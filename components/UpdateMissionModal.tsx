@@ -17,7 +17,7 @@ import {
   Loader2, Search, ChevronDown, UserPlus, Package, ShieldCheck, Check, BadgeCheck, Sparkles,
   Milestone, Timer, Calendar, Globe, Briefcase, Zap, TrendingUp, RefreshCw, User, Phone, CheckCircle2, Mail,
   ExternalLink, Radar, ArrowRightLeft, TableProperties, Gauge, XCircle, CalendarClock, CircleDot,
-  ClipboardList
+  ClipboardList, UserX
 } from 'lucide-react';
 import { useLoadScript, Autocomplete, GoogleMap, Marker } from '@react-google-maps/api';
 import { googleMapsApiKey, libraries, googleMapsLoadConfig } from '../lib/maps';
@@ -120,9 +120,8 @@ export interface FinalizeConfirmPayload {
     odometerPrintUrl: string | null;
 }
 
-// Fornecedores ATIVA e TM SEG enviam o KM final só DEPOIS da missão. Para eles,
-// ao concluir/cancelar a OS, o KM final e o print do hodômetro NÃO são exigidos.
-// Demais fornecedores seguem com KM final + print obrigatórios.
+// Fornecedores ATIVA e TM SEG enviam o KM final só DEPOIS da missão na conclusão.
+// Evidência do encerramento é obrigatória para TODOS os status terminais.
 export const isOdometerExemptProvider = (providerName?: string): boolean => {
     const raw = (providerName || '').toUpperCase();
     const tokens = raw.split(/[^A-Z0-9]+/).filter(Boolean);
@@ -139,7 +138,7 @@ interface OdometerAiResult {
 
 interface FinalizeChecklistDialogProps {
     isOpen: boolean;
-    kind: 'completed' | 'cancelled';
+    kind: 'completed' | 'cancelled' | 'refused';
     osLabel: string;
     providerName: string;
     dateLabel: string;
@@ -168,6 +167,8 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     franchiseKm, suggestions, defaultDateTime, minDateTime, missionId, onConfirm, onCancel,
 }) => {
     const isCompleted = kind === 'completed';
+    const isCancelled = kind === 'cancelled';
+    const isRefused = kind === 'refused';
     const [endKm, setEndKm] = useState(defaultEndKm);
     const [dt, setDt] = useState(defaultDateTime);
     const [endTravelDt, setEndTravelDt] = useState(defaultDateTime);
@@ -232,10 +233,9 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     // KM final e o print do hodômetro NÃO são obrigatórios na conclusão.
     const odometerExempt = isOdometerExemptProvider(providerName);
 
-    // Auditoria do hodômetro: print obrigatório como prova do KM. A conferência
-    // por IA é apenas um AUXÍLIO informativo — NUNCA trava a finalização (a IA
-    // falha em fotos escuras/embaçadas). Basta anexar o print para concluir.
-    const odometerOk = !isCompleted ? true : odometerExempt ? true : !!odoUrl;
+    // Evidência obrigatória em todo status terminal (Concluída, Cancelada, Recusada).
+    // Na conclusão, ATIVA/TM SEG ainda podem omitir KM final; evidência é sempre exigida.
+    const evidenceOk = !!odoUrl;
 
     const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -285,11 +285,27 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         setOdoUploading(true);
         try {
             const ext = (file.name.split('.').pop() || 'png').toLowerCase();
-            const path = `odometer/${missionId}/${Date.now()}.${ext}`;
+            const folder = isCompleted ? 'odometer' : isRefused ? 'refused' : 'cancelled';
+            const path = `${folder}/${missionId}/${Date.now()}.${ext}`;
             const { error: upErr } = await supabase.storage.from('mission-evidence').upload(path, file, { upsert: true, contentType: file.type });
             if (upErr) throw upErr;
             const { data: pub } = supabase.storage.from('mission-evidence').getPublicUrl(path);
-            setOdoUrl(pub?.publicUrl || '');
+            const publicUrl = pub?.publicUrl || '';
+            setOdoUrl(publicUrl);
+            try {
+                await supabase.from('system_logs').insert({
+                    entity: 'MissionEvidence',
+                    entity_id: missionId,
+                    action_type: isCompleted ? 'odometer_print' : isRefused ? 'refused_status_evidence' : 'cancel_status_evidence',
+                    details: JSON.stringify({
+                        fileName: file.name, filePath: path, publicUrl,
+                        terminalStatus: kind,
+                        uploadedAt: new Date().toISOString(),
+                        context: `Checklist de ${isCompleted ? 'conclusão' : isRefused ? 'recusa' : 'cancelamento'}`,
+                    }),
+                    created_at: new Date().toISOString(),
+                });
+            } catch (logErr) { console.warn('[TerminalEvidence] Falha ao registrar log:', logErr); }
         } catch (e: any) {
             setOdoErr('Falha ao enviar o print. Tente novamente.');
             setOdoUploading(false);
@@ -300,33 +316,43 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
     };
 
     // Etapas visíveis nesta OS (para a barra de progresso).
-    const steps = {
-        address: true,
-        raio: isRaio,
-        cities: true,
-        km: isCompleted,
-        cancel: !isCompleted,
-    };
+    const steps = isRefused
+        ? { refused: true }
+        : {
+            address: true,
+            raio: isRaio,
+            cities: true,
+            km: isCompleted,
+            cancel: isCancelled,
+        };
     const totalSteps = Object.values(steps).filter(Boolean).length;
     const rawDoneSteps =
-        (chkAddress ? 1 : 0) +
-        (steps.raio && raioAnswer ? 1 : 0) +
-        (chkCities ? 1 : 0) +
-        (steps.km && (endKmNum != null && endKmNum > 0 && (!kmMismatch || chkTable) && odometerOk) ? 1 : 0) +
-        (steps.cancel && dt && endTravelDt ? 1 : 0);
-    // Fornecedores isentos (ATIVA / TM SEG) seguem a regra ANTIGA: finalizar/cancelar
-    // sem o checklist de auditoria (endereço, raio, cidades, KM, print). Para eles,
-    // só a data/hora de fim libera o botão; as etapas visíveis contam como concluídas.
-    const essentialDone = isCompleted ? !!dt : (!!dt && !!endTravelDt);
-    const doneSteps = odometerExempt ? totalSteps : rawDoneSteps;
+        (isRefused
+            ? (endKmNum != null && endKmNum > 0 && evidenceOk && dt ? 1 : 0)
+            : 0) +
+        (!isRefused && chkAddress ? 1 : 0) +
+        (!isRefused && steps.raio && raioAnswer ? 1 : 0) +
+        (!isRefused && chkCities ? 1 : 0) +
+        (steps.km && (endKmNum != null && endKmNum > 0 && (!kmMismatch || chkTable) && evidenceOk) ? 1 : 0) +
+        (steps.cancel && dt && endTravelDt && endKmNum != null && endKmNum > 0 && evidenceOk ? 1 : 0);
+    // Fornecedores isentos (ATIVA / TM SEG) na conclusão: KM opcional, mas hora + evidência obrigatórios.
+    const essentialDone = isRefused
+        ? (endKmNum != null && endKmNum > 0 && evidenceOk && !!dt)
+        : isCompleted
+            ? (!!dt && evidenceOk)
+            : (!!dt && !!endTravelDt && endKmNum != null && endKmNum > 0 && evidenceOk);
+    const doneSteps = (odometerExempt && isCompleted) ? (essentialDone ? totalSteps : 0) : rawDoneSteps;
     const progressPct = totalSteps > 0 ? Math.round((doneSteps / totalSteps) * 100) : 0;
-    const allDone = odometerExempt ? essentialDone : rawDoneSteps >= totalSteps;
+    const allDone = (odometerExempt && isCompleted) ? essentialDone : rawDoneSteps >= totalSteps;
 
     const handleConfirm = () => {
-        // Isentos (ATIVA / TM SEG): pula TODO o checklist de auditoria (endereço,
-        // raio, cidades, KM, print) — exige apenas data/hora de fim.
-        if (!odometerExempt) {
-            if (!chkAddress) { setErr('Confirme o endereço de destino final.'); return; }
+        if (isRefused) {
+            if (endKmNum == null || endKmNum <= 0) { setErr('Informe o KM final.'); return; }
+            if (startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
+            if (!evidenceOk) { setErr('Cole ou anexe a evidência do encerramento (obrigatório).'); return; }
+            if (!dt) { setErr('Informe a data e a hora exata da recusa.'); return; }
+        } else if (!odometerExempt || !isCompleted) {
+            if (!isRefused && !chkAddress) { setErr('Confirme o endereço de destino final.'); return; }
             if (isRaio && !raioAnswer) { setErr('Responda se a viatura rodou o raio.'); return; }
             if (isRaio && raioAnswer === 'no' && (raioRealKm || '').trim() === '') { setErr('Informe o raio realmente rodado (km).'); return; }
             if (!chkCities) { setErr('Confirme as cidades e a tabela aplicada.'); return; }
@@ -339,15 +365,15 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             if (endKmNum != null && startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
             if (!odometerExempt) {
                 if (kmMismatch && !chkTable) { setErr('O KM rodado não bate com a tabela. Confirme a ciência da tabela aplicada.'); return; }
-                if (!odoUrl) { setErr('Cole ou anexe o print do hodômetro (obrigatório).'); return; }
-                // A IA é só um auxílio: não bloqueia a finalização mesmo se falhar
-                // ou acusar divergência. O print anexado já é a prova do KM.
             }
+            if (!evidenceOk) { setErr('Cole ou anexe a evidência do encerramento (obrigatório).'); return; }
             if (!dt) { setErr('Informe a data e a hora exata da finalização.'); return; }
-        } else {
+        } else if (isCancelled) {
             if (!dt) { setErr('Informe a data e a hora do cancelamento.'); return; }
             if (!endTravelDt) { setErr('Informe a data de fim de viagem.'); return; }
-            if (endKmNum != null && startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
+            if (endKmNum == null || endKmNum <= 0) { setErr('Informe o KM final.'); return; }
+            if (startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
+            if (!evidenceOk) { setErr('Cole ou anexe a evidência do cancelamento (obrigatório).'); return; }
         }
 
         const parsed = new Date(dt);
@@ -359,8 +385,8 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         onConfirm({
             endKm: endKmNum,
             iso: parsed.toISOString(),
-            endTravelIso: !isCompleted && endTravelParsed && !isNaN(endTravelParsed.getTime()) ? endTravelParsed.toISOString() : null,
-            odometerPrintUrl: isCompleted ? (odoUrl || null) : null,
+            endTravelIso: isCancelled && endTravelParsed && !isNaN(endTravelParsed.getTime()) ? endTravelParsed.toISOString() : null,
+            odometerPrintUrl: evidenceOk ? (odoUrl || null) : null,
         });
     };
 
@@ -369,19 +395,19 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             <div className="my-6 w-full max-w-[600px] overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
                 {/* Header */}
                 <div className="flex items-center gap-3 border-b border-slate-100 bg-white px-5 py-4">
-                    <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${isCompleted ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
+                    <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${isCompleted ? 'bg-emerald-500 text-white' : isRefused ? 'bg-red-800 text-white' : 'bg-red-500 text-white'}`}>
                         {isCompleted ? <ShieldCheck className="h-6 w-6" /> : <XCircle className="h-6 w-6" />}
                     </div>
                     <div className="min-w-0">
                         <h2 className="text-base font-extrabold leading-tight text-slate-900" data-testid="text-finalize-title">
-                            {isCompleted ? 'Finalizar Missão' : 'Cancelar Missão'}{isDhl ? ' DHL' : ''}
+                            {isCompleted ? 'Finalizar Missão' : isRefused ? 'Recusar Missão' : 'Cancelar Missão'}{isDhl ? ' DHL' : ''}
                         </h2>
                         <p className="truncate text-xs text-slate-500" data-testid="text-finalize-subtitle">
                             {osLabel}{providerName ? ` · Fornecedor: ${providerName}` : ''}{dateLabel ? ` · ${dateLabel}` : ''}
                         </p>
                     </div>
-                    <span className={`ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${isCompleted ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-red-50 text-red-700 ring-red-200'}`}>
-                        <CircleDot className="h-3 w-3" /> {isCompleted ? 'Em conferência' : 'Cancelamento'}
+                    <span className={`ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${isCompleted ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : isRefused ? 'bg-red-100 text-red-900 ring-red-300' : 'bg-red-50 text-red-700 ring-red-200'}`}>
+                        <CircleDot className="h-3 w-3" /> {isCompleted ? 'Em conferência' : isRefused ? 'Recusa' : 'Cancelamento'}
                     </span>
                 </div>
 
@@ -394,6 +420,8 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                 </div>
 
                 <div className="space-y-3 p-5">
+                    {!isRefused && (
+                    <>
                     {/* 1 - Endereço destino final */}
                     <FinSection n={1} done={chkAddress} icon={<MapPin className="h-4 w-4" />} title="Endereço de destino final">
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -453,6 +481,38 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                         </div>
                         <FinCheck label="Confirmo as cidades e a tabela aplicada" checked={chkCities} onToggle={() => setChkCities(v => !v)} testId="check-cities" />
                     </FinSection>
+                    </>
+                    )}
+
+                    {/* Recusa — hora + KM + evidência (sem checklist de endereço) */}
+                    {isRefused && (
+                        <FinSection n={1} danger icon={<UserX className="h-4 w-4" />} title="Recusar missão — hora, KM e evidência obrigatórios">
+                            <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                                <p className="text-[12px] font-medium text-red-900">
+                                    Para registrar a <b>Recusada</b>, confirme o KM final, a hora exata do encerramento e anexe a evidência no sistema.
+                                </p>
+                                <div className="mt-3">
+                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">KM final *</label>
+                                    <input value={endKm} onChange={e => { setEndKm(e.target.value); setOdoResult(null); setOdoValidatedKm(null); setOdoConfirmed(false); }} inputMode="decimal" placeholder="Ex: 123456" className="mt-1 w-full rounded-md border border-red-300 bg-white px-2.5 py-1.5 text-[13px] font-semibold text-slate-800 outline-none focus:border-red-500" data-testid="input-confirm-end-km" />
+                                </div>
+                                <div className="mt-2">
+                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">Data e hora exata da recusa *</label>
+                                    <input type="datetime-local" step={1} value={dt} min={minDateTime} onChange={e => setDt(e.target.value)} className="mt-1 w-full rounded-md border border-red-300 bg-white px-2.5 py-2 text-sm font-bold text-slate-800 outline-none focus:border-red-500" data-testid="input-confirm-real-time" />
+                                </div>
+                            </div>
+                            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <p className="text-[12px] font-bold text-slate-800">Evidência do encerramento (obrigatório)</p>
+                                <p className="mt-1 text-[11px] font-medium text-slate-500">Cole o print (Ctrl+V) ou anexe foto/comprovante do encerramento.</p>
+                                <div tabIndex={0} onPaste={(e) => { const item = Array.from(e.clipboardData.items).find(it => it.type.startsWith('image/')); const file = item?.getAsFile(); if (file) { e.preventDefault(); handleOdometerImage(file); } }} className="mt-2 flex min-h-[64px] cursor-text flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 text-center outline-none focus:border-red-500" data-testid="dropzone-terminal-evidence">
+                                    {odoPreview ? (<img src={odoPreview} alt="Evidência" className="max-h-44 rounded-md border border-slate-200" />) : (<p className="text-[11px] font-semibold text-slate-400">Clique aqui e tecle Ctrl+V para colar</p>)}
+                                    <label className="mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-slate-700 px-2.5 py-1.5 text-[11px] font-semibold text-white"><Plus className="h-3.5 w-3.5" /> Anexar imagem<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleOdometerImage(f); e.currentTarget.value=''; }} /></label>
+                                </div>
+                                {(odoUploading || odoChecking) && (<div className="mt-2 flex items-center gap-2 text-[12px] font-semibold text-slate-600"><Loader2 className="h-4 w-4 animate-spin" /> Enviando evidência...</div>)}
+                                {odoErr && (<div className="mt-2 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-bold text-red-600"><AlertTriangle size={13} /> {odoErr}</div>)}
+                                {odoUrl && !odoUploading && (<div className="mt-2 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-2 text-[11px] font-bold text-emerald-800">Evidência salva no sistema.</div>)}
+                            </div>
+                        </FinSection>
+                    )}
 
                     {/* 4 - KM rodado x KM da tabela (somente conclusão) */}
                     {isCompleted && (
@@ -477,12 +537,28 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
 
                             {/* Auditoria do hodômetro por IA */}
                             {odometerExempt ? (
+                            <>
                             <div className="mt-3 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="note-odometer-exempt">
                                 <Gauge className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
                                 <p className="text-[12px] font-medium text-blue-900">
-                                    Fornecedor <b>{providerName}</b>: print do hodômetro <b>não é obrigatório</b> (o KM final é enviado depois). Pode concluir sem a foto.
+                                    Fornecedor <b>{providerName}</b>: KM final pode ser enviado depois, mas a <b>evidência é obrigatória</b> agora.
                                 </p>
                             </div>
+                            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <div className="flex items-center gap-2">
+                                    <Gauge className="h-4 w-4 text-slate-600" />
+                                    <p className="text-[12px] font-bold text-slate-800">Evidência do encerramento (obrigatório)</p>
+                                </div>
+                                <p className="mt-1 text-[11px] font-medium text-slate-500">Cole o print (Ctrl+V) ou anexe foto/comprovante.</p>
+                                <div tabIndex={0} onPaste={(e) => { const item = Array.from(e.clipboardData.items).find(it => it.type.startsWith('image/')); const file = item?.getAsFile(); if (file) { e.preventDefault(); handleOdometerImage(file); } }} className="mt-2 flex min-h-[64px] cursor-text flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 text-center outline-none focus:border-emerald-500" data-testid="dropzone-odometer">
+                                    {odoPreview ? (<img src={odoPreview} alt="Evidência" className="max-h-44 rounded-md border border-slate-200" data-testid="img-odometer-preview" />) : (<p className="text-[11px] font-semibold text-slate-400">Clique aqui e tecle Ctrl+V para colar</p>)}
+                                    <label className="mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-slate-700 px-2.5 py-1.5 text-[11px] font-semibold text-white" data-testid="button-odometer-attach"><Plus className="h-3.5 w-3.5" /> Anexar imagem<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleOdometerImage(f); e.currentTarget.value=''; }} /></label>
+                                </div>
+                                {(odoUploading || odoChecking) && (<div className="mt-2 flex items-center gap-2 text-[12px] font-semibold text-slate-600"><Loader2 className="h-4 w-4 animate-spin" /> Enviando evidência...</div>)}
+                                {odoErr && (<div className="mt-2 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-bold text-red-600"><AlertTriangle size={13} /> {odoErr}</div>)}
+                                {odoUrl && !odoUploading && (<div className="mt-2 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-2 text-[11px] font-bold text-emerald-800">Evidência salva no sistema.</div>)}
+                            </div>
+                            </>
                             ) : (
                             <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                                 <div className="flex items-center gap-2">
@@ -569,13 +645,13 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                     )}
 
                     {/* 5 - Cancelamento (campos obrigatórios) */}
-                    {!isCompleted && (
-                        <FinSection n={isRaio ? 4 : 3} danger icon={<XCircle className="h-4 w-4" />} title="Missão cancelada — datas obrigatórias">
+                    {isCancelled && (
+                        <FinSection n={isRaio ? 4 : 3} danger icon={<XCircle className="h-4 w-4" />} title="Missão cancelada — hora, KM e evidência obrigatórios">
                             <div className="rounded-lg border border-red-200 bg-red-50 p-3">
                                 <div className="flex items-start gap-2">
                                     <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
                                     <p className="text-[12px] font-medium text-red-900">
-                                        Os dois campos abaixo são <b>obrigatórios</b> para evitar erro de cobrança. A data do cancelamento define a cobrança de horas extras.
+                                        Confirme as datas, o KM final e anexe a evidência. A data do cancelamento define a cobrança de horas extras.
                                     </p>
                                 </div>
                                 <div className="mt-3 grid grid-cols-2 gap-2">
@@ -583,10 +659,20 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                                     <FinDateField label="Data de fim de viagem *" value={endTravelDt} min={minDateTime} onChange={setEndTravelDt} testId="input-cancel-end-travel" />
                                 </div>
                                 <div className="mt-2">
-                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">KM final (opcional)</label>
-                                    <input value={endKm} onChange={e => setEndKm(e.target.value)} inputMode="decimal" placeholder="Ex: 123456" className="mt-1 w-full rounded-md border border-red-300 bg-white px-2.5 py-1.5 text-[13px] font-semibold text-slate-800 outline-none focus:border-red-500" data-testid="input-confirm-end-km" />
-                                    <p className="mt-1 text-[10px] font-medium text-red-700">Preencha quando a viatura já tinha rodado km antes do cancelamento (cobra excedente).</p>
+                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">KM final *</label>
+                                    <input value={endKm} onChange={e => { setEndKm(e.target.value); setOdoResult(null); setOdoValidatedKm(null); setOdoConfirmed(false); }} inputMode="decimal" placeholder="Ex: 123456" className="mt-1 w-full rounded-md border border-red-300 bg-white px-2.5 py-1.5 text-[13px] font-semibold text-slate-800 outline-none focus:border-red-500" data-testid="input-confirm-end-km" />
                                 </div>
+                            </div>
+                            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <p className="text-[12px] font-bold text-slate-800">Evidência do cancelamento (obrigatório)</p>
+                                <p className="mt-1 text-[11px] font-medium text-slate-500">Cole o print (Ctrl+V) ou anexe foto/comprovante.</p>
+                                <div tabIndex={0} onPaste={(e) => { const item = Array.from(e.clipboardData.items).find(it => it.type.startsWith('image/')); const file = item?.getAsFile(); if (file) { e.preventDefault(); handleOdometerImage(file); } }} className="mt-2 flex min-h-[64px] cursor-text flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 text-center outline-none focus:border-red-500" data-testid="dropzone-cancel-evidence">
+                                    {odoPreview ? (<img src={odoPreview} alt="Evidência" className="max-h-44 rounded-md border border-slate-200" />) : (<p className="text-[11px] font-semibold text-slate-400">Clique aqui e tecle Ctrl+V para colar</p>)}
+                                    <label className="mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-slate-700 px-2.5 py-1.5 text-[11px] font-semibold text-white"><Plus className="h-3.5 w-3.5" /> Anexar imagem<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleOdometerImage(f); e.currentTarget.value=''; }} /></label>
+                                </div>
+                                {(odoUploading || odoChecking) && (<div className="mt-2 flex items-center gap-2 text-[12px] font-semibold text-slate-600"><Loader2 className="h-4 w-4 animate-spin" /> Enviando evidência...</div>)}
+                                {odoErr && (<div className="mt-2 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-bold text-red-600"><AlertTriangle size={13} /> {odoErr}</div>)}
+                                {odoUrl && !odoUploading && (<div className="mt-2 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-2 text-[11px] font-bold text-emerald-800">Evidência salva no sistema.</div>)}
                             </div>
                         </FinSection>
                     )}
@@ -604,9 +690,11 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                     <button type="button" onClick={onCancel} className="ml-auto rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600" data-testid="button-confirm-finalize-cancel">
                         Voltar
                     </button>
-                    <button type="button" onClick={handleConfirm} disabled={!allDone || submitting} className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white transition-all active:scale-95 ${(allDone && !submitting) ? (isCompleted ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700') : 'cursor-not-allowed bg-slate-300 text-slate-500'}`} data-testid="button-confirm-finalize">
+                    <button type="button" onClick={handleConfirm} disabled={!allDone || submitting} className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white transition-all active:scale-95 ${(allDone && !submitting) ? (isCompleted ? 'bg-emerald-600 hover:bg-emerald-700' : isRefused ? 'bg-red-800 hover:bg-red-900' : 'bg-red-600 hover:bg-red-700') : 'cursor-not-allowed bg-slate-300 text-slate-500'}`} data-testid="button-confirm-finalize">
                         {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                        {submitting ? (isCompleted ? 'Finalizando...' : 'Cancelando...') : (isCompleted ? 'Finalizar missão' : 'Confirmar cancelamento')}
+                        {submitting
+                            ? (isCompleted ? 'Finalizando...' : isRefused ? 'Registrando recusa...' : 'Cancelando...')
+                            : (isCompleted ? 'Finalizar missão' : isRefused ? 'Confirmar recusa' : 'Confirmar cancelamento')}
                     </button>
                 </div>
             </div>
@@ -691,7 +779,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     // Confirmação obrigatória de KM final + hora EXATA ao Concluir/Cancelar.
     // A SM só muda de status depois que o operador confirma esses valores.
-    const [pendingFinalizeConfirm, setPendingFinalizeConfirm] = useState<{ kind: 'completed' | 'cancelled' } | null>(null);
+    const [pendingFinalizeConfirm, setPendingFinalizeConfirm] = useState<{ kind: 'completed' | 'cancelled' | 'refused' } | null>(null);
     const finalizeConfirmedRef = useRef(false);
     // Status REAL escolhido no gate de finalização (Concluída/Cancelada). O
     // resume() do checklist re-dispara um handleUpdateSubmit CAPTURADO antes do
@@ -1833,11 +1921,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             }
         }
 
-        // GATE de confirmação operacional (Concluir / Cancelar): antes de mudar
-        // o status para Concluída ou Cancelada, o operador PRECISA confirmar o
-        // KM final e a HORA EXATA do evento. A SM só muda de status APÓS essa
-        // confirmação. A hora confirmada alimenta o cálculo (end_time na
-        // conclusão; _cancelStatusAt no cancelamento via recalc-on-cancel).
+        // GATE de confirmação operacional (Concluir / Cancelar / Recusar): antes de
+        // mudar o status terminal, o operador PRECISA confirmar KM final, hora exata
+        // e evidência no sistema.
         if (!finalizeConfirmedRef.current && !mission.billing_approved) {
             const _sKm = parseNumber(editData.startKm);
             const _eKm = parseNumber(editData.endKm);
@@ -1848,21 +1934,24 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const _isInFlight = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN].includes(_selected);
             const _isPending = _selected === MissionStatus.PENDING;
             const _isExplicitRevert = isCompletedMission && canRevertStatus && _selected === MissionStatus.IN_TRANSIT;
-            // Fornecedores isentos (ATIVA / TM SEG) NÃO auto-concluem ao salvar:
-            // o processo de finalização/cancelamento só dispara quando o operador
-            // escolhe explicitamente CONCLUÍDA/CANCELADA — senão o dialog aparecia
-            // toda vez que iam só ATUALIZAR a OS (KM final vem depois p/ esses).
             const willComplete = !_isExplicitRevert && mission.status !== MissionStatus.COMPLETED &&
                 (_selected === MissionStatus.COMPLETED || (!_exemptOdo && (_isPending || _isInFlight) && _hasStart && _hasEnd));
             const willCancel = _selected === MissionStatus.CANCELLED && mission.status !== MissionStatus.CANCELLED;
-            if (willComplete || willCancel) {
+            const willRefuse = _selected === MissionStatus.REFUSED && mission.status !== MissionStatus.REFUSED;
+            if (willComplete || willCancel || willRefuse) {
                 resumeSubmitRef.current = () => {
                     finalizeConfirmedRef.current = true;
                     handleUpdateSubmit({ preventDefault: () => {} } as React.FormEvent);
                 };
-                pendingFinalizeStatusRef.current = willComplete ? MissionStatus.COMPLETED : MissionStatus.CANCELLED;
+                pendingFinalizeStatusRef.current = willComplete
+                    ? MissionStatus.COMPLETED
+                    : willCancel
+                        ? MissionStatus.CANCELLED
+                        : MissionStatus.REFUSED;
                 setIsEndTimeLocked(true);
-                setPendingFinalizeConfirm({ kind: willComplete ? 'completed' : 'cancelled' });
+                setPendingFinalizeConfirm({
+                    kind: willComplete ? 'completed' : willCancel ? 'cancelled' : 'refused',
+                });
                 return;
             }
         }
@@ -2170,6 +2259,25 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     destination: editData.destination
                 })
             }]);
+
+            if (confirmedPrintUrlRef.current && [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(finalStatus as MissionStatus)) {
+                try {
+                    await supabase.from('system_logs').insert({
+                        user_name: currentUser.name || 'Usuário',
+                        entity: 'MissionEvidence',
+                        entity_id: mission.id,
+                        action_type: 'terminal_status_confirmed',
+                        details: JSON.stringify({
+                            status: finalStatus,
+                            evidenceUrl: confirmedPrintUrlRef.current,
+                            endKm: eKm || null,
+                            confirmedAt: confirmedRealTimeRef.current || endIso,
+                            uploadedBy: currentUser.name || 'Sistema',
+                        }),
+                        created_at: new Date().toISOString(),
+                    });
+                } catch (evErr) { console.warn('[TerminalEvidence] Falha ao registrar confirmação:', evErr); }
+            }
             
             const dateObj = new Date(startIso);
             const dateStr = formatDateBR(dateObj);
@@ -2700,7 +2808,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         setEditData(prev => ({
             ...prev,
             ...(km != null ? { endKm: String(km) } : {}),
-            ...(kind === 'completed' ? { endDate, endTime } : (et ? { endDate: etDate, endTime: etTime } : {})),
+            ...(kind === 'completed' || kind === 'refused'
+                ? { endDate, endTime }
+                : (et ? { endDate: etDate, endTime: etTime } : {})),
         }));
         setPendingFinalizeConfirm(null);
         const resume = resumeSubmitRef.current;
@@ -2717,18 +2827,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         setIsEndTimeLocked(false);
     };
 
-    // Atalho operacional: ao clicar em CONCLUÍDA / CANCELADA numa OS ativa, abre
+    // Atalho operacional: ao clicar em CONCLUÍDA / CANCELADA / RECUSADA numa OS ativa, abre
     // direto o checklist de finalização (mesma rota do gate em handleUpdateSubmit).
-    // Ao confirmar, o resume persiste a OS automaticamente com os campos da tela.
-    // OS já concluída/cancelada/aprovada cai no fluxo normal (só seleciona).
     const handleStatusButton = (s: MissionStatus) => {
         const isConclude = s === MissionStatus.COMPLETED;
         const isCancel = s === MissionStatus.CANCELLED;
+        const isRefuse = s === MissionStatus.REFUSED;
         const directOK = mission && !mission.billing_approved
             && mission.status !== MissionStatus.COMPLETED
             && mission.status !== MissionStatus.CANCELLED
+            && mission.status !== MissionStatus.REFUSED
             && mission.status !== s;
-        if ((isConclude || isCancel) && directOK) {
+        if ((isConclude || isCancel || isRefuse) && directOK) {
             setEditData(prev => ({ ...prev, status: s }));
             pendingFinalizeStatusRef.current = s;
             resumeSubmitRef.current = () => {
@@ -2736,7 +2846,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 handleUpdateSubmit({ preventDefault: () => {} } as React.FormEvent);
             };
             setIsEndTimeLocked(true);
-            setPendingFinalizeConfirm({ kind: isConclude ? 'completed' : 'cancelled' });
+            setPendingFinalizeConfirm({
+                kind: isConclude ? 'completed' : isCancel ? 'cancelled' : 'refused',
+            });
             return;
         }
         setEditData({ ...editData, status: s });

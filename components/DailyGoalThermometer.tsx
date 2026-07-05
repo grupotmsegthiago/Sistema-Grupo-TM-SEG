@@ -255,9 +255,11 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         return 'text-slate-500';
     };
 
+    const CM_BUTTON_LABEL = 'Central de Monitoramento - CM';
+
     const refreshButtonTitle = lastDataUpdatedAt
-        ? `Atualizar Meta — Última atualização: ${formatDateTimeAuditBR(lastDataUpdatedAt)}`
-        : 'Atualizar Meta — Aguardando primeira sincronização';
+        ? `${CM_BUTTON_LABEL} — Última atualização: ${formatDateTimeAuditBR(lastDataUpdatedAt)}`
+        : `${CM_BUTTON_LABEL} — Aguardando primeira sincronização`;
 
     const suffix = titleSuffix ? ` ${titleSuffix}` : '';
     const labelText = viewPeriod === 'TODAY' ? `Meta Agendada${suffix} (Hoje)` :
@@ -269,10 +271,10 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                       `Faturamento Período${suffix}`;
 
     return (
-        <div className="group perspective-1000 w-full max-w-lg mx-auto h-full">
-            <div className="bg-white rounded-[35px] p-4 sm:p-5 border-x border-t border-b-4 border-gray-200/60 shadow-[0_20px_50px_rgba(0,0,0,0.06)] w-full h-full overflow-hidden transition-all duration-700 hover:shadow-[0_25px_60px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transform hover:rotate-0.5 border-r-[5px] ml-[0px] mr-[0px]">
+        <div className="group perspective-1000 w-full max-w-lg mx-auto h-full overflow-visible">
+            <div className="bg-white rounded-[35px] p-4 sm:p-5 border-x border-t border-b-4 border-gray-200/60 shadow-[0_20px_50px_rgba(0,0,0,0.06)] w-full h-full overflow-visible transition-all duration-700 hover:shadow-[0_25px_60px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transform hover:rotate-0.5 border-r-[5px] ml-[0px] mr-[0px]">
                 
-                <div className="flex justify-between items-center gap-2 mb-4 min-w-0">
+                <div className="flex justify-between items-center gap-2 mb-4 overflow-visible">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <div className="relative shrink-0">
                             <div className={`p-2 rounded-[15px] text-white shadow-lg transition-colors duration-500 ${accentClass ? `bg-gradient-to-br ${accentClass}` : stats.colorClass}`}>
@@ -304,7 +306,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                         </div>
                     </div>
                     {canSeeMonetary && (
-                        <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-2 shrink-0 overflow-visible relative z-[300]">
                             <p className={`text-sm md:text-base font-black font-mono tracking-tighter whitespace-nowrap transition-colors duration-500 ${stats.textClass}`}>
                                 {isLoading ? (
                                     <Loader2 size={14} className="animate-spin inline text-red-500" />
@@ -313,23 +315,24 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                                 )}
                             </p>
                             <div
-                                className="relative"
+                                className="relative overflow-visible z-[300]"
                                 onMouseEnter={() => setShowHistoryPopover(true)}
                                 onMouseLeave={() => setShowHistoryPopover(false)}
                             >
                                 <button
                                     onClick={handleManualRefresh}
                                     disabled={isRefreshing || isLoading}
-                                    className="p-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-500 hover:text-gray-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-90"
+                                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-600 hover:text-gray-800 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 whitespace-nowrap"
                                     title={refreshButtonTitle}
                                     aria-label={refreshButtonTitle}
                                     data-testid="button-refresh-goal"
                                 >
-                                    <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} />
+                                    <RefreshCw size={13} className={`shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
+                                    <span className="text-[7px] font-black uppercase leading-tight">{CM_BUTTON_LABEL}</span>
                                 </button>
                                 {showHistoryPopover && (
                                     <div
-                                        className="absolute right-0 top-full mt-2 z-[200] w-[min(92vw,340px)] rounded-xl border border-slate-200 bg-white shadow-xl p-3 text-left"
+                                        className="absolute right-0 top-full mt-2 z-[500] w-[min(92vw,340px)] rounded-xl border border-slate-200 bg-white shadow-xl p-3 text-left overflow-visible"
                                         data-testid="popover-goal-update-history"
                                         onClick={e => e.stopPropagation()}
                                     >

@@ -1834,8 +1834,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           </div>
 
           {!isRestrictedClientView && (
-          <div className="flex flex-wrap gap-3 w-full justify-start">
-             <div className="w-full sm:w-[320px] sm:shrink-0 flex">
+          <div className="flex flex-wrap gap-3 w-full justify-start overflow-visible">
+             <div className="w-full sm:w-[320px] sm:shrink-0 flex overflow-visible">
                 <DailyGoalThermometer 
                    viewPeriod={viewPeriod} 
                    customStartDate={customStartDate} 
@@ -1855,7 +1855,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    historyKey="meta-geral"
                 />
              </div>
-             <div className="w-full sm:w-[320px] sm:shrink-0 flex">
+             <div className="w-full sm:w-[320px] sm:shrink-0 flex overflow-visible">
                 <DailyGoalThermometer 
                    viewPeriod={viewPeriod} 
                    customStartDate={customStartDate} 
@@ -1877,7 +1877,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    historyKey="meta-dhl"
                 />
              </div>
-             <div className="w-full sm:w-[320px] sm:shrink-0 flex">
+             <div className="w-full sm:w-[320px] sm:shrink-0 flex overflow-visible">
                 <DailyGoalThermometer 
                    viewPeriod={viewPeriod} 
                    customStartDate={customStartDate} 

@@ -121,6 +121,18 @@ https://sistema.grupotmseg.com.br
 
 Tela de login do **Grupo TMSEG - Sistema de Gestão** sem erro.
 
+### 6.4 Esconder `vercel.app` na barra do navegador
+
+Quem acessa `https://sistema-grupo-tm-seg.vercel.app` deve ser **redirecionado** para `https://sistema.grupotmseg.com.br` (configurado no `vercel.json`).
+
+Na Vercel, confirme também:
+
+1. **Settings → Domains** → `sistema.grupotmseg.com.br` com status **Valid**
+2. Clique nos **três pontinhos** ao lado do domínio → **Set as Primary Domain** (domínio principal)
+3. Ative **Redirect old domains to primary** (redireciona URLs `.vercel.app` para o domínio principal)
+
+> **Importante:** `www.grupotmseg.com.br` é o **site institucional** (servidor `34.111.179.208`), não o sistema na Vercel. O endereço do sistema é **`sistema.grupotmseg.com.br`**. Não dá para mostrar só `grupotmseg.com.br` na barra sem hospedar o app no domínio raiz (conflita com o site da empresa).
+
 ---
 
 ## 7. Checklist
