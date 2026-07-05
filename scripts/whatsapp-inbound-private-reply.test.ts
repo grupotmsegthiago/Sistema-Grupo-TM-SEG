@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  buildOperationalPrivateReply,
   extractInboundText,
   isFleetSummaryCommand,
+  isOperationalPrivateReplyCommand,
   resolveInboundChatKind,
   resolveReplyPhone,
 } from '../server/whatsapp/inboundBot';
@@ -58,4 +60,23 @@ test('mensagem privada continua respondendo para o próprio phone', () => {
 
   assert.equal(resolveInboundChatKind(payload), 'private');
   assert.equal(resolveReplyPhone(payload), '5511911112222');
+});
+
+test('pedido operacional "Reinicio?" em grupo é reconhecido e montado para PV', () => {
+  const payload = {
+    isGroup: true,
+    phone: '120363019502650977-group',
+    participantPhone: '11926831234',
+    senderName: 'Beatriz',
+    text: { message: 'Reinicio?' },
+  };
+
+  assert.equal(isFleetSummaryCommand(extractInboundText(payload)), false);
+  assert.equal(isOperationalPrivateReplyCommand(extractInboundText(payload)), true);
+  assert.equal(resolveInboundChatKind(payload), 'group');
+  assert.equal(resolveReplyPhone(payload), '5511926831234');
+  assert.equal(
+    buildOperationalPrivateReply(payload),
+    'Beatriz, vou checar com a equipe agora e já retorno com atualização. 👍',
+  );
 });

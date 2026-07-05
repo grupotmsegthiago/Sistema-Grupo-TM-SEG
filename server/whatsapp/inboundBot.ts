@@ -1,4 +1,4 @@
-// ── Bot inbound: comando "resumo" → resposta no PV (nunca no grupo) ──────────
+// ── Bot inbound: comandos do grupo → resposta no PV (nunca no grupo) ─────────
 
 import { assertOfficialBotNumber } from "../zapiGuard";
 import { whatsappProviderSendText } from "./providerRegistry";
@@ -9,11 +9,18 @@ export function isWhatsappResumoEnabled(): boolean {
 }
 
 const RESUMO_PATTERN = /^(resumo|atualiza(ç|c)(a|ã)o|status|viaturas)(\s|$)|resumo operacional/i;
+const OPERATIONAL_PRIVATE_REPLY_PATTERN = /\b(rein[ií]cio|reiniciou|reiniciar|reiniciado)\b/i;
 
 export function isFleetSummaryCommand(text: string): boolean {
   const t = String(text || "").trim();
   if (!t) return false;
   return RESUMO_PATTERN.test(t);
+}
+
+export function isOperationalPrivateReplyCommand(text: string): boolean {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  return OPERATIONAL_PRIVATE_REPLY_PATTERN.test(t);
 }
 
 export type ZapiInboundPayload = {
@@ -24,6 +31,8 @@ export type ZapiInboundPayload = {
   senderPhone?: string;
   isGroup?: boolean;
   fromMe?: boolean;
+  senderName?: string;
+  chatName?: string;
   text?: { message?: string };
   message?: { text?: string; extendedTextMessage?: { text?: string } };
   eventResponse?: {
@@ -33,6 +42,18 @@ export type ZapiInboundPayload = {
   };
   body?: string;
 };
+
+function firstName(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw.split(/\s+/)[0] || "";
+}
+
+export function buildOperationalPrivateReply(payload: ZapiInboundPayload): string {
+  const name = firstName(payload.senderName || payload.chatName);
+  const prefix = name ? `${name}, ` : "";
+  return `${prefix}vou checar com a equipe agora e já retorno com atualização. 👍`;
+}
 
 export function extractInboundText(payload: ZapiInboundPayload): string {
   return String(
@@ -99,10 +120,12 @@ export async function handleInboundWhatsappMessage(payload: ZapiInboundPayload):
   if (payload.fromMe) return { handled: false, action: "ignored_from_me" };
 
   const text = extractInboundText(payload);
-  if (!isFleetSummaryCommand(text)) return { handled: false, action: "not_a_command" };
+  const isSummary = isFleetSummaryCommand(text);
+  const isOperationalReply = isOperationalPrivateReplyCommand(text);
+  if (!isSummary && !isOperationalReply) return { handled: false, action: "not_a_command" };
 
   if (!isWhatsappResumoEnabled()) {
-    return { handled: true, action: "resumo_disabled", error: "WHATSAPP_RESUMO_ENABLED não está ativo" };
+    return { handled: true, action: "inbound_bot_disabled", error: "WHATSAPP_RESUMO_ENABLED não está ativo" };
   }
 
   const numGuard = await assertOfficialBotNumber();
@@ -116,12 +139,18 @@ export async function handleInboundWhatsappMessage(payload: ZapiInboundPayload):
   }
 
   try {
-    const summary = await buildFleetOperationalSummary();
-    const result = await whatsappProviderSendText(replyPhone, summary.text, "resumo viaturas PV");
+    const message = isSummary
+      ? (await buildFleetOperationalSummary()).text
+      : buildOperationalPrivateReply(payload);
+    const result = await whatsappProviderSendText(
+      replyPhone,
+      message,
+      isSummary ? "resumo viaturas PV" : "pedido operacional PV",
+    );
     if (!result.ok) {
       return { handled: true, action: "send_failed", replyPhone, error: result.error || `HTTP ${result.httpStatus}` };
     }
-    return { handled: true, action: "resumo_sent_pv", replyPhone };
+    return { handled: true, action: isSummary ? "resumo_sent_pv" : "operational_reply_sent_pv", replyPhone };
   } catch (e: any) {
     return { handled: true, action: "error", replyPhone, error: e?.message || "Erro ao gerar resumo" };
   }
