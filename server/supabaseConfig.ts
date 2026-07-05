@@ -1,8 +1,47 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from '../lib/supabaseDefaults';
+import {
+  cleanEnv,
+  decodeJwtProjectRef,
+  isTmSegSupabaseAnonKey,
+  isTmSegSupabaseUrl,
+  isValidHttpUrl,
+  resolveSupabasePublicEnv,
+} from '../lib/supabasePublicEnv';
 
 let warnedMissingServiceRole = false;
 let warnedAnonKeyAsService = false;
 let warnedAnonFallback = false;
+let warnedForeignProject = false;
+
+function warnForeignProjectOnce(): void {
+  if (warnedForeignProject) return;
+  warnedForeignProject = true;
+  console.warn(
+    '[Supabase] Variaveis de outro projeto ignoradas — usando projeto TM SEG (ajhmmjuewdsukecaimik). ' +
+      'Remova na Vercel envs de integracao Supabase incorretas ou alinhe SUPABASE_URL/VITE_SUPABASE_URL.',
+  );
+}
+
+function pickServerUrl(): string {
+  const candidates = [process.env.SUPABASE_URL, process.env.VITE_SUPABASE_URL];
+  for (const candidate of candidates) {
+    const value = cleanEnv(candidate);
+    if (isValidHttpUrl(value) && isTmSegSupabaseUrl(value)) return value;
+    if (isValidHttpUrl(value)) warnForeignProjectOnce();
+  }
+  return DEFAULT_SUPABASE_URL;
+}
+
+function pickServerAnonKey(url: string): string {
+  const candidates = [process.env.SUPABASE_ANON_KEY, process.env.VITE_SUPABASE_ANON_KEY];
+  for (const candidate of candidates) {
+    const value = cleanEnv(candidate);
+    if (isTmSegSupabaseAnonKey(value, url)) return value;
+    if (value) warnForeignProjectOnce();
+  }
+  return DEFAULT_SUPABASE_ANON_KEY;
+}
 
 function decodeJwtRole(key: string): string | null {
   try {
@@ -16,47 +55,55 @@ function decodeJwtRole(key: string): string | null {
   }
 }
 
-/** URL do projeto Supabase (servidor). */
+/** URL do projeto Supabase TM SEG (servidor). */
 export function getSupabaseUrl(): string {
-  return process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  return pickServerUrl();
 }
 
 /** Chave anon (leituras com RLS). */
 export function getSupabaseAnonKey(): string {
-  return process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+  return pickServerAnonKey(getSupabaseUrl());
 }
 
 /**
  * Chave service_role para operações admin no servidor.
  * Prioridade: SUPABASE_SERVICE_ROLE_KEY → SUPABASE_SERVICE_KEY (legado Replit).
- * Não usa anon — se faltar, retorna '' e registra aviso.
  */
 export function getSupabaseServiceRoleKey(): string {
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    '';
+  const candidates = [
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_KEY,
+  ];
 
-  if (!key) {
-    if (!warnedMissingServiceRole) {
-      warnedMissingServiceRole = true;
-      console.warn(
-        '[Supabase] SUPABASE_SERVICE_ROLE_KEY não definida. ' +
-          'Copie a chave "service_role" em Supabase → Settings → API e adicione ao .env.'
-      );
+  for (const candidate of candidates) {
+    const key = cleanEnv(candidate);
+    if (!key) continue;
+    const ref = decodeJwtProjectRef(key);
+    if (ref && ref !== decodeJwtProjectRef(getSupabaseUrl())) {
+      warnForeignProjectOnce();
+      continue;
     }
-    return '';
+    if (decodeJwtRole(key) === 'anon') {
+      if (!warnedAnonKeyAsService) {
+        warnedAnonKeyAsService = true;
+        console.error(
+          '[Supabase] SUPABASE_SERVICE_KEY contém a chave ANON, não service_role. ' +
+            'Substitua pelo valor "service_role" no .env (Settings → API no Supabase).',
+        );
+      }
+      continue;
+    }
+    return key;
   }
 
-  if (decodeJwtRole(key) === 'anon' && !warnedAnonKeyAsService) {
-    warnedAnonKeyAsService = true;
-    console.error(
-      '[Supabase] SUPABASE_SERVICE_KEY contém a chave ANON, não service_role. ' +
-        'Substitua pelo valor "service_role" no .env (Settings → API no Supabase).'
+  if (!warnedMissingServiceRole) {
+    warnedMissingServiceRole = true;
+    console.warn(
+      '[Supabase] SUPABASE_SERVICE_ROLE_KEY não definida para o projeto TM SEG. ' +
+        'Copie a chave "service_role" em Supabase → Settings → API e adicione na Vercel.',
     );
   }
-
-  return key;
+  return '';
 }
 
 /** service_role se existir; senão anon (modo degradado, com aviso). */
@@ -77,4 +124,9 @@ export function createSupabaseAdminClient(): SupabaseClient | null {
   const key = getSupabaseServerKey();
   if (!url || !key) return null;
   return createClient(url, key);
+}
+
+/** Mesma resolucao do frontend — util em scripts/build. */
+export function resolveServerSupabaseFromProcessEnv(): { url: string; anonKey: string } {
+  return resolveSupabasePublicEnv(process.env as Record<string, string | undefined>);
 }

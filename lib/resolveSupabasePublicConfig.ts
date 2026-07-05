@@ -1,4 +1,10 @@
 import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from './supabaseDefaults';
+import {
+  cleanEnv,
+  isTmSegSupabaseAnonKey,
+  isTmSegSupabaseUrl,
+  isValidHttpUrl,
+} from './supabasePublicEnv';
 
 declare global {
   interface Window {
@@ -6,32 +12,23 @@ declare global {
   }
 }
 
-function clean(value: unknown): string {
-  if (value == null) return '';
-  return String(value).trim().replace(/^["']|["']$/g, '');
-}
-
-function isValidHttpUrl(url: string): boolean {
-  return /^https?:\/\/.+/i.test(url);
-}
-
 function pickUrl(...candidates: unknown[]): string {
   for (const candidate of candidates) {
-    const value = clean(candidate);
-    if (isValidHttpUrl(value)) return value;
+    const value = cleanEnv(candidate);
+    if (isValidHttpUrl(value) && isTmSegSupabaseUrl(value)) return value;
   }
   return DEFAULT_SUPABASE_URL;
 }
 
-function pickAnonKey(...candidates: unknown[]): string {
+function pickAnonKey(url: string, ...candidates: unknown[]): string {
   for (const candidate of candidates) {
-    const value = clean(candidate);
-    if (value) return value;
+    const value = cleanEnv(candidate);
+    if (isTmSegSupabaseAnonKey(value, url)) return value;
   }
   return DEFAULT_SUPABASE_ANON_KEY;
 }
 
-/** Resolve URL/anon do Supabase no browser (build Vercel, .env local ou defaults). */
+/** Resolve URL/anon do Supabase no browser (build Vercel, .env local ou defaults TM SEG). */
 export function resolveSupabasePublicConfig(): { url: string; anonKey: string } {
   const injected = typeof window !== 'undefined' ? window.__TMSEG_SUPABASE__ : undefined;
   const env = import.meta.env as Record<string, string | undefined>;
@@ -44,6 +41,7 @@ export function resolveSupabasePublicConfig(): { url: string; anonKey: string } 
   );
 
   const anonKey = pickAnonKey(
+    url,
     injected?.anonKey,
     env.VITE_SUPABASE_ANON_KEY,
     env.SUPABASE_ANON_KEY,
