@@ -1,0 +1,536 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import { CheckCircle2, Loader2, Phone, QrCode, RefreshCw, Save, Smartphone, Wifi, WifiOff, XCircle } from 'lucide-react';
+
+type InstancePublic = {
+  id: string;
+  slug: string;
+  label: string;
+  provider: 'zapi' | 'meta' | 'mock';
+  instance_type: 'web' | 'mobile' | null;
+  zapi_instance_id: string | null;
+  zapi_client_token: string | null;
+  meta_phone_number_id: string | null;
+  meta_api_version: string | null;
+  official_ddi: string;
+  official_phone: string;
+  is_default: boolean;
+  enabled: boolean;
+  has_zapi_token: boolean;
+  has_meta_token: boolean;
+  zapi_token_masked?: string;
+  last_checked_at: string | null;
+  last_connected: boolean | null;
+  last_connected_phone: string | null;
+  phone_matches_official: boolean | null;
+  last_error: string | null;
+};
+
+type ConnStatus = {
+  instanceId?: string;
+  slug?: string;
+  label?: string;
+  provider?: string;
+  configured?: boolean;
+  instanceType?: string;
+  officialPhone?: string;
+  connectedPhone?: string | null;
+  phoneMatchesOfficial?: boolean;
+  lastCheckedAt?: string | null;
+  lastError?: string | null;
+  lastConnected?: boolean | null;
+  status?: { connected: boolean; error?: string };
+};
+
+type TestResult = {
+  ok: boolean;
+  message: string;
+  connected: boolean;
+  connectedPhone: string | null;
+  expectedPhone: string;
+  phoneMatchesOfficial: boolean;
+  checkedAt: string;
+};
+
+const authHeaders = (): Record<string, string> => {
+  const token = localStorage.getItem('authToken');
+  return token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+};
+
+const fmtPhone = (p: string) => {
+  const d = String(p || '').replace(/\D/g, '');
+  if (d.length >= 12 && d.startsWith('55')) {
+    return `(${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`;
+  }
+  return p;
+};
+
+const statusDot = (row: InstancePublic) => {
+  if (row.last_connected && row.phone_matches_official) return '🟢';
+  if (row.last_connected === false || row.last_error) return '🔴';
+  return '🟡';
+};
+
+const WhatsAppConnectionPanel: React.FC = () => {
+  const [instances, setInstances] = useState<InstancePublic[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [info, setInfo] = useState<ConnStatus | null>(null);
+  const [form, setForm] = useState<Partial<InstancePublic & { zapi_token?: string; meta_access_token?: string }>>({});
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [qrBase64, setQrBase64] = useState<string | null>(null);
+  const [phoneLinkCode, setPhoneLinkCode] = useState<string | null>(null);
+  const [smsCode, setSmsCode] = useState('');
+  const [pinCode, setPinCode] = useState('');
+
+  const selected = instances.find(i => i.id === selectedId) || instances[0] || null;
+  const instanceQuery = selected ? `?instanceId=${encodeURIComponent(selected.id)}` : '';
+
+  const loadInstances = useCallback(async () => {
+    const r = await fetch('/api/whatsapp/instances', { headers: authHeaders() });
+    const data = await r.json();
+    const list: InstancePublic[] = Array.isArray(data) ? data : [];
+    setInstances(list);
+    if (!selectedId && list.length > 0) {
+      const def = list.find(i => i.is_default) || list[0];
+      setSelectedId(def.id);
+    }
+    return list;
+  }, [selectedId]);
+
+  const refreshStatus = useCallback(async (id?: string) => {
+    const q = id ? `?instanceId=${encodeURIComponent(id)}` : instanceQuery;
+    const r = await fetch(`/api/whatsapp/connection/status${q}`, { headers: authHeaders() });
+    setInfo(await r.json());
+  }, [instanceQuery]);
+
+  const refreshAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const list = await loadInstances();
+      const id = selectedId || list.find(i => i.is_default)?.id || list[0]?.id;
+      if (id) await refreshStatus(id);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadInstances, refreshStatus, selectedId]);
+
+  useEffect(() => { void refreshAll(); }, []);
+
+  useEffect(() => {
+    if (!selected) return;
+    setForm({
+      ...selected,
+      zapi_token: '',
+      meta_access_token: '',
+    });
+    void refreshStatus(selected.id);
+    setTestResult(null);
+    setQrBase64(null);
+    setMessage(null);
+  }, [selected?.id]);
+
+  const saveInstance = async () => {
+    if (!selected) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const body: Record<string, unknown> = {
+        slug: form.slug,
+        label: form.label,
+        provider: form.provider,
+        instance_type: form.instance_type,
+        zapi_instance_id: form.zapi_instance_id,
+        zapi_client_token: form.zapi_client_token,
+        meta_phone_number_id: form.meta_phone_number_id,
+        meta_api_version: form.meta_api_version,
+        official_ddi: form.official_ddi,
+        official_phone: form.official_phone,
+        is_default: form.is_default,
+        enabled: form.enabled,
+      };
+      if (form.zapi_token) body.zapi_token = form.zapi_token;
+      if (form.meta_access_token) body.meta_access_token = form.meta_access_token;
+      const r = await fetch(`/api/whatsapp/instances/${selected.id}`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify(body),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Falha ao salvar');
+      setMessage('Credenciais salvas no banco.');
+      await refreshAll();
+    } catch (e: any) {
+      setMessage(e?.message || 'Erro ao salvar');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const testConnection = async () => {
+    if (!selected) return;
+    setBusy(true);
+    setMessage(null);
+    setTestResult(null);
+    try {
+      const r = await fetch(`/api/whatsapp/instances/${selected.id}/test-connection`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      const data: TestResult = await r.json();
+      setTestResult(data);
+      setMessage(data.message);
+      await loadInstances();
+      await refreshStatus(selected.id);
+    } catch (e: any) {
+      setMessage(e?.message || 'Erro no teste');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runBootstrap = async () => {
+    setBusy(true);
+    setMessage(null);
+    setQrBase64(null);
+    try {
+      const r = await fetch(`/api/whatsapp/connection/bootstrap${instanceQuery}`, { method: 'POST', headers: authHeaders() });
+      const data = await r.json();
+      setMessage(data.message || JSON.stringify(data));
+      if (data.qrBase64) setQrBase64(data.qrBase64);
+      if (data.phoneLinkCode) setPhoneLinkCode(data.phoneLinkCode);
+      await refreshStatus(selected?.id);
+      await loadInstances();
+    } catch (e: any) {
+      setMessage(e?.message || 'Erro');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const refreshQr = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/whatsapp/connection/qr-code${instanceQuery}`, { headers: authHeaders() });
+      const data = await r.json();
+      setQrBase64(data.qrBase64 || null);
+      setPhoneLinkCode(data.phoneLinkCode || null);
+      setMessage(data.error || data.phoneLinkError || (data.qrBase64 ? 'QR Code atualizado.' : 'QR indisponível'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const requestSms = async (method: 'sms' | 'wa_old') => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const r = await fetch(`/api/whatsapp/connection/request-code${instanceQuery}`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ method }),
+      });
+      const data = await r.json();
+      setMessage(data.requestCode?.error || (data.requestCode?.ok ? `Código solicitado via ${method}. Verifique o celular.` : 'Falha ao solicitar código'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmCode = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/whatsapp/connection/confirm-code${instanceQuery}`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ code: smsCode || undefined, pin: pinCode || undefined }),
+      });
+      const data = await r.json();
+      if (data.data?.confirmSecurityCode) {
+        setMessage('Código OK — informe o PIN de verificação em duas etapas abaixo.');
+      } else if (data.data?.deviceConfirm) {
+        setMessage('Confirme a transferência no celular onde o WhatsApp está aberto.');
+      } else if (data.data?.success || data.status?.connected) {
+        setMessage('Conectado com sucesso!');
+        setSmsCode('');
+        setPinCode('');
+      } else {
+        setMessage(data.error || data.data?.error || 'Falha na confirmação');
+      }
+      await refreshStatus(selected?.id);
+      await loadInstances();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const connected = info?.status?.connected === true;
+  const isMobile = (form.instance_type || info?.instanceType) === 'mobile';
+  const isZapi = form.provider === 'zapi';
+
+  return (
+    <div className="space-y-6" data-testid="panel-whatsapp-connection">
+      {/* Tabela de instâncias */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+        <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
+          <div>
+            <h3 className="text-lg font-bold text-gray-800">Instâncias WhatsApp</h3>
+            <p className="text-sm text-gray-500">Credenciais no banco — sem editar .env</p>
+          </div>
+          <button type="button" onClick={() => void refreshAll()} className="text-xs text-gray-500 flex items-center gap-1">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Atualizar
+          </button>
+        </div>
+
+        {instances.length === 0 ? (
+          <p className="text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
+            Nenhuma instância cadastrada. Na primeira subida com ZAPI_* no .env, o sistema cria &quot;Central TM SEG&quot; automaticamente.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[10px] font-black uppercase text-gray-400 border-b">
+                  <th className="py-2 pr-3">Empresa</th>
+                  <th className="py-2 pr-3">Provider</th>
+                  <th className="py-2 pr-3">Tipo</th>
+                  <th className="py-2 pr-3">Status</th>
+                  <th className="py-2">Última verificação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {instances.map(row => (
+                  <tr
+                    key={row.id}
+                    onClick={() => setSelectedId(row.id)}
+                    className={`border-b cursor-pointer hover:bg-gray-50 ${selectedId === row.id ? 'bg-blue-50' : ''}`}
+                  >
+                    <td className="py-2 pr-3 font-medium">{row.label}{row.is_default ? ' ★' : ''}</td>
+                    <td className="py-2 pr-3 uppercase text-xs">{row.provider}</td>
+                    <td className="py-2 pr-3 text-xs">{row.instance_type || '—'}</td>
+                    <td className="py-2 pr-3">{statusDot(row)} {row.last_connected ? 'Conectado' : row.last_error ? 'Erro' : '—'}</td>
+                    <td className="py-2 text-xs text-gray-400">{row.last_checked_at ? new Date(row.last_checked_at).toLocaleString('pt-BR') : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {selected && (
+        <>
+          {/* Credenciais */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h4 className="font-bold text-gray-800 mb-4">Credenciais — {selected.label}</h4>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] font-black uppercase text-gray-500">Slug</label>
+                <input value={form.slug || ''} onChange={e => setForm(f => ({ ...f, slug: e.target.value }))}
+                  className="w-full mt-1 p-2 border rounded-lg text-sm" />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-gray-500">Nome exibido</label>
+                <input value={form.label || ''} onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
+                  className="w-full mt-1 p-2 border rounded-lg text-sm" />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-gray-500">Provider</label>
+                <select value={form.provider || 'zapi'} onChange={e => setForm(f => ({ ...f, provider: e.target.value as InstancePublic['provider'] }))}
+                  className="w-full mt-1 p-2 border rounded-lg text-sm">
+                  <option value="zapi">Z-API</option>
+                  <option value="meta">Meta Cloud API</option>
+                  <option value="mock">Mock (dev)</option>
+                </select>
+              </div>
+              {isZapi && (
+                <>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-gray-500">Tipo instância</label>
+                    <select value={form.instance_type || 'mobile'} onChange={e => setForm(f => ({ ...f, instance_type: e.target.value as 'web' | 'mobile' }))}
+                      className="w-full mt-1 p-2 border rounded-lg text-sm">
+                      <option value="mobile">Mobile</option>
+                      <option value="web">Web</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-gray-500">Instance ID</label>
+                    <input value={form.zapi_instance_id || ''} onChange={e => setForm(f => ({ ...f, zapi_instance_id: e.target.value }))}
+                      className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-gray-500">
+                      Token {selected.has_zapi_token && `(atual: ${selected.zapi_token_masked})`}
+                    </label>
+                    <input type="password" value={form.zapi_token || ''} onChange={e => setForm(f => ({ ...f, zapi_token: e.target.value }))}
+                      placeholder={selected.has_zapi_token ? 'Deixe vazio para manter' : 'Obrigatório'}
+                      className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-gray-500">Client-Token</label>
+                    <input type="password" value={form.zapi_client_token || ''} onChange={e => setForm(f => ({ ...f, zapi_client_token: e.target.value }))}
+                      className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
+                  </div>
+                </>
+              )}
+              {form.provider === 'meta' && (
+                <>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-gray-500">Phone Number ID</label>
+                    <input value={form.meta_phone_number_id || ''} onChange={e => setForm(f => ({ ...f, meta_phone_number_id: e.target.value }))}
+                      className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-gray-500">Access Token</label>
+                    <input type="password" value={form.meta_access_token || ''} onChange={e => setForm(f => ({ ...f, meta_access_token: e.target.value }))}
+                      placeholder={selected.has_meta_token ? 'Deixe vazio para manter' : 'Obrigatório'}
+                      className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
+                  </div>
+                </>
+              )}
+              <div>
+                <label className="text-[10px] font-black uppercase text-gray-500">Número oficial (sem DDI)</label>
+                <input value={form.official_phone || ''} onChange={e => setForm(f => ({ ...f, official_phone: e.target.value }))}
+                  className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
+              </div>
+              <div className="flex items-end gap-4">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={!!form.is_default} onChange={e => setForm(f => ({ ...f, is_default: e.target.checked }))} />
+                  Instância padrão
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={form.enabled !== false} onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))} />
+                  Ativa
+                </label>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mt-4">
+              <button type="button" disabled={busy} onClick={() => void saveInstance()}
+                className="text-xs font-bold px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1">
+                <Save size={14} /> Salvar no banco
+              </button>
+              <button type="button" disabled={busy} onClick={() => void testConnection()}
+                className="text-xs font-bold px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1">
+                {busy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                Testar conexão
+              </button>
+            </div>
+
+            {testResult && (
+              <div className={`mt-4 p-3 rounded-lg text-sm flex items-start gap-2 ${testResult.ok ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                {testResult.ok ? <CheckCircle2 size={18} className="shrink-0 mt-0.5" /> : <XCircle size={18} className="shrink-0 mt-0.5" />}
+                <div>
+                  <p className="font-bold">{testResult.message}</p>
+                  <p className="text-xs mt-1 opacity-80">
+                    Esperado: {fmtPhone(testResult.expectedPhone)}
+                    {testResult.connectedPhone ? ` · Conectado: ${fmtPhone(testResult.connectedPhone)}` : ''}
+                    · {new Date(testResult.checkedAt).toLocaleString('pt-BR')}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Conexão */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+              <div className="flex items-start gap-3">
+                {connected ? <Wifi className="text-green-600 mt-1" /> : <WifiOff className="text-red-500 mt-1" />}
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800">Conexão — {selected.label}</h3>
+                  <p className="text-sm text-gray-500">
+                    {form.provider?.toUpperCase()} · {isMobile ? 'mobile' : 'web'} · Oficial {fmtPhone(info?.officialPhone || `55${form.official_phone}`)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {loading && !info ? (
+              <div className="flex items-center gap-2 text-gray-400 py-6"><Loader2 className="animate-spin" size={18} /> Consultando…</div>
+            ) : (
+              <div className="space-y-4">
+                <div className={`p-3 rounded-lg text-sm ${connected ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                  {connected
+                    ? `Conectado${info?.connectedPhone ? ` — ${fmtPhone(info.connectedPhone)}` : ''}${info?.phoneMatchesOfficial ? ' ✓ número oficial' : ' ⚠ número diferente do oficial'}`
+                    : `Desconectado${info?.status?.error ? `: ${info.status.error}` : info?.lastError ? `: ${info.lastError}` : ''}`}
+                </div>
+
+                {message && (
+                  <p className="text-sm bg-blue-50 border border-blue-100 text-blue-900 p-3 rounded-lg">{message}</p>
+                )}
+
+                {isZapi && (
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" disabled={busy} onClick={() => void runBootstrap()}
+                      className="text-xs font-bold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
+                      {busy ? 'Aguarde…' : 'Iniciar conexão automática'}
+                    </button>
+                    {!isMobile && (
+                      <button type="button" disabled={busy} onClick={() => void refreshQr()}
+                        className="text-xs font-bold px-4 py-2 rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200 disabled:opacity-50 flex items-center gap-1">
+                        <QrCode size={14} /> Atualizar QR
+                      </button>
+                    )}
+                    {isMobile && (
+                      <>
+                        <button type="button" disabled={busy} onClick={() => void requestSms('wa_old')}
+                          className="text-xs font-bold px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-50 flex items-center gap-1">
+                          <Smartphone size={14} /> Pop-up no app
+                        </button>
+                        <button type="button" disabled={busy} onClick={() => void requestSms('sms')}
+                          className="text-xs font-bold px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-50 flex items-center gap-1">
+                          <Phone size={14} /> SMS
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {qrBase64 && (
+                  <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <p className="text-xs font-bold text-gray-600 mb-2">Escaneie no WhatsApp → Aparelhos conectados</p>
+                    <img src={qrBase64} alt="QR Code" className="mx-auto max-w-[220px] rounded-lg" />
+                  </div>
+                )}
+
+                {phoneLinkCode && (
+                  <p className="text-sm text-center font-mono font-bold bg-gray-100 p-3 rounded-lg">
+                    Código de pareamento: {phoneLinkCode}
+                  </p>
+                )}
+
+                {isMobile && isZapi && (
+                  <div className="grid sm:grid-cols-2 gap-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-gray-500">Código SMS / confirmação</label>
+                      <input value={smsCode} onChange={e => setSmsCode(e.target.value)} placeholder="123456"
+                        className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-gray-500">PIN 2FA (se pedido)</label>
+                      <input value={pinCode} onChange={e => setPinCode(e.target.value)} placeholder="PIN"
+                        className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
+                    </div>
+                    <button type="button" disabled={busy || (!smsCode && !pinCode)} onClick={() => void confirmCode()}
+                      className="sm:col-span-2 text-xs font-bold py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                      Confirmar código
+                    </button>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  O botão <strong>Testar conexão</strong> consulta a API, valida o número conectado e persiste o status no banco.
+                  Todo envio do sistema usa a instância padrão (★) via <code className="bg-gray-100 px-1 rounded">whatsappProvider.sendText()</code>.
+                </p>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+export default WhatsAppConnectionPanel;

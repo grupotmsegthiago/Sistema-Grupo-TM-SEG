@@ -1,16 +1,19 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Target, Loader2, Trophy, Zap, Clock, RefreshCw } from 'lucide-react';
-import { calculateMissionFinancials } from '../lib/financialUtils';
-import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
+import { ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { useNotification } from '../lib/NotificationContext';
 import { formatDateTimeAuditBR } from '../lib/dateUtils';
 import {
   getCanonicalDateRange,
-  filterMissionsByPeriod,
   sumCanonical,
   type CanonicalPeriod,
 } from '../lib/missionFinancialsCanonical';
+import {
+  formatGoalDelta,
+  loadGoalUpdateHistory,
+  pushGoalUpdateHistory,
+  type GoalUpdateSnapshot,
+} from '../lib/goalUpdateHistory';
 
 const DEFAULT_DAILY_GOAL = 35000.00;
 const DEFAULT_MONTHLY_GOAL = 700000.00;
@@ -59,6 +62,7 @@ interface Props {
     monthlyGoalOverride?: number;
     titleSuffix?: string; // ex.: "DHL" → "Meta Agendada DHL (Hoje)"
     accentClass?: string; // ex.: "from-yellow-400 to-red-600" para o ícone DHL
+    historyKey?: string; // chave única para histórico de atualizações (diretoria)
 }
 
 const formatCurrency = (val: number) => {
@@ -73,7 +77,7 @@ function getDateRange(viewPeriod: string, customStartDate?: string, customEndDat
     return getCanonicalDateRange(period, customStartDate, customEndDate);
 }
 
-const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customStartDate, customEndDate, missions: parentMissions, clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData, lastDataUpdatedAt, onRefreshMissions, clientFilter, dailyGoalOverride, monthlyGoalOverride, titleSuffix, accentClass }) => {
+const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customStartDate, customEndDate, missions: parentMissions, clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData, lastDataUpdatedAt, onRefreshMissions, clientFilter, dailyGoalOverride, monthlyGoalOverride, titleSuffix, accentClass, historyKey: historyKeyProp }) => {
     const { showNotification } = useNotification();
     const dailyGoal = typeof dailyGoalOverride === 'number' ? dailyGoalOverride : DEFAULT_DAILY_GOAL;
     const monthlyGoal = typeof monthlyGoalOverride === 'number' ? monthlyGoalOverride : DEFAULT_MONTHLY_GOAL;
@@ -81,6 +85,12 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
     const [userRole, setUserRole] = useState<string>('');
     const [currentTime, setCurrentTime] = useState(new Date());
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [showHistoryPopover, setShowHistoryPopover] = useState(false);
+    const [updateHistory, setUpdateHistory] = useState<GoalUpdateSnapshot[]>([]);
+    const lastRecordedFetchAt = useRef<number | null>(null);
+    const pendingManualRecord = useRef(false);
+
+    const resolvedHistoryKey = historyKeyProp || `meta-${(titleSuffix || 'geral').toLowerCase().replace(/\s+/g, '-')}-${viewPeriod}`;
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -185,23 +195,65 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
 
     const canSeeMonetary = userRole === 'diretoria';
 
+    const recordSnapshot = useCallback((source: 'manual' | 'sync') => {
+        const next = pushGoalUpdateHistory(resolvedHistoryKey, {
+            at: new Date().toISOString(),
+            revenue: currentRevenue,
+            cost: currentCost,
+            profit: stats.profit,
+            missionCount: filteredMissions.length,
+            percentage: stats.percentage,
+            source,
+        });
+        setUpdateHistory(next);
+    }, [resolvedHistoryKey, currentRevenue, currentCost, stats.profit, stats.percentage, filteredMissions.length]);
+
+    useEffect(() => {
+        if (userRole === 'diretoria') {
+            setUpdateHistory(loadGoalUpdateHistory(resolvedHistoryKey));
+        }
+    }, [resolvedHistoryKey, userRole]);
+
+    // Registra após cada sincronização (manual ou automática) quando os dados do pai mudam
+    useEffect(() => {
+        if (userRole !== 'diretoria' || !lastDataUpdatedAt) return;
+        const ts = lastDataUpdatedAt.getTime();
+        if (lastRecordedFetchAt.current === ts) return;
+        lastRecordedFetchAt.current = ts;
+        if (!parentClientTables?.length) return;
+        const source = pendingManualRecord.current ? 'manual' : 'sync';
+        pendingManualRecord.current = false;
+        recordSnapshot(source);
+    }, [lastDataUpdatedAt, userRole, recordSnapshot, parentClientTables?.length, currentRevenue, currentCost, stats.profit, stats.percentage, filteredMissions.length]);
+
     const handleManualRefresh = useCallback(async () => {
         if (isRefreshing || isLoading) return;
         setIsRefreshing(true);
         try {
             if (onRefreshMissions) {
+                pendingManualRecord.current = true;
                 const result = await onRefreshMissions();
                 if (result !== false) {
                     setCurrentTime(new Date());
                     showNotification('Sucesso', 'Meta atualizada com sucesso!', 'success');
+                } else {
+                    pendingManualRecord.current = false;
                 }
             }
         } catch (e) {
+            pendingManualRecord.current = false;
             console.error(e);
         } finally {
             setIsRefreshing(false);
         }
     }, [onRefreshMissions, showNotification, isRefreshing, isLoading]);
+
+    const deltaColor = (val: number | null) => {
+        if (val === null) return 'text-slate-400';
+        if (val > 0.01) return 'text-emerald-600';
+        if (val < -0.01) return 'text-red-600';
+        return 'text-slate-500';
+    };
 
     const refreshButtonTitle = lastDataUpdatedAt
         ? `Atualizar Meta — Última atualização: ${formatDateTimeAuditBR(lastDataUpdatedAt)}`
@@ -260,16 +312,61 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                                     formatCurrency(currentRevenue)
                                 )}
                             </p>
-                            <button
-                                onClick={handleManualRefresh}
-                                disabled={isRefreshing || isLoading}
-                                className="p-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-500 hover:text-gray-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-90"
-                                title={refreshButtonTitle}
-                                aria-label={refreshButtonTitle}
-                                data-testid="button-refresh-goal"
+                            <div
+                                className="relative"
+                                onMouseEnter={() => setShowHistoryPopover(true)}
+                                onMouseLeave={() => setShowHistoryPopover(false)}
                             >
-                                <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} />
-                            </button>
+                                <button
+                                    onClick={handleManualRefresh}
+                                    disabled={isRefreshing || isLoading}
+                                    className="p-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-500 hover:text-gray-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-90"
+                                    title={refreshButtonTitle}
+                                    aria-label={refreshButtonTitle}
+                                    data-testid="button-refresh-goal"
+                                >
+                                    <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} />
+                                </button>
+                                {showHistoryPopover && (
+                                    <div
+                                        className="absolute right-0 top-full mt-2 z-[200] w-[min(92vw,340px)] rounded-xl border border-slate-200 bg-white shadow-xl p-3 text-left"
+                                        data-testid="popover-goal-update-history"
+                                        onClick={e => e.stopPropagation()}
+                                    >
+                                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-2">
+                                            Últimas {updateHistory.length || 0} atualizações
+                                        </p>
+                                        {updateHistory.length === 0 ? (
+                                            <p className="text-xs text-slate-400 py-2">Nenhuma atualização registrada ainda. Clique no botão para atualizar a meta.</p>
+                                        ) : (
+                                            <div className="max-h-[280px] overflow-y-auto space-y-2">
+                                                {updateHistory.map((row, i) => (
+                                                    <div key={`${row.at}-${i}`} className="rounded-lg border border-slate-100 bg-slate-50/80 p-2">
+                                                        <div className="flex items-center justify-between gap-2 mb-1">
+                                                            <span className="text-[10px] font-bold text-slate-700">{formatDateTimeAuditBR(row.at)}</span>
+                                                            <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${row.source === 'manual' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>
+                                                                {row.source === 'manual' ? 'Manual' : 'Sync'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
+                                                            <span className="text-slate-500">Faturamento</span>
+                                                            <span className="font-bold text-slate-800 text-right">{formatCurrency(row.revenue)}</span>
+                                                            <span className="text-slate-500">Variação</span>
+                                                            <span className={`font-black text-right ${deltaColor(row.deltaRevenue)}`}>{formatGoalDelta(row.deltaRevenue)}</span>
+                                                            <span className="text-slate-500">Missões</span>
+                                                            <span className="font-bold text-slate-800 text-right">{row.missionCount}</span>
+                                                            <span className="text-slate-500">Δ Missões</span>
+                                                            <span className={`font-black text-right ${deltaColor(row.deltaMissions)}`}>{formatGoalDelta(row.deltaMissions, false)}</span>
+                                                            <span className="text-slate-500">Atingido</span>
+                                                            <span className="font-bold text-slate-800 text-right">{row.percentage.toFixed(1)}%</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>

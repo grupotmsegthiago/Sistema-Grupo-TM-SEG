@@ -415,6 +415,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [aiLoading, setAiLoading] = useState(false);
   const [showAuditSummary, setShowAuditSummary] = useState(false);
   const [auditSummaryData, setAuditSummaryData] = useState<AuditSummaryData | null>(null);
+  const [auditSummaryEditText, setAuditSummaryEditText] = useState('');
+  const [auditSummaryView, setAuditSummaryView] = useState<'visual' | 'text'>('visual');
   const [auditSummaryLoading, setAuditSummaryLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<{
     clientSuggestion: { tableId: string; tableName: string; reason: string } | null;
@@ -2885,7 +2887,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     setShowAuditSummary(true);
     setAuditSummaryLoading(true);
     setAuditSummaryData(null);
+    setAuditSummaryEditText('');
+    setAuditSummaryView('visual');
     try {
+      const token = localStorage.getItem('authToken');
+      const settingsHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+      let summarySettings: { aiPromptPrefix?: string; temperature?: number; maxOutputTokens?: number } | null = null;
+      try {
+        const sRes = await fetch('/api/admin/system-settings/audit-summary', { headers: settingsHeaders });
+        const sJson = await sRes.json();
+        if (sJson?.ok && sJson.settings) summarySettings = sJson.settings;
+      } catch { /* usa padrão embutido */ }
+
       const clientTable = clientTables.find(t => String(t.id) === String(manualClientTableId));
       const providerTable = providerTables.find(t => String(t.id) === String(manualProviderTableId));
       const tradingName =
@@ -2901,8 +2914,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         revenueTotal: footerRevTotal,
         costTotal: footerCostTotal,
         marginPct: footerMarginPct,
+        aiPromptPrefix: summarySettings?.aiPromptPrefix,
+        aiTemperature: summarySettings?.temperature,
+        aiMaxOutputTokens: summarySettings?.maxOutputTokens,
       });
       setAuditSummaryData(data);
+      setAuditSummaryEditText(data.whatsappText);
     } catch (e) {
       console.error('[auditSummary]', e);
       showNotification('Erro', 'Não foi possível gerar o resumo da auditoria.', 'error');
@@ -2913,8 +2930,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   };
 
   const copyAuditSummary = () => {
-    if (!auditSummaryData?.whatsappText) return;
-    void copyTextAsync(auditSummaryData.whatsappText).then(ok => {
+    const text = (auditSummaryEditText || auditSummaryData?.whatsappText || '').trim();
+    if (!text) return;
+    void copyTextAsync(text).then(ok => {
       if (!ok) {
         showNotification('Erro', 'Não foi possível copiar o resumo.', 'error');
         return;
@@ -2950,12 +2968,36 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       </button>
                   </div>
 
+                  <div className="px-4 py-2 border-b bg-white flex gap-2">
+                      <button
+                          type="button"
+                          onClick={() => setAuditSummaryView('visual')}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase ${auditSummaryView === 'visual' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+                      >
+                          Visual
+                      </button>
+                      <button
+                          type="button"
+                          onClick={() => setAuditSummaryView('text')}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase ${auditSummaryView === 'text' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+                      >
+                          Texto / WhatsApp
+                      </button>
+                  </div>
+
                   <div className="flex-1 overflow-auto p-4 bg-slate-100/80">
                       {auditSummaryLoading ? (
                           <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-500">
                               <Loader2 size={28} className="animate-spin text-emerald-600" />
                               <p className="text-xs font-bold uppercase tracking-widest">Montando resumo{isDirectorAccess ? ' e IA' : ''}…</p>
                           </div>
+                      ) : auditSummaryView === 'text' ? (
+                          <textarea
+                              className="w-full min-h-[320px] border border-gray-300 rounded-xl p-4 text-xs font-mono leading-relaxed bg-white"
+                              value={auditSummaryEditText}
+                              onChange={e => setAuditSummaryEditText(e.target.value)}
+                              data-testid="textarea-audit-summary-edit"
+                          />
                       ) : auditSummaryData ? (
                           <AuditSummaryPanel data={auditSummaryData.display} />
                       ) : null}
@@ -2972,7 +3014,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       <button
                           type="button"
                           onClick={copyAuditSummary}
-                          disabled={auditSummaryLoading || !auditSummaryData?.whatsappText}
+                          disabled={auditSummaryLoading || !(auditSummaryEditText || auditSummaryData?.whatsappText)}
                           className="px-4 py-2 rounded-xl text-[10px] font-black uppercase text-white bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
                           data-testid="btn-copy-audit-summary"
                       >

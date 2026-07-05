@@ -3,6 +3,7 @@ import { generateContent } from './gemini';
 import { formatDateTimeBR, formatTimeBR } from './dateUtils';
 import { clientNameShort } from './financialUtils';
 import { isDhlSupplyClient } from './dhlAutoTableSelector';
+import { AUDIT_SUMMARY_DEFAULTS } from './auditSummarySettingsShared';
 import type { Mission } from '../types';
 
 export interface AuditSummaryDisplay {
@@ -66,6 +67,9 @@ export interface AuditSummaryOptions {
   revenueTotal?: number;
   costTotal?: number;
   marginPct?: number;
+  aiPromptPrefix?: string;
+  aiTemperature?: number;
+  aiMaxOutputTokens?: number;
 }
 
 interface StatusMarks {
@@ -300,7 +304,14 @@ export function buildDirectorAuditSection(trail: AuditTrail, aiSummary?: string)
 export async function generateAuditAiSummary(
   mission: Mission,
   trail: AuditTrail,
-  extras?: { revenueTotal?: number; costTotal?: number; marginPct?: number },
+  extras?: {
+    revenueTotal?: number;
+    costTotal?: number;
+    marginPct?: number;
+    aiPromptPrefix?: string;
+    aiTemperature?: number;
+    aiMaxOutputTokens?: number;
+  },
 ): Promise<string> {
   const payload = {
     os: mission.id,
@@ -318,15 +329,19 @@ export async function generateAuditAiSummary(
     alteracoesKm: trail.kmEntries.slice(-8),
   };
 
+  const promptPrefix = (extras?.aiPromptPrefix || AUDIT_SUMMARY_DEFAULTS.aiPromptPrefix).trim();
   const text = await generateContent({
     contents: [{
       role: 'user',
       parts: [{
         type: 'text',
-        text: `Você é auditor financeiro-operacional da TM SEG. Com base nos dados JSON abaixo, escreva um parágrafo único (máx. 6 frases) em português do Brasil, objetivo, profissional e prático, resumindo a OS para a diretoria. Cite riscos, pendências e pontos de atenção se existirem. Não use markdown.\n\n${JSON.stringify(payload)}`,
+        text: `${promptPrefix}\n\n${JSON.stringify(payload)}`,
       }],
     }],
-    config: { temperature: 0.3, maxOutputTokens: 400 },
+    config: {
+      temperature: extras?.aiTemperature ?? AUDIT_SUMMARY_DEFAULTS.temperature,
+      maxOutputTokens: extras?.aiMaxOutputTokens ?? AUDIT_SUMMARY_DEFAULTS.maxOutputTokens,
+    },
   });
 
   return text.trim();
@@ -343,6 +358,9 @@ export async function buildAuditSummaryData(options: AuditSummaryOptions): Promi
     revenueTotal,
     costTotal,
     marginPct,
+    aiPromptPrefix,
+    aiTemperature,
+    aiMaxOutputTokens,
   } = options;
 
   const [marks, carretaPlate, trail] = await Promise.all([
@@ -384,7 +402,14 @@ export async function buildAuditSummaryData(options: AuditSummaryOptions): Promi
   if (includeDirectorSection) {
     if (withAiSummary) {
       try {
-        aiSummary = await generateAuditAiSummary(mission, trail, { revenueTotal, costTotal, marginPct });
+        aiSummary = await generateAuditAiSummary(mission, trail, {
+          revenueTotal,
+          costTotal,
+          marginPct,
+          aiPromptPrefix,
+          aiTemperature,
+          aiMaxOutputTokens,
+        });
       } catch (e) {
         console.warn('[auditSummary] IA indisponível:', e);
         aiSummary = 'Resumo IA indisponível no momento. Utilize os dados operacionais acima.';

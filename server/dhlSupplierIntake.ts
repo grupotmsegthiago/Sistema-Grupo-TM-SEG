@@ -13,7 +13,7 @@
 import type { Express, Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { assertOfficialBotNumber } from './zapiGuard';
-import { throttleZapiSend } from './zapiThrottle';
+import { whatsappProviderSendText } from './whatsapp/providerRegistry';
 import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -376,45 +376,27 @@ function maskPhone(value: string | null | undefined): string {
 // Centraliza a chamada para reaproveitar no fluxo de geração inicial e no
 // worker de lembretes automáticos.
 async function sendZapiTextMessage(phoneDigits: string, message: string): Promise<{ ok: boolean; error: string | null; messageId: string | null }> {
-  const ZAPI_INSTANCE = process.env.ZAPI_INSTANCE_ID || process.env.VITE_ZAPI_INSTANCE_ID || '';
-  const ZAPI_TOKEN = process.env.ZAPI_TOKEN || process.env.VITE_ZAPI_TOKEN || '';
-  const ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || process.env.VITE_ZAPI_CLIENT_TOKEN || '';
-  if (!ZAPI_INSTANCE || !ZAPI_TOKEN) {
-    return { ok: false, error: 'Z-API não configurada', messageId: null };
-  }
-  // BOT SILENCIADO (pedido do usuário, jul/2026): nenhum envio de WhatsApp
-  // pelo número da Central, a menos que WHATSAPP_BOT_ENABLED=true.
   if ((process.env.WHATSAPP_BOT_ENABLED || '').trim().toLowerCase() !== 'true') {
     return { ok: false, error: 'Envio de WhatsApp desativado — bot silenciado', messageId: null };
   }
-  // Trava do número oficial: nunca enviar por número diferente do (11) 92683-9456.
   const numGuard = await assertOfficialBotNumber();
   if (!numGuard.ok) {
     return { ok: false, error: numGuard.error || 'Bot fora do número oficial', messageId: null };
   }
   const digits = String(phoneDigits || '').replace(/\D/g, '');
   if (!digits) return { ok: false, error: 'telefone vazio', messageId: null };
-  // Brasil: garante prefixo 55 quando vier apenas DDD+número (10/11 dígitos).
   const phone = digits.length <= 11 ? `55${digits}` : digits;
   try {
-    const headers: any = { 'Content-Type': 'application/json' };
-    if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
-    const r = await throttleZapiSend('send-text intake fornecedor', () => fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE}/token/${ZAPI_TOKEN}/send-text`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ phone, message }),
-    }));
-    const txt = await r.text();
-    let parsed: any = null;
-    try { parsed = JSON.parse(txt); } catch {}
+    const r = await whatsappProviderSendText(phone, message, 'send-text intake fornecedor');
     if (!r.ok) {
-      const detail = parsed ?? txt;
-      const err = `Z-API ${r.status}: ${typeof detail === 'string' ? detail : (detail?.error || detail?.message || JSON.stringify(detail))}`;
+      const detail = r.data;
+      const err = `WhatsApp ${r.httpStatus}: ${typeof detail === 'string' ? detail : ((detail as any)?.error || (detail as any)?.message || r.error || JSON.stringify(detail))}`;
       return { ok: false, error: err, messageId: null };
     }
     let messageId: string | null = null;
+    const parsed = r.data;
     if (parsed && typeof parsed === 'object') {
-      const mid = parsed.messageId || parsed.id || parsed.zaapId || null;
+      const mid = (parsed as any).messageId || (parsed as any).id || (parsed as any).zaapId || null;
       messageId = mid ? String(mid) : null;
     }
     return { ok: true, error: null, messageId };

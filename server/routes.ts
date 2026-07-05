@@ -18,11 +18,42 @@ import {
   isMetaWhatsAppConfigured,
   pingMetaWhatsApp,
 } from "./metaWhatsAppConfig";
-import { throttleZapiSend } from "./zapiThrottle";
+import {
+  createWhatsappProvider,
+  getDefaultWhatsappProvider,
+  getWhatsappProviderById,
+  testWhatsappInstanceConnection,
+  whatsappProviderSendImage,
+  whatsappProviderSendText,
+} from "./whatsapp/providerRegistry";
+import { buildFleetOperationalSummary } from "./whatsapp/fleetSummary";
+import { handleInboundWhatsappMessage } from "./whatsapp/inboundBot";
+import {
+  getDefaultWhatsappInstance,
+  instanceConfigured,
+  listWhatsappInstances,
+  runWhatsappInstanceMigrations,
+  upsertWhatsappInstance,
+} from "./whatsapp/instanceStore";
+import { expectedOfficialPhone, toPublicInstance, type WhatsappProvider } from "./whatsapp/types";
+import { zapiBasePath, zapiFetch, zapiHeaders, isZapiConfigured, getZapiInstanceTypeAsync } from "./zapiClient";
+import { assertOfficialBotNumber } from "./zapiGuard";
+import {
+  getWhatsappTelemetryDashboard,
+  logWhatsappOutbound,
+  runWhatsappTelemetryMigrations,
+  type TelemetryRange,
+} from "./whatsappTelemetry";
 import { isLongRunningHost } from "./runtime";
 import { registerScheduledTick } from "./scheduledRegistry";
 import { registerMaintenanceTick } from "./maintenanceJobs";
 import { registerCronRoutes } from "./registerCronRoutes";
+import {
+  AUDIT_SUMMARY_DEFAULTS,
+  AUDIT_SUMMARY_SETTINGS_KEY,
+  sanitizeAuditSummarySettings,
+  type AuditSummarySettings,
+} from "../lib/auditSummarySettingsShared";
 import { verifyWebhookSecret } from "./cronAuth";
 import {
   generateGeminiContent,
@@ -159,12 +190,7 @@ export function cleanupRealtimeListeners(): void {
 
 const verificationCodes = new Map<string, { code: string; expiresAt: number; email: string }>();
 
-// Configuração Z-API server-side (não exposta ao frontend)
-const ZAPI_INSTANCE = process.env.ZAPI_INSTANCE_ID || process.env.VITE_ZAPI_INSTANCE_ID || '';
-const ZAPI_TOKEN = process.env.ZAPI_TOKEN || process.env.VITE_ZAPI_TOKEN || '';
-const ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || process.env.VITE_ZAPI_CLIENT_TOKEN || '';
-const zapiBase = () => `https://api.z-api.io/instances/${ZAPI_INSTANCE}/token/${ZAPI_TOKEN}`;
-// BOT SILENCIADO (pedido do usuário, jul/2026): o número da Central NÃO pode
+// BOT SILENCIADO (pedido do usuário, jul/2026)
 // enviar nem responder nada pelo sistema. Todo envio de WhatsApp (manual ou
 // automático) fica bloqueado, a menos que WHATSAPP_BOT_ENABLED=true seja
 // definido explicitamente nos secrets. Leituras (listar grupos/status) seguem
@@ -936,18 +962,97 @@ export async function registerRoutes(
     }
   });
 
-  // ───────────── WhatsApp — Z-API (ativo) + Meta Cloud API (configuração) ─────────────
+  // ───────────── WhatsApp — providers (Z-API / Meta / mock) + instâncias no banco ─────────────
+  async function resolveWhatsappProvider(req: Request): Promise<WhatsappProvider | null> {
+    const id = req.params.id || req.query.instanceId || req.body?.instanceId;
+    if (id) return getWhatsappProviderById(String(id));
+    return getDefaultWhatsappProvider(true);
+  }
+
+  app.get('/api/whatsapp/instances', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
+    try {
+      const rows = await listWhatsappInstances();
+      res.json(rows.map(toPublicInstance));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put('/api/whatsapp/instances/:id', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const body = req.body || {};
+      const updated = await upsertWhatsappInstance(req.params.id, {
+        slug: body.slug,
+        label: body.label,
+        provider: body.provider,
+        instance_type: body.instance_type,
+        zapi_instance_id: body.zapi_instance_id,
+        zapi_token: body.zapi_token,
+        zapi_client_token: body.zapi_client_token,
+        meta_phone_number_id: body.meta_phone_number_id,
+        meta_access_token: body.meta_access_token,
+        meta_api_version: body.meta_api_version,
+        official_ddi: body.official_ddi,
+        official_phone: body.official_phone,
+        is_default: body.is_default,
+        enabled: body.enabled,
+      });
+      if (!updated) return res.status(500).json({ error: 'Falha ao salvar instância' });
+      res.json(toPublicInstance(updated));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/whatsapp/instances/:id/test-connection', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const result = await testWhatsappInstanceConnection(req.params.id);
+      res.status(result.ok ? 200 : 502).json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/whatsapp/fleet-summary', requireAuth, requireRole('diretoria', 'administrador', 'ceo', 'operacional'), async (_req: Request, res: Response) => {
+    try {
+      const summary = await buildFleetOperationalSummary();
+      res.json(summary);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/whatsapp/webhook/inbound', async (req: Request, res: Response) => {
+    try {
+      const secret = process.env.ZAPI_WEBHOOK_SECRET || process.env.SUPABASE_WEBHOOK_SECRET || "";
+      if (secret) {
+        const header = String(req.headers["x-zapi-secret"] || req.headers["x-webhook-secret"] || "");
+        const query = String(req.query.token || "");
+        if (header !== secret && query !== secret) {
+          return res.status(401).json({ ok: false, error: "invalid webhook secret" });
+        }
+      }
+      const result = await handleInboundWhatsappMessage(req.body || {});
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      console.error("[WhatsApp Inbound]", e?.message);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   app.get('/api/whatsapp/providers', requireAuth, async (_req: Request, res: Response) => {
+    const defaultRow = await getDefaultWhatsappInstance();
+    const creds = await isZapiConfigured();
     res.json({
-      activeProvider: getWhatsappProvider(),
+      activeProvider: defaultRow?.provider || getWhatsappProvider(),
       botEnabled: isWhatsappBotEnabled(),
+      defaultInstanceSlug: defaultRow?.slug || null,
       zapi: {
-        configured: !!(ZAPI_INSTANCE && ZAPI_TOKEN),
-        hasClientToken: !!ZAPI_CLIENT_TOKEN,
+        configured: creds,
+        instanceType: await getZapiInstanceTypeAsync(),
+        officialPhone: defaultRow ? expectedOfficialPhone(defaultRow) : null,
       },
-      meta: {
-        configured: isMetaWhatsAppConfigured(),
-      },
+      meta: { configured: isMetaWhatsAppConfigured() },
     });
   });
 
@@ -962,9 +1067,9 @@ export async function registerRoutes(
 
   app.get('/api/whatsapp/groups', requireAuth, async (_req: Request, res: Response) => {
     try {
-      if (!ZAPI_INSTANCE || !ZAPI_TOKEN) return res.status(503).json({ error: 'Z-API não configurada' });
-      const headers: any = { 'Content-Type': 'application/json' };
-      if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
+      if (!(await isZapiConfigured())) return res.status(503).json({ error: 'Z-API não configurada' });
+      const headers: any = await zapiHeaders(true);
+      const base = await zapiBasePath();
       // A Z-API PAGINA a lista de grupos — buscar só a 1ª página faz grupos
       // novos "sumirem" do seletor do cadastro. Varre todas as páginas e
       // devolve a lista completa (deduplicada por id/phone).
@@ -992,10 +1097,9 @@ export async function registerRoutes(
         return list.length ? added : -1; // -1 = página vazia
       };
       for (let page = 1; page <= MAX_PAGES; page++) {
-        let { r, data } = await fetchPage(`${zapiBase()}/groups?page=${page}&pageSize=${PAGE_SIZE}`);
+        let { r, data } = await fetchPage(`${base}/groups?page=${page}&pageSize=${PAGE_SIZE}`);
         if (!r.ok && page === 1 && r.status >= 400 && r.status < 500 && !/connected/i.test(String(data?.error || ''))) {
-          // Compatibilidade: se a Z-API rejeitar page/pageSize, tenta o endpoint legado sem paginação.
-          ({ r, data } = await fetchPage(`${zapiBase()}/groups`));
+          ({ r, data } = await fetchPage(`${base}/groups`));
           if (r.ok) { collect(data); break; }
         }
         if (!r.ok) {
@@ -1022,26 +1126,54 @@ export async function registerRoutes(
   });
 
   app.post('/api/whatsapp/send', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).auth?.id || extractUserIdFromToken((req as any).authToken || '') || null;
+    const { phone, message } = req.body || {};
+    const baseLog = {
+      queueLabel: 'send-text individual',
+      endpoint: 'send-text',
+      destinationType: 'individual' as const,
+      groupId: phone ? String(phone) : null,
+      triggeredByUserId: userId,
+    };
     try {
-      if (!ZAPI_INSTANCE || !ZAPI_TOKEN) return res.status(503).json({ error: 'Z-API não configurada' });
-      if (!isWhatsappBotEnabled()) return res.status(503).json({ error: 'Envio de WhatsApp desativado — o bot está silenciado por decisão da diretoria.' });
+      if (!(await isZapiConfigured())) {
+        logWhatsappOutbound({ ...baseLog, success: false, skipped: true, skipReason: 'WhatsApp não configurado', errorMessage: 'WhatsApp não configurado' });
+        return res.status(503).json({ error: 'WhatsApp não configurado no banco' });
+      }
+      if (!isWhatsappBotEnabled()) {
+        logWhatsappOutbound({ ...baseLog, success: false, skipped: true, skipReason: 'bot silenciado', errorMessage: 'Envio de WhatsApp desativado' });
+        return res.status(503).json({ error: 'Envio de WhatsApp desativado — o bot está silenciado por decisão da diretoria.' });
+      }
       const numGuard = await assertOfficialBotNumber();
-      if (!numGuard.ok) return res.status(503).json({ error: numGuard.error });
-      const { phone, message } = req.body || {};
+      if (!numGuard.ok) {
+        logWhatsappOutbound({ ...baseLog, success: false, skipped: true, skipReason: 'número não oficial', errorMessage: numGuard.error || 'número bloqueado' });
+        return res.status(503).json({ error: numGuard.error });
+      }
       if (!phone || !message) return res.status(400).json({ error: 'phone e message são obrigatórios' });
-      const headers: any = { 'Content-Type': 'application/json' };
-      if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
-      const r = await throttleZapiSend('send-text individual', () => fetch(`${zapiBase()}/send-text`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ phone, message }),
-      }));
-      const text = await r.text();
-      let data: any = null;
-      try { data = JSON.parse(text); } catch { data = { raw: text }; }
-      if (!r.ok) return res.status(r.status).json({ error: 'Falha Z-API', detail: data });
-      res.json(data);
+      const result = await whatsappProviderSendText(String(phone), String(message), 'send-text individual');
+      if (!result.ok) {
+        logWhatsappOutbound({
+          ...baseLog,
+          queueWaitMs: result.queueWaitMs,
+          queueDepth: result.queueDepth,
+          httpStatus: result.httpStatus,
+          success: false,
+          zapiResponse: result.data,
+          errorMessage: result.error,
+        });
+        return res.status(result.httpStatus || 502).json({ error: 'Falha WhatsApp', detail: result.data });
+      }
+      logWhatsappOutbound({
+        ...baseLog,
+        queueWaitMs: result.queueWaitMs,
+        queueDepth: result.queueDepth,
+        httpStatus: result.httpStatus,
+        success: true,
+        zapiResponse: result.data,
+      });
+      res.json(result.data);
     } catch (e: any) {
+      logWhatsappOutbound({ ...baseLog, success: false, errorMessage: e.message });
       res.status(500).json({ error: e.message });
     }
   });
@@ -1053,15 +1185,28 @@ export async function registerRoutes(
   // O grupo de destino é SEMPRE resolvido server-side pelo cadastro do cliente
   // (match EXATO por name/trading_name) — o frontend nunca escolhe o destino.
   app.post('/api/whatsapp/send-group', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).auth?.id || extractUserIdFromToken((req as any).authToken || '') || null;
+    const { clientName, message, imageBase64, missionId } = req.body || {};
+    const endpointPreview = imageBase64 ? 'send-image' : 'send-text';
+    const logBase = (overrides: Partial<Parameters<typeof logWhatsappOutbound>[0]> = {}) => ({
+      queueLabel: `${endpointPreview} grupo do cliente`,
+      endpoint: endpointPreview,
+      destinationType: 'group' as const,
+      clientName: clientName ? String(clientName) : null,
+      missionId: missionId ? String(missionId) : null,
+      triggeredByUserId: userId,
+      ...overrides,
+    });
     try {
-      if (!ZAPI_INSTANCE || !ZAPI_TOKEN) return res.status(503).json({ error: 'Z-API não configurada' });
-      const { clientName, message, imageBase64 } = req.body || {};
+      if (!(await isZapiConfigured())) {
+        logWhatsappOutbound(logBase({ success: false, skipped: true, skipReason: 'WhatsApp não configurado', errorMessage: 'WhatsApp não configurado' }));
+        return res.status(503).json({ error: 'WhatsApp não configurado no banco' });
+      }
       if (!clientName || !message) return res.status(400).json({ error: 'clientName e message são obrigatórios' });
 
       const sb = createSupabaseAdminClient();
       if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
 
-      // Isolamento de cliente: match EXATO (name OU trading_name), nunca ILIKE.
       let { data: rows } = await sb.from('clients')
         .select('id, name, whatsapp_group_id')
         .eq('name', String(clientName))
@@ -1074,42 +1219,179 @@ export async function registerRoutes(
         rows = r2.data || [];
       }
       const clientRow = rows?.[0];
-      if (!clientRow) return res.json({ skipped: true, reason: 'cliente não encontrado no cadastro' });
+      if (!clientRow) {
+        logWhatsappOutbound(logBase({ success: false, skipped: true, skipReason: 'cliente não encontrado' }));
+        return res.json({ skipped: true, reason: 'cliente não encontrado no cadastro' });
+      }
       const groupId = String(clientRow.whatsapp_group_id || '').trim();
-      if (!groupId) return res.json({ skipped: true, reason: 'cliente sem grupo de WhatsApp configurado' });
-      // Guarda do kill-switch: o destino PRECISA ser um GRUPO (id termina em
-      // "-group" ou "@g.us"). Nunca enviar para contato individual por aqui.
+      if (!groupId) {
+        logWhatsappOutbound(logBase({ success: false, skipped: true, skipReason: 'sem grupo configurado', clientName: clientRow.name }));
+        return res.json({ skipped: true, reason: 'cliente sem grupo de WhatsApp configurado' });
+      }
       if (!/-group$|@g\.us$/i.test(groupId)) {
         console.warn(`[WhatsApp Grupo] BLOQUEADO: whatsapp_group_id do cliente ${clientRow.name} não é um ID de grupo válido.`);
+        logWhatsappOutbound(logBase({
+          groupId,
+          clientName: clientRow.name,
+          success: false,
+          skipped: true,
+          skipReason: 'ID de grupo inválido',
+          errorMessage: 'Destino não é grupo válido',
+        }));
         return res.status(400).json({ error: 'O destino configurado no cadastro do cliente não é um grupo de WhatsApp válido.' });
       }
 
-      // Trava do número oficial: nunca postar no grupo por um número errado.
       const numGuard = await assertOfficialBotNumber();
-      if (!numGuard.ok) return res.status(503).json({ error: numGuard.error });
+      if (!numGuard.ok) {
+        logWhatsappOutbound(logBase({
+          groupId,
+          clientName: clientRow.name,
+          success: false,
+          skipped: true,
+          skipReason: 'número não oficial',
+          errorMessage: numGuard.error || 'número bloqueado',
+        }));
+        return res.status(503).json({ error: numGuard.error });
+      }
 
-      const headers: any = { 'Content-Type': 'application/json' };
-      if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
-
-      // Com foto: send-image (foto + texto como legenda). Sem foto: send-text.
       const endpoint = imageBase64 ? 'send-image' : 'send-text';
-      const body = imageBase64
-        ? { phone: groupId, image: imageBase64, caption: message }
-        : { phone: groupId, message };
-      const r = await throttleZapiSend(`${endpoint} grupo do cliente`, () => fetch(`${zapiBase()}/${endpoint}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-      }));
-      const text = await r.text();
-      let data: any = null;
-      try { data = JSON.parse(text); } catch { data = { raw: text }; }
-      if (!r.ok) {
-        console.warn(`[WhatsApp Grupo] Falha Z-API ${endpoint} → grupo ${groupId} (cliente ${clientRow.name}) HTTP ${r.status}: ${text.slice(0, 200)}`);
-        return res.status(r.status).json({ error: 'Falha Z-API', detail: data });
+      const result = imageBase64
+        ? await whatsappProviderSendImage(groupId, String(message), String(imageBase64), `${endpoint} grupo do cliente`)
+        : await whatsappProviderSendText(groupId, String(message), `${endpoint} grupo do cliente`);
+      if (!result.ok) {
+        console.warn(`[WhatsApp Grupo] Falha ${endpoint} → grupo ${groupId} (cliente ${clientRow.name}) HTTP ${result.httpStatus}: ${result.error}`);
+        logWhatsappOutbound(logBase({
+          groupId,
+          clientName: clientRow.name,
+          endpoint,
+          queueLabel: `${endpoint} grupo do cliente`,
+          queueWaitMs: result.queueWaitMs,
+          queueDepth: result.queueDepth,
+          httpStatus: result.httpStatus,
+          success: false,
+          zapiResponse: result.data,
+          errorMessage: result.error || `HTTP ${result.httpStatus}`,
+        }));
+        return res.status(result.httpStatus || 502).json({ error: 'Falha WhatsApp', detail: result.data });
       }
       console.log(`[WhatsApp Grupo] Atualização enviada ao grupo do cliente ${clientRow.name} (${endpoint}).`);
-      res.json({ sent: true, endpoint, ...((data && typeof data === 'object') ? data : {}) });
+      logWhatsappOutbound(logBase({
+        groupId,
+        clientName: clientRow.name,
+        endpoint,
+        queueLabel: `${endpoint} grupo do cliente`,
+        queueWaitMs: result.queueWaitMs,
+        queueDepth: result.queueDepth,
+        httpStatus: result.httpStatus,
+        success: true,
+        zapiResponse: result.data,
+      }));
+      res.json({ sent: true, endpoint, ...((result.data && typeof result.data === 'object') ? result.data : {}) });
+    } catch (e: any) {
+      logWhatsappOutbound(logBase({ success: false, errorMessage: e.message }));
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/whatsapp/telemetry/dashboard', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const raw = String(req.query.range || 'today').toLowerCase();
+      const range: TelemetryRange = raw === '7d' ? '7d' : raw === '15d' ? '15d' : 'today';
+      const data = await getWhatsappTelemetryDashboard(range);
+      res.status(data.ok ? 200 : 503).json(data);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  app.get('/api/whatsapp/telemetry/migrations-sql', requireAuth, requireRole('diretoria', 'administrador'), async (_req: Request, res: Response) => {
+    try {
+      const p = path.join(process.cwd(), 'migrations', '2026_07_05_whatsapp_telemetry.sql');
+      const sql = fs.readFileSync(p, 'utf8');
+      res.type('text/plain').send(sql);
+    } catch (e: any) {
+      res.status(500).json({ error: 'Não foi possível ler migration: ' + (e?.message || 'erro') });
+    }
+  });
+
+  app.get('/api/whatsapp/connection/status', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const provider = await resolveWhatsappProvider(req);
+      if (!provider) return res.status(503).json({ error: 'WhatsApp não configurado no banco' });
+      const row = provider.instance;
+      const status = await provider.getStatus();
+      const connectedPhone = status.connected ? await provider.getConnectedPhone() : null;
+      const official = expectedOfficialPhone(row);
+      res.json({
+        instanceId: row.id,
+        slug: row.slug,
+        label: row.label,
+        provider: row.provider,
+        configured: instanceConfigured(row),
+        instanceType: row.instance_type || 'web',
+        officialPhone: official,
+        autoConnect: (process.env.ZAPI_AUTO_CONNECT || '').toLowerCase() === 'true',
+        status,
+        connectedPhone,
+        phoneMatchesOfficial: connectedPhone === official,
+        lastCheckedAt: row.last_checked_at,
+        lastError: row.last_error,
+        lastConnected: row.last_connected,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/whatsapp/connection/bootstrap', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const provider = await resolveWhatsappProvider(req);
+      if (!provider) return res.status(503).json({ error: 'WhatsApp não configurado no banco' });
+      res.json(await provider.bootstrapConnection(true));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/whatsapp/connection/qr-code', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const provider = await resolveWhatsappProvider(req);
+      if (!provider?.getQrCode) return res.status(400).json({ error: 'Provider não suporta QR Code' });
+      const qr = await provider.getQrCode();
+      const link = provider.getPhoneLinkCode ? await provider.getPhoneLinkCode() : { code: null as string | null };
+      res.json({ ...qr, phoneLinkCode: link.code, phoneLinkError: (link as any).error });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/whatsapp/connection/request-code', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const provider = await resolveWhatsappProvider(req);
+      if (!provider?.mobileRequestCode) return res.status(400).json({ error: 'Provider não suporta registro mobile' });
+      const method = (req.body?.method || 'wa_old') as 'sms' | 'voice' | 'wa_old';
+      const registration = (provider as any).mobileRegistrationAvailable
+        ? await (provider as any).mobileRegistrationAvailable()
+        : null;
+      res.json({
+        registration,
+        requestCode: await provider.mobileRequestCode(method),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/whatsapp/connection/confirm-code', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const provider = await resolveWhatsappProvider(req);
+      if (!provider) return res.status(503).json({ error: 'WhatsApp não configurado' });
+      const { code, pin } = req.body || {};
+      if (!code && !pin) return res.status(400).json({ error: 'code ou pin obrigatório' });
+      const result = pin
+        ? (provider.mobileConfirmSecurityCode ? await provider.mobileConfirmSecurityCode(String(pin)) : { ok: false, error: 'PIN não suportado' })
+        : (provider.mobileConfirmCode ? await provider.mobileConfirmCode(String(code)) : { ok: false, error: 'Código não suportado' });
+      res.json({ ...result, status: await provider.getStatus() });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -2094,6 +2376,16 @@ export async function registerRoutes(
     await runDhlIntakeMigrations();
   } catch (e: any) {
     console.warn('[Migration] DHL intake:', e?.message || 'falhou');
+  }
+  try {
+    await runWhatsappTelemetryMigrations();
+  } catch (e: any) {
+    console.warn('[Migration] WhatsApp telemetria:', e?.message || 'falhou');
+  }
+  try {
+    await runWhatsappInstanceMigrations();
+  } catch (e: any) {
+    console.warn('[Migration] WhatsApp instâncias:', e?.message || 'falhou');
   }
   registerDhlIntakeRoutes(app, requireAuth, requireRole, resolveUserRole, resolvePrincipal);
 
@@ -7665,25 +7957,18 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           const phones = rawPhones.split(/[,;\s]+/).map(s => s.replace(/\D/g, '')).filter(p => p.length >= 10);
           if (phones.length > 0 && !isWhatsappBotEnabled()) {
             console.log(`[OverrideAlert] ${scope}=${name} → bot WhatsApp silenciado; pulando envio.`);
-          } else if (phones.length > 0 && ZAPI_INSTANCE && ZAPI_TOKEN && (await assertOfficialBotNumber()).ok) {
+          } else if (phones.length > 0 && (await isZapiConfigured()) && (await assertOfficialBotNumber()).ok) {
             const waMessage =
               `⚠️ *TM SEG — Excesso de edições manuais*\n\n` +
               `${scopeLabel}: *${name}*\n` +
               `Edições divergentes: *${r2(count)}* (limite ${MANUAL_OVERRIDE_THRESHOLD})\n` +
               `Janela: ${fromDay} → ${toDay}\n\n` +
               `Auditoria filtrada:\n${link}`;
-            const headers: any = { 'Content-Type': 'application/json' };
-            if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
             for (const phone of phones) {
               try {
-                const r = await throttleZapiSend('send-text alerta override', () => fetch(`${zapiBase()}/send-text`, {
-                  method: 'POST',
-                  headers,
-                  body: JSON.stringify({ phone, message: waMessage }),
-                }));
+                const r = await whatsappProviderSendText(phone, waMessage, 'send-text alerta override');
                 if (!r.ok) {
-                  const t = await r.text().catch(() => '');
-                  console.warn(`[OverrideAlert] WhatsApp ${phone} HTTP ${r.status}: ${t.slice(0, 200)}`);
+                  console.warn(`[OverrideAlert] WhatsApp ${phone} HTTP ${r.httpStatus}: ${r.error}`);
                 } else {
                   console.log(`[OverrideAlert] WhatsApp enviado para ${phone} (${scope}=${name})`);
                 }
@@ -7881,6 +8166,121 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       res.json({ ok: true, history });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar histórico' });
+    }
+  });
+
+  let auditSummarySettingsCache: { value: AuditSummarySettings; expiresAt: number } | null = null;
+  const AUDIT_SUMMARY_CACHE_TTL = 60 * 1000;
+  const loadAuditSummarySettings = async (): Promise<AuditSummarySettings> => {
+    if (auditSummarySettingsCache && auditSummarySettingsCache.expiresAt > Date.now()) {
+      return auditSummarySettingsCache.value;
+    }
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('system_settings')
+        .select('value')
+        .eq('key', AUDIT_SUMMARY_SETTINGS_KEY)
+        .maybeSingle();
+      const value = (error || !data?.value)
+        ? { ...AUDIT_SUMMARY_DEFAULTS }
+        : sanitizeAuditSummarySettings(typeof data.value === 'string' ? JSON.parse(data.value) : data.value);
+      auditSummarySettingsCache = { value, expiresAt: Date.now() + AUDIT_SUMMARY_CACHE_TTL };
+      return value;
+    } catch {
+      const value = { ...AUDIT_SUMMARY_DEFAULTS };
+      auditSummarySettingsCache = { value, expiresAt: Date.now() + AUDIT_SUMMARY_CACHE_TTL };
+      return value;
+    }
+  };
+  const invalidateAuditSummarySettingsCache = () => { auditSummarySettingsCache = null; };
+
+  app.get('/api/admin/system-settings/audit-summary', requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const current = await loadAuditSummarySettings();
+      const { data: row } = await supabaseAdmin
+        .from('system_settings')
+        .select('updated_by, updated_at')
+        .eq('key', AUDIT_SUMMARY_SETTINGS_KEY)
+        .maybeSingle();
+      res.json({
+        ok: true,
+        settings: current,
+        defaults: AUDIT_SUMMARY_DEFAULTS,
+        updatedBy: row?.updated_by || null,
+        updatedAt: row?.updated_at || null,
+      });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar configurações do resumo' });
+    }
+  });
+
+  app.put('/api/admin/system-settings/audit-summary', requireAuth, requireRole('diretoria', 'administrador'), async (req: Request, res: Response) => {
+    try {
+      const prev = await loadAuditSummarySettings();
+      const next = sanitizeAuditSummarySettings(req.body || {});
+      const principal = (req as any).user || (req as any).auth || {};
+      const editorName = principal.name || principal.email || 'Sistema';
+
+      const { error: upErr } = await supabaseAdmin
+        .from('system_settings')
+        .upsert([{
+          key: AUDIT_SUMMARY_SETTINGS_KEY,
+          value: next,
+          updated_by: editorName,
+          updated_at: new Date().toISOString(),
+        }], { onConflict: 'key' });
+      if (upErr) throw upErr;
+      invalidateAuditSummarySettingsCache();
+
+      const changedFields: string[] = [];
+      (Object.keys(next) as Array<keyof AuditSummarySettings>).forEach(k => {
+        if (String((prev as any)[k]) !== String((next as any)[k])) changedFields.push(k);
+      });
+      await supabaseAdmin.from('system_logs').insert([{
+        user_name: editorName,
+        action_type: 'UPDATE',
+        entity: 'SystemSetting',
+        entity_id: AUDIT_SUMMARY_SETTINGS_KEY,
+        details: JSON.stringify({
+          summary: `Configuração do resumo da auditoria atualizada (${changedFields.join(', ') || 'sem alterações'}).`,
+          before: prev,
+          after: next,
+          changedFields,
+        }),
+      }]);
+
+      res.json({ ok: true, settings: next, defaults: AUDIT_SUMMARY_DEFAULTS });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao salvar configurações do resumo' });
+    }
+  });
+
+  app.get('/api/admin/system-settings/audit-summary/history', requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('system_logs')
+        .select('id, created_at, user_name, details')
+        .eq('entity', 'SystemSetting')
+        .eq('entity_id', AUDIT_SUMMARY_SETTINGS_KEY)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      const history = (data || []).map((r: any) => {
+        let d: any = {};
+        try { d = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {}); } catch { /* ignore */ }
+        return {
+          id: r.id,
+          createdAt: r.created_at,
+          userName: r.user_name,
+          before: d.before || null,
+          after: d.after || null,
+          changedFields: d.changedFields || [],
+          summary: d.summary || '',
+        };
+      });
+      res.json({ ok: true, history });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar histórico do resumo' });
     }
   });
 

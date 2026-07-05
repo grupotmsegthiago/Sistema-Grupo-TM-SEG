@@ -64,6 +64,7 @@ async function sendUpdateToClientGroup(
     clientName: string,
     message: string,
     photo: Blob | null,
+    missionId?: string,
 ): Promise<{ sent: boolean; skipped?: boolean; error?: string }> {
     try {
         if (!clientName || !message) return { sent: false, skipped: true };
@@ -79,7 +80,7 @@ async function sendUpdateToClientGroup(
         const resp = await authFetch('/api/whatsapp/send-group', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clientName, message, imageBase64 }),
+            body: JSON.stringify({ clientName, message, imageBase64, missionId }),
         });
         const data = await resp.json().catch(() => null);
         if (resp.ok && data?.sent) return { sent: true };
@@ -2274,7 +2275,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     showNotification('WhatsApp', 'Atualização rotineira registrada no sistema — NÃO enviada ao grupo DHL (cliente só recebe: chegada na origem, início/fim de missão, início/reinício de pernoite e situações atípicas).', 'info');
                 } else {
                     const groupPhoto = updatePrintBlobRef.current;
-                    void sendUpdateToClientGroup(mission.client || '', report, groupPhoto).then(r => {
+                    void sendUpdateToClientGroup(mission.client || '', report, groupPhoto, mission.id).then(r => {
                         if (r.sent) {
                             showNotification('WhatsApp', 'Atualização enviada automaticamente ao grupo do cliente.', 'success');
                         } else if (r.error) {
@@ -2417,7 +2418,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     }
                     // Envio automático ao grupo de WhatsApp do cliente (se
                     // configurado no cadastro). Fire-and-forget.
-                    void sendUpdateToClientGroup(mission.client || '', finalizeShareText, photoBlob).then(r => {
+                    void sendUpdateToClientGroup(mission.client || '', finalizeShareText, photoBlob, mission.id).then(r => {
                         if (r.sent) {
                             showNotification('WhatsApp', 'Fim de missão enviado automaticamente ao grupo do cliente.', 'success');
                         } else if (r.error) {

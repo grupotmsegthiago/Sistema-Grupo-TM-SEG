@@ -1852,6 +1852,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    }}
                    dailyGoalOverride={35000}
                    monthlyGoalOverride={35000 * 20}
+                   historyKey="meta-geral"
                 />
              </div>
              <div className="w-full sm:w-[320px] sm:shrink-0 flex">
@@ -1873,6 +1874,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    monthlyGoalOverride={40000 * 20}
                    titleSuffix="DHL"
                    accentClass="from-yellow-400 to-red-600"
+                   historyKey="meta-dhl"
                 />
              </div>
              <div className="w-full sm:w-[320px] sm:shrink-0 flex">
@@ -1890,6 +1892,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    monthlyGoalOverride={(35000 + 40000) * 20}
                    titleSuffix="TOTAL"
                    accentClass="from-blue-500 to-indigo-700"
+                   historyKey="meta-total"
                 />
              </div>
              {canSeeFinancials && lossesCount > 0 && (

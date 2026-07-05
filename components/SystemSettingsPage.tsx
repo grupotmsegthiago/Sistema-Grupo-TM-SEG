@@ -3,6 +3,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Settings, Mail, Clock, Save, Loader2, RefreshCw, History, FileBarChart, Send, CheckCircle2, AlertTriangle, ListChecks, Calendar, User, Download, X, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import ManualOverrideAlertSettings from './ManualOverrideAlertSettings';
 import AlertRecipientsSettings from './AlertRecipientsSettings';
+import AuditSummarySettings from './AuditSummarySettings';
+import WhatsAppTelemetryDashboard from './WhatsAppTelemetryDashboard';
+import WhatsAppConnectionPanel from './WhatsAppConnectionPanel';
 
 type Schedule = { emails: string; hour: number; minute: number };
 type DailyReports = {
@@ -764,6 +767,12 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
       </div>
 
       <AlertRecipientsSettings />
+
+      <WhatsAppConnectionPanel />
+
+      <WhatsAppTelemetryDashboard />
+
+      <AuditSummarySettings />
 
       <ManualOverrideAlertSettings />
 
