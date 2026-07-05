@@ -7,19 +7,6 @@
       "maxDuration": 300
     }
   },
-  "redirects": [
-    {
-      "source": "/:path*",
-      "has": [
-        {
-          "type": "host",
-          "value": "sistema-grupo-tm-seg.vercel.app"
-        }
-      ],
-      "destination": "https://sistema.grupotmseg.com.br/:path*",
-      "permanent": true
-    }
-  ],
   "rewrites": [
     {
       "source": "/api/health",
