@@ -20,10 +20,6 @@
       "destination": "/api/whatsapp/webhook/inbound"
     },
     {
-      "source": "/api/(.*)",
-      "destination": "/api"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
