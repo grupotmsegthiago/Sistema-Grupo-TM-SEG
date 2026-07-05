@@ -374,11 +374,9 @@ async function lookupClientNfDefaults(cnpj?: string | null, name?: string | null
   const cached = clientNfCache[key];
   if (cached && Date.now() - cached.ts < CLIENT_NF_CACHE_TTL_MS) return cached.value;
   try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-    const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-    if (!sbUrl || !sbKey) return null;
-    const supabase = createClient(sbUrl, sbKey);
+    const { createSupabaseAdminClient } = await import('./supabaseConfig');
+    const supabase = createSupabaseAdminClient();
+    if (!supabase) return null;
     let row: any = null;
     if (cnpj) {
       const cleanCnpj = cnpj.replace(/\D/g, '');

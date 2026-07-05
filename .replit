@@ -69,12 +69,8 @@ integrations = ["javascript_gemini_ai_integrations:2.0.0"]
 [userenv]
 
 [userenv.shared]
-VITE_SUPABASE_URL = "https://ajhmmjuewdsukecaimik.supabase.co"
-VAPID_PUBLIC_KEY = "BJ32tbxqb-CD-TyivlxMx8QmVwNqug0F3GXdFX6dqXEkqLAV8JnhGg57SsSkckY1YC03_XvuuOr0PW0IDtjzOYo"
-VAPID_PRIVATE_KEY = "NQz566P5YoibgXSYBNKe2j544tKLAbRfPdBNW7FlukU"
-SUPABASE_URL = "https://ajhmmjuewdsukecaimik.supabase.co"
-SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk"
-DATAJUD_API_KEY = "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="
+# Secrets: use Replit Secrets (Tools → Secrets), não commitar valores aqui.
+# SUPABASE_SERVICE_ROLE_KEY = service_role do Supabase (Settings → API)
 
 [postMerge]
 path = "scripts/post-merge.sh"

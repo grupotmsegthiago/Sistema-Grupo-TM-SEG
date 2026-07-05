@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createSupabaseAdminClient } from './supabaseConfig';
 import { sendMissionEmailToClient } from './emailService';
 
 const CYCLE_MS = 5 * 60 * 1000;
@@ -13,15 +13,7 @@ const PROCESSABLE_STATUSES = [
 ];
 
 function getSupabase() {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-  const key =
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.VITE_SUPABASE_ANON_KEY ||
-    '';
-  if (!url || !key) return null;
-  return createClient(url, key);
+  return createSupabaseAdminClient();
 }
 
 async function findClientEmail(supabase: any, clientName: string): Promise<string> {
@@ -198,6 +190,10 @@ async function safeCycle() {
     cycleRunning = false;
   }
 }
+export async function runClientEmailQueueCycle(): Promise<void> {
+  await safeCycle();
+}
+
 export function startClientEmailQueueWorker() {
   if (started) return;
   started = true;

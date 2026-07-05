@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB } from '../types';
 import { authFetch } from '../lib/authFetch';
-import { supabase } from '../lib/supabase';
+import { supabase, MISSION_UPDATES_BROADCAST_CHANNEL } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { clientFuzzyFilter, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
@@ -2507,7 +2507,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 setEmailConfirmDialog({ type, clientPayload: pendingClientPayload, providerPayload: pendingProviderPayload });
             }
 
-            await supabase.channel('mission-updates').send({
+            await supabase.channel(MISSION_UPDATES_BROADCAST_CHANNEL).send({
                 type: 'broadcast',
                 event: 'mission_updated',
                 payload: {

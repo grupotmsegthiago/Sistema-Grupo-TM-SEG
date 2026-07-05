@@ -171,23 +171,25 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         const handleRefresh = () => scheduleRefresh();
         window.addEventListener('refreshMissions', handleRefresh);
 
-        // Qualquer mudança em missions/snapshots/vínculos atualiza o boletim
-        // em tempo real. Antes, só um subconjunto de campos disparava
-        // refresh — agora capturamos qualquer UPDATE/INSERT/DELETE.
-        const channel = supabase.channel('billing-financial-sync')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'missions' }, () => scheduleRefresh())
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'client_vehicles' }, () => scheduleRefresh())
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, () => scheduleRefresh())
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'system_logs' }, (payload: any) => {
-                const ent = payload?.new?.entity || payload?.old?.entity;
-                if (ent === 'BillingAdjustment' || ent === 'BillingSnapshot') scheduleRefresh();
-            })
-            .subscribe();
+        const onTableRealtime = () => scheduleRefresh();
+        const onSystemLogsRealtime = (event: Event) => {
+            const payload = (event as CustomEvent).detail as { new?: { entity?: string }; old?: { entity?: string } } | undefined;
+            const ent = payload?.new?.entity || payload?.old?.entity;
+            if (ent === 'BillingAdjustment' || ent === 'BillingSnapshot') scheduleRefresh();
+        };
+
+        window.addEventListener('supabase:missions:realtime', onTableRealtime);
+        window.addEventListener('supabase:client_vehicles:realtime', onTableRealtime);
+        window.addEventListener('supabase:vehicles:realtime', onTableRealtime);
+        window.addEventListener('supabase:system_logs:realtime', onSystemLogsRealtime);
 
         return () => {
             if (refreshTimer) clearTimeout(refreshTimer);
             window.removeEventListener('refreshMissions', handleRefresh);
-            supabase.removeChannel(channel);
+            window.removeEventListener('supabase:missions:realtime', onTableRealtime);
+            window.removeEventListener('supabase:client_vehicles:realtime', onTableRealtime);
+            window.removeEventListener('supabase:vehicles:realtime', onTableRealtime);
+            window.removeEventListener('supabase:system_logs:realtime', onSystemLogsRealtime);
         };
     }, []);
 

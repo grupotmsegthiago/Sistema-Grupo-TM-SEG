@@ -8,3 +8,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+/** Canal broadcast compartilhado: quem envia e quem escuta devem usar o mesmo nome. */
+export const MISSION_UPDATES_BROADCAST_CHANNEL = 'mission-updates';

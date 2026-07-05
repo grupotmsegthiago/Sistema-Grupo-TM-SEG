@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createSupabaseAdminClient } from './supabaseConfig';
 
 export type NfProvider = 'ASAAS' | 'PLUGNOTAS';
 
@@ -11,10 +11,7 @@ let cache: { ts: number; map: Record<string, NfProvider> } | null = null;
 const CACHE_TTL_MS = 60_000;
 
 function getSupabase() {
-  const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-  const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-  if (!sbUrl || !sbKey) return null;
-  return createClient(sbUrl, sbKey);
+  return createSupabaseAdminClient();
 }
 
 function normalize(s?: string | null): string {

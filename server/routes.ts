@@ -2,7 +2,8 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI, Modality } from "@google/genai";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
+import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseServerKey, getSupabaseServiceRoleKey, getSupabaseUrl } from "./supabaseConfig";
 import { Resend } from "resend";
 import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
@@ -14,6 +15,11 @@ import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIn
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
 import { assertOfficialBotNumber } from "./zapiGuard";
 import { throttleZapiSend } from "./zapiThrottle";
+import { isLongRunningHost } from "./runtime";
+import { registerScheduledTick } from "./scheduledRegistry";
+import { registerMaintenanceTick } from "./maintenanceJobs";
+import { registerCronRoutes } from "./registerCronRoutes";
+import { verifyWebhookSecret } from "./cronAuth";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -28,10 +34,8 @@ const pushSubsCache = new Map<string, any>();
 
 async function pushSubsLoadAll(): Promise<Array<{ key: string; subscription: any }>> {
   try {
-    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-    const key = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-    if (!url || !key) return Array.from(pushSubsCache.entries()).map(([k, v]) => ({ key: k, subscription: v }));
-    const sb = createClient(url, key);
+    const sb = createSupabaseAdminClient();
+    if (!sb) return Array.from(pushSubsCache.entries()).map(([k, v]) => ({ key: k, subscription: v }));
     const { data, error } = await sb.from('push_subscriptions').select('user_key, subscription');
     if (error || !data) return Array.from(pushSubsCache.entries()).map(([k, v]) => ({ key: k, subscription: v }));
     pushSubsCache.clear();
@@ -45,10 +49,8 @@ async function pushSubsLoadAll(): Promise<Array<{ key: string; subscription: any
 async function pushSubsUpsert(userKey: string, subscription: any): Promise<void> {
   pushSubsCache.set(userKey, subscription);
   try {
-    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-    const key = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-    if (!url || !key) return;
-    const sb = createClient(url, key);
+    const sb = createSupabaseAdminClient();
+    if (!sb) return;
     await sb.from('push_subscriptions').upsert({
       user_key: userKey,
       subscription,
@@ -63,14 +65,85 @@ async function pushSubsUpsert(userKey: string, subscription: any): Promise<void>
 async function pushSubsDelete(userKey: string): Promise<void> {
   pushSubsCache.delete(userKey);
   try {
-    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-    const key = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-    if (!url || !key) return;
-    const sb = createClient(url, key);
+    const sb = createSupabaseAdminClient();
+    if (!sb) return;
     await sb.from('push_subscriptions').delete().eq('user_key', userKey);
   } catch (e: any) {
     console.warn('[Push] Falha ao remover subscription:', e?.message);
   }
+}
+
+const SERVER_PUSH_MISSIONS_CHANNEL = 'server-push-missions';
+let pushMissionsChannel: RealtimeChannel | null = null;
+let pushMissionsSupabase: SupabaseClient | null = null;
+
+function stopPushMissionsListener(): void {
+  if (pushMissionsChannel && pushMissionsSupabase) {
+    try {
+      pushMissionsSupabase.removeChannel(pushMissionsChannel);
+      console.log('[Push] Canal Realtime encerrado');
+    } catch (e: any) {
+      console.warn('[Push] Falha ao encerrar canal Realtime:', e?.message);
+    }
+  }
+  pushMissionsChannel = null;
+  pushMissionsSupabase = null;
+}
+
+async function notifyPushForNewMission(mission: any): Promise<void> {
+  if (!mission) return;
+
+  const osId = mission.id || 'N/A';
+  const client = mission.client || 'N/A';
+  const origin = mission.origin || 'N/A';
+  const destination = mission.destination || 'N/A';
+  const provider = mission.provider || 'N/A';
+  const isAccident = (mission.current_location || '').includes('ACIDENTE');
+
+  const title = isAccident
+    ? `🚨 ACIDENTE - OS Nº ${osId} - ${client}`
+    : `OS - Criada Nº ${osId} - Cliente: ${client}`;
+  const body = `Origem: ${origin} → Destino: ${destination}\nFornecedor: ${provider}`;
+
+  const subs = await pushSubsLoadAll();
+  if (subs.length > 0) {
+    const pushPayload = JSON.stringify({ title, body, tag: `mission-${osId}`, icon: '/favicon.png' });
+    for (const { key, subscription } of subs) {
+      try {
+        await webpush.sendNotification(subscription, pushPayload);
+      } catch (err: any) {
+        if (err.statusCode === 410 || err.statusCode === 404) {
+          await pushSubsDelete(key);
+        }
+      }
+    }
+    console.log(`[Push] Notificação enviada para ${subs.length} dispositivos: OS ${osId}`);
+  }
+}
+
+function startPushMissionsListener(supabase: SupabaseClient): void {
+  stopPushMissionsListener();
+  pushMissionsSupabase = supabase;
+
+  pushMissionsChannel = supabase
+    .channel(SERVER_PUSH_MISSIONS_CHANNEL)
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'missions'
+    }, async (payload: any) => {
+      await notifyPushForNewMission(payload.new);
+    })
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('[Push] Escutando novas OS para push notifications');
+      }
+    });
+}
+
+/** Encerra listeners Realtime do servidor (SIGINT/SIGTERM ou hot-reload). */
+export function cleanupRealtimeListeners(): void {
+  stopPushMissionsListener();
 }
 
 const verificationCodes = new Map<string, { code: string; expiresAt: number; email: string }>();
@@ -128,9 +201,8 @@ async function resolvePrincipal(token: string): Promise<ResolvedPrincipal | null
   if (!userId) return null;
 
   try {
-    const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-    const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-    const sb = createClient(sbUrl, sbKey);
+    const sb = createSupabaseAdminClient();
+    if (!sb) return null;
     const { data } = await sb.from('system_users').select('id, name, email, status, client_id, permissions, profiles:profile_id ( name, permissions )').eq('id', userId).single();
     if (!data || data.status !== 'Ativo') return null;
     const profilePerms: string[] = Array.isArray((data.profiles as any)?.permissions) ? (data.profiles as any).permissions : [];
@@ -382,9 +454,8 @@ export async function registerRoutes(
 
   app.post('/api/recalculate-all', requireAuth, requireRole('diretoria', 'administrador', 'ceo', 'financeiro'), async (req: Request, res: Response) => {
     try {
-      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-      const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-      const sb = createClient(sbUrl, sbKey);
+      const sb = createSupabaseAdminClient();
+      if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
 
       let allMissions: any[] = [];
       let from = 0;
@@ -485,9 +556,8 @@ export async function registerRoutes(
   app.post('/api/missions/:id/cancel-missing-info-email', requireAuth, async (req: Request, res: Response) => {
     try {
       const missionId = req.params.id;
-      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-      const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-      const sb = createClient(sbUrl, sbKey);
+      const sb = createSupabaseAdminClient();
+      if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
 
       const { data: mission } = await sb.from('missions').select('*').eq('id', missionId).single();
       if (!mission) return res.status(404).json({ error: 'Missão não encontrada' });
@@ -593,9 +663,8 @@ export async function registerRoutes(
         return res.status(400).json({ error: 'correctName (string) e variations (string[]) são obrigatórios' });
       }
 
-      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-      const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-      const sb = createClient(sbUrl, sbKey);
+      const sb = createSupabaseAdminClient();
+      if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
 
       const tables = [
         { table: 'missions', column: 'client' },
@@ -963,10 +1032,8 @@ export async function registerRoutes(
       const { clientName, message, imageBase64 } = req.body || {};
       if (!clientName || !message) return res.status(400).json({ error: 'clientName e message são obrigatórios' });
 
-      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-      const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-      if (!sbUrl || !sbKey) return res.status(503).json({ error: 'Supabase não configurado' });
-      const sb = createClient(sbUrl, sbKey);
+      const sb = createSupabaseAdminClient();
+      if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
 
       // Isolamento de cliente: match EXATO (name OU trading_name), nunca ILIKE.
       let { data: rows } = await sb.from('clients')
@@ -1041,10 +1108,7 @@ export async function registerRoutes(
     }
   });
 
-  const supabase = createClient(
-    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
-    process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
-  );
+  const supabase = createSupabaseAdminClient() ?? createClient(getSupabaseUrl(), getSupabaseAnonKey());
 
   (async () => {
     const realtimeTables = [
@@ -1099,48 +1163,24 @@ export async function registerRoutes(
     return { email, data: provData };
   }
 
-  // Supabase Realtime listener for push notifications
-  const supabaseForPush = supabase;
+  if (isLongRunningHost) {
+    startPushMissionsListener(supabase);
+  } else {
+    console.log('[Push] Vercel — push de novas OS via webhook Supabase (/api/webhooks/mission-created).');
+  }
 
-  supabaseForPush
-    .channel('server-push-missions')
-    .on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'missions'
-    }, async (payload: any) => {
-      const mission = payload.new;
-      if (!mission) return;
-
-      const osId = mission.id || 'N/A';
-      const client = mission.client || 'N/A';
-      const origin = mission.origin || 'N/A';
-      const destination = mission.destination || 'N/A';
-      const provider = mission.provider || 'N/A';
-      const isAccident = (mission.current_location || '').includes('ACIDENTE');
-
-      const title = isAccident
-        ? `🚨 ACIDENTE - OS Nº ${osId} - ${client}`
-        : `OS - Criada Nº ${osId} - Cliente: ${client}`;
-      const body = `Origem: ${origin} → Destino: ${destination}\nFornecedor: ${provider}`;
-
-      const subs = await pushSubsLoadAll();
-      if (subs.length > 0) {
-        const pushPayload = JSON.stringify({ title, body, tag: `mission-${osId}`, icon: '/favicon.png' });
-        for (const { key, subscription } of subs) {
-          try {
-            await webpush.sendNotification(subscription, pushPayload);
-          } catch (err: any) {
-            if (err.statusCode === 410 || err.statusCode === 404) {
-              await pushSubsDelete(key);
-            }
-          }
-        }
-        console.log(`[Push] Notificação enviada para ${subs.length} dispositivos: OS ${osId}`);
-      }
-
-    })
-    .subscribe();
+  app.post('/api/webhooks/mission-created', async (req: Request, res: Response) => {
+    if (!verifyWebhookSecret(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const mission = (req.body as any)?.record ?? (req.body as any)?.new ?? req.body;
+    try {
+      await notifyPushForNewMission(mission);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   // ── Email API Endpoints ──
   app.post("/api/email/test", requireAuth, async (req: Request, res: Response) => {
@@ -1858,8 +1898,8 @@ export async function registerRoutes(
   // Lidos exclusivamente do ambiente — não use fallback hardcoded.
   // Se faltarem, os endpoints que dependem dessas constantes responderão erro
   // (preferível a expor chaves no código).
-  const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-  const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+  const SUPABASE_URL = getSupabaseUrl();
+  const SUPABASE_ANON_KEY = getSupabaseAnonKey();
   const supabaseAdmin = supabase;
 
   const { error: colCheck } = await supabaseAdmin.from('missions').select('billing_release').limit(1);
@@ -3468,10 +3508,13 @@ export async function registerRoutes(
   };
 
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-  setTimeout(() => {
+  registerMaintenanceTick(checkAndRunCleanup);
+  if (isLongRunningHost) {
+    setTimeout(() => {
       checkAndRunCleanup();
       setInterval(checkAndRunCleanup, ONE_DAY_MS);
-  }, 5 * 60 * 1000);
+    }, 5 * 60 * 1000);
+  }
 
   // ===== Limpeza MENSAL automática de system_logs (ruído de heartbeat/login/logout) =====
   // Mantém o banco enxuto e o egresso saudável sem precisar lembrar de rodar SQL manual.
@@ -3563,10 +3606,13 @@ export async function registerRoutes(
 
   // Roda 7 minutos depois do start (escalonado da limpeza trimestral pra não sobrecarregar boot)
   // e depois a cada 24h verifica se já passou 1 mês.
-  setTimeout(() => {
+  registerMaintenanceTick(checkAndRunMonthlyCleanup);
+  if (isLongRunningHost) {
+    setTimeout(() => {
       checkAndRunMonthlyCleanup();
       setInterval(checkAndRunMonthlyCleanup, ONE_DAY_MS);
-  }, 7 * 60 * 1000);
+    }, 7 * 60 * 1000);
+  }
 
   // Endpoint manual pra forçar a limpeza mensal (útil pra testes/diretoria)
   app.post('/api/admin/run-monthly-logs-cleanup', async (_req: Request, res: Response) => {
@@ -3799,8 +3845,9 @@ export async function registerRoutes(
 
   app.post("/api/migrations/provider-ops-columns", async (_req: Request, res: Response) => {
     try {
-      const sbUrl = 'https://ajhmmjuewdsukecaimik.supabase.co';
-      const sbKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NDE3NTEyMSwiZXhwIjoyMDc5NzUxMTIxfQ.0Ql-GHBBFrNbe7iYOwoPx8cZJBhDHMfClaF3AGfIkYA';
+      const sbUrl = getSupabaseUrl();
+      const sbKey = getSupabaseServiceRoleKey();
+      if (!sbUrl || !sbKey) return res.status(503).json({ error: 'Supabase não configurado' });
       const headers = { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
 
       const columns = [
@@ -3842,8 +3889,9 @@ export async function registerRoutes(
 
   app.post("/api/missions/fix-ceva-logitech-values", async (_req: Request, res: Response) => {
     try {
-      const sbUrl = 'https://ajhmmjuewdsukecaimik.supabase.co';
-      const sbKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
+      const sbUrl = getSupabaseUrl();
+      const sbKey = getSupabaseServerKey();
+      if (!sbUrl || !sbKey) return res.status(503).json({ error: 'Supabase não configurado' });
       const headers = { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
 
       const missionsRes = await fetch(`${sbUrl}/rest/v1/missions?client=ilike.*CEVA*&or=(destination.ilike.*200KM*,destination.ilike.*200%20KM*,destination.ilike.*LOGITECH*)&select=id,revenue_value,cost_value,toll_value,destination,origin,client,provider,status`, { headers });
@@ -4698,10 +4746,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       type InvoiceRow = typeof all[number];
       let inv: InvoiceRow | undefined = all.find(i => i.id === invoiceId);
       if (!inv) {
-        const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-        const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-        if (sbUrl && sbKey) {
-          const sb = createClient(sbUrl, sbKey);
+        const sb = createSupabaseAdminClient();
+        if (sb) {
           const { data } = await sb.from('financial_invoices')
             .select('id, client, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_provider, plugnotas_invoice_id, plugnotas_protocol, number, amount, due_date, description, notes')
             .eq('id', invoiceId).maybeSingle();
@@ -4723,10 +4769,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         if (!inv.asaas_payment_id) return res.status(400).json({ error: 'Fatura sem ID Asaas — não pode reemitir.' });
       }
       if (inv.nf_retry_paused) {
-        const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-        const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-        if (sbUrl && sbKey) {
-          const sb = createClient(sbUrl, sbKey);
+        const sb = createSupabaseAdminClient();
+        if (sb) {
           await sb.from('financial_invoices').update({ nf_retry_paused: false }).eq('id', inv.id);
           inv.nf_retry_paused = false;
         }
@@ -4740,10 +4784,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   app.get("/api/nf/summary", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
     try {
-      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-      const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-      if (!sbUrl || !sbKey) return res.json({ success: true, summary: [], stuck: [], byProvider: {} });
-      const sb = createClient(sbUrl, sbKey);
+      const sb = createSupabaseAdminClient();
+      if (!sb) return res.json({ success: true, summary: [], stuck: [], byProvider: {} });
       const { data, error } = await sb.from('financial_invoices')
         .select('id, client, number, amount, issuer_company, nf_status, nf_retry_at, created_at, asaas_payment_id, nf_provider, plugnotas_invoice_id');
       if (error) return res.status(500).json({ error: error.message });
@@ -4848,10 +4890,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   app.post("/api/nf/reissue-plugnotas/:invoiceId", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const { invoiceId } = req.params;
-      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-      const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-      if (!sbUrl || !sbKey) return res.status(500).json({ error: 'Supabase indisponível' });
-      const sb = createClient(sbUrl, sbKey);
+      const sb = createSupabaseAdminClient();
+      if (!sb) return res.status(500).json({ error: 'Supabase indisponível' });
       const { data: inv } = await sb.from('financial_invoices').select('*').eq('id', invoiceId).maybeSingle();
       if (!inv) return res.status(404).json({ error: 'Fatura não encontrada' });
 
@@ -4971,10 +5011,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       }
       const body = req.body || {};
       console.log('[PlugNotas Webhook] payload recebido:', JSON.stringify(body).substring(0, 500));
-      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-      const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-      if (!sbUrl || !sbKey) return res.json({ ok: true, ignored: 'no-supabase' });
-      const sb = createClient(sbUrl, sbKey);
+      const sb = createSupabaseAdminClient();
+      if (!sb) return res.json({ ok: true, ignored: 'no-supabase' });
 
       const items: any[] = Array.isArray(body) ? body : Array.isArray(body?.documents) ? body.documents : [body];
       const { mapPlugNotasStatusToNf, extractPlugNotasError, getNfsePdfUrl: plugGetPdfUrlWh } = await import('./plugnotasService');
@@ -6078,9 +6116,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         return res.status(400).json({ error: 'missionIds array required' });
       }
 
-      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-      const sb = createClient(supabaseUrl, supabaseKey);
+      const sb = createSupabaseAdminClient();
+      if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
 
       const { data: clientTables } = await sb.from('client_price_tables').select('*');
       const { data: providerTables } = await sb.from('provider_cost_tables').select('*');
@@ -6220,8 +6257,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       if (!items || !Array.isArray(items)) {
         return res.status(400).json({ error: 'items array required [{id, revenue, cost}]' });
       }
-      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+      const supabaseUrl = getSupabaseUrl();
+      const supabaseKey = getSupabaseServerKey();
+      if (!supabaseUrl || !supabaseKey) return res.status(503).json({ error: 'Supabase não configurado' });
       const results: any[] = [];
       let restored = 0;
       for (const item of items) {
@@ -6846,20 +6884,21 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   }
 
-  function scheduleDailyLegalReport() {
-    const checkInterval = async () => {
-      const cfg = (await loadDailyReportsSettings()).legal;
-      const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
-        executeDailyLegalReport();
-      }
-    };
+  async function tickDailyLegalReport() {
+    const cfg = (await loadDailyReportsSettings()).legal;
+    const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
+      await executeDailyLegalReport();
+    }
+  }
 
-    setInterval(checkInterval, 60 * 1000);
+  function scheduleDailyLegalReport() {
+    setInterval(() => { tickDailyLegalReport().catch(() => {}); }, 60 * 1000);
     console.log('[Jurídico Diário] Agendamento ativo — horário e destinatários lidos de system_settings (daily_reports.legal).');
   }
 
-  scheduleDailyLegalReport();
+  registerScheduledTick(tickDailyLegalReport);
+  if (isLongRunningHost) scheduleDailyLegalReport();
 
   app.post("/api/datajud/relatorio-diario", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
     let override: string | null = null;
@@ -6952,20 +6991,21 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   }
 
-  function scheduleDailyPendingReport() {
-    const checkInterval = async () => {
-      const cfg = (await loadDailyReportsSettings()).pending;
-      const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
-        executeDailyPendingReport();
-      }
-    };
+  async function tickDailyPendingReport() {
+    const cfg = (await loadDailyReportsSettings()).pending;
+    const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
+      await executeDailyPendingReport();
+    }
+  }
 
-    setInterval(checkInterval, 60 * 1000);
+  function scheduleDailyPendingReport() {
+    setInterval(() => { tickDailyPendingReport().catch(() => {}); }, 60 * 1000);
     console.log(`[Pendências Diário] Agendamento ativo — horário e destinatários lidos de system_settings (daily_reports.pending).`);
   }
 
-  scheduleDailyPendingReport();
+  registerScheduledTick(tickDailyPendingReport);
+  if (isLongRunningHost) scheduleDailyPendingReport();
 
   app.post("/api/relatorio-pendencias", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
     let override: string | null = null;
@@ -7045,20 +7085,21 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   }
 
-  function scheduleDailyApprovalReport() {
-    const checkInterval = async () => {
-      const cfg = (await loadDailyReportsSettings()).approval;
-      const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
-        executeDailyApprovalReport();
-      }
-    };
+  async function tickDailyApprovalReport() {
+    const cfg = (await loadDailyReportsSettings()).approval;
+    const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
+      await executeDailyApprovalReport();
+    }
+  }
 
-    setInterval(checkInterval, 60 * 1000);
+  function scheduleDailyApprovalReport() {
+    setInterval(() => { tickDailyApprovalReport().catch(() => {}); }, 60 * 1000);
     console.log(`[Aprovações Diário] Agendamento ativo — horário e destinatários lidos de system_settings (daily_reports.approval).`);
   }
 
-  scheduleDailyApprovalReport();
+  registerScheduledTick(tickDailyApprovalReport);
+  if (isLongRunningHost) scheduleDailyApprovalReport();
 
   app.post("/api/relatorio-aprovacoes", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
     let override: string | null = null;
@@ -7152,20 +7193,21 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   }
 
-  function scheduleDailyMissingInfoReport() {
-    const checkInterval = async () => {
-      const cfg = (await loadDailyReportsSettings()).missingInfo;
-      const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
-        executeDailyMissingInfoReport();
-      }
-    };
+  async function tickDailyMissingInfoReport() {
+    const cfg = (await loadDailyReportsSettings()).missingInfo;
+    const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
+      await executeDailyMissingInfoReport();
+    }
+  }
 
-    setInterval(checkInterval, 60 * 1000);
+  function scheduleDailyMissingInfoReport() {
+    setInterval(() => { tickDailyMissingInfoReport().catch(() => {}); }, 60 * 1000);
     console.log(`[Dados Faltantes Diário] Agendamento ativo — horário e destinatários lidos de system_settings (daily_reports.missingInfo).`);
   }
 
-  scheduleDailyMissingInfoReport();
+  registerScheduledTick(tickDailyMissingInfoReport);
+  if (isLongRunningHost) scheduleDailyMissingInfoReport();
 
   app.post("/api/relatorio-dados-faltantes", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
     let override: string | null = null;
@@ -7607,10 +7649,13 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   }
 
   // Agendamento: roda 12 minutos após o boot e depois a cada 6 horas.
-  setTimeout(() => {
-    runManualOverrideAlertCheck().then(r => console.log('[OverrideAlert] Primeira execução:', JSON.stringify(r))).catch(() => {});
-    setInterval(() => { runManualOverrideAlertCheck().catch(() => {}); }, 6 * 60 * 60 * 1000);
-  }, 12 * 60 * 1000);
+  registerMaintenanceTick(runManualOverrideAlertCheck);
+  if (isLongRunningHost) {
+    setTimeout(() => {
+      runManualOverrideAlertCheck().then(r => console.log('[OverrideAlert] Primeira execução:', JSON.stringify(r))).catch(() => {});
+      setInterval(() => { runManualOverrideAlertCheck().catch(() => {}); }, 6 * 60 * 60 * 1000);
+    }, 12 * 60 * 1000);
+  }
 
   app.post('/api/admin/run-manual-override-alert', requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (_req: Request, res: Response) => {
     const r = await runManualOverrideAlertCheck();
@@ -8212,19 +8257,21 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   }
 
+  async function tickDailyStuckNfReport() {
+    const cfg = (await loadDailyReportsSettings()).stuckNf;
+    const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
+      await executeDailyStuckNfReport();
+    }
+  }
+
   function scheduleDailyStuckNfReport() {
-    const checkInterval = async () => {
-      const cfg = (await loadDailyReportsSettings()).stuckNf;
-      const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
-        executeDailyStuckNfReport();
-      }
-    };
-    setInterval(checkInterval, 60 * 1000);
+    setInterval(() => { tickDailyStuckNfReport().catch(() => {}); }, 60 * 1000);
     console.log(`[NF Travadas Diário] Agendamento ativo — horário e destinatários lidos de system_settings (daily_reports.stuckNf).`);
   }
 
-  scheduleDailyStuckNfReport();
+  registerScheduledTick(tickDailyStuckNfReport);
+  if (isLongRunningHost) scheduleDailyStuckNfReport();
 
   app.post("/api/relatorio-nfs-travadas", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     let override: string | null = null;
@@ -8447,6 +8494,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar histórico de execuções' });
     }
   });
+
+  registerCronRoutes(app);
 
   return httpServer;
 }

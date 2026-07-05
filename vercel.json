@@ -2,10 +2,45 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist/public",
   "installCommand": "npm ci --no-audit --no-fund",
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 300
+    }
+  },
   "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
     {
       "source": "/(.*)",
       "destination": "/index.html"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/minute",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/nf-retry",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/email-queue",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/dhl",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/zapi",
+      "schedule": "*/3 * * * *"
+    },
+    {
+      "path": "/api/cron/maintenance",
+      "schedule": "0 */6 * * *"
     }
   ],
   "headers": [

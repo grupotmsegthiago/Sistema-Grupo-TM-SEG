@@ -1,4 +1,5 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { queryClient } from './queryClient';
 
@@ -59,12 +60,18 @@ const TABLE_TO_QUERY_KEYS: Record<TableName, string[][]> = {
 };
 
 const DEBOUNCE_MS = 500;
+const RECONNECT_MS = 3000;
+const GLOBAL_REALTIME_CHANNEL = 'global-realtime-sync';
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const pendingTablesRef = useRef<Set<TableName>>(new Set());
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     const flush = () => {
       const tables = new Set(pendingTablesRef.current);
       pendingTablesRef.current.clear();
@@ -91,33 +98,57 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    const handleChange = (table: TableName) => {
+    const handleChange = (table: TableName, payload?: unknown) => {
+      window.dispatchEvent(new CustomEvent(`supabase:${table}:realtime`, { detail: payload }));
       pendingTablesRef.current.add(table);
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(flush, DEBOUNCE_MS);
     };
 
-    let channel = supabase.channel('global-realtime-sync');
+    const setupGlobalChannel = () => {
+      if (cancelled) return;
 
-    for (const table of REALTIME_TABLES) {
-      channel = channel.on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table },
-        () => handleChange(table)
-      );
-    }
-
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('[Realtime] Conectado — sincronização ativa em', REALTIME_TABLES.length, 'tabelas');
-      } else if (status === 'CHANNEL_ERROR') {
-        console.error('[Realtime] Erro no canal — tentando reconectar...');
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
-    });
+
+      let channel = supabase.channel(GLOBAL_REALTIME_CHANNEL);
+
+      for (const table of REALTIME_TABLES) {
+        channel = channel.on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table },
+          (payload) => handleChange(table, payload)
+        );
+      }
+
+      channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[Realtime] Conectado — sincronização ativa em', REALTIME_TABLES.length, 'tabelas');
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`[Realtime] Canal global ${status} — reconectando em ${RECONNECT_MS / 1000}s...`);
+          if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = setTimeout(() => {
+            reconnectTimerRef.current = null;
+            if (!cancelled) setupGlobalChannel();
+          }, RECONNECT_MS);
+        }
+      });
+
+      channelRef.current = channel;
+    };
+
+    setupGlobalChannel();
 
     return () => {
+      cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);
-      supabase.removeChannel(channel);
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, []);
 

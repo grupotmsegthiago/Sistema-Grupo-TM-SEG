@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { createSupabaseAdminClient } from './supabaseConfig';
 
 const SANDBOX_URL = 'https://api.sandbox.plugnotas.com.br';
 const PRODUCTION_URL = 'https://api.plugnotas.com.br';
@@ -176,10 +177,8 @@ interface ClientNfData {
 async function lookupClientForNf(cnpj?: string | null, name?: string | null): Promise<ClientNfData | null> {
   if (!cnpj && !name) return null;
   try {
-    const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-    const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-    if (!sbUrl || !sbKey) return null;
-    const sb = createClient(sbUrl, sbKey);
+    const sb = createSupabaseAdminClient();
+    if (!sb) return null;
     let row: any = null;
     if (cnpj) {
       const cleanCnpj = cnpj.replace(/\D/g, '');

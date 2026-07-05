@@ -1,11 +1,17 @@
 import { jsPDF } from 'jspdf';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
+import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from './supabaseConfig';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+let supabaseClient: SupabaseClient | null = null;
+
+function getSupabase(): SupabaseClient {
+  if (!supabaseClient) {
+    supabaseClient = createSupabaseAdminClient() ?? createClient(getSupabaseUrl(), getSupabaseAnonKey());
+  }
+  return supabaseClient;
+}
 
 interface ReportData {
   mission: any;
@@ -34,6 +40,7 @@ function formatDateTimeBR(dateString?: string): string {
 
 export async function generateMissionReportPDF(missionId: string): Promise<Buffer | null> {
   try {
+    const supabase = getSupabase();
     const { data: mission } = await supabase.from('missions').select('*').eq('id', missionId).single();
     if (!mission) return null;
 

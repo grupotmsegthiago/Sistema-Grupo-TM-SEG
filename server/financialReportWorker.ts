@@ -1,7 +1,7 @@
-import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createSupabaseAdminClient } from './supabaseConfig';
 import { computeCanonicalRevenueCost } from '../lib/missionFinancialsCanonical';
 import { MissionStatus, type ClientPriceTable, type ProviderCostTable, type Client } from '../types';
 
@@ -21,10 +21,9 @@ const transporter = nodemailer.createTransport({
 });
 
 function getSupabase() {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-  const key = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-  if (!url || !key) throw new Error('Supabase env vars não configuradas');
-  return createClient(url, key);
+  const sb = createSupabaseAdminClient();
+  if (!sb) throw new Error('Supabase env vars não configuradas');
+  return sb;
 }
 
 function brl(n: number): string {
@@ -493,6 +492,10 @@ function tick() {
   } catch (e: any) {
     console.error('[FinReport] tick erro:', e.message);
   }
+}
+
+export function runFinancialReportTick(): void {
+  tick();
 }
 
 export function startFinancialReportWorker() {

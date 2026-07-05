@@ -1,133 +1,59 @@
 import "./loadEnv";
-import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes";
+import { createServer } from "http";
+import { getApp, log } from "./createApp";
+import { cleanupRealtimeListeners } from "./routes";
 import { startNfRetryWorker } from "./nfRetryWorker";
 import { startFinancialReportWorker } from "./financialReportWorker";
 import { startDhlIntakeExpiryWorker } from "./dhlSupplierIntake";
 import { startClientEmailQueueWorker } from "./clientEmailQueueWorker";
 import { startZapiWatchdog } from "./zapiWatchdog";
-import { serveStatic } from "./static";
-import { createServer } from "http";
-
-const app = express();
-const httpServer = createServer(app);
-
-declare module "http" {
-  interface IncomingMessage {
-    rawBody: unknown;
-  }
-}
-
-app.use(
-  express.json({
-    limit: '50mb',
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
-    },
-  }),
-);
-
-app.use(express.urlencoded({ extended: false }));
-
-// CACHE GLOBAL OFF para todas as rotas /api/*.
-// Garante que NENHUMA resposta de API fica cacheada em browser, proxy ou CDN.
-// Crítico para que o frontend sempre veja dados atualizados.
-app.use('/api', (_req, res, next) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  res.setHeader('Surrogate-Control', 'no-store');
-  next();
-});
-
-// Desabilita ETag global (evita 304 Not Modified servindo conteúdo velho)
-app.disable('etag');
-
-export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-
-  console.log(`${formattedTime} [${source}] ${message}`);
-}
-
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      log(logLine);
-    }
-  });
-
-  next();
-});
+import { isLongRunningHost } from "./runtime";
 
 (async () => {
-  await registerRoutes(httpServer, app);
+  const app = await getApp();
+  const httpServer = createServer(app);
 
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+  if (!isLongRunningHost) {
+    log("Modo Vercel — workers via Cron Jobs; servidor HTTP local não iniciado.");
+    return;
+  }
 
-    console.error("Internal Server Error:", err);
-
-    if (res.headersSent) {
-      return next(err);
-    }
-
-    return res.status(status).json({ message });
-  });
-
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
-  } else {
+  if (process.env.NODE_ENV !== "production") {
     try {
       const { setupVite } = await import("./vite");
       await setupVite(httpServer, app);
-    } catch (e) {
+    } catch {
       console.warn("Vite not available, falling back to static serving");
+      const { serveStatic } = await import("./static");
       serveStatic(app);
     }
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
   const onListen = () => {
-      log(`serving on port ${port}`);
-      try { startNfRetryWorker(); } catch (e: any) { log(`NF retry worker falhou ao iniciar: ${e.message}`); }
-      try { startFinancialReportWorker(); } catch (e: any) { log(`Financial report worker falhou ao iniciar: ${e.message}`); }
-      try { startDhlIntakeExpiryWorker(); } catch (e: any) { log(`DHL intake expiry worker falhou ao iniciar: ${e.message}`); }
-      try { startClientEmailQueueWorker(); } catch (e: any) { log(`Client email queue worker falhou ao iniciar: ${e.message}`); }
-      try { startZapiWatchdog(); } catch (e: any) { log(`Z-API vigia falhou ao iniciar: ${e.message}`); }
+    log(`serving on port ${port}`);
+    try { startNfRetryWorker(); } catch (e: any) { log(`NF retry worker falhou ao iniciar: ${e.message}`); }
+    try { startFinancialReportWorker(); } catch (e: any) { log(`Financial report worker falhou ao iniciar: ${e.message}`); }
+    try { startDhlIntakeExpiryWorker(); } catch (e: any) { log(`DHL intake expiry worker falhou ao iniciar: ${e.message}`); }
+    try { startClientEmailQueueWorker(); } catch (e: any) { log(`Client email queue worker falhou ao iniciar: ${e.message}`); }
+    try { startZapiWatchdog(); } catch (e: any) { log(`Z-API vigia falhou ao iniciar: ${e.message}`); }
   };
-  // reusePort só funciona no Linux (Replit); no Windows causa ENOTSUP
+
   if (process.platform === "win32") {
     httpServer.listen(port, "0.0.0.0", onListen);
   } else {
     httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, onListen);
   }
+
+  const shutdown = (signal: string) => {
+    log(`${signal} — encerrando listeners Realtime...`);
+    cleanupRealtimeListeners();
+    httpServer.close(() => {
+      log("Servidor HTTP encerrado");
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
 })();

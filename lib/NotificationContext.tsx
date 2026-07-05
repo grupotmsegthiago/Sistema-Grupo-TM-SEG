@@ -67,6 +67,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // Dedup: guarda chaves recentes por 8s para evitar toasts duplicados
   // (Realtime do Supabase pode reentregar a mesma linha em reconnect/retry).
   const recentKeysRef = useRef<Map<string, number>>(new Map());
+  const isSoundEnabledRef = useRef(isSoundEnabled);
+  isSoundEnabledRef.current = isSoundEnabled;
 
   useEffect(() => {
     const storedSound = localStorage.getItem('notificationSound');
@@ -105,14 +107,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         return next.length > MAX_VISIBLE_TOASTS ? next.slice(next.length - MAX_VISIBLE_TOASTS) : next;
       });
 
-      if (isSoundEnabled) playBeep();
+      if (isSoundEnabledRef.current) playBeep();
 
       setTimeout(() => {
         setNotifications((prev) => prev.filter((n) => n.id !== id));
       }, TOAST_TTL_MS);
     },
-    [isSoundEnabled]
+    []
   );
+
+  const showNotificationRef = useRef(showNotification);
+  showNotificationRef.current = showNotification;
 
   const requestPermission = useCallback(async () => {
     if (!('Notification' in window)) return;
@@ -156,7 +161,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
           // Dedup pelo id do log para evitar repetição em reconnect
           const dedupKey = log.id ? `log-${log.id}` : `${log.action_type}-${log.entity}-${log.created_at}`;
-          showNotification(title, message, type, dedupKey);
+          showNotificationRef.current(title, message, type, dedupKey);
         }
       )
       .subscribe((status: string) => {
@@ -168,7 +173,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
 
     return () => { supabase.removeChannel(channel); };
-  }, [showNotification]);
+  }, []);
 
   return (
     <NotificationContext.Provider value={{ showNotification, isSoundEnabled, toggleSound, requestPermission, permission }}>

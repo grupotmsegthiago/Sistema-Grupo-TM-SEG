@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, MissionLog, User as UserType, Agent, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { authFetch } from '../lib/authFetch';
-import { supabase } from '../lib/supabase';
+import { supabase, MISSION_UPDATES_BROADCAST_CHANNEL } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import { logAction } from '../lib/logger';
 import { 
@@ -229,13 +229,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     return () => { ro.disconnect(); window.removeEventListener('resize', update); };
   }, [isLoading]);
 
-  // Relógio para projeções
+  // Relógio para projeções financeiras (hora extra, margem em OS em andamento).
   const [currentTime, setCurrentTime] = useState(new Date());
-
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 300000);
-    return () => clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('userData');
@@ -421,7 +416,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const auxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressFullRefetchUntilRef = useRef<number>(0);
-  const hasSubscribedOnceRef = useRef<boolean>(false);
+  const broadcastChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const broadcastReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Garante que o fetch inicial concluiu antes de aceitar patches direcionados
   // (evita race de startup com eventos chegando antes do snapshot inicial).
   const initialFetchDoneRef = useRef<boolean>(false);
@@ -613,25 +609,43 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     await Promise.all([fetchApprovalLogs(), fetchEvidenceLogs(), fetchMissionLogs(), fetchDhlIntakes(), fetchTollConfirmations()]);
   }, []);
 
+  const fetchMissionsRef = useRef<(silent?: boolean) => Promise<void>>(async () => {});
+  const showNotificationRef = useRef(showNotification);
+  showNotificationRef.current = showNotification;
+  const mapRawMissionRowRef = useRef(mapRawMissionRow);
+  mapRawMissionRowRef.current = mapRawMissionRow;
+  const refreshDerivedDataRef = useRef(refreshDerivedData);
+  refreshDerivedDataRef.current = refreshDerivedData;
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
+  const isCommercialRef = useRef(isCommercial);
+  isCommercialRef.current = isCommercial;
+  const isRestrictedClientViewRef = useRef(isRestrictedClientView);
+  isRestrictedClientViewRef.current = isRestrictedClientView;
+
   const fetchMissions = useCallback(async (silent = false) => {
+    const user = currentUserRef.current;
+    const commercial = isCommercialRef.current;
+    const restrictedClientView = isRestrictedClientViewRef.current;
+
     if (!silent) setIsLoading(true);
     setDbStatus(null);
     try {
       // 1) Resolve o escopo de cliente (visão restrita por cliente / comercial).
       //    Guardamos o escopo num ref para reaproveitar na busca server-side.
       let scope: { type: 'all' | 'eq' | 'in' | 'empty'; value?: string; values?: string[] } = { type: 'all' };
-      if (currentUser?.clientId) {
-          const { data: clientData } = await supabase.from('clients').select('name').eq('id', currentUser.clientId).single();
+      if (user?.clientId) {
+          const { data: clientData } = await supabase.from('clients').select('name').eq('id', user.clientId).single();
           if (clientData) { scope = { type: 'eq', value: clientData.name }; setResolvedClientName(clientData.name); }
           else { setAllMissions([]); allMissionsRef.current = []; setIsLoading(false); return; }
-      } else if (isCommercial || (currentUser?.permissions && currentUser.permissions.some(p => p.startsWith('client_view:')))) {
-          const allowedClientIds = currentUser?.permissions?.filter(p => p.startsWith('client_view:')).map(p => p.split(':')[1]) || [];
+      } else if (commercial || (user?.permissions && user.permissions.some(p => p.startsWith('client_view:')))) {
+          const allowedClientIds = user?.permissions?.filter(p => p.startsWith('client_view:')).map(p => p.split(':')[1]) || [];
 
           let clientNamesQuery = supabase.from('clients').select('name');
           if (allowedClientIds.length > 0) {
-              clientNamesQuery = clientNamesQuery.or(`created_by.eq."${currentUser?.name}",id.in.(${allowedClientIds.join(',')})`);
+              clientNamesQuery = clientNamesQuery.or(`created_by.eq."${user?.name}",id.in.(${allowedClientIds.join(',')})`);
           } else {
-              clientNamesQuery = clientNamesQuery.eq('created_by', currentUser?.name);
+              clientNamesQuery = clientNamesQuery.eq('created_by', user?.name);
           }
 
           const { data: myClients } = await clientNamesQuery;
@@ -686,7 +700,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           // conjunto de UM cliente já é pequeno e os painéis do cliente
           // (ClientExecutiveDashboard/Relatórios/Comitê) têm seu PRÓPRIO
           // seletor de período. Carrega tudo do cliente para não quebrá-los.
-          if (isRestrictedClientView) {
+          if (restrictedClientView) {
               return fetchAllPagesOf(buildBase());
           }
           if (vp === 'HISTORY') {
@@ -786,7 +800,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             // consiga enriquecer uma única OS sem recarregar a lista inteira.
             lookupMapsRef.current = { vehicleMap, clientVehicleMap, clientNameMap, providerNameMap };
 
-            const mapped: Mission[] = missionsData.map((m: any) => mapRawMissionRow(m));
+            const mapped: Mission[] = missionsData.map((m: any) => mapRawMissionRowRef.current(m));
             // Sincroniza o ref no mesmo tick para que callbacks realtime leiam o
             // snapshot recém-carregado sem esperar o useEffect de espelhamento.
             allMissionsRef.current = mapped;
@@ -817,34 +831,44 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
             // Selos/contadores (aprovação, pedágio, evidência, logs, DHL) —
             // reconciliados em segundo plano; já têm versionamento próprio.
-            void refreshDerivedData(mapped).catch(err => console.error('Erro ao carregar dados derivados:', err));
+            void refreshDerivedDataRef.current(mapped).catch(err => console.error('Erro ao carregar dados derivados:', err));
         }
       } catch (error: any) {
         console.error('Error fetching missions:', error.message || error);
         setDbStatus('error');
-        showNotification('Erro', `Falha ao carregar monitoramento`, 'error');
+        showNotificationRef.current('Erro', `Falha ao carregar monitoramento`, 'error');
       } finally {
         if (!silent) setIsLoading(false);
       }
-    }, [showNotification, currentUser, isCommercial, isRestrictedClientView, mapRawMissionRow, refreshDerivedData]);
+    }, []);
+
+    fetchMissionsRef.current = fetchMissions;
 
     // Mantém allMissionsRef sincronizado para leitura síncrona em callbacks.
     useEffect(() => { allMissionsRef.current = allMissions; }, [allMissions]);
+
+    const scheduleFullRefetchRef = useRef<() => void>(() => {});
+    const scheduleAuxRefreshRef = useRef<() => void>(() => {});
 
     // Recarga total com debounce (coalesce de rajadas de eventos realtime e do
     // evento global 'refreshMissions').
     const scheduleFullRefetch = useCallback(() => {
       if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
-      refetchTimerRef.current = setTimeout(() => { fetchMissions(true); }, 800);
-    }, [fetchMissions]);
+      refetchTimerRef.current = setTimeout(() => { fetchMissionsRef.current(true); }, 800);
+    }, []);
 
     // Reconcilia apenas os dados derivados (contadores + mapas auxiliares) a
     // partir da lista atual, sem rebaixar missions/clientes/tabelas. Usado após
     // patch direcionado e quando o evento global chega durante a supressão.
     const scheduleAuxRefresh = useCallback(() => {
       if (auxTimerRef.current) clearTimeout(auxTimerRef.current);
-      auxTimerRef.current = setTimeout(() => { refreshDerivedData(allMissionsRef.current); }, 900);
-    }, [refreshDerivedData]);
+      auxTimerRef.current = setTimeout(() => { refreshDerivedDataRef.current(allMissionsRef.current); }, 900);
+    }, []);
+
+    scheduleFullRefetchRef.current = scheduleFullRefetch;
+    scheduleAuxRefreshRef.current = scheduleAuxRefresh;
+
+    const applyRealtimeMissionChangeRef = useRef<(payload: any) => void>(() => {});
 
     // Aplica uma mudança realtime de UMA OS direto no estado, sem rebaixar a
     // lista inteira. Em qualquer incerteza (mapa de lookup ausente, payload
@@ -854,10 +878,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         // Se o snapshot inicial ainda não concluiu, um patch direcionado poderia
         // ser sobrescrito pelo fetch em andamento (race de startup). Faz recarga
         // total com debounce, que roda após o fetch inicial assentar.
-        if (!initialFetchDoneRef.current) { scheduleFullRefetch(); return; }
+        if (!initialFetchDoneRef.current) { scheduleFullRefetchRef.current(); return; }
         if (payload.eventType === 'DELETE') {
           const oldId = payload.old?.id;
-          if (oldId == null) { scheduleFullRefetch(); return; }
+          if (oldId == null) { scheduleFullRefetchRef.current(); return; }
           setAllMissions(prev => {
             const next = prev.filter(m => String(m.id) !== String(oldId));
             allMissionsRef.current = next;
@@ -865,11 +889,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           });
           setSearchMatches(prev => prev.some(m => String(m.id) === String(oldId)) ? prev.filter(m => String(m.id) !== String(oldId)) : prev);
           suppressFullRefetchUntilRef.current = Date.now() + 1500;
-          scheduleAuxRefresh();
+          scheduleAuxRefreshRef.current();
           return;
         }
         const row = payload.new;
-        if (!row || row.id == null) { scheduleFullRefetch(); return; }
+        if (!row || row.id == null) { scheduleFullRefetchRef.current(); return; }
         // Mantém os resultados de busca (searchMatches) sincronizados: uma OS
         // pode estar visível via busca/filtro de OS por estar FORA do período
         // carregado em allMissions (ex.: OS Concluída antiga). O patch
@@ -881,14 +905,14 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           const sidx = prev.findIndex(m => String(m.id) === String(row.id));
           if (sidx === -1) return prev;
           const snext = prev.slice();
-          snext[sidx] = mapRawMissionRow(row);
+          snext[sidx] = mapRawMissionRowRef.current(row);
           return snext;
         });
         const maps = lookupMapsRef.current;
         const needsVehicle = !!row.vehicle_id && !maps.vehicleMap[row.vehicle_id];
         const needsClientVehicle = !!row.client_vehicle && !maps.clientVehicleMap[row.client_vehicle?.toString()];
-        if (needsVehicle || needsClientVehicle) { scheduleFullRefetch(); return; }
-        const mappedRow = mapRawMissionRow(row);
+        if (needsVehicle || needsClientVehicle) { scheduleFullRefetchRef.current(); return; }
+        const mappedRow = mapRawMissionRowRef.current(row);
         setAllMissions(prev => {
           const idx = prev.findIndex(m => String(m.id) === String(row.id));
           const next = idx === -1 ? [mappedRow, ...prev] : prev.slice();
@@ -903,72 +927,66 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         suppressFullRefetchUntilRef.current = Date.now() + 1500;
         // Reconcilia mapas auxiliares (aprovação/evidência/logs/DHL/pedágio) da
         // OS afetada de forma leve, sem rebaixar a lista inteira.
-        scheduleAuxRefresh();
+        scheduleAuxRefreshRef.current();
       } catch {
-        scheduleFullRefetch();
+        scheduleFullRefetchRef.current();
       }
-    }, [mapRawMissionRow, scheduleFullRefetch, scheduleAuxRefresh]);
+    }, []);
+
+    applyRealtimeMissionChangeRef.current = applyRealtimeMissionChange;
+
+    const userSessionKey = currentUser
+      ? `${currentUser.name ?? ''}:${currentUser.clientId ?? ''}:${isRestrictedClientView}:${isCommercial}`
+      : '';
 
     useEffect(() => {
-      if (currentUser) {
-          fetchMissions();
-          // Patch direcionado só para usuários com acesso total (listas grandes).
-          // Para visão restrita de cliente / comercial, o conjunto é pequeno e
-          // filtrado no servidor — uma recarga total com debounce é mais segura.
-          const canPatchInPlace = !isRestrictedClientView && !isCommercial;
-          // Recalcula custo/receita das OS automaticamente ao abrir a tela
-          // (silencioso, não altera tabelas de preço — apenas reflete tabelas atuais nas OS sem edição manual/aprovação).
-          const role = (currentUser.role || '').toLowerCase();
-          if (!isRestrictedClientView && ['diretoria', 'administrador', 'ceo', 'financeiro'].includes(role)) {
+      if (!userSessionKey) return;
+
+      let cancelled = false;
+
+      fetchMissionsRef.current();
+          const role = (currentUserRef.current?.role || '').toLowerCase();
+          if (!isRestrictedClientViewRef.current && ['diretoria', 'administrador', 'ceo', 'financeiro'].includes(role)) {
               authFetch('/api/recalculate-all', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
                   .then(r => r.json())
-                  .then(data => { if (data?.success && data.updated > 0) fetchMissions(true); })
+                  .then(data => { if (data?.success && data.updated > 0) fetchMissionsRef.current(true); })
                   .catch(() => { /* silencioso */ });
           }
-          const channel = supabase
-            .channel('missions-changes')
-            .on(
-              'postgres_changes',
-              { event: '*', schema: 'public', table: 'missions' },
-              (payload: any) => {
-                if (payload.eventType === 'INSERT' && payload.new && payload.new.status === 'Solicitada' && !isRestrictedClientView) {
-                  const location = payload.new.current_location || '';
-                  const isAccident = location.includes('ACIDENTE');
-                  showNotification(
-                    isAccident ? 'ACIDENTE - Nova Solicitação!' : 'Nova Solicitação de Cliente!',
-                    `OS ${payload.new.id} - ${payload.new.client}`,
-                    isAccident ? 'error' : 'info'
-                  );
-                }
-                // Em vez de rebaixar TODAS as OS a cada evento, aplica a mudança
-                // de uma única OS direto no estado (acesso total) ou recarrega
-                // com debounce (visão restrita/comercial).
-                if (canPatchInPlace) applyRealtimeMissionChange(payload);
-                else scheduleFullRefetch();
-              }
-            )
-            .subscribe((status: string) => {
-              if (status === 'SUBSCRIBED') {
-                // Não recarregar no primeiro SUBSCRIBED: o efeito já fez o fetch
-                // inicial. Em reconexões posteriores, ressincroniza com debounce.
-                if (hasSubscribedOnceRef.current) {
-                  console.log('[Realtime] Canal missions reconectado — ressincronizando...');
-                  scheduleFullRefetch();
-                  setSearchRefreshTick(t => t + 1);
-                } else {
-                  hasSubscribedOnceRef.current = true;
-                }
-              }
-              if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-                console.warn('[Realtime] Canal missions desconectado — tentando reconexão em 3s...');
-                setTimeout(() => { channel.subscribe(); }, 3000);
-              }
-            });
-          const broadcastChannel = supabase
-            .channel('mission-updates')
+
+          const handleMissionsRealtime = (event: Event) => {
+            const payload = (event as CustomEvent).detail as { eventType?: string; new?: any; old?: any } | undefined;
+            if (!payload) {
+              scheduleFullRefetchRef.current();
+              return;
+            }
+            const restricted = isRestrictedClientViewRef.current;
+            const commercial = isCommercialRef.current;
+            const canPatchInPlace = !restricted && !commercial;
+            if (payload.eventType === 'INSERT' && payload.new && payload.new.status === 'Solicitada' && !restricted) {
+              const location = payload.new.current_location || '';
+              const isAccident = location.includes('ACIDENTE');
+              showNotificationRef.current(
+                isAccident ? 'ACIDENTE - Nova Solicitação!' : 'Nova Solicitação de Cliente!',
+                `OS ${payload.new.id} - ${payload.new.client}`,
+                isAccident ? 'error' : 'info'
+              );
+            }
+            if (canPatchInPlace) applyRealtimeMissionChangeRef.current(payload);
+            else scheduleFullRefetchRef.current();
+          };
+
+          const setupBroadcastChannel = () => {
+            if (cancelled) return;
+            if (broadcastChannelRef.current) {
+              supabase.removeChannel(broadcastChannelRef.current);
+              broadcastChannelRef.current = null;
+            }
+            const broadcastChannel = supabase
+            .channel(MISSION_UPDATES_BROADCAST_CHANNEL)
             .on('broadcast', { event: 'mission_updated' }, ({ payload }) => {
-              if (payload && payload.updatedBy !== currentUser.name) {
-                showNotification(
+              const userName = currentUserRef.current?.name;
+              if (payload && payload.updatedBy !== userName) {
+                showNotificationRef.current(
                   `OS ${payload.missionId} Atualizada`,
                   `${payload.changeType} — por ${payload.updatedBy}`,
                   'info'
@@ -978,39 +996,69 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             .subscribe((status: string) => {
               if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
                 console.warn('[Realtime] Canal broadcast desconectado — tentando reconexão em 3s...');
-                setTimeout(() => { broadcastChannel.subscribe(); }, 3000);
+                if (broadcastReconnectTimerRef.current) clearTimeout(broadcastReconnectTimerRef.current);
+                broadcastReconnectTimerRef.current = setTimeout(() => {
+                  if (!cancelled) setupBroadcastChannel();
+                }, 3000);
               }
             });
-          const interval = setInterval(() => fetchMissions(true), 300000);
-          // O evento global 'refreshMissions' também dispara para mudanças em
-          // missions (via RealtimeProvider). Se um patch direcionado já tratou a
-          // mudança há instantes, ignora para não fazer recarga total redundante.
+            broadcastChannelRef.current = broadcastChannel;
+            return broadcastChannel;
+          };
+
+          setupBroadcastChannel();
+          window.addEventListener('supabase:missions:realtime', handleMissionsRealtime);
           const handleExternalRefresh = () => {
-            // Resultados de busca (searchMatches) também precisam refletir a
-            // mudança — inclusive na visão restrita/comercial, que não usa patch
-            // direcionado. Re-dispara a busca ativa (no-op se não há termo).
             setSearchRefreshTick(t => t + 1);
             if (Date.now() < suppressFullRefetchUntilRef.current) {
-              // Um patch direcionado já atualizou as OS há instantes. O evento
-              // global pode ter vindo de mudanças correlatas (DHL, pedágio,
-              // evidência, logs): reconcilia só os mapas derivados, sem rebaixar
-              // a lista inteira.
-              scheduleAuxRefresh();
+              scheduleAuxRefreshRef.current();
               return;
             }
-            scheduleFullRefetch();
+            scheduleFullRefetchRef.current();
           };
           window.addEventListener('refreshMissions', handleExternalRefresh);
           return () => {
-            supabase.removeChannel(channel);
-            supabase.removeChannel(broadcastChannel);
-            clearInterval(interval);
+            cancelled = true;
+            if (broadcastReconnectTimerRef.current) clearTimeout(broadcastReconnectTimerRef.current);
+            if (broadcastChannelRef.current) supabase.removeChannel(broadcastChannelRef.current);
+            broadcastChannelRef.current = null;
+            window.removeEventListener('supabase:missions:realtime', handleMissionsRealtime);
             if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
             if (auxTimerRef.current) clearTimeout(auxTimerRef.current);
             window.removeEventListener('refreshMissions', handleExternalRefresh);
           };
-      }
-    }, [fetchMissions, currentUser, showNotification, isRestrictedClientView, isCommercial, applyRealtimeMissionChange, scheduleFullRefetch, scheduleAuxRefresh]);
+    }, [userSessionKey]);
+
+    // A cada 5 min: recalcula hora extra na tela (todos os usuários).
+    // Diretoria/financeiro: também persiste valores no banco quando mudam (faturamento).
+    const OVERTIME_SYNC_MS = 5 * 60 * 1000;
+    useEffect(() => {
+      if (!userSessionKey) return;
+
+      const canPersistBillingRecalc = () => {
+        const role = (currentUserRef.current?.role || '').toLowerCase();
+        return !isRestrictedClientViewRef.current
+          && ['diretoria', 'administrador', 'ceo', 'financeiro'].includes(role);
+      };
+
+      const syncOvertimeAndBilling = async () => {
+        setCurrentTime(new Date());
+        if (!canPersistBillingRecalc()) return;
+        try {
+          const r = await authFetch('/api/recalculate-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          const data = await r.json();
+          if (data?.success && data.updated > 0) {
+            fetchMissionsRef.current(true);
+          }
+        } catch { /* silencioso */ }
+      };
+
+      const timer = setInterval(syncOvertimeAndBilling, OVERTIME_SYNC_MS);
+      return () => clearInterval(timer);
+    }, [userSessionKey]);
 
     // Recarrega do servidor SÓ o período/datas selecionados quando o usuário
     // troca de período. Pula o mount (o efeito de assinatura acima já fez o
@@ -1019,8 +1067,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     useEffect(() => {
       if (!currentUser) return;
       if (periodChangeInitRef.current) { periodChangeInitRef.current = false; return; }
-      fetchMissions();
-    }, [viewPeriod, customStartDate, customEndDate, currentUser, fetchMissions]);
+      fetchMissionsRef.current();
+    }, [viewPeriod, customStartDate, customEndDate, currentUser]);
 
     // Busca server-side por termo (OS, cliente, fornecedor, motorista, SE),
     // com debounce. Mantém a busca encontrando OS fora do período carregado,

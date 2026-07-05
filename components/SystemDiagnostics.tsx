@@ -7,6 +7,13 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const SUPABASE_WS_URL = SUPABASE_URL && SUPABASE_ANON_KEY
+  ? `wss://${new URL(SUPABASE_URL).host}/realtime/v1/websocket?apikey=${encodeURIComponent(SUPABASE_ANON_KEY)}&vsn=1.0.0`
+  : '';
+const SUPABASE_REST_URL = SUPABASE_URL ? `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/` : '';
+
 interface DiagResult {
     name: string;
     category: string;
@@ -285,9 +292,10 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
                 const wsSupport = 'WebSocket' in window;
                 const sseSupport = 'EventSource' in window;
                 if (!wsSupport) return { status: 'error', detail: 'WebSocket não suportado — comunicação em tempo real indisponível' };
+                if (!SUPABASE_WS_URL) return { status: 'warning', detail: 'VITE_SUPABASE_URL/ANON_KEY não configurados' };
                 const lat = await measureLatency(async () => {
                     await new Promise<void>((resolve, reject) => {
-                        const ws = new WebSocket('wss://ajhmmjuewdsukecaimik.supabase.co/realtime/v1/websocket?apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ5MTY2ODAsImV4cCI6MjA2MDQ5MjY4MH0.zNHBe-JOyJHIBOOMYBnYi_nAjd3U0iqr6_p0pJqNiYc&vsn=1.0.0');
+                        const ws = new WebSocket(SUPABASE_WS_URL);
                         ws.onopen = () => { ws.close(); resolve(); };
                         ws.onerror = () => { resolve(); };
                         setTimeout(() => { try { ws.close(); } catch {} resolve(); }, 5000);
@@ -302,13 +310,13 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
         await runTest(14, async () => {
             try {
                 const corsTargets = [
-                    { name: 'Supabase', url: 'https://ajhmmjuewdsukecaimik.supabase.co/rest/v1/', mode: 'cors' as RequestMode },
+                    { name: 'Supabase', url: SUPABASE_REST_URL || `${SUPABASE_URL}/rest/v1/`, mode: 'cors' as RequestMode },
                     { name: 'Backend', url: '/api/health', mode: 'cors' as RequestMode },
                 ];
                 const issues: string[] = [];
                 for (const target of corsTargets) {
                     try {
-                        const res = await fetch(target.url, { mode: target.mode, cache: 'no-store', headers: target.name === 'Supabase' ? { 'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ5MTY2ODAsImV4cCI6MjA2MDQ5MjY4MH0.zNHBe-JOyJHIBOOMYBnYi_nAjd3U0iqr6_p0pJqNiYc' } : {} });
+                        const res = await fetch(target.url, { mode: target.mode, cache: 'no-store', headers: target.name === 'Supabase' && SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : {} });
                     } catch {
                         issues.push(target.name);
                     }
@@ -323,7 +331,7 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
                         const retryIssues: string[] = [];
                         for (const target of corsTargets) {
                             try {
-                                await fetch(target.url, { mode: target.mode, cache: 'no-store', headers: target.name === 'Supabase' ? { 'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ5MTY2ODAsImV4cCI6MjA2MDQ5MjY4MH0.zNHBe-JOyJHIBOOMYBnYi_nAjd3U0iqr6_p0pJqNiYc' } : {} });
+                                await fetch(target.url, { mode: target.mode, cache: 'no-store', headers: target.name === 'Supabase' && SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : {} });
                             } catch { retryIssues.push(target.name); }
                         }
                         if (retryIssues.length === 0) return 'Bloqueios resolvidos após limpar cache!';

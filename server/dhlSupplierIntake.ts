@@ -29,10 +29,12 @@ import {
 const DHL_CLIENT_NAME = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
 const OPERACIONAL_EMAIL = 'operacional@grupotmseg.com.br';
 
+import { createSupabaseAdminClient } from './supabaseConfig';
+
 function getSb(): SupabaseClient {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-  return createClient(url, key);
+  const sb = createSupabaseAdminClient();
+  if (!sb) throw new Error('Supabase não configurado');
+  return sb;
 }
 
 /** Marca como 'cancelado' todos os intakes pendentes/preenchidos de uma missão.
@@ -1064,18 +1066,20 @@ async function checkAndSendDhlOperationalFollowups(): Promise<void> {
   console.log(`[DHL Followup Worker] follow-up enviado para ${claimedIntakes.length}/${elegiveis.length} intake(s) (claimed).`);
 }
 
+export async function runDhlWorkerTick(): Promise<void> {
+  await checkAndNotifyExpiredDhlIntakes();
+  await checkAndSendDhlIntakeReminders();
+  await checkAndSendDhlOperationalFollowups();
+}
+
 export function startDhlIntakeExpiryWorker(): void {
   if (_dhlExpiryWorkerTimer) return;
   // Primeira execução com um pequeno delay para não competir com o boot.
   setTimeout(() => {
-    checkAndNotifyExpiredDhlIntakes().catch(e => console.error('[DHL Expiry Worker] tick inicial falhou:', e?.message));
-    checkAndSendDhlIntakeReminders().catch(e => console.error('[DHL Reminder Worker] tick inicial falhou:', e?.message));
-    checkAndSendDhlOperationalFollowups().catch(e => console.error('[DHL Followup Worker] tick inicial falhou:', e?.message));
+    runDhlWorkerTick().catch(e => console.error('[DHL Worker] tick inicial falhou:', e?.message));
   }, 30 * 1000);
   _dhlExpiryWorkerTimer = setInterval(() => {
-    checkAndNotifyExpiredDhlIntakes().catch(e => console.error('[DHL Expiry Worker] tick falhou:', e?.message));
-    checkAndSendDhlIntakeReminders().catch(e => console.error('[DHL Reminder Worker] tick falhou:', e?.message));
-    checkAndSendDhlOperationalFollowups().catch(e => console.error('[DHL Followup Worker] tick falhou:', e?.message));
+    runDhlWorkerTick().catch(e => console.error('[DHL Worker] tick falhou:', e?.message));
   }, DHL_EXPIRY_CHECK_INTERVAL_MS);
   console.log(`[DHL Expiry Worker] iniciado (intervalo ${Math.round(DHL_EXPIRY_CHECK_INTERVAL_MS / 60000)} min).`);
 }

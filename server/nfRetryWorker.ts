@@ -1,5 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
 import { scheduleInvoice, getInvoiceByPayment, getInvoice, cancelInvoice } from './asaasService';
+import { createSupabaseAdminClient } from './supabaseConfig';
 import {
   consultNfseByIntegration,
   consultNfseById,
@@ -68,10 +68,7 @@ function extractAsaasErrorText(invoice: any): string {
 }
 
 function getSupabase() {
-  const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-  const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-  if (!sbUrl || !sbKey) return null;
-  return createClient(sbUrl, sbKey);
+  return createSupabaseAdminClient();
 }
 
 interface PendingInvoice {
