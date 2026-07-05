@@ -263,6 +263,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     return nameLower.includes('daniel') || nameLower.includes('michelle') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago moreira') || roleLower === 'controller';
   }, [currentUser]);
 
+  const canSeeGoalFinancials = useMemo(() => {
+    return isDirector || canSeeFinancials;
+  }, [isDirector, canSeeFinancials]);
+
   const canSeeGoalThermometers = useMemo(() => {
     if (!currentUser) return false;
     const roleLower = (currentUser.role || '').toLowerCase();
@@ -1862,6 +1866,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    dailyGoalOverride={35000}
                    monthlyGoalOverride={35000 * 20}
                    historyKey="meta-geral"
+                   canSeeMonetary={canSeeGoalFinancials}
                 />
              </div>
              <div className="w-full sm:w-[320px] sm:shrink-0 flex overflow-visible">
@@ -1884,6 +1889,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    titleSuffix="DHL"
                    accentClass="from-yellow-400 to-red-600"
                    historyKey="meta-dhl"
+                   canSeeMonetary={canSeeGoalFinancials}
                 />
              </div>
              <div className="w-full sm:w-[320px] sm:shrink-0 flex overflow-visible">
@@ -1902,6 +1908,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    titleSuffix="TOTAL"
                    accentClass="from-blue-500 to-indigo-700"
                    historyKey="meta-total"
+                   canSeeMonetary={canSeeGoalFinancials}
                 />
              </div>
              </>
