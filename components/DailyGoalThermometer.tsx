@@ -255,11 +255,11 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         return 'text-slate-500';
     };
 
-    const CM_BUTTON_LABEL = 'Central de Monitoramento - CM';
+    const REFRESH_BUTTON_LABEL = 'Monitoramento 24h';
 
     const refreshButtonTitle = lastDataUpdatedAt
-        ? `${CM_BUTTON_LABEL} — Última atualização: ${formatDateTimeAuditBR(lastDataUpdatedAt)}`
-        : `${CM_BUTTON_LABEL} — Aguardando primeira sincronização`;
+        ? `${REFRESH_BUTTON_LABEL} — Última atualização: ${formatDateTimeAuditBR(lastDataUpdatedAt)}`
+        : `${REFRESH_BUTTON_LABEL} — Aguardando primeira sincronização`;
 
     const suffix = titleSuffix ? ` ${titleSuffix}` : '';
     const labelText = viewPeriod === 'TODAY' ? `Meta Agendada${suffix} (Hoje)` :
@@ -328,7 +328,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                                     data-testid="button-refresh-goal"
                                 >
                                     <RefreshCw size={13} className={`shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
-                                    <span className="text-[7px] font-black uppercase leading-tight">{CM_BUTTON_LABEL}</span>
+                                    <span className="text-[7px] font-black uppercase leading-tight">{REFRESH_BUTTON_LABEL}</span>
                                 </button>
                                 {showHistoryPopover && (
                                     <div
