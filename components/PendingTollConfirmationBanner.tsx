@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { AlertTriangle, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
 
+import { formatDateBR } from '../lib/dateUtils';
+
 interface PendingMission {
     id: string;
     client: string | null;
@@ -15,10 +17,7 @@ interface Props {
     onOpenMission?: (missionId: string) => void;
 }
 
-const formatDate = (d: string | null) => {
-    if (!d) return '—';
-    try { return new Date(d).toLocaleDateString('pt-BR'); } catch { return '—'; }
-};
+const formatDate = (d: string | null) => formatDateBR(d);
 
 const PendingTollConfirmationBanner: React.FC<Props> = ({ onOpenMission }) => {
     const [missions, setMissions] = useState<PendingMission[]>([]);

@@ -1,3 +1,4 @@
+import { formatDateBR } from '../lib/dateUtils';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Mission } from '../types';
 import { supabase } from '../lib/supabase';
@@ -246,7 +247,7 @@ const TollConfirmationDialog: React.FC<Props> = ({ isOpen, mission, initialValue
                                         <tbody>
                                             {history.map((h, i) => (
                                                 <tr key={h.missionId + i} className="border-t border-gray-100">
-                                                    <td className="px-2 py-1 text-gray-700">{h.date ? new Date(h.date).toLocaleDateString('pt-BR') : '—'}</td>
+                                                    <td className="px-2 py-1 text-gray-700">{h.date ? formatDateBR(h.date) : '—'}</td>
                                                     <td className="px-2 py-1 text-gray-700 truncate max-w-[120px]">{h.user || '—'}</td>
                                                     <td className="px-2 py-1 text-right font-bold text-green-700">R$ {formatBRL(h.toll)}</td>
                                                 </tr>

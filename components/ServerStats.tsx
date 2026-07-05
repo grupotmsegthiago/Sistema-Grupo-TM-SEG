@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useCallback } from 'react';
+import { formatDateTimeBR } from '../lib/dateUtils';
 import { authFetch } from '../lib/authFetch';
 import { 
   Activity, Database, Zap, Clock, Server, RefreshCw, Truck, Play, 
@@ -570,7 +569,7 @@ const ServerStats: React.FC = () => {
                                         })}
                                     </div>
                                     {dbCapacity.updated_at && (
-                                        <p className="text-[8px] text-slate-600 mt-2 text-right">Atualizado: {new Date(dbCapacity.updated_at).toLocaleString('pt-BR')}</p>
+                                        <p className="text-[8px] text-slate-600 mt-2 text-right">Atualizado: {formatDateTimeBR(dbCapacity.updated_at)}</p>
                                     )}
                                 </div>
                             )}

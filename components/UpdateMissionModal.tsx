@@ -1,3 +1,4 @@
+import { formatDateBR } from '../lib/dateUtils';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB } from '../types';
@@ -3878,7 +3879,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
               kind={pendingFinalizeConfirm.kind}
               osLabel={mission?.id ? `OS ${mission.id}` : 'OS'}
               providerName={editData.provider || ''}
-              dateLabel={editData.startDate ? new Date(`${editData.startDate}T00:00:00`).toLocaleDateString('pt-BR') : ''}
+              dateLabel={editData.startDate ? formatDateBR(`${editData.startDate}T12:00:00`) : ''}
               isDhl={finalizeData.isDhl}
               destinationAddress={finalizeData.destinationAddress}
               mapLink={editData.mapLink || ''}

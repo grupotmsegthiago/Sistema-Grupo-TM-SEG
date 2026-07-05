@@ -1,3 +1,4 @@
+import { formatDateTimeBR } from '../lib/dateUtils';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
@@ -795,7 +796,7 @@ const ClientContractTab: React.FC<Props> = ({
                         <p className="text-xs text-gray-500 mt-2 italic">"{c.notes}"</p>
                       )}
                       <p className="text-[9px] text-gray-300 mt-2">
-                        Criado por {c.created_by} em {new Date(c.created_at).toLocaleString('pt-BR')}
+                        Criado por {c.created_by} em {formatDateTimeBR(c.created_at)}
                       </p>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">

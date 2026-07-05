@@ -22,6 +22,7 @@ import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import { formatProviderName } from '../lib/utils';
+import { formatDateTimeBR, formatNowDateTimeBR, formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import html2canvas from 'html2canvas';
 import FilterableSelect, { type FilterableSelectOption } from './FilterableSelect';
 
@@ -174,7 +175,7 @@ const BillingPeriodOverridePanel: React.FC<{
                             )}
                         </div>
                         <p className="text-[10px] text-gray-400 mt-1">
-                            Se preenchido, o boletim usa esta data em vez da data da viagem ({mission.start_time ? new Date(mission.start_time).toLocaleDateString('pt-BR') : '-'}).
+                            Se preenchido, o boletim usa esta data em vez da data da viagem ({mission.start_time ? formatDateBR(mission.start_time) : '-'}).
                         </p>
                     </div>
                     <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -1214,8 +1215,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       if (details.costTotal != null) setControllerSavedCost(details.costTotal);
                       if (details.revenueTotal != null) setControllerSavedRevenue(details.revenueTotal);
 
-                      const savedDate = new Date(adj.created_at);
-                      const dateStr = savedDate.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' ' + savedDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+                      const dateStr = formatDateTimeBR(adj.created_at);
                       setSavedByInfo(`${adj.user_name} (${dateStr})`);
                       setControllerSaveInfo({ user: adj.user_name, date: dateStr });
                   } catch (e) { console.error('Erro ao restaurar ajustes:', e); }
@@ -1797,7 +1797,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   last_update: new Date().toISOString()
               };
               if (r2(revServiceOnly) === 0) {
-                  recalcPayload.revenue_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Recalculado pelo sistema (valor zero)`;
+                  recalcPayload.revenue_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] Recalculado pelo sistema (valor zero)`;
               } else {
                   recalcPayload.revenue_edit_reason = '';
               }
@@ -1868,7 +1868,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   last_update: new Date().toISOString()
               };
               if (r2(costServiceOnly) === 0) {
-                  recalcProvPayload.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Recalculado pelo sistema (valor zero)`;
+                  recalcProvPayload.cost_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] Recalculado pelo sistema (valor zero)`;
               } else {
                   recalcProvPayload.cost_edit_reason = '';
               }
@@ -2275,19 +2275,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           const reasonFields: any = {};
           if (revDivergent && revenueEditReason.trim()) {
-              reasonFields.revenue_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${revenueEditReason.trim()}`;
+              reasonFields.revenue_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] ${revenueEditReason.trim()}`;
           }
           if ((costDivergent || autoEngineDivergent) && costEditReason.trim()) {
               const prefix = autoEngineDivergent
-                  ? `[${userName} - ${new Date().toLocaleString('pt-BR')}] [DIVERGENTE DO MOTOR AUTO R$ ${(autoEngineSuggestedCost || 0).toFixed(2)}]`
-                  : `[${userName} - ${new Date().toLocaleString('pt-BR')}]`;
+                  ? `[${userName} - ${formatNowDateTimeBR()}] [DIVERGENTE DO MOTOR AUTO R$ ${(autoEngineSuggestedCost || 0).toFixed(2)}]`
+                  : `[${userName} - ${formatNowDateTimeBR()}]`;
               reasonFields.cost_edit_reason = `${prefix} ${costEditReason.trim()}`;
           }
           if (r2(revServiceOnly) === 0 && !reasonFields.revenue_edit_reason) {
-              reasonFields.revenue_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Valor zero confirmado`;
+              reasonFields.revenue_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] Valor zero confirmado`;
           }
           if (r2(costServiceOnly) === 0 && !reasonFields.cost_edit_reason) {
-              reasonFields.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Valor zero confirmado`;
+              reasonFields.cost_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] Valor zero confirmado`;
           }
           // Proteção contra reversão pelo /api/recalculate-all:
           // QUALQUER clique em "Salvar Ajustes" trava a OS contra o
@@ -2296,7 +2296,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // foi um salvamento manual confirmado pelo usuário. Isso garante
           // que abrir a tela de Missões novamente NUNCA reverta o valor.
           const brl = (v: number) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-          const stamp = `[${userName} - ${new Date().toLocaleString('pt-BR')}]`;
+          const stamp = `[${userName} - ${formatNowDateTimeBR()}]`;
           if (!reasonFields.revenue_edit_reason) {
               reasonFields.revenue_edit_reason = revDivergent
                   ? `${stamp} Edição manual (sem justificativa) — receita salva: ${brl(r2(revServiceOnly))} | sistema sugeria: ${brl(r2(calcRevTotal))}`
@@ -2575,8 +2575,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
 
-          const now = new Date();
-          const dateStr = now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+          const dateStr = formatNowDateTimeBR();
           const verifiedLabel = `${userName} (${dateStr})`;
           setSavedByInfo(verifiedLabel);
 
@@ -3305,7 +3304,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                     <div className="bg-amber-500 p-2 rounded-lg"><Lock size={20} className="text-white" /></div>
                     <div>
                         <p className="font-bold text-amber-900 text-sm">Dados Congelados</p>
-                        <p className="text-amber-700 text-xs">Aprovado por <strong>{mission.snapshot_approved_by}</strong> em {mission.snapshot_approved_at ? new Date(mission.snapshot_approved_at).toLocaleString('pt-BR') : '-'}</p>
+                        <p className="text-amber-700 text-xs">Aprovado por <strong>{mission.snapshot_approved_by}</strong> em {mission.snapshot_approved_at ? formatDateTimeBR(mission.snapshot_approved_at) : '-'}</p>
                         <p className="text-amber-600 text-[10px] mt-0.5">Valores finais salvos. O boletim de medição reflete esta versão aprovada.</p>
                     </div>
                 </div>
@@ -3318,7 +3317,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             {unlockOverride ? 'Edição desbloqueada temporariamente' : 'Faturamento bloqueado para edição'}
                         </p>
                         <p className={`text-xs ${unlockOverride ? 'text-orange-700' : 'text-blue-700'}`}>
-                            {mission.billing_verified_by ? <>Salvo por <strong>{mission.billing_verified_by}</strong>{mission.billing_verified_at ? ` em ${new Date(mission.billing_verified_at).toLocaleString('pt-BR')}` : ''}.</> : 'Valores aprovados/salvos.'} {unlockOverride ? 'Os campos estão editáveis somente nesta sessão.' : 'Os campos só podem ser alterados após destravar.'}
+                            {mission.billing_verified_by ? <>Salvo por <strong>{mission.billing_verified_by}</strong>{mission.billing_verified_at ? ` em ${formatDateTimeBR(mission.billing_verified_at)}` : ''}.</> : 'Valores aprovados/salvos.'} {unlockOverride ? 'Os campos estão editáveis somente nesta sessão.' : 'Os campos só podem ser alterados após destravar.'}
                         </p>
                     </div>
                     {canUnlockBilling && (
@@ -3380,7 +3379,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         {lm.is_same_os && !isParent && <span className="text-[8px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase shrink-0">MESMA OS</span>}
                                         <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase shrink-0 ${lm.status === 'Concluída' ? 'bg-green-100 text-green-700' : lm.status === 'Cancelada' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{lm.status}</span>
                                     </div>
-                                    <span className="text-gray-400 text-[9px] shrink-0">{lm.start_time ? new Date(lm.start_time).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo'}) : '--:--'}</span>
+                                    <span className="text-gray-400 text-[9px] shrink-0">{lm.start_time ? formatTimeBR(lm.start_time, '--:--') : '--:--'}</span>
                                 </div>
                                 <div className="flex items-center justify-between mt-1.5">
                                     <span className="text-gray-500 truncate text-[10px]" title={`${lm.origin} → ${lm.destination}`}>
@@ -3576,7 +3575,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             {isEditingOpsData && canEditOpsData ? (
                                                 <input type="datetime-local" value={editStartTime} onChange={e => setEditStartTime(e.target.value)} className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" data-testid="input-start-time" />
                                             ) : (
-                                                <p className="text-sm font-bold text-gray-700 font-mono">{mission.startTime ? new Date(mission.startTime).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '---'}</p>
+                                                <p className="text-sm font-bold text-gray-700 font-mono">{mission.startTime ? formatDateTimeBR(mission.startTime) : '---'}</p>
                                             )}
                                         </div>
                                         <div>
@@ -3592,7 +3591,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             {isEditingOpsData ? (
                                                 <input type="datetime-local" value={editEndTime} onChange={e => setEditEndTime(e.target.value)} className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" data-testid="input-end-time" />
                                             ) : (
-                                                <p className="text-sm font-bold text-gray-700 font-mono">{mission.endTime ? new Date(mission.endTime).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '---'}</p>
+                                                <p className="text-sm font-bold text-gray-700 font-mono">{mission.endTime ? formatDateTimeBR(mission.endTime) : '---'}</p>
                                             )}
                                         </div>
                                         <div>
@@ -3661,7 +3660,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             ) : (
                                                 <p className="text-sm font-bold text-gray-700 font-mono">{(() => {
                                                     const t = mission.provider_ops_edited && mission.provider_start_time ? mission.provider_start_time : mission.startTime;
-                                                    return t ? new Date(t).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '---';
+                                                    return t ? formatDateTimeBR(t) : '---';
                                                 })()}</p>
                                             )}
                                         </div>
@@ -3683,7 +3682,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             ) : (
                                                 <p className="text-sm font-bold text-gray-700 font-mono">{(() => {
                                                     const t = mission.provider_ops_edited && mission.provider_end_time ? mission.provider_end_time : mission.endTime;
-                                                    return t ? new Date(t).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '---';
+                                                    return t ? formatDateTimeBR(t) : '---';
                                                 })()}</p>
                                             )}
                                         </div>
@@ -4013,16 +4012,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         );
                                     }
 
-                                    const fmtDate = (iso?: string | null) => {
-                                        if (!iso) return '';
-                                        try {
-                                            return new Date(iso).toLocaleString('pt-BR', {
-                                                day: '2-digit', month: '2-digit', year: 'numeric',
-                                                hour: '2-digit', minute: '2-digit',
-                                                timeZone: 'America/Sao_Paulo',
-                                            });
-                                        } catch { return ''; }
-                                    };
+                                    const fmtDate = (iso?: string | null) => iso ? formatDateTimeBR(iso) : '';
 
                                     const tooltip = source
                                         ? `Sugestão veio da OS ${source.missionId || '(sem ID)'}`
@@ -4127,7 +4117,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                         {recent.map((rec, idx) => {
                                                             const chosenTable = clientTables.find(t => String(t.id) === String(rec.chosenTableId));
                                                             const tableLabel = chosenTable?.operation_type || `Tabela #${rec.chosenTableId}`;
-                                                            const when = rec.createdAt ? new Date(rec.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+                                                            const when = rec.createdAt ? formatDateTimeBR(rec.createdAt) : '—';
                                                             const route = (rec.originCity || rec.destCity)
                                                                 ? `${rec.originCity || '?'} → ${rec.destCity || '?'}`
                                                                 : 'Rota não informada';
@@ -5044,7 +5034,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 {log.stage === 'auditor' ? 'Auditor' : log.stage === 'financeiro' ? 'Financeiro' : log.stage === 'diretoria' ? 'Diretoria' : log.stage === 'controller' ? 'Controller' : log.stage}
                                             </span>
                                             <span className="text-[9px] text-gray-500 ml-1">({log.user})</span>
-                                            <p className="text-[8px] text-gray-400 font-mono">{new Date(log.date).toLocaleString('pt-BR')}</p>
+                                            <p className="text-[8px] text-gray-400 font-mono">{formatDateTimeBR(log.date)}</p>
                                         </div>
                                         <button
                                             onClick={async () => {
@@ -5191,7 +5181,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                             </span>
                                                             <span className="text-[10px] font-black text-gray-800 uppercase truncate">{h.user_name}</span>
                                                         </div>
-                                                        <span className="text-[9px] text-gray-500 font-mono shrink-0">{new Date(h.created_at).toLocaleString('pt-BR')}</span>
+                                                        <span className="text-[9px] text-gray-500 font-mono shrink-0">{formatDateTimeBR(h.created_at)}</span>
                                                     </div>
                                                     {h.source && (
                                                         <p className="text-[9px] text-slate-500 font-mono mb-1 truncate" title={h.source}>Origem: {h.source}</p>
@@ -5232,7 +5222,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <div key={i} className="bg-white px-3 py-2 rounded-lg border border-amber-200 shadow-sm" data-testid={`edit-history-${i}`}>
                                         <div className="flex items-center justify-between gap-2 mb-1">
                                             <span className="text-[10px] font-black text-gray-800 uppercase">{h.user}</span>
-                                            <span className="text-[9px] text-gray-500 font-mono">{new Date(h.date).toLocaleString('pt-BR')}</span>
+                                            <span className="text-[9px] text-gray-500 font-mono">{formatDateTimeBR(h.date)}</span>
                                         </div>
                                         {h.changes.length > 0 && (
                                             <ul className="text-[10px] text-gray-700 font-mono space-y-0.5 mb-1">

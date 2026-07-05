@@ -1,3 +1,4 @@
+import { formatDateTimeBR } from '../lib/dateUtils';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
@@ -695,7 +696,7 @@ const MaintenanceDashboard: React.FC = () => {
                             ) : (
                                 backups.map(b => (
                                     <tr key={b.id} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="px-6 py-4 text-xs font-bold text-gray-700">{new Date(b.created_at).toLocaleString('pt-BR')}</td>
+                                        <td className="px-6 py-4 text-xs font-bold text-gray-700">{formatDateTimeBR(b.created_at)}</td>
                                         <td className="px-6 py-4 text-xs font-black text-slate-500 uppercase">{b.created_by}</td>
                                         <td className="px-6 py-4 text-xs font-mono text-indigo-600 font-bold">{b.file_size}</td>
                                         <td className="px-6 py-4 text-xs font-bold text-gray-900">{b.record_count} registros</td>

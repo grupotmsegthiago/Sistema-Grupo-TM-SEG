@@ -1,3 +1,4 @@
+import { formatDateTimeBR } from '../lib/dateUtils';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, MissionLog, User as UserType, Agent, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { authFetch } from '../lib/authFetch';
@@ -1635,10 +1636,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         const citySplit = addressPart.split('-');
         const cityField = citySplit.length > 1 ? citySplit[citySplit.length-2].split(',').pop()?.trim() + ' - ' + citySplit[citySplit.length-1].trim() : addressPart;
         const isDHL = /DHL/i.test(mission.client || '');
-        const fmtTime = (iso?: string) => {
-            if (!iso) return '';
-            try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); } catch { return ''; }
-        };
+        const fmtTime = (iso?: string) => iso ? formatDateTimeBR(iso) : '';
         let dhlOriginAt = '', dhlInTransitAt = '', dhlCompletedAt = '';
         if (isDHL) {
             try {

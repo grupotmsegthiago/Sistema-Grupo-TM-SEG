@@ -1,3 +1,4 @@
+import { formatDateTimeBR } from '../lib/dateUtils';
 import { useEffect, useState, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import {
@@ -49,8 +50,7 @@ interface Props {
   canViewSnapshots?: boolean;
 }
 
-const fmt = (d: string | null | undefined) =>
-  d ? new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
+const fmt = (d: string | null | undefined) => formatDateTimeBR(d);
 
 // Formata datas no padrão brasileiro DD/MM/AAAA. Aceita ISO ("2031-07-13" ou
 // "2031-07-13T00:00:00Z"), "AAAA-MM-DD" puro e já-BR ("13/07/2031" passa direto).

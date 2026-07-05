@@ -1,3 +1,4 @@
+import { formatIsoDateBR, TMSEG_TIMEZONE } from '../lib/dateUtils';
 
 import React, { useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
@@ -17,8 +18,8 @@ const formatCurrency = (val: number | null | undefined) => {
 
 const FinancialDashboard: React.FC = () => {
   const [period, setPeriod] = useState<'MONTH' | 'YEAR' | 'ALL' | 'CUSTOM'>('MONTH');
-  const [customStartDate, setCustomStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [customEndDate, setCustomEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [customStartDate, setCustomStartDate] = useState(() => formatIsoDateBR());
+  const [customEndDate, setCustomEndDate] = useState(() => formatIsoDateBR());
 
   const { data: financialData, isLoading: loading, refetch: fetchData } = useQuery({
     queryKey: ['financial-dashboard'],
@@ -103,7 +104,7 @@ const FinancialDashboard: React.FC = () => {
         const dayTrans = transactions.filter(t => t.due_date.startsWith(dateStr));
         const inc = dayTrans.filter(t => t.type === 'INCOME').reduce((acc, t) => acc + t.amount, 0);
         const exp = dayTrans.filter(t => t.type === 'EXPENSE').reduce((acc, t) => acc + t.amount, 0);
-        days.push({ label: i === 0 ? 'Hoje' : d.toLocaleDateString('pt-BR', { weekday: 'short' }), inc, exp });
+        days.push({ label: i === 0 ? 'Hoje' : d.toLocaleDateString('pt-BR', { weekday: 'short', timeZone: TMSEG_TIMEZONE }), inc, exp });
     }
     return days;
   }, [transactions]);

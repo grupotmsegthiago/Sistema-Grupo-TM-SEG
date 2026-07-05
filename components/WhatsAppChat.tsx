@@ -1,3 +1,4 @@
+import { formatTimeBR } from '../lib/dateUtils';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
@@ -340,7 +341,7 @@ const WhatsAppChat: React.FC = () => {
                                             <p className="whitespace-pre-wrap">{msg.text}</p>
                                             <div className="flex justify-end items-center gap-1 mt-1">
                                                 <span className="text-[10px] text-gray-500">
-                                                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    {formatTimeBR(msg.created_at)}
                                                 </span>
                                                 {msg.sender === 'user' && (
                                                     <CheckCheck size={14} className={msg.status === 'read' ? 'text-blue-500' : 'text-gray-400'} />

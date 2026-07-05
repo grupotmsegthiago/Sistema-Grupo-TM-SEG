@@ -1,3 +1,4 @@
+import { formatNowDateTimeBR } from '../lib/dateUtils';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
@@ -328,7 +329,7 @@ const DailyCashMovement: React.FC = () => {
             {/* RODAPÉ DE IMPRESSÃO */}
             <div className="hidden print:block mt-10 border-t-2 border-gray-900 pt-4 text-center">
                 <p className="text-[10px] font-black uppercase text-gray-400 tracking-[0.3em]">Grupo TMSEG - Inteligência Operacional & Financeira</p>
-                <p className="text-[8px] text-gray-300 mt-1 italic">Relatório gerado em {new Date().toLocaleString('pt-BR')}</p>
+                <p className="text-[8px] text-gray-300 mt-1 italic">Relatório gerado em {formatNowDateTimeBR()}</p>
             </div>
         </div>
     );

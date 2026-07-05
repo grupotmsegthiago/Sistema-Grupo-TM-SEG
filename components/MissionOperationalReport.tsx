@@ -1,3 +1,4 @@
+import { formatDateTimeBR, formatNowDateTimeBR, formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Mission, MissionStatus } from '../types';
 import { authFetch } from '../lib/authFetch';
@@ -27,8 +28,8 @@ interface TimelineEvent {
     description: string;
 }
 
-const fmtDate = (d: any) => d ? new Date(d).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
-const fmtTime = (d: any) => d ? new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—';
+const fmtDate = (d: any) => formatDateBR(d);
+const fmtTime = (d: any) => formatTimeBR(d);
 const fmtDateTime = (d: any) => d ? `${fmtDate(d)} às ${fmtTime(d)}` : '—';
 
 const PhotoUploadBox = ({ label, preview, onUpload, onRemove, icon: Icon }: { label: string; preview: string | null; onUpload: (f: File) => void; onRemove: () => void; icon: any }) => {
@@ -592,7 +593,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                 </div>
                 <div className="mt-4 flex items-center justify-between">
                     <h1 className="text-white text-[15px] font-black uppercase tracking-[0.15em]">Relatório Operacional</h1>
-                    <p className="text-white/30 text-[8px] font-bold">{new Date().toLocaleString('pt-BR')}</p>
+                    <p className="text-white/30 text-[8px] font-bold">{formatNowDateTimeBR()}</p>
                 </div>
                 <div className="h-[2px] rounded-full mt-3" style={{ background: `linear-gradient(90deg, ${accentColor}, ${accentColor}40, transparent)` }} />
             </div>
@@ -809,7 +810,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                 <div className="flex items-center gap-3">
                     <img src="/logo.png" alt="TMSEG" className="h-5 w-auto object-contain opacity-80" crossOrigin="anonymous" />
                 </div>
-                <span className="text-[7px] text-white/40 font-bold">Documento confidencial — Gerado em {new Date().toLocaleString('pt-BR')}</span>
+                <span className="text-[7px] text-white/40 font-bold">Documento confidencial — Gerado em {formatNowDateTimeBR()}</span>
             </div>
         </div>
     );

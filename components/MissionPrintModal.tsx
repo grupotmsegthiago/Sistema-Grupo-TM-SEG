@@ -1,3 +1,4 @@
+import { formatDateBR, formatTimeBR, formatNowDateTimeBR } from '../lib/dateUtils';
 
 import React, { useEffect, useState } from 'react';
 import { X, Printer, Loader2, ShieldCheck, Download } from 'lucide-react';
@@ -64,17 +65,9 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
     setTimeout(() => { document.title = originalTitle; }, 1000);
   };
 
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '';
-    return new Date(dateString).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-  };
+  const formatDate = (dateString?: string) => dateString ? formatDateBR(dateString) : '';
 
-  const formatTime = (isoString?: string) => {
-      if (!isoString) return '';
-      try {
-          return new Date(isoString).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
-      } catch { return ''; }
-  };
+  const formatTime = (isoString?: string) => isoString ? formatTimeBR(isoString, '') : '';
 
   const getAgent = (name?: string) => agentsDetails.find(a => a.name === name);
 
@@ -339,7 +332,7 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
                         <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '9px', textTransform: 'uppercase', color: '#6b7280', fontWeight: 700, borderTop: '1px solid #d1d5db', paddingTop: '6px' }}>
                             ATENCIOSAMENTE DEPARTAMENTO DE ESCOLTA ARMADA - GRUPO TMSEG
                             <br/>
-                            <span style={{ fontWeight: 400, textTransform: 'none' }}>Documento gerado eletronicamente em {new Date().toLocaleString('pt-BR')}</span>
+                            <span style={{ fontWeight: 400, textTransform: 'none' }}>Documento gerado eletronicamente em {formatNowDateTimeBR()}</span>
                         </div>
 
                     </div>
