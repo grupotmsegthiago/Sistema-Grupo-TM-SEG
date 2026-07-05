@@ -263,16 +263,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     return nameLower.includes('daniel') || nameLower.includes('michelle') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago moreira') || roleLower === 'controller';
   }, [currentUser]);
 
+  const isDiretoriaRole = useMemo(() => {
+    return (currentUser?.role || '').toLowerCase() === 'diretoria';
+  }, [currentUser]);
+
   const canSeeGoalFinancials = useMemo(() => {
-    return isDirector || canSeeFinancials;
-  }, [isDirector, canSeeFinancials]);
+    return isDiretoriaRole;
+  }, [isDiretoriaRole]);
 
   const canSeeGoalThermometers = useMemo(() => {
-    if (!currentUser) return false;
-    const roleLower = (currentUser.role || '').toLowerCase();
-    if (currentUser.permissions?.includes('*')) return true;
-    return !['operador', 'avançado', 'avancado'].includes(roleLower);
-  }, [currentUser]);
+    return isDiretoriaRole;
+  }, [isDiretoriaRole]);
 
   // Alerta "OS sem Tabela": visível para ADMINISTRADOR e AVANÇADO (e acesso total
   // '*'), além dos nomes históricos (Thiago Moreira, Bárbara, Simone) para não

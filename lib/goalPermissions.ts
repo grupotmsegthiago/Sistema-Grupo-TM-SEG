@@ -1,3 +1,5 @@
 export function canViewGoalMonetaryData(canSeeMonetaryProp: boolean | undefined, userRole: string): boolean {
-  return canSeeMonetaryProp ?? String(userRole || '').toLowerCase() === 'diretoria';
+  const isDiretoria = String(userRole || '').toLowerCase() === 'diretoria';
+  if (!isDiretoria) return false;
+  return canSeeMonetaryProp ?? true;
 }
