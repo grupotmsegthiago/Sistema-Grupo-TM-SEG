@@ -779,8 +779,9 @@ const FinDateField: React.FC<{ label: string; value: string; min?: string; onCha
 );
 
 const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose, mission, currentUser, onSuccess, hideProviderInfo = false }) => {
-    const { isLoaded } = useLoadScript(googleMapsLoadConfig);
+    const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
     const { showNotification } = useNotification();
+    const mapsJsReady = isLoaded && !loadError && !!googleMapsApiKey;
     
     const [isLoadingData, setIsLoadingData] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
@@ -1625,6 +1626,15 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }
     };
 
+    const fallbackMapEmbedUrl = useMemo(() => {
+        const coords = currentPreviewCoords || extractCoordinates(editData.mapLink) || extractCoordinates(editData.currentLocationName);
+        const query = coords
+            ? `${coords.lat},${coords.lng}`
+            : (editData.currentLocationName || editData.mapLink || editData.destination || '').trim();
+        if (!query) return '';
+        return `https://www.google.com/maps?q=${encodeURIComponent(query)}&output=embed`;
+    }, [currentPreviewCoords, editData.mapLink, editData.currentLocationName, editData.destination]);
+
     const handleLocationInputChange = async (val: string) => {
         const trimmed = val.trim();
         setEditData(prev => ({
@@ -1653,6 +1663,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             setEditData(prev => ({ ...prev, currentLocationName: val, mapLink: trimmed }));
             setCurrentPreviewCoords(null);
             showNotification('Link Google Maps validado', 'Link salvo. Se ele não tiver coordenadas, o mapa de prévia ficará indisponível, mas a atualização poderá ser salva.', 'success');
+            return;
+        }
+
+        if (trimmed.length >= 3 && !/^https?:\/\//i.test(trimmed)) {
+            const searchLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(trimmed)}`;
+            setEditData(prev => ({ ...prev, currentLocationName: val, mapLink: searchLink }));
+            setCurrentPreviewCoords(null);
         }
     };
 
@@ -3614,7 +3631,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     <div className="p-2.5 bg-emerald-50 rounded-xl text-emerald-600 shrink-0"><MapPin size={16}/></div>
                                     <div className="min-w-0 flex-1">
                                         <span className={LABEL_CLASS}>Origem (Ponto A)</span>
-                                        {canEditRoute && isLoaded ? (
+                                        {canEditRoute && mapsJsReady ? (
                                             <Autocomplete 
                                                 onLoad={ref => originAutocompleteRef.current = ref} 
                                                 onPlaceChanged={handleOriginSelect}
@@ -3672,7 +3689,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     <div className="p-2.5 bg-red-50 rounded-xl text-red-600 shrink-0"><Flag size={16}/></div>
                                     <div className="min-w-0 flex-1">
                                         <span className={LABEL_CLASS}>Destino (Ponto C)</span>
-                                        {canEditRoute && isLoaded ? (
+                                        {canEditRoute && mapsJsReady ? (
                                             <Autocomplete 
                                                 onLoad={ref => destinationAutocompleteRef.current = ref} 
                                                 onPlaceChanged={handleDestinationSelect}
@@ -3861,11 +3878,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     <label className={`text-[9px] font-black uppercase tracking-[0.2em] mb-1.5 block ${isGoogleLinkRequired ? 'text-red-400 animate-pulse underline decoration-2' : 'text-slate-400'}`}>
                                         {isGoogleLinkRequired ? 'LINK GOOGLE MAPS OBRIGATÓRIO *' : 'Localização Atual (Ponto B)'}
                                     </label>
-                                    <Autocomplete onLoad={ref => updateLocRef.current = ref} onPlaceChanged={handlePlaceSelect}>
-                                        <input type="text" className={`w-full bg-slate-800 border rounded-xl p-3.5 text-xs font-bold outline-none transition-all ${isGoogleLinkRequired && !editData.mapLink ? 'border-red-500/50 ring-2 ring-red-500/10' : 'border-white/10 focus:ring-2 focus:ring-red-500/30'}`} placeholder="Busque a cidade ou cole link do Google Maps..." value={editData.currentLocationName} onChange={e => handleLocationInputChange(e.target.value)} />
-                                    </Autocomplete>
+                                    {mapsJsReady ? (
+                                        <Autocomplete onLoad={ref => updateLocRef.current = ref} onPlaceChanged={handlePlaceSelect}>
+                                            <input type="text" className={`w-full bg-slate-800 border rounded-xl p-3.5 text-xs font-bold outline-none transition-all ${isGoogleLinkRequired && !editData.mapLink ? 'border-red-500/50 ring-2 ring-red-500/10' : 'border-white/10 focus:ring-2 focus:ring-red-500/30'}`} placeholder="Busque a cidade ou cole link do Google Maps..." value={editData.currentLocationName} onChange={e => handleLocationInputChange(e.target.value)} />
+                                        </Autocomplete>
+                                    ) : (
+                                        <input type="text" className={`w-full bg-slate-800 border rounded-xl p-3.5 text-xs font-bold outline-none transition-all ${isGoogleLinkRequired && !editData.mapLink ? 'border-red-500/50 ring-2 ring-red-500/10' : 'border-white/10 focus:ring-2 focus:ring-red-500/30'}`} placeholder="Digite o endereço ou cole link do Google Maps..." value={editData.currentLocationName} onChange={e => handleLocationInputChange(e.target.value)} />
+                                    )}
                                     {!editData.mapLink && isGoogleLinkRequired && (
                                         <p className="text-[8px] text-red-500 font-black mt-1 uppercase flex items-center gap-1"><ShieldAlert size={10}/> Sistema bloqueado até identificar link de satélite válido</p>
+                                    )}
+                                    {loadError && (
+                                        <p className="text-[8px] text-amber-400 font-black mt-1 uppercase flex items-center gap-1"><ShieldAlert size={10}/> Maps JS indisponível; usando mapa por link/endereço</p>
                                     )}
                                     {editData.mapLink && (
                                         <p className="text-[8px] text-green-500 font-black mt-1 uppercase flex items-center gap-1"><Globe size={10}/> Link de GPS validado com sucesso</p>
@@ -3878,10 +3902,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             </div>
                             <div className="flex flex-col gap-3 min-h-[350px]">
                                 <div className="bg-slate-950 rounded-[2rem] border border-white/5 overflow-hidden flex-1 relative shadow-inner">
-                                    {currentPreviewCoords ? (
+                                    {mapsJsReady && currentPreviewCoords ? (
                                         <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={currentPreviewCoords} zoom={15} options={{ disableDefaultUI: true, styles: [{ elementType: "geometry", stylers: [{ color: "#242f3e" }] }, { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] }] }}>
                                             <Marker position={currentPreviewCoords} />
                                         </GoogleMap>
+                                    ) : fallbackMapEmbedUrl ? (
+                                        <iframe
+                                            title="Prévia do mapa"
+                                            src={fallbackMapEmbedUrl}
+                                            className="h-full w-full border-0"
+                                            loading="lazy"
+                                            referrerPolicy="no-referrer-when-downgrade"
+                                        />
                                     ) : (
                                         <div className="flex flex-col items-center justify-center h-full opacity-20"><MapPin size={40}/><p className="text-[9px] font-black uppercase mt-2 text-center">Aguardando coordenadas...</p></div>
                                     )}
