@@ -17,6 +17,7 @@ import {
   selectChartSnapshots,
   type GoalUpdateSnapshot,
 } from '../lib/goalUpdateHistory';
+import { canViewGoalMonetaryData } from '../lib/goalPermissions';
 
 const DEFAULT_DAILY_GOAL = 35000.00;
 const DEFAULT_MONTHLY_GOAL = 700000.00;
@@ -371,7 +372,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         return [];
     }, []);
 
-    const canSeeMonetary = canSeeMonetaryProp ?? userRole === 'diretoria';
+    const canSeeMonetary = canViewGoalMonetaryData(canSeeMonetaryProp, userRole);
 
     const recordSnapshot = useCallback((source: 'manual' | 'sync') => {
         const next = pushGoalUpdateHistory(resolvedHistoryKey, {
