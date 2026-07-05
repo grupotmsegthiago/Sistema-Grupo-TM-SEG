@@ -1,4 +1,5 @@
 const GEMINI_TEXT_MODEL = "gemini-2.5-flash";
+const GEMINI_REFERER = "https://sistema-grupo-tm-seg.vercel.app/";
 
 function getGeminiApiKey(): string {
   return String(
@@ -29,7 +30,7 @@ export default async function handler(req: any, res: any) {
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Referer": GEMINI_REFERER },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: "Responda apenas: OK" }] }],
         generationConfig: { maxOutputTokens: 10, temperature: 0 },

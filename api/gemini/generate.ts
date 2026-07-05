@@ -2,6 +2,7 @@ const GEMINI_TEXT_MODEL = "gemini-2.5-flash";
 const GEMINI_PRO_MODEL = "gemini-2.5-pro";
 const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
 const GEMINI_FALLBACK_MODELS = [GEMINI_TEXT_MODEL, "gemini-2.0-flash", GEMINI_PRO_MODEL];
+const GEMINI_REFERER = "https://sistema-grupo-tm-seg.vercel.app/";
 const LEGACY_MODEL_MAP: Record<string, string> = {
   "gemini-3-flash-preview": GEMINI_TEXT_MODEL,
   "gemini-1.5-flash": GEMINI_TEXT_MODEL,
@@ -59,7 +60,7 @@ async function generateWithFallback(apiKey: string, model: string, contents: unk
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${candidate}:generateContent?key=${encodeURIComponent(apiKey)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Referer": GEMINI_REFERER },
         body: JSON.stringify({
           contents: normalizeContents(contents),
           generationConfig: config,
