@@ -711,7 +711,7 @@ Qualquer dúvida, estamos a disposição.
                         {(() => {
                             if (tollConfirmation) {
                                 const dt = tollConfirmation.date ? new Date(tollConfirmation.date) : null;
-                                const dtStr = dt && !isNaN(dt.getTime()) ? dt.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+                                const dtStr = dt && !isNaN(dt.getTime()) ? formatDateTimeBR(dt) : '—';
                                 const label = tollConfirmation.hasToll ? `Pedágio confirmado (R$ ${tollConfirmation.value.toFixed(2)}) por ${tollConfirmation.user} em ${dtStr}` : `Pedágio confirmado como ZERO por ${tollConfirmation.user} em ${dtStr}`;
                                 return (
                                     <span title={label} className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 bg-green-100 text-green-700 border border-green-300 shadow-sm" data-testid={`badge-toll-status-confirmed-${mission.id}`}>
@@ -1075,7 +1075,7 @@ Qualquer dúvida, estamos a disposição.
                                {(() => {
                                    if (tollConfirmation) {
                                        const dt = tollConfirmation.date ? new Date(tollConfirmation.date) : null;
-                                       const dtStr = dt && !isNaN(dt.getTime()) ? dt.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+                                       const dtStr = dt && !isNaN(dt.getTime()) ? formatDateTimeBR(dt) : '—';
                                        const label = tollConfirmation.hasToll ? `Pedágio confirmado (R$ ${tollConfirmation.value.toFixed(2)}) por ${tollConfirmation.user} em ${dtStr}` : `Pedágio confirmado como ZERO por ${tollConfirmation.user} em ${dtStr}`;
                                        return (
                                            <span title={label} className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-green-600 text-white flex items-center justify-center border border-white shadow" data-testid={`badge-toll-confirmed-${mission.id}`}>

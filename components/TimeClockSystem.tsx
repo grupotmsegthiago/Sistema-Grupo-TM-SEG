@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { generateContent } from '../lib/gemini';
 import { Camera, MapPin, Clock, Fingerprint, Loader2, ShieldCheck, AlertTriangle, CheckCircle2, History, Smartphone, Coffee, LogOut, ArrowRight, UserCheck } from 'lucide-react';
+import { formatNowTimeBR, formatTimeBR } from '../lib/dateUtils';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
@@ -150,7 +151,7 @@ const TimeClockSystem: React.FC = () => {
                 </div>
                 <div className="bg-slate-900 px-6 py-2 rounded-xl text-center">
                     <p className="text-[9px] text-gray-500 font-bold uppercase">Hora Local</p>
-                    <p className="text-xl font-black text-white font-mono">{new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
+                    <p className="text-xl font-black text-white font-mono">{formatNowTimeBR()}</p>
                 </div>
             </div>
 
@@ -205,7 +206,7 @@ const TimeClockSystem: React.FC = () => {
                                                     <p className="text-[9px] font-black uppercase text-gray-400 tracking-tight">
                                                         {type === 'IN' ? 'Entrada' : type === 'OUT' ? 'Saída Turno' : type === 'BREAK_START' ? 'S. Almoço' : 'R. Almoço'}
                                                     </p>
-                                                    <p className="text-sm font-black text-gray-900">{entry ? new Date(entry.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--'}</p>
+                                                    <p className="text-sm font-black text-gray-900">{entry ? formatTimeBR(entry.timestamp, '--:--') : '--:--'}</p>
                                                 </div>
                                             </div>
                                             {entry && <img src={entry.photo_url} className="w-10 h-10 rounded-lg object-cover border-2 border-white shadow-sm" />}

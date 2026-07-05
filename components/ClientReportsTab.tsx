@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { calculateMissionFinancials } from '../lib/financialUtils';
-import { FileText, Download, Calendar, Printer, Search, ChevronDown, Activity, Eye, Plus, X, Check, Loader2, Filter } from 'lucide-react';
+import { formatDateBR, formatNowDateTimeBR } from '../lib/dateUtils';
 
 interface Props {
     missions: Mission[];
@@ -33,7 +33,9 @@ const STATUS_COLORS: Record<string, string> = {
     [MissionStatus.ORIGIN]: 'bg-cyan-100 text-cyan-800 border-cyan-200',
 };
 
-const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '---';
+import { FileText, Download, Calendar, Printer, Search, ChevronDown, Activity, Eye, Plus, X, Check, Loader2, Filter } from 'lucide-react';
+
+const fmtDate = (d: string) => (d ? formatDateBR(d) : '---');
 const fmtCurrency = (v: number) => v ? v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00';
 const fmtNum = (v: number | undefined | null) => v ? Math.round(v).toLocaleString('pt-BR') : '---';
 
@@ -367,7 +369,7 @@ const ClientReportsTab: React.FC<Props> = ({ missions, clientTables = [], provid
             }).join('')}
             </tbody>
         </table>
-        <div class="footer">Grupo TMSEG &middot; Intermediadora de Escolta Armada & Segurança Patrimonial &middot; Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+        <div class="footer">Grupo TMSEG &middot; Intermediadora de Escolta Armada & Segurança Patrimonial &middot; Gerado em ${formatNowDateTimeBR()}</div>
         </body></html>`;
         const w = window.open('', '_blank');
         if (w) { w.document.write(html); w.document.close(); }

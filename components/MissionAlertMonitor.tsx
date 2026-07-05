@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { formatDateTimeBR } from '../lib/dateUtils';
 import { Bell, Clock, MapPin, Phone, Users, X, AlertTriangle, CheckCircle2, ChevronRight, ChevronLeft, Volume2, MessageCircle, Timer, XCircle, Maximize2, Minimize2, Shield } from 'lucide-react';
 
 const alertAnimation = `
@@ -88,9 +87,7 @@ const formatPhone = (phone: string) => {
     return phone;
 };
 
-const formatTime = (d: string) => {
-    try { return new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch { return d; }
-};
+const formatTime = (d: string) => formatDateTimeBR(d) || d;
 
 const MissionAlertMonitor: React.FC = () => {
     const [alerts, setAlerts] = useState<MissionAlert[]>([]);
@@ -242,7 +239,15 @@ const MissionAlertMonitor: React.FC = () => {
     useEffect(() => {
         const timer = setTimeout(() => checkMissions(), 3000);
         const interval = setInterval(checkMissions, CHECK_INTERVAL);
-        return () => { clearTimeout(timer); clearInterval(interval); };
+        const onMissionChange = () => checkMissions();
+        window.addEventListener('refreshMissions', onMissionChange);
+        window.addEventListener('supabase:missions', onMissionChange);
+        return () => {
+            clearTimeout(timer);
+            clearInterval(interval);
+            window.removeEventListener('refreshMissions', onMissionChange);
+            window.removeEventListener('supabase:missions', onMissionChange);
+        };
     }, [checkMissions]);
 
     useEffect(() => {

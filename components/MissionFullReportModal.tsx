@@ -4,6 +4,7 @@ import { Mission, MissionLog, MissionHistory, Agent, Vehicle, MissionStatus } fr
 import { supabase } from '../lib/supabase';
 import { X, ExternalLink, Loader2, FileText } from 'lucide-react';
 import { googleMapsApiKey } from '../lib/maps';
+import { formatNowDateTimeBR } from '../lib/dateUtils';
 
 interface Client {
     id: number;
@@ -512,7 +513,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
         <div class="status-bar">
             <span class="badge" style="background:${statusColor}">${statusLabel}</span>
             <span class="badge" style="background:#64748B">${opType}</span>
-            <span style="margin-left:auto;font-size:11px;color:#64748B;">Emissão: ${new Date().toLocaleString('pt-BR')}</span>
+            <span style="margin-left:auto;font-size:11px;color:#64748B;">Emissão: ${formatNowDateTimeBR()}</span>
         </div>
 
         <div class="content">
@@ -751,7 +752,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
         </div>
 
         <div style="text-align:center;padding:0 0 20px;font-size:10px;color:#94A3B8;">
-            GRUPO TMSEG — Relatório Operacional Confidencial — Gerado em ${new Date().toLocaleString('pt-BR')}
+            GRUPO TMSEG — Relatório Operacional Confidencial — Gerado em ${formatNowDateTimeBR()}
           </div>
       </div>
   </body>

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Menu, Bell, User, Clock, Settings, LogOut, ChevronDown, Volume2, VolumeX, Eraser, BellRing, Activity } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
 import SystemDiagnostics from './SystemDiagnostics';
+import { formatNowTimeBR } from '../lib/dateUtils';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -77,7 +78,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileSettingsClick, is
         <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-gray-50 border rounded-lg text-gray-700">
           <Clock size={16} className="text-red-700" />
           <span className="text-sm font-mono font-bold">
-            {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {formatNowTimeBR(time)}
           </span>
         </div>
 

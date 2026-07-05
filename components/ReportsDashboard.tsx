@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
     FileBarChart, Calendar, Clock, User, Download, Search, Loader2, 
@@ -8,6 +8,8 @@ import {
     Building2, Briefcase, Printer, Filter, Zap, Scale, UserCheck
 } from 'lucide-react';
 import { SystemLog, MissionStatus } from '../types';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import { formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
 import {
     ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, Legend
@@ -271,6 +273,14 @@ const ReportsDashboard: React.FC = () => {
         if (activeTab === 'manualOverride') fetchOverrideAlerts();
         if (activeTab === 'dhlMemory') fetchDhlMemoryData();
     }, [activeTab]);
+
+    useRealtimeRefresh(['missions', 'system_logs'], () => {
+        fetchData();
+        if (activeTab === 'timeline') fetchTimelineData();
+        if (activeTab === 'autoEngine' || activeTab === 'manualOverride') fetchAutoEngineData();
+        if (activeTab === 'manualOverride') fetchOverrideAlerts();
+        if (activeTab === 'dhlMemory') fetchDhlMemoryData();
+    });
 
     // Task #117 — Carrega correções DHL (system_logs entity=DhlTableCorrection)
     const fetchDhlMemoryData = async () => {
@@ -906,7 +916,7 @@ const ReportsDashboard: React.FC = () => {
                                                 {user.navCount}
                                             </td>
                                             <td className="px-6 py-4 text-right text-xs text-gray-500">
-                                                {new Date(user.lastActivity).toLocaleString('pt-BR')}
+                                                {formatDateTimeBR(user.lastActivity)}
                                             </td>
                                         </tr>
                                     ))}
@@ -948,7 +958,7 @@ const ReportsDashboard: React.FC = () => {
                                         ) : filteredLogs.slice(0, 100).map((log) => (
                                             <tr key={log.id} className="hover:bg-gray-50 transition-colors">
                                                 <td className="px-6 py-3 whitespace-nowrap text-xs text-gray-500 font-mono">
-                                                    {new Date(log.created_at).toLocaleString('pt-BR')}
+                                                    {formatDateTimeBR(log.created_at)}
                                                 </td>
                                                 <td className="px-6 py-3 text-xs font-bold text-gray-700">
                                                     {log.user_name}
@@ -1115,7 +1125,7 @@ const ReportsDashboard: React.FC = () => {
                                                     {dayMissions.map((m: any) => {
                                                         globalCounter++;
                                                         const st = statusLabel(m.status);
-                                                        const hora = new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+                                                        const hora = formatTimeBR(m.created_at);
                                                         const revTotal = (m.revenue_value || 0) + (m.toll_value || 0);
                                                         const costTotal = (m.cost_value || 0) + (m.toll_value || 0);
                                                         
@@ -1265,7 +1275,7 @@ const ReportsDashboard: React.FC = () => {
                         const lines = [header.join(';')];
                         filtered.forEach(r => {
                             lines.push([
-                                new Date(r.createdAt).toLocaleString('pt-BR'),
+                                formatDateTimeBR(r.createdAt),
                                 r.missionId,
                                 (r.client || '').replace(/;/g, ','),
                                 (r.provider || '').replace(/;/g, ','),
@@ -1527,7 +1537,7 @@ const ReportsDashboard: React.FC = () => {
                                                         <tr><td colSpan={11} className="px-4 py-6 text-center text-xs text-gray-400">Nenhum registro encontrado no período/filtro.</td></tr>
                                                     ) : filtered.slice(0, 500).map(r => (
                                                         <tr key={r.logId} className={`border-t border-gray-100 hover:bg-gray-50 ${r.divergent ? 'bg-red-50/30' : ''}`} data-testid={`row-auto-engine-${r.missionId}`}>
-                                                            <td className="px-4 py-2 text-[11px] text-gray-500 font-mono whitespace-nowrap">{new Date(r.createdAt).toLocaleString('pt-BR')}</td>
+                                                            <td className="px-4 py-2 text-[11px] text-gray-500 font-mono whitespace-nowrap">{formatDateTimeBR(r.createdAt)}</td>
                                                             <td className="px-4 py-2 text-xs font-black text-gray-800">{r.missionId}</td>
                                                             <td className="px-4 py-2 text-xs text-gray-600 truncate max-w-[160px]" title={r.client}>{r.client}</td>
                                                             <td className="px-4 py-2 text-xs font-bold text-gray-700 truncate max-w-[160px]" title={r.provider}>{r.provider}</td>
@@ -1597,7 +1607,7 @@ const ReportsDashboard: React.FC = () => {
                         const lines = [header.join(';')];
                         filtered.forEach(r => {
                             lines.push([
-                                new Date(r.createdAt).toLocaleString('pt-BR'),
+                                formatDateTimeBR(r.createdAt),
                                 r.missionId,
                                 (r.userName || '').replace(/[;\n\r]/g, ' '),
                                 (r.client || '').replace(/[;\n\r]/g, ' '),
@@ -1608,7 +1618,7 @@ const ReportsDashboard: React.FC = () => {
                                 (r.costEditReason || '').replace(/[;\n\r]/g, ' '),
                                 (r.revenueEditReason || '').replace(/[;\n\r]/g, ' '),
                                 (r.reasonUser || '').replace(/[;\n\r]/g, ' '),
-                                r.reasonAt ? new Date(r.reasonAt).toLocaleString('pt-BR') : '',
+                                r.reasonAt ? formatDateTimeBR(r.reasonAt) : '',
                             ].join(';'));
                         });
                         const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -1623,7 +1633,7 @@ const ReportsDashboard: React.FC = () => {
                     };
 
                     const formatDateTimeBR = (iso: string) => {
-                        try { return new Date(iso).toLocaleString('pt-BR'); } catch { return iso; }
+                        try { return formatDateTimeBR(iso); } catch { return iso; }
                     };
                     const formatCooldownRemaining = (untilIso: string) => {
                         const ms = Date.parse(untilIso) - Date.now();
@@ -1644,7 +1654,7 @@ const ReportsDashboard: React.FC = () => {
                     const isLoose = !!s && (s.threshold > 50 || s.windowDays > 30 || s.cooldownHours > 72);
                     const fmtUpdatedAt = (iso: string | null) => {
                         if (!iso) return '—';
-                        try { return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }); }
+                        try { return formatDateTimeBR(iso); }
                         catch { return iso; }
                     };
                     const goToSettings = () => {
@@ -2134,7 +2144,7 @@ const ReportsDashboard: React.FC = () => {
                                                         const reason = reasonOf(r);
                                                         return (
                                                             <tr key={r.logId} className="border-t border-gray-100 hover:bg-red-50/20" data-testid={`row-manual-override-${r.missionId}`}>
-                                                                <td className="px-3 py-2 text-[11px] text-gray-500 font-mono whitespace-nowrap">{new Date(r.createdAt).toLocaleString('pt-BR')}</td>
+                                                                <td className="px-3 py-2 text-[11px] text-gray-500 font-mono whitespace-nowrap">{formatDateTimeBR(r.createdAt)}</td>
                                                                 <td className="px-3 py-2 text-xs font-black text-gray-800">{r.missionId}</td>
                                                                 <td className="px-3 py-2 text-xs font-bold text-gray-700 truncate max-w-[140px]" title={r.userName}>{r.userName || '-'}</td>
                                                                 <td className="px-3 py-2 text-[11px] text-gray-600">
@@ -2152,7 +2162,7 @@ const ReportsDashboard: React.FC = () => {
                                                                             <div className="whitespace-pre-wrap break-words" title={reason}>{reason}</div>
                                                                             {r.reasonUser && (
                                                                                 <div className="text-[9px] text-gray-400 mt-0.5">
-                                                                                    por {r.reasonUser}{r.reasonAt ? ` · ${new Date(r.reasonAt).toLocaleString('pt-BR')}` : ''}
+                                                                                    por {r.reasonUser}{r.reasonAt ? ` · ${formatDateTimeBR(r.reasonAt)}` : ''}
                                                                                 </div>
                                                                             )}
                                                                         </div>
@@ -2212,7 +2222,7 @@ const ReportsDashboard: React.FC = () => {
                         const lines = [header.join(';')];
                         filtered.forEach(r => {
                             lines.push([
-                                new Date(r.createdAt).toLocaleString('pt-BR'),
+                                formatDateTimeBR(r.createdAt),
                                 (r.userName || '').replace(/;/g, ','),
                                 r.missionId,
                                 r.region || '',
@@ -2391,7 +2401,7 @@ const ReportsDashboard: React.FC = () => {
                                                         <tr><td colSpan={8} className="px-3 py-8 text-center text-[11px] text-gray-400">Nenhuma correção encontrada para os filtros atuais.</td></tr>
                                                     ) : filtered.slice(0, 500).map((r, i) => (
                                                         <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50" data-testid={`row-dhl-memory-${i}`}>
-                                                            <td className="px-3 py-1.5 text-[11px] text-gray-700 whitespace-nowrap">{new Date(r.createdAt).toLocaleString('pt-BR')}</td>
+                                                            <td className="px-3 py-1.5 text-[11px] text-gray-700 whitespace-nowrap">{formatDateTimeBR(r.createdAt)}</td>
                                                             <td className="px-3 py-1.5 text-[11px] text-gray-700 truncate max-w-[140px]">{r.userName}</td>
                                                             <td className="px-3 py-1.5 text-[11px] font-mono text-gray-700">{r.missionId.slice(0, 8)}</td>
                                                             <td className="px-3 py-1.5 text-[11px] font-bold text-red-700">{r.region || '—'}</td>

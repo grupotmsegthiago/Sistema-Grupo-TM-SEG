@@ -1,8 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { SystemLog } from '../types';
 import { logAction } from '../lib/logger';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import { formatDateTimeBR } from '../lib/dateUtils';
 import { 
     Shield, Activity, Search, User, FileText, Trash2, Edit, PlusCircle, 
     BarChart2, RefreshCw, Clock, Wifi, WifiOff, HeartPulse, Building2, Briefcase, Calendar, AlertTriangle, Copy, Check, Wrench, Zap, Power, Database, DollarSign, Loader2, ShieldCheck
@@ -64,7 +66,7 @@ NOTIFY pgrst, 'reload schema';
         fetchLogs();
     }, []);
 
-    const fetchLogs = async () => {
+    const fetchLogs = useCallback(async () => {
         setIsLoading(true);
         try {
             const { data, error } = await supabase
@@ -79,7 +81,9 @@ NOTIFY pgrst, 'reload schema';
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
+
+    useRealtimeRefresh('system_logs', fetchLogs);
 
     const handleCopySql = () => {
         navigator.clipboard.writeText(auditSql);
@@ -194,7 +198,7 @@ NOTIFY pgrst, 'reload schema';
                                 filteredLogs.map((log) => (
                                     <tr key={log.id} className="hover:bg-gray-50 transition-colors">
                                         <td className="px-6 py-4 text-[11px] font-mono text-gray-500">
-                                            {new Date(log.created_at).toLocaleString('pt-BR')}
+                                            {formatDateTimeBR(log.created_at)}
                                         </td>
                                         <td className="px-6 py-4 font-black text-xs text-gray-700 uppercase">
                                             {log.user_name}

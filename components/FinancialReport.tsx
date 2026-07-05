@@ -1,7 +1,9 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { FinancialTransaction, FinancialCategory } from '../types';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import { formatIsoDateBR } from '../lib/dateUtils';
 import { 
     FileText, Calendar, DollarSign, Download, Printer, Filter, 
     ArrowUpCircle, ArrowDownCircle, ShieldAlert, Loader2, Search, TrendingUp, User,
@@ -10,14 +12,7 @@ import {
 
 const formatCurrency = (val: number) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-const getTodayBR = (): string => {
-    const now = new Date();
-    const brDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-    const y = brDate.getFullYear();
-    const m = String(brDate.getMonth() + 1).padStart(2, '0');
-    const d = String(brDate.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-};
+const getTodayBR = (): string => formatIsoDateBR();
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const MONTH_NAMES_SHORT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -81,7 +76,7 @@ const FinancialReport: React.FC = () => {
         }
     }, []);
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true);
         try {
             const { data, error } = await supabase
@@ -96,12 +91,17 @@ const FinancialReport: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
-    const fetchCategories = async () => {
+    const fetchCategories = useCallback(async () => {
         const { data } = await supabase.from('financial_categories').select('*');
         if (data) setCategories(data as FinancialCategory[]);
-    };
+    }, []);
+
+    useRealtimeRefresh(['financial_transactions', 'financial_categories'], () => {
+        fetchData();
+        fetchCategories();
+    });
 
     const investmentCategoryIds = useMemo(() => {
         return new Set(categories.filter(c => c.group === 'INVESTIMENTOS').map(c => c.id));

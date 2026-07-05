@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { resolveSupabasePublicConfig } from '../lib/resolveSupabasePublicConfig';
+import { formatNowDateTimeBR } from '../lib/dateUtils';
 
 const { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY } = resolveSupabasePublicConfig();
 const SUPABASE_WS_URL = SUPABASE_URL && SUPABASE_ANON_KEY
@@ -378,7 +379,7 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
         const ua = navigator.userAgent;
         const lines = [
             '🔧 DIAGNÓSTICO DO SISTEMA — GRUPO TMSEG',
-            `📅 Data: ${new Date().toLocaleString('pt-BR')}`,
+            `📅 Data: ${formatNowDateTimeBR()}`,
             `👤 Usuário: ${user.name || 'N/A'} (${user.role || 'N/A'})`,
             `🌐 Navegador: ${ua.substring(0, 100)}`,
             `📱 Tela: ${window.innerWidth}x${window.innerHeight}`,
