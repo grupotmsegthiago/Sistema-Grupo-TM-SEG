@@ -31,7 +31,7 @@ function pickAnonKey(url: string, ...candidates: unknown[]): string {
 /** Resolve URL/anon do Supabase no browser (build Vercel, .env local ou defaults TM SEG). */
 export function resolveSupabasePublicConfig(): { url: string; anonKey: string } {
   const injected = typeof window !== 'undefined' ? window.__TMSEG_SUPABASE__ : undefined;
-  const env = import.meta.env as Record<string, string | undefined>;
+  const env = ((import.meta as any).env || {}) as Record<string, string | undefined>;
 
   const url = pickUrl(
     injected?.url,
