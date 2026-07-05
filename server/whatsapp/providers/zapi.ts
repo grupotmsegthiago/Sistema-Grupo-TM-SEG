@@ -133,7 +133,12 @@ export class ZapiWhatsappProvider implements WhatsappProvider {
     const r = await throttleZapiSend(label, () => fetch(`${zapiBasePathFor(creds)}/send-image`, {
       method: "POST",
       headers: { ...zapiHeadersFor(creds, true) },
-      body: JSON.stringify({ phone: params.phone, image: params.imageBase64, caption: params.caption }),
+      body: JSON.stringify({
+        phone: params.phone,
+        image: params.imageBase64.trim(),
+        caption: params.caption,
+        viewOnce: false,
+      }),
     }), queueMeta);
     const text = await r.text();
     let data: any = null;

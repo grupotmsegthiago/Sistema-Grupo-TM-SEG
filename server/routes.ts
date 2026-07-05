@@ -1186,8 +1186,9 @@ export async function registerRoutes(
   // (match EXATO por name/trading_name) — o frontend nunca escolhe o destino.
   app.post('/api/whatsapp/send-group', requireAuth, async (req: Request, res: Response) => {
     const userId = (req as any).auth?.id || extractUserIdFromToken((req as any).authToken || '') || null;
-    const { clientName, message, imageBase64, missionId } = req.body || {};
-    const endpointPreview = imageBase64 ? 'send-image' : 'send-text';
+    const { clientName, message, imageBase64, missionId, requireImage } = req.body || {};
+    const imagePayload = typeof imageBase64 === 'string' ? imageBase64.trim() : '';
+    const endpointPreview = imagePayload ? 'send-image' : 'send-text';
     const logBase = (overrides: Partial<Parameters<typeof logWhatsappOutbound>[0]> = {}) => ({
       queueLabel: `${endpointPreview} grupo do cliente`,
       endpoint: endpointPreview,
@@ -1203,6 +1204,10 @@ export async function registerRoutes(
         return res.status(503).json({ error: 'WhatsApp não configurado no banco' });
       }
       if (!clientName || !message) return res.status(400).json({ error: 'clientName e message são obrigatórios' });
+      if (requireImage === true && !imagePayload) {
+        logWhatsappOutbound(logBase({ success: false, skipped: true, skipReason: 'foto obrigatória ausente', errorMessage: 'Imagem obrigatória não enviada pelo frontend' }));
+        return res.status(400).json({ error: 'Foto obrigatória ausente — envio ao grupo não foi realizado sem imagem.' });
+      }
 
       const sb = createSupabaseAdminClient();
       if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
@@ -1254,9 +1259,9 @@ export async function registerRoutes(
         return res.status(503).json({ error: numGuard.error });
       }
 
-      const endpoint = imageBase64 ? 'send-image' : 'send-text';
-      const result = imageBase64
-        ? await whatsappProviderSendImage(groupId, String(message), String(imageBase64), `${endpoint} grupo do cliente`)
+      const endpoint = imagePayload ? 'send-image' : 'send-text';
+      const result = imagePayload
+        ? await whatsappProviderSendImage(groupId, String(message), imagePayload, `${endpoint} grupo do cliente`)
         : await whatsappProviderSendText(groupId, String(message), `${endpoint} grupo do cliente`);
       if (!result.ok) {
         console.warn(`[WhatsApp Grupo] Falha ${endpoint} → grupo ${groupId} (cliente ${clientRow.name}) HTTP ${result.httpStatus}: ${result.error}`);
