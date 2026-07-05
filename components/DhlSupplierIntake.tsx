@@ -2,6 +2,7 @@
 // de uma OS DHL. Acessada via /fornecedor/dhl?token=XXX
 // Não exige login. Memória por fornecedor com seleção/reaproveitamento.
 
+import { formatDateTimeBR } from '../lib/dateUtils';
 import React, { useEffect, useState, useMemo } from 'react';
 import { User, Truck, CheckCircle2, ArrowRight, ArrowLeft, Loader2, AlertCircle, Search, Info, Camera, Image as ImageIcon, ClipboardPaste } from 'lucide-react';
 import tmsegLogo from '../attached_assets/tmseg_logo_transparent.png';
@@ -378,7 +379,7 @@ const DhlSupplierIntake: React.FC = () => {
             <div><span className="text-[10px] uppercase text-gray-400 font-bold block">Fornecedor</span><span className="font-semibold text-gray-800">{intake?.providerName || '—'}</span></div>
             <div><span className="text-[10px] uppercase text-gray-400 font-bold block">Origem</span><span className="text-gray-700">{mission?.origin || '—'}</span></div>
             <div><span className="text-[10px] uppercase text-gray-400 font-bold block">Destino</span><span className="text-gray-700">{mission?.destination || '—'}</span></div>
-            <div className="md:col-span-2"><span className="text-[10px] uppercase text-gray-400 font-bold block">Início previsto</span><span className="text-gray-700">{mission?.start_time ? new Date(mission.start_time).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—'}</span></div>
+            <div className="md:col-span-2"><span className="text-[10px] uppercase text-gray-400 font-bold block">Início previsto</span><span className="text-gray-700">{formatDateTimeBR(mission?.start_time)}</span></div>
           </div>
         </div>
 

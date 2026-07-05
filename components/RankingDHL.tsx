@@ -1,3 +1,5 @@
+import { formatDateBR } from '../lib/dateUtils';
+
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Trophy, Calendar, RefreshCw, Loader2, Activity, Lock, AlertTriangle } from 'lucide-react';
@@ -24,7 +26,7 @@ function monthLabel(year: number, month0: number) {
 function endOfMonthPlus40(year: number, month0: number) {
     const lastDay = new Date(year, month0 + 1, 0);
     const payment = new Date(lastDay.getTime() + 40 * 24 * 60 * 60 * 1000);
-    return payment.toLocaleDateString('pt-BR');
+    return formatDateBR(payment);
 }
 
 function isDiretoria(): boolean {

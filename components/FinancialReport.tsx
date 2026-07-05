@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { FinancialTransaction, FinancialCategory } from '../types';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
-import { formatIsoDateBR } from '../lib/dateUtils';
+import { formatIsoDateBR, formatDateBR } from '../lib/dateUtils';
 import { 
     FileText, Calendar, DollarSign, Download, Printer, Filter, 
     ArrowUpCircle, ArrowDownCircle, ShieldAlert, Loader2, Search, TrendingUp, User,
@@ -122,7 +122,7 @@ const FinancialReport: React.FC = () => {
     const periodLabel = useMemo(() => {
         const now = today;
         const labels: Record<string, string> = {
-            DIA: now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+            DIA: formatDateBR(now),
             SEMANA: 'Semana Atual',
             MES: `${MONTH_NAMES[now.getMonth()]}/${now.getFullYear()}`,
             TRIMESTRE: `${MONTH_NAMES[now.getMonth()]}—${MONTH_NAMES[Math.min(now.getMonth()+2, 11)]}/${now.getFullYear()}`,

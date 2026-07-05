@@ -122,6 +122,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [allMissions, setAllMissions] = useState<Mission[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState<'ok' | 'error' | null>(null);
+  const [lastMissionsFetchAt, setLastMissionsFetchAt] = useState<Date | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   
@@ -610,7 +611,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     await Promise.all([fetchApprovalLogs(), fetchEvidenceLogs(), fetchMissionLogs(), fetchDhlIntakes(), fetchTollConfirmations()]);
   }, []);
 
-  const fetchMissionsRef = useRef<(silent?: boolean) => Promise<void>>(async () => {});
+  const fetchMissionsRef = useRef<(silent?: boolean) => Promise<boolean>>(async () => true);
   const showNotificationRef = useRef(showNotification);
   showNotificationRef.current = showNotification;
   const mapRawMissionRowRef = useRef(mapRawMissionRow);
@@ -624,7 +625,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const isRestrictedClientViewRef = useRef(isRestrictedClientView);
   isRestrictedClientViewRef.current = isRestrictedClientView;
 
-  const fetchMissions = useCallback(async (silent = false) => {
+  const fetchMissions = useCallback(async (silent = false): Promise<boolean> => {
     const user = currentUserRef.current;
     const commercial = isCommercialRef.current;
     const restrictedClientView = isRestrictedClientViewRef.current;
@@ -638,7 +639,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
       if (user?.clientId) {
           const { data: clientData } = await supabase.from('clients').select('name').eq('id', user.clientId).single();
           if (clientData) { scope = { type: 'eq', value: clientData.name }; setResolvedClientName(clientData.name); }
-          else { setAllMissions([]); allMissionsRef.current = []; setIsLoading(false); return; }
+          else { setAllMissions([]); allMissionsRef.current = []; if (!silent) setIsLoading(false); setLastMissionsFetchAt(new Date()); return true; }
       } else if (commercial || (user?.permissions && user.permissions.some(p => p.startsWith('client_view:')))) {
           const allowedClientIds = user?.permissions?.filter(p => p.startsWith('client_view:')).map(p => p.split(':')[1]) || [];
 
@@ -834,10 +835,14 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             // reconciliados em segundo plano; já têm versionamento próprio.
             void refreshDerivedDataRef.current(mapped).catch(err => console.error('Erro ao carregar dados derivados:', err));
         }
+
+        setLastMissionsFetchAt(new Date());
+        return true;
       } catch (error: any) {
         console.error('Error fetching missions:', error.message || error);
         setDbStatus('error');
         showNotificationRef.current('Erro', `Falha ao carregar monitoramento`, 'error');
+        return false;
       } finally {
         if (!silent) setIsLoading(false);
       }
@@ -1839,6 +1844,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    clientTables={clientTables}
                    providerTables={providerTables}
                    clientsData={clientsData}
+                   lastDataUpdatedAt={lastMissionsFetchAt}
                    onRefreshMissions={() => fetchMissions(true)}
                    clientFilter={(name) => {
                      const n = (name || '').toUpperCase();
@@ -1857,6 +1863,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    clientTables={clientTables}
                    providerTables={providerTables}
                    clientsData={clientsData}
+                   lastDataUpdatedAt={lastMissionsFetchAt}
                    onRefreshMissions={() => fetchMissions(true)}
                    clientFilter={(name) => {
                      const n = (name || '').toUpperCase();
@@ -1877,6 +1884,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    clientTables={clientTables}
                    providerTables={providerTables}
                    clientsData={clientsData}
+                   lastDataUpdatedAt={lastMissionsFetchAt}
                    onRefreshMissions={() => fetchMissions(true)}
                    dailyGoalOverride={35000 + 40000}
                    monthlyGoalOverride={(35000 + 40000) * 20}

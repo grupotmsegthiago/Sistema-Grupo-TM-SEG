@@ -1,7 +1,7 @@
 
 import React, { memo, useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
-import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
+import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
 import { Mission, MissionStatus, MissionLog, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
@@ -441,7 +441,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         e.stopPropagation();
         const dateObj = new Date(mission.startTime || mission.createdAt);
         const dateStr = formatDateBR(dateObj);
-        const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+        const timeStr = formatTimeBR(dateObj);
         const trackerType = mission.vehicleData?.tracker_type || 'N/A';
         const trackerId = mission.vehicleData?.tracker_id || 'N/A';
         const textToCopy = `Segue os dados referente a missão solicitada:

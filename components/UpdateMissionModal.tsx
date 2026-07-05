@@ -1,4 +1,4 @@
-import { formatDateBR } from '../lib/dateUtils';
+import { formatDateBR, formatIsoDateBR, formatTimeAuditBR, formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB } from '../types';
@@ -1110,8 +1110,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const now = new Date();
             setEditData(prev => ({
                 ...prev,
-                endDate: now.toLocaleDateString('en-CA'),
-                endTime: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                endDate: formatIsoDateBR(now),
+                endTime: formatTimeAuditBR(now)
             }));
         }, 1000);
 
@@ -1248,11 +1248,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         try {
             const { data: m } = await supabase.from('missions').select('*').eq('id', mission.id).single();
             const startDT = m.start_time ? {
-                date: new Date(m.start_time).toLocaleDateString('en-CA'),
-                time: new Date(m.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                date: formatIsoDateBR(new Date(m.start_time)),
+                time: formatTimeAuditBR(new Date(m.start_time))
             } : { 
-                date: new Date().toLocaleDateString('en-CA'), 
-                time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) 
+                date: formatIsoDateBR(),
+                time: formatTimeAuditBR()
             };
 
             // Lógica de Data Final Inteligente:
@@ -1264,11 +1264,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const isFutureStart = startObj > new Date(now.getTime() + 60000); // Buffer 1 min
 
             const endDT = m.end_time ? {
-                date: new Date(m.end_time).toLocaleDateString('en-CA'),
-                time: new Date(m.end_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                date: formatIsoDateBR(new Date(m.end_time)),
+                time: formatTimeAuditBR(new Date(m.end_time))
             } : (isFutureStart ? { date: '', time: '' } : { 
-                date: new Date().toLocaleDateString('en-CA'), 
-                time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) 
+                date: formatIsoDateBR(),
+                time: formatTimeAuditBR()
             });
 
             if ([MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED, MissionStatus.PENDING].includes(m.status as MissionStatus)) {
@@ -1742,8 +1742,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const scheduledStart = new Date(`${editData.startDate}T${editData.startTime}`);
             if (now < scheduledStart) {
                 startIso = now.toISOString();
-                const newDate = now.toLocaleDateString('en-CA');
-                const newTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const newDate = formatIsoDateBR(now);
+                const newTime = formatTimeAuditBR(now);
                 setEditData(prev => ({ ...prev, startDate: newDate, startTime: newTime }));
             }
         }
@@ -2171,8 +2171,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             }]);
             
             const dateObj = new Date(startIso);
-            const dateStr = dateObj.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-            const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+            const dateStr = formatDateBR(dateObj);
+            const timeStr = formatTimeBR(dateObj);
             
             const formatFL = (name?: string) => { 
                 if (!name || name === '---' || name === '') return 'N/A'; 
@@ -2186,7 +2186,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const isDHL = /DHL/i.test(mission.client || '');
             const fmtDateTime = (iso?: string) => {
                 if (!iso) return '';
-                try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); } catch { return ''; }
+                try { return formatDateTimeBR(iso); } catch { return ''; }
             };
             let dhlOriginAt = '', dhlInTransitAt = '', dhlCompletedAt = '';
             if (isDHL) {
@@ -2682,12 +2682,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }
 
         const d = new Date(iso);
-        const endDate = d.toLocaleDateString('en-CA');
-        const endTime = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const endDate = formatIsoDateBR(d);
+        const endTime = formatTimeAuditBR(d);
         // Cancelamento: a "Data de fim de viagem" (operacional) vira endDate/endTime.
         const et = endTravelIso ? new Date(endTravelIso) : null;
-        const etDate = et ? et.toLocaleDateString('en-CA') : '';
-        const etTime = et ? et.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+        const etDate = et ? formatIsoDateBR(et) : '';
+        const etTime = et ? formatTimeAuditBR(et) : '';
         setEditData(prev => ({
             ...prev,
             ...(km != null ? { endKm: String(km) } : {}),

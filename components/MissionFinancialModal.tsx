@@ -23,6 +23,7 @@ import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import { formatProviderName } from '../lib/utils';
 import { formatDateTimeBR, formatNowDateTimeBR, formatDateBR, formatTimeBR } from '../lib/dateUtils';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import html2canvas from 'html2canvas';
 import FilterableSelect, { type FilterableSelectOption } from './FilterableSelect';
 
@@ -43,6 +44,28 @@ const safeNumber = (val: any): number => {
     const n = typeof val === 'number' ? val : parseFloat(String(val).replace(',', '.'));
     return isNaN(n) ? 0 : n;
 };
+
+const r2money = (v: number) => Math.round(v * 100) / 100;
+
+/** OS filha Mesma OS: custo do fornecedor sempre zero no banco. */
+async function zeroSameOsProviderCostInDb(missionId: string): Promise<boolean> {
+    const payload: Record<string, unknown> = {
+        cost_value: 0,
+        toll_value_provider: 0,
+        displacement_value_provider: 0,
+        last_update: new Date().toISOString(),
+    };
+    let { error } = await supabase.from('missions').update(payload).eq('id', missionId);
+    if (error?.message?.includes('does not exist')) {
+        const { toll_value_provider, displacement_value_provider, ...minimal } = payload;
+        ({ error } = await supabase.from('missions').update(minimal).eq('id', missionId));
+    }
+    return !error;
+}
+
+function broadcastMissionRefresh() {
+    try { window.dispatchEvent(new CustomEvent('refreshMissions')); } catch {}
+}
 
 // Parser robusto para input BRL
 const parseNumber = (val: string | number | undefined | null): number => {
@@ -559,11 +582,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     }
 
     setTollInput(formatted);
-    if (prevTollProv <= 0 || prevTollProv === prevToll) {
+    if (!isSameOs && (prevTollProv <= 0 || prevTollProv === prevToll)) {
         setTollProviderInput(formatted);
         const currentCost = parseNumber(costInput);
         const updatedCost = currentCost - prevTollProv + v;
         setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    } else if (isSameOs) {
+        setTollProviderInput('0,00');
+        setCostInput('0,00');
     }
     const currentRev = parseNumber(revenueInput);
     const updatedRev = currentRev - prevToll + v;
@@ -959,6 +985,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
           if (mRes.data) {
               const d = mRes.data;
+              // Corrige legado: filha Mesma OS não pode ter custo de fornecedor salvo.
+              if (d.is_same_os) {
+                  const legacyCost = safeNumber(d.cost_value);
+                  const legacyTollProv = safeNumber(d.toll_value_provider);
+                  const legacyDispProv = safeNumber(d.displacement_value_provider);
+                  if (legacyCost > 0 || legacyTollProv > 0 || legacyDispProv > 0) {
+                      const fixed = await zeroSameOsProviderCostInDb(d.id);
+                      if (fixed) {
+                          d.cost_value = 0;
+                          d.toll_value_provider = 0;
+                          d.displacement_value_provider = 0;
+                          broadcastMissionRefresh();
+                      }
+                  }
+              }
               // OS CANCELADA: busca o horário do cancelamento (mission_history)
               // para o motor cobrar as horas extras quando cancelada DEPOIS da
               // franquia. Sem isso, o motor trata como "cancelada antes" e zera
@@ -1120,8 +1161,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       const revTotal = savedRev + dbToll + dbDisp;
                       setRevenueInput(revTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                   }
-                  if (savedCost > 0 || (savedCost === 0 && hasVerifiedOrApproved)) {
-                      const costTotal = savedCost + dbTollProvider + (mRes.data.is_same_os ? 0 : dbDispProvider);
+                  if (isSameOsMission) {
+                      setCostInput('0,00');
+                  } else if (savedCost > 0 || (savedCost === 0 && hasVerifiedOrApproved)) {
+                      const costTotal = savedCost + dbTollProvider + dbDispProvider;
                       setCostInput(costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                   }
                   dbValuesLoadedRef.current = true;
@@ -1460,7 +1503,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       } finally { setIsUpdating(false); isSavingRef.current = false; }
   };
 
-  useEffect(() => { if (isOpen) loadData(); }, [isOpen]);
+  useEffect(() => { if (isOpen) loadData(); }, [isOpen, initialMission?.id]);
+
+  useRealtimeRefresh('missions', () => {
+      if (isOpen && !isSavingRef.current) loadData();
+  });
+
+  useEffect(() => {
+      const onRefresh = () => {
+          if (isOpen && !isSavingRef.current) loadData();
+      };
+      window.addEventListener('refreshMissions', onRefresh);
+      return () => window.removeEventListener('refreshMissions', onRefresh);
+  }, [isOpen]);
 
   const providerOpsOverride = useMemo(() => {
       if (!mission?.provider_ops_edited) return undefined;
@@ -1536,7 +1591,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // "base + km + hora + IBL + pedágio = total": serviço (já com IBL) + pedágio.
           // O número grande deve ser cópia fiel deste valor.
           const autoClientTotal = financialData.client.serviceTotal + parseNumber(tollInput) + parseNumber(displacementInput);
-          const autoProviderTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
+          const autoProviderTotal = mission.is_same_os
+              ? 0
+              : financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
 
           const canAutoFill = !dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current;
           if (canAutoFill) {
@@ -1564,8 +1621,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   setRevenueInput(fmtBR(autoClientTotal));
               }
               const currentCost = parseNumber(costInput);
-              if (autoProviderTotal > 0 && Math.abs(currentCost - autoProviderTotal) > 1) {
+              if (!mission.is_same_os && autoProviderTotal > 0 && Math.abs(currentCost - autoProviderTotal) > 1) {
                   setCostInput(fmtBR(autoProviderTotal));
+              } else if (mission.is_same_os && currentCost !== 0) {
+                  setCostInput('0,00');
               }
           }
 
@@ -1577,7 +1636,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // passa a ser o do motor, evitando o "R$ 0,00" remanescente de
           // gravações antigas (anteriores ao motor).
           // Só não roda durante salvamento ou logo após edição manual.
-          if (financialData.autoEngine?.active && !userManuallyEditedRef.current && !isSavingRef.current) {
+          if (financialData.autoEngine?.active && !mission.is_same_os && !userManuallyEditedRef.current && !isSavingRef.current) {
               const engineCostTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
               const currentCostInput = parseNumber(costInput);
               if (engineCostTotal > 0 && Math.abs(currentCostInput - engineCostTotal) > 1) {
@@ -1603,7 +1662,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
               const calcCostTotal = financialData.provider.total + parseNumber(displacementProviderInput);
               const currentCostInput = parseNumber(costInput);
-              if (calcCostTotal > 0 && Math.abs(currentCostInput - calcCostTotal) > 1) {
+              if (!mission.is_same_os && calcCostTotal > 0 && Math.abs(currentCostInput - calcCostTotal) > 1) {
                   setCostInput(fmt(calcCostTotal));
               }
           }
@@ -1713,7 +1772,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const updatedRev = currentRev - oldToll + newToll;
           setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
       }
-      if (parseNumber(tollProviderInput) === 0 && newToll > 0) {
+      if (!mission?.is_same_os && parseNumber(tollProviderInput) === 0 && newToll > 0) {
           const oldTollProv = parseNumber(tollProviderInput);
           setTollProviderInput(val);
           const currentCost = parseNumber(costInput);
@@ -1724,6 +1783,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   };
 
   const handleTollProviderChange = (val: string) => {
+      if (mission?.is_same_os) return;
       const oldTollProv = parseNumber(tollProviderInput);
       const newTollProv = parseNumber(val);
       setTollProviderInput(val);
@@ -2046,6 +2106,64 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       return { hasAuditor, hasFinanceiro, hasDiretoria, hasController, isFullyApproved, isApprovedForBilling, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage, lockedByDiretoria, isPrivilegedReapprover };
   }, [approvalLog, mission?.endTime]);
 
+  const applyOfficialTableToDb = async () => {
+      if (!mission || !financialData) return;
+      setIsUpdating(true);
+      isSavingRef.current = true;
+      try {
+          const toll = parseNumber(tollInput);
+          const tollProv = mission.is_same_os ? 0 : (parseNumber(tollProviderInput) || toll);
+          const displacement = parseNumber(displacementInput);
+          const dispProv = mission.is_same_os ? 0 : parseNumber(displacementProviderInput);
+          const revService = r2money(financialData.client.serviceTotal);
+          const costService = mission.is_same_os ? 0 : r2money(financialData.provider.serviceTotal);
+          const revTotal = revService + toll + displacement;
+          const costTotal = costService + tollProv + dispProv;
+          const fmt = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+          setUseSavedValues(false);
+          userManuallyEditedRef.current = false;
+          setRevenueInput(fmt(revTotal));
+          setCostInput(fmt(costTotal));
+
+          const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+          const userName = userData.name || 'Sistema';
+          const stamp = `[${userName} - ${formatNowDateTimeBR()}]`;
+          const payload: Record<string, unknown> = {
+              revenue_value: revService,
+              cost_value: costService,
+              toll_value: r2money(toll),
+              displacement_value: r2money(displacement),
+              toll_value_provider: r2money(tollProv),
+              displacement_value_provider: r2money(dispProv),
+              revenue_edit_reason: `${stamp} Tabela oficial aplicada automaticamente`,
+              last_update: new Date().toISOString(),
+              billing_verified_by: userName,
+          };
+          if (!mission.is_same_os) {
+              payload.cost_edit_reason = `${stamp} Tabela oficial aplicada automaticamente`;
+          }
+
+          let { error } = await supabase.from('missions').update(payload).eq('id', mission.id);
+          if (error?.message?.includes('does not exist')) {
+              const { toll_value_provider, displacement_value, displacement_value_provider, ...minimal } = payload;
+              ({ error } = await supabase.from('missions').update(minimal).eq('id', mission.id));
+          }
+          if (error) throw error;
+
+          dbValuesLoadedRef.current = true;
+          showNotification('Tabela Aplicada', 'Valores gravados conforme tabela oficial de franquia.', 'success');
+          broadcastMissionRefresh();
+          onUpdate?.();
+          await loadData();
+      } catch (e: any) {
+          showNotification('Erro', e.message || 'Falha ao aplicar tabela oficial.', 'error');
+      } finally {
+          setIsUpdating(false);
+          isSavingRef.current = false;
+      }
+  };
+
   const handleUpdate = async (approve: boolean) => {
       if (!mission) return;
       if (isSnapshotFrozen && !isController && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro' && currentApprovalStatus.currentUserStage !== 'controller') {
@@ -2099,16 +2217,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       }
 
       const originalRevenue = (mission.revenue_value || 0) + (mission.toll_value || 0) + ((mission as any).displacement_value || 0);
+      const isSameOs = mission.is_same_os === true;
       const revTotal = isController ? originalRevenue : parseNumber(revenueInput);
-      const costTotal = parseNumber(costInput);
+      const costTotal = isSameOs ? 0 : parseNumber(costInput);
       const toll = isController ? (mission.toll_value || 0) : parseNumber(tollInput);
-      const tollProv = parseNumber(tollProviderInput) || toll;
+      const tollProv = isSameOs ? 0 : (parseNumber(tollProviderInput) || toll);
       const displacement = isController ? ((mission as any).displacement_value || 0) : parseNumber(displacementInput);
-      const dispProv = parseNumber(displacementProviderInput);
+      const dispProv = isSameOs ? 0 : parseNumber(displacementProviderInput);
       const calcRevTotal = financialData ? (financialData.client.serviceTotal + toll + displacement) : 0;
       const calcCostTotal = financialData ? (financialData.provider.serviceTotal + tollProv + dispProv) : 0;
       const revDivergent = isController ? false : Math.abs(revTotal - calcRevTotal) > 1;
-      const costDivergent = Math.abs(costTotal - calcCostTotal) > 1;
+      const costDivergent = !isSameOs && Math.abs(costTotal - calcCostTotal) > 1;
       // Task #66 — quando o motor automático de fornecedor está ativo, qualquer
       // divergência (> 1 centavo) entre o custo salvo (sem pedágio) e a sugestão
       // do motor deve obrigar o operador a informar o motivo, garantindo
@@ -2117,6 +2236,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const autoEngineSuggestedCost = autoEngineActive ? (financialData!.autoEngine!.totalCost || 0) : null;
       const savedCostServiceOnly = costTotal - tollProv - dispProv;
       const autoEngineDivergent = autoEngineActive
+          && !isSameOs
           && autoEngineSuggestedCost !== null
           && Math.abs(savedCostServiceOnly - autoEngineSuggestedCost) > 0.01;
 
@@ -2746,6 +2866,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const isZeroCostError = financialData && financialData.provider.base === 0 && !mission.is_same_os && (financialData.realTraveledKm > 0 || financialData.durationHours > 0);
   
+  const missionStatusTrim = (mission?.status || '').trim();
+  const requiresTollGate = missionStatusTrim === 'Concluída' || missionStatusTrim === 'Cancelada';
+  const footerRevTotal = parseNumber(revenueInput);
+  const footerCostTotal = parseNumber(costInput);
+  const footerProfit = footerRevTotal - footerCostTotal;
+  const footerMarginPct = footerRevTotal > 0 ? (footerProfit / footerRevTotal) * 100 : 0;
+  
   const isInheritedToll = false;
   const isSavedZero = tollSource === 'VALOR SALVO (R$ 0,00)';
   const isAwaitingCheck = tollSource === 'AGUARDANDO CONFERÊNCIA';
@@ -2943,6 +3070,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                 try {
                   const updateData: any = { is_same_os: newVal };
                   if (!newVal) updateData.parent_mission_id = null;
+                  if (newVal) {
+                    updateData.cost_value = 0;
+                    updateData.toll_value_provider = 0;
+                    updateData.displacement_value_provider = 0;
+                  }
                   await supabase.from('missions').update(updateData).eq('id', mission.id);
                   const userData = JSON.parse(localStorage.getItem('user') || '{}');
                   await supabase.from('system_logs').insert([{
@@ -2954,8 +3086,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   }]);
                   mission.is_same_os = newVal;
                   if (!newVal) mission.parent_mission_id = undefined;
+                  if (newVal) {
+                    mission.cost_value = 0;
+                    (mission as any).toll_value_provider = 0;
+                    (mission as any).displacement_value_provider = 0;
+                    setCostInput('0,00');
+                    setTollProviderInput('0,00');
+                  }
+                  broadcastMissionRefresh();
                   showNotification(newVal ? 'MESMA OS Ativada' : 'MESMA OS Desativada', newVal ? 'Custo do fornecedor zerado.' : 'Custo será recalculado.', 'success');
                   onUpdate();
+                  await loadData();
                 } catch (err: any) {
                   showNotification('Erro', err.message, 'error');
                 }
@@ -3482,18 +3623,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </div>
                                     </div>
                                     <button
-                                        onClick={() => {
-                                            if (financialData) {
-                                                const toll = financialData.tollValue;
-                                                setUseSavedValues(false);
-                                                setRevenueInput((financialData.client.total + parseNumber(displacementInput)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                                                setCostInput((financialData.provider.total + parseNumber(displacementProviderInput)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                                                setTollInput(toll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                                                setTollProviderInput(toll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                                                showNotification('Tabela Aplicada', 'Valores ajustados conforme tabela oficial de franquia.', 'success');
-                                            }
-                                        }}
-                                        className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-amber-700 transition-all shadow-sm"
+                                        onClick={() => applyOfficialTableToDb()}
+                                        disabled={isUpdating}
+                                        className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-amber-700 transition-all shadow-sm disabled:opacity-50"
                                         data-testid="button-apply-official-table"
                                     >
                                         <RefreshCw size={12} /> Aplicar Tabela Oficial
@@ -5264,14 +5396,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             <div className="flex gap-12 items-center">
                                 <div>
                                     <p className="text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">Resultado Operacional Final</p>
-                                    <h3 className={`text-3xl font-black font-mono tracking-tighter ${financialData.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                        {formatCurrency(parseNumber(revenueInput) - parseNumber(costInput))}
+                                    <h3 className={`text-3xl font-black font-mono tracking-tighter ${footerProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {formatCurrency(footerProfit)}
                                     </h3>
                                 </div>
                                 <div className="border-l border-gray-200 pl-12 hidden md:block">
                                     <p className="text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">Margem Líquida %</p>
                                     <h3 className="text-3xl font-black font-mono tracking-tighter text-blue-600">
-                                        {financialData.marginPercent.toFixed(1)}%
+                                        {footerMarginPct.toFixed(1)}%
                                     </h3>
                                 </div>
                                 {!currentApprovalStatus.isFullyApproved && (
@@ -5299,8 +5431,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 
-                                    disabled={isUpdating || !tollConfirmed || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))} 
-                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${!tollConfirmed ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    disabled={isUpdating || (requiresTollGate && !tollConfirmed) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))} 
+                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${requiresTollGate && !tollConfirmed ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
                                     data-testid="button-approve-billing"
                                 >
                                     <span className="flex items-center gap-2">
@@ -5309,7 +5441,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             ? 'Re-Aprovar Faturamento'
                                             : (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')
                                             ? 'OS Pendente — Não Aprovável' 
-                                            : !tollConfirmed 
+                                            : requiresTollGate && !tollConfirmed 
                                                 ? 'Confirme o Pedágio' 
                                                 : currentApprovalStatus.lockedByDiretoria
                                                     ? 'Bloqueado — Somente Diretoria'

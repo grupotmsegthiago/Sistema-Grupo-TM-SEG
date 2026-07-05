@@ -1,3 +1,4 @@
+import { formatNowTimeBR } from '../lib/dateUtils';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { generateContent } from '../lib/gemini';
@@ -132,7 +133,7 @@ const CloudCostManager: React.FC = () => {
         ];
 
         for (const step of steps) {
-            setImplementationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${step}`]);
+            setImplementationLogs(prev => [...prev, `[${formatNowTimeBR()}] ${step}`]);
             await new Promise(r => setTimeout(r, 800));
         }
 

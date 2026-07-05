@@ -1,3 +1,4 @@
+import { formatNowDateTimeBR } from '../lib/dateUtils';
 // BUILD v048 - 2026-04-07 17:40 BRT
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
@@ -4351,7 +4352,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             const tollVal = Math.max(0, m.toll_value || 0);
                                             const dispVal = Math.max(0, m.displacement_value || 0);
                                             const newRevenue = Math.max(0, Math.round((newTotal - tollVal - dispVal) * 100) / 100);
-                                            const reasonStamp = `[${userName} - ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}] Ajustado pela conferência da planilha do cliente (Total ${fmtBRL(newTotal)})`;
+                                            const reasonStamp = `[${userName} - ${formatNowDateTimeBR()}] Ajustado pela conferência da planilha do cliente (Total ${fmtBRL(newTotal)})`;
                                             console.log('[DivergenceEdit] Tentando salvar', { fullId, newTotal, newRevenue, tollVal, userName });
                                             // Usa endpoint backend (com service-role) p/ contornar RLS e snapshots
                                             const resp = await authFetch(`/api/missions/${encodeURIComponent(fullId)}/billing-override`, {

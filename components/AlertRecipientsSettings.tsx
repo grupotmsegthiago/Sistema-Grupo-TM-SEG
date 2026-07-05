@@ -1,3 +1,4 @@
+import { formatDateTimeBR } from '../lib/dateUtils';
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Save, Loader2, RefreshCw, History, Mail } from 'lucide-react';
 
@@ -137,7 +138,7 @@ const AlertRecipientsSettings: React.FC = () => {
 
   const fmtDate = (iso: string | null) => {
     if (!iso) return '—';
-    try { return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }); }
+    try { return formatDateTimeBR(iso); }
     catch { return iso; }
   };
 

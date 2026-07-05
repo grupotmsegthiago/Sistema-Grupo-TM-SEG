@@ -1,3 +1,4 @@
+import { formatDateBR, TMSEG_TIMEZONE } from '../lib/dateUtils';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
@@ -265,7 +266,7 @@ const CommercialProposalModal: React.FC<Props> = ({
       showNotification('Assinatura Digital', 'Documento enviado para o ZapSign.', 'info');
   };
 
-  const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+  const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: TMSEG_TIMEZONE });
   const fullAddressStr = street ? `${street}, nº ${number}${complement ? ' ('+complement+')' : ''}, ${neighborhood}, ${city}/${state}, CEP: ${zip_code}` : address || 'Endereço não informado';
 
   // DADOS DA CONTRATADA (FIXOS)

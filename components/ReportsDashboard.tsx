@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { SystemLog, MissionStatus } from '../types';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
-import { formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
+import { formatDateTimeBR, formatIsoDateBR, formatTimeBR, TMSEG_TIMEZONE } from '../lib/dateUtils';
 import {
     ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, Legend
@@ -79,9 +79,7 @@ const ReportsDashboard: React.FC = () => {
     const [dhlMemorySearchTerm, setDhlMemorySearchTerm] = useState('');
     
     // Helper para formatar data local (YYYY-MM-DD)
-    const getLocalISODate = (date: Date) => {
-        return date.toLocaleDateString('en-CA');
-    };
+    const getLocalISODate = (date: Date) => formatIsoDateBR(date);
 
     const [startDate, setStartDate] = useState(getLocalISODate(new Date()));
     const [endDate, setEndDate] = useState(getLocalISODate(new Date()));
@@ -1248,7 +1246,7 @@ const ReportsDashboard: React.FC = () => {
                         .map(m => {
                             const [y, mo] = m.month.split('-');
                             const label = new Date(Number(y), Number(mo) - 1, 1)
-                                .toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
+                                .toLocaleDateString('pt-BR', { month: 'short', year: '2-digit', timeZone: TMSEG_TIMEZONE })
                                 .replace('.', '');
                             return { ...m, label };
                         });

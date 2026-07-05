@@ -1,3 +1,4 @@
+import { formatDateTimeBR } from '../lib/dateUtils';
 
 import React, { useEffect, useState } from 'react';
 import { X, History, ArrowRight, User, Calendar, Loader2, FileSearch, PlusCircle } from 'lucide-react';
@@ -53,7 +54,7 @@ const MissionHistoryModal: React.FC<Props> = ({ missionId, onClose }) => {
 
     // Agrupa alterações pelo timestamp (mesma ação de salvar)
     const groupedHistory = history.reduce((acc, curr) => {
-        const key = new Date(curr.changed_at).toLocaleString();
+        const key = curr.changed_at;
         if (!acc[key]) {
             acc[key] = [];
         }
@@ -154,7 +155,7 @@ const MissionHistoryModal: React.FC<Props> = ({ missionId, onClose }) => {
                                                          <User size={12} /> {user}
                                                      </div>
                                                      <div className="flex items-center gap-1 text-gray-500">
-                                                         <Calendar size={12} /> {timestamp}
+                                                         <Calendar size={12} /> {formatDateTimeBR(timestamp)}
                                                      </div>
                                                  </div>
                                                  <span className={`px-2 py-0.5 rounded-full font-bold ${isCreation ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>

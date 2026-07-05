@@ -1,3 +1,4 @@
+import { formatDateTimeBR, formatNowTimeBR } from '../lib/dateUtils';
 
 import { useState, useCallback, useEffect } from 'react';
 import { Scale, Search, ChevronDown, ChevronRight, Clock, Building2, FileText, AlertTriangle, Loader2, BookOpen, Gavel, Calendar, Hash, Eye, ArrowLeft, Download, Plus, Trash2, Bell, CheckCircle2 } from 'lucide-react';
@@ -53,12 +54,7 @@ const TRIBUNAIS_AGRUPADOS = {
 
 const ALL_TRIBUNAIS = Object.values(TRIBUNAIS_AGRUPADOS).flat();
 
-const formatDate = (d: string) => {
-  if (!d) return '—';
-  try {
-    return new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
-  } catch { return d; }
-};
+const formatDate = (d: string) => formatDateTimeBR(d);
 
 const formatProcessoNumber = (n: string) => {
   if (!n) return '';
@@ -193,7 +189,7 @@ const LegalDashboard = () => {
         setError('Nenhum processo encontrado para esta consulta.');
       }
 
-      setSearchHistory(prev => [{ tribunal, query, date: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' }), count: data.total || 0 }, ...prev].slice(0, 10));
+      setSearchHistory(prev => [{ tribunal, query, date: formatNowTimeBR(), count: data.total || 0 }, ...prev].slice(0, 10));
     } catch (err: any) {
       setError(err.message || 'Falha na comunicação com o servidor.');
     } finally {

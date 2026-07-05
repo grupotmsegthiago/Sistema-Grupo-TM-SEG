@@ -1,3 +1,4 @@
+import { formatNowDateTimeBR, formatDateTimeBR } from '../lib/dateUtils';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Settings, Mail, Clock, Save, Loader2, RefreshCw, History, FileBarChart, Send, CheckCircle2, AlertTriangle, ListChecks, Calendar, User, Download, X, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import ManualOverrideAlertSettings from './ManualOverrideAlertSettings';
@@ -173,7 +174,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
       });
       let json: any = {};
       try { json = await res.json(); } catch {}
-      const at = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const at = formatNowDateTimeBR();
       if (!res.ok) {
         setRunResults(prev => ({ ...prev, [key]: { ok: false, message: json?.error || `HTTP ${res.status}`, at } }));
       } else {
@@ -191,7 +192,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
         if (testMode) setOverrideEmails(prev => ({ ...prev, [key]: '' }));
       }
     } catch (e: any) {
-      const at = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const at = formatNowDateTimeBR();
       setRunResults(prev => ({ ...prev, [key]: { ok: false, message: e?.message || 'Erro desconhecido', at } }));
     } finally {
       setRunningKey(null);
@@ -486,7 +487,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
 
   const fmtDate = (iso: string | null) => {
     if (!iso) return '—';
-    try { return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }); }
+    try { return formatDateTimeBR(iso); }
     catch { return iso; }
   };
 
@@ -552,7 +553,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
               ? 'Nunca executado'
               : `${lastScheduledRun.success ? 'OK' : 'FALHOU'} em ${(() => {
                   try {
-                    return new Date(lastScheduledRun.createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+                    return formatDateTimeBR(lastScheduledRun.createdAt);
                   } catch { return lastScheduledRun.createdAt; }
                 })()}`;
             const badgeTitle = !lastScheduledRun

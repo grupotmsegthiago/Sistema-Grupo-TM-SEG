@@ -1486,11 +1486,14 @@ export const auditMissionFinancials = (
     }
 
     const fin = calculateMissionFinancials(mission, clientTables, providerTables, clientData, new Date(), undefined, providers);
+    const isSameOs = !!(mission as any).is_same_os;
     
     const storedRevenue = safeNumber(mission.revenue_value) + safeNumber(mission.toll_value) + dispVal;
-    const storedCost = safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value) + dispProvVal;
+    const storedCost = isSameOs
+        ? 0
+        : safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value) + dispProvVal;
     const calculatedRevenue = fin.client.total + dispVal;
-    const calculatedCost = fin.provider.total + dispProvVal;
+    const calculatedCost = isSameOs ? 0 : fin.provider.total + dispProvVal;
     
     const revenueDiff = Math.abs(storedRevenue - calculatedRevenue);
     const costDiff = Math.abs(storedCost - calculatedCost);

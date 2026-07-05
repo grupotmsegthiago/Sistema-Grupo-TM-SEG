@@ -4,7 +4,7 @@ import { Mission, MissionLog, MissionHistory, Agent, Vehicle, MissionStatus } fr
 import { supabase } from '../lib/supabase';
 import { X, ExternalLink, Loader2, FileText } from 'lucide-react';
 import { googleMapsApiKey } from '../lib/maps';
-import { formatNowDateTimeBR } from '../lib/dateUtils';
+import { formatDateTimeBR, formatNowDateTimeBR } from '../lib/dateUtils';
 
 interface Client {
     id: number;
@@ -97,7 +97,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
     const formatDateTime = (iso?: string) => {
         if (!iso) return '—';
         const d = new Date(iso);
-        return `${d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}`;
+        return formatDateTimeBR(d);
     };
 
     const translateField = (field: string) => {

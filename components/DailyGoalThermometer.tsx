@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase';
 import { Target, Loader2, Trophy, Zap, Clock, RefreshCw } from 'lucide-react';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
+import { useNotification } from '../lib/NotificationContext';
+import { formatDateTimeAuditBR } from '../lib/dateUtils';
 import {
   getCanonicalDateRange,
   filterMissionsByPeriod,
@@ -49,7 +51,8 @@ interface Props {
     clientTables?: ClientPriceTable[];
     providerTables?: ProviderCostTable[];
     clientsData?: Client[];
-    onRefreshMissions?: () => void | Promise<void>;
+    lastDataUpdatedAt?: Date | null;
+    onRefreshMissions?: () => void | Promise<void | boolean>;
     // Filtros opcionais para criar variantes (ex.: META DHL)
     clientFilter?: (clientName: string) => boolean;
     dailyGoalOverride?: number;
@@ -70,7 +73,8 @@ function getDateRange(viewPeriod: string, customStartDate?: string, customEndDat
     return getCanonicalDateRange(period, customStartDate, customEndDate);
 }
 
-const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customStartDate, customEndDate, missions: parentMissions, clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData, onRefreshMissions, clientFilter, dailyGoalOverride, monthlyGoalOverride, titleSuffix, accentClass }) => {
+const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customStartDate, customEndDate, missions: parentMissions, clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData, lastDataUpdatedAt, onRefreshMissions, clientFilter, dailyGoalOverride, monthlyGoalOverride, titleSuffix, accentClass }) => {
+    const { showNotification } = useNotification();
     const dailyGoal = typeof dailyGoalOverride === 'number' ? dailyGoalOverride : DEFAULT_DAILY_GOAL;
     const monthlyGoal = typeof monthlyGoalOverride === 'number' ? monthlyGoalOverride : DEFAULT_MONTHLY_GOAL;
     const [isLoading, setIsLoading] = useState(false);
@@ -182,12 +186,26 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
     const canSeeMonetary = userRole === 'diretoria';
 
     const handleManualRefresh = useCallback(async () => {
+        if (isRefreshing || isLoading) return;
         setIsRefreshing(true);
         try {
-            if (onRefreshMissions) await onRefreshMissions();
-        } catch (e) { console.error(e); }
-        setTimeout(() => setIsRefreshing(false), 500);
-    }, [onRefreshMissions]);
+            if (onRefreshMissions) {
+                const result = await onRefreshMissions();
+                if (result !== false) {
+                    setCurrentTime(new Date());
+                    showNotification('Sucesso', 'Meta atualizada com sucesso!', 'success');
+                }
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [onRefreshMissions, showNotification, isRefreshing, isLoading]);
+
+    const refreshButtonTitle = lastDataUpdatedAt
+        ? `Atualizar Meta — Última atualização: ${formatDateTimeAuditBR(lastDataUpdatedAt)}`
+        : 'Atualizar Meta — Aguardando primeira sincronização';
 
     const suffix = titleSuffix ? ` ${titleSuffix}` : '';
     const labelText = viewPeriod === 'TODAY' ? `Meta Agendada${suffix} (Hoje)` :
@@ -246,7 +264,8 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                                 onClick={handleManualRefresh}
                                 disabled={isRefreshing || isLoading}
                                 className="p-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-500 hover:text-gray-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-90"
-                                title="Atualizar Meta"
+                                title={refreshButtonTitle}
+                                aria-label={refreshButtonTitle}
                                 data-testid="button-refresh-goal"
                             >
                                 <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} />

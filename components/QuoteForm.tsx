@@ -1,3 +1,4 @@
+import { formatDateBR } from '../lib/dateUtils';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Printer, MapPin, Calculator, Plus, Trash2, Loader2, Clock, Gauge, CheckCircle2, ScrollText, Info, Save, Database, AlertTriangle, ExternalLink } from 'lucide-react';
@@ -224,7 +225,7 @@ const QuoteForm: React.FC<Props> = ({ onBack, id }) => {
           </div>
           <div className="lg:col-span-5 space-y-6">
               <div id="quote-preview" className="bg-white rounded-lg shadow-lg border-t-4 border-red-700 p-8 min-h-[500px] flex flex-col">
-                  <div className="flex justify-between items-start mb-8"><div><h1 className="text-2xl font-black uppercase tracking-tighter">Cotação</h1><p className="text-xs text-gray-500">Serviços de Segurança</p></div><p className="text-sm font-bold">{new Date().toLocaleDateString()}</p></div>
+                  <div className="flex justify-between items-start mb-8"><div><h1 className="text-2xl font-black uppercase tracking-tighter">Cotação</h1><p className="text-xs text-gray-500">Serviços de Segurança</p></div><p className="text-sm font-bold">{formatDateBR(new Date())}</p></div>
                   <div className="mb-8"><p className="text-[10px] text-gray-400 font-bold uppercase">Cliente</p><h2 className="text-lg font-bold uppercase">{formData.clientName || '...'}</h2></div>
                   {totalValue > 0 && (<div className="border-t-2 border-gray-900 pt-4 mt-auto"><div className="flex justify-between items-end"><div><span className="text-sm font-bold uppercase">Total Estimado</span><p className="text-[10px] text-green-600 font-bold">Base: {formatCurrency(appliedRate)}/km</p></div><span className="text-3xl font-black">{formatCurrency(totalValue)}</span></div></div>)}
               </div>

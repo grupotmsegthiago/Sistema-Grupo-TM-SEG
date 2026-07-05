@@ -1,3 +1,4 @@
+import { formatIsoDateBR, formatNowTimeBR, formatDateTimeBR } from '../lib/dateUtils';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, Save, MapPin, Flag, FileText, Building2, Ruler, Loader2, Plus, X, Navigation, Calendar, ShieldCheck, DollarSign, Calculator, Briefcase, TrendingUp, TrendingDown, ArrowRight, Check, ChevronDown, Package, Info, Siren, Clock, Tag, Layers, Truck, Search, User, Phone, AlertCircle, AlertTriangle, CheckCircle2, Zap, Shield, ShieldAlert, Paperclip, Image, Trash2, Clipboard, Mail } from 'lucide-react';
@@ -126,8 +127,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [canViewIntakeSnapshots, setCanViewIntakeSnapshots] = useState(false);
   
   const now = new Date();
-  const defaultDate = now.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); 
-  const defaultTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+  const defaultDate = formatIsoDateBR(now);
+  const defaultTime = formatNowTimeBR(now);
 
   const [formData, setFormData] = useState({
     client: '', provider: '', origin: '', destination: '', totalDistance: '', estimatedTime: '',
@@ -1930,7 +1931,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                         : st === 'expirado'
                                           ? { bg: 'bg-orange-100', fg: 'text-orange-800', label: 'Expirado' }
                                           : { bg: 'bg-yellow-100', fg: 'text-yellow-800', label: 'Pendente' };
-                                    const fmt = (d: string | null) => d ? new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
+                                    const fmt = (d: string | null) => formatDateTimeBR(d);
                                     const hasSnapshots = canViewIntakeSnapshots && st === 'preenchido' && (it.agent1_snapshot || it.agent2_snapshot || it.vehicle_snapshot);
                                     const isExpanded = expandedIntakeId === it.id;
 
@@ -2794,7 +2795,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       <div className="p-4 bg-orange-50 border-2 border-orange-200 rounded-xl space-y-3 animate-in slide-in-from-top-2">
                           <p className="text-[11px] font-black text-orange-800 uppercase tracking-wider flex items-center gap-2"><Clock size={14} /> Esta missão é imediata ou agendada?</p>
                           <div className="grid grid-cols-2 gap-3">
-                              <button type="button" onClick={() => { const now = new Date(); setFormData(prev => ({ ...prev, scheduledDate: now.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), scheduledTime: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) })); setScheduleMode('immediate'); }} className="py-4 bg-red-700 text-white rounded-xl font-black text-xs uppercase tracking-wider hover:bg-red-800 transition-all active:scale-95 flex flex-col items-center gap-2 shadow-md" data-testid="button-schedule-immediate">
+                              <button type="button" onClick={() => { setFormData(prev => ({ ...prev, scheduledDate: formatIsoDateBR(), scheduledTime: formatNowTimeBR() })); setScheduleMode('immediate'); }} className="py-4 bg-red-700 text-white rounded-xl font-black text-xs uppercase tracking-wider hover:bg-red-800 transition-all active:scale-95 flex flex-col items-center gap-2 shadow-md" data-testid="button-schedule-immediate">
                                   <Zap size={20} />
                                   <span>Imediata</span>
                                   <span className="text-[9px] font-medium opacity-70 normal-case">Saída agora</span>
@@ -2822,7 +2823,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   {scheduleMode === 'scheduled' && (
                       <div className="space-y-4 animate-in slide-in-from-top-2">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="relative"><label className={LABEL_CLASS}>Data do Agendamento *</label><div className="relative"><input type="date" required min={new Date().toLocaleDateString('en-CA')} className={INPUT_CLASS} value={formData.scheduledDate} onChange={e => setFormData({...formData, scheduledDate: e.target.value})} data-testid="input-scheduled-date" /><Calendar size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div>
+                              <div className="relative"><label className={LABEL_CLASS}>Data do Agendamento *</label><div className="relative"><input type="date" required min={formatIsoDateBR()} className={INPUT_CLASS} value={formData.scheduledDate} onChange={e => setFormData({...formData, scheduledDate: e.target.value})} data-testid="input-scheduled-date" /><Calendar size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div>
                               <div className="relative"><label className={LABEL_CLASS}>Horário *</label><div className="relative"><input type="time" required className={INPUT_CLASS} value={formData.scheduledTime} onChange={e => setFormData({...formData, scheduledTime: e.target.value})} data-testid="input-scheduled-time" /><Clock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div>
                           </div>
                           {isScheduledInPast && (
