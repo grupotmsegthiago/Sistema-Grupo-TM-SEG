@@ -1,4 +1,5 @@
 - REGRAS DE OURO TMSEGO (ler antes de QUALQUER tarefa): ver `.replitinstructions` na raiz — direto ao ponto, edições cirúrgicas, isolamento de clientes por match exato, billing = revenue_value+toll_value do banco, travar minutos antes do custo, frota fixa de 3 viaturas.
+- [Testar antes de entregar](test-before-deliver.md) — regra permanente do Thiago: executar todos os testes possiveis (build, API, browser, producao apos deploy) antes de dizer que esta pronto; nunca entregar sem evidencia.
 - [Toll confirmation persistence](toll-confirmation-persistence.md) — confirming pedágio must persist toll_value to DB, not just write the audit log; revenue/cost are service-only, toll is additive.
 - [Billing report client isolation](billing-client-fuzzy-filter.md) — boletim must scope OS with EXACT `.in('client',[name,trading])`; never ILIKE/generic-word `.or()` (leaks same-industry clients e.g. FSM/UNIKA) nor a JS post-filter.
 - [Comercial data isolation](comercial-data-isolation.md) — no RLS; comercial role scoped 100% via frontend Supabase filters (created_by===name), guard `role==='comercial' && !perms('*')`; director name-match must use full name, not bare first name.

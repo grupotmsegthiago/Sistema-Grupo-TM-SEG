@@ -1,0 +1,56 @@
+---
+description: Testar tudo antes de entregar — regra obrigatoria do usuario para qualquer alteracao
+alwaysApply: true
+---
+
+# Testar antes de entregar (regra do usuario)
+
+**Preferencia permanente do Thiago:** antes de considerar qualquer tarefa concluida, a IA deve **executar ela mesma** todos os testes possiveis e so entregar quando estiver funcionando.
+
+Nunca diga "pronto" ou "publicado" sem evidencia de que testou.
+
+## Ordem obrigatoria
+
+1. **Implementar** a alteracao
+2. **Testar** (ver checklist abaixo)
+3. **Corrigir** se algo falhar — repetir testes
+4. **So entao** informar o usuario (commit/publicar so se ele pedir)
+
+## Checklist minimo (este projeto — Sistema Grupo TM SEG)
+
+### Build e tipos
+- `npm run build` — deve terminar sem erro
+- Se alterou TS/TSX: verificar lints nos arquivos editados
+
+### Backend / API (se tocou `server/` ou `api/`)
+- Subir ou usar servidor local se necessario
+- `GET /api/health` deve retornar status ok
+- Testar rotas/endpoints alterados (curl ou fetch real)
+
+### Frontend (se tocou `components/`, `lib/`, `App.tsx`, etc.)
+- Confirmar que o build injeta Supabase (`dist/public/index.html` contem `__TMSEG_SUPABASE__` ou URL valida)
+- Se possivel: verificar pagina no browser (login carrega, sem overlay de erro JS)
+
+### Testes automatizados (se existirem para o escopo)
+- `bash scripts/run-tests.sh` ou `node --test` nos arquivos `*.test.ts` / `*.test.tsx` relacionados
+
+### Publicacao (so quando o usuario pedir publicar)
+- Apos `publicar.ps1`: aguardar deploy Vercel
+- Verificar site em producao (HTML + tela de login sem erro)
+- Confirmar `/api/health` em producao
+
+## Regras gerais (vale para qualquer sistema neste workspace)
+
+- **Nao assumir que funciona** — rodar comandos reais, nao apenas ler codigo
+- **Nao pular testes** por pressa ou porque "e uma mudanca pequena"
+- **Reportar resultados** ao usuario: o que testou, o que passou, o que falhou
+- Se um teste nao puder rodar (sem rede, sem credencial), dizer explicitamente o que faltou e o que testou no lugar
+- Apos correcoes de bug em producao: **sempre** validar em producao apos deploy, nao so build local
+
+## Exemplo de entrega correta
+
+> Build OK. `/api/health` retornou `{"status":"ok"}`. Site em producao carrega login sem erro Supabase. Deploy commit `abc1234` confirmado.
+
+## Exemplo de entrega incorreta (proibido)
+
+> Pronto, corrigi o Supabase. Pode testar ai.
