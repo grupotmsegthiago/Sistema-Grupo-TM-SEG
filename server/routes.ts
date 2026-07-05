@@ -13,7 +13,11 @@ import pg from "pg";
 import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider } from "./emailService";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
-import { assertOfficialBotNumber } from "./zapiGuard";
+import {
+  getWhatsappProvider,
+  isMetaWhatsAppConfigured,
+  pingMetaWhatsApp,
+} from "./metaWhatsAppConfig";
 import { throttleZapiSend } from "./zapiThrottle";
 import { isLongRunningHost } from "./runtime";
 import { registerScheduledTick } from "./scheduledRegistry";
@@ -932,7 +936,30 @@ export async function registerRoutes(
     }
   });
 
-  // ───────────── WhatsApp (Z-API) — proxy para não expor credenciais ao browser ─────────────
+  // ───────────── WhatsApp — Z-API (ativo) + Meta Cloud API (configuração) ─────────────
+  app.get('/api/whatsapp/providers', requireAuth, async (_req: Request, res: Response) => {
+    res.json({
+      activeProvider: getWhatsappProvider(),
+      botEnabled: isWhatsappBotEnabled(),
+      zapi: {
+        configured: !!(ZAPI_INSTANCE && ZAPI_TOKEN),
+        hasClientToken: !!ZAPI_CLIENT_TOKEN,
+      },
+      meta: {
+        configured: isMetaWhatsAppConfigured(),
+      },
+    });
+  });
+
+  app.get('/api/whatsapp/meta/health', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const health = await pingMetaWhatsApp();
+      res.status(health.ok ? 200 : health.configured ? 502 : 503).json(health);
+    } catch (error: any) {
+      res.status(500).json({ ok: false, configured: false, error: error.message || 'Erro interno' });
+    }
+  });
+
   app.get('/api/whatsapp/groups', requireAuth, async (_req: Request, res: Response) => {
     try {
       if (!ZAPI_INSTANCE || !ZAPI_TOKEN) return res.status(503).json({ error: 'Z-API não configurada' });
