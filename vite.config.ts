@@ -6,9 +6,21 @@ import process from 'node:process';
 export default defineConfig(({ mode }) => {
   // Carrega todas as variáveis do .env local, independente do prefixo
   const env = loadEnv(mode, process.cwd(), '');
-  
+
   // Prioriza a chave do Gemini, mas aceita variações comuns
   const finalKey = env.VITE_GEMINI_API_KEY || env.VITE_API_KEY || env.GEMINI_API_KEY || '';
+
+  // Vercel/Supabase integration often sets SUPABASE_* without VITE_ prefix.
+  const supabaseUrl =
+    env.VITE_SUPABASE_URL ||
+    env.SUPABASE_URL ||
+    env.NEXT_PUBLIC_SUPABASE_URL ||
+    '';
+  const supabaseAnonKey =
+    env.VITE_SUPABASE_ANON_KEY ||
+    env.SUPABASE_ANON_KEY ||
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    '';
 
   return {
     plugins: [react()],
@@ -22,6 +34,8 @@ export default defineConfig(({ mode }) => {
     define: {
       'process.env.API_KEY': JSON.stringify(finalKey),
       'process.env.NODE_ENV': JSON.stringify(mode),
+      'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
+      'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(supabaseAnonKey),
     }
   };
 });
