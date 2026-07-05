@@ -9,6 +9,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/health",
+      "destination": "/api/health"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api"
     },

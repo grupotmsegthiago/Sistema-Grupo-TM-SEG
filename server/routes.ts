@@ -1902,8 +1902,9 @@ export async function registerRoutes(
   const SUPABASE_ANON_KEY = getSupabaseAnonKey();
   const supabaseAdmin = supabase;
 
-  const { error: colCheck } = await supabaseAdmin.from('missions').select('billing_release').limit(1);
-  if (colCheck && colCheck.message.includes('does not exist')) {
+  try {
+    const { error: colCheck } = await supabaseAdmin.from('missions').select('billing_release').limit(1);
+    if (colCheck && colCheck.message.includes('does not exist')) {
     console.log('[Migration] ⚠️  Coluna billing_release NÃO existe na tabela missions.');
     console.log('[Migration] Execute no Supabase SQL Editor:');
     console.log("[Migration] ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT '';");
@@ -1924,6 +1925,9 @@ export async function registerRoutes(
     });
   } else {
     console.log('[Migration] Colunas valor_zero_motivo, reference_number, billing_release verificadas/OK.');
+  }
+  } catch (e: any) {
+    console.log('[Migration] billing_release check:', e?.message || 'unknown');
   }
 
   // ── Migration: controles manuais do Boletim de Medição ──
@@ -2037,7 +2041,11 @@ export async function registerRoutes(
   }
 
   // ── DHL Supplier Intake (tabelas + coluna dhl_se_number) ──
-  await runDhlIntakeMigrations();
+  try {
+    await runDhlIntakeMigrations();
+  } catch (e: any) {
+    console.warn('[Migration] DHL intake:', e?.message || 'falhou');
+  }
   registerDhlIntakeRoutes(app, requireAuth, requireRole, resolveUserRole, resolvePrincipal);
 
   app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
