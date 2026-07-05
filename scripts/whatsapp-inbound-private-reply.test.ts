@@ -51,6 +51,40 @@ test('eventResponse em grupo usa responseFrom como destinatário privado', () =>
   assert.equal(resolveReplyPhone(payload), '5544888888888');
 });
 
+test('grupo sem participantPhone não usa o ID do grupo como destinatário', () => {
+  const payload = {
+    isGroup: true,
+    phone: '120363019502650977-group',
+    text: { message: 'resumo' },
+  };
+
+  assert.equal(resolveInboundChatKind(payload), 'group');
+  assert.equal(resolveReplyPhone(payload), null);
+});
+
+test('ID novo de grupo sem sufixo não é tratado como telefone privado', () => {
+  const payload = {
+    phone: '120363019502650977',
+    text: { message: 'resumo' },
+  };
+
+  assert.equal(resolveInboundChatKind(payload), 'group');
+  assert.equal(resolveReplyPhone(payload), null);
+});
+
+test('grupo pode responder no PV usando from quando participantPhone vier ausente', () => {
+  const payload = {
+    isGroup: true,
+    phone: '120363019502650977-group',
+    from: '5511926839456',
+    participantPhone: null,
+    text: { message: 'resumo' },
+  };
+
+  assert.equal(resolveInboundChatKind(payload), 'group');
+  assert.equal(resolveReplyPhone(payload), '5511926839456');
+});
+
 test('mensagem privada continua respondendo para o próprio phone', () => {
   const payload = {
     isGroup: false,
@@ -79,4 +113,17 @@ test('pedido operacional "Reinicio?" em grupo é reconhecido e montado para PV',
     buildOperationalPrivateReply(payload),
     'Beatriz, vou checar com a equipe agora e já retorno com atualização. 👍',
   );
+});
+
+test('pedido operacional em grupo sem remetente privado não responde no grupo', () => {
+  const payload = {
+    isGroup: true,
+    phone: '120363019502650977-group',
+    senderName: 'Beatriz',
+    text: { message: 'Reinicio?' },
+  };
+
+  assert.equal(isOperationalPrivateReplyCommand(extractInboundText(payload)), true);
+  assert.equal(resolveInboundChatKind(payload), 'group');
+  assert.equal(resolveReplyPhone(payload), null);
 });
