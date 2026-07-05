@@ -45,9 +45,13 @@ if (fs.existsSync(clientPublic)) {
 
 console.log('Frontend files (HTML, assets, ícones PWA, manifest, sw.js) movidos para dist/public/');
 
-execSync(
-  'npx esbuild server/index.ts --bundle --platform=node --format=cjs --outfile=dist/index.cjs --packages=external --external:./vite --external:../vite.config',
-  { stdio: 'inherit' }
-);
-
-console.log('Server bundled to dist/index.cjs');
+// Na Vercel o backend roda via api/index.ts (serverless); não precisa do bundle CJS.
+if (!process.env.VERCEL) {
+  execSync(
+    'npx esbuild server/index.ts --bundle --platform=node --format=cjs --outfile=dist/index.cjs --packages=external --external:./vite --external:../vite.config',
+    { stdio: 'inherit' }
+  );
+  console.log('Server bundled to dist/index.cjs');
+} else {
+  console.log('Vercel: pulando bundle dist/index.cjs (usa api/index.ts).');
+}

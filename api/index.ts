@@ -1,16 +1,15 @@
-import "./loadEnv";
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import "../server/loadEnv";
 import serverless from "serverless-http";
 import { getApp } from "../server/createApp";
 
 let handler: ReturnType<typeof serverless> | null = null;
 
-export default async function vercelHandler(req: VercelRequest, res: VercelResponse) {
+export default async function vercelHandler(req: unknown, res: unknown) {
   if (!handler) {
     const app = await getApp();
     handler = serverless(app, { binary: true });
   }
-  return handler(req, res);
+  return handler(req as any, res as any);
 }
 
 export const config = {

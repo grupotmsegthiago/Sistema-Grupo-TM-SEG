@@ -1,7 +1,7 @@
 {
-  "buildCommand": "npm run build",
+  "installCommand": "npm install --no-audit --no-fund --legacy-peer-deps",
+  "buildCommand": "vite build && node build-server.mjs",
   "outputDirectory": "dist/public",
-  "installCommand": "npm ci --no-audit --no-fund",
   "functions": {
     "api/index.ts": {
       "maxDuration": 300
