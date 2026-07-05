@@ -156,14 +156,14 @@ export async function handleInboundWhatsappMessage(payload: ZapiInboundPayload):
     return { handled: true, action: "inbound_bot_disabled", error: "WHATSAPP_RESUMO_ENABLED não está ativo" };
   }
 
-  const numGuard = await assertOfficialBotNumber();
-  if (!numGuard.ok) {
-    return { handled: true, action: "blocked_unofficial_number", error: numGuard.error || "Número não oficial" };
-  }
-
   const replyPhone = resolveReplyPhone(payload);
   if (!replyPhone) {
     return { handled: true, action: "no_reply_phone", error: "Não foi possível identificar o telefone privado do remetente (participantPhone)" };
+  }
+
+  const numGuard = await assertOfficialBotNumber();
+  if (!numGuard.ok) {
+    return { handled: true, action: "blocked_unofficial_number", replyPhone, error: numGuard.error || "Número não oficial" };
   }
 
   try {

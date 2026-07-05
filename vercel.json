@@ -5,12 +5,19 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 300
+    },
+    "api/whatsapp/webhook/inbound.ts": {
+      "maxDuration": 300
     }
   },
   "rewrites": [
     {
       "source": "/api/health",
       "destination": "/api/health"
+    },
+    {
+      "source": "/api/whatsapp/webhook/inbound",
+      "destination": "/api/whatsapp/webhook/inbound"
     },
     {
       "source": "/api/(.*)",
