@@ -4,7 +4,6 @@ import { storage } from "./storage";
 import { Modality } from "@google/genai";
 import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseServerKey, getSupabaseServiceRoleKey, getSupabaseUrl } from "./supabaseConfig";
-import { Resend } from "resend";
 import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
@@ -62,8 +61,6 @@ import {
   pingGeminiHealth,
 } from "./geminiClient";
 import { resolveGeminiModel } from "../lib/geminiModels";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
