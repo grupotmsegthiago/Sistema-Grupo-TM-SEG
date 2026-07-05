@@ -20,34 +20,74 @@ export type ZapiInboundPayload = {
   phone?: string;
   from?: string;
   participant?: string;
+  participantPhone?: string | null;
   senderPhone?: string;
   isGroup?: boolean;
   fromMe?: boolean;
   text?: { message?: string };
-  message?: { text?: string };
+  message?: { text?: string; extendedTextMessage?: { text?: string } };
+  eventResponse?: {
+    response?: string;
+    responseFrom?: string;
+    referencedMessage?: { participant?: string };
+  };
   body?: string;
 };
 
 export function extractInboundText(payload: ZapiInboundPayload): string {
   return String(
     payload.message?.text
+    || payload.message?.extendedTextMessage?.text
     || payload.text?.message
     || payload.body
+    || payload.eventResponse?.response
     || "",
   ).trim();
 }
 
-export function resolveReplyPhone(payload: ZapiInboundPayload): string | null {
-  const phone = String(payload.phone || payload.from || "");
-  const isGroup = payload.isGroup === true || phone.includes("@g.us") || phone.endsWith("-group");
-  if (isGroup) {
-    const participant = String(payload.participant || payload.senderPhone || "").replace(/\D/g, "");
-    if (participant.length >= 10) return participant.length <= 11 ? `55${participant}` : participant;
-    return null;
-  }
-  const digits = phone.replace(/\D/g, "");
+function digitsOnly(value: unknown): string {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function normalizeBrazilPhone(value: unknown): string | null {
+  const digits = digitsOnly(value);
   if (digits.length < 10) return null;
   return digits.length <= 11 ? `55${digits}` : digits;
+}
+
+function looksLikeGroupChatId(value: string): boolean {
+  const phone = String(value || "");
+  return phone.includes("@g.us")
+    || phone.endsWith("-group")
+    || /^\d+-\d+$/.test(phone);
+}
+
+export function resolveReplyPhone(payload: ZapiInboundPayload): string | null {
+  const phone = String(payload.phone || payload.from || "");
+  const isGroup = payload.isGroup === true || looksLikeGroupChatId(phone);
+  if (isGroup) {
+    return normalizeBrazilPhone(
+      payload.participantPhone
+      || payload.participant
+      || payload.senderPhone
+      || payload.eventResponse?.responseFrom
+      || payload.eventResponse?.referencedMessage?.participant,
+    );
+  }
+  return normalizeBrazilPhone(phone);
+}
+
+export function resolveInboundChatKind(payload: ZapiInboundPayload): "group" | "private" {
+  const phone = String(payload.phone || payload.from || "");
+  return payload.isGroup === true || looksLikeGroupChatId(phone) ? "group" : "private";
+}
+
+export function resolveInboundDebug(payload: ZapiInboundPayload): { chatKind: "group" | "private"; replyPhone: string | null } {
+  const chatKind = resolveInboundChatKind(payload);
+  return {
+    chatKind,
+    replyPhone: resolveReplyPhone(payload),
+  };
 }
 
 export async function handleInboundWhatsappMessage(payload: ZapiInboundPayload): Promise<{
