@@ -28,5 +28,8 @@ A partir de agora, responda apenas em Português do Brasil, inclusive explicaç�
 - Se a alteração envolver múltiplos arquivos, descreva o impacto em cada um deles antes de confirmar.
 
 ## Automação de Publicação
-- Se o usuário pedir para "atualizar o sistema", "publicar" ou "subir para produção", execute o script `.\publicar.ps1`.
-- Após a execução, verifique se o processo foi concluído com sucesso e informe o usuário.
+- Se o usuário pedir para **"publicar"**, **"publicar o site"**, **"publicar o sistema"**, **"subir para produção"**, **"atualizar o site"**, **"atualizar o sistema"**, **"deploy"** ou **"colocar no ar"**, execute o fluxo completo **sem pedir confirmação**:
+  1. Commitar alterações pendentes na branch `dev` (nunca incluir `.env` ou segredos).
+  2. Executar `.\publicar.ps1` na raiz do projeto.
+  3. Verificar sucesso e informar o usuário (Vercel faz deploy automático da `main`).
+- Após a execução, confirme merge, push e retorno à branch `dev`.

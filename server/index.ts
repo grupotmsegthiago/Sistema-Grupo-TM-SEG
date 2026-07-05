@@ -1,3 +1,4 @@
+import "./loadEnv";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { startNfRetryWorker } from "./nfRetryWorker";
@@ -115,19 +116,18 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
+  const onListen = () => {
       log(`serving on port ${port}`);
       try { startNfRetryWorker(); } catch (e: any) { log(`NF retry worker falhou ao iniciar: ${e.message}`); }
       try { startFinancialReportWorker(); } catch (e: any) { log(`Financial report worker falhou ao iniciar: ${e.message}`); }
       try { startDhlIntakeExpiryWorker(); } catch (e: any) { log(`DHL intake expiry worker falhou ao iniciar: ${e.message}`); }
       try { startClientEmailQueueWorker(); } catch (e: any) { log(`Client email queue worker falhou ao iniciar: ${e.message}`); }
       try { startZapiWatchdog(); } catch (e: any) { log(`Z-API vigia falhou ao iniciar: ${e.message}`); }
-    },
-  );
+  };
+  // reusePort só funciona no Linux (Replit); no Windows causa ENOTSUP
+  if (process.platform === "win32") {
+    httpServer.listen(port, "0.0.0.0", onListen);
+  } else {
+    httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, onListen);
+  }
 })();
