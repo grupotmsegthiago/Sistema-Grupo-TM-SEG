@@ -6,9 +6,9 @@ import {
     Monitor, Cpu, Activity, ArrowRight, Copy, Download
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { resolveSupabasePublicConfig } from '../lib/resolveSupabasePublicConfig';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY } = resolveSupabasePublicConfig();
 const SUPABASE_WS_URL = SUPABASE_URL && SUPABASE_ANON_KEY
   ? `wss://${new URL(SUPABASE_URL).host}/realtime/v1/websocket?apikey=${encodeURIComponent(SUPABASE_ANON_KEY)}&vsn=1.0.0`
   : '';
