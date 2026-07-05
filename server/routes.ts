@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { GoogleGenAI, Modality } from "@google/genai";
+import { Modality } from "@google/genai";
 import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseServerKey, getSupabaseServiceRoleKey, getSupabaseUrl } from "./supabaseConfig";
 import { Resend } from "resend";
@@ -20,6 +20,13 @@ import { registerScheduledTick } from "./scheduledRegistry";
 import { registerMaintenanceTick } from "./maintenanceJobs";
 import { registerCronRoutes } from "./registerCronRoutes";
 import { verifyWebhookSecret } from "./cronAuth";
+import {
+  generateGeminiContent,
+  generateGeminiContentStream,
+  isGeminiConfigured,
+  pingGeminiHealth,
+} from "./geminiClient";
+import { resolveGeminiModel } from "../lib/geminiModels";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -161,14 +168,6 @@ const zapiBase = () => `https://api.z-api.io/instances/${ZAPI_INSTANCE}/token/${
 export const isWhatsappBotEnabled = () =>
   (process.env.WHATSAPP_BOT_ENABLED || '').trim().toLowerCase() === 'true';
 console.log(`[WhatsApp Bot] Estado: ${isWhatsappBotEnabled() ? 'ATIVO (envios liberados)' : 'SILENCIADO (nenhum envio será feito)'}`);
-
-const ai = new GoogleGenAI({
-  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
-  httpOptions: {
-    apiVersion: "",
-    baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
-  },
-});
 
 function requireAuth(req: Request, res: Response, next: Function) {
   const authHeader = req.headers['authorization'];
@@ -1707,10 +1706,33 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/gemini/health", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!isGeminiConfigured()) {
+        return res.status(503).json({
+          ok: false,
+          error: "Chave Gemini não configurada",
+          hint: "Configure GEMINI_API_KEY nas variáveis de ambiente da Vercel",
+        });
+      }
+      const ping = await pingGeminiHealth();
+      res.json({ ok: true, model: ping.model, text: ping.text });
+    } catch (error: any) {
+      console.error("[Gemini Health]", error);
+      res.status(500).json({ ok: false, error: error.message || "Falha ao contactar Gemini" });
+    }
+  });
+
   app.post("/api/gemini/generate", requireAuth, async (req: Request, res: Response) => {
     try {
+      if (!isGeminiConfigured()) {
+        return res.status(503).json({
+          error:
+            "Chave Gemini não configurada. Defina GEMINI_API_KEY ou AI_INTEGRATIONS_GEMINI_API_KEY.",
+        });
+      }
       const { contents, config, stream } = req.body;
-      const model = req.body.model || "gemini-2.5-flash";
+      const model = resolveGeminiModel(req.body.model);
       const finalConfig = { ...config, maxOutputTokens: config?.maxOutputTokens || 8192 };
 
       if (stream) {
@@ -1718,10 +1740,10 @@ export async function registerRoutes(
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
 
-        const streamResult = await ai.models.generateContentStream({
+        const streamResult = await generateGeminiContentStream({
           model,
           contents,
-          config: finalConfig
+          config: finalConfig,
         });
 
         for await (const chunk of streamResult) {
@@ -1733,10 +1755,10 @@ export async function registerRoutes(
         res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
         res.end();
       } else {
-        const response = await ai.models.generateContent({
+        const response = await generateGeminiContent({
           model,
           contents,
-          config: finalConfig
+          config: finalConfig,
         });
         res.json({ text: response.text || "" });
       }
@@ -1765,7 +1787,7 @@ export async function registerRoutes(
       // na foto). A foto final é montada no frontend em RESOLUÇÃO ORIGINAL e a
       // imagem regenerada pela IA (que sai em ~1024px, borrada) só é usada
       // como remendo DENTRO dessas caixas — nunca como base da foto inteira.
-      const boxResp = await ai.models.generateContent({
+      const boxResp = await generateGeminiContent({
         model: "gemini-2.5-flash",
         contents: [{
           role: "user",
@@ -1807,7 +1829,7 @@ export async function registerRoutes(
       const editPrompt = "Produce a clean, realistic photograph without any text overlays, watermarks, logos, or digital text. Remove ALL text overlays from this image. This includes: (1) any date/time and city/location stamp printed on the photo (camera timestamp overlays), (2) any watermarks, captions, promotional text, phone numbers, Instagram handles, website addresses, app UI text or software names, (3) any pasted/stamped company logos of any brand (including a 'TMSEG' shield logo overlay if present), (4) any third-party company logos or brand names, including ones painted or printed on the truck/vehicle body. Smoothly and seamlessly blend and fill each removed area with its natural surrounding background (for example: clear sky with light clouds at the top, the car dashboard at the bottom, road, or vehicle surface) so that no trace, smudge or ghosting remains. CRITICAL: do not alter or blur the truck/vehicle itself, and the vehicle LICENSE PLATE must remain 100% untouched, visible and readable — NEVER remove, blur, cover, whiten or alter license plates. The same applies to road signs and any text that is a physical part of the scene (except third-party company logos). Do NOT enhance, retouch, sharpen, brighten or otherwise alter the photo quality — preserve the original exposure, colors, grain and blur exactly as they are. Keep everything else in the photo exactly the same: vehicle, license plate, road, map, route, landscape and framing. Do not add any new text, logo or element. Output only the edited image.";
       let imgPart: any = null;
       for (let attempt = 1; attempt <= 2 && !imgPart; attempt++) {
-        const response = await ai.models.generateContent({
+        const response = await generateGeminiContent({
           model: "gemini-2.5-flash-image",
           contents: [{
             role: "user",
@@ -1848,7 +1870,7 @@ export async function registerRoutes(
       const systemInstruction = "Você é o assistente oficial de logística e segurança do Grupo TMSEG. Responda de forma profissional e técnica.";
 
       if (image) {
-        const response = await ai.models.generateContent({
+        const response = await generateGeminiContent({
           model: "gemini-2.5-flash",
           contents: {
             parts: [
@@ -1869,7 +1891,7 @@ export async function registerRoutes(
           parts: [{ text: m.text }]
         }));
 
-        const stream = await ai.models.generateContentStream({
+        const stream = await generateGeminiContentStream({
           model: "gemini-2.5-flash",
           contents: [...chatHistory, { role: "user", parts: [{ text: message }] }],
           config: { systemInstruction, maxOutputTokens: 8192 }
@@ -4675,7 +4697,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   "confianca": "alta/media/baixa"
 }`;
 
-      const response = await ai.models.generateContent({
+      const response = await generateGeminiContent({
         model: "gemini-2.5-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: { maxOutputTokens: 4096, temperature: 0.1 }

@@ -23,7 +23,8 @@ import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import { formatProviderName } from '../lib/utils';
 import { copyTextAsync } from '../lib/clipboard';
-import { buildFullAuditSummary } from '../lib/auditSummaryBuilder';
+import { buildAuditSummaryData, type AuditSummaryData } from '../lib/auditSummaryBuilder';
+import AuditSummaryPanel from './AuditSummaryPanel';
 import { formatDateTimeBR, formatNowDateTimeBR, formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import html2canvas from 'html2canvas';
@@ -413,7 +414,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const [aiLoading, setAiLoading] = useState(false);
   const [showAuditSummary, setShowAuditSummary] = useState(false);
-  const [auditSummaryText, setAuditSummaryText] = useState('');
+  const [auditSummaryData, setAuditSummaryData] = useState<AuditSummaryData | null>(null);
   const [auditSummaryLoading, setAuditSummaryLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<{
     clientSuggestion: { tableId: string; tableName: string; reason: string } | null;
@@ -2883,14 +2884,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     if (!mission || auditSummaryLoading) return;
     setShowAuditSummary(true);
     setAuditSummaryLoading(true);
-    setAuditSummaryText('');
+    setAuditSummaryData(null);
     try {
       const clientTable = clientTables.find(t => String(t.id) === String(manualClientTableId));
       const providerTable = providerTables.find(t => String(t.id) === String(manualProviderTableId));
       const tradingName =
         providersList.find(p => p.trading_name && p.trading_name.trim())?.trading_name?.trim() ||
         formatProviderName(mission.provider);
-      const text = await buildFullAuditSummary({
+      const data = await buildAuditSummaryData({
         mission,
         providerTradingName: tradingName,
         clientTableLabel: clientTable?.operation_type,
@@ -2901,7 +2902,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         costTotal: footerCostTotal,
         marginPct: footerMarginPct,
       });
-      setAuditSummaryText(text);
+      setAuditSummaryData(data);
     } catch (e) {
       console.error('[auditSummary]', e);
       showNotification('Erro', 'Não foi possível gerar o resumo da auditoria.', 'error');
@@ -2912,7 +2913,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   };
 
   const copyAuditSummary = () => {
-    void copyTextAsync(auditSummaryText).then(ok => {
+    if (!auditSummaryData?.whatsappText) return;
+    void copyTextAsync(auditSummaryData.whatsappText).then(ok => {
       if (!ok) {
         showNotification('Erro', 'Não foi possível copiar o resumo.', 'error');
         return;
@@ -2931,7 +2933,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       {showAuditSummary && (
           <div className="absolute inset-0 z-[125] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowAuditSummary(false)}>
               <div
-                  className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col border border-gray-200"
+                  className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden flex flex-col border border-gray-200"
                   onClick={e => e.stopPropagation()}
                   data-testid="panel-audit-summary"
               >
@@ -2948,20 +2950,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       </button>
                   </div>
 
-                  <div className="flex-1 overflow-auto p-4 bg-slate-50">
+                  <div className="flex-1 overflow-auto p-4 bg-slate-100/80">
                       {auditSummaryLoading ? (
                           <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-500">
                               <Loader2 size={28} className="animate-spin text-emerald-600" />
                               <p className="text-xs font-bold uppercase tracking-widest">Montando resumo{isDirectorAccess ? ' e IA' : ''}…</p>
                           </div>
-                      ) : (
-                          <pre
-                              className="whitespace-pre-wrap break-words text-[12px] leading-relaxed font-mono text-gray-800 bg-white border border-gray-200 rounded-xl p-4 shadow-inner"
-                              data-testid="text-audit-summary"
-                          >
-                              {auditSummaryText}
-                          </pre>
-                      )}
+                      ) : auditSummaryData ? (
+                          <AuditSummaryPanel data={auditSummaryData.display} />
+                      ) : null}
                   </div>
 
                   <div className="px-4 py-3 border-t bg-white flex flex-wrap gap-2 justify-end">
@@ -2975,7 +2972,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       <button
                           type="button"
                           onClick={copyAuditSummary}
-                          disabled={auditSummaryLoading || !auditSummaryText}
+                          disabled={auditSummaryLoading || !auditSummaryData?.whatsappText}
                           className="px-4 py-2 rounded-xl text-[10px] font-black uppercase text-white bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
                           data-testid="btn-copy-audit-summary"
                       >
@@ -3715,7 +3712,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             </div>
                         </div>
                     )}
-                    {!financialData.hasProviderTable && (
+                    {!financialData.hasProviderTable && !mission.is_same_os && (
                         <div className="bg-orange-50 border-2 border-orange-400 rounded-xl p-4 shadow-md" data-testid="alert-no-provider-table">
                             <div className="flex items-start gap-3">
                                 <div className="p-2 bg-orange-100 rounded-lg shrink-0"><AlertTriangle size={20} className="text-orange-700" /></div>
@@ -4632,6 +4629,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 value={(!fullEditMode && financialData.autoEngine?.active) ? '' : (manualProviderTableId || '')}
                                                 onChange={handleChange}
                                                 options={options}
+                                                placeholder={placeholderLabel}
                                                 disabled={providerSelectorDisabled}
                                                 accentColor="red"
                                                 buttonClassName={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 flex items-center justify-between gap-2 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200 hover:border-gray-300'} ${providerSelectorDisabled ? 'opacity-60 cursor-not-allowed' : ''}`}
@@ -4669,6 +4667,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </button>
                                     )}
                                 </div>
+                                {mission.is_same_os && (
+                                    <div
+                                        data-testid="alert-same-os-provider-table-unused"
+                                        className="mt-2 p-2.5 rounded-lg bg-blue-50 border border-blue-300 text-[10px] font-black text-blue-800 uppercase tracking-wide flex items-start gap-2"
+                                    >
+                                        <Info size={14} className="text-blue-600 shrink-0 mt-0.5" />
+                                        <span>
+                                            TABELA NÃO UTILIZADA, POR SER A MESMA OS - {mission.parent_mission_id || '—'}
+                                        </span>
+                                    </div>
+                                )}
                                 <div className="mt-2 text-[9px] font-bold text-gray-400 flex items-center gap-1.5 bg-gray-50 p-2 rounded-lg border border-gray-100">
                                     <BrainCircuit size={12} className="text-red-500" />
                                     <span>IA Detectou: {financialData.provider.detectionLog}</span>

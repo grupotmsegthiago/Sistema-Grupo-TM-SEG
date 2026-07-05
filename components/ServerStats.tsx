@@ -9,15 +9,10 @@ import {
   TrendingUp, Package, FolderOpen, Eye, ArrowUpRight, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { API_BRASIL_CONFIG, WHATSAPP_API_CONFIG, TOLL_API_CONFIG } from '../constants';
+import { TOLL_API_CONFIG } from '../constants';
 import { googleMapsApiKey } from '../lib/maps';
-import { generateContent } from '../lib/gemini';
-
-interface HourlyStatus {
-    hour: string;
-    status: 'online' | 'idle' | 'error';
-    count: number;
-}
+import DatabaseLiveTimeline from './DatabaseLiveTimeline';
+import { build24hGraph, loadHealthHistory, saveHealthSnapshot, type HealthHourSlot } from '../lib/healthHistory';
 
 interface ApiTestState {
     status: 'IDLE' | 'TESTING' | 'SUCCESS' | 'ERROR';
@@ -85,8 +80,9 @@ const ServerStats: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [dbLatency, setDbLatency] = useState(0);
   const [storageEstimate, setStorageEstimate] = useState(0);
-  const [uptimeGraph, setUptimeGraph] = useState<HourlyStatus[]>([]);
+  const [uptimeGraph, setUptimeGraph] = useState<HealthHourSlot[]>(() => build24hGraph(loadHealthHistory()));
   const [systemUptime, setSystemUptime] = useState("Calculando...");
+  const [tvTimelineMode, setTvTimelineMode] = useState(false);
 
   const [wdapi, setWdapi] = useState<ApiTestState>({ status: 'IDLE', result: null, errorDetails: null, showHelp: false });
   const [maps, setMaps] = useState<ApiTestState>({ status: 'IDLE', result: null, errorDetails: null, showHelp: false });
@@ -101,13 +97,30 @@ const ServerStats: React.FC = () => {
   const [billingLinks, setBillingLinks] = useState<BillingLinks | null>(null);
   const [monitorLoading, setMonitorLoading] = useState(false);
   const [showAllTables, setShowAllTables] = useState(false);
-  const [activeMonitorTab, setActiveMonitorTab] = useState<'overview' | 'database' | 'storage' | 'links' | 'costs'>('overview');
+  const [activeMonitorTab, setActiveMonitorTab] = useState<'overview' | 'database' | 'storage' | 'links' | 'costs' | 'timeline'>('overview');
   const [dbCapacity, setDbCapacity] = useState<any>(null);
   const [platformCosts, setPlatformCosts] = useState<any>(null);
+
+  const recordHealthSnapshot = useCallback((latencyMs: number) => {
+      const states = [gemini, wdapi, maps, zapi, toll];
+      const tested = states.filter(s => s.status === 'SUCCESS' || s.status === 'ERROR');
+      const ok = tested.filter(s => s.status === 'SUCCESS').length;
+      const history = saveHealthSnapshot({
+          latencyMs,
+          servicesOk: ok,
+          servicesTotal: tested.length || states.length,
+      });
+      setUptimeGraph(build24hGraph(history));
+  }, [gemini, wdapi, maps, zapi, toll]);
 
   useEffect(() => {
       runFullDiagnostic();
       fetchMonitorData();
+      testWdapi();
+      testMaps();
+      testZapi();
+      testToll();
+      testGemini();
       const interval = setInterval(() => { runFullDiagnostic(true); fetchMonitorData(true); }, 60000);
       return () => clearInterval(interval);
   }, []);
@@ -154,15 +167,8 @@ const ServerStats: React.FC = () => {
           ]);
           
           const total = (logsCount.count || 0) + (missionsCount.count || 0);
-          setStorageEstimate(parseFloat(((total * 8) / 1024 / 1024).toFixed(4)));
+          setStorageEstimate(total); // usado como fallback até dbCapacity carregar
 
-          const now = new Date();
-          const graphData: HourlyStatus[] = [];
-          for (let i = 23; i >= 0; i--) {
-              const d = new Date(now.getTime() - i * 60 * 60 * 1000);
-              graphData.push({ hour: `${d.getHours()}:00`, status: 'online', count: 1 });
-          }
-          setUptimeGraph(graphData);
           setSystemUptime("Ativo");
       } catch (error) {
           console.error("Diagnostic error", error);
@@ -174,20 +180,39 @@ const ServerStats: React.FC = () => {
   const testGemini = async () => {
     setGemini({ ...gemini, status: 'TESTING', result: null, errorDetails: null });
     try {
-        const resultText = await generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: 'ping',
-            config: { maxOutputTokens: 10, thinkingConfig: { thinkingBudget: 0 } }
-        });
-        if (resultText) {
-            setGemini({ ...gemini, status: 'SUCCESS', result: 'IA Operacional (Gemini 3)', errorDetails: null, showHelp: false });
-        } else {
-            throw new Error("IA não respondeu ao comando");
+        const response = await authFetch('/api/gemini/health');
+        const data = await response.json().catch(() => ({}));
+        if (response.ok && data.ok) {
+            setGemini({
+              status: 'SUCCESS',
+              result: `IA Operacional (${data.model || 'Gemini 2.5 Flash'})`,
+              errorDetails: null,
+              showHelp: false,
+            });
+            return;
         }
+        const errMsg = data.error || data.hint || `HTTP ${response.status}`;
+        throw new Error(errMsg);
     } catch (e: any) {
+        const msg = e?.message || 'Falha na IA';
+        const missingKey = /não configurada|not configured|api key/i.test(msg);
         setGemini({ 
             status: 'ERROR', result: 'Falha na IA', showHelp: true,
-            errorDetails: { code: 'AI_AUTH_ERROR', steps: ["Verifique se o faturamento do Google AI Studio está ativo", "Certifique-se que o modelo 'gemini-3-flash-preview' está disponível na sua região", "Valide se a chave de API em variáveis de ambiente está correta"], link: "https://aistudio.google.com/app/apikey" }
+            errorDetails: {
+              code: missingKey ? 'AI_KEY_MISSING' : 'AI_AUTH_ERROR',
+              steps: missingKey
+                ? [
+                    "Configure GEMINI_API_KEY nas variáveis de ambiente da Vercel (Settings → Environment Variables)",
+                    "Faça redeploy após salvar a variável",
+                    "Gere uma chave em Google AI Studio se ainda não tiver",
+                  ]
+                : [
+                    "Verifique se o faturamento do Google AI Studio está ativo",
+                    "Confirme que a chave GEMINI_API_KEY é válida e não expirou",
+                    "O sistema usa o modelo gemini-2.5-flash (compatível com a API atual)",
+                  ],
+              link: "https://aistudio.google.com/app/apikey",
+            },
         });
     }
   };
@@ -195,24 +220,23 @@ const ServerStats: React.FC = () => {
   const testWdapi = async () => {
     setWdapi({ ...wdapi, status: 'TESTING', result: null, errorDetails: null });
     try {
-        if (!API_BRASIL_CONFIG.TOKEN) {
-            setWdapi({ status: 'ERROR', result: 'Token não configurado', showHelp: true, errorDetails: { code: 'NO_TOKEN', steps: ["Configure VITE_WDAPI_TOKEN nas variáveis de ambiente do Replit"], link: "https://apiplacas.com.br" } });
+        const response = await authFetch('/api/placa/lookup/ABC1D23');
+        if (response.status === 503) {
+            setWdapi({ status: 'ERROR', result: 'Token não configurado no servidor', showHelp: true, errorDetails: { code: 'NO_TOKEN', steps: ["Configure WDAPI_TOKEN ou VITE_WDAPI_TOKEN nas variáveis de ambiente da Vercel"], link: "https://wdapi2.com.br" } });
             return;
         }
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        const response = await fetch(API_BRASIL_CONFIG.consultaUrl('TEST0000'), { signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (response.status === 401 || response.status === 403) {
-            setWdapi({ status: 'ERROR', result: 'Token inválido', showHelp: true, errorDetails: { code: 'AUTH_INVALID', steps: ["Acesse apiplacas.com.br", "Copie o Token atualizado", "Atualize VITE_WDAPI_TOKEN nos Secrets do Replit"], link: "https://apiplacas.com.br" } });
+        if (response.ok) {
+            setWdapi({ status: 'SUCCESS', result: 'Proxy WDAPI OK', errorDetails: null, showHelp: false });
+        } else if (response.status === 401 || response.status === 403) {
+            setWdapi({ status: 'ERROR', result: 'Token inválido', showHelp: true, errorDetails: { code: 'AUTH_INVALID', steps: ["Atualize WDAPI_TOKEN nas variáveis de ambiente do servidor"], link: "https://wdapi2.com.br" } });
         } else {
-            setWdapi({ ...wdapi, status: 'SUCCESS', result: `OK: Vw`, errorDetails: null, showHelp: false });
+            setWdapi({ status: 'SUCCESS', result: `Proxy respondeu (${response.status})`, errorDetails: null, showHelp: false });
         }
     } catch (e: any) {
         if (e.name === 'AbortError') {
             setWdapi({ status: 'ERROR', result: 'Timeout', showHelp: true, errorDetails: { code: 'TIMEOUT', steps: ["Servidor WDAPI pode estar lento ou offline"] } });
         } else {
-            setWdapi({ status: 'ERROR', result: 'Falha de conexão', showHelp: true, errorDetails: { code: 'CONN_ERR', steps: ["Verifique sua internet", "O servidor WDAPI pode estar offline"] } });
+            setWdapi({ status: 'ERROR', result: 'Falha de conexão', showHelp: true, errorDetails: { code: 'CONN_ERR', steps: ["Verifique sua internet", "O proxy /api/placa/lookup pode estar indisponível"] } });
         }
     }
   };
@@ -255,8 +279,6 @@ const ServerStats: React.FC = () => {
   const testZapi = async () => {
     setZapi({ ...zapi, status: 'TESTING', result: null, errorDetails: null });
     try {
-        // Usa proxy backend para não expor token Z-API no bundle
-        const { authFetch } = await import('../lib/authFetch');
         const response = await authFetch('/api/whatsapp/groups');
         if (response.ok) {
             setZapi({ ...zapi, status: 'SUCCESS', result: 'Instância Conectada', errorDetails: null, showHelp: false });
@@ -274,20 +296,26 @@ const ServerStats: React.FC = () => {
   const testToll = async () => {
     setToll({ ...toll, status: 'TESTING', result: null, errorDetails: null });
     try {
-        const response = await fetch(`${TOLL_API_CONFIG.BASE_URL}/status`);
-        const data = await response.json();
+        const response = await authFetch(`${TOLL_API_CONFIG.BASE_URL}/status`);
+        const data = await response.json().catch(() => ({}));
         if (response.ok && data.success) {
-            setToll({ ...toll, status: 'SUCCESS', result: `Serviço de Pedágio OK (${TOLL_API_CONFIG.PROVIDER})`, errorDetails: null, showHelp: false });
+            setToll({ status: 'SUCCESS', result: `Serviço de Pedágio OK (${TOLL_API_CONFIG.PROVIDER})`, errorDetails: null, showHelp: false });
         } else {
             setToll({ 
-                status: 'ERROR', result: data.error || 'Chave Inválida', showHelp: true,
-                errorDetails: { code: 'TOLL_AUTH', steps: ["Verifique se a chave RAPIDAPI_TOLL_KEY está configurada nos Secrets do Replit", "POR QUE NÃO CALCULA?: O Pedágio depende de uma ROTA válida. Se o card de 'Google Maps' estiver com erro, o Pedágio não conseguirá calcular valores na tela de missão.", "Verifique sua assinatura no RapidAPI para a API 'Pedagio'"], link: "https://rapidapi.com/territorial/api/pedagio" }
+                status: 'ERROR', result: data.error || 'Indisponível', showHelp: true,
+                errorDetails: { code: 'TOLL_AUTH', steps: ["Configure RAPIDAPI_TOLL_KEY no servidor (Vercel)", "Verifique assinatura RapidAPI Pedágio", "O pedágio depende de rota válida do Google Maps"], link: "https://rapidapi.com/territorial/api/pedagio" }
             });
         }
     } catch (e) {
-        setToll({ status: 'ERROR', result: 'Offline', showHelp: true, errorDetails: { code: 'TOLL_ERR', steps: ["Serviço de pedágio temporariamente fora do ar"] } });
+        setToll({ status: 'ERROR', result: 'Offline', showHelp: true, errorDetails: { code: 'TOLL_ERR', steps: ["Proxy /api/toll indisponível ou RapidAPI fora do ar"] } });
     }
   };
+
+  useEffect(() => {
+      const apiStates = [gemini, wdapi, maps, zapi, toll];
+      if (apiStates.some(s => s.status === 'TESTING' || s.status === 'IDLE')) return;
+      recordHealthSnapshot(dbLatency);
+  }, [gemini.status, wdapi.status, maps.status, zapi.status, toll.status, dbLatency, recordHealthSnapshot]);
 
   const formatBytes = (bytes: number) => {
       if (bytes === 0) return '0 B';
@@ -378,16 +406,29 @@ const ServerStats: React.FC = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
-                <h3 className="font-bold text-gray-800 flex items-center gap-2 mb-6">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2 mb-2">
                     <Server size={18} className="text-gray-400" /> Histórico de Disponibilidade (24h)
                 </h3>
+                <p className="text-[9px] text-gray-500 mb-4 font-bold uppercase tracking-wide">Dados reais gravados a cada teste (local) · verde=ok · amarelo=degradado · vermelho=offline · cinza=sem amostra</p>
                 <div className="flex items-end justify-between gap-1.5 h-32 w-full border-b border-gray-100 pb-1">
-                    {uptimeGraph.map((slot, index) => (
+                    {uptimeGraph.map((slot, index) => {
+                        const barClass = !slot.updatedAt ? 'bg-slate-200' :
+                            slot.status === 'online' ? 'bg-emerald-500' :
+                            slot.status === 'degraded' ? 'bg-amber-500' : 'bg-red-500';
+                        const height = !slot.updatedAt ? '12%' :
+                            slot.status === 'online' ? '85%' :
+                            slot.status === 'degraded' ? '55%' : '30%';
+                        return (
                         <div key={index} className="flex-1 h-full flex flex-col justify-end group relative">
-                            <div className="absolute bottom-full mb-2 bg-black text-white text-[8px] p-1 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 transition-opacity">Sistema OK - {slot.hour}</div>
-                            <div className="w-full bg-emerald-500 rounded-t-sm h-[80%] hover:bg-emerald-400 transition-colors"></div>
+                            <div className="absolute bottom-full mb-2 bg-black text-white text-[8px] p-1.5 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 transition-opacity max-w-[140px]">
+                                {slot.updatedAt
+                                    ? `${slot.label} · ${slot.status} · ${slot.latencyMs}ms · ${slot.servicesOk}/${slot.servicesTotal} APIs`
+                                    : `${slot.label} · sem teste registrado`}
+                            </div>
+                            <div className={`w-full rounded-t-sm hover:opacity-80 transition-colors ${barClass}`} style={{ height }}></div>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
 
@@ -395,12 +436,30 @@ const ServerStats: React.FC = () => {
                 <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm">
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Armazenamento Supabase</p>
                     <div className="flex items-baseline gap-2">
-                        <h3 className="text-3xl font-black text-gray-900">{(storageEstimate / DB_QUOTA_MB * 100).toFixed(2)}%</h3>
-                        <span className="text-[10px] font-black text-gray-400">Free Tier</span>
+                        {(() => {
+                            const usedMb = dbCapacity?.used_mb ?? dbMetrics?.total_estimated_size_mb ?? 0;
+                            const limitMb = dbCapacity ? dbCapacity.limit_gb * 1024 : (dbMetrics?.quota_mb || DB_QUOTA_MB);
+                            const pct = limitMb > 0 ? Math.min(100, (usedMb / limitMb) * 100) : 0;
+                            return (
+                                <>
+                                    <h3 className="text-3xl font-black text-gray-900">{pct.toFixed(2)}%</h3>
+                                    <span className="text-[10px] font-black text-gray-400">{dbCapacity?.source === 'rpc' ? 'Dado real RPC' : 'Estimativa'}</span>
+                                </>
+                            );
+                        })()}
                     </div>
                     <div className="w-full bg-gray-100 h-2 mt-3 rounded-full overflow-hidden border">
-                        <div className="h-full bg-blue-600 transition-all duration-1000" style={{ width: `${(storageEstimate / DB_QUOTA_MB * 100)}%` }}></div>
+                        <div className="h-full bg-blue-600 transition-all duration-1000" style={{ width: `${(() => {
+                            const usedMb = dbCapacity?.used_mb ?? dbMetrics?.total_estimated_size_mb ?? 0;
+                            const limitMb = dbCapacity ? dbCapacity.limit_gb * 1024 : (dbMetrics?.quota_mb || DB_QUOTA_MB);
+                            return limitMb > 0 ? Math.min(100, (usedMb / limitMb) * 100) : 0;
+                        })()}%` }}></div>
                     </div>
+                    <p className="text-[9px] text-gray-500 mt-2 font-mono">
+                        {dbCapacity
+                            ? `${(dbCapacity.used_mb || 0).toFixed(1)} MB de ${(dbCapacity.limit_gb * 1024).toFixed(0)} MB`
+                            : `${storageEstimate.toLocaleString('pt-BR')} registros monitorados (logs+OS)`}
+                    </p>
                 </div>
 
                 <div className="bg-slate-900 p-5 rounded-3xl text-white shadow-xl relative overflow-hidden group">
@@ -435,19 +494,26 @@ const ServerStats: React.FC = () => {
                 </div>
             </div>
 
-            <div className="flex gap-1 mb-6 bg-slate-800/50 p-1 rounded-xl">
-                {(['overview', 'database', 'storage', 'costs', 'links'] as const).map(tab => (
+            <div className="flex gap-1 mb-6 bg-slate-800/50 p-1 rounded-xl flex-wrap">
+                {(['overview', 'timeline', 'database', 'storage', 'costs', 'links'] as const).map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveMonitorTab(tab)}
-                        className={`flex-1 py-2.5 px-3 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                        className={`flex-1 min-w-[90px] py-2.5 px-3 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
                             activeMonitorTab === tab ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700'
                         }`}
                     >
-                        {tab === 'overview' ? 'Visão Geral' : tab === 'database' ? 'Banco de Dados' : tab === 'storage' ? 'Storage' : tab === 'costs' ? 'Custos' : 'Links Úteis'}
+                        {tab === 'overview' ? 'Visão Geral' : tab === 'timeline' ? 'Linha do Tempo' : tab === 'database' ? 'Banco de Dados' : tab === 'storage' ? 'Storage' : tab === 'costs' ? 'Custos' : 'Links Úteis'}
                     </button>
                 ))}
             </div>
+
+            {activeMonitorTab === 'timeline' && (
+                <DatabaseLiveTimeline
+                    tvMode={tvTimelineMode}
+                    onToggleTvMode={() => setTvTimelineMode(v => !v)}
+                />
+            )}
 
             {activeMonitorTab === 'overview' && (
                 <div className="space-y-6">

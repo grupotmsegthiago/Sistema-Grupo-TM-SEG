@@ -1,4 +1,5 @@
 import { authFetch } from './authFetch';
+import { resolveGeminiModel } from './geminiModels';
 
 export async function generateContent(options: {
   contents: any;
@@ -10,7 +11,7 @@ export async function generateContent(options: {
     body: JSON.stringify({
       contents: options.contents,
       config: options.config,
-      model: options.model || 'gemini-2.5-flash',
+      model: resolveGeminiModel(options.model),
       stream: false
     })
   });
@@ -33,7 +34,7 @@ export async function generateContentStream(options: {
     body: JSON.stringify({
       contents: options.contents,
       config: options.config,
-      model: options.model || 'gemini-2.5-flash',
+      model: resolveGeminiModel(options.model),
       stream: true
     })
   });

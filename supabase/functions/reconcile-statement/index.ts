@@ -49,7 +49,7 @@ serve(async (req: Request) => {
     Não use markdown, não adicione explicações.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.5-flash',
       contents: { 
         parts: [
           { inlineData: { mimeType: mimeType, data: fileBase64 } }, 

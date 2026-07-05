@@ -5,6 +5,57 @@ import { clientNameShort } from './financialUtils';
 import { isDhlSupplyClient } from './dhlAutoTableSelector';
 import type { Mission } from '../types';
 
+export interface AuditSummaryDisplay {
+  osId: string;
+  seNumber?: string;
+  isDhl: boolean;
+  viaturaPlate: string;
+  providerTradingName: string;
+  agent1: string;
+  agent2: string;
+  driverName: string;
+  driverPhone: string;
+  clientLabel: string;
+  origin: string;
+  destination: string;
+  cavaloPlate: string;
+  carretaPlate: string;
+  scheduledStart: string;
+  originArrival: string;
+  operationStart: string;
+  operationEnd: string;
+  totalDuration: string;
+  startKm: string;
+  endKm: string;
+  totalKm: string;
+  status: string;
+  finalizeMessage?: string;
+  director?: {
+    openedBy: string;
+    tablesBy: string;
+    statusEntries: Array<{ status: string; at: string; by: string }>;
+    kmEntries: Array<{ field: string; fieldLabel: string; at: string; by: string; value: string }>;
+    aiSummary?: string;
+    revenueTotal?: number;
+    costTotal?: number;
+    marginPct?: number;
+  };
+}
+
+export interface AuditSummaryData {
+  whatsappText: string;
+  display: AuditSummaryDisplay;
+}
+
+const KM_FIELD_LABELS: Record<string, string> = {
+  start_km: 'KM Inicial',
+  end_km: 'KM Final',
+  start_time: 'Hora Início',
+  end_time: 'Hora Fim',
+  provider_start_km: 'KM Inicial (Fornec.)',
+  provider_end_km: 'KM Final (Fornec.)',
+};
+
 export interface AuditSummaryOptions {
   mission: Mission;
   providerTradingName?: string;
@@ -281,7 +332,7 @@ export async function generateAuditAiSummary(
   return text.trim();
 }
 
-export async function buildFullAuditSummary(options: AuditSummaryOptions): Promise<string> {
+export async function buildAuditSummaryData(options: AuditSummaryOptions): Promise<AuditSummaryData> {
   const {
     mission,
     providerTradingName = '',
@@ -300,10 +351,37 @@ export async function buildFullAuditSummary(options: AuditSummaryOptions): Promi
     fetchAuditTrail(mission, clientTableLabel, providerTableLabel),
   ]);
 
+  const isDhl = isDhlSupplyClient(mission.originalClientName || mission.client);
+  const seNum = String((mission as any).dhl_se_number || '').trim().toUpperCase();
+  const scheduledStart = mission.startTime || mission.createdAt;
+  const operationEnd = marks.operationEnd || mission.endTime || marks.completedAt;
+
+  const viaturaPlate =
+    mission.vehicleData?.plate ||
+    (typeof mission.vehicleId === 'string' && !mission.vehicleId.includes('-') ? mission.vehicleId : '') ||
+    '—';
+
+  const clientLabel = isDhl ? 'DHL' : clientNameShort(mission.originalClientName || mission.client || '—');
+  const destination = (mission.destination || '—').toUpperCase().replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim();
+
+  const startKm = mission.startKm != null && mission.startKm !== '' ? String(mission.startKm) : '—';
+  const endKm = mission.endKm != null && mission.endKm !== '' ? String(mission.endKm) : '—';
+  const sKm = Number(mission.startKm);
+  const eKm = Number(mission.endKm);
+  const totalKm =
+    Number.isFinite(sKm) && Number.isFinite(eKm) && eKm > sKm
+      ? String(Math.round((eKm - sKm) * 10) / 10)
+      : '—';
+
+  const finalizeTime = marks.completedAt || mission.endTime;
+  const finalizeMessage = finalizeTime
+    ? `Missão finalizada às ${formatTimeBR(finalizeTime)} — seguiu em segurança`
+    : undefined;
+
   let body = buildAuditSummaryBody(mission, marks, providerTradingName, carretaPlate);
+  let aiSummary = '';
 
   if (includeDirectorSection) {
-    let aiSummary = '';
     if (withAiSummary) {
       try {
         aiSummary = await generateAuditAiSummary(mission, trail, { revenueTotal, costTotal, marginPct });
@@ -315,5 +393,53 @@ export async function buildFullAuditSummary(options: AuditSummaryOptions): Promi
     body += buildDirectorAuditSection(trail, aiSummary);
   }
 
-  return body;
+  const display: AuditSummaryDisplay = {
+    osId: mission.id,
+    seNumber: isDhl && seNum ? seNum : undefined,
+    isDhl,
+    viaturaPlate: viaturaPlate || '—',
+    providerTradingName: providerTradingName || '—',
+    agent1: formatAgentName(mission.agent1),
+    agent2: formatAgentName(mission.agent2),
+    driverName: formatAgentName(mission.driver_name),
+    driverPhone: dash(mission.driver_phone),
+    clientLabel,
+    origin: (mission.origin || '—').toUpperCase(),
+    destination,
+    cavaloPlate: dash(mission.clientVehicle?.plate),
+    carretaPlate: dash(carretaPlate),
+    scheduledStart: formatDateTimeBR(scheduledStart),
+    originArrival: formatDateTimeBR(marks.originArrival),
+    operationStart: formatDateTimeBR(marks.operationStart),
+    operationEnd: formatDateTimeBR(operationEnd),
+    totalDuration: formatDurationBetween(scheduledStart, operationEnd),
+    startKm,
+    endKm,
+    totalKm: totalKm !== '—' ? `${totalKm} KM` : '—',
+    status: String(mission.status || '—'),
+    finalizeMessage,
+  };
+
+  if (includeDirectorSection) {
+    display.director = {
+      openedBy: trail.openedBy,
+      tablesBy: trail.tablesBy,
+      statusEntries: trail.statusEntries,
+      kmEntries: trail.kmEntries.map(k => ({
+        ...k,
+        fieldLabel: KM_FIELD_LABELS[k.field] || k.field,
+      })),
+      aiSummary: aiSummary || undefined,
+      revenueTotal,
+      costTotal,
+      marginPct,
+    };
+  }
+
+  return { whatsappText: body, display };
+}
+
+export async function buildFullAuditSummary(options: AuditSummaryOptions): Promise<string> {
+  const data = await buildAuditSummaryData(options);
+  return data.whatsappText;
 }
