@@ -1611,8 +1611,27 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         return fallbackAddress;
     };
 
+    const isGoogleMapsUrl = (value: string): boolean => {
+        const raw = value.trim();
+        if (!/^https?:\/\//i.test(raw)) return false;
+        try {
+            const host = new URL(raw).hostname.replace(/^www\./i, '').toLowerCase();
+            return host === 'google.com'
+                || host.endsWith('.google.com')
+                || host === 'maps.app.goo.gl'
+                || host === 'goo.gl';
+        } catch {
+            return /(?:google\.[^/]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(raw);
+        }
+    };
+
     const handleLocationInputChange = async (val: string) => {
-        setEditData(prev => ({ ...prev, currentLocationName: val }));
+        const trimmed = val.trim();
+        setEditData(prev => ({
+            ...prev,
+            currentLocationName: val,
+            mapLink: trimmed ? prev.mapLink : '',
+        }));
         const coords = extractCoordinates(val);
         if (coords) {
             const standardLink = `https://www.google.com/maps?q=${coords.lat},${coords.lng}&z=17&hl=pt-BR`;
@@ -1627,6 +1646,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             } else {
                 showNotification('GPS Identificado', 'Coordenadas capturadas. O endereço será resolvido ao salvar.', 'success');
             }
+            return;
+        }
+
+        if (isGoogleMapsUrl(trimmed)) {
+            setEditData(prev => ({ ...prev, currentLocationName: val, mapLink: trimmed }));
+            setCurrentPreviewCoords(null);
+            showNotification('Link Google Maps validado', 'Link salvo. Se ele não tiver coordenadas, o mapa de prévia ficará indisponível, mas a atualização poderá ser salva.', 'success');
         }
     };
 
