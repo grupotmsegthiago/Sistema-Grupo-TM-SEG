@@ -69,9 +69,10 @@ const formatCurrency = (val: number) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
-const CHART_W = 118;
-const CHART_H = 42;
-const CHART_PAD = 5;
+const CHART_W = 132;
+const CHART_H = 52;
+const CHART_PAD = 10;
+const VALUE_EPS = 0.01;
 
 const GoalUpdateSparkline: React.FC<{
     rows: GoalUpdateSnapshot[];
@@ -81,6 +82,8 @@ const GoalUpdateSparkline: React.FC<{
     title: string;
 }> = ({ rows, stroke, isRefreshing, onRefresh, title }) => {
     const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+    const [tooltipPos, setTooltipPos] = useState({ top: 0, left: 0 });
+    const chartRef = useRef<HTMLDivElement>(null);
     const chronological = useMemo(() => [...rows].slice(0, 5).reverse(), [rows]);
 
     const points = useMemo(() => {
@@ -88,33 +91,60 @@ const GoalUpdateSparkline: React.FC<{
         const values = chronological.map(r => r.revenue);
         const min = Math.min(...values);
         const max = Math.max(...values);
-        const range = max - min || 1;
+        const range = max - min;
         const innerW = CHART_W - CHART_PAD * 2;
         const innerH = CHART_H - CHART_PAD * 2;
+        const midY = CHART_PAD + innerH / 2;
         return chronological.map((row, i) => {
             const x = CHART_PAD + (chronological.length === 1 ? innerW / 2 : (i / (chronological.length - 1)) * innerW);
-            const y = CHART_PAD + (1 - (row.revenue - min) / range) * innerH;
+            const y = range < VALUE_EPS
+                ? midY
+                : CHART_PAD + (1 - (row.revenue - min) / range) * innerH;
             const prev = i > 0 ? chronological[i - 1].revenue : null;
             const delta = prev !== null ? row.revenue - prev : null;
             return { x, y, row, delta, i };
         });
     }, [chronological]);
 
-    const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+    const pathD = useMemo(() => {
+        if (points.length < 2) return '';
+        let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+        for (let i = 1; i < points.length; i++) {
+            const prev = points[i - 1];
+            const curr = points[i];
+            const same = Math.abs(curr.row.revenue - prev.row.revenue) < VALUE_EPS;
+            if (same) {
+                // Valor igual → segmento horizontal (linha reta)
+                d += ` L ${curr.x.toFixed(1)} ${prev.y.toFixed(1)}`;
+            } else {
+                // Valor mudou → degrau: horizontal até o ponto, depois vertical
+                d += ` L ${curr.x.toFixed(1)} ${prev.y.toFixed(1)} L ${curr.x.toFixed(1)} ${curr.y.toFixed(1)}`;
+            }
+        }
+        return d;
+    }, [points]);
+
+    const showTooltip = (idx: number, el: SVGCircleElement) => {
+        setHoverIdx(idx);
+        const r = el.getBoundingClientRect();
+        setTooltipPos({ top: r.top - 8, left: r.left + r.width / 2 });
+    };
 
     return (
         <div
-            className="relative w-full select-none"
+            ref={chartRef}
+            className="relative select-none overflow-visible z-[160]"
+            style={{ width: CHART_W }}
             data-testid="goal-update-sparkline"
             title={title}
         >
             <div className="flex items-center justify-between gap-1 mb-0.5">
-                <span className="text-[7px] font-black uppercase text-slate-400 leading-none">Monitoramento 24h</span>
+                <span className="text-[7px] font-black uppercase text-slate-400 leading-none whitespace-nowrap">Monitoramento 24h</span>
                 <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onRefresh(); }}
                     disabled={isRefreshing}
-                    className="p-0.5 rounded text-slate-400 hover:text-slate-700 disabled:opacity-40"
+                    className="p-0.5 rounded text-slate-400 hover:text-slate-700 disabled:opacity-40 shrink-0"
                     aria-label={title}
                     data-testid="button-refresh-goal"
                 >
@@ -125,28 +155,36 @@ const GoalUpdateSparkline: React.FC<{
                 type="button"
                 onClick={onRefresh}
                 disabled={isRefreshing}
-                className="block w-full rounded-lg border border-slate-200/80 bg-slate-50/80 hover:bg-slate-100/90 transition-colors disabled:opacity-50 overflow-visible"
+                className="block rounded-lg border border-slate-200/80 bg-white/95 shadow-md hover:bg-slate-50 transition-colors disabled:opacity-50 overflow-visible backdrop-blur-sm"
+                style={{ width: CHART_W, height: CHART_H }}
                 aria-label={title}
             >
                 {points.length === 0 ? (
-                    <div className="flex items-center justify-center h-[42px] text-[8px] font-semibold text-slate-400 uppercase">
+                    <div className="flex items-center justify-center h-full text-[8px] font-semibold text-slate-400 uppercase">
                         Sem histórico
                     </div>
                 ) : (
-                    <svg width={CHART_W} height={CHART_H} viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full h-[42px]">
+                    <svg
+                        width={CHART_W}
+                        height={CHART_H}
+                        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+                        className="overflow-visible"
+                        style={{ overflow: 'visible' }}
+                    >
                         {points.length > 1 && (
-                            <path d={pathD} fill="none" stroke={stroke} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" opacity={0.85} />
+                            <path d={pathD} fill="none" stroke={stroke} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" opacity={0.9} />
                         )}
                         {points.map((p) => (
                             <circle
                                 key={p.row.at}
                                 cx={p.x}
                                 cy={p.y}
-                                r={hoverIdx === p.i ? 4 : 3}
+                                r={hoverIdx === p.i ? 4.5 : 3.5}
                                 fill={hoverIdx === p.i ? stroke : '#fff'}
                                 stroke={stroke}
                                 strokeWidth={2}
-                                onMouseEnter={() => setHoverIdx(p.i)}
+                                style={{ overflow: 'visible' }}
+                                onMouseEnter={(e) => showTooltip(p.i, e.currentTarget)}
                                 onMouseLeave={() => setHoverIdx(null)}
                             />
                         ))}
@@ -155,13 +193,14 @@ const GoalUpdateSparkline: React.FC<{
             </button>
             {hoverIdx !== null && points[hoverIdx] && (
                 <div
-                    className="absolute z-[500] bottom-full mb-1 right-0 w-[min(92vw,200px)] rounded-lg border border-slate-200 bg-white shadow-lg px-2 py-1.5 text-left pointer-events-none"
+                    className="fixed z-[9999] -translate-x-1/2 -translate-y-full rounded-lg border border-slate-200 bg-white shadow-xl px-2.5 py-1.5 text-left pointer-events-none min-w-[140px]"
+                    style={{ top: tooltipPos.top, left: tooltipPos.left }}
                     data-testid="sparkline-tooltip"
                 >
                     <p className="text-[9px] font-bold text-slate-700">{formatDateTimeAuditBR(points[hoverIdx].row.at)}</p>
                     <p className="text-[9px] text-slate-600">{formatCurrency(points[hoverIdx].row.revenue)}</p>
                     {points[hoverIdx].delta !== null && (
-                        <p className={`text-[9px] font-black ${points[hoverIdx].delta! > 0.01 ? 'text-emerald-600' : points[hoverIdx].delta! < -0.01 ? 'text-red-600' : 'text-slate-500'}`}>
+                        <p className={`text-[9px] font-black ${Math.abs(points[hoverIdx].delta!) < VALUE_EPS ? 'text-slate-500' : points[hoverIdx].delta! > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                             Δ {formatGoalDelta(points[hoverIdx].delta)}
                         </p>
                     )}
@@ -368,11 +407,11 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                       `Faturamento Período${suffix}`;
 
     return (
-        <div className="group perspective-1000 w-full max-w-lg mx-auto h-full">
-            <div className="bg-white rounded-[35px] p-4 sm:p-5 border-x border-t border-b-4 border-gray-200/60 shadow-[0_20px_50px_rgba(0,0,0,0.06)] w-full h-full overflow-hidden transition-all duration-700 hover:shadow-[0_25px_60px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transform hover:rotate-0.5 border-r-[5px] ml-[0px] mr-[0px]">
+        <div className="group perspective-1000 w-full max-w-lg mx-auto h-full overflow-visible">
+            <div className="relative bg-white rounded-[35px] p-4 sm:p-5 border-x border-t border-b-4 border-gray-200/60 shadow-[0_20px_50px_rgba(0,0,0,0.06)] w-full h-full overflow-visible transition-all duration-700 hover:shadow-[0_25px_60px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transform hover:rotate-0.5 border-r-[5px] ml-[0px] mr-[0px]">
                 
-                <div className="flex justify-between items-start gap-2 mb-4 min-w-0">
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className="relative flex justify-between items-start gap-2 mb-4 min-w-0 min-h-[72px] overflow-visible">
+                    <div className={`flex items-center gap-2.5 min-w-0 flex-1 ${canSeeMonetary ? 'pr-[138px]' : ''}`}>
                         <div className="relative shrink-0">
                             <div className={`p-2 rounded-[15px] text-white shadow-lg transition-colors duration-500 ${accentClass ? `bg-gradient-to-br ${accentClass}` : stats.colorClass}`}>
                                 <Target size={16} strokeWidth={3} />
@@ -403,7 +442,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                         </div>
                     </div>
                     {canSeeMonetary && (
-                        <div className="flex flex-col items-end gap-1 shrink-0 w-[118px]">
+                        <div className="absolute -right-1 -top-1 z-[160] flex flex-col items-end gap-1 overflow-visible pointer-events-auto">
                             <p className={`text-sm md:text-base font-black font-mono tracking-tighter whitespace-nowrap transition-colors duration-500 ${stats.textClass}`}>
                                 {isLoading ? (
                                     <Loader2 size={14} className="animate-spin inline text-red-500" />
