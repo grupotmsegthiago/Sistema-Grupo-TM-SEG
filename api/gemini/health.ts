@@ -1,5 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
-import { GEMINI_TEXT_MODEL } from "../../lib/geminiModels";
+const GEMINI_TEXT_MODEL = "gemini-2.5-flash";
 
 function getGeminiApiKey(): string {
   return String(
@@ -28,13 +27,21 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: GEMINI_TEXT_MODEL,
-      contents: "Responda apenas: OK",
-      config: { maxOutputTokens: 10, temperature: 0 },
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: "Responda apenas: OK" }] }],
+        generationConfig: { maxOutputTokens: 10, temperature: 0 },
+      }),
     });
-    res.status(200).json({ ok: true, model: GEMINI_TEXT_MODEL, text: (response.text || "").trim() });
+    const data: any = await response.json();
+    if (!response.ok) {
+      res.status(response.status).json({ ok: false, error: data?.error?.message || "Falha ao contactar Gemini" });
+      return;
+    }
+    const text = data?.candidates?.[0]?.content?.parts?.map((part: any) => part.text || "").join("").trim() || "";
+    res.status(200).json({ ok: true, model: GEMINI_TEXT_MODEL, text });
   } catch (e: any) {
     res.status(500).json({ ok: false, error: e?.message || "Falha ao contactar Gemini" });
   }
