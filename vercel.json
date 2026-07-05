@@ -8,6 +8,12 @@
     },
     "api/whatsapp/webhook/inbound.ts": {
       "maxDuration": 300
+    },
+    "api/geocode-address.ts": {
+      "maxDuration": 60
+    },
+    "api/reverse-geocode.ts": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
@@ -18,6 +24,14 @@
     {
       "source": "/api/whatsapp/webhook/inbound",
       "destination": "/api/whatsapp/webhook/inbound"
+    },
+    {
+      "source": "/api/geocode-address",
+      "destination": "/api/geocode-address"
+    },
+    {
+      "source": "/api/reverse-geocode",
+      "destination": "/api/reverse-geocode"
     },
     {
       "source": "/(.*)",

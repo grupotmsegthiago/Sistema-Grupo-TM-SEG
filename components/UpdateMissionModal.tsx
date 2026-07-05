@@ -1571,6 +1571,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const calculateProgressFromCoords = async (currentLat: number, currentLng: number) => {
         if (!editData.origin) return;
         if (!missionTotals.plannedKm || missionTotals.plannedKm <= 0) return;
+        if (!mapsJsReady || typeof google === 'undefined') return;
 
         try {
             const geocoder = new google.maps.Geocoder();
@@ -1628,12 +1629,49 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const fallbackMapEmbedUrl = useMemo(() => {
         const coords = currentPreviewCoords || extractCoordinates(editData.mapLink) || extractCoordinates(editData.currentLocationName);
-        const query = coords
-            ? `${coords.lat},${coords.lng}`
-            : (editData.currentLocationName || editData.mapLink || editData.destination || '').trim();
-        if (!query) return '';
-        return `https://www.google.com/maps?q=${encodeURIComponent(query)}&output=embed`;
+        if (!coords) return '';
+        const latDelta = 0.018;
+        const lngDelta = 0.018;
+        const bbox = [
+            coords.lng - lngDelta,
+            coords.lat - latDelta,
+            coords.lng + lngDelta,
+            coords.lat + latDelta,
+        ].join(',');
+        return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(`${coords.lat},${coords.lng}`)}`;
     }, [currentPreviewCoords, editData.mapLink, editData.currentLocationName, editData.destination]);
+
+    const fallbackMapOpenUrl = useMemo(() => {
+        const query = (editData.currentLocationName || editData.mapLink || editData.destination || '').trim();
+        if (editData.mapLink) return editData.mapLink;
+        if (!query) return '';
+        return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    }, [editData.currentLocationName, editData.mapLink, editData.destination]);
+
+    const resolveTypedAddress = async (rawValue: string) => {
+        const trimmed = rawValue.trim();
+        if (trimmed.length < 3 || /^https?:\/\//i.test(trimmed) || extractCoordinates(trimmed)) return;
+
+        try {
+            const resp = await authFetch(`/api/geocode-address?address=${encodeURIComponent(trimmed)}`);
+            const data = await resp.json();
+            const loc = data?.location;
+            if (data?.success && Number.isFinite(loc?.lat) && Number.isFinite(loc?.lng)) {
+                const coords = { lat: Number(loc.lat), lng: Number(loc.lng) };
+                const standardLink = `https://www.google.com/maps?q=${coords.lat},${coords.lng}&z=17&hl=pt-BR`;
+                setCurrentPreviewCoords(coords);
+                setEditData(prev => ({
+                    ...prev,
+                    currentLocationName: String(data.address || trimmed),
+                    mapLink: standardLink,
+                }));
+                calculateProgressFromCoords(coords.lat, coords.lng);
+                showNotification('Endereço localizado', 'Coordenadas encontradas e link do Google Maps gerado.', 'success');
+            }
+        } catch (e) {
+            console.warn('[LOCATION] Falha ao geocodificar endereço digitado:', e);
+        }
+    };
 
     const handleLocationInputChange = async (val: string) => {
         const trimmed = val.trim();
@@ -3880,10 +3918,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     </label>
                                     {mapsJsReady ? (
                                         <Autocomplete onLoad={ref => updateLocRef.current = ref} onPlaceChanged={handlePlaceSelect}>
-                                            <input type="text" className={`w-full bg-slate-800 border rounded-xl p-3.5 text-xs font-bold outline-none transition-all ${isGoogleLinkRequired && !editData.mapLink ? 'border-red-500/50 ring-2 ring-red-500/10' : 'border-white/10 focus:ring-2 focus:ring-red-500/30'}`} placeholder="Busque a cidade ou cole link do Google Maps..." value={editData.currentLocationName} onChange={e => handleLocationInputChange(e.target.value)} />
+                                            <input type="text" className={`w-full bg-slate-800 border rounded-xl p-3.5 text-xs font-bold outline-none transition-all ${isGoogleLinkRequired && !editData.mapLink ? 'border-red-500/50 ring-2 ring-red-500/10' : 'border-white/10 focus:ring-2 focus:ring-red-500/30'}`} placeholder="Busque a cidade ou cole link do Google Maps..." value={editData.currentLocationName} onChange={e => handleLocationInputChange(e.target.value)} onBlur={e => resolveTypedAddress(e.target.value)} />
                                         </Autocomplete>
                                     ) : (
-                                        <input type="text" className={`w-full bg-slate-800 border rounded-xl p-3.5 text-xs font-bold outline-none transition-all ${isGoogleLinkRequired && !editData.mapLink ? 'border-red-500/50 ring-2 ring-red-500/10' : 'border-white/10 focus:ring-2 focus:ring-red-500/30'}`} placeholder="Digite o endereço ou cole link do Google Maps..." value={editData.currentLocationName} onChange={e => handleLocationInputChange(e.target.value)} />
+                                        <input type="text" className={`w-full bg-slate-800 border rounded-xl p-3.5 text-xs font-bold outline-none transition-all ${isGoogleLinkRequired && !editData.mapLink ? 'border-red-500/50 ring-2 ring-red-500/10' : 'border-white/10 focus:ring-2 focus:ring-red-500/30'}`} placeholder="Digite o endereço ou cole link do Google Maps..." value={editData.currentLocationName} onChange={e => handleLocationInputChange(e.target.value)} onBlur={e => resolveTypedAddress(e.target.value)} />
                                     )}
                                     {!editData.mapLink && isGoogleLinkRequired && (
                                         <p className="text-[8px] text-red-500 font-black mt-1 uppercase flex items-center gap-1"><ShieldAlert size={10}/> Sistema bloqueado até identificar link de satélite válido</p>
@@ -3914,6 +3952,15 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                             loading="lazy"
                                             referrerPolicy="no-referrer-when-downgrade"
                                         />
+                                    ) : fallbackMapOpenUrl ? (
+                                        <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                                            <MapPin size={40} className="text-red-400" />
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-300">Endereço/link aceito</p>
+                                            <p className="max-w-sm text-[11px] font-semibold text-slate-400">O mapa interativo do Google está indisponível neste navegador, mas o link da localização foi gerado para salvar e abrir externamente.</p>
+                                            <a href={fallbackMapOpenUrl} target="_blank" rel="noreferrer" className="rounded-xl bg-red-600 px-4 py-2 text-[10px] font-black uppercase text-white hover:bg-red-700">
+                                                Abrir no Google Maps
+                                            </a>
+                                        </div>
                                     ) : (
                                         <div className="flex flex-col items-center justify-center h-full opacity-20"><MapPin size={40}/><p className="text-[9px] font-black uppercase mt-2 text-center">Aguardando coordenadas...</p></div>
                                     )}
