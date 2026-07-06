@@ -470,6 +470,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   }, [userNameLower]);
   const canEditVerifiedProviderTotal = isBarbaraFinance
     || ['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower);
+  const isControllerRole = userRoleLower === 'controller';
   const isProviderTotalLockedByController = !!(mission?.verified_by && mission?.verified_at && !canEditVerifiedProviderTotal);
   // MODO EDIÇÃO TOTAL: Barbara e Thiago podem destravar TODOS os campos da OS
   // (operacional, cliente, fornecedor, financeiro), inclusive em OS aprovadas.
@@ -487,7 +488,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // escolhida passa a valer. Usa "thiago moreira" (não só "thiago") para não
   // pegar o comercial Thiago Arruda.
   const canOverrideAutoProvider = useMemo(() => {
-    return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
+    return userRoleLower === 'administrador' || userRoleLower === 'diretoria' || userRoleLower === 'controller'
       || userNameLower.includes('barbara') || userNameLower.includes('bárbara')
       || userNameLower.includes('thiago moreira')
       || userNameLower.includes('simone');
@@ -518,6 +519,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     return canEditOpsData || ['operacional', 'operador'].includes(userRoleLower) || fullEditMode;
   }, [canEditOpsData, userRoleLower, fullEditMode]);
   const canEditClientData = (canEditOpsData && !isController) || fullEditMode;
+  // Controller pode ajustar o valor total do fornecedor mesmo após verificação.
+  const canEditProviderCostTotal = canEditOpsData && (fullEditMode || !isProviderTotalLockedByController || isControllerRole);
 
   // TRAVA PÓS-SALVAMENTO: assim que alguém salva ou aprova um faturamento,
   // todos os campos editáveis são bloqueados em todas as telas. Diretoria,
@@ -1642,7 +1645,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   setRevenueInput(fmtBR(autoClientTotal));
               }
               const currentCost = parseNumber(costInput);
-              const needCost = !mission.is_same_os && !costIntentional && autoProviderTotal > 0 && Math.abs(currentCost - autoProviderTotal) > 1;
+              const needCost = !mission.is_same_os && !costIntentional && !userManuallyEditedRef.current && !isControllerRole
+                  && autoProviderTotal > 0 && Math.abs(currentCost - autoProviderTotal) > 1;
               if (needCost) {
                   setCostInput(fmtBR(autoProviderTotal));
               } else if (mission.is_same_os && currentCost !== 0) {
@@ -1715,7 +1719,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // passa a ser o do motor, evitando o "R$ 0,00" remanescente de
           // gravações antigas (anteriores ao motor).
           // Só não roda durante salvamento ou logo após edição manual.
-          if (financialData.autoEngine?.active && !mission.is_same_os && !userManuallyEditedRef.current && !isSavingRef.current) {
+          if (financialData.autoEngine?.active && !mission.is_same_os && !userManuallyEditedRef.current && !isSavingRef.current && !isControllerRole) {
               const engineCostTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
               const currentCostInput = parseNumber(costInput);
               if (engineCostTotal > 0 && Math.abs(currentCostInput - engineCostTotal) > 1) {
@@ -1741,7 +1745,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
               const calcCostTotal = financialData.provider.total + parseNumber(displacementProviderInput);
               const currentCostInput = parseNumber(costInput);
-              if (!mission.is_same_os && calcCostTotal > 0 && Math.abs(currentCostInput - calcCostTotal) > 1) {
+              if (!mission.is_same_os && !isControllerRole && calcCostTotal > 0 && Math.abs(currentCostInput - calcCostTotal) > 1) {
                   setCostInput(fmt(calcCostTotal));
               }
           }
@@ -5253,7 +5257,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     {mission?.verified_by && mission?.verified_at && <Lock size={12} className="text-blue-600" />}
                                 </label>
                                 <div className="flex items-center gap-2">
-                                {!(mission?.verified_by && mission?.verified_at) && (() => {
+                                {(!mission?.verified_by || !mission?.verified_at || canEditVerifiedProviderTotal) && (() => {
                                     const calcCostBtn = financialData ? (financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput)) : 0;
                                     const inputCostBtn = parseNumber(costInput);
                                     const isManualCostBtn = inputCostBtn > 0 && calcCostBtn > 0 && Math.abs(inputCostBtn - calcCostBtn) > 1;
@@ -5274,7 +5278,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </button>
                                     );
                                 })()}
-                                {!(mission?.verified_by && mission?.verified_at) && !mission.is_same_os && (() => {
+                                {(!mission?.verified_by || !mission?.verified_at || canEditVerifiedProviderTotal) && !mission.is_same_os && (() => {
                                     const swapOptions: FilterableSelectOption[] = [
                                         { value: '', label: 'IA Detectando Melhor Custo...' },
                                         ...[...filteredProviderTables]
@@ -5298,10 +5302,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 })()}
                                 </div>
                             </div>
-                            {mission?.verified_by && mission?.verified_at && (
+                            {mission?.verified_by && mission?.verified_at && !canEditVerifiedProviderTotal && (
                                 <div className="bg-blue-100 border border-blue-300 rounded-lg px-3 py-1.5 mb-2 flex items-center gap-2">
                                     <ShieldCheck size={14} className="text-blue-700" />
-                                    <span className="text-[9px] font-black text-blue-800">VERIFICADO PELO CONTROLLER — Valor travado. Somente Diretoria pode alterar.</span>
+                                    <span className="text-[9px] font-black text-blue-800">VERIFICADO PELO CONTROLLER — Valor travado. Somente Diretoria/Controller podem alterar.</span>
                                 </div>
                             )}
                             {(() => {
@@ -5372,19 +5376,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <input 
                                     type="text" 
                                     inputMode="decimal"
-                                    className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${(!canEditOpsData || (!fullEditMode && isProviderTotalLockedByController)) ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
+                                    className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${!canEditProviderCostTotal ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                     value={costInput} 
-                                    onChange={e => { if (canEditOpsData && (fullEditMode || !isProviderTotalLockedByController)) { userManuallyEditedRef.current = true; setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
-                                    readOnly={!canEditOpsData || (!fullEditMode && isProviderTotalLockedByController)}
+                                    onChange={e => { if (canEditProviderCostTotal) { userManuallyEditedRef.current = true; setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
+                                    readOnly={!canEditProviderCostTotal}
                                     data-testid="input-cost-total"
                                 />
                             </div>
                             <p className="text-[8px] text-blue-600 font-bold mt-1 italic">
                                 {mission?.verified_by && mission?.verified_at
-                                    ? (isBarbaraFinance
-                                        ? '✓ VALOR VERIFICADO PELO CONTROLLER — Financeiro (Bárbara) pode ajustar e aprovar'
-                                        : '🔒 VALOR VERIFICADO PELO CONTROLLER — Somente Diretoria pode alterar')
-                                    : canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : ''}
+                                    ? (canEditVerifiedProviderTotal
+                                        ? (isControllerRole
+                                            ? '✓ CONTROLLER — Você pode ajustar o valor do fornecedor'
+                                            : '✓ VALOR VERIFICADO PELO CONTROLLER — Diretoria/Controller podem ajustar')
+                                        : '🔒 VALOR VERIFICADO PELO CONTROLLER — Somente Diretoria/Controller podem alterar')
+                                    : canEditProviderCostTotal ? '* EDITÁVEL - CONTROLLER / DIRETORIA / ADMINISTRADOR (toque para editar)' : ''}
                             </p>
                             {(showCostReasonInput || costEditReason) && (
                                 <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
