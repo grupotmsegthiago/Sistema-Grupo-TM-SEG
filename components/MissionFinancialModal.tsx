@@ -463,6 +463,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const userNameLower = useMemo(() => {
     try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); return ((u.name || u.username || '') as string).toLowerCase(); } catch { return ''; }
   }, []);
+  // Financeiro (Bárbara): liberação permanente para editar e aprovar faturamento,
+  // inclusive OS verificadas pelo Controller ou já salvas/aprovadas.
+  const isBarbaraFinance = useMemo(() => {
+    return userNameLower.includes('barbara') || userNameLower.includes('bárbara');
+  }, [userNameLower]);
+  const canEditVerifiedProviderTotal = isBarbaraFinance
+    || ['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower);
+  const isProviderTotalLockedByController = !!(mission?.verified_by && mission?.verified_at && !canEditVerifiedProviderTotal);
   // MODO EDIÇÃO TOTAL: Barbara e Thiago podem destravar TODOS os campos da OS
   // (operacional, cliente, fornecedor, financeiro), inclusive em OS aprovadas.
   // O acionamento é registrado em system_logs (MissionEditHistory).
@@ -495,16 +503,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // isController: identifica o cargo Controller para travas de edição.
   // Quando EDIÇÃO TOTAL está ligada, o gate de Controller é suspenso para
   // que TODOS os campos (cliente, pedágio, etc.) fiquem editáveis.
-  const isController = userRoleLower === 'controller' && !fullEditMode;
+  const isController = userRoleLower === 'controller' && !fullEditMode && !isBarbaraFinance;
 
   const canEditOpsData = useMemo(() => {
     if (fullEditMode) return true;
+    if (isBarbaraFinance) return true;
     try {
       const u = JSON.parse(localStorage.getItem('userData') || '{}');
       if (userNameLower.includes('plinio') || userNameLower.includes('plínio')) return true;
       return ['diretoria', 'administrador', 'avançado', 'avancado', 'controller'].includes(userRoleLower) || u.permissions?.includes('*');
     } catch { return false; }
-  }, [userRoleLower, userNameLower, fullEditMode]);
+  }, [userRoleLower, userNameLower, fullEditMode, isBarbaraFinance]);
   const canEditEndTimeOnly = useMemo(() => {
     return canEditOpsData || ['operacional', 'operador'].includes(userRoleLower) || fullEditMode;
   }, [canEditOpsData, userRoleLower, fullEditMode]);
@@ -515,10 +524,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // administrador e CEO podem destravar manualmente para corrigir algo.
   const isBillingLocked = !!(mission?.billing_verified_by || mission?.billing_approved || mission?.snapshot_approved_by);
   const isPlinio = userNameLower.includes('plinio') || userNameLower.includes('plínio');
-  const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower) || isPlinio;
+  const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower) || isPlinio || isBarbaraFinance;
   // ADMINISTRADOR (ex: Barbara) tem liberação permanente: pode editar OS aprovada
   // a qualquer momento. O sistema registra cada alteração no histórico permanente.
-  const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode || isPlinio;
+  const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode || isPlinio || isBarbaraFinance;
   const isDirectorAccess = userRoleLower === 'diretoria' || userRoleLower === 'administrador';
   const [unlockOverride, setUnlockOverride] = useState(false);
   useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); staleAutoResyncDoneRef.current = null; }, [mission?.id]);
@@ -2239,7 +2248,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro, Controller ou Diretoria podem editar.`, 'error');
           return;
       }
-      if (currentApprovalStatus.lockedByDiretoria) {
+      if (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) {
           showNotification('Bloqueado', 'Esta OS foi aprovada pela Diretoria. Somente a Diretoria pode editar.', 'error');
           return;
       }
@@ -2250,7 +2259,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       // Só é exigido quando a missão está Concluída ou Cancelada.
       const missionStatusTrim = (mission.status || '').trim();
       const requiresTollGate = missionStatusTrim === 'Concluída' || missionStatusTrim === 'Cancelada';
-      if (approve && !mission.billing_approved && requiresTollGate) {
+      if (approve && !mission.billing_approved && requiresTollGate && !isBarbaraFinance) {
           if (!tollConfirmed) {
               setShowTollConfirmDialog(true);
               showNotification('Pedágio Não Confirmado', 'Confirme se há ou não pedágio antes de aprovar.', 'error');
@@ -5362,16 +5371,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <input 
                                     type="text" 
                                     inputMode="decimal"
-                                    className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${(!canEditOpsData || (!fullEditMode && mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower))) ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
+                                    className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${(!canEditOpsData || (!fullEditMode && isProviderTotalLockedByController)) ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                     value={costInput} 
-                                    onChange={e => { if (canEditOpsData && (fullEditMode || !(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower)))) { userManuallyEditedRef.current = true; setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
-                                    readOnly={!canEditOpsData || (!fullEditMode && !!(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower)))}
+                                    onChange={e => { if (canEditOpsData && (fullEditMode || !isProviderTotalLockedByController)) { userManuallyEditedRef.current = true; setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
+                                    readOnly={!canEditOpsData || (!fullEditMode && isProviderTotalLockedByController)}
                                     data-testid="input-cost-total"
                                 />
                             </div>
                             <p className="text-[8px] text-blue-600 font-bold mt-1 italic">
                                 {mission?.verified_by && mission?.verified_at
-                                    ? '🔒 VALOR VERIFICADO PELO CONTROLLER — Somente Diretoria pode alterar'
+                                    ? (isBarbaraFinance
+                                        ? '✓ VALOR VERIFICADO PELO CONTROLLER — Financeiro (Bárbara) pode ajustar e aprovar'
+                                        : '🔒 VALOR VERIFICADO PELO CONTROLLER — Somente Diretoria pode alterar')
                                     : canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : ''}
                             </p>
                             {(showCostReasonInput || costEditReason) && (
@@ -5665,13 +5676,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 )}
                                 <div className="flex flex-col sm:flex-row gap-3">
-                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || currentApprovalStatus.lockedByDiretoria || isEffectivelyLocked} className={`px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 ${(currentApprovalStatus.lockedByDiretoria || isEffectivelyLocked) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={isEffectivelyLocked ? 'Faturamento travado — destrave para editar' : ''} data-testid="button-save-adjustments">
-                                    {isUpdating ? <Loader2 size={16} className="animate-spin" /> : currentApprovalStatus.lockedByDiretoria ? <Lock size={16} /> : <Save size={16} />} {currentApprovalStatus.lockedByDiretoria ? 'Bloqueado (Diretoria)' : 'Salvar Ajustes'}
+                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked} className={`px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 ${((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={isEffectivelyLocked ? 'Faturamento travado — destrave para editar' : ''} data-testid="button-save-adjustments">
+                                    {isUpdating ? <Loader2 size={16} className="animate-spin" /> : (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? <Lock size={16} /> : <Save size={16} />} {(currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado (Diretoria)' : 'Salvar Ajustes'}
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 
-                                    disabled={isUpdating || (requiresTollGate && !tollConfirmed) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))} 
-                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${requiresTollGate && !tollConfirmed ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    disabled={isUpdating || (requiresTollGate && !tollConfirmed && !isBarbaraFinance) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))} 
+                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${requiresTollGate && !tollConfirmed && !isBarbaraFinance ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
                                     data-testid="button-approve-billing"
                                 >
                                     <span className="flex items-center gap-2">
@@ -5680,7 +5691,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             ? 'Re-Aprovar Faturamento'
                                             : (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')
                                             ? 'OS Pendente — Não Aprovável' 
-                                            : requiresTollGate && !tollConfirmed 
+                                            : requiresTollGate && !tollConfirmed && !isBarbaraFinance 
                                                 ? 'Confirme o Pedágio' 
                                                 : currentApprovalStatus.lockedByDiretoria
                                                     ? 'Bloqueado — Somente Diretoria'
