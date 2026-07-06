@@ -48,7 +48,20 @@ interface DhlReminderConfig { maxCount: number; cycleHours: number; }
 interface Props {
   missionId: string;
   canViewSnapshots?: boolean;
+  /** Cliente DHL — identidade visual amarela/vermelha; demais usam tema neutro. */
+  isDhlClient?: boolean;
+  /** Fornecedor selecionado no formulário (pode divergir do salvo na OS). */
+  currentProvider?: string;
+  /** Fornecedor gravado na OS no banco (antes de salvar alterações). */
+  savedProvider?: string;
 }
+
+const normProvider = (s?: string | null) => String(s || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toUpperCase();
 
 const fmt = (d: string | null | undefined) => formatDateTimeBR(d);
 
@@ -75,7 +88,13 @@ const fmtDateBr = (d: string | null | undefined): string | null => {
   return s;
 };
 
-const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true }) => {
+const DhlIntakeTimeline: React.FC<Props> = ({
+  missionId,
+  canViewSnapshots = true,
+  isDhlClient = false,
+  currentProvider = '',
+  savedProvider = '',
+}) => {
   const [intakes, setIntakes] = useState<DhlIntakeRow[]>([]);
   const [reminderConfig, setReminderConfig] = useState<DhlReminderConfig>({ maxCount: 3, cycleHours: 12 });
   const [loading, setLoading] = useState(false);
@@ -135,7 +154,7 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
       const r = await authFetch(`/api/dhl/intake/by-mission/${encodeURIComponent(missionId)}`);
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        setErrorMsg(j?.error || 'Não foi possível carregar o painel DHL.');
+        setErrorMsg(j?.error || 'Não foi possível carregar os links do fornecedor.');
         setIntakes([]);
         return;
       }
@@ -145,7 +164,7 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
         setReminderConfig({ maxCount: j.reminderConfig.maxCount, cycleHours: j.reminderConfig.cycleHours });
       }
     } catch {
-      setErrorMsg('Falha de conexão ao carregar painel DHL.');
+      setErrorMsg('Falha de conexão ao carregar links do fornecedor.');
     } finally {
       setLoading(false);
     }
@@ -376,11 +395,67 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
     );
   };
 
+  const accentBorder = isDhlClient ? '#D40511' : '#d1d5db';
+  const titleColor = isDhlClient ? '#7f1d1d' : '#374151';
+  const providerChangedUnsaved = !!(
+    currentProvider?.trim()
+    && savedProvider?.trim()
+    && normProvider(currentProvider) !== normProvider(savedProvider)
+  );
+  const intakeForCurrentProvider = intakes.find(
+    (it) => normProvider(it.provider_name) === normProvider(currentProvider)
+      && (it.effective_status === 'pendente' || it.effective_status === 'preenchido'),
+  );
+  const canGenerateLink = !!currentProvider?.trim() && !providerChangedUnsaved;
+  const needsLinkForCurrentProvider = canGenerateLink && !intakeForCurrentProvider;
+  const sortedIntakes = [...intakes].sort((a, b) => {
+    const aCur = normProvider(a.provider_name) === normProvider(currentProvider) ? 0 : 1;
+    const bCur = normProvider(b.provider_name) === normProvider(currentProvider) ? 0 : 1;
+    return aCur - bCur;
+  });
+
+  const renderGenerateButtons = (testIdPrefix: string) => (
+    <div className="flex flex-wrap gap-2">
+      <button
+        type="button"
+        onClick={() => generateLink('both')}
+        disabled={generating !== null || !canGenerateLink}
+        title={!canGenerateLink ? (providerChangedUnsaved ? 'Salve a OS com o novo fornecedor antes de gerar o link' : 'Selecione o fornecedor na OS') : 'Gera o link, envia e-mail e prepara mensagem de WhatsApp'}
+        className="px-3 h-9 rounded-lg bg-gray-900 hover:bg-black text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 active:scale-95 transition-all"
+        data-testid={`${testIdPrefix}-both`}
+      >
+        {generating === 'both' ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+        {generating === 'both' ? 'Gerando...' : 'Gerar link (E-mail + WhatsApp)'}
+      </button>
+      <button
+        type="button"
+        onClick={() => generateLink('email')}
+        disabled={generating !== null || !canGenerateLink}
+        className="px-3 h-9 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 active:scale-95 transition-all"
+        data-testid={`${testIdPrefix}-email`}
+      >
+        {generating === 'email' ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
+        Só e-mail
+      </button>
+      <button
+        type="button"
+        onClick={() => generateLink('whatsapp')}
+        disabled={generating !== null || !canGenerateLink}
+        className="px-3 h-9 rounded-lg bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 active:scale-95 transition-all"
+        data-testid={`${testIdPrefix}-whatsapp`}
+      >
+        {generating === 'whatsapp' ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />}
+        Só WhatsApp
+      </button>
+    </div>
+  );
+
   return (
-    <div className="mt-4 pt-4 border-t-2 border-dashed rounded-lg" style={{ borderColor: '#D40511' }} data-testid="panel-dhl-timeline">
+    <div className="mt-4 pt-4 border-t-2 border-dashed rounded-lg" style={{ borderColor: accentBorder }} data-testid="panel-dhl-timeline">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#7f1d1d' }}>
-          Acompanhamento DHL {intakes.length > 0 && <span className="text-gray-500">({intakes.length})</span>}
+        <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: titleColor }}>
+          {isDhlClient ? 'Cadastro operacional DHL — link externo' : 'Cadastro operacional — link do fornecedor'}
+          {intakes.length > 0 && <span className="text-gray-500"> ({intakes.length})</span>}
         </p>
         <button
           type="button"
@@ -402,49 +477,62 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
         <p className="text-[10px] text-green-700 italic mb-2" data-testid="text-dhl-timeline-success">{successMsg}</p>
       )}
 
+      {currentProvider?.trim() && (
+        <p className="text-[10px] text-gray-700 mb-2" data-testid="text-intake-current-provider">
+          <span className="font-black uppercase tracking-wider">Fornecedor na tela:</span>{' '}
+          <span className="font-bold">{currentProvider}</span>
+          {intakeForCurrentProvider ? (
+            <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 font-black uppercase text-[9px]">
+              <CheckCircle2 size={10} /> Link ativo — {intakeForCurrentProvider.effective_status === 'preenchido' ? 'dados recebidos' : 'aguardando preenchimento'}
+            </span>
+          ) : providerChangedUnsaved ? (
+            <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-black uppercase text-[9px]">
+              <AlertTriangle size={10} /> Fornecedor alterado — salve a OS para gerar link
+            </span>
+          ) : (
+            <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-900 font-black uppercase text-[9px]">
+              <Clock size={10} /> Sem link para este fornecedor
+            </span>
+          )}
+        </p>
+      )}
+
+      {providerChangedUnsaved && (
+        <div className="mb-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-300 text-[10px] text-amber-900" data-testid="banner-provider-changed">
+          <p className="font-black uppercase tracking-wider flex items-center gap-1.5">
+            <AlertTriangle size={12} /> Fornecedor alterado nesta OS
+          </p>
+          <p className="mt-1 font-medium">
+            De <b>{savedProvider}</b> para <b>{currentProvider}</b>. Salve as alterações e use os botões abaixo para enviar o link ao <b>novo prestador</b>.
+          </p>
+        </div>
+      )}
+
+      {needsLinkForCurrentProvider && intakes.length > 0 && !providerChangedUnsaved && (
+        <div className="mb-3 px-3 py-2.5 rounded-lg bg-blue-50 border border-blue-200" data-testid="banner-new-provider-link">
+          <p className="text-[10px] font-black uppercase tracking-wider text-blue-900 mb-2">
+            Gerar link para {currentProvider}
+          </p>
+          <p className="text-[10px] text-blue-800 mb-2">
+            Há links de outros fornecedores nesta OS, mas nenhum ativo para o fornecedor atual. Gere um novo link abaixo.
+          </p>
+          {renderGenerateButtons('btn-generate-link-new-provider')}
+        </div>
+      )}
+
       {loading && intakes.length === 0 ? (
         <p className="text-[10px] text-gray-500 italic" data-testid="text-dhl-timeline-loading">Carregando...</p>
       ) : intakes.length === 0 ? (
         <div className="flex flex-col items-start gap-2" data-testid="empty-dhl-timeline">
           <p className="text-[10px] text-gray-600 italic">
-            Nenhum link gerado para esta OS ainda. Gere agora para enviar ao fornecedor por e-mail e WhatsApp — ele cadastra os escoltistas e veículo direto no link.
+            Nenhum link gerado para esta OS ainda. Gere agora para enviar ao fornecedor por e-mail e WhatsApp — ele cadastra escoltistas e veículo direto no link.
           </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => generateLink('both')}
-              disabled={generating !== null}
-              className="px-3 h-9 rounded-lg bg-gray-900 hover:bg-black text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 active:scale-95 transition-all"
-              data-testid="btn-generate-link-empty"
-            >
-              {generating === 'both' ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-              {generating === 'both' ? 'Gerando...' : 'Gerar link (E-mail + WhatsApp)'}
-            </button>
-            <button
-              type="button"
-              onClick={() => generateLink('email')}
-              disabled={generating !== null}
-              className="px-3 h-9 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 active:scale-95 transition-all"
-              data-testid="btn-generate-link-email"
-            >
-              {generating === 'email' ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
-              Só e-mail
-            </button>
-            <button
-              type="button"
-              onClick={() => generateLink('whatsapp')}
-              disabled={generating !== null}
-              className="px-3 h-9 rounded-lg bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 active:scale-95 transition-all"
-              data-testid="btn-generate-link-whatsapp"
-            >
-              {generating === 'whatsapp' ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />}
-              Só WhatsApp
-            </button>
-          </div>
+          {renderGenerateButtons('btn-generate-link-empty')}
         </div>
       ) : (
         <div className="space-y-3">
-          {intakes.map((it) => {
+          {sortedIntakes.map((it) => {
+            const isCurrentProvider = normProvider(it.provider_name) === normProvider(currentProvider);
             const st = it.effective_status;
             const badge = st === 'preenchido'
               ? { bg: 'bg-green-100', fg: 'text-green-800', label: 'Dados inseridos' }
@@ -458,11 +546,18 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
             const hasSnapshots = canViewSnapshots && st === 'preenchido' && (it.agent1_snapshot || it.agent2_snapshot || it.vehicle_snapshot);
 
             return (
-              <div key={it.id} className="bg-white border border-gray-200 rounded-lg p-2.5 text-[10px]" data-testid={`row-dhl-intake-${it.id}`}>
+              <div key={it.id} className={`bg-white border rounded-lg p-2.5 text-[10px] ${isCurrentProvider ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-200'}`} data-testid={`row-dhl-intake-${it.id}`}>
                 <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <span className={`px-2 py-0.5 ${badge.bg} ${badge.fg} font-black uppercase tracking-wider rounded`} data-testid={`status-dhl-intake-${it.id}`}>
-                    {badge.label}
-                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`px-2 py-0.5 ${badge.bg} ${badge.fg} font-black uppercase tracking-wider rounded`} data-testid={`status-dhl-intake-${it.id}`}>
+                      {badge.label}
+                    </span>
+                    {isCurrentProvider && (
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-800 font-black uppercase tracking-wider rounded text-[9px]" data-testid={`tag-current-provider-${it.id}`}>
+                        Fornecedor atual
+                      </span>
+                    )}
+                  </div>
                   <span className="text-gray-500 font-mono">{it.provider_name || '—'}</span>
                 </div>
 
@@ -652,7 +747,7 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
                         </button>
                       )}
                     </div>
-                    {isExpanded && (
+                    {isExpanded && isDhlClient && (
                       <button
                         type="button"
                         onClick={() => copyVinculo(it)}
@@ -746,13 +841,16 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
             >
               <div className="px-5 py-4 bg-white border-b border-gray-200 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-3">
-                  <div className="px-2 py-1 rounded bg-red-600 text-white text-[10px] font-black uppercase tracking-wider">DHL</div>
+                  {isDhlClient && (
+                    <div className="px-2 py-1 rounded bg-red-600 text-white text-[10px] font-black uppercase tracking-wider">DHL</div>
+                  )}
                   <div>
                     <h2 className="text-sm font-black uppercase tracking-wider text-gray-900">Dados preenchidos pelo fornecedor</h2>
                     <p className="text-[11px] text-gray-500">{it.provider_name || '—'} · Enviado em {fmt(it.submitted_at)}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {isDhlClient && (
                   <button
                     type="button"
                     onClick={() => copyVinculo(it)}
@@ -765,6 +863,7 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
                       : <><Send size={14} /> Solicitar vínculo para DHL</>
                     }
                   </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => copySnapshot(it)}
