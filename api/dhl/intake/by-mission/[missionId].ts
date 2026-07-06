@@ -41,7 +41,7 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const missionId = String(req.query?.missionId || "").trim();
+  const missionId = String(req.query?.missionId || req.query?.id || "").trim();
   if (!missionId) {
     res.status(400).json({ error: "missionId é obrigatório" });
     return;

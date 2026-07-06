@@ -1497,7 +1497,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         availableVehicles: any[],
     ) => {
         try {
-            const r = await authFetch(`/api/dhl/intake/by-mission/${encodeURIComponent(missionId)}`);
+            const r = await authFetch(`/api/dhl/intake/by-mission?missionId=${encodeURIComponent(missionId)}`);
             if (!r.ok) return;
             const j = await r.json();
             const intakes: any[] = (j?.intakes || []).filter((it: any) => it.effective_status !== 'cancelado');
