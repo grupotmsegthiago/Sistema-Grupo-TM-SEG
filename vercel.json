@@ -15,6 +15,12 @@
     "api/reverse-geocode.ts": {
       "maxDuration": 60
     },
+    "api/distance-matrix.ts": {
+      "maxDuration": 60
+    },
+    "api/route-progress.ts": {
+      "maxDuration": 60
+    },
     "api/gemini/health.ts": {
       "maxDuration": 60
     },
@@ -38,6 +44,14 @@
     {
       "source": "/api/reverse-geocode",
       "destination": "/api/reverse-geocode"
+    },
+    {
+      "source": "/api/distance-matrix",
+      "destination": "/api/distance-matrix"
+    },
+    {
+      "source": "/api/route-progress",
+      "destination": "/api/route-progress"
     },
     {
       "source": "/api/gemini/health",
