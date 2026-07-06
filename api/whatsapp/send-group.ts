@@ -1,5 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
-import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from "../../lib/supabaseDefaults";
+const DEFAULT_SUPABASE_URL = "https://ajhmmjuewdsukecaimik.supabase.co";
+const DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk";
 
 type ZapiCreds = {
   instance: string;
@@ -22,7 +22,8 @@ function authToken(req: any): string {
   return String(req.headers?.authorization || "").replace(/^Bearer\s+/i, "") || String(req.headers?.["x-auth-token"] || "");
 }
 
-function supabase() {
+async function supabase() {
+  const { createClient } = await import("@supabase/supabase-js");
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
     || process.env.SUPABASE_SERVICE_KEY
@@ -43,7 +44,7 @@ function zapiHeaders(creds: ZapiCreds): Record<string, string> {
   };
 }
 
-async function getDefaultZapiCreds(sb: ReturnType<typeof supabase>): Promise<ZapiCreds | null> {
+async function getDefaultZapiCreds(sb: any): Promise<ZapiCreds | null> {
   const { data } = await sb
     .from("whatsapp_instances")
     .select("zapi_instance_id,zapi_token,zapi_client_token,official_ddi,official_phone,provider,is_default,enabled")
@@ -87,7 +88,7 @@ async function assertOfficialBot(creds: ZapiCreds): Promise<{ ok: boolean; error
   return { ok: true };
 }
 
-async function findClientGroup(sb: ReturnType<typeof supabase>, clientName: string): Promise<{ name: string; groupId: string } | null> {
+async function findClientGroup(sb: any, clientName: string): Promise<{ name: string; groupId: string } | null> {
   const select = "name,whatsapp_group_id";
   let { data } = await sb.from("clients").select(select).eq("name", clientName).limit(1);
   if (!data || data.length === 0) {
@@ -126,7 +127,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const sb = supabase();
+    const sb = await supabase();
     const creds = await getDefaultZapiCreds(sb);
     if (!creds) {
       res.status(503).json({ error: "WhatsApp não configurado no banco" });
