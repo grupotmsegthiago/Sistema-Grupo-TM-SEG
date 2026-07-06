@@ -855,11 +855,28 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         return allowedFirstNames.includes(firstName) || allowedFirstNames.some(n => name.includes(n));
     }, [currentUser]);
 
-    const canEditRoute = useMemo(() => {
+    // Financeiro (Bárbara): pode editar OS concluída/aprovada — inclusive KM final
+    // de missões veladas TM SEG/ATIVA enviadas depois da conclusão.
+    const isBarbaraFinance = useMemo(() => {
+        if (!currentUser) return false;
+        const name = (currentUser.name || currentUser.username || '').toLowerCase();
+        return name.includes('barbara') || name.includes('bárbara');
+    }, [currentUser]);
+
+    const hasPrivilegedOsEdit = useMemo(() => {
         if (!currentUser) return false;
         const role = (currentUser.role || '').toLowerCase();
+        return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role)
+            || (currentUser.permissions && currentUser.permissions.includes('*'))
+            || isBarbaraFinance;
+    }, [currentUser, isBarbaraFinance]);
+
+    const canEditRoute = useMemo(() => {
+        if (!currentUser) return false;
+        if (hasPrivilegedOsEdit) return true;
+        const role = (currentUser.role || '').toLowerCase();
         return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
-    }, [currentUser]);
+    }, [currentUser, hasPrivilegedOsEdit]);
 
     const isCompletedMission = mission?.status === MissionStatus.COMPLETED;
     const isBillingApproved = !!mission?.billing_approved;
@@ -868,21 +885,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const role = (currentUser.role || '').toLowerCase();
         return role === 'diretoria';
     }, [currentUser]);
-    const canEditApproved = useMemo(() => {
-        if (!currentUser) return false;
-        const role = (currentUser.role || '').toLowerCase();
-        return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
-    }, [currentUser]);
-    const canRevertStatus = useMemo(() => {
-        if (!currentUser) return false;
-        const role = (currentUser.role || '').toLowerCase();
-        return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
-    }, [currentUser]);
-    const canEditTimes = useMemo(() => {
-        if (!currentUser) return false;
-        const role = (currentUser.role || '').toLowerCase();
-        return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
-    }, [currentUser]);
+    const canEditApproved = hasPrivilegedOsEdit;
+    const canRevertStatus = hasPrivilegedOsEdit;
+    const canEditTimes = hasPrivilegedOsEdit;
     const canEditEndTime = useMemo(() => {
         if (canEditTimes) return true;
         if (!currentUser) return false;
@@ -3270,7 +3275,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         {isCompletedMission && isBillingApproved && canEditApproved && (
                             <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-xl mb-3" data-testid="billing-approved-diretoria">
                                 <ShieldCheck size={16} className="text-green-600" />
-                                <span className="text-[10px] font-black text-green-700 uppercase">OS aprovada — seu perfil pode alterar</span>
+                                <span className="text-[10px] font-black text-green-700 uppercase">{isBarbaraFinance ? 'OS aprovada — Financeiro (Bárbara) pode alterar KM e dados operacionais' : 'OS aprovada — seu perfil pode alterar'}</span>
                             </div>
                         )}
                         {isCompletedMission && !isBillingApproved && canRevertStatus && (

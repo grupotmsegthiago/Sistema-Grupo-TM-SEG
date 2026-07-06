@@ -397,7 +397,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const canEditMission = useMemo(() => {
       if (!currentUser) return false;
       const roleLower = (currentUser.role || '').toLowerCase();
-      return ['diretoria', 'administrador', 'avançado', 'avancado', 'operador', 'comercial'].includes(roleLower) || currentUser.permissions?.includes('*');
+      const nameLower = (currentUser.name || currentUser.username || '').toLowerCase();
+      const isBarbara = nameLower.includes('barbara') || nameLower.includes('bárbara');
+      return isBarbara
+          || ['diretoria', 'administrador', 'avançado', 'avancado', 'operador', 'comercial', 'financeiro'].includes(roleLower)
+          || currentUser.permissions?.includes('*');
   }, [currentUser]);
 
   const isRestrictedClientView = useMemo(() => {

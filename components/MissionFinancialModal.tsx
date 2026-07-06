@@ -533,6 +533,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); staleAutoResyncDoneRef.current = null; }, [mission?.id]);
   useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); setShowTollConfirmDialog(false); setTollConfirmAutoOpened(false); } }, [isOpen]);
   const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
+  const canEditOpsEvenIfLocked = isBarbaraFinance || !isEffectivelyLocked;
   // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
   // da memória de cálculo devem ACOMPANHAR a tabela escolhida sempre que o
   // usuário tem permissão de trocar a tabela mesmo numa OS travada
@@ -3927,7 +3928,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <div className="bg-green-50/50 border border-green-200 rounded-xl p-3">
                                     <div className="flex items-center justify-between mb-3">
                                         <p className="text-[10px] font-black text-green-700 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={12}/> Dados Cliente</p>
-                                        {(canEditClientData || canEditEndTimeOnly) && !isEditingOpsData && !isEffectivelyLocked && (
+                                        {(canEditClientData || canEditEndTimeOnly) && canEditOpsEvenIfLocked && !isEditingOpsData && (
                                             <button onClick={() => setIsEditingOpsData(true)} className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-green-600 bg-green-100 rounded-lg hover:bg-green-200 uppercase tracking-wider transition-all" data-testid="button-edit-ops-data"><Edit2 size={10}/> {canEditClientData ? 'Editar' : 'Editar Data/Hora'}</button>
                                         )}
                                         {isEditingOpsData && (
@@ -4010,7 +4011,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 <span className="text-[8px] font-bold text-blue-400 bg-blue-100 px-1.5 py-0.5 rounded-full">CÓPIA CLIENTE</span>
                                             )}
                                         </div>
-                                        {canEditOpsData && !isEditingProvOpsData && !isEffectivelyLocked && (
+                                        {canEditOpsData && canEditOpsEvenIfLocked && !isEditingProvOpsData && (
                                             <button onClick={() => setIsEditingProvOpsData(true)} className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200 uppercase tracking-wider transition-all" data-testid="button-edit-prov-ops-data"><Edit2 size={10}/> Editar</button>
                                         )}
                                         {isEditingProvOpsData && (
