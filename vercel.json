@@ -48,8 +48,14 @@
     "api/dhl-intake-lookup-placa.ts": {
       "maxDuration": 60
     },
-    "api/dhl-intake-public-get.ts": {
+    "api/dhl/intake/public/[token].ts": {
       "maxDuration": 60
+    },
+    "api/dhl/intake/public/[token]/progress.ts": {
+      "maxDuration": 300
+    },
+    "api/dhl/intake/public/[token]/submit.ts": {
+      "maxDuration": 300
     },
     "api/dhl-intake-public-progress.ts": {
       "maxDuration": 300
@@ -121,15 +127,15 @@
     },
     {
       "source": "/api/dhl/intake/public/:token/progress",
-      "destination": "/api/dhl-intake-public-progress?token=:token"
+      "destination": "/api/dhl/intake/public/:token/progress"
     },
     {
       "source": "/api/dhl/intake/public/:token/submit",
-      "destination": "/api/dhl-intake-public-submit?token=:token"
+      "destination": "/api/dhl/intake/public/:token/submit"
     },
     {
       "source": "/api/dhl/intake/public/:token",
-      "destination": "/api/dhl-intake-public-get?token=:token"
+      "destination": "/api/dhl/intake/public/:token"
     },
     {
       "source": "/(.*)",
