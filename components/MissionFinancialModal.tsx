@@ -6,7 +6,7 @@ import { useLoadScript, Autocomplete } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
-import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, isSameClientName, extractCityFromAddress } from '../lib/financialUtils';
+import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, extractCityFromAddress } from '../lib/financialUtils';
 import {
   isDhlSupplyClient,
   validateDhlTableName,
@@ -981,7 +981,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           const [mRes, ctRes, ptRes, clRes] = await Promise.all([
               supabase.from('missions').select('*').eq('id', initialMission.id).single(),
-              supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(clientName)),
+              fetchClientPriceTables(supabase, clientName).then((rows) => ({ data: rows, error: null })).catch((e: any) => ({ data: null, error: e })),
               ptQuery,
               supabase.from('clients').select('*').ilike('name', `%${ctShort}%`).single()
           ]);
@@ -3088,8 +3088,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   <ClientPriceForm 
                       onBack={() => { setIsEditClientTableOpen(false); setEditClientTableId(null); }} 
                       onSuccess={async (newTableId?: string) => {
-                          const { data } = await supabase.from('client_price_tables').select('*');
-                          if (data) {
+                          const missionClient = mission?.originalClientName || mission?.client || '';
+                          const data = missionClient ? await fetchClientPriceTables(supabase, missionClient) : [];
+                          if (data.length > 0) {
                               setClientTables(data as any);
                               setCustomClientBase('');
                               setCustomClientKm('');
@@ -4110,7 +4111,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         const isMasterRow = (t: any) => /^__AUTO_MASTER__/i.test((t.operation_type || '').trim());
                                         const onlyThisClient = clientTables.filter(t => {
                                             if (isMasterRow(t)) return false;
-                                            return isSameClientName(t.client || '', missionClientName);
+                                            return clientTableMatchesMission(t.client || '', missionClientName);
                                         });
                                         const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables.filter(t => !isMasterRow(t));
                                         const options: FilterableSelectOption[] = [
@@ -5065,7 +5066,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     const isMasterRow = (t: any) => /^__AUTO_MASTER__/i.test((t.operation_type || '').trim());
                                     const onlyThisClient = clientTables.filter(t => {
                                         if (isMasterRow(t)) return false;
-                                        return isSameClientName(t.client || '', missionClientName);
+                                        return clientTableMatchesMission(t.client || '', missionClientName);
                                     });
                                     const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables.filter(t => !isMasterRow(t));
                                     const swapOptions: FilterableSelectOption[] = [
