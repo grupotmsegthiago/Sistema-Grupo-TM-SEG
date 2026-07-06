@@ -621,6 +621,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     const formatted = v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const prevToll = parseNumber(tollInput);
     const prevTollProv = parseNumber(tollProviderInput);
+    const isSameOs = mission?.is_same_os === true;
     // Valor do pedágio do fornecedor: espelha o cliente quando ainda não havia
     // pedágio de fornecedor distinto; caso contrário preserva o valor existente.
     const newTollProv = (prevTollProv <= 0 || prevTollProv === prevToll) ? v : prevTollProv;
@@ -631,7 +632,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     // sendo apenas o serviço), então não tocamos receita/custo aqui.
     if (mission?.id) {
         const r2 = (n: number) => Math.round(n * 100) / 100;
-        const isSameOs = mission.is_same_os === true;
         const payload: any = {
             toll_value: r2(v),
             toll_value_provider: isSameOs ? 0 : r2(newTollProv),
