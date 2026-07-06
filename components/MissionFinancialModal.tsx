@@ -441,6 +441,51 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [isEditingOpsData, setIsEditingOpsData] = useState(false);
   const [editOrigin, setEditOrigin] = useState('');
   const { isLoaded: isMapsLoaded } = useLoadScript(googleMapsLoadConfig);
+
+  /** Calcula KM rodoviário origem→destino (Directions no browser ou /api/distance-matrix no servidor). */
+  const fetchRouteDistanceKm = async (originRaw: string, destinationRaw: string): Promise<number | null> => {
+    const origin = String(originRaw || '').trim();
+    const destination = String(destinationRaw || '').trim();
+    if (!origin || !destination) return null;
+
+    if (isMapsLoaded && (window as any).google?.maps) {
+      try {
+        const ds = new (window as any).google.maps.DirectionsService();
+        const result: any = await new Promise((resolve, reject) => {
+          ds.route({
+            origin: origin + ', Brasil',
+            destination: destination + ', Brasil',
+            travelMode: (window as any).google.maps.TravelMode.DRIVING,
+            unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+            region: 'br',
+          }, (res: any, status: string) => {
+            if (status === 'OK') resolve(res);
+            else reject(new Error('Directions status: ' + status));
+          });
+        });
+        const legs = result?.routes?.[0]?.legs || [];
+        const totalMeters = legs.reduce((acc: number, l: any) => acc + (l?.distance?.value || 0), 0);
+        if (totalMeters > 0) {
+          return Math.round((totalMeters / 1000) * 100) / 100;
+        }
+      } catch (geoErr) {
+        console.warn('[RouteDistance] Directions no browser falhou:', geoErr);
+      }
+    }
+
+    try {
+      const res = await authFetch(`/api/distance-matrix?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`);
+      const text = await res.text();
+      const json = text ? JSON.parse(text) : {};
+      if (json?.success && Number(json.distanceKm) > 0) {
+        return Number(json.distanceKm);
+      }
+      console.warn('[RouteDistance] API retornou:', json?.error || res.status);
+    } catch (apiErr) {
+      console.warn('[RouteDistance] fallback /api/distance-matrix falhou:', apiErr);
+    }
+    return null;
+  };
   const originAutocompleteRef = useRef<any>(null);
   const destinationAutocompleteRef = useRef<any>(null);
   const [editDestination, setEditDestination] = useState('');
@@ -1076,6 +1121,24 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   cost_edit_reason: loadedCostReason || d.cost_edit_reason,
               };
               setMission(fullMission);
+
+              // Se origem/destino existem mas KM previsto está zerado, recalcula automaticamente.
+              if (
+                  !mRes.data.is_same_os
+                  && mRes.data.status !== MissionStatus.CANCELLED
+                  && mRes.data.origin
+                  && mRes.data.destination
+                  && safeNumber(mRes.data.total_distance) <= 0
+              ) {
+                  void (async () => {
+                      const km = await fetchRouteDistanceKm(String(mRes.data.origin), String(mRes.data.destination));
+                      if (km != null && km > 0) {
+                          await supabase.from('missions').update({ total_distance: km, last_update: new Date().toISOString() }).eq('id', initialMission.id);
+                          setMission((prev) => prev ? { ...prev, totalDistance: km, total_distance: km } : prev);
+                          setMemoryLoaded(false);
+                      }
+                  })();
+              }
 
               setEditStartKm(mRes.data.start_km ? String(mRes.data.start_km) : '');
               setEditEndKm(mRes.data.end_km ? String(mRes.data.end_km) : '');
@@ -3512,32 +3575,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                           const v = parseFloat((editKmManual || '').replace(',', '.'));
                                           newDistanceKm = isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : null;
                                       } else {
-                                      try {
-                                          if (isMapsLoaded && (window as any).google?.maps) {
-                                              const ds = new (window as any).google.maps.DirectionsService();
-                                              const result: any = await new Promise((resolve, reject) => {
-                                                  ds.route({
-                                                      origin: editOrigin.trim() + ', Brasil',
-                                                      destination: editDestination.trim() + ', Brasil',
-                                                      travelMode: (window as any).google.maps.TravelMode.DRIVING,
-                                                      unitSystem: (window as any).google.maps.UnitSystem.METRIC,
-                                                      region: 'br',
-                                                  }, (res: any, status: string) => {
-                                                      if (status === 'OK') resolve(res);
-                                                      else reject(new Error('Directions status: ' + status));
-                                                  });
-                                              });
-                                              const legs = result?.routes?.[0]?.legs || [];
-                                              const totalMeters = legs.reduce((acc: number, l: any) => acc + (l?.distance?.value || 0), 0);
-                                              console.log('[Directions API]', 'meters:', totalMeters, 'legs:', legs.length);
-                                              if (totalMeters > 0) {
-                                                  newDistanceKm = Math.round((totalMeters / 1000) * 100) / 100;
-                                              }
+                                          newDistanceKm = await fetchRouteDistanceKm(editOrigin.trim(), editDestination.trim());
+                                          if (newDistanceKm === null) {
+                                              showNotification('KM não calculado', 'Não foi possível calcular a distância. Marque KM manual ou tente novamente.', 'error');
                                           }
-                                      } catch (geoErr) {
-                                          console.warn('Falha ao calcular distância (Directions API):', geoErr);
                                       }
-                                      } // fecha else (modo Directions automático)
 
                                       const updatePayload: any = {
                                           origin: editOrigin.trim(),
