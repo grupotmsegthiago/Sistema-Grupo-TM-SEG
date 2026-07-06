@@ -42,10 +42,10 @@
     "api/gemini/generate.ts": {
       "maxDuration": 300
     },
-    "api/placa/lookup/[placa].ts": {
+    "api/placa-lookup.ts": {
       "maxDuration": 60
     },
-    "api/dhl/intake/public/[token]/lookup-placa/[placa].ts": {
+    "api/dhl-intake-lookup-placa.ts": {
       "maxDuration": 60
     }
   },
@@ -104,11 +104,11 @@
     },
     {
       "source": "/api/placa/lookup/:placa",
-      "destination": "/api/placa/lookup/:placa"
+      "destination": "/api/placa-lookup?placa=:placa"
     },
     {
       "source": "/api/dhl/intake/public/:token/lookup-placa/:placa",
-      "destination": "/api/dhl/intake/public/:token/lookup-placa/:placa"
+      "destination": "/api/dhl-intake-lookup-placa?token=:token&placa=:placa"
     },
     {
       "source": "/(.*)",
