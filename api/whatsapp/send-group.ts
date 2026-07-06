@@ -22,6 +22,41 @@ function authToken(req: any): string {
   return String(req.headers?.authorization || "").replace(/^Bearer\s+/i, "") || String(req.headers?.["x-auth-token"] || "");
 }
 
+function normalizeClientName(value: unknown): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/&/g, " E ")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .replace(/\b(LTDA|EIRELI|EPP|ME|SA|S A|S\/A|TRANSPORTES?|LOGISTICA|SEGURANCA|VIGILANCIA|PATRIMONIAL|SERVICOS?)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenSet(value: string): Set<string> {
+  return new Set(value.split(/\s+/).filter(Boolean));
+}
+
+function rowScore(row: any, clientName: string): number {
+  const target = normalizeClientName(clientName);
+  const names = [row.name, row.trading_name].map(normalizeClientName).filter(Boolean);
+  let best = 0;
+  for (const name of names) {
+    if (!target || !name) continue;
+    if (name === target) best = Math.max(best, 100);
+    if (name.includes(target) || target.includes(name)) best = Math.max(best, 80);
+    const targetTokens = tokenSet(target);
+    const nameTokens = tokenSet(name);
+    const common = [...targetTokens].filter(t => nameTokens.has(t)).length;
+    if (common > 0) {
+      const coverage = common / Math.max(1, targetTokens.size);
+      best = Math.max(best, Math.round(coverage * 70));
+    }
+  }
+  return best;
+}
+
 async function supabase() {
   const { createClient } = await import("@supabase/supabase-js");
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
@@ -88,16 +123,52 @@ async function assertOfficialBot(creds: ZapiCreds): Promise<{ ok: boolean; error
   return { ok: true };
 }
 
-async function findClientGroup(sb: any, clientName: string): Promise<{ name: string; groupId: string } | null> {
-  const select = "name,whatsapp_group_id";
+async function findClientGroup(sb: any, clientName: string): Promise<{ name: string; groupId: string; matchScore: number } | null> {
+  const select = "name,trading_name,whatsapp_group_id";
   let { data } = await sb.from("clients").select(select).eq("name", clientName).limit(1);
   if (!data || data.length === 0) {
     const byTrading = await sb.from("clients").select(select).eq("trading_name", clientName).limit(1);
     data = byTrading.data || [];
   }
-  const row = data?.[0];
+  if (data && data.length > 0) {
+    const row = data[0];
+    return {
+      name: String(row.name || clientName),
+      groupId: String(row.whatsapp_group_id || "").trim(),
+      matchScore: 100,
+    };
+  }
+
+  const target = normalizeClientName(clientName);
+  const firstToken = target.split(" ")[0] || clientName;
+  const candidates = await sb
+    .from("clients")
+    .select(select)
+    .or(`name.ilike.*${firstToken}*,trading_name.ilike.*${firstToken}*`)
+    .limit(25);
+  data = candidates.data || [];
+
+  if (!data || data.length === 0) {
+    const all = await sb.from("clients").select(select).limit(500);
+    data = all.data || [];
+  }
+
+  const ranked = (data || [])
+    .map((row: any) => ({ row, score: rowScore(row, clientName) }))
+    .filter((x: any) => x.score >= 60)
+    .sort((a: any, b: any) => {
+      const ag = a.row.whatsapp_group_id ? 1 : 0;
+      const bg = b.row.whatsapp_group_id ? 1 : 0;
+      return bg - ag || b.score - a.score;
+    });
+
+  const row = ranked[0]?.row;
   if (!row) return null;
-  return { name: String(row.name || clientName), groupId: String(row.whatsapp_group_id || "").trim() };
+  return {
+    name: String(row.name || clientName),
+    groupId: String(row.whatsapp_group_id || "").trim(),
+    matchScore: ranked[0]?.score || rowScore(row, clientName),
+  };
 }
 
 export default async function handler(req: any, res: any) {
@@ -117,6 +188,7 @@ export default async function handler(req: any, res: any) {
     const missionId = body.missionId ? String(body.missionId) : null;
     const imagePayload = typeof body.imageBase64 === "string" ? body.imageBase64.trim() : "";
     const requireImage = body.requireImage === true;
+    const dryRun = body.dryRun === true;
 
     if (!clientName || !message) {
       res.status(400).json({ error: "clientName e message são obrigatórios" });
@@ -128,23 +200,27 @@ export default async function handler(req: any, res: any) {
     }
 
     const sb = await supabase();
-    const creds = await getDefaultZapiCreds(sb);
-    if (!creds) {
-      res.status(503).json({ error: "WhatsApp não configurado no banco" });
-      return;
-    }
-
     const client = await findClientGroup(sb, clientName);
     if (!client) {
       res.status(200).json({ skipped: true, reason: "cliente não encontrado no cadastro" });
       return;
     }
     if (!client.groupId) {
-      res.status(200).json({ skipped: true, reason: "cliente sem grupo de WhatsApp configurado" });
+      res.status(200).json({ skipped: true, reason: "cliente sem grupo de WhatsApp configurado", clientName: client.name, matchScore: client.matchScore });
       return;
     }
     if (!/-group$|@g\.us$/i.test(client.groupId)) {
       res.status(400).json({ error: "O destino configurado no cadastro do cliente não é um grupo de WhatsApp válido." });
+      return;
+    }
+    if (dryRun) {
+      res.status(200).json({ ok: true, dryRun: true, clientName: client.name, hasGroup: true, matchScore: client.matchScore });
+      return;
+    }
+
+    const creds = await getDefaultZapiCreds(sb);
+    if (!creds) {
+      res.status(503).json({ error: "WhatsApp não configurado no banco" });
       return;
     }
 
