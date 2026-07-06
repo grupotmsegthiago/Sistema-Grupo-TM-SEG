@@ -10,6 +10,7 @@ import { generateContent } from '../lib/gemini';
 import { showWhatsappCopyPopup } from '../lib/whatsappCopyFlow';
 import { hasExplicitUpdatePrint, shouldSendClientGroupWhatsApp } from '../lib/clientGroupUpdateFilter';
 import {
+  computeScaledCanvasSize,
   createBrandedFallbackPhoto,
   dataUrlToBlob,
   loadStampImage,
@@ -985,14 +986,21 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             setUpdatePrintAiCleaned(!!cleaned);
             const photoUrl = URL.createObjectURL(file);
             try {
-                // Base da foto = SEMPRE a original em resolução cheia (qualidade).
-                const [photo, logo] = await Promise.all([loadImg(photoUrl), loadImg('/logo.png')]);
+                // Base da foto = original; reduz só se passar do limite do canvas do navegador.
+                const photo = await loadImg(photoUrl);
+                const { width: canvasW, height: canvasH, scale } = computeScaledCanvasSize(photo.naturalWidth, photo.naturalHeight);
+                let logo: HTMLImageElement | null = null;
+                try {
+                    logo = await loadImg('/logo.png');
+                } catch (logoErr) {
+                    console.warn('[UpdatePrint] Logo indisponível, segue sem carimbo:', logoErr);
+                }
                 const canvas = document.createElement('canvas');
-                canvas.width = photo.naturalWidth;
-                canvas.height = photo.naturalHeight;
+                canvas.width = canvasW;
+                canvas.height = canvasH;
                 const ctx = canvas.getContext('2d');
                 if (!ctx) throw new Error('Canvas indisponível');
-                ctx.drawImage(photo, 0, 0);
+                ctx.drawImage(photo, 0, 0, photo.naturalWidth, photo.naturalHeight, 0, 0, canvasW, canvasH);
                 // Remendos só DENTRO das caixas detectadas (carimbo/logos):
                 // com imagem limpa da IA, cola o trecho limpo escalado; sem ela
                 // (filtro de segurança bloqueou), aplica borrão local forte.
@@ -1059,7 +1067,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 }
                 // Carimbo da marca: logo TM SEG no canto superior direito +
                 // Instagram @grupo_tmseg e site no canto inferior direito.
-                stampBrandOverlays(ctx, canvas.width, canvas.height, logo);
+                if (logo) stampBrandOverlays(ctx, canvas.width, canvas.height, logo);
+                if (scale < 1) {
+                    console.warn(`[UpdatePrint] Imagem reduzida de ${photo.naturalWidth}x${photo.naturalHeight} para ${canvasW}x${canvasH} (limite do navegador).`);
+                }
                 const blob: Blob = await new Promise((resolve, reject) =>
                     canvas.toBlob(b => b ? resolve(b) : reject(new Error('Falha ao gerar PNG')), 'image/png')
                 );
