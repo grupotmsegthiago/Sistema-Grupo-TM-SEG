@@ -265,7 +265,8 @@ export default function RankingDHL() {
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                <table className="w-full">
+                <div className="overflow-x-auto">
+                <table className="w-full min-w-[780px]">
                     <thead className="bg-gradient-to-r from-gray-900 to-gray-700 text-white">
                         <tr>
                             <th className="px-3 py-3 text-left text-xs font-black uppercase tracking-widest w-16">#</th>
@@ -316,6 +317,7 @@ export default function RankingDHL() {
                         )}
                     </tbody>
                 </table>
+                </div>
             </div>
 
             {diretoria && (

@@ -2928,8 +2928,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     if (!isOpen || !mission) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-[#f8fafc] rounded-[24px] shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-y-auto flex flex-col relative border border-gray-100 scrollbar-thin">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center overflow-y-auto bg-black/60 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in">
+          <div className="my-3 sm:my-0 bg-[#f8fafc] rounded-[24px] shadow-2xl w-full max-w-6xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[95vh] overflow-y-auto flex flex-col relative border border-gray-100 scrollbar-thin">
             
             {/* MODAIS DE CADASTRO RÁPIDO E BUSCA */}
             {quickModal === 'provider' && (

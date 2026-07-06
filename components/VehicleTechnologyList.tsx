@@ -107,7 +107,8 @@ const VehicleTechnologyList: React.FC<Props> = ({ onAdd, onEdit }) => {
           </div>
         </div>
 
-        <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[620px] text-left border-collapse">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Nome da Tecnologia</th>
@@ -152,6 +153,7 @@ const VehicleTechnologyList: React.FC<Props> = ({ onAdd, onEdit }) => {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

@@ -576,7 +576,7 @@ const FinancialInvoiceControl: React.FC = () => {
                       </span>
                     )}
                   </div>
-                  <div className="grid grid-cols-4 gap-1.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                     {cell('Total', s.total, 'total', 'text-gray-700 bg-gray-50 border-gray-200 hover:bg-gray-100')}
                     {cell('Autoriz.', s.authorized, 'authorized', 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100')}
                     {cell('Em fila', s.scheduled, 'scheduled', 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100')}

@@ -381,7 +381,7 @@ const App: React.FC = () => {
     <QueryClientProvider client={queryClient}>
     <RealtimeProvider>
     <NotificationProvider>
-        <div className="flex min-h-screen-ios overflow-x-hidden overflow-y-auto font-sans text-gray-800 relative" style={{ maxWidth: '100vw' }}>
+        <div className="flex min-h-screen-ios overflow-x-auto overflow-y-auto font-sans text-gray-800 relative" style={{ maxWidth: '100vw' }}>
         
         {rebootCountdown !== null && (
             <div className="fixed inset-0 z-[9999] bg-black flex flex-col items-center justify-center text-center p-6 backdrop-blur-xl animate-in fade-in duration-500">
@@ -395,10 +395,10 @@ const App: React.FC = () => {
         <Sidebar isOpen={isSidebarOpen} activeScreen={currentScreen} onNavigate={navigateTo} onLogout={handleLogout} />
         <PushNotificationManager />
         {(() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); const allowed = ['operador', 'avançado', 'avancado']; return allowed.includes(r); } catch { return false; } })() && <MissionAlertMonitor />}
-        <div className="flex-1 flex flex-col min-h-0 relative z-10 overflow-x-hidden lg:pl-20">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 relative z-10 lg:pl-20">
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />
-            <main className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <main className="flex-1 overflow-x-auto overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="w-full mx-auto relative">
                 <AppErrorBoundary key={currentScreen} onReset={() => navigateTo('dashboard')}>
                   {renderContent()}

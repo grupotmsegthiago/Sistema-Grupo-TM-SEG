@@ -2946,7 +2946,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isAwaitingCheck = tollSource === 'AGUARDANDO CONFERÊNCIA';
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+    <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center overflow-y-auto bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in">
       
       {showAuditSummary && (
           <div className="absolute inset-0 z-[125] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowAuditSummary(false)}>
@@ -3176,7 +3176,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[95vh] border border-gray-200 relative z-[100]">
+      <div className="my-3 sm:my-0 bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] sm:max-h-[95vh] border border-gray-200 relative z-[100]">
         <header className="bg-[#0f172a] text-white p-5 flex flex-col gap-3 shrink-0">
           <div className="flex flex-col xl:flex-row xl:justify-between xl:items-start gap-3">
             <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -5571,21 +5571,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
                     <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-gray-200 z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
                         <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
-                            <div className="flex gap-12 items-center">
+                            <div className="flex flex-wrap gap-4 md:gap-12 items-center justify-center md:justify-start">
                                 <div>
                                     <p className="text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">Resultado Operacional Final</p>
                                     <h3 className={`text-3xl font-black font-mono tracking-tighter ${footerProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                         {formatCurrency(footerProfit)}
                                     </h3>
                                 </div>
-                                <div className="border-l border-gray-200 pl-12 hidden md:block">
+                                <div className="border-l border-gray-200 pl-4 md:pl-12">
                                     <p className="text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">Margem Líquida %</p>
-                                    <h3 className="text-3xl font-black font-mono tracking-tighter text-blue-600">
+                                    <h3 className="text-xl md:text-3xl font-black font-mono tracking-tighter text-blue-600">
                                         {footerMarginPct.toFixed(1)}%
                                     </h3>
                                 </div>
                                 {!currentApprovalStatus.isFullyApproved && (
-                                    <div className="border-l border-gray-200 pl-6 hidden md:block">
+                                    <div className="border-l border-gray-200 pl-4 md:pl-6">
                                         <p className="text-[10px] font-black text-amber-600 uppercase mb-0.5 tracking-widest">Aprovações</p>
                                         <div className="flex gap-1.5">
                                             <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${currentApprovalStatus.hasAuditor ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>AUD</span>
@@ -5603,7 +5603,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wide">Salvo por {savedByInfo}</span>
                                     </div>
                                 )}
-                                <div className="flex gap-3">
+                                <div className="flex flex-col sm:flex-row gap-3">
                                 <button onClick={() => handleUpdate(false)} disabled={isUpdating || currentApprovalStatus.lockedByDiretoria || isEffectivelyLocked} className={`px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 ${(currentApprovalStatus.lockedByDiretoria || isEffectivelyLocked) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={isEffectivelyLocked ? 'Faturamento travado — destrave para editar' : ''} data-testid="button-save-adjustments">
                                     {isUpdating ? <Loader2 size={16} className="animate-spin" /> : currentApprovalStatus.lockedByDiretoria ? <Lock size={16} /> : <Save size={16} />} {currentApprovalStatus.lockedByDiretoria ? 'Bloqueado (Diretoria)' : 'Salvar Ajustes'}
                                 </button>

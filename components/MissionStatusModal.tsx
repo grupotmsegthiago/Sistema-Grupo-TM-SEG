@@ -157,8 +157,8 @@ const MissionStatusModal: React.FC<Props> = ({
   const progress = mission.progress || 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in p-4">
-      <div className="bg-gray-50 rounded-2xl shadow-2xl w-full max-w-6xl flex flex-col max-h-[95vh] border border-gray-700/50 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center overflow-y-auto bg-black/70 backdrop-blur-sm animate-in fade-in p-3 sm:p-4">
+      <div className="my-3 sm:my-0 bg-gray-50 rounded-2xl shadow-2xl w-full max-w-6xl flex flex-col max-h-[calc(100dvh-1.5rem)] sm:max-h-[95vh] border border-gray-700/50 overflow-hidden">
         <header className="bg-gray-800 text-white p-4 flex justify-between items-center shrink-0">
           <div className="flex items-center gap-4">
             <div className="p-2.5 bg-red-600 rounded-xl shadow-lg shadow-red-900/20"><BarChart3 size={24} className="text-white" /></div>
@@ -180,7 +180,7 @@ const MissionStatusModal: React.FC<Props> = ({
           <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors"><X size={24} /></button>
         </header>
 
-        <div className="flex-1 p-4 grid grid-cols-12 gap-4 overflow-hidden">
+        <div className="flex-1 p-3 sm:p-4 grid grid-cols-12 gap-4 overflow-y-auto overflow-x-hidden">
           <div className="col-span-12 lg:col-span-8 flex flex-col gap-4">
             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
                 <div className="flex justify-between items-center mb-4">
@@ -189,7 +189,8 @@ const MissionStatusModal: React.FC<Props> = ({
                         <div className="h-full bg-green-600 transition-all duration-1000" style={{ width: `${progress}%` }}></div>
                     </div>
                 </div>
-                <div className="flex justify-between items-center">
+                <div className="overflow-x-auto pb-1">
+                <div className="flex min-w-[520px] justify-between items-center">
                     {ALL_STATUSES.map((status, index) => (
                         <React.Fragment key={status}>
                             <div className="flex flex-col items-center text-center relative group">
@@ -201,6 +202,7 @@ const MissionStatusModal: React.FC<Props> = ({
                             {index < ALL_STATUSES.length - 1 && (<div className={`flex-1 h-0.5 mx-1 rounded-full ${index < currentStatusIndex ? 'bg-green-600' : 'bg-gray-100'}`}></div>)}
                         </React.Fragment>
                     ))}
+                </div>
                 </div>
             </div>
 

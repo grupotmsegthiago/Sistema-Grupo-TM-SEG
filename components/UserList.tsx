@@ -327,7 +327,8 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
       )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-left border-collapse">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Usuário</th>
@@ -463,6 +464,7 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
