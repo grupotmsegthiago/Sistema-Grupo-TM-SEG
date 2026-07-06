@@ -12,6 +12,9 @@
     "api/whatsapp/send-group.ts": {
       "maxDuration": 300
     },
+    "api/whatsapp/telemetry/dashboard.ts": {
+      "maxDuration": 60
+    },
     "api/geocode-address.ts": {
       "maxDuration": 60
     },
@@ -43,6 +46,10 @@
     {
       "source": "/api/whatsapp/send-group",
       "destination": "/api/whatsapp/send-group"
+    },
+    {
+      "source": "/api/whatsapp/telemetry/dashboard",
+      "destination": "/api/whatsapp/telemetry/dashboard"
     },
     {
       "source": "/api/geocode-address",
