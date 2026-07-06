@@ -1542,7 +1542,7 @@ export async function registerRoutes(
     try {
       const { name, email, password, userType, profileName, verificationCode } = req.body;
       if (!name || !email || !password) return res.status(400).json({ error: 'Campos name, email e password são obrigatórios' });
-      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'app.grupotmseg.com.br'}`;
+      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'sistema.grupotmseg.com.br'}`;
       const success = await sendWelcomeEmail({ name, email, password, userType: userType || 'internal', profileName }, systemUrl, verificationCode);
       res.json({ success, message: success ? 'E-mail de boas-vindas enviado!' : 'Falha ao enviar e-mail' });
     } catch (err: any) {
@@ -1572,7 +1572,7 @@ export async function registerRoutes(
       const { data: verifyData } = await supabase.from('system_users').select('password_reset_token').eq('id', userId).single();
       console.log(`[PasswordReset] Token gravado para user ${userId}: ${verifyData?.password_reset_token ? 'SIM' : 'NÃO'}`);
 
-      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'app.grupotmseg.com.br'}`;
+      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'sistema.grupotmseg.com.br'}`;
       const resetLink = `${systemUrl}/reset-password?token=${token}`;
 
       const success = await sendPasswordResetEmail(userData.email, userData.name, resetLink, senderName);
@@ -7057,7 +7057,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         if (fromEnv) return fromEnv;
         const replitDomain = (process.env.REPLIT_DOMAINS || '').split(',')[0].trim();
         if (replitDomain) return `https://${replitDomain}`;
-        return 'https://app.grupotmseg.com.br';
+        return 'https://sistema.grupotmseg.com.br';
       })();
       const deepLink = `${appBaseUrl}/?page=system-settings&focus=report&key=${encodeURIComponent(reportKey)}`;
 

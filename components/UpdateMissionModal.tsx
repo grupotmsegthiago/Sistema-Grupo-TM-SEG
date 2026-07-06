@@ -323,7 +323,9 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             return;
         }
         setOdoUploading(false);
-        await validateOdometer(file, endKmNum);
+        if (isCompleted && endKmNum != null && endKmNum > 0) {
+            await validateOdometer(file, endKmNum);
+        }
     };
 
     // Etapas visíveis nesta OS (para a barra de progresso).
@@ -339,7 +341,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
     const totalSteps = Object.values(steps).filter(Boolean).length;
     const rawDoneSteps =
         (isRefused
-            ? (endKmNum != null && endKmNum > 0 && evidenceOk && dt ? 1 : 0)
+            ? (evidenceOk && dt ? 1 : 0)
             : 0) +
         (!isRefused && chkAddress ? 1 : 0) +
         (!isRefused && steps.raio && raioAnswer ? 1 : 0) +
@@ -348,7 +350,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         (steps.cancel && dt && endTravelDt && endKmNum != null && endKmNum > 0 && evidenceOk ? 1 : 0);
     // Fornecedores isentos (ATIVA / TM SEG) na conclusão: KM opcional, mas hora + evidência obrigatórios.
     const essentialDone = isRefused
-        ? (endKmNum != null && endKmNum > 0 && evidenceOk && !!dt)
+        ? (evidenceOk && !!dt)
         : isCompleted
             ? (!!dt && evidenceOk)
             : (!!dt && !!endTravelDt && endKmNum != null && endKmNum > 0 && evidenceOk);
@@ -358,8 +360,10 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
 
     const handleConfirm = () => {
         if (isRefused) {
-            if (endKmNum == null || endKmNum <= 0) { setErr('Informe o KM final.'); return; }
-            if (startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
+            if (endKmNum != null && endKmNum > 0 && startKm > 0 && endKmNum < startKm) {
+                setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`);
+                return;
+            }
             if (!evidenceOk) { setErr('Cole ou anexe a evidência do encerramento (obrigatório).'); return; }
             if (!dt) { setErr('Informe a data e a hora exata da recusa.'); return; }
         } else if (!odometerExempt || !isCompleted) {
@@ -497,13 +501,13 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
 
                     {/* Recusa — hora + KM + evidência (sem checklist de endereço) */}
                     {isRefused && (
-                        <FinSection n={1} danger icon={<UserX className="h-4 w-4" />} title="Recusar missão — hora, KM e evidência obrigatórios">
+                        <FinSection n={1} danger icon={<UserX className="h-4 w-4" />} title="Recusar missão — hora e evidência obrigatórios">
                             <div className="rounded-lg border border-red-200 bg-red-50 p-3">
                                 <p className="text-[12px] font-medium text-red-900">
-                                    Para registrar a <b>Recusada</b>, confirme o KM final, a hora exata do encerramento e anexe a evidência no sistema.
+                                    Para registrar a <b>Recusada</b>, confirme a hora exata do encerramento e anexe a evidência no sistema. O KM final é opcional (use quando a viatura já tiver saído).
                                 </p>
                                 <div className="mt-3">
-                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">KM final *</label>
+                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">KM final (opcional)</label>
                                     <input value={endKm} onChange={e => { setEndKm(e.target.value); setOdoResult(null); setOdoValidatedKm(null); setOdoConfirmed(false); }} inputMode="decimal" placeholder="Ex: 123456" className="mt-1 w-full rounded-md border border-red-300 bg-white px-2.5 py-1.5 text-[13px] font-semibold text-slate-800 outline-none focus:border-red-500" data-testid="input-confirm-end-km" />
                                 </div>
                                 <div className="mt-2">

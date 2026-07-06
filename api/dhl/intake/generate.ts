@@ -43,11 +43,9 @@ function isDhlMission(clientName: unknown): boolean {
   return n.includes("DHL SUPPLY CHAIN") || n.includes("DHL LOGISTICS") || n === "DHL";
 }
 
-function appUrl(req: any): string {
-  const env = String(process.env.APP_PUBLIC_URL || process.env.SYSTEM_URL || "").replace(/\/$/, "");
-  if (env && !env.includes("sistema.grupotmseg.com.br")) return env;
-  const host = String(req.headers?.host || "sistema-grupo-tm-seg.vercel.app");
-  return `https://${host}`;
+async function appUrl(req: any): Promise<string> {
+  const { resolvePublicAppUrl } = await import("../../lib/publicAppUrl");
+  return resolvePublicAppUrl(req);
 }
 
 function buildWhatsappText(opts: { providerName: string; osNumber: string; origin: string; destination: string; scheduledAt: string; link: string; isDhl: boolean }) {
@@ -143,7 +141,7 @@ export default async function handler(req: any, res: any) {
       intake = inserted;
     }
 
-    const link = `${appUrl(req)}/fornecedor/dhl?token=${token}`;
+    const link = `${await appUrl(req)}/fornecedor/dhl?token=${token}`;
     const scheduledAt = mission.start_time ? new Date(mission.start_time).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
     const whatsappText = buildWhatsappText({
       providerName: provider.trading_name || provider.name,

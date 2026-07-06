@@ -25,6 +25,7 @@ import {
   sendDhlIntakeReminderOperacionalEmail,
   sendDhlIntakeOperationalFollowupEmail,
 } from './emailService';
+import { resolvePublicAppUrl } from '../lib/publicAppUrl';
 
 const DHL_CLIENT_NAME = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
 const OPERACIONAL_EMAIL = 'operacional@grupotmseg.com.br';
@@ -294,15 +295,7 @@ export async function runDhlIntakeMigrations(): Promise<void> {
 }
 
 function getAppUrl(req: Request): string {
-  // Prioridade: APP_PUBLIC_URL (estável p/ links externos) → REPLIT_DOMAINS → headers.
-  // Evita links efêmeros do ambiente dev quando há um domínio publicado.
-  const fromEnv = (process.env.APP_PUBLIC_URL || '').trim();
-  if (fromEnv) return fromEnv.replace(/\/$/, '');
-  const replitDomain = (process.env.REPLIT_DOMAINS || '').split(',')[0].trim();
-  if (replitDomain) return `https://${replitDomain}`;
-  const proto = (req.headers['x-forwarded-proto'] as string) || 'https';
-  const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost';
-  return `${proto}://${host}`;
+  return resolvePublicAppUrl(req);
 }
 
 function buildWhatsappText(opts: {
@@ -652,8 +645,7 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
   if (elegiveis.length === 0) return;
   console.log(`[DHL Reminder Worker] ${elegiveis.length} intake(s) elegível(eis) para lembrete.`);
 
-  const baseUrl = (process.env.APP_PUBLIC_URL || '').replace(/\/$/, '')
-    || (process.env.REPLIT_DOMAINS ? `https://${(process.env.REPLIT_DOMAINS || '').split(',')[0].trim()}` : '');
+  const baseUrl = resolvePublicAppUrl();
 
   // Por canal: lista de intakes que ainda precisam do envio. Cada canal
   // (e-mail e WhatsApp ao fornecedor) tem sua própria flag para permitir
