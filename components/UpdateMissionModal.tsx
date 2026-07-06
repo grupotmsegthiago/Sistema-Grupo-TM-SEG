@@ -8,7 +8,7 @@ import { logAction } from '../lib/logger';
 import { clientFuzzyFilter, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
 import { showWhatsappCopyPopup } from '../lib/whatsappCopyFlow';
-import { shouldSendDhlGroupUpdate } from '../lib/dhlGroupUpdateFilter';
+import { hasExplicitUpdatePrint, shouldSendClientGroupWhatsApp } from '../lib/clientGroupUpdateFilter';
 import {
   createBrandedFallbackPhoto,
   dataUrlToBlob,
@@ -1099,8 +1099,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const [currentPreviewCoords, setCurrentPreviewCoords] = useState<{ lat: number, lng: number } | null>(null);
 
-    /** Foto com logo + Instagram para envio ao grupo: print colado, preview ou mapa padrão. */
-    const resolveGroupWhatsAppPhoto = async (statusLabel: string): Promise<Blob | null> => {
+    /** Print colado/anexado pelo funcionário (sem foto automática de fallback). */
+    const resolveExplicitUpdatePrintPhoto = async (): Promise<Blob | null> => {
         if (updatePrintProcessing) {
             await waitUntil(() => !updatePrintProcessing, 45000);
         }
@@ -1108,8 +1108,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         if (updatePrintPreview?.startsWith('data:')) {
             try {
                 return await dataUrlToBlob(updatePrintPreview);
-            } catch { /* segue fallback */ }
+            } catch {
+                return null;
+            }
         }
+        return null;
+    };
+
+    /** Foto com logo + Instagram para cópia manual: print colado, preview ou mapa padrão. */
+    const resolveGroupWhatsAppPhoto = async (statusLabel: string): Promise<Blob | null> => {
+        const explicit = await resolveExplicitUpdatePrintPhoto();
+        if (explicit) return explicit;
         try {
             return await createBrandedFallbackPhoto({
                 coords: currentPreviewCoords,
@@ -2420,19 +2429,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             // Envio automático ao grupo de WhatsApp do cliente (se configurado
             // no cadastro). Fire-and-forget: não bloqueia o fluxo de cópia.
             if (!isNowCompleted) {
-                // DHL só recebe marcos (origem, início, pernoite, atípicos) —
-                // atualização rotineira de monitoramento não vai para o grupo.
-                const dhlRoutineSkip = isDHL && !shouldSendDhlGroupUpdate({
+                const hasPrint = hasExplicitUpdatePrint(updatePrintBlobRef.current, updatePrintPreview);
+                const shouldSendGroup = shouldSendClientGroupWhatsApp({
                     finalStatus,
                     originalStatus,
+                    hasExplicitPrint: hasPrint,
+                    isMissionCompletion: false,
+                    isDhl: isDHL,
                     occurrence: finalDescription,
                     previousOccurrence: mission.currentLocation || '',
                 });
-                if (dhlRoutineSkip) {
-                    showNotification('WhatsApp', 'Atualização rotineira registrada no sistema — NÃO enviada ao grupo DHL (cliente só recebe: chegada na origem, início/fim de missão, início/reinício de pernoite e situações atípicas).', 'info');
-                } else {
-                    const statusLabel = `${finalStatus.toUpperCase()}${finalDescription ? ' — ' + finalDescription.toUpperCase() : ''}`;
-                    const groupPhoto = await resolveGroupWhatsAppPhoto(statusLabel);
+                if (shouldSendGroup) {
+                    const groupPhoto = await resolveExplicitUpdatePrintPhoto();
                     void sendUpdateToClientGroup(mission.client || '', report, groupPhoto, mission.id, true).then(r => {
                         if (r.sent) {
                             showNotification('WhatsApp', 'Atualização enviada automaticamente ao grupo do cliente.', 'success');
@@ -2440,6 +2448,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
                         }
                     }).catch(() => {});
+                } else if (isDHL && hasPrint && !shouldSendGroup && finalStatus !== originalStatus) {
+                    showNotification('WhatsApp', 'Atualização registrada no sistema — NÃO enviada ao grupo DHL (cliente só recebe marcos operacionais com print).', 'info');
                 }
             }
 
@@ -2574,18 +2584,31 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             }
                         } catch (photoErr) { console.warn('[FimDeMissao] Falha ao preparar foto:', photoErr); }
                     }
+                    const hadExplicitPrintBeforeFallback = hasExplicitUpdatePrint(updatePrintBlobRef.current, updatePrintPreview);
+                    const hadOdometerEvidence = !!confirmedPrintUrlRef.current;
                     if (!photoBlob) {
                         photoBlob = await resolveGroupWhatsAppPhoto(`${finalStatus.toUpperCase()} — FIM DE MISSÃO`);
                     }
-                    // Envio automático ao grupo de WhatsApp do cliente (se
-                    // configurado no cadastro). Fire-and-forget.
-                    void sendUpdateToClientGroup(mission.client || '', finalizeShareText, photoBlob, mission.id, true).then(r => {
-                        if (r.sent) {
-                            showNotification('WhatsApp', 'Fim de missão enviado automaticamente ao grupo do cliente.', 'success');
-                        } else if (r.error) {
-                            showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
-                        }
-                    }).catch(() => {});
+                    // Grupo: só envia com print colado ou evidência do hodômetro no
+                    // checklist — nunca com foto automática de fallback.
+                    const completionPhotoForGroup = hadExplicitPrintBeforeFallback || hadOdometerEvidence ? photoBlob : null;
+                    if (shouldSendClientGroupWhatsApp({
+                        finalStatus,
+                        originalStatus,
+                        hasExplicitPrint: !!(hadExplicitPrintBeforeFallback || hadOdometerEvidence),
+                        isMissionCompletion: true,
+                        isDhl: isDHL,
+                        occurrence: finalDescription,
+                        previousOccurrence: mission.currentLocation || '',
+                    }) && completionPhotoForGroup) {
+                        void sendUpdateToClientGroup(mission.client || '', finalizeShareText, completionPhotoForGroup, mission.id, true).then(r => {
+                            if (r.sent) {
+                                showNotification('WhatsApp', 'Fim de missão enviado automaticamente ao grupo do cliente.', 'success');
+                            } else if (r.error) {
+                                showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
+                            }
+                        }).catch(() => {});
+                    }
 
                     if (photoBlob && showWhatsappCopyPopup(photoBlob, finalizeShareText)) {
                         // Popup guiado: COPIAR FOTO → COPIAR TEXTO → fecha sozinho.
