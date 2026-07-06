@@ -149,7 +149,7 @@ const GoalUpdateAreaChart: React.FC<{
     return (
         <div className="relative w-full select-none overflow-visible" data-testid="goal-update-sparkline">
             <div className="flex items-center justify-between gap-2 mb-1">
-                <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Amostras a cada 30 min · {periodLabel}</span>
+                <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Últimas 5 atualizações · {periodLabel}</span>
                 <button
                     type="button"
                     onClick={onRefresh}
@@ -171,7 +171,7 @@ const GoalUpdateAreaChart: React.FC<{
             >
                 {points.length === 0 ? (
                     <div className="flex items-center justify-center h-[88px] rounded-lg border border-dashed border-slate-200/80 bg-gradient-to-b from-slate-50/50 to-white text-[9px] font-semibold text-slate-400 uppercase">
-                        Sem histórico — aguardando amostra de 30 min
+                        Sem histórico — aguardando atualização
                     </div>
                 ) : (
                     <svg
