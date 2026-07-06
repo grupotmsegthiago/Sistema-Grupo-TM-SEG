@@ -9,6 +9,9 @@
     "api/whatsapp/webhook/inbound.ts": {
       "maxDuration": 300
     },
+    "api/whatsapp/send-group.ts": {
+      "maxDuration": 300
+    },
     "api/geocode-address.ts": {
       "maxDuration": 60
     },
@@ -36,6 +39,10 @@
     {
       "source": "/api/whatsapp/webhook/inbound",
       "destination": "/api/whatsapp/webhook/inbound"
+    },
+    {
+      "source": "/api/whatsapp/send-group",
+      "destination": "/api/whatsapp/send-group"
     },
     {
       "source": "/api/geocode-address",
