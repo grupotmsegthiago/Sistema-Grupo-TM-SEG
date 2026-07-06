@@ -1,5 +1,5 @@
 import { createSupabaseAdminClient } from './supabaseConfig';
-import { sendMissionEmailToClient } from './emailService';
+import { sendMissionEmailToClient } from '../lib/email/missionEmails.js';
 
 const CYCLE_MS = 5 * 60 * 1000;
 const MAX_PER_CYCLE = 20;
