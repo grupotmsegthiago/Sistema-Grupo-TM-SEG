@@ -1,4 +1,10 @@
-import { expressProxyConfig, proxyExpress } from "./lib/expressProxy";
+import { publicIntakeProgress } from "../lib/dhlIntakePublicApi";
+
+function parseBody(body: unknown): Record<string, any> {
+  if (typeof body !== "string") return (body as Record<string, any>) || {};
+  if (!body.trim()) return {};
+  return JSON.parse(body);
+}
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
@@ -10,7 +16,7 @@ export default async function handler(req: any, res: any) {
     res.status(400).json({ error: "token é obrigatório" });
     return;
   }
-  return proxyExpress(req, res, `/api/dhl/intake/public/${encodeURIComponent(token)}/progress`);
+  const body = parseBody(req.body);
+  const result = await publicIntakeProgress(token, body);
+  res.status(result.status).json(result.body);
 }
-
-export const config = expressProxyConfig;

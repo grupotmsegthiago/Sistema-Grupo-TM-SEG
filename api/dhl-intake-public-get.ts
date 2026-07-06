@@ -1,4 +1,4 @@
-import { expressProxyConfig, proxyExpress } from "./lib/expressProxy";
+import { publicIntakeGet } from "../lib/dhlIntakePublicApi";
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") {
@@ -10,7 +10,6 @@ export default async function handler(req: any, res: any) {
     res.status(400).json({ error: "token é obrigatório" });
     return;
   }
-  return proxyExpress(req, res, `/api/dhl/intake/public/${encodeURIComponent(token)}`);
+  const result = await publicIntakeGet(token);
+  res.status(result.status).json(result.body);
 }
-
-export const config = expressProxyConfig;
