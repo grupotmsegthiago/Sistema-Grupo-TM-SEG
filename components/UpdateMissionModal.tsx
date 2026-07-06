@@ -3482,6 +3482,19 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         </div>
                     </div>
 
+                    {/* Cadastro operacional — link externo do fornecedor (todos os clientes) */}
+                    {!hideProviderInfo && mission?.id && (
+                        <div className="p-6 bg-white border border-gray-200 rounded-[2.5rem] shadow-sm">
+                            <DhlIntakeTimeline
+                                missionId={mission.id}
+                                canViewSnapshots={true}
+                                isDhlClient={(mission?.client || '').toUpperCase().includes('DHL')}
+                                currentProvider={editData.provider}
+                                savedProvider={mission.provider || ''}
+                            />
+                        </div>
+                    )}
+
                     {/* DADOS DA CARGA E MOTORISTA */}
                     <div className="bg-white p-6 rounded-[2.5rem] border border-gray-200 shadow-sm space-y-5">
                         <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2 border-b border-gray-50 pb-3"><Package size={14} className="text-red-600"/> Dados da Carga e Condutor</h4>
@@ -3653,10 +3666,6 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 )}
                             </div>
                         </div>
-
-                        {((mission?.client || '').toUpperCase().includes('DHL')) && mission?.id && (
-                            <DhlIntakeTimeline missionId={mission.id} canViewSnapshots={true} />
-                        )}
                     </div>
 
                     {/* FICHA DE MEDIÇÃO OPERACIONAL */}
