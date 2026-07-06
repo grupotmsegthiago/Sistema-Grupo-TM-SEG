@@ -63,6 +63,12 @@ const normProvider = (s?: string | null) => String(s || '')
   .trim()
   .toUpperCase();
 
+/** Compara fornecedores ignorando sufixos societários (LTDA, ME, etc.). */
+const normProviderKey = (s?: string | null) => normProvider(s)
+  .replace(/\b(LTDA|EIRELI|EPP|ME|SA|S A|S\/A)\b/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
 const fmt = (d: string | null | undefined) => formatDateTimeBR(d);
 
 // Formata datas no padrão brasileiro DD/MM/AAAA. Aceita ISO ("2031-07-13" ou
@@ -145,20 +151,28 @@ const DhlIntakeTimeline: React.FC<Props> = ({
   const [generating, setGenerating] = useState<'email' | 'whatsapp' | 'both' | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [waTextById, setWaTextById] = useState<Record<string, string>>({});
+  const [lastGeneratedUrl, setLastGeneratedUrl] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!missionId) return;
     setLoading(true);
     setErrorMsg(null);
     try {
-      const r = await authFetch(`/api/dhl/intake/by-mission/${encodeURIComponent(missionId)}`);
+      const r = await authFetch(`/api/dhl/intake/by-mission?missionId=${encodeURIComponent(missionId)}`);
+      const raw = await r.text();
+      let j: any = null;
+      try {
+        j = raw ? JSON.parse(raw) : null;
+      } catch {
+        setErrorMsg('Resposta inválida do servidor ao carregar links do fornecedor.');
+        setIntakes([]);
+        return;
+      }
       if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
         setErrorMsg(j?.error || 'Não foi possível carregar os links do fornecedor.');
         setIntakes([]);
         return;
       }
-      const j = await r.json();
       setIntakes(Array.isArray(j?.intakes) ? j.intakes : []);
       if (j?.reminderConfig && typeof j.reminderConfig.maxCount === 'number' && typeof j.reminderConfig.cycleHours === 'number') {
         setReminderConfig({ maxCount: j.reminderConfig.maxCount, cycleHours: j.reminderConfig.cycleHours });
@@ -227,7 +241,12 @@ const DhlIntakeTimeline: React.FC<Props> = ({
       else if ((channel === 'whatsapp' || channel === 'both') && j.whatsappError) parts.push(`WhatsApp não enviado: ${j.whatsappError}.`);
       if ((channel === 'email' || channel === 'both') && j.emailSent) parts.push(`E-mail enviado para ${j.providerEmail || 'o fornecedor'}.`);
       else if ((channel === 'email' || channel === 'both') && j.emailError) parts.push(`E-mail não enviado: ${j.emailError}.`);
-      setSuccessMsg(parts.length ? parts.join(' ') : 'Link gerado com sucesso.');
+      if (j.url) {
+        setLastGeneratedUrl(String(j.url));
+        await copyLink(String(j.url));
+      }
+      const baseMsg = parts.length ? parts.join(' ') : 'Link gerado com sucesso.';
+      setSuccessMsg(j.url ? `${baseMsg} URL copiada — use o botão abaixo se precisar copiar de novo.` : baseMsg);
       if (j.intakeId && j.whatsappText) {
         setWaTextById((prev) => ({ ...prev, [j.intakeId]: j.whatsappText }));
       }
@@ -400,17 +419,17 @@ const DhlIntakeTimeline: React.FC<Props> = ({
   const providerChangedUnsaved = !!(
     currentProvider?.trim()
     && savedProvider?.trim()
-    && normProvider(currentProvider) !== normProvider(savedProvider)
+    && normProviderKey(currentProvider) !== normProviderKey(savedProvider)
   );
   const intakeForCurrentProvider = intakes.find(
-    (it) => normProvider(it.provider_name) === normProvider(currentProvider)
+    (it) => normProviderKey(it.provider_name) === normProviderKey(currentProvider)
       && (it.effective_status === 'pendente' || it.effective_status === 'preenchido'),
   );
   const canGenerateLink = !!currentProvider?.trim() && !providerChangedUnsaved;
   const needsLinkForCurrentProvider = canGenerateLink && !intakeForCurrentProvider;
   const sortedIntakes = [...intakes].sort((a, b) => {
-    const aCur = normProvider(a.provider_name) === normProvider(currentProvider) ? 0 : 1;
-    const bCur = normProvider(b.provider_name) === normProvider(currentProvider) ? 0 : 1;
+    const aCur = normProviderKey(a.provider_name) === normProviderKey(currentProvider) ? 0 : 1;
+    const bCur = normProviderKey(b.provider_name) === normProviderKey(currentProvider) ? 0 : 1;
     return aCur - bCur;
   });
 
@@ -476,6 +495,19 @@ const DhlIntakeTimeline: React.FC<Props> = ({
       {successMsg && (
         <p className="text-[10px] text-green-700 italic mb-2" data-testid="text-dhl-timeline-success">{successMsg}</p>
       )}
+      {lastGeneratedUrl && (
+        <div className="mb-3 flex flex-wrap items-center gap-2" data-testid="block-last-generated-link">
+          <span className="text-[10px] text-gray-600 font-mono truncate max-w-full">{lastGeneratedUrl}</span>
+          <button
+            type="button"
+            onClick={() => copyLink(lastGeneratedUrl)}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-900 hover:bg-black text-white font-black uppercase tracking-wider text-[10px]"
+            data-testid="btn-copy-last-generated-link"
+          >
+            {copiedLink === lastGeneratedUrl ? <><Check size={11} /> Copiado</> : <><Copy size={11} /> Copiar link</>}
+          </button>
+        </div>
+      )}
 
       {currentProvider?.trim() && (
         <p className="text-[10px] text-gray-700 mb-2" data-testid="text-intake-current-provider">
@@ -532,7 +564,7 @@ const DhlIntakeTimeline: React.FC<Props> = ({
       ) : (
         <div className="space-y-3">
           {sortedIntakes.map((it) => {
-            const isCurrentProvider = normProvider(it.provider_name) === normProvider(currentProvider);
+            const isCurrentProvider = normProviderKey(it.provider_name) === normProviderKey(currentProvider);
             const st = it.effective_status;
             const badge = st === 'preenchido'
               ? { bg: 'bg-green-100', fg: 'text-green-800', label: 'Dados inseridos' }

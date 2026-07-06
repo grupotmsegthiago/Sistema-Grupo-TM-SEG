@@ -253,7 +253,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     if (!missionId || !/^GTM-\d+/i.test(missionId)) return;
     setDhlIntakesLoading(true);
     try {
-      const r = await authFetch(`/api/dhl/intake/by-mission/${encodeURIComponent(missionId)}`);
+      const r = await authFetch(`/api/dhl/intake/by-mission?missionId=${encodeURIComponent(missionId)}`);
       const j = await r.json();
       if (r.ok && Array.isArray(j.intakes)) setDhlIntakes(j.intakes);
       else setDhlIntakes([]);

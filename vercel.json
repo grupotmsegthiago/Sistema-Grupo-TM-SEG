@@ -107,7 +107,7 @@
     },
     {
       "source": "/api/dhl/intake/by-mission/:missionId",
-      "destination": "/api/dhl/intake/by-mission/:missionId"
+      "destination": "/api/dhl/intake/by-mission?missionId=:missionId"
     },
     {
       "source": "/api/gemini/health",

@@ -77,6 +77,10 @@ export default async function handler(req: any, res: any) {
         maxProviderReminders: 2,
         cycleHours: 24,
       },
+      reminderConfig: {
+        maxCount: 2,
+        cycleHours: 24,
+      },
     });
   } catch (e: any) {
     res.status(500).json({ error: e?.message || "Erro interno" });
