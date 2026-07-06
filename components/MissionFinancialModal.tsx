@@ -6,7 +6,7 @@ import { useLoadScript, Autocomplete } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
-import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, extractCityFromAddress } from '../lib/financialUtils';
+import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, isIntentionalBillingOverride, extractCityFromAddress } from '../lib/financialUtils';
 import {
   isDhlSupplyClient,
   validateDhlTableName,
@@ -410,6 +410,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isSavingRef = React.useRef(false);
   const userManuallyEditedRef = React.useRef(false);
   const dbValuesLoadedRef = React.useRef(false);
+  const staleAutoResyncDoneRef = React.useRef<string | null>(null);
   const [savedByInfo, setSavedByInfo] = useState<string | null>(null);
 
   const [aiLoading, setAiLoading] = useState(false);
@@ -520,7 +521,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode || isPlinio;
   const isDirectorAccess = userRoleLower === 'diretoria' || userRoleLower === 'administrador';
   const [unlockOverride, setUnlockOverride] = useState(false);
-  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); }, [mission?.id]);
+  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); staleAutoResyncDoneRef.current = null; }, [mission?.id]);
   useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); setShowTollConfirmDialog(false); setTollConfirmAutoOpened(false); } }, [isOpen]);
   const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
   // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
@@ -923,6 +924,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (!initialMission?.id || isSavingRef.current) return;
       userManuallyEditedRef.current = false;
       dbValuesLoadedRef.current = false;
+      staleAutoResyncDoneRef.current = null;
       setUseSavedValues(false);
       setIsLoading(true);
       // Reseta apelidos do fornecedor para evitar carry-over de uma OS
@@ -1027,6 +1029,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       }
                   } catch {}
               }
+
+              let loadedRevReason = mRes.data.revenue_edit_reason || '';
+              let loadedCostReason = mRes.data.cost_edit_reason || '';
+              if (!loadedRevReason && !loadedCostReason) {
+                  const { data: reasonLog } = await supabase.from('system_logs')
+                      .select('details')
+                      .eq('entity', 'Mission')
+                      .eq('entity_id', initialMission.id)
+                      .eq('action_type', 'VALUE_EDIT_REASON')
+                      .order('created_at', { ascending: false })
+                      .limit(1)
+                      .single();
+                  if (reasonLog?.details) {
+                      try {
+                          const parsed = typeof reasonLog.details === 'string' ? JSON.parse(reasonLog.details) : reasonLog.details;
+                          if (parsed.revenue_edit_reason) loadedRevReason = parsed.revenue_edit_reason;
+                          if (parsed.cost_edit_reason) loadedCostReason = parsed.cost_edit_reason;
+                      } catch {}
+                  }
+              }
+
               const fullMission = {
                   ...initialMission,
                   ...d,
@@ -1036,6 +1059,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   startTime: d.start_time ?? initialMission.startTime,
                   endTime: d.end_time ?? initialMission.endTime,
                   totalDistance: d.total_distance ?? initialMission.totalDistance,
+                  revenue_edit_reason: loadedRevReason || d.revenue_edit_reason,
+                  cost_edit_reason: loadedCostReason || d.cost_edit_reason,
               };
               setMission(fullMission);
 
@@ -1078,26 +1103,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                               fullMission.provider_end_time = parsed.provider_end_time;
                               setMission(fullMission);
                           }
-                      } catch {}
-                  }
-              }
-
-              let loadedRevReason = mRes.data.revenue_edit_reason || '';
-              let loadedCostReason = mRes.data.cost_edit_reason || '';
-              if (!loadedRevReason && !loadedCostReason) {
-                  const { data: reasonLog } = await supabase.from('system_logs')
-                      .select('details')
-                      .eq('entity', 'Mission')
-                      .eq('entity_id', initialMission.id)
-                      .eq('action_type', 'VALUE_EDIT_REASON')
-                      .order('created_at', { ascending: false })
-                      .limit(1)
-                      .single();
-                  if (reasonLog?.details) {
-                      try {
-                          const parsed = typeof reasonLog.details === 'string' ? JSON.parse(reasonLog.details) : reasonLog.details;
-                          if (parsed.revenue_edit_reason) loadedRevReason = parsed.revenue_edit_reason;
-                          if (parsed.cost_edit_reason) loadedCostReason = parsed.cost_edit_reason;
                       } catch {}
                   }
               }
@@ -1153,9 +1158,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
               const isVendorVerified = !!(mRes.data.verified_by && mRes.data.verified_at);
 
-              const hasManualEditReason = !!(mRes.data.revenue_edit_reason || mRes.data.cost_edit_reason);
-              const hasVerifiedSave = !!mRes.data.billing_verified_by;
-              if (hasManualEditReason || hasVerifiedSave) {
+              const intentionalRevOverride = isIntentionalBillingOverride(loadedRevReason);
+              const intentionalCostOverride = isIntentionalBillingOverride(loadedCostReason);
+              if (intentionalRevOverride || intentionalCostOverride) {
                   userManuallyEditedRef.current = true;
                   setUseSavedValues(true);
               }
@@ -1610,30 +1615,85 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setCostInput(fmtBR(autoProviderTotal));
           }
 
-          // Task #133: o número grande (cliente verde e fornecedor azul) é, por
-          // padrão, uma cópia fiel do total da memória de cálculo. Mesmo quando
-          // já existe valor salvo no banco (dbValuesLoadedRef), o número grande
-          // acompanha o cálculo — corrigindo valores antigos que ficavam
-          // "presos" e divergentes (o aviso âmbar indevido). NÃO roda quando:
-          //  - há edição manual de propósito (userManuallyEditedRef, setado no
-          //    load quando há revenue_edit_reason/cost_edit_reason ou
-          //    billing_verified_by) -> preserva o override da diretoria;
-          //  - está salvando;
-          //  - a OS está travada/aprovada SEM permissão de troca de tabela
-          //    (lockAllowsRecalc=false) -> o snapshot financeiro congelado
-          //    permanece intacto. Task #143: quando o usuário PODE trocar a
-          //    tabela mesmo travado, o número grande acompanha a nova tabela
-          //    (só na tela; nada é gravado até Salvar/Aprovar).
-          if (dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && lockAllowsRecalc) {
+          // Task #133: o número grande acompanha o cálculo quando o valor salvo
+          // ficou defasado. Overrides intencionais (edição manual divergente) são
+          // preservados via isIntentionalBillingOverride — ver bloco canResyncSaved.
+          // Task #133 + auto-resync: alinha o número grande ao cálculo quando o valor
+          // salvo ficou defasado (ex.: motor evoluiu após "Salvamento manual confirmado").
+          // Preserva overrides INTENCIONAIS (edição manual divergente, desconto, etc.).
+          const revIntentional = isIntentionalBillingOverride(mission.revenue_edit_reason);
+          const costIntentional = isIntentionalBillingOverride(mission.cost_edit_reason);
+          const canResyncSaved = dbValuesLoadedRef.current && !isSavingRef.current && lockAllowsRecalc && !isEffectivelyLocked;
+
+          if (canResyncSaved) {
               const currentRev = parseNumber(revenueInput);
-              if (autoClientTotal > 0 && Math.abs(currentRev - autoClientTotal) > 1) {
+              const needRev = !revIntentional && autoClientTotal > 0 && Math.abs(currentRev - autoClientTotal) > 1;
+              if (needRev) {
                   setRevenueInput(fmtBR(autoClientTotal));
               }
               const currentCost = parseNumber(costInput);
-              if (!mission.is_same_os && autoProviderTotal > 0 && Math.abs(currentCost - autoProviderTotal) > 1) {
+              const needCost = !mission.is_same_os && !costIntentional && autoProviderTotal > 0 && Math.abs(currentCost - autoProviderTotal) > 1;
+              if (needCost) {
                   setCostInput(fmtBR(autoProviderTotal));
               } else if (mission.is_same_os && currentCost !== 0) {
                   setCostInput('0,00');
+              }
+
+              // Persiste automaticamente no banco (uma vez por abertura) para não exigir
+              // clique em "Restaurar Auto" nem novo Salvar só por regra de cálculo atualizada.
+              if ((needRev || needCost) && staleAutoResyncDoneRef.current !== mission.id) {
+                  staleAutoResyncDoneRef.current = mission.id;
+                  const r2 = (v: number) => Math.round(v * 100) / 100;
+                  const revServiceOnly = financialData.client.serviceTotal;
+                  const costServiceOnly = mission.is_same_os ? 0 : financialData.provider.serviceTotal;
+                  const toll = parseNumber(tollInput);
+                  const tollProv = mission.is_same_os ? 0 : parseNumber(tollProviderInput);
+                  const payload: Record<string, unknown> = {
+                      last_update: new Date().toISOString(),
+                  };
+                  if (needRev) {
+                      payload.revenue_value = r2(revServiceOnly);
+                      payload.revenue_edit_reason = '';
+                  }
+                  if (needCost) {
+                      payload.cost_value = r2(costServiceOnly);
+                      payload.cost_edit_reason = '';
+                  }
+                  if (!mission.billing_verified_by && (needRev || needCost)) {
+                      payload.billing_verified_by = null;
+                  }
+                  (async () => {
+                      try {
+                          const { error } = await supabase.from('missions').update(payload).eq('id', mission.id);
+                          if (error) throw error;
+                          setMission((prev) => prev ? {
+                              ...prev,
+                              ...(needRev ? { revenue_value: payload.revenue_value as number, revenue_edit_reason: '' } : {}),
+                              ...(needCost ? { cost_value: payload.cost_value as number, cost_edit_reason: '' } : {}),
+                          } : prev);
+                          await supabase.from('system_logs').insert([{
+                              user_name: 'Sistema',
+                              action_type: 'AUTO_RESYNC_BILLING',
+                              entity: 'Mission',
+                              entity_id: mission.id,
+                              details: JSON.stringify({
+                                  revenue: needRev ? r2(revServiceOnly) : null,
+                                  cost: needCost ? r2(costServiceOnly) : null,
+                                  toll: r2(toll),
+                                  tollProvider: r2(tollProv),
+                                  clientExcessKm: financialData.client.excessKm,
+                                  clientExtraKmVal: r2(financialData.client.extraKmVal),
+                              }),
+                          }]);
+                          showNotification(
+                              'Cálculo atualizado',
+                              'Valor salvo anteriormente foi alinhado automaticamente ao cálculo da tabela.',
+                              'success',
+                          );
+                      } catch (e) {
+                          console.warn('[Auto-resync billing] Falha ao persistir:', e);
+                      }
+                  })();
               }
           }
 
@@ -1693,7 +1753,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
       }
-    }, [financialData, memoryLoaded, mission, tollProviderInput, displacementInput, displacementProviderInput, useSavedValues, isLoading]); 
+    }, [financialData, memoryLoaded, mission, tollProviderInput, displacementInput, displacementProviderInput, useSavedValues, isLoading, isEffectivelyLocked, lockAllowsRecalc, revenueInput, costInput, tollInput, showNotification]); 
 
     // KM de deslocamento autorizado pela DHL: o campo dhl_deslocamento_km
     // (digitado no "Atualizar Missão") vira cobrança automática pelo campo

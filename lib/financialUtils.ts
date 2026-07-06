@@ -83,6 +83,38 @@ export function clientTableMatchesMission(tableClient: string, missionClientName
     return !!(missionDhl && tableDhl && missionDhl === tableDhl);
 }
 
+/**
+ * Indica se o motivo gravado na OS representa divergência INTENCIONAL do operador
+ * (desconto, ajuste manual, valor zero confirmado, etc.). Nesses casos o sistema
+ * NÃO re-sincroniza automaticamente ao reabrir a auditoria.
+ * Retorna false para "Salvamento manual confirmado" e motivos vazios — permite
+ * alinhar ao motor quando a regra de cálculo evoluiu desde o último save.
+ */
+export function isIntentionalBillingOverride(editReason: string | null | undefined): boolean {
+    const raw = String(editReason || '').trim();
+    if (!raw) return false;
+    const r = raw.toLowerCase();
+    const allowAutoResync = [
+        'salvamento manual confirmado',
+        'recalculado pelo sistema',
+        'tabela oficial aplicada',
+    ];
+    if (allowAutoResync.some((p) => r.includes(p))) return false;
+    const blockAutoResync = [
+        'edição manual',
+        'edicao manual',
+        'ajuste manual',
+        'divergente',
+        'sugeria:',
+        'sistema sugeria:',
+        'motor auto sugeria',
+        'valor zero confirmado',
+    ];
+    if (blockAutoResync.some((p) => r.includes(p))) return true;
+    // Texto livre digitado pelo usuário (qualquer outro motivo não vazio)
+    return true;
+}
+
 /** Busca todas as tabelas de preço do cliente (paginado — evita corte em 1000 linhas). */
 export async function fetchClientPriceTables(
     supabase: { from: (table: string) => { select: (cols: string) => any } },
