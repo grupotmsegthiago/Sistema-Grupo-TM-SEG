@@ -1,3 +1,5 @@
+import { publicIntakeSubmit } from './lib/dhlIntakePublicApi';
+
 function parseBody(body: unknown): Record<string, any> {
   if (typeof body !== "string") return (body as Record<string, any>) || {};
   if (!body.trim()) return {};
@@ -16,7 +18,6 @@ export default async function handler(req: any, res: any) {
   }
   const body = parseBody(req.body);
   try {
-    const { publicIntakeSubmit } = await import("./lib/dhlIntakePublicApi");
     const result = await publicIntakeSubmit(token, body);
     res.status(result.status).json(result.body);
   } catch (e: any) {

@@ -104,7 +104,7 @@ const DhlSupplierIntake: React.FC = () => {
     mirrorData?: { dataUrl: string; filename: string } | null;
   }): Promise<string | null> => {
     try {
-      const r = await fetch(`/api/dhl/intake/public/${encodeURIComponent(token)}/progress`, {
+      const r = await fetch(`/api/dhl-intake-public-progress?token=${encodeURIComponent(token)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
@@ -127,8 +127,16 @@ const DhlSupplierIntake: React.FC = () => {
     if (!token) { setError('Link inválido — token ausente'); setLoading(false); return; }
     (async () => {
       try {
-        const r = await fetch(`/api/dhl/intake/public/${encodeURIComponent(token)}`);
-        const j = await r.json();
+        const r = await fetch(`/api/dhl-intake-public-get?token=${encodeURIComponent(token)}`);
+        const raw = await r.text();
+        let j: any;
+        try {
+          j = raw ? JSON.parse(raw) : null;
+        } catch {
+          setError('Falha ao carregar — servidor indisponível. Atualize a página e tente novamente.');
+          setLoading(false);
+          return;
+        }
         if (!r.ok) { setError(j.error || 'Link inválido ou expirado'); setLoading(false); return; }
         setMission(j.mission);
         setIntake(j.intake);
@@ -286,7 +294,7 @@ const DhlSupplierIntake: React.FC = () => {
       // substituiu, manda o sinal useExistingMirror para o servidor reutilizar
       // o que foi enviado em /progress, sem precisar reenviar o base64.
       const useExistingMirror = !mirrorProof && !!existingMirrorProof;
-      const r = await fetch(`/api/dhl/intake/public/${encodeURIComponent(token)}/submit`, {
+      const r = await fetch(`/api/dhl-intake-public-submit?token=${encodeURIComponent(token)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           agent1, agent2, vehicle: veiculo,
@@ -752,7 +760,7 @@ const VeiculoForm: React.FC<{
     setLastQueriedPlate(placa);
     const t = setTimeout(async () => {
       try {
-        const r = await fetch(`/api/dhl/intake/public/${encodeURIComponent(token)}/lookup-placa/${encodeURIComponent(placa)}`);
+        const r = await fetch(`/api/dhl-intake-lookup-placa?token=${encodeURIComponent(token)}&placa=${encodeURIComponent(placa)}`);
         if (cancelled) return;
         if (r.status === 404) { setPlateLookup('notfound'); return; }
         if (!r.ok) { setPlateLookup('error'); return; }
