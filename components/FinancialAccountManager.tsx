@@ -101,20 +101,40 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
 
     useRealtimeRefresh(['financial_accounts', 'financial_categories', 'financial_transactions'], () => { if (dbReady) fetchData(); });
 
+    const fetchSnapshotsSafe = async (days: number): Promise<BalanceSnapshot[]> => {
+        try {
+            const res = await authFetch(`/api/investment/snapshots-all?days=${days}&_t=${Date.now()}`);
+            if (!res.ok) return [];
+            const contentType = res.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                console.warn('[Investment] snapshots-all retornou conteúdo não-JSON — histórico ignorado');
+                return [];
+            }
+            const data = await res.json();
+            if (!Array.isArray(data)) return [];
+            return data.map((s: any) => ({ ...s, balance: parseFloat(s.balance) }));
+        } catch (e) {
+            console.warn('[Investment] Falha ao carregar snapshots — histórico ignorado:', e);
+            return [];
+        }
+    };
+
     const fetchData = async () => {
         setIsLoading(true);
         try {
             const days = periodFilter === 'all' ? 3650 : parseInt(periodFilter);
-            const [accRes, catRes, snapRes] = await Promise.all([
+            const [accRes, catRes, snapshots] = await Promise.all([
                 supabase.from('financial_accounts').select('*').order('name'),
                 supabase.from('financial_categories').select('*'),
-                authFetch(`/api/investment/snapshots-all?days=${days}&_t=${Date.now()}`).then(r => r.json()),
+                fetchSnapshotsSafe(days),
             ]);
+
+            if (accRes.error) {
+                showNotification('Erro', 'Não foi possível carregar contas: ' + accRes.error.message, 'error');
+            }
 
             const accData = accRes.data || [];
             setCategories((catRes.data || []) as any);
-
-            const snapshots: BalanceSnapshot[] = (snapRes || []).map((s: any) => ({ ...s, balance: parseFloat(s.balance) }));
             setAllSnapshots(snapshots);
 
             const now = Date.now();

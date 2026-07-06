@@ -68,6 +68,18 @@
     },
     "api/vendor-verification.ts": {
       "maxDuration": 60
+    },
+    "api/investment-init.ts": {
+      "maxDuration": 60
+    },
+    "api/investment-snapshots-all.ts": {
+      "maxDuration": 60
+    },
+    "api/investment-snapshots.ts": {
+      "maxDuration": 60
+    },
+    "api/investment-snapshot-delete.ts": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
@@ -146,6 +158,22 @@
     {
       "source": "/api/vendor-verification/:missionId",
       "destination": "/api/vendor-verification?missionId=:missionId"
+    },
+    {
+      "source": "/api/investment/init",
+      "destination": "/api/investment-init"
+    },
+    {
+      "source": "/api/investment/snapshots-all",
+      "destination": "/api/investment-snapshots-all"
+    },
+    {
+      "source": "/api/investment/snapshots",
+      "destination": "/api/investment-snapshots"
+    },
+    {
+      "source": "/api/investment/snapshots/:id",
+      "destination": "/api/investment-snapshot-delete?id=:id"
     },
     {
       "source": "/(.*)",
