@@ -80,6 +80,15 @@
     },
     "api/investment-snapshot-delete.ts": {
       "maxDuration": 60
+    },
+    "api/email-mission-scheduled.ts": {
+      "maxDuration": 120
+    },
+    "api/email-mission-solicited.ts": {
+      "maxDuration": 120
+    },
+    "api/cron/email-queue.ts": {
+      "maxDuration": 120
     }
   },
   "rewrites": [
@@ -174,6 +183,18 @@
     {
       "source": "/api/investment/snapshots/:id",
       "destination": "/api/investment-snapshot-delete?id=:id"
+    },
+    {
+      "source": "/api/email/mission-scheduled",
+      "destination": "/api/email-mission-scheduled"
+    },
+    {
+      "source": "/api/email/mission-solicited",
+      "destination": "/api/email-mission-solicited"
+    },
+    {
+      "source": "/api/cron/email-queue",
+      "destination": "/api/cron/email-queue"
     },
     {
       "source": "/(.*)",

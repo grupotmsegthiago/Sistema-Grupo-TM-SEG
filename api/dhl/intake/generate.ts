@@ -173,7 +173,12 @@ export default async function handler(req: any, res: any) {
       intake = inserted;
     }
 
-    const link = `${appUrl(req)}/fornecedor/dhl?token=${token}`;
+    const channelRaw = String(body.channel || 'both').toLowerCase();
+    const channel: 'email' | 'whatsapp' | 'both' =
+      channelRaw === 'email' || channelRaw === 'whatsapp' ? channelRaw : 'both';
+    const wantsEmail = channel === 'email' || channel === 'both';
+
+    const providerEmail = String(provider.dhl_solicitation_email || provider.os_email || provider.email || '').trim();
     const scheduledAt = mission.start_time ? new Date(mission.start_time).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
     const whatsappText = buildWhatsappText({
       providerName: provider.trading_name || provider.name,
@@ -181,23 +186,53 @@ export default async function handler(req: any, res: any) {
       origin: mission.origin || "—",
       destination: mission.destination || "—",
       scheduledAt,
-      link,
+      link: `${appUrl(req)}/fornecedor/dhl?token=${token}`,
       isDhl,
     });
+
+    let emailSent = false;
+    let emailError: string | null = null;
+    let emailSkipped = !wantsEmail;
+    if (wantsEmail) {
+      if (!providerEmail) {
+        emailError = 'Fornecedor sem e-mail cadastrado';
+      } else {
+        try {
+          const { sendDhlSupplierIntakeEmail } = await import('../../../lib/email/reexport.js');
+          await sendDhlSupplierIntakeEmail({
+            to: providerEmail,
+            providerName: provider.trading_name || provider.name,
+            osNumber: mission.id,
+            seNumber: mission.dhl_se_number || '—',
+            origin: mission.origin || '—',
+            destination: mission.destination || '—',
+            scheduledAt,
+            link: `${appUrl(req)}/fornecedor/dhl?token=${token}`,
+            isDhl,
+          });
+          emailSent = true;
+        } catch (e: any) {
+          emailError = e?.message || 'falha no envio do e-mail';
+          console.error('[DHL Intake generate] erro email:', emailError);
+        }
+      }
+    }
+
+    const link = `${appUrl(req)}/fornecedor/dhl?token=${token}`;
 
     res.status(200).json({
       ok: true,
       token,
       url: link,
       whatsappText,
-      emailSent: false,
-      emailError: null,
-      emailSkipped: true,
+      emailSent,
+      emailError,
+      emailSkipped,
       whatsappSent: false,
       whatsappError: null,
-      whatsappSkipped: true,
-      channel: "link",
-      providerEmail: provider.dhl_solicitation_email || provider.os_email || provider.email || null,
+      whatsappSkipped: channel !== 'whatsapp' && channel !== 'both',
+      channel,
+      providerEmail: providerEmail || null,
       providerPhone: provider.phone || null,
       reusedExistingToken: !!(existing && notExpired),
       intakeId: intake?.id || null,
