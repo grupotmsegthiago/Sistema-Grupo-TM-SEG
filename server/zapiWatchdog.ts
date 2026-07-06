@@ -7,38 +7,13 @@ import { markSessionDisconnected, markSessionReconnected } from "./zapiConnectio
 import { getDefaultWhatsappInstance, instanceConfigured } from "./whatsapp/instanceStore";
 import { credsFromInstance, zapiFetchWith } from "./whatsapp/zapiHttp";
 
-const COOLDOWN_SETTINGS_KEY = 'zapi_watchdog_last_restart_at';
-
 function getSb() {
   const sb = createSupabaseAdminClient();
   if (!sb) throw new Error('Supabase não configurado');
   return sb;
 }
 
-async function loadLastRestartAt(): Promise<number> {
-  try {
-    const { data } = await getSb().from('system_settings').select('value').eq('key', COOLDOWN_SETTINGS_KEY).maybeSingle();
-    const raw: any = data?.value;
-    const ts = typeof raw === 'object' && raw ? Number(raw.ts) : Number(raw);
-    return Number.isFinite(ts) && ts > 0 ? ts : 0;
-  } catch { return 0; }
-}
-
-async function saveLastRestartAt(ts: number): Promise<void> {
-  try {
-    await getSb().from('system_settings').upsert([{
-      key: COOLDOWN_SETTINGS_KEY,
-      value: { ts },
-      updated_by: 'Z-API Vigia',
-      updated_at: new Date().toISOString(),
-    }], { onConflict: 'key' });
-  } catch (e: any) {
-    console.warn(`[Z-API Vigia] Falha ao persistir cooldown: ${e?.message || e}`);
-  }
-}
-
 const CHECK_INTERVAL_MS = 3 * 60 * 1000;
-const RESTART_COOLDOWN_MS = 30 * 60 * 1000;
 const CONFIRM_CHECKS = 2;
 const ALERT_RECIPIENTS = ['thiago@grupotmseg.com.br', 'operacional@grupotmseg.com.br'];
 
@@ -57,24 +32,12 @@ let lastConnected: boolean | null = null;
 let downStreak = 0;
 let incidentOpen = false;
 let incidentStartedAt: string | null = null;
-let restartTriedThisIncident = false;
 let wrongNumberAlerted = false;
-let lastRestartAt = 0;
-let cooldownLoaded = false;
 const dropHistory: number[] = [];
-
-async function ensureCooldownLoaded() {
-  if (cooldownLoaded) return;
-  cooldownLoaded = true;
-  const ts = await loadLastRestartAt().catch(() => 0);
-  if (ts > lastRestartAt) lastRestartAt = ts;
-}
 
 export async function runZapiWatchdogTick(): Promise<void> {
   const row = await getDefaultWhatsappInstance();
   if (!row || row.provider !== 'zapi' || !instanceConfigured(row)) return;
-
-  await ensureCooldownLoaded();
 
   let status: any = null;
   try {
@@ -105,7 +68,6 @@ export async function runZapiWatchdogTick(): Promise<void> {
 
     if (incidentOpen) {
       incidentOpen = false;
-      restartTriedThisIncident = false;
       const since = incidentStartedAt || '?';
       incidentStartedAt = null;
       const newGen = await markSessionReconnected();
@@ -128,15 +90,6 @@ export async function runZapiWatchdogTick(): Promise<void> {
     const gen = await markSessionDisconnected();
     logWhatsappSessionEvent({ eventType: 'disconnected', connected: false, dropsLast24h: dropHistory.length, incidentStartedAt: incidentStartedAt || undefined, connectionGeneration: gen, details: { connected: status.connected } });
     void sendSystemAlertEmail(ALERT_RECIPIENTS, 'ALERTA: WhatsApp Bot DESCONECTADO', `<p>Desde ${incidentStartedAt}.</p>`).catch(() => {});
-  }
-
-  const now = Date.now();
-  if (!restartTriedThisIncident && now - lastRestartAt >= RESTART_COOLDOWN_MS) {
-    restartTriedThisIncident = true;
-    lastRestartAt = now;
-    void saveLastRestartAt(now);
-    logWhatsappSessionEvent({ eventType: 'restart_attempted', connected: false, dropsLast24h: dropHistory.length, incidentStartedAt: incidentStartedAt || undefined });
-    try { await zapiGet('restart'); } catch { /* ignore */ }
   }
   lastConnected = false;
 }
