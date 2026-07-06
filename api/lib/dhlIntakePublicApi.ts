@@ -467,7 +467,7 @@ export async function publicIntakeSubmit(token: string, body: Record<string, any
 
     // Notifica operacional
     try {
-      const { sendDhlIntakeSubmittedEmail } = await import('../server/emailService');
+      const { sendDhlIntakeSubmittedEmail } = await import('../../server/emailService');
       const { data: mission } = await sb.from('missions').select('*').eq('id', intake.mission_id).maybeSingle();
       await sendDhlIntakeSubmittedEmail({
         to: OPERACIONAL_EMAIL,

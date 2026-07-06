@@ -1,4 +1,4 @@
-import { publicIntakeGet } from "../lib/dhlIntakePublicApi";
+import { publicIntakeGet } from "./lib/dhlIntakePublicApi";
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") {
@@ -10,6 +10,11 @@ export default async function handler(req: any, res: any) {
     res.status(400).json({ error: "token é obrigatório" });
     return;
   }
-  const result = await publicIntakeGet(token);
-  res.status(result.status).json(result.body);
+  try {
+    const result = await publicIntakeGet(token);
+    res.status(result.status).json(result.body);
+  } catch (e: any) {
+    console.error("[dhl-intake-public-get]", e);
+    res.status(500).json({ error: e?.message || "Erro interno" });
+  }
 }

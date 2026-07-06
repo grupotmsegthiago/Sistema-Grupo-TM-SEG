@@ -1,4 +1,4 @@
-import { publicIntakeSubmit } from "../lib/dhlIntakePublicApi";
+import { publicIntakeSubmit } from "./lib/dhlIntakePublicApi";
 
 function parseBody(body: unknown): Record<string, any> {
   if (typeof body !== "string") return (body as Record<string, any>) || {};
@@ -17,6 +17,11 @@ export default async function handler(req: any, res: any) {
     return;
   }
   const body = parseBody(req.body);
-  const result = await publicIntakeSubmit(token, body);
-  res.status(result.status).json(result.body);
+  try {
+    const result = await publicIntakeSubmit(token, body);
+    res.status(result.status).json(result.body);
+  } catch (e: any) {
+    console.error("[dhl-intake-public-submit]", e);
+    res.status(500).json({ error: e?.message || "Erro interno" });
+  }
 }
