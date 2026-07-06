@@ -1,5 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
-import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from "../../../lib/supabaseDefaults";
+const DEFAULT_SUPABASE_URL = "https://ajhmmjuewdsukecaimik.supabase.co";
+const DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk";
 
 type RangeKey = "today" | "7d" | "15d";
 
@@ -7,7 +7,8 @@ function authToken(req: any): string {
   return String(req.headers?.authorization || "").replace(/^Bearer\s+/i, "") || String(req.headers?.["x-auth-token"] || "");
 }
 
-function supabase() {
+async function supabase() {
+  const { createClient } = await import("@supabase/supabase-js");
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
     || process.env.SUPABASE_SERVICE_KEY
@@ -70,7 +71,7 @@ export default async function handler(req: any, res: any) {
 
   const range = ["7d", "15d"].includes(String(req.query?.range)) ? String(req.query.range) as RangeKey : "today";
   const startIso = rangeStart(range).toISOString();
-  const sb = supabase();
+  const sb = await supabase();
 
   try {
     const [outbound, sessions] = await Promise.all([
