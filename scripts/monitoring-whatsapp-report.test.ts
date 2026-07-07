@@ -76,3 +76,18 @@ test('buildMonitoringWhatsAppReport segue o modelo oficial', () => {
   assert.ok(locationIdx < linkIdx);
   assert.ok(linkIdx < occurrenceIdx);
 });
+
+test('buildMonitoringWhatsAppReport não altera o padrão DHL (ESCOLTA ARMADA)', () => {
+  const report = buildMonitoringWhatsAppReport({
+    osId: 'GTM-0001',
+    status: 'EM VIAGEM',
+    dateStr: '07/07/2026',
+    timeStr: '08:00',
+    client: 'DHL',
+    origin: 'ORIGEM',
+    destination: 'DESTINO',
+    progress: 50,
+  });
+  assert.doesNotMatch(report, /ESCOLTA ARMADA/);
+  assert.match(report, /^\*MONITORAMENTO GRUPO TMSEG\*/);
+});

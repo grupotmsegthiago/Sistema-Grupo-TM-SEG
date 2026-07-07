@@ -1,3 +1,7 @@
+/**
+ * Relatório WhatsApp de monitoramento para clientes NÃO-DHL.
+ * O template DHL (*ESCOLTA ARMADA*) permanece inline em UpdateMissionModal e MissionTable.
+ */
 export type MonitoringWhatsAppReportInput = {
   osId: string;
   status: string;
