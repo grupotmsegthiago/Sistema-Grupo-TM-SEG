@@ -16,6 +16,11 @@ import { GoogleMap, useLoadScript, Marker, InfoWindow } from '@react-google-maps
 import { googleMapsLoadConfig } from '../lib/maps';
 import { extractCoordinates } from '../lib/utils';
 import { copyTextAsync } from '../lib/clipboard';
+import {
+  buildMonitoringWhatsAppReport,
+  formatAgentShortName,
+  parseMonitoringLocation,
+} from '../lib/monitoringWhatsAppReport';
 import MissionStatusModal from './MissionStatusModal';
 import UpdateMissionModal from './UpdateMissionModal';
 import MissionCard from './MissionCard';
@@ -1646,16 +1651,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         const dateObj = new Date(mission.startTime || mission.createdAt);
         const dateStr = dateObj.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
         const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
-        const formatFL = (name?: string) => { 
-            if (!name || name === '---' || name === '') return 'N/A'; 
-            const parts = name.trim().split(' '); 
-            return parts.length > 2 ? `${parts[0]} ${parts[parts.length-1]}`.toUpperCase() : name.toUpperCase(); 
-        };
-        const fullLocationRaw = mission.currentLocation || "AGUARDANDO INÍCIO";
-        const locationParts = fullLocationRaw.split('|');
-        const addressPart = locationParts.length > 1 ? locationParts[1].trim() : locationParts[0].trim();
-        const citySplit = addressPart.split('-');
-        const cityField = citySplit.length > 1 ? citySplit[citySplit.length-2].split(',').pop()?.trim() + ' - ' + citySplit[citySplit.length-1].trim() : addressPart;
+        const formatFL = formatAgentShortName;
+        const { occurrence: locationOccurrence, city: cityField } = parseMonitoringLocation(mission.currentLocation);
+        const locationParts = (mission.currentLocation || 'AGUARDANDO INÍCIO').split('|');
         const isDHL = /DHL/i.test(mission.client || '');
         const fmtTime = (iso?: string) => iso ? formatDateTimeBR(iso) : '';
         let dhlOriginAt = '', dhlInTransitAt = '', dhlCompletedAt = '';
@@ -1695,28 +1693,27 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 🧭 *INÍCIO DE OPERAÇÃO:* ${dhlInTransitAt}
 🧭 *FIM DE OPERAÇÃO:* ${dhlCompletedAt}
 
-🖋️ *STATUS:* ${mission.status.toUpperCase()}${mission.currentLocation ? ' — ' + locationParts[0].trim().toUpperCase() : ''}` : `*MONITORAMENTO GRUPO TMSEG*
-*OS:* ${mission.id} | *STATUS:* ${mission.status.toUpperCase()}
-
-🗓 *DATA:* ${dateStr} *HORA:* ${timeStr}
-🛡 *OPERAÇÃO:* ${mission.mission_type?.toUpperCase() || 'CARACTERIZADA'}
-🏢 *CLIENTE:* ${mission.client}
-
-📍 *ORIGEM:* ${mission.origin || 'N/A'}
-🏁 *DESTINO:* ${(mission.destination || 'N/A').replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim() || 'N/A'}
-
-🚛 *VEÍCULO:* ${mission.clientVehicle?.plate || 'N/A'} (${mission.clientVehicle?.model || 'N/D'})
-👤 *MOTORISTA:* ${formatFL(mission.driver_name)}
-📞 *CONTATO:* ${mission.driver_phone || 'N/A'}
-
-🚔 *VIATURA:* ${mission.vehicleId || 'N/A'}
-👮 *AGENTE 01:* ${formatFL(mission.agent1)}
-👮 *AGENTE 02:* ${formatFL(mission.agent2)}
-
-*PROGRESSO DA MISSÃO:* ${Math.floor(mission.progress || 0)}%
-📣 *OCORRÊNCIA:* ${locationParts[0].trim().toUpperCase()}
-🏙️ *LOCALIZAÇÃO:* ${cityField.toUpperCase()}
-🗾 *LINK DO GOOGLE:* ${mission.mapLink || 'N/A'}`;
+🖋️ *STATUS:* ${mission.status.toUpperCase()}${mission.currentLocation ? ' — ' + locationParts[0].trim().toUpperCase() : ''}` : buildMonitoringWhatsAppReport({
+            osId: mission.id,
+            status: mission.status,
+            dateStr,
+            timeStr,
+            operationType: mission.mission_type,
+            client: mission.client,
+            origin: mission.origin || 'N/A',
+            destination: mission.destination || 'N/A',
+            vehiclePlate: mission.clientVehicle?.plate,
+            vehicleModel: mission.clientVehicle?.model,
+            driverName: mission.driver_name,
+            driverPhone: mission.driver_phone,
+            escortVehicle: mission.vehicleId,
+            agent1: mission.agent1,
+            agent2: mission.agent2,
+            progress: mission.progress || 0,
+            occurrence: locationOccurrence,
+            locationCity: cityField,
+            mapLink: mission.mapLink,
+        });
         
             return text;
         };

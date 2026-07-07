@@ -10,6 +10,11 @@ import { generateContent } from '../lib/gemini';
 import { showWhatsappCopyPopup } from '../lib/whatsappCopyFlow';
 import { hasExplicitUpdatePrint, shouldSendClientGroupWhatsApp } from '../lib/clientGroupUpdateFilter';
 import {
+  buildMonitoringWhatsAppReport,
+  formatAgentShortName,
+  parseMonitoringCityFromLocationName,
+} from '../lib/monitoringWhatsAppReport';
+import {
   computeScaledCanvasSize,
   createBrandedFallbackPhoto,
   dataUrlToBlob,
@@ -2384,14 +2389,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const dateStr = formatDateBR(dateObj);
             const timeStr = formatTimeBR(dateObj);
             
-            const formatFL = (name?: string) => { 
-                if (!name || name === '---' || name === '') return 'N/A'; 
-                const parts = name.trim().split(' '); 
-                return parts.length > 2 ? `${parts[0]} ${parts[parts.length-1]}`.toUpperCase() : name.toUpperCase(); 
-            };
-
-            const cityParts = editData.currentLocationName.split('-');
-            const cityPart = cityParts.length > 1 ? cityParts[cityParts.length-2].split(',').pop()?.trim() + ' - ' + cityParts[cityParts.length-1].trim() : (editData.currentLocationName || 'S/D');
+            const formatFL = formatAgentShortName;
+            const cityPart = parseMonitoringCityFromLocationName(editData.currentLocationName);
 
             const isDHL = /DHL/i.test(mission.client || '');
             const fmtDateTime = (iso?: string) => {
@@ -2439,28 +2438,27 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 🧭 *INÍCIO DE OPERAÇÃO:* ${dhlInTransitAt}
 🧭 *FIM DE OPERAÇÃO:* ${dhlCompletedAt}
 
-🖋️ *STATUS:* ${finalStatus.toUpperCase()}${finalDescription ? ' — ' + finalDescription.toUpperCase() : ''}` : `*MONITORAMENTO GRUPO TMSEG*
-*OS:* ${mission.id} | *STATUS:* ${finalStatus.toUpperCase()}
-
-🗓 *DATA:* ${dateStr} *HORA:* ${timeStr}
-🛡 *OPERAÇÃO:* ${editData.missionType?.toUpperCase() || 'CARACTERIZADA'}
-🏢 *CLIENTE:* ${mission.client}
-
-📍 *ORIGEM:* ${editData.origin.toUpperCase()}
-🏁 *DESTINO:* ${finalDestination.toUpperCase().replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim() || 'N/A'}
-
-🚛 *VEÍCULO:* ${editData.client_vehicle_plate || 'N/A'} (${editData.client_vehicle_model || 'N/D'})
-👤 *MOTORISTA:* ${formatFL(editData.driver_name)}
-📞 *CONTATO:* ${editData.driver_phone || 'N/A'}
-
-🚔 *VIATURA:* ${searchVehicle || 'N/A'}
-👮 *AGENTE 01:* ${formatFL(editData.agent1)}
-👮 *AGENTE 02:* ${formatFL(editData.agent2)}
-
-📈*PROGRESSO DA MISSÃO:* ${Math.floor(progressValue)}%
-📣 *OCORRÊNCIA:* ${finalDescription || 'SEM INFORMAÇÃO'}
-🏙️ *LOCALIZAÇÃO:* ${cityPart.toUpperCase()}
-🗾 *LINK DO GOOGLE:* ${editData.mapLink || 'N/A'}`;
+🖋️ *STATUS:* ${finalStatus.toUpperCase()}${finalDescription ? ' — ' + finalDescription.toUpperCase() : ''}` : buildMonitoringWhatsAppReport({
+                osId: mission.id,
+                status: finalStatus,
+                dateStr,
+                timeStr,
+                operationType: editData.missionType,
+                client: mission.client,
+                origin: editData.origin,
+                destination: finalDestination,
+                vehiclePlate: editData.client_vehicle_plate,
+                vehicleModel: editData.client_vehicle_model,
+                driverName: editData.driver_name,
+                driverPhone: editData.driver_phone,
+                escortVehicle: searchVehicle,
+                agent1: editData.agent1,
+                agent2: editData.agent2,
+                progress: progressValue,
+                occurrence: finalDescription || 'SEM INFORMAÇÃO',
+                locationCity: cityPart,
+                mapLink: editData.mapLink,
+            });
 
             const isNowCompleted = finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED;
 
