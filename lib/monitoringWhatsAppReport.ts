@@ -33,23 +33,29 @@ export function formatAgentShortName(name?: string): string {
     : name.toUpperCase();
 }
 
+/** Quantidade de quadrados e percentual de cada um. */
+const PROGRESS_SQUARE_COUNT = 4;
+const PROGRESS_STEP_PERCENT = 100 / PROGRESS_SQUARE_COUNT;
+
 /**
  * Tom do quadrado preenchido conforme a quantidade (verde claro → verde escuro).
  * WhatsApp só oferece 🟢 (verde limão) e 🟩 (quadrado verde escuro) — sem coração.
  */
-const FILL_GREEN_TONE_BY_COUNT = ['', '🟢', '🟢', '🟩', '🟩', '🟩'] as const;
+const FILL_GREEN_TONE_BY_COUNT = ['', '🟢', '🟢', '🟩', '🟩'] as const;
 const EMPTY_PROGRESS_SQUARE = '⬜';
 
-/** Barra visual de progresso: verde claro no início, escurecendo até 100% (cada quadrado = 20%). */
+/** Barra visual de progresso: verde claro no início, escurecendo até 100%. */
 export function formatProgressSquares(progress: number): string {
   const percent = Math.min(100, Math.max(0, Math.floor(progress)));
-  const filled = percent === 0 ? 0 : Math.min(5, Math.ceil(percent / 20));
+  const filled =
+    percent === 0 ? 0 : Math.min(PROGRESS_SQUARE_COUNT, Math.ceil(percent / PROGRESS_STEP_PERCENT));
   if (filled === 0) {
-    return `${EMPTY_PROGRESS_SQUARE.repeat(5)} ${percent}% (cada quadrado vale 20%)`;
+    return `${EMPTY_PROGRESS_SQUARE.repeat(PROGRESS_SQUARE_COUNT)} ${percent}%`;
   }
   const tone = FILL_GREEN_TONE_BY_COUNT[filled];
-  const squares = tone.repeat(filled) + EMPTY_PROGRESS_SQUARE.repeat(5 - filled);
-  return `${squares} ${percent}% (cada quadrado vale 20%)`;
+  const squares =
+    tone.repeat(filled) + EMPTY_PROGRESS_SQUARE.repeat(PROGRESS_SQUARE_COUNT - filled);
+  return `${squares} ${percent}%`;
 }
 
 export function stripDestinationToDefine(destination: string): string {

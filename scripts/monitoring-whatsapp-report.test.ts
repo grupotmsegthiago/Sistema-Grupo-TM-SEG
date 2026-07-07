@@ -7,44 +7,33 @@ import {
   parseMonitoringLocation,
 } from '../lib/monitoringWhatsAppReport';
 
-test('formatProgressSquares: 100% usa cinco quadrados verdes escuros', () => {
-  assert.equal(
-    formatProgressSquares(100),
-    '🟩🟩🟩🟩🟩 100% (cada quadrado vale 20%)',
-  );
+test('formatProgressSquares: 100% usa quatro quadrados verdes escuros', () => {
+  assert.equal(formatProgressSquares(100), '🟩🟩🟩🟩 100%');
 });
 
-test('formatProgressSquares: 20% começa com verde clarinho', () => {
-  assert.equal(
-    formatProgressSquares(20),
-    '🟢⬜⬜⬜⬜ 20% (cada quadrado vale 20%)',
-  );
+test('formatProgressSquares: 25% começa com verde clarinho', () => {
+  assert.equal(formatProgressSquares(25), '🟢⬜⬜⬜ 25%');
 });
 
-test('formatProgressSquares: 40% mantém verde claro', () => {
-  assert.equal(
-    formatProgressSquares(40),
-    '🟢🟢⬜⬜⬜ 40% (cada quadrado vale 20%)',
-  );
+test('formatProgressSquares: 50% mantém verde claro', () => {
+  assert.equal(formatProgressSquares(50), '🟢🟢⬜⬜ 50%');
 });
 
-test('formatProgressSquares: 0% deixa todos vazios', () => {
-  assert.equal(
-    formatProgressSquares(0),
-    '⬜⬜⬜⬜⬜ 0% (cada quadrado vale 20%)',
-  );
+test('formatProgressSquares: 0% deixa quatro quadrados vazios', () => {
+  assert.equal(formatProgressSquares(0), '⬜⬜⬜⬜ 0%');
 });
 
-test('formatProgressSquares: 60% passa para verde escuro (quadrado)', () => {
-  assert.equal(
-    formatProgressSquares(60),
-    '🟩🟩🟩⬜⬜ 60% (cada quadrado vale 20%)',
-  );
+test('formatProgressSquares: 75% passa para verde escuro (quadrado)', () => {
+  assert.equal(formatProgressSquares(75), '🟩🟩🟩⬜ 75%');
+});
+
+test('formatProgressSquares: não exibe texto explicativo do quadrado', () => {
+  assert.doesNotMatch(formatProgressSquares(100), /cada quadrado vale/i);
 });
 
 test('formatProgressSquares: não usa coração verde', () => {
   assert.doesNotMatch(formatProgressSquares(100), /💚/);
-  assert.doesNotMatch(formatProgressSquares(60), /💚/);
+  assert.doesNotMatch(formatProgressSquares(75), /💚/);
 });
 
 test('parseMonitoringLocation separa ocorrência e cidade', () => {
@@ -82,7 +71,8 @@ test('buildMonitoringWhatsAppReport segue o modelo oficial', () => {
   assert.match(report, /\*OS:\* GTM-6253 \| \*STATUS:\* EM VIAGEM/);
   assert.match(report, /🗓️ \*DATA:\* 07\/07\/2026 \*HORA:\* 08:00/);
   assert.match(report, /🛡️ \*OPERAÇÃO:\* CARACTERIZADA/);
-  assert.match(report, /📈\*PROGRESSO DA MISSÃO:\* 🟩🟩🟩🟩🟩 100% \(cada quadrado vale 20%\)/);
+  assert.match(report, /📈\*PROGRESSO DA MISSÃO:\* 🟩🟩🟩🟩 100%/);
+  assert.doesNotMatch(report, /cada quadrado vale/i);
   assert.match(report, /🏙️ \*LOCALIZAÇÃO:\* 11460 - 001, BRASIL/);
   assert.match(report, /🗾 \*LINK DO GOOGLE:\* https:\/\/www\.google\.com\/maps/);
   assert.match(report, /📣 \*OCORRÊNCIA:\* CHEGADA NO DESTINO, AGUARDANDO A ENTRADA DO AUTO/);
@@ -94,6 +84,34 @@ test('buildMonitoringWhatsAppReport segue o modelo oficial', () => {
   assert.ok(progressIdx < locationIdx);
   assert.ok(locationIdx < linkIdx);
   assert.ok(linkIdx < occurrenceIdx);
+});
+
+test('buildMonitoringWhatsAppReport: exemplo GTM-6238 em origem', () => {
+  const report = buildMonitoringWhatsAppReport({
+    osId: 'GTM-6238',
+    status: 'ORIGEM',
+    dateStr: '07/07/2026',
+    timeStr: '14:00',
+    operationType: 'CARACTERIZADA',
+    client: 'PREXTEX ENCOMENDAS',
+    origin: 'R. FRANCISCO REIS, 1205 - CORDEIROS, ITAJAÍ - SC, 88311-750',
+    destination: 'BELO HORIZONTE, MG',
+    vehiclePlate: 'AUF6B18',
+    vehicleModel: 'sem inf',
+    driverName: 'ISMAEL NUNES',
+    driverPhone: '+55 41 9803-5183',
+    escortVehicle: 'UDE1G87',
+    agent1: 'FERMANDO COLONHEZI',
+    agent2: 'VITOR FRANÇA',
+    progress: 0,
+    occurrence: 'AGUARDANDO PARA DAR INICIO, SEM NOVIDADES',
+    locationCity: '88307 - 750, BRASIL',
+    mapLink: 'https://www.google.com/maps?q=-26.9639,-48.6839&z=17&hl=pt-BR',
+  });
+
+  assert.match(report, /\*OS:\* GTM-6238 \| \*STATUS:\* ORIGEM/);
+  assert.match(report, /📈\*PROGRESSO DA MISSÃO:\* ⬜⬜⬜⬜ 0%/);
+  assert.doesNotMatch(report, /cada quadrado vale/i);
 });
 
 test('buildMonitoringWhatsAppReport não altera o padrão DHL (ESCOLTA ARMADA)', () => {
