@@ -58,6 +58,12 @@ import {
   listPatrimonioBackups,
   restorePatrimonioFromBackup,
 } from "./patrimonioStore";
+import {
+  getEmployeeCompliance,
+  saveEmployeeDeclaration,
+  signEmployeePatrimonioContract,
+  completeEmptyPatrimonioDeclaration,
+} from "./patrimonioSelfService";
 import { isLongRunningHost } from "./runtime";
 import { registerScheduledTick } from "./scheduledRegistry";
 import { registerMaintenanceTick } from "./maintenanceJobs";
@@ -231,7 +237,7 @@ function extractUserIdFromToken(token: string): string | null {
   return match ? match[1] : null;
 }
 
-type ResolvedPrincipal = { id: string; name: string | null; email: string | null; role: string; clientId: string | null; permissions: string[] };
+type ResolvedPrincipal = { id: string; name: string | null; email: string | null; role: string; clientId: string | null; permissions: string[]; userType: string | null };
 const principalCache = new Map<string, { principal: ResolvedPrincipal; expiresAt: number }>();
 
 async function resolvePrincipal(token: string): Promise<ResolvedPrincipal | null> {
@@ -244,7 +250,7 @@ async function resolvePrincipal(token: string): Promise<ResolvedPrincipal | null
   try {
     const sb = createSupabaseAdminClient();
     if (!sb) return null;
-    const { data } = await sb.from('system_users').select('id, name, email, status, client_id, permissions, profiles:profile_id ( name, permissions )').eq('id', userId).single();
+    const { data } = await sb.from('system_users').select('id, name, email, status, client_id, user_type, permissions, profiles:profile_id ( name, permissions )').eq('id', userId).single();
     if (!data || data.status !== 'Ativo') return null;
     const profilePerms: string[] = Array.isArray((data.profiles as any)?.permissions) ? (data.profiles as any).permissions : [];
     const userPerms: string[] = Array.isArray((data as any).permissions) ? (data as any).permissions : [];
@@ -255,6 +261,7 @@ async function resolvePrincipal(token: string): Promise<ResolvedPrincipal | null
       role: ((data.profiles as any)?.name || '').toLowerCase(),
       clientId: (data as any).client_id || null,
       permissions: [...new Set([...profilePerms, ...userPerms])],
+      userType: (data as any).user_type || null,
     };
     principalCache.set(token, { principal, expiresAt: Date.now() + ROLE_CACHE_TTL });
     // Mantém roleCache em sync para compatibilidade com código legado.
@@ -2416,6 +2423,16 @@ export async function registerRoutes(
         status TEXT NOT NULL DEFAULT 'ok',
         notes TEXT
       );
+      CREATE TABLE IF NOT EXISTS patrimonio_employee_compliance (
+        user_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL DEFAULT 'pending',
+        declared_at TIMESTAMPTZ,
+        contract_signed_at TIMESTAMPTZ,
+        items_count INTEGER NOT NULL DEFAULT 0,
+        declared_items JSONB,
+        contract JSONB,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
       CREATE UNIQUE INDEX IF NOT EXISTS patrimonio_equipments_patrimony_id_uidx
         ON patrimonio_equipments (patrimony_id) WHERE deleted_at IS NULL;
       CREATE INDEX IF NOT EXISTS patrimonio_backups_created_at_idx ON patrimonio_backups (created_at DESC);
@@ -2705,6 +2722,80 @@ export async function registerRoutes(
       res.json({ ok: true, count: equipments.length });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || 'Falha ao salvar patrimônio' });
+    }
+  });
+
+  app.get('/api/patrimonio/my/compliance', requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const principal = (req as any).user as ResolvedPrincipal;
+      const result = await getEmployeeCompliance(supabaseAdmin, {
+        id: principal.id,
+        name: principal.name,
+        role: principal.role,
+        permissions: principal.permissions,
+        user_type: principal.userType || 'internal',
+      });
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao verificar conformidade' });
+    }
+  });
+
+  app.post('/api/patrimonio/my/declare', requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const principal = (req as any).user as ResolvedPrincipal;
+      const items = req.body?.items || [];
+      const result = await saveEmployeeDeclaration(supabaseAdmin, {
+        id: principal.id,
+        name: principal.name,
+        role: principal.role,
+        permissions: principal.permissions,
+        user_type: principal.userType || 'internal',
+      }, items);
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao salvar declaração' });
+    }
+  });
+
+  app.post('/api/patrimonio/my/sign-contract', requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const principal = (req as any).user as ResolvedPrincipal;
+      const user = {
+        id: principal.id,
+        name: principal.name,
+        role: principal.role,
+        permissions: principal.permissions,
+        user_type: principal.userType || 'internal',
+      };
+      const term = req.body?.term;
+      const equipmentIds: string[] = req.body?.equipment_ids || [];
+      const emptyDeclaration = !!req.body?.empty_declaration;
+
+      if (!term) {
+        res.status(400).json({ ok: false, error: 'Termo obrigatório' });
+        return;
+      }
+
+      const result = emptyDeclaration || equipmentIds.length === 0
+        ? await completeEmptyPatrimonioDeclaration(supabaseAdmin, user, term)
+        : await signEmployeePatrimonioContract(supabaseAdmin, user, term, equipmentIds);
+
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao assinar termo' });
     }
   });
 

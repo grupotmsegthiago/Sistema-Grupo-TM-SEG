@@ -49,6 +49,23 @@ CREATE TABLE IF NOT EXISTS patrimonio_backups (
 CREATE INDEX IF NOT EXISTS patrimonio_backups_created_at_idx
   ON patrimonio_backups (created_at DESC);
 
+-- Conformidade do colaborador (autodeclaração + termo assinado)
+CREATE TABLE IF NOT EXISTS patrimonio_employee_compliance (
+  user_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'pending',
+  declared_at TIMESTAMPTZ,
+  contract_signed_at TIMESTAMPTZ,
+  items_count INTEGER NOT NULL DEFAULT 0,
+  declared_items JSONB,
+  contract JSONB,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE patrimonio_employee_compliance ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS patrimonio_compliance_all ON patrimonio_employee_compliance;
+CREATE POLICY patrimonio_compliance_all ON patrimonio_employee_compliance
+  FOR ALL USING (true) WITH CHECK (true);
+
 -- RLS: leitura/escrita para anon autenticado via app (mesmo padrão de outras tabelas)
 ALTER TABLE patrimonio_equipments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE patrimonio_custom_types ENABLE ROW LEVEL SECURITY;

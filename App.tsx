@@ -33,6 +33,7 @@ import ProfileSettingsModal from './components/ProfileSettingsModal';
 
 import MissionFinancialModal from './components/MissionFinancialModal';
 import MotivationGate, { shouldShowMotivation } from './components/MotivationGate';
+import PatrimonioComplianceGate from './components/PatrimonioComplianceGate';
 
 // Outros Componentes
 import ClientRouteList from './components/ClientRouteList';
@@ -114,6 +115,14 @@ const App: React.FC = () => {
   const [isCevaClient, setIsCevaClient] = useState(false);
   const [billingMissionId, setBillingMissionId] = useState<string | null>(null);
   const [billingMission, setBillingMission] = useState<any>(null);
+  const [patrimonioPending, setPatrimonioPending] = useState(() => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const userData = localStorage.getItem('userData');
+      const version = localStorage.getItem('app_version');
+      return !!(token && userData && version === APP_VERSION);
+    } catch { return false; }
+  });
   const [motivationPending, setMotivationPending] = useState(() => {
     try {
       const token = localStorage.getItem('authToken');
@@ -226,6 +235,7 @@ const App: React.FC = () => {
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const handleLogin = () => {
     setIsAuthenticated(true);
+    setPatrimonioPending(true);
     verifySessionInDatabase();
     try {
       const u = JSON.parse(localStorage.getItem('userData') || '{}');
@@ -293,6 +303,18 @@ const App: React.FC = () => {
   if (!isAuthenticated) { return <Login onLogin={handleLogin} />; }
   
   if (needsPasswordChange) { return <ChangePasswordModal onSuccess={handlePasswordChanged} />; }
+
+  if (patrimonioPending) {
+    const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+    return (
+      <PatrimonioComplianceGate
+        userId={u.id || ''}
+        userName={u.name || u.full_name || 'Colaborador'}
+        userRole={u.role}
+        onComplete={() => setPatrimonioPending(false)}
+      />
+    );
+  }
 
   if (motivationPending) {
     const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
