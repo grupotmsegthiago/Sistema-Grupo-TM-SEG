@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Users, Eye, Pencil } from 'lucide-react';
+import { Plus, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeRefresh } from '../../lib/RealtimeProvider';
 import RhPageHeader from './shared/RhPageHeader';
@@ -9,11 +9,10 @@ import { canEditRh } from '../../lib/rh/permissions';
 
 interface Props {
   onAdd: () => void;
-  onEdit: (id: string) => void;
-  onProfile: (id: string) => void;
+  onOpen: (id: string) => void;
 }
 
-const RhEmployeeList: React.FC<Props> = ({ onAdd, onEdit, onProfile }) => {
+const RhEmployeeList: React.FC<Props> = ({ onAdd, onOpen }) => {
   const [rows, setRows] = useState<RhEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const editable = canEditRh();
@@ -46,7 +45,7 @@ const RhEmployeeList: React.FC<Props> = ({ onAdd, onEdit, onProfile }) => {
     <div>
       <RhPageHeader
         title="Funcionários"
-        subtitle="Cadastro completo de colaboradores"
+        subtitle="Abra a pasta do colaborador — cadastro, salários, comissões, férias e documentos em abas"
         icon={Users}
         actions={editable && (
           <button type="button" onClick={onAdd} className="inline-flex items-center gap-2 px-4 py-2.5 bg-black text-white rounded-lg text-xs font-bold uppercase">
@@ -58,19 +57,13 @@ const RhEmployeeList: React.FC<Props> = ({ onAdd, onEdit, onProfile }) => {
         <RhDataTable
           data={rows}
           searchKeys={['full_name', 'matricula', 'cpf', 'email', 'status']}
-          onRowClick={(r) => onProfile(r.id)}
+          onRowClick={(r) => onOpen(r.id)}
           columns={[
             { key: 'matricula', label: 'Matrícula' },
             { key: 'full_name', label: 'Nome' },
             { key: 'department', label: 'Departamento', render: (r) => (r as any).rh_departments?.name || '—' },
             { key: 'position', label: 'Cargo', render: (r) => (r as any).rh_positions?.name || '—' },
             { key: 'status', label: 'Situação', render: (r) => statusBadge(r.status) },
-            { key: 'actions', label: 'Ações', sortable: false, render: (r) => (
-              <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                <button type="button" onClick={() => onProfile(r.id)} className="p-1.5 rounded border hover:bg-gray-50"><Eye size={14} /></button>
-                {editable && <button type="button" onClick={() => onEdit(r.id)} className="p-1.5 rounded border hover:bg-gray-50"><Pencil size={14} /></button>}
-              </div>
-            )},
           ]}
         />
       )}

@@ -41,21 +41,35 @@ export function canViewEmployee(employeeId: string, user: RhUserContext = getRhU
   return user.permissions?.includes('rh-employees');
 }
 
-export function canAccessRhScreen(screenId: string, user: RhUserContext = getRhUser()): boolean {
+/** Qualquer permissão rh-* ou perfil RH libera o módulo. */
+function hasAnyRhPermission(user: RhUserContext): boolean {
+  if (user.permissions?.some((p) => p === '*' || p.startsWith('rh-'))) return true;
   const role = (user.role || '').toLowerCase();
+  return ['rh', 'financeiro', 'administrador', 'diretoria'].includes(role);
+}
+
+export function canAccessRhScreen(screenId: string, user: RhUserContext = getRhUser()): boolean {
   if (isRhAdmin(user)) return true;
-  if (user.permissions?.includes(screenId)) return true;
+  if (!hasAnyRhPermission(user)) return false;
 
-  const salaryScreens = ['rh-salaries', 'rh-payroll', 'rh-payslips'];
-  if (salaryScreens.includes(screenId) && (isRhFinance(user) || role === 'rh')) return true;
+  const menuScreens = ['rh-dashboard', 'rh-employees', 'rh-timeclock'];
+  const internalScreens = [
+    'rh-employee-workspace', 'rh-employee-form', 'rh-employee-profile',
+    'rh-point-report', 'rh-settings', 'rh-payroll',
+    // legado — redirecionados para pasta do funcionário ou dashboard
+    'rh-admissions', 'rh-positions', 'rh-departments', 'rh-salaries', 'rh-benefits',
+    'rh-work-schedule', 'rh-commissions', 'rh-awards', 'rh-bonuses', 'rh-warnings',
+    'rh-vacations', 'rh-leaves', 'rh-exams', 'rh-payslips', 'rh-reports',
+  ];
 
-  const hrScreens = ['rh-dashboard', 'rh-employees', 'rh-admissions', 'rh-positions', 'rh-departments',
-    'rh-benefits', 'rh-commissions', 'rh-awards', 'rh-bonuses', 'rh-warnings', 'rh-vacations',
-    'rh-leaves', 'rh-reports', 'rh-settings', 'rh-point-report', 'rh-work-schedule'];
-  if (hrScreens.includes(screenId) && (role === 'rh' || canEditRh(user))) return true;
+  if (menuScreens.includes(screenId) || internalScreens.includes(screenId)) {
+    if (user.permissions?.includes(screenId)) return true;
+    if (screenId.startsWith('rh-') && user.permissions?.some((p) => p.startsWith('rh-'))) return true;
+    const role = (user.role || '').toLowerCase();
+    if (['rh', 'financeiro'].includes(role)) return true;
+  }
 
-  const allInternal = ['rh-timeclock', 'rh-employee-profile'];
-  if (allInternal.includes(screenId) && !user.clientId) return true;
+  if (['rh-timeclock', 'rh-point-report'].includes(screenId) && !user.clientId) return true;
 
   return false;
 }

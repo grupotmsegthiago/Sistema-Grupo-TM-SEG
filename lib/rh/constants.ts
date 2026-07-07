@@ -9,11 +9,16 @@ export const RH_BONUS_TYPES = ['Produtividade', 'Metas', 'Economia', 'Desempenho
 export const RH_LEAVE_TYPES = ['INSS', 'Acidente', 'Licença maternidade', 'Licença paternidade', 'Doença', 'Outros'] as const;
 export const RH_PAYMENT_STATUS = ['Pago', 'Pendente', 'Cancelado'] as const;
 export const RH_EXAM_TYPES = ['Admissional', 'Periódico', 'Retorno', 'Mudança de função', 'Demissional'] as const;
+export const RH_WARNING_TYPES = ['Verbal', 'Escrita', 'Suspensão'] as const;
 export const RH_DOC_TYPES = ['CPF', 'RG', 'CNH', 'Título', 'Reservista', 'Comprovante de residência', 'Carteira de Trabalho', 'PIS', 'Certificados', 'Contrato', 'Outros'] as const;
 
+/** IDs de menu visíveis no sidebar (estrutura simplificada). */
 export const RH_MENU_IDS = [
-  'rh-dashboard', 'rh-employees', 'rh-admissions', 'rh-positions', 'rh-departments',
-  'rh-salaries', 'rh-benefits', 'rh-work-schedule', 'rh-timeclock', 'rh-commissions',
-  'rh-awards', 'rh-bonuses', 'rh-warnings', 'rh-vacations', 'rh-leaves',
-  'rh-payslips', 'rh-payroll', 'rh-reports', 'rh-settings', 'rh-point-report',
+  'rh-dashboard', 'rh-employees', 'rh-timeclock',
+] as const;
+
+/** Telas internas (pasta do funcionário, configurações embutidas). */
+export const RH_INTERNAL_SCREEN_IDS = [
+  'rh-employee-workspace', 'rh-employee-form', 'rh-employee-profile',
+  'rh-settings', 'rh-payroll', 'rh-point-report',
 ] as const;
