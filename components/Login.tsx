@@ -77,6 +77,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             status,
             client_id,
             provider_id,
+            user_type,
             profile_id,
             force_password_change,
             permissions, 
@@ -117,6 +118,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         permissions: combinedPermissions,
         clientId: userCheck.client_id,
         providerId: userCheck.provider_id,
+        userType: userCheck.user_type || (userCheck.client_id ? 'client' : userCheck.provider_id ? 'provider' : 'internal'),
         force_password_change: userCheck.force_password_change
       };
 

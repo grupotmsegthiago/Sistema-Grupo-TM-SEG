@@ -1,11 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isInternalEmployeeAccount } from '../lib/employeePortalGuards';
 import { evaluateTimeclockGate, type TimeClockEntry } from '../lib/timeclockGate';
 
 export interface TimeclockUser {
   id: string;
   role?: string;
   user_type?: string | null;
+  userType?: string | null;
   client_id?: string | null;
+  clientId?: string | null;
+  provider_id?: string | null;
+  providerId?: string | null;
 }
 
 async function columnExists(sb: SupabaseClient, table: string, column: string): Promise<boolean> {
@@ -14,8 +19,7 @@ async function columnExists(sb: SupabaseClient, table: string, column: string): 
 }
 
 export async function userRequiresTimeClock(sb: SupabaseClient, user: TimeclockUser): Promise<boolean> {
-  if (user.user_type && user.user_type !== 'internal') return false;
-  if (user.client_id) return false;
+  if (!isInternalEmployeeAccount(user)) return false;
 
   if (await columnExists(sb, 'system_users', 'requires_time_clock')) {
     const { data } = await sb.from('system_users').select('requires_time_clock').eq('id', user.id).maybeSingle();

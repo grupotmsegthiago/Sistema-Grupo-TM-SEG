@@ -50,14 +50,18 @@ export function registerRhRoutes(
       const client = sb();
       const { data: userRow } = await client
         .from('system_users')
-        .select('user_type, client_id')
+        .select('user_type, client_id, provider_id')
         .eq('id', principal.id)
         .maybeSingle();
       const result = await getTimeclockCompliance(client, {
         id: principal.id,
         role: principal.role,
-        user_type: userRow?.user_type || 'internal',
+        user_type: userRow?.user_type || null,
+        userType: userRow?.user_type || principal.userType || null,
         client_id: userRow?.client_id || principal.clientId || null,
+        clientId: userRow?.client_id || principal.clientId || null,
+        provider_id: userRow?.provider_id || principal.providerId || null,
+        providerId: userRow?.provider_id || principal.providerId || null,
       });
       res.json({ ok: true, ...result });
     } catch (e: any) {
