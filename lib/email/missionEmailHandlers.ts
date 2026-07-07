@@ -100,6 +100,10 @@ export async function handleMissionSolicited(body: Record<string, any>) {
   const { data: missionCheck } = await sb.from('missions').select('*').eq('id', missionId).single();
   if (!missionCheck) return { status: 404, body: { error: 'Missão não encontrada' } };
 
+  if (missionCheck.is_same_os) {
+    return { status: 200, body: { success: true, skipped: true, message: 'OS vinculada (Mesma OS) — fornecedor não notificado.' } };
+  }
+
   const missionData = {
     id: missionId,
     client: missionCheck.client || '',
