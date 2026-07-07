@@ -162,7 +162,9 @@ const MissionRouteProgressBar: React.FC<Props> = ({
           {pct >= 100 ? (
             <Flag size={14} className="text-green-700 drop-shadow" strokeWidth={2.5} />
           ) : (
-            <EscoltaViaturaIcon className="h-[18px] w-[52px] shrink-0" />
+            <span className="inline-flex items-center justify-center rounded-full bg-slate-900/75 px-1 py-0.5 shadow-md ring-1 ring-white/30">
+              <EscoltaViaturaIcon className="h-[14px] w-[44px] shrink-0 text-white drop-shadow" />
+            </span>
           )}
         </div>
       </div>
