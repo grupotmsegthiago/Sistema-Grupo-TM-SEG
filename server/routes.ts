@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 import pg from "pg";
 import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider } from "./emailService";
+import { runEmailHealthCheck } from "./emailHealth";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { registerRhRoutes } from "./rhRoutes";
 import { runRhMigrations } from "./rhMigrations";
@@ -1358,6 +1359,17 @@ export async function registerRoutes(
     }
   });
 
+  app.get('/api/whatsapp/connection/extension-token', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const provider = await resolveWhatsappProvider(req);
+      if (!provider?.getExtensionToken) return res.status(400).json({ error: 'Provider não suporta token de extensão' });
+      const result = await provider.getExtensionToken();
+      res.json({ ok: !!result.token, ...result });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get('/api/whatsapp/connection/qr-code', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
     try {
       const provider = await resolveWhatsappProvider(req);
@@ -1504,6 +1516,16 @@ export async function registerRoutes(
       res.json({ success, message: success ? 'E-mail de teste enviado!' : 'Falha ao enviar e-mail' });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/email/health", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const sendTestTo = typeof req.query?.sendTestTo === 'string' ? req.query.sendTestTo : undefined;
+      const health = await runEmailHealthCheck(sendTestTo ? { sendTestTo } : undefined);
+      res.json(health);
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
     }
   });
 

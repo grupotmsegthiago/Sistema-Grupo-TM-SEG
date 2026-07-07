@@ -6,6 +6,7 @@ import AlertRecipientsSettings from './AlertRecipientsSettings';
 import AuditSummarySettings from './AuditSummarySettings';
 import WhatsAppTelemetryDashboard from './WhatsAppTelemetryDashboard';
 import WhatsAppConnectionPanel from './WhatsAppConnectionPanel';
+import EmailHealthPanel from './EmailHealthPanel';
 
 type Schedule = { emails: string; hour: number; minute: number };
 type DailyReports = {
@@ -767,6 +768,8 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
       </div>
 
       <AlertRecipientsSettings />
+
+      <EmailHealthPanel />
 
       <WhatsAppConnectionPanel />
 

@@ -104,6 +104,9 @@
     },
     "api/rh-seed-employees.ts": {
       "maxDuration": 120
+    },
+    "api/email-health.ts": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
@@ -230,6 +233,10 @@
     {
       "source": "/api/rh/seed-employees",
       "destination": "/api/rh-seed-employees"
+    },
+    {
+      "source": "/api/email/health",
+      "destination": "/api/email-health"
     },
     {
       "source": "/(.*)",
