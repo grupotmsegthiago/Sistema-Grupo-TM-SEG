@@ -9,6 +9,7 @@ import { logAction } from '../lib/logger';
 import { useNotification } from '../lib/NotificationContext';
 import { useLoadScript, Autocomplete } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
+import { pickRouteEndpoints, resolveRouteDistanceClient } from '../lib/resolveRouteDistanceClient';
 
 import ClientForm from './ClientForm';
 import ProviderForm from './ProviderForm';
@@ -964,6 +965,21 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       let realDist = parseFloat(route.distance) || 0;
       const googleDistKm = (route as any)._googleDistKm || 0;
       if (realDist <= 0 && googleDistKm > 0) realDist = googleDistKm;
+
+      if (realDist <= 0) {
+          const endpoints = pickRouteEndpoints(route, formData.origin, formData.destination);
+          if (endpoints.origin && endpoints.destination) {
+              const resolved = await resolveRouteDistanceClient(endpoints.origin, endpoints.destination);
+              if (resolved && resolved.distKm > 0) {
+                  realDist = resolved.distKm;
+                  (route as any)._googleDistKm = resolved.distKm;
+                  (route as any)._googleDurationMin = resolved.durationMin;
+                  if (parseFloat(String(route.distance || '0')) <= 0) {
+                      (route as any).distance = String(resolved.distKm);
+                  }
+              }
+          }
+      }
       const originUpper = normalizeStr(route.origin);
       const originCity = originUpper.split(',')[0].trim();
       const geoInfo = CITY_MAP[originCity] || { uf: '', region: '' };
@@ -1055,7 +1071,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           if (revTable) setManualRevenueTableId(revTable.id.toString());
           if (cstTable) setManualCostTableId(cstTable.id.toString());
       } finally { setIsCalculating(false); }
-  }, [formData.client, formData.provider, formData.applyCeva200km, formData.raioKm, formData.applyVtc02h, formData.isSameOs, clientPriceTables, providerCostTables, manualOverrides.revenue, manualOverrides.cost]);
+  }, [formData.client, formData.provider, formData.origin, formData.destination, formData.applyCeva200km, formData.raioKm, formData.applyVtc02h, formData.isSameOs, clientPriceTables, providerCostTables, manualOverrides.revenue, manualOverrides.cost]);
 
   const calculateTollQualP = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; distance?: number; provider?: string } | null> => {
       try {
@@ -1235,30 +1251,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       return null;
   };
 
-  /** Distância rodoviária: Google no browser; se falhar, API do servidor (Directions + múltiplas chaves). */
-  const resolveRouteDistance = async (origin: string, destination: string): Promise<{ distKm: number; durationMin: number; source?: string } | null> => {
-      const originT = (origin || '').trim();
-      const destT = (destination || '').trim();
-      if (!originT || !destT) return null;
-
-      const clientResult = await getGoogleMapsDistance(originT, destT);
-      if (clientResult && clientResult.distKm > 0) return { ...clientResult, source: 'google-client' };
-
-      try {
-          const qs = new URLSearchParams({ origin: originT, destination: destT });
-          const resp = await authFetch(`/api/distance-matrix?${qs}`);
-          const data = await resp.json().catch(() => ({}));
-          if (data?.success && Number(data.distanceKm) > 0) {
-              return {
-                  distKm: Math.round(Number(data.distanceKm)),
-                  durationMin: Number(data.durationMin) || 0,
-                  source: data.source || 'server',
-              };
-          }
-      } catch (e) {
-          console.error('Falha ao consultar distância no servidor:', e);
-      }
-      return null;
+  /** Distância rodoviária: servidor primeiro; Google no browser como fallback. */
+  const resolveRouteDistance = async (origin: string, destination: string) => {
+      return resolveRouteDistanceClient(origin, destination, getGoogleMapsDistance);
   };
 
   const applyDistanceFromToll = (distanceKm: number | undefined, destination: string) => {
@@ -1281,11 +1276,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       setOperatorConfirmedCalc(false);
 
       const routeDist = parseFloat(route.distance) || 0;
-      const gResult = await resolveRouteDistance(route.origin, route.destination);
+      const endpoints = pickRouteEndpoints(route, formData.origin, formData.destination);
+      const gResult = await resolveRouteDistance(endpoints.origin, endpoints.destination);
       if (gResult) {
           if (gResult.distKm > 0) {
               if (routeDist <= 0) (route as any).distance = gResult.distKm.toString();
               (route as any)._googleDistKm = gResult.distKm;
+              (route as any).origin = endpoints.origin;
+              (route as any).destination = endpoints.destination;
           }
           if (gResult.durationMin > 0) {
               (route as any)._googleDurationMin = gResult.durationMin;
