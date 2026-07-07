@@ -20,6 +20,7 @@ import {
 import ExcelJS from 'exceljs';
 import FinancialTransactionForm from './FinancialTransactionForm';
 import BankStatementImporter from './BankStatementImporter';
+import FinancialDocConferencia from './FinancialDocConferencia';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -786,7 +787,13 @@ const FinancialTransactionList: React.FC = () => {
         </div>
     );
 
-    const renderTransactionTable = (list: FinancialTransaction[], typeLabel: string) => (
+    const handleTransactionDocUpdate = (id: string, patch: Partial<FinancialTransaction>) => {
+        setTransactions(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
+    };
+
+    const renderTransactionTable = (list: FinancialTransaction[], typeLabel: string, showConferencia = false) => {
+        const colCount = showConferencia ? 9 : 8;
+        return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -798,15 +805,16 @@ const FinancialTransactionList: React.FC = () => {
                             <th className="px-4 py-3">Categoria</th>
                             <th className="px-4 py-3 text-center">Forma Pgto</th>
                             <th className="px-4 py-3 text-center">Status</th>
+                            {showConferencia && <th className="px-4 py-3 text-center">Conferência</th>}
                             <th className="px-4 py-3 text-right">Valor</th>
                             <th className="px-4 py-3 text-right no-print">Ações</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {loading ? (
-                            <tr><td colSpan={8} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-red-700"/></td></tr>
+                            <tr><td colSpan={colCount} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-red-700"/></td></tr>
                         ) : list.length === 0 ? (
-                            <tr><td colSpan={8} className="p-12 text-center text-gray-400 font-bold uppercase italic text-sm">Nenhum lançamento encontrado.</td></tr>
+                            <tr><td colSpan={colCount} className="p-12 text-center text-gray-400 font-bold uppercase italic text-sm">Nenhum lançamento encontrado.</td></tr>
                         ) : list.map(t => {
                             const isOverdue = t.status === 'PENDING' && t.due_date.split('T')[0] < getTodayBR();
                             return (
@@ -876,6 +884,11 @@ const FinancialTransactionList: React.FC = () => {
                                             <option value="CANCELLED">Cancelado</option>
                                         </select>
                                     </td>
+                                    {showConferencia && (
+                                        <td className="px-2 py-3 text-center">
+                                            <FinancialDocConferencia transaction={t} onUpdate={handleTransactionDocUpdate} />
+                                        </td>
+                                    )}
                                     <td className={`px-4 py-3 text-right font-black font-mono text-sm ${t.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
                                         {formatCurrency(t.amount)}
                                     </td>
@@ -896,7 +909,8 @@ const FinancialTransactionList: React.FC = () => {
                 <span className="font-mono font-black text-gray-900">Total: {formatCurrency(list.reduce((a, t) => a + t.amount, 0))}</span>
             </div>
         </div>
-    );
+        );
+    };
 
     const renderStepContent = () => {
         switch (activeStep) {
@@ -974,7 +988,7 @@ const FinancialTransactionList: React.FC = () => {
                             })()}
                         </div>
                         {renderFilters()}
-                        {renderTransactionTable(filteredByStep, isPagar ? 'Despesa' : 'Receita')}
+                        {renderTransactionTable(filteredByStep, isPagar ? 'Despesa' : 'Receita', isPagar)}
                     </>
                 );
             }
