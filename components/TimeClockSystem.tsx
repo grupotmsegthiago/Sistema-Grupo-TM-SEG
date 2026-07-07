@@ -9,7 +9,14 @@ import { useNotification } from '../lib/NotificationContext';
 
 type Stage = 'IN' | 'BREAK_START' | 'BREAK_END' | 'OUT';
 
-const TimeClockSystem: React.FC = () => {
+interface Props {
+  gateMode?: boolean;
+  forcedStage?: Stage;
+  gateTitle?: string;
+  onPunchComplete?: () => void;
+}
+
+const TimeClockSystem: React.FC<Props> = ({ gateMode = false, forcedStage, gateTitle, onPunchComplete }) => {
     const { showNotification } = useNotification();
     const [isProcessing, setIsProcessing] = useState(false);
     const [location, setLocation] = useState<{lat: number, lng: number} | null>(null);
@@ -27,6 +34,10 @@ const TimeClockSystem: React.FC = () => {
         getGeolocation();
         fetchTodayCycle();
     }, []);
+
+    useEffect(() => {
+        if (forcedStage) setCurrentStage(forcedStage);
+    }, [forcedStage]);
 
     useRealtimeRefresh('time_clock', () => fetchTodayCycle());
 
@@ -69,11 +80,14 @@ const TimeClockSystem: React.FC = () => {
         
         if (data) {
             setHistory(data);
-            if (data.length === 0) setCurrentStage('IN');
-            else if (data.length === 1) setCurrentStage('BREAK_START');
-            else if (data.length === 2) setCurrentStage('BREAK_END');
-            else if (data.length === 3) setCurrentStage('OUT');
-            else setCurrentStage('OUT'); // Já finalizou
+            let stage: Stage = 'IN';
+            if (data.length === 0) stage = 'IN';
+            else if (!data.some((h) => h.type === 'IN')) stage = 'IN';
+            else if (!data.some((h) => h.type === 'BREAK_START')) stage = 'BREAK_START';
+            else if (!data.some((h) => h.type === 'BREAK_END')) stage = 'BREAK_END';
+            else if (!data.some((h) => h.type === 'OUT')) stage = 'OUT';
+            else stage = 'OUT';
+            setCurrentStage(forcedStage || stage);
         }
     };
 
@@ -102,22 +116,24 @@ const TimeClockSystem: React.FC = () => {
                 throw new Error('Falha na Biometria: Remova óculos/boné e garanta boa luz.');
             }
 
+            const punchType = forcedStage || currentStage;
             const { error } = await supabase.from('time_clock').insert([{
                 user_id: currentUser.id,
                 user_name: currentUser.name,
-                type: currentStage,
+                type: punchType,
                 timestamp: new Date().toISOString(),
                 latitude: location.lat,
                 longitude: location.lng,
                 photo_url: `data:image/jpeg;base64,${photoBase64}`,
                 ai_verification: true,
-                metadata: { stage: currentStage, device: 'mobile' }
+                metadata: { stage: punchType, device: gateMode ? 'gate' : 'mobile' }
             }]);
 
             if (error) throw error;
 
-            showNotification('Sucesso', `Registro de ${currentStage} efetuado com sucesso!`, 'success');
+            showNotification('Sucesso', `Registro de ${punchType} efetuado com sucesso!`, 'success');
             await fetchTodayCycle();
+            onPunchComplete?.();
         } catch (e) {
             const msg = e instanceof Error ? e.message : 'Erro desconhecido';
             showNotification('Erro', msg, 'error');
@@ -126,19 +142,20 @@ const TimeClockSystem: React.FC = () => {
         }
     };
 
-    const getStageInfo = () => {
-        switch(currentStage) {
+    const stageForButton = forcedStage || currentStage;
+    const stageInfo = (() => {
+        switch (stageForButton) {
             case 'IN': return { label: 'Entrada de Turno', icon: UserCheck, color: 'bg-green-600' };
-            case 'BREAK_START': return { label: 'Pausa Almoço', icon: Coffee, color: 'bg-orange-500' };
+            case 'BREAK_START': return { label: 'Saída Almoço', icon: Coffee, color: 'bg-orange-500' };
             case 'BREAK_END': return { label: 'Retorno Almoço', icon: ArrowRight, color: 'bg-blue-600' };
-            case 'OUT': return { label: 'Fim de Turno', icon: LogOut, color: 'bg-red-600' };
+            case 'OUT': return { label: 'Fim de Expediente', icon: LogOut, color: 'bg-red-600' };
         }
-    };
-
-    const stage = getStageInfo();
+    })();
+    const alreadyDone = history.some((h) => h.type === stageForButton);
 
     return (
-        <div className="max-w-4xl mx-auto space-y-6 pb-20 p-4">
+        <div className={`max-w-4xl mx-auto space-y-6 pb-20 ${gateMode ? 'p-2' : 'p-4'}`}>
+            {!gateMode && (
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="flex items-center gap-4">
                     <div className="p-3 bg-red-700 text-white rounded-2xl shadow-lg animate-pulse"><Fingerprint size={28} /></div>
@@ -154,6 +171,10 @@ const TimeClockSystem: React.FC = () => {
                     <p className="text-xl font-black text-white font-mono">{formatNowTimeBR()}</p>
                 </div>
             </div>
+            )}
+            {gateMode && gateTitle && (
+              <p className="text-center text-xs font-bold text-slate-500 uppercase tracking-widest px-4">{gateTitle}</p>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <div className="lg:col-span-7 space-y-4">
@@ -177,10 +198,10 @@ const TimeClockSystem: React.FC = () => {
                         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full px-8">
                             <button 
                                 onClick={handleClockAction}
-                                disabled={isProcessing || (history.length >= 4)}
-                                className={`w-full py-5 rounded-[2rem] ${stage.color} text-white font-black uppercase text-sm shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-3 border-b-4 border-black/20`}
+                                disabled={isProcessing || alreadyDone || (history.some((h) => h.type === 'OUT'))}
+                                className={`w-full py-5 rounded-[2rem] ${stageInfo.color} text-white font-black uppercase text-sm shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-3 border-b-4 border-black/20`}
                             >
-                                <stage.icon size={20} /> {history.length >= 4 ? 'Jornada Concluída' : `Registrar ${stage.label}`}
+                                <stageInfo.icon size={20} /> {alreadyDone ? 'Já registrado' : history.some((h) => h.type === 'OUT') ? 'Jornada Concluída' : `Registrar ${stageInfo.label}`}
                             </button>
                         </div>
                     </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Save, Loader2, User, Building2, FileText, Landmark, DollarSign } from 'lucide-react';
+import { Save, Loader2, User, Building2, FileText, Landmark, DollarSign, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useNotification } from '../../lib/NotificationContext';
 import RhPageHeader from './shared/RhPageHeader';
@@ -122,6 +122,10 @@ const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved, embedded, initia
         else await supabase.from('rh_employee_bank_accounts').insert([bankPayload]);
       }
 
+      if (form.user_id && form.requires_time_clock !== undefined) {
+        await supabase.from('system_users').update({ requires_time_clock: !!form.requires_time_clock }).eq('id', form.user_id);
+      }
+
       showNotification('success', 'Funcionário salvo com sucesso!');
       if (form.full_name) onNameLoaded?.(form.full_name);
       onSaved?.(employeeId!);
@@ -200,6 +204,13 @@ const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved, embedded, initia
             <div><label className={RH_LABEL_CLASS}>Centro de custo</label><input className={RH_INPUT_CLASS} value={form.cost_center || ''} onChange={(e) => set('cost_center', e.target.value)} /></div>
             <div><label className={RH_LABEL_CLASS}>Fim experiência</label><input type="date" className={RH_INPUT_CLASS} value={form.probation_end_date || ''} onChange={(e) => set('probation_end_date', e.target.value)} /></div>
             <div className="md:col-span-2"><label className={RH_LABEL_CLASS}>Vincular usuário do sistema</label><select className={RH_SELECT_CLASS} value={form.user_id || ''} onChange={(e) => set('user_id', e.target.value || null)}><option value="">Sem vínculo</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}</select></div>
+            <div className="md:col-span-2">
+              <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer ${form.requires_time_clock ? 'bg-amber-50 border-amber-300' : 'bg-gray-50 border-gray-200'}`}>
+                <input type="checkbox" className="w-4 h-4" checked={!!form.requires_time_clock} onChange={(e) => set('requires_time_clock', e.target.checked)} />
+                <Clock size={16} className={form.requires_time_clock ? 'text-amber-600' : 'text-gray-400'} />
+                <span className="text-xs font-bold text-gray-700">Bater ponto obrigatório ao acessar o sistema</span>
+              </label>
+            </div>
           </div>
         )}
 

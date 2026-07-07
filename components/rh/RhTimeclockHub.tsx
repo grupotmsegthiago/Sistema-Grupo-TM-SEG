@@ -3,32 +3,37 @@ import { Clock, BarChart3 } from 'lucide-react';
 import RhPageHeader from './shared/RhPageHeader';
 import TimeClockSystem from '../TimeClockSystem';
 import RHPointReport from '../RHPointReport';
+import { canViewTimeclockReport, getRhUser } from '../../lib/rh/permissions';
 
 const RhTimeclockHub: React.FC = () => {
-  const [tab, setTab] = useState<'registro' | 'relatorio'>('registro');
+  const rhUser = getRhUser();
+  const showReport = canViewTimeclockReport(rhUser);
+  const [tab, setTab] = useState<'registro' | 'relatorio'>(showReport ? 'relatorio' : 'registro');
 
   return (
     <div>
-      <RhPageHeader title="Folha de Ponto" subtitle="Registro facial e relatórios de jornada" icon={Clock} />
+      <RhPageHeader title="Folha de Ponto" subtitle={showReport ? 'Auditoria RH e registros de jornada' : 'Registro de jornada'} icon={Clock} />
 
-      <div className="flex gap-2 mb-4">
-        <button
-          type="button"
-          onClick={() => setTab('registro')}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase ${tab === 'registro' ? 'bg-black text-white' : 'bg-white border text-gray-600'}`}
-        >
-          <Clock size={14} /> Registro de ponto
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('relatorio')}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase ${tab === 'relatorio' ? 'bg-black text-white' : 'bg-white border text-gray-600'}`}
-        >
-          <BarChart3 size={14} /> Relatório de ponto
-        </button>
-      </div>
+      {showReport && (
+        <div className="flex gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => setTab('relatorio')}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase ${tab === 'relatorio' ? 'bg-black text-white' : 'bg-white border text-gray-600'}`}
+          >
+            <BarChart3 size={14} /> Relatório de ponto
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('registro')}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase ${tab === 'registro' ? 'bg-black text-white' : 'bg-white border text-gray-600'}`}
+          >
+            <Clock size={14} /> Registro manual
+          </button>
+        </div>
+      )}
 
-      {tab === 'registro' ? <TimeClockSystem /> : <RHPointReport />}
+      {showReport && tab === 'relatorio' ? <RHPointReport /> : <TimeClockSystem />}
     </div>
   );
 };

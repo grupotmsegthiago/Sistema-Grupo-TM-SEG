@@ -62,6 +62,7 @@ export interface RhEmployee {
   dismissal_date?: string;
   dismissal_reason?: string;
   notes?: string;
+  requires_time_clock?: boolean;
   created_at?: string;
   updated_at?: string;
   deleted_at?: string;

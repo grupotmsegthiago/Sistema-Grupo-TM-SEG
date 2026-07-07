@@ -41,6 +41,15 @@ export function canViewEmployee(employeeId: string, user: RhUserContext = getRhU
   return user.permissions?.includes('rh-employees');
 }
 
+/** Relatório e auditoria de ponto — somente equipe RH (não o colaborador comum). */
+export function canViewTimeclockReport(user: RhUserContext = getRhUser()): boolean {
+  if (isRhAdmin(user)) return true;
+  const role = (user.role || '').toLowerCase();
+  if (role === 'rh' || user.permissions?.includes('rh-timeclock-report')) return true;
+  if (canEditRh(user)) return true;
+  return false;
+}
+
 /** Qualquer permissão rh-* ou perfil RH libera o módulo. */
 function hasAnyRhPermission(user: RhUserContext): boolean {
   if (user.permissions?.some((p) => p === '*' || p.startsWith('rh-'))) return true;
@@ -50,6 +59,11 @@ function hasAnyRhPermission(user: RhUserContext): boolean {
 
 export function canAccessRhScreen(screenId: string, user: RhUserContext = getRhUser()): boolean {
   if (isRhAdmin(user)) return true;
+
+  if (screenId === 'rh-timeclock' || screenId === 'rh-point-report') {
+    return canViewTimeclockReport(user);
+  }
+
   if (!hasAnyRhPermission(user)) return false;
 
   const menuScreens = ['rh-dashboard', 'rh-employees', 'rh-timeclock'];
@@ -68,8 +82,6 @@ export function canAccessRhScreen(screenId: string, user: RhUserContext = getRhU
     const role = (user.role || '').toLowerCase();
     if (['rh', 'financeiro'].includes(role)) return true;
   }
-
-  if (['rh-timeclock', 'rh-point-report'].includes(screenId) && !user.clientId) return true;
 
   return false;
 }
