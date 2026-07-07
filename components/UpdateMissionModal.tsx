@@ -18,6 +18,7 @@ import {
   waitUntil,
 } from '../lib/brandPhotoStamp';
 import { useNotification } from '../lib/NotificationContext';
+import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
   Layers, Navigation, History, 
@@ -2313,6 +2314,32 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 } catch (e) {
                     console.warn('[CANCEL RECALC] Falha no recálculo automático:', e);
                 }
+            }
+
+            // Comissão RH automática ao concluir OS (fire-and-forget).
+            if (finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED) {
+                void (async () => {
+                    try {
+                        const { data: fresh } = await supabase
+                            .from('missions')
+                            .select('revenue_value, client, mission_type')
+                            .eq('id', mission.id)
+                            .single();
+                        const result = await autoCalculateMissionCommissions(supabase, {
+                            missionId: mission.id,
+                            revenueValue: Number(fresh?.revenue_value ?? mission.revenue_value ?? editData.revenueValue ?? 0),
+                            clientName: fresh?.client || mission.client || '',
+                            serviceType: fresh?.mission_type || mission.mission_type || editData.missionType || '',
+                            agentNames: [editData.agent1, editData.agent2].filter(Boolean) as string[],
+                        });
+                        const inserted = result.results.filter((r) => r.inserted);
+                        if (inserted.length) {
+                            console.log(`[RH Commission] OS ${mission.id}: ${inserted.length} comissão(ões) gerada(s)`, inserted);
+                        }
+                    } catch (e) {
+                        console.warn('[RH Commission] Falha no cálculo automático:', e);
+                    }
+                })();
             }
 
             await supabase.from('system_logs').insert([{

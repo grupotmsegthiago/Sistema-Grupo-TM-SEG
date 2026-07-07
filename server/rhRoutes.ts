@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from 'express';
-import crypto from 'crypto';
 import { createSupabaseAdminClient } from './supabaseConfig';
 import { calcSalary } from '../lib/rh/payroll';
+import { calculateCommissionForEmployee } from '../lib/rh/commissionAuto';
 import type { RhSalaryConfig, RhTaxBracket } from '../types/rh';
 
 function sb() {
@@ -158,46 +158,19 @@ export function registerRhRoutes(
       const { missionId, employeeId, revenueValue, clientName, serviceType } = req.body || {};
       if (!missionId || !employeeId) return res.status(400).json({ error: 'missionId e employeeId obrigatórios' });
 
-      const { data: rules } = await sb().from('rh_commission_rules')
-        .select('*').eq('employee_id', employeeId).eq('active', true).is('deleted_at', null);
-
-      let total = 0;
-      const details: any[] = [];
-      for (const rule of rules || []) {
-        if (rule.client_filter && clientName && !String(clientName).toLowerCase().includes(String(rule.client_filter).toLowerCase())) continue;
-        if (rule.service_filter && serviceType && rule.service_filter !== serviceType) continue;
-
-        let amount = 0;
-        if (rule.calc_type === 'percent') {
-          const base = Number(revenueValue || 0);
-          if (base >= Number(rule.min_threshold || 0)) {
-            amount = base * (Number(rule.percent_value || 0) / 100);
-          }
-        } else {
-          amount = Number(rule.fixed_value || 0);
-        }
-        if (amount > 0) {
-          total += amount;
-          details.push({ ruleId: rule.id, ruleName: rule.name, amount });
-        }
+      const result = await calculateCommissionForEmployee(sb(), {
+        missionId,
+        employeeId,
+        revenueValue,
+        clientName,
+        serviceType,
+        skipAudit: true,
+      });
+      if (result.inserted) {
+        await audit('rh_commissions', missionId, 'auto_calculate', req, result.details);
       }
 
-      if (total > 0) {
-        const month = new Date().toISOString().slice(0, 7);
-        await sb().from('rh_commissions').insert([{
-          id: crypto.randomUUID(),
-          employee_id: employeeId,
-          mission_id: missionId,
-          reference_month: month,
-          description: `Comissão OS ${missionId}`,
-          base_amount: revenueValue || 0,
-          commission_amount: total,
-          status: 'Pendente',
-        }]);
-        await audit('rh_commissions', missionId, 'auto_calculate', req, details);
-      }
-
-      res.json({ ok: true, total, details });
+      res.json({ ok: true, total: result.total, details: result.details, inserted: result.inserted, skipped: result.skipped });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
