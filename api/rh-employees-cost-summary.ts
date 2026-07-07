@@ -1,4 +1,4 @@
-import { authToken } from '../lib/email/missionEmailHandlers.js';
+import { authToken } from '../lib/email/missionEmailHelpers.js';
 import { createRhAdminClient } from '../lib/rh/adminSupabase.js';
 import { loadEmployeeCostSummary } from '../lib/rh/loadEmployeeCostSummary.js';
 
