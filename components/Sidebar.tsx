@@ -200,21 +200,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         if (!isAuthorized) return false;
     }
 
-    // RH — Funcionários: somente Diretoria e perfil RH; demais telas RH por permissão
+    // RH — somente Diretoria e perfil RH
     if (itemId === 'rh-group' || itemId.startsWith('rh-')) {
-      const employeesOnly = ['rh-employees', 'rh-employee-workspace', 'rh-employee-form', 'rh-employee-profile'];
-      if (employeesOnly.includes(itemId)) {
-        return role === 'diretoria' || role === 'rh';
-      }
-      if (role === 'administrador' || role === 'diretoria' || userPermissions.includes('*')) return true;
-      if (role === 'financeiro' && ['rh-dashboard', 'rh-timeclock'].includes(itemId)) return true;
-      if (role === 'rh') return true;
-      if (itemId === 'rh-timeclock' && !currentUser?.clientId) return true;
-      if (itemId === 'rh-group') {
-        return role === 'diretoria' || role === 'rh' || role === 'financeiro'
-          || userPermissions.some((p: string) => p.startsWith('rh-'));
-      }
-      return userPermissions.includes(itemId);
+      return role === 'diretoria' || role === 'rh';
     }
 
     // REGRAS DO PERFIL AVANÇADO

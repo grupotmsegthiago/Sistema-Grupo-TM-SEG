@@ -24,6 +24,12 @@ export function isRhFinance(user: RhUserContext = getRhUser()): boolean {
   return isRhAdmin(user) || role === 'financeiro' || user.permissions?.includes('rh-salaries') || false;
 }
 
+/** Módulo RH completo — somente Diretoria e perfil RH. */
+export function canAccessRhModule(user: RhUserContext = getRhUser()): boolean {
+  const role = (user.role || '').toLowerCase();
+  return role === 'diretoria' || role === 'rh';
+}
+
 /** Telas de cadastro/custos de funcionários — somente Diretoria e perfil RH. */
 export const RH_EMPLOYEES_SCREENS = [
   'rh-employees',
@@ -33,8 +39,7 @@ export const RH_EMPLOYEES_SCREENS = [
 ] as const;
 
 export function canAccessEmployeesScreen(user: RhUserContext = getRhUser()): boolean {
-  const role = (user.role || '').toLowerCase();
-  return role === 'diretoria' || role === 'rh';
+  return canAccessRhModule(user);
 }
 
 export function canViewEmployeeCosts(user: RhUserContext = getRhUser()): boolean {
@@ -58,39 +63,7 @@ export function canViewEmployee(employeeId: string, user: RhUserContext = getRhU
   return false;
 }
 
-/** Qualquer permissão rh-* ou perfil RH libera o módulo. */
-function hasAnyRhPermission(user: RhUserContext): boolean {
-  if (user.permissions?.some((p) => p === '*' || p.startsWith('rh-'))) return true;
-  const role = (user.role || '').toLowerCase();
-  return ['rh', 'financeiro', 'administrador', 'diretoria'].includes(role);
-}
-
 export function canAccessRhScreen(screenId: string, user: RhUserContext = getRhUser()): boolean {
-  if ((RH_EMPLOYEES_SCREENS as readonly string[]).includes(screenId)) {
-    return canAccessEmployeesScreen(user);
-  }
-
-  if (isRhAdmin(user)) return true;
-  if (!hasAnyRhPermission(user)) return false;
-
-  const menuScreens = ['rh-dashboard', 'rh-employees', 'rh-timeclock'];
-  const internalScreens = [
-    'rh-employee-workspace', 'rh-employee-form', 'rh-employee-profile',
-    'rh-point-report', 'rh-settings', 'rh-payroll',
-    // legado — redirecionados para pasta do funcionário ou dashboard
-    'rh-admissions', 'rh-positions', 'rh-departments', 'rh-salaries', 'rh-benefits',
-    'rh-work-schedule', 'rh-commissions', 'rh-awards', 'rh-bonuses', 'rh-warnings',
-    'rh-vacations', 'rh-leaves', 'rh-exams', 'rh-payslips', 'rh-reports',
-  ];
-
-  if (menuScreens.includes(screenId) || internalScreens.includes(screenId)) {
-    if (user.permissions?.includes(screenId)) return true;
-    if (screenId.startsWith('rh-') && user.permissions?.some((p) => p.startsWith('rh-'))) return true;
-    const role = (user.role || '').toLowerCase();
-    if (['rh', 'financeiro'].includes(role)) return true;
-  }
-
-  if (['rh-timeclock', 'rh-point-report'].includes(screenId) && !user.clientId) return true;
-
-  return false;
+  if (screenId !== 'rh-group' && !screenId.startsWith('rh-')) return false;
+  return canAccessRhModule(user);
 }
