@@ -42,6 +42,20 @@ export function registerRhRoutes(
     res.json({ ok: true, module: 'rh' });
   });
 
+  app.get('/api/rh/employees', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const { data, error } = await sb()
+        .from('rh_employees')
+        .select('*, rh_positions(name), rh_departments(name)')
+        .is('deleted_at', null)
+        .order('full_name');
+      if (error) throw error;
+      res.json({ ok: true, employees: data || [], total: data?.length || 0 });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   app.post('/api/rh/payroll/calculate', ...rhAuth, async (req: Request, res: Response) => {
     try {
       const { employeeId, referenceMonth } = req.body || {};
