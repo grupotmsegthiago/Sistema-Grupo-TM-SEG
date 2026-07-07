@@ -8,7 +8,14 @@ const DEFAULT_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
 let pool: pg.Pool | null = null;
 
 function getPool(): pg.Pool | null {
-  const connectionString = String(process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || '').trim();
+  const connectionString = String(
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_URL_NON_POOLING ||
+    process.env.POSTGRES_PRISMA_URL ||
+    process.env.SUPABASE_DB_URL ||
+    '',
+  ).trim();
   if (!connectionString) return null;
   if (!pool) pool = new pg.Pool({ connectionString, max: 2, ssl: { rejectUnauthorized: false } });
   return pool;
@@ -40,7 +47,11 @@ WHERE NOT EXISTS (SELECT 1 FROM rh_tax_brackets LIMIT 1);`,
 
 async function runViaPg(sql: string): Promise<void> {
   const p = getPool();
-  if (!p) throw new Error('DATABASE_URL não configurada');
+  if (!p) throw new Error('DATABASE_URL/POSTGRES_URL não configurada na Vercel');
+  // Garante função exec_sql para migrações futuras
+  await p.query(`CREATE OR REPLACE FUNCTION public.exec_sql(sql TEXT)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN EXECUTE sql; END; $$;`);
   await p.query(sql);
 }
 
@@ -73,7 +84,9 @@ export async function ensureRhTables(): Promise<{ method: string; tables: string
       method = 'exec_sql';
       await runViaExecSql(sql);
     } else {
-      throw e;
+      throw new Error(
+        `${e?.message || e}. Configure POSTGRES_URL na Vercel (integração Supabase) ou execute migrations/2026_07_07_rh_module.sql no SQL Editor.`,
+      );
     }
   }
 
