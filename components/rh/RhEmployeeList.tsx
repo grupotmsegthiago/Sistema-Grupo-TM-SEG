@@ -27,6 +27,7 @@ const COST_LABELS: { key: keyof RhEmployeeCostBreakdown; label: string }[] = [
   { key: 'commissions', label: 'Comissões' },
   { key: 'awards', label: 'Premiações' },
   { key: 'bonuses', label: 'Bonificações' },
+  { key: 'netSalary', label: 'Salário líquido (estimado)' },
 ];
 
 const RhEmployeeList: React.FC<Props> = ({ onAdd, onOpen }) => {
@@ -135,7 +136,7 @@ const RhEmployeeList: React.FC<Props> = ({ onAdd, onOpen }) => {
   const renderCostCell = (employeeId: string, field: keyof RhEmployeeCostBreakdown) => {
     const cost = costByEmployee[employeeId];
     if (!cost) return '—';
-    if (!cost.hasSalaryConfig && field !== 'commissions' && field !== 'awards' && field !== 'bonuses' && field !== 'variablePay' && field !== 'companyCost') {
+    if (!cost?.hasSalaryConfig && field !== 'commissions' && field !== 'awards' && field !== 'bonuses' && field !== 'variablePay' && field !== 'companyCost') {
       return '—';
     }
     const value = cost[field];

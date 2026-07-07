@@ -108,6 +108,9 @@
     "api/rh-employees.ts": {
       "maxDuration": 60
     },
+    "api/rh-employees-cost-summary.ts": {
+      "maxDuration": 60
+    },
     "api/email-health.ts": {
       "maxDuration": 60
     }
@@ -236,6 +239,10 @@
     {
       "source": "/api/rh/seed-employees",
       "destination": "/api/rh-seed-employees"
+    },
+    {
+      "source": "/api/rh/employees/cost-summary",
+      "destination": "/api/rh-employees-cost-summary"
     },
     {
       "source": "/api/rh/employees",

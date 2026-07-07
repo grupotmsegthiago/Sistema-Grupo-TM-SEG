@@ -19,6 +19,8 @@ export interface RhEmployeeCostBreakdown {
   variablePay: number;
   /** Custo mensal total para a empresa (bruto + FGTS + benefícios + variáveis). */
   companyCost: number;
+  /** Salário líquido estimado (bruto + benefícios − descontos). */
+  netSalary: number;
   calc: RhPayrollCalc | null;
 }
 
@@ -49,6 +51,7 @@ export function buildEmployeeCostBreakdown(
       bonuses,
       variablePay: commissions + awards + bonuses,
       companyCost: commissions + awards + bonuses,
+      netSalary: 0,
       calc: null,
     };
   }
@@ -74,6 +77,7 @@ export function buildEmployeeCostBreakdown(
     bonuses,
     variablePay,
     companyCost,
+    netSalary: calc.netSalary,
     calc,
   };
 }
@@ -94,6 +98,7 @@ export function sumCostBreakdowns(rows: RhEmployeeCostBreakdown[]) {
       bonuses: acc.bonuses + row.bonuses,
       variablePay: acc.variablePay + row.variablePay,
       companyCost: acc.companyCost + row.companyCost,
+      netSalary: acc.netSalary + row.netSalary,
       withConfig: acc.withConfig + (row.hasSalaryConfig ? 1 : 0),
     }),
     {
@@ -110,6 +115,7 @@ export function sumCostBreakdowns(rows: RhEmployeeCostBreakdown[]) {
       bonuses: 0,
       variablePay: 0,
       companyCost: 0,
+      netSalary: 0,
       withConfig: 0,
     },
   );

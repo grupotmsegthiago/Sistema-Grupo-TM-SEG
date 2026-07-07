@@ -1,11 +1,12 @@
 import { authFetch } from '../authFetch';
+import { sumCostBreakdowns } from './employeeCostSummary';
 import type { RhEmployeeCostBreakdown } from './employeeCostSummary';
 
 export interface RhEmployeeCostSummaryResponse {
   ok: boolean;
   referenceMonth: string;
   items: RhEmployeeCostBreakdown[];
-  totals: ReturnType<typeof import('./employeeCostSummary').sumCostBreakdowns>;
+  totals: ReturnType<typeof sumCostBreakdowns>;
   error?: string;
 }
 
@@ -17,5 +18,14 @@ export async function fetchEmployeeCostSummary(referenceMonth?: string): Promise
   if (!res.ok || json?.ok === false) {
     throw new Error(json?.error || `Falha HTTP ${res.status}`);
   }
-  return json as RhEmployeeCostSummaryResponse;
+  if (!Array.isArray(json?.items)) {
+    throw new Error('Resposta inválida do servidor (custos não retornados). Confirme se o deploy está atualizado.');
+  }
+  const items = json.items as RhEmployeeCostBreakdown[];
+  return {
+    ok: true,
+    referenceMonth: json.referenceMonth || month,
+    items,
+    totals: json.totals || sumCostBreakdowns(items),
+  };
 }

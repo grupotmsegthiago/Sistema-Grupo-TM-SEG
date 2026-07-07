@@ -20,6 +20,7 @@ describe('employeeCostSummary', () => {
     assert.equal(row.fgts, 240);
     assert.equal(row.variablePay, 650);
     assert.equal(row.companyCost, 3000 + 240 + 300 + 650);
+    assert.ok(row.netSalary > 0);
   });
 
   it('sem salário mantém apenas variáveis no custo', () => {
