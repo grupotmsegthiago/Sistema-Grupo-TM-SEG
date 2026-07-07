@@ -256,9 +256,29 @@ export function parseEquipmentFromBackupJson(raw: unknown): { equipments: Equipm
   const lists: EquipmentRecord[][] = [];
   let customTypes: { value: string; label: string }[] = [];
 
-  if (!raw || typeof raw !== 'object') return { equipments: [], customTypes };
+  if (!raw) return { equipments: [], customTypes };
 
-  const obj = raw as Record<string, unknown>;
+  let obj: Record<string, unknown>;
+  if (typeof raw === 'string') {
+    try {
+      obj = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return { equipments: [], customTypes };
+    }
+  } else if (typeof raw === 'object') {
+    obj = raw as Record<string, unknown>;
+  } else {
+    return { equipments: [], customTypes };
+  }
+
+  // Export do SQL Editor: { backup_json: "{ ... }" } ou coluna única
+  if (typeof obj.backup_json === 'string') {
+    return parseEquipmentFromBackupJson(JSON.parse(obj.backup_json));
+  }
+  if (typeof obj.backup_json === 'object' && obj.backup_json) {
+    return parseEquipmentFromBackupJson(obj.backup_json);
+  }
+
   const content = (obj.content || obj.database || obj) as Record<string, unknown>;
 
   const registry = content.equipment_registry;

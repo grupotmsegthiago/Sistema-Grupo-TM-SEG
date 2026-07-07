@@ -1,7 +1,7 @@
 import { formatDateTimeBR, formatDateBR } from '../lib/dateUtils';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Monitor, Plus, Search, Trash2, Save, Loader2, Camera, X, ArrowLeft, Edit3, User, Package, ChevronDown, Image as ImageIcon, FileText, RefreshCw, Eye, Upload } from 'lucide-react';
+import { Monitor, Plus, Search, Trash2, Save, Loader2, Camera, X, ArrowLeft, Edit3, User, Package, ChevronDown, Image as ImageIcon, FileText, RefreshCw, Eye, Upload, Database, ChevronRight, ExternalLink } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { authFetch } from '../lib/authFetch';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
@@ -38,6 +38,7 @@ const EquipmentManager: React.FC = () => {
   const [newTypeName, setNewTypeName] = useState('');
   const [recoveryInfo, setRecoveryInfo] = useState<string | null>(null);
   const [recoveryHints, setRecoveryHints] = useState<string[]>([]);
+  const [showSupabaseGuide, setShowSupabaseGuide] = useState(false);
   const [termEquipment, setTermEquipment] = useState<EquipmentRecord | null>(null);
   const [viewTerm, setViewTerm] = useState<EquipmentResponsibilityTerm | null>(null);
   const masterRowIdRef = useRef<number | null>(null);
@@ -509,6 +510,42 @@ const EquipmentManager: React.FC = () => {
           ))}
         </div>
       )}
+
+      <div className="mb-4 border border-blue-200 rounded-xl overflow-hidden bg-blue-50/50">
+        <button
+          type="button"
+          onClick={() => setShowSupabaseGuide((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-blue-50 transition-colors"
+          data-testid="button-supabase-guide"
+        >
+          <span className="flex items-center gap-2 text-xs font-black uppercase text-blue-900">
+            <Database size={14} /> Recuperar do backup do Supabase
+          </span>
+          <ChevronRight size={14} className={`text-blue-600 transition-transform ${showSupabaseGuide ? 'rotate-90' : ''}`} />
+        </button>
+        {showSupabaseGuide && (
+          <div className="px-4 pb-4 text-[11px] text-blue-950 space-y-2 leading-relaxed border-t border-blue-100 pt-3">
+            <p className="font-bold">O Supabase (plano Pro) guarda backups diários dos últimos 7 dias e pode ter PITR.</p>
+            <ol className="list-decimal pl-4 space-y-1.5">
+              <li>
+                Abra{' '}
+                <a href="https://supabase.com/dashboard/project/ajhmmjuewdsukecaimik/database/backups" target="_blank" rel="noopener noreferrer" className="underline font-bold inline-flex items-center gap-0.5">
+                  Supabase → Database → Backups <ExternalLink size={10} />
+                </a>
+              </li>
+              <li>
+                <strong>Caminho seguro:</strong> baixe um backup de <em>antes</em> da limpeza de logs, ou use SQL Editor em cópia temporária com o script{' '}
+                <code className="bg-white px-1 rounded text-[10px]">scripts/recuperar-patrimonio-supabase.sql</code>
+              </li>
+              <li>Exporte o JSON (consulta OPÇÃO A do script) e salve como <code className="bg-white px-1 rounded">patrimonio.json</code></li>
+              <li>Clique em <strong>Importar backup</strong> nesta tela e selecione o arquivo</li>
+            </ol>
+            <p className="text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 font-bold">
+              Evite &quot;Restore&quot; completo na produção — isso reverte missões, RH e financeiro para a data do backup. Use só se aceitar perder tudo feito depois.
+            </p>
+          </div>
+        )}
+      </div>
 
       <div className="mb-4">
         <div className="relative max-w-md">
