@@ -1,12 +1,9 @@
 // ── Webhook Z-API: eventos de conexão (DisconnectedCallback / ConnectedCallback) ─
-import { sendSystemAlertEmail, sendWhatsappDisconnectAlertEmail } from "./emailService";
 import { logWhatsappSessionEvent } from "./whatsappTelemetry";
 import { markSessionDisconnected, markSessionReconnected } from "./zapiConnectionState";
 import { getDefaultWhatsappInstance } from "./whatsapp/instanceStore";
-import { credsFromInstance } from "./whatsapp/zapiHttp";
-import { fetchZapiExtensionToken } from "./whatsapp/zapiExtensionToken";
-
-const ALERT_RECIPIENTS = ["thiago@grupotmseg.com.br", "operacional@grupotmseg.com.br"];
+import { notifyZapiDisconnected, notifyZapiReconnected } from "./zapiDisconnectNotify";
+import { closeZapiIncident, loadZapiWatchdogState } from "./zapiWatchdogState";
 
 const nowSP = () => new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
@@ -49,31 +46,9 @@ export async function handleZapiConnectionWebhook(body: any): Promise<{ handled:
         incidentStartedAt: nowSP(),
       });
 
-      let extensionToken: string | null = null;
-      let extensionExpiresAt: number | null = null;
-      let extensionError: string | null = null;
       if (row) {
-        const creds = credsFromInstance(row);
-        if (creds) {
-          const ext = await fetchZapiExtensionToken(creds);
-          extensionToken = ext.token;
-          extensionExpiresAt = ext.expiresAt;
-          extensionError = ext.error || null;
-        }
-        void sendWhatsappDisconnectAlertEmail({
-          to: ALERT_RECIPIENTS,
-          instanceLabel: row.label,
-          incidentStartedAt: nowSP(),
-          dropsLast24h: 1,
-          extensionToken,
-          extensionExpiresAt,
-          extensionError,
-        }).catch(() => {
-          void sendSystemAlertEmail(
-            ALERT_RECIPIENTS,
-            "ALERTA: WhatsApp Bot DESCONECTADO (webhook)",
-            `<p>Queda detectada via webhook Z-API em ${nowSP()}.</p>`,
-          ).catch(() => {});
+        void notifyZapiDisconnected(row, "webhook").catch((e) => {
+          console.error("[Z-API Webhook] Falha alerta desconexão:", e?.message || e);
         });
       }
       continue;
@@ -81,6 +56,9 @@ export async function handleZapiConnectionWebhook(body: any): Promise<{ handled:
 
     if (isConnectEvent(ev)) {
       handled = "connected";
+      const prev = await loadZapiWatchdogState();
+      const since = prev.incidentStartedAt;
+      await closeZapiIncident();
       const newGen = await markSessionReconnected();
       logWhatsappSessionEvent({
         eventType: "reconnected",
@@ -89,11 +67,7 @@ export async function handleZapiConnectionWebhook(body: any): Promise<{ handled:
         details: { source: "zapi_webhook", raw: ev },
         connectionGeneration: newGen,
       });
-      void sendSystemAlertEmail(
-        ALERT_RECIPIENTS,
-        "WhatsApp Bot RECONECTADO (webhook)",
-        `<p>Reconexão detectada via webhook Z-API em ${nowSP()}.</p>`,
-      ).catch(() => {});
+      void notifyZapiReconnected("webhook", since);
     }
   }
 

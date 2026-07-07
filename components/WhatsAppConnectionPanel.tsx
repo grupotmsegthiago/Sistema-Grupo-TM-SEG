@@ -488,6 +488,25 @@ const WhatsAppConnectionPanel: React.FC = () => {
                 )}
 
                 {isZapi && (
+                  <div className="p-4 rounded-lg border border-amber-200 bg-amber-50 text-amber-950 text-xs space-y-2">
+                    <p className="font-black uppercase text-[10px] tracking-wide">Webhooks Z-API (anti-queda — configure no painel Z-API)</p>
+                    <p className="leading-relaxed">
+                      Cole estas URLs nos callbacks da instância. Use o mesmo segredo configurado em <code className="bg-white px-1 rounded">ZAPI_WEBHOOK_SECRET</code> na Vercel.
+                    </p>
+                    <div className="font-mono text-[10px] bg-white p-2 rounded border break-all">
+                      Desconexão: {typeof window !== 'undefined' ? `${window.location.origin}/api/zapi/webhook/connection` : '/api/zapi/webhook/connection'}
+                    </div>
+                    <div className="font-mono text-[10px] bg-white p-2 rounded border break-all">
+                      Mensagens: {typeof window !== 'undefined' ? `${window.location.origin}/api/whatsapp/webhook/inbound` : '/api/whatsapp/webhook/inbound'}
+                    </div>
+                    <div className="font-mono text-[10px] bg-white p-2 rounded border break-all">
+                      Status entrega: {typeof window !== 'undefined' ? `${window.location.origin}/api/zapi/webhook/message-status` : '/api/zapi/webhook/message-status'}
+                    </div>
+                    <p className="text-[10px] opacity-80">Vigia automático: a cada 1 min + e-mail/push com código extensão na queda.</p>
+                  </div>
+                )}
+
+                {isZapi && (
                   <div className="flex flex-wrap gap-2">
                     <button type="button" disabled={busy} onClick={() => void runBootstrap()}
                       className="text-xs font-bold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
