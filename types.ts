@@ -345,6 +345,8 @@ export interface FinancialCategory {
   scope?: 'EMPRESA' | 'PESSOAL'; 
 }
 
+export type FinancialDocStatus = 'empty' | 'pending' | 'ok' | 'issue';
+
 export interface FinancialTransaction {
   id: string;
   description: string;
@@ -366,6 +368,12 @@ export interface FinancialTransaction {
   notes?: string;
   status_conciliacao?: 'PENDENTE' | 'CONCILIADO' | 'DIVERGENTE';
   payment_method?: 'PIX' | 'BOLETO' | 'TRANSFERENCIA' | null;
+  doc_boleto_url?: string | null;
+  doc_boleto_status?: FinancialDocStatus | null;
+  doc_nf_url?: string | null;
+  doc_nf_status?: FinancialDocStatus | null;
+  doc_comprovante_url?: string | null;
+  doc_comprovante_status?: FinancialDocStatus | null;
 }
 
 export interface BrandIdentity {
