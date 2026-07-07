@@ -90,8 +90,14 @@
     "api/cron/email-queue.ts": {
       "maxDuration": 120
     },
-    "api/[...path].ts": {
-      "maxDuration": 300
+    "api/password-reset-request.ts": {
+      "maxDuration": 120
+    },
+    "api/password-reset-validate.ts": {
+      "maxDuration": 60
+    },
+    "api/password-reset-confirm.ts": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
@@ -200,8 +206,16 @@
       "destination": "/api/cron/email-queue"
     },
     {
-      "source": "/api/:path*",
-      "destination": "/api/index"
+      "source": "/api/password-reset/request",
+      "destination": "/api/password-reset-request"
+    },
+    {
+      "source": "/api/password-reset/validate",
+      "destination": "/api/password-reset-validate"
+    },
+    {
+      "source": "/api/password-reset/confirm",
+      "destination": "/api/password-reset-confirm"
     },
     {
       "source": "/(.*)",
