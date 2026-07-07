@@ -101,6 +101,9 @@
     },
     "api/rh-init.ts": {
       "maxDuration": 120
+    },
+    "api/rh-seed-employees.ts": {
+      "maxDuration": 120
     }
   },
   "rewrites": [
@@ -223,6 +226,10 @@
     {
       "source": "/api/rh/init",
       "destination": "/api/rh-init"
+    },
+    {
+      "source": "/api/rh/seed-employees",
+      "destination": "/api/rh-seed-employees"
     },
     {
       "source": "/(.*)",
