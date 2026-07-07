@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import { createSupabaseAdminClient } from './supabaseConfig';
 import { calcSalary } from '../lib/rh/payroll';
+import { buildEmployeeCostBreakdown, sumCostBreakdowns } from '../lib/rh/employeeCostSummary';
 import { calculateCommissionForEmployee } from '../lib/rh/commissionAuto';
 import { seedTmsegEmployees } from '../lib/rh/seedTmsegEmployeesRunner';
 import type { RhSalaryConfig, RhTaxBracket } from '../types/rh';
@@ -54,6 +55,94 @@ export function registerRhRoutes(
       res.json({ ok: true, employees: data || [], total: data?.length || 0 });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  app.get('/api/rh/employees/cost-summary', ...rhAuth, async (req: Request, res: Response) => {
+    try {
+      const month = String(req.query.month || new Date().toISOString().slice(0, 7));
+      const client = sb();
+
+      const [{ data: employees }, taxBrackets] = await Promise.all([
+        client
+          .from('rh_employees')
+          .select('id')
+          .is('deleted_at', null)
+          .neq('status', 'Desligado'),
+        loadTaxBrackets(),
+      ]);
+
+      const employeeIds = (employees || []).map((e) => e.id);
+      if (!employeeIds.length) {
+        return res.json({ ok: true, referenceMonth: month, items: [], totals: sumCostBreakdowns([]) });
+      }
+
+      const [{ data: salaryRows }, { data: commissionRows }, { data: awardRows }, { data: bonusRows }] = await Promise.all([
+        client
+          .from('rh_salary_configs')
+          .select('*')
+          .in('employee_id', employeeIds)
+          .is('deleted_at', null)
+          .order('effective_from', { ascending: false }),
+        client
+          .from('rh_commissions')
+          .select('employee_id, commission_amount')
+          .in('employee_id', employeeIds)
+          .eq('reference_month', month)
+          .is('deleted_at', null),
+        client
+          .from('rh_awards')
+          .select('employee_id, amount')
+          .in('employee_id', employeeIds)
+          .is('deleted_at', null),
+        client
+          .from('rh_bonuses')
+          .select('employee_id, amount')
+          .in('employee_id', employeeIds)
+          .eq('reference_month', month)
+          .is('deleted_at', null),
+      ]);
+
+      const salaryByEmployee = new Map<string, RhSalaryConfig>();
+      for (const row of salaryRows || []) {
+        if (!salaryByEmployee.has(row.employee_id)) {
+          salaryByEmployee.set(row.employee_id, row as RhSalaryConfig);
+        }
+      }
+
+      const sumByEmployee = (rows: { employee_id: string; [key: string]: unknown }[] | null, field: string) => {
+        const map = new Map<string, number>();
+        for (const row of rows || []) {
+          const id = row.employee_id;
+          map.set(id, (map.get(id) || 0) + Number(row[field] || 0));
+        }
+        return map;
+      };
+
+      const commissionsMap = sumByEmployee(commissionRows as any, 'commission_amount');
+      const awardsMap = sumByEmployee(awardRows as any, 'amount');
+      const bonusesMap = sumByEmployee(bonusRows as any, 'amount');
+
+      const items = employeeIds.map((employeeId) =>
+        buildEmployeeCostBreakdown(
+          employeeId,
+          month,
+          salaryByEmployee.get(employeeId) || null,
+          taxBrackets,
+          commissionsMap.get(employeeId) || 0,
+          awardsMap.get(employeeId) || 0,
+          bonusesMap.get(employeeId) || 0,
+        ),
+      );
+
+      res.json({
+        ok: true,
+        referenceMonth: month,
+        items,
+        totals: sumCostBreakdowns(items),
+      });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao calcular custos' });
     }
   });
 
