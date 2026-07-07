@@ -15,6 +15,10 @@ interface Props {
   id?: string | null;
   onBack: () => void;
   onSaved?: (id: string) => void;
+  /** Dentro da pasta do funcionário (sem cabeçalho próprio). */
+  embedded?: boolean;
+  initialTab?: Tab;
+  onNameLoaded?: (name: string) => void;
 }
 
 const emptyEmployee: Partial<RhEmployee> = {
@@ -30,9 +34,9 @@ const emptySalary: RhSalaryConfig = {
   overtime_rate_pct: 50,
 };
 
-const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved }) => {
+const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved, embedded, initialTab, onNameLoaded }) => {
   const { showNotification } = useNotification();
-  const [tab, setTab] = useState<Tab>('pessoal');
+  const [tab, setTab] = useState<Tab>(initialTab || 'pessoal');
   const [form, setForm] = useState<Partial<RhEmployee>>(emptyEmployee);
   const [salary, setSalary] = useState<RhSalaryConfig>(emptySalary);
   const [bank, setBank] = useState<any>({});
@@ -44,6 +48,7 @@ const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved }) => {
   const [loading, setLoading] = useState(!!id);
 
   useEffect(() => { loadRefs(); if (id) loadEmployee(id); }, [id]);
+  useEffect(() => { if (initialTab) setTab(initialTab); }, [initialTab]);
 
   const payroll = useMemo(() => {
     if (!salary.base_salary) return null;
@@ -67,7 +72,10 @@ const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved }) => {
   const loadEmployee = async (empId: string) => {
     setLoading(true);
     const { data } = await supabase.from('rh_employees').select('*').eq('id', empId).single();
-    if (data) setForm(data);
+    if (data) {
+      setForm(data);
+      if (data.full_name) onNameLoaded?.(data.full_name);
+    }
     const { data: sal } = await supabase.from('rh_salary_configs').select('*').eq('employee_id', empId).is('deleted_at', null).order('effective_from', { ascending: false }).limit(1).maybeSingle();
     if (sal) setSalary(sal);
     const { data: bnk } = await supabase.from('rh_employee_bank_accounts').select('*').eq('employee_id', empId).is('deleted_at', null).limit(1).maybeSingle();
@@ -115,8 +123,9 @@ const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved }) => {
       }
 
       showNotification('success', 'Funcionário salvo com sucesso!');
+      if (form.full_name) onNameLoaded?.(form.full_name);
       onSaved?.(employeeId!);
-      onBack();
+      if (!embedded) onBack();
     } catch (e: any) {
       showNotification('error', e.message || 'Erro ao salvar');
     } finally {
@@ -124,31 +133,41 @@ const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved }) => {
     }
   };
 
-  const tabs: { id: Tab; label: string; icon: any }[] = [
-    { id: 'pessoal', label: 'Dados Pessoais', icon: User },
-    { id: 'empresa', label: 'Dados da Empresa', icon: Building2 },
-    { id: 'salario', label: 'Salário', icon: DollarSign },
-    { id: 'banco', label: 'Dados Bancários', icon: Landmark },
-    { id: 'documentos', label: 'Documentos', icon: FileText },
-  ];
+  const tabs: { id: Tab; label: string; icon: any }[] = embedded
+    ? [
+        { id: 'pessoal', label: 'Dados Pessoais', icon: User },
+        { id: 'empresa', label: 'Contrato / Empresa', icon: Building2 },
+        { id: 'banco', label: 'Dados Bancários', icon: Landmark },
+      ]
+    : [
+        { id: 'pessoal', label: 'Dados Pessoais', icon: User },
+        { id: 'empresa', label: 'Dados da Empresa', icon: Building2 },
+        { id: 'salario', label: 'Salário', icon: DollarSign },
+        { id: 'banco', label: 'Dados Bancários', icon: Landmark },
+        { id: 'documentos', label: 'Documentos', icon: FileText },
+      ];
+
+  const activeTab = embedded && initialTab === 'salario' ? 'salario' : tab;
 
   if (loading) return <div className="p-8 text-center text-gray-400">Carregando...</div>;
 
   return (
     <div>
-      <RhPageHeader title={id ? 'Editar Funcionário' : 'Novo Funcionário'} onBack={onBack} />
+      {!embedded && <RhPageHeader title={id ? 'Editar Funcionário' : 'Novo Funcionário'} onBack={onBack} />}
 
-      <div className="flex flex-wrap gap-2 mb-6">
+      {!(embedded && initialTab === 'salario') && (
+      <div className={`flex flex-wrap gap-2 ${embedded ? 'mb-4' : 'mb-6'}`}>
         {tabs.map((t) => (
           <button key={t.id} type="button" onClick={() => setTab(t.id)}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase ${tab === t.id ? 'bg-black text-white' : 'bg-white border text-gray-600'}`}>
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase ${activeTab === t.id ? 'bg-black text-white' : 'bg-white border text-gray-600'}`}>
             <t.icon size={14} /> {t.label}
           </button>
         ))}
       </div>
+      )}
 
-      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-        {tab === 'pessoal' && (
+      <div className={embedded ? '' : 'bg-white rounded-2xl border border-gray-100 p-6 shadow-sm'}>
+        {activeTab === 'pessoal' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2"><label className={RH_LABEL_CLASS}>Nome completo *</label><input className={RH_INPUT_CLASS} value={form.full_name || ''} onChange={(e) => set('full_name', e.target.value)} /></div>
             <div><label className={RH_LABEL_CLASS}>CPF</label><input className={RH_INPUT_CLASS} value={form.cpf || ''} onChange={(e) => set('cpf', maskCpf(e.target.value))} /></div>
@@ -170,7 +189,7 @@ const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved }) => {
           </div>
         )}
 
-        {tab === 'empresa' && (
+        {activeTab === 'empresa' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div><label className={RH_LABEL_CLASS}>Matrícula</label><input className={RH_INPUT_CLASS} value={form.matricula || ''} onChange={(e) => set('matricula', e.target.value)} /></div>
             <div><label className={RH_LABEL_CLASS}>Admissão</label><input type="date" className={RH_INPUT_CLASS} value={form.admission_date || ''} onChange={(e) => set('admission_date', e.target.value)} /></div>
@@ -184,7 +203,7 @@ const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved }) => {
           </div>
         )}
 
-        {tab === 'salario' && (
+        {activeTab === 'salario' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {([
@@ -212,7 +231,7 @@ const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved }) => {
           </div>
         )}
 
-        {tab === 'banco' && (
+        {activeTab === 'banco' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div><label className={RH_LABEL_CLASS}>Banco</label><input className={RH_INPUT_CLASS} value={bank.bank_name || ''} onChange={(e) => setBank({ ...bank, bank_name: e.target.value })} /></div>
             <div><label className={RH_LABEL_CLASS}>Agência</label><input className={RH_INPUT_CLASS} value={bank.agency || ''} onChange={(e) => setBank({ ...bank, agency: e.target.value })} /></div>
@@ -223,15 +242,17 @@ const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved }) => {
           </div>
         )}
 
-        {tab === 'documentos' && (
+        {activeTab === 'documentos' && (
           <p className="text-sm text-gray-500">Upload de documentos disponível no perfil do funcionário após o cadastro (CPF, RG, CNH, CTPS, contrato e outros).</p>
         )}
       </div>
 
       <div className="flex justify-end gap-3 mt-6">
-        <button type="button" onClick={onBack} className="px-6 py-2.5 border rounded-lg text-sm font-bold uppercase">Cancelar</button>
+        {!embedded && (
+          <button type="button" onClick={onBack} className="px-6 py-2.5 border rounded-lg text-sm font-bold uppercase">Cancelar</button>
+        )}
         <button type="button" disabled={saving} onClick={handleSave} className="inline-flex items-center gap-2 px-8 py-2.5 bg-black text-white rounded-lg text-sm font-bold uppercase disabled:opacity-50">
-          {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Salvar
+          {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Salvar cadastro
         </button>
       </div>
     </div>
