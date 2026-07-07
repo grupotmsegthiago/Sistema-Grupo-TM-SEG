@@ -1,6 +1,33 @@
-import { authToken } from '../lib/email/missionEmailHelpers.js';
-import { createRhAdminClient } from '../lib/rh/adminSupabase.js';
-import { loadEmployeeCostSummary } from '../lib/rh/loadEmployeeCostSummary.js';
+const DEFAULT_SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
+const TMSEG_REF = 'ajhmmjuewdsukecaimik';
+
+function authToken(req: any): string {
+  return String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '') || String(req.headers?.['x-auth-token'] || '');
+}
+
+function decodeRef(key: string): string | null {
+  try {
+    const payload = key.split('.')[1];
+    if (!payload) return null;
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))?.ref || null;
+  } catch {
+    return null;
+  }
+}
+
+async function adminSupabase() {
+  const { createClient } = await import('@supabase/supabase-js');
+  const envUrl = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '');
+  const url = envUrl.includes(TMSEG_REF) ? envUrl : DEFAULT_SUPABASE_URL;
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    '';
+  if (!key || decodeRef(key) !== TMSEG_REF) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY indisponível neste ambiente');
+  }
+  return createClient(url, key);
+}
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {
@@ -8,8 +35,7 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const token = authToken(req);
-  if (!token) {
+  if (!authToken(req)) {
     res.status(401).json({ ok: false, error: 'Não autorizado' });
     return;
   }
@@ -18,7 +44,8 @@ export default async function handler(req: any, res: any) {
 
   try {
     const month = String(req.query?.month || new Date().toISOString().slice(0, 7));
-    const sb = createRhAdminClient();
+    const sb = await adminSupabase();
+    const { loadEmployeeCostSummary } = await import('../lib/rh/loadEmployeeCostSummary.js');
     const result = await loadEmployeeCostSummary(sb, month);
     res.status(200).json(result);
   } catch (e: any) {
