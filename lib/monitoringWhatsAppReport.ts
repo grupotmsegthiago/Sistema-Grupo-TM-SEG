@@ -33,17 +33,22 @@ export function formatAgentShortName(name?: string): string {
     : name.toUpperCase();
 }
 
-/** Tons de verde por posição (1º = clarinho → 5º = mais escuro). */
-const PROGRESS_SQUARE_TONES = ['🟢', '💚', '🟩', '🟩', '🟩'] as const;
+/**
+ * Tom do quadrado preenchido conforme a quantidade (verde claro → verde escuro).
+ * WhatsApp só oferece 🟢 (verde limão) e 🟩 (quadrado verde escuro) — sem coração.
+ */
+const FILL_GREEN_TONE_BY_COUNT = ['', '🟢', '🟢', '🟩', '🟩', '🟩'] as const;
 const EMPTY_PROGRESS_SQUARE = '⬜';
 
-/** Barra visual de progresso com quadrados verdes em degradê (cada um = 20%). */
+/** Barra visual de progresso: verde claro no início, escurecendo até 100% (cada quadrado = 20%). */
 export function formatProgressSquares(progress: number): string {
   const percent = Math.min(100, Math.max(0, Math.floor(progress)));
   const filled = percent === 0 ? 0 : Math.min(5, Math.ceil(percent / 20));
-  const squares = PROGRESS_SQUARE_TONES.map((tone, index) =>
-    index < filled ? tone : EMPTY_PROGRESS_SQUARE,
-  ).join('');
+  if (filled === 0) {
+    return `${EMPTY_PROGRESS_SQUARE.repeat(5)} ${percent}% (cada quadrado vale 20%)`;
+  }
+  const tone = FILL_GREEN_TONE_BY_COUNT[filled];
+  const squares = tone.repeat(filled) + EMPTY_PROGRESS_SQUARE.repeat(5 - filled);
   return `${squares} ${percent}% (cada quadrado vale 20%)`;
 }
 
