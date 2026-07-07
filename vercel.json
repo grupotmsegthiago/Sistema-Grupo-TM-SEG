@@ -12,6 +12,9 @@
     "api/whatsapp/send-group.ts": {
       "maxDuration": 300
     },
+    "api/whatsapp/groups.ts": {
+      "maxDuration": 60
+    },
     "api/whatsapp/telemetry/dashboard.ts": {
       "maxDuration": 60
     },
@@ -112,6 +115,10 @@
     {
       "source": "/api/whatsapp/send-group",
       "destination": "/api/whatsapp/send-group"
+    },
+    {
+      "source": "/api/whatsapp/groups",
+      "destination": "/api/whatsapp/groups"
     },
     {
       "source": "/api/whatsapp/telemetry/dashboard",
