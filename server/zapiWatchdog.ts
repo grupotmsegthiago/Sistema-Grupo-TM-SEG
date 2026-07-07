@@ -106,7 +106,21 @@ export async function runZapiWatchdogTick(): Promise<void> {
     while (dropHistory.length && dropHistory[0] < cutoff) dropHistory.shift();
     dropHistory.push(Date.now());
     const gen = await markSessionDisconnected();
-    logWhatsappSessionEvent({ eventType: 'disconnected', connected: false, dropsLast24h: dropHistory.length, incidentStartedAt: incidentStartedAt || undefined, connectionGeneration: gen, details: { connected: status.connected } });
+    logWhatsappSessionEvent({
+      eventType: 'disconnected',
+      connected: false,
+      smartphoneConnected: status.smartphoneConnected ?? null,
+      dropsLast24h: dropHistory.length,
+      incidentStartedAt: incidentStartedAt || undefined,
+      connectionGeneration: gen,
+      details: {
+        connected: status.connected,
+        smartphoneConnected: status.smartphoneConnected,
+        session: status.session,
+        error: status.error,
+        source: 'watchdog',
+      },
+    });
     void notifyDisconnect(row).catch((e) => {
       console.error('[Z-API Vigia] Falha no e-mail de desconexão:', e?.message || e);
       void sendSystemAlertEmail(ALERT_RECIPIENTS, 'ALERTA: WhatsApp Bot DESCONECTADO', `<p>Desde ${incidentStartedAt}. Falha ao gerar código extensão no e-mail.</p>`).catch(() => {});

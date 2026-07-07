@@ -46,6 +46,8 @@ import {
   runWhatsappTelemetryMigrations,
   type TelemetryRange,
 } from "./whatsappTelemetry";
+import { buildWhatsappDiagnosticsReport } from "./whatsappDiagnostics";
+import { handleZapiConnectionWebhook } from "./zapiConnectionWebhook";
 import { isLongRunningHost } from "./runtime";
 import { registerScheduledTick } from "./scheduledRegistry";
 import { registerMaintenanceTick } from "./maintenanceJobs";
@@ -1040,6 +1042,24 @@ export async function registerRoutes(
     }
   });
 
+  app.post('/api/zapi/webhook/connection', async (req: Request, res: Response) => {
+    try {
+      const secret = (process.env.ZAPI_WEBHOOK_SECRET || "").trim();
+      if (secret) {
+        const provided =
+          String(req.headers["x-zapi-secret"] || req.headers["x-webhook-secret"] || req.query.token || "");
+        if (provided !== secret) {
+          return res.status(401).json({ ok: false, error: "invalid webhook secret" });
+        }
+      }
+      const result = await handleZapiConnectionWebhook(req.body || {});
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      console.error("[Z-API Webhook Connection]", e?.message);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   app.get('/api/whatsapp/providers', requireAuth, async (_req: Request, res: Response) => {
     const defaultRow = await getDefaultWhatsappInstance();
     const creds = await isZapiConfigured();
@@ -1304,6 +1324,17 @@ export async function registerRoutes(
       const range: TelemetryRange = raw === '7d' ? '7d' : raw === '15d' ? '15d' : 'today';
       const data = await getWhatsappTelemetryDashboard(range);
       res.status(data.ok ? 200 : 503).json(data);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  app.get('/api/whatsapp/diagnostics/report', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const raw = String(req.query.range || '15d').toLowerCase();
+      const range: TelemetryRange = raw === '7d' ? '7d' : raw === 'today' ? 'today' : '15d';
+      const report = await buildWhatsappDiagnosticsReport(range);
+      res.status(report.ok ? 200 : 503).json(report);
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
     }
