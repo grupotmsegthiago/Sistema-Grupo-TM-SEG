@@ -34,10 +34,10 @@ WHERE key ILIKE '%equip%'
    OR value::text ILIKE '%"equipments"%'
 ORDER BY key;
 
--- 6) Backup automático do sistema (após deploy com cron 6h)
-SELECT key, value->>'last_at' AS ultimo_backup, value->>'last_count' AS qtd
-FROM system_settings
-WHERE key = 'equipment_auto_backups';
+-- 8) Tabelas dedicadas (padrão atual — fora de system_logs)
+SELECT count(*) AS ativos FROM patrimonio_equipments WHERE deleted_at IS NULL;
+SELECT id, created_at, source, item_count, storage_path, status
+FROM patrimonio_backups ORDER BY created_at DESC LIMIT 10;
 
 -- 7) Detalhe dos 2 UserEquipment (expandir JSON)
 SELECT entity_id AS usuario_id, created_at, details

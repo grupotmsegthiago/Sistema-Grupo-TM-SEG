@@ -49,12 +49,15 @@ import {
 import { buildWhatsappDiagnosticsReport } from "./whatsappDiagnostics";
 import { handleZapiConnectionWebhook } from "./zapiConnectionWebhook";
 import { runForensicEquipmentRecovery, parseEquipmentFromBackupJson } from "./equipmentForensicRecovery";
+import { runFullEquipmentScan } from "./equipmentBackupService";
 import {
-  runFullEquipmentScan,
-  runEquipmentAutoBackup,
-  listEquipmentAutoBackups,
-  getBestEquipmentBackupSnapshot,
-} from "./equipmentBackupService";
+  loadPatrimonio,
+  savePatrimonioToTables,
+  migrateLegacyPatrimonioIfNeeded,
+  runPatrimonioAutoBackup,
+  listPatrimonioBackups,
+  restorePatrimonioFromBackup,
+} from "./patrimonioStore";
 import { isLongRunningHost } from "./runtime";
 import { registerScheduledTick } from "./scheduledRegistry";
 import { registerMaintenanceTick } from "./maintenanceJobs";
@@ -2377,6 +2380,51 @@ export async function registerRoutes(
     console.log('[Migration] push_subscriptions:', e.message || 'ok');
   }
 
+  // ── Migration: tabelas dedicadas de patrimônio (fora de system_logs) ──
+  try {
+    await supabaseAdmin.rpc('exec_sql', { sql: `
+      CREATE TABLE IF NOT EXISTS patrimonio_equipments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        patrimony_id TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'outro',
+        brand TEXT DEFAULT '',
+        model TEXT DEFAULT '',
+        serial_number TEXT DEFAULT '',
+        photo_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
+        notes TEXT DEFAULT '',
+        assigned_to TEXT DEFAULT '',
+        assigned_to_name TEXT DEFAULT '',
+        history JSONB NOT NULL DEFAULT '[]'::jsonb,
+        responsibility_term JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        deleted_at TIMESTAMPTZ
+      );
+      CREATE TABLE IF NOT EXISTS patrimonio_custom_types (
+        value TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS patrimonio_backups (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        source TEXT NOT NULL DEFAULT 'cron_6h',
+        item_count INTEGER NOT NULL DEFAULT 0,
+        storage_path TEXT,
+        payload JSONB,
+        file_size_bytes BIGINT,
+        status TEXT NOT NULL DEFAULT 'ok',
+        notes TEXT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS patrimonio_equipments_patrimony_id_uidx
+        ON patrimonio_equipments (patrimony_id) WHERE deleted_at IS NULL;
+      CREATE INDEX IF NOT EXISTS patrimonio_backups_created_at_idx ON patrimonio_backups (created_at DESC);
+    `});
+    console.log('[Migration] Tabelas patrimonio_* verificadas/criadas.');
+  } catch (e: any) {
+    console.log('[Migration] patrimonio_*:', e.message || 'ok');
+  }
+
   // ── Migration: tabela system_settings (configurações administrativas key/value) ──
   try {
     await supabaseAdmin.rpc('exec_sql', { sql: `
@@ -2632,6 +2680,47 @@ export async function registerRoutes(
     }
   });
 
+  app.get('/api/patrimonio/equipments', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const data = await loadPatrimonio(supabaseAdmin);
+      res.json({ ok: true, ...data });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar patrimônio' });
+    }
+  });
+
+  app.put('/api/patrimonio/equipments', requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const equipments = req.body?.equipments || [];
+      const customTypes = req.body?.customTypes || [];
+      await savePatrimonioToTables(supabaseAdmin, equipments, customTypes, 'app');
+      res.json({ ok: true, count: equipments.length });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao salvar patrimônio' });
+    }
+  });
+
+  app.post('/api/patrimonio/migrate-legacy', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const data = await migrateLegacyPatrimonioIfNeeded(supabaseAdmin);
+      res.json({ ok: true, ...data });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha na migração' });
+    }
+  });
+
   app.get('/api/equipment/recovery/forensic', requireAuth, async (_req: Request, res: Response) => {
     try {
       if (!supabaseAdmin) {
@@ -2666,8 +2755,8 @@ export async function registerRoutes(
         res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
         return;
       }
-      const snapshots = await listEquipmentAutoBackups(supabaseAdmin);
-      res.json({ ok: true, snapshots: snapshots.map((s) => ({ at: s.at, count: s.count, storage_path: s.storage_path })) });
+      const snapshots = await listPatrimonioBackups(supabaseAdmin);
+      res.json({ ok: true, snapshots });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || 'Falha ao listar backups' });
     }
@@ -2679,14 +2768,20 @@ export async function registerRoutes(
         res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
         return;
       }
-      const at = req.body?.at as string | undefined;
-      const snapshots = await listEquipmentAutoBackups(supabaseAdmin);
-      const snap = at ? snapshots.find((s) => s.at === at) : await getBestEquipmentBackupSnapshot(supabaseAdmin);
-      if (!snap || !snap.equipments?.length) {
-        res.status(404).json({ ok: false, error: 'Nenhum backup automático com equipamentos encontrado' });
+      const backupId = req.body?.backup_id as string | undefined;
+      const restored = await restorePatrimonioFromBackup(supabaseAdmin, backupId);
+      if (!restored?.equipments?.length) {
+        res.status(404).json({ ok: false, error: 'Nenhum backup em patrimonio_backups com equipamentos' });
         return;
       }
-      res.json({ ok: true, snapshot_at: snap.at, equipments: snap.equipments, customTypes: snap.customTypes, total: snap.equipments.length });
+      await savePatrimonioToTables(supabaseAdmin, restored.equipments, restored.customTypes, 'backup_restore');
+      res.json({
+        ok: true,
+        snapshot_at: restored.snapshot_at,
+        equipments: restored.equipments,
+        customTypes: restored.customTypes,
+        total: restored.equipments.length,
+      });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || 'Falha ao restaurar backup' });
     }
@@ -2698,7 +2793,7 @@ export async function registerRoutes(
         res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
         return;
       }
-      const result = await runEquipmentAutoBackup(supabaseAdmin);
+      const result = await runPatrimonioAutoBackup(supabaseAdmin);
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || 'Falha ao gerar backup' });
@@ -4022,7 +4117,7 @@ export async function registerRoutes(
   registerMaintenanceTick(async () => {
     try {
       if (!supabaseAdmin) return;
-      await runEquipmentAutoBackup(supabaseAdmin);
+      await runPatrimonioAutoBackup(supabaseAdmin);
     } catch (e: any) {
       console.error('[equipment-backup] tick falhou:', e?.message);
     }

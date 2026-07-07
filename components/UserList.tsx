@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { authFetch } from '../lib/authFetch';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { APP_VERSION } from '../constants';
 import { 
@@ -147,18 +148,29 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
 
         if (userType === 'internal') {
           try {
-            const { data: eqData } = await supabase.from('system_logs')
-              .select('details').eq('entity', 'EquipmentRegistry').eq('entity_id', 'master')
-              .order('created_at', { ascending: false }).limit(1).maybeSingle();
-            if (eqData?.details) {
-              const parsed = JSON.parse(eqData.details);
-              if (parsed?.equipments && Array.isArray(parsed.equipments)) {
+            const { data: fromTable } = await supabase
+              .from('patrimonio_equipments')
+              .select('patrimony_id, type, brand, model, assigned_to')
+              .is('deleted_at', null);
+            if (fromTable?.length) {
+              const map: {[userId: string]: { patrimony_id: string; type: string; brand: string; model: string }[]} = {};
+              fromTable.forEach((eq: any) => {
+                if (!eq.assigned_to) return;
+                const uid = String(eq.assigned_to);
+                if (!map[uid]) map[uid] = [];
+                map[uid].push({ patrimony_id: eq.patrimony_id, type: eq.type, brand: eq.brand, model: eq.model });
+              });
+              setEquipmentMap(map);
+            } else {
+              const patRes = await authFetch('/api/patrimonio/equipments');
+              const patJson = await patRes.json();
+              if (patRes.ok && patJson.equipments?.length) {
                 const map: {[userId: string]: { patrimony_id: string; type: string; brand: string; model: string }[]} = {};
-                parsed.equipments.forEach((eq: any) => {
-                  if (eq.assigned_to) {
-                    if (!map[eq.assigned_to]) map[eq.assigned_to] = [];
-                    map[eq.assigned_to].push({ patrimony_id: eq.patrimony_id, type: eq.type, brand: eq.brand, model: eq.model });
-                  }
+                patJson.equipments.forEach((eq: any) => {
+                  if (!eq.assigned_to) return;
+                  const uid = String(eq.assigned_to);
+                  if (!map[uid]) map[uid] = [];
+                  map[uid].push({ patrimony_id: eq.patrimony_id, type: eq.type, brand: eq.brand, model: eq.model });
                 });
                 setEquipmentMap(map);
               }

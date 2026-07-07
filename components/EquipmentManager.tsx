@@ -1,12 +1,12 @@
 import { formatDateTimeBR, formatDateBR } from '../lib/dateUtils';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Monitor, Plus, Search, Trash2, Save, Loader2, Camera, X, ArrowLeft, Edit3, User, Package, ChevronDown, Image as ImageIcon, FileText, RefreshCw, Eye, Upload, Database, ChevronRight, ExternalLink } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { authFetch } from '../lib/authFetch';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
-import { loadEquipmentWithRecovery, type EquipmentRecord, type EquipmentResponsibilityTerm } from '../lib/equipmentRecovery';
+import { type EquipmentRecord, type EquipmentResponsibilityTerm } from '../lib/equipmentRecovery';
 import EquipmentResponsibilityTermModal from './EquipmentResponsibilityTermModal';
 
 const DEFAULT_TYPES = [
@@ -41,29 +41,24 @@ const EquipmentManager: React.FC = () => {
   const [showSupabaseGuide, setShowSupabaseGuide] = useState(false);
   const [termEquipment, setTermEquipment] = useState<EquipmentRecord | null>(null);
   const [viewTerm, setViewTerm] = useState<EquipmentResponsibilityTerm | null>(null);
-  const masterRowIdRef = useRef<number | null>(null);
 
   const allTypes = [...DEFAULT_TYPES, ...customTypes];
 
   const getTypeLabel = (val: string) => allTypes.find(t => t.value === val)?.label || val;
 
-  const loadData = useCallback(async (forceRecover = false) => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const result = await loadEquipmentWithRecovery(supabase);
-      const usersRes = await supabase.from('system_users').select('id, name').eq('user_type', 'internal').eq('status', 'Ativo').order('name');
-
-      setEquipments(result.equipments);
-      setCustomTypes(result.customTypes);
-      masterRowIdRef.current = result.masterRowId;
-
-      const { registryRows, userEquipmentRows, mergedCount } = result.recoveredFrom;
-      if (forceRecover || (mergedCount > 0 && result.equipments.length > 0)) {
-        const sources: string[] = [];
-        if (registryRows > 1) sources.push(`${registryRows} snapshots de registro`);
-        if (userEquipmentRows > 0) sources.push(`${userEquipmentRows} cadastros legados por usuário`);
-        if (sources.length > 0) {
-          setRecoveryInfo(`Recuperação: ${mergedCount} item(ns) de ${sources.join(' + ')}`);
+      const [patRes, usersRes] = await Promise.all([
+        authFetch('/api/patrimonio/equipments'),
+        supabase.from('system_users').select('id, name').eq('user_type', 'internal').eq('status', 'Ativo').order('name'),
+      ]);
+      const patJson = await patRes.json();
+      if (patRes.ok && patJson.equipments) {
+        setEquipments(patJson.equipments);
+        setCustomTypes(patJson.customTypes || []);
+        if (patJson.source === 'legacy_migrated') {
+          setRecoveryInfo(`Migração automática: ${patJson.equipments.length} item(ns) movidos para tabela dedicada patrimonio_equipments.`);
         }
       }
 
@@ -81,8 +76,9 @@ const EquipmentManager: React.FC = () => {
     loadData();
     (async () => {
       try {
-        const result = await loadEquipmentWithRecovery(supabase);
-        if (result.equipments.length > 0) return;
+        const patRes = await authFetch('/api/patrimonio/equipments');
+        const patJson = await patRes.json();
+        if (patJson.equipments?.length > 0) return;
         const resp = await authFetch('/api/equipment/recovery/full-scan');
         if (!resp.ok) return;
         const scan = await resp.json();
@@ -93,33 +89,22 @@ const EquipmentManager: React.FC = () => {
     })();
   }, [loadData]);
 
-  useRealtimeRefresh('system_logs', () => loadData());
+  useRealtimeRefresh('patrimonio_equipments', () => loadData());
 
   const saveAll = async (updatedList: EquipmentRecord[], typesOverride?: { value: string; label: string }[]) => {
     setIsSaving(true);
     try {
-      const payload = JSON.stringify({ equipments: updatedList, customTypes: typesOverride || customTypes });
-
-      if (masterRowIdRef.current) {
-        const { error } = await supabase.from('system_logs')
-          .update({ details: payload })
-          .eq('id', masterRowIdRef.current);
-        if (error) throw error;
-      } else {
-        const { data: inserted, error } = await supabase.from('system_logs').insert([{
-          user_name: 'Sistema',
-          action_type: 'CREATE',
-          entity: 'EquipmentRegistry',
-          entity_id: 'master',
-          details: payload
-        }]).select('id').maybeSingle();
-        if (error) throw error;
-        if (inserted) masterRowIdRef.current = inserted.id;
-      }
+      const resp = await authFetch('/api/patrimonio/equipments', {
+        method: 'PUT',
+        body: JSON.stringify({ equipments: updatedList, customTypes: typesOverride || customTypes }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Falha ao salvar');
       setEquipments(updatedList);
-      showNotification('Sucesso', 'Equipamentos salvos com sucesso!', 'success');
-    } catch (e: any) {
-      showNotification('Erro', 'Falha ao salvar: ' + e.message, 'error');
+      if (typesOverride) setCustomTypes(typesOverride);
+      showNotification('Sucesso', 'Patrimônio salvo na tabela dedicada.', 'success');
+    } catch (e: unknown) {
+      showNotification('Erro', e instanceof Error ? e.message : 'Falha ao salvar', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -129,34 +114,25 @@ const EquipmentManager: React.FC = () => {
     setIsSaving(true);
     setRecoveryHints([]);
     try {
-      const resp = await authFetch('/api/equipment/recovery/full-scan');
-      const scan = await resp.json();
+      const resp = await authFetch('/api/patrimonio/migrate-legacy', { method: 'POST', body: '{}' });
+      const migrated = await resp.json();
+      if (!resp.ok) throw new Error(migrated.error || 'Falha na migração');
 
-      if (!resp.ok) {
-        throw new Error(scan.error || 'Falha na varredura');
-      }
-
-      if (scan.hints?.length) setRecoveryHints(scan.hints);
-
-      const merged = (scan.equipments || []) as EquipmentRecord[];
-      const types = scan.customTypes || [];
+      const merged = (migrated.equipments || []) as EquipmentRecord[];
+      const types = migrated.customTypes || [];
 
       if (merged.length === 0) {
-        showNotification(
-          'Varredura completa',
-          'Nenhum patrimônio em system_logs, system_settings (Replit) nem storage. Veja as dicas abaixo ou backup do Supabase.',
-          'info',
-        );
+        const scanResp = await authFetch('/api/equipment/recovery/full-scan');
+        const scan = await scanResp.json();
+        if (scan?.hints?.length) setRecoveryHints(scan.hints);
+        showNotification('Varredura completa', 'Nada para migrar. Veja dicas abaixo ou backup Supabase.', 'info');
         return;
       }
 
-      const result = await loadEquipmentWithRecovery(supabase);
-      masterRowIdRef.current = result.masterRowId;
-      await saveAll(merged, types.length ? types : result.customTypes);
       setEquipments(merged);
-      setCustomTypes(types.length ? types : result.customTypes);
-      setRecoveryInfo(`Varredura completa: ${merged.length} equipamento(s) — fontes: logs ${scan.sources?.registryRows || 0}, UserEquipment ${scan.sources?.userEquipmentRows || 0}, system_settings ${scan.sources?.systemSettingsKeys || 0}`);
-      showNotification('Recuperado', `${merged.length} equipamento(s) consolidado(s) e salvos.`, 'success');
+      setCustomTypes(types);
+      setRecoveryInfo(`Migrado para patrimonio_equipments: ${merged.length} item(ns) (fonte: ${migrated.source}).`);
+      showNotification('Migrado', `${merged.length} equipamento(s) na tabela dedicada.`, 'success');
     } catch (e: unknown) {
       showNotification('Erro', e instanceof Error ? e.message : 'Falha na recuperação', 'error');
     } finally {
@@ -170,11 +146,11 @@ const EquipmentManager: React.FC = () => {
       const resp = await authFetch('/api/equipment/backups/restore-auto', { method: 'POST', body: '{}' });
       const data = await resp.json();
       if (!resp.ok || !data.equipments?.length) {
-        showNotification('Sem backup automático', data.error || 'Ainda não há snapshot com equipamentos (cron 6h).', 'info');
+        showNotification('Sem backup', data.error || 'Nenhum registro em patrimonio_backups ainda (cron 6h).', 'info');
         return;
       }
-      await saveAll(data.equipments, data.customTypes || customTypes);
       setEquipments(data.equipments);
+      if (data.customTypes?.length) setCustomTypes(data.customTypes);
       showNotification('Restaurado', `${data.equipments.length} item(ns) do backup de ${formatDateTimeBR(data.snapshot_at)}.`, 'success');
     } catch (e: unknown) {
       showNotification('Erro', e instanceof Error ? e.message : 'Falha ao restaurar', 'error');
@@ -538,7 +514,7 @@ const EquipmentManager: React.FC = () => {
         </button>
         {showSupabaseGuide && (
           <div className="px-4 pb-4 text-[11px] text-blue-950 space-y-2 leading-relaxed border-t border-blue-100 pt-3">
-            <p className="font-bold">Backup automático a cada 6 horas (cron Vercel) em system_settings + storage.</p>
+            <p className="font-bold">Patrimônio em tabelas dedicadas: patrimonio_equipments + patrimonio_backups (não usa system_logs).</p>
             <ol className="list-decimal pl-4 space-y-1.5">
               <li>
                 Abra{' '}

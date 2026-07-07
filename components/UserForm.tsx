@@ -125,6 +125,18 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
 
   const loadLinkedEquipments = async (userId: string) => {
     try {
+      const { data: fromTable } = await supabase
+        .from('patrimonio_equipments')
+        .select('patrimony_id, type, brand, model, serial_number, photo_urls, assigned_to')
+        .eq('assigned_to', userId)
+        .is('deleted_at', null);
+      if (fromTable?.length) {
+        setLinkedEquipments(fromTable.map((eq: any) => ({
+          ...eq,
+          photo_urls: eq.photo_urls || [],
+        })));
+        return;
+      }
       const { data } = await supabase.from('system_logs')
         .select('details').eq('entity', 'EquipmentRegistry').eq('entity_id', 'master')
         .order('created_at', { ascending: false }).limit(1).maybeSingle();
@@ -140,7 +152,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
 
   const saveEquipmentData = async (userId: string) => {
     try {
-      const payload = JSON.stringify({ equipments, chips });
+      const payload = JSON.stringify({ equipments: [], chips });
       const { data: existing } = await supabase.from('system_logs')
         .select('id')
         .eq('entity', 'UserEquipment')

@@ -201,7 +201,7 @@ const MaintenanceDashboard: React.FC = () => {
         try {
             const [
                 clients, providers, missions, prices, costs, routes, 
-                agents, vehicles, mission_logs, fin_trans, fin_acc, fin_cat, equipment_logs
+                agents, vehicles, mission_logs, fin_trans, fin_acc, fin_cat, patrimonio_eq, patrimonio_bk
             ] = await Promise.all([
                 supabase.from('clients').select('*'),
                 supabase.from('providers').select('*'),
@@ -215,7 +215,8 @@ const MaintenanceDashboard: React.FC = () => {
                 supabase.from('financial_transactions').select('*'),
                 supabase.from('financial_accounts').select('*'),
                 supabase.from('financial_categories').select('*'),
-                supabase.from('system_logs').select('*').in('entity', ['EquipmentRegistry', 'UserEquipment'])
+                supabase.from('patrimonio_equipments').select('*').is('deleted_at', null),
+                supabase.from('patrimonio_backups').select('*').order('created_at', { ascending: false }).limit(50),
             ]);
 
             const backupData = {
@@ -235,7 +236,8 @@ const MaintenanceDashboard: React.FC = () => {
                     financial_transactions: fin_trans.data,
                     financial_accounts: fin_acc.data,
                     financial_categories: fin_cat.data,
-                    equipment_registry: equipment_logs.data
+                    patrimonio_equipments: patrimonio_eq.data,
+                    patrimonio_backups: patrimonio_bk.data
                 }
             };
 

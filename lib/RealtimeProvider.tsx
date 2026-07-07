@@ -32,6 +32,7 @@ const REALTIME_TABLES = [
   'rh_departments',
   'rh_positions',
   'rh_payroll_runs',
+  'patrimonio_equipments',
 ] as const;
 
 type TableName = (typeof REALTIME_TABLES)[number];
@@ -65,6 +66,7 @@ const TABLE_TO_QUERY_KEYS: Record<TableName, string[][]> = {
   rh_departments: [['rh_departments']],
   rh_positions: [['rh_positions']],
   rh_payroll_runs: [['rh_payroll_runs']],
+  patrimonio_equipments: [['patrimonio_equipments']],
 };
 
 const DEBOUNCE_MS = 500;
