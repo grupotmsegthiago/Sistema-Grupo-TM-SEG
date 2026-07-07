@@ -200,6 +200,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         if (!isAuthorized) return false;
     }
 
+    // RH — administrador/diretoria têm acesso total; demais por permissão explícita
+    if (itemId === 'rh-group' || itemId.startsWith('rh-')) {
+        if (role === 'administrador' || role === 'diretoria' || userPermissions.includes('*')) return true;
+        if (role === 'financeiro' && ['rh-salaries', 'rh-payroll', 'rh-payslips', 'rh-reports', 'rh-dashboard'].includes(itemId)) return true;
+        if (role === 'rh' && itemId !== 'rh-settings') return true;
+        if (['rh-timeclock', 'rh-employee-profile'].includes(itemId) && !currentUser?.clientId) return true;
+        if (itemId === 'rh-group') return userPermissions.some((p: string) => p.startsWith('rh-'));
+        return userPermissions.includes(itemId);
+    }
+
     // REGRAS DO PERFIL AVANÇADO
     const isAvancado = role === 'avançado' || role === 'avancado';
     if (isAvancado) {

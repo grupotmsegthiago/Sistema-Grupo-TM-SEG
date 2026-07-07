@@ -28,6 +28,10 @@ const REALTIME_TABLES = [
   'system_logs',
   'mission_logs',
   'dhl_supplier_intakes',
+  'rh_employees',
+  'rh_departments',
+  'rh_positions',
+  'rh_payroll_runs',
 ] as const;
 
 type TableName = (typeof REALTIME_TABLES)[number];
@@ -57,6 +61,10 @@ const TABLE_TO_QUERY_KEYS: Record<TableName, string[][]> = {
   system_logs: [['system_logs']],
   mission_logs: [['mission_logs']],
   dhl_supplier_intakes: [],
+  rh_employees: [['rh_employees']],
+  rh_departments: [['rh_departments']],
+  rh_positions: [['rh_positions']],
+  rh_payroll_runs: [['rh_payroll_runs']],
 };
 
 const DEBOUNCE_MS = 500;

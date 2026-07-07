@@ -11,6 +11,8 @@ import path from "path";
 import pg from "pg";
 import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider } from "./emailService";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
+import { registerRhRoutes } from "./rhRoutes";
+import { runRhMigrations } from "./rhMigrations";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
 import {
   getWhatsappProvider,
@@ -2390,7 +2392,13 @@ export async function registerRoutes(
   } catch (e: any) {
     console.warn('[Migration] WhatsApp instâncias:', e?.message || 'falhou');
   }
+  try {
+    await runRhMigrations();
+  } catch (e: any) {
+    console.warn('[Migration] RH:', e?.message || 'falhou');
+  }
   registerDhlIntakeRoutes(app, requireAuth, requireRole, resolveUserRole, resolvePrincipal);
+  registerRhRoutes(app, requireAuth, requireRole);
 
   app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
     try {

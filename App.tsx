@@ -85,6 +85,8 @@ import VendorVerificationControl from './components/VendorVerificationControl';
 import FinancialInvoiceControl from './components/FinancialInvoiceControl';
 import MissionAlertMonitor from './components/MissionAlertMonitor';
 import AppErrorBoundary from './components/AppErrorBoundary';
+import RhModule from './components/rh/RhModule';
+import { canAccessRhScreen } from './lib/rh/permissions';
 
 // TEMPO DE INATIVIDADE (30 minutos)
 const INACTIVITY_LIMIT = 20 * 60 * 1000;
@@ -373,7 +375,14 @@ const App: React.FC = () => {
         return allowed ? <RankingDHL /> : <Dashboard />;
       }
       case 'support-network': return <SupportMapFinder onNavigate={navigateTo} />;
-      default: return <Dashboard />;
+      default: {
+        if (currentScreen.startsWith('rh-')) {
+          const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+          if (!canAccessRhScreen(currentScreen, u)) return <Dashboard onOpenMission={handleOpenBillingMission} />;
+          return <RhModule screen={currentScreen} selectedId={selectedId} onNavigate={navigateTo} onEdit={handleEdit} />;
+        }
+        return <Dashboard onOpenMission={handleOpenBillingMission} />;
+      }
     }
   };
 
