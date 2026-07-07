@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Users } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { Plus, Users, AlertCircle } from 'lucide-react';
 import { useRealtimeRefresh } from '../../lib/RealtimeProvider';
+import { fetchRhEmployees } from '../../lib/rh/fetchRhEmployees';
 import RhPageHeader from './shared/RhPageHeader';
 import RhDataTable from './shared/RhDataTable';
 import type { RhEmployee } from '../../types/rh';
@@ -15,16 +15,15 @@ interface Props {
 const RhEmployeeList: React.FC<Props> = ({ onAdd, onOpen }) => {
   const [rows, setRows] = useState<RhEmployee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const editable = canEditRh();
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from('rh_employees')
-      .select('*, rh_positions(name), rh_departments(name)')
-      .is('deleted_at', null)
-      .order('full_name');
-    setRows((data as RhEmployee[]) || []);
+    setLoadError(null);
+    const { rows: data, error } = await fetchRhEmployees();
+    setRows(data);
+    if (error && data.length === 0) setLoadError(error);
     setLoading(false);
   };
 
@@ -53,6 +52,15 @@ const RhEmployeeList: React.FC<Props> = ({ onAdd, onOpen }) => {
           </button>
         )}
       />
+      {loadError && (
+        <div className="mb-4 flex items-start gap-2 p-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-sm">
+          <AlertCircle size={18} className="shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold">Nenhum funcionário visível</p>
+            <p className="mt-1 text-xs">{loadError}</p>
+          </div>
+        </div>
+      )}
       {loading ? <p className="text-gray-400">Carregando...</p> : (
         <RhDataTable
           data={rows}
