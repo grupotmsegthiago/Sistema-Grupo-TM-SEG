@@ -63,6 +63,7 @@ import {
   saveEmployeeDeclaration,
   signEmployeePatrimonioContract,
   completeEmptyPatrimonioDeclaration,
+  complianceUserFromPrincipal,
 } from "./patrimonioSelfService";
 import { isLongRunningHost } from "./runtime";
 import { registerScheduledTick } from "./scheduledRegistry";
@@ -237,7 +238,7 @@ function extractUserIdFromToken(token: string): string | null {
   return match ? match[1] : null;
 }
 
-type ResolvedPrincipal = { id: string; name: string | null; email: string | null; role: string; clientId: string | null; permissions: string[]; userType: string | null };
+type ResolvedPrincipal = { id: string; name: string | null; email: string | null; role: string; clientId: string | null; providerId: string | null; permissions: string[]; userType: string | null };
 const principalCache = new Map<string, { principal: ResolvedPrincipal; expiresAt: number }>();
 
 async function resolvePrincipal(token: string): Promise<ResolvedPrincipal | null> {
@@ -250,7 +251,7 @@ async function resolvePrincipal(token: string): Promise<ResolvedPrincipal | null
   try {
     const sb = createSupabaseAdminClient();
     if (!sb) return null;
-    const { data } = await sb.from('system_users').select('id, name, email, status, client_id, user_type, permissions, profiles:profile_id ( name, permissions )').eq('id', userId).single();
+    const { data } = await sb.from('system_users').select('id, name, email, status, client_id, provider_id, user_type, permissions, profiles:profile_id ( name, permissions )').eq('id', userId).single();
     if (!data || data.status !== 'Ativo') return null;
     const profilePerms: string[] = Array.isArray((data.profiles as any)?.permissions) ? (data.profiles as any).permissions : [];
     const userPerms: string[] = Array.isArray((data as any).permissions) ? (data as any).permissions : [];
@@ -260,6 +261,7 @@ async function resolvePrincipal(token: string): Promise<ResolvedPrincipal | null
       email: (data as any).email || null,
       role: ((data.profiles as any)?.name || '').toLowerCase(),
       clientId: (data as any).client_id || null,
+      providerId: (data as any).provider_id || null,
       permissions: [...new Set([...profilePerms, ...userPerms])],
       userType: (data as any).user_type || null,
     };
@@ -2732,13 +2734,7 @@ export async function registerRoutes(
         return;
       }
       const principal = (req as any).user as ResolvedPrincipal;
-      const result = await getEmployeeCompliance(supabaseAdmin, {
-        id: principal.id,
-        name: principal.name,
-        role: principal.role,
-        permissions: principal.permissions,
-        user_type: principal.userType || 'internal',
-      });
+      const result = await getEmployeeCompliance(supabaseAdmin, complianceUserFromPrincipal(principal));
       res.json({ ok: true, ...result });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || 'Falha ao verificar conformidade' });
@@ -2753,13 +2749,7 @@ export async function registerRoutes(
       }
       const principal = (req as any).user as ResolvedPrincipal;
       const items = req.body?.items || [];
-      const result = await saveEmployeeDeclaration(supabaseAdmin, {
-        id: principal.id,
-        name: principal.name,
-        role: principal.role,
-        permissions: principal.permissions,
-        user_type: principal.userType || 'internal',
-      }, items);
+      const result = await saveEmployeeDeclaration(supabaseAdmin, complianceUserFromPrincipal(principal), items);
       res.json({ ok: true, ...result });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || 'Falha ao salvar declaração' });
@@ -2773,13 +2763,7 @@ export async function registerRoutes(
         return;
       }
       const principal = (req as any).user as ResolvedPrincipal;
-      const user = {
-        id: principal.id,
-        name: principal.name,
-        role: principal.role,
-        permissions: principal.permissions,
-        user_type: principal.userType || 'internal',
-      };
+      const user = complianceUserFromPrincipal(principal);
       const term = req.body?.term;
       const equipmentIds: string[] = req.body?.equipment_ids || [];
       const emptyDeclaration = !!req.body?.empty_declaration;

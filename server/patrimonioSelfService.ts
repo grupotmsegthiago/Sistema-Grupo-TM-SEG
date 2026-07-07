@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { EquipmentRecord, EquipmentResponsibilityTerm } from '../lib/equipmentRecovery';
 import type { PatrimonioDeclaredItemDraft, PatrimonioComplianceStatus } from '../lib/patrimonioSelfServiceTypes';
 import { savePatrimonioToTables, loadPatrimonioFromTables } from './patrimonioStore';
+import { isInternalEmployeeAccount } from '../lib/employeePortalGuards';
 
 /** Somente o perfil Diretoria fica isento do fluxo de patrimônio home office. */
 const BYPASS_ROLES = new Set(['diretoria']);
@@ -12,14 +13,42 @@ export interface ComplianceUser {
   name?: string | null;
   role?: string;
   permissions?: string[];
-  user_type?: string;
+  user_type?: string | null;
+  userType?: string | null;
+  client_id?: string | null;
+  clientId?: string | null;
+  provider_id?: string | null;
+  providerId?: string | null;
 }
 
 export function isPatrimonioComplianceRequired(user: ComplianceUser): boolean {
-  if (user.user_type && user.user_type !== 'internal') return false;
+  if (!isInternalEmployeeAccount(user)) return false;
   const role = (user.role || '').toLowerCase();
   if (BYPASS_ROLES.has(role)) return false;
   return true;
+}
+
+export function complianceUserFromPrincipal(principal: {
+  id: string;
+  name?: string | null;
+  role?: string;
+  permissions?: string[];
+  userType?: string | null;
+  clientId?: string | null;
+  providerId?: string | null;
+}, row?: { user_type?: string | null; client_id?: string | null; provider_id?: string | null } | null): ComplianceUser {
+  return {
+    id: principal.id,
+    name: principal.name,
+    role: principal.role,
+    permissions: principal.permissions,
+    user_type: row?.user_type ?? principal.userType ?? null,
+    userType: row?.user_type ?? principal.userType ?? null,
+    client_id: row?.client_id ?? principal.clientId ?? null,
+    clientId: row?.client_id ?? principal.clientId ?? null,
+    provider_id: row?.provider_id ?? principal.providerId ?? null,
+    providerId: row?.provider_id ?? principal.providerId ?? null,
+  };
 }
 
 async function complianceTableExists(sb: SupabaseClient): Promise<boolean> {
