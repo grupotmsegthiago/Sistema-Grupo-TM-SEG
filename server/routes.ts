@@ -48,6 +48,7 @@ import {
 } from "./whatsappTelemetry";
 import { buildWhatsappDiagnosticsReport } from "./whatsappDiagnostics";
 import { handleZapiConnectionWebhook } from "./zapiConnectionWebhook";
+import { runForensicEquipmentRecovery, parseEquipmentFromBackupJson } from "./equipmentForensicRecovery";
 import { isLongRunningHost } from "./runtime";
 import { registerScheduledTick } from "./scheduledRegistry";
 import { registerMaintenanceTick } from "./maintenanceJobs";
@@ -2622,6 +2623,35 @@ export async function registerRoutes(
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/equipment/recovery/forensic', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const report = await runForensicEquipmentRecovery(supabaseAdmin);
+      res.json(report);
+    } catch (e: any) {
+      console.error('[equipment-forensic]', e?.message);
+      res.status(500).json({ ok: false, error: e?.message || 'Falha na recuperação forense' });
+    }
+  });
+
+  app.post('/api/equipment/recovery/import-backup', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const payload = req.body?.backup ?? req.body;
+      const parsed = parseEquipmentFromBackupJson(payload);
+      res.json({
+        ok: true,
+        equipments: parsed.equipments,
+        customTypes: parsed.customTypes,
+        total: parsed.equipments.length,
+      });
+    } catch (e: any) {
+      res.status(400).json({ ok: false, error: e?.message || 'JSON de backup inválido' });
     }
   });
 

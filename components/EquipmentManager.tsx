@@ -1,8 +1,9 @@
 import { formatDateTimeBR, formatDateBR } from '../lib/dateUtils';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Monitor, Plus, Search, Trash2, Save, Loader2, Camera, X, ArrowLeft, Edit3, User, Package, ChevronDown, Image as ImageIcon, FileText, RefreshCw, Eye } from 'lucide-react';
+import { Monitor, Plus, Search, Trash2, Save, Loader2, Camera, X, ArrowLeft, Edit3, User, Package, ChevronDown, Image as ImageIcon, FileText, RefreshCw, Eye, Upload } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { authFetch } from '../lib/authFetch';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
 import { loadEquipmentWithRecovery, type EquipmentRecord, type EquipmentResponsibilityTerm } from '../lib/equipmentRecovery';
@@ -36,6 +37,7 @@ const EquipmentManager: React.FC = () => {
   const [showAddType, setShowAddType] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [recoveryInfo, setRecoveryInfo] = useState<string | null>(null);
+  const [recoveryHints, setRecoveryHints] = useState<string[]>([]);
   const [termEquipment, setTermEquipment] = useState<EquipmentRecord | null>(null);
   const [viewTerm, setViewTerm] = useState<EquipmentResponsibilityTerm | null>(null);
   const masterRowIdRef = useRef<number | null>(null);
@@ -74,7 +76,21 @@ const EquipmentManager: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+    (async () => {
+      try {
+        const result = await loadEquipmentWithRecovery(supabase);
+        if (result.equipments.length > 0) return;
+        const resp = await authFetch('/api/equipment/recovery/forensic');
+        if (!resp.ok) return;
+        const forensic = await resp.json();
+        if (forensic?.hints?.length) setRecoveryHints(forensic.hints);
+      } catch {
+        /* diagnóstico opcional */
+      }
+    })();
+  }, [loadData]);
 
   useRealtimeRefresh('system_logs', () => loadData());
 
@@ -110,19 +126,75 @@ const EquipmentManager: React.FC = () => {
 
   const handleRecoverAndSave = async () => {
     setIsSaving(true);
+    setRecoveryHints([]);
     try {
-      const result = await loadEquipmentWithRecovery(supabase);
-      if (result.equipments.length === 0) {
-        showNotification('Nada encontrado', 'Não há snapshots legados de patrimônio no banco.', 'info');
+      const resp = await authFetch('/api/equipment/recovery/forensic');
+      const forensic = await resp.json();
+
+      let result = await loadEquipmentWithRecovery(supabase);
+      let merged = result.equipments;
+      let types = result.customTypes;
+
+      if (resp.ok && forensic?.equipments?.length) {
+        const ids = new Set(merged.map((e) => e.id));
+        const patIds = new Set(merged.map((e) => e.patrimony_id).filter(Boolean));
+        for (const eq of forensic.equipments as EquipmentRecord[]) {
+          if (ids.has(eq.id)) continue;
+          if (eq.patrimony_id && patIds.has(eq.patrimony_id)) continue;
+          merged.push(eq);
+          ids.add(eq.id);
+          if (eq.patrimony_id) patIds.add(eq.patrimony_id);
+        }
+        if (forensic.customTypes?.length && types.length === 0) types = forensic.customTypes;
+        setRecoveryHints(forensic.hints || []);
+      }
+
+      if (merged.length === 0) {
+        showNotification(
+          'Nada encontrado',
+          forensic?.hints?.[0] || 'Não há vestígios de patrimônio no banco nem no storage. Tente importar um backup JSON.',
+          'info',
+        );
+        if (forensic?.hints?.length) setRecoveryHints(forensic.hints);
         return;
       }
+
       masterRowIdRef.current = result.masterRowId;
-      await saveAll(result.equipments, result.customTypes);
-      setEquipments(result.equipments);
-      setCustomTypes(result.customTypes);
-      showNotification('Recuperado', `${result.equipments.length} equipamento(s) restaurado(s) e salvos.`, 'success');
+      await saveAll(merged, types);
+      setEquipments(merged);
+      setCustomTypes(types);
+      setRecoveryInfo(`Recuperação forense: ${merged.length} equipamento(s) consolidado(s).`);
+      showNotification('Recuperado', `${merged.length} equipamento(s) restaurado(s) e salvos.`, 'success');
     } catch (e: unknown) {
       showNotification('Erro', e instanceof Error ? e.message : 'Falha na recuperação', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setIsSaving(true);
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const resp = await authFetch('/api/equipment/recovery/import-backup', {
+        method: 'POST',
+        body: JSON.stringify({ backup: json }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.equipments?.length) {
+        showNotification('Backup sem patrimônio', data.error || 'O arquivo não contém equipment_registry.', 'info');
+        return;
+      }
+      await saveAll(data.equipments, data.customTypes || customTypes);
+      setEquipments(data.equipments);
+      if (data.customTypes?.length) setCustomTypes(data.customTypes);
+      showNotification('Importado', `${data.equipments.length} equipamento(s) do backup.`, 'success');
+    } catch (e: unknown) {
+      showNotification('Erro', e instanceof Error ? e.message : 'Falha ao importar backup', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -411,9 +483,13 @@ const EquipmentManager: React.FC = () => {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={handleRecoverAndSave} disabled={isSaving} className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-600 text-white rounded-xl text-xs font-black uppercase hover:bg-amber-700 transition-colors disabled:opacity-50" data-testid="button-recover-equipment" title="Busca snapshots antigos e cadastros legados no banco">
+          <button onClick={handleRecoverAndSave} disabled={isSaving} className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-600 text-white rounded-xl text-xs font-black uppercase hover:bg-amber-700 transition-colors disabled:opacity-50" data-testid="button-recover-equipment" title="Busca em system_logs, storage e cadastros legados">
             <RefreshCw size={14} className={isSaving ? 'animate-spin' : ''} /> Recuperar dados
           </button>
+          <label className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-600 text-white rounded-xl text-xs font-black uppercase hover:bg-slate-700 transition-colors cursor-pointer" data-testid="button-import-backup-equipment">
+            <Upload size={14} /> Importar backup
+            <input type="file" accept=".json,application/json" className="hidden" onChange={handleImportBackup} />
+          </label>
           <button onClick={handleAddNew} className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 text-white rounded-xl text-xs font-black uppercase hover:bg-slate-900 transition-colors shadow-lg" data-testid="button-new-equipment">
             <Plus size={14} /> Novo Equipamento
           </button>
@@ -422,7 +498,15 @@ const EquipmentManager: React.FC = () => {
 
       {recoveryInfo && (
         <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] font-bold text-amber-800">
-          {recoveryInfo}. Se a lista estiver incompleta, clique em <strong>Recuperar dados</strong> para consolidar e salvar.
+          {recoveryInfo}
+        </div>
+      )}
+
+      {recoveryHints.length > 0 && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-[11px] text-red-800 space-y-1">
+          {recoveryHints.map((h, i) => (
+            <p key={i}>• {h}</p>
+          ))}
         </div>
       )}
 
@@ -450,8 +534,8 @@ const EquipmentManager: React.FC = () => {
           <p className="text-sm font-bold text-slate-400">{searchTerm ? 'Nenhum equipamento encontrado' : 'Nenhum equipamento cadastrado'}</p>
           {!searchTerm && (
             <>
-              <p className="text-xs text-slate-400 mt-1">Clique em &quot;Novo Equipamento&quot; ou tente <strong>Recuperar dados</strong> se havia cadastro anterior.</p>
-              <p className="text-[10px] text-amber-600 mt-2 max-w-md mx-auto">Dados antigos podem ter sido afetados pela limpeza de logs do sistema (corrigida nesta versão).</p>
+              <p className="text-xs text-slate-400 mt-1">Use <strong>Recuperar dados</strong> (busca forense) ou <strong>Importar backup</strong> se você baixou o JSON em Manutenção.</p>
+              <p className="text-[10px] text-amber-600 mt-2 max-w-lg mx-auto">Se nada voltar, os registros foram apagados da rotação de logs (já corrigida). Restaure via Supabase → Database → Backups (PITR) ou recadastre.</p>
             </>
           )}
         </div>
