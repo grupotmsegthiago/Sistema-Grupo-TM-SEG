@@ -1550,7 +1550,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/password-reset/request", async (req: Request, res: Response) => {
+  app.post("/api/password-reset/request", requireAuth, async (req: Request, res: Response) => {
     try {
       const { userId, senderName } = req.body;
       if (!userId) return res.status(400).json({ error: 'userId obrigatório' });

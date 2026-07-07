@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { authFetch } from '../lib/authFetch';
+import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { KeyRound, Eye, EyeOff, Loader2, CheckCircle2, AlertCircle, ShieldCheck } from 'lucide-react';
 
 interface ResetPasswordProps {
@@ -30,7 +31,7 @@ const ResetPassword: React.FC<ResetPasswordProps> = ({ token, onComplete }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token }),
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (res.ok && data.valid) {
         setTokenValid(true);
         setUserName(data.userName);
@@ -65,7 +66,7 @@ const ResetPassword: React.FC<ResetPasswordProps> = ({ token, onComplete }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, newPassword }),
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (res.ok && data.success) {
         setSuccess(true);
         setTimeout(() => onComplete(), 3000);

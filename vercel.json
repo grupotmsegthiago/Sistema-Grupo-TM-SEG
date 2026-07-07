@@ -89,6 +89,9 @@
     },
     "api/cron/email-queue.ts": {
       "maxDuration": 120
+    },
+    "api/[...path].ts": {
+      "maxDuration": 300
     }
   },
   "rewrites": [
@@ -195,6 +198,10 @@
     {
       "source": "/api/cron/email-queue",
       "destination": "/api/cron/email-queue"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index"
     },
     {
       "source": "/(.*)",

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Save, UserCog, Building2, Shield, Info, Loader2, Key, RefreshCw, Eye, EyeOff, Copy, Briefcase, AlertTriangle, CheckSquare, Square, Mail, LayoutDashboard, MapPin, Truck, Route, Users, FileText, BarChart3, Bell, FileBarChart, CheckCircle2, MessageCircle, X, Monitor, Smartphone, Plus, Trash2, Camera, Image as ImageIcon, Wifi } from 'lucide-react';
 import { Client, AccessProfile, ProviderData } from '../types';
 import { authFetch } from '../lib/authFetch';
+import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { useNotification } from '../lib/NotificationContext';
@@ -709,7 +710,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({ userId: id, senderName })
                             });
-                            const data = await res.json();
+                            const data = await parseJsonResponse(res);
                             if (res.ok && data.success) {
                               showNotification('success', 'E-mail de redefinição enviado com sucesso!');
                             } else {
