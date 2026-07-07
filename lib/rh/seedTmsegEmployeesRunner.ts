@@ -27,7 +27,7 @@ async function ensureDepartment(sb: SupabaseClient): Promise<string> {
   if (existing?.id) return existing.id;
 
   const { data, error } = await sb.from('rh_departments')
-    .insert([{ name: TMSEG_COMPANY, code: 'TMSEG', active: true, created_by: 'seed-rh' }])
+    .insert([{ name: TMSEG_COMPANY, code: 'TMSEG', active: true }])
     .select('id')
     .single();
   if (error) throw error;

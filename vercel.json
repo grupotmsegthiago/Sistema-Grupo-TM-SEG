@@ -105,6 +105,9 @@
     "api/rh-seed-employees.ts": {
       "maxDuration": 120
     },
+    "api/rh-employees.ts": {
+      "maxDuration": 60
+    },
     "api/email-health.ts": {
       "maxDuration": 60
     }
@@ -235,6 +238,10 @@
       "destination": "/api/rh-seed-employees"
     },
     {
+      "source": "/api/rh/employees",
+      "destination": "/api/rh-employees"
+    },
+    {
       "source": "/api/email/health",
       "destination": "/api/email-health"
     },
@@ -262,7 +269,7 @@
     },
     {
       "path": "/api/cron/zapi",
-      "schedule": "*/3 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/cron/maintenance",

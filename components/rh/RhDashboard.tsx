@@ -4,8 +4,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import RhPageHeader from './shared/RhPageHeader';
 import RhStatCard from './shared/RhStatCard';
 import RhAdminSettings from './RhAdminSettings';
+import { fetchRhEmployees } from '../../lib/rh/fetchRhEmployees';
 import { supabase } from '../../lib/supabase';
-import { maskCurrency } from '../../lib/rh/masks';
 import { RH_SELECT_CLASS, RH_LABEL_CLASS } from '../../lib/rh/constants';
 import { canEditRh } from '../../lib/rh/permissions';
 
@@ -23,8 +23,8 @@ const RhDashboard: React.FC = () => {
   useEffect(() => { load(); }, [filterId]);
 
   const loadEmployees = async () => {
-    const { data } = await supabase.from('rh_employees').select('id, full_name, status').is('deleted_at', null).order('full_name');
-    setEmployees(data || []);
+    const { rows } = await fetchRhEmployees();
+    setEmployees(rows.map((e) => ({ id: e.id, full_name: e.full_name, status: e.status })));
   };
 
   const load = async () => {

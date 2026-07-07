@@ -5,8 +5,8 @@
 BEGIN;
 
 -- Departamento
-INSERT INTO rh_departments (name, code, active, created_by)
-SELECT 'TM SEGURANÇA', 'TMSEG', true, 'sql-seed'
+INSERT INTO rh_departments (name, code, active)
+SELECT 'TM SEGURANÇA', 'TMSEG', true
 WHERE NOT EXISTS (
   SELECT 1 FROM rh_departments WHERE name = 'TM SEGURANÇA' AND deleted_at IS NULL
 );
