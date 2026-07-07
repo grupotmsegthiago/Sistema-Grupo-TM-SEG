@@ -4,7 +4,7 @@ import { useRealtimeRefresh } from '../../lib/RealtimeProvider';
 import { fetchRhEmployees } from '../../lib/rh/fetchRhEmployees';
 import { fetchEmployeeCostSummary } from '../../lib/rh/fetchEmployeeCostSummary';
 import { authFetch } from '../../lib/authFetch';
-import { maskCurrency } from '../../lib/rh/masks';
+import { maskCurrency, maskPercent } from '../../lib/rh/masks';
 import RhPageHeader from './shared/RhPageHeader';
 import type { RhEmployee } from '../../types/rh';
 import type { RhEmployeeCostBreakdown } from '../../lib/rh/employeeCostSummary';
@@ -242,13 +242,14 @@ const RhEmployeeList: React.FC<Props> = ({ onAdd, onOpen }) => {
                       <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase whitespace-nowrap">FGTS</th>
                       <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase whitespace-nowrap">Variáveis</th>
                       <th className="px-4 py-3 text-xs font-bold text-red-600 uppercase whitespace-nowrap">Custo empresa</th>
+                      <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase whitespace-nowrap">% do total</th>
                     </>
                   )}
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={showCosts ? 11 : 5} className="px-4 py-10 text-center text-gray-400">Nenhum registro encontrado.</td></tr>
+                  <tr><td colSpan={showCosts ? 12 : 5} className="px-4 py-10 text-center text-gray-400">Nenhum registro encontrado.</td></tr>
                 ) : filtered.map((row) => {
                   const cost = costByEmployee[row.id];
                   const isExpanded = expandedId === row.id;
@@ -284,12 +285,15 @@ const RhEmployeeList: React.FC<Props> = ({ onAdd, onOpen }) => {
                             <td className="px-4 py-3 whitespace-nowrap font-black text-red-700">
                               {costLoading ? '…' : (cost ? maskCurrency(cost.companyCost) : '—')}
                             </td>
+                            <td className="px-4 py-3 whitespace-nowrap font-semibold text-gray-700">
+                              {costLoading ? '…' : (cost && costTotals ? maskPercent(cost.companyCost, costTotals.companyCost) : '—')}
+                            </td>
                           </>
                         )}
                       </tr>
                       {showCosts && isExpanded && (
                         <tr className="bg-gray-50/80 border-t border-gray-100">
-                          <td colSpan={11} className="px-6 py-4">
+                          <td colSpan={12} className="px-6 py-4">
                             {!cost?.hasSalaryConfig && !cost?.variablePay ? (
                               <p className="text-sm text-amber-700">Sem configuração salarial cadastrada para este colaborador.</p>
                             ) : (
@@ -311,6 +315,11 @@ const RhEmployeeList: React.FC<Props> = ({ onAdd, onOpen }) => {
                                   <span className="text-lg font-black text-red-700">
                                     {cost ? maskCurrency(cost.companyCost) : '—'}
                                   </span>
+                                  {cost && costTotals ? (
+                                    <span className="text-sm font-bold text-gray-600">
+                                      {maskPercent(cost.companyCost, costTotals.companyCost)} do custo total da equipe
+                                    </span>
+                                  ) : null}
                                   <p className="w-full text-[11px] text-red-700/80">
                                     Bruto + FGTS + benefícios + comissões + premiações + bonificações
                                   </p>
@@ -333,6 +342,7 @@ const RhEmployeeList: React.FC<Props> = ({ onAdd, onOpen }) => {
                     <td className="px-4 py-3 whitespace-nowrap">{maskCurrency(costTotals.fgts)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{maskCurrency(costTotals.variablePay)}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-red-300">{maskCurrency(costTotals.companyCost)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">100%</td>
                   </tr>
                 </tfoot>
               )}

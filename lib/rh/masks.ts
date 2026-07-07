@@ -20,6 +20,15 @@ export function maskCurrency(value: number | string): string {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+/** Percentual do valor em relação ao total (ex.: participação no custo da equipe). */
+export function maskPercent(value: number, total: number): string {
+  if (!total || total <= 0 || !Number.isFinite(value)) return '—';
+  const pct = (value / total) * 100;
+  if (pct <= 0 && value <= 0) return '0%';
+  if (pct > 0 && pct < 0.1) return '<0,1%';
+  return `${pct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+}
+
 export function parseCurrencyInput(value: string): number {
   const cleaned = (value || '').replace(/[^\d,.-]/g, '').replace(',', '.');
   const n = parseFloat(cleaned);
