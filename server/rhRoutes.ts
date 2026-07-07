@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import { createSupabaseAdminClient } from './supabaseConfig';
 import { calcSalary } from '../lib/rh/payroll';
+import { loadEmployeeCostSummary } from '../lib/rh/loadEmployeeCostSummary';
 import { calculateCommissionForEmployee } from '../lib/rh/commissionAuto';
 import { seedTmsegEmployees } from '../lib/rh/seedTmsegEmployeesRunner';
 import type { RhSalaryConfig, RhTaxBracket } from '../types/rh';
@@ -54,6 +55,16 @@ export function registerRhRoutes(
       res.json({ ok: true, employees: data || [], total: data?.length || 0 });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  app.get('/api/rh/employees/cost-summary', ...rhAuth, async (req: Request, res: Response) => {
+    try {
+      const month = String(req.query.month || new Date().toISOString().slice(0, 7));
+      const result = await loadEmployeeCostSummary(sb(), month);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao calcular custos' });
     }
   });
 
