@@ -1,6 +1,6 @@
 {
   "installCommand": "npm install --no-audit --no-fund --legacy-peer-deps",
-  "buildCommand": "vite build && node build-server.mjs",
+  "buildCommand": "node scripts/generate-build-meta.mjs && vite build && node build-server.mjs",
   "outputDirectory": "dist/public",
   "functions": {
     "api/index.ts": {
@@ -113,6 +113,9 @@
     },
     "api/email-health.ts": {
       "maxDuration": 60
+    },
+    "api/version.ts": {
+      "maxDuration": 10
     }
   },
   "rewrites": [
@@ -253,6 +256,10 @@
       "destination": "/api/email-health"
     },
     {
+      "source": "/api/version",
+      "destination": "/api/version"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
@@ -284,6 +291,32 @@
     }
   ],
   "headers": [
+    {
+      "source": "/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Pragma",
+          "value": "no-cache"
+        },
+        {
+          "key": "Expires",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "source": "/build-meta.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
     {
       "source": "/index.html",
       "headers": [

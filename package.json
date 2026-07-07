@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "npx tsx server/index.ts",
-    "build": "vite build && node build-server.mjs",
+    "build": "node scripts/generate-build-meta.mjs && vite build && node build-server.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
