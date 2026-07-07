@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Save, UserCog, Building2, Shield, Info, Loader2, Key, RefreshCw, Eye, EyeOff, Copy, Briefcase, AlertTriangle, CheckSquare, Square, Mail, LayoutDashboard, MapPin, Truck, Route, Users, FileText, BarChart3, Bell, FileBarChart, CheckCircle2, MessageCircle, X, Monitor, Smartphone, Plus, Trash2, Camera, Image as ImageIcon, Wifi } from 'lucide-react';
+import { ArrowLeft, Save, UserCog, Building2, Shield, Info, Loader2, Key, RefreshCw, Eye, EyeOff, Copy, Briefcase, AlertTriangle, CheckSquare, Square, Mail, LayoutDashboard, MapPin, Truck, Route, Users, FileText, BarChart3, Bell, FileBarChart, CheckCircle2, MessageCircle, X, Monitor, Smartphone, Plus, Trash2, Camera, Image as ImageIcon, Wifi, Clock } from 'lucide-react';
 import { Client, AccessProfile, ProviderData } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
@@ -70,7 +70,8 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
     profileId: '',
     clientId: '',
     providerId: '',
-    status: 'Ativo'
+    status: 'Ativo',
+    requires_time_clock: false,
   });
 
   const [profiles, setProfiles] = useState<AccessProfile[]>([]);
@@ -225,7 +226,8 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   profileId: data.profile_id || '',
                   clientId: data.client_id || '',
                   providerId: data.provider_id || '',
-                  status: data.status
+                  status: data.status,
+                  requires_time_clock: !!data.requires_time_clock,
               });
               if (data.permissions && Array.isArray(data.permissions) && data.permissions.length > 0) {
                   setSelectedPermissions(data.permissions);
@@ -285,6 +287,9 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               status: formData.status,
               force_password_change: !id
           };
+          if (userType === 'internal') {
+              payload.requires_time_clock = !!formData.requires_time_clock;
+          }
           if (userType === 'client' && isClientUser) {
               payload.permissions = selectedPermissions;
           }
@@ -577,6 +582,17 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
 
               {userType === 'internal' && (
                 <div className="space-y-6">
+                  <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${formData.requires_time_clock ? 'bg-amber-50 border-amber-400' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
+                    <input type="checkbox" className="hidden" checked={formData.requires_time_clock} onChange={(e) => setFormData({ ...formData, requires_time_clock: e.target.checked })} />
+                    <div className={`p-2 rounded-lg ${formData.requires_time_clock ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-400'}`}><Clock size={18} /></div>
+                    <div className="flex-1">
+                      <p className="text-xs font-black text-gray-800 uppercase">Bater ponto obrigatório</p>
+                      <p className="text-[10px] text-gray-500">Ao abrir o sistema, este colaborador deve registrar entrada, almoço, retorno e fim de expediente.</p>
+                    </div>
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${formData.requires_time_clock ? 'bg-amber-500 border-amber-500 text-white' : 'border-gray-300'}`}>
+                      {formData.requires_time_clock && <CheckCircle2 size={14} />}
+                    </div>
+                  </label>
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 animate-in fade-in">
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2">

@@ -4,6 +4,7 @@ import { calcSalary } from '../lib/rh/payroll';
 import { calculateCommissionForEmployee } from '../lib/rh/commissionAuto';
 import { seedTmsegEmployees } from '../lib/rh/seedTmsegEmployeesRunner';
 import type { RhSalaryConfig, RhTaxBracket } from '../types/rh';
+import { getTimeclockCompliance } from './timeclockCompliance';
 
 function sb() {
   const client = createSupabaseAdminClient();
@@ -41,6 +42,27 @@ export function registerRhRoutes(
 
   app.get('/api/rh/health', requireAuth, (_req, res) => {
     res.json({ ok: true, module: 'rh' });
+  });
+
+  app.get('/api/timeclock/my/status', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const principal = (req as any).user || {};
+      const client = sb();
+      const { data: userRow } = await client
+        .from('system_users')
+        .select('user_type, client_id')
+        .eq('id', principal.id)
+        .maybeSingle();
+      const result = await getTimeclockCompliance(client, {
+        id: principal.id,
+        role: principal.role,
+        user_type: userRow?.user_type || 'internal',
+        client_id: userRow?.client_id || principal.clientId || null,
+      });
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao verificar ponto' });
+    }
   });
 
   app.get('/api/rh/employees', requireAuth, async (_req: Request, res: Response) => {

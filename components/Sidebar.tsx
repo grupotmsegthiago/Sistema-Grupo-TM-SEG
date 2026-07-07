@@ -7,6 +7,7 @@ import {
 import { NAV_ITEMS, APP_VERSION } from '../constants';
 import { NavItem } from '../constants'; // Explicit import to avoid TS error if NAV_ITEMS interface isn't exported correctly
 import { logAction } from '../lib/logger';
+import { canViewTimeclockReport } from '../lib/rh/permissions';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -203,9 +204,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
     // RH — administrador/diretoria têm acesso total; demais por permissão explícita
     if (itemId === 'rh-group' || itemId.startsWith('rh-')) {
         if (role === 'administrador' || role === 'diretoria' || userPermissions.includes('*')) return true;
-        if (role === 'financeiro' && ['rh-dashboard', 'rh-employees', 'rh-timeclock'].includes(itemId)) return true;
+        if (role === 'financeiro' && ['rh-dashboard', 'rh-employees'].includes(itemId)) return true;
         if (role === 'rh') return true;
-        if (['rh-timeclock', 'rh-employee-workspace', 'rh-employee-profile'].includes(itemId) && !currentUser?.clientId) return true;
+        if (itemId === 'rh-timeclock') {
+          return canViewTimeclockReport({ role, permissions: userPermissions, clientId: currentUser?.clientId });
+        }
         if (itemId === 'rh-group') return userPermissions.some((p: string) => p.startsWith('rh-'));
         return userPermissions.includes(itemId);
     }
