@@ -39,12 +39,13 @@ export function registerRhRoutes(
   requireRole: (...roles: string[]) => (req: Request, res: Response, next: Function) => void,
 ) {
   const rhAuth = [requireAuth, requireRole('administrador', 'diretoria', 'financeiro', 'rh', '*')];
+  const rhEmployeesAuth = [requireAuth, requireRole('diretoria', 'rh')];
 
   app.get('/api/rh/health', requireAuth, (_req, res) => {
     res.json({ ok: true, module: 'rh' });
   });
 
-  app.get('/api/rh/employees', requireAuth, async (_req: Request, res: Response) => {
+  app.get('/api/rh/employees', ...rhEmployeesAuth, async (_req: Request, res: Response) => {
     try {
       const { data, error } = await sb()
         .from('rh_employees')
@@ -58,7 +59,7 @@ export function registerRhRoutes(
     }
   });
 
-  app.get('/api/rh/employees/cost-summary', ...rhAuth, async (req: Request, res: Response) => {
+  app.get('/api/rh/employees/cost-summary', ...rhEmployeesAuth, async (req: Request, res: Response) => {
     try {
       const month = String(req.query.month || new Date().toISOString().slice(0, 7));
       const result = await loadEmployeeCostSummary(sb(), month);

@@ -1,3 +1,5 @@
+import { assertEmployeesApiAccess } from '../lib/rh/apiEmployeesAuth.js';
+
 const DEFAULT_SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
 const TMSEG_REF = 'ajhmmjuewdsukecaimik';
 
@@ -35,8 +37,15 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  if (!authToken(req)) {
+  const token = authToken(req);
+  if (!token) {
     res.status(401).json({ ok: false, error: 'Não autorizado' });
+    return;
+  }
+
+  const denied = await assertEmployeesApiAccess(token);
+  if (denied) {
+    res.status(403).json({ ok: false, error: denied });
     return;
   }
 

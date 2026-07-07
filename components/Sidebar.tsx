@@ -200,14 +200,21 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         if (!isAuthorized) return false;
     }
 
-    // RH — administrador/diretoria têm acesso total; demais por permissão explícita
+    // RH — Funcionários: somente Diretoria e perfil RH; demais telas RH por permissão
     if (itemId === 'rh-group' || itemId.startsWith('rh-')) {
-        if (role === 'administrador' || role === 'diretoria' || userPermissions.includes('*')) return true;
-        if (role === 'financeiro' && ['rh-dashboard', 'rh-employees', 'rh-timeclock'].includes(itemId)) return true;
-        if (role === 'rh') return true;
-        if (['rh-timeclock', 'rh-employee-workspace', 'rh-employee-profile'].includes(itemId) && !currentUser?.clientId) return true;
-        if (itemId === 'rh-group') return userPermissions.some((p: string) => p.startsWith('rh-'));
-        return userPermissions.includes(itemId);
+      const employeesOnly = ['rh-employees', 'rh-employee-workspace', 'rh-employee-form', 'rh-employee-profile'];
+      if (employeesOnly.includes(itemId)) {
+        return role === 'diretoria' || role === 'rh';
+      }
+      if (role === 'administrador' || role === 'diretoria' || userPermissions.includes('*')) return true;
+      if (role === 'financeiro' && ['rh-dashboard', 'rh-timeclock'].includes(itemId)) return true;
+      if (role === 'rh') return true;
+      if (itemId === 'rh-timeclock' && !currentUser?.clientId) return true;
+      if (itemId === 'rh-group') {
+        return role === 'diretoria' || role === 'rh' || role === 'financeiro'
+          || userPermissions.some((p: string) => p.startsWith('rh-'));
+      }
+      return userPermissions.includes(itemId);
     }
 
     // REGRAS DO PERFIL AVANÇADO

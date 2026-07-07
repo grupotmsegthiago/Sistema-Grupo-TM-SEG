@@ -8,7 +8,7 @@ import { maskCurrency, maskPercent } from '../../lib/rh/masks';
 import RhPageHeader from './shared/RhPageHeader';
 import type { RhEmployee } from '../../types/rh';
 import type { RhEmployeeCostBreakdown } from '../../lib/rh/employeeCostSummary';
-import { canEditRh, canViewSalary } from '../../lib/rh/permissions';
+import { canAccessEmployeesScreen, canViewEmployeeCosts } from '../../lib/rh/permissions';
 
 interface Props {
   onAdd: () => void;
@@ -43,8 +43,8 @@ const RhEmployeeList: React.FC<Props> = ({ onAdd, onOpen }) => {
   const [costLoading, setCostLoading] = useState(false);
   const [costError, setCostError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const editable = canEditRh();
-  const showCosts = canViewSalary();
+  const editable = canAccessEmployeesScreen();
+  const showCosts = canViewEmployeeCosts();
 
   const load = async () => {
     setLoading(true);

@@ -24,6 +24,23 @@ export function isRhFinance(user: RhUserContext = getRhUser()): boolean {
   return isRhAdmin(user) || role === 'financeiro' || user.permissions?.includes('rh-salaries') || false;
 }
 
+/** Telas de cadastro/custos de funcionários — somente Diretoria e perfil RH. */
+export const RH_EMPLOYEES_SCREENS = [
+  'rh-employees',
+  'rh-employee-workspace',
+  'rh-employee-form',
+  'rh-employee-profile',
+] as const;
+
+export function canAccessEmployeesScreen(user: RhUserContext = getRhUser()): boolean {
+  const role = (user.role || '').toLowerCase();
+  return role === 'diretoria' || role === 'rh';
+}
+
+export function canViewEmployeeCosts(user: RhUserContext = getRhUser()): boolean {
+  return canAccessEmployeesScreen(user);
+}
+
 export function canEditRh(user: RhUserContext = getRhUser()): boolean {
   const role = (user.role || '').toLowerCase();
   if (isRhAdmin(user)) return true;
@@ -36,9 +53,9 @@ export function canViewSalary(user: RhUserContext = getRhUser()): boolean {
 }
 
 export function canViewEmployee(employeeId: string, user: RhUserContext = getRhUser()): boolean {
-  if (canEditRh(user) || isRhFinance(user)) return true;
+  if (canAccessEmployeesScreen(user)) return true;
   if (user.employeeId && user.employeeId === employeeId) return true;
-  return user.permissions?.includes('rh-employees');
+  return false;
 }
 
 /** Qualquer permissão rh-* ou perfil RH libera o módulo. */
@@ -49,6 +66,10 @@ function hasAnyRhPermission(user: RhUserContext): boolean {
 }
 
 export function canAccessRhScreen(screenId: string, user: RhUserContext = getRhUser()): boolean {
+  if ((RH_EMPLOYEES_SCREENS as readonly string[]).includes(screenId)) {
+    return canAccessEmployeesScreen(user);
+  }
+
   if (isRhAdmin(user)) return true;
   if (!hasAnyRhPermission(user)) return false;
 
