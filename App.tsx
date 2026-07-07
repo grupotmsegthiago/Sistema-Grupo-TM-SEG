@@ -33,6 +33,8 @@ import ProfileSettingsModal from './components/ProfileSettingsModal';
 
 import MissionFinancialModal from './components/MissionFinancialModal';
 import MotivationGate, { shouldShowMotivation } from './components/MotivationGate';
+import PatrimonioComplianceGate from './components/PatrimonioComplianceGate';
+import { isInternalEmployeeAccount } from './lib/employeePortalGuards';
 
 // Outros Componentes
 import ClientRouteList from './components/ClientRouteList';
@@ -114,6 +116,16 @@ const App: React.FC = () => {
   const [isCevaClient, setIsCevaClient] = useState(false);
   const [billingMissionId, setBillingMissionId] = useState<string | null>(null);
   const [billingMission, setBillingMission] = useState<any>(null);
+  const [patrimonioPending, setPatrimonioPending] = useState(() => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const userData = localStorage.getItem('userData');
+      const version = localStorage.getItem('app_version');
+      if (!(token && userData && version === APP_VERSION)) return false;
+      const u = JSON.parse(userData || '{}');
+      return isInternalEmployeeAccount(u);
+    } catch { return false; }
+  });
   const [motivationPending, setMotivationPending] = useState(() => {
     try {
       const token = localStorage.getItem('authToken');
@@ -151,7 +163,7 @@ const App: React.FC = () => {
       if (!storedUser) return;
       try {
           const user = JSON.parse(storedUser);
-          const { data, error } = await supabase.from('system_users').select(`name, status, force_password_change, permissions, profile_id, client_id, profiles:profile_id ( name, permissions )`).eq('id', user.id).single();
+          const { data, error } = await supabase.from('system_users').select(`name, status, force_password_change, permissions, profile_id, client_id, provider_id, user_type, profiles:profile_id ( name, permissions )`).eq('id', user.id).single();
           if (error || !data || data.status !== 'Ativo') { handleLogout(); return; }
           if (data.force_password_change) setNeedsPasswordChange(true);
           const profilePerms = data.profiles?.permissions || [];
@@ -168,6 +180,18 @@ const App: React.FC = () => {
           }
           if (data.profiles?.name && (!user.role || user.role === 'Usuário')) {
               user.role = data.profiles.name;
+              needsUpdate = true;
+          }
+          if (data.client_id !== user.clientId) {
+              user.clientId = data.client_id;
+              needsUpdate = true;
+          }
+          if (data.provider_id !== user.providerId) {
+              user.providerId = data.provider_id;
+              needsUpdate = true;
+          }
+          if (data.user_type && data.user_type !== user.userType) {
+              user.userType = data.user_type;
               needsUpdate = true;
           }
           if (needsUpdate) {
@@ -226,11 +250,15 @@ const App: React.FC = () => {
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const handleLogin = () => {
     setIsAuthenticated(true);
-    verifySessionInDatabase();
     try {
       const u = JSON.parse(localStorage.getItem('userData') || '{}');
+      setPatrimonioPending(isInternalEmployeeAccount(u));
       setMotivationPending(shouldShowMotivation(u.id || u.email || 'anon'));
-    } catch { setMotivationPending(true); }
+    } catch {
+      setPatrimonioPending(false);
+      setMotivationPending(true);
+    }
+    verifySessionInDatabase();
   };
 
   const handleOpenBillingMission = async (missionId: string) => {
@@ -293,6 +321,18 @@ const App: React.FC = () => {
   if (!isAuthenticated) { return <Login onLogin={handleLogin} />; }
   
   if (needsPasswordChange) { return <ChangePasswordModal onSuccess={handlePasswordChanged} />; }
+
+  if (patrimonioPending) {
+    const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+    return (
+      <PatrimonioComplianceGate
+        userId={u.id || ''}
+        userName={u.name || u.full_name || 'Colaborador'}
+        userRole={u.role}
+        onComplete={() => setPatrimonioPending(false)}
+      />
+    );
+  }
 
   if (motivationPending) {
     const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
