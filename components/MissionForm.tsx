@@ -1076,6 +1076,30 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       }
   };
 
+  const calculateTollRapidApi = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; provider?: string } | null> => {
+      try {
+          const resp = await authFetch('/api/toll/calculate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ origin, destination }),
+          });
+          if (!resp.ok) return null;
+          const data = await resp.json();
+          if (data.success && typeof data.tollValue === 'number') {
+              return {
+                  value: data.tollValue,
+                  count: data.tollCount || 0,
+                  tolls: data.tolls || [],
+                  provider: data.provider || 'rapidapi-pedagio',
+              };
+          }
+          return null;
+      } catch (e) {
+          console.error('Erro RapidAPI pedágio:', e);
+          return null;
+      }
+  };
+
   const calculateTollGemini = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; provider?: string; observacoes?: string; confianca?: string } | null> => {
       try {
           const resp = await authFetch('/api/toll/gemini-estimate', {
@@ -1102,8 +1126,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       }
   };
 
-  const isAutoTollResult = (r: { provider?: string; value?: number } | null | undefined): r is { provider: 'qualp' | 'gemini-ai'; value: number; count: number; tolls: any[]; observacoes?: string; confianca?: string } =>
-      !!r && (r.provider === 'qualp' || r.provider === 'gemini-ai') && typeof r.value === 'number';
+  const isAutoTollResult = (r: { provider?: string; value?: number } | null | undefined): r is { provider: 'qualp' | 'gemini-ai' | 'rapidapi-pedagio'; value: number; count: number; tolls: any[]; observacoes?: string; confianca?: string; distance?: number } =>
+      !!r && (r.provider === 'qualp' || r.provider === 'gemini-ai' || r.provider === 'rapidapi-pedagio') && typeof r.value === 'number';
 
   const notifyTollResult = (r: { provider?: string; value: number; count: number; confianca?: string }) => {
       if (r.provider === 'gemini-ai') {
@@ -1135,6 +1159,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
           const geminiResult = await calculateTollGemini(origin, destination);
           if (geminiResult) return geminiResult;
+
+          const rapidResult = await calculateTollRapidApi(origin, destination);
+          if (rapidResult) return rapidResult;
 
           return { value: 0, count: 0, tolls: [], apiError: 'QualP indisponível e a estimativa por IA também falhou. Informe o pedágio manualmente, se houver.' };
       } catch (e) {
@@ -1176,6 +1203,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
       const apiResult = await calculateTollFromAPI(originT, destT);
       if (isAutoTollResult(apiResult)) {
+          applyDistanceFromToll(apiResult.distance, destT);
           setFormData(prev => ({ ...prev, tollValue: apiResult.value.toFixed(2) }));
           setTollDetails({ count: apiResult.count, tolls: apiResult.tolls, observacoes: apiResult.observacoes, confianca: apiResult.confianca, provider: apiResult.provider });
           setTollFetchDone(true);
@@ -1207,6 +1235,42 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       return null;
   };
 
+  /** Distância rodoviária: Google no browser; se falhar, API do servidor (Directions + múltiplas chaves). */
+  const resolveRouteDistance = async (origin: string, destination: string): Promise<{ distKm: number; durationMin: number; source?: string } | null> => {
+      const originT = (origin || '').trim();
+      const destT = (destination || '').trim();
+      if (!originT || !destT) return null;
+
+      const clientResult = await getGoogleMapsDistance(originT, destT);
+      if (clientResult && clientResult.distKm > 0) return { ...clientResult, source: 'google-client' };
+
+      try {
+          const qs = new URLSearchParams({ origin: originT, destination: destT });
+          const resp = await authFetch(`/api/distance-matrix?${qs}`);
+          const data = await resp.json().catch(() => ({}));
+          if (data?.success && Number(data.distanceKm) > 0) {
+              return {
+                  distKm: Math.round(Number(data.distanceKm)),
+                  durationMin: Number(data.durationMin) || 0,
+                  source: data.source || 'server',
+              };
+          }
+      } catch (e) {
+          console.error('Falha ao consultar distância no servidor:', e);
+      }
+      return null;
+  };
+
+  const applyDistanceFromToll = (distanceKm: number | undefined, destination: string) => {
+      if (!distanceKm || distanceKm <= 0 || isSyntheticTollDest(destination)) return;
+      const normalized = distanceKm > 500 ? Math.round(distanceKm / 1000) : Math.round(distanceKm);
+      setFormData((prev) => {
+          const current = parseFloat(prev.totalDistance) || 0;
+          if (current > 0) return prev;
+          return { ...prev, totalDistance: String(normalized) };
+      });
+  };
+
   const handleRouteSelect = async (route: ClientRoute) => {
       setSelectedRouteId(route.id.toString());
       setRouteSearchTerm(route.name);
@@ -1217,7 +1281,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       setOperatorConfirmedCalc(false);
 
       const routeDist = parseFloat(route.distance) || 0;
-      const gResult = await getGoogleMapsDistance(route.origin, route.destination);
+      const gResult = await resolveRouteDistance(route.origin, route.destination);
       if (gResult) {
           if (gResult.distKm > 0) {
               if (routeDist <= 0) (route as any).distance = gResult.distKm.toString();
@@ -1253,7 +1317,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           setSelectedRouteId('manual');
           setRouteSearchTerm(`${origin.split(',')[0]} → ${destination.split(',')[0]}`);
 
-          const gResult = await getGoogleMapsDistance(origin, destination);
+          const gResult = await resolveRouteDistance(origin, destination);
           const distKm = (gResult && gResult.distKm > 0) ? gResult.distKm : 0;
 
           const virtualRoute: any = { id: 'manual', name: `${origin.split(',')[0]} → ${destination.split(',')[0]}`, origin, destination, distance: String(distKm), toll_cost: 0 };
@@ -1345,6 +1409,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
     setIsSaving(true);
 
+    let resolvedDistance = parseFloat(formData.totalDistance) || 0;
+    if (resolvedDistance <= 0 && formData.origin && formData.destination && !isSyntheticTollDest(formData.destination)) {
+        const distResult = await resolveRouteDistance(formData.origin, formData.destination);
+        if (distResult && distResult.distKm > 0) {
+            resolvedDistance = distResult.distKm;
+            setFormData((prev) => ({ ...prev, totalDistance: String(distResult.distKm) }));
+        }
+    }
+
     let resolvedTollValue = parseFloat(formData.tollValue) || 0;
     const destForToll = (formData.destination || '');
     if (!manualOverrides.toll && !tollFetchDone && formData.origin && destForToll && !isSyntheticTollDest(destForToll)) {
@@ -1368,7 +1441,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 id: finalId, client: formData.client, provider: formData.provider || null,
                 origin: formData.origin, destination: formData.destination, status: MissionStatus.SOLICITED,
                 last_update: nowIso, created_at: nowIso, updated_by: userData.name,
-                total_distance: parseFloat(formData.totalDistance), start_time: scheduledIso,
+                total_distance: resolvedDistance > 0 ? resolvedDistance : parseFloat(formData.totalDistance),
+                start_time: scheduledIso,
                 mission_type: formData.missionType || 'Caracterizada', 
                 revenue_value: parseFloat(formData.revenueValue) || 0, cost_value: formData.isSameOs ? 0 : (parseFloat(formData.costValue) || 0),
                 toll_value: resolvedTollValue,

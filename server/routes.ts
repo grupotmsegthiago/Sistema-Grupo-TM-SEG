@@ -6,6 +6,7 @@ import { createClient, type RealtimeChannel, type SupabaseClient } from "@supaba
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseServerKey, getSupabaseServiceRoleKey, getSupabaseUrl } from "./supabaseConfig";
 import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
+import { computeRouteDistanceKm, normalizeRouteAddress } from "../lib/routeDistance";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
@@ -5151,6 +5152,20 @@ export async function registerRoutes(
   const QUALP_API_TOKEN = process.env.QUALP_API_TOKEN || '';
   const QUALP_ROUTE_URL = 'https://api.qualp.com.br/rotas/v4';
 
+  function parseQualpDistanceKm(data: any): number | undefined {
+    const d = data?.distancia;
+    if (!d) return undefined;
+    if (typeof d.valor === 'number' && d.valor > 0) {
+      return d.valor > 500 ? Math.round((d.valor / 1000) * 100) / 100 : d.valor;
+    }
+    if (typeof d.km === 'number' && d.km > 0) return d.km;
+    if (typeof d.texto === 'string') {
+      const m = d.texto.match(/([\d.,]+)/);
+      if (m) return parseFloat(m[1].replace(',', '.'));
+    }
+    return undefined;
+  }
+
   app.post('/api/toll/qualp', requireAuth, async (req: Request, res: Response) => {
     try {
       if (!QUALP_API_TOKEN) {
@@ -5163,6 +5178,8 @@ export async function registerRoutes(
       }
 
       const eixos = Number(axis) >= 2 ? Number(axis) : 2;
+      const originNorm = normalizeRouteAddress(String(origin));
+      const destinationNorm = normalizeRouteAddress(String(destination));
 
       const response = await fetch(QUALP_ROUTE_URL, {
         method: 'POST',
@@ -5171,7 +5188,7 @@ export async function registerRoutes(
           'Access-Token': QUALP_API_TOKEN,
         },
         body: JSON.stringify({
-          locations: [origin, destination],
+          locations: [originNorm, destinationNorm],
           config: {
             route: { type_route: 'efficient', calculate_return: false },
             vehicle: { type: 'car', axis: eixos },
@@ -5210,11 +5227,14 @@ export async function registerRoutes(
       });
 
       const tollValue = tolls.reduce((sum: number, t: any) => sum + t.value, 0);
-      const distance = typeof data?.distancia?.valor === 'number' ? data.distancia.valor : undefined;
+      let distance = parseQualpDistanceKm(data);
 
-      // Rota calculada com sucesso (mesmo sem pedágio) quando a QualP retorna distância.
-      // Diferenciar "rota sem pedágio (R$ 0)" de "falha" evita cair em fallback e lançar valor indevido.
-      const routeComputed = typeof distance === 'number';
+      if (distance === undefined) {
+        const fallback = await computeRouteDistanceKm(originNorm, destinationNorm);
+        if (fallback.success && fallback.distanceKm) distance = fallback.distanceKm;
+      }
+
+      const routeComputed = typeof distance === 'number' && distance > 0;
 
       return res.json({
         success: routeComputed,
@@ -5236,10 +5256,13 @@ export async function registerRoutes(
 
   app.post('/api/toll/gemini-estimate', requireAuth, async (req: Request, res: Response) => {
     try {
-      const { origin, destination } = req.body;
-      if (!origin || !destination) {
+      const originRaw = String(req.body?.origin || '').trim();
+      const destinationRaw = String(req.body?.destination || '').trim();
+      if (!originRaw || !destinationRaw) {
         return res.json({ success: false, error: 'Origem e destino são obrigatórios' });
       }
+      const origin = normalizeRouteAddress(originRaw);
+      const destination = normalizeRouteAddress(destinationRaw);
 
       const prompt = `Você é um engenheiro de tráfego rodoviário brasileiro com conhecimento detalhado de TODAS as praças de pedágio do Brasil.
 
@@ -6637,20 +6660,16 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       if (!origin || !destination) {
         return res.status(400).json({ success: false, error: 'origin e destination são obrigatórios' });
       }
-      const key = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || '';
-      if (!key) {
-        return res.status(500).json({ success: false, error: 'GOOGLE_MAPS_API_KEY não configurada' });
+      const result = await computeRouteDistanceKm(origin, destination);
+      if (result.success) {
+        return res.json({
+          success: true,
+          distanceKm: result.distanceKm,
+          durationMin: result.durationMin ?? null,
+          source: result.source,
+        });
       }
-      const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&mode=driving&units=metric&language=pt-BR&region=br&key=${key}`;
-      const r = await fetch(url);
-      const data: any = await r.json();
-      const el = data?.rows?.[0]?.elements?.[0];
-      if (el?.status === 'OK' && el.distance?.value) {
-        const distanceKm = Math.round((el.distance.value / 1000) * 100) / 100;
-        const durationMin = el.duration?.value ? Math.round(el.duration.value / 60) : null;
-        return res.json({ success: true, distanceKm, durationMin });
-      }
-      return res.json({ success: false, error: el?.status || data?.status || 'NO_RESULT' });
+      return res.json({ success: false, error: result.error || 'NO_RESULT' });
     } catch (e: any) {
       return res.status(500).json({ success: false, error: e?.message || 'erro' });
     }

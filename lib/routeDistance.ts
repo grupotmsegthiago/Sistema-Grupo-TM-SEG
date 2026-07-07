@@ -22,6 +22,8 @@ function normalizeRouteAddress(address: string): string {
   return /,\s*brasil\s*$/i.test(trimmed) ? trimmed : `${trimmed}, Brasil`;
 }
 
+export { normalizeRouteAddress };
+
 async function tryDistanceMatrix(origin: string, destination: string, key: string): Promise<RouteDistanceResult | null> {
   const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&mode=driving&units=metric&language=pt-BR&region=br&key=${encodeURIComponent(key)}`;
   const resp = await fetch(url);
