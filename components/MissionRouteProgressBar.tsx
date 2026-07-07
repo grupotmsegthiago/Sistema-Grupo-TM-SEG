@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CarFront, Flag, Loader2 } from 'lucide-react';
+import { Flag, Loader2 } from 'lucide-react';
 import { fetchRouteProgress, formatRouteEta } from '../lib/routeProgress';
+
+const ESCOLTA_VIATURA_SRC = '/assets/escolta-viatura-torres.png';
 
 export interface FallbackProgress {
   progressVisual: number;
@@ -161,7 +163,12 @@ const MissionRouteProgressBar: React.FC<Props> = ({
           {pct >= 100 ? (
             <Flag size={14} className="text-green-700 drop-shadow" strokeWidth={2.5} />
           ) : (
-            <CarFront size={16} className="text-black drop-shadow-md" strokeWidth={2.5} />
+            <img
+              src={ESCOLTA_VIATURA_SRC}
+              alt="Viatura de escolta"
+              className="h-5 w-auto max-w-[52px] object-contain drop-shadow-md select-none"
+              draggable={false}
+            />
           )}
         </div>
       </div>
