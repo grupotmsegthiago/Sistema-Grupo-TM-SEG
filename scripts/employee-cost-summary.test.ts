@@ -29,6 +29,20 @@ describe('employeeCostSummary', () => {
     assert.equal(row.companyCost, 100);
   });
 
+  it('PJ não inclui FGTS no custo empresa', () => {
+    const salary: RhSalaryConfig = {
+      employee_id: 'emp-pj',
+      base_salary: 5000,
+      fgts_pct: 8,
+    };
+    const clt = buildEmployeeCostBreakdown('emp-clt', '2026-07', salary, emptyTax, 0, 0, 0, 'CLT');
+    const pj = buildEmployeeCostBreakdown('emp-pj', '2026-07', salary, emptyTax, 0, 0, 0, 'PJ');
+    assert.equal(clt.fgts, 400);
+    assert.equal(pj.fgts, 0);
+    assert.equal(pj.companyCost, 5000);
+    assert.equal(clt.companyCost, 5400);
+  });
+
   it('soma totais da equipe', () => {
     const a = buildEmployeeCostBreakdown('a', '2026-07', { employee_id: 'a', base_salary: 1000 }, emptyTax, 0, 0, 0);
     const b = buildEmployeeCostBreakdown('b', '2026-07', { employee_id: 'b', base_salary: 2000 }, emptyTax, 0, 0, 0);

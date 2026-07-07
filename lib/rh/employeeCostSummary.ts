@@ -1,6 +1,11 @@
 import { calcSalary } from './payroll';
 import type { RhPayrollCalc, RhSalaryConfig, RhTaxBracket } from '../../types/rh';
 
+/** PJ e equivalentes não geram FGTS para a empresa. */
+export function contractTypeExemptsFgts(contractType?: string | null): boolean {
+  return String(contractType || '').trim().toUpperCase() === 'PJ';
+}
+
 export interface RhEmployeeCostBreakdown {
   employeeId: string;
   referenceMonth: string;
@@ -32,6 +37,7 @@ export function buildEmployeeCostBreakdown(
   commissions: number,
   awards: number,
   bonuses: number,
+  contractType?: string | null,
 ): RhEmployeeCostBreakdown {
   if (!salary) {
     return {
@@ -58,7 +64,8 @@ export function buildEmployeeCostBreakdown(
 
   const calc = calcSalary(salary, taxBrackets);
   const variablePay = commissions + awards + bonuses;
-  const companyCost = calc.grossSalary + calc.fgts + calc.totalBenefits + variablePay;
+  const fgts = contractTypeExemptsFgts(contractType) ? 0 : calc.fgts;
+  const companyCost = calc.grossSalary + fgts + calc.totalBenefits + variablePay;
 
   return {
     employeeId,
@@ -71,7 +78,7 @@ export function buildEmployeeCostBreakdown(
     overtimeValue: calc.overtimeValue,
     grossSalary: calc.grossSalary,
     benefits: calc.totalBenefits,
-    fgts: calc.fgts,
+    fgts,
     commissions,
     awards,
     bonuses,

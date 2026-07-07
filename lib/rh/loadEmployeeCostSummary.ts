@@ -51,7 +51,7 @@ export async function loadEmployeeCostSummary(sb: SupabaseClient, month: string)
   const [{ data: employees }, taxBrackets] = await Promise.all([
     sb
       .from('rh_employees')
-      .select('id, matricula, position_id, rh_positions(base_salary)')
+      .select('id, matricula, contract_type, position_id, rh_positions(base_salary)')
       .is('deleted_at', null)
       .neq('status', 'Desligado'),
     loadTaxBrackets(sb),
@@ -130,6 +130,8 @@ export async function loadEmployeeCostSummary(sb: SupabaseClient, month: string)
     const awards = resolveMonthlyPremio(emp.matricula, awardsByEmployee.get(emp.id) || 0);
     const commissions = commissionsMap.get(emp.id) || 0;
     const bonuses = bonusesMap.get(emp.id) || 0;
+    const seed = emp.matricula ? SEED_BY_MATRICULA.get(emp.matricula) : undefined;
+    const contractType = (emp as { contract_type?: string }).contract_type || seed?.contract_type;
 
     return buildEmployeeCostBreakdown(
       emp.id,
@@ -139,6 +141,7 @@ export async function loadEmployeeCostSummary(sb: SupabaseClient, month: string)
       commissions,
       awards,
       bonuses,
+      contractType,
     );
   });
 

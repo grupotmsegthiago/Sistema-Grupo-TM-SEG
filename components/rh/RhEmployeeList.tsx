@@ -321,7 +321,7 @@ const RhEmployeeList: React.FC<Props> = ({ onAdd, onOpen }) => {
                                     </span>
                                   ) : null}
                                   <p className="w-full text-[11px] text-red-700/80">
-                                    Bruto + FGTS + benefícios + comissões + premiações + bonificações
+                                    Bruto + FGTS (CLT) + benefícios + comissões + premiações + bonificações. Contrato PJ não inclui FGTS.
                                   </p>
                                 </div>
                               </div>
