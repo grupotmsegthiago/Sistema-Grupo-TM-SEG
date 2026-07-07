@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { DATA_RETENTION } from '../constants';
+import { applyRotatableLogFilter } from '../lib/systemLogRetention';
 import { 
     Database, Download, Trash2, RefreshCw, Loader2, CheckCircle2, 
     AlertTriangle, ShieldCheck, Clock, Zap, FileJson, Server,
@@ -110,7 +111,9 @@ const MaintenanceDashboard: React.FC = () => {
 
             const [logsRes, oldLogsRes, missionsRes] = await Promise.all([
                 supabase.from('system_logs').select('*', { count: 'exact', head: true }),
-                supabase.from('system_logs').select('*', { count: 'exact', head: true }).lt('created_at', thirtyDaysAgo.toISOString()),
+                applyRotatableLogFilter(
+                    supabase.from('system_logs').select('*', { count: 'exact', head: true }).lt('created_at', thirtyDaysAgo.toISOString())
+                ),
                 supabase.from('missions').select('*', { count: 'exact', head: true })
             ]);
 
@@ -137,17 +140,19 @@ const MaintenanceDashboard: React.FC = () => {
     };
 
     const handleLogRotation = async () => {
-        if (!confirm(`ATENÇÃO: Deseja remover apenas os LOGS DE SISTEMA (rastros de acessos) com mais de ${DATA_RETENTION.LOGS_DAYS} dias?\n\nSuas Missões e Cadastros NUNCA serão apagados por este botão.`)) return;
+        if (!confirm(`ATENÇÃO: Deseja remover apenas RASTROS DE ACESSO (login, logout, heartbeat) com mais de ${DATA_RETENTION.LOGS_DAYS} dias?\n\nPatrimônio, equipamentos, contratos e demais cadastros em system_logs NUNCA serão apagados por este botão.`)) return;
         
         setIsProcessing('ROTATE');
         try {
             const thirtyDaysAgo = new Date();
             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - DATA_RETENTION.LOGS_DAYS);
 
-            const { error } = await supabase
-                .from('system_logs')
-                .delete()
-                .lt('created_at', thirtyDaysAgo.toISOString());
+            const { error } = await applyRotatableLogFilter(
+                supabase
+                    .from('system_logs')
+                    .delete()
+                    .lt('created_at', thirtyDaysAgo.toISOString())
+            );
 
             if (error) throw error;
 
@@ -196,7 +201,7 @@ const MaintenanceDashboard: React.FC = () => {
         try {
             const [
                 clients, providers, missions, prices, costs, routes, 
-                agents, vehicles, mission_logs, fin_trans, fin_acc, fin_cat
+                agents, vehicles, mission_logs, fin_trans, fin_acc, fin_cat, equipment_logs
             ] = await Promise.all([
                 supabase.from('clients').select('*'),
                 supabase.from('providers').select('*'),
@@ -209,7 +214,8 @@ const MaintenanceDashboard: React.FC = () => {
                 supabase.from('mission_logs').select('*'),
                 supabase.from('financial_transactions').select('*'),
                 supabase.from('financial_accounts').select('*'),
-                supabase.from('financial_categories').select('*')
+                supabase.from('financial_categories').select('*'),
+                supabase.from('system_logs').select('*').in('entity', ['EquipmentRegistry', 'UserEquipment'])
             ]);
 
             const backupData = {
@@ -228,7 +234,8 @@ const MaintenanceDashboard: React.FC = () => {
                     mission_logs: mission_logs.data,
                     financial_transactions: fin_trans.data,
                     financial_accounts: fin_acc.data,
-                    financial_categories: fin_cat.data
+                    financial_categories: fin_cat.data,
+                    equipment_registry: equipment_logs.data
                 }
             };
 
