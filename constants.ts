@@ -10,7 +10,7 @@ export const APP_VERSION = "3.7.28";
 // ==========================================
 export const DATA_RETENTION = {
     LOGS_DAYS: 30,             // Manter logs por 30 dias
-    BACKUP_INTERVAL_HRS: 12,   // Alerta de backup a cada 12h
+    BACKUP_INTERVAL_HRS: 6,    // Backup automático de patrimônio (cron maintenance)
     STORAGE_LIMIT_MB: 500,     // Limite do plano Free Supabase
 };
 

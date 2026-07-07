@@ -49,6 +49,12 @@ import {
 import { buildWhatsappDiagnosticsReport } from "./whatsappDiagnostics";
 import { handleZapiConnectionWebhook } from "./zapiConnectionWebhook";
 import { runForensicEquipmentRecovery, parseEquipmentFromBackupJson } from "./equipmentForensicRecovery";
+import {
+  runFullEquipmentScan,
+  runEquipmentAutoBackup,
+  listEquipmentAutoBackups,
+  getBestEquipmentBackupSnapshot,
+} from "./equipmentBackupService";
 import { isLongRunningHost } from "./runtime";
 import { registerScheduledTick } from "./scheduledRegistry";
 import { registerMaintenanceTick } from "./maintenanceJobs";
@@ -2640,6 +2646,65 @@ export async function registerRoutes(
     }
   });
 
+  app.get('/api/equipment/recovery/full-scan', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const report = await runFullEquipmentScan(supabaseAdmin);
+      res.json(report);
+    } catch (e: any) {
+      console.error('[equipment-full-scan]', e?.message);
+      res.status(500).json({ ok: false, error: e?.message || 'Falha na varredura completa' });
+    }
+  });
+
+  app.get('/api/equipment/backups/auto', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const snapshots = await listEquipmentAutoBackups(supabaseAdmin);
+      res.json({ ok: true, snapshots: snapshots.map((s) => ({ at: s.at, count: s.count, storage_path: s.storage_path })) });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao listar backups' });
+    }
+  });
+
+  app.post('/api/equipment/backups/restore-auto', requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const at = req.body?.at as string | undefined;
+      const snapshots = await listEquipmentAutoBackups(supabaseAdmin);
+      const snap = at ? snapshots.find((s) => s.at === at) : await getBestEquipmentBackupSnapshot(supabaseAdmin);
+      if (!snap || !snap.equipments?.length) {
+        res.status(404).json({ ok: false, error: 'Nenhum backup automático com equipamentos encontrado' });
+        return;
+      }
+      res.json({ ok: true, snapshot_at: snap.at, equipments: snap.equipments, customTypes: snap.customTypes, total: snap.equipments.length });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao restaurar backup' });
+    }
+  });
+
+  app.post('/api/equipment/backups/run-now', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const result = await runEquipmentAutoBackup(supabaseAdmin);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao gerar backup' });
+    }
+  });
+
   app.post('/api/equipment/recovery/import-backup', requireAuth, async (req: Request, res: Response) => {
     try {
       const payload = req.body?.backup ?? req.body;
@@ -3952,6 +4017,16 @@ export async function registerRoutes(
 
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
   registerMaintenanceTick(checkAndRunCleanup);
+
+  // Backup automático de patrimônio a cada 6h (cron /api/cron/maintenance)
+  registerMaintenanceTick(async () => {
+    try {
+      if (!supabaseAdmin) return;
+      await runEquipmentAutoBackup(supabaseAdmin);
+    } catch (e: any) {
+      console.error('[equipment-backup] tick falhou:', e?.message);
+    }
+  });
   if (isLongRunningHost) {
     setTimeout(() => {
       checkAndRunCleanup();

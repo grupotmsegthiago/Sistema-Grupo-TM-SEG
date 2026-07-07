@@ -83,10 +83,10 @@ const EquipmentManager: React.FC = () => {
       try {
         const result = await loadEquipmentWithRecovery(supabase);
         if (result.equipments.length > 0) return;
-        const resp = await authFetch('/api/equipment/recovery/forensic');
+        const resp = await authFetch('/api/equipment/recovery/full-scan');
         if (!resp.ok) return;
-        const forensic = await resp.json();
-        if (forensic?.hints?.length) setRecoveryHints(forensic.hints);
+        const scan = await resp.json();
+        if (scan?.hints?.length) setRecoveryHints(scan.hints);
       } catch {
         /* diagnóstico opcional */
       }
@@ -129,45 +129,55 @@ const EquipmentManager: React.FC = () => {
     setIsSaving(true);
     setRecoveryHints([]);
     try {
-      const resp = await authFetch('/api/equipment/recovery/forensic');
-      const forensic = await resp.json();
+      const resp = await authFetch('/api/equipment/recovery/full-scan');
+      const scan = await resp.json();
 
-      let result = await loadEquipmentWithRecovery(supabase);
-      let merged = result.equipments;
-      let types = result.customTypes;
-
-      if (resp.ok && forensic?.equipments?.length) {
-        const ids = new Set(merged.map((e) => e.id));
-        const patIds = new Set(merged.map((e) => e.patrimony_id).filter(Boolean));
-        for (const eq of forensic.equipments as EquipmentRecord[]) {
-          if (ids.has(eq.id)) continue;
-          if (eq.patrimony_id && patIds.has(eq.patrimony_id)) continue;
-          merged.push(eq);
-          ids.add(eq.id);
-          if (eq.patrimony_id) patIds.add(eq.patrimony_id);
-        }
-        if (forensic.customTypes?.length && types.length === 0) types = forensic.customTypes;
-        setRecoveryHints(forensic.hints || []);
+      if (!resp.ok) {
+        throw new Error(scan.error || 'Falha na varredura');
       }
+
+      if (scan.hints?.length) setRecoveryHints(scan.hints);
+
+      const merged = (scan.equipments || []) as EquipmentRecord[];
+      const types = scan.customTypes || [];
 
       if (merged.length === 0) {
         showNotification(
-          'Nada encontrado',
-          forensic?.hints?.[0] || 'Não há vestígios de patrimônio no banco nem no storage. Tente importar um backup JSON.',
+          'Varredura completa',
+          'Nenhum patrimônio em system_logs, system_settings (Replit) nem storage. Veja as dicas abaixo ou backup do Supabase.',
           'info',
         );
-        if (forensic?.hints?.length) setRecoveryHints(forensic.hints);
         return;
       }
 
+      const result = await loadEquipmentWithRecovery(supabase);
       masterRowIdRef.current = result.masterRowId;
-      await saveAll(merged, types);
+      await saveAll(merged, types.length ? types : result.customTypes);
       setEquipments(merged);
-      setCustomTypes(types);
-      setRecoveryInfo(`Recuperação forense: ${merged.length} equipamento(s) consolidado(s).`);
-      showNotification('Recuperado', `${merged.length} equipamento(s) restaurado(s) e salvos.`, 'success');
+      setCustomTypes(types.length ? types : result.customTypes);
+      setRecoveryInfo(`Varredura completa: ${merged.length} equipamento(s) — fontes: logs ${scan.sources?.registryRows || 0}, UserEquipment ${scan.sources?.userEquipmentRows || 0}, system_settings ${scan.sources?.systemSettingsKeys || 0}`);
+      showNotification('Recuperado', `${merged.length} equipamento(s) consolidado(s) e salvos.`, 'success');
     } catch (e: unknown) {
       showNotification('Erro', e instanceof Error ? e.message : 'Falha na recuperação', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleRestoreAutoBackup = async () => {
+    setIsSaving(true);
+    try {
+      const resp = await authFetch('/api/equipment/backups/restore-auto', { method: 'POST', body: '{}' });
+      const data = await resp.json();
+      if (!resp.ok || !data.equipments?.length) {
+        showNotification('Sem backup automático', data.error || 'Ainda não há snapshot com equipamentos (cron 6h).', 'info');
+        return;
+      }
+      await saveAll(data.equipments, data.customTypes || customTypes);
+      setEquipments(data.equipments);
+      showNotification('Restaurado', `${data.equipments.length} item(ns) do backup de ${formatDateTimeBR(data.snapshot_at)}.`, 'success');
+    } catch (e: unknown) {
+      showNotification('Erro', e instanceof Error ? e.message : 'Falha ao restaurar', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -484,8 +494,11 @@ const EquipmentManager: React.FC = () => {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={handleRecoverAndSave} disabled={isSaving} className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-600 text-white rounded-xl text-xs font-black uppercase hover:bg-amber-700 transition-colors disabled:opacity-50" data-testid="button-recover-equipment" title="Busca em system_logs, storage e cadastros legados">
-            <RefreshCw size={14} className={isSaving ? 'animate-spin' : ''} /> Recuperar dados
+          <button onClick={handleRecoverAndSave} disabled={isSaving} className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-600 text-white rounded-xl text-xs font-black uppercase hover:bg-amber-700 transition-colors disabled:opacity-50" data-testid="button-recover-equipment" title="Varredura: system_logs + system_settings (Replit) + storage">
+            <RefreshCw size={14} className={isSaving ? 'animate-spin' : ''} /> Varredura completa
+          </button>
+          <button onClick={handleRestoreAutoBackup} disabled={isSaving} className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-700 text-white rounded-xl text-xs font-black uppercase hover:bg-emerald-800 transition-colors disabled:opacity-50" data-testid="button-restore-auto-backup" title="Backup automático a cada 6 horas">
+            <Database size={14} /> Backup 6h
           </button>
           <label className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-600 text-white rounded-xl text-xs font-black uppercase hover:bg-slate-700 transition-colors cursor-pointer" data-testid="button-import-backup-equipment">
             <Upload size={14} /> Importar backup
@@ -525,7 +538,7 @@ const EquipmentManager: React.FC = () => {
         </button>
         {showSupabaseGuide && (
           <div className="px-4 pb-4 text-[11px] text-blue-950 space-y-2 leading-relaxed border-t border-blue-100 pt-3">
-            <p className="font-bold">O Supabase (plano Pro) guarda backups diários dos últimos 7 dias e pode ter PITR.</p>
+            <p className="font-bold">Backup automático a cada 6 horas (cron Vercel) em system_settings + storage.</p>
             <ol className="list-decimal pl-4 space-y-1.5">
               <li>
                 Abra{' '}
@@ -533,12 +546,8 @@ const EquipmentManager: React.FC = () => {
                   Supabase → Database → Backups <ExternalLink size={10} />
                 </a>
               </li>
-              <li>
-                <strong>Caminho seguro:</strong> baixe um backup de <em>antes</em> da limpeza de logs, ou use SQL Editor em cópia temporária com o script{' '}
-                <code className="bg-white px-1 rounded text-[10px]">scripts/recuperar-patrimonio-supabase.sql</code>
-              </li>
-              <li>Exporte o JSON (consulta OPÇÃO A do script) e salve como <code className="bg-white px-1 rounded">patrimonio.json</code></li>
-              <li>Clique em <strong>Importar backup</strong> nesta tela e selecione o arquivo</li>
+              <li>Clique em <strong>Varredura completa</strong> — busca também <code className="bg-white px-1 rounded">system_settings</code> (legado Replit)</li>
+              <li>Rode no SQL Editor: <code className="bg-white px-1 rounded text-[10px]">SELECT key FROM system_settings WHERE value::text ILIKE '%patrimony%';</code></li>
             </ol>
             <p className="text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 font-bold">
               Evite &quot;Restore&quot; completo na produção — isso reverte missões, RH e financeiro para a data do backup. Use só se aceitar perder tudo feito depois.

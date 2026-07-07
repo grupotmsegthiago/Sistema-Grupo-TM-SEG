@@ -24,8 +24,23 @@ WHERE details ILIKE '%patrimony_id%'
 ORDER BY created_at DESC
 LIMIT 50;
 
--- 4) Histórico de backups gerados pelo sistema
-SELECT id, created_at, file_name, file_size, record_count, status
-FROM backup_history
-ORDER BY created_at DESC
-LIMIT 10;
+-- 5) Legado Replit — patrimônio pode estar em system_settings (não em system_logs)
+SELECT key, jsonb_typeof(value) AS tipo, left(value::text, 200) AS preview
+FROM system_settings
+WHERE key ILIKE '%equip%'
+   OR key ILIKE '%patrim%'
+   OR key ILIKE '%registry%'
+   OR value::text ILIKE '%patrimony_id%'
+   OR value::text ILIKE '%"equipments"%'
+ORDER BY key;
+
+-- 6) Backup automático do sistema (após deploy com cron 6h)
+SELECT key, value->>'last_at' AS ultimo_backup, value->>'last_count' AS qtd
+FROM system_settings
+WHERE key = 'equipment_auto_backups';
+
+-- 7) Detalhe dos 2 UserEquipment (expandir JSON)
+SELECT entity_id AS usuario_id, created_at, details
+FROM system_logs
+WHERE entity = 'UserEquipment'
+ORDER BY created_at DESC;
