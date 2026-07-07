@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Flag, Loader2 } from 'lucide-react';
 import { fetchRouteProgress, formatRouteEta } from '../lib/routeProgress';
-import RouteProgressCarTopIcon from './icons/RouteProgressCarTopIcon';
+
+const ROUTE_PROGRESS_CAR_SRC = '/assets/route-progress-car-top.png';
 
 export interface FallbackProgress {
   progressVisual: number;
@@ -104,7 +105,7 @@ const MissionRouteProgressBar: React.FC<Props> = ({
   const kmLabel = googleProgress
     ? `${googleProgress.totalKm.toFixed(1)}KM`
     : plannedKmLabel.replace(/\s*KM\s*/i, 'KM').replace(/\s+/g, '');
-  const carHalfWidthPx = 22;
+  const carHalfWidthPx = 54;
   const carLeft =
     pct <= 0 ? '0%' : pct >= 100 ? '100%' : `calc(${pct}% - ${carHalfWidthPx}px)`;
 
@@ -137,24 +138,30 @@ const MissionRouteProgressBar: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="relative w-full pt-3 pb-1">
+      <div className="relative w-full pt-4 pb-2">
         <div
-          className="relative w-full h-4 rounded-full shadow-inner overflow-visible"
+          className="relative w-full h-5 rounded-full shadow-[inset_0_1px_3px_rgba(0,0,0,0.25)] overflow-visible"
           style={{
-            background: 'linear-gradient(90deg, #ef4444 0%, #7f1d3f 42%, #312e81 72%, #1e3a8a 100%)',
+            background: 'linear-gradient(90deg, #e85d4c 0%, #8b2f5b 38%, #3d2d6b 68%, #1e3a8a 100%)',
           }}
         >
           <div
             className="absolute top-1/2 z-20 flex items-center justify-center transition-all duration-700 ease-out pointer-events-none"
             style={{
               left: carLeft,
-              transform: pct >= 100 ? 'translate(-100%, calc(-50% - 6px))' : 'translateY(calc(-50% - 6px))',
+              transform: pct >= 100 ? 'translate(-100%, calc(-50% - 8px))' : 'translateY(calc(-50% - 8px))',
             }}
           >
             {pct >= 100 ? (
-              <Flag size={16} className="text-green-600 drop-shadow-md" strokeWidth={2.5} />
+              <Flag size={18} className="text-green-600 drop-shadow-md" strokeWidth={2.5} />
             ) : (
-              <RouteProgressCarTopIcon className="h-8 w-[44px] shrink-0 drop-shadow-lg" />
+              <img
+                src={ROUTE_PROGRESS_CAR_SRC}
+                alt="Veículo em rota"
+                className="h-12 w-auto max-w-[108px] object-contain select-none"
+                style={{ filter: 'drop-shadow(0 4px 8px rgba(15, 23, 42, 0.45))' }}
+                draggable={false}
+              />
             )}
           </div>
         </div>
