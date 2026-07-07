@@ -4,8 +4,8 @@ import type { EquipmentRecord, EquipmentResponsibilityTerm } from '../lib/equipm
 import type { PatrimonioDeclaredItemDraft, PatrimonioComplianceStatus } from '../lib/patrimonioSelfServiceTypes';
 import { savePatrimonioToTables, loadPatrimonioFromTables } from './patrimonioStore';
 
-const BYPASS_ROLES = new Set(['diretoria', 'administrador', 'ceo']);
-const BYPASS_PERMS = new Set(['*', 'equipment-manager', 'patrimonio-bypass']);
+/** Somente o perfil Diretoria fica isento do fluxo de patrimônio home office. */
+const BYPASS_ROLES = new Set(['diretoria']);
 
 export interface ComplianceUser {
   id: string;
@@ -19,8 +19,6 @@ export function isPatrimonioComplianceRequired(user: ComplianceUser): boolean {
   if (user.user_type && user.user_type !== 'internal') return false;
   const role = (user.role || '').toLowerCase();
   if (BYPASS_ROLES.has(role)) return false;
-  const perms = user.permissions || [];
-  if (perms.some((p) => BYPASS_PERMS.has(p))) return false;
   return true;
 }
 
