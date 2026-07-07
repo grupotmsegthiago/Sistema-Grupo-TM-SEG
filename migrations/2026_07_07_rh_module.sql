@@ -443,9 +443,11 @@ CREATE TABLE IF NOT EXISTS rh_settings (
   updated_by TEXT
 );
 
--- Faixas INSS/IRRF padrão 2026
-INSERT INTO rh_tax_brackets (tax_type, bracket_from, bracket_to, rate_pct, deduction, year) VALUES
-  ('INSS', 0, 1518.00, 7.5, 0, 2026),
+-- Faixas INSS/IRRF padrão 2026 (seed via api/rh-init ou script)
+INSERT INTO rh_tax_brackets (tax_type, bracket_from, bracket_to, rate_pct, deduction, year)
+SELECT v.tax_type, v.bracket_from, v.bracket_to, v.rate_pct, v.deduction, v.year
+FROM (VALUES
+  ('INSS'::text, 0::numeric, 1518.00::numeric, 7.5::numeric, 0::numeric, 2026::int),
   ('INSS', 1518.01, 2793.60, 9.0, 0, 2026),
   ('INSS', 2793.61, 4190.40, 12.0, 0, 2026),
   ('INSS', 4190.41, 8157.41, 14.0, 0, 2026),
@@ -454,4 +456,5 @@ INSERT INTO rh_tax_brackets (tax_type, bracket_from, bracket_to, rate_pct, deduc
   ('IRRF', 2826.66, 3751.05, 15.0, 381.44, 2026),
   ('IRRF', 3751.06, 4664.68, 22.5, 662.77, 2026),
   ('IRRF', 4664.69, 99999999, 27.5, 896.00, 2026)
-ON CONFLICT DO NOTHING;
+) AS v(tax_type, bracket_from, bracket_to, rate_pct, deduction, year)
+WHERE NOT EXISTS (SELECT 1 FROM rh_tax_brackets LIMIT 1);

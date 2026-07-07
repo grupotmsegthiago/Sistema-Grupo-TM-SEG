@@ -98,6 +98,9 @@
     },
     "api/password-reset-confirm.ts": {
       "maxDuration": 60
+    },
+    "api/rh-init.ts": {
+      "maxDuration": 120
     }
   },
   "rewrites": [
@@ -216,6 +219,10 @@
     {
       "source": "/api/password-reset/confirm",
       "destination": "/api/password-reset-confirm"
+    },
+    {
+      "source": "/api/rh/init",
+      "destination": "/api/rh-init"
     },
     {
       "source": "/(.*)",
