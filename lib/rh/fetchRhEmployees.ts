@@ -3,7 +3,7 @@ import { supabase } from '../supabase';
 import type { RhEmployee } from '../../types/rh';
 
 const RLS_HINT =
-  'Execute scripts/rh-rls-policies.sql no Supabase SQL Editor para liberar leitura das tabelas RH.';
+  'Nenhum funcionário no banco. Use o botão "Importar planilha TM SEG (12)" ou execute scripts/seed-rh-employees.sql no Supabase.';
 
 export async function fetchRhEmployees(): Promise<{ rows: RhEmployee[]; error?: string }> {
   try {

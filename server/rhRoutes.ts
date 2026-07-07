@@ -2,6 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { createSupabaseAdminClient } from './supabaseConfig';
 import { calcSalary } from '../lib/rh/payroll';
 import { calculateCommissionForEmployee } from '../lib/rh/commissionAuto';
+import { seedTmsegEmployees } from '../lib/rh/seedTmsegEmployeesRunner';
 import type { RhSalaryConfig, RhTaxBracket } from '../types/rh';
 
 function sb() {
@@ -51,6 +52,15 @@ export function registerRhRoutes(
         .order('full_name');
       if (error) throw error;
       res.json({ ok: true, employees: data || [], total: data?.length || 0 });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  app.post('/api/rh/seed-employees', requireAuth, requireRole('administrador', 'diretoria', 'ceo'), async (_req: Request, res: Response) => {
+    try {
+      const result = await seedTmsegEmployees(sb());
+      res.status(result.ok ? 200 : 207).json(result);
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
     }
