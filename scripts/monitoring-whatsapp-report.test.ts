@@ -7,10 +7,17 @@ import {
   parseMonitoringLocation,
 } from '../lib/monitoringWhatsAppReport';
 
-test('formatProgressSquares: 100% preenche cinco quadrados verdes', () => {
+test('formatProgressSquares: 100% preenche cinco quadrados em degradê verde', () => {
   assert.equal(
     formatProgressSquares(100),
-    '🟩🟩🟩🟩🟩 100% (cada quadrado vale 20%)',
+    '🟢💚🟩🟩🟩 100% (cada quadrado vale 20%)',
+  );
+});
+
+test('formatProgressSquares: 20% começa com verde clarinho no 1º quadrado', () => {
+  assert.equal(
+    formatProgressSquares(20),
+    '🟢⬜⬜⬜⬜ 20% (cada quadrado vale 20%)',
   );
 });
 
@@ -21,10 +28,10 @@ test('formatProgressSquares: 0% deixa todos vazios', () => {
   );
 });
 
-test('formatProgressSquares: 60% preenche três quadrados', () => {
+test('formatProgressSquares: 60% preenche três quadrados com degradê', () => {
   assert.equal(
     formatProgressSquares(60),
-    '🟩🟩🟩⬜⬜ 60% (cada quadrado vale 20%)',
+    '🟢💚🟩⬜⬜ 60% (cada quadrado vale 20%)',
   );
 });
 
@@ -63,7 +70,7 @@ test('buildMonitoringWhatsAppReport segue o modelo oficial', () => {
   assert.match(report, /\*OS:\* GTM-6253 \| \*STATUS:\* EM VIAGEM/);
   assert.match(report, /🗓️ \*DATA:\* 07\/07\/2026 \*HORA:\* 08:00/);
   assert.match(report, /🛡️ \*OPERAÇÃO:\* CARACTERIZADA/);
-  assert.match(report, /📈\*PROGRESSO DA MISSÃO:\* 🟩🟩🟩🟩🟩 100% \(cada quadrado vale 20%\)/);
+  assert.match(report, /📈\*PROGRESSO DA MISSÃO:\* 🟢💚🟩🟩🟩 100% \(cada quadrado vale 20%\)/);
   assert.match(report, /🏙️ \*LOCALIZAÇÃO:\* 11460 - 001, BRASIL/);
   assert.match(report, /🗾 \*LINK DO GOOGLE:\* https:\/\/www\.google\.com\/maps/);
   assert.match(report, /📣 \*OCORRÊNCIA:\* CHEGADA NO DESTINO, AGUARDANDO A ENTRADA DO AUTO/);

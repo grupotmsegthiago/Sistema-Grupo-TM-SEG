@@ -33,11 +33,17 @@ export function formatAgentShortName(name?: string): string {
     : name.toUpperCase();
 }
 
-/** Barra visual de progresso com quadrados verdes (cada um = 20%). */
+/** Tons de verde por posição (1º = clarinho → 5º = mais escuro). */
+const PROGRESS_SQUARE_TONES = ['🟢', '💚', '🟩', '🟩', '🟩'] as const;
+const EMPTY_PROGRESS_SQUARE = '⬜';
+
+/** Barra visual de progresso com quadrados verdes em degradê (cada um = 20%). */
 export function formatProgressSquares(progress: number): string {
   const percent = Math.min(100, Math.max(0, Math.floor(progress)));
   const filled = percent === 0 ? 0 : Math.min(5, Math.ceil(percent / 20));
-  const squares = '🟩'.repeat(filled) + '⬜'.repeat(5 - filled);
+  const squares = PROGRESS_SQUARE_TONES.map((tone, index) =>
+    index < filled ? tone : EMPTY_PROGRESS_SQUARE,
+  ).join('');
   return `${squares} ${percent}% (cada quadrado vale 20%)`;
 }
 
