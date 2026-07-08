@@ -949,12 +949,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     // junto com o texto do formulário na hora de salvar.
     const [updatePrintPreview, setUpdatePrintPreview] = useState('');
     const [updatePrintProcessing, setUpdatePrintProcessing] = useState(false);
+    const [updatePrintBgCleaning, setUpdatePrintBgCleaning] = useState(false);
     const [updatePrintAiCleaned, setUpdatePrintAiCleaned] = useState(false);
     const [updatePrintTimings, setUpdatePrintTimings] = useState<PrintPipelineTimings | null>(null);
     const updatePrintBlobRef = useRef<Blob | null>(null);
 
     const SUPPORTED_PRINT_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
-    const PRINT_PIPELINE_TIMEOUT_MS = 45_000;
+    const PRINT_PIPELINE_TIMEOUT_MS = 18_000;
 
     const base64ToBlob = (base64: string, mimeType: string): Blob => {
       const binary = atob(base64);
@@ -1093,25 +1094,31 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     };
 
     const processUpdatePrint = async (file: File) => {
-      setUpdatePrintProcessing(true);
       setUpdatePrintTimings(null);
       const totalStart = performance.now();
       try {
-        const processed = await processPrintOnServer(file);
-        const sourceBlob = processed?.blob ?? file;
-        const stamped = await applyBrandStampToBlob(sourceBlob);
-        updatePrintBlobRef.current = stamped.blob;
-        setUpdatePrintPreview(stamped.preview);
-        setUpdatePrintAiCleaned(!!processed?.cleaned);
+        // Fase 1 — libera em ~1s: logo TM SEG na foto original (não espera IA).
+        setUpdatePrintProcessing(true);
+        const quickStamp = await applyBrandStampToBlob(file);
+        updatePrintBlobRef.current = quickStamp.blob;
+        setUpdatePrintPreview(quickStamp.preview);
+        setUpdatePrintAiCleaned(false);
+        setUpdatePrintProcessing(false);
 
-        if (!processed) {
-          setUpdatePrintAiCleaned(false);
+        // Fase 2 — limpeza de timestamps/logos em background (não bloqueia o fluxo).
+        setUpdatePrintBgCleaning(true);
+        const processed = await processPrintOnServer(file);
+        if (processed?.cleaned) {
+          const stamped = await applyBrandStampToBlob(processed.blob);
+          updatePrintBlobRef.current = stamped.blob;
+          setUpdatePrintPreview(stamped.preview);
+          setUpdatePrintAiCleaned(true);
         }
 
         if (processed?.timings) {
           const timings: PrintPipelineTimings = {
             ...processed.timings,
-            logoMs: stamped.logoMs,
+            logoMs: quickStamp.logoMs,
             totalMs: Math.round(performance.now() - totalStart),
           };
           setUpdatePrintTimings(timings);
@@ -1121,12 +1128,15 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }
       } catch (e) {
         console.warn('[UpdatePrint] Falha ao processar print:', e);
-        updatePrintBlobRef.current = null;
-        setUpdatePrintPreview('');
-        setUpdatePrintTimings(null);
-        showNotification('Erro', 'Não foi possível processar o print colado. Tente novamente.', 'error');
+        if (!updatePrintPreview) {
+          updatePrintBlobRef.current = null;
+          setUpdatePrintPreview('');
+          setUpdatePrintTimings(null);
+          showNotification('Erro', 'Não foi possível processar o print colado. Tente novamente.', 'error');
+        }
       } finally {
         setUpdatePrintProcessing(false);
+        setUpdatePrintBgCleaning(false);
       }
     };
 
@@ -1134,6 +1144,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         updatePrintBlobRef.current = null;
         setUpdatePrintPreview('');
         setUpdatePrintAiCleaned(false);
+        setUpdatePrintBgCleaning(false);
         setUpdatePrintTimings(null);
     };
 
@@ -4102,11 +4113,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             >
                                 {updatePrintProcessing ? (
                                     <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300" data-testid="status-update-print-processing">
-                                        <Loader2 className="h-4 w-4 animate-spin" /> Detectando overlays, removendo marcas e aplicando logotipo TM SEG...
+                                        <Loader2 className="h-4 w-4 animate-spin" /> Aplicando logotipo TM SEG...
                                     </div>
                                 ) : updatePrintPreview ? (
                                     <>
-                                        <img src={updatePrintPreview} alt="Print com logotipo TM SEG" className="max-h-56 rounded-xl border border-white/10" data-testid="img-update-print-preview" />
+                                        <div className="relative w-full">
+                                            <img src={updatePrintPreview} alt="Print com logotipo TM SEG" className="max-h-56 w-full rounded-xl border border-white/10 object-contain" data-testid="img-update-print-preview" />
+                                            {updatePrintBgCleaning && (
+                                                <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/50 text-[10px] font-bold text-amber-200" data-testid="status-update-print-bg-cleaning">
+                                                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Removendo timestamps e logos...
+                                                </div>
+                                            )}
+                                        </div>
                                         <button
                                             type="button"
                                             onClick={clearUpdatePrint}
@@ -4131,9 +4149,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             {updatePrintPreview && !updatePrintProcessing && (
                                 <div className="mt-2 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2" data-testid="text-update-print-ready">
                                     <CheckCircle2 size={14} className="shrink-0 text-emerald-400" />
-                                    <p className="text-[10px] font-bold text-emerald-300">{updatePrintAiCleaned
-                                        ? 'Foto tratada: overlays removidos e logotipo TM SEG aplicado. Não é salva no sistema — só vai na área de transferência ao salvar.'
-                                        : 'Logotipo TM SEG aplicado (nenhum overlay detectado ou limpeza indisponível). Não é salva no sistema — só vai na área de transferência ao salvar.'}</p>
+                                    <p className="text-[10px] font-bold text-emerald-300">
+                                        {updatePrintBgCleaning
+                                            ? 'Print pronto para salvar. Removendo timestamps/logos em segundo plano...'
+                                            : updatePrintAiCleaned
+                                                ? 'Foto tratada: timestamps e logos removidos + logotipo TM SEG. Não é salva no sistema — só vai na área de transferência ao salvar.'
+                                                : 'Logotipo TM SEG aplicado. Não é salva no sistema — só vai na área de transferência ao salvar.'}
+                                    </p>
                                     {(isPrintPipelineDebug() && updatePrintTimings) && (
                                         <div className="mt-2 rounded-lg border border-white/10 bg-slate-900/80 p-2 text-left font-mono text-[9px] text-slate-400" data-testid="print-pipeline-timings">
                                             <p className="font-bold text-amber-300/90 mb-1">Pipeline debug (ms)</p>
