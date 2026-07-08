@@ -6,6 +6,7 @@ import { generatePayrollClient } from '../../lib/rh/payrollClient';
 import RhPageHeader from './shared/RhPageHeader';
 import { maskCurrency } from '../../lib/rh/masks';
 import { canEditRh } from '../../lib/rh/permissions';
+import { useRealtimeRefresh } from '../../lib/RealtimeProvider';
 
 const RhPayrollTable: React.FC = () => {
   const { showNotification } = useNotification();
@@ -15,6 +16,10 @@ const RhPayrollTable: React.FC = () => {
   const editable = canEditRh();
 
   useEffect(() => { load(); }, [month]);
+
+  useRealtimeRefresh(['rh_payroll_runs', 'rh_payroll_items'], () => {
+    load();
+  });
 
   const load = async () => {
     setLoading(true);

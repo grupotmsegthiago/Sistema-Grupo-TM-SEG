@@ -33,6 +33,25 @@ const REALTIME_TABLES = [
   'rh_positions',
   'rh_payroll_runs',
   'patrimonio_equipments',
+  // === expansão jul/2026: tabelas com escrita em runtime e valor operacional ===
+  'rh_salary_configs',
+  'rh_commissions',
+  'rh_awards',
+  'rh_bonuses',
+  'rh_payroll_items',
+  'rh_employee_bank_accounts',
+  'rh_employee_documents',
+  'rh_warnings',
+  'mission_history',
+  'provider_escoltistas',
+  'provider_intake_vehicles',
+  'dhl_supplier_intake_resends',
+  'client_registries',
+  'client_mission_notes',
+  'operational_reports',
+  'monitored_processes',
+  'system_settings',
+  'whatsapp_instances',
 ] as const;
 
 type TableName = (typeof REALTIME_TABLES)[number];
@@ -67,6 +86,27 @@ const TABLE_TO_QUERY_KEYS: Record<TableName, string[][]> = {
   rh_positions: [['rh_positions']],
   rh_payroll_runs: [['rh_payroll_runs']],
   patrimonio_equipments: [['patrimonio_equipments']],
+  // Novas tabelas — nenhuma delas usa ReactQuery hoje; hooks manuais escutam via
+  // window event `supabase:<table>` disparado no flush. Se algum dia migrar para
+  // ReactQuery, basta acrescentar a chave aqui.
+  rh_salary_configs: [],
+  rh_commissions: [],
+  rh_awards: [],
+  rh_bonuses: [],
+  rh_payroll_items: [],
+  rh_employee_bank_accounts: [],
+  rh_employee_documents: [],
+  rh_warnings: [],
+  mission_history: [],
+  provider_escoltistas: [],
+  provider_intake_vehicles: [],
+  dhl_supplier_intake_resends: [],
+  client_registries: [],
+  client_mission_notes: [],
+  operational_reports: [],
+  monitored_processes: [],
+  system_settings: [],
+  whatsapp_instances: [],
 };
 
 const DEBOUNCE_MS = 500;
