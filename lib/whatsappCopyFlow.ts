@@ -66,9 +66,21 @@ export function showWhatsappCopyPopup(photoBlob: Blob, text: string): boolean {
     closeLink.style.cssText = 'display:none;margin-top:12px;background:none;border:none;color:#64748b;font-size:11px;font-weight:700;text-decoration:underline;cursor:pointer;';
     closeLink.onclick = () => removePopup();
 
+    const skipCloseBtn = document.createElement('button');
+    skipCloseBtn.type = 'button';
+    skipCloseBtn.textContent = 'Clique para Fechar';
+    skipCloseBtn.setAttribute('data-testid', 'button-whatsapp-copy-skip-close');
+    skipCloseBtn.style.cssText = 'display:none;margin-top:14px;background:none;border:none;color:#94a3b8;font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;';
+
+    const hideSkipClose = () => {
+        skipCloseBtn.style.display = 'none';
+        skipCloseBtn.onclick = null;
+    };
+
     const showError = (msg: string) => {
         err.textContent = msg;
         err.style.display = 'block';
+        hideSkipClose();
         // Só libera a saída quando algo deu errado — senão o fluxo é obrigatório
         closeLink.style.display = 'inline-block';
     };
@@ -96,8 +108,28 @@ export function showWhatsappCopyPopup(photoBlob: Blob, text: string): boolean {
         void fill.offsetWidth;
         fill.style.transition = `width ${PROGRESS_MS / 1000}s linear`;
         fill.style.width = '100%';
-        // Cópia é rápida; segura a animação inteira para completar o botão
-        await Promise.all([work, delay(PROGRESS_MS)]);
+
+        skipCloseBtn.style.display = 'inline-block';
+
+        await new Promise<void>((resolve, reject) => {
+            let settled = false;
+            const settle = (fn: () => void) => {
+                if (settled) return;
+                settled = true;
+                hideSkipClose();
+                fn();
+            };
+
+            skipCloseBtn.onclick = () => settle(resolve);
+
+            void work
+                .then(async () => {
+                    if (!settled) await delay(PROGRESS_MS);
+                    settle(resolve);
+                })
+                .catch((copyErr) => settle(() => reject(copyErr)));
+        });
+
         fill.style.transition = 'none';
         fill.style.width = '0';
     };
@@ -107,6 +139,8 @@ export function showWhatsappCopyPopup(photoBlob: Blob, text: string): boolean {
         void (async () => {
             btn.disabled = true;
             btn.style.cursor = 'wait';
+            hideSkipClose();
+            closeLink.style.display = 'none';
             try {
                 if (stage === 'photo') {
                     // FOTO SOZINHA no clipboard: único jeito de o WhatsApp abrir a
@@ -143,6 +177,7 @@ export function showWhatsappCopyPopup(photoBlob: Blob, text: string): boolean {
     card.appendChild(step);
     card.appendChild(btn);
     card.appendChild(err);
+    card.appendChild(skipCloseBtn);
     card.appendChild(closeLink);
     overlay.appendChild(card);
     document.body.appendChild(overlay);
