@@ -12,7 +12,7 @@ import MissionFinancialModal from './MissionFinancialModal';
 import MissionAuditModal from './MissionAuditModal';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import {
-  auditMissionsBatch,
+  auditMissionsBatchAsync,
   clearMissionBillingAuditCache,
   computeMissionBillingAudit,
   fetchBillingAdjustmentsForMissionIds,
@@ -41,7 +41,10 @@ const MissionReportPage: React.FC = () => {
   const [providersData, setProvidersData] = useState<any[]>([]);
   const [billingAdjustmentsMap, setBillingAdjustmentsMap] = useState<Map<string, BillingAdjustmentRecord>>(new Map());
   const [refDataReady, setRefDataReady] = useState(false);
+  const [auditByMission, setAuditByMission] = useState<Map<string, MissionBillingAuditResult>>(new Map());
+  const [auditBusy, setAuditBusy] = useState(false);
   const realtimeDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const auditRunRef = React.useRef(0);
   const [auditForModal, setAuditForModal] = useState<{ mission: Mission; audit: MissionBillingAuditResult } | null>(null);
 
   const [periodFilter, setPeriodFilter] = useState<'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM' | 'ALL'>('WEEK');
@@ -272,6 +275,14 @@ const MissionReportPage: React.FC = () => {
     if (clientPriceTables.length === 0 && providerCostTables.length === 0) return new Map<string, { clientTable: string; providerTable: string }>();
     const map = new Map<string, { clientTable: string; providerTable: string }>();
     for (const m of filteredMissions) {
+      const adj = m.id ? billingAdjustmentsMap.get(m.id) : undefined;
+      if (adj?.clientTableName || adj?.providerTableName) {
+        map.set(m.id, {
+          clientTable: adj.clientTableName || '-',
+          providerTable: adj.providerTableName || '-',
+        });
+        continue;
+      }
       try {
         const mObj = { ...m, startKm: m.startKm || m.start_km, endKm: m.endKm || m.end_km, startTime: m.startTime || m.start_time, endTime: m.endTime || m.end_time };
         const clientMatch = clientsData.find((c: any) => c.name === (m as any).originalClientName || c.name === m.client);
@@ -282,7 +293,7 @@ const MissionReportPage: React.FC = () => {
       } catch { /* skip */ }
     }
     return map;
-  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData]);
+  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData, billingAdjustmentsMap]);
 
   const handleRecalcRow = async (missionId: string) => {
     setRecalcRowId(missionId);
@@ -316,22 +327,52 @@ const MissionReportPage: React.FC = () => {
     }
   };
 
-  // CANÔNICO: cálculo único usado por todas as telas/worker.
-  // Para cada OS calcula receita base + pedágio + custo base + pedágio pago.
-  // Pula REFUSED. Usa valores salvos quando há, senão estima via tabela.
-  const auditByMission = useMemo(() => {
-    if (!refDataReady || clientPriceTables.length === 0) {
-      return new Map<string, MissionBillingAuditResult>();
+  // Auditoria em background — não trava a tabela (useMemo síncrono bloqueava a UI).
+  useEffect(() => {
+    if (!refDataReady || !canSeeFinancials || filteredMissions.length === 0) {
+      setAuditByMission(new Map());
+      setAuditBusy(false);
+      return;
     }
-    return auditMissionsBatch(
+
+    const runId = ++auditRunRef.current;
+    const signal = { cancelled: false };
+    setAuditBusy(true);
+    setAuditByMission(new Map());
+
+    auditMissionsBatchAsync(
       filteredMissions,
       clientPriceTables,
       providerCostTables,
       clientsData,
       providersData,
       billingAdjustmentsMap,
-    );
-  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData, providersData, billingAdjustmentsMap, refDataReady]);
+      40,
+      signal,
+    )
+      .then((map) => {
+        if (auditRunRef.current !== runId) return;
+        setAuditByMission(map);
+        setAuditBusy(false);
+      })
+      .catch(() => {
+        if (auditRunRef.current !== runId) return;
+        setAuditBusy(false);
+      });
+
+    return () => {
+      signal.cancelled = true;
+    };
+  }, [
+    filteredMissions,
+    clientPriceTables,
+    providerCostTables,
+    clientsData,
+    providersData,
+    billingAdjustmentsMap,
+    refDataReady,
+    canSeeFinancials,
+  ]);
 
   const openAuditModal = useCallback((mission: Mission) => {
     clearMissionBillingAuditCache(mission.id);
@@ -501,6 +542,11 @@ const MissionReportPage: React.FC = () => {
                 <span className="bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded">🔴 {auditSummary.erro}</span>
                 {auditSummary.pendente > 0 && (
                   <span className="bg-gray-100 text-gray-600 border border-gray-200 px-2 py-0.5 rounded">⚪ {auditSummary.pendente}</span>
+                )}
+                {auditBusy && (
+                  <span className="text-gray-400 font-bold px-1 flex items-center gap-1">
+                    <Loader2 size={10} className="animate-spin" /> auditoria…
+                  </span>
                 )}
               </div>
             )}
@@ -855,9 +901,9 @@ const MissionReportPage: React.FC = () => {
                         </>
                       )}
                       {canSeeFinancials && (() => {
-                        if (!refDataReady) {
+                        if (!refDataReady || auditBusy) {
                           return (
-                            <td className="px-3 py-2 border-r border-gray-100 text-center text-[10px] text-gray-300">…</td>
+                            <td className="px-3 py-2 border-r border-gray-100 text-center text-[10px] text-gray-300" title={auditBusy ? 'Calculando auditoria…' : undefined}>…</td>
                           );
                         }
                         const audit = auditByMission.get(m.id);

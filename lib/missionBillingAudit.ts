@@ -77,29 +77,25 @@ export function clearMissionBillingAuditCache(missionId?: string): void {
   }
 }
 
-/** Hash leve das tabelas de preço — invalida cache quando tabelas mudam. */
+/** Hash leve das tabelas — O(1), sem varrer 1200+ linhas (evita travar a UI). */
 export function computePricingTablesHash(
   clientTables: ClientPriceTable[],
   providerTables: ProviderCostTable[],
 ): string {
-  const slice = (rows: Array<Record<string, unknown>>, prefix: string) =>
-    rows
-      .map((r) =>
-        [
-          prefix,
-          r.id,
-          r.activation_fee ?? r.activation_cost,
-          r.franchise_km,
-          r.franchise_hours,
-          r.price_per_extra_km ?? r.cost_per_extra_km,
-          r.price_per_extra_hour ?? r.cost_per_extra_hour,
-          r.operation_type,
-        ].join(':'),
-      )
-      .sort()
-      .join('|');
-
-  return `${clientTables.length}#${slice(clientTables as any[], 'c')}::${providerTables.length}#${slice(providerTables as any[], 'p')}`;
+  const fold = (rows: Array<Record<string, unknown>>) => {
+    let h = rows.length;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const base = Number(r.activation_fee ?? r.activation_cost ?? 0);
+      const fk = Number(r.franchise_km ?? 0);
+      h = ((h << 5) - h + base + fk) | 0;
+      if (i === 0 || i === rows.length - 1) {
+        h = ((h << 5) - h + String(r.id ?? '').length) | 0;
+      }
+    }
+    return h;
+  };
+  return `${clientTables.length}:${fold(clientTables as any[])}::${providerTables.length}:${fold(providerTables as any[])}`;
 }
 
 export function buildMissionAuditFingerprint(
@@ -1170,6 +1166,52 @@ export function auditMissionsBatch(
         adj,
       ),
     );
+  }
+
+  return map;
+}
+
+const yieldToMain = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+/**
+ * Auditoria em lotes com yield — não bloqueia a thread principal da UI.
+ */
+export async function auditMissionsBatchAsync(
+  missions: Mission[],
+  clientTables: ClientPriceTable[],
+  providerTables: ProviderCostTable[],
+  clientsData: Client[] = [],
+  providers?: any[] | null,
+  billingAdjustments?: Map<string, BillingAdjustmentRecord>,
+  chunkSize = 40,
+  signal?: { cancelled: boolean },
+): Promise<Map<string, MissionBillingAuditResult>> {
+  const tablesHash = computePricingTablesHash(clientTables, providerTables);
+  const clientByName = new Map(clientsData.map((c) => [c.name, c]));
+  const map = new Map<string, MissionBillingAuditResult>();
+
+  for (let i = 0; i < missions.length; i += chunkSize) {
+    if (signal?.cancelled) break;
+    const chunk = missions.slice(i, i + chunkSize);
+    for (const m of chunk) {
+      const clientMatch = clientByName.get(
+        String((m as any).originalClientName || m.client || ''),
+      );
+      const adj = m.id ? billingAdjustments?.get(m.id) : undefined;
+      map.set(
+        m.id,
+        computeMissionBillingAudit(
+          m,
+          clientTables,
+          providerTables,
+          clientMatch,
+          providers,
+          tablesHash,
+          adj,
+        ),
+      );
+    }
+    if (i + chunkSize < missions.length) await yieldToMain();
   }
 
   return map;
