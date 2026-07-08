@@ -131,25 +131,106 @@ export function buildMissionAuditFingerprint(
   ].join('|');
 }
 
+const normalizeTableLabel = (s: string) =>
+  (s || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[.,/\\&-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** Resolve ID órfão do snapshot: tenta casar pelo nome da tabela / faixa antes de desistir. */
+function resolveSnapshotClientTableId(
+  snap: Record<string, unknown>,
+  clientTables: ClientPriceTable[],
+  mission: Mission,
+): { id?: string; orphan: boolean } {
+  const rawId = snap?.clientTableId ? String(snap.clientTableId) : undefined;
+  if (!rawId) return { orphan: false };
+  if (clientTables.some((t) => String(t.id) === rawId)) return { id: rawId, orphan: false };
+
+  const tableName = normalizeTableLabel(String(snap.tableName || ''));
+  const missionClient = normalizeTableLabel(String((mission as any).originalClientName || mission.client || ''));
+  const franchiseKm = Number(snap.franchiseKm || 0);
+  const activationFee = Number(snap.activationFee || 0);
+
+  const byName = clientTables.find((t) => {
+    const op = normalizeTableLabel(t.operation_type || '');
+    const tc = normalizeTableLabel(t.client || '');
+    if (tableName && tableName !== '-' && op === tableName) {
+      return !missionClient || tc.includes(missionClient) || missionClient.includes(tc);
+    }
+    return false;
+  });
+  if (byName) return { id: String(byName.id), orphan: false };
+
+  const byFranchise = clientTables.find((t) => {
+    const tc = normalizeTableLabel(t.client || '');
+    return (
+      (t.franchise_km || 0) === franchiseKm &&
+      Math.abs((t.activation_fee || 0) - activationFee) < 0.02 &&
+      (!missionClient || tc.includes(missionClient) || missionClient.includes(tc))
+    );
+  });
+  if (byFranchise) return { id: String(byFranchise.id), orphan: false };
+
+  // ID órfão sem fallback confiável — omitir override e deixar o motor auto selecionar.
+  return { orphan: true };
+}
+
+function resolveSnapshotProviderTableId(
+  snap: Record<string, unknown>,
+  providerTables: ProviderCostTable[],
+  _mission: Mission,
+): { id?: string; orphan: boolean } {
+  const rawId = snap?.providerTableId ? String(snap.providerTableId) : undefined;
+  if (!rawId || rawId.startsWith('auto-')) return { id: rawId, orphan: false };
+  if (providerTables.some((t) => String(t.id) === rawId)) return { id: rawId, orphan: false };
+
+  // ID órfão: não adivinhar tabela — omitir override e deixar o motor auto do fornecedor.
+  return { orphan: true };
+}
+
 /** Tabelas congeladas no snapshot de aprovação (mesma regra do modal/boletim). */
 export function buildSnapshotTableOverrides(
   mission: Mission,
+  clientTables: ClientPriceTable[] = [],
+  providerTables: ProviderCostTable[] = [],
 ): {
   clientTableId?: string;
   providerTableId?: string;
   providerOpsOverride?: { distanceKm: number; durationHours: number };
+  clientTableOrphan?: boolean;
+  providerTableOrphan?: boolean;
 } | undefined {
   const snap = (mission as any).snapshot_data as Record<string, unknown> | null | undefined;
-  const clientTableId = snap?.clientTableId ? String(snap.clientTableId) : undefined;
-  const providerTableId = snap?.providerTableId ? String(snap.providerTableId) : undefined;
   const providerOpsOverride = buildProviderOpsOverride(mission);
 
-  if (!clientTableId && !providerTableId && !providerOpsOverride) return undefined;
+  if (!snap) {
+    if (!providerOpsOverride) return undefined;
+    return { ...(providerOpsOverride ? { providerOpsOverride } : {}) };
+  }
+
+  const clientResolved = resolveSnapshotClientTableId(snap, clientTables, mission);
+  const providerResolved = resolveSnapshotProviderTableId(snap, providerTables, mission);
+
+  if (
+    !clientResolved.id &&
+    !providerResolved.id &&
+    !providerOpsOverride &&
+    !clientResolved.orphan &&
+    !providerResolved.orphan
+  ) {
+    return undefined;
+  }
 
   return {
-    ...(clientTableId ? { clientTableId } : {}),
-    ...(providerTableId ? { providerTableId } : {}),
+    ...(clientResolved.id ? { clientTableId: clientResolved.id } : {}),
+    ...(providerResolved.id ? { providerTableId: providerResolved.id } : {}),
     ...(providerOpsOverride ? { providerOpsOverride } : {}),
+    ...(clientResolved.orphan ? { clientTableOrphan: true } : {}),
+    ...(providerResolved.orphan ? { providerTableOrphan: true } : {}),
   };
 }
 
@@ -489,17 +570,28 @@ export function computeMissionBillingAudit(
   };
 
   const providerOpsOverride = buildProviderOpsOverride(mission);
-  const snapshotOverrides = buildSnapshotTableOverrides(mission);
-  const tableOverrides = snapshotOverrides ?? (providerOpsOverride ? { providerOpsOverride } : undefined);
+  const snapshotOverrides = buildSnapshotTableOverrides(mission, clientTables, providerTables);
+  const tableOverrides = snapshotOverrides
+    ? {
+        ...(snapshotOverrides.clientTableId ? { clientTableId: snapshotOverrides.clientTableId } : {}),
+        ...(snapshotOverrides.providerTableId ? { providerTableId: snapshotOverrides.providerTableId } : {}),
+        ...(snapshotOverrides.providerOpsOverride ? { providerOpsOverride: snapshotOverrides.providerOpsOverride } : {}),
+      }
+    : providerOpsOverride
+      ? { providerOpsOverride }
+      : undefined;
 
   const snap = (mission as any).snapshot_data as Record<string, unknown> | null | undefined;
   const clientTableMissing = !!(
     snap?.clientTableId &&
-    !clientTables.some((t) => String(t.id) === String(snap.clientTableId))
+    !clientTables.some((t) => String(t.id) === String(snap.clientTableId)) &&
+    !snapshotOverrides?.clientTableId
   );
   const providerTableMissing = !!(
     snap?.providerTableId &&
-    !providerTables.some((t) => String(t.id) === String(snap.providerTableId))
+    !String(snap.providerTableId).startsWith('auto-') &&
+    !providerTables.some((t) => String(t.id) === String(snap.providerTableId)) &&
+    !snapshotOverrides?.providerTableId
   );
 
   const fin = calculateMissionFinancials(

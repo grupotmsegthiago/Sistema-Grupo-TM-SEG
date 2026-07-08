@@ -213,6 +213,43 @@ describe('missionBillingAudit', () => {
     assert.ok(Math.abs(audit.client.diferenca) < 0.01);
   });
 
+  it('recupera tabela órfã do snapshot via fallback (fornecedor)', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission({
+      billing_approved: true,
+      snapshot_approved_by: 'Auditor',
+      provider: 'FORNECEDOR TESTE',
+      snapshot_data: {
+        clientTableId: '1',
+        providerTableId: 'id-orfao-nao-existe',
+        tableName: 'FAIXA 100KM',
+        franchiseKm: 100,
+        activationFee: 690,
+      },
+    } as any);
+    const fin = calculateMissionFinancials(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+      undefined,
+      new Date(),
+      { clientTableId: '1' },
+    );
+
+    const audit = computeMissionBillingAudit(
+      {
+        ...mission,
+        revenue_value: fin.client.serviceTotal,
+        cost_value: fin.provider.serviceTotal,
+      } as Mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(Math.abs(audit.provider.diferenca) < 0.01);
+  });
+
   it('usa cache e invalida quando fingerprint muda', () => {
     clearMissionBillingAuditCache();
     const mission = makeMission({ revenue_value: 790, cost_value: 590 });

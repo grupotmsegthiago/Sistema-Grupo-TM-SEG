@@ -2691,6 +2691,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const dispChanged = (existingSnap.displacementVal || 0) !== displacement;
               const dispProvChanged = (existingSnap.displacementProvider || 0) !== dispProv;
               const tableChanged = String(existingSnap.clientTableId || '') !== String(newClientTableId || '');
+              const newProviderTableId = sanitizeProviderTableId(
+                manualProviderTableId || financialData?.provider.tableId || existingSnap.providerTableId,
+              );
+              const providerTableChanged =
+                String(existingSnap.providerTableId || '') !== String(newProviderTableId || '');
               const breakdownChanged = (
                   r2(existingSnap.activationFee || 0) !== r2(newActivationFee) ||
                   (existingSnap.franchiseKm || 0) !== newFranchiseKm ||
@@ -2701,7 +2706,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   r2(existingSnap.hrExtraTotal || 0) !== r2(newHrExtraTotal)
               );
 
-              if (revenueChanged || costChanged || tollChanged || tollProvChanged || dispChanged || dispProvChanged || tableChanged || breakdownChanged) {
+              if (revenueChanged || costChanged || tollChanged || tollProvChanged || dispChanged || dispProvChanged || tableChanged || providerTableChanged || breakdownChanged) {
                   const updatedSnap = {
                       ...existingSnap,
                       // valores financeiros
@@ -2715,7 +2720,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       // tabela e breakdown atual — mantém o snapshot
                       // alinhado com a tabela escolhida na auditoria
                       clientTableId: newClientTableId,
-                      providerTableId: sanitizeProviderTableId(manualProviderTableId || financialData?.provider.tableId || existingSnap.providerTableId),
+                      providerTableId: newProviderTableId,
                       tableName: newTableName,
                       activationFee: r2(newActivationFee),
                       franchiseKm: newFranchiseKm,

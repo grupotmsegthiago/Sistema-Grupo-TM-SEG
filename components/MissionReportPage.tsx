@@ -14,6 +14,7 @@ import { calculateMissionFinancials } from '../lib/financialUtils';
 import {
   auditMissionsBatch,
   clearMissionBillingAuditCache,
+  computeMissionBillingAudit,
   type MissionBillingAuditResult,
 } from '../lib/missionBillingAudit';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
@@ -308,6 +309,28 @@ const MissionReportPage: React.FC = () => {
       providersData,
     );
   }, [filteredMissions, clientPriceTables, providerCostTables, clientsData, providersData]);
+
+  const openAuditModal = useCallback((mission: Mission) => {
+    clearMissionBillingAuditCache(mission.id);
+    const clientMatch = clientsData.find(
+      (c: any) => c.name === (mission as any).originalClientName || c.name === mission.client,
+    );
+    const mObj = {
+      ...mission,
+      startKm: mission.startKm ?? (mission as any).start_km,
+      endKm: mission.endKm ?? (mission as any).end_km,
+      startTime: mission.startTime ?? (mission as any).start_time,
+      endTime: mission.endTime ?? (mission as any).end_time,
+    };
+    const audit = computeMissionBillingAudit(
+      mObj,
+      clientPriceTables,
+      providerCostTables,
+      clientMatch,
+      providersData,
+    );
+    setAuditForModal({ mission, audit });
+  }, [clientPriceTables, providerCostTables, clientsData, providersData]);
 
   const auditSummary = useMemo(() => {
     let validado = 0, atencao = 0, erro = 0, pendente = 0;
@@ -824,7 +847,7 @@ const MissionReportPage: React.FC = () => {
                             <button
                               type="button"
                               data-testid={`btn-audit-${m.id}`}
-                              onClick={() => setAuditForModal({ mission: m, audit })}
+                              onClick={() => openAuditModal(m)}
                               className={`inline-flex flex-col items-center gap-0.5 px-2 py-1 rounded text-[10px] font-black transition-colors ${bg}`}
                               title={
                                 audit.overallStatus === 'validado'
