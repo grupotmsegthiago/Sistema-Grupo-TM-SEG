@@ -1,5 +1,5 @@
 import { formatDateTimeBR } from '../lib/dateUtils';
-import React, { useEffect, useState } from 'react';
+import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { AlertTriangle, Save, Loader2, RefreshCw, History, Mail } from 'lucide-react';
 
 type Settings = {
@@ -81,8 +81,8 @@ const AlertRecipientsSettings: React.FC = () => {
         fetch('/api/admin/system-settings/alert-recipients', { headers: authHeaders() }),
         fetch('/api/admin/system-settings/alert-recipients/history', { headers: authHeaders() }),
       ]);
-      const sJson = await sRes.json();
-      const hJson = await hRes.json();
+      const sJson = await parseJsonResponse(sRes);
+      const hJson = await parseJsonResponse(hRes);
       if (sJson?.ok) {
         setSettings(sJson.settings);
         setDefaults(sJson.defaults);
