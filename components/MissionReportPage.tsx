@@ -20,6 +20,7 @@ import {
   type MissionBillingAuditResult,
 } from '../lib/missionBillingAudit';
 import { loadAllPricingTables, invalidatePricingTablesCache } from '../lib/pricingTablesLoader';
+import { isTerminalMissionStatusForAudit } from '../lib/missionBillingAuditConfig';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import {
   computeCanonicalRevenueCost,
@@ -327,9 +328,16 @@ const MissionReportPage: React.FC = () => {
     }
   };
 
-  // Auditoria em background — não trava a tabela (useMemo síncrono bloqueava a UI).
+  // Auditoria em background — só OS finalizadas (concluída / recusada / cancelada).
   useEffect(() => {
     if (!refDataReady || !canSeeFinancials || filteredMissions.length === 0) {
+      setAuditByMission(new Map());
+      setAuditBusy(false);
+      return;
+    }
+
+    const terminalMissions = filteredMissions.filter((m) => isTerminalMissionStatusForAudit(m.status));
+    if (terminalMissions.length === 0) {
       setAuditByMission(new Map());
       setAuditBusy(false);
       return;
@@ -341,7 +349,7 @@ const MissionReportPage: React.FC = () => {
     setAuditByMission(new Map());
 
     auditMissionsBatchAsync(
-      filteredMissions,
+      terminalMissions,
       clientPriceTables,
       providerCostTables,
       clientsData,
@@ -400,15 +408,24 @@ const MissionReportPage: React.FC = () => {
 
   const auditSummary = useMemo(() => {
     let validado = 0, atencao = 0, erro = 0, pendente = 0, emViagem = 0;
-    auditByMission.forEach((a) => {
+    for (const m of filteredMissions) {
+      if (!isTerminalMissionStatusForAudit(m.status)) {
+        emViagem++;
+        continue;
+      }
+      const a = auditByMission.get(m.id);
+      if (!a || a.skipped) {
+        if (a?.overallStatus === 'pendente') pendente++;
+        continue;
+      }
       if (a.overallStatus === 'validado') validado++;
       else if (a.overallStatus === 'atencao') atencao++;
       else if (a.overallStatus === 'erro') erro++;
       else if (a.overallStatus === 'em_viagem') emViagem++;
       else pendente++;
-    });
+    }
     return { validado, atencao, erro, pendente, emViagem };
-  }, [auditByMission]);
+  }, [auditByMission, filteredMissions]);
 
   const canonicalByMission = useMemo(() => {
     const refs = { clientTables: clientPriceTables, providerTables: providerCostTables, clientsData };
@@ -908,6 +925,21 @@ const MissionReportPage: React.FC = () => {
                         if (!refDataReady || auditBusy) {
                           return (
                             <td className="px-3 py-2 border-r border-gray-100 text-center text-[10px] text-gray-300" title={auditBusy ? 'Calculando auditoria…' : undefined}>…</td>
+                          );
+                        }
+                        // Blindagem: status operacional prevalece sobre cache antigo da auditoria.
+                        if (!isTerminalMissionStatusForAudit(m.status)) {
+                          return (
+                            <td className="px-3 py-2 border-r border-gray-100 text-center">
+                              <span
+                                className="inline-flex flex-col items-center gap-0.5 px-2 py-1 rounded text-[10px] font-black bg-sky-50 text-sky-800 border border-sky-200"
+                                title={`OS em andamento (${m.status}) — auditoria após conclusão, recusa ou cancelamento`}
+                                data-testid={`btn-audit-${m.id}`}
+                              >
+                                <span>🛣️</span>
+                                <span>EM VIAGEM</span>
+                              </span>
+                            </td>
                           );
                         }
                         const audit = auditByMission.get(m.id);

@@ -57,7 +57,7 @@ async function main() {
     } else {
       console.log(`[${m.id}] Sem BillingAdjustment`);
     }
-    console.log(`[${m.id}] OS: revenue=${(m as any).revenue_value} cost=${(m as any).cost_value} approved=${(m as any).billing_approved}`);
+    console.log(`[${m.id}] OS: status=${(m as any).status} revenue=${(m as any).revenue_value} cost=${(m as any).cost_value} approved=${(m as any).billing_approved}`);
     const audit = computeMissionBillingAudit(
       m as any,
       ct as any,
