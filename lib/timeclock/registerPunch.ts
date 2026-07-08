@@ -98,8 +98,8 @@ export interface RegisterTimeClockPunchInput {
   stage: TimeClockStage;
   photoBase64: string;
   signatureUrl: string;
-  latitude: number;
-  longitude: number;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export async function registerTimeClockPunch(
@@ -132,8 +132,8 @@ export async function registerTimeClockPunch(
       stage: input.stage,
       photoBase64: input.photoBase64,
       signatureUrl: input.signatureUrl,
-      latitude: input.latitude,
-      longitude: input.longitude,
+      latitude: input.latitude ?? null,
+      longitude: input.longitude ?? null,
     });
     try {
       requestPresenceRefresh();
@@ -156,8 +156,8 @@ export async function registerTimeClockPunch(
     user_name: input.user.name,
     type: input.stage,
     timestamp: new Date().toISOString(),
-    latitude: input.latitude,
-    longitude: input.longitude,
+    latitude: input.latitude ?? null,
+    longitude: input.longitude ?? null,
     photo_url: photoUrl,
     signature_url: input.signatureUrl,
     ai_verification: aiVerified,

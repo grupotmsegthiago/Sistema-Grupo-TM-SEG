@@ -11,3 +11,10 @@ test('TimeClockModal forced usa z-index acima do gate', () => {
   const src = fs.readFileSync('components/TimeClockModal.tsx', 'utf8');
   assert.match(src, /forced \? 'z-\[210\]' : 'z-\[120\]'/);
 });
+
+test('TimeClockModal não exige GPS para bater ponto', () => {
+  const src = fs.readFileSync('components/TimeClockModal.tsx', 'utf8');
+  assert.doesNotMatch(src, /geolocation/);
+  assert.doesNotMatch(src, /getCurrentPosition/);
+  assert.doesNotMatch(src, /latitude:\s*location/);
+});

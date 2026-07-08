@@ -4,8 +4,8 @@ export interface PunchApiPayload {
   stage: TimeClockStage;
   photoBase64: string;
   signatureUrl: string;
-  latitude: number;
-  longitude: number;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export async function registerTimeClockPunchViaApi(

@@ -43,7 +43,6 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
   const [step, setStep] = useState<Step>('face');
   const [user, setUser] = useState<TimeClockUserContext | null>(null);
   const [history, setHistory] = useState<TimeClockEntry[]>([]);
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [signatureDraft, setSignatureDraft] = useState<string | null>(null);
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -87,34 +86,7 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
     setSignatureDraft(null);
     setPhotoBase64(null);
     void loadContext();
-
-    let geoFallbackTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const applyFallbackLocation = () => {
-      setLocation((prev) => prev ?? { lat: 0, lng: 0 });
-    };
-
-    if (typeof navigator !== 'undefined' && navigator.geolocation) {
-      geoFallbackTimer = setTimeout(applyFallbackLocation, 12_000);
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          if (geoFallbackTimer) clearTimeout(geoFallbackTimer);
-          setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        },
-        () => {
-          if (geoFallbackTimer) clearTimeout(geoFallbackTimer);
-          applyFallbackLocation();
-        },
-        { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
-      );
-    } else {
-      applyFallbackLocation();
-    }
-
-    return () => {
-      if (geoFallbackTimer) clearTimeout(geoFallbackTimer);
-      stopCamera();
-    };
+    return () => stopCamera();
   }, [open]);
 
   useEffect(() => {
@@ -154,10 +126,6 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
   };
 
   const handleFaceContinue = async () => {
-    if (!location) {
-      setError('Aguardando localização. Se o GPS não responder, aguarde alguns segundos ou recarregue a página.');
-      return;
-    }
     setLoading(true);
     setError('');
     try {
@@ -172,7 +140,7 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
   };
 
   const handleRegister = async (signatureUrl: string) => {
-    if (!user || !location || journeyDone || currentStage === 'DONE' || !photoBase64) return;
+    if (!user || journeyDone || currentStage === 'DONE' || !photoBase64) return;
     setLoading(true);
     setStep('processing');
     setError('');
@@ -182,8 +150,6 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
         stage: currentStage as TimeClockStage,
         photoBase64,
         signatureUrl,
-        latitude: location.lat,
-        longitude: location.lng,
       });
 
       if (!user.digitalSignatureUrl && user.employeeId && signatureDraft) {
