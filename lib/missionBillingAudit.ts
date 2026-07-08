@@ -265,6 +265,128 @@ function resolveSnapshotProviderTableId(
   return { orphan: true };
 }
 
+export interface BillingAdjustmentRecord {
+  clientTableId?: string;
+  providerTableId?: string;
+  clientTableName?: string;
+  providerTableName?: string;
+  customClientBase?: number | null;
+  customClientKm?: number | null;
+  customClientHour?: number | null;
+  customProviderBase?: number | null;
+  customProviderKm?: number | null;
+  customProviderHour?: number | null;
+  disableFixedKmRule?: boolean;
+  revenueTotal?: number;
+  costTotal?: number;
+  systemCalculatedRevenue?: number;
+  systemCalculatedCost?: number;
+}
+
+/** Parseia o log BillingAdjustment (mesma fonte do MissionFinancialModal). */
+export function parseBillingAdjustment(details: unknown): BillingAdjustmentRecord | null {
+  if (!details) return null;
+  try {
+    const raw = typeof details === 'string' ? JSON.parse(details) : details;
+    if (!raw || typeof raw !== 'object') return null;
+    const adj = raw as Record<string, unknown>;
+    if (!adj.clientTableId && !adj.providerTableId) return null;
+    return {
+      clientTableId: adj.clientTableId ? String(adj.clientTableId) : undefined,
+      providerTableId: adj.providerTableId ? String(adj.providerTableId) : undefined,
+      clientTableName: adj.clientTableName ? String(adj.clientTableName) : undefined,
+      providerTableName: adj.providerTableName ? String(adj.providerTableName) : undefined,
+      customClientBase: adj.customClientBase != null ? Number(adj.customClientBase) : null,
+      customClientKm: adj.customClientKm != null ? Number(adj.customClientKm) : null,
+      customClientHour: adj.customClientHour != null ? Number(adj.customClientHour) : null,
+      customProviderBase: adj.customProviderBase != null ? Number(adj.customProviderBase) : null,
+      customProviderKm: adj.customProviderKm != null ? Number(adj.customProviderKm) : null,
+      customProviderHour: adj.customProviderHour != null ? Number(adj.customProviderHour) : null,
+      disableFixedKmRule: !!adj.disableFixedKmRule,
+      revenueTotal: adj.revenueTotal != null ? Number(adj.revenueTotal) : undefined,
+      costTotal: adj.costTotal != null ? Number(adj.costTotal) : undefined,
+      systemCalculatedRevenue:
+        adj.systemCalculatedRevenue != null ? Number(adj.systemCalculatedRevenue) : undefined,
+      systemCalculatedCost:
+        adj.systemCalculatedCost != null ? Number(adj.systemCalculatedCost) : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Monta mapa missionId → último BillingAdjustment (ordenar created_at desc). */
+export function indexBillingAdjustments(
+  rows: Array<{ entity_id?: string; details?: unknown }>,
+): Map<string, BillingAdjustmentRecord> {
+  const map = new Map<string, BillingAdjustmentRecord>();
+  for (const row of rows) {
+    const id = row.entity_id ? String(row.entity_id) : '';
+    if (!id || map.has(id)) continue;
+    const parsed = parseBillingAdjustment(row.details);
+    if (parsed) map.set(id, parsed);
+  }
+  return map;
+}
+
+function buildBillingAdjustmentTableOverrides(
+  adj: BillingAdjustmentRecord,
+): Record<string, unknown> | undefined {
+  const override: Record<string, unknown> = {};
+  if (adj.clientTableId && !String(adj.clientTableId).startsWith('auto-')) {
+    override.clientTableId = adj.clientTableId;
+  }
+  if (adj.providerTableId && !String(adj.providerTableId).startsWith('auto-')) {
+    override.providerTableId = adj.providerTableId;
+  }
+  if (adj.customClientBase != null) override.customClientBase = adj.customClientBase;
+  if (adj.customClientKm != null) override.customClientUnitKm = adj.customClientKm;
+  if (adj.customClientHour != null) override.customClientUnitHour = adj.customClientHour;
+  if (adj.customProviderBase != null) override.customProviderBase = adj.customProviderBase;
+  if (adj.customProviderKm != null) override.customProviderUnitKm = adj.customProviderKm;
+  if (adj.customProviderHour != null) override.customProviderUnitHour = adj.customProviderHour;
+  if (adj.disableFixedKmRule) override.disableFixedKmRule = true;
+  return Object.keys(override).length > 0 ? override : undefined;
+}
+
+/**
+ * Fonte de tabelas para auditoria — mesma ordem do modal financeiro:
+ * 1) snapshot aprovado  2) BillingAdjustment salvo  3) medição fornecedor editada
+ */
+export function buildAuditTableOverrides(
+  mission: Mission,
+  clientTables: ClientPriceTable[] = [],
+  providerTables: ProviderCostTable[] = [],
+  billingAdjustment?: BillingAdjustmentRecord | null,
+): Record<string, unknown> | undefined {
+  const snap = (mission as any).snapshot_data as Record<string, unknown> | null | undefined;
+  const snapshotOverrides = buildSnapshotTableOverrides(mission, clientTables, providerTables);
+  const providerOpsOverride = buildProviderOpsOverride(mission);
+
+  // Mesma prioridade do modal: BillingAdjustment (salvamento manual) > snapshot > medição fornecedor.
+  if (billingAdjustment) {
+    const adjOverrides = buildBillingAdjustmentTableOverrides(billingAdjustment);
+    if (adjOverrides || providerOpsOverride) {
+      return {
+        ...(adjOverrides || {}),
+        ...(providerOpsOverride ? { providerOpsOverride } : {}),
+      };
+    }
+  }
+
+  if (snap?.clientTableId || snap?.providerTableId) {
+    return snapshotOverrides as Record<string, unknown> | undefined;
+  }
+
+  if (!providerOpsOverride) {
+    return snapshotOverrides as Record<string, unknown> | undefined;
+  }
+
+  return {
+    ...(providerOpsOverride ? { providerOpsOverride } : {}),
+  };
+}
+
 /** Tabelas congeladas no snapshot de aprovação (mesma regra do modal/boletim). */
 export function buildSnapshotTableOverrides(
   mission: Mission,
@@ -750,9 +872,13 @@ export function computeMissionBillingAudit(
   clientData?: Client,
   providers?: any[] | null,
   tablesHash?: string,
+  billingAdjustment?: BillingAdjustmentRecord | null,
 ): MissionBillingAuditResult {
   const hash = tablesHash ?? computePricingTablesHash(clientTables, providerTables);
-  const fingerprint = buildMissionAuditFingerprint(mission, hash);
+  const adjKey = billingAdjustment
+    ? `|adj:${billingAdjustment.clientTableId || ''}:${billingAdjustment.providerTableId || ''}`
+    : '';
+  const fingerprint = `${buildMissionAuditFingerprint(mission, hash)}${adjKey}`;
   const cached = auditCache.get(fingerprint);
   if (cached) return cached;
 
@@ -873,28 +999,28 @@ export function computeMissionBillingAudit(
   };
 
   const providerOpsOverride = buildProviderOpsOverride(mission);
-  const snapshotOverrides = buildSnapshotTableOverrides(mission, clientTables, providerTables);
-  const tableOverrides = snapshotOverrides
-    ? {
-        ...(snapshotOverrides.clientTableId ? { clientTableId: snapshotOverrides.clientTableId } : {}),
-        ...(snapshotOverrides.providerTableId ? { providerTableId: snapshotOverrides.providerTableId } : {}),
-        ...(snapshotOverrides.providerOpsOverride ? { providerOpsOverride: snapshotOverrides.providerOpsOverride } : {}),
-      }
-    : providerOpsOverride
-      ? { providerOpsOverride }
-      : undefined;
-
+  const tableOverrides = buildAuditTableOverrides(
+    mission,
+    clientTables,
+    providerTables,
+    billingAdjustment,
+  );
   const snap = (mission as any).snapshot_data as Record<string, unknown> | null | undefined;
+  const adjClient = !!billingAdjustment?.clientTableId;
+  const adjProvider = !!billingAdjustment?.providerTableId;
+  // Só bloqueia busca no catálogo quando há salvamento manual (BillingAdjustment).
+  const skipClientCatalog = adjClient;
+  const skipProviderCatalog = adjProvider;
   const clientTableMissing = !!(
     snap?.clientTableId &&
     !clientTables.some((t) => String(t.id) === String(snap.clientTableId)) &&
-    !snapshotOverrides?.clientTableId
+    !tableOverrides?.clientTableId
   );
   const providerTableMissing = !!(
     snap?.providerTableId &&
     !String(snap.providerTableId).startsWith('auto-') &&
     !providerTables.some((t) => String(t.id) === String(snap.providerTableId)) &&
-    !snapshotOverrides?.providerTableId
+    !tableOverrides?.providerTableId
   );
 
   const fin = calculateMissionFinancials(
@@ -924,24 +1050,27 @@ export function computeMissionBillingAudit(
     lancadoCusto,
   );
 
-  const clientCatalogMatch = tryMatchRealCatalogTable(
-    'cliente',
-    mission,
-    mObj,
-    lancadoReceita,
-    clientTables,
-    providerTables,
-    clientData,
-    providers,
-    tableOverrides,
-    fin.client,
-    fin.realTraveledKm,
-    fin.durationHours,
-    snap,
-  );
-  if (clientCatalogMatch) clientDetail = clientCatalogMatch;
+  // Só busca tabela no catálogo quando NÃO há BillingAdjustment (salvamento manual no modal).
+  if (!skipClientCatalog) {
+    const clientCatalogMatch = tryMatchRealCatalogTable(
+      'cliente',
+      mission,
+      mObj,
+      lancadoReceita,
+      clientTables,
+      providerTables,
+      clientData,
+      providers,
+      tableOverrides,
+      fin.client,
+      fin.realTraveledKm,
+      fin.durationHours,
+      snap,
+    );
+    if (clientCatalogMatch) clientDetail = clientCatalogMatch;
+  }
 
-  if (!(mission as any).is_same_os) {
+  if (!(mission as any).is_same_os && !skipProviderCatalog) {
     const providerCatalogMatch = tryMatchRealCatalogTable(
       'fornecedor',
       mission,
@@ -993,6 +1122,7 @@ export function auditMissionsBatch(
   providerTables: ProviderCostTable[],
   clientsData: Client[] = [],
   providers?: any[] | null,
+  billingAdjustments?: Map<string, BillingAdjustmentRecord>,
 ): Map<string, MissionBillingAuditResult> {
   const tablesHash = computePricingTablesHash(clientTables, providerTables);
   const map = new Map<string, MissionBillingAuditResult>();
@@ -1001,9 +1131,18 @@ export function auditMissionsBatch(
     const clientMatch = clientsData.find(
       (c) => c.name === (m as any).originalClientName || c.name === m.client,
     );
+    const adj = m.id ? billingAdjustments?.get(m.id) : undefined;
     map.set(
       m.id,
-      computeMissionBillingAudit(m, clientTables, providerTables, clientMatch, providers, tablesHash),
+      computeMissionBillingAudit(
+        m,
+        clientTables,
+        providerTables,
+        clientMatch,
+        providers,
+        tablesHash,
+        adj,
+      ),
     );
   }
 

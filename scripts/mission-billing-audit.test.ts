@@ -551,6 +551,15 @@ describe('missionBillingAudit', () => {
       mission,
       clientTables as any,
       providerTables as any,
+      undefined,
+      null,
+      undefined,
+      {
+        clientTableId: 'louveira-971',
+        providerTableId: 'torres-900',
+        clientTableName: 'SUDESTE - LOUVEIRA-SERRA 971KM',
+        providerTableName: '900KM',
+      },
     );
 
     assert.equal(audit.overallStatus, 'validado');

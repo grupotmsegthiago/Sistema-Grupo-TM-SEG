@@ -15,6 +15,8 @@ import {
   auditMissionsBatch,
   clearMissionBillingAuditCache,
   computeMissionBillingAudit,
+  indexBillingAdjustments,
+  type BillingAdjustmentRecord,
   type MissionBillingAuditResult,
 } from '../lib/missionBillingAudit';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
@@ -36,6 +38,7 @@ const MissionReportPage: React.FC = () => {
   const [providerCostTables, setProviderCostTables] = useState<any[]>([]);
   const [clientsData, setClientsData] = useState<any[]>([]);
   const [providersData, setProvidersData] = useState<any[]>([]);
+  const [billingAdjustmentsMap, setBillingAdjustmentsMap] = useState<Map<string, BillingAdjustmentRecord>>(new Map());
   const [auditForModal, setAuditForModal] = useState<{ mission: Mission; audit: MissionBillingAuditResult } | null>(null);
 
   const [periodFilter, setPeriodFilter] = useState<'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM' | 'ALL'>('WEEK');
@@ -93,7 +96,26 @@ const MissionReportPage: React.FC = () => {
         return all;
       };
 
-      const [missionsData, clientsRes, providersRes, cptRes, pctRes, allClientsRes, allProvidersRes] = await Promise.all([
+      const fetchBillingAdjustments = async () => {
+        let all: Array<{ entity_id?: string; details?: unknown }> = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          const { data, error } = await supabase
+            .from('system_logs')
+            .select('entity_id, details, created_at')
+            .eq('entity', 'BillingAdjustment')
+            .order('created_at', { ascending: false })
+            .range(from, from + pageSize - 1);
+          if (error) throw error;
+          if (data) all = all.concat(data);
+          if (!data || data.length < pageSize) break;
+          from += pageSize;
+        }
+        return indexBillingAdjustments(all);
+      };
+
+      const [missionsData, clientsRes, providersRes, cptRes, pctRes, allClientsRes, allProvidersRes, billingAdjMap] = await Promise.all([
         fetchAllPages(),
         supabase.from('clients').select('name, trading_name'),
         supabase.from('providers').select('name, trading_name'),
@@ -101,11 +123,13 @@ const MissionReportPage: React.FC = () => {
         supabase.from('provider_cost_tables').select('*'),
         supabase.from('clients').select('*'),
         supabase.from('providers').select('*'),
+        fetchBillingAdjustments(),
       ]);
       setClientPriceTables(cptRes.data || []);
       setProviderCostTables(pctRes.data || []);
       setClientsData(allClientsRes.data || []);
       setProvidersData(allProvidersRes.data || []);
+      setBillingAdjustmentsMap(billingAdjMap);
 
       if (missionsData) {
         const clientVehicleIds = [...new Set(missionsData.map((m: any) => m.client_vehicle).filter((id: any) => id))];
@@ -177,7 +201,7 @@ const MissionReportPage: React.FC = () => {
     if (currentUser) fetchMissions();
   }, [currentUser, fetchMissions]);
 
-  useRealtimeRefresh(['missions', 'client_price_tables', 'provider_cost_tables'], () => {
+  useRealtimeRefresh(['missions', 'client_price_tables', 'provider_cost_tables', 'system_logs'], () => {
     clearMissionBillingAuditCache();
     if (currentUser) fetchMissions(true);
   });
@@ -307,8 +331,9 @@ const MissionReportPage: React.FC = () => {
       providerCostTables,
       clientsData,
       providersData,
+      billingAdjustmentsMap,
     );
-  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData, providersData]);
+  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData, providersData, billingAdjustmentsMap]);
 
   const openAuditModal = useCallback((mission: Mission) => {
     clearMissionBillingAuditCache(mission.id);
@@ -328,9 +353,11 @@ const MissionReportPage: React.FC = () => {
       providerCostTables,
       clientMatch,
       providersData,
+      undefined,
+      mission.id ? billingAdjustmentsMap.get(mission.id) : undefined,
     );
     setAuditForModal({ mission, audit });
-  }, [clientPriceTables, providerCostTables, clientsData, providersData]);
+  }, [clientPriceTables, providerCostTables, clientsData, providersData, billingAdjustmentsMap]);
 
   const auditSummary = useMemo(() => {
     let validado = 0, atencao = 0, erro = 0, pendente = 0;
