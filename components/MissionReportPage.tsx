@@ -35,7 +35,7 @@ const MissionReportPage: React.FC = () => {
   const [providerCostTables, setProviderCostTables] = useState<any[]>([]);
   const [clientsData, setClientsData] = useState<any[]>([]);
   const [providersData, setProvidersData] = useState<any[]>([]);
-  const [auditForModal, setAuditForModal] = useState<{ missionId: string; audit: MissionBillingAuditResult } | null>(null);
+  const [auditForModal, setAuditForModal] = useState<{ mission: Mission; audit: MissionBillingAuditResult } | null>(null);
 
   const [periodFilter, setPeriodFilter] = useState<'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM' | 'ALL'>('WEEK');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -824,7 +824,7 @@ const MissionReportPage: React.FC = () => {
                             <button
                               type="button"
                               data-testid={`btn-audit-${m.id}`}
-                              onClick={() => setAuditForModal({ missionId: m.id, audit })}
+                              onClick={() => setAuditForModal({ mission: m, audit })}
                               className={`inline-flex flex-col items-center gap-0.5 px-2 py-1 rounded text-[10px] font-black transition-colors ${bg}`}
                               title={
                                 audit.overallStatus === 'validado'
@@ -908,7 +908,7 @@ const MissionReportPage: React.FC = () => {
 
       {auditForModal && (
         <MissionAuditModal
-          missionId={auditForModal.missionId}
+          mission={auditForModal.mission}
           audit={auditForModal.audit}
           onClose={() => setAuditForModal(null)}
         />

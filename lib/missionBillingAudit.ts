@@ -34,6 +34,17 @@ export interface MissionBillingAuditResult {
   cacheKey: string;
   skipped: boolean;
   skipReason?: string;
+  /** Resumo executivo para exibição no popup de auditoria */
+  resumo: AuditExecutiveSummary;
+}
+
+export interface AuditExecutiveSummary {
+  conclusao: string;
+  pontos: string[];
+  operacao: {
+    kmRodado: number;
+    duracaoHoras: number;
+  };
 }
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
@@ -278,6 +289,82 @@ function buildSideDetail(
   return partial;
 }
 
+function enrichSideMotivos(
+  side: SideAuditDetail,
+  lado: 'cliente' | 'fornecedor',
+  tableMissing?: boolean,
+): SideAuditDetail {
+  const copy = { ...side, motivos: [...side.motivos] };
+  if (tableMissing && copy.lancado > 0 && Math.abs(copy.esperado) < 0.005) {
+    copy.motivos.unshift(
+      `Tabela de ${lado === 'cliente' ? 'preço' : 'custo'} do snapshot não encontrada no cadastro (ID órfão)`,
+    );
+  } else if (Math.abs(copy.diferenca) >= 0.005 && copy.motivos.length === 0) {
+    if (copy.diferenca < 0) {
+      if (copy.kmExcedente > 0 && copy.subtotalKm > 0) copy.motivos.push('KM excedente não cobrado ou subcobrado');
+      if (copy.horaExcedente > 0 && copy.subtotalHora > 0) copy.motivos.push('Hora excedente não cobrada ou subcobrada');
+    } else {
+      if (copy.kmExcedente === 0 && copy.subtotalKm === 0) copy.motivos.push('KM cobrado indevidamente');
+      if (copy.horaExcedente === 0 && copy.subtotalHora === 0) copy.motivos.push('Hora cobrada indevidamente');
+    }
+    if (copy.motivos.length === 0) copy.motivos.push('Valor divergente da tabela aplicada');
+  }
+  copy.status = Math.abs(copy.diferenca) < 0.005 ? 'validado' : 'erro';
+  return copy;
+}
+
+function buildAuditExecutiveSummary(
+  audit: Pick<MissionBillingAuditResult, 'overallStatus' | 'overallLabel' | 'client' | 'provider' | 'resultadoFinal' | 'skipped' | 'skipReason'>,
+  kmRodado: number,
+  duracaoHoras: number,
+): AuditExecutiveSummary {
+  const pontos: string[] = [];
+  const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  if (audit.skipped) {
+    return {
+      conclusao: audit.skipReason || 'Auditoria indisponível para esta OS.',
+      pontos: ['Não há valores suficientes para comparar receita/custo com a tabela.'],
+      operacao: { kmRodado, duracaoHoras },
+    };
+  }
+
+  const clientOk = Math.abs(audit.client.diferenca) < 0.005;
+  const providerOk = Math.abs(audit.provider.diferenca) < 0.005;
+
+  if (clientOk) {
+    pontos.push(`Cliente: ${fmt(audit.client.lancado)} está correto (tabela ${audit.client.tableName || 'aplicada'}).`);
+  } else {
+    pontos.push(
+      `Cliente: lançado ${fmt(audit.client.lancado)} vs esperado ${fmt(audit.client.esperado)} (Δ ${fmt(audit.client.diferenca)}).`,
+    );
+    audit.client.motivos.forEach((m) => pontos.push(`→ ${m}`));
+  }
+
+  if (providerOk) {
+    pontos.push(`Fornecedor: ${fmt(audit.provider.lancado)} está correto (tabela ${audit.provider.tableName || 'aplicada'}).`);
+  } else {
+    pontos.push(
+      `Fornecedor: lançado ${fmt(audit.provider.lancado)} vs esperado ${fmt(audit.provider.esperado)} (Δ ${fmt(audit.provider.diferenca)}).`,
+    );
+    audit.provider.motivos.forEach((m) => pontos.push(`→ ${m}`));
+  }
+
+  let conclusao: string;
+  if (audit.overallStatus === 'validado') {
+    conclusao = 'Receita e custo conferem com o cálculo das tabelas aplicadas. Nenhuma divergência encontrada.';
+  } else if (audit.overallStatus === 'atencao') {
+    conclusao = 'Diferença inferior a R$ 1,00 — revisar antes de fechar, mas dentro da tolerância de atenção.';
+  } else {
+    const lados: string[] = [];
+    if (!clientOk) lados.push('cliente');
+    if (!providerOk) lados.push('fornecedor');
+    conclusao = `Divergência no ${lados.join(' e ')} — o valor lançado não bate com o cálculo automático pela tabela.`;
+  }
+
+  return { conclusao, pontos, operacao: { kmRodado, duracaoHoras } };
+}
+
 function resolveOverallStatus(
   clientDiff: number,
   providerDiff: number,
@@ -375,6 +462,19 @@ export function computeMissionBillingAudit(
       cacheKey: fingerprint,
       skipped: true,
       skipReason: isRefused ? 'OS recusada' : isCancelled ? 'OS cancelada sem valores' : 'Sem valores lançados',
+      resumo: buildAuditExecutiveSummary(
+        {
+          overallStatus: 'pendente',
+          overallLabel: 'PENDENTE',
+          client: emptySide(),
+          provider: emptySide(),
+          resultadoFinal: 'ERRO',
+          skipped: true,
+          skipReason: isRefused ? 'OS recusada' : isCancelled ? 'OS cancelada sem valores' : 'Sem valores lançados',
+        },
+        0,
+        0,
+      ),
     };
     auditCache.set(fingerprint, pending);
     return pending;
@@ -392,6 +492,16 @@ export function computeMissionBillingAudit(
   const snapshotOverrides = buildSnapshotTableOverrides(mission);
   const tableOverrides = snapshotOverrides ?? (providerOpsOverride ? { providerOpsOverride } : undefined);
 
+  const snap = (mission as any).snapshot_data as Record<string, unknown> | null | undefined;
+  const clientTableMissing = !!(
+    snap?.clientTableId &&
+    !clientTables.some((t) => String(t.id) === String(snap.clientTableId))
+  );
+  const providerTableMissing = !!(
+    snap?.providerTableId &&
+    !providerTables.some((t) => String(t.id) === String(snap.providerTableId))
+  );
+
   const fin = calculateMissionFinancials(
     mObj,
     clientTables,
@@ -405,19 +515,22 @@ export function computeMissionBillingAudit(
   const providerKmRodado = providerOpsOverride?.distanceKm ?? fin.realTraveledKm;
   const providerTempoHours = providerOpsOverride?.durationHours ?? fin.durationHours;
 
-  const clientDetail = buildSideDetail(
+  let clientDetail = buildSideDetail(
     fin.client,
     fin.realTraveledKm,
     fin.durationHours,
     lancadoReceita,
   );
 
-  const providerDetail = buildSideDetail(
+  let providerDetail = buildSideDetail(
     fin.provider,
     providerKmRodado,
     providerTempoHours,
     lancadoCusto,
   );
+
+  clientDetail = enrichSideMotivos(clientDetail, 'cliente', clientTableMissing);
+  providerDetail = enrichSideMotivos(providerDetail, 'fornecedor', providerTableMissing);
 
   const overall = resolveOverallStatus(
     clientDetail.diferenca,
@@ -432,6 +545,11 @@ export function computeMissionBillingAudit(
     provider: providerDetail,
     cacheKey: fingerprint,
     skipped: false,
+    resumo: buildAuditExecutiveSummary(
+      { overallStatus: overall.overallStatus, overallLabel: overall.overallLabel, client: clientDetail, provider: providerDetail, resultadoFinal: overall.resultadoFinal, skipped: false },
+      fin.realTraveledKm,
+      fin.durationHours,
+    ),
   };
 
   auditCache.set(fingerprint, result);
