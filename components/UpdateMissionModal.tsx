@@ -7,6 +7,8 @@ import { supabase, MISSION_UPDATES_BROADCAST_CHANNEL } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { clientFuzzyFilter, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
+import { optimizeImageForAI } from '../lib/imageForAI';
+import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
 import { showWhatsappCopyPopup } from '../lib/whatsappCopyFlow';
 import { hasExplicitUpdatePrint, shouldSendClientGroupWhatsApp } from '../lib/clientGroupUpdateFilter';
 import {
@@ -255,21 +257,13 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     // Na conclusão, ATIVA/TM SEG ainda podem omitir KM final; evidência é sempre exigida.
     const evidenceOk = !!odoUrl;
 
-    const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const res = String(reader.result || '');
-            resolve(res.includes(',') ? res.split(',')[1] : res);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
-
     const validateOdometer = async (file: File, targetKm: number | null) => {
         if (targetKm == null || targetKm <= 0) { setOdoErr('Informe o KM final antes de validar o print.'); return; }
         setOdoChecking(true); setOdoErr(''); setOdoResult(null); setOdoConfirmed(false);
         try {
-            const base64 = await fileToBase64(file);
+            // Reduz/comprime só a cópia enviada à IA (o print salvo como
+            // evidência continua em qualidade original) — leitura muito mais rápida.
+            const aiImage = await optimizeImageForAI(file);
             const prompt = `Você é um auditor de frotas. Analise a imagem do PAINEL/HODÔMETRO de um veículo e compare com o valor de KM FINAL informado pelo operador: ${targetKm}.
 Tarefas:
 1. Identifique se a imagem mostra de fato um hodômetro/painel de veículo (campo "concluido": true se for um hodômetro legível, false caso contrário).
@@ -277,10 +271,17 @@ Tarefas:
 3. Compare o valor extraído com o KM FINAL informado (${targetKm}). Se forem diferentes (tolerância de 2 km), "divergencia": true.
 4. Escreva uma justificativa curta em português (campo "justificativa").
 Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": boolean, "km_extraido": string|null, "divergencia": boolean, "justificativa": string}`;
-            const raw = await generateContent({
-                contents: { parts: [ { inlineData: { mimeType: file.type || 'image/png', data: base64 } }, { text: prompt } ] },
-                config: { responseMimeType: 'application/json' },
-            });
+            // Timeout de 30s: se o Gemini travar, a tela NÃO fica presa no spinner.
+            // A validação por IA é apenas um apoio — a OS pode ser concluída mesmo
+            // que ela falhe (o print já está salvo como evidência).
+            const raw = await withTimeout(
+                generateContent({
+                    contents: { parts: [ { inlineData: { mimeType: aiImage.mimeType, data: aiImage.data } }, { text: prompt } ] },
+                    config: { responseMimeType: 'application/json' },
+                }),
+                30_000,
+                'A validação por IA demorou demais',
+            );
             let txt = (raw || '').trim();
             if (txt.startsWith('```')) txt = txt.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
             const parsed = JSON.parse(txt) as OdometerAiResult;
@@ -288,7 +289,10 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             setOdoValidatedKm(targetKm);
             if (!parsed.concluido) setOdoErr('A imagem não parece ser um hodômetro legível. Cole um print válido do painel.');
         } catch (e: any) {
-            setOdoErr('Não foi possível validar o print com a IA. Tente novamente.');
+            const timedOut = e instanceof TimeoutError;
+            setOdoErr(timedOut
+                ? 'A validação por IA demorou demais e foi interrompida. O print já está salvo — você pode concluir a OS normalmente.'
+                : 'Não foi possível validar o print com a IA. O print já está salvo — você pode concluir a OS normalmente.');
         } finally {
             setOdoChecking(false);
         }
