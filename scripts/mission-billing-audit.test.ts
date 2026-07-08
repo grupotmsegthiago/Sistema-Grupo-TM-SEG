@@ -568,6 +568,41 @@ describe('missionBillingAudit', () => {
     assert.ok((audit.client.tableName || '').includes('LOUVEIRA-SERRA'));
   });
 
+  it('OS em andamento exibe EM VIAGEM sem rodar auditoria financeira', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission({
+      status: 'Em Viagem',
+      revenue_value: 735,
+      cost_value: 500,
+    } as any);
+    const audit = computeMissionBillingAudit(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    assert.equal(audit.overallStatus, 'em_viagem');
+    assert.equal(audit.overallLabel, 'EM VIAGEM');
+    assert.equal(audit.skipped, true);
+    assert.ok(audit.skipReason?.includes('andamento'));
+  });
+
+  it('OS concluída continua auditando normalmente', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission({ status: 'Concluída' });
+    const fin = calculateMissionFinancials(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    const audit = computeMissionBillingAudit(
+      { ...mission, revenue_value: fin.client.serviceTotal, cost_value: fin.provider.serviceTotal } as Mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    assert.equal(audit.overallStatus, 'validado');
+    assert.notEqual(audit.overallStatus, 'em_viagem');
+  });
+
   it('missão anterior a jun/2026 fica pendente fora do período', () => {
     clearMissionBillingAuditCache();
     const mission = makeMission({

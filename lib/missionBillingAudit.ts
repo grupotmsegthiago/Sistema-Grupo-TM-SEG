@@ -2,9 +2,9 @@ import type { Mission, Client, ClientPriceTable, ProviderCostTable } from '../ty
 import { calculateMissionFinancials, extractCityFromAddress } from './financialUtils';
 import { isAutoMasterRow } from './providerAutoPricing';
 import { computeDhlBand } from './dhlAutoTableSelector';
-import { missionEligibleForBillingAudit } from './missionBillingAuditConfig';
+import { missionEligibleForBillingAudit, isTerminalMissionStatusForAudit } from './missionBillingAuditConfig';
 
-export type AuditStatusLevel = 'validado' | 'atencao' | 'erro' | 'pendente';
+export type AuditStatusLevel = 'validado' | 'atencao' | 'erro' | 'pendente' | 'em_viagem';
 
 export interface SideAuditDetail {
   status: 'validado' | 'erro';
@@ -887,6 +887,60 @@ function resolveOverallStatus(
   };
 }
 
+function emptyAuditSide(): SideAuditDetail {
+  return {
+    status: 'validado',
+    activation: 0,
+    franchiseKm: 0,
+    franchiseHours: 0,
+    kmRodado: 0,
+    kmExcedente: 0,
+    valorKmUnit: 0,
+    subtotalKm: 0,
+    tempoExecutadoHours: 0,
+    horaExcedente: 0,
+    valorHoraUnit: 0,
+    subtotalHora: 0,
+    esperado: 0,
+    lancado: 0,
+    diferenca: 0,
+    motivos: [],
+  };
+}
+
+function buildSkippedAuditResult(
+  mission: Mission,
+  fingerprint: string,
+  opts: {
+    overallStatus: AuditStatusLevel;
+    overallLabel: string;
+    overallIcon: string;
+    skipReason: string;
+    resumoPontos?: string[];
+  },
+): MissionBillingAuditResult {
+  const empty = emptyAuditSide();
+  const result: MissionBillingAuditResult = {
+    missionId: mission.id || '',
+    overallStatus: opts.overallStatus,
+    overallLabel: opts.overallLabel,
+    overallIcon: opts.overallIcon,
+    client: empty,
+    provider: empty,
+    resultadoFinal: 'ERRO',
+    cacheKey: fingerprint,
+    skipped: true,
+    skipReason: opts.skipReason,
+    resumo: {
+      conclusao: opts.skipReason,
+      pontos: opts.resumoPontos || [],
+      operacao: { kmRodado: 0, duracaoHoras: 0 },
+    },
+  };
+  auditCache.set(fingerprint, result);
+  return result;
+}
+
 export function computeMissionBillingAudit(
   mission: Mission,
   clientTables: ClientPriceTable[],
@@ -905,54 +959,31 @@ export function computeMissionBillingAudit(
   if (cached) return cached;
 
   if (!missionEligibleForBillingAudit(mission)) {
-    const emptySide = (): SideAuditDetail => ({
-      status: 'validado',
-      activation: 0,
-      franchiseKm: 0,
-      franchiseHours: 0,
-      kmRodado: 0,
-      kmExcedente: 0,
-      valorKmUnit: 0,
-      subtotalKm: 0,
-      tempoExecutadoHours: 0,
-      horaExcedente: 0,
-      valorHoraUnit: 0,
-      subtotalHora: 0,
-      esperado: 0,
-      lancado: 0,
-      diferenca: 0,
-      motivos: [],
-    });
-    const outside: MissionBillingAuditResult = {
-      missionId: mission.id || '',
+    return buildSkippedAuditResult(mission, fingerprint, {
       overallStatus: 'pendente',
       overallLabel: 'PENDENTE',
       overallIcon: '⚪',
-      client: emptySide(),
-      provider: emptySide(),
-      resultadoFinal: 'ERRO',
-      cacheKey: fingerprint,
-      skipped: true,
       skipReason: 'Fora do período de auditoria (a partir de jun/2026)',
-      resumo: buildAuditExecutiveSummary(
-        {
-          overallStatus: 'pendente',
-          overallLabel: 'PENDENTE',
-          client: emptySide(),
-          provider: emptySide(),
-          resultadoFinal: 'ERRO',
-          skipped: true,
-          skipReason: 'Fora do período de auditoria (a partir de jun/2026)',
-        },
-        0,
-        0,
-      ),
-    };
-    auditCache.set(fingerprint, outside);
-    return outside;
+      resumoPontos: ['Não há valores suficientes para comparar receita/custo com a tabela.'],
+    });
   }
 
-  const status = String((mission as any).status || '').toUpperCase();
+  const missionStatus = String((mission as any).status || '');
+
+  if (!isTerminalMissionStatusForAudit(missionStatus)) {
+    return buildSkippedAuditResult(mission, fingerprint, {
+      overallStatus: 'em_viagem',
+      overallLabel: 'EM VIAGEM',
+      overallIcon: '🛣️',
+      skipReason: 'OS em andamento — a auditoria roda quando a OS for concluída, recusada ou cancelada.',
+      resumoPontos: [
+        `Status atual: ${missionStatus || '—'}.`,
+        'Aguarde a conclusão da operação para validar receita e custo.',
+      ],
+    });
+  }
+
+  const status = missionStatus.toUpperCase();
   const isRefused = status.includes('RECUS');
   const isCancelled = status.includes('CANCEL');
 
@@ -961,55 +992,21 @@ export function computeMissionBillingAudit(
     ? 0
     : safeNumber((mission as any).cost_value);
 
-  const hasComparableValues = !isRefused && (lancadoReceita > 0 || lancadoCusto > 0 || status.includes('CONCLU'));
+  const hasComparableValues =
+    status.includes('CONCLU') ||
+    isRefused ||
+    isCancelled ||
+    lancadoReceita > 0 ||
+    lancadoCusto > 0;
 
   if (!hasComparableValues) {
-    const emptySide = (): SideAuditDetail => ({
-      status: 'validado',
-      activation: 0,
-      franchiseKm: 0,
-      franchiseHours: 0,
-      kmRodado: 0,
-      kmExcedente: 0,
-      valorKmUnit: 0,
-      subtotalKm: 0,
-      tempoExecutadoHours: 0,
-      horaExcedente: 0,
-      valorHoraUnit: 0,
-      subtotalHora: 0,
-      esperado: 0,
-      lancado: 0,
-      diferenca: 0,
-      motivos: [],
-    });
-
-    const pending: MissionBillingAuditResult = {
-      missionId: mission.id || '',
+    return buildSkippedAuditResult(mission, fingerprint, {
       overallStatus: 'pendente',
       overallLabel: 'PENDENTE',
       overallIcon: '⚪',
-      client: emptySide(),
-      provider: emptySide(),
-      resultadoFinal: 'ERRO',
-      cacheKey: fingerprint,
-      skipped: true,
-      skipReason: isRefused ? 'OS recusada' : isCancelled ? 'OS cancelada sem valores' : 'Sem valores lançados',
-      resumo: buildAuditExecutiveSummary(
-        {
-          overallStatus: 'pendente',
-          overallLabel: 'PENDENTE',
-          client: emptySide(),
-          provider: emptySide(),
-          resultadoFinal: 'ERRO',
-          skipped: true,
-          skipReason: isRefused ? 'OS recusada' : isCancelled ? 'OS cancelada sem valores' : 'Sem valores lançados',
-        },
-        0,
-        0,
-      ),
-    };
-    auditCache.set(fingerprint, pending);
-    return pending;
+      skipReason: 'Sem valores lançados',
+      resumoPontos: ['Não há valores suficientes para comparar receita/custo com a tabela.'],
+    });
   }
 
   const mObj = {

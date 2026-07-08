@@ -399,14 +399,15 @@ const MissionReportPage: React.FC = () => {
   }, [clientPriceTables, providerCostTables, clientsData, providersData, billingAdjustmentsMap]);
 
   const auditSummary = useMemo(() => {
-    let validado = 0, atencao = 0, erro = 0, pendente = 0;
+    let validado = 0, atencao = 0, erro = 0, pendente = 0, emViagem = 0;
     auditByMission.forEach((a) => {
       if (a.overallStatus === 'validado') validado++;
       else if (a.overallStatus === 'atencao') atencao++;
       else if (a.overallStatus === 'erro') erro++;
+      else if (a.overallStatus === 'em_viagem') emViagem++;
       else pendente++;
     });
-    return { validado, atencao, erro, pendente };
+    return { validado, atencao, erro, pendente, emViagem };
   }, [auditByMission]);
 
   const canonicalByMission = useMemo(() => {
@@ -542,6 +543,9 @@ const MissionReportPage: React.FC = () => {
                 <span className="bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded">🔴 {auditSummary.erro}</span>
                 {auditSummary.pendente > 0 && (
                   <span className="bg-gray-100 text-gray-600 border border-gray-200 px-2 py-0.5 rounded">⚪ {auditSummary.pendente}</span>
+                )}
+                {auditSummary.emViagem > 0 && (
+                  <span className="bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 rounded">🛣️ {auditSummary.emViagem}</span>
                 )}
                 {auditBusy && (
                   <span className="text-gray-400 font-bold px-1 flex items-center gap-1">
@@ -907,7 +911,26 @@ const MissionReportPage: React.FC = () => {
                           );
                         }
                         const audit = auditByMission.get(m.id);
-                        if (!audit || audit.skipped) {
+                        if (!audit) {
+                          return (
+                            <td className="px-3 py-2 border-r border-gray-100 text-center text-[10px] text-gray-400">—</td>
+                          );
+                        }
+                        if (audit.overallStatus === 'em_viagem') {
+                          return (
+                            <td className="px-3 py-2 border-r border-gray-100 text-center">
+                              <span
+                                className="inline-flex flex-col items-center gap-0.5 px-2 py-1 rounded text-[10px] font-black bg-sky-50 text-sky-800 border border-sky-200"
+                                title={audit.skipReason || 'OS em andamento'}
+                                data-testid={`btn-audit-${m.id}`}
+                              >
+                                <span>{audit.overallIcon}</span>
+                                <span>{audit.overallLabel}</span>
+                              </span>
+                            </td>
+                          );
+                        }
+                        if (audit.skipped) {
                           return (
                             <td className="px-3 py-2 border-r border-gray-100 text-center text-[10px] text-gray-400">—</td>
                           );

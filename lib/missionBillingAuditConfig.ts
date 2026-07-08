@@ -48,3 +48,17 @@ export function filterMissionsForBillingAudit<T extends Mission | Record<string,
 ): T[] {
   return missions.filter((m) => missionEligibleForBillingAudit(m, untilInclusive));
 }
+
+/** Status em que a auditoria financeira deve rodar (OS encerrada). */
+export function isTerminalMissionStatusForAudit(status: string | undefined | null): boolean {
+  const s = String(status || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return s.includes('CONCLU') || s.includes('RECUS') || s.includes('CANCEL');
+}
+
+/** OS ainda em operação (viagem, origem, documentação, agendada, etc.). */
+export function isInProgressMissionStatus(status: string | undefined | null): boolean {
+  return !isTerminalMissionStatusForAudit(status);
+}

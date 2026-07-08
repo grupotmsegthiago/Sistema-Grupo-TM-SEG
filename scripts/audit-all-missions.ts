@@ -121,7 +121,7 @@ async function main() {
     }
   }
 
-  const stats = { validado: 0, atencao: 0, erro: 0, pendente: 0, skipped: 0 };
+  const stats = { validado: 0, atencao: 0, erro: 0, pendente: 0, em_viagem: 0, skipped: 0 };
   const erros: Array<{ id: string; audit: MissionBillingAuditResult; mission: Mission }> = [];
   const atencoes: typeof erros = [];
   const orphanTables: string[] = [];
@@ -130,8 +130,10 @@ async function main() {
     const audit = auditMap.get(m.id!);
     if (!audit) continue;
 
-    if (audit.skipped) stats.skipped++;
-    else stats[audit.overallStatus]++;
+    if (audit.skipped) {
+      if (audit.overallStatus === 'em_viagem') stats.em_viagem++;
+      else stats.skipped++;
+    } else stats[audit.overallStatus]++;
 
     const snap = (m as any).snapshot_data;
     if (snap?.clientTableId && !(clientTables as any[]).some((t) => String(t.id) === String(snap.clientTableId))) {
@@ -164,6 +166,7 @@ async function main() {
   console.log(`🟢 VALIDADO:  ${stats.validado}`);
   console.log(`🟡 ATENÇÃO:   ${stats.atencao}`);
   console.log(`🔴 ERRO:      ${stats.erro}`);
+  console.log(`🛣️ EM VIAGEM: ${stats.em_viagem}`);
   console.log('');
 
   if (orphanTables.length > 0) {
