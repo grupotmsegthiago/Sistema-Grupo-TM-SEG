@@ -109,6 +109,9 @@
     "api/rh-employee-list.ts": {
       "maxDuration": 60
     },
+    "api/rh-timeclock-entries.ts": {
+      "maxDuration": 60
+    },
     "api/rh-employee-costs.ts": {
       "maxDuration": 60
     },
@@ -251,6 +254,10 @@
     {
       "source": "/api/rh/employees",
       "destination": "/api/rh-employee-list"
+    },
+    {
+      "source": "/api/rh/timeclock/entries",
+      "destination": "/api/rh-timeclock-entries"
     },
     {
       "source": "/api/email/health",

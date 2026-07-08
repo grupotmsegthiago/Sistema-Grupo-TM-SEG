@@ -4,19 +4,27 @@ import { formatIsoDateBR } from '../dateUtils';
 import { requestPresenceRefresh } from '../presenceChannel';
 import type { TimeClockEntry, TimeClockStage, TimeClockUserContext } from './types';
 import { getNextTimeClockStage } from './stages';
+import { fetchTodayTimeClockEntriesFromApi } from './fetchEntriesApi';
 
 export async function fetchTodayTimeClockEntries(userId: string): Promise<TimeClockEntry[]> {
-  const today = formatIsoDateBR();
-  const { data, error } = await supabase
-    .from('time_clock')
-    .select('*')
-    .eq('user_id', userId)
-    .gte('timestamp', `${today}T00:00:00`)
-    .lte('timestamp', `${today}T23:59:59`)
-    .order('timestamp', { ascending: true });
+  try {
+    return await fetchTodayTimeClockEntriesFromApi(userId);
+  } catch (apiErr) {
+    const today = formatIsoDateBR();
+    const { data, error } = await supabase
+      .from('time_clock')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('timestamp', `${today}T00:00:00`)
+      .lte('timestamp', `${today}T23:59:59`)
+      .order('timestamp', { ascending: true });
 
-  if (error) throw error;
-  return (data || []) as TimeClockEntry[];
+    if (error) {
+      const msg = apiErr instanceof Error ? apiErr.message : 'Falha na API';
+      throw new Error(error.message || msg);
+    }
+    return (data || []) as TimeClockEntry[];
+  }
 }
 
 export async function verifySelfieForTimeClock(photoBase64: string): Promise<void> {

@@ -1,8 +1,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
-import { Search, Download, Calendar, User, FileText, Loader2, MapPin, Printer } from 'lucide-react';
+import { Download, FileText, Loader2, MapPin, Printer } from 'lucide-react';
 import { formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import {
   TIME_CLOCK_STAGE_LABELS,
@@ -10,6 +9,8 @@ import {
   getTimeClockEntryForStage,
 } from '../lib/timeclock/stages';
 import type { TimeClockEntry } from '../lib/timeclock/types';
+import { fetchTimeClockEntriesFromApi } from '../lib/timeclock/fetchEntriesApi';
+import { fetchCltEmployeesForHistory } from '../lib/timeclock/history';
 
 type FolhaRow = {
   key: string;
@@ -43,9 +44,10 @@ function groupLogsForFolha(logs: TimeClockEntry[]): FolhaRow[] {
 const RHPointReport: React.FC = () => {
     const [logs, setLogs] = useState<TimeClockEntry[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
     const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
-    const [users, setUsers] = useState<any[]>([]);
+    const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
     const [selectedUser, setSelectedUser] = useState('ALL');
     const [viewMode, setViewMode] = useState<'folha' | 'detalhado'>('folha');
 
@@ -59,18 +61,34 @@ const RHPointReport: React.FC = () => {
     const folhaRows = useMemo(() => groupLogsForFolha(logs), [logs]);
 
     const fetchUsers = async () => {
-        const { data } = await supabase.from('system_users').select('id, name').order('name');
-        if (data) setUsers(data);
+        try {
+            const employees = await fetchCltEmployeesForHistory();
+            setUsers(
+              employees
+                .filter((e) => e.user_id)
+                .map((e) => ({ id: e.user_id!, name: e.full_name }))
+            );
+        } catch {
+            setUsers([]);
+        }
     };
 
     const fetchLogs = async () => {
         setLoading(true);
-        let query = supabase.from('time_clock').select('*').gte('timestamp', `${startDate}T00:00:00`).lte('timestamp', `${endDate}T23:59:59`);
-        if (selectedUser !== 'ALL') query = query.eq('user_id', selectedUser);
-        
-        const { data } = await query.order('timestamp', { ascending: false });
-        if (data) setLogs(data as TimeClockEntry[]);
-        setLoading(false);
+        setError('');
+        try {
+            const data = await fetchTimeClockEntriesFromApi({
+              startDate,
+              endDate,
+              userId: selectedUser !== 'ALL' ? selectedUser : undefined,
+            });
+            setLogs(data);
+        } catch (e: any) {
+            setLogs([]);
+            setError(e?.message || 'Falha ao carregar folha de ponto');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const exportCSV = () => {
@@ -149,6 +167,11 @@ const RHPointReport: React.FC = () => {
             </div>
 
             <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
+                {error && (
+                  <div className="m-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-bold">
+                    {error}
+                  </div>
+                )}
                 <div className="overflow-x-auto">
                     {viewMode === 'folha' ? (
                       <table className="w-full text-left border-collapse">

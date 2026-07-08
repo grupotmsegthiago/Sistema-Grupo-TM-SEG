@@ -15,13 +15,20 @@ import { fetchTodayTimeClockEntries } from '../lib/timeclock/registerPunch';
 
 const TimeClockSystem: React.FC = () => {
   const [history, setHistory] = useState<TimeClockEntry[]>([]);
+  const [loadError, setLoadError] = useState('');
   const [open, setOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     const user = JSON.parse(localStorage.getItem('userData') || '{}');
     if (!user?.id) return;
-    const entries = await fetchTodayTimeClockEntries(user.id);
-    setHistory(entries);
+    setLoadError('');
+    try {
+      const entries = await fetchTodayTimeClockEntries(user.id);
+      setHistory(entries);
+    } catch (e: any) {
+      setHistory([]);
+      setLoadError(e?.message || 'Falha ao carregar registros de hoje');
+    }
   }, []);
 
   useEffect(() => {
@@ -53,6 +60,12 @@ const TimeClockSystem: React.FC = () => {
           <p className="text-xl font-black text-white font-mono">{formatNowTimeBR()}</p>
         </div>
       </div>
+
+      {loadError && (
+        <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-bold">
+          {loadError}
+        </div>
+      )}
 
       <div className="bg-white rounded-[2.5rem] border border-gray-200 shadow-sm overflow-hidden">
         <div className="p-5 bg-gray-900 text-white flex justify-between items-center">
