@@ -27,7 +27,7 @@ export default async function handler(req: any, res: any) {
       created_by: String(body.created_by || ''),
     });
     if (!row) {
-      res.status(500).json({ error: 'DATABASE_URL indisponível ou falha ao gravar snapshot' });
+      res.status(500).json({ error: 'Falha ao gravar snapshot de saldo. Tente novamente ou contate o suporte.' });
       return;
     }
     res.status(200).json(row);
