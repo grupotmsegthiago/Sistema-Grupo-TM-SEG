@@ -6,6 +6,9 @@ import {
   type TeamPunchLookup,
   type TeamRosterMember,
 } from './teamPunchBoard';
+import { requiresTimeclockUser } from './eligibility';
+import { getOnDutyStageLabel, getMinutesOnDutyToday, isCltOnDutyToday } from './onDuty';
+import type { TimeClockUserContext } from './types';
 
 export type { PresencePunchMark } from './punchMarks';
 export { buildPunchMarks } from './punchMarks';
@@ -231,6 +234,38 @@ export function parsePresenceState(
  * - Status Em serviço / Em almoço / Fora vem do ponto de hoje quando existir.
  * - Online ao vivo enriquece atividade; offline com ponto usa dados do banco.
  */
+export function buildPresenceHeartbeatFromUser(
+  user: TimeClockUserContext & { role?: string },
+  entries?: Pick<TimeClockEntry, 'type' | 'timestamp'>[],
+): PresenceUserState {
+  const mustClock = requiresTimeclockUser(user);
+  const contractType = (user.contractType || '').toUpperCase() || undefined;
+  const punchMarks = entries?.length ? buildPunchMarks(entries) : undefined;
+  const onDuty = entries?.length ? isCltOnDutyToday(entries) : false;
+  let onDutyLabel = 'Online';
+
+  if (entries?.length) {
+    onDutyLabel = getOnDutyStageLabel(entries);
+  } else if (mustClock) {
+    onDutyLabel = 'Aguardando ponto';
+  } else if (contractType) {
+    onDutyLabel = contractType;
+  }
+
+  return {
+    userId: normalizePresenceUserId(user.id),
+    name: user.name || 'Usuário',
+    role: user.role || 'Operador',
+    contractType,
+    isClt: mustClock,
+    onDuty,
+    onDutyLabel,
+    onlineAt: new Date().toISOString(),
+    minutesOnDuty: onDuty ? getMinutesOnDutyToday(entries || []) : 0,
+    punchMarks,
+  };
+}
+
 export function mergeRosterWithPresence(
   roster: TeamRosterMember[],
   onlineUsers: PresenceUserState[],

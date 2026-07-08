@@ -10,6 +10,7 @@ import {
   buildPunchMarks,
   buildPresenceTooltip,
   mergeRosterWithPresence,
+  buildPresenceHeartbeatFromUser,
   formatPresenceShortName,
   normalizePresenceUserId,
   PRESENCE_USER_AVATAR_SRC,
@@ -193,6 +194,26 @@ test('getPresenceServiceStatus distingue online sem ponto de fora offline', () =
     ),
     'online',
   );
+});
+
+test('buildPresenceHeartbeatFromUser marca operador CLT como aguardando ponto', () => {
+  const payload = buildPresenceHeartbeatFromUser({
+    id: 4,
+    name: 'michelle dias',
+    role: 'AVANÇADO',
+  } as any);
+  assert.equal(payload.isClt, true);
+  assert.equal(payload.onDutyLabel, 'Aguardando ponto');
+  assert.equal(normalizePresenceUserId(payload.userId), '4');
+});
+
+test('buildPresenceHeartbeatFromUser reflete ponto IN como em serviço', () => {
+  const payload = buildPresenceHeartbeatFromUser(
+    { id: '5', name: 'Beatriz', role: 'Operador' } as any,
+    [{ type: 'IN', timestamp: '2026-07-08T10:30:00.000Z' }],
+  );
+  assert.equal(getPresenceServiceStatus(payload), 'em_servico');
+  assert.equal(payload.onDuty, true);
 });
 
 test('normalizePresenceUserId unifica number e string do login', () => {

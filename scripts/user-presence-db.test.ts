@@ -30,9 +30,18 @@ test('useOnlinePresence mescla banco + broadcast (banco prevalece)', () => {
   assert.match(hookSrc, /mergePresenceSources/);
 });
 
+test('TimeClockGate grava heartbeat de presença para CLT', () => {
+  const gateSrc = fs.readFileSync('components/TimeClockGate.tsx', 'utf8');
+  assert.match(gateSrc, /upsertUserPresenceDb/);
+  assert.match(gateSrc, /buildPresenceHeartbeatFromUser/);
+  assert.match(gateSrc, /requestPresenceRefresh/);
+});
+
 test('UserPresenceTracker grava heartbeat no banco', () => {
   assert.match(trackerSrc, /upsertUserPresenceDb/);
   assert.match(trackerSrc, /removeUserPresenceDb/);
+  assert.match(trackerSrc, /buildPresenceHeartbeatFromUser/);
+  assert.match(trackerSrc, /refreshDbHeartbeat/);
 });
 
 test('mergePresenceSources: banco prevalece sobre broadcast no mesmo userId', () => {

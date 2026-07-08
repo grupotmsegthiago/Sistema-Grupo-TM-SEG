@@ -8,7 +8,7 @@ import {
   getLastActivityAt,
 } from '../lib/userActivityTracker';
 import { requiresTimeclockUser } from '../lib/timeclock/eligibility';
-import { buildPunchMarks, normalizePresenceUserId } from '../lib/timeclock/presence';
+import { buildPunchMarks, normalizePresenceUserId, buildPresenceHeartbeatFromUser } from '../lib/timeclock/presence';
 import {
   onPresenceRefreshRequested,
   trackPresence,
@@ -41,15 +41,7 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
 
     const buildQuickPayload = (
       raw: TimeClockUserContext & { role?: string }
-    ): PresenceUserState => ({
-      userId: normalizePresenceUserId(raw.id),
-      name: raw.name || 'Usuário',
-      role: raw.role || 'Operador',
-      isClt: !!(raw.isClt || raw.requiresTimeclock),
-      onDuty: false,
-      onDutyLabel: 'Online',
-      onlineAt: new Date().toISOString(),
-    });
+    ): PresenceUserState => buildPresenceHeartbeatFromUser(raw);
 
     const buildPayload = async (): Promise<PresenceUserState | null> => {
       try {
@@ -117,20 +109,29 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
 
     const applyPayload = (payload: PresenceUserState) => {
       lastGoodPayload = payload;
+      void upsertUserPresenceDb(payload);
       if (stopTracking) {
         updatePresencePayload(payload);
       } else {
         stopTracking = trackPresence(payload);
       }
-      void upsertUserPresenceDb(payload);
+    };
+
+    const refreshDbHeartbeat = () => {
+      if (cancelled || !lastGoodPayload) return;
+      void upsertUserPresenceDb({
+        ...lastGoodPayload,
+        onlineAt: new Date().toISOString(),
+      });
     };
 
     const heartbeat = async (opts?: { activityOnly?: boolean; bypassThrottle?: boolean }) => {
-      if (cancelled || !stopTracking) return;
+      if (cancelled) return;
 
       // Caminho "activityOnly": NÃO vai ao banco. Só atualiza presença/atividade
       // e reconta os minutos em serviço localmente a partir do último ponto lido.
       if (opts?.activityOnly && lastGoodPayload) {
+        if (!stopTracking) return;
         const now = Date.now();
         if (!opts.bypassThrottle && now - lastActivityHeartbeatAt < ACTIVITY_HEARTBEAT_MIN_MS) return;
         lastActivityHeartbeatAt = now;
@@ -176,6 +177,7 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
     // renova a presença/atividade. O status real (Em serviço / Em almoço / Fora
     // de serviço) só muda no login e quando o banco avisa um novo ponto.
     heartbeatTimer = setInterval(() => {
+      refreshDbHeartbeat();
       void heartbeat({ activityOnly: true, bypassThrottle: true });
     }, HEARTBEAT_MS);
 
