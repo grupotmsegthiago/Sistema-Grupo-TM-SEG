@@ -7,7 +7,18 @@ export function isCltUser(user: TimeClockUserContext | null | undefined): boolea
   return (user.contractType || '').toUpperCase() === 'CLT';
 }
 
+/** Retorna o funcionário CLT do usuário (compat com chamadas antigas). */
 export async function fetchCltEmployeeForUser(
+  user: Pick<TimeClockUserContext, 'id' | 'email'>
+): Promise<CltEmployeeInfo | null> {
+  const employee = await fetchEmployeeForUser(user);
+  if (!employee) return null;
+  if (String(employee.contract_type || '').toUpperCase() !== 'CLT') return null;
+  return employee;
+}
+
+/** Busca o funcionário do usuário SEM filtrar por tipo de contrato. */
+export async function fetchEmployeeForUser(
   user: Pick<TimeClockUserContext, 'id' | 'email'>
 ): Promise<CltEmployeeInfo | null> {
   const baseSelect =
@@ -21,9 +32,7 @@ export async function fetchCltEmployeeForUser(
     .is('deleted_at', null)
     .maybeSingle();
 
-  if (byUser && String(byUser.contract_type || '').toUpperCase() === 'CLT') {
-    return byUser as CltEmployeeInfo;
-  }
+  if (byUser) return byUser as CltEmployeeInfo;
 
   if (user.email) {
     const { data: byEmail } = await supabase
@@ -34,9 +43,7 @@ export async function fetchCltEmployeeForUser(
       .is('deleted_at', null)
       .maybeSingle();
 
-    if (byEmail && String(byEmail.contract_type || '').toUpperCase() === 'CLT') {
-      return byEmail as CltEmployeeInfo;
-    }
+    if (byEmail) return byEmail as CltEmployeeInfo;
   }
 
   return null;
@@ -45,16 +52,19 @@ export async function fetchCltEmployeeForUser(
 export async function enrichUserWithCltData(
   user: TimeClockUserContext
 ): Promise<TimeClockUserContext> {
-  const employee = await fetchCltEmployeeForUser(user);
+  const employee = await fetchEmployeeForUser(user);
   if (!employee) {
     return { ...user, isClt: false };
   }
 
+  const contractType = String(employee.contract_type || '').toUpperCase();
+  const isClt = contractType === 'CLT';
+
   return {
     ...user,
     employeeId: employee.id,
-    contractType: employee.contract_type,
-    isClt: true,
+    contractType,
+    isClt,
     digitalSignatureUrl: employee.digital_signature_url || null,
   };
 }
