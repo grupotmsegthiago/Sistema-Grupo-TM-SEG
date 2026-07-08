@@ -1,38 +1,65 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabase';
-import {
-  TMSEG_PRESENCE_CHANNEL,
-  parsePresenceState,
-  type PresenceUserState,
-} from './timeclock/presence';
+import type { PresenceUserState } from './timeclock/presence';
 
-type PresenceListener = (users: PresenceUserState[]) => void;
+/**
+ * Sistema de presença baseado em Broadcast do Supabase Realtime.
+ *
+ * Por que Broadcast em vez de Presence?
+ * - Presence depende do serviço de Presence estar habilitado no projeto
+ *   Supabase e às vezes exige RLS/authorization específica.
+ * - Broadcast é a primitiva mais robusta do Realtime: funciona sem
+ *   configuração extra e todos os projetos Supabase têm por padrão.
+ *
+ * Como funciona:
+ * - Cada cliente envia um "heartbeat" broadcast a cada BROADCAST_INTERVAL_MS
+ *   com seu payload de presença.
+ * - Cada cliente recebe heartbeats dos outros e mantém um Map { userId -> {...} }.
+ * - Um cleanup periódico remove clientes que não deram heartbeat há STALE_MS.
+ */
 
-interface PresenceChannelState {
-  channel: RealtimeChannel;
-  key: string;
-  users: PresenceUserState[];
-  listeners: Set<PresenceListener>;
-  ready: boolean;
-  lastPayload: PresenceUserState | null;
-  hasTracked: boolean;
-}
-
-let state: PresenceChannelState | null = null;
-let refCount = 0;
-const refreshTarget = new EventTarget();
+const PRESENCE_CHANNEL = 'tmseg-user-presence-v2';
+const BROADCAST_EVENT_HELLO = 'hello';
+const BROADCAST_EVENT_BYE = 'bye';
+const BROADCAST_INTERVAL_MS = 15_000;
+const STALE_MS = 60_000; // se não recebeu ping há 60s, considera offline
+const CLEANUP_INTERVAL_MS = 20_000;
 
 const DEBUG = typeof window !== 'undefined';
 const log = (...args: unknown[]) => {
   if (DEBUG) console.log('[TMSEG_PRESENCE]', ...args);
 };
 
-/** Pede ao tracker atual para refazer o track imediatamente (usado após bater ponto etc.). */
+type PresenceListener = (users: PresenceUserState[]) => void;
+
+interface PresenceRecord extends PresenceUserState {
+  lastSeen: number;
+}
+
+interface PresenceState {
+  channel: RealtimeChannel;
+  ready: boolean;
+  listeners: Set<PresenceListener>;
+  users: Map<string, PresenceRecord>;
+  lastPayload: PresenceUserState | null;
+  broadcastTimer: ReturnType<typeof setInterval> | null;
+  cleanupTimer: ReturnType<typeof setInterval> | null;
+  trackers: number;
+}
+
+let state: PresenceState | null = null;
+const refreshTarget = new EventTarget();
+
+// ─────────────────────────────────────────────────────────────
+// API pública
+// ─────────────────────────────────────────────────────────────
+
+/** Solicita ao tracker atual que refaça o broadcast imediatamente. */
 export function requestPresenceRefresh(): void {
   refreshTarget.dispatchEvent(new Event('refresh'));
 }
 
-/** Inscreve um callback para reagir a pedidos de refresh (usado internamente pelo tracker). */
+/** Inscreve callback para reagir a pedidos de refresh externos (uso interno). */
 export function onPresenceRefreshRequested(cb: () => void): () => void {
   const handler = () => {
     try {
@@ -45,179 +72,209 @@ export function onPresenceRefreshRequested(cb: () => void): () => void {
   return () => refreshTarget.removeEventListener('refresh', handler);
 }
 
-function generatePresenceKey(): string {
-  try {
-    const raw = localStorage.getItem('userData');
-    if (raw) {
-      const parsed = JSON.parse(raw) as { id?: string };
-      if (parsed?.id) return parsed.id;
-    }
-  } catch {
-    // ignora – cai no fallback
-  }
-  return `guest-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+/** Assina alterações da lista de presença. Retorna função para dessubscrever. */
+export function subscribePresence(listener: PresenceListener): () => void {
+  const current = ensureState();
+  current.listeners.add(listener);
+  log('novo listener. total =', current.listeners.size);
+  emit(current, listener);
+  return () => {
+    current.listeners.delete(listener);
+    teardownIfIdle();
+  };
 }
 
-function notify(current: PresenceChannelState): void {
-  for (const listener of current.listeners) {
+/** Registra a presença do usuário atual. Retorna função para parar. */
+export function trackPresence(payload: PresenceUserState): () => void {
+  const current = ensureState();
+  current.trackers += 1;
+  current.lastPayload = payload;
+  log('trackPresence chamado. name=', payload.name, 'ready=', current.ready);
+  // Guarda o próprio usuário no map local imediatamente, sem esperar o servidor.
+  upsertLocal(current, payload);
+  if (current.ready) void sendHello(current);
+  ensureBroadcastTimer(current);
+  return () => {
+    current.trackers = Math.max(0, current.trackers - 1);
+    if (current.trackers === 0) {
+      void sendBye(current);
+      if (current.lastPayload) {
+        current.users.delete(current.lastPayload.userId);
+      }
+      current.lastPayload = null;
+      broadcastToListeners(current);
+    }
+    teardownIfIdle();
+  };
+}
+
+/** Atualiza o payload atual (heartbeat manual, ex.: após bater ponto). */
+export function updatePresencePayload(payload: PresenceUserState): void {
+  const current = state;
+  if (!current) {
+    log('updatePresencePayload sem state — abrindo canal');
+    trackPresence(payload);
+    return;
+  }
+  current.lastPayload = payload;
+  upsertLocal(current, payload);
+  if (current.ready) void sendHello(current);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Internals
+// ─────────────────────────────────────────────────────────────
+
+function emit(current: PresenceState, only?: PresenceListener): void {
+  const list = Array.from(current.users.values()).map(({ lastSeen: _ls, ...user }) => user);
+  list.sort((a, b) => (a.name || 'Usuário').localeCompare(b.name || 'Usuário', 'pt-BR'));
+  if (only) {
     try {
-      listener(current.users);
+      only(list);
+    } catch (err) {
+      console.warn('[TMSEG_PRESENCE] listener falhou', err);
+    }
+    return;
+  }
+  for (const l of current.listeners) {
+    try {
+      l(list);
     } catch (err) {
       console.warn('[TMSEG_PRESENCE] listener falhou', err);
     }
   }
 }
 
-function syncFromChannel(current: PresenceChannelState, origem: string): void {
+function broadcastToListeners(current: PresenceState): void {
+  emit(current);
+}
+
+function upsertLocal(current: PresenceState, payload: PresenceUserState): void {
+  current.users.set(payload.userId, {
+    ...payload,
+    lastSeen: Date.now(),
+  });
+  broadcastToListeners(current);
+}
+
+async function sendHello(current: PresenceState): Promise<void> {
+  if (!current.lastPayload) return;
   try {
-    const raw = current.channel.presenceState() as Record<string, unknown>;
-    log(`sync (${origem}) raw presenceState =`, raw);
-    const users = parsePresenceState(raw as any);
-    current.users = users;
-    log(`sync (${origem}) → ${users.length} usuário(s):`, users.map((u) => `${u.name} [${u.userId}]`));
-    notify(current);
+    const result = await current.channel.send({
+      type: 'broadcast',
+      event: BROADCAST_EVENT_HELLO,
+      payload: current.lastPayload,
+    });
+    log('hello enviado. name=', current.lastPayload.name, 'result=', result);
   } catch (err) {
-    console.warn('[TMSEG_PRESENCE] sync falhou', err);
+    console.warn('[TMSEG_PRESENCE] send hello falhou', err);
   }
 }
 
-async function performTrack(current: PresenceChannelState, origem: string): Promise<void> {
-  if (!current.ready) {
-    log(`track ignorado (${origem}) — canal ainda não pronto`);
-    return;
-  }
-  if (!current.lastPayload) {
-    log(`track ignorado (${origem}) — sem payload`);
-    return;
-  }
+async function sendBye(current: PresenceState): Promise<void> {
+  const payload = current.lastPayload;
+  if (!payload) return;
   try {
-    const result = await current.channel.track(current.lastPayload);
-    current.hasTracked = true;
-    log(`track ok (${origem}) →`, current.lastPayload.name, 'result=', result);
-    setTimeout(() => syncFromChannel(current, `after-track-${origem}`), 300);
-  } catch (err) {
-    console.warn(`[TMSEG_PRESENCE] track falhou (${origem})`, err);
+    await current.channel.send({
+      type: 'broadcast',
+      event: BROADCAST_EVENT_BYE,
+      payload: { userId: payload.userId },
+    });
+    log('bye enviado. userId=', payload.userId);
+  } catch {
+    // ignora
   }
 }
 
-function ensureState(): PresenceChannelState {
+function ensureBroadcastTimer(current: PresenceState): void {
+  if (current.broadcastTimer) return;
+  current.broadcastTimer = setInterval(() => {
+    if (current.ready) {
+      void sendHello(current);
+      // renova nosso próprio lastSeen (para não expirarmos a nós mesmos)
+      if (current.lastPayload) upsertLocal(current, current.lastPayload);
+    }
+  }, BROADCAST_INTERVAL_MS);
+}
+
+function ensureCleanupTimer(current: PresenceState): void {
+  if (current.cleanupTimer) return;
+  current.cleanupTimer = setInterval(() => {
+    const cutoff = Date.now() - STALE_MS;
+    let changed = false;
+    for (const [id, rec] of current.users) {
+      // Nunca expira o próprio usuário (ele é atualizado pelo próprio broadcast).
+      const isMe = current.lastPayload?.userId === id;
+      if (!isMe && rec.lastSeen < cutoff) {
+        current.users.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) broadcastToListeners(current);
+  }, CLEANUP_INTERVAL_MS);
+}
+
+function ensureState(): PresenceState {
   if (state) return state;
+  log('criando canal broadcast de presença');
 
-  const key = generatePresenceKey();
-  log('criando canal de presença, key=', key);
-
-  const current: PresenceChannelState = {
+  const current: PresenceState = {
     channel: null as unknown as RealtimeChannel,
-    key,
-    users: [],
-    listeners: new Set(),
     ready: false,
+    listeners: new Set(),
+    users: new Map(),
     lastPayload: null,
-    hasTracked: false,
+    broadcastTimer: null,
+    cleanupTimer: null,
+    trackers: 0,
   };
 
-  // Padrão recomendado pela documentação do Supabase: registrar listeners primeiro, subscrever depois
   const channel = supabase
-    .channel(TMSEG_PRESENCE_CHANNEL, {
-      config: { presence: { key } },
+    .channel(PRESENCE_CHANNEL, { config: { broadcast: { self: true } } })
+    .on('broadcast', { event: BROADCAST_EVENT_HELLO }, ({ payload }) => {
+      const p = payload as PresenceUserState | undefined;
+      if (!p?.userId) return;
+      log('hello recebido de', p.name, `[${p.userId}]`);
+      upsertLocal(current, p);
     })
-    .on('presence', { event: 'sync' }, () => {
-      log('evt sync recebido');
-      syncFromChannel(current, 'evt-sync');
-    })
-    .on('presence', { event: 'join' }, ({ key: k, newPresences }) => {
-      log('evt join recebido. key=', k, 'newPresences=', newPresences);
-      syncFromChannel(current, 'evt-join');
-    })
-    .on('presence', { event: 'leave' }, ({ key: k, leftPresences }) => {
-      log('evt leave recebido. key=', k, 'leftPresences=', leftPresences);
-      syncFromChannel(current, 'evt-leave');
+    .on('broadcast', { event: BROADCAST_EVENT_BYE }, ({ payload }) => {
+      const p = payload as { userId?: string } | undefined;
+      if (!p?.userId) return;
+      log('bye recebido de', p.userId);
+      current.users.delete(p.userId);
+      broadcastToListeners(current);
     })
     .subscribe((status, err) => {
       log('subscribe status =', status, err ? `err=${String(err)}` : '');
       if (status === 'SUBSCRIBED') {
         current.ready = true;
-        void performTrack(current, 'on-subscribed');
-        // 2 syncs — um imediato, um com pequeno delay para pegar o próprio track.
-        syncFromChannel(current, 'on-subscribed');
-        setTimeout(() => syncFromChannel(current, 'on-subscribed-delayed'), 500);
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        if (current.lastPayload) void sendHello(current);
+      } else if (
+        status === 'CHANNEL_ERROR' ||
+        status === 'TIMED_OUT' ||
+        status === 'CLOSED'
+      ) {
         current.ready = false;
       }
     });
 
   current.channel = channel;
+  ensureCleanupTimer(current);
   state = current;
   return current;
 }
 
 function teardownIfIdle(): void {
   if (!state) return;
-  if (refCount > 0) return;
-  if (state.listeners.size > 0) return;
+  if (state.trackers > 0 || state.listeners.size > 0) return;
   log('teardown do canal (sem listeners nem trackers)');
   const current = state;
   state = null;
-  try {
-    void current.channel.untrack();
-  } catch {
-    // ignora
-  }
+  if (current.broadcastTimer) clearInterval(current.broadcastTimer);
+  if (current.cleanupTimer) clearInterval(current.cleanupTimer);
   try {
     void supabase.removeChannel(current.channel);
   } catch {
     // ignora
   }
-}
-
-/** Assina alterações da lista de presença. Retorna função de unsubscribe. */
-export function subscribePresence(listener: PresenceListener): () => void {
-  const current = ensureState();
-  current.listeners.add(listener);
-  log('novo listener. total =', current.listeners.size, '| users atuais =', current.users.length);
-  try {
-    listener(current.users);
-  } catch (err) {
-    console.warn('[TMSEG_PRESENCE] listener inicial falhou', err);
-  }
-  return () => {
-    current.listeners.delete(listener);
-    log('listener removido. total =', current.listeners.size);
-    teardownIfIdle();
-  };
-}
-
-/** Registra a presença do usuário atual. Retorna função para parar de rastrear. */
-export function trackPresence(payload: PresenceUserState): () => void {
-  const current = ensureState();
-  refCount += 1;
-  current.lastPayload = payload;
-  log('trackPresence chamado. ready=', current.ready, 'name=', payload.name);
-  void performTrack(current, 'trackPresence');
-  return () => {
-    refCount = Math.max(0, refCount - 1);
-    log('trackPresence untrack. refCount=', refCount);
-    if (refCount === 0 && state) {
-      try {
-        void state.channel.untrack();
-        state.hasTracked = false;
-      } catch {
-        // ignora
-      }
-    }
-    teardownIfIdle();
-  };
-}
-
-/** Atualiza o payload atual (heartbeat). */
-export function updatePresencePayload(payload: PresenceUserState): void {
-  const current = state;
-  if (!current) {
-    log('updatePresencePayload sem state — abrindo canal para rastrear novamente');
-    trackPresence(payload);
-    return;
-  }
-  current.lastPayload = payload;
-  log('updatePresencePayload. ready=', current.ready);
-  void performTrack(current, 'updatePresencePayload');
 }

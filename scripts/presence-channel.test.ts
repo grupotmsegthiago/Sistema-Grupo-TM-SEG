@@ -9,19 +9,25 @@ const trackerSrc = fs.readFileSync('components/UserPresenceTracker.tsx', 'utf8')
 test('hook usa o singleton (não cria canal próprio)', () => {
   assert.match(hookSrc, /from '\.\/presenceChannel'/);
   assert.doesNotMatch(hookSrc, /supabase\.channel\(/);
-  assert.doesNotMatch(hookSrc, /channel\.on\('presence'/);
 });
 
 test('tracker usa o singleton (não cria canal próprio)', () => {
   assert.match(trackerSrc, /from '\.\.\/lib\/presenceChannel'/);
   assert.doesNotMatch(trackerSrc, /supabase\.channel\(/);
-  assert.doesNotMatch(trackerSrc, /channel\.on\('presence'/);
+});
+
+test('singleton usa BROADCAST (mais robusto que Presence)', () => {
+  assert.match(singletonSrc, /'broadcast'/);
+  assert.match(singletonSrc, /broadcast:\s*\{\s*self:\s*true\s*\}/);
+  // Não deve mais depender do serviço de Presence do Supabase
+  assert.doesNotMatch(singletonSrc, /'presence'/);
+  assert.doesNotMatch(singletonSrc, /channel\.track\(/);
 });
 
 test('singleton registra listeners antes de subscribe', () => {
-  const onIdx = singletonSrc.indexOf(".on('presence'");
+  const onIdx = singletonSrc.indexOf(".on('broadcast'");
   const subIdx = singletonSrc.indexOf('.subscribe(');
-  assert.ok(onIdx >= 0, 'deve registrar listeners de presence');
+  assert.ok(onIdx >= 0, 'deve registrar listeners de broadcast');
   assert.ok(subIdx >= 0, 'deve chamar subscribe');
   assert.ok(onIdx < subIdx, 'listeners devem ser registrados antes do subscribe');
 });
@@ -30,4 +36,11 @@ test('singleton exporta subscribePresence e trackPresence', () => {
   assert.match(singletonSrc, /export function subscribePresence\(/);
   assert.match(singletonSrc, /export function trackPresence\(/);
   assert.match(singletonSrc, /export function updatePresencePayload\(/);
+  assert.match(singletonSrc, /export function requestPresenceRefresh\(/);
+});
+
+test('singleton tem cleanup periódico (heartbeat + stale)', () => {
+  assert.match(singletonSrc, /BROADCAST_INTERVAL_MS/);
+  assert.match(singletonSrc, /STALE_MS/);
+  assert.match(singletonSrc, /cleanupTimer/);
 });
