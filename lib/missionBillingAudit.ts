@@ -102,6 +102,7 @@ export function buildMissionAuditFingerprint(
     m.end_km ?? m.endKm,
     m.start_time ?? m.startTime,
     m.end_time ?? m.endTime,
+    m.provider_ops_edited,
     m.provider_start_km,
     m.provider_end_km,
     m.provider_start_time,
@@ -115,6 +116,51 @@ export function buildMissionAuditFingerprint(
     m.billing_verified_by,
     m.snapshot_approved_by,
   ].join('|');
+}
+
+/** Mesma regra do MissionFinancialModal quando fornecedor tem medição editada. */
+export function buildProviderOpsOverride(
+  mission: Mission,
+): { distanceKm: number; durationHours: number } | undefined {
+  if (!(mission as any).provider_ops_edited) return undefined;
+
+  const getKm = (val: unknown) =>
+    typeof val === 'number' ? val : parseFloat(String(val ?? '0').replace(',', '.'));
+
+  const pStartKm =
+    (mission as any).provider_start_km != null
+      ? getKm((mission as any).provider_start_km)
+      : getKm((mission as any).startKm ?? (mission as any).start_km);
+  const pEndKm =
+    (mission as any).provider_end_km != null
+      ? getKm((mission as any).provider_end_km)
+      : getKm((mission as any).endKm ?? (mission as any).end_km);
+  const pHasValidKms = pStartKm > 0 && pEndKm > 0 && pEndKm >= pStartKm;
+  const pDistanceKm = pHasValidKms
+    ? pEndKm - pStartKm
+    : safeNumber((mission as any).totalDistance ?? (mission as any).total_distance);
+
+  const pStartTime = (mission as any).provider_start_time
+    ? new Date((mission as any).provider_start_time)
+    : (mission as any).startTime
+      ? new Date((mission as any).startTime)
+      : (mission as any).start_time
+        ? new Date((mission as any).start_time)
+        : null;
+  const pEndTime = (mission as any).provider_end_time
+    ? new Date((mission as any).provider_end_time)
+    : (mission as any).endTime
+      ? new Date((mission as any).endTime)
+      : (mission as any).end_time
+        ? new Date((mission as any).end_time)
+        : null;
+
+  let pDurationHours = 0;
+  if (pStartTime && pEndTime && !Number.isNaN(pStartTime.getTime()) && !Number.isNaN(pEndTime.getTime())) {
+    pDurationHours = Math.max(0, (pEndTime.getTime() - pStartTime.getTime()) / (1000 * 60 * 60));
+  }
+
+  return { distanceKm: pDistanceKm, durationHours: pDurationHours };
 }
 
 function detectMotivos(
@@ -318,15 +364,20 @@ export function computeMissionBillingAudit(
     endTime: (mission as any).endTime ?? (mission as any).end_time,
   };
 
+  const providerOpsOverride = buildProviderOpsOverride(mission);
+
   const fin = calculateMissionFinancials(
     mObj,
     clientTables,
     providerTables,
     clientData,
     new Date(),
-    undefined,
+    providerOpsOverride ? { providerOpsOverride } : undefined,
     providers,
   );
+
+  const providerKmRodado = providerOpsOverride?.distanceKm ?? fin.realTraveledKm;
+  const providerTempoHours = providerOpsOverride?.durationHours ?? fin.durationHours;
 
   const clientDetail = buildSideDetail(
     fin.client,
@@ -337,8 +388,8 @@ export function computeMissionBillingAudit(
 
   const providerDetail = buildSideDetail(
     fin.provider,
-    fin.realTraveledKm,
-    fin.durationHours,
+    providerKmRodado,
+    providerTempoHours,
     lancadoCusto,
   );
 

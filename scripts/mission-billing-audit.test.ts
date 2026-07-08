@@ -117,6 +117,44 @@ describe('missionBillingAudit', () => {
     assert.equal(audit.overallIcon, '🟡');
   });
 
+  it('respeita medição editada do fornecedor (provider_ops_edited)', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission({
+      provider_ops_edited: true,
+      provider_start_km: 48228,
+      provider_end_km: 48269,
+      provider_start_time: '2026-07-01T08:00:00.000Z',
+      provider_end_time: '2026-07-01T12:06:00.000Z',
+      start_km: 48228,
+      end_km: 48247,
+      start_time: '2026-07-01T08:00:00.000Z',
+      end_time: '2026-07-01T10:05:00.000Z',
+    } as any);
+    const fin = calculateMissionFinancials(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+      undefined,
+      new Date(),
+      { providerOpsOverride: { distanceKm: 41, durationHours: 4.1 } },
+    );
+    assert.ok(fin.provider.extraHrVal > 0);
+    assert.ok(fin.client.serviceTotal !== fin.provider.serviceTotal || fin.client.excessHours !== fin.provider.excessHours);
+
+    const audit = computeMissionBillingAudit(
+      {
+        ...mission,
+        revenue_value: fin.client.serviceTotal,
+        cost_value: fin.provider.serviceTotal,
+      } as Mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(audit.provider.subtotalHora > 0);
+    assert.equal(audit.provider.kmRodado, 41);
+  });
+
   it('usa cache e invalida quando fingerprint muda', () => {
     clearMissionBillingAuditCache();
     const mission = makeMission({ revenue_value: 790, cost_value: 590 });
