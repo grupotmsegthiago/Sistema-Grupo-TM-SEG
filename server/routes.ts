@@ -228,7 +228,7 @@ const roleCache = new Map<string, { role: string; expiresAt: number }>();
 const ROLE_CACHE_TTL = 5 * 60 * 1000;
 
 function extractUserIdFromToken(token: string): string | null {
-  const match = token.match(/(?:tmseg-token|impersonation-token)-([a-f0-9-]+)-\d+/);
+  const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
   return match ? match[1] : null;
 }
 

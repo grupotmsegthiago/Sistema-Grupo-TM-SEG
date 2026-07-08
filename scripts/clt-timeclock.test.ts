@@ -13,6 +13,7 @@ import {
   TIME_CLOCK_STAGE_ORDER,
 } from '../lib/timeclock/stages.ts';
 import { formatIsoDateBR } from '../lib/dateUtils.ts';
+import { extractUserIdFromToken } from '../lib/rh/apiEmployeesAuth.ts';
 
 // ─── Identificação CLT ─────────────────────────────────────────────────────
 
@@ -139,12 +140,24 @@ test('history usa contract_type case-insensitive', async () => {
   assert.match(src, /ilike\('contract_type', 'clt'\)/);
 });
 
+test('extractUserIdFromToken aceita ID numérico e UUID', () => {
+  assert.equal(extractUserIdFromToken('tmseg-token-5-1783516873131'), '5');
+  assert.equal(
+    extractUserIdFromToken('tmseg-token-550e8400-e29b-41d4-a716-446655440000-99'),
+    '550e8400-e29b-41d4-a716-446655440000',
+  );
+  assert.equal(extractUserIdFromToken('impersonation-token-23-1000'), '23');
+  assert.equal(extractUserIdFromToken('invalid'), null);
+});
+
 test('API Vercel dedicada para leitura de ponto', async () => {
   const vercel = await import('node:fs/promises').then((fs) =>
     fs.readFile('vercel.json', 'utf8')
   );
   assert.match(vercel, /\/api\/rh\/timeclock\/entries/);
   assert.match(vercel, /rh-timeclock-entries/);
+  assert.match(vercel, /\/api\/rh\/timeclock\/init/);
+  assert.match(vercel, /rh-timeclock-init/);
 });
 
 test('CltTimeClockBar persiste userData enriquecido', async () => {

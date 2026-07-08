@@ -112,6 +112,9 @@
     "api/rh-timeclock-entries.ts": {
       "maxDuration": 60
     },
+    "api/rh-timeclock-init.ts": {
+      "maxDuration": 120
+    },
     "api/rh-employee-costs.ts": {
       "maxDuration": 60
     },
@@ -264,6 +267,10 @@
     {
       "source": "/api/rh/timeclock/entries",
       "destination": "/api/rh-timeclock-entries"
+    },
+    {
+      "source": "/api/rh/timeclock/init",
+      "destination": "/api/rh-timeclock-init"
     },
     {
       "source": "/api/toll/qualp",

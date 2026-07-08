@@ -6,7 +6,7 @@ ALTER TABLE rh_employees
 
 CREATE TABLE IF NOT EXISTS time_clock (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL,
+  user_id TEXT NOT NULL,
   employee_id UUID REFERENCES rh_employees(id),
   user_name TEXT NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('IN', 'BREAK_START', 'BREAK_END', 'OUT')),

@@ -2,7 +2,7 @@ const DEFAULT_SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
 const TMSEG_REF = 'ajhmmjuewdsukecaimik';
 
 export function extractUserIdFromToken(token: string): string | null {
-  const match = token.match(/(?:tmseg-token|impersonation-token)-([a-f0-9-]+)-\d+/);
+  const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
   return match ? match[1] : null;
 }
 
