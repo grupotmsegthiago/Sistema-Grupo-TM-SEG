@@ -6,6 +6,7 @@ import { maskCurrency } from '../../lib/rh/masks';
 import { monthsBetween } from '../../lib/rh/payroll';
 import { formatDateBR } from '../../lib/dateUtils';
 import type { RhEmployee } from '../../types/rh';
+import { useRealtimeRefresh } from '../../lib/RealtimeProvider';
 
 interface Props {
   id: string;
@@ -24,6 +25,21 @@ const RhEmployeeProfile: React.FC<Props> = ({ id, onBack, onEdit }) => {
   const [timeClock, setTimeClock] = useState<any[]>([]);
 
   useEffect(() => { load(); }, [id]);
+
+  useRealtimeRefresh(
+    [
+      'rh_employees',
+      'rh_salary_configs',
+      'rh_warnings',
+      'rh_commissions',
+      'rh_awards',
+      'rh_bonuses',
+      'time_clock',
+    ],
+    () => {
+      load();
+    },
+  );
 
   const load = async () => {
     const { data: emp } = await supabase.from('rh_employees')

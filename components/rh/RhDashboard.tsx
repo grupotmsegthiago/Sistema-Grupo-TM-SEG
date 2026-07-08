@@ -8,6 +8,7 @@ import { fetchRhEmployees } from '../../lib/rh/fetchRhEmployees';
 import { supabase } from '../../lib/supabase';
 import { RH_SELECT_CLASS, RH_LABEL_CLASS } from '../../lib/rh/constants';
 import { canEditRh } from '../../lib/rh/permissions';
+import { useRealtimeRefresh } from '../../lib/RealtimeProvider';
 
 const COLORS = ['#dc2626', '#1f2937', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6'];
 
@@ -21,6 +22,22 @@ const RhDashboard: React.FC = () => {
 
   useEffect(() => { loadEmployees(); }, []);
   useEffect(() => { load(); }, [filterId]);
+
+  useRealtimeRefresh(
+    [
+      'rh_employees',
+      'rh_salary_configs',
+      'rh_commissions',
+      'rh_awards',
+      'rh_bonuses',
+      'rh_warnings',
+      'rh_departments',
+    ],
+    () => {
+      loadEmployees();
+      load();
+    },
+  );
 
   const loadEmployees = async () => {
     const { rows } = await fetchRhEmployees();
