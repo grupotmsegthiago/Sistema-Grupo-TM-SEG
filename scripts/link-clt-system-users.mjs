@@ -70,6 +70,21 @@ function getPgPool() {
   return new pg.Pool({ connectionString, max: 2 });
 }
 
+async function applySchemaFixViaExecSql() {
+  const url = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_URL);
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
+  const key = serviceKey && decodeRef(serviceKey) === TMSEG_REF ? serviceKey : DEFAULT_ANON;
+  const sb = createClient(url, key);
+  const sqlPath = path.join(process.cwd(), 'migrations', '2026_07_08_timeclock_fix_user_id.sql');
+  const sql = fs.readFileSync(sqlPath, 'utf8');
+  console.log('[link-clt] Aplicando schema fix via exec_sql...');
+  const { error } = await sb.rpc('exec_sql', { sql });
+  if (error) throw error;
+  console.log('[link-clt] Schema OK (user_id TEXT + time_clock)');
+  return true;
+}
+
 async function applySchemaFixViaPg() {
   const pool = getPgPool();
   if (!pool) return false;
@@ -103,9 +118,18 @@ async function main() {
     process.exit(0);
   }
 
-  await applySchemaFixViaPg().catch((e) => {
-    console.warn('[link-clt] Schema via pg não aplicado:', e.message);
-  });
+  const schemaApplied =
+    (await applySchemaFixViaPg().catch((e) => {
+      console.warn('[link-clt] Schema via pg não aplicado:', e.message);
+      return false;
+    })) ||
+    (await applySchemaFixViaExecSql().catch((e) => {
+      console.warn('[link-clt] Schema via exec_sql não aplicado:', e.message);
+      return false;
+    }));
+  if (!schemaApplied) {
+    console.warn('[link-clt] Continuando vínculo (schema pode já estar correto)...');
+  }
 
   const sb = createSb();
 

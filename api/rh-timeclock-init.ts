@@ -11,7 +11,7 @@ export default async function handler(req: any, res: any) {
       res.status(500).json({
         ok: false,
         error:
-          'DATABASE_URL indisponível. Execute migrations/2026_07_08_timeclock_fix_user_id.sql no Supabase SQL Editor.',
+          'Falha ao preparar ponto CLT. Execute migrations/2026_07_08_timeclock_fix_user_id.sql no Supabase SQL Editor ou node scripts/link-clt-system-users.mjs',
       });
       return;
     }
