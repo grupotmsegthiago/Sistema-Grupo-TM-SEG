@@ -92,15 +92,15 @@ import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
 
-// TEMPO DE INATIVIDADE (30 minutos)
-const INACTIVITY_LIMIT = 20 * 60 * 1000;
+// TEMPO DE INATIVIDADE (30 minutos) — só conta com a aba visível/ativa
+const INACTIVITY_LIMIT = 30 * 60 * 1000;
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     const token = localStorage.getItem('authToken');
     const userData = localStorage.getItem('userData');
-    const version = localStorage.getItem('app_version');
-    return !!(token && userData && version === APP_VERSION);
+    // Não exige app_version === APP_VERSION: após auto-update o login deve persistir.
+    return !!(token && userData);
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
@@ -121,8 +121,7 @@ const App: React.FC = () => {
     try {
       const token = localStorage.getItem('authToken');
       const userData = localStorage.getItem('userData');
-      const version = localStorage.getItem('app_version');
-      if (!(token && userData && version === APP_VERSION)) return false;
+      if (!(token && userData)) return false;
       const u = JSON.parse(userData || '{}');
       return shouldShowMotivation(u.id || u.email || 'anon');
     } catch { return false; }
@@ -155,7 +154,11 @@ const App: React.FC = () => {
       try {
           const user = JSON.parse(storedUser);
           const { data, error } = await supabase.from('system_users').select(`name, status, force_password_change, permissions, profile_id, client_id, profiles:profile_id ( name, permissions )`).eq('id', user.id).single();
-          if (error || !data || data.status !== 'Ativo') { handleLogout(); return; }
+          if (error) {
+            console.warn('[Sessão] Falha temporária ao verificar usuário — mantendo login:', error.message);
+            return;
+          }
+          if (!data || data.status !== 'Ativo') { handleLogout(); return; }
           if (data.force_password_change) setNeedsPasswordChange(true);
           const profilePerms = data.profiles?.permissions || [];
           const userPerms = data.permissions || [];
@@ -222,14 +225,37 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!isAuthenticated || isPublicRoute) return;
-    let timeoutId: any;
-    const resetTimer = () => { if (timeoutId) clearTimeout(timeoutId); timeoutId = setTimeout(() => handleLogout(), INACTIVITY_LIMIT); };
-    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-    events.forEach(event => document.addEventListener(event, resetTimer));
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const resetTimer = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => handleLogout(), INACTIVITY_LIMIT);
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        // Pausa o timer quando o app vai para segundo plano (celular).
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = undefined;
+      } else {
+        resetTimer();
+      }
+    };
+
+    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click', 'pointerdown'];
+    events.forEach((event) => document.addEventListener(event, resetTimer, { passive: true }));
+    document.addEventListener('visibilitychange', onVisibility);
     resetTimer();
+
     const sessionInterval = setInterval(verifySessionInDatabase, 120000);
-    return () => { if (timeoutId) clearTimeout(timeoutId); clearInterval(sessionInterval); events.forEach(event => document.removeEventListener(event, resetTimer)); };
-  }, [isAuthenticated, isPublicRoute, handleLogout]); 
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      clearInterval(sessionInterval);
+      events.forEach((event) => document.removeEventListener(event, resetTimer));
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [isAuthenticated, isPublicRoute, handleLogout]);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const handleLogin = () => {
