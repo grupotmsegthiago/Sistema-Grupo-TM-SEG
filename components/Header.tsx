@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Menu, Bell, User, Clock, Settings, LogOut, ChevronDown, Volume2, VolumeX, Eraser, BellRing, Activity } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
 import SystemDiagnostics from './SystemDiagnostics';
+import TimeClockHeaderButton from './TimeClockHeaderButton';
 import { formatNowTimeBR } from '../lib/dateUtils';
 
 interface HeaderProps {
@@ -74,8 +75,10 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileSettingsClick, is
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
-        <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-gray-50 border rounded-lg text-gray-700">
+      <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+        <TimeClockHeaderButton />
+
+        <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-gray-50 border rounded-lg text-gray-700 shrink-0">
           <Clock size={16} className="text-red-700" />
           <span className="text-sm font-mono font-bold">
             {formatNowTimeBR(time)}

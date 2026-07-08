@@ -173,10 +173,20 @@ test('API Vercel dedicada para leitura de ponto', async () => {
   assert.match(vercel, /rh-timeclock-init/);
 });
 
-test('CltTimeClockBar persiste userData enriquecido', async () => {
-  const src = await import('node:fs/promises').then((fs) =>
-    fs.readFile('components/CltTimeClockBar.tsx', 'utf8')
+test('botão de ponto no header persiste userData enriquecido', async () => {
+  const hookSrc = await import('node:fs/promises').then((fs) =>
+    fs.readFile('lib/services/useTimeClockButton.ts', 'utf8')
   );
-  assert.match(src, /localStorage\.setItem\('userData'/);
-  assert.doesNotMatch(src, /catch \{\s*setReady\(false\)/);
+  assert.match(hookSrc, /localStorage\.setItem\('userData'/);
+
+  const headerBtn = await import('node:fs/promises').then((fs) =>
+    fs.readFile('components/TimeClockHeaderButton.tsx', 'utf8')
+  );
+  assert.match(headerBtn, /button-bater-ponto-header/);
+  assert.match(headerBtn, /useTimeClockButton/);
+
+  const header = await import('node:fs/promises').then((fs) =>
+    fs.readFile('components/Header.tsx', 'utf8')
+  );
+  assert.match(header, /TimeClockHeaderButton/);
 });

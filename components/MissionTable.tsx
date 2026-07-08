@@ -44,7 +44,6 @@ import ClientReportsTab from './ClientReportsTab';
 import ClientMissionRequest from './ClientMissionRequest';
 import ClientCommitteePresentation from './ClientCommitteePresentation';
 import MissionOperationalReport from './MissionOperationalReport';
-import CltTimeClockBar from './CltTimeClockBar';
 import MissionTeamPresenceBoard from './MissionTeamPresenceBoard';
 const cevaLogoPath = '/logo_ceva.png';
 
@@ -2371,7 +2370,6 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 </div>
             </div>
         )}
-        <CltTimeClockBar />
       </div>
     );
   };
