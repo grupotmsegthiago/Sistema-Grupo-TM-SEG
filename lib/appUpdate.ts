@@ -73,6 +73,19 @@ export async function reloadForPublishedUpdate(
   }
   await clearCachesAndServiceWorkers();
   const url = new URL(window.location.href);
+  // Mantém ?page= e demais params — evita voltar ao dashboard após auto-update.
   url.searchParams.set('_v', server.buildId || server.version);
   window.location.replace(url.toString());
+}
+
+/** Intervalo mínimo entre checagens ao voltar para a aba (evita reload em loop). */
+export const UPDATE_CHECK_COOLDOWN_MS = 10 * 60 * 1000;
+
+let lastUpdateCheckAt = 0;
+
+export function shouldThrottleUpdateCheck(): boolean {
+  const now = Date.now();
+  if (now - lastUpdateCheckAt < UPDATE_CHECK_COOLDOWN_MS) return true;
+  lastUpdateCheckAt = now;
+  return false;
 }

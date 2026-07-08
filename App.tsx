@@ -91,6 +91,7 @@ import AppErrorBoundary from './components/AppErrorBoundary';
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
+import { persistScreen, resolveInitialScreen } from './lib/screenNavigation';
 
 // TEMPO DE INATIVIDADE (30 minutos) — só conta com a aba visível/ativa
 const INACTIVITY_LIMIT = 30 * 60 * 1000;
@@ -105,12 +106,7 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
-  const [currentScreen, setCurrentScreen] = useState(() => {
-    try {
-      const page = new URLSearchParams(window.location.search).get('page');
-      return page && /^[a-z0-9-]+$/i.test(page) ? page : 'dashboard';
-    } catch { return 'dashboard'; }
-  });
+  const [currentScreen, setCurrentScreen] = useState(() => resolveInitialScreen('dashboard'));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   
   const [rebootCountdown, setRebootCountdown] = useState<number | null>(null);
@@ -304,8 +300,16 @@ const App: React.FC = () => {
     if (storedUser) { try { const user = JSON.parse(storedUser); user.force_password_change = false; localStorage.setItem('userData', JSON.stringify(user)); } catch (e) { console.error(e); } }
     setNeedsPasswordChange(false);
   };
-  const navigateTo = (screen: string) => { setSelectedId(null); setCurrentScreen(screen); };
-  const handleEdit = (screen: string, id: string) => { setSelectedId(id); setCurrentScreen(screen); };
+  const navigateTo = (screen: string) => {
+    setSelectedId(null);
+    setCurrentScreen(screen);
+    persistScreen(screen);
+  };
+  const handleEdit = (screen: string, id: string) => {
+    setSelectedId(id);
+    setCurrentScreen(screen);
+    persistScreen(screen);
+  };
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -447,7 +451,9 @@ const App: React.FC = () => {
             <WhatsAppStatusBanner />
             <main className="flex-1 overflow-x-auto overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="w-full mx-auto relative">
-                <AppErrorBoundary key={currentScreen} onReset={() => navigateTo('dashboard')}>
+                <AppErrorBoundary key={currentScreen} onReset={() => {
+                  // Só limpa o erro — não joga o usuário pro dashboard automaticamente.
+                }}>
                   {renderContent()}
                 </AppErrorBoundary>
                 <footer className="mt-8 text-center text-[10px] text-gray-400 pb-4 uppercase">&copy; {new Date().getFullYear()} Grupo TMSEG.</footer>

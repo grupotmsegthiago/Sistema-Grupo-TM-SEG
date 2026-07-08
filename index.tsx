@@ -7,7 +7,9 @@ import {
   fetchPublishedVersion,
   isPublishedVersionNewer,
   reloadForPublishedUpdate,
+  shouldThrottleUpdateCheck,
 } from './lib/appUpdate';
+import { SCREEN_STORAGE_KEY } from './lib/screenNavigation';
 
 declare const __TMSEG_BUILD_ID__: string;
 declare const __TMSEG_BUILD_VERSION__: string;
@@ -82,7 +84,9 @@ async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): 
       // Mantém login: só atualiza a marca de versão local (não limpa authToken/userData).
       localStorage.setItem('app_version', APP_VERSION);
       try {
+        const keepScreen = sessionStorage.getItem(SCREEN_STORAGE_KEY);
         sessionStorage.clear();
+        if (keepScreen) sessionStorage.setItem(SCREEN_STORAGE_KEY, keepScreen);
       } catch {}
     }
 
@@ -99,12 +103,14 @@ async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): 
 
 if (!isPublicExternalRoute && window.location.hostname !== 'localhost') {
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
+    if (document.visibilityState === 'visible' && !shouldThrottleUpdateCheck()) {
       void checkForPublishedUpdate({ skipReloadFlag: true });
     }
   });
   window.addEventListener('focus', () => {
-    void checkForPublishedUpdate({ skipReloadFlag: true });
+    if (!shouldThrottleUpdateCheck()) {
+      void checkForPublishedUpdate({ skipReloadFlag: true });
+    }
   });
 }
 
