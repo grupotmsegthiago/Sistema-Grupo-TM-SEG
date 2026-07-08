@@ -19,6 +19,25 @@ interface PresenceChannelState {
 
 let state: PresenceChannelState | null = null;
 let refCount = 0;
+const refreshTarget = new EventTarget();
+
+/** Pede ao tracker atual para refazer o track imediatamente (usado após bater ponto etc.). */
+export function requestPresenceRefresh(): void {
+  refreshTarget.dispatchEvent(new Event('refresh'));
+}
+
+/** Inscreve um callback para reagir a pedidos de refresh (usado internamente pelo tracker). */
+export function onPresenceRefreshRequested(cb: () => void): () => void {
+  const handler = () => {
+    try {
+      cb();
+    } catch (err) {
+      console.warn('[presence] refresh handler falhou', err);
+    }
+  };
+  refreshTarget.addEventListener('refresh', handler);
+  return () => refreshTarget.removeEventListener('refresh', handler);
+}
 
 function generatePresenceKey(): string {
   try {

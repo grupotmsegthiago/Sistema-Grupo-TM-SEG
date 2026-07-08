@@ -2,7 +2,11 @@ import React, { useEffect } from 'react';
 import { enrichUserWithCltData, isCltUser } from '../lib/timeclock/cltEmployee';
 import { fetchTodayTimeClockEntries } from '../lib/timeclock/registerPunch';
 import { getOnDutyStageLabel, isCltOnDutyToday } from '../lib/timeclock/onDuty';
-import { trackPresence, updatePresencePayload } from '../lib/presenceChannel';
+import {
+  onPresenceRefreshRequested,
+  trackPresence,
+  updatePresencePayload,
+} from '../lib/presenceChannel';
 import type { PresenceUserState } from '../lib/timeclock/presence';
 import type { TimeClockUserContext } from '../lib/timeclock/types';
 
@@ -68,9 +72,14 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
       void heartbeat();
     }, HEARTBEAT_MS);
 
+    const unsubscribeRefresh = onPresenceRefreshRequested(() => {
+      void heartbeat();
+    });
+
     return () => {
       cancelled = true;
       if (heartbeatTimer) clearInterval(heartbeatTimer);
+      unsubscribeRefresh();
       if (stopTracking) {
         try {
           stopTracking();
