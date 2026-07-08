@@ -4,7 +4,7 @@
 -- 1) Vínculo por e-mail (case-insensitive)
 UPDATE rh_employees e
 SET
-  user_id = u.id,
+  user_id = u.id::TEXT,
   email = COALESCE(NULLIF(TRIM(e.email), ''), u.email),
   updated_at = now()
 FROM system_users u
@@ -19,7 +19,7 @@ WHERE e.deleted_at IS NULL
 -- 2) Vínculo por nome (quando e-mail do RH ainda não foi preenchido)
 UPDATE rh_employees e
 SET
-  user_id = u.id,
+  user_id = u.id::TEXT,
   email = COALESCE(NULLIF(TRIM(e.email), ''), u.email),
   updated_at = now()
 FROM system_users u
