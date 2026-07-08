@@ -24,6 +24,8 @@ export interface CltEmployeeInfo {
   contract_type: string;
   digital_signature_url?: string | null;
   matricula?: string | null;
+  status?: string | null;
+  email?: string | null;
 }
 
 export interface TimeClockUserContext {

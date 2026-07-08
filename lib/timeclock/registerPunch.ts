@@ -2,9 +2,13 @@ import { generateContent } from '../gemini';
 import { supabase } from '../supabase';
 import { formatIsoDateBR } from '../dateUtils';
 import { requestPresenceRefresh } from '../presenceChannel';
+import { withTimeout, TimeoutError } from '../promiseTimeout';
 import type { TimeClockEntry, TimeClockStage, TimeClockUserContext } from './types';
 import { getNextTimeClockStage } from './stages';
 import { fetchTodayTimeClockEntriesFromApi } from './fetchEntriesApi';
+import { isCltUser } from './cltEmployee';
+
+const SELFIE_VERIFY_TIMEOUT_MS = 25_000;
 
 export async function fetchTodayTimeClockEntries(userId: string): Promise<TimeClockEntry[]> {
   try {
@@ -27,21 +31,40 @@ export async function fetchTodayTimeClockEntries(userId: string): Promise<TimeCl
   }
 }
 
-export async function verifySelfieForTimeClock(photoBase64: string): Promise<void> {
+/** Valida selfie via IA. Retorna true se aprovada; false se timeout/falha de rede (não bloqueia). */
+export async function verifySelfieForTimeClock(photoBase64: string): Promise<boolean> {
   const prompt =
     'Valide se o rosto está claro e se a pessoa está SEM óculos escuros e SEM boné. Responda apenas VALID ou o motivo do erro.';
-  const resultText = await generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: {
-      parts: [
-        { inlineData: { mimeType: 'image/jpeg', data: photoBase64 } },
-        { text: prompt },
-      ],
-    },
-  });
+  try {
+    const resultText = await withTimeout(
+      generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: {
+          parts: [
+            { inlineData: { mimeType: 'image/jpeg', data: photoBase64 } },
+            { text: prompt },
+          ],
+        },
+      }),
+      SELFIE_VERIFY_TIMEOUT_MS,
+      'Timeout na verificação biométrica',
+    );
 
-  if (!resultText.toUpperCase().includes('VALID')) {
-    throw new Error('Falha na biometria: remova óculos/boné e garanta boa iluminação.');
+    if (!resultText.toUpperCase().includes('VALID')) {
+      throw new Error('Falha na biometria: remova óculos/boné e garanta boa iluminação.');
+    }
+    return true;
+  } catch (e) {
+    if (e instanceof TimeoutError) {
+      console.warn('[timeclock] Verificação biométrica por IA expirou — registrando sem validação automática.');
+      return false;
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/timeout|fetch|network|503|502|504/i.test(msg)) {
+      console.warn('[timeclock] Verificação biométrica indisponível:', msg);
+      return false;
+    }
+    throw e;
   }
 }
 
@@ -71,6 +94,10 @@ export interface RegisterTimeClockPunchInput {
 export async function registerTimeClockPunch(
   input: RegisterTimeClockPunchInput
 ): Promise<TimeClockEntry> {
+  if (!isCltUser(input.user)) {
+    throw new Error('Apenas funcionários CLT podem registrar ponto.');
+  }
+
   const history = await fetchTodayTimeClockEntries(input.user.id);
   const expected = getNextTimeClockStage(history);
   if (expected === 'DONE') {
@@ -80,7 +107,7 @@ export async function registerTimeClockPunch(
     throw new Error(`Próxima batida esperada: ${expected}.`);
   }
 
-  await verifySelfieForTimeClock(input.photoBase64);
+  const aiVerified = await verifySelfieForTimeClock(input.photoBase64);
   const photoUrl = await uploadTimeClockPhoto(input.user.id, input.photoBase64);
 
   const payload = {
@@ -93,8 +120,13 @@ export async function registerTimeClockPunch(
     longitude: input.longitude,
     photo_url: photoUrl,
     signature_url: input.signatureUrl,
-    ai_verification: true,
-    metadata: { stage: input.stage, device: 'mobile', source: 'mission-screen' },
+    ai_verification: aiVerified,
+    metadata: {
+      stage: input.stage,
+      device: typeof window !== 'undefined' && window.innerWidth < 768 ? 'mobile' : 'desktop',
+      source: 'mission-screen',
+      ai_skipped: !aiVerified,
+    },
   };
 
   const { data, error } = await supabase.from('time_clock').insert([payload]).select('*').single();

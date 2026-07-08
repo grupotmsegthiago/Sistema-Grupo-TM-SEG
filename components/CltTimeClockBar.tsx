@@ -16,21 +16,35 @@ const CltTimeClockBar: React.FC = () => {
   const [history, setHistory] = useState<TimeClockEntry[]>([]);
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   const refresh = useCallback(async () => {
+    setLoadError('');
     try {
       const raw = JSON.parse(localStorage.getItem('userData') || '{}') as TimeClockUserContext;
-      const enriched = await enrichUserWithCltData(raw);
-      if (!isCltUser(enriched)) {
+      if (!raw?.id) {
         setReady(false);
         return;
       }
+
+      const enriched = await enrichUserWithCltData(raw);
+      localStorage.setItem('userData', JSON.stringify(enriched));
+
+      if (!isCltUser(enriched)) {
+        setReady(false);
+        setUser(null);
+        return;
+      }
+
       setUser(enriched);
       const entries = await fetchTodayTimeClockEntries(enriched.id);
       setHistory(entries);
       setReady(true);
-    } catch {
+    } catch (e) {
+      console.error('[CltTimeClockBar] Falha ao carregar ponto CLT:', e);
       setReady(false);
+      setUser(null);
+      setLoadError(e instanceof Error ? e.message : 'Falha ao carregar ponto');
     }
   }, []);
 
@@ -42,7 +56,12 @@ const CltTimeClockBar: React.FC = () => {
     void refresh();
   });
 
-  if (!ready || !user) return null;
+  if (!ready || !user) {
+    if (loadError) {
+      console.warn('[CltTimeClockBar]', loadError);
+    }
+    return null;
+  }
 
   const nextStage = getNextTimeClockStage(history);
   const label =
