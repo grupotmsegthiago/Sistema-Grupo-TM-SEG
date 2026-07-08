@@ -28,8 +28,13 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
   const [user, setUser] = useState<TimeClockUserContext | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  const evaluate = useCallback(async () => {
-    setLoading(true);
+  // `initial` = primeira avaliação (mostra o "loading" que oculta a tela).
+  // As reavaliações periódicas rodam em segundo plano SEM mexer em `loading`,
+  // caso contrário o gate renderiza `null` e desmonta/remonta toda a árvore
+  // (a tela "pisca" e componentes como o alerta "OS sem Tabela" reabrem a
+  // cada ciclo). Só atualizamos mustPunch/shiftBlocked se algo mudar.
+  const evaluate = useCallback(async (initial = false) => {
+    if (initial) setLoading(true);
     try {
       const raw = JSON.parse(localStorage.getItem('userData') || '{}') as TimeClockUserContext;
       if (!raw?.id) {
@@ -62,13 +67,13 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
       console.warn('[TimeClockGate] evaluate falhou:', e);
       setMustPunch(false);
     } finally {
-      setLoading(false);
+      if (initial) setLoading(false);
     }
   }, [onCleared]);
 
   useEffect(() => {
-    void evaluate();
-    const timer = setInterval(() => void evaluate(), 30_000);
+    void evaluate(true);
+    const timer = setInterval(() => void evaluate(false), 30_000);
     return () => clearInterval(timer);
   }, [evaluate]);
 
