@@ -8,7 +8,7 @@ import {
   getLastActivityAt,
 } from '../lib/userActivityTracker';
 import { requiresTimeclockUser } from '../lib/timeclock/eligibility';
-import { buildPunchMarks } from '../lib/timeclock/presence';
+import { buildPunchMarks, normalizePresenceUserId } from '../lib/timeclock/presence';
 import {
   onPresenceRefreshRequested,
   trackPresence,
@@ -41,7 +41,7 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
     const buildQuickPayload = (
       raw: TimeClockUserContext & { role?: string }
     ): PresenceUserState => ({
-      userId: raw.id,
+      userId: normalizePresenceUserId(raw.id),
       name: raw.name || 'Usuário',
       role: raw.role || 'Operador',
       isClt: !!(raw.isClt || raw.requiresTimeclock),
@@ -94,7 +94,7 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
         const activityStatus = getActivityStatus();
         const idleMinutes = getIdleMinutes();
         return {
-          userId: user.id,
+          userId: normalizePresenceUserId(user.id),
           name: user.name || 'Usuário',
           role: user.role || 'Operador',
           contractType,

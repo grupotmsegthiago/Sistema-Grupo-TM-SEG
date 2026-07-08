@@ -1,6 +1,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import type { PresenceUserState } from './timeclock/presence';
+import { normalizePresenceUserId } from './timeclock/presence';
 
 /**
  * Sistema de presença baseado em Broadcast do Supabase Realtime.
@@ -121,11 +122,11 @@ export function subscribePresence(listener: PresenceListener): () => void {
 /** Registra a presença do usuário atual. Retorna função para parar. */
 export function trackPresence(payload: PresenceUserState): () => void {
   const current = ensureState();
+  const normalized = withNormalizedUserId(payload);
   current.trackers += 1;
-  current.lastPayload = payload;
-  log('trackPresence chamado. name=', payload.name, 'ready=', current.ready);
-  // Guarda o próprio usuário no map local imediatamente, sem esperar o servidor.
-  upsertLocal(current, payload);
+  current.lastPayload = normalized;
+  log('trackPresence chamado. name=', normalized.name, 'ready=', current.ready);
+  upsertLocal(current, normalized);
   if (current.ready) void sendHello(current);
   ensureBroadcastTimer(current);
   return () => {
@@ -133,7 +134,7 @@ export function trackPresence(payload: PresenceUserState): () => void {
     if (current.trackers === 0) {
       void sendBye(current);
       if (current.lastPayload) {
-        current.users.delete(current.lastPayload.userId);
+        current.users.delete(normalizePresenceUserId(current.lastPayload.userId));
       }
       current.lastPayload = null;
       broadcastToListeners(current);
@@ -145,13 +146,14 @@ export function trackPresence(payload: PresenceUserState): () => void {
 /** Atualiza o payload atual (heartbeat manual, ex.: após bater ponto). */
 export function updatePresencePayload(payload: PresenceUserState): void {
   const current = state;
+  const normalized = withNormalizedUserId(payload);
   if (!current) {
     log('updatePresencePayload sem state — abrindo canal');
-    trackPresence(payload);
+    trackPresence(normalized);
     return;
   }
-  current.lastPayload = payload;
-  upsertLocal(current, payload);
+  current.lastPayload = normalized;
+  upsertLocal(current, normalized);
   if (current.ready) void sendHello(current);
 }
 
@@ -183,9 +185,14 @@ function broadcastToListeners(current: PresenceState): void {
   emit(current);
 }
 
+function withNormalizedUserId(payload: PresenceUserState): PresenceUserState {
+  return { ...payload, userId: normalizePresenceUserId(payload.userId) };
+}
+
 function upsertLocal(current: PresenceState, payload: PresenceUserState): void {
-  current.users.set(payload.userId, {
-    ...payload,
+  const normalized = withNormalizedUserId(payload);
+  current.users.set(normalized.userId, {
+    ...normalized,
     lastSeen: Date.now(),
   });
   broadcastToListeners(current);
@@ -238,7 +245,7 @@ function ensureCleanupTimer(current: PresenceState): void {
     let changed = false;
     for (const [id, rec] of current.users) {
       // Nunca expira o próprio usuário (ele é atualizado pelo próprio broadcast).
-      const isMe = current.lastPayload?.userId === id;
+      const isMe = normalizePresenceUserId(current.lastPayload?.userId) === id;
       if (!isMe && rec.lastSeen < cutoff) {
         current.users.delete(id);
         changed = true;
@@ -267,15 +274,16 @@ function ensureState(): PresenceState {
     .channel(PRESENCE_CHANNEL, { config: { broadcast: { self: true } } })
     .on('broadcast', { event: BROADCAST_EVENT_HELLO }, ({ payload }) => {
       const p = payload as PresenceUserState | undefined;
-      if (!p?.userId) return;
-      log('hello recebido de', p.name, `[${p.userId}]`);
-      upsertLocal(current, p);
+      if (!normalizePresenceUserId(p?.userId)) return;
+      log('hello recebido de', p?.name, `[${normalizePresenceUserId(p?.userId)}]`);
+      upsertLocal(current, p as PresenceUserState);
     })
     .on('broadcast', { event: BROADCAST_EVENT_BYE }, ({ payload }) => {
-      const p = payload as { userId?: string } | undefined;
-      if (!p?.userId) return;
-      log('bye recebido de', p.userId);
-      current.users.delete(p.userId);
+      const p = payload as { userId?: unknown } | undefined;
+      const userId = normalizePresenceUserId(p?.userId);
+      if (!userId) return;
+      log('bye recebido de', userId);
+      current.users.delete(userId);
       broadcastToListeners(current);
     })
     .subscribe((status, err) => {

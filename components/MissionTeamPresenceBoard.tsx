@@ -11,6 +11,7 @@ import {
   getPresenceServiceStatus,
   mergeRosterWithPresence,
   formatPresenceShortName,
+  normalizePresenceUserId,
   type PresenceCategory,
   type PresenceServiceStatus,
   type PresenceUserState,
@@ -122,7 +123,7 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
   const { roster, punchLookup } = useTeamPresenceBoard(enabled);
 
   const onlineIds = useMemo(
-    () => new Set(onlineUsers.map((u) => u.userId)),
+    () => new Set(onlineUsers.map((u) => normalizePresenceUserId(u.userId))),
     [onlineUsers]
   );
 
@@ -132,12 +133,12 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
   );
 
   const emServicoCount = useMemo(
-    () => displayUsers.filter((u) => getPresenceServiceStatus(u, { isOnline: onlineIds.has(u.userId) }) === 'em_servico').length,
+    () => displayUsers.filter((u) => getPresenceServiceStatus(u, { isOnline: onlineIds.has(normalizePresenceUserId(u.userId)) }) === 'em_servico').length,
     [displayUsers, onlineIds]
   );
 
   const onlineOnBoard = useMemo(
-    () => displayUsers.filter((u) => onlineIds.has(u.userId)).length,
+    () => displayUsers.filter((u) => onlineIds.has(normalizePresenceUserId(u.userId))).length,
     [displayUsers, onlineIds]
   );
 
@@ -206,7 +207,7 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
                   <div className="flex flex-wrap gap-3">
                     {users.map((user) => {
                       const displayName = formatPresenceShortName(user.name || 'Usuário');
-                      const isOnline = onlineIds.has(user.userId);
+                      const isOnline = onlineIds.has(normalizePresenceUserId(user.userId));
                       const serviceStatus = getPresenceServiceStatus(user, { isOnline });
                       const style = statusStyle(serviceStatus, isOnline);
                       const status = statusLine(user, isOnline);

@@ -11,6 +11,7 @@ import {
   buildPresenceTooltip,
   mergeRosterWithPresence,
   formatPresenceShortName,
+  normalizePresenceUserId,
   PRESENCE_USER_AVATAR_SRC,
 } from '../lib/timeclock/presence.ts';
 import {
@@ -192,6 +193,31 @@ test('getPresenceServiceStatus distingue online sem ponto de fora offline', () =
     ),
     'online',
   );
+});
+
+test('normalizePresenceUserId unifica number e string do login', () => {
+  assert.equal(normalizePresenceUserId(4), '4');
+  assert.equal(normalizePresenceUserId('4'), '4');
+  assert.equal(normalizePresenceUserId(' 22 '), '22');
+  assert.equal(normalizePresenceUserId(null), '');
+});
+
+test('mergeRosterWithPresence casa online com userId numérico no broadcast', () => {
+  const roster = [{ userId: '4', name: 'Michelle dias', role: 'Operador' }];
+  const online = [
+    {
+      userId: 4,
+      name: 'Michelle dias',
+      role: 'Operador',
+      isClt: true,
+      onDuty: false,
+      onDutyLabel: 'Aguardando ponto',
+      onlineAt: new Date().toISOString(),
+    },
+  ];
+  const merged = mergeRosterWithPresence(roster, online as any);
+  assert.equal(merged.length, 1);
+  assert.equal(getPresenceServiceStatus(merged[0], { isOnline: true }), 'aguardando_ponto');
 });
 
 test('formatPresenceShortName diferencia homônimos', () => {

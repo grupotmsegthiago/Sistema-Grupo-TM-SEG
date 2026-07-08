@@ -10,6 +10,14 @@ import {
 export type { PresencePunchMark } from './punchMarks';
 export { buildPunchMarks } from './punchMarks';
 
+/** IDs do login (number) e do roster (string) devem casar no quadro e no broadcast. */
+export function normalizePresenceUserId(id: unknown): string {
+  if (id == null) return '';
+  if (typeof id === 'number' && Number.isFinite(id)) return String(id);
+  if (typeof id === 'string') return id.trim();
+  return String(id).trim();
+}
+
 export const TMSEG_PRESENCE_CHANNEL = 'tmseg-user-presence';
 /** Ícone de avatar para usuários online no quadro de presença. */
 export const PRESENCE_USER_AVATAR_SRC = '/assets/presence-user-robot.svg';
@@ -144,7 +152,7 @@ export function buildPresenceTooltip(user: PresenceUserState): string {
 type RawPresenceMeta = Partial<PresenceUserState> | Record<string, unknown>;
 
 function normalizePresenceMeta(meta: RawPresenceMeta): PresenceUserState | null {
-  const userId = typeof meta.userId === 'string' && meta.userId.trim() ? meta.userId.trim() : '';
+  const userId = normalizePresenceUserId(meta.userId);
   if (!userId) return null;
 
   return {
@@ -228,15 +236,18 @@ export function mergeRosterWithPresence(
   onlineUsers: PresenceUserState[],
   punchLookup?: Map<string, Pick<TimeClockEntry, 'type' | 'timestamp'>[]> | TeamPunchLookup,
 ): PresenceUserState[] {
-  const onlineMap = new Map(onlineUsers.map((u) => [u.userId, u]));
+  const onlineMap = new Map(
+    onlineUsers.map((u) => [normalizePresenceUserId(u.userId), u]),
+  );
   const result: PresenceUserState[] = [];
   const seenIds = new Set<string>();
 
   for (const member of roster) {
-    if (!member.userId || seenIds.has(member.userId)) continue;
-    seenIds.add(member.userId);
+    const memberId = normalizePresenceUserId(member.userId);
+    if (!memberId || seenIds.has(memberId)) continue;
+    seenIds.add(memberId);
 
-    const online = onlineMap.get(member.userId);
+    const online = onlineMap.get(memberId);
     const punchEntries = resolvePunchEntriesForMember(member, punchLookup);
 
     if (online) {
@@ -259,7 +270,7 @@ export function mergeRosterWithPresence(
     if (punchEntries?.length) {
       const fromPunch = buildPresenceFromPunchEntries(member, punchEntries);
       result.push({
-        userId: member.userId,
+        userId: memberId,
         name: member.name || 'Usuário',
         role: member.role || 'Usuário',
         isClt: fromPunch.isClt,
@@ -273,7 +284,7 @@ export function mergeRosterWithPresence(
     }
 
     result.push({
-      userId: member.userId,
+      userId: memberId,
       name: member.name || 'Usuário',
       role: member.role || 'Usuário',
       isClt: false,

@@ -438,6 +438,7 @@ const App: React.FC = () => {
     <QueryClientProvider client={queryClient}>
     <RealtimeProvider>
     <NotificationProvider>
+        <UserPresenceTracker enabled={isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isResetPasswordRoute} />
         <TimeClockGate onLogout={handleLogout} onCleared={() => {}}>
         <div className="flex min-h-screen-ios overflow-x-auto overflow-y-auto font-sans text-gray-800 relative" style={{ maxWidth: '100vw' }}>
         
@@ -452,7 +453,6 @@ const App: React.FC = () => {
         <div className="absolute inset-0 z-0 pointer-events-none"><img src="/background.png" alt="System Background" className="w-full h-full object-cover fixed opacity-[0.03]"/><div className="absolute inset-0 bg-[#f8fafc] -z-10"></div></div>
         <Sidebar isOpen={isSidebarOpen} activeScreen={currentScreen} onNavigate={navigateTo} onLogout={handleLogout} />
         <PushNotificationManager />
-        <UserPresenceTracker enabled={isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isResetPasswordRoute} />
         <PresenceDebugPanel />
         {(() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); const allowed = ['operador', 'avançado', 'avancado']; return allowed.includes(r); } catch { return false; } })() && <MissionAlertMonitor />}
         <div className="flex-1 flex flex-col min-h-0 min-w-0 relative z-10 lg:pl-20">
