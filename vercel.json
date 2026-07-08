@@ -115,6 +115,12 @@
     "api/rh-employee-costs.ts": {
       "maxDuration": 60
     },
+    "api/toll-qualp.ts": {
+      "maxDuration": 60
+    },
+    "api/toll-gemini-estimate.ts": {
+      "maxDuration": 60
+    },
     "api/email-health.ts": {
       "maxDuration": 60
     },
@@ -258,6 +264,14 @@
     {
       "source": "/api/rh/timeclock/entries",
       "destination": "/api/rh-timeclock-entries"
+    },
+    {
+      "source": "/api/toll/qualp",
+      "destination": "/api/toll-qualp"
+    },
+    {
+      "source": "/api/toll/gemini-estimate",
+      "destination": "/api/toll-gemini-estimate"
     },
     {
       "source": "/api/email/health",
