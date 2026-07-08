@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { AlertTriangle, Save, Loader2, RefreshCw, History, Mail, Clock, Hash, Calendar, PlayCircle, MessageCircle, Bell } from 'lucide-react';
 
 type Settings = {
@@ -54,8 +55,8 @@ const ManualOverrideAlertSettings: React.FC = () => {
         fetch('/api/admin/manual-override-settings', { headers: authHeaders() }),
         fetch('/api/admin/manual-override-settings/history', { headers: authHeaders() }),
       ]);
-      const sJson = await sRes.json();
-      const hJson = await hRes.json();
+      const sJson = await parseJsonResponse(sRes);
+      const hJson = await parseJsonResponse(hRes);
       if (sJson?.ok) {
         setSettings(sJson.settings);
         setDefaults(sJson.defaults);

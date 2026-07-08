@@ -7,6 +7,7 @@ import AuditSummarySettings from './AuditSummarySettings';
 import WhatsAppTelemetryDashboard from './WhatsAppTelemetryDashboard';
 import WhatsAppConnectionPanel from './WhatsAppConnectionPanel';
 import EmailHealthPanel from './EmailHealthPanel';
+import { parseJsonResponse } from '../lib/parseJsonResponse';
 
 type Schedule = { emails: string; hour: number; minute: number };
 type DailyReports = {
@@ -403,8 +404,8 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
         fetch('/api/admin/system-settings/daily-reports', { headers: authHeaders() }),
         fetch('/api/admin/system-settings/daily-reports/history', { headers: authHeaders() }),
       ]);
-      const sJson = await sRes.json();
-      const hJson = await hRes.json();
+      const sJson = await parseJsonResponse(sRes);
+      const hJson = await parseJsonResponse(hRes);
       if (sJson?.ok) {
         setSettings(sJson.settings);
         setDefaults(sJson.defaults);
