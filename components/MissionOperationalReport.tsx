@@ -4,6 +4,7 @@ import { Mission, MissionStatus } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { generateContent } from '../lib/gemini';
+import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
 import { googleMapsApiKey } from '../lib/maps';
 import { X, Loader2, FileText, Upload, Trash2, Sparkles, Download, Image as ImageIcon, Plus, Clock, MapPin, Truck, User, Shield, Phone, Navigation, Activity, Camera, Gauge, RefreshCw, PenLine, Save, Edit3, Check, Map } from 'lucide-react';
 import html2canvas from 'html2canvas';
@@ -61,6 +62,8 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
     const [isGenerating, setIsGenerating] = useState(false);
     const [generatedReport, setGeneratedReport] = useState<string | null>(null);
     const [isExporting, setIsExporting] = useState(false);
+    const [processingError, setProcessingError] = useState('');
+    const exportCancelledRef = useRef(false);
     const [isSaving, setIsSaving] = useState(false);
     const [isSaved, setIsSaved] = useState(false);
     const [loadedFromDb, setLoadedFromDb] = useState(false);
@@ -88,6 +91,67 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
 
     const routeMapUrl = (mission.origin && mission.destination && googleMapsApiKey) ?
         `https://maps.googleapis.com/maps/api/staticmap?size=740x280&maptype=roadmap&markers=color:green%7Clabel:A%7C${encodeURIComponent(mission.origin)}&markers=color:red%7Clabel:B%7C${encodeURIComponent(mission.destination)}&path=enc:&key=${googleMapsApiKey}&language=pt-BR&region=BR` : null;
+
+    const GEMINI_TIMEOUT_MS = 90_000;
+    const HTML2CANVAS_TIMEOUT_MS = 25_000;
+    const IMAGE_PRELOAD_TIMEOUT_MS = 12_000;
+
+    const handleCloseReport = () => {
+        exportCancelledRef.current = true;
+        setIsGenerating(false);
+        setIsExporting(false);
+        setProcessingError('');
+        onClose();
+    };
+
+    const preloadReportImages = async (root: HTMLElement) => {
+        const imgs = Array.from(root.querySelectorAll('img'));
+        await Promise.all(imgs.map((img) =>
+            withTimeout(
+                new Promise<void>((resolve) => {
+                    if (img.complete && img.naturalWidth > 0) {
+                        resolve();
+                        return;
+                    }
+                    const done = () => {
+                        img.removeEventListener('load', done);
+                        img.removeEventListener('error', done);
+                        resolve();
+                    };
+                    img.addEventListener('load', done);
+                    img.addEventListener('error', done);
+                }),
+                IMAGE_PRELOAD_TIMEOUT_MS,
+                'Timeout ao carregar imagem do relatório'
+            ).catch(() => undefined)
+        ));
+    };
+
+    const captureSectionCanvas = async (section: HTMLElement) => {
+        return withTimeout(
+            html2canvas(section, {
+                scale: 2,
+                useCORS: true,
+                allowTaint: false,
+                backgroundColor: '#ffffff',
+                windowWidth: 794,
+                logging: false,
+                imageTimeout: 8000,
+            }),
+            HTML2CANVAS_TIMEOUT_MS,
+            'Timeout ao gerar imagem da seção'
+        ).catch(() => null);
+    };
+
+    const generateReportWithTimeout = async (prompt: string) => withTimeout(
+        generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            config: { temperature: 0.7 },
+            model: 'gemini-2.5-flash'
+        }),
+        GEMINI_TIMEOUT_MS,
+        'A geração do relatório demorou demais — tente novamente'
+    );
 
     const startTime = mission.startTime || (mission as any).start_time;
     const endTime = mission.endTime || (mission as any).end_time;
@@ -415,6 +479,8 @@ REGRAS:
 
     const handleAutoGenerate = async (logs: any[]) => {
         setIsGenerating(true);
+        setProcessingError('');
+        exportCancelledRef.current = false;
         try {
             const logsSummary = logs.map(l => `${fmtDateTime(l.created_at)} - ${l.status}: ${l.description || ''} ${l.location || ''}`).join('\n');
             const prompt = `Você é um redator técnico do Grupo TMSEG. Gere um relatório operacional profissional mas com linguagem simples e direta.
@@ -427,14 +493,14 @@ REGISTROS: ${logsSummary || 'Sem registros.'}
 
 Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇÕES IN LOCO, ANÁLISE DE SEGURANÇA, CRONOLOGIA OPERACIONAL. Use <section class="report-section"><h3>TÍTULO</h3><p>...</p></section>. Mínimo 300 palavras.`;
 
-            const result = await generateContent({
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                config: { temperature: 0.7 },
-                model: 'gemini-2.5-flash'
-            });
-            setGeneratedReport(result);
+            const result = await generateReportWithTimeout(prompt);
+            if (!exportCancelledRef.current) setGeneratedReport(result);
         } catch (error: any) {
             console.error('Erro ao gerar relatório:', error);
+            const msg = error instanceof TimeoutError
+                ? 'A geração do relatório demorou demais. Verifique a conexão e tente novamente.'
+                : (error?.message || 'Erro ao gerar relatório');
+            setProcessingError(msg);
         } finally {
             setIsGenerating(false);
         }
@@ -442,16 +508,18 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
 
     const handleGenerate = async () => {
         setIsGenerating(true);
+        setProcessingError('');
+        exportCancelledRef.current = false;
         try {
             const prompt = buildPrompt(missionLogs);
-            const result = await generateContent({
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                config: { temperature: 0.7 },
-                model: 'gemini-2.5-flash'
-            });
-            setGeneratedReport(result);
+            const result = await generateReportWithTimeout(prompt);
+            if (!exportCancelledRef.current) setGeneratedReport(result);
         } catch (error: any) {
-            alert('Erro ao gerar relatório: ' + error.message);
+            const msg = error instanceof TimeoutError
+                ? 'A geração do relatório demorou demais. Verifique a conexão e tente novamente.'
+                : (error?.message || 'Erro ao gerar relatório');
+            setProcessingError(msg);
+            alert('Erro ao gerar relatório: ' + msg);
         } finally {
             setIsGenerating(false);
         }
@@ -460,17 +528,21 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
     const handleRefine = async () => {
         if (!editSuggestion.trim()) return;
         setIsGenerating(true);
+        setProcessingError('');
+        exportCancelledRef.current = false;
         try {
             const prompt = buildPrompt(missionLogs, editSuggestion);
-            const result = await generateContent({
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                config: { temperature: 0.7 },
-                model: 'gemini-2.5-flash'
-            });
-            setGeneratedReport(result);
-            setEditSuggestion('');
+            const result = await generateReportWithTimeout(prompt);
+            if (!exportCancelledRef.current) {
+                setGeneratedReport(result);
+                setEditSuggestion('');
+            }
         } catch (error: any) {
-            alert('Erro ao refinar relatório: ' + error.message);
+            const msg = error instanceof TimeoutError
+                ? 'O ajuste do relatório demorou demais. Tente novamente.'
+                : (error?.message || 'Erro ao refinar relatório');
+            setProcessingError(msg);
+            alert('Erro ao refinar relatório: ' + msg);
         } finally {
             setIsGenerating(false);
         }
@@ -479,7 +551,12 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
     const handleExportPDF = async () => {
         if (!reportRef.current) return;
         setIsExporting(true);
+        setProcessingError('');
+        exportCancelledRef.current = false;
         try {
+            await preloadReportImages(reportRef.current);
+            if (exportCancelledRef.current) return;
+
             const sections = reportRef.current.querySelectorAll('[data-pdf-section]');
             const pdf = new jsPDF('p', 'mm', 'a4');
             const pageWidth = 210;
@@ -489,18 +566,14 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
             const usableHeight = pageHeight - margin * 2;
             let currentY = margin;
             let isFirstPage = true;
+            let capturedSections = 0;
 
             for (let i = 0; i < sections.length; i++) {
+                if (exportCancelledRef.current) return;
                 const section = sections[i] as HTMLElement;
-                const canvas = await html2canvas(section, {
-                    scale: 2,
-                    useCORS: true,
-                    allowTaint: true,
-                    backgroundColor: '#ffffff',
-                    windowWidth: 794,
-                    logging: false,
-                }).catch(() => null);
+                const canvas = await captureSectionCanvas(section);
                 if (!canvas) continue;
+                capturedSections += 1;
                 let imgData: string;
                 try {
                     imgData = canvas.toDataURL('image/jpeg', 0.85);
@@ -519,6 +592,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                     let srcY = 0;
 
                     while (srcY < totalCanvasHeight) {
+                        if (exportCancelledRef.current) return;
                         if (srcY > 0) {
                             pdf.addPage();
                             currentY = margin;
@@ -545,9 +619,18 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                 isFirstPage = false;
             }
 
+            if (exportCancelledRef.current) return;
+            if (capturedSections === 0) {
+                throw new Error('Não foi possível gerar as imagens do relatório. Tente fechar e abrir novamente, ou use outro navegador.');
+            }
+
             pdf.save(`Relatorio_Operacional_${mission.id}_${new Date().toISOString().slice(0, 10)}.pdf`);
         } catch (error: any) {
-            alert('Erro ao exportar PDF: ' + (error?.message || String(error) || 'Erro desconhecido'));
+            const msg = error instanceof TimeoutError
+                ? 'A geração da imagem demorou demais. Tente novamente ou feche o relatório.'
+                : (error?.message || String(error) || 'Erro desconhecido');
+            setProcessingError(msg);
+            alert('Erro ao exportar PDF: ' + msg);
         } finally {
             setIsExporting(false);
         }
@@ -658,7 +741,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                         <h2 className="text-[12px] font-black uppercase tracking-[0.15em]" style={{ color: primaryColor }}>Trajeto da Operação</h2>
                     </div>
                     <div className="rounded-xl overflow-hidden border border-gray-200" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                        <img src={routeMapUrl} alt="Mapa do Trajeto" className="w-full h-auto object-cover" />
+                        <img src={routeMapUrl} alt="Mapa do Trajeto" className="w-full h-auto object-cover" crossOrigin="anonymous" />
                         <div className="px-4 py-2 bg-gray-50 flex items-center justify-between border-t border-gray-100">
                             <div className="flex items-center gap-3">
                                 <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-green-600" /><span className="text-[9px] font-bold text-gray-500">A — Origem</span></div>
@@ -816,8 +899,8 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
     );
 
     return (
-        <div className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/70 backdrop-blur-sm overflow-y-auto py-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-            <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl mx-4 my-2 flex flex-col max-h-[96vh]" data-testid="modal-operational-report" style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        <div className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/70 backdrop-blur-sm overflow-y-auto py-4" onClick={(e) => { if (e.target === e.currentTarget && !isGenerating && !isExporting) handleCloseReport(); }}>
+            <div className="relative bg-white w-full max-w-5xl rounded-2xl shadow-2xl mx-4 my-2 flex flex-col max-h-[96vh]" data-testid="modal-operational-report" style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
                 <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100 shrink-0" style={{ background: `linear-gradient(135deg, ${gradientStart}, ${gradientEnd})` }}>
                     <div className="flex items-center gap-3">
                         <div className="p-1.5 bg-white/10 rounded-lg">
@@ -830,13 +913,48 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                     </div>
                     <div className="flex items-center gap-3">
                         {generatedReport && (
-                            <button onClick={handleExportPDF} disabled={isExporting} className="flex items-center gap-1.5 px-4 py-2 text-[10px] font-black text-white rounded-lg transition-all hover:brightness-110 disabled:opacity-50 uppercase" style={{ backgroundColor: accentColor }} data-testid="button-export-pdf">
+                            <button onClick={handleExportPDF} disabled={isExporting || isGenerating} className="flex items-center gap-1.5 px-4 py-2 text-[10px] font-black text-white rounded-lg transition-all hover:brightness-110 disabled:opacity-50 uppercase" style={{ backgroundColor: accentColor }} data-testid="button-export-pdf">
                                 {isExporting ? <><Loader2 size={12} className="animate-spin" /> Exportando...</> : <><Download size={12} /> Exportar PDF</>}
                             </button>
                         )}
-                        <button onClick={onClose} className="text-white/50 hover:text-white transition-colors p-1" data-testid="button-close-report"><X size={18} /></button>
+                        <button onClick={handleCloseReport} className="text-white/50 hover:text-white transition-colors p-1" data-testid="button-close-report"><X size={18} /></button>
                     </div>
                 </div>
+
+                {(isGenerating || isExporting) && (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/55 backdrop-blur-[2px] rounded-2xl" data-testid="overlay-report-processing">
+                        <div className="mx-4 w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/95 px-6 py-8 text-center shadow-2xl">
+                            {isGenerating && (
+                                <>
+                                    <Loader2 size={34} className="mx-auto mb-4 animate-spin text-white/80" />
+                                    <p className="text-sm font-bold text-white">Relatório sendo processado, aguarde...</p>
+                                    <p className="mt-2 text-[11px] font-medium text-slate-400">A IA está montando o texto do relatório operacional.</p>
+                                </>
+                            )}
+                            {isExporting && (
+                                <>
+                                    <p className="mb-4 text-sm font-bold text-white">Relatório sendo processado, aguarde...</p>
+                                    <div className="mx-auto inline-flex items-center gap-2 rounded-xl bg-slate-700/90 px-4 py-3 text-white">
+                                        <Loader2 size={16} className="animate-spin" />
+                                        <span className="text-sm font-bold">Gerando a imagem</span>
+                                    </div>
+                                </>
+                            )}
+                            {processingError && (
+                                <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] font-bold text-red-200">{processingError}</p>
+                            )}
+                            <button
+                                type="button"
+                                onClick={handleCloseReport}
+                                className="mt-6 rounded-lg px-5 py-2.5 text-[11px] font-black uppercase tracking-wider text-white transition-all hover:brightness-110"
+                                style={{ backgroundColor: accentColor }}
+                                data-testid="button-close-report-processing"
+                            >
+                                Fechar Relatório
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 <div className="flex-1 overflow-y-auto scrollbar-thin">
                     {isClientView ? (
@@ -844,7 +962,13 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                             {isGenerating ? (
                                 <div className="flex flex-col items-center justify-center h-64 text-gray-400">
                                     <Loader2 size={32} className="animate-spin mb-3" style={{ color: accentColor }} />
-                                    <p className="text-sm font-bold">Gerando relatório...</p>
+                                    <p className="text-sm font-bold">Relatório sendo processado, aguarde...</p>
+                                </div>
+                            ) : processingError && !generatedReport ? (
+                                <div className="flex flex-col items-center justify-center h-64 text-gray-500 px-6 text-center">
+                                    <FileText size={40} className="mb-3 opacity-30" />
+                                    <p className="text-sm font-bold text-red-600">{processingError}</p>
+                                    <button type="button" onClick={handleCloseReport} className="mt-4 rounded-lg px-4 py-2 text-[11px] font-black uppercase text-white" style={{ backgroundColor: accentColor }}>Fechar Relatório</button>
                                 </div>
                             ) : generatedReport ? (
                                 renderReportDocument()

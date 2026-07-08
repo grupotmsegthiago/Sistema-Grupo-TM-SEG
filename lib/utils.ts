@@ -1,4 +1,25 @@
 
+/** Converte texto monetário BR (1.234,56 / 1234.56 / R$ 1.234,56) para número. */
+export const parseAmountBR = (val: string): number => {
+  if (!val) return NaN;
+  let cleaned = val.trim().replace(/[R$\s]/gi, '');
+  if (!cleaned) return NaN;
+  const hasComma = cleaned.includes(',');
+  const hasDot = cleaned.includes('.');
+  if (hasComma && hasDot) {
+    const lastComma = cleaned.lastIndexOf(',');
+    const lastDot = cleaned.lastIndexOf('.');
+    if (lastComma > lastDot) {
+      return parseFloat(cleaned.replace(/\./g, '').replace(',', '.'));
+    }
+    return parseFloat(cleaned.replace(/,/g, ''));
+  }
+  if (hasComma) {
+    return parseFloat(cleaned.replace(',', '.'));
+  }
+  return parseFloat(cleaned);
+};
+
 export const extractCoordinates = (url: string): { lat: number; lng: number } | null => {
   if (!url) return null;
 
