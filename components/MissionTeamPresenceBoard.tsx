@@ -5,7 +5,6 @@ import {
   PRESENCE_CATEGORY_LABELS,
   PRESENCE_CATEGORY_ORDER,
   PRESENCE_SERVICE_STATUS_LABELS,
-  PRESENCE_USER_AVATAR_SRC,
   buildPresenceTooltip,
   getPresenceCategory,
   getPresenceServiceStatus,
@@ -17,6 +16,46 @@ import {
 interface Props {
   enabled?: boolean;
 }
+
+/**
+ * Avatar do robô desenhado inline (SVG no próprio bundle JS). Antes usávamos
+ * um <img src="/assets/..."> que aparecia quebrado quando o cache do navegador
+ * ou o caminho do arquivo falhava. Inline nunca quebra e mantém o robô pedido.
+ */
+const RobotAvatar: React.FC = () => (
+  <svg
+    viewBox="0 0 64 64"
+    className="w-10 h-10 select-none pointer-events-none"
+    role="img"
+    aria-hidden
+    focusable="false"
+  >
+    <defs>
+      <linearGradient id="tmsegRobotBody" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stopColor="#ffffff" />
+        <stop offset="100%" stopColor="#e2e8f0" />
+      </linearGradient>
+      <radialGradient id="tmsegRobotEye" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stopColor="#67e8f9" />
+        <stop offset="100%" stopColor="#06b6d4" />
+      </radialGradient>
+    </defs>
+    <rect width="64" height="64" rx="14" fill="#f8fafc" />
+    <rect x="14" y="44" width="36" height="6" rx="1.5" fill="#cbd5e1" stroke="#94a3b8" strokeWidth="0.8" />
+    <rect x="16" y="38" width="32" height="8" rx="1" fill="#e2e8f0" stroke="#94a3b8" strokeWidth="0.8" />
+    <ellipse cx="32" cy="34" rx="11" ry="9" fill="url(#tmsegRobotBody)" stroke="#cbd5e1" strokeWidth="1" />
+    <rect x="17" y="30" width="5" height="10" rx="2.5" fill="#f1f5f9" stroke="#cbd5e1" strokeWidth="0.8" />
+    <rect x="42" y="30" width="5" height="10" rx="2.5" fill="#f1f5f9" stroke="#cbd5e1" strokeWidth="0.8" />
+    <circle cx="32" cy="18" r="12" fill="url(#tmsegRobotBody)" stroke="#cbd5e1" strokeWidth="1" />
+    <rect x="22" y="14" width="20" height="10" rx="5" fill="#0f172a" />
+    <ellipse cx="27" cy="19" rx="3" ry="2.2" fill="url(#tmsegRobotEye)" />
+    <ellipse cx="37" cy="19" rx="3" ry="2.2" fill="url(#tmsegRobotEye)" />
+    <ellipse cx="27.5" cy="18.5" rx="1" ry="0.7" fill="#ecfeff" opacity="0.9" />
+    <ellipse cx="37.5" cy="18.5" rx="1" ry="0.7" fill="#ecfeff" opacity="0.9" />
+    <line x1="32" y1="6" x2="32" y2="3" stroke="#94a3b8" strokeWidth="1.2" strokeLinecap="round" />
+    <circle cx="32" cy="2.5" r="1.5" fill="#06b6d4" />
+  </svg>
+);
 
 interface StatusStyle {
   border: string;
@@ -149,13 +188,7 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
                             <div
                               className={`w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center shadow-md border-2 bg-white ${style.border}`}
                             >
-                              <img
-                                src={PRESENCE_USER_AVATAR_SRC}
-                                alt=""
-                                aria-hidden
-                                className="w-10 h-10 object-contain select-none pointer-events-none"
-                                draggable={false}
-                              />
+                              <RobotAvatar />
                             </div>
                             <span
                               className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${style.dot}`}

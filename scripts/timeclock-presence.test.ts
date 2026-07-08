@@ -97,10 +97,13 @@ test('parsePresenceState preserva contractType do payload', () => {
   assert.equal(bruno.isClt, false);
 });
 
-test('quadro de presença usa ícone de robô em vez de iniciais', () => {
+test('quadro de presença usa robô inline (SVG) em vez de iniciais ou <img> externo', () => {
   const boardSrc = fs.readFileSync('components/MissionTeamPresenceBoard.tsx', 'utf8');
-  assert.match(boardSrc, /PRESENCE_USER_AVATAR_SRC/);
-  assert.match(boardSrc, /<img[\s\S]*src=\{PRESENCE_USER_AVATAR_SRC\}/);
+  // Robô desenhado inline no próprio componente (não depende de arquivo externo
+  // que aparecia quebrado no cache do navegador).
+  assert.match(boardSrc, /const RobotAvatar/);
+  assert.match(boardSrc, /<RobotAvatar \/>/);
+  assert.doesNotMatch(boardSrc, /<img[\s\S]*src=\{PRESENCE_USER_AVATAR_SRC\}/);
   assert.doesNotMatch(boardSrc, /getInitials\(displayName\)/);
 });
 

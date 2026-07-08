@@ -34,6 +34,9 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
     let lastGoodPayload: PresenceUserState | null = null;
     let lastActivityHeartbeatAt = 0;
+    // Marco (epoch ms) do início do serviço, derivado da última leitura de ponto.
+    // Permite recontar os "minutos em serviço" localmente, sem ir ao banco.
+    let serviceStartMs: number | null = null;
 
     const buildQuickPayload = (
       raw: TimeClockUserContext & { role?: string }
@@ -84,6 +87,10 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
           punchMarks = undefined;
         }
 
+        // Guarda o início do serviço para recontagem local dos minutos entre
+        // as leituras reais de ponto (evita novas idas ao banco).
+        serviceStartMs = onDuty ? Date.now() - Math.max(0, minutesOnDuty) * 60_000 : null;
+
         const activityStatus = getActivityStatus();
         const idleMinutes = getIdleMinutes();
         return {
@@ -116,19 +123,26 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
       }
     };
 
-    const heartbeat = async (opts?: { activityOnly?: boolean }) => {
+    const heartbeat = async (opts?: { activityOnly?: boolean; bypassThrottle?: boolean }) => {
       if (cancelled || !stopTracking) return;
 
+      // Caminho "activityOnly": NÃO vai ao banco. Só atualiza presença/atividade
+      // e reconta os minutos em serviço localmente a partir do último ponto lido.
       if (opts?.activityOnly && lastGoodPayload) {
         const now = Date.now();
-        if (now - lastActivityHeartbeatAt < ACTIVITY_HEARTBEAT_MIN_MS) return;
+        if (!opts.bypassThrottle && now - lastActivityHeartbeatAt < ACTIVITY_HEARTBEAT_MIN_MS) return;
         lastActivityHeartbeatAt = now;
+        const minutesOnDuty =
+          serviceStartMs != null
+            ? Math.max(0, Math.floor((now - serviceStartMs) / 60_000))
+            : lastGoodPayload.minutesOnDuty ?? 0;
         const updated: PresenceUserState = {
           ...lastGoodPayload,
           onlineAt: new Date().toISOString(),
           lastActivityAt: getLastActivityAt(),
           activityStatus: getActivityStatus(),
           idleMinutes: getIdleMinutes(),
+          minutesOnDuty,
         };
         applyPayload(updated);
         return;
@@ -156,13 +170,32 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
 
     void start();
 
+    // Tick periódico LOCAL: sem ida ao banco. Só reconta minutos em serviço e
+    // renova a presença/atividade. O status real (Em serviço / Em almoço / Fora
+    // de serviço) só muda no login e quando o banco avisa um novo ponto.
     heartbeatTimer = setInterval(() => {
-      void heartbeat();
+      void heartbeat({ activityOnly: true, bypassThrottle: true });
     }, HEARTBEAT_MS);
 
     const unsubscribeRefresh = onPresenceRefreshRequested(() => {
       void heartbeat();
     });
+
+    // "O banco avisa que subiu um ponto": o RealtimeProvider já escuta a tabela
+    // time_clock e dispara este evento. Quando o ponto for do usuário atual,
+    // relemos o ponto uma única vez e atualizamos o status (sem recarregar a
+    // página e sem polling).
+    const onPunchRealtime = (event: Event) => {
+      const detail = (event as CustomEvent).detail as
+        | { new?: { user_id?: string }; old?: { user_id?: string } }
+        | undefined;
+      const rowUserId = detail?.new?.user_id ?? detail?.old?.user_id;
+      const myId = lastGoodPayload?.userId;
+      if (!myId || !rowUserId || rowUserId === myId) {
+        void heartbeat();
+      }
+    };
+    window.addEventListener('supabase:time_clock:realtime', onPunchRealtime);
 
     const onActivity = () => void heartbeat({ activityOnly: true });
     window.addEventListener('tmseg:activity', onActivity);
@@ -176,6 +209,7 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
       cancelled = true;
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       unsubscribeRefresh();
+      window.removeEventListener('supabase:time_clock:realtime', onPunchRealtime);
       window.removeEventListener('tmseg:activity', onActivity);
       document.removeEventListener('visibilitychange', onVisibility);
       if (stopTracking) {
