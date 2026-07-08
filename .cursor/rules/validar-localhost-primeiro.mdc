@@ -1,0 +1,34 @@
+# Validar em localhost antes de publicar
+
+Preferência permanente do Thiago: **toda alteração deve ser vista primeiro em** `http://localhost:5000/` **antes de ir para produção**.
+
+## Fluxo obrigatório da IA
+
+1. **Implementar** a alteração na branch de trabalho.
+2. **Garantir servidor local ativo** na porta 5000:
+   ```bash
+   npm run dev
+   ```
+   Se já estiver rodando mas a mudança não aparecer, reiniciar o processo.
+3. **Testar localmente** (build, `/api/health`, tela alterada quando possível).
+4. **Informar o usuário** com o link explícito: `http://localhost:5000/` e o que validar (menu/tela).
+5. **Só publicar** (`publicar.ps1`) quando o usuário pedir **publicar** — nunca subir direto sem ele ter visto no localhost.
+
+## URL local
+
+- App + API: `http://localhost:5000/`
+- Health: `http://localhost:5000/api/health`
+
+## Quando reiniciar o dev server
+
+- Novas dependências (`npm install`)
+- Alterações em `server/`, `vite.config.ts` ou variáveis de ambiente
+- Usuário reporta que localhost não reflete a mudança
+
+## Entrega correta
+
+> Alteração pronta para você validar em **http://localhost:5000/** — abra [menu X] e confira [Y]. Quando estiver ok, diga **publicar**.
+
+## Entrega incorreta
+
+> Pronto, já está no ar. (sem ter orientado validação no localhost)

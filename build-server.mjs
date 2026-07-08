@@ -13,6 +13,10 @@ const oldCjs = path.join(distDir, 'index.cjs');
 if (fs.existsSync(oldCjs)) {
   fs.unlinkSync(oldCjs);
 }
+const oldVercelCjs = path.join(distDir, 'vercelApp.cjs');
+if (fs.existsSync(oldVercelCjs)) {
+  fs.unlinkSync(oldVercelCjs);
+}
 
 fs.mkdirSync(publicDir, { recursive: true });
 
@@ -22,7 +26,7 @@ fs.mkdirSync(publicDir, { recursive: true });
 // _redirects), o que deixava ícones do PWA (apple-touch-icon.png,
 // icon-*.png), manifest.json e sw.js órfãos em dist/ e nunca servidos
 // em produção. Resultado: iPhone nunca recebia o logo no atalho.
-const skipEntries = new Set(['public', 'index.cjs']);
+const skipEntries = new Set(['public', 'index.cjs', 'vercelApp.cjs']);
 const entries = fs.readdirSync(distDir);
 for (const entry of entries) {
   if (skipEntries.has(entry)) continue;
@@ -45,13 +49,17 @@ if (fs.existsSync(clientPublic)) {
 
 console.log('Frontend files (HTML, assets, ícones PWA, manifest, sw.js) movidos para dist/public/');
 
-// Na Vercel o backend roda via api/index.ts (serverless); não precisa do bundle CJS.
+// Bundle leve para api/index.ts na Vercel (carregado sob demanda, não no top-level).
+execSync(
+  'npx esbuild server/vercelAppEntry.ts --bundle --platform=node --format=cjs --outfile=dist/vercelApp.cjs --packages=external',
+  { stdio: 'inherit' }
+);
+console.log('Server bundled to dist/vercelApp.cjs');
+
 if (!process.env.VERCEL) {
   execSync(
     'npx esbuild server/index.ts --bundle --platform=node --format=cjs --outfile=dist/index.cjs --packages=external --external:./vite --external:../vite.config',
     { stdio: 'inherit' }
   );
   console.log('Server bundled to dist/index.cjs');
-} else {
-  console.log('Vercel: pulando bundle dist/index.cjs (usa api/index.ts).');
 }

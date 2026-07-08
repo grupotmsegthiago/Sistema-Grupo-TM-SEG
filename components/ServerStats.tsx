@@ -192,25 +192,41 @@ const ServerStats: React.FC = () => {
             return;
         }
         const errMsg = data.error || data.hint || `HTTP ${response.status}`;
-        throw new Error(errMsg);
+        const errCode = data.code || (missingKey ? 'KEY_MISSING' : 'UNKNOWN');
+        throw Object.assign(new Error(errMsg), { code: errCode, hint: data.hint });
     } catch (e: any) {
         const msg = e?.message || 'Falha na IA';
-        const missingKey = /não configurada|not configured|api key/i.test(msg);
+        const errCode = e?.code || '';
+        const missingKey = errCode === 'KEY_MISSING' || /não configurada|not configured|api key/i.test(msg);
+        const invalidKey = errCode === 'KEY_INVALID';
+        const quotaOrBilling = errCode === 'QUOTA' || errCode === 'BILLING';
         setGemini({ 
             status: 'ERROR', result: 'Falha na IA', showHelp: true,
             errorDetails: {
-              code: missingKey ? 'AI_KEY_MISSING' : 'AI_AUTH_ERROR',
+              code: errCode || (missingKey ? 'AI_KEY_MISSING' : 'AI_AUTH_ERROR'),
               steps: missingKey
                 ? [
                     "Configure GEMINI_API_KEY nas variáveis de ambiente da Vercel (Settings → Environment Variables)",
                     "Faça redeploy após salvar a variável",
                     "Gere uma chave em Google AI Studio se ainda não tiver",
                   ]
-                : [
-                    "Verifique se o faturamento do Google AI Studio está ativo",
-                    "Confirme que a chave GEMINI_API_KEY é válida e não expirou",
-                    "O sistema usa o modelo gemini-2.5-flash (compatível com a API atual)",
-                  ],
+                : invalidKey
+                  ? [
+                      "A chave GEMINI_API_KEY na Vercel está inválida ou foi revogada",
+                      "Gere uma nova chave em Google AI Studio e substitua na Vercel",
+                      "Faça redeploy após atualizar a variável",
+                    ]
+                  : quotaOrBilling
+                    ? [
+                        "Ative faturamento/créditos no Google AI Studio",
+                        "Confirme que o projeto da chave não excedeu a cota gratuita",
+                        "O sistema usa o modelo gemini-2.5-flash",
+                      ]
+                    : [
+                        "Verifique se o faturamento do Google AI Studio está ativo",
+                        "Confirme que a chave GEMINI_API_KEY é válida e não expirou",
+                        "O sistema usa o modelo gemini-2.5-flash (compatível com a API atual)",
+                      ],
               link: "https://aistudio.google.com/app/apikey",
             },
         });

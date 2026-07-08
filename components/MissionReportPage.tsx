@@ -9,7 +9,19 @@ import {
   AlertTriangle, ShieldAlert, BadgeCheck
 } from 'lucide-react';
 import MissionFinancialModal from './MissionFinancialModal';
+import MissionAuditModal from './MissionAuditModal';
 import { calculateMissionFinancials } from '../lib/financialUtils';
+import {
+  auditMissionsBatchAsync,
+  clearMissionBillingAuditCache,
+  computeMissionBillingAudit,
+  fetchBillingAdjustmentsForMissionIds,
+  type BillingAdjustmentRecord,
+  type MissionBillingAuditResult,
+} from '../lib/missionBillingAudit';
+import { loadAllPricingTables, invalidatePricingTablesCache } from '../lib/pricingTablesLoader';
+import { isTerminalMissionStatusForAudit } from '../lib/missionBillingAuditConfig';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import {
   computeCanonicalRevenueCost,
   getCanonicalDateRange,
@@ -27,6 +39,14 @@ const MissionReportPage: React.FC = () => {
   const [clientPriceTables, setClientPriceTables] = useState<any[]>([]);
   const [providerCostTables, setProviderCostTables] = useState<any[]>([]);
   const [clientsData, setClientsData] = useState<any[]>([]);
+  const [providersData, setProvidersData] = useState<any[]>([]);
+  const [billingAdjustmentsMap, setBillingAdjustmentsMap] = useState<Map<string, BillingAdjustmentRecord>>(new Map());
+  const [refDataReady, setRefDataReady] = useState(false);
+  const [auditByMission, setAuditByMission] = useState<Map<string, MissionBillingAuditResult>>(new Map());
+  const [auditBusy, setAuditBusy] = useState(false);
+  const realtimeDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const auditRunRef = React.useRef(0);
+  const [auditForModal, setAuditForModal] = useState<{ mission: Mission; audit: MissionBillingAuditResult } | null>(null);
 
   const [periodFilter, setPeriodFilter] = useState<'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM' | 'ALL'>('WEEK');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -60,13 +80,20 @@ const MissionReportPage: React.FC = () => {
 
   const fetchMissions = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
+    clearMissionBillingAuditCache();
+    setRefDataReady(false);
     try {
       let query = supabase.from('missions').select('*').order('created_at', { ascending: false });
 
       if (currentUser?.clientId) {
         const { data: clientData } = await supabase.from('clients').select('name').eq('id', currentUser.clientId).single();
         if (clientData) query = query.eq('client', clientData.name);
-        else { setAllMissions([]); setIsLoading(false); return; }
+        else { setAllMissions([]); setBillingAdjustmentsMap(new Map()); setRefDataReady(true); setIsLoading(false); return; }
+      }
+
+      if (periodFilter !== 'ALL' && !(periodFilter === 'CUSTOM' && (!customStartDate || !customEndDate))) {
+        const [start, end] = getCanonicalDateRange(periodFilter, customStartDate, customEndDate);
+        query = query.gte('start_time', start.toISOString()).lte('start_time', end.toISOString());
       }
 
       const fetchAllPages = async () => {
@@ -83,17 +110,23 @@ const MissionReportPage: React.FC = () => {
         return all;
       };
 
-      const [missionsData, clientsRes, providersRes, cptRes, pctRes, allClientsRes] = await Promise.all([
-        fetchAllPages(),
+      const missionsData = await fetchAllPages();
+      const missionIds = missionsData.map((m: any) => m.id).filter(Boolean);
+
+      const [clientsRes, providersRes, pricingTables, allClientsRes, allProvidersRes, billingAdjMap] = await Promise.all([
         supabase.from('clients').select('name, trading_name'),
         supabase.from('providers').select('name, trading_name'),
-        supabase.from('client_price_tables').select('*'),
-        supabase.from('provider_cost_tables').select('*'),
+        loadAllPricingTables(),
         supabase.from('clients').select('*'),
+        supabase.from('providers').select('*'),
+        fetchBillingAdjustmentsForMissionIds(supabase, missionIds),
       ]);
-      setClientPriceTables(cptRes.data || []);
-      setProviderCostTables(pctRes.data || []);
+      setClientPriceTables(pricingTables.client || []);
+      setProviderCostTables(pricingTables.provider || []);
       setClientsData(allClientsRes.data || []);
+      setProvidersData(allProvidersRes.data || []);
+      setBillingAdjustmentsMap(billingAdjMap);
+      setRefDataReady(true);
 
       if (missionsData) {
         const clientVehicleIds = [...new Set(missionsData.map((m: any) => m.client_vehicle).filter((id: any) => id))];
@@ -156,14 +189,24 @@ const MissionReportPage: React.FC = () => {
       }
     } catch (err: any) {
       showNotification('Erro', err.message || 'Falha ao carregar missões', 'error');
+      setRefDataReady(false);
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, showNotification]);
+  }, [currentUser, showNotification, periodFilter, customStartDate, customEndDate]);
 
   useEffect(() => {
     if (currentUser) fetchMissions();
   }, [currentUser, fetchMissions]);
+
+  useRealtimeRefresh(['missions', 'client_price_tables', 'provider_cost_tables', 'system_logs'], () => {
+    if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
+    realtimeDebounceRef.current = setTimeout(() => {
+      invalidatePricingTablesCache();
+      clearMissionBillingAuditCache();
+      if (currentUser) fetchMissions(true);
+    }, 1200);
+  });
 
   const filteredMissions = useMemo(() => {
     let filtered = allMissions;
@@ -233,6 +276,14 @@ const MissionReportPage: React.FC = () => {
     if (clientPriceTables.length === 0 && providerCostTables.length === 0) return new Map<string, { clientTable: string; providerTable: string }>();
     const map = new Map<string, { clientTable: string; providerTable: string }>();
     for (const m of filteredMissions) {
+      const adj = m.id ? billingAdjustmentsMap.get(m.id) : undefined;
+      if (adj?.clientTableName || adj?.providerTableName) {
+        map.set(m.id, {
+          clientTable: adj.clientTableName || '-',
+          providerTable: adj.providerTableName || '-',
+        });
+        continue;
+      }
       try {
         const mObj = { ...m, startKm: m.startKm || m.start_km, endKm: m.endKm || m.end_km, startTime: m.startTime || m.start_time, endTime: m.endTime || m.end_time };
         const clientMatch = clientsData.find((c: any) => c.name === (m as any).originalClientName || c.name === m.client);
@@ -243,7 +294,7 @@ const MissionReportPage: React.FC = () => {
       } catch { /* skip */ }
     }
     return map;
-  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData]);
+  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData, billingAdjustmentsMap]);
 
   const handleRecalcRow = async (missionId: string) => {
     setRecalcRowId(missionId);
@@ -265,6 +316,7 @@ const MissionReportPage: React.FC = () => {
         showNotification('Bloqueado', data.error || 'OS aprovada — desfaça a aprovação antes de recalcular.', 'error');
       } else if (data.success) {
         showNotification('Sucesso', `OS ${missionId} recalculada: Receita R$ ${(data.new.revenue || 0).toFixed(2)} | Custo R$ ${(data.new.cost || 0).toFixed(2)}`, 'success');
+        clearMissionBillingAuditCache(missionId);
         fetchMissions(true);
       } else {
         showNotification('Erro', data.error || 'Falha ao recalcular', 'error');
@@ -276,9 +328,105 @@ const MissionReportPage: React.FC = () => {
     }
   };
 
-  // CANÔNICO: cálculo único usado por todas as telas/worker.
-  // Para cada OS calcula receita base + pedágio + custo base + pedágio pago.
-  // Pula REFUSED. Usa valores salvos quando há, senão estima via tabela.
+  // Auditoria em background — só OS finalizadas (concluída / recusada / cancelada).
+  useEffect(() => {
+    if (!refDataReady || !canSeeFinancials || filteredMissions.length === 0) {
+      setAuditByMission(new Map());
+      setAuditBusy(false);
+      return;
+    }
+
+    const terminalMissions = filteredMissions.filter((m) => isTerminalMissionStatusForAudit(m.status));
+    if (terminalMissions.length === 0) {
+      setAuditByMission(new Map());
+      setAuditBusy(false);
+      return;
+    }
+
+    const runId = ++auditRunRef.current;
+    const signal = { cancelled: false };
+    setAuditBusy(true);
+    setAuditByMission(new Map());
+
+    auditMissionsBatchAsync(
+      terminalMissions,
+      clientPriceTables,
+      providerCostTables,
+      clientsData,
+      providersData,
+      billingAdjustmentsMap,
+      40,
+      signal,
+    )
+      .then((map) => {
+        if (auditRunRef.current !== runId) return;
+        setAuditByMission(map);
+        setAuditBusy(false);
+      })
+      .catch(() => {
+        if (auditRunRef.current !== runId) return;
+        setAuditBusy(false);
+      });
+
+    return () => {
+      signal.cancelled = true;
+    };
+  }, [
+    filteredMissions,
+    clientPriceTables,
+    providerCostTables,
+    clientsData,
+    providersData,
+    billingAdjustmentsMap,
+    refDataReady,
+    canSeeFinancials,
+  ]);
+
+  const openAuditModal = useCallback((mission: Mission) => {
+    clearMissionBillingAuditCache(mission.id);
+    const clientMatch = clientsData.find(
+      (c: any) => c.name === (mission as any).originalClientName || c.name === mission.client,
+    );
+    const mObj = {
+      ...mission,
+      startKm: mission.startKm ?? (mission as any).start_km,
+      endKm: mission.endKm ?? (mission as any).end_km,
+      startTime: mission.startTime ?? (mission as any).start_time,
+      endTime: mission.endTime ?? (mission as any).end_time,
+    };
+    const audit = computeMissionBillingAudit(
+      mObj,
+      clientPriceTables,
+      providerCostTables,
+      clientMatch,
+      providersData,
+      undefined,
+      mission.id ? billingAdjustmentsMap.get(mission.id) : undefined,
+    );
+    setAuditForModal({ mission, audit });
+  }, [clientPriceTables, providerCostTables, clientsData, providersData, billingAdjustmentsMap]);
+
+  const auditSummary = useMemo(() => {
+    let validado = 0, atencao = 0, erro = 0, pendente = 0, emViagem = 0;
+    for (const m of filteredMissions) {
+      if (!isTerminalMissionStatusForAudit(m.status)) {
+        emViagem++;
+        continue;
+      }
+      const a = auditByMission.get(m.id);
+      if (!a || a.skipped) {
+        if (a?.overallStatus === 'pendente') pendente++;
+        continue;
+      }
+      if (a.overallStatus === 'validado') validado++;
+      else if (a.overallStatus === 'atencao') atencao++;
+      else if (a.overallStatus === 'erro') erro++;
+      else if (a.overallStatus === 'em_viagem') emViagem++;
+      else pendente++;
+    }
+    return { validado, atencao, erro, pendente, emViagem };
+  }, [auditByMission, filteredMissions]);
+
   const canonicalByMission = useMemo(() => {
     const refs = { clientTables: clientPriceTables, providerTables: providerCostTables, clientsData };
     const now = new Date();
@@ -375,6 +523,7 @@ const MissionReportPage: React.FC = () => {
       const data = await resp.json();
       if (data.success) {
         showNotification('Recálculo Concluído', `${data.updated} OS corrigidas de ${data.total} analisadas. ${data.skipped} sem divergência.`, 'success');
+        clearMissionBillingAuditCache();
         fetchMissions(true);
       } else {
         showNotification('Erro', data.error || 'Falha no recálculo', 'error');
@@ -404,6 +553,24 @@ const MissionReportPage: React.FC = () => {
             <FileBarChart size={22} className="text-red-600" />
             <h1 className="text-lg font-black text-gray-900 uppercase tracking-tight">Relatório de OS</h1>
             <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded">{filteredMissions.length} missões</span>
+            {canSeeFinancials && (
+              <div className="flex items-center gap-1.5 text-[10px] font-black">
+                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded">🟢 {auditSummary.validado}</span>
+                <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded">🟡 {auditSummary.atencao}</span>
+                <span className="bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded">🔴 {auditSummary.erro}</span>
+                {auditSummary.pendente > 0 && (
+                  <span className="bg-gray-100 text-gray-600 border border-gray-200 px-2 py-0.5 rounded">⚪ {auditSummary.pendente}</span>
+                )}
+                {auditSummary.emViagem > 0 && (
+                  <span className="bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 rounded">🛣️ {auditSummary.emViagem}</span>
+                )}
+                {auditBusy && (
+                  <span className="text-gray-400 font-bold px-1 flex items-center gap-1">
+                    <Loader2 size={10} className="animate-spin" /> auditoria…
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -415,7 +582,7 @@ const MissionReportPage: React.FC = () => {
             </button>
             <button
               data-testid="btn-refresh-report"
-              onClick={() => fetchMissions(true)}
+              onClick={() => { invalidatePricingTablesCache(); clearMissionBillingAuditCache(); fetchMissions(true); }}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-bold border border-gray-200 transition-colors"
             >
               <RefreshCw size={13} /> Atualizar
@@ -622,6 +789,9 @@ const MissionReportPage: React.FC = () => {
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">% LUCRO</th>
                     </>
                   )}
+                  {canSeeFinancials && (
+                    <th className="px-3 py-2.5 text-center font-black border-r border-gray-700">STATUS AUDITORIA</th>
+                  )}
                   <th className="px-3 py-2.5 text-center font-black">FATURAMENTO</th>
                 </tr>
               </thead>
@@ -751,6 +921,77 @@ const MissionReportPage: React.FC = () => {
                           })()}
                         </>
                       )}
+                      {canSeeFinancials && (() => {
+                        if (!refDataReady || auditBusy) {
+                          return (
+                            <td className="px-3 py-2 border-r border-gray-100 text-center text-[10px] text-gray-300" title={auditBusy ? 'Calculando auditoria…' : undefined}>…</td>
+                          );
+                        }
+                        // Blindagem: status operacional prevalece sobre cache antigo da auditoria.
+                        if (!isTerminalMissionStatusForAudit(m.status)) {
+                          return (
+                            <td className="px-3 py-2 border-r border-gray-100 text-center">
+                              <span
+                                className="inline-flex flex-col items-center gap-0.5 px-2 py-1 rounded text-[10px] font-black bg-sky-50 text-sky-800 border border-sky-200"
+                                title={`OS em andamento (${m.status}) — auditoria após conclusão, recusa ou cancelamento`}
+                                data-testid={`btn-audit-${m.id}`}
+                              >
+                                <span>🛣️</span>
+                                <span>EM VIAGEM</span>
+                              </span>
+                            </td>
+                          );
+                        }
+                        const audit = auditByMission.get(m.id);
+                        if (!audit) {
+                          return (
+                            <td className="px-3 py-2 border-r border-gray-100 text-center text-[10px] text-gray-400">—</td>
+                          );
+                        }
+                        if (audit.overallStatus === 'em_viagem') {
+                          return (
+                            <td className="px-3 py-2 border-r border-gray-100 text-center">
+                              <span
+                                className="inline-flex flex-col items-center gap-0.5 px-2 py-1 rounded text-[10px] font-black bg-sky-50 text-sky-800 border border-sky-200"
+                                title={audit.skipReason || 'OS em andamento'}
+                                data-testid={`btn-audit-${m.id}`}
+                              >
+                                <span>{audit.overallIcon}</span>
+                                <span>{audit.overallLabel}</span>
+                              </span>
+                            </td>
+                          );
+                        }
+                        if (audit.skipped) {
+                          return (
+                            <td className="px-3 py-2 border-r border-gray-100 text-center text-[10px] text-gray-400">—</td>
+                          );
+                        }
+                        const bg =
+                          audit.overallStatus === 'validado'
+                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
+                            : audit.overallStatus === 'atencao'
+                              ? 'bg-amber-50 hover:bg-amber-100 text-amber-800'
+                              : 'bg-red-50 hover:bg-red-100 text-red-800';
+                        return (
+                          <td className="px-3 py-2 border-r border-gray-100 text-center">
+                            <button
+                              type="button"
+                              data-testid={`btn-audit-${m.id}`}
+                              onClick={() => openAuditModal(m)}
+                              className={`inline-flex flex-col items-center gap-0.5 px-2 py-1 rounded text-[10px] font-black transition-colors ${bg}`}
+                              title={
+                                audit.overallStatus === 'validado'
+                                  ? 'Faturamento validado'
+                                  : `Cliente Δ ${audit.client.diferenca.toFixed(2)} | Fornecedor Δ ${audit.provider.diferenca.toFixed(2)}`
+                              }
+                            >
+                              <span>{audit.overallIcon}</span>
+                              <span>{audit.overallLabel}</span>
+                            </button>
+                          </td>
+                        );
+                      })()}
                       <td className="px-3 py-2 text-center">
                         <div className="flex items-center gap-1 justify-center">
                         <button
@@ -795,6 +1036,9 @@ const MissionReportPage: React.FC = () => {
                     <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totals.rev > 0 ? (totals.profit >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>
                       {totals.rev > 0 ? `${((totals.profit / totals.rev) * 100).toFixed(1)}%` : '-'}
                     </td>
+                    <td className="px-3 py-2.5 text-center border-r border-gray-600 text-[10px]">
+                      🟢{auditSummary.validado} 🟡{auditSummary.atencao} 🔴{auditSummary.erro}
+                    </td>
                     <td className="px-3 py-2.5"></td>
                   </tr>
                 </tfoot>
@@ -809,7 +1053,19 @@ const MissionReportPage: React.FC = () => {
           isOpen={isFinancialModalOpen}
           onClose={() => setIsFinancialModalOpen(false)}
           mission={missionForFinancials}
-          onUpdate={() => fetchMissions(true)}
+          onUpdate={() => {
+            invalidatePricingTablesCache();
+            clearMissionBillingAuditCache();
+            fetchMissions(true);
+          }}
+        />
+      )}
+
+      {auditForModal && (
+        <MissionAuditModal
+          mission={auditForModal.mission}
+          audit={auditForModal.audit}
+          onClose={() => setAuditForModal(null)}
         />
       )}
     </div>

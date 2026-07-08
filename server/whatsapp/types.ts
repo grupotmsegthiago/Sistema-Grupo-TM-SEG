@@ -109,6 +109,7 @@ export interface WhatsappProvider {
   bootstrapConnection(force?: boolean): Promise<BootstrapResult>;
   getQrCode?(): Promise<{ qrBase64: string | null; error?: string }>;
   getPhoneLinkCode?(): Promise<{ code: string | null; error?: string }>;
+  getExtensionToken?(): Promise<{ token: string | null; expiresAt: number | null; error?: string }>;
   mobileRequestCode?(method: "sms" | "voice" | "wa_old"): Promise<{ ok: boolean; data?: unknown; error?: string }>;
   mobileConfirmCode?(code: string): Promise<{ ok: boolean; data?: unknown; error?: string }>;
   mobileConfirmSecurityCode?(pin: string): Promise<{ ok: boolean; data?: unknown; error?: string }>;

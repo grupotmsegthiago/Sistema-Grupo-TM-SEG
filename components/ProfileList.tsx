@@ -165,7 +165,8 @@ const ProfileList: React.FC<Props> = ({ onAdd, onEdit }) => {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left border-collapse">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="pl-10 px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Nome do Perfil</th>
@@ -214,6 +215,7 @@ const ProfileList: React.FC<Props> = ({ onAdd, onEdit }) => {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

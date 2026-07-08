@@ -17,6 +17,7 @@ import {
   selectChartSnapshots,
   type GoalUpdateSnapshot,
 } from '../lib/goalUpdateHistory';
+import { canViewGoalMonetaryData } from '../lib/goalPermissions';
 
 const DEFAULT_DAILY_GOAL = 35000.00;
 const DEFAULT_MONTHLY_GOAL = 700000.00;
@@ -66,6 +67,7 @@ interface Props {
     titleSuffix?: string; // ex.: "DHL" → "Meta Agendada DHL (Hoje)"
     accentClass?: string; // ex.: "from-yellow-400 to-red-600" para o ícone DHL
     historyKey?: string; // chave única para histórico de atualizações (diretoria)
+    canSeeMonetary?: boolean; // permissão financeira resolvida pelo componente pai
 }
 
 const formatCurrency = (val: number) => {
@@ -147,7 +149,7 @@ const GoalUpdateAreaChart: React.FC<{
     return (
         <div className="relative w-full select-none overflow-visible" data-testid="goal-update-sparkline">
             <div className="flex items-center justify-between gap-2 mb-1">
-                <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Amostras a cada 30 min · {periodLabel}</span>
+                <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Últimas 5 atualizações · {periodLabel}</span>
                 <button
                     type="button"
                     onClick={onRefresh}
@@ -169,7 +171,7 @@ const GoalUpdateAreaChart: React.FC<{
             >
                 {points.length === 0 ? (
                     <div className="flex items-center justify-center h-[88px] rounded-lg border border-dashed border-slate-200/80 bg-gradient-to-b from-slate-50/50 to-white text-[9px] font-semibold text-slate-400 uppercase">
-                        Sem histórico — aguardando amostra de 30 min
+                        Sem histórico — aguardando atualização
                     </div>
                 ) : (
                     <svg
@@ -275,7 +277,7 @@ function getDateRange(viewPeriod: string, customStartDate?: string, customEndDat
     return getCanonicalDateRange(period, customStartDate, customEndDate);
 }
 
-const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customStartDate, customEndDate, missions: parentMissions, clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData, lastDataUpdatedAt, onRefreshMissions, clientFilter, dailyGoalOverride, monthlyGoalOverride, titleSuffix, accentClass, historyKey: historyKeyProp }) => {
+const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customStartDate, customEndDate, missions: parentMissions, clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData, lastDataUpdatedAt, onRefreshMissions, clientFilter, dailyGoalOverride, monthlyGoalOverride, titleSuffix, accentClass, historyKey: historyKeyProp, canSeeMonetary: canSeeMonetaryProp }) => {
     const { showNotification } = useNotification();
     const dailyGoal = typeof dailyGoalOverride === 'number' ? dailyGoalOverride : DEFAULT_DAILY_GOAL;
     const monthlyGoal = typeof monthlyGoalOverride === 'number' ? monthlyGoalOverride : DEFAULT_MONTHLY_GOAL;
@@ -393,7 +395,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         return [];
     }, []);
 
-    const canSeeMonetary = userRole === 'diretoria';
+    const canSeeMonetary = canViewGoalMonetaryData(canSeeMonetaryProp, userRole);
 
     const recordSnapshot = useCallback((source: 'manual' | 'sync') => {
         const next = pushGoalUpdateHistory(resolvedHistoryKey, {
@@ -409,15 +411,15 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
     }, [resolvedHistoryKey, currentRevenue, currentCost, stats.profit, stats.percentage, filteredMissions.length]);
 
     useEffect(() => {
-        if (userRole === 'diretoria') {
+        if (canSeeMonetary) {
             setUpdateHistory(loadGoalUpdateHistory(resolvedHistoryKey));
         }
-    }, [resolvedHistoryKey, userRole]);
+    }, [resolvedHistoryKey, canSeeMonetary]);
 
     // Registra após cada sincronização (manual ou automática) quando os dados do pai mudam.
     // A chave inclui o filtro (ex.: MONTH-2026-03) — trocar filtro ou virar o dia grava no bucket correto.
     useEffect(() => {
-        if (userRole !== 'diretoria' || !lastDataUpdatedAt) return;
+        if (!canSeeMonetary || !lastDataUpdatedAt) return;
         const ts = lastDataUpdatedAt.getTime();
         const prev = lastRecordedFetchAt.current;
         if (prev && prev.key === resolvedHistoryKey && prev.ts === ts) return;
@@ -426,15 +428,15 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         const source = pendingManualRecord.current ? 'manual' : 'sync';
         pendingManualRecord.current = false;
         recordSnapshot(source);
-    }, [lastDataUpdatedAt, userRole, recordSnapshot, resolvedHistoryKey, parentClientTables?.length, currentRevenue, currentCost, stats.profit, stats.percentage, filteredMissions.length]);
+    }, [lastDataUpdatedAt, canSeeMonetary, recordSnapshot, resolvedHistoryKey, parentClientTables?.length, currentRevenue, currentCost, stats.profit, stats.percentage, filteredMissions.length]);
 
     // Amostra automática a cada 30 min (atualiza o bucket corrente ou abre um novo).
     useEffect(() => {
-        if (userRole !== 'diretoria' || !parentClientTables?.length) return;
+        if (!canSeeMonetary || !parentClientTables?.length) return;
         recordSnapshot('sync');
         const id = setInterval(() => recordSnapshot('sync'), GOAL_SAMPLE_INTERVAL_MS);
         return () => clearInterval(id);
-    }, [userRole, parentClientTables?.length, recordSnapshot, resolvedHistoryKey]);
+    }, [canSeeMonetary, parentClientTables?.length, recordSnapshot, resolvedHistoryKey]);
 
     const handleManualRefresh = useCallback(async () => {
         if (isRefreshing || isLoading) return;

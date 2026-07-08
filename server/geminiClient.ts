@@ -5,6 +5,7 @@ import {
   isRetriableGeminiModelError,
   resolveGeminiModel,
 } from '../lib/geminiModels';
+import { classifyGeminiError } from '../lib/geminiUnavailable';
 
 export function getGeminiApiKey(): string | undefined {
   const key = (

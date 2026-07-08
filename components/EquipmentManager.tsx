@@ -1,25 +1,13 @@
-import { formatDateTimeBR } from '../lib/dateUtils';
+import { formatDateTimeBR, formatDateBR } from '../lib/dateUtils';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Monitor, Plus, Search, Trash2, Save, Loader2, Camera, X, ArrowLeft, Edit3, User, Package, ChevronDown, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Monitor, Plus, Search, Trash2, Save, Loader2, Camera, X, ArrowLeft, Edit3, User, Package, ChevronDown, Image as ImageIcon, FileText, RefreshCw, Eye, Upload, Database, ChevronRight, ExternalLink } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { authFetch } from '../lib/authFetch';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
-
-interface EquipmentRecord {
-  id: string;
-  type: string;
-  brand: string;
-  model: string;
-  serial_number: string;
-  patrimony_id: string;
-  photo_urls: string[];
-  notes: string;
-  assigned_to: string;
-  assigned_to_name: string;
-  created_at: string;
-  history: { user_id: string; user_name: string; date: string; action: string }[];
-}
+import { type EquipmentRecord, type EquipmentResponsibilityTerm } from '../lib/equipmentRecovery';
+import EquipmentResponsibilityTermModal from './EquipmentResponsibilityTermModal';
 
 const DEFAULT_TYPES = [
   { value: 'notebook', label: 'Notebook' },
@@ -48,7 +36,11 @@ const EquipmentManager: React.FC = () => {
   const [customTypes, setCustomTypes] = useState<{ value: string; label: string }[]>([]);
   const [showAddType, setShowAddType] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
-  const masterRowIdRef = useRef<number | null>(null);
+  const [recoveryInfo, setRecoveryInfo] = useState<string | null>(null);
+  const [recoveryHints, setRecoveryHints] = useState<string[]>([]);
+  const [showSupabaseGuide, setShowSupabaseGuide] = useState(false);
+  const [termEquipment, setTermEquipment] = useState<EquipmentRecord | null>(null);
+  const [viewTerm, setViewTerm] = useState<EquipmentResponsibilityTerm | null>(null);
 
   const allTypes = [...DEFAULT_TYPES, ...customTypes];
 
@@ -57,29 +49,21 @@ const EquipmentManager: React.FC = () => {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [eqRes, usersRes] = await Promise.all([
-        supabase.from('system_logs').select('id, details').eq('entity', 'EquipmentRegistry').eq('entity_id', 'master').order('created_at', { ascending: false }).limit(1).maybeSingle(),
-        supabase.from('system_users').select('id, name').eq('user_type', 'internal').eq('status', 'Ativo').order('name')
+      const [patRes, usersRes] = await Promise.all([
+        authFetch('/api/patrimonio/equipments'),
+        supabase.from('system_users').select('id, name').eq('user_type', 'internal').eq('status', 'Ativo').order('name'),
       ]);
-
-      if (eqRes.data?.details) {
-        try {
-          const parsed = JSON.parse(eqRes.data.details);
-          if (parsed && Array.isArray(parsed.equipments)) {
-            setEquipments(parsed.equipments);
-            masterRowIdRef.current = eqRes.data.id;
-          }
-          if (parsed && Array.isArray(parsed.customTypes)) {
-            setCustomTypes(parsed.customTypes);
-          }
-        } catch (parseErr) {
-          console.error('Erro ao interpretar dados de equipamentos:', parseErr);
-          setEquipments([]);
+      const patJson = await patRes.json();
+      if (patRes.ok && patJson.equipments) {
+        setEquipments(patJson.equipments);
+        setCustomTypes(patJson.customTypes || []);
+        if (patJson.source === 'legacy_migrated') {
+          setRecoveryInfo(`Migração automática: ${patJson.equipments.length} item(ns) movidos para tabela dedicada patrimonio_equipments.`);
         }
       }
 
       if (usersRes.data) {
-        setInternalUsers(usersRes.data.map((u: any) => ({ id: String(u.id), name: u.name })));
+        setInternalUsers(usersRes.data.map((u: { id: string; name: string }) => ({ id: String(u.id), name: u.name })));
       }
     } catch (e) {
       console.error('Erro ao carregar equipamentos:', e);
@@ -88,38 +72,128 @@ const EquipmentManager: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+    (async () => {
+      try {
+        const patRes = await authFetch('/api/patrimonio/equipments');
+        const patJson = await patRes.json();
+        if (patJson.equipments?.length > 0) return;
+        const resp = await authFetch('/api/equipment/recovery/full-scan');
+        if (!resp.ok) return;
+        const scan = await resp.json();
+        if (scan?.hints?.length) setRecoveryHints(scan.hints);
+      } catch {
+        /* diagnóstico opcional */
+      }
+    })();
+  }, [loadData]);
 
-  useRealtimeRefresh('system_logs', () => loadData());
+  useRealtimeRefresh('patrimonio_equipments', () => loadData());
 
   const saveAll = async (updatedList: EquipmentRecord[], typesOverride?: { value: string; label: string }[]) => {
     setIsSaving(true);
     try {
-      const payload = JSON.stringify({ equipments: updatedList, customTypes: typesOverride || customTypes });
-
-      if (masterRowIdRef.current) {
-        const { error } = await supabase.from('system_logs')
-          .update({ details: payload })
-          .eq('id', masterRowIdRef.current);
-        if (error) throw error;
-      } else {
-        const { data: inserted, error } = await supabase.from('system_logs').insert([{
-          user_name: 'Sistema',
-          action_type: 'CREATE',
-          entity: 'EquipmentRegistry',
-          entity_id: 'master',
-          details: payload
-        }]).select('id').maybeSingle();
-        if (error) throw error;
-        if (inserted) masterRowIdRef.current = inserted.id;
-      }
+      const resp = await authFetch('/api/patrimonio/equipments', {
+        method: 'PUT',
+        body: JSON.stringify({ equipments: updatedList, customTypes: typesOverride || customTypes }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Falha ao salvar');
       setEquipments(updatedList);
-      showNotification('Sucesso', 'Equipamentos salvos com sucesso!', 'success');
-    } catch (e: any) {
-      showNotification('Erro', 'Falha ao salvar: ' + e.message, 'error');
+      if (typesOverride) setCustomTypes(typesOverride);
+      showNotification('Sucesso', 'Patrimônio salvo na tabela dedicada.', 'success');
+    } catch (e: unknown) {
+      showNotification('Erro', e instanceof Error ? e.message : 'Falha ao salvar', 'error');
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleRecoverAndSave = async () => {
+    setIsSaving(true);
+    setRecoveryHints([]);
+    try {
+      const resp = await authFetch('/api/patrimonio/migrate-legacy', { method: 'POST', body: '{}' });
+      const migrated = await resp.json();
+      if (!resp.ok) throw new Error(migrated.error || 'Falha na migração');
+
+      const merged = (migrated.equipments || []) as EquipmentRecord[];
+      const types = migrated.customTypes || [];
+
+      if (merged.length === 0) {
+        const scanResp = await authFetch('/api/equipment/recovery/full-scan');
+        const scan = await scanResp.json();
+        if (scan?.hints?.length) setRecoveryHints(scan.hints);
+        showNotification('Varredura completa', 'Nada para migrar. Veja dicas abaixo ou backup Supabase.', 'info');
+        return;
+      }
+
+      setEquipments(merged);
+      setCustomTypes(types);
+      setRecoveryInfo(`Migrado para patrimonio_equipments: ${merged.length} item(ns) (fonte: ${migrated.source}).`);
+      showNotification('Migrado', `${merged.length} equipamento(s) na tabela dedicada.`, 'success');
+    } catch (e: unknown) {
+      showNotification('Erro', e instanceof Error ? e.message : 'Falha na recuperação', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleRestoreAutoBackup = async () => {
+    setIsSaving(true);
+    try {
+      const resp = await authFetch('/api/equipment/backups/restore-auto', { method: 'POST', body: '{}' });
+      const data = await resp.json();
+      if (!resp.ok || !data.equipments?.length) {
+        showNotification('Sem backup', data.error || 'Nenhum registro em patrimonio_backups ainda (cron 6h).', 'info');
+        return;
+      }
+      setEquipments(data.equipments);
+      if (data.customTypes?.length) setCustomTypes(data.customTypes);
+      showNotification('Restaurado', `${data.equipments.length} item(ns) do backup de ${formatDateTimeBR(data.snapshot_at)}.`, 'success');
+    } catch (e: unknown) {
+      showNotification('Erro', e instanceof Error ? e.message : 'Falha ao restaurar', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setIsSaving(true);
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const resp = await authFetch('/api/equipment/recovery/import-backup', {
+        method: 'POST',
+        body: JSON.stringify({ backup: json }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.equipments?.length) {
+        showNotification('Backup sem patrimônio', data.error || 'O arquivo não contém equipment_registry.', 'info');
+        return;
+      }
+      await saveAll(data.equipments, data.customTypes || customTypes);
+      setEquipments(data.equipments);
+      if (data.customTypes?.length) setCustomTypes(data.customTypes);
+      showNotification('Importado', `${data.equipments.length} equipamento(s) do backup.`, 'success');
+    } catch (e: unknown) {
+      showNotification('Erro', e instanceof Error ? e.message : 'Falha ao importar backup', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleTermSigned = async (term: EquipmentResponsibilityTerm) => {
+    if (!termEquipment) return;
+    const updatedList = equipments.map((eq) =>
+      eq.id === termEquipment.id ? { ...eq, responsibility_term: term } : eq,
+    );
+    await saveAll(updatedList);
+    setTermEquipment(null);
   };
 
   const generatePatrimonyId = () => {
@@ -395,9 +469,67 @@ const EquipmentManager: React.FC = () => {
             <p className="text-[10px] text-slate-500 font-bold mt-0.5">{equipments.length} equipamento{equipments.length !== 1 ? 's' : ''} cadastrado{equipments.length !== 1 ? 's' : ''}</p>
           </div>
         </div>
-        <button onClick={handleAddNew} className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 text-white rounded-xl text-xs font-black uppercase hover:bg-slate-900 transition-colors shadow-lg" data-testid="button-new-equipment">
-          <Plus size={14} /> Novo Equipamento
+        <div className="flex flex-wrap gap-2">
+          <button onClick={handleRecoverAndSave} disabled={isSaving} className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-600 text-white rounded-xl text-xs font-black uppercase hover:bg-amber-700 transition-colors disabled:opacity-50" data-testid="button-recover-equipment" title="Varredura: system_logs + system_settings (Replit) + storage">
+            <RefreshCw size={14} className={isSaving ? 'animate-spin' : ''} /> Varredura completa
+          </button>
+          <button onClick={handleRestoreAutoBackup} disabled={isSaving} className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-700 text-white rounded-xl text-xs font-black uppercase hover:bg-emerald-800 transition-colors disabled:opacity-50" data-testid="button-restore-auto-backup" title="Backup automático a cada 6 horas">
+            <Database size={14} /> Backup 6h
+          </button>
+          <label className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-600 text-white rounded-xl text-xs font-black uppercase hover:bg-slate-700 transition-colors cursor-pointer" data-testid="button-import-backup-equipment">
+            <Upload size={14} /> Importar backup
+            <input type="file" accept=".json,application/json" className="hidden" onChange={handleImportBackup} />
+          </label>
+          <button onClick={handleAddNew} className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 text-white rounded-xl text-xs font-black uppercase hover:bg-slate-900 transition-colors shadow-lg" data-testid="button-new-equipment">
+            <Plus size={14} /> Novo Equipamento
+          </button>
+        </div>
+      </div>
+
+      {recoveryInfo && (
+        <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] font-bold text-amber-800">
+          {recoveryInfo}
+        </div>
+      )}
+
+      {recoveryHints.length > 0 && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-[11px] text-red-800 space-y-1">
+          {recoveryHints.map((h, i) => (
+            <p key={i}>• {h}</p>
+          ))}
+        </div>
+      )}
+
+      <div className="mb-4 border border-blue-200 rounded-xl overflow-hidden bg-blue-50/50">
+        <button
+          type="button"
+          onClick={() => setShowSupabaseGuide((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-blue-50 transition-colors"
+          data-testid="button-supabase-guide"
+        >
+          <span className="flex items-center gap-2 text-xs font-black uppercase text-blue-900">
+            <Database size={14} /> Recuperar do backup do Supabase
+          </span>
+          <ChevronRight size={14} className={`text-blue-600 transition-transform ${showSupabaseGuide ? 'rotate-90' : ''}`} />
         </button>
+        {showSupabaseGuide && (
+          <div className="px-4 pb-4 text-[11px] text-blue-950 space-y-2 leading-relaxed border-t border-blue-100 pt-3">
+            <p className="font-bold">Patrimônio em tabelas dedicadas: patrimonio_equipments + patrimonio_backups (não usa system_logs).</p>
+            <ol className="list-decimal pl-4 space-y-1.5">
+              <li>
+                Abra{' '}
+                <a href="https://supabase.com/dashboard/project/ajhmmjuewdsukecaimik/database/backups" target="_blank" rel="noopener noreferrer" className="underline font-bold inline-flex items-center gap-0.5">
+                  Supabase → Database → Backups <ExternalLink size={10} />
+                </a>
+              </li>
+              <li>Clique em <strong>Varredura completa</strong> — busca também <code className="bg-white px-1 rounded">system_settings</code> (legado Replit)</li>
+              <li>Rode no SQL Editor: <code className="bg-white px-1 rounded text-[10px]">SELECT key FROM system_settings WHERE value::text ILIKE '%patrimony%';</code></li>
+            </ol>
+            <p className="text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 font-bold">
+              Evite &quot;Restore&quot; completo na produção — isso reverte missões, RH e financeiro para a data do backup. Use só se aceitar perder tudo feito depois.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="mb-4">
@@ -422,7 +554,12 @@ const EquipmentManager: React.FC = () => {
         <div className="text-center py-16">
           <Monitor size={40} className="mx-auto text-slate-300 mb-3" />
           <p className="text-sm font-bold text-slate-400">{searchTerm ? 'Nenhum equipamento encontrado' : 'Nenhum equipamento cadastrado'}</p>
-          {!searchTerm && <p className="text-xs text-slate-400 mt-1">Clique em "Novo Equipamento" para começar</p>}
+          {!searchTerm && (
+            <>
+              <p className="text-xs text-slate-400 mt-1">Use <strong>Recuperar dados</strong> (busca forense) ou <strong>Importar backup</strong> se você baixou o JSON em Manutenção.</p>
+              <p className="text-[10px] text-amber-600 mt-2 max-w-lg mx-auto">Se nada voltar, os registros foram apagados da rotação de logs (já corrigida). Restaure via Supabase → Database → Backups (PITR) ou recadastre.</p>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -476,6 +613,28 @@ const EquipmentManager: React.FC = () => {
                 <User size={10} />
                 {eq.assigned_to ? eq.assigned_to_name : 'Sem atribuição'}
               </div>
+
+              <div className="flex gap-1.5 mt-2">
+                {eq.responsibility_term ? (
+                  <button
+                    type="button"
+                    onClick={() => setViewTerm(eq.responsibility_term!)}
+                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[9px] font-black uppercase hover:bg-emerald-100"
+                    data-testid={`button-view-term-${eq.patrimony_id}`}
+                  >
+                    <Eye size={10} /> Termo assinado
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setTermEquipment(eq)}
+                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-[9px] font-black uppercase hover:bg-slate-200"
+                    data-testid={`button-sign-term-${eq.patrimony_id}`}
+                  >
+                    <FileText size={10} /> Gerar termo
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -484,6 +643,35 @@ const EquipmentManager: React.FC = () => {
       {photoPreview && (
         <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4" onClick={() => setPhotoPreview(null)}>
           <img src={photoPreview} alt="Preview" className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl" />
+        </div>
+      )}
+
+      {termEquipment && (
+        <EquipmentResponsibilityTermModal
+          equipment={termEquipment}
+          getTypeLabel={getTypeLabel}
+          onClose={() => setTermEquipment(null)}
+          onSigned={handleTermSigned}
+        />
+      )}
+
+      {viewTerm && (
+        <div className="fixed inset-0 z-[250] bg-black/60 flex items-center justify-center p-4" onClick={() => setViewTerm(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-sm font-black uppercase text-slate-800">Termo de Responsabilidade</h3>
+              <button type="button" onClick={() => setViewTerm(null)} className="p-2 rounded-lg hover:bg-gray-100"><X size={16} /></button>
+            </div>
+            <div className="text-sm text-slate-700 space-y-2 leading-relaxed">
+              <p><strong>Colaborador:</strong> {viewTerm.collaborator_name}<br /><strong>Função:</strong> {viewTerm.role}<br /><strong>Empresa:</strong> {viewTerm.company}</p>
+              <p className="text-xs bg-slate-50 border rounded-lg p-3">{viewTerm.material_description}</p>
+              <p className="text-[10px] text-slate-500">Assinado em {formatDateTimeBR(viewTerm.signed_at)} · Recebimento {formatDateBR(viewTerm.receipt_date)}</p>
+              <div className="grid grid-cols-2 gap-3">
+                {viewTerm.face_photo_url && <img src={viewTerm.face_photo_url} alt="Reconhecimento facial" className="rounded-lg border w-full aspect-square object-cover" />}
+                {viewTerm.signature_url && <img src={viewTerm.signature_url} alt="Assinatura" className="rounded-lg border w-full bg-white object-contain" />}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

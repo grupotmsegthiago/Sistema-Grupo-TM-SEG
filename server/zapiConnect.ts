@@ -8,9 +8,8 @@ export type ZapiStatus = ConnectionStatus;
 
 /** @deprecated Use provider.bootstrapConnection() — mantido para compatibilidade. */
 export async function bootstrapZapiConnection(force = false): Promise<BootstrapResult> {
-  const autoConnect = (process.env.ZAPI_AUTO_CONNECT || "").trim().toLowerCase() === "true";
-  if (!force && !autoConnect) {
-    return { phase: "skipped", message: "ZAPI_AUTO_CONNECT não está ativo." };
+  if (!force) {
+    return { phase: "skipped", message: "Reconexão automática Z-API desativada por segurança anti-ban. Use ação manual no painel." };
   }
   const provider = await getDefaultWhatsappProvider(true);
   if (!provider) {

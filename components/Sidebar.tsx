@@ -200,6 +200,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         if (!isAuthorized) return false;
     }
 
+    // RH — somente Diretoria e perfil RH
+    if (itemId === 'rh-group' || itemId.startsWith('rh-')) {
+      return role === 'diretoria' || role === 'rh';
+    }
+
     // REGRAS DO PERFIL AVANÇADO
     const isAvancado = role === 'avançado' || role === 'avancado';
     if (isAvancado) {

@@ -7,7 +7,6 @@ import { startFinancialReportWorker } from "./financialReportWorker";
 import { startDhlIntakeExpiryWorker } from "./dhlSupplierIntake";
 import { startClientEmailQueueWorker } from "./clientEmailQueueWorker";
 import { startZapiWatchdog } from "./zapiWatchdog";
-import { bootstrapZapiConnection } from "./zapiConnect";
 import { isLongRunningHost } from "./runtime";
 
 (async () => {
@@ -38,11 +37,6 @@ import { isLongRunningHost } from "./runtime";
     try { startDhlIntakeExpiryWorker(); } catch (e: any) { log(`DHL intake expiry worker falhou ao iniciar: ${e.message}`); }
     try { startClientEmailQueueWorker(); } catch (e: any) { log(`Client email queue worker falhou ao iniciar: ${e.message}`); }
     try { startZapiWatchdog(); } catch (e: any) { log(`Z-API vigia falhou ao iniciar: ${e.message}`); }
-    void bootstrapZapiConnection().then(r => {
-      if (r.phase !== 'skipped' && r.phase !== 'connected') {
-        log(`[Z-API Conexão] ${r.phase}: ${r.message}`);
-      }
-    }).catch(e => log(`[Z-API Conexão] bootstrap falhou: ${e?.message || e}`));
   };
 
   if (process.platform === "win32") {

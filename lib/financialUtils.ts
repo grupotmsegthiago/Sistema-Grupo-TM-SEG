@@ -65,6 +65,86 @@ export function isSameClientName(a: string, b: string): boolean {
     return true;
 }
 
+/** KM excedente padrão DHL por UF de origem (espelha planilha de medição — coluna AA). */
+export function dhlDefaultUnitKmExcess(originUF: string): number {
+    const uf = String(originUF || '').toUpperCase().trim();
+    return (uf === 'SC' || uf === 'RS') ? 7.35 : 6.90;
+}
+
+/** Decide se uma linha de client_price_tables pertence ao cliente da OS. */
+export function clientTableMatchesMission(tableClient: string, missionClientName: string): boolean {
+    const mission = String(missionClientName || '').trim();
+    const tc = String(tableClient || '').trim();
+    if (!mission || !tc) return false;
+    if (normalize(tc) === normalize(mission)) return true;
+    if (isSameClientName(tc, mission)) return true;
+    const missionDhl = findDhlAutoClient(mission);
+    const tableDhl = findDhlAutoClient(tc);
+    return !!(missionDhl && tableDhl && missionDhl === tableDhl);
+}
+
+/**
+ * Indica se o motivo gravado na OS representa divergência INTENCIONAL do operador
+ * (desconto, ajuste manual, valor zero confirmado, etc.). Nesses casos o sistema
+ * NÃO re-sincroniza automaticamente ao reabrir a auditoria.
+ * Retorna false para "Salvamento manual confirmado" e motivos vazios — permite
+ * alinhar ao motor quando a regra de cálculo evoluiu desde o último save.
+ */
+export function isIntentionalBillingOverride(editReason: string | null | undefined): boolean {
+    const raw = String(editReason || '').trim();
+    if (!raw) return false;
+    const r = raw.toLowerCase();
+    const allowAutoResync = [
+        'salvamento manual confirmado',
+        'recalculado pelo sistema',
+        'tabela oficial aplicada',
+    ];
+    if (allowAutoResync.some((p) => r.includes(p))) return false;
+    const blockAutoResync = [
+        'edição manual',
+        'edicao manual',
+        'ajuste manual',
+        'divergente',
+        'sugeria:',
+        'sistema sugeria:',
+        'motor auto sugeria',
+        'valor zero confirmado',
+    ];
+    if (blockAutoResync.some((p) => r.includes(p))) return true;
+    // Texto livre digitado pelo usuário (qualquer outro motivo não vazio)
+    return true;
+}
+
+/** Busca todas as tabelas de preço do cliente (paginado — evita corte em 1000 linhas). */
+export async function fetchClientPriceTables(
+    supabase: { from: (table: string) => { select: (cols: string) => any } },
+    clientName: string,
+): Promise<ClientPriceTable[]> {
+    const trimmed = String(clientName || '').trim();
+    if (!trimmed) return [];
+    const pageSize = 1000;
+    const byId = new Map<string, ClientPriceTable>();
+
+    const ingest = async (builder: any) => {
+        let offset = 0;
+        for (;;) {
+            const { data, error } = await builder.range(offset, offset + pageSize - 1);
+            if (error) throw error;
+            const rows = (data || []) as ClientPriceTable[];
+            for (const row of rows) byId.set(String(row.id), row);
+            if (rows.length < pageSize) break;
+            offset += pageSize;
+        }
+    };
+
+    const dhlCanonical = findDhlAutoClient(trimmed);
+    if (dhlCanonical) {
+        await ingest(supabase.from('client_price_tables').select('*').eq('client', dhlCanonical));
+    }
+    await ingest(supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(trimmed)));
+    return Array.from(byId.values());
+}
+
 export interface CalculatedFinancials {
     autoEngine?: {
         active: boolean;
@@ -466,6 +546,14 @@ export const calculateMissionFinancials = (
     if (isCancelled) {
         distanceForCalculation = (hasValidKms && realTraveledKm > 0) ? realTraveledKm : 0;
     }
+
+    /** Distância para SELEÇÃO de faixa/tabela. OS concluída com hodômetro → KM real executado. */
+    const getTableSelectionDistance = () => {
+        if (isFinished && hasValidKms && realTraveledKm > 0) {
+            return realTraveledKm;
+        }
+        return Math.max(totalDistance, distanceForCalculation);
+    };
     
     const scheduledDate = parseSafeDate(mission.startTime || (mission as any).start_time); 
     const creationDate = parseSafeDate(mission.createdAt); 
@@ -741,7 +829,10 @@ export const calculateMissionFinancials = (
     let appliedClientTable: any = null;
     let clientLog = 'Manual';
 
-    const allClientTablesForThisClient = clientTables.filter(t => normalize(t.client) === missionClientName);
+    const missionClientRaw = String(mission.originalClientName || mission.client || '');
+    const allClientTablesForThisClient = clientTables.filter(t =>
+        clientTableMatchesMission(t.client || '', missionClientRaw),
+    );
 
     const isIblClient = missionClientName.includes('IBL') || missionClientName.includes('INTERMODAL BRASIL');
 
@@ -818,7 +909,7 @@ export const calculateMissionFinancials = (
       const dhlResult = selectDhlClientTable(
         clientTablesFiltered,
         { origin: mission.origin || '', destination: mission.destination || '' },
-        totalDistance,
+        getTableSelectionDistance(),
         { clientName: dhlClientCanonical },
       );
       dhlEngineHandled = true;
@@ -831,7 +922,7 @@ export const calculateMissionFinancials = (
       }
     }
     if (!appliedClientTable && !dhlEngineHandled) {
-        const clientDistReference = Math.max(totalDistance, distanceForCalculation);
+        const clientDistReference = getTableSelectionDistance();
         const result = selectStrictTable(
             clientTablesFiltered, 
             clientDistReference, 
@@ -878,7 +969,7 @@ export const calculateMissionFinancials = (
     const normalizedDest = normalize(mission.destination || '');
     const isJundiai = normalizedOrigin.includes('JUNDIAI');
     const destHas200km = normalizedDest.includes('200KM') || normalizedDest.includes('200 KM') || normalizedDest.includes('ACOMPANHAMENTO');
-    const referenceDistance = Math.max(totalDistance, distanceForCalculation);
+    const referenceDistance = getTableSelectionDistance();
     let is200kmAccompaniment = destHas200km && !isZeroValueMission;
 
     const cevaLogitech = isCevaClient && (isJundiai || destHas200km);
@@ -987,7 +1078,7 @@ export const calculateMissionFinancials = (
 
     const providerDistReference = manualTableOverrides?.providerOpsOverride 
         ? manualTableOverrides.providerOpsOverride.distanceKm 
-        : Math.max(totalDistance, distanceForCalculation);
+        : getTableSelectionDistance();
 
     if (effectiveProviderTableId) {
         appliedProviderTable = providerTables.find(t => t.id.toString() === effectiveProviderTableId);
@@ -1158,7 +1249,7 @@ export const calculateMissionFinancials = (
             ? 0
             : (manualTableOverrides?.providerOpsOverride
                 ? manualTableOverrides.providerOpsOverride.distanceKm
-                : (isFinished && hasValidKms ? realTraveledKm : Math.max(totalDistance, distanceForCalculation)));
+                : getTableSelectionDistance());
         const goldenStart = cancelledBeforeExecution ? null : ((mission as any).provider_start_time || mission.startTime || (mission as any).start_time);
         const goldenScheduled = cancelledBeforeExecution ? null : (mission.startTime || (mission as any).start_time);
         const goldenEnd = cancelledBeforeExecution ? null : ((mission as any).provider_end_time || mission.endTime || (mission as any).end_time);
@@ -1193,9 +1284,14 @@ export const calculateMissionFinancials = (
     let cExcessKm = Math.max(0, distanceForCalculation - cFranchiseKm);
     let cExcessHr = Math.max(0, durationHours - cFranchiseHr);
     
-    const cUnitPriceKm = manualTableOverrides?.customClientUnitKm !== undefined 
-        ? manualTableOverrides.customClientUnitKm 
+    let cUnitPriceKm = manualTableOverrides?.customClientUnitKm !== undefined
+        ? manualTableOverrides.customClientUnitKm
         : (appliedClientTable?.price_per_extra_km || 0);
+    // Tabelas DHL de rota nomeada têm price_per_extra_km = 0 no cadastro; o valor
+    // oficial por UF (6,90 / 7,35) vem da planilha de medição — aplicamos aqui.
+    if (cUnitPriceKm <= 0 && findDhlAutoClient(missionClientRaw) && manualTableOverrides?.customClientUnitKm === undefined) {
+        cUnitPriceKm = dhlDefaultUnitKmExcess(originUF);
+    }
 
     const cUnitPriceHour = manualTableOverrides?.customClientUnitHour !== undefined
         ? manualTableOverrides.customClientUnitHour
@@ -1206,7 +1302,8 @@ export const calculateMissionFinancials = (
 
     const isFranchiseTable = (name: string) => name.includes('ATÉ') || name.includes('ATE ') || name.includes('FAIXA') || /\bATE\W*\d/i.test(name);
     const clientHasExtraKmPrice = (appliedClientTable?.price_per_extra_km || 0) > 0
-        || (manualTableOverrides?.customClientUnitKm || 0) > 0;
+        || (manualTableOverrides?.customClientUnitKm || 0) > 0
+        || (findDhlAutoClient(missionClientRaw) && cUnitPriceKm > 0);
     const clientTableIs200km = appliedTableName.includes('200KM') || appliedTableName.includes('200 KM') || appliedTableName.includes('LOGITECH') || missionDest.includes('200KM');
     const clientTableIs100km = appliedTableName.includes('100KM') || appliedTableName.includes('100 KM');
     const isFixedDistanceClientRule = (clientTableIs200km || clientTableIs100km) && !isFranchiseTable(appliedTableName) && !clientHasExtraKmPrice;

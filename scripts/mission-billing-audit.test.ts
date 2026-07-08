@@ -1,0 +1,718 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  computeMissionBillingAudit,
+  clearMissionBillingAuditCache,
+  computePricingTablesHash,
+} from '../lib/missionBillingAudit';
+import { calculateMissionFinancials } from '../lib/financialUtils';
+import type { Mission } from '../types';
+
+const baseTables = {
+  client: [
+    {
+      id: 1,
+      client: 'TESTE',
+      operation_type: 'FAIXA 100KM',
+      activation_fee: 690,
+      franchise_km: 100,
+      franchise_hours: 3,
+      price_per_extra_km: 5,
+      price_per_extra_hour: 80,
+    },
+  ],
+  provider: [
+    {
+      id: 1,
+      provider: 'FORNECEDOR TESTE',
+      operation_type: 'FAIXA 100KM',
+      activation_cost: 500,
+      franchise_km: 100,
+      franchise_hours: 3,
+      cost_per_extra_km: 4,
+      cost_per_extra_hour: 60,
+    },
+  ],
+};
+
+function makeMission(overrides: Partial<Mission> = {}): Mission {
+  return {
+    id: 'GTM-TEST-1',
+    client: 'TESTE',
+    provider: 'FORNECEDOR TESTE',
+    status: 'Concluída',
+    origin: 'SAO PAULO - SP',
+    destination: 'CAMPINAS - SP',
+    start_km: 1000,
+    end_km: 1120,
+    start_time: '2026-07-01T08:00:00.000Z',
+    end_time: '2026-07-01T12:15:00.000Z',
+    revenue_value: 790,
+    cost_value: 590,
+    mission_type: 'Caracterizada',
+    ...overrides,
+  } as Mission;
+}
+
+describe('missionBillingAudit', () => {
+  it('marca VALIDADO quando receita e custo batem com o cálculo', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission();
+    const fin = calculateMissionFinancials(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    const expectedRev = fin.client.serviceTotal;
+    const expectedCost = fin.provider.serviceTotal;
+    const audit = computeMissionBillingAudit(
+      { ...mission, revenue_value: expectedRev, cost_value: expectedCost } as Mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    assert.equal(audit.overallStatus, 'validado');
+    assert.equal(audit.overallIcon, '🟢');
+    assert.equal(audit.resultadoFinal, 'VALIDADO');
+    assert.ok(Math.abs(audit.client.diferenca) < 0.01);
+    assert.ok(Math.abs(audit.provider.diferenca) < 0.01);
+  });
+
+  it('marca ERRO quando receita diverge', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission();
+    const fin = calculateMissionFinancials(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    const audit = computeMissionBillingAudit(
+      { ...mission, revenue_value: fin.client.base, cost_value: fin.provider.serviceTotal } as Mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    assert.equal(audit.overallStatus, 'erro');
+    assert.equal(audit.overallIcon, '🔴');
+    assert.ok(audit.client.diferenca < 0);
+    assert.ok(audit.client.motivos.length > 0);
+  });
+
+  it('marca ATENÇÃO para diferença menor que R$1 sem salvamento manual', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission();
+    const fin = calculateMissionFinancials(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    const audit = computeMissionBillingAudit(
+      {
+        ...mission,
+        revenue_value: fin.client.serviceTotal - 0.5,
+        cost_value: fin.provider.serviceTotal,
+      } as Mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    assert.equal(audit.overallStatus, 'atencao');
+    assert.equal(audit.overallIcon, '🟡');
+  });
+
+  it('marca VALIDADO quando salvamento manual confirmado e diferença < R$1', () => {
+    clearMissionBillingAuditCache();
+    const dhlClient = 'CEVA LOGISTICS LTDA';
+    const clientTables = [
+      {
+        id: 'sp-rj',
+        client: dhlClient,
+        operation_type: 'SUDESTE - ESTADO DE SP E RJ',
+        activation_fee: 660,
+        franchise_km: 100,
+        franchise_hours: 3,
+        price_per_extra_km: 6.6,
+        price_per_extra_hour: 160,
+      },
+    ];
+    const providerTables = [
+      {
+        id: '100km',
+        provider: 'TORRES',
+        operation_type: '100KM',
+        activation_cost: 480,
+        franchise_km: 100,
+        franchise_hours: 3,
+        cost_per_extra_km: 4.8,
+        cost_per_extra_hour: 110,
+      },
+    ];
+    const mission = makeMission({
+      id: 'GTM-6284',
+      client: dhlClient,
+      provider: 'TORRES',
+      start_km: 48863,
+      end_km: 49006,
+      start_time: '2026-07-08T08:00:00+00:00',
+      end_time: '2026-07-08T12:06:00+00:00',
+      revenue_value: 1118.05,
+      cost_value: 805.57,
+      revenue_edit_reason:
+        '[THIAGO - 08/07/2026] Salvamento manual confirmado — receita: R$ 1.118,05',
+      cost_edit_reason:
+        '[THIAGO - 08/07/2026] Salvamento manual confirmado — custo: R$ 805,57',
+    } as any);
+
+    const audit = computeMissionBillingAudit(
+      mission,
+      clientTables as any,
+      providerTables as any,
+      undefined,
+      null,
+      undefined,
+      {
+        clientTableId: 'sp-rj',
+        providerTableId: '100km',
+      },
+    );
+
+    assert.equal(audit.overallStatus, 'validado');
+    assert.equal(audit.overallIcon, '🟢');
+    assert.ok(Math.abs(audit.client.diferenca - 0.92) < 0.01);
+    assert.equal(audit.client.status, 'validado');
+  });
+
+  it('respeita medição editada do fornecedor (provider_ops_edited)', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission({
+      provider_ops_edited: true,
+      provider_start_km: 48228,
+      provider_end_km: 48269,
+      provider_start_time: '2026-07-01T08:00:00.000Z',
+      provider_end_time: '2026-07-01T12:06:00.000Z',
+      start_km: 48228,
+      end_km: 48247,
+      start_time: '2026-07-01T08:00:00.000Z',
+      end_time: '2026-07-01T10:05:00.000Z',
+    } as any);
+    const fin = calculateMissionFinancials(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+      undefined,
+      new Date(),
+      { providerOpsOverride: { distanceKm: 41, durationHours: 4.1 } },
+    );
+    assert.ok(fin.provider.extraHrVal > 0);
+    assert.ok(fin.client.serviceTotal !== fin.provider.serviceTotal || fin.client.excessHours !== fin.provider.excessHours);
+
+    const audit = computeMissionBillingAudit(
+      {
+        ...mission,
+        revenue_value: fin.client.serviceTotal,
+        cost_value: fin.provider.serviceTotal,
+      } as Mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(audit.provider.subtotalHora > 0);
+    assert.equal(audit.provider.kmRodado, 41);
+  });
+
+  it('usa tabelas do snapshot quando OS foi aprovada com conferência', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission({
+      client: 'TESTE',
+      provider: 'FORNECEDOR TESTE',
+      origin: 'GUARUJÁ, SP',
+      destination: 'SANTANA DE PARNAÍBA, SP',
+      start_km: 32712,
+      end_km: 32849,
+      start_time: '2026-07-06T11:00:00+00:00',
+      end_time: '2026-07-06T15:34:00+00:00',
+      billing_approved: true,
+      snapshot_approved_by: 'Auditor',
+      snapshot_data: {
+        clientTableId: '1',
+        providerTableId: '1',
+      },
+    } as any);
+
+    const clientTables = [
+      ...baseTables.client,
+      {
+        id: 'rota-nomeada',
+        client: 'TESTE',
+        operation_type: 'ROTA NOMEADA CARA',
+        activation_fee: 944.72,
+        franchise_km: 143,
+        franchise_hours: 3,
+        price_per_extra_km: 6.6,
+        price_per_extra_hour: 160,
+      },
+    ];
+
+    const finAuto = calculateMissionFinancials(mission, clientTables as any, baseTables.provider as any);
+    const finSnap = calculateMissionFinancials(
+      mission,
+      clientTables as any,
+      baseTables.provider as any,
+      undefined,
+      new Date(),
+      { clientTableId: '1', providerTableId: '1' },
+    );
+
+    const audit = computeMissionBillingAudit(
+      {
+        ...mission,
+        revenue_value: finSnap.client.serviceTotal,
+        cost_value: finSnap.provider.serviceTotal,
+      } as Mission,
+      clientTables as any,
+      baseTables.provider as any,
+    );
+
+    assert.ok(finAuto.client.serviceTotal > finSnap.client.serviceTotal + 10, 'auto seria mais caro');
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(Math.abs(audit.client.diferenca) < 0.01);
+  });
+
+  it('recupera tabela órfã do snapshot via fallback (fornecedor)', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission({
+      billing_approved: true,
+      snapshot_approved_by: 'Auditor',
+      provider: 'FORNECEDOR TESTE',
+      snapshot_data: {
+        clientTableId: '1',
+        providerTableId: 'id-orfao-nao-existe',
+        tableName: 'FAIXA 100KM',
+        franchiseKm: 100,
+        activationFee: 690,
+      },
+    } as any);
+    const fin = calculateMissionFinancials(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+      undefined,
+      new Date(),
+      { clientTableId: '1' },
+    );
+
+    const audit = computeMissionBillingAudit(
+      {
+        ...mission,
+        revenue_value: fin.client.serviceTotal,
+        cost_value: fin.provider.serviceTotal,
+      } as Mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(Math.abs(audit.provider.diferenca) < 0.01);
+  });
+
+  it('prioriza tableName do snapshot quando clientTableId aponta para tabela errada', () => {
+    clearMissionBillingAuditCache();
+    const itajaiTable = {
+      id: 'itajai-bh',
+      client: 'PRESTEX ENCOMENDAS EXPRESSAS LTDA',
+      operation_type: 'SUL - ITAJAI X BELO HORIZONTE',
+      activation_fee: 12200,
+      franchise_km: 1600,
+      franchise_hours: 100,
+      price_per_extra_km: 7.45,
+      price_per_extra_hour: 175,
+    };
+    const saoJoseTable = {
+      id: 'sao-jose-wrong',
+      client: 'PRESTEX ENCOMENDAS EXPRESSAS LTDA',
+      operation_type: 'SUL - SÃO JOSÉ SC X SP X MT',
+      activation_fee: 35000,
+      franchise_km: 4300,
+      franchise_hours: 100,
+      price_per_extra_km: 7.45,
+      price_per_extra_hour: 175,
+    };
+    const clientTables = [itajaiTable, saoJoseTable];
+    const mission = makeMission({
+      client: 'PRESTEX ENCOMENDAS EXPRESSAS LTDA',
+      origin: 'R. FRANCISCO REIS, ITAJAÍ - SC',
+      destination: 'BELO HORIZONTE, MG',
+      start_km: 28283,
+      end_km: null,
+      total_distance: 1192.3,
+      billing_approved: true,
+      snapshot_approved_by: 'Auditor',
+      snapshot_data: {
+        clientTableId: 'sao-jose-wrong',
+        providerTableId: '1',
+        tableName: 'SUL - ITAJAI X BELO HORIZONTE',
+        activationFee: 12200,
+        franchiseKm: 1600,
+        revenueServiceOnly: 12200,
+      },
+    } as any);
+
+    const fin = calculateMissionFinancials(
+      mission,
+      clientTables as any,
+      baseTables.provider as any,
+      undefined,
+      new Date(),
+      { clientTableId: 'itajai-bh', providerTableId: '1' },
+    );
+
+    const audit = computeMissionBillingAudit(
+      {
+        ...mission,
+        revenue_value: 12200,
+        cost_value: fin.provider.serviceTotal,
+      } as Mission,
+      clientTables as any,
+      baseTables.provider as any,
+    );
+
+    assert.equal(audit.overallStatus, 'validado');
+    assert.equal(audit.client.esperado, 12200);
+    assert.ok(audit.client.tableName?.includes('ITAJAI'));
+  });
+
+  it('valida fornecedor quando valor lançado bate com tabela real (motor auto divergente)', () => {
+    clearMissionBillingAuditCache();
+    const g8Name = 'COMANDO G8 - SEGURANCA PATRIMONIAL E TRANSPORTE DE VALORES LTDA';
+    const providerTables = [
+      {
+        id: '100km-real',
+        provider: g8Name,
+        operation_type: '100KM',
+        activation_cost: 480,
+        franchise_km: 100,
+        franchise_hours: 3,
+        cost_per_extra_km: 4,
+        cost_per_extra_hour: 60,
+      },
+      {
+        id: '200km-real',
+        provider: g8Name,
+        operation_type: '200KM',
+        activation_cost: 960,
+        franchise_km: 200,
+        franchise_hours: 6,
+        cost_per_extra_km: 4,
+        cost_per_extra_hour: 60,
+      },
+    ];
+    const providersList = [
+      {
+        name: g8Name,
+        auto_calc_enabled: true,
+        auto_base_value: 6200,
+        auto_base_km: 100,
+        auto_base_hr: 3,
+        auto_extra_km: 4,
+        auto_extra_hr: 90,
+      },
+    ];
+    const mission = makeMission({
+      provider: g8Name,
+      start_km: 62065,
+      end_km: 62171,
+      start_time: '2026-07-07T01:30:00+00:00',
+      end_time: '2026-07-07T05:16:07+00:00',
+    } as any);
+
+    const finAuto = calculateMissionFinancials(
+      mission,
+      baseTables.client as any,
+      providerTables as any,
+      undefined,
+      new Date(),
+      undefined,
+      providersList,
+    );
+    const finReal100 = calculateMissionFinancials(
+      mission,
+      baseTables.client as any,
+      providerTables as any,
+      undefined,
+      new Date(),
+      { providerTableId: '100km-real' },
+      providersList,
+    );
+
+    assert.ok(finAuto.provider.serviceTotal > finReal100.provider.serviceTotal + 100, 'motor auto deve divergir da tabela real');
+
+    const audit = computeMissionBillingAudit(
+      {
+        ...mission,
+        revenue_value: finAuto.client.serviceTotal,
+        cost_value: finReal100.provider.serviceTotal,
+      } as Mission,
+      baseTables.client as any,
+      providerTables as any,
+      undefined,
+      providersList,
+    );
+
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(Math.abs(audit.provider.diferenca) < 0.01);
+    assert.equal(audit.provider.tableName, '100KM');
+    assert.equal(audit.provider.esperado, finReal100.provider.serviceTotal);
+  });
+
+  it('valida GTM-6258 quando cálculo usa tabela errada (RAIO 300KM) mas valor lançado bate com faixa 100KM', () => {
+    clearMissionBillingAuditCache();
+    const dhlClient = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
+    const g8Name = 'COMANDO G8 - SEGURANCA PATRIMONIAL E TRANSPORTE DE VALORES LTDA';
+    const clientTables = [
+      {
+        id: 'raio-es-300',
+        client: dhlClient,
+        operation_type: 'SUDESTE - RAIO ES 300KM',
+        activation_fee: 2070,
+        franchise_km: 300,
+        franchise_hours: 7,
+        price_per_extra_km: 6.9,
+        price_per_extra_hour: 145,
+      },
+      {
+        id: 'barueri-100',
+        client: dhlClient,
+        operation_type: 'SUDESTE - BARUERI-CAJAMAR 100KM',
+        activation_fee: 690,
+        franchise_km: 100,
+        franchise_hours: 3,
+        price_per_extra_km: 0,
+        price_per_extra_hour: 145,
+      },
+    ];
+    const providerTables = [
+      {
+        id: 'g8-100',
+        provider: g8Name,
+        operation_type: '100KM',
+        activation_cost: 480,
+        franchise_km: 100,
+        franchise_hours: 3,
+        cost_per_extra_km: 4.8,
+        cost_per_extra_hour: 100,
+      },
+    ];
+    const providersList = [
+      {
+        name: g8Name,
+        auto_calc_enabled: true,
+        auto_base_value: 6200,
+        auto_base_km: 100,
+        auto_base_hr: 3,
+        auto_extra_km: 4,
+        auto_extra_hr: 90,
+      },
+    ];
+    const mission = makeMission({
+      id: 'GTM-6258',
+      client: dhlClient,
+      provider: g8Name,
+      origin: 'AV. TAMBORE, 1440 - TAMBORÉ, BARUERI - SP',
+      destination: 'ROD. FERNÃO DIAS',
+      start_km: 268054,
+      end_km: 268181,
+      total_distance: 320,
+      start_time: '2026-07-07T01:30:00+00:00',
+      end_time: '2026-07-07T06:30:00+00:00',
+      revenue_value: 1166.3,
+      cost_value: 809.6,
+      billing_approved: true,
+      snapshot_data: {
+        clientTableId: 'raio-es-300',
+      },
+    } as any);
+
+    const finWrong = calculateMissionFinancials(
+      mission,
+      clientTables as any,
+      providerTables as any,
+      undefined,
+      new Date(),
+      { clientTableId: 'raio-es-300' },
+      providersList,
+    );
+    assert.equal(finWrong.client.serviceTotal, 2070, 'motor com tabela errada = 2070');
+
+    const audit = computeMissionBillingAudit(
+      mission,
+      clientTables as any,
+      providerTables as any,
+      undefined,
+      providersList,
+    );
+
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(Math.abs(audit.client.diferenca) < 0.01);
+    assert.ok(Math.abs(audit.provider.diferenca) < 0.01);
+    assert.equal(audit.client.lancado, 1166.3);
+    assert.equal(audit.provider.lancado, 809.6);
+    assert.ok((audit.client.tableName || '').includes('BARUERI-CAJAMAR'));
+    assert.equal(audit.provider.tableName, '100KM');
+  });
+
+  it('valida GTM-6235 com tabela LOUVEIRA-SERRA selecionada manualmente', () => {
+    clearMissionBillingAuditCache();
+    const dhlClient = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
+    const clientTables = [
+      {
+        id: 'anapolis-965',
+        client: dhlClient,
+        operation_type: 'SUDESTE - BARUERI-ANAPOLIS 965KM',
+        activation_fee: 6658.5,
+        franchise_km: 965,
+        franchise_hours: 26,
+        price_per_extra_km: 0,
+        price_per_extra_hour: 145,
+      },
+      {
+        id: 'louveira-971',
+        client: dhlClient,
+        operation_type: 'SUDESTE - LOUVEIRA-SERRA 971KM',
+        activation_fee: 6699.9,
+        franchise_km: 971,
+        franchise_hours: 28,
+        price_per_extra_km: 0,
+        price_per_extra_hour: 145,
+      },
+    ];
+    const providerTables = [
+      {
+        id: 'torres-900',
+        provider: 'TORRES',
+        operation_type: '900KM',
+        activation_cost: 4320,
+        franchise_km: 900,
+        franchise_hours: 23,
+        cost_per_extra_km: 4.8,
+        cost_per_extra_hour: 110,
+      },
+    ];
+    const mission = makeMission({
+      id: 'GTM-6235',
+      client: dhlClient,
+      provider: 'TORRES',
+      origin: 'ROD. VICE PREF. HERMENEGILDO TONOLI, 1500 - JUNDIAÍ - SP',
+      destination: 'R. PORTO ALEGRE, 307 - SERRA - ES',
+      start_km: 40906,
+      end_km: 41878,
+      total_distance: 1023.13,
+      start_time: '2026-07-06T23:00:00+00:00',
+      end_time: '2026-07-08T13:10:00+00:00',
+      revenue_value: 8180.97,
+      cost_value: 6333.93,
+    } as any);
+
+    const audit = computeMissionBillingAudit(
+      mission,
+      clientTables as any,
+      providerTables as any,
+      undefined,
+      null,
+      undefined,
+      {
+        clientTableId: 'louveira-971',
+        providerTableId: 'torres-900',
+        clientTableName: 'SUDESTE - LOUVEIRA-SERRA 971KM',
+        providerTableName: '900KM',
+      },
+    );
+
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(Math.abs(audit.client.diferenca) < 0.01);
+    assert.equal(audit.client.lancado, 8180.97);
+    assert.ok((audit.client.tableName || '').includes('LOUVEIRA-SERRA'));
+  });
+
+  it('OS em andamento exibe EM VIAGEM sem rodar auditoria financeira', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission({
+      status: 'Em Viagem',
+      revenue_value: 735,
+      cost_value: 500,
+    } as any);
+    const audit = computeMissionBillingAudit(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    assert.equal(audit.overallStatus, 'em_viagem');
+    assert.equal(audit.overallLabel, 'EM VIAGEM');
+    assert.equal(audit.skipped, true);
+    assert.ok(audit.skipReason?.includes('andamento'));
+  });
+
+  it('OS concluída continua auditando normalmente', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission({ status: 'Concluída' });
+    const fin = calculateMissionFinancials(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    const audit = computeMissionBillingAudit(
+      { ...mission, revenue_value: fin.client.serviceTotal, cost_value: fin.provider.serviceTotal } as Mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    assert.equal(audit.overallStatus, 'validado');
+    assert.notEqual(audit.overallStatus, 'em_viagem');
+  });
+
+  it('missão anterior a jun/2026 fica pendente fora do período', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission({
+      start_time: '2026-05-15T08:00:00.000Z',
+      revenue_value: 790,
+      cost_value: 590,
+    } as any);
+    const audit = computeMissionBillingAudit(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    assert.equal(audit.overallStatus, 'pendente');
+    assert.equal(audit.skipped, true);
+    assert.ok(audit.skipReason?.includes('jun/2026'));
+  });
+
+  it('usa cache e invalida quando fingerprint muda', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission({ revenue_value: 790, cost_value: 590 });
+    const hash = computePricingTablesHash(baseTables.client as any, baseTables.provider as any);
+
+    const first = computeMissionBillingAudit(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+      undefined,
+      null,
+      hash,
+    );
+    const second = computeMissionBillingAudit(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+      undefined,
+      null,
+      hash,
+    );
+    assert.equal(first.cacheKey, second.cacheKey);
+
+    const changed = computeMissionBillingAudit(
+      { ...mission, revenue_value: 700 } as Mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+      undefined,
+      null,
+      hash,
+    );
+    assert.notEqual(first.cacheKey, changed.cacheKey);
+  });
+});

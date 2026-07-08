@@ -45,6 +45,61 @@ export async function sendSystemAlertEmail(to: string[], subject: string, conten
   }
 }
 
+function systemAppUrl(path = ''): string {
+  const base = (process.env.SYSTEM_URL || 'https://sistema.grupotmseg.com.br').replace(/\/$/, '');
+  return path ? `${base}${path.startsWith('/') ? path : `/${path}`}` : base;
+}
+
+/** Alerta de queda do bot WhatsApp com código da extensão Z-API (quando disponível). */
+export async function sendWhatsappDisconnectAlertEmail(opts: {
+  to: string[];
+  instanceLabel: string;
+  incidentStartedAt: string;
+  dropsLast24h: number;
+  extensionToken?: string | null;
+  extensionExpiresAt?: number | null;
+  extensionError?: string | null;
+}): Promise<boolean> {
+  const panelUrl = `${systemAppUrl()}/?page=system-settings`;
+  const zapiPanelUrl = 'https://app.z-api.io';
+  const expiresInMin = opts.extensionExpiresAt
+    ? Math.max(0, Math.round((opts.extensionExpiresAt - Date.now()) / 60_000))
+    : null;
+
+  const codeBlock = opts.extensionToken
+    ? `
+    <div class="highlight-box">
+      <p style="margin:0 0 8px;font-size:12px;font-weight:700;text-transform:uppercase;color:#c0392b;">Código extensão (válido ~${expiresInMin ?? 5} min)</p>
+      <p style="margin:0;font-size:28px;font-weight:900;letter-spacing:4px;font-family:monospace;text-align:center;">${opts.extensionToken}</p>
+    </div>
+    <ol style="font-size:13px;color:#444;line-height:1.8;padding-left:20px;">
+      <li>Instale a extensão <strong>Z-API Conector</strong> no Chrome</li>
+      <li>Abra <a href="https://web.whatsapp.com">web.whatsapp.com</a> com o número oficial da Central</li>
+      <li>Clique na extensão e digite o código acima</li>
+      <li>Confirme em <strong>Conectar na Z-API</strong></li>
+    </ol>
+    `
+    : `
+    <div class="highlight-box">
+      <p style="margin:0;font-size:13px;color:#555;">Não foi possível gerar código automático${opts.extensionError ? `: ${opts.extensionError}` : ''}. Gere manualmente no painel Z-API → Conectar via extensão.</p>
+    </div>
+    `;
+
+  const html = `
+    <h2>⚠️ WhatsApp Bot desconectado</h2>
+    <p>A instância <strong>${opts.instanceLabel}</strong> perdeu conexão com o WhatsApp em <strong>${opts.incidentStartedAt}</strong>.</p>
+    <table class="info-table">
+      <tr><td>Quedas (24h)</td><td>${opts.dropsLast24h}</td></tr>
+      <tr><td>Painel TM SEG</td><td><a href="${panelUrl}">Configurações → WhatsApp</a></td></tr>
+      <tr><td>Painel Z-API</td><td><a href="${zapiPanelUrl}">app.z-api.io</a></td></tr>
+    </table>
+    ${codeBlock}
+    <p style="font-size:12px;color:#888;">Reconexão automática permanece desativada (anti-ban). Este e-mail foi enviado pelo vigia do sistema.</p>
+  `;
+
+  return sendSystemAlertEmail(opts.to, 'ALERTA: WhatsApp Bot DESCONECTADO — código de reconexão', html);
+}
+
 function toTitleCase(str: string): string {
   return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase());
 }

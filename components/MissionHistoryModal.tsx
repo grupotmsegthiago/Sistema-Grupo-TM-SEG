@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { X, History, ArrowRight, User, Calendar, Loader2, FileSearch, PlusCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { MissionHistory, Mission } from '../types';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 
 interface Props {
     missionId: string;
@@ -18,6 +19,10 @@ const MissionHistoryModal: React.FC<Props> = ({ missionId, onClose }) => {
     useEffect(() => {
         fetchHistory();
     }, [missionId]);
+
+    useRealtimeRefresh(['mission_history', 'missions'], () => {
+        fetchHistory();
+    });
 
     const fetchHistory = async () => {
         setIsLoading(true);

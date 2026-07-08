@@ -81,6 +81,8 @@ const WhatsAppConnectionPanel: React.FC = () => {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [qrBase64, setQrBase64] = useState<string | null>(null);
   const [phoneLinkCode, setPhoneLinkCode] = useState<string | null>(null);
+  const [extensionToken, setExtensionToken] = useState<string | null>(null);
+  const [extensionExpiresAt, setExtensionExpiresAt] = useState<number | null>(null);
   const [smsCode, setSmsCode] = useState('');
   const [pinCode, setPinCode] = useState('');
 
@@ -128,6 +130,9 @@ const WhatsAppConnectionPanel: React.FC = () => {
     void refreshStatus(selected.id);
     setTestResult(null);
     setQrBase64(null);
+    setPhoneLinkCode(null);
+    setExtensionToken(null);
+    setExtensionExpiresAt(null);
     setMessage(null);
   }, [selected?.id]);
 
@@ -233,6 +238,27 @@ const WhatsAppConnectionPanel: React.FC = () => {
       });
       const data = await r.json();
       setMessage(data.requestCode?.error || (data.requestCode?.ok ? `Código solicitado via ${method}. Verifique o celular.` : 'Falha ao solicitar código'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const fetchExtensionToken = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const r = await fetch(`/api/whatsapp/connection/extension-token${instanceQuery}`, { headers: authHeaders() });
+      const data = await r.json();
+      if (data.token) {
+        setExtensionToken(data.token);
+        setExtensionExpiresAt(data.expiresAt || null);
+        setMessage(`Código extensão gerado — válido ~5 min. Use na extensão Z-API Conector.`);
+      } else {
+        setExtensionToken(null);
+        setMessage(data.error || 'Não foi possível gerar código de extensão');
+      }
+    } catch (e: any) {
+      setMessage(e?.message || 'Erro ao gerar código');
     } finally {
       setBusy(false);
     }
@@ -462,6 +488,25 @@ const WhatsAppConnectionPanel: React.FC = () => {
                 )}
 
                 {isZapi && (
+                  <div className="p-4 rounded-lg border border-amber-200 bg-amber-50 text-amber-950 text-xs space-y-2">
+                    <p className="font-black uppercase text-[10px] tracking-wide">Webhooks Z-API (anti-queda — configure no painel Z-API)</p>
+                    <p className="leading-relaxed">
+                      Cole estas URLs nos callbacks da instância. Use o mesmo segredo configurado em <code className="bg-white px-1 rounded">ZAPI_WEBHOOK_SECRET</code> na Vercel.
+                    </p>
+                    <div className="font-mono text-[10px] bg-white p-2 rounded border break-all">
+                      Desconexão: {typeof window !== 'undefined' ? `${window.location.origin}/api/zapi/webhook/connection` : '/api/zapi/webhook/connection'}
+                    </div>
+                    <div className="font-mono text-[10px] bg-white p-2 rounded border break-all">
+                      Mensagens: {typeof window !== 'undefined' ? `${window.location.origin}/api/whatsapp/webhook/inbound` : '/api/whatsapp/webhook/inbound'}
+                    </div>
+                    <div className="font-mono text-[10px] bg-white p-2 rounded border break-all">
+                      Status entrega: {typeof window !== 'undefined' ? `${window.location.origin}/api/zapi/webhook/message-status` : '/api/zapi/webhook/message-status'}
+                    </div>
+                    <p className="text-[10px] opacity-80">Vigia automático: a cada 1 min + e-mail/push com código extensão na queda.</p>
+                  </div>
+                )}
+
+                {isZapi && (
                   <div className="flex flex-wrap gap-2">
                     <button type="button" disabled={busy} onClick={() => void runBootstrap()}
                       className="text-xs font-bold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
@@ -473,6 +518,10 @@ const WhatsAppConnectionPanel: React.FC = () => {
                         <QrCode size={14} /> Atualizar QR
                       </button>
                     )}
+                    <button type="button" disabled={busy} onClick={() => void fetchExtensionToken()}
+                      className="text-xs font-bold px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
+                      Código extensão
+                    </button>
                     {isMobile && (
                       <>
                         <button type="button" disabled={busy} onClick={() => void requestSms('wa_old')}
@@ -499,6 +548,21 @@ const WhatsAppConnectionPanel: React.FC = () => {
                   <p className="text-sm text-center font-mono font-bold bg-gray-100 p-3 rounded-lg">
                     Código de pareamento: {phoneLinkCode}
                   </p>
+                )}
+
+                {extensionToken && (
+                  <div className="text-center p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+                    <p className="text-[10px] font-black uppercase text-indigo-700 mb-2">Extensão Z-API Conector</p>
+                    <p className="text-2xl font-black font-mono tracking-widest text-indigo-900">{extensionToken}</p>
+                    {extensionExpiresAt && (
+                      <p className="text-[10px] text-indigo-600 mt-2">
+                        Expira em ~{Math.max(0, Math.round((extensionExpiresAt - Date.now()) / 60_000))} min
+                      </p>
+                    )}
+                    <p className="text-[11px] text-gray-600 mt-3 leading-relaxed">
+                      Chrome → web.whatsapp.com (número oficial) → extensão Z-API Conector → digite o código
+                    </p>
+                  </div>
                 )}
 
                 {isMobile && isZapi && (

@@ -2,51 +2,84 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { APP_VERSION } from './constants';
+import {
+  APP_UPDATE_RELOAD_FLAG,
+  fetchPublishedVersion,
+  isPublishedVersionNewer,
+  reloadForPublishedUpdate,
+  shouldThrottleUpdateCheck,
+} from './lib/appUpdate';
+import { SCREEN_STORAGE_KEY } from './lib/screenNavigation';
+
+declare const __TMSEG_BUILD_ID__: string;
+declare const __TMSEG_BUILD_VERSION__: string;
+
+const CLIENT_BUILD = {
+  version: typeof __TMSEG_BUILD_VERSION__ !== 'undefined' ? __TMSEG_BUILD_VERSION__ : APP_VERSION,
+  buildId: typeof __TMSEG_BUILD_ID__ !== 'undefined' ? __TMSEG_BUILD_ID__ : APP_VERSION,
+};
 
 // ============================================================
-// AUTO-UPDATE NO BOOT (sem ser invasivo)
-// Em todo boot:
-//  1) Desregistra Service Workers órfãos (escopos diferentes do nosso /sw.js)
-//  2) Detecta bump local de APP_VERSION e limpa sessionStorage
-//  3) Compara versão local x versão publicada no servidor (/api/version, no-store).
-//     Se divergir → limpa caches + SWs + sessionStorage + reload com bypass,
-//     preservando token de login. Flag de sessão evita loop.
-// Não fazemos limpeza incondicional de cache em todo boot — só quando
-// realmente precisa (versão diferente). O sw.js já é network-only.
+// AUTO-UPDATE NO BOOT + AO VOLTAR PARA A ABA
+// Compara buildId/version do bundle local com /api/version (no-store).
+// Se divergir → limpa caches + SWs + reload com bypass, preservando login.
 // ============================================================
 
-const REDIRECTED_FLAG = '__tmseg_just_reloaded__';
-
-async function clearCachesAndSWs(): Promise<void> {
-  if ('caches' in window) {
-    try {
-      const names = await caches.keys();
-      await Promise.all(names.map((n) => caches.delete(n).catch(() => false)));
-    } catch {}
-  }
-  if ('serviceWorker' in navigator) {
-    try {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.unregister().catch(() => false)));
-    } catch {}
-  }
-}
-
-// Rotas públicas (fornecedor DHL, cadastro operacional, reset de senha)
-// NÃO devem sofrer auto-reload por divergência de versão — o usuário externo
-// está digitando dados sensíveis e perderia tudo. Para eles, o bundle local
-// é suficiente; só o operacional interno precisa de PWA/cache-busting.
 const PUBLIC_PATHS = ['/fornecedor/dhl', '/cadastro-operacional', '/reset-password'];
 const isPublicExternalRoute = (() => {
   try {
     const p = window.location.pathname.toLowerCase().replace(/\/$/, '');
     return PUBLIC_PATHS.includes(p);
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 })();
+
+let updateCheckInFlight = false;
+let pendingUpdateBuildId: string | null = null;
+
+async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): Promise<boolean> {
+  if (isPublicExternalRoute) return false;
+  if (window.location.hostname === 'localhost') return false;
+  if (!options?.skipReloadFlag && sessionStorage.getItem(APP_UPDATE_RELOAD_FLAG)) return false;
+  if (updateCheckInFlight) return false;
+
+  updateCheckInFlight = true;
+  try {
+    const server = await fetchPublishedVersion();
+    if (!server) {
+      pendingUpdateBuildId = null;
+      return false;
+    }
+
+    if (!isPublishedVersionNewer(CLIENT_BUILD, server)) {
+      pendingUpdateBuildId = null;
+      return false;
+    }
+
+    const serverKey = server.buildId || server.version;
+    if (pendingUpdateBuildId !== serverKey) {
+      pendingUpdateBuildId = serverKey;
+      console.warn(
+        `[AutoUpdate] Nova versão detectada (${serverKey}). Aguardando confirmação antes de recarregar.`
+      );
+      return false;
+    }
+
+    console.warn(
+      `[AutoUpdate] Build local (${CLIENT_BUILD.buildId} / v${CLIENT_BUILD.version}) ` +
+        `≠ servidor (${server.buildId} / v${server.version}). Atualizando…`
+    );
+    pendingUpdateBuildId = null;
+    await reloadForPublishedUpdate(server);
+    return true;
+  } finally {
+    updateCheckInFlight = false;
+  }
+}
 
 (async () => {
   try {
-    // 1) Remove SWs órfãos (de scopes ou URLs diferentes do nosso /sw.js)
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
       for (const reg of regs) {
@@ -60,49 +93,45 @@ const isPublicExternalRoute = (() => {
       }
     }
 
-    // 2) Detecta mudança de versão LOCAL e limpa sessionStorage
     const storedVersion = localStorage.getItem('app_version');
     if (storedVersion && storedVersion !== APP_VERSION) {
       console.log(`[Versão] Atualizado de ${storedVersion} → ${APP_VERSION}`);
-      try { sessionStorage.clear(); } catch {}
+      // Mantém login: só atualiza a marca de versão local (não limpa authToken/userData).
+      localStorage.setItem('app_version', APP_VERSION);
+      try {
+        const keepScreen = sessionStorage.getItem(SCREEN_STORAGE_KEY);
+        sessionStorage.clear();
+        if (keepScreen) sessionStorage.setItem(SCREEN_STORAGE_KEY, keepScreen);
+      } catch {}
     }
 
-    // 3) Compara com versão publicada no servidor — só age se divergir.
-    //    PULA inteiramente para rotas públicas externas (ex.: fornecedor DHL),
-    //    onde um reload mid-typing fará o fornecedor perder os dados.
-    if (!isPublicExternalRoute && window.location.hostname !== 'localhost' && !sessionStorage.getItem(REDIRECTED_FLAG)) {
-      try {
-        const res = await fetch('/api/version', {
-          cache: 'no-store',
-          headers: { 'Cache-Control': 'no-cache' },
-        });
-        if (res.ok) {
-          const { version: serverVersion } = await res.json();
-          if (serverVersion && serverVersion !== APP_VERSION) {
-            console.warn(
-              `[AutoUpdate] Versão local (${APP_VERSION}) ≠ servidor (${serverVersion}). Atualizando…`
-            );
-            sessionStorage.setItem(REDIRECTED_FLAG, '1');
-            await clearCachesAndSWs();
-            const url = new URL(window.location.href);
-            url.searchParams.set('_v', serverVersion);
-            window.location.replace(url.toString());
-            return;
-          }
-        }
-      } catch {
-        // Sem rede ou backend fora — segue com versão local
-      }
-    }
-    try { sessionStorage.removeItem(REDIRECTED_FLAG); } catch {}
+    const updated = await checkForPublishedUpdate();
+    if (updated) return;
+
+    try {
+      sessionStorage.removeItem(APP_UPDATE_RELOAD_FLAG);
+    } catch {}
   } catch (err) {
     console.warn('[Boot] Falha na verificação de versão:', err);
   }
 })();
 
+if (!isPublicExternalRoute && window.location.hostname !== 'localhost') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !shouldThrottleUpdateCheck()) {
+      void checkForPublishedUpdate({ skipReloadFlag: true });
+    }
+  });
+  window.addEventListener('focus', () => {
+    if (!shouldThrottleUpdateCheck()) {
+      void checkForPublishedUpdate({ skipReloadFlag: true });
+    }
+  });
+}
+
 const rootElement = document.getElementById('root');
 if (!rootElement) {
-  throw new Error("Could not find root element to mount to");
+  throw new Error('Could not find root element to mount to');
 }
 
 const root = ReactDOM.createRoot(rootElement);
@@ -112,12 +141,6 @@ root.render(
   </React.StrictMode>
 );
 
-// Service Worker: APENAS registra para receber push notifications.
-// NÃO faz auto-reload em controllerchange — isso causava loop infinito
-// de reload no iPhone PWA (Bug 3.3.x: o servidor injetava Date.now() no
-// sw.js, então TODO check de update via reg.update() achava bytes
-// diferentes → skipWaiting → controllerchange → reload).
-// O ciclo de atualização real é feito pelo /api/version check no boot.
 if ('serviceWorker' in navigator && window.location.hostname !== 'localhost') {
   window.addEventListener('load', async () => {
     try {

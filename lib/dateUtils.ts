@@ -66,6 +66,17 @@ export const formatIsoDateBR = (date: Date = new Date()): string => {
   return date.toLocaleDateString('en-CA', { timeZone: TZ });
 };
 
+/**
+ * Limites UTC (ISO) do dia civil em Brasília.
+ * Corrige consultas que usavam T00:00:00 sem offset e perdiam batidas após ~21h BRT.
+ */
+export function getBrazilDayBounds(isoDate?: string): { date: string; start: string; end: string } {
+  const date = (isoDate || formatIsoDateBR()).trim();
+  const start = new Date(`${date}T00:00:00-03:00`).toISOString();
+  const end = new Date(`${date}T23:59:59.999-03:00`).toISOString();
+  return { date, start, end };
+}
+
 /** Agora formatado para rodapés e logs visíveis. */
 export const formatNowDateTimeBR = (): string => formatDateTimeBR(new Date());
 

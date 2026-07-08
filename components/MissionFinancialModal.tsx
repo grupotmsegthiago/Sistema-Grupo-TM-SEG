@@ -6,7 +6,7 @@ import { useLoadScript, Autocomplete } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
-import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, isSameClientName, extractCityFromAddress } from '../lib/financialUtils';
+import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, isIntentionalBillingOverride, extractCityFromAddress } from '../lib/financialUtils';
 import {
   isDhlSupplyClient,
   validateDhlTableName,
@@ -410,6 +410,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isSavingRef = React.useRef(false);
   const userManuallyEditedRef = React.useRef(false);
   const dbValuesLoadedRef = React.useRef(false);
+  const staleAutoResyncDoneRef = React.useRef<string | null>(null);
   const [savedByInfo, setSavedByInfo] = useState<string | null>(null);
 
   const [aiLoading, setAiLoading] = useState(false);
@@ -440,6 +441,51 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [isEditingOpsData, setIsEditingOpsData] = useState(false);
   const [editOrigin, setEditOrigin] = useState('');
   const { isLoaded: isMapsLoaded } = useLoadScript(googleMapsLoadConfig);
+
+  /** Calcula KM rodoviário origem→destino (Directions no browser ou /api/distance-matrix no servidor). */
+  const fetchRouteDistanceKm = async (originRaw: string, destinationRaw: string): Promise<number | null> => {
+    const origin = String(originRaw || '').trim();
+    const destination = String(destinationRaw || '').trim();
+    if (!origin || !destination) return null;
+
+    if (isMapsLoaded && (window as any).google?.maps) {
+      try {
+        const ds = new (window as any).google.maps.DirectionsService();
+        const result: any = await new Promise((resolve, reject) => {
+          ds.route({
+            origin: origin + ', Brasil',
+            destination: destination + ', Brasil',
+            travelMode: (window as any).google.maps.TravelMode.DRIVING,
+            unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+            region: 'br',
+          }, (res: any, status: string) => {
+            if (status === 'OK') resolve(res);
+            else reject(new Error('Directions status: ' + status));
+          });
+        });
+        const legs = result?.routes?.[0]?.legs || [];
+        const totalMeters = legs.reduce((acc: number, l: any) => acc + (l?.distance?.value || 0), 0);
+        if (totalMeters > 0) {
+          return Math.round((totalMeters / 1000) * 100) / 100;
+        }
+      } catch (geoErr) {
+        console.warn('[RouteDistance] Directions no browser falhou:', geoErr);
+      }
+    }
+
+    try {
+      const res = await authFetch(`/api/distance-matrix?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`);
+      const text = await res.text();
+      const json = text ? JSON.parse(text) : {};
+      if (json?.success && Number(json.distanceKm) > 0) {
+        return Number(json.distanceKm);
+      }
+      console.warn('[RouteDistance] API retornou:', json?.error || res.status);
+    } catch (apiErr) {
+      console.warn('[RouteDistance] fallback /api/distance-matrix falhou:', apiErr);
+    }
+    return null;
+  };
   const originAutocompleteRef = useRef<any>(null);
   const destinationAutocompleteRef = useRef<any>(null);
   const [editDestination, setEditDestination] = useState('');
@@ -462,6 +508,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const userNameLower = useMemo(() => {
     try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); return ((u.name || u.username || '') as string).toLowerCase(); } catch { return ''; }
   }, []);
+  // Financeiro (Bárbara): liberação permanente para editar e aprovar faturamento,
+  // inclusive OS verificadas pelo Controller ou já salvas/aprovadas.
+  const isBarbaraFinance = useMemo(() => {
+    return userNameLower.includes('barbara') || userNameLower.includes('bárbara');
+  }, [userNameLower]);
+  const canEditVerifiedProviderTotal = isBarbaraFinance
+    || ['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower);
+  const isControllerRole = userRoleLower === 'controller';
+  const isProviderTotalLockedByController = !!(mission?.verified_by && mission?.verified_at && !canEditVerifiedProviderTotal);
   // MODO EDIÇÃO TOTAL: Barbara e Thiago podem destravar TODOS os campos da OS
   // (operacional, cliente, fornecedor, financeiro), inclusive em OS aprovadas.
   // O acionamento é registrado em system_logs (MissionEditHistory).
@@ -478,7 +533,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // escolhida passa a valer. Usa "thiago moreira" (não só "thiago") para não
   // pegar o comercial Thiago Arruda.
   const canOverrideAutoProvider = useMemo(() => {
-    return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
+    return userRoleLower === 'administrador' || userRoleLower === 'diretoria' || userRoleLower === 'controller'
       || userNameLower.includes('barbara') || userNameLower.includes('bárbara')
       || userNameLower.includes('thiago moreira')
       || userNameLower.includes('simone');
@@ -494,35 +549,39 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // isController: identifica o cargo Controller para travas de edição.
   // Quando EDIÇÃO TOTAL está ligada, o gate de Controller é suspenso para
   // que TODOS os campos (cliente, pedágio, etc.) fiquem editáveis.
-  const isController = userRoleLower === 'controller' && !fullEditMode;
+  const isController = userRoleLower === 'controller' && !fullEditMode && !isBarbaraFinance;
 
   const canEditOpsData = useMemo(() => {
     if (fullEditMode) return true;
+    if (isBarbaraFinance) return true;
     try {
       const u = JSON.parse(localStorage.getItem('userData') || '{}');
       if (userNameLower.includes('plinio') || userNameLower.includes('plínio')) return true;
       return ['diretoria', 'administrador', 'avançado', 'avancado', 'controller'].includes(userRoleLower) || u.permissions?.includes('*');
     } catch { return false; }
-  }, [userRoleLower, userNameLower, fullEditMode]);
+  }, [userRoleLower, userNameLower, fullEditMode, isBarbaraFinance]);
   const canEditEndTimeOnly = useMemo(() => {
     return canEditOpsData || ['operacional', 'operador'].includes(userRoleLower) || fullEditMode;
   }, [canEditOpsData, userRoleLower, fullEditMode]);
   const canEditClientData = (canEditOpsData && !isController) || fullEditMode;
+  // Controller pode ajustar o valor total do fornecedor mesmo após verificação.
+  const canEditProviderCostTotal = canEditOpsData && (fullEditMode || !isProviderTotalLockedByController || isControllerRole);
 
   // TRAVA PÓS-SALVAMENTO: assim que alguém salva ou aprova um faturamento,
   // todos os campos editáveis são bloqueados em todas as telas. Diretoria,
   // administrador e CEO podem destravar manualmente para corrigir algo.
   const isBillingLocked = !!(mission?.billing_verified_by || mission?.billing_approved || mission?.snapshot_approved_by);
   const isPlinio = userNameLower.includes('plinio') || userNameLower.includes('plínio');
-  const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower) || isPlinio;
+  const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower) || isPlinio || isBarbaraFinance;
   // ADMINISTRADOR (ex: Barbara) tem liberação permanente: pode editar OS aprovada
   // a qualquer momento. O sistema registra cada alteração no histórico permanente.
-  const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode || isPlinio;
+  const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode || isPlinio || isBarbaraFinance;
   const isDirectorAccess = userRoleLower === 'diretoria' || userRoleLower === 'administrador';
   const [unlockOverride, setUnlockOverride] = useState(false);
-  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); }, [mission?.id]);
+  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); staleAutoResyncDoneRef.current = null; }, [mission?.id]);
   useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); setShowTollConfirmDialog(false); setTollConfirmAutoOpened(false); } }, [isOpen]);
   const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
+  const canEditOpsEvenIfLocked = isBarbaraFinance || !isEffectivelyLocked;
   // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
   // da memória de cálculo devem ACOMPANHAR a tabela escolhida sempre que o
   // usuário tem permissão de trocar a tabela mesmo numa OS travada
@@ -562,6 +621,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     const formatted = v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const prevToll = parseNumber(tollInput);
     const prevTollProv = parseNumber(tollProviderInput);
+    const isSameOs = mission?.is_same_os === true;
     // Valor do pedágio do fornecedor: espelha o cliente quando ainda não havia
     // pedágio de fornecedor distinto; caso contrário preserva o valor existente.
     const newTollProv = (prevTollProv <= 0 || prevTollProv === prevToll) ? v : prevTollProv;
@@ -572,7 +632,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     // sendo apenas o serviço), então não tocamos receita/custo aqui.
     if (mission?.id) {
         const r2 = (n: number) => Math.round(n * 100) / 100;
-        const isSameOs = mission.is_same_os === true;
         const payload: any = {
             toll_value: r2(v),
             toll_value_provider: isSameOs ? 0 : r2(newTollProv),
@@ -923,6 +982,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (!initialMission?.id || isSavingRef.current) return;
       userManuallyEditedRef.current = false;
       dbValuesLoadedRef.current = false;
+      staleAutoResyncDoneRef.current = null;
       setUseSavedValues(false);
       setIsLoading(true);
       // Reseta apelidos do fornecedor para evitar carry-over de uma OS
@@ -981,7 +1041,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           const [mRes, ctRes, ptRes, clRes] = await Promise.all([
               supabase.from('missions').select('*').eq('id', initialMission.id).single(),
-              supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(clientName)),
+              fetchClientPriceTables(supabase, clientName).then((rows) => ({ data: rows, error: null })).catch((e: any) => ({ data: null, error: e })),
               ptQuery,
               supabase.from('clients').select('*').ilike('name', `%${ctShort}%`).single()
           ]);
@@ -1027,6 +1087,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       }
                   } catch {}
               }
+
+              let loadedRevReason = mRes.data.revenue_edit_reason || '';
+              let loadedCostReason = mRes.data.cost_edit_reason || '';
+              if (!loadedRevReason && !loadedCostReason) {
+                  const { data: reasonLog } = await supabase.from('system_logs')
+                      .select('details')
+                      .eq('entity', 'Mission')
+                      .eq('entity_id', initialMission.id)
+                      .eq('action_type', 'VALUE_EDIT_REASON')
+                      .order('created_at', { ascending: false })
+                      .limit(1)
+                      .single();
+                  if (reasonLog?.details) {
+                      try {
+                          const parsed = typeof reasonLog.details === 'string' ? JSON.parse(reasonLog.details) : reasonLog.details;
+                          if (parsed.revenue_edit_reason) loadedRevReason = parsed.revenue_edit_reason;
+                          if (parsed.cost_edit_reason) loadedCostReason = parsed.cost_edit_reason;
+                      } catch {}
+                  }
+              }
+
               const fullMission = {
                   ...initialMission,
                   ...d,
@@ -1036,8 +1117,28 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   startTime: d.start_time ?? initialMission.startTime,
                   endTime: d.end_time ?? initialMission.endTime,
                   totalDistance: d.total_distance ?? initialMission.totalDistance,
+                  revenue_edit_reason: loadedRevReason || d.revenue_edit_reason,
+                  cost_edit_reason: loadedCostReason || d.cost_edit_reason,
               };
               setMission(fullMission);
+
+              // Se origem/destino existem mas KM previsto está zerado, recalcula automaticamente.
+              if (
+                  !mRes.data.is_same_os
+                  && mRes.data.status !== MissionStatus.CANCELLED
+                  && mRes.data.origin
+                  && mRes.data.destination
+                  && safeNumber(mRes.data.total_distance) <= 0
+              ) {
+                  void (async () => {
+                      const km = await fetchRouteDistanceKm(String(mRes.data.origin), String(mRes.data.destination));
+                      if (km != null && km > 0) {
+                          await supabase.from('missions').update({ total_distance: km, last_update: new Date().toISOString() }).eq('id', initialMission.id);
+                          setMission((prev) => prev ? { ...prev, totalDistance: km, total_distance: km } : prev);
+                          setMemoryLoaded(false);
+                      }
+                  })();
+              }
 
               setEditStartKm(mRes.data.start_km ? String(mRes.data.start_km) : '');
               setEditEndKm(mRes.data.end_km ? String(mRes.data.end_km) : '');
@@ -1078,26 +1179,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                               fullMission.provider_end_time = parsed.provider_end_time;
                               setMission(fullMission);
                           }
-                      } catch {}
-                  }
-              }
-
-              let loadedRevReason = mRes.data.revenue_edit_reason || '';
-              let loadedCostReason = mRes.data.cost_edit_reason || '';
-              if (!loadedRevReason && !loadedCostReason) {
-                  const { data: reasonLog } = await supabase.from('system_logs')
-                      .select('details')
-                      .eq('entity', 'Mission')
-                      .eq('entity_id', initialMission.id)
-                      .eq('action_type', 'VALUE_EDIT_REASON')
-                      .order('created_at', { ascending: false })
-                      .limit(1)
-                      .single();
-                  if (reasonLog?.details) {
-                      try {
-                          const parsed = typeof reasonLog.details === 'string' ? JSON.parse(reasonLog.details) : reasonLog.details;
-                          if (parsed.revenue_edit_reason) loadedRevReason = parsed.revenue_edit_reason;
-                          if (parsed.cost_edit_reason) loadedCostReason = parsed.cost_edit_reason;
                       } catch {}
                   }
               }
@@ -1153,9 +1234,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
               const isVendorVerified = !!(mRes.data.verified_by && mRes.data.verified_at);
 
-              const hasManualEditReason = !!(mRes.data.revenue_edit_reason || mRes.data.cost_edit_reason);
-              const hasVerifiedSave = !!mRes.data.billing_verified_by;
-              if (hasManualEditReason || hasVerifiedSave) {
+              const intentionalRevOverride = isIntentionalBillingOverride(loadedRevReason);
+              const intentionalCostOverride = isIntentionalBillingOverride(loadedCostReason);
+              if (intentionalRevOverride || intentionalCostOverride) {
                   userManuallyEditedRef.current = true;
                   setUseSavedValues(true);
               }
@@ -1610,30 +1691,86 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setCostInput(fmtBR(autoProviderTotal));
           }
 
-          // Task #133: o número grande (cliente verde e fornecedor azul) é, por
-          // padrão, uma cópia fiel do total da memória de cálculo. Mesmo quando
-          // já existe valor salvo no banco (dbValuesLoadedRef), o número grande
-          // acompanha o cálculo — corrigindo valores antigos que ficavam
-          // "presos" e divergentes (o aviso âmbar indevido). NÃO roda quando:
-          //  - há edição manual de propósito (userManuallyEditedRef, setado no
-          //    load quando há revenue_edit_reason/cost_edit_reason ou
-          //    billing_verified_by) -> preserva o override da diretoria;
-          //  - está salvando;
-          //  - a OS está travada/aprovada SEM permissão de troca de tabela
-          //    (lockAllowsRecalc=false) -> o snapshot financeiro congelado
-          //    permanece intacto. Task #143: quando o usuário PODE trocar a
-          //    tabela mesmo travado, o número grande acompanha a nova tabela
-          //    (só na tela; nada é gravado até Salvar/Aprovar).
-          if (dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && lockAllowsRecalc) {
+          // Task #133: o número grande acompanha o cálculo quando o valor salvo
+          // ficou defasado. Overrides intencionais (edição manual divergente) são
+          // preservados via isIntentionalBillingOverride — ver bloco canResyncSaved.
+          // Task #133 + auto-resync: alinha o número grande ao cálculo quando o valor
+          // salvo ficou defasado (ex.: motor evoluiu após "Salvamento manual confirmado").
+          // Preserva overrides INTENCIONAIS (edição manual divergente, desconto, etc.).
+          const revIntentional = isIntentionalBillingOverride(mission.revenue_edit_reason);
+          const costIntentional = isIntentionalBillingOverride(mission.cost_edit_reason);
+          const canResyncSaved = dbValuesLoadedRef.current && !isSavingRef.current && lockAllowsRecalc && !isEffectivelyLocked;
+
+          if (canResyncSaved) {
               const currentRev = parseNumber(revenueInput);
-              if (autoClientTotal > 0 && Math.abs(currentRev - autoClientTotal) > 1) {
+              const needRev = !revIntentional && autoClientTotal > 0 && Math.abs(currentRev - autoClientTotal) > 1;
+              if (needRev) {
                   setRevenueInput(fmtBR(autoClientTotal));
               }
               const currentCost = parseNumber(costInput);
-              if (!mission.is_same_os && autoProviderTotal > 0 && Math.abs(currentCost - autoProviderTotal) > 1) {
+              const needCost = !mission.is_same_os && !costIntentional && !userManuallyEditedRef.current && !isControllerRole
+                  && autoProviderTotal > 0 && Math.abs(currentCost - autoProviderTotal) > 1;
+              if (needCost) {
                   setCostInput(fmtBR(autoProviderTotal));
               } else if (mission.is_same_os && currentCost !== 0) {
                   setCostInput('0,00');
+              }
+
+              // Persiste automaticamente no banco (uma vez por abertura) para não exigir
+              // clique em "Restaurar Auto" nem novo Salvar só por regra de cálculo atualizada.
+              if ((needRev || needCost) && staleAutoResyncDoneRef.current !== mission.id) {
+                  staleAutoResyncDoneRef.current = mission.id;
+                  const r2 = (v: number) => Math.round(v * 100) / 100;
+                  const revServiceOnly = financialData.client.serviceTotal;
+                  const costServiceOnly = mission.is_same_os ? 0 : financialData.provider.serviceTotal;
+                  const toll = parseNumber(tollInput);
+                  const tollProv = mission.is_same_os ? 0 : parseNumber(tollProviderInput);
+                  const payload: Record<string, unknown> = {
+                      last_update: new Date().toISOString(),
+                  };
+                  if (needRev) {
+                      payload.revenue_value = r2(revServiceOnly);
+                      payload.revenue_edit_reason = '';
+                  }
+                  if (needCost) {
+                      payload.cost_value = r2(costServiceOnly);
+                      payload.cost_edit_reason = '';
+                  }
+                  if (!mission.billing_verified_by && (needRev || needCost)) {
+                      payload.billing_verified_by = null;
+                  }
+                  (async () => {
+                      try {
+                          const { error } = await supabase.from('missions').update(payload).eq('id', mission.id);
+                          if (error) throw error;
+                          setMission((prev) => prev ? {
+                              ...prev,
+                              ...(needRev ? { revenue_value: payload.revenue_value as number, revenue_edit_reason: '' } : {}),
+                              ...(needCost ? { cost_value: payload.cost_value as number, cost_edit_reason: '' } : {}),
+                          } : prev);
+                          await supabase.from('system_logs').insert([{
+                              user_name: 'Sistema',
+                              action_type: 'AUTO_RESYNC_BILLING',
+                              entity: 'Mission',
+                              entity_id: mission.id,
+                              details: JSON.stringify({
+                                  revenue: needRev ? r2(revServiceOnly) : null,
+                                  cost: needCost ? r2(costServiceOnly) : null,
+                                  toll: r2(toll),
+                                  tollProvider: r2(tollProv),
+                                  clientExcessKm: financialData.client.excessKm,
+                                  clientExtraKmVal: r2(financialData.client.extraKmVal),
+                              }),
+                          }]);
+                          showNotification(
+                              'Cálculo atualizado',
+                              'Valor salvo anteriormente foi alinhado automaticamente ao cálculo da tabela.',
+                              'success',
+                          );
+                      } catch (e) {
+                          console.warn('[Auto-resync billing] Falha ao persistir:', e);
+                      }
+                  })();
               }
           }
 
@@ -1645,7 +1782,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // passa a ser o do motor, evitando o "R$ 0,00" remanescente de
           // gravações antigas (anteriores ao motor).
           // Só não roda durante salvamento ou logo após edição manual.
-          if (financialData.autoEngine?.active && !mission.is_same_os && !userManuallyEditedRef.current && !isSavingRef.current) {
+          if (financialData.autoEngine?.active && !mission.is_same_os && !userManuallyEditedRef.current && !isSavingRef.current && !isControllerRole) {
               const engineCostTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
               const currentCostInput = parseNumber(costInput);
               if (engineCostTotal > 0 && Math.abs(currentCostInput - engineCostTotal) > 1) {
@@ -1671,7 +1808,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
               const calcCostTotal = financialData.provider.total + parseNumber(displacementProviderInput);
               const currentCostInput = parseNumber(costInput);
-              if (!mission.is_same_os && calcCostTotal > 0 && Math.abs(currentCostInput - calcCostTotal) > 1) {
+              if (!mission.is_same_os && !isControllerRole && calcCostTotal > 0 && Math.abs(currentCostInput - calcCostTotal) > 1) {
                   setCostInput(fmt(calcCostTotal));
               }
           }
@@ -1693,7 +1830,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
       }
-    }, [financialData, memoryLoaded, mission, tollProviderInput, displacementInput, displacementProviderInput, useSavedValues, isLoading]); 
+    }, [financialData, memoryLoaded, mission, tollProviderInput, displacementInput, displacementProviderInput, useSavedValues, isLoading, isEffectivelyLocked, lockAllowsRecalc, revenueInput, costInput, tollInput, showNotification]); 
 
     // KM de deslocamento autorizado pela DHL: o campo dhl_deslocamento_km
     // (digitado no "Atualizar Missão") vira cobrança automática pelo campo
@@ -2179,7 +2316,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro, Controller ou Diretoria podem editar.`, 'error');
           return;
       }
-      if (currentApprovalStatus.lockedByDiretoria) {
+      if (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) {
           showNotification('Bloqueado', 'Esta OS foi aprovada pela Diretoria. Somente a Diretoria pode editar.', 'error');
           return;
       }
@@ -2190,7 +2327,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       // Só é exigido quando a missão está Concluída ou Cancelada.
       const missionStatusTrim = (mission.status || '').trim();
       const requiresTollGate = missionStatusTrim === 'Concluída' || missionStatusTrim === 'Cancelada';
-      if (approve && !mission.billing_approved && requiresTollGate) {
+      if (approve && !mission.billing_approved && requiresTollGate && !isBarbaraFinance) {
           if (!tollConfirmed) {
               setShowTollConfirmDialog(true);
               showNotification('Pedágio Não Confirmado', 'Confirme se há ou não pedágio antes de aprovar.', 'error');
@@ -2554,6 +2691,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const dispChanged = (existingSnap.displacementVal || 0) !== displacement;
               const dispProvChanged = (existingSnap.displacementProvider || 0) !== dispProv;
               const tableChanged = String(existingSnap.clientTableId || '') !== String(newClientTableId || '');
+              const newProviderTableId = sanitizeProviderTableId(
+                manualProviderTableId || financialData?.provider.tableId || existingSnap.providerTableId,
+              );
+              const providerTableChanged =
+                String(existingSnap.providerTableId || '') !== String(newProviderTableId || '');
               const breakdownChanged = (
                   r2(existingSnap.activationFee || 0) !== r2(newActivationFee) ||
                   (existingSnap.franchiseKm || 0) !== newFranchiseKm ||
@@ -2564,7 +2706,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   r2(existingSnap.hrExtraTotal || 0) !== r2(newHrExtraTotal)
               );
 
-              if (revenueChanged || costChanged || tollChanged || tollProvChanged || dispChanged || dispProvChanged || tableChanged || breakdownChanged) {
+              if (revenueChanged || costChanged || tollChanged || tollProvChanged || dispChanged || dispProvChanged || tableChanged || providerTableChanged || breakdownChanged) {
                   const updatedSnap = {
                       ...existingSnap,
                       // valores financeiros
@@ -2578,7 +2720,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       // tabela e breakdown atual — mantém o snapshot
                       // alinhado com a tabela escolhida na auditoria
                       clientTableId: newClientTableId,
-                      providerTableId: sanitizeProviderTableId(manualProviderTableId || financialData?.provider.tableId || existingSnap.providerTableId),
+                      providerTableId: newProviderTableId,
                       tableName: newTableName,
                       activationFee: r2(newActivationFee),
                       franchiseKm: newFranchiseKm,
@@ -2946,7 +3088,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isAwaitingCheck = tollSource === 'AGUARDANDO CONFERÊNCIA';
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+    <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center overflow-y-auto bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in">
       
       {showAuditSummary && (
           <div className="absolute inset-0 z-[125] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowAuditSummary(false)}>
@@ -3088,8 +3230,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   <ClientPriceForm 
                       onBack={() => { setIsEditClientTableOpen(false); setEditClientTableId(null); }} 
                       onSuccess={async (newTableId?: string) => {
-                          const { data } = await supabase.from('client_price_tables').select('*');
-                          if (data) {
+                          const missionClient = mission?.originalClientName || mission?.client || '';
+                          const data = missionClient ? await fetchClientPriceTables(supabase, missionClient) : [];
+                          if (data.length > 0) {
                               setClientTables(data as any);
                               setCustomClientBase('');
                               setCustomClientKm('');
@@ -3176,7 +3319,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[95vh] border border-gray-200 relative z-[100]">
+      <div className="my-3 sm:my-0 bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] sm:max-h-[95vh] border border-gray-200 relative z-[100]">
         <header className="bg-[#0f172a] text-white p-5 flex flex-col gap-3 shrink-0">
           <div className="flex flex-col xl:flex-row xl:justify-between xl:items-start gap-3">
             <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -3437,32 +3580,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                           const v = parseFloat((editKmManual || '').replace(',', '.'));
                                           newDistanceKm = isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : null;
                                       } else {
-                                      try {
-                                          if (isMapsLoaded && (window as any).google?.maps) {
-                                              const ds = new (window as any).google.maps.DirectionsService();
-                                              const result: any = await new Promise((resolve, reject) => {
-                                                  ds.route({
-                                                      origin: editOrigin.trim() + ', Brasil',
-                                                      destination: editDestination.trim() + ', Brasil',
-                                                      travelMode: (window as any).google.maps.TravelMode.DRIVING,
-                                                      unitSystem: (window as any).google.maps.UnitSystem.METRIC,
-                                                      region: 'br',
-                                                  }, (res: any, status: string) => {
-                                                      if (status === 'OK') resolve(res);
-                                                      else reject(new Error('Directions status: ' + status));
-                                                  });
-                                              });
-                                              const legs = result?.routes?.[0]?.legs || [];
-                                              const totalMeters = legs.reduce((acc: number, l: any) => acc + (l?.distance?.value || 0), 0);
-                                              console.log('[Directions API]', 'meters:', totalMeters, 'legs:', legs.length);
-                                              if (totalMeters > 0) {
-                                                  newDistanceKm = Math.round((totalMeters / 1000) * 100) / 100;
-                                              }
+                                          newDistanceKm = await fetchRouteDistanceKm(editOrigin.trim(), editDestination.trim());
+                                          if (newDistanceKm === null) {
+                                              showNotification('KM não calculado', 'Não foi possível calcular a distância. Marque KM manual ou tente novamente.', 'error');
                                           }
-                                      } catch (geoErr) {
-                                          console.warn('Falha ao calcular distância (Directions API):', geoErr);
                                       }
-                                      } // fecha else (modo Directions automático)
 
                                       const updatePayload: any = {
                                           origin: editOrigin.trim(),
@@ -3857,7 +3979,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <div className="bg-green-50/50 border border-green-200 rounded-xl p-3">
                                     <div className="flex items-center justify-between mb-3">
                                         <p className="text-[10px] font-black text-green-700 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={12}/> Dados Cliente</p>
-                                        {(canEditClientData || canEditEndTimeOnly) && !isEditingOpsData && !isEffectivelyLocked && (
+                                        {(canEditClientData || canEditEndTimeOnly) && canEditOpsEvenIfLocked && !isEditingOpsData && (
                                             <button onClick={() => setIsEditingOpsData(true)} className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-green-600 bg-green-100 rounded-lg hover:bg-green-200 uppercase tracking-wider transition-all" data-testid="button-edit-ops-data"><Edit2 size={10}/> {canEditClientData ? 'Editar' : 'Editar Data/Hora'}</button>
                                         )}
                                         {isEditingOpsData && (
@@ -3940,7 +4062,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 <span className="text-[8px] font-bold text-blue-400 bg-blue-100 px-1.5 py-0.5 rounded-full">CÓPIA CLIENTE</span>
                                             )}
                                         </div>
-                                        {canEditOpsData && !isEditingProvOpsData && !isEffectivelyLocked && (
+                                        {canEditOpsData && canEditOpsEvenIfLocked && !isEditingProvOpsData && (
                                             <button onClick={() => setIsEditingProvOpsData(true)} className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200 uppercase tracking-wider transition-all" data-testid="button-edit-prov-ops-data"><Edit2 size={10}/> Editar</button>
                                         )}
                                         {isEditingProvOpsData && (
@@ -4110,7 +4232,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         const isMasterRow = (t: any) => /^__AUTO_MASTER__/i.test((t.operation_type || '').trim());
                                         const onlyThisClient = clientTables.filter(t => {
                                             if (isMasterRow(t)) return false;
-                                            return isSameClientName(t.client || '', missionClientName);
+                                            return clientTableMatchesMission(t.client || '', missionClientName);
                                         });
                                         const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables.filter(t => !isMasterRow(t));
                                         const options: FilterableSelectOption[] = [
@@ -5065,7 +5187,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     const isMasterRow = (t: any) => /^__AUTO_MASTER__/i.test((t.operation_type || '').trim());
                                     const onlyThisClient = clientTables.filter(t => {
                                         if (isMasterRow(t)) return false;
-                                        return isSameClientName(t.client || '', missionClientName);
+                                        return clientTableMatchesMission(t.client || '', missionClientName);
                                     });
                                     const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables.filter(t => !isMasterRow(t));
                                     const swapOptions: FilterableSelectOption[] = [
@@ -5182,7 +5304,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     {mission?.verified_by && mission?.verified_at && <Lock size={12} className="text-blue-600" />}
                                 </label>
                                 <div className="flex items-center gap-2">
-                                {!(mission?.verified_by && mission?.verified_at) && (() => {
+                                {(!mission?.verified_by || !mission?.verified_at || canEditVerifiedProviderTotal) && (() => {
                                     const calcCostBtn = financialData ? (financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput)) : 0;
                                     const inputCostBtn = parseNumber(costInput);
                                     const isManualCostBtn = inputCostBtn > 0 && calcCostBtn > 0 && Math.abs(inputCostBtn - calcCostBtn) > 1;
@@ -5203,7 +5325,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </button>
                                     );
                                 })()}
-                                {!(mission?.verified_by && mission?.verified_at) && !mission.is_same_os && (() => {
+                                {(!mission?.verified_by || !mission?.verified_at || canEditVerifiedProviderTotal) && !mission.is_same_os && (() => {
                                     const swapOptions: FilterableSelectOption[] = [
                                         { value: '', label: 'IA Detectando Melhor Custo...' },
                                         ...[...filteredProviderTables]
@@ -5227,10 +5349,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 })()}
                                 </div>
                             </div>
-                            {mission?.verified_by && mission?.verified_at && (
+                            {mission?.verified_by && mission?.verified_at && !canEditVerifiedProviderTotal && (
                                 <div className="bg-blue-100 border border-blue-300 rounded-lg px-3 py-1.5 mb-2 flex items-center gap-2">
                                     <ShieldCheck size={14} className="text-blue-700" />
-                                    <span className="text-[9px] font-black text-blue-800">VERIFICADO PELO CONTROLLER — Valor travado. Somente Diretoria pode alterar.</span>
+                                    <span className="text-[9px] font-black text-blue-800">VERIFICADO PELO CONTROLLER — Valor travado. Somente Diretoria/Controller podem alterar.</span>
                                 </div>
                             )}
                             {(() => {
@@ -5301,17 +5423,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <input 
                                     type="text" 
                                     inputMode="decimal"
-                                    className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${(!canEditOpsData || (!fullEditMode && mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower))) ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
+                                    className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${!canEditProviderCostTotal ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                     value={costInput} 
-                                    onChange={e => { if (canEditOpsData && (fullEditMode || !(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower)))) { userManuallyEditedRef.current = true; setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
-                                    readOnly={!canEditOpsData || (!fullEditMode && !!(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower)))}
+                                    onChange={e => { if (canEditProviderCostTotal) { userManuallyEditedRef.current = true; setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
+                                    readOnly={!canEditProviderCostTotal}
                                     data-testid="input-cost-total"
                                 />
                             </div>
                             <p className="text-[8px] text-blue-600 font-bold mt-1 italic">
                                 {mission?.verified_by && mission?.verified_at
-                                    ? '🔒 VALOR VERIFICADO PELO CONTROLLER — Somente Diretoria pode alterar'
-                                    : canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : ''}
+                                    ? (canEditVerifiedProviderTotal
+                                        ? (isControllerRole
+                                            ? '✓ CONTROLLER — Você pode ajustar o valor do fornecedor'
+                                            : '✓ VALOR VERIFICADO PELO CONTROLLER — Diretoria/Controller podem ajustar')
+                                        : '🔒 VALOR VERIFICADO PELO CONTROLLER — Somente Diretoria/Controller podem alterar')
+                                    : canEditProviderCostTotal ? '* EDITÁVEL - CONTROLLER / DIRETORIA / ADMINISTRADOR (toque para editar)' : ''}
                             </p>
                             {(showCostReasonInput || costEditReason) && (
                                 <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
@@ -5571,21 +5697,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
                     <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-gray-200 z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
                         <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
-                            <div className="flex gap-12 items-center">
+                            <div className="flex flex-wrap gap-4 md:gap-12 items-center justify-center md:justify-start">
                                 <div>
                                     <p className="text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">Resultado Operacional Final</p>
                                     <h3 className={`text-3xl font-black font-mono tracking-tighter ${footerProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                         {formatCurrency(footerProfit)}
                                     </h3>
                                 </div>
-                                <div className="border-l border-gray-200 pl-12 hidden md:block">
+                                <div className="border-l border-gray-200 pl-4 md:pl-12">
                                     <p className="text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">Margem Líquida %</p>
-                                    <h3 className="text-3xl font-black font-mono tracking-tighter text-blue-600">
+                                    <h3 className="text-xl md:text-3xl font-black font-mono tracking-tighter text-blue-600">
                                         {footerMarginPct.toFixed(1)}%
                                     </h3>
                                 </div>
                                 {!currentApprovalStatus.isFullyApproved && (
-                                    <div className="border-l border-gray-200 pl-6 hidden md:block">
+                                    <div className="border-l border-gray-200 pl-4 md:pl-6">
                                         <p className="text-[10px] font-black text-amber-600 uppercase mb-0.5 tracking-widest">Aprovações</p>
                                         <div className="flex gap-1.5">
                                             <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${currentApprovalStatus.hasAuditor ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>AUD</span>
@@ -5603,14 +5729,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wide">Salvo por {savedByInfo}</span>
                                     </div>
                                 )}
-                                <div className="flex gap-3">
-                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || currentApprovalStatus.lockedByDiretoria || isEffectivelyLocked} className={`px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 ${(currentApprovalStatus.lockedByDiretoria || isEffectivelyLocked) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={isEffectivelyLocked ? 'Faturamento travado — destrave para editar' : ''} data-testid="button-save-adjustments">
-                                    {isUpdating ? <Loader2 size={16} className="animate-spin" /> : currentApprovalStatus.lockedByDiretoria ? <Lock size={16} /> : <Save size={16} />} {currentApprovalStatus.lockedByDiretoria ? 'Bloqueado (Diretoria)' : 'Salvar Ajustes'}
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked} className={`px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 ${((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={isEffectivelyLocked ? 'Faturamento travado — destrave para editar' : ''} data-testid="button-save-adjustments">
+                                    {isUpdating ? <Loader2 size={16} className="animate-spin" /> : (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? <Lock size={16} /> : <Save size={16} />} {(currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado (Diretoria)' : 'Salvar Ajustes'}
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 
-                                    disabled={isUpdating || (requiresTollGate && !tollConfirmed) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))} 
-                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${requiresTollGate && !tollConfirmed ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    disabled={isUpdating || (requiresTollGate && !tollConfirmed && !isBarbaraFinance) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))} 
+                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${requiresTollGate && !tollConfirmed && !isBarbaraFinance ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
                                     data-testid="button-approve-billing"
                                 >
                                     <span className="flex items-center gap-2">
@@ -5619,7 +5745,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             ? 'Re-Aprovar Faturamento'
                                             : (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')
                                             ? 'OS Pendente — Não Aprovável' 
-                                            : requiresTollGate && !tollConfirmed 
+                                            : requiresTollGate && !tollConfirmed && !isBarbaraFinance 
                                                 ? 'Confirme o Pedágio' 
                                                 : currentApprovalStatus.lockedByDiretoria
                                                     ? 'Bloqueado — Somente Diretoria'

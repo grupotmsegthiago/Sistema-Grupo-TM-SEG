@@ -1,4 +1,4 @@
-import { throttleZapiSend } from "../../zapiThrottle";
+import { fetchZapiExtensionToken } from "../zapiExtensionToken";
 import { invalidateBotPhoneCache } from "../../zapiGuard";
 import {
   credsFromInstance,
@@ -133,7 +133,12 @@ export class ZapiWhatsappProvider implements WhatsappProvider {
     const r = await throttleZapiSend(label, () => fetch(`${zapiBasePathFor(creds)}/send-image`, {
       method: "POST",
       headers: { ...zapiHeadersFor(creds, true) },
-      body: JSON.stringify({ phone: params.phone, image: params.imageBase64, caption: params.caption }),
+      body: JSON.stringify({
+        phone: params.phone,
+        image: params.imageBase64.trim(),
+        caption: params.caption,
+        viewOnce: false,
+      }),
     }), queueMeta);
     const text = await r.text();
     let data: any = null;
@@ -163,6 +168,10 @@ export class ZapiWhatsappProvider implements WhatsappProvider {
     const { ok, data, text } = await zapiFetchWith(this.creds(), `phone-code/${full}`, { method: "GET" });
     if (!ok) return { code: null, error: data?.error || text };
     return { code: String(data?.value || "").trim() || null };
+  }
+
+  async getExtensionToken() {
+    return fetchZapiExtensionToken(this.creds());
   }
 
   async mobileRegistrationAvailable() {

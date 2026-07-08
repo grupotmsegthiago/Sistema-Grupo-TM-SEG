@@ -1,15 +1,42 @@
 import { googleMapsApiKey } from './maps';
 
 const LOGO_SRC = '/logo.png';
+const MAX_CANVAS_DIM = 4096;
+const MAX_CANVAS_PIXELS = 16_777_216;
 
 export function loadStampImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    // blob:/data: são same-origin — crossOrigin='anonymous' quebra colagem no Safari/iOS.
+    if (!src.startsWith('blob:') && !src.startsWith('data:')) {
+      img.crossOrigin = 'anonymous';
+    }
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error('Falha ao carregar imagem'));
     img.src = src;
   });
+}
+
+/** Reduz dimensões que estouram limites de canvas/toBlob no navegador. */
+export function computeScaledCanvasSize(
+  naturalWidth: number,
+  naturalHeight: number,
+): { width: number; height: number; scale: number } {
+  if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight) || naturalWidth <= 0 || naturalHeight <= 0) {
+    throw new Error('Imagem inválida ou corrompida');
+  }
+  let scale = 1;
+  if (naturalWidth > MAX_CANVAS_DIM || naturalHeight > MAX_CANVAS_DIM) {
+    scale = Math.min(MAX_CANVAS_DIM / naturalWidth, MAX_CANVAS_DIM / naturalHeight);
+  }
+  let width = Math.max(1, Math.round(naturalWidth * scale));
+  let height = Math.max(1, Math.round(naturalHeight * scale));
+  if (width * height > MAX_CANVAS_PIXELS) {
+    scale = Math.sqrt(MAX_CANVAS_PIXELS / (naturalWidth * naturalHeight));
+    width = Math.max(1, Math.round(naturalWidth * scale));
+    height = Math.max(1, Math.round(naturalHeight * scale));
+  }
+  return { width, height, scale };
 }
 
 /** Logo TM SEG (sup. dir.) + badge Instagram + @grupo_tmseg + site (inf. dir.). */

@@ -7,16 +7,27 @@ import { supabase, MISSION_UPDATES_BROADCAST_CHANNEL } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { clientFuzzyFilter, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
+import { optimizeImageForAI } from '../lib/imageForAI';
+import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
 import { showWhatsappCopyPopup } from '../lib/whatsappCopyFlow';
-import { shouldSendDhlGroupUpdate } from '../lib/dhlGroupUpdateFilter';
+import { hasExplicitUpdatePrint, shouldSendClientGroupWhatsApp } from '../lib/clientGroupUpdateFilter';
 import {
+  buildMonitoringWhatsAppReport,
+  formatAgentShortName,
+  parseMonitoringCityFromLocationName,
+} from '../lib/monitoringWhatsAppReport';
+import {
+  computeScaledCanvasSize,
   createBrandedFallbackPhoto,
   dataUrlToBlob,
   loadStampImage,
+  stampBrandOnImageBlob,
   stampBrandOverlays,
   waitUntil,
 } from '../lib/brandPhotoStamp';
+import type { PrintPipelineTimings } from '../lib/printPipelineTypes';
 import { useNotification } from '../lib/NotificationContext';
+import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
   Layers, Navigation, History, 
@@ -73,9 +84,13 @@ async function sendUpdateToClientGroup(
     message: string,
     photo: Blob | null,
     missionId?: string,
+    requirePhoto = false,
 ): Promise<{ sent: boolean; skipped?: boolean; error?: string }> {
     try {
         if (!clientName || !message) return { sent: false, skipped: true };
+        if (requirePhoto && !photo) {
+            return { sent: false, error: 'foto obrigatória ausente para envio ao grupo' };
+        }
         let imageBase64: string | undefined;
         if (photo) {
             imageBase64 = await new Promise<string>((resolve, reject) => {
@@ -88,7 +103,7 @@ async function sendUpdateToClientGroup(
         const resp = await authFetch('/api/whatsapp/send-group', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clientName, message, imageBase64, missionId }),
+            body: JSON.stringify({ clientName, message, imageBase64, missionId, requireImage: requirePhoto }),
         });
         const data = await resp.json().catch(() => null);
         if (resp.ok && data?.sent) return { sent: true };
@@ -245,21 +260,13 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     // Na conclusão, ATIVA/TM SEG ainda podem omitir KM final; evidência é sempre exigida.
     const evidenceOk = !!odoUrl;
 
-    const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const res = String(reader.result || '');
-            resolve(res.includes(',') ? res.split(',')[1] : res);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
-
     const validateOdometer = async (file: File, targetKm: number | null) => {
         if (targetKm == null || targetKm <= 0) { setOdoErr('Informe o KM final antes de validar o print.'); return; }
         setOdoChecking(true); setOdoErr(''); setOdoResult(null); setOdoConfirmed(false);
         try {
-            const base64 = await fileToBase64(file);
+            // Reduz/comprime só a cópia enviada à IA (o print salvo como
+            // evidência continua em qualidade original) — leitura muito mais rápida.
+            const aiImage = await optimizeImageForAI(file);
             const prompt = `Você é um auditor de frotas. Analise a imagem do PAINEL/HODÔMETRO de um veículo e compare com o valor de KM FINAL informado pelo operador: ${targetKm}.
 Tarefas:
 1. Identifique se a imagem mostra de fato um hodômetro/painel de veículo (campo "concluido": true se for um hodômetro legível, false caso contrário).
@@ -267,10 +274,17 @@ Tarefas:
 3. Compare o valor extraído com o KM FINAL informado (${targetKm}). Se forem diferentes (tolerância de 2 km), "divergencia": true.
 4. Escreva uma justificativa curta em português (campo "justificativa").
 Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": boolean, "km_extraido": string|null, "divergencia": boolean, "justificativa": string}`;
-            const raw = await generateContent({
-                contents: { parts: [ { inlineData: { mimeType: file.type || 'image/png', data: base64 } }, { text: prompt } ] },
-                config: { responseMimeType: 'application/json' },
-            });
+            // Timeout de 30s: se o Gemini travar, a tela NÃO fica presa no spinner.
+            // A validação por IA é apenas um apoio — a OS pode ser concluída mesmo
+            // que ela falhe (o print já está salvo como evidência).
+            const raw = await withTimeout(
+                generateContent({
+                    contents: { parts: [ { inlineData: { mimeType: aiImage.mimeType, data: aiImage.data } }, { text: prompt } ] },
+                    config: { responseMimeType: 'application/json' },
+                }),
+                30_000,
+                'A validação por IA demorou demais',
+            );
             let txt = (raw || '').trim();
             if (txt.startsWith('```')) txt = txt.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
             const parsed = JSON.parse(txt) as OdometerAiResult;
@@ -278,7 +292,10 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             setOdoValidatedKm(targetKm);
             if (!parsed.concluido) setOdoErr('A imagem não parece ser um hodômetro legível. Cole um print válido do painel.');
         } catch (e: any) {
-            setOdoErr('Não foi possível validar o print com a IA. Tente novamente.');
+            const timedOut = e instanceof TimeoutError;
+            setOdoErr(timedOut
+                ? 'A validação por IA demorou demais e foi interrompida. O print já está salvo — você pode concluir a OS normalmente.'
+                : 'Não foi possível validar o print com a IA. O print já está salvo — você pode concluir a OS normalmente.');
         } finally {
             setOdoChecking(false);
         }
@@ -320,7 +337,9 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             return;
         }
         setOdoUploading(false);
-        await validateOdometer(file, endKmNum);
+        if (isCompleted && endKmNum != null && endKmNum > 0) {
+            await validateOdometer(file, endKmNum);
+        }
     };
 
     // Etapas visíveis nesta OS (para a barra de progresso).
@@ -336,7 +355,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
     const totalSteps = Object.values(steps).filter(Boolean).length;
     const rawDoneSteps =
         (isRefused
-            ? (endKmNum != null && endKmNum > 0 && evidenceOk && dt ? 1 : 0)
+            ? (evidenceOk && dt ? 1 : 0)
             : 0) +
         (!isRefused && chkAddress ? 1 : 0) +
         (!isRefused && steps.raio && raioAnswer ? 1 : 0) +
@@ -345,7 +364,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         (steps.cancel && dt && endTravelDt && endKmNum != null && endKmNum > 0 && evidenceOk ? 1 : 0);
     // Fornecedores isentos (ATIVA / TM SEG) na conclusão: KM opcional, mas hora + evidência obrigatórios.
     const essentialDone = isRefused
-        ? (endKmNum != null && endKmNum > 0 && evidenceOk && !!dt)
+        ? (evidenceOk && !!dt)
         : isCompleted
             ? (!!dt && evidenceOk)
             : (!!dt && !!endTravelDt && endKmNum != null && endKmNum > 0 && evidenceOk);
@@ -355,8 +374,10 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
 
     const handleConfirm = () => {
         if (isRefused) {
-            if (endKmNum == null || endKmNum <= 0) { setErr('Informe o KM final.'); return; }
-            if (startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
+            if (endKmNum != null && endKmNum > 0 && startKm > 0 && endKmNum < startKm) {
+                setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`);
+                return;
+            }
             if (!evidenceOk) { setErr('Cole ou anexe a evidência do encerramento (obrigatório).'); return; }
             if (!dt) { setErr('Informe a data e a hora exata da recusa.'); return; }
         } else if (!odometerExempt || !isCompleted) {
@@ -494,13 +515,13 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
 
                     {/* Recusa — hora + KM + evidência (sem checklist de endereço) */}
                     {isRefused && (
-                        <FinSection n={1} danger icon={<UserX className="h-4 w-4" />} title="Recusar missão — hora, KM e evidência obrigatórios">
+                        <FinSection n={1} danger icon={<UserX className="h-4 w-4" />} title="Recusar missão — hora e evidência obrigatórios">
                             <div className="rounded-lg border border-red-200 bg-red-50 p-3">
                                 <p className="text-[12px] font-medium text-red-900">
-                                    Para registrar a <b>Recusada</b>, confirme o KM final, a hora exata do encerramento e anexe a evidência no sistema.
+                                    Para registrar a <b>Recusada</b>, confirme a hora exata do encerramento e anexe a evidência no sistema. O KM final é opcional (use quando a viatura já tiver saído).
                                 </p>
                                 <div className="mt-3">
-                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">KM final *</label>
+                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">KM final (opcional)</label>
                                     <input value={endKm} onChange={e => { setEndKm(e.target.value); setOdoResult(null); setOdoValidatedKm(null); setOdoConfirmed(false); }} inputMode="decimal" placeholder="Ex: 123456" className="mt-1 w-full rounded-md border border-red-300 bg-white px-2.5 py-1.5 text-[13px] font-semibold text-slate-800 outline-none focus:border-red-500" data-testid="input-confirm-end-km" />
                                 </div>
                                 <div className="mt-2">
@@ -776,8 +797,9 @@ const FinDateField: React.FC<{ label: string; value: string; min?: string; onCha
 );
 
 const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose, mission, currentUser, onSuccess, hideProviderInfo = false }) => {
-    const { isLoaded } = useLoadScript(googleMapsLoadConfig);
+    const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
     const { showNotification } = useNotification();
+    const mapsJsReady = isLoaded && !loadError && !!googleMapsApiKey;
     
     const [isLoadingData, setIsLoadingData] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
@@ -801,6 +823,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const confirmedEndTravelRef = useRef<string | null>(null);
     // Print do hodômetro confirmado no checklist (para relatório/foto/e-mails).
     const confirmedPrintUrlRef = useRef<string | null>(null);
+    const confirmedPrintBlobRef = useRef<Blob | null>(null);
+    const confirmedPrintBlobPromiseRef = useRef<Promise<Blob | null> | null>(null);
     // Relatório de fim de missão (dois botões: copiar texto / copiar foto).
     const [finalizeReport, setFinalizeReport] = useState<{ text: string; photoUrl: string | null } | null>(null);
     const [copiedReportText, setCopiedReportText] = useState(false);
@@ -816,6 +840,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         confirmedRealTimeRef.current = null;
         confirmedEndTravelRef.current = null;
         confirmedPrintUrlRef.current = null;
+        confirmedPrintBlobRef.current = null;
+        confirmedPrintBlobPromiseRef.current = null;
         setPendingFinalizeConfirm(null);
         // Print de atualização é estritamente da sessão: limpa ao abrir/trocar OS
         updatePrintBlobRef.current = null;
@@ -847,11 +873,28 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         return allowedFirstNames.includes(firstName) || allowedFirstNames.some(n => name.includes(n));
     }, [currentUser]);
 
-    const canEditRoute = useMemo(() => {
+    // Financeiro (Bárbara): pode editar OS concluída/aprovada — inclusive KM final
+    // de missões veladas TM SEG/ATIVA enviadas depois da conclusão.
+    const isBarbaraFinance = useMemo(() => {
+        if (!currentUser) return false;
+        const name = (currentUser.name || currentUser.username || '').toLowerCase();
+        return name.includes('barbara') || name.includes('bárbara');
+    }, [currentUser]);
+
+    const hasPrivilegedOsEdit = useMemo(() => {
         if (!currentUser) return false;
         const role = (currentUser.role || '').toLowerCase();
+        return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role)
+            || (currentUser.permissions && currentUser.permissions.includes('*'))
+            || isBarbaraFinance;
+    }, [currentUser, isBarbaraFinance]);
+
+    const canEditRoute = useMemo(() => {
+        if (!currentUser) return false;
+        if (hasPrivilegedOsEdit) return true;
+        const role = (currentUser.role || '').toLowerCase();
         return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
-    }, [currentUser]);
+    }, [currentUser, hasPrivilegedOsEdit]);
 
     const isCompletedMission = mission?.status === MissionStatus.COMPLETED;
     const isBillingApproved = !!mission?.billing_approved;
@@ -860,21 +903,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const role = (currentUser.role || '').toLowerCase();
         return role === 'diretoria';
     }, [currentUser]);
-    const canEditApproved = useMemo(() => {
-        if (!currentUser) return false;
-        const role = (currentUser.role || '').toLowerCase();
-        return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
-    }, [currentUser]);
-    const canRevertStatus = useMemo(() => {
-        if (!currentUser) return false;
-        const role = (currentUser.role || '').toLowerCase();
-        return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
-    }, [currentUser]);
-    const canEditTimes = useMemo(() => {
-        if (!currentUser) return false;
-        const role = (currentUser.role || '').toLowerCase();
-        return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
-    }, [currentUser]);
+    const canEditApproved = hasPrivilegedOsEdit;
+    const canRevertStatus = hasPrivilegedOsEdit;
+    const canEditTimes = hasPrivilegedOsEdit;
     const canEditEndTime = useMemo(() => {
         if (canEditTimes) return true;
         if (!currentUser) return false;
@@ -925,150 +956,210 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [updatePrintPreview, setUpdatePrintPreview] = useState('');
     const [updatePrintProcessing, setUpdatePrintProcessing] = useState(false);
     const [updatePrintAiCleaned, setUpdatePrintAiCleaned] = useState(false);
+    const [updatePrintTimings, setUpdatePrintTimings] = useState<PrintPipelineTimings | null>(null);
     const updatePrintBlobRef = useRef<Blob | null>(null);
 
-    // Limpeza por IA (Gemini, via backend): detecta as REGIÕES com carimbo/
-    // logos colados (inclusive um logo TM SEG antigo) e devolve a imagem
-    // "limpa" para usar como REMENDO só dentro dessas regiões. A foto final é
-    // sempre montada na RESOLUÇÃO ORIGINAL — nunca substituída pela imagem
-    // regenerada da IA (que sai em ~1024px e deixava a foto borrada).
-    // Fail-soft: se a IA falhar, segue com a foto original.
-    const cleanPrintWithAI = async (file: File): Promise<{ src: string | null; boxes: number[][] } | null> => {
-        try {
-            const base64 = await new Promise<string>((resolve, reject) => {
-                const r = new FileReader();
-                r.onload = () => resolve(String(r.result).split(',')[1] || '');
-                r.onerror = () => reject(new Error('Falha ao ler imagem'));
-                r.readAsDataURL(file);
-            });
-            if (!base64) return null;
-            const resp = await authFetch('/api/gemini/clean-print', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: { mimeType: file.type || 'image/png', data: base64 } }),
-            });
-            if (!resp.ok) return null;
-            const j = await resp.json();
-            const boxes: number[][] = (Array.isArray(j?.boxes) ? j.boxes : [])
-                .map((b: any) => b?.box_2d)
-                .filter((b: any) => Array.isArray(b) && b.length === 4);
-            if (boxes.length === 0) return null;
-            // Sem imagem editada (ex.: filtro de segurança do Gemini bloqueou a
-            // remoção do logo): segue só com as caixas — o remendo vira borrão local.
-            return { src: j?.image ? `data:${j.mimeType || 'image/png'};base64,${j.image}` : null, boxes };
-        } catch (e) {
-            console.warn('[UpdatePrint] Limpeza por IA falhou (segue com a foto original):', e);
-            return null;
-        }
+    /** Pré-processa a foto do hodômetro (checklist) em paralelo ao submit — evita
+     *  re-fetch + carimbo síncrono no fim da OS, que deixava o salvamento lento. */
+    const prefetchConfirmedPrintBlob = (url: string) => {
+        confirmedPrintBlobRef.current = null;
+        confirmedPrintBlobPromiseRef.current = (async () => {
+            try {
+                const resp = await fetch(url);
+                if (!resp.ok) return null;
+                const raw = await resp.blob();
+                const stamped = await stampBrandOnImageBlob(raw);
+                confirmedPrintBlobRef.current = stamped;
+                return stamped;
+            } catch (prefetchErr) {
+                console.warn('[FimDeMissao] Pré-carimbo da evidência falhou:', prefetchErr);
+                return null;
+            }
+        })();
     };
 
-    // Carimbo padrão TM SEG — ver lib/brandPhotoStamp.ts
+    const SUPPORTED_PRINT_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+    const PRINT_PIPELINE_TIMEOUT_MS = 45_000;
+
+    const base64ToBlob = (base64: string, mimeType: string): Blob => {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new Blob([bytes], { type: mimeType });
+    };
+
+    const isPrintPipelineDebug = () =>
+      import.meta.env.DEV || localStorage.getItem('tmseg:print-pipeline-debug') === '1';
+
+    /** Envia print ao pipeline server-side (multipart) e retorna imagem limpa + timings. */
+    const processPrintOnServer = async (
+      file: File,
+    ): Promise<{ blob: Blob; cleaned: boolean; timings: PrintPipelineTimings } | null> => {
+      const mime = (file.type || 'image/jpeg').toLowerCase();
+      if (!SUPPORTED_PRINT_TYPES.has(mime)) {
+        showNotification('Formato inválido', 'Use JPEG, PNG ou WEBP.', 'error');
+        return null;
+      }
+      const uploadStart = performance.now();
+      try {
+        const token = localStorage.getItem('authToken') || '';
+        const form = new FormData();
+        form.append('image', file, file.name || 'print.jpg');
+        const resp = await withTimeout(
+          fetch('/api/gemini/clean-print', {
+            method: 'POST',
+            cache: 'no-store',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'X-Print-Response': 'binary',
+            },
+            body: form,
+          }),
+          PRINT_PIPELINE_TIMEOUT_MS,
+          'Timeout ao limpar print com IA',
+        );
+        const clientUploadMs = Math.round(performance.now() - uploadStart);
+        if (!resp.ok) {
+          const errBody = await resp.text().catch(() => '');
+          let errMsg = `Erro ${resp.status}`;
+          try {
+            const parsed = errBody ? JSON.parse(errBody) : null;
+            errMsg = parsed?.error || parsed?.message || errMsg;
+          } catch {
+            if (errBody) errMsg = errBody.slice(0, 120);
+          }
+          showNotification('Limpeza IA indisponível', `${errMsg}. Usando foto original.`, 'warning');
+          return null;
+        }
+
+        const contentType = (resp.headers.get('Content-Type') || '').toLowerCase();
+        if (contentType.startsWith('image/')) {
+          const blob = await resp.blob();
+          const cleaned = resp.headers.get('X-Print-Cleaned') === '1';
+          let timings: PrintPipelineTimings = {
+            uploadMs: clientUploadMs,
+            readMs: 0,
+            detectionMs: 0,
+            removalMs: 0,
+            logoMs: 0,
+            saveMs: 0,
+            totalMs: clientUploadMs,
+          };
+          try {
+            const headerTimings = JSON.parse(resp.headers.get('X-Print-Timings') || '{}');
+            timings = {
+              uploadMs: headerTimings.uploadMs ?? clientUploadMs,
+              readMs: headerTimings.readMs ?? 0,
+              detectionMs: headerTimings.detectionMs ?? 0,
+              removalMs: headerTimings.removalMs ?? 0,
+              logoMs: 0,
+              saveMs: headerTimings.saveMs ?? 0,
+              totalMs: (headerTimings.totalMs ?? 0) + clientUploadMs,
+            };
+          } catch {
+            // ignora parse
+          }
+          return { blob, cleaned, timings };
+        }
+
+        const j = await resp.json();
+        if (!j?.image) return null;
+        const blob = base64ToBlob(j.image, j.mimeType || 'image/png');
+        const timings: PrintPipelineTimings = {
+          uploadMs: j.timings?.uploadMs ?? clientUploadMs,
+          readMs: j.timings?.readMs ?? 0,
+          detectionMs: j.timings?.detectionMs ?? 0,
+          removalMs: j.timings?.removalMs ?? 0,
+          logoMs: 0,
+          saveMs: j.timings?.saveMs ?? 0,
+          totalMs: (j.timings?.totalMs ?? 0) + clientUploadMs,
+        };
+        return { blob, cleaned: !!j.cleaned, timings };
+      } catch (e) {
+        const msg = e instanceof TimeoutError
+          ? 'A IA demorou demais. Usando foto original.'
+          : 'Falha na limpeza. Usando foto original.';
+        console.warn('[UpdatePrint] Pipeline server falhou (segue com foto original):', e);
+        showNotification('Limpeza IA', msg, 'warning');
+        return null;
+      }
+    };
+
+    const applyBrandStampToBlob = async (source: Blob): Promise<{ blob: Blob; preview: string; logoMs: number }> => {
+      const logoStart = performance.now();
+      const photoUrl = URL.createObjectURL(source);
+      try {
+        const photo = await loadStampImage(photoUrl);
+        const { width: canvasW, height: canvasH, scale } = computeScaledCanvasSize(photo.naturalWidth, photo.naturalHeight);
+        let logo: HTMLImageElement | null = null;
+        try {
+          logo = await loadStampImage('/logo.png');
+        } catch (logoErr) {
+          console.warn('[UpdatePrint] Logo indisponível, segue sem carimbo:', logoErr);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = canvasW;
+        canvas.height = canvasH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas indisponível');
+        ctx.drawImage(photo, 0, 0, photo.naturalWidth, photo.naturalHeight, 0, 0, canvasW, canvasH);
+        if (logo) stampBrandOverlays(ctx, canvas.width, canvas.height, logo);
+        if (scale < 1) {
+          console.warn(`[UpdatePrint] Imagem reduzida de ${photo.naturalWidth}x${photo.naturalHeight} para ${canvasW}x${canvasH} (limite do navegador).`);
+        }
+        const blob: Blob = await new Promise((resolve, reject) =>
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('Falha ao gerar PNG')), 'image/png'),
+        );
+        const preview = canvas.toDataURL('image/png');
+        return { blob, preview, logoMs: Math.round(performance.now() - logoStart) };
+      } finally {
+        URL.revokeObjectURL(photoUrl);
+      }
+    };
 
     const processUpdatePrint = async (file: File) => {
-        setUpdatePrintProcessing(true);
-        try {
-            const loadImg = loadStampImage;
-            const cleaned = await cleanPrintWithAI(file);
-            setUpdatePrintAiCleaned(!!cleaned);
-            const photoUrl = URL.createObjectURL(file);
-            try {
-                // Base da foto = SEMPRE a original em resolução cheia (qualidade).
-                const [photo, logo] = await Promise.all([loadImg(photoUrl), loadImg('/logo.png')]);
-                const canvas = document.createElement('canvas');
-                canvas.width = photo.naturalWidth;
-                canvas.height = photo.naturalHeight;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) throw new Error('Canvas indisponível');
-                ctx.drawImage(photo, 0, 0);
-                // Remendos só DENTRO das caixas detectadas (carimbo/logos):
-                // com imagem limpa da IA, cola o trecho limpo escalado; sem ela
-                // (filtro de segurança bloqueou), aplica borrão local forte.
-                if (cleaned) {
-                    try {
-                        let patchImg = cleaned.src ? await loadImg(cleaned.src) : null;
-                        const W = canvas.width, H = canvas.height;
-                        // Guarda de proporção: se a imagem da IA veio com aspect
-                        // ratio diferente do original (>5%), o mapeamento das
-                        // caixas ficaria torto — cai no remendo local.
-                        if (patchImg) {
-                            const arOrig = W / H, arPatch = patchImg.naturalWidth / patchImg.naturalHeight;
-                            if (Math.abs(arPatch - arOrig) / arOrig > 0.05) {
-                                console.warn('[UpdatePrint] Proporção da imagem da IA difere do original — usando remendo local.');
-                                patchImg = null;
-                            }
-                        }
-                        // ctx.filter não é suportado em todo navegador (iOS antigo):
-                        // detecta e usa pixelização determinística como alternativa.
-                        const filterSupported = typeof (ctx as any).filter === 'string';
-                        const localPatch = (dx: number, dy: number, dw: number, dh: number) => {
-                            if (filterSupported) {
-                                const blurPx = Math.max(16, Math.round(Math.max(dw, dh) / 6));
-                                ctx.save();
-                                ctx.beginPath();
-                                ctx.rect(dx, dy, dw, dh);
-                                ctx.clip();
-                                ctx.filter = `blur(${blurPx}px)`;
-                                ctx.drawImage(canvas, dx, dy, dw, dh, dx, dy, dw, dh);
-                                ctx.drawImage(canvas, dx, dy, dw, dh, dx, dy, dw, dh);
-                                ctx.restore();
-                                ctx.filter = 'none';
-                                return;
-                            }
-                            // Pixelização: reduz a região a ~8px de lado e volta
-                            // ampliada com suavização — funciona em qualquer navegador.
-                            const tiny = document.createElement('canvas');
-                            tiny.width = Math.max(2, Math.round(dw / Math.max(dw, dh) * 8));
-                            tiny.height = Math.max(2, Math.round(dh / Math.max(dw, dh) * 8));
-                            const tctx = tiny.getContext('2d');
-                            if (!tctx) return;
-                            tctx.drawImage(canvas, dx, dy, dw, dh, 0, 0, tiny.width, tiny.height);
-                            ctx.imageSmoothingEnabled = true;
-                            ctx.drawImage(tiny, 0, 0, tiny.width, tiny.height, dx, dy, dw, dh);
-                        };
-                        for (const [ymin, xmin, ymax, xmax] of cleaned.boxes) {
-                            // Coordenadas normalizadas 0-1000 + folga de 1,5%.
-                            const pad = 15;
-                            const y0 = Math.max(0, ymin - pad) / 1000, x0 = Math.max(0, xmin - pad) / 1000;
-                            const y1 = Math.min(1000, ymax + pad) / 1000, x1 = Math.min(1000, xmax + pad) / 1000;
-                            if (y1 <= y0 || x1 <= x0) continue;
-                            const dx = x0 * W, dy = y0 * H, dw = (x1 - x0) * W, dh = (y1 - y0) * H;
-                            if (patchImg) {
-                                const pw = patchImg.naturalWidth, ph = patchImg.naturalHeight;
-                                ctx.drawImage(patchImg, x0 * pw, y0 * ph, (x1 - x0) * pw, (y1 - y0) * ph, dx, dy, dw, dh);
-                            } else {
-                                localPatch(dx, dy, dw, dh);
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('[UpdatePrint] Remendo da IA falhou (segue com a foto original):', e);
-                        setUpdatePrintAiCleaned(false);
-                    }
-                }
-                // Carimbo da marca: logo TM SEG no canto superior direito +
-                // Instagram @grupo_tmseg e site no canto inferior direito.
-                stampBrandOverlays(ctx, canvas.width, canvas.height, logo);
-                const blob: Blob = await new Promise((resolve, reject) =>
-                    canvas.toBlob(b => b ? resolve(b) : reject(new Error('Falha ao gerar PNG')), 'image/png')
-                );
-                updatePrintBlobRef.current = blob;
-                setUpdatePrintPreview(canvas.toDataURL('image/jpeg', 0.85));
-            } finally {
-                URL.revokeObjectURL(photoUrl);
-            }
-        } catch (e) {
-            console.warn('[UpdatePrint] Falha ao processar print:', e);
-            updatePrintBlobRef.current = null;
-            setUpdatePrintPreview('');
-            showNotification('Erro', 'Não foi possível processar o print colado. Tente novamente.', 'error');
-        } finally {
-            setUpdatePrintProcessing(false);
+      setUpdatePrintProcessing(true);
+      setUpdatePrintTimings(null);
+      const totalStart = performance.now();
+      try {
+        const processed = await processPrintOnServer(file);
+        const sourceBlob = processed?.blob ?? file;
+        const stamped = await applyBrandStampToBlob(sourceBlob);
+        updatePrintBlobRef.current = stamped.blob;
+        setUpdatePrintPreview(stamped.preview);
+        setUpdatePrintAiCleaned(!!processed?.cleaned);
+
+        if (!processed) {
+          setUpdatePrintAiCleaned(false);
         }
+
+        if (processed?.timings) {
+          const timings: PrintPipelineTimings = {
+            ...processed.timings,
+            logoMs: stamped.logoMs,
+            totalMs: Math.round(performance.now() - totalStart),
+          };
+          setUpdatePrintTimings(timings);
+          if (isPrintPipelineDebug()) {
+            console.info('[print-pipeline:client]', timings);
+          }
+        }
+      } catch (e) {
+        console.warn('[UpdatePrint] Falha ao processar print:', e);
+        updatePrintBlobRef.current = null;
+        setUpdatePrintPreview('');
+        setUpdatePrintTimings(null);
+        showNotification('Erro', 'Não foi possível processar o print colado. Tente novamente.', 'error');
+      } finally {
+        setUpdatePrintProcessing(false);
+      }
     };
 
     const clearUpdatePrint = () => {
         updatePrintBlobRef.current = null;
         setUpdatePrintPreview('');
         setUpdatePrintAiCleaned(false);
+        setUpdatePrintTimings(null);
     };
 
     const [editData, setEditData] = useState({
@@ -1091,8 +1182,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const [currentPreviewCoords, setCurrentPreviewCoords] = useState<{ lat: number, lng: number } | null>(null);
 
-    /** Foto com logo + Instagram para envio ao grupo: print colado, preview ou mapa padrão. */
-    const resolveGroupWhatsAppPhoto = async (statusLabel: string): Promise<Blob | null> => {
+    /** Print colado/anexado pelo funcionário (sem foto automática de fallback). */
+    const resolveExplicitUpdatePrintPhoto = async (): Promise<Blob | null> => {
         if (updatePrintProcessing) {
             await waitUntil(() => !updatePrintProcessing, 45000);
         }
@@ -1100,8 +1191,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         if (updatePrintPreview?.startsWith('data:')) {
             try {
                 return await dataUrlToBlob(updatePrintPreview);
-            } catch { /* segue fallback */ }
+            } catch {
+                return null;
+            }
         }
+        return null;
+    };
+
+    /** Foto com logo + Instagram para cópia manual: print colado, preview ou mapa padrão. */
+    const resolveGroupWhatsAppPhoto = async (statusLabel: string): Promise<Blob | null> => {
+        const explicit = await resolveExplicitUpdatePrintPhoto();
+        if (explicit) return explicit;
         try {
             return await createBrandedFallbackPhoto({
                 coords: currentPreviewCoords,
@@ -1477,7 +1577,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         availableVehicles: any[],
     ) => {
         try {
-            const r = await authFetch(`/api/dhl/intake/by-mission/${encodeURIComponent(missionId)}`);
+            const r = await authFetch(`/api/dhl/intake/by-mission?missionId=${encodeURIComponent(missionId)}`);
             if (!r.ok) return;
             const j = await r.json();
             const intakes: any[] = (j?.intakes || []).filter((it: any) => it.effective_status !== 'cancelado');
@@ -1605,8 +1705,73 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         return fallbackAddress;
     };
 
+    const isGoogleMapsUrl = (value: string): boolean => {
+        const raw = value.trim();
+        if (!/^https?:\/\//i.test(raw)) return false;
+        try {
+            const host = new URL(raw).hostname.replace(/^www\./i, '').toLowerCase();
+            return host === 'google.com'
+                || host.endsWith('.google.com')
+                || host === 'maps.app.goo.gl'
+                || host === 'goo.gl';
+        } catch {
+            return /(?:google\.[^/]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(raw);
+        }
+    };
+
+    const fallbackMapEmbedUrl = useMemo(() => {
+        const coords = currentPreviewCoords || extractCoordinates(editData.mapLink) || extractCoordinates(editData.currentLocationName);
+        if (!coords) return '';
+        const latDelta = 0.018;
+        const lngDelta = 0.018;
+        const bbox = [
+            coords.lng - lngDelta,
+            coords.lat - latDelta,
+            coords.lng + lngDelta,
+            coords.lat + latDelta,
+        ].join(',');
+        return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(`${coords.lat},${coords.lng}`)}`;
+    }, [currentPreviewCoords, editData.mapLink, editData.currentLocationName, editData.destination]);
+
+    const fallbackMapOpenUrl = useMemo(() => {
+        const query = (editData.currentLocationName || editData.mapLink || editData.destination || '').trim();
+        if (editData.mapLink) return editData.mapLink;
+        if (!query) return '';
+        return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    }, [editData.currentLocationName, editData.mapLink, editData.destination]);
+
+    const resolveTypedAddress = async (rawValue: string) => {
+        const trimmed = rawValue.trim();
+        if (trimmed.length < 3 || /^https?:\/\//i.test(trimmed) || extractCoordinates(trimmed)) return;
+
+        try {
+            const resp = await authFetch(`/api/geocode-address?address=${encodeURIComponent(trimmed)}`);
+            const data = await resp.json();
+            const loc = data?.location;
+            if (data?.success && Number.isFinite(loc?.lat) && Number.isFinite(loc?.lng)) {
+                const coords = { lat: Number(loc.lat), lng: Number(loc.lng) };
+                const standardLink = `https://www.google.com/maps?q=${coords.lat},${coords.lng}&z=17&hl=pt-BR`;
+                setCurrentPreviewCoords(coords);
+                setEditData(prev => ({
+                    ...prev,
+                    currentLocationName: String(data.address || trimmed),
+                    mapLink: standardLink,
+                }));
+                calculateProgressFromRoute(coords.lat, coords.lng);
+                showNotification('Endereço localizado', 'Coordenadas encontradas e link do Google Maps gerado.', 'success');
+            }
+        } catch (e) {
+            console.warn('[LOCATION] Falha ao geocodificar endereço digitado:', e);
+        }
+    };
+
     const handleLocationInputChange = async (val: string) => {
-        setEditData(prev => ({ ...prev, currentLocationName: val }));
+        const trimmed = val.trim();
+        setEditData(prev => ({
+            ...prev,
+            currentLocationName: val,
+            mapLink: trimmed ? prev.mapLink : '',
+        }));
         const coords = extractCoordinates(val);
         if (coords) {
             const standardLink = `https://www.google.com/maps?q=${coords.lat},${coords.lng}&z=17&hl=pt-BR`;
@@ -1621,6 +1786,20 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             } else {
                 showNotification('GPS Identificado', 'Coordenadas capturadas. O endereço será resolvido ao salvar.', 'success');
             }
+            return;
+        }
+
+        if (isGoogleMapsUrl(trimmed)) {
+            setEditData(prev => ({ ...prev, currentLocationName: val, mapLink: trimmed }));
+            setCurrentPreviewCoords(null);
+            showNotification('Link Google Maps validado', 'Link salvo. Se ele não tiver coordenadas, o mapa de prévia ficará indisponível, mas a atualização poderá ser salva.', 'success');
+            return;
+        }
+
+        if (trimmed.length >= 3 && !/^https?:\/\//i.test(trimmed)) {
+            const searchLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(trimmed)}`;
+            setEditData(prev => ({ ...prev, currentLocationName: val, mapLink: searchLink }));
+            setCurrentPreviewCoords(null);
         }
     };
 
@@ -2211,6 +2390,32 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 }
             }
 
+            // Comissão RH automática ao concluir OS (fire-and-forget).
+            if (finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED) {
+                void (async () => {
+                    try {
+                        const { data: fresh } = await supabase
+                            .from('missions')
+                            .select('revenue_value, client, mission_type')
+                            .eq('id', mission.id)
+                            .single();
+                        const result = await autoCalculateMissionCommissions(supabase, {
+                            missionId: mission.id,
+                            revenueValue: Number(fresh?.revenue_value ?? mission.revenue_value ?? editData.revenueValue ?? 0),
+                            clientName: fresh?.client || mission.client || '',
+                            serviceType: fresh?.mission_type || mission.mission_type || editData.missionType || '',
+                            agentNames: [editData.agent1, editData.agent2].filter(Boolean) as string[],
+                        });
+                        const inserted = result.results.filter((r) => r.inserted);
+                        if (inserted.length) {
+                            console.log(`[RH Commission] OS ${mission.id}: ${inserted.length} comissão(ões) gerada(s)`, inserted);
+                        }
+                    } catch (e) {
+                        console.warn('[RH Commission] Falha no cálculo automático:', e);
+                    }
+                })();
+            }
+
             await supabase.from('system_logs').insert([{
                 user_name: currentUser.name || 'Usuário',
                 action_type: isRevertFromCompleted ? 'MISSION_STATUS_REVERT' : 'MISSION_UPDATE',
@@ -2253,20 +2458,15 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const dateStr = formatDateBR(dateObj);
             const timeStr = formatTimeBR(dateObj);
             
-            const formatFL = (name?: string) => { 
-                if (!name || name === '---' || name === '') return 'N/A'; 
-                const parts = name.trim().split(' '); 
-                return parts.length > 2 ? `${parts[0]} ${parts[parts.length-1]}`.toUpperCase() : name.toUpperCase(); 
-            };
-
-            const cityParts = editData.currentLocationName.split('-');
-            const cityPart = cityParts.length > 1 ? cityParts[cityParts.length-2].split(',').pop()?.trim() + ' - ' + cityParts[cityParts.length-1].trim() : (editData.currentLocationName || 'S/D');
+            const formatFL = formatAgentShortName;
+            const cityPart = parseMonitoringCityFromLocationName(editData.currentLocationName);
 
             const isDHL = /DHL/i.test(mission.client || '');
             const fmtDateTime = (iso?: string) => {
                 if (!iso) return '';
                 try { return formatDateTimeBR(iso); } catch { return ''; }
             };
+            let cachedStatusHistory: Array<{ changed_at: string; new_value: string }> | null = null;
             let dhlOriginAt = '', dhlInTransitAt = '', dhlCompletedAt = '';
             if (isDHL) {
                 try {
@@ -2276,6 +2476,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         .eq('mission_id', mission.id)
                         .eq('field_name', 'status')
                         .order('changed_at', { ascending: false });
+                    cachedStatusHistory = statusHist || null;
                     if (statusHist) {
                         const lastOf = (val: string) => (statusHist as any[]).find(h => h.new_value === val)?.changed_at;
                         dhlOriginAt = fmtDateTime(lastOf('Origem'));
@@ -2308,28 +2509,27 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 🧭 *INÍCIO DE OPERAÇÃO:* ${dhlInTransitAt}
 🧭 *FIM DE OPERAÇÃO:* ${dhlCompletedAt}
 
-🖋️ *STATUS:* ${finalStatus.toUpperCase()}${finalDescription ? ' — ' + finalDescription.toUpperCase() : ''}` : `*MONITORAMENTO GRUPO TMSEG*
-*OS:* ${mission.id} | *STATUS:* ${finalStatus.toUpperCase()}
-
-🗓 *DATA:* ${dateStr} *HORA:* ${timeStr}
-🛡 *OPERAÇÃO:* ${editData.missionType?.toUpperCase() || 'CARACTERIZADA'}
-🏢 *CLIENTE:* ${mission.client}
-
-📍 *ORIGEM:* ${editData.origin.toUpperCase()}
-🏁 *DESTINO:* ${finalDestination.toUpperCase().replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim() || 'N/A'}
-
-🚛 *VEÍCULO:* ${editData.client_vehicle_plate || 'N/A'} (${editData.client_vehicle_model || 'N/D'})
-👤 *MOTORISTA:* ${formatFL(editData.driver_name)}
-📞 *CONTATO:* ${editData.driver_phone || 'N/A'}
-
-🚔 *VIATURA:* ${searchVehicle || 'N/A'}
-👮 *AGENTE 01:* ${formatFL(editData.agent1)}
-👮 *AGENTE 02:* ${formatFL(editData.agent2)}
-
-📈*PROGRESSO DA MISSÃO:* ${Math.floor(progressValue)}%
-📣 *OCORRÊNCIA:* ${finalDescription || 'SEM INFORMAÇÃO'}
-🏙️ *LOCALIZAÇÃO:* ${cityPart.toUpperCase()}
-🗾 *LINK DO GOOGLE:* ${editData.mapLink || 'N/A'}`;
+🖋️ *STATUS:* ${finalStatus.toUpperCase()}${finalDescription ? ' — ' + finalDescription.toUpperCase() : ''}` : buildMonitoringWhatsAppReport({
+                osId: mission.id,
+                status: finalStatus,
+                dateStr,
+                timeStr,
+                operationType: editData.missionType,
+                client: mission.client,
+                origin: editData.origin,
+                destination: finalDestination,
+                vehiclePlate: editData.client_vehicle_plate,
+                vehicleModel: editData.client_vehicle_model,
+                driverName: editData.driver_name,
+                driverPhone: editData.driver_phone,
+                escortVehicle: searchVehicle,
+                agent1: editData.agent1,
+                agent2: editData.agent2,
+                progress: progressValue,
+                occurrence: finalDescription || 'SEM INFORMAÇÃO',
+                locationCity: cityPart,
+                mapLink: editData.mapLink,
+            });
 
             const isNowCompleted = finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED;
 
@@ -2341,26 +2541,27 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             // Envio automático ao grupo de WhatsApp do cliente (se configurado
             // no cadastro). Fire-and-forget: não bloqueia o fluxo de cópia.
             if (!isNowCompleted) {
-                // DHL só recebe marcos (origem, início, pernoite, atípicos) —
-                // atualização rotineira de monitoramento não vai para o grupo.
-                const dhlRoutineSkip = isDHL && !shouldSendDhlGroupUpdate({
+                const hasPrint = hasExplicitUpdatePrint(updatePrintBlobRef.current, updatePrintPreview);
+                const shouldSendGroup = shouldSendClientGroupWhatsApp({
                     finalStatus,
                     originalStatus,
+                    hasExplicitPrint: hasPrint,
+                    isMissionCompletion: false,
+                    isDhl: isDHL,
                     occurrence: finalDescription,
                     previousOccurrence: mission.currentLocation || '',
                 });
-                if (dhlRoutineSkip) {
-                    showNotification('WhatsApp', 'Atualização rotineira registrada no sistema — NÃO enviada ao grupo DHL (cliente só recebe: chegada na origem, início/fim de missão, início/reinício de pernoite e situações atípicas).', 'info');
-                } else {
-                    const statusLabel = `${finalStatus.toUpperCase()}${finalDescription ? ' — ' + finalDescription.toUpperCase() : ''}`;
-                    const groupPhoto = await resolveGroupWhatsAppPhoto(statusLabel);
-                    void sendUpdateToClientGroup(mission.client || '', report, groupPhoto, mission.id).then(r => {
+                if (shouldSendGroup) {
+                    const groupPhoto = await resolveExplicitUpdatePrintPhoto();
+                    void sendUpdateToClientGroup(mission.client || '', report, groupPhoto, mission.id, true).then(r => {
                         if (r.sent) {
                             showNotification('WhatsApp', 'Atualização enviada automaticamente ao grupo do cliente.', 'success');
                         } else if (r.error) {
                             showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
                         }
                     }).catch(() => {});
+                } else if (isDHL && hasPrint && !shouldSendGroup && finalStatus !== originalStatus) {
+                    showNotification('WhatsApp', 'Atualização registrada no sistema — NÃO enviada ao grupo DHL (cliente só recebe marcos operacionais com print).', 'info');
                 }
             }
 
@@ -2399,14 +2600,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             if (isNowCompleted) {
                 let originArrivalAt = '', operationStartAt = '';
                 try {
-                    const { data: marks } = await supabase
-                        .from('mission_history')
-                        .select('changed_at,new_value')
-                        .eq('mission_id', mission.id)
-                        .eq('field_name', 'status')
-                        .order('changed_at', { ascending: false });
-                    if (marks) {
-                        const lastOf = (val: string) => (marks as any[]).find(h => h.new_value === val)?.changed_at;
+                    if (!cachedStatusHistory) {
+                        const { data: marks } = await supabase
+                            .from('mission_history')
+                            .select('changed_at,new_value')
+                            .eq('mission_id', mission.id)
+                            .eq('field_name', 'status')
+                            .order('changed_at', { ascending: false });
+                        cachedStatusHistory = marks || null;
+                    }
+                    if (cachedStatusHistory) {
+                        const lastOf = (val: string) => cachedStatusHistory!.find(h => h.new_value === val)?.changed_at;
                         originArrivalAt = fmtDateTime(lastOf('Origem'));
                         operationStartAt = fmtDateTime(lastOf('Em Viagem'));
                     }
@@ -2441,72 +2645,54 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 // Foto: prioriza o print colado no COLAR PRINT (já com logo);
                 // senão, usa o print do hodômetro confirmado no checklist.
                 try {
-                    let photoBlob: Blob | null = updatePrintBlobRef.current;
+                    const hadExplicitPrintBeforeFallback = hasExplicitUpdatePrint(updatePrintBlobRef.current, updatePrintPreview);
+                    const hadOdometerEvidence = !!confirmedPrintUrlRef.current;
+                    let photoBlob: Blob | null = updatePrintBlobRef.current || confirmedPrintBlobRef.current;
+
+                    if (!photoBlob && confirmedPrintBlobPromiseRef.current) {
+                        try {
+                            photoBlob = await confirmedPrintBlobPromiseRef.current;
+                        } catch (prefetchWaitErr) {
+                            console.warn('[FimDeMissao] Espera do pré-carimbo falhou:', prefetchWaitErr);
+                        }
+                    }
+
                     if (!photoBlob && confirmedPrintUrlRef.current) {
                         try {
                             const resp = await fetch(confirmedPrintUrlRef.current);
                             if (resp.ok) {
-                                const raw = await resp.blob();
-                                // Foto do hodômetro do checklist: aplica o MESMO
-                                // carimbo da marca (logo + Instagram + site) antes
-                                // de copiar/enviar ao grupo. Também garante PNG
-                                // (ClipboardItem só aceita image/png).
-                                // A FOTO é obrigatória; o carimbo é best-effort:
-                                // qualquer falha de decodificação/logo não pode
-                                // derrubar a foto (fallback = PNG cru).
-                                if (raw.type === 'image/png') photoBlob = raw;
-                                try {
-                                    // Decodifica com fallback: createImageBitmap
-                                    // pode não existir/falhar em navegadores antigos.
-                                    let src: CanvasImageSource | null = null;
-                                    let sw = 0, sh = 0;
-                                    let objUrl = '';
-                                    try {
-                                        const bmp = await createImageBitmap(raw);
-                                        src = bmp; sw = bmp.width; sh = bmp.height;
-                                    } catch {
-                                        objUrl = URL.createObjectURL(raw);
-                                        const img = await loadStampImage(objUrl);
-                                        src = img; sw = img.naturalWidth; sh = img.naturalHeight;
-                                    }
-                                    try {
-                                        if (src && sw > 0 && sh > 0) {
-                                            const cv = document.createElement('canvas');
-                                            cv.width = sw; cv.height = sh;
-                                            const cctx = cv.getContext('2d');
-                                            if (cctx) {
-                                                cctx.drawImage(src, 0, 0);
-                                                try {
-                                                    const logoImg = await loadStampImage('/logo.png');
-                                                    stampBrandOverlays(cctx, cv.width, cv.height, logoImg);
-                                                } catch (logoErr) {
-                                                    console.warn('[FimDeMissao] Logo indisponível, foto segue sem carimbo:', logoErr);
-                                                }
-                                                const stamped = await new Promise<Blob | null>(res => cv.toBlob(res, 'image/png'));
-                                                if (stamped) photoBlob = stamped;
-                                            }
-                                        }
-                                    } finally {
-                                        if (objUrl) URL.revokeObjectURL(objUrl);
-                                    }
-                                } catch (stampErr) {
-                                    console.warn('[FimDeMissao] Carimbo falhou, foto segue original:', stampErr);
-                                }
+                                photoBlob = await stampBrandOnImageBlob(await resp.blob());
                             }
-                        } catch (photoErr) { console.warn('[FimDeMissao] Falha ao preparar foto:', photoErr); }
+                        } catch (photoErr) {
+                            console.warn('[FimDeMissao] Falha ao preparar foto da evidência:', photoErr);
+                        }
                     }
-                    if (!photoBlob) {
+
+                    // Só gera foto de fallback (mapa TM SEG) quando há print/evidência —
+                    // evita chamada lenta ao Google Static Maps em conclusões sem foto.
+                    if (!photoBlob && (hadExplicitPrintBeforeFallback || hadOdometerEvidence)) {
                         photoBlob = await resolveGroupWhatsAppPhoto(`${finalStatus.toUpperCase()} — FIM DE MISSÃO`);
                     }
-                    // Envio automático ao grupo de WhatsApp do cliente (se
-                    // configurado no cadastro). Fire-and-forget.
-                    void sendUpdateToClientGroup(mission.client || '', finalizeShareText, photoBlob, mission.id).then(r => {
-                        if (r.sent) {
-                            showNotification('WhatsApp', 'Fim de missão enviado automaticamente ao grupo do cliente.', 'success');
-                        } else if (r.error) {
-                            showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
-                        }
-                    }).catch(() => {});
+                    // Grupo: só envia com print colado ou evidência do hodômetro no
+                    // checklist — nunca com foto automática de fallback.
+                    const completionPhotoForGroup = hadExplicitPrintBeforeFallback || hadOdometerEvidence ? photoBlob : null;
+                    if (shouldSendClientGroupWhatsApp({
+                        finalStatus,
+                        originalStatus,
+                        hasExplicitPrint: !!(hadExplicitPrintBeforeFallback || hadOdometerEvidence),
+                        isMissionCompletion: true,
+                        isDhl: isDHL,
+                        occurrence: finalDescription,
+                        previousOccurrence: mission.currentLocation || '',
+                    }) && completionPhotoForGroup) {
+                        void sendUpdateToClientGroup(mission.client || '', finalizeShareText, completionPhotoForGroup, mission.id, true).then(r => {
+                            if (r.sent) {
+                                showNotification('WhatsApp', 'Fim de missão enviado automaticamente ao grupo do cliente.', 'success');
+                            } else if (r.error) {
+                                showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
+                            }
+                        }).catch(() => {});
+                    }
 
                     if (photoBlob && showWhatsappCopyPopup(photoBlob, finalizeShareText)) {
                         // Popup guiado: COPIAR FOTO → COPIAR TEXTO → fecha sozinho.
@@ -2530,18 +2716,21 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     setCopiedReportPhoto(false);
                 }
 
-                try {
-                    await authFetch('/api/email/mission-end', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            missionId: mission.id,
-                            odometerPrintUrl: confirmedPrintUrlRef.current || undefined,
-                            senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined,
-                        }),
-                    });
+                // E-mails de fim de missão em background — não bloqueia o fechamento do modal.
+                const missionEndPayload = {
+                    missionId: mission.id,
+                    odometerPrintUrl: confirmedPrintUrlRef.current || undefined,
+                    senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined,
+                };
+                void authFetch('/api/email/mission-end', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(missionEndPayload),
+                }).then(() => {
                     showNotification('E-mails de Fim de Missão', 'Enviados para cliente e fornecedor.', 'success');
-                } catch (mailErr) { console.error('[Email] Erro fim de missão:', mailErr); }
+                }).catch((mailErr) => {
+                    console.error('[Email] Erro fim de missão:', mailErr);
+                });
             }
 
             const vehiclePlateForEmail = searchVehicle || editData.client_vehicle_plate || '—';
@@ -2728,6 +2917,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         confirmedRealTimeRef.current = iso;
         confirmedEndTravelRef.current = endTravelIso;
         confirmedPrintUrlRef.current = odometerPrintUrl || null;
+        if (odometerPrintUrl) prefetchConfirmedPrintBlob(odometerPrintUrl);
 
         // Recálculo automático de pedágio (estimativa por IA / Gemini) ao
         // CONCLUIR. Não usamos a QualP aqui por custo; o endpoint
@@ -2737,11 +2927,15 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         // falha, mantém o gate manual de pedágio (tollConfirmedRef permanece false).
         if (mission && kind === 'completed' && !mission.billing_approved) {
             try {
-                const r = await authFetch('/api/toll/gemini-estimate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ origin: editData.origin, destination: editData.destination }),
-                });
+                const r = await withTimeout(
+                    authFetch('/api/toll/gemini-estimate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ origin: editData.origin, destination: editData.destination }),
+                    }),
+                    5000,
+                    'Estimativa de pedágio excedeu 5s',
+                );
                 const j = await r.json().catch(() => ({} as any));
                 if (j?.success && typeof j.tollValue === 'number') {
                     const v = Number(j.tollValue.toFixed(2));
@@ -2768,7 +2962,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     }
                 }
             } catch (e) {
-                console.warn('[FIM MISSÃO] Falha ao recalcular pedágio (IA):', e);
+                if (e instanceof TimeoutError) {
+                    console.warn('[FIM MISSÃO] Estimativa de pedágio (IA) expirou — segue sem bloquear a conclusão.');
+                } else {
+                    console.warn('[FIM MISSÃO] Falha ao recalcular pedágio (IA):', e);
+                }
             }
         }
 
@@ -2853,8 +3051,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     if (!isOpen || !mission) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-[#f8fafc] rounded-[24px] shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-y-auto flex flex-col relative border border-gray-100 scrollbar-thin">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center overflow-y-auto bg-black/60 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in">
+          <div className="my-3 sm:my-0 bg-[#f8fafc] rounded-[24px] shadow-2xl w-full max-w-6xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[95vh] overflow-y-auto flex flex-col relative border border-gray-100 scrollbar-thin">
             
             {/* MODAIS DE CADASTRO RÁPIDO E BUSCA */}
             {quickModal === 'provider' && (
@@ -3168,7 +3366,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         {isCompletedMission && isBillingApproved && canEditApproved && (
                             <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-xl mb-3" data-testid="billing-approved-diretoria">
                                 <ShieldCheck size={16} className="text-green-600" />
-                                <span className="text-[10px] font-black text-green-700 uppercase">OS aprovada — seu perfil pode alterar</span>
+                                <span className="text-[10px] font-black text-green-700 uppercase">{isBarbaraFinance ? 'OS aprovada — Financeiro (Bárbara) pode alterar KM e dados operacionais' : 'OS aprovada — seu perfil pode alterar'}</span>
                             </div>
                         )}
                         {isCompletedMission && !isBillingApproved && canRevertStatus && (
@@ -3403,6 +3601,19 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         </div>
                     </div>
 
+                    {/* Cadastro operacional — link externo do fornecedor (todos os clientes) */}
+                    {!hideProviderInfo && mission?.id && (
+                        <div className="p-6 bg-white border border-gray-200 rounded-[2.5rem] shadow-sm">
+                            <DhlIntakeTimeline
+                                missionId={mission.id}
+                                canViewSnapshots={true}
+                                isDhlClient={(mission?.client || '').toUpperCase().includes('DHL')}
+                                currentProvider={editData.provider}
+                                savedProvider={mission.provider || ''}
+                            />
+                        </div>
+                    )}
+
                     {/* DADOS DA CARGA E MOTORISTA */}
                     <div className="bg-white p-6 rounded-[2.5rem] border border-gray-200 shadow-sm space-y-5">
                         <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2 border-b border-gray-50 pb-3"><Package size={14} className="text-red-600"/> Dados da Carga e Condutor</h4>
@@ -3574,10 +3785,6 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 )}
                             </div>
                         </div>
-
-                        {((mission?.client || '').toUpperCase().includes('DHL')) && mission?.id && (
-                            <DhlIntakeTimeline missionId={mission.id} canViewSnapshots={true} />
-                        )}
                     </div>
 
                     {/* FICHA DE MEDIÇÃO OPERACIONAL */}
@@ -3594,7 +3801,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     <div className="p-2.5 bg-emerald-50 rounded-xl text-emerald-600 shrink-0"><MapPin size={16}/></div>
                                     <div className="min-w-0 flex-1">
                                         <span className={LABEL_CLASS}>Origem (Ponto A)</span>
-                                        {canEditRoute && isLoaded ? (
+                                        {canEditRoute && mapsJsReady ? (
                                             <Autocomplete 
                                                 onLoad={ref => originAutocompleteRef.current = ref} 
                                                 onPlaceChanged={handleOriginSelect}
@@ -3652,7 +3859,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     <div className="p-2.5 bg-red-50 rounded-xl text-red-600 shrink-0"><Flag size={16}/></div>
                                     <div className="min-w-0 flex-1">
                                         <span className={LABEL_CLASS}>Destino (Ponto C)</span>
-                                        {canEditRoute && isLoaded ? (
+                                        {canEditRoute && mapsJsReady ? (
                                             <Autocomplete 
                                                 onLoad={ref => destinationAutocompleteRef.current = ref} 
                                                 onPlaceChanged={handleDestinationSelect}
@@ -3841,11 +4048,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     <label className={`text-[9px] font-black uppercase tracking-[0.2em] mb-1.5 block ${isGoogleLinkRequired ? 'text-red-400 animate-pulse underline decoration-2' : 'text-slate-400'}`}>
                                         {isGoogleLinkRequired ? 'LINK GOOGLE MAPS OBRIGATÓRIO *' : 'Localização Atual (Ponto B)'}
                                     </label>
-                                    <Autocomplete onLoad={ref => updateLocRef.current = ref} onPlaceChanged={handlePlaceSelect}>
-                                        <input type="text" className={`w-full bg-slate-800 border rounded-xl p-3.5 text-xs font-bold outline-none transition-all ${isGoogleLinkRequired && !editData.mapLink ? 'border-red-500/50 ring-2 ring-red-500/10' : 'border-white/10 focus:ring-2 focus:ring-red-500/30'}`} placeholder="Busque a cidade ou cole link do Google Maps..." value={editData.currentLocationName} onChange={e => handleLocationInputChange(e.target.value)} />
-                                    </Autocomplete>
+                                    {mapsJsReady ? (
+                                        <Autocomplete onLoad={ref => updateLocRef.current = ref} onPlaceChanged={handlePlaceSelect}>
+                                            <input type="text" className={`w-full bg-slate-800 border rounded-xl p-3.5 text-xs font-bold outline-none transition-all ${isGoogleLinkRequired && !editData.mapLink ? 'border-red-500/50 ring-2 ring-red-500/10' : 'border-white/10 focus:ring-2 focus:ring-red-500/30'}`} placeholder="Busque a cidade ou cole link do Google Maps..." value={editData.currentLocationName} onChange={e => handleLocationInputChange(e.target.value)} onBlur={e => resolveTypedAddress(e.target.value)} />
+                                        </Autocomplete>
+                                    ) : (
+                                        <input type="text" className={`w-full bg-slate-800 border rounded-xl p-3.5 text-xs font-bold outline-none transition-all ${isGoogleLinkRequired && !editData.mapLink ? 'border-red-500/50 ring-2 ring-red-500/10' : 'border-white/10 focus:ring-2 focus:ring-red-500/30'}`} placeholder="Digite o endereço ou cole link do Google Maps..." value={editData.currentLocationName} onChange={e => handleLocationInputChange(e.target.value)} onBlur={e => resolveTypedAddress(e.target.value)} />
+                                    )}
                                     {!editData.mapLink && isGoogleLinkRequired && (
                                         <p className="text-[8px] text-red-500 font-black mt-1 uppercase flex items-center gap-1"><ShieldAlert size={10}/> Sistema bloqueado até identificar link de satélite válido</p>
+                                    )}
+                                    {loadError && (
+                                        <p className="text-[8px] text-amber-400 font-black mt-1 uppercase flex items-center gap-1"><ShieldAlert size={10}/> Maps JS indisponível; usando mapa por link/endereço</p>
                                     )}
                                     {editData.mapLink && (
                                         <p className="text-[8px] text-green-500 font-black mt-1 uppercase flex items-center gap-1"><Globe size={10}/> Link de GPS validado com sucesso</p>
@@ -3858,10 +4072,27 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             </div>
                             <div className="flex flex-col gap-3 min-h-[350px]">
                                 <div className="bg-slate-950 rounded-[2rem] border border-white/5 overflow-hidden flex-1 relative shadow-inner">
-                                    {currentPreviewCoords ? (
+                                    {mapsJsReady && currentPreviewCoords ? (
                                         <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={currentPreviewCoords} zoom={15} options={{ disableDefaultUI: true, styles: [{ elementType: "geometry", stylers: [{ color: "#242f3e" }] }, { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] }] }}>
                                             <Marker position={currentPreviewCoords} />
                                         </GoogleMap>
+                                    ) : fallbackMapEmbedUrl ? (
+                                        <iframe
+                                            title="Prévia do mapa"
+                                            src={fallbackMapEmbedUrl}
+                                            className="h-full w-full border-0"
+                                            loading="lazy"
+                                            referrerPolicy="no-referrer-when-downgrade"
+                                        />
+                                    ) : fallbackMapOpenUrl ? (
+                                        <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                                            <MapPin size={40} className="text-red-400" />
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-300">Endereço/link aceito</p>
+                                            <p className="max-w-sm text-[11px] font-semibold text-slate-400">O mapa interativo do Google está indisponível neste navegador, mas o link da localização foi gerado para salvar e abrir externamente.</p>
+                                            <a href={fallbackMapOpenUrl} target="_blank" rel="noreferrer" className="rounded-xl bg-red-600 px-4 py-2 text-[10px] font-black uppercase text-white hover:bg-red-700">
+                                                Abrir no Google Maps
+                                            </a>
+                                        </div>
                                     ) : (
                                         <div className="flex flex-col items-center justify-center h-full opacity-20"><MapPin size={40}/><p className="text-[9px] font-black uppercase mt-2 text-center">Aguardando coordenadas...</p></div>
                                     )}
@@ -3890,7 +4121,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             >
                                 {updatePrintProcessing ? (
                                     <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300" data-testid="status-update-print-processing">
-                                        <Loader2 className="h-4 w-4 animate-spin" /> Limpando logos de terceiros (IA) e aplicando logotipo TM SEG...
+                                        <Loader2 className="h-4 w-4 animate-spin" /> Detectando overlays, removendo marcas e aplicando logotipo TM SEG...
                                     </div>
                                 ) : updatePrintPreview ? (
                                     <>
@@ -3920,8 +4151,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 <div className="mt-2 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2" data-testid="text-update-print-ready">
                                     <CheckCircle2 size={14} className="shrink-0 text-emerald-400" />
                                     <p className="text-[10px] font-bold text-emerald-300">{updatePrintAiCleaned
-                                        ? 'Foto tratada: logos de terceiros removidos (IA) e logotipo TM SEG aplicado. Ela NÃO é salva no sistema — só vai junto na área de transferência ao salvar.'
-                                        : 'Logotipo TM SEG aplicado (limpeza por IA indisponível — confira se sobrou logo de terceiros). A foto NÃO é salva no sistema — só vai junto na área de transferência ao salvar.'}</p>
+                                        ? 'Foto tratada: overlays removidos e logotipo TM SEG aplicado. Não é salva no sistema — só vai na área de transferência ao salvar.'
+                                        : 'Logotipo TM SEG aplicado (nenhum overlay detectado ou limpeza indisponível). Não é salva no sistema — só vai na área de transferência ao salvar.'}</p>
+                                    {(isPrintPipelineDebug() && updatePrintTimings) && (
+                                        <div className="mt-2 rounded-lg border border-white/10 bg-slate-900/80 p-2 text-left font-mono text-[9px] text-slate-400" data-testid="print-pipeline-timings">
+                                            <p className="font-bold text-amber-300/90 mb-1">Pipeline debug (ms)</p>
+                                            <p>upload: {updatePrintTimings.uploadMs} · leitura: {updatePrintTimings.readMs} · detecção: {updatePrintTimings.detectionMs}</p>
+                                            <p>remoção: {updatePrintTimings.removalMs} · logo: {updatePrintTimings.logoMs} · salvamento: {updatePrintTimings.saveMs}</p>
+                                            <p className="text-emerald-400 font-bold">total: {updatePrintTimings.totalMs} ms</p>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

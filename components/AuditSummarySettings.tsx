@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { FileText, Save, Loader2, RefreshCw, History, Sparkles } from 'lucide-react';
 import { formatDateTimeBR } from '../lib/dateUtils';
+import { parseJsonResponse } from '../lib/parseJsonResponse';
 import {
   AUDIT_SUMMARY_DEFAULTS,
   type AuditSummarySettings,
@@ -37,8 +38,8 @@ const AuditSummarySettingsPanel: React.FC = () => {
         fetch('/api/admin/system-settings/audit-summary', { headers: authHeaders() }),
         fetch('/api/admin/system-settings/audit-summary/history', { headers: authHeaders() }),
       ]);
-      const sJson = await sRes.json();
-      const hJson = await hRes.json();
+      const sJson = await parseJsonResponse(sRes);
+      const hJson = await parseJsonResponse(hRes);
       if (sJson?.ok) {
         setSettings(sJson.settings);
         setDefaults(sJson.defaults || AUDIT_SUMMARY_DEFAULTS);

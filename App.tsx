@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
+import WhatsAppStatusBanner from './components/WhatsAppStatusBanner';
 import Login from './components/Login';
 import ResetPassword from './components/ResetPassword';
 import { APP_VERSION } from './constants';
@@ -84,27 +85,30 @@ import DailyCashMovement from './components/DailyCashMovement';
 import VendorVerificationControl from './components/VendorVerificationControl';
 import FinancialInvoiceControl from './components/FinancialInvoiceControl';
 import MissionAlertMonitor from './components/MissionAlertMonitor';
+import UserPresenceTracker from './components/UserPresenceTracker';
+import PresenceDebugPanel from './components/PresenceDebugPanel';
+import TimeClockGate from './components/TimeClockGate';
 import AppErrorBoundary from './components/AppErrorBoundary';
+import { wireUserActivityTracker, touchUserActivity } from './lib/userActivityTracker';
+import RhModule from './components/rh/RhModule';
+import { canAccessRhScreen } from './lib/rh/permissions';
+import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
+import { persistScreen, resolveInitialScreen } from './lib/screenNavigation';
 
-// TEMPO DE INATIVIDADE (30 minutos)
-const INACTIVITY_LIMIT = 20 * 60 * 1000;
+// TEMPO DE INATIVIDADE (30 minutos) — só conta com a aba visível/ativa
+const INACTIVITY_LIMIT = 30 * 60 * 1000;
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     const token = localStorage.getItem('authToken');
     const userData = localStorage.getItem('userData');
-    const version = localStorage.getItem('app_version');
-    return !!(token && userData && version === APP_VERSION);
+    // Não exige app_version === APP_VERSION: após auto-update o login deve persistir.
+    return !!(token && userData);
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
-  const [currentScreen, setCurrentScreen] = useState(() => {
-    try {
-      const page = new URLSearchParams(window.location.search).get('page');
-      return page && /^[a-z0-9-]+$/i.test(page) ? page : 'dashboard';
-    } catch { return 'dashboard'; }
-  });
+  const [currentScreen, setCurrentScreen] = useState(() => resolveInitialScreen('dashboard'));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   
   const [rebootCountdown, setRebootCountdown] = useState<number | null>(null);
@@ -115,8 +119,7 @@ const App: React.FC = () => {
     try {
       const token = localStorage.getItem('authToken');
       const userData = localStorage.getItem('userData');
-      const version = localStorage.getItem('app_version');
-      if (!(token && userData && version === APP_VERSION)) return false;
+      if (!(token && userData)) return false;
       const u = JSON.parse(userData || '{}');
       return shouldShowMotivation(u.id || u.email || 'anon');
     } catch { return false; }
@@ -149,7 +152,11 @@ const App: React.FC = () => {
       try {
           const user = JSON.parse(storedUser);
           const { data, error } = await supabase.from('system_users').select(`name, status, force_password_change, permissions, profile_id, client_id, profiles:profile_id ( name, permissions )`).eq('id', user.id).single();
-          if (error || !data || data.status !== 'Ativo') { handleLogout(); return; }
+          if (error) {
+            console.warn('[Sessão] Falha temporária ao verificar usuário — mantendo login:', error.message);
+            return;
+          }
+          if (!data || data.status !== 'Ativo') { handleLogout(); return; }
           if (data.force_password_change) setNeedsPasswordChange(true);
           const profilePerms = data.profiles?.permissions || [];
           const userPerms = data.permissions || [];
@@ -170,6 +177,11 @@ const App: React.FC = () => {
           if (needsUpdate) {
               localStorage.setItem('userData', JSON.stringify(user));
           }
+          const enriched = await enrichUserWithCltData({
+            ...user,
+            email: user.email,
+          });
+          localStorage.setItem('userData', JSON.stringify(enriched));
           if (data.client_id) {
               const { data: clientData } = await supabase.from('clients').select('name').eq('id', data.client_id).single();
               if (clientData && (clientData.name || '').toUpperCase().includes('CEVA')) {
@@ -179,6 +191,11 @@ const App: React.FC = () => {
           if (!isAuthenticated) setIsAuthenticated(true);
       } catch (e) { console.error(e); }
   };
+
+  useEffect(() => {
+    if (!isAuthenticated || isPublicRoute) return;
+    return wireUserActivityTracker();
+  }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {
     if (!isAuthenticated || isPublicRoute) return;
@@ -211,14 +228,37 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!isAuthenticated || isPublicRoute) return;
-    let timeoutId: any;
-    const resetTimer = () => { if (timeoutId) clearTimeout(timeoutId); timeoutId = setTimeout(() => handleLogout(), INACTIVITY_LIMIT); };
-    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-    events.forEach(event => document.addEventListener(event, resetTimer));
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const resetTimer = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => handleLogout(), INACTIVITY_LIMIT);
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        // Pausa o timer quando o app vai para segundo plano (celular).
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = undefined;
+      } else {
+        resetTimer();
+      }
+    };
+
+    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click', 'pointerdown'];
+    events.forEach((event) => document.addEventListener(event, resetTimer, { passive: true }));
+    document.addEventListener('visibilitychange', onVisibility);
     resetTimer();
+
     const sessionInterval = setInterval(verifySessionInDatabase, 120000);
-    return () => { if (timeoutId) clearTimeout(timeoutId); clearInterval(sessionInterval); events.forEach(event => document.removeEventListener(event, resetTimer)); };
-  }, [isAuthenticated, isPublicRoute, handleLogout]); 
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      clearInterval(sessionInterval);
+      events.forEach((event) => document.removeEventListener(event, resetTimer));
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [isAuthenticated, isPublicRoute, handleLogout]);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const handleLogin = () => {
@@ -267,8 +307,18 @@ const App: React.FC = () => {
     if (storedUser) { try { const user = JSON.parse(storedUser); user.force_password_change = false; localStorage.setItem('userData', JSON.stringify(user)); } catch (e) { console.error(e); } }
     setNeedsPasswordChange(false);
   };
-  const navigateTo = (screen: string) => { setSelectedId(null); setCurrentScreen(screen); };
-  const handleEdit = (screen: string, id: string) => { setSelectedId(id); setCurrentScreen(screen); };
+  const navigateTo = (screen: string) => {
+    setSelectedId(null);
+    setCurrentScreen(screen);
+    persistScreen(screen);
+    touchUserActivity();
+    window.dispatchEvent(new CustomEvent('tmseg:screen-change', { detail: screen }));
+  };
+  const handleEdit = (screen: string, id: string) => {
+    setSelectedId(id);
+    setCurrentScreen(screen);
+    persistScreen(screen);
+  };
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -373,7 +423,14 @@ const App: React.FC = () => {
         return allowed ? <RankingDHL /> : <Dashboard />;
       }
       case 'support-network': return <SupportMapFinder onNavigate={navigateTo} />;
-      default: return <Dashboard />;
+      default: {
+        if (currentScreen.startsWith('rh-')) {
+          const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+          if (!canAccessRhScreen(currentScreen, u)) return <Dashboard onOpenMission={handleOpenBillingMission} />;
+          return <RhModule screen={currentScreen} selectedId={selectedId} onNavigate={navigateTo} onEdit={handleEdit} />;
+        }
+        return <Dashboard onOpenMission={handleOpenBillingMission} />;
+      }
     }
   };
 
@@ -381,7 +438,9 @@ const App: React.FC = () => {
     <QueryClientProvider client={queryClient}>
     <RealtimeProvider>
     <NotificationProvider>
-        <div className="flex min-h-screen-ios overflow-x-hidden overflow-y-auto font-sans text-gray-800 relative" style={{ maxWidth: '100vw' }}>
+        <UserPresenceTracker enabled={isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isResetPasswordRoute} />
+        <TimeClockGate onLogout={handleLogout} onCleared={() => {}}>
+        <div className="flex min-h-screen-ios overflow-x-auto overflow-y-auto font-sans text-gray-800 relative" style={{ maxWidth: '100vw' }}>
         
         {rebootCountdown !== null && (
             <div className="fixed inset-0 z-[9999] bg-black flex flex-col items-center justify-center text-center p-6 backdrop-blur-xl animate-in fade-in duration-500">
@@ -394,13 +453,17 @@ const App: React.FC = () => {
         <div className="absolute inset-0 z-0 pointer-events-none"><img src="/background.png" alt="System Background" className="w-full h-full object-cover fixed opacity-[0.03]"/><div className="absolute inset-0 bg-[#f8fafc] -z-10"></div></div>
         <Sidebar isOpen={isSidebarOpen} activeScreen={currentScreen} onNavigate={navigateTo} onLogout={handleLogout} />
         <PushNotificationManager />
+        <PresenceDebugPanel />
         {(() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); const allowed = ['operador', 'avançado', 'avancado']; return allowed.includes(r); } catch { return false; } })() && <MissionAlertMonitor />}
-        <div className="flex-1 flex flex-col min-h-0 relative z-10 overflow-x-hidden lg:pl-20">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 relative z-10 lg:pl-20">
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />
-            <main className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <WhatsAppStatusBanner />
+            <main className="flex-1 overflow-x-auto overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="w-full mx-auto relative">
-                <AppErrorBoundary key={currentScreen} onReset={() => navigateTo('dashboard')}>
+                <AppErrorBoundary onReset={() => {
+                  // Só limpa o erro — não joga o usuário pro dashboard automaticamente.
+                }}>
                   {renderContent()}
                 </AppErrorBoundary>
                 <footer className="mt-8 text-center text-[10px] text-gray-400 pb-4 uppercase">&copy; {new Date().getFullYear()} Grupo TMSEG.</footer>
@@ -410,6 +473,7 @@ const App: React.FC = () => {
         {isProfileSettingsOpen && ( <ProfileSettingsModal onClose={() => setIsProfileSettingsOpen(false)} onSuccess={() => { setIsProfileSettingsOpen(false); alert("Dados atualizados com sucesso! Por segurança, por favor, faça login novamente."); handleLogout(); }} /> )}
         {billingMissionId && billingMission && ( <MissionFinancialModal isOpen={true} onClose={() => { setBillingMissionId(null); setBillingMission(null); }} mission={billingMission} onUpdate={() => { setBillingMissionId(null); setBillingMission(null); window.dispatchEvent(new CustomEvent('refreshMissions')); }} /> )}
         </div>
+        </TimeClockGate>
     </NotificationProvider>
     </RealtimeProvider>
     </QueryClientProvider>

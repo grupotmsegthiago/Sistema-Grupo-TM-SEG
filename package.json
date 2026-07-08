@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "npx tsx server/index.ts",
-    "build": "vite build && node build-server.mjs",
+    "build": "node scripts/generate-build-meta.mjs && vite build && node build-server.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -30,6 +30,7 @@
     "jsdom": "^29.1.1",
     "jspdf": "^4.2.0",
     "lucide-react": "^0.344.0",
+    "multer": "^2.2.0",
     "nanoid": "^5.1.6",
     "nodemailer": "^8.0.2",
     "p-limit": "^7.3.0",
@@ -42,6 +43,7 @@
     "resend": "^6.9.2",
     "rollup": "^4.59.0",
     "serverless-http": "^4.0.0",
+    "sharp": "^0.35.3",
     "tsx": "^4.21.0",
     "web-push": "^3.6.7",
     "xlsx": "^0.18.5",
@@ -49,6 +51,7 @@
     "zod-validation-error": "^5.0.0"
   },
   "devDependencies": {
+    "@types/multer": "^2.2.0",
     "@types/react": "^18.2.64",
     "@types/react-dom": "^18.2.21",
     "@vitejs/plugin-react": "^4.7.0",

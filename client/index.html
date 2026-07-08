@@ -144,21 +144,33 @@
     </style>
     <script>
       (function() {
+        var isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
         if ('caches' in window) {
           caches.keys().then(function(names) {
             names.forEach(function(name) { caches.delete(name); });
           });
         }
+        // Em localhost (dev) NUNCA registramos o Service Worker: ele + o cache
+        // "immutable" dos chunks do Vite causavam mistura de versões do React
+        // (dispatcher nulo → "Cannot read properties of null"). No dev, apenas
+        // desregistramos qualquer SW remanescente para o navegador buscar tudo
+        // sempre da rede.
         if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function(regs) {
-            regs.forEach(function(reg) { reg.update(); });
-          });
-          navigator.serviceWorker.register('/sw.js').then(function(reg) {
-            reg.update();
-            console.log('[PWA] Service Worker registrado/atualizado');
-          }).catch(function(err) {
-            console.error('[PWA] SW falhou:', err);
-          });
+          if (isLocalhost) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              regs.forEach(function(reg) { reg.unregister(); });
+            });
+          } else {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              regs.forEach(function(reg) { reg.update(); });
+            });
+            navigator.serviceWorker.register('/sw.js').then(function(reg) {
+              reg.update();
+              console.log('[PWA] Service Worker registrado/atualizado');
+            }).catch(function(err) {
+              console.error('[PWA] SW falhou:', err);
+            });
+          }
         }
 
         function setVh() {

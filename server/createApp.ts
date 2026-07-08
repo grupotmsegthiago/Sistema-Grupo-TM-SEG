@@ -62,7 +62,11 @@ async function buildApp(): Promise<Express> {
       if (path.startsWith("/api")) {
         let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
         if (capturedJsonResponse) {
-          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+          const safeBody = { ...capturedJsonResponse };
+          if (typeof safeBody.image === 'string' && safeBody.image.length > 200) {
+            safeBody.image = `<base64 ${safeBody.image.length} chars>`;
+          }
+          logLine += ` :: ${JSON.stringify(safeBody)}`;
         }
         log(logLine);
       }

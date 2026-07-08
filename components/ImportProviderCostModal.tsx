@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { X, Save, Loader2, FileSpreadsheet, AlertCircle, HelpCircle, UploadCloud, Zap, Wand2, Trash2, Search, RefreshCw } from 'lucide-react';
 import { ProviderData } from '../types';
 import { generateContent } from '../lib/gemini';
+import { optimizeImageForAI } from '../lib/imageForAI';
 import { googleMapsApiKey } from '../lib/maps';
 
 interface Props {
@@ -156,23 +157,15 @@ const ImportProviderCostModal: React.FC<Props> = ({ onClose, onSuccess, fixedPro
       }
   };
 
-  const blobToBase64 = (blob: Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  };
-
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
       e.target.value = '';
       setFileName(file.name);
       try {
-          const base64Data = await blobToBase64(file);
-          await handleAnalyzeWithAI({ mimeType: file.type, data: base64Data }, true);
+          // Otimiza imagens antes da IA (mais rápido); PDFs/planilhas passam intactos.
+          const aiImage = await optimizeImageForAI(file);
+          await handleAnalyzeWithAI({ mimeType: aiImage.mimeType, data: aiImage.data }, true);
       } catch (e: any) { setError(e.message); }
   };
 

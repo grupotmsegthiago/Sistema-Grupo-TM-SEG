@@ -262,7 +262,7 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
             </div>
 
             {view === 'map' && (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[750px] animate-in fade-in zoom-in-95 duration-300">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[520px] lg:h-[750px] animate-in fade-in zoom-in-95 duration-300">
                     <div className="lg:col-span-4 flex flex-col bg-white rounded-[2rem] shadow-sm border border-gray-200 overflow-hidden">
                         
                         <div className="p-4 bg-gradient-to-r from-red-700 to-red-900 border-b border-white/10">

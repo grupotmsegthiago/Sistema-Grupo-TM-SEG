@@ -1,17 +1,19 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { Modality } from "@google/genai";
 import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseServerKey, getSupabaseServiceRoleKey, getSupabaseUrl } from "./supabaseConfig";
-import { Resend } from "resend";
 import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
+import { computeRouteDistanceKm, normalizeRouteAddress } from "../lib/routeDistance";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
 import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider } from "./emailService";
+import { runEmailHealthCheck } from "./emailHealth";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
+import { registerRhRoutes } from "./rhRoutes";
+import { runRhMigrations } from "./rhMigrations";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
 import {
   getWhatsappProvider,
@@ -44,6 +46,18 @@ import {
   runWhatsappTelemetryMigrations,
   type TelemetryRange,
 } from "./whatsappTelemetry";
+import { buildWhatsappDiagnosticsReport } from "./whatsappDiagnostics";
+import { handleZapiConnectionWebhook } from "./zapiConnectionWebhook";
+import { runForensicEquipmentRecovery, parseEquipmentFromBackupJson } from "./equipmentForensicRecovery";
+import { runFullEquipmentScan } from "./equipmentBackupService";
+import {
+  loadPatrimonio,
+  savePatrimonioToTables,
+  migrateLegacyPatrimonioIfNeeded,
+  runPatrimonioAutoBackup,
+  listPatrimonioBackups,
+  restorePatrimonioFromBackup,
+} from "./patrimonioStore";
 import { isLongRunningHost } from "./runtime";
 import { registerScheduledTick } from "./scheduledRegistry";
 import { registerMaintenanceTick } from "./maintenanceJobs";
@@ -62,8 +76,12 @@ import {
   pingGeminiHealth,
 } from "./geminiClient";
 import { resolveGeminiModel } from "../lib/geminiModels";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import multer from "multer";
+import {
+  logPipelineTimings,
+  processPrintImage,
+} from "./printImagePipeline";
+import { isSupportedPrintMime, normalizePrintMime } from "../lib/printPipelineTypes";
 
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
@@ -215,7 +233,7 @@ const roleCache = new Map<string, { role: string; expiresAt: number }>();
 const ROLE_CACHE_TTL = 5 * 60 * 1000;
 
 function extractUserIdFromToken(token: string): string | null {
-  const match = token.match(/(?:tmseg-token|impersonation-token)-([a-f0-9-]+)-\d+/);
+  const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
   return match ? match[1] : null;
 }
 
@@ -1040,6 +1058,24 @@ export async function registerRoutes(
     }
   });
 
+  app.post('/api/zapi/webhook/connection', async (req: Request, res: Response) => {
+    try {
+      const secret = (process.env.ZAPI_WEBHOOK_SECRET || "").trim();
+      if (secret) {
+        const provided =
+          String(req.headers["x-zapi-secret"] || req.headers["x-webhook-secret"] || req.query.token || "");
+        if (provided !== secret) {
+          return res.status(401).json({ ok: false, error: "invalid webhook secret" });
+        }
+      }
+      const result = await handleZapiConnectionWebhook(req.body || {});
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      console.error("[Z-API Webhook Connection]", e?.message);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   app.get('/api/whatsapp/providers', requireAuth, async (_req: Request, res: Response) => {
     const defaultRow = await getDefaultWhatsappInstance();
     const creds = await isZapiConfigured();
@@ -1186,8 +1222,9 @@ export async function registerRoutes(
   // (match EXATO por name/trading_name) — o frontend nunca escolhe o destino.
   app.post('/api/whatsapp/send-group', requireAuth, async (req: Request, res: Response) => {
     const userId = (req as any).auth?.id || extractUserIdFromToken((req as any).authToken || '') || null;
-    const { clientName, message, imageBase64, missionId } = req.body || {};
-    const endpointPreview = imageBase64 ? 'send-image' : 'send-text';
+    const { clientName, message, imageBase64, missionId, requireImage } = req.body || {};
+    const imagePayload = typeof imageBase64 === 'string' ? imageBase64.trim() : '';
+    const endpointPreview = imagePayload ? 'send-image' : 'send-text';
     const logBase = (overrides: Partial<Parameters<typeof logWhatsappOutbound>[0]> = {}) => ({
       queueLabel: `${endpointPreview} grupo do cliente`,
       endpoint: endpointPreview,
@@ -1203,6 +1240,10 @@ export async function registerRoutes(
         return res.status(503).json({ error: 'WhatsApp não configurado no banco' });
       }
       if (!clientName || !message) return res.status(400).json({ error: 'clientName e message são obrigatórios' });
+      if (requireImage === true && !imagePayload) {
+        logWhatsappOutbound(logBase({ success: false, skipped: true, skipReason: 'foto obrigatória ausente', errorMessage: 'Imagem obrigatória não enviada pelo frontend' }));
+        return res.status(400).json({ error: 'Foto obrigatória ausente — envio ao grupo não foi realizado sem imagem.' });
+      }
 
       const sb = createSupabaseAdminClient();
       if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
@@ -1254,9 +1295,9 @@ export async function registerRoutes(
         return res.status(503).json({ error: numGuard.error });
       }
 
-      const endpoint = imageBase64 ? 'send-image' : 'send-text';
-      const result = imageBase64
-        ? await whatsappProviderSendImage(groupId, String(message), String(imageBase64), `${endpoint} grupo do cliente`)
+      const endpoint = imagePayload ? 'send-image' : 'send-text';
+      const result = imagePayload
+        ? await whatsappProviderSendImage(groupId, String(message), imagePayload, `${endpoint} grupo do cliente`)
         : await whatsappProviderSendText(groupId, String(message), `${endpoint} grupo do cliente`);
       if (!result.ok) {
         console.warn(`[WhatsApp Grupo] Falha ${endpoint} → grupo ${groupId} (cliente ${clientRow.name}) HTTP ${result.httpStatus}: ${result.error}`);
@@ -1304,6 +1345,17 @@ export async function registerRoutes(
     }
   });
 
+  app.get('/api/whatsapp/diagnostics/report', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const raw = String(req.query.range || '15d').toLowerCase();
+      const range: TelemetryRange = raw === '7d' ? '7d' : raw === 'today' ? 'today' : '15d';
+      const report = await buildWhatsappDiagnosticsReport(range);
+      res.status(report.ok ? 200 : 503).json(report);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   app.get('/api/whatsapp/telemetry/migrations-sql', requireAuth, requireRole('diretoria', 'administrador'), async (_req: Request, res: Response) => {
     try {
       const p = path.join(process.cwd(), 'migrations', '2026_07_05_whatsapp_telemetry.sql');
@@ -1330,7 +1382,8 @@ export async function registerRoutes(
         configured: instanceConfigured(row),
         instanceType: row.instance_type || 'web',
         officialPhone: official,
-        autoConnect: (process.env.ZAPI_AUTO_CONNECT || '').toLowerCase() === 'true',
+        autoConnect: false,
+        autoConnectDisabledReason: 'Reconexão automática desativada por segurança anti-ban; reconecte manualmente pelo painel Z-API.',
         status,
         connectedPhone,
         phoneMatchesOfficial: connectedPhone === official,
@@ -1348,6 +1401,17 @@ export async function registerRoutes(
       const provider = await resolveWhatsappProvider(req);
       if (!provider) return res.status(503).json({ error: 'WhatsApp não configurado no banco' });
       res.json(await provider.bootstrapConnection(true));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/whatsapp/connection/extension-token', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const provider = await resolveWhatsappProvider(req);
+      if (!provider?.getExtensionToken) return res.status(400).json({ error: 'Provider não suporta token de extensão' });
+      const result = await provider.getExtensionToken();
+      res.json({ ok: !!result.token, ...result });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1502,6 +1566,42 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/email/health", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const sendTestTo = typeof req.query?.sendTestTo === 'string' ? req.query.sendTestTo : undefined;
+      const health = await runEmailHealthCheck(sendTestTo ? { sendTestTo } : undefined);
+      res.json(health);
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  app.get("/api/system/diagnostics", requireAuth, requireRole('diretoria', 'administrador', 'rh', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const { diagnosticoIntegracoes } = await import('./integracoesDiagnostics');
+      const semOpcionais = String(req.query?.semOpcionais || req.query?.core || '') === '1'
+        || String(req.query?.semOpcionais || '').toLowerCase() === 'true';
+      const result = await diagnosticoIntegracoes({ incluirOpcionais: !semOpcionais });
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(result.overall === 'down' ? 503 : 200).json({ ok: result.overall !== 'down', ...result });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  app.get("/api/rh/team-presence-board", requireAuth, requireRole('diretoria', 'administrador', 'rh', 'ceo'), async (_req: Request, res: Response) => {
+    try {
+      const { createRhAdminClient } = await import('../lib/rh/adminSupabase');
+      const { loadTeamPresenceBoardData } = await import('../lib/services/teamPresenceBoardService');
+      const sb = createRhAdminClient();
+      const payload = await loadTeamPresenceBoardData(sb);
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ ok: true, ...payload });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   app.post("/api/email/test-mission-emails", requireAuth, async (req: Request, res: Response) => {
     try {
       const { to } = req.body;
@@ -1539,7 +1639,7 @@ export async function registerRoutes(
     try {
       const { name, email, password, userType, profileName, verificationCode } = req.body;
       if (!name || !email || !password) return res.status(400).json({ error: 'Campos name, email e password são obrigatórios' });
-      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'app.grupotmseg.com.br'}`;
+      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'sistema.grupotmseg.com.br'}`;
       const success = await sendWelcomeEmail({ name, email, password, userType: userType || 'internal', profileName }, systemUrl, verificationCode);
       res.json({ success, message: success ? 'E-mail de boas-vindas enviado!' : 'Falha ao enviar e-mail' });
     } catch (err: any) {
@@ -1547,7 +1647,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/password-reset/request", async (req: Request, res: Response) => {
+  app.post("/api/password-reset/request", requireAuth, async (req: Request, res: Response) => {
     try {
       const { userId, senderName } = req.body;
       if (!userId) return res.status(400).json({ error: 'userId obrigatório' });
@@ -1569,7 +1669,7 @@ export async function registerRoutes(
       const { data: verifyData } = await supabase.from('system_users').select('password_reset_token').eq('id', userId).single();
       console.log(`[PasswordReset] Token gravado para user ${userId}: ${verifyData?.password_reset_token ? 'SIM' : 'NÃO'}`);
 
-      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'app.grupotmseg.com.br'}`;
+      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'sistema.grupotmseg.com.br'}`;
       const resetLink = `${systemUrl}/reset-password?token=${token}`;
 
       const success = await sendPasswordResetEmail(userData.email, userData.name, resetLink, senderName);
@@ -2020,15 +2120,27 @@ export async function registerRoutes(
       if (!isGeminiConfigured()) {
         return res.status(503).json({
           ok: false,
+          code: 'KEY_MISSING',
           error: "Chave Gemini não configurada",
-          hint: "Configure GEMINI_API_KEY nas variáveis de ambiente da Vercel",
+          hint: "Configure GEMINI_API_KEY nas variáveis de ambiente da Vercel (Settings → Environment Variables) e faça redeploy.",
+          checkedEnvVars: ['GEMINI_API_KEY', 'AI_INTEGRATIONS_GEMINI_API_KEY', 'GOOGLE_GEMINI_API_KEY'],
         });
       }
       const ping = await pingGeminiHealth();
       res.json({ ok: true, model: ping.model, text: ping.text });
     } catch (error: any) {
       console.error("[Gemini Health]", error);
-      res.status(500).json({ ok: false, error: error.message || "Falha ao contactar Gemini" });
+      const classified = classifyGeminiError(error);
+      res.status(500).json({
+        ok: false,
+        code: classified.code,
+        error: classified.message,
+        hint: classified.code === 'KEY_INVALID'
+          ? 'Gere uma nova chave em Google AI Studio e atualize GEMINI_API_KEY na Vercel.'
+          : classified.code === 'BILLING' || classified.code === 'QUOTA'
+            ? 'Ative faturamento/créditos no Google AI Studio (aistudio.google.com).'
+            : 'Verifique GEMINI_API_KEY e o painel do Google AI Studio.',
+      });
     }
   });
 
@@ -2082,94 +2194,78 @@ export async function registerRoutes(
     }
   });
 
-  // Limpeza de print por IA (uso único, imagem NUNCA persiste): remove
-  // logotipos/marcas d'água/escritas de terceiros do print colado no
-  // "Atualizar Missão". O logotipo TM SEG é aplicado depois, no frontend.
-  app.post("/api/gemini/clean-print", requireAuth, async (req: Request, res: Response) => {
+  // Pipeline de limpeza de print (uso único — imagem NUNCA persiste no bucket).
+  // Detecta overlays via Gemini Flash; remove localmente com inpainting determinístico.
+  // Logotipo TM SEG completo é aplicado no frontend (lib/brandPhotoStamp.ts).
+  const printUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 },
+  });
+
+  app.post("/api/gemini/clean-print", requireAuth, printUpload.single('image'), async (req: Request, res: Response) => {
+    const reqStart = Date.now();
     try {
-      const { image } = req.body || {};
-      if (!image?.data || !image?.mimeType) return res.status(400).json({ error: 'Imagem ausente' });
-      if (typeof image.mimeType !== 'string' || !image.mimeType.startsWith('image/')) return res.status(400).json({ error: 'Tipo de arquivo inválido' });
-      if (typeof image.data !== 'string' || image.data.length > 20_000_000) return res.status(413).json({ error: 'Imagem grande demais para limpeza por IA' });
-      // PASSO 1 — detectar as REGIÕES com sobreposições (carimbo de câmera,
-      // marca d'água, logos colados — inclusive um logo TM SEG antigo colado
-      // na foto). A foto final é montada no frontend em RESOLUÇÃO ORIGINAL e a
-      // imagem regenerada pela IA (que sai em ~1024px, borrada) só é usada
-      // como remendo DENTRO dessas caixas — nunca como base da foto inteira.
-      const boxResp = await generateGeminiContent({
-        model: "gemini-2.5-flash",
-        contents: [{
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: image.mimeType, data: image.data } },
-            { text: "Detect every OVERLAY element stamped ON TOP of this photo: (1) date/time and city/location camera stamps, (2) watermarks, captions, app UI text or software names, (3) pasted/stamped company logos of ANY brand (including a 'TMSEG' shield logo if present as an overlay), (4) third-party company logos or brand names painted/printed on the truck or vehicle body. Do NOT include: vehicle license plates, road signs, or any text that is a physical part of the scene. Return a JSON array where each item is {\"box_2d\": [ymin, xmin, ymax, xmax], \"label\": string} with coordinates normalized to 0-1000. Return [] if there are no overlays." }
-          ]
-        }],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                box_2d: { type: "array", items: { type: "integer" } },
-                label: { type: "string" },
-              },
-              required: ["box_2d"],
-            },
-          },
-        },
-      });
-      let boxes: Array<{ box_2d: number[]; label?: string }> = [];
-      try { boxes = JSON.parse(boxResp.text || '[]'); } catch { boxes = []; }
-      boxes = (Array.isArray(boxes) ? boxes : []).filter(b => Array.isArray(b?.box_2d) && b.box_2d.length === 4);
-      if (boxes.length === 0) {
-        // Nada para remover — o frontend usa a foto original em qualidade cheia.
-        return res.json({ boxes: [] });
+      let buffer: Buffer | null = null;
+      let mimeType = '';
+      let uploadMs = 0;
+
+      if (req.file?.buffer) {
+        uploadMs = Date.now() - reqStart;
+        buffer = req.file.buffer;
+        mimeType = normalizePrintMime(req.file.mimetype || 'image/jpeg');
+      } else {
+        const { image } = req.body || {};
+        if (!image?.data || !image?.mimeType) return res.status(400).json({ error: 'Imagem ausente' });
+        mimeType = normalizePrintMime(image.mimeType);
+        if (!isSupportedPrintMime(mimeType)) return res.status(400).json({ error: 'Formato inválido. Use JPEG, PNG ou WEBP.' });
+        if (typeof image.data !== 'string' || image.data.length > 20_000_000) {
+          return res.status(413).json({ error: 'Imagem grande demais para processamento' });
+        }
+        const decodeStart = Date.now();
+        buffer = Buffer.from(image.data, 'base64');
+        uploadMs = Date.now() - decodeStart;
       }
 
-      // PASSO 2 — gerar a versão "limpa" (inpainting) para servir de remendo.
-      // Prompt em inglês: testado contra o carimbo de data/cidade de câmera —
-      // a versão em português preservava o carimbo; a em inglês remove
-      // carimbo, marcas d'água e logos de terceiros (inclusive na carroceria).
-      // IMPORTANTE (pedido do usuário): a PLACA do veículo é intocável —
-      // o modelo estava cobrindo a placa com retângulo branco; a instrução
-      // reforçada abaixo proíbe apagar/borrar/cobrir placas.
-      const editPrompt = "Produce a clean, realistic photograph without any text overlays, watermarks, logos, or digital text. Remove ALL text overlays from this image. This includes: (1) any date/time and city/location stamp printed on the photo (camera timestamp overlays), (2) any watermarks, captions, promotional text, phone numbers, Instagram handles, website addresses, app UI text or software names, (3) any pasted/stamped company logos of any brand (including a 'TMSEG' shield logo overlay if present), (4) any third-party company logos or brand names, including ones painted or printed on the truck/vehicle body. Smoothly and seamlessly blend and fill each removed area with its natural surrounding background (for example: clear sky with light clouds at the top, the car dashboard at the bottom, road, or vehicle surface) so that no trace, smudge or ghosting remains. CRITICAL: do not alter or blur the truck/vehicle itself, and the vehicle LICENSE PLATE must remain 100% untouched, visible and readable — NEVER remove, blur, cover, whiten or alter license plates. The same applies to road signs and any text that is a physical part of the scene (except third-party company logos). Do NOT enhance, retouch, sharpen, brighten or otherwise alter the photo quality — preserve the original exposure, colors, grain and blur exactly as they are. Keep everything else in the photo exactly the same: vehicle, license plate, road, map, route, landscape and framing. Do not add any new text, logo or element. Output only the edited image.";
-      let imgPart: any = null;
-      for (let attempt = 1; attempt <= 2 && !imgPart; attempt++) {
-        const response = await generateGeminiContent({
-          model: "gemini-2.5-flash-image",
-          contents: [{
-            role: "user",
-            parts: [
-              { inlineData: { mimeType: image.mimeType, data: image.data } },
-              { text: editPrompt }
-            ]
-          }],
-          config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
-        });
-        const parts = response.candidates?.[0]?.content?.parts || [];
-        imgPart = parts.find((p: any) => p.inlineData?.data) || null;
-        if (!imgPart) {
-          const txt = parts.map((p: any) => p.text).filter(Boolean).join(' ').slice(0, 300);
-          const block = (response as any).promptFeedback?.blockReason || '';
-          console.warn(`[clean-print] Tentativa ${attempt}: sem imagem na resposta. Texto: ${txt || '(vazio)'} | finishReason: ${response.candidates?.[0]?.finishReason || '?'} | block: ${block || '-'}`);
-          // O filtro de segurança do Gemini costuma BLOQUEAR pedidos de
-          // remoção de logo/marca d'água (blockReason SAFETY) — retentar não
-          // adianta. O frontend cobre as caixas com borrão local.
-          if (block) break;
-        }
+      if (!buffer?.length) return res.status(400).json({ error: 'Imagem ausente ou vazia' });
+      if (!isSupportedPrintMime(mimeType)) return res.status(400).json({ error: 'Formato inválido. Use JPEG, PNG ou WEBP.' });
+
+      const enableGeminiPatch = process.env.PRINT_PIPELINE_GEMINI_PATCH === 'true';
+      const result = await processPrintImage(buffer, mimeType, { uploadMs, enableGeminiPatch });
+
+      logPipelineTimings(result.timings, {
+        cleaned: result.cleaned,
+        method: result.method,
+        boxes: result.boxes.length,
+        width: result.width,
+        height: result.height,
+      });
+
+      const wantBinary =
+        String(req.headers['x-print-response'] || '').toLowerCase() === 'binary' ||
+        String(req.query?.format || '').toLowerCase() === 'binary';
+
+      if (wantBinary) {
+        res.setHeader('Content-Type', result.mimeType);
+        res.setHeader('X-Print-Cleaned', result.cleaned ? '1' : '0');
+        res.setHeader('X-Print-Method', result.method || '');
+        res.setHeader('X-Print-Timings', JSON.stringify(result.timings));
+        res.send(result.buffer);
+        return;
       }
-      if (!imgPart?.inlineData?.data) {
-        // Sem imagem editada: devolve só as caixas — o frontend faz o remendo
-        // local (borrão) por cima do carimbo/logo, mantendo a foto original nítida.
-        return res.json({ boxes });
-      }
-      res.json({ image: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png', boxes });
+
+      res.json({
+        image: result.buffer.toString('base64'),
+        mimeType: result.mimeType,
+        boxes: result.boxes,
+        cleaned: result.cleaned,
+        method: result.method,
+        width: result.width,
+        height: result.height,
+        timings: result.timings,
+      });
     } catch (error: any) {
-      console.error('Erro Gemini clean-print:', error);
-      res.status(500).json({ error: 'Falha ao limpar a imagem por IA' });
+      console.error('Erro print-pipeline clean-print:', error);
+      res.status(500).json({ error: error?.message || 'Falha ao processar a imagem' });
     }
   });
 
@@ -2312,6 +2408,51 @@ export async function registerRoutes(
     console.log('[Migration] push_subscriptions:', e.message || 'ok');
   }
 
+  // ── Migration: tabelas dedicadas de patrimônio (fora de system_logs) ──
+  try {
+    await supabaseAdmin.rpc('exec_sql', { sql: `
+      CREATE TABLE IF NOT EXISTS patrimonio_equipments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        patrimony_id TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'outro',
+        brand TEXT DEFAULT '',
+        model TEXT DEFAULT '',
+        serial_number TEXT DEFAULT '',
+        photo_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
+        notes TEXT DEFAULT '',
+        assigned_to TEXT DEFAULT '',
+        assigned_to_name TEXT DEFAULT '',
+        history JSONB NOT NULL DEFAULT '[]'::jsonb,
+        responsibility_term JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        deleted_at TIMESTAMPTZ
+      );
+      CREATE TABLE IF NOT EXISTS patrimonio_custom_types (
+        value TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS patrimonio_backups (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        source TEXT NOT NULL DEFAULT 'cron_6h',
+        item_count INTEGER NOT NULL DEFAULT 0,
+        storage_path TEXT,
+        payload JSONB,
+        file_size_bytes BIGINT,
+        status TEXT NOT NULL DEFAULT 'ok',
+        notes TEXT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS patrimonio_equipments_patrimony_id_uidx
+        ON patrimonio_equipments (patrimony_id) WHERE deleted_at IS NULL;
+      CREATE INDEX IF NOT EXISTS patrimonio_backups_created_at_idx ON patrimonio_backups (created_at DESC);
+    `});
+    console.log('[Migration] Tabelas patrimonio_* verificadas/criadas.');
+  } catch (e: any) {
+    console.log('[Migration] patrimonio_*:', e.message || 'ok');
+  }
+
   // ── Migration: tabela system_settings (configurações administrativas key/value) ──
   try {
     await supabaseAdmin.rpc('exec_sql', { sql: `
@@ -2387,7 +2528,13 @@ export async function registerRoutes(
   } catch (e: any) {
     console.warn('[Migration] WhatsApp instâncias:', e?.message || 'falhou');
   }
+  try {
+    await runRhMigrations();
+  } catch (e: any) {
+    console.warn('[Migration] RH:', e?.message || 'falhou');
+  }
   registerDhlIntakeRoutes(app, requireAuth, requireRole, resolveUserRole, resolvePrincipal);
+  registerRhRoutes(app, requireAuth, requireRole);
 
   app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
     try {
@@ -2558,6 +2705,141 @@ export async function registerRoutes(
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/patrimonio/equipments', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const data = await loadPatrimonio(supabaseAdmin);
+      res.json({ ok: true, ...data });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar patrimônio' });
+    }
+  });
+
+  app.put('/api/patrimonio/equipments', requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const equipments = req.body?.equipments || [];
+      const customTypes = req.body?.customTypes || [];
+      await savePatrimonioToTables(supabaseAdmin, equipments, customTypes, 'app');
+      res.json({ ok: true, count: equipments.length });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao salvar patrimônio' });
+    }
+  });
+
+  app.post('/api/patrimonio/migrate-legacy', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const data = await migrateLegacyPatrimonioIfNeeded(supabaseAdmin);
+      res.json({ ok: true, ...data });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha na migração' });
+    }
+  });
+
+  app.get('/api/equipment/recovery/forensic', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const report = await runForensicEquipmentRecovery(supabaseAdmin);
+      res.json(report);
+    } catch (e: any) {
+      console.error('[equipment-forensic]', e?.message);
+      res.status(500).json({ ok: false, error: e?.message || 'Falha na recuperação forense' });
+    }
+  });
+
+  app.get('/api/equipment/recovery/full-scan', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const report = await runFullEquipmentScan(supabaseAdmin);
+      res.json(report);
+    } catch (e: any) {
+      console.error('[equipment-full-scan]', e?.message);
+      res.status(500).json({ ok: false, error: e?.message || 'Falha na varredura completa' });
+    }
+  });
+
+  app.get('/api/equipment/backups/auto', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const snapshots = await listPatrimonioBackups(supabaseAdmin);
+      res.json({ ok: true, snapshots });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao listar backups' });
+    }
+  });
+
+  app.post('/api/equipment/backups/restore-auto', requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const backupId = req.body?.backup_id as string | undefined;
+      const restored = await restorePatrimonioFromBackup(supabaseAdmin, backupId);
+      if (!restored?.equipments?.length) {
+        res.status(404).json({ ok: false, error: 'Nenhum backup em patrimonio_backups com equipamentos' });
+        return;
+      }
+      await savePatrimonioToTables(supabaseAdmin, restored.equipments, restored.customTypes, 'backup_restore');
+      res.json({
+        ok: true,
+        snapshot_at: restored.snapshot_at,
+        equipments: restored.equipments,
+        customTypes: restored.customTypes,
+        total: restored.equipments.length,
+      });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao restaurar backup' });
+    }
+  });
+
+  app.post('/api/equipment/backups/run-now', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
+    try {
+      if (!supabaseAdmin) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+      const result = await runPatrimonioAutoBackup(supabaseAdmin);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao gerar backup' });
+    }
+  });
+
+  app.post('/api/equipment/recovery/import-backup', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const payload = req.body?.backup ?? req.body;
+      const parsed = parseEquipmentFromBackupJson(payload);
+      res.json({
+        ok: true,
+        equipments: parsed.equipments,
+        customTypes: parsed.customTypes,
+        total: parsed.equipments.length,
+      });
+    } catch (e: any) {
+      res.status(400).json({ ok: false, error: e?.message || 'JSON de backup inválido' });
     }
   });
 
@@ -3858,6 +4140,16 @@ export async function registerRoutes(
 
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
   registerMaintenanceTick(checkAndRunCleanup);
+
+  // Backup automático de patrimônio a cada 6h (cron /api/cron/maintenance)
+  registerMaintenanceTick(async () => {
+    try {
+      if (!supabaseAdmin) return;
+      await runPatrimonioAutoBackup(supabaseAdmin);
+    } catch (e: any) {
+      console.error('[equipment-backup] tick falhou:', e?.message);
+    }
+  });
   if (isLongRunningHost) {
     setTimeout(() => {
       checkAndRunCleanup();
@@ -4887,6 +5179,20 @@ export async function registerRoutes(
   const QUALP_API_TOKEN = process.env.QUALP_API_TOKEN || '';
   const QUALP_ROUTE_URL = 'https://api.qualp.com.br/rotas/v4';
 
+  function parseQualpDistanceKm(data: any): number | undefined {
+    const d = data?.distancia;
+    if (!d) return undefined;
+    if (typeof d.valor === 'number' && d.valor > 0) {
+      return d.valor > 500 ? Math.round((d.valor / 1000) * 100) / 100 : d.valor;
+    }
+    if (typeof d.km === 'number' && d.km > 0) return d.km;
+    if (typeof d.texto === 'string') {
+      const m = d.texto.match(/([\d.,]+)/);
+      if (m) return parseFloat(m[1].replace(',', '.'));
+    }
+    return undefined;
+  }
+
   app.post('/api/toll/qualp', requireAuth, async (req: Request, res: Response) => {
     try {
       if (!QUALP_API_TOKEN) {
@@ -4899,6 +5205,8 @@ export async function registerRoutes(
       }
 
       const eixos = Number(axis) >= 2 ? Number(axis) : 2;
+      const originNorm = normalizeRouteAddress(String(origin));
+      const destinationNorm = normalizeRouteAddress(String(destination));
 
       const response = await fetch(QUALP_ROUTE_URL, {
         method: 'POST',
@@ -4907,7 +5215,7 @@ export async function registerRoutes(
           'Access-Token': QUALP_API_TOKEN,
         },
         body: JSON.stringify({
-          locations: [origin, destination],
+          locations: [originNorm, destinationNorm],
           config: {
             route: { type_route: 'efficient', calculate_return: false },
             vehicle: { type: 'car', axis: eixos },
@@ -4946,11 +5254,14 @@ export async function registerRoutes(
       });
 
       const tollValue = tolls.reduce((sum: number, t: any) => sum + t.value, 0);
-      const distance = typeof data?.distancia?.valor === 'number' ? data.distancia.valor : undefined;
+      let distance = parseQualpDistanceKm(data);
 
-      // Rota calculada com sucesso (mesmo sem pedágio) quando a QualP retorna distância.
-      // Diferenciar "rota sem pedágio (R$ 0)" de "falha" evita cair em fallback e lançar valor indevido.
-      const routeComputed = typeof distance === 'number';
+      if (distance === undefined) {
+        const fallback = await computeRouteDistanceKm(originNorm, destinationNorm);
+        if (fallback.success && fallback.distanceKm) distance = fallback.distanceKm;
+      }
+
+      const routeComputed = typeof distance === 'number' && distance > 0;
 
       return res.json({
         success: routeComputed,
@@ -4972,10 +5283,13 @@ export async function registerRoutes(
 
   app.post('/api/toll/gemini-estimate', requireAuth, async (req: Request, res: Response) => {
     try {
-      const { origin, destination } = req.body;
-      if (!origin || !destination) {
+      const originRaw = String(req.body?.origin || '').trim();
+      const destinationRaw = String(req.body?.destination || '').trim();
+      if (!originRaw || !destinationRaw) {
         return res.json({ success: false, error: 'Origem e destino são obrigatórios' });
       }
+      const origin = normalizeRouteAddress(originRaw);
+      const destination = normalizeRouteAddress(destinationRaw);
 
       const prompt = `Você é um engenheiro de tráfego rodoviário brasileiro com conhecimento detalhado de TODAS as praças de pedágio do Brasil.
 
@@ -6373,20 +6687,16 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       if (!origin || !destination) {
         return res.status(400).json({ success: false, error: 'origin e destination são obrigatórios' });
       }
-      const key = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || '';
-      if (!key) {
-        return res.status(500).json({ success: false, error: 'GOOGLE_MAPS_API_KEY não configurada' });
+      const result = await computeRouteDistanceKm(origin, destination);
+      if (result.success) {
+        return res.json({
+          success: true,
+          distanceKm: result.distanceKm,
+          durationMin: result.durationMin ?? null,
+          source: result.source,
+        });
       }
-      const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&mode=driving&units=metric&language=pt-BR&region=br&key=${key}`;
-      const r = await fetch(url);
-      const data: any = await r.json();
-      const el = data?.rows?.[0]?.elements?.[0];
-      if (el?.status === 'OK' && el.distance?.value) {
-        const distanceKm = Math.round((el.distance.value / 1000) * 100) / 100;
-        const durationMin = el.duration?.value ? Math.round(el.duration.value / 60) : null;
-        return res.json({ success: true, distanceKm, durationMin });
-      }
-      return res.json({ success: false, error: el?.status || data?.status || 'NO_RESULT' });
+      return res.json({ success: false, error: result.error || 'NO_RESULT' });
     } catch (e: any) {
       return res.status(500).json({ success: false, error: e?.message || 'erro' });
     }
@@ -7054,7 +7364,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         if (fromEnv) return fromEnv;
         const replitDomain = (process.env.REPLIT_DOMAINS || '').split(',')[0].trim();
         if (replitDomain) return `https://${replitDomain}`;
-        return 'https://app.grupotmseg.com.br';
+        return 'https://sistema.grupotmseg.com.br';
       })();
       const deepLink = `${appBaseUrl}/?page=system-settings&focus=report&key=${encodeURIComponent(reportKey)}`;
 

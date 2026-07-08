@@ -11,6 +11,19 @@ const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 const supabase = createClient(supabaseUrl, supabaseKey)
 
+const VERCEL_APP_URL = 'https://sistema-grupo-tm-seg.vercel.app'
+
+function resolveAppUrl(): string {
+  const configured = (Deno.env.get('APP_PUBLIC_URL') || Deno.env.get('SYSTEM_URL') || '').trim().replace(/\/$/, '')
+  if (!configured) return VERCEL_APP_URL
+
+  // Enquanto o DNS do domínio oficial aponta para Replit/Apache, o webhook deve
+  // falar direto com a Vercel para usar o backend publicado e testado.
+  if (configured.includes('sistema.grupotmseg.com.br')) return VERCEL_APP_URL
+
+  return configured
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*' } })
@@ -42,7 +55,7 @@ serve(async (req) => {
     }
 
     // Comando "resumo" → TM SEG responde no PV (nunca no grupo)
-    const appUrl = Deno.env.get('APP_PUBLIC_URL') || Deno.env.get('SYSTEM_URL') || '';
+    const appUrl = resolveAppUrl();
     if (appUrl) {
       const secret = Deno.env.get('ZAPI_WEBHOOK_SECRET') || Deno.env.get('SUPABASE_WEBHOOK_SECRET') || '';
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };

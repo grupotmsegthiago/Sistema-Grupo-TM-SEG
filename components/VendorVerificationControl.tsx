@@ -19,6 +19,18 @@ const formatCurrency = (val: number | null | undefined) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
+async function parseJsonResponse(res: Response): Promise<any> {
+    const text = await res.text();
+    if (!text.trim()) {
+        throw new Error(res.ok ? 'Resposta vazia do servidor' : `Erro do servidor (${res.status})`);
+    }
+    try {
+        return JSON.parse(text);
+    } catch {
+        throw new Error(res.ok ? 'Resposta inválida do servidor' : `Erro do servidor (${res.status})`);
+    }
+}
+
 // CUSTO real do fornecedor gravado na OS = cost_value (serviço) + pedágio
 // fornecedor + deslocamento fornecedor. Pedágio e deslocamento são ADITIVOS e
 // espelham exatamente o que o MissionFinancialModal mostra/grava (custo serviço
@@ -494,7 +506,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
 
         try {
             const [verRes] = await Promise.all([
-                authFetch(`/api/vendor-verification/${mission.id}`).then(r => r.json()),
+                authFetch(`/api/vendor-verification/${mission.id}`).then(r => parseJsonResponse(r)),
                 loadAttachments(mission.id)
             ]);
             if (verRes.ok && verRes.data) {
@@ -566,7 +578,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                     toll_value_provider: newTollProvValue,
                 })
             });
-            const json = await res.json();
+            const json = await parseJsonResponse(res);
 
             if (json.ok) {
                 setVerifiedBy(userName);
@@ -663,7 +675,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                         verified_at: now,
                     })
                 });
-                const json = await res.json();
+                const json = await parseJsonResponse(res);
                 if (json.ok) {
                     successCount++;
                     setMissions(prev => prev.map(m =>

@@ -1,5 +1,5 @@
 // Histórico das últimas atualizações de meta (gráfico Monitoramento) — só diretoria vê no UI.
-// Amostras agrupadas a cada 30 minutos por filtro de período.
+// Cada sincronização/manual refresh vira um ponto para mostrar a evolução real do faturamento.
 
 export type GoalUpdateSnapshot = {
   at: string;
@@ -18,8 +18,8 @@ export type GoalUpdateSnapshot = {
 /** Intervalo fixo de amostragem do gráfico. */
 export const GOAL_SAMPLE_INTERVAL_MS = 30 * 60 * 1000;
 
-/** Pontos exibidos no sparkline (últimas 30 amostras de 30 min = 15 h). */
-export const GOAL_CHART_POINTS = 30;
+/** Pontos exibidos no sparkline: últimas 5 atualizações reais. */
+export const GOAL_CHART_POINTS = 5;
 
 /** ~31 dias de amostras de 30 min por filtro. */
 export const GOAL_MAX_HISTORY_ENTRIES = 48 * 31;
@@ -94,7 +94,7 @@ export function loadGoalUpdateHistory(key: string): GoalUpdateSnapshot[] {
   }
 }
 
-/** Últimas N amostras de 30 min em ordem cronológica (para o gráfico). */
+/** Últimas N atualizações em ordem cronológica (para o gráfico). */
 export function selectChartSnapshots(
   rows: GoalUpdateSnapshot[],
   maxPoints = GOAL_CHART_POINTS,
@@ -108,28 +108,20 @@ export function pushGoalUpdateHistory(
   entry: Omit<GoalUpdateSnapshot, 'deltaRevenue' | 'deltaCost' | 'deltaProfit' | 'deltaMissions'>,
 ): GoalUpdateSnapshot[] {
   const prev = loadGoalUpdateHistory(key);
-  const bucketMs = bucketTimestampMs(entry.at);
-  const bucketAt = new Date(bucketMs).toISOString();
-
   const chronologicallyPrev = prev
-    .filter(p => bucketTimestampMs(p.at) < bucketMs)
     .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())[0] ?? null;
 
   const snapshot: GoalUpdateSnapshot = {
     ...entry,
-    at: bucketAt,
     deltaRevenue: chronologicallyPrev ? entry.revenue - chronologicallyPrev.revenue : null,
     deltaCost: chronologicallyPrev ? entry.cost - chronologicallyPrev.cost : null,
     deltaProfit: chronologicallyPrev ? entry.profit - chronologicallyPrev.profit : null,
     deltaMissions: chronologicallyPrev ? entry.missionCount - chronologicallyPrev.missionCount : null,
   };
 
-  const hasBucket = prev.some(p => bucketTimestampMs(p.at) === bucketMs);
-  const next = hasBucket
-    ? prev
-        .map(p => (bucketTimestampMs(p.at) === bucketMs ? snapshot : p))
-        .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-    : [snapshot, ...prev].slice(0, GOAL_MAX_HISTORY_ENTRIES);
+  const next = [snapshot, ...prev]
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, GOAL_MAX_HISTORY_ENTRIES);
 
   try {
     localStorage.setItem(storageKey(key), JSON.stringify(next));

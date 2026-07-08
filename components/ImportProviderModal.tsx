@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { X, Save, Loader2, FileSpreadsheet, AlertCircle, HelpCircle, UploadCloud, Zap, Wand2, Trash2 } from 'lucide-react';
 import { generateContent } from '../lib/gemini';
+import { optimizeImageForAI } from '../lib/imageForAI';
 
 interface Props {
   onClose: () => void;
@@ -120,19 +121,6 @@ const ImportProviderModal: React.FC<Props> = ({ onClose, onSuccess }) => {
       }
   };
 
-  const blobToBase64 = (blob: Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        const base64Data = base64String.split(',')[1]; 
-        resolve(base64Data);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  };
-
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -142,8 +130,10 @@ const ImportProviderModal: React.FC<Props> = ({ onClose, onSuccess }) => {
       setError('');
 
       try {
-          const base64Data = await blobToBase64(file);
-          await handleAnalyzeWithAI({ mimeType: file.type, data: base64Data }, true);
+          // Otimiza imagens (reduz/comprime) antes de enviar à IA — leitura mais
+          // rápida. PDFs/planilhas passam sem alteração (fallback do helper).
+          const aiImage = await optimizeImageForAI(file);
+          await handleAnalyzeWithAI({ mimeType: aiImage.mimeType, data: aiImage.data }, true);
       } catch (e: any) {
           setError("Erro ao ler arquivo: " + e.message);
       }

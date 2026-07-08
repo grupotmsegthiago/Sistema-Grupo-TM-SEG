@@ -3,14 +3,14 @@
 // ==========================================
 // VERSÃO DO SISTEMA
 // ==========================================
-export const APP_VERSION = "3.7.28";
+export const APP_VERSION = "3.7.60";
 
 // ==========================================
 // CONFIGURAÇÕES DE RETENÇÃO (ESPAÇO EM BANCO)
 // ==========================================
 export const DATA_RETENTION = {
     LOGS_DAYS: 30,             // Manter logs por 30 dias
-    BACKUP_INTERVAL_HRS: 12,   // Alerta de backup a cada 12h
+    BACKUP_INTERVAL_HRS: 6,    // Backup automático de patrimônio (cron maintenance)
     STORAGE_LIMIT_MB: 500,     // Limite do plano Free Supabase
 };
 
@@ -141,6 +141,16 @@ export const NAV_ITEMS: NavItem[] = [
     ]
   },
   { name: 'Jurídico', icon: 'Scale', id: 'legal-dashboard' },
+  {
+    name: 'RH',
+    icon: 'UserCog',
+    id: 'rh-group',
+    children: [
+      { name: 'Dashboard', id: 'rh-dashboard' },
+      { name: 'Funcionários', id: 'rh-employees' },
+      { name: 'Folha de Ponto', id: 'rh-timeclock' },
+    ],
+  },
   { name: 'Relatórios', icon: 'FileBarChart', id: 'reports' },
   { 
     name: 'Configurações', 

@@ -25,6 +25,7 @@ import {
   sendDhlIntakeReminderOperacionalEmail,
   sendDhlIntakeOperationalFollowupEmail,
 } from './emailService';
+import { resolvePublicAppUrl } from '../lib/publicAppUrl';
 
 const DHL_CLIENT_NAME = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
 const OPERACIONAL_EMAIL = 'operacional@grupotmseg.com.br';
@@ -294,15 +295,7 @@ export async function runDhlIntakeMigrations(): Promise<void> {
 }
 
 function getAppUrl(req: Request): string {
-  // Prioridade: APP_PUBLIC_URL (estável p/ links externos) → REPLIT_DOMAINS → headers.
-  // Evita links efêmeros do ambiente dev quando há um domínio publicado.
-  const fromEnv = (process.env.APP_PUBLIC_URL || '').trim();
-  if (fromEnv) return fromEnv.replace(/\/$/, '');
-  const replitDomain = (process.env.REPLIT_DOMAINS || '').split(',')[0].trim();
-  if (replitDomain) return `https://${replitDomain}`;
-  const proto = (req.headers['x-forwarded-proto'] as string) || 'https';
-  const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost';
-  return `${proto}://${host}`;
+  return resolvePublicAppUrl(req);
 }
 
 function buildWhatsappText(opts: {
@@ -652,8 +645,7 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
   if (elegiveis.length === 0) return;
   console.log(`[DHL Reminder Worker] ${elegiveis.length} intake(s) elegível(eis) para lembrete.`);
 
-  const baseUrl = (process.env.APP_PUBLIC_URL || '').replace(/\/$/, '')
-    || (process.env.REPLIT_DOMAINS ? `https://${(process.env.REPLIT_DOMAINS || '').split(',')[0].trim()}` : '');
+  const baseUrl = resolvePublicAppUrl();
 
   // Por canal: lista de intakes que ainda precisam do envio. Cada canal
   // (e-mail e WhatsApp ao fornecedor) tem sua própria flag para permitir
@@ -2337,6 +2329,7 @@ export function registerDhlIntakeRoutes(
       const validateAgentForSubmit = (a: any, label: string): string | null => {
         const required: [string, string][] = [
           ['nome', 'Nome'], ['cpf', 'CPF'], ['rg', 'RG'], ['orgao_emissor', 'Órgão emis./UF'],
+          ['cnh', 'CNH'], ['cnh_categoria', 'Categoria CNH'], ['cnh_vencimento', 'Vencimento CNH'],
           ['cnv_numero', 'CNV Número'], ['cnv_validade', 'Validade CNV'],
           ['celular', 'Celular'],
           ['rua', 'Rua'], ['numero', 'Número'], ['bairro', 'Bairro'],
@@ -2375,34 +2368,6 @@ export function registerDhlIntakeRoutes(
       if (!agent1?.id && !agent2?.id && cpf1 && cpf1 === cpf2) {
         return res.status(400).json({ error: 'Escoltista 1 e Escoltista 2 não podem ter o mesmo CPF.' });
       }
-
-      // Regra cruzada de CNH: PELO MENOS UM dos escoltistas precisa ter CNH e
-      // Vencimento CNH preenchidos. Bloqueia somente quando AMBOS estiverem sem.
-      const cnhStr = (a: any, k: string) => {
-        const v = a?.[k] ?? a?.[k.replace(/_([a-z])/g, (_: any, c: string) => c.toUpperCase())];
-        return v === undefined || v === null ? '' : String(v).trim();
-      };
-      const a1HasCnh = !!cnhStr(agent1, 'cnh') && !!cnhStr(agent1, 'cnh_vencimento');
-      const a2HasCnh = !!cnhStr(agent2, 'cnh') && !!cnhStr(agent2, 'cnh_vencimento');
-      if (!a1HasCnh && !a2HasCnh) {
-        return res.status(400).json({
-          error: 'Pelo menos UM dos escoltistas precisa ter CNH e Vencimento da CNH preenchidos.',
-        });
-      }
-      // Coerência por escoltista: se preencheu qualquer campo do bloco CNH,
-      // tem que preencher todos (número, categoria, vencimento).
-      const checkCnhBlock = (a: any, label: string): string | null => {
-        const num = cnhStr(a, 'cnh');
-        const cat = cnhStr(a, 'cnh_categoria');
-        const val = cnhStr(a, 'cnh_vencimento');
-        if (!num && !cat && !val) return null;
-        if (!num) return `${label}: informe o número da CNH.`;
-        if (!val) return `${label}: informe o Vencimento da CNH.`;
-        if (!cat) return `${label}: informe a Categoria da CNH.`;
-        return null;
-      };
-      const cnhErr = checkCnhBlock(agent1, 'Escoltista 1') || checkCnhBlock(agent2, 'Escoltista 2');
-      if (cnhErr) return res.status(400).json({ error: cnhErr });
 
       // Validação completa dos blocos para o submit FINAL (campos obrigatórios).
       const v1Err = validateAgentForSubmit(agent1, 'Escoltista 1');

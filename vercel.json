@@ -1,33 +1,318 @@
 {
   "installCommand": "npm install --no-audit --no-fund --legacy-peer-deps",
-  "buildCommand": "vite build && node build-server.mjs",
+  "buildCommand": "node scripts/generate-build-meta.mjs && vite build && node build-server.mjs",
   "outputDirectory": "dist/public",
   "functions": {
     "api/index.ts": {
+      "maxDuration": 300,
+      "includeFiles": "dist/vercelApp.cjs"
+    },
+    "api/whatsapp/webhook/inbound.ts": {
       "maxDuration": 300
+    },
+    "api/whatsapp/send-group.ts": {
+      "maxDuration": 300
+    },
+    "api/whatsapp/telemetry/dashboard.ts": {
+      "maxDuration": 60
+    },
+    "api/geocode-address.ts": {
+      "maxDuration": 60
+    },
+    "api/reverse-geocode.ts": {
+      "maxDuration": 60
+    },
+    "api/distance-matrix.ts": {
+      "maxDuration": 60
+    },
+    "api/route-progress.ts": {
+      "maxDuration": 60
+    },
+    "api/dhl/intake/generate.ts": {
+      "maxDuration": 300
+    },
+    "api/dhl/intake/by-mission.ts": {
+      "maxDuration": 60
+    },
+    "api/dhl/intake/by-mission/[missionId].ts": {
+      "maxDuration": 60
+    },
+    "api/gemini/health.ts": {
+      "maxDuration": 60
+    },
+    "api/gemini/generate.ts": {
+      "maxDuration": 300
+    },
+    "api/placa-lookup.ts": {
+      "maxDuration": 60
+    },
+    "api/dhl-intake-lookup-placa.ts": {
+      "maxDuration": 60
+    },
+    "api/dhl/intake/public/[token].ts": {
+      "maxDuration": 60
+    },
+    "api/dhl/intake/public/[token]/progress.ts": {
+      "maxDuration": 300
+    },
+    "api/dhl/intake/public/[token]/submit.ts": {
+      "maxDuration": 300
+    },
+    "api/dhl-intake-public-get.ts": {
+      "maxDuration": 60
+    },
+    "api/dhl-intake-public-progress.ts": {
+      "maxDuration": 300
+    },
+    "api/dhl-intake-public-submit.ts": {
+      "maxDuration": 300
+    },
+    "api/vendor-verification.ts": {
+      "maxDuration": 60
+    },
+    "api/investment-init.ts": {
+      "maxDuration": 60
+    },
+    "api/investment-snapshots-all.ts": {
+      "maxDuration": 60
+    },
+    "api/investment-snapshots.ts": {
+      "maxDuration": 60
+    },
+    "api/investment-snapshot-delete.ts": {
+      "maxDuration": 60
+    },
+    "api/email-mission-scheduled.ts": {
+      "maxDuration": 120
+    },
+    "api/email-mission-solicited.ts": {
+      "maxDuration": 120
+    },
+    "api/cron/email-queue.ts": {
+      "maxDuration": 120
+    },
+    "api/password-reset-request.ts": {
+      "maxDuration": 120
+    },
+    "api/password-reset-validate.ts": {
+      "maxDuration": 60
+    },
+    "api/password-reset-confirm.ts": {
+      "maxDuration": 60
+    },
+    "api/rh-init.ts": {
+      "maxDuration": 120
+    },
+    "api/rh-seed-employees.ts": {
+      "maxDuration": 120
+    },
+    "api/rh-employee-list.ts": {
+      "maxDuration": 60
+    },
+    "api/rh-timeclock-entries.ts": {
+      "maxDuration": 60
+    },
+    "api/rh-timeclock-init.ts": {
+      "maxDuration": 120,
+      "includeFiles": "migrations/2026_07_08_timeclock_fix_user_id.sql"
+    },
+    "api/rh-timeclock-punch.ts": {
+      "maxDuration": 60
+    },
+    "api/rh-employee-costs.ts": {
+      "maxDuration": 60
+    },
+    "api/toll-qualp.ts": {
+      "maxDuration": 60
+    },
+    "api/toll-gemini-estimate.ts": {
+      "maxDuration": 60
+    },
+    "api/email-health.ts": {
+      "maxDuration": 60
+    },
+    "api/system-diagnostics.ts": {
+      "maxDuration": 120
+    },
+    "api/rh-team-presence-board.ts": {
+      "maxDuration": 60
+    },
+    "api/version.ts": {
+      "maxDuration": 10
     }
   },
-  "redirects": [
-    {
-      "source": "/:path*",
-      "has": [
-        {
-          "type": "host",
-          "value": "sistema-grupo-tm-seg.vercel.app"
-        }
-      ],
-      "destination": "https://sistema.grupotmseg.com.br/:path*",
-      "permanent": true
-    }
-  ],
   "rewrites": [
     {
       "source": "/api/health",
       "destination": "/api/health"
     },
     {
+      "source": "/api/whatsapp/webhook/inbound",
+      "destination": "/api/whatsapp/webhook/inbound"
+    },
+    {
+      "source": "/api/whatsapp/send-group",
+      "destination": "/api/whatsapp/send-group"
+    },
+    {
+      "source": "/api/whatsapp/telemetry/dashboard",
+      "destination": "/api/whatsapp/telemetry/dashboard"
+    },
+    {
+      "source": "/api/geocode-address",
+      "destination": "/api/geocode-address"
+    },
+    {
+      "source": "/api/reverse-geocode",
+      "destination": "/api/reverse-geocode"
+    },
+    {
+      "source": "/api/distance-matrix",
+      "destination": "/api/distance-matrix"
+    },
+    {
+      "source": "/api/route-progress",
+      "destination": "/api/route-progress"
+    },
+    {
+      "source": "/api/dhl/intake/generate",
+      "destination": "/api/dhl/intake/generate"
+    },
+    {
+      "source": "/api/dhl/intake/by-mission",
+      "destination": "/api/dhl/intake/by-mission"
+    },
+    {
+      "source": "/api/dhl/intake/by-mission/:missionId",
+      "destination": "/api/dhl/intake/by-mission?missionId=:missionId"
+    },
+    {
+      "source": "/api/gemini/health",
+      "destination": "/api/gemini/health"
+    },
+    {
+      "source": "/api/gemini/generate",
+      "destination": "/api/gemini/generate"
+    },
+    {
+      "source": "/api/placa/lookup/:placa",
+      "destination": "/api/placa-lookup?placa=:placa"
+    },
+    {
+      "source": "/api/dhl/intake/public/:token/lookup-placa/:placa",
+      "destination": "/api/dhl-intake-lookup-placa?token=:token&placa=:placa"
+    },
+    {
+      "source": "/api/dhl/intake/public/:token/progress",
+      "destination": "/api/dhl-intake-public-progress?token=:token"
+    },
+    {
+      "source": "/api/dhl/intake/public/:token/submit",
+      "destination": "/api/dhl-intake-public-submit?token=:token"
+    },
+    {
+      "source": "/api/dhl/intake/public/:token",
+      "destination": "/api/dhl-intake-public-get?token=:token"
+    },
+    {
+      "source": "/api/vendor-verification/:missionId",
+      "destination": "/api/vendor-verification?missionId=:missionId"
+    },
+    {
+      "source": "/api/investment/init",
+      "destination": "/api/investment-init"
+    },
+    {
+      "source": "/api/investment/snapshots-all",
+      "destination": "/api/investment-snapshots-all"
+    },
+    {
+      "source": "/api/investment/snapshots",
+      "destination": "/api/investment-snapshots"
+    },
+    {
+      "source": "/api/investment/snapshots/:id",
+      "destination": "/api/investment-snapshot-delete?id=:id"
+    },
+    {
+      "source": "/api/email/mission-scheduled",
+      "destination": "/api/email-mission-scheduled"
+    },
+    {
+      "source": "/api/email/mission-solicited",
+      "destination": "/api/email-mission-solicited"
+    },
+    {
+      "source": "/api/cron/email-queue",
+      "destination": "/api/cron/email-queue"
+    },
+    {
+      "source": "/api/password-reset/request",
+      "destination": "/api/password-reset-request"
+    },
+    {
+      "source": "/api/password-reset/validate",
+      "destination": "/api/password-reset-validate"
+    },
+    {
+      "source": "/api/password-reset/confirm",
+      "destination": "/api/password-reset-confirm"
+    },
+    {
+      "source": "/api/rh/init",
+      "destination": "/api/rh-init"
+    },
+    {
+      "source": "/api/rh/seed-employees",
+      "destination": "/api/rh-seed-employees"
+    },
+    {
+      "source": "/api/rh/employees/cost-summary",
+      "destination": "/api/rh-employee-costs"
+    },
+    {
+      "source": "/api/rh/employees",
+      "destination": "/api/rh-employee-list"
+    },
+    {
+      "source": "/api/rh/timeclock/entries",
+      "destination": "/api/rh-timeclock-entries"
+    },
+    {
+      "source": "/api/rh/timeclock/init",
+      "destination": "/api/rh-timeclock-init"
+    },
+    {
+      "source": "/api/rh/timeclock/punch",
+      "destination": "/api/rh-timeclock-punch"
+    },
+    {
+      "source": "/api/toll/qualp",
+      "destination": "/api/toll-qualp"
+    },
+    {
+      "source": "/api/toll/gemini-estimate",
+      "destination": "/api/toll-gemini-estimate"
+    },
+    {
+      "source": "/api/email/health",
+      "destination": "/api/email-health"
+    },
+    {
+      "source": "/api/system/diagnostics",
+      "destination": "/api/system-diagnostics"
+    },
+    {
+      "source": "/api/rh/team-presence-board",
+      "destination": "/api/rh-team-presence-board"
+    },
+    {
+      "source": "/api/version",
+      "destination": "/api/version"
+    },
+    {
       "source": "/api/(.*)",
-      "destination": "/api"
+      "destination": "/api/index"
     },
     {
       "source": "/(.*)",
@@ -53,7 +338,7 @@
     },
     {
       "path": "/api/cron/zapi",
-      "schedule": "*/3 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/cron/maintenance",
@@ -61,6 +346,32 @@
     }
   ],
   "headers": [
+    {
+      "source": "/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Pragma",
+          "value": "no-cache"
+        },
+        {
+          "key": "Expires",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "source": "/build-meta.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
     {
       "source": "/index.html",
       "headers": [
