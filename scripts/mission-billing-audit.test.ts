@@ -155,6 +155,64 @@ describe('missionBillingAudit', () => {
     assert.equal(audit.provider.kmRodado, 41);
   });
 
+  it('usa tabelas do snapshot quando OS foi aprovada com conferência', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission({
+      client: 'TESTE',
+      provider: 'FORNECEDOR TESTE',
+      origin: 'GUARUJÁ, SP',
+      destination: 'SANTANA DE PARNAÍBA, SP',
+      start_km: 32712,
+      end_km: 32849,
+      start_time: '2026-07-06T11:00:00+00:00',
+      end_time: '2026-07-06T15:34:00+00:00',
+      billing_approved: true,
+      snapshot_approved_by: 'Auditor',
+      snapshot_data: {
+        clientTableId: '1',
+        providerTableId: '1',
+      },
+    } as any);
+
+    const clientTables = [
+      ...baseTables.client,
+      {
+        id: 'rota-nomeada',
+        client: 'TESTE',
+        operation_type: 'ROTA NOMEADA CARA',
+        activation_fee: 944.72,
+        franchise_km: 143,
+        franchise_hours: 3,
+        price_per_extra_km: 6.6,
+        price_per_extra_hour: 160,
+      },
+    ];
+
+    const finAuto = calculateMissionFinancials(mission, clientTables as any, baseTables.provider as any);
+    const finSnap = calculateMissionFinancials(
+      mission,
+      clientTables as any,
+      baseTables.provider as any,
+      undefined,
+      new Date(),
+      { clientTableId: '1', providerTableId: '1' },
+    );
+
+    const audit = computeMissionBillingAudit(
+      {
+        ...mission,
+        revenue_value: finSnap.client.serviceTotal,
+        cost_value: finSnap.provider.serviceTotal,
+      } as Mission,
+      clientTables as any,
+      baseTables.provider as any,
+    );
+
+    assert.ok(finAuto.client.serviceTotal > finSnap.client.serviceTotal + 10, 'auto seria mais caro');
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(Math.abs(audit.client.diferenca) < 0.01);
+  });
+
   it('usa cache e invalida quando fingerprint muda', () => {
     clearMissionBillingAuditCache();
     const mission = makeMission({ revenue_value: 790, cost_value: 590 });

@@ -115,7 +115,31 @@ export function buildMissionAuditFingerprint(
     m.billing_approved,
     m.billing_verified_by,
     m.snapshot_approved_by,
+    (m.snapshot_data as any)?.clientTableId,
+    (m.snapshot_data as any)?.providerTableId,
   ].join('|');
+}
+
+/** Tabelas congeladas no snapshot de aprovação (mesma regra do modal/boletim). */
+export function buildSnapshotTableOverrides(
+  mission: Mission,
+): {
+  clientTableId?: string;
+  providerTableId?: string;
+  providerOpsOverride?: { distanceKm: number; durationHours: number };
+} | undefined {
+  const snap = (mission as any).snapshot_data as Record<string, unknown> | null | undefined;
+  const clientTableId = snap?.clientTableId ? String(snap.clientTableId) : undefined;
+  const providerTableId = snap?.providerTableId ? String(snap.providerTableId) : undefined;
+  const providerOpsOverride = buildProviderOpsOverride(mission);
+
+  if (!clientTableId && !providerTableId && !providerOpsOverride) return undefined;
+
+  return {
+    ...(clientTableId ? { clientTableId } : {}),
+    ...(providerTableId ? { providerTableId } : {}),
+    ...(providerOpsOverride ? { providerOpsOverride } : {}),
+  };
 }
 
 /** Mesma regra do MissionFinancialModal quando fornecedor tem medição editada. */
@@ -365,6 +389,8 @@ export function computeMissionBillingAudit(
   };
 
   const providerOpsOverride = buildProviderOpsOverride(mission);
+  const snapshotOverrides = buildSnapshotTableOverrides(mission);
+  const tableOverrides = snapshotOverrides ?? (providerOpsOverride ? { providerOpsOverride } : undefined);
 
   const fin = calculateMissionFinancials(
     mObj,
@@ -372,7 +398,7 @@ export function computeMissionBillingAudit(
     providerTables,
     clientData,
     new Date(),
-    providerOpsOverride ? { providerOpsOverride } : undefined,
+    tableOverrides,
     providers,
   );
 
