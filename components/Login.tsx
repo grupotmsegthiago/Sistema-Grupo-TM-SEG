@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, Lock, Loader2, AlertCircle, ShieldCheck, Shield, Eye, EyeOff, Fingerprint, Radio } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { logAction } from '../lib/logger';
 import { enrichUserWithCltData } from '../lib/timeclock/cltEmployee';
 import { APP_VERSION } from '../constants';
 
