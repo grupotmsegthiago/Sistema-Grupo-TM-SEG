@@ -10,6 +10,7 @@ import {
   getPresenceCategory,
   getPresenceServiceStatus,
   mergeRosterWithPresence,
+  sortPresenceBoardUsers,
   formatPresenceShortName,
   formatPresenceDurationMinutes,
   normalizePresenceUserId,
@@ -154,12 +155,10 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
       groups[category].push(user);
     }
     for (const key of PRESENCE_CATEGORY_ORDER) {
-      groups[key].sort((a, b) =>
-        (a.name || 'Usuário').localeCompare(b.name || 'Usuário', 'pt-BR')
-      );
+      groups[key] = sortPresenceBoardUsers(groups[key], onlineIds);
     }
     return groups;
-  }, [displayUsers]);
+  }, [displayUsers, onlineIds]);
 
   if (!enabled) return null;
 

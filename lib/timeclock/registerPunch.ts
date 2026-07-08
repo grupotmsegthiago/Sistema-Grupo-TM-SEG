@@ -102,6 +102,15 @@ export interface RegisterTimeClockPunchInput {
   longitude?: number | null;
 }
 
+function dispatchTimeClockRealtime(entry: TimeClockEntry): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.dispatchEvent(new CustomEvent('supabase:time_clock:realtime', { detail: { new: entry } }));
+  } catch {
+    // ignora
+  }
+}
+
 export async function registerTimeClockPunch(
   input: RegisterTimeClockPunchInput
 ): Promise<TimeClockEntry> {
@@ -137,6 +146,7 @@ export async function registerTimeClockPunch(
     });
     try {
       requestPresenceRefresh();
+      dispatchTimeClockRealtime(entry);
     } catch {
       // não bloqueia
     }
@@ -174,6 +184,7 @@ export async function registerTimeClockPunch(
 
   try {
     requestPresenceRefresh();
+    dispatchTimeClockRealtime(data as TimeClockEntry);
   } catch {
     // se o canal de presença ainda não estiver ativo, não bloqueia a batida
   }

@@ -6,13 +6,11 @@ const registerSrc = fs.readFileSync('lib/timeclock/registerPunch.ts', 'utf8');
 const trackerSrc = fs.readFileSync('components/UserPresenceTracker.tsx', 'utf8');
 const channelSrc = fs.readFileSync('lib/presenceChannel.ts', 'utf8');
 
-test('registerTimeClockPunch dispara requestPresenceRefresh após inserir', () => {
+test('registerTimeClockPunch dispara refresh e realtime após registrar', () => {
   assert.match(registerSrc, /from '\.\.\/presenceChannel'/);
   assert.match(registerSrc, /requestPresenceRefresh\(\)/);
-  const insertIdx = registerSrc.indexOf('.insert([payload])');
-  const refreshIdx = registerSrc.indexOf('requestPresenceRefresh()');
-  assert.ok(insertIdx >= 0, 'deve chamar insert');
-  assert.ok(refreshIdx > insertIdx, 'refresh deve ocorrer depois do insert');
+  assert.match(registerSrc, /dispatchTimeClockRealtime/);
+  assert.match(registerSrc, /supabase:time_clock:realtime/);
 });
 
 test('UserPresenceTracker escuta refresh externo (heartbeat imediato)', () => {

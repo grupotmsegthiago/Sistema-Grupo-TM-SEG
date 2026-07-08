@@ -280,6 +280,50 @@ export function buildPresenceHeartbeatFromUser(
   };
 }
 
+export function enrichPresenceWithPunchMarks(user: PresenceUserState): PresenceUserState {
+  const marks = user.punchMarks || [];
+  if (!marks.length) return user;
+
+  const hasIn = marks.some((m) => m.type === 'IN');
+  const hasOut = marks.some((m) => m.type === 'OUT');
+  const hasBreakStart = marks.some((m) => m.type === 'BREAK_START');
+  const hasBreakEnd = marks.some((m) => m.type === 'BREAK_END');
+
+  let onDuty = user.onDuty;
+  let onDutyLabel = user.onDutyLabel;
+
+  if (hasBreakStart && !hasBreakEnd) {
+    onDuty = true;
+    onDutyLabel = 'Em almoço';
+  } else if (hasIn && !hasOut) {
+    onDuty = true;
+    onDutyLabel = 'Em serviço';
+  } else if (hasOut) {
+    onDuty = false;
+    onDutyLabel = 'Fora do expediente';
+  }
+
+  return {
+    ...user,
+    isClt: user.isClt || true,
+    onDuty,
+    onDutyLabel,
+  };
+}
+
+/** Online à esquerda; fora de serviço/offline à direita; depois ordem alfabética. */
+export function sortPresenceBoardUsers(
+  users: PresenceUserState[],
+  onlineIds: Set<string>,
+): PresenceUserState[] {
+  return [...users].sort((a, b) => {
+    const aOnline = onlineIds.has(normalizePresenceUserId(a.userId));
+    const bOnline = onlineIds.has(normalizePresenceUserId(b.userId));
+    if (aOnline !== bOnline) return aOnline ? -1 : 1;
+    return (a.name || 'Usuário').localeCompare(b.name || 'Usuário', 'pt-BR');
+  });
+}
+
 export function mergeRosterWithPresence(
   roster: TeamRosterMember[],
   onlineUsers: PresenceUserState[],
@@ -300,7 +344,7 @@ export function mergeRosterWithPresence(
     const punchEntries = resolvePunchEntriesForMember(member, punchLookup);
 
     if (online) {
-      const merged: PresenceUserState = { ...online };
+      let merged = enrichPresenceWithPunchMarks({ ...online });
       if (punchEntries?.length) {
         const fromPunch = buildPresenceFromPunchEntries(member, punchEntries);
         merged.onDuty = fromPunch.onDuty;
@@ -308,7 +352,15 @@ export function mergeRosterWithPresence(
         merged.minutesOnDuty = fromPunch.minutesOnDuty;
         merged.punchMarks = fromPunch.punchMarks;
         merged.isClt = merged.isClt || fromPunch.isClt;
-      } else if (merged.isClt && !merged.punchMarks?.length && !merged.onDuty) {
+      } else if (
+        merged.isClt &&
+        !merged.punchMarks?.length &&
+        !merged.onDuty &&
+        !String(merged.onDutyLabel || '').toLowerCase().includes('serviço') &&
+        !String(merged.onDutyLabel || '').toLowerCase().includes('servico') &&
+        !String(merged.onDutyLabel || '').toLowerCase().includes('almoço') &&
+        !String(merged.onDutyLabel || '').toLowerCase().includes('almoco')
+      ) {
         merged.onDutyLabel = 'Aguardando ponto';
         merged.onDuty = false;
       }

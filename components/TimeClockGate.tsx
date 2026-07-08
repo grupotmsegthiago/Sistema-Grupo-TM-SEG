@@ -100,8 +100,7 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
 
   const handleRegistered = () => {
     setModalOpen(false);
-    setMustPunch(false);
-    onCleared();
+    void evaluate(false);
   };
 
   if (loading) return null;
