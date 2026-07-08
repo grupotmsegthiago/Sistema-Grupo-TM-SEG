@@ -495,6 +495,70 @@ describe('missionBillingAudit', () => {
     assert.equal(audit.provider.tableName, '100KM');
   });
 
+  it('valida GTM-6235 com tabela LOUVEIRA-SERRA selecionada manualmente', () => {
+    clearMissionBillingAuditCache();
+    const dhlClient = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
+    const clientTables = [
+      {
+        id: 'anapolis-965',
+        client: dhlClient,
+        operation_type: 'SUDESTE - BARUERI-ANAPOLIS 965KM',
+        activation_fee: 6658.5,
+        franchise_km: 965,
+        franchise_hours: 26,
+        price_per_extra_km: 0,
+        price_per_extra_hour: 145,
+      },
+      {
+        id: 'louveira-971',
+        client: dhlClient,
+        operation_type: 'SUDESTE - LOUVEIRA-SERRA 971KM',
+        activation_fee: 6699.9,
+        franchise_km: 971,
+        franchise_hours: 28,
+        price_per_extra_km: 0,
+        price_per_extra_hour: 145,
+      },
+    ];
+    const providerTables = [
+      {
+        id: 'torres-900',
+        provider: 'TORRES',
+        operation_type: '900KM',
+        activation_cost: 4320,
+        franchise_km: 900,
+        franchise_hours: 23,
+        cost_per_extra_km: 4.8,
+        cost_per_extra_hour: 110,
+      },
+    ];
+    const mission = makeMission({
+      id: 'GTM-6235',
+      client: dhlClient,
+      provider: 'TORRES',
+      origin: 'ROD. VICE PREF. HERMENEGILDO TONOLI, 1500 - JUNDIAÍ - SP',
+      destination: 'R. PORTO ALEGRE, 307 - SERRA - ES',
+      start_km: 40906,
+      end_km: 41878,
+      total_distance: 1023.13,
+      start_time: '2026-07-06T23:00:00+00:00',
+      end_time: '2026-07-08T13:10:00+00:00',
+      revenue_value: 8180.97,
+      cost_value: 6333.93,
+    } as any);
+
+    const audit = computeMissionBillingAudit(
+      mission,
+      clientTables as any,
+      providerTables as any,
+    );
+
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(Math.abs(audit.client.diferenca) < 0.01);
+    assert.equal(audit.client.lancado, 8180.97);
+    assert.ok((audit.client.tableName || '').includes('LOUVEIRA-SERRA'));
+  });
+
   it('missão anterior a jun/2026 fica pendente fora do período', () => {
     clearMissionBillingAuditCache();
     const mission = makeMission({

@@ -1,5 +1,5 @@
 import type { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { calculateMissionFinancials } from './financialUtils';
+import { calculateMissionFinancials, extractCityFromAddress } from './financialUtils';
 import { isAutoMasterRow } from './providerAutoPricing';
 import { computeDhlBand } from './dhlAutoTableSelector';
 import { missionEligibleForBillingAudit } from './missionBillingAuditConfig';
@@ -568,11 +568,15 @@ function shouldTryRealCatalogMatch(
   if (diff < 0.005) return false;
   // Motor automático (ex. COMANDO G8 AUTO 100KM) vs tabela real do cadastro.
   if (isAutoEngineTableSide(sideFin)) return true;
-  // Cliente: franquia muito acima do KM rodado → provável seleção por KM previsto da rota
-  // (ex.: GTM-6258 com 127 km reais mas tabela RAIO 300KM por total_distance 320).
   const franq = sideFin.franchiseKm ?? 0;
   const km = kmRodado ?? 0;
+  // Franquia muito acima do KM rodado → provável uso de KM previsto (ex. GTM-6258).
   if (km > 0 && franq >= 200 && franq >= km * 2) return true;
+  // Rota nomeada errada: franquia alinhada ao KM real mas motor escolheu outra tabela
+  // (ex. GTM-6235: LOUVEIRA-SERRA 971km correta vs ANAPOLIS 965km sugerida).
+  if (km > 0 && franq >= 200 && Math.abs(franq - km) <= 40 && diff >= 1) return true;
+  // Divergência relevante — busca tabela real que reproduz o valor lançado.
+  if (diff >= 1) return true;
   return false;
 }
 
@@ -664,7 +668,24 @@ function tryMatchRealCatalogTable(
       );
       if (bySnap) return bySnap;
     }
+    const originCity = normalizeTableLabel(extractCityFromAddress(mission.origin || ''));
+    const destCity = normalizeTableLabel(extractCityFromAddress(mission.destination || ''));
     return [...matches].sort((a, b) => {
+      const opA = normalizeTableLabel(String(a.table.operation_type || ''));
+      const opB = normalizeTableLabel(String(b.table.operation_type || ''));
+      if (destCity) {
+        const destA = opA.includes(destCity) ? 0 : 1;
+        const destB = opB.includes(destCity) ? 0 : 1;
+        if (destA !== destB) return destA - destB;
+      }
+      if (originCity) {
+        const origA = opA.includes(originCity) ? 0 : 1;
+        const origB = opB.includes(originCity) ? 0 : 1;
+        if (origA !== origB) return origA - origB;
+      }
+      const proxA = Math.abs(((a.table as any).franchise_km || 0) - kmRodado);
+      const proxB = Math.abs(((b.table as any).franchise_km || 0) - kmRodado);
+      if (proxA !== proxB) return proxA - proxB;
       const kmA = (a.table as any).franchise_km || 0;
       const kmB = (b.table as any).franchise_km || 0;
       if (kmA !== kmB) return kmA - kmB;
