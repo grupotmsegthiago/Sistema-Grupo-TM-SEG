@@ -201,6 +201,47 @@ export function parsePresenceState(
   );
 }
 
+/**
+ * Mescla o roster (todos os usuários cadastrados) com a presença ao vivo.
+ * Quem está online usa o estado real; quem não está aparece como
+ * "Fora de Serviço". Assim os usuários ficam SEMPRE visíveis na tela e apenas
+ * o status muda (Em serviço / Em almoço / Fora de Serviço).
+ */
+export function mergeRosterWithPresence(
+  roster: { userId: string; name: string; role: string }[],
+  onlineUsers: PresenceUserState[]
+): PresenceUserState[] {
+  const onlineMap = new Map(onlineUsers.map((u) => [u.userId, u]));
+  const result: PresenceUserState[] = [];
+  const seen = new Set<string>();
+  for (const member of roster) {
+    if (!member.userId || seen.has(member.userId)) continue;
+    seen.add(member.userId);
+    const online = onlineMap.get(member.userId);
+    if (online) {
+      result.push(online);
+    } else {
+      result.push({
+        userId: member.userId,
+        name: member.name || 'Usuário',
+        role: member.role || 'Usuário',
+        isClt: false,
+        onDuty: false,
+        onDutyLabel: 'Fora de Serviço',
+        onlineAt: new Date(0).toISOString(),
+      });
+    }
+  }
+  // Usuário online que ainda não veio no roster (ex.: cadastro recém-criado).
+  for (const user of onlineUsers) {
+    if (!seen.has(user.userId)) {
+      seen.add(user.userId);
+      result.push(user);
+    }
+  }
+  return result;
+}
+
 export function getInitials(name: string): string {
   const parts = (name || '?').trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '?';

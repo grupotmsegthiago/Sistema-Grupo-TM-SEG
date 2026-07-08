@@ -9,6 +9,7 @@ import {
   getPresenceServiceStatus,
   buildPunchMarks,
   buildPresenceTooltip,
+  mergeRosterWithPresence,
   PRESENCE_USER_AVATAR_SRC,
 } from '../lib/timeclock/presence.ts';
 import { getBrazilDayBounds } from '../lib/dateUtils.ts';
@@ -97,11 +98,59 @@ test('parsePresenceState preserva contractType do payload', () => {
   assert.equal(bruno.isClt, false);
 });
 
-test('quadro de presença usa ícone de robô em vez de iniciais', () => {
+test('quadro de presença usa robô inline (SVG) em vez de iniciais ou <img> externo', () => {
   const boardSrc = fs.readFileSync('components/MissionTeamPresenceBoard.tsx', 'utf8');
-  assert.match(boardSrc, /PRESENCE_USER_AVATAR_SRC/);
-  assert.match(boardSrc, /<img[\s\S]*src=\{PRESENCE_USER_AVATAR_SRC\}/);
+  // Robô desenhado inline no próprio componente (não depende de arquivo externo
+  // que aparecia quebrado no cache do navegador).
+  assert.match(boardSrc, /const RobotAvatar/);
+  assert.match(boardSrc, /<RobotAvatar \/>/);
+  assert.doesNotMatch(boardSrc, /<img[\s\S]*src=\{PRESENCE_USER_AVATAR_SRC\}/);
   assert.doesNotMatch(boardSrc, /getInitials\(displayName\)/);
+});
+
+test('mergeRosterWithPresence mantém todos os cadastrados na tela (online + fora)', () => {
+  const roster = [
+    { userId: 'u1', name: 'Ana', role: 'Operador' },
+    { userId: 'u2', name: 'Bruno', role: 'Comercial' },
+    { userId: 'u3', name: 'Carla', role: 'Administrador' },
+  ];
+  const online = [
+    {
+      userId: 'u2',
+      name: 'Bruno',
+      role: 'Comercial',
+      isClt: true,
+      onDuty: true,
+      onDutyLabel: 'Em serviço',
+      onlineAt: new Date().toISOString(),
+    },
+  ];
+  const merged = mergeRosterWithPresence(roster, online as any);
+  // Todos os 3 usuários aparecem, mesmo os offline.
+  assert.equal(merged.length, 3);
+  const bruno = merged.find((u) => u.userId === 'u2')!;
+  const ana = merged.find((u) => u.userId === 'u1')!;
+  // Online mantém estado ao vivo; offline vira "Fora de Serviço".
+  assert.equal(getPresenceServiceStatus(bruno), 'em_servico');
+  assert.equal(getPresenceServiceStatus(ana), 'fora');
+  assert.equal(ana.onDutyLabel, 'Fora de Serviço');
+});
+
+test('mergeRosterWithPresence inclui usuário online que ainda não está no roster', () => {
+  const online = [
+    {
+      userId: 'novo',
+      name: 'Novato',
+      role: 'Operador',
+      isClt: false,
+      onDuty: false,
+      onDutyLabel: 'Online',
+      onlineAt: new Date().toISOString(),
+    },
+  ];
+  const merged = mergeRosterWithPresence([], online as any);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].userId, 'novo');
 });
 
 test('getPresenceCategory agrupa por Operação, Administrativo e Comercial', () => {
