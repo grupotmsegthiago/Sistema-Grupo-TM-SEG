@@ -250,6 +250,72 @@ describe('missionBillingAudit', () => {
     assert.ok(Math.abs(audit.provider.diferenca) < 0.01);
   });
 
+  it('prioriza tableName do snapshot quando clientTableId aponta para tabela errada', () => {
+    clearMissionBillingAuditCache();
+    const itajaiTable = {
+      id: 'itajai-bh',
+      client: 'PRESTEX ENCOMENDAS EXPRESSAS LTDA',
+      operation_type: 'SUL - ITAJAI X BELO HORIZONTE',
+      activation_fee: 12200,
+      franchise_km: 1600,
+      franchise_hours: 100,
+      price_per_extra_km: 7.45,
+      price_per_extra_hour: 175,
+    };
+    const saoJoseTable = {
+      id: 'sao-jose-wrong',
+      client: 'PRESTEX ENCOMENDAS EXPRESSAS LTDA',
+      operation_type: 'SUL - SÃO JOSÉ SC X SP X MT',
+      activation_fee: 35000,
+      franchise_km: 4300,
+      franchise_hours: 100,
+      price_per_extra_km: 7.45,
+      price_per_extra_hour: 175,
+    };
+    const clientTables = [itajaiTable, saoJoseTable];
+    const mission = makeMission({
+      client: 'PRESTEX ENCOMENDAS EXPRESSAS LTDA',
+      origin: 'R. FRANCISCO REIS, ITAJAÍ - SC',
+      destination: 'BELO HORIZONTE, MG',
+      start_km: 28283,
+      end_km: null,
+      total_distance: 1192.3,
+      billing_approved: true,
+      snapshot_approved_by: 'Auditor',
+      snapshot_data: {
+        clientTableId: 'sao-jose-wrong',
+        providerTableId: '1',
+        tableName: 'SUL - ITAJAI X BELO HORIZONTE',
+        activationFee: 12200,
+        franchiseKm: 1600,
+        revenueServiceOnly: 12200,
+      },
+    } as any);
+
+    const fin = calculateMissionFinancials(
+      mission,
+      clientTables as any,
+      baseTables.provider as any,
+      undefined,
+      new Date(),
+      { clientTableId: 'itajai-bh', providerTableId: '1' },
+    );
+
+    const audit = computeMissionBillingAudit(
+      {
+        ...mission,
+        revenue_value: 12200,
+        cost_value: fin.provider.serviceTotal,
+      } as Mission,
+      clientTables as any,
+      baseTables.provider as any,
+    );
+
+    assert.equal(audit.overallStatus, 'validado');
+    assert.equal(audit.client.esperado, 12200);
+    assert.ok(audit.client.tableName?.includes('ITAJAI'));
+  });
+
   it('usa cache e invalida quando fingerprint muda', () => {
     clearMissionBillingAuditCache();
     const mission = makeMission({ revenue_value: 790, cost_value: 590 });

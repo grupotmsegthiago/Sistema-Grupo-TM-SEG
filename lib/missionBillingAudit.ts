@@ -147,33 +147,60 @@ function resolveSnapshotClientTableId(
   mission: Mission,
 ): { id?: string; orphan: boolean } {
   const rawId = snap?.clientTableId ? String(snap.clientTableId) : undefined;
-  if (!rawId) return { orphan: false };
-  if (clientTables.some((t) => String(t.id) === rawId)) return { id: rawId, orphan: false };
-
   const tableName = normalizeTableLabel(String(snap.tableName || ''));
   const missionClient = normalizeTableLabel(String((mission as any).originalClientName || mission.client || ''));
   const franchiseKm = Number(snap.franchiseKm || 0);
   const activationFee = Number(snap.activationFee || 0);
 
-  const byName = clientTables.find((t) => {
-    const op = normalizeTableLabel(t.operation_type || '');
-    const tc = normalizeTableLabel(t.client || '');
-    if (tableName && tableName !== '-' && op === tableName) {
+  const matchByTableName = (): string | undefined => {
+    if (!tableName || tableName === '-') return undefined;
+    const byName = clientTables.find((t) => {
+      const op = normalizeTableLabel(t.operation_type || '');
+      const tc = normalizeTableLabel(t.client || '');
+      if (op !== tableName) return false;
       return !missionClient || tc.includes(missionClient) || missionClient.includes(tc);
-    }
-    return false;
-  });
-  if (byName) return { id: String(byName.id), orphan: false };
+    });
+    return byName ? String(byName.id) : undefined;
+  };
 
-  const byFranchise = clientTables.find((t) => {
-    const tc = normalizeTableLabel(t.client || '');
-    return (
-      (t.franchise_km || 0) === franchiseKm &&
-      Math.abs((t.activation_fee || 0) - activationFee) < 0.02 &&
-      (!missionClient || tc.includes(missionClient) || missionClient.includes(tc))
-    );
-  });
-  if (byFranchise) return { id: String(byFranchise.id), orphan: false };
+  const matchByFranchiseAndFee = (): string | undefined => {
+    const byFranchise = clientTables.find((t) => {
+      const tc = normalizeTableLabel(t.client || '');
+      return (
+        (t.franchise_km || 0) === franchiseKm &&
+        Math.abs((t.activation_fee || 0) - activationFee) < 0.02 &&
+        (!missionClient || tc.includes(missionClient) || missionClient.includes(tc))
+      );
+    });
+    return byFranchise ? String(byFranchise.id) : undefined;
+  };
+
+  if (rawId) {
+    const tableFromId = clientTables.find((t) => String(t.id) === rawId);
+    if (tableFromId) {
+      const opFromId = normalizeTableLabel(tableFromId.operation_type || '');
+      const feeFromId = Number(tableFromId.activation_fee || 0);
+      const nameMismatch = tableName && tableName !== '-' && opFromId !== tableName;
+      const feeMismatch = activationFee > 0 && Math.abs(feeFromId - activationFee) > 0.02;
+      // ID válido mas divergente do tableName/activationFee congelados no snapshot (ex.: troca manual de tabela).
+      if (nameMismatch || feeMismatch) {
+        const fromName = matchByTableName();
+        if (fromName) return { id: fromName, orphan: false };
+        const fromFee = matchByFranchiseAndFee();
+        if (fromFee) return { id: fromFee, orphan: false };
+      }
+      return { id: rawId, orphan: false };
+    }
+  } else {
+    const fromName = matchByTableName();
+    if (fromName) return { id: fromName, orphan: false };
+  }
+
+  const byName = matchByTableName();
+  if (byName) return { id: byName, orphan: false };
+
+  const byFranchise = matchByFranchiseAndFee();
+  if (byFranchise) return { id: byFranchise, orphan: false };
 
   // ID órfão sem fallback confiável — omitir override e deixar o motor auto selecionar.
   return { orphan: true };
