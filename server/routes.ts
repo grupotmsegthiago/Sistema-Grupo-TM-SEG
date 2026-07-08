@@ -2202,6 +2202,19 @@ export async function registerRoutes(
         height: result.height,
       });
 
+      const wantBinary =
+        String(req.headers['x-print-response'] || '').toLowerCase() === 'binary' ||
+        String(req.query?.format || '').toLowerCase() === 'binary';
+
+      if (wantBinary) {
+        res.setHeader('Content-Type', result.mimeType);
+        res.setHeader('X-Print-Cleaned', result.cleaned ? '1' : '0');
+        res.setHeader('X-Print-Method', result.method || '');
+        res.setHeader('X-Print-Timings', JSON.stringify(result.timings));
+        res.send(result.buffer);
+        return;
+      }
+
       res.json({
         image: result.buffer.toString('base64'),
         mimeType: result.mimeType,

@@ -461,7 +461,7 @@ const App: React.FC = () => {
             <WhatsAppStatusBanner />
             <main className="flex-1 overflow-x-auto overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="w-full mx-auto relative">
-                <AppErrorBoundary key={currentScreen} onReset={() => {
+                <AppErrorBoundary onReset={() => {
                   // Só limpa o erro — não joga o usuário pro dashboard automaticamente.
                 }}>
                   {renderContent()}

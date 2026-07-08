@@ -6,6 +6,7 @@ import {
   resolveUserRoleFromToken,
   roleCanAccessEmployees,
 } from '../lib/rh/apiEmployeesAuth.js';
+import { getBrazilDayBounds } from '../lib/dateUtils.js';
 
 const DEFAULT_SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
 const TMSEG_REF = 'ajhmmjuewdsukecaimik';
@@ -74,11 +75,16 @@ export default async function handler(req: any, res: any) {
 
   try {
     const sb = await adminSupabase();
-    let query = sb
-      .from('time_clock')
-      .select('*')
-      .gte('timestamp', `${startDate}T00:00:00`)
-      .lte('timestamp', `${endDate}T23:59:59`);
+    const sameDay = startDate === endDate;
+    const bounds = sameDay ? getBrazilDayBounds(startDate) : null;
+    let query = sb.from('time_clock').select('*');
+    if (bounds) {
+      query = query.gte('timestamp', bounds.start).lte('timestamp', bounds.end);
+    } else {
+      const startBounds = getBrazilDayBounds(startDate);
+      const endBounds = getBrazilDayBounds(endDate);
+      query = query.gte('timestamp', startBounds.start).lte('timestamp', endBounds.end);
+    }
 
     if (filterUserId) {
       query = query.eq('user_id', filterUserId);

@@ -79,7 +79,7 @@ export async function reloadForPublishedUpdate(
 }
 
 /** Intervalo mínimo entre checagens ao voltar para a aba (evita reload em loop). */
-export const UPDATE_CHECK_COOLDOWN_MS = 10 * 60 * 1000;
+export const UPDATE_CHECK_COOLDOWN_MS = 30 * 60 * 1000;
 
 let lastUpdateCheckAt = 0;
 

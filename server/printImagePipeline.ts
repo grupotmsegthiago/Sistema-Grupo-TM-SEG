@@ -8,6 +8,7 @@ import path from 'path';
 import sharp from 'sharp';
 import { Modality } from '@google/genai';
 import { generateGeminiContent, isGeminiConfigured } from './geminiClient';
+import { withTimeout } from '../lib/promiseTimeout';
 import { computeScaledDimensions } from '../lib/imageForAI';
 import {
   removeOverlaysFromBuffer,
@@ -23,6 +24,7 @@ import { isSupportedPrintMime, normalizePrintMime } from '../lib/printPipelineTy
 const DETECTION_MAX_DIM = 1600;
 const DETECTION_JPEG_QUALITY = 85;
 const MAX_INPUT_BYTES = 20 * 1024 * 1024;
+const GEMINI_DETECTION_TIMEOUT_MS = 25_000;
 
 const DETECTION_PROMPT =
   'Detect every digital OVERLAY stamped ON TOP of this photo (not part of the physical scene): ' +
@@ -69,31 +71,35 @@ async function detectOverlays(
   if (!isGeminiConfigured()) return { boxes: [], ms: nowMs() - t0 };
 
   const payload = await buildDetectionPayload(buffer, mimeType);
-  const boxResp = await generateGeminiContent({
-    model: 'gemini-2.5-flash',
-    contents: [{
-      role: 'user',
-      parts: [
-        { inlineData: { mimeType: payload.mimeType, data: payload.data } },
-        { text: DETECTION_PROMPT },
-      ],
-    }],
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            box_2d: { type: 'array', items: { type: 'integer' } },
-            label: { type: 'string' },
-            kind: { type: 'string' },
+  const boxResp = await withTimeout(
+    generateGeminiContent({
+      model: 'gemini-2.5-flash',
+      contents: [{
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType: payload.mimeType, data: payload.data } },
+          { text: DETECTION_PROMPT },
+        ],
+      }],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              box_2d: { type: 'array', items: { type: 'integer' } },
+              label: { type: 'string' },
+              kind: { type: 'string' },
+            },
+            required: ['box_2d'],
           },
-          required: ['box_2d'],
         },
       },
-    },
-  });
+    }),
+    GEMINI_DETECTION_TIMEOUT_MS,
+    'Timeout na detecção de overlays do print',
+  );
 
   let boxes: DetectedOverlay[] = [];
   try {

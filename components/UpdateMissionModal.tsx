@@ -954,6 +954,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const updatePrintBlobRef = useRef<Blob | null>(null);
 
     const SUPPORTED_PRINT_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+    const PRINT_PIPELINE_TIMEOUT_MS = 45_000;
+
+    const base64ToBlob = (base64: string, mimeType: string): Blob => {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new Blob([bytes], { type: mimeType });
+    };
 
     const isPrintPipelineDebug = () =>
       import.meta.env.DEV || localStorage.getItem('tmseg:print-pipeline-debug') === '1';
@@ -972,17 +980,66 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const token = localStorage.getItem('authToken') || '';
         const form = new FormData();
         form.append('image', file, file.name || 'print.jpg');
-        const resp = await fetch('/api/gemini/clean-print', {
-          method: 'POST',
-          cache: 'no-store',
-          headers: { Authorization: `Bearer ${token}` },
-          body: form,
-        });
+        const resp = await withTimeout(
+          fetch('/api/gemini/clean-print', {
+            method: 'POST',
+            cache: 'no-store',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'X-Print-Response': 'binary',
+            },
+            body: form,
+          }),
+          PRINT_PIPELINE_TIMEOUT_MS,
+          'Timeout ao limpar print com IA',
+        );
         const clientUploadMs = Math.round(performance.now() - uploadStart);
-        if (!resp.ok) return null;
+        if (!resp.ok) {
+          const errBody = await resp.text().catch(() => '');
+          let errMsg = `Erro ${resp.status}`;
+          try {
+            const parsed = errBody ? JSON.parse(errBody) : null;
+            errMsg = parsed?.error || parsed?.message || errMsg;
+          } catch {
+            if (errBody) errMsg = errBody.slice(0, 120);
+          }
+          showNotification('Limpeza IA indisponível', `${errMsg}. Usando foto original.`, 'warning');
+          return null;
+        }
+
+        const contentType = (resp.headers.get('Content-Type') || '').toLowerCase();
+        if (contentType.startsWith('image/')) {
+          const blob = await resp.blob();
+          const cleaned = resp.headers.get('X-Print-Cleaned') === '1';
+          let timings: PrintPipelineTimings = {
+            uploadMs: clientUploadMs,
+            readMs: 0,
+            detectionMs: 0,
+            removalMs: 0,
+            logoMs: 0,
+            saveMs: 0,
+            totalMs: clientUploadMs,
+          };
+          try {
+            const headerTimings = JSON.parse(resp.headers.get('X-Print-Timings') || '{}');
+            timings = {
+              uploadMs: headerTimings.uploadMs ?? clientUploadMs,
+              readMs: headerTimings.readMs ?? 0,
+              detectionMs: headerTimings.detectionMs ?? 0,
+              removalMs: headerTimings.removalMs ?? 0,
+              logoMs: 0,
+              saveMs: headerTimings.saveMs ?? 0,
+              totalMs: (headerTimings.totalMs ?? 0) + clientUploadMs,
+            };
+          } catch {
+            // ignora parse
+          }
+          return { blob, cleaned, timings };
+        }
+
         const j = await resp.json();
         if (!j?.image) return null;
-        const blob = await fetch(`data:${j.mimeType || 'image/png'};base64,${j.image}`).then(r => r.blob());
+        const blob = base64ToBlob(j.image, j.mimeType || 'image/png');
         const timings: PrintPipelineTimings = {
           uploadMs: j.timings?.uploadMs ?? clientUploadMs,
           readMs: j.timings?.readMs ?? 0,
@@ -994,7 +1051,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         };
         return { blob, cleaned: !!j.cleaned, timings };
       } catch (e) {
+        const msg = e instanceof TimeoutError
+          ? 'A IA demorou demais. Usando foto original.'
+          : 'Falha na limpeza. Usando foto original.';
         console.warn('[UpdatePrint] Pipeline server falhou (segue com foto original):', e);
+        showNotification('Limpeza IA', msg, 'warning');
         return null;
       }
     };
@@ -1042,6 +1103,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         updatePrintBlobRef.current = stamped.blob;
         setUpdatePrintPreview(stamped.preview);
         setUpdatePrintAiCleaned(!!processed?.cleaned);
+
+        if (!processed) {
+          setUpdatePrintAiCleaned(false);
+        }
 
         if (processed?.timings) {
           const timings: PrintPipelineTimings = {

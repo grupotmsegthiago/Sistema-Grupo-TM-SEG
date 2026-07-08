@@ -22,7 +22,7 @@ const PRESENCE_CHANNEL = 'tmseg-user-presence-v2';
 const BROADCAST_EVENT_HELLO = 'hello';
 const BROADCAST_EVENT_BYE = 'bye';
 const BROADCAST_INTERVAL_MS = 15_000;
-const STALE_MS = 60_000; // se não recebeu ping há 60s, considera offline
+const STALE_MS = 120_000; // se não recebeu ping há 2min, considera offline
 const CLEANUP_INTERVAL_MS = 20_000;
 
 const DEBUG = typeof window !== 'undefined';

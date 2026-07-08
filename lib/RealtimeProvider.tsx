@@ -109,12 +109,13 @@ const TABLE_TO_QUERY_KEYS: Record<TableName, string[][]> = {
   whatsapp_instances: [],
 };
 
-const DEBOUNCE_MS = 500;
+const DEBOUNCE_MS = 2000;
 const RECONNECT_MS = 3000;
 const GLOBAL_REALTIME_CHANNEL = 'global-realtime-sync';
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const pendingTablesRef = useRef<Set<TableName>>(new Set());
+  const pendingMissionFullRefreshRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -143,12 +144,22 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      if (tables.has('missions') || tables.has('dhl_supplier_intakes')) {
+      if (tables.has('dhl_supplier_intakes')) {
         window.dispatchEvent(new CustomEvent('refreshMissions'));
+      }
+      if (pendingMissionFullRefreshRef.current) {
+        window.dispatchEvent(new CustomEvent('refreshMissions'));
+        pendingMissionFullRefreshRef.current = false;
       }
     };
 
     const handleChange = (table: TableName, payload?: unknown) => {
+      if (table === 'missions') {
+        const eventType = String((payload as { eventType?: string } | undefined)?.eventType || '');
+        if (eventType === 'INSERT' || eventType === 'DELETE') {
+          pendingMissionFullRefreshRef.current = true;
+        }
+      }
       window.dispatchEvent(new CustomEvent(`supabase:${table}:realtime`, { detail: payload }));
       pendingTablesRef.current.add(table);
       if (timerRef.current) clearTimeout(timerRef.current);

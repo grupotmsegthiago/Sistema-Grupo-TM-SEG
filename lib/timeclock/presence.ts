@@ -4,7 +4,7 @@ import type { TimeClockEntry, TimeClockStage } from './types';
 
 export const TMSEG_PRESENCE_CHANNEL = 'tmseg-user-presence';
 /** Ícone de avatar para usuários online no quadro de presença. */
-export const PRESENCE_USER_AVATAR_SRC = '/assets/presence-user-robot.png';
+export const PRESENCE_USER_AVATAR_SRC = '/assets/presence-user-robot.svg';
 
 export type PresenceCategory = 'operacao' | 'administrativo' | 'comercial';
 export type PresenceServiceStatus = 'em_servico' | 'fora' | 'em_almoco';
@@ -63,6 +63,16 @@ export function getPresenceCategory(role: string | null | undefined): PresenceCa
 export function getPresenceServiceStatus(user: PresenceUserState): PresenceServiceStatus {
   const label = (user.onDutyLabel || '').toLowerCase();
   if (label.includes('almoço') || label.includes('almoco')) return 'em_almoco';
+
+  const marks = user.punchMarks || [];
+  const hasIn = marks.some((m) => m.type === 'IN');
+  const hasOut = marks.some((m) => m.type === 'OUT');
+  const hasBreakStart = marks.some((m) => m.type === 'BREAK_START');
+  const hasBreakEnd = marks.some((m) => m.type === 'BREAK_END');
+
+  if (hasBreakStart && !hasBreakEnd) return 'em_almoco';
+  if (hasIn && !hasOut) return 'em_servico';
+
   if (user.onDuty) return 'em_servico';
   if (label.includes('em serviço') || label.includes('em servico')) return 'em_servico';
   return 'fora';

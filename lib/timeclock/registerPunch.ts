@@ -1,6 +1,6 @@
 import { generateContent } from '../gemini';
 import { supabase } from '../supabase';
-import { formatIsoDateBR } from '../dateUtils';
+import { getBrazilDayBounds } from '../dateUtils';
 import { requestPresenceRefresh } from '../presenceChannel';
 import { withTimeout, TimeoutError } from '../promiseTimeout';
 import type { TimeClockEntry, TimeClockStage, TimeClockUserContext } from './types';
@@ -16,13 +16,13 @@ export async function fetchTodayTimeClockEntries(userId: string): Promise<TimeCl
   try {
     return await fetchTodayTimeClockEntriesFromApi(userId);
   } catch (apiErr) {
-    const today = formatIsoDateBR();
+    const { start, end } = getBrazilDayBounds();
     const { data, error } = await supabase
       .from('time_clock')
       .select('*')
       .eq('user_id', userId)
-      .gte('timestamp', `${today}T00:00:00`)
-      .lte('timestamp', `${today}T23:59:59`)
+      .gte('timestamp', start)
+      .lte('timestamp', end)
       .order('timestamp', { ascending: true });
 
     if (error) {

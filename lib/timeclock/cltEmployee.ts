@@ -139,7 +139,13 @@ export async function enrichUserWithCltData(
 
   const employee = await fetchEmployeeForUser(user);
   if (!employee) {
-    return { ...user, isClt: false, contractType: undefined, employeeId: undefined };
+    return {
+      ...user,
+      isClt: user.isClt ?? false,
+      requiresTimeclock: user.requiresTimeclock,
+      contractType: user.contractType,
+      employeeId: user.employeeId,
+    };
   }
 
   const contractType = String(employee.contract_type || '').trim().toUpperCase();

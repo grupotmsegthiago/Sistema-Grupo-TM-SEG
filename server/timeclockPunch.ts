@@ -8,6 +8,7 @@ import { isDiretoriaRole } from '../lib/timeclock/eligibility';
 import { canPunchEntryNow } from '../lib/timeclock/shiftRules';
 import { getNextTimeClockStage } from '../lib/timeclock/stages';
 import type { TimeClockStage } from '../lib/timeclock/types';
+import { formatIsoDateBR, getBrazilDayBounds } from '../lib/dateUtils';
 
 function sb() {
   const client = createSupabaseAdminClient();
@@ -65,13 +66,13 @@ export async function handleTimeclockPunch(req: Request, res: Response): Promise
     return;
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const { start, end } = getBrazilDayBounds(formatIsoDateBR());
   const { data: history } = await sb()
     .from('time_clock')
     .select('type, timestamp')
     .eq('user_id', userId)
-    .gte('timestamp', `${today}T00:00:00`)
-    .lte('timestamp', `${today}T23:59:59`)
+    .gte('timestamp', start)
+    .lte('timestamp', end)
     .order('timestamp', { ascending: true });
 
   const expected = getNextTimeClockStage(history || []);

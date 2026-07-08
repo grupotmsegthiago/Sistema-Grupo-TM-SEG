@@ -36,6 +36,7 @@ const isPublicExternalRoute = (() => {
 })();
 
 let updateCheckInFlight = false;
+let pendingUpdateBuildId: string | null = null;
 
 async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): Promise<boolean> {
   if (isPublicExternalRoute) return false;
@@ -46,9 +47,22 @@ async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): 
   updateCheckInFlight = true;
   try {
     const server = await fetchPublishedVersion();
-    if (!server) return false;
+    if (!server) {
+      pendingUpdateBuildId = null;
+      return false;
+    }
 
     if (!isPublishedVersionNewer(CLIENT_BUILD, server)) {
+      pendingUpdateBuildId = null;
+      return false;
+    }
+
+    const serverKey = server.buildId || server.version;
+    if (pendingUpdateBuildId !== serverKey) {
+      pendingUpdateBuildId = serverKey;
+      console.warn(
+        `[AutoUpdate] Nova versão detectada (${serverKey}). Aguardando confirmação antes de recarregar.`
+      );
       return false;
     }
 
@@ -56,6 +70,7 @@ async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): 
       `[AutoUpdate] Build local (${CLIENT_BUILD.buildId} / v${CLIENT_BUILD.version}) ` +
         `≠ servidor (${server.buildId} / v${server.version}). Atualizando…`
     );
+    pendingUpdateBuildId = null;
     await reloadForPublishedUpdate(server);
     return true;
   } finally {

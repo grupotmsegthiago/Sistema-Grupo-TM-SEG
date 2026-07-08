@@ -6,7 +6,6 @@ import {
   getActivityStatus,
   getIdleMinutes,
   getLastActivityAt,
-  touchUserActivity,
 } from '../lib/userActivityTracker';
 import { requiresTimeclockUser } from '../lib/timeclock/eligibility';
 import { buildPunchMarks } from '../lib/timeclock/presence';
@@ -23,103 +22,93 @@ interface Props {
 }
 
 const HEARTBEAT_MS = 45_000;
+const ACTIVITY_HEARTBEAT_MIN_MS = 15_000;
 
 /** Mantém o usuário atual visível no canal de presença (online + CLT em serviço). */
 const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
   useEffect(() => {
-    console.log('[TMSEG_PRESENCE] UserPresenceTracker useEffect. enabled=', enabled);
     if (!enabled) return;
 
     let cancelled = false;
     let stopTracking: (() => void) | null = null;
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    let lastGoodPayload: PresenceUserState | null = null;
+    let lastActivityHeartbeatAt = 0;
+
+    const buildQuickPayload = (
+      raw: TimeClockUserContext & { role?: string }
+    ): PresenceUserState => ({
+      userId: raw.id,
+      name: raw.name || 'Usuário',
+      role: raw.role || 'Operador',
+      isClt: !!(raw.isClt || raw.requiresTimeclock),
+      onDuty: false,
+      onDutyLabel: 'Online',
+      onlineAt: new Date().toISOString(),
+    });
 
     const buildPayload = async (): Promise<PresenceUserState | null> => {
       try {
-        const raw = JSON.parse(localStorage.getItem('userData') || '{}') as TimeClockUserContext;
-        if (!raw?.id) {
-          console.log('[TMSEG_PRESENCE] buildPayload sem raw.id — userData vazio no localStorage');
-          return null;
+        const raw = JSON.parse(localStorage.getItem('userData') || '{}') as TimeClockUserContext & {
+          role?: string;
+        };
+        if (!raw?.id) return null;
+
+        let user: TimeClockUserContext;
+        try {
+          user = await enrichUserWithCltData(raw);
+        } catch (err) {
+          console.warn('[TMSEG_PRESENCE] enrich falhou, reutilizando dados locais', err);
+          user = raw;
         }
 
-        // Retorno rápido enquanto o enrich async completa (evita "0 usuários" no primeiro segundo).
-        const quickPayload: PresenceUserState = {
-          userId: raw.id,
-          name: raw.name || 'Usuário',
-          role: (raw as any).role || 'Operador',
-          isClt: false,
-          onDuty: false,
-          onDutyLabel: 'Online',
-          onlineAt: new Date().toISOString(),
-        };
+        const contractType = (user.contractType || '').toUpperCase() || undefined;
+        const mustClock = requiresTimeclockUser(user);
+        let onDuty = lastGoodPayload?.onDuty ?? false;
+        let onDutyLabel = lastGoodPayload?.onDutyLabel ?? 'Online';
+        let minutesOnDuty = lastGoodPayload?.minutesOnDuty ?? 0;
+        let punchMarks = lastGoodPayload?.punchMarks;
 
-        // Se conseguirmos enriquecer, retorna o payload completo; se falhar, quickPayload.
-        try {
-          const user = await enrichUserWithCltData(raw);
-          const contractType = (user.contractType || '').toUpperCase() || undefined;
-          let onDuty = false;
-          let onDutyLabel = 'Online';
-          let minutesOnDuty = 0;
-          let punchMarks: ReturnType<typeof buildPunchMarks> | undefined;
-          if (requiresTimeclockUser(user)) {
+        if (mustClock) {
+          try {
             const entries = await fetchTodayTimeClockEntries(user.id);
             punchMarks = buildPunchMarks(entries);
             onDuty = isCltOnDutyToday(entries);
             onDutyLabel = getOnDutyStageLabel(entries);
             minutesOnDuty = onDuty ? getMinutesOnDutyToday(entries) : 0;
-          } else if (contractType) {
-            onDutyLabel = contractType;
+          } catch (err) {
+            console.warn('[TMSEG_PRESENCE] fetch ponto falhou, mantendo último estado', err);
           }
-          const activityStatus = getActivityStatus();
-          const idleMinutes = getIdleMinutes();
-          return {
-            userId: user.id,
-            name: user.name || 'Usuário',
-            role: user.role || 'Operador',
-            contractType,
-            isClt: requiresTimeclockUser(user),
-            onDuty,
-            onDutyLabel,
-            onlineAt: new Date().toISOString(),
-            lastActivityAt: getLastActivityAt(),
-            minutesOnDuty,
-            activityStatus,
-            idleMinutes,
-            punchMarks,
-          };
-        } catch (err) {
-          console.warn('[TMSEG_PRESENCE] enrich falhou, mantendo payload básico', err);
-          return quickPayload;
+        } else if (contractType) {
+          onDutyLabel = contractType;
+          punchMarks = undefined;
         }
+
+        const activityStatus = getActivityStatus();
+        const idleMinutes = getIdleMinutes();
+        return {
+          userId: user.id,
+          name: user.name || 'Usuário',
+          role: user.role || 'Operador',
+          contractType,
+          isClt: mustClock,
+          onDuty,
+          onDutyLabel,
+          onlineAt: new Date().toISOString(),
+          lastActivityAt: getLastActivityAt(),
+          minutesOnDuty,
+          activityStatus,
+          idleMinutes,
+          punchMarks,
+        };
       } catch (err) {
         console.warn('[TMSEG_PRESENCE] buildPayload erro', err);
-        return null;
+        return lastGoodPayload;
       }
     };
 
-    const start = async () => {
-      // Track "rápido" com o que já temos no localStorage — não bloqueia esperando enrich.
-      try {
-        const raw = JSON.parse(localStorage.getItem('userData') || '{}') as TimeClockUserContext & { role?: string };
-        if (raw?.id && !stopTracking) {
-          const quickPayload: PresenceUserState = {
-            userId: raw.id,
-            name: raw.name || 'Usuário',
-            role: raw.role || 'Operador',
-            isClt: false,
-            onDuty: false,
-            onDutyLabel: 'Online',
-            onlineAt: new Date().toISOString(),
-          };
-          console.log('[TMSEG_PRESENCE] start: quick track', quickPayload.name);
-          stopTracking = trackPresence(quickPayload);
-        }
-      } catch {
-        // ignora
-      }
-
-      const payload = await buildPayload();
-      if (!payload || cancelled) return;
+    const applyPayload = (payload: PresenceUserState) => {
+      lastGoodPayload = payload;
       if (stopTracking) {
         updatePresencePayload(payload);
       } else {
@@ -127,11 +116,42 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
       }
     };
 
-    const heartbeat = async () => {
+    const heartbeat = async (opts?: { activityOnly?: boolean }) => {
       if (cancelled || !stopTracking) return;
+
+      if (opts?.activityOnly && lastGoodPayload) {
+        const now = Date.now();
+        if (now - lastActivityHeartbeatAt < ACTIVITY_HEARTBEAT_MIN_MS) return;
+        lastActivityHeartbeatAt = now;
+        const updated: PresenceUserState = {
+          ...lastGoodPayload,
+          onlineAt: new Date().toISOString(),
+          lastActivityAt: getLastActivityAt(),
+          activityStatus: getActivityStatus(),
+          idleMinutes: getIdleMinutes(),
+        };
+        applyPayload(updated);
+        return;
+      }
+
       const payload = await buildPayload();
       if (!payload || cancelled) return;
-      updatePresencePayload(payload);
+      applyPayload(payload);
+    };
+
+    const start = async () => {
+      try {
+        const raw = JSON.parse(localStorage.getItem('userData') || '{}') as TimeClockUserContext & {
+          role?: string;
+        };
+        if (raw?.id && !stopTracking) {
+          applyPayload(buildQuickPayload(raw));
+        }
+      } catch {
+        // ignora
+      }
+
+      await heartbeat();
     };
 
     void start();
@@ -144,7 +164,7 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
       void heartbeat();
     });
 
-    const onActivity = () => void heartbeat();
+    const onActivity = () => void heartbeat({ activityOnly: true });
     window.addEventListener('tmseg:activity', onActivity);
 
     const onVisibility = () => {

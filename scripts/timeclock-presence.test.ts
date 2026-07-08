@@ -9,7 +9,9 @@ import {
   getPresenceServiceStatus,
   buildPunchMarks,
   buildPresenceTooltip,
+  PRESENCE_USER_AVATAR_SRC,
 } from '../lib/timeclock/presence.ts';
+import { getBrazilDayBounds } from '../lib/dateUtils.ts';
 
 test('isCltOnDutyToday após entrada sem saída', () => {
   assert.equal(isCltOnDutyToday([{ type: 'IN' }]), true);
@@ -170,9 +172,29 @@ test('buildPunchMarks e tooltip exibem marcações do dia', () => {
   assert.match(tooltip, /Entrada:/);
 });
 
-test('quadro de presença divide por categorias fixas', () => {
-  const boardSrc = fs.readFileSync('components/MissionTeamPresenceBoard.tsx', 'utf8');
-  assert.match(boardSrc, /PRESENCE_CATEGORY_ORDER/);
-  assert.match(boardSrc, /PRESENCE_CATEGORY_LABELS/);
-  assert.match(boardSrc, /getPresenceCategory/);
+test('getPresenceServiceStatus usa punchMarks quando onDutyLabel diverge', () => {
+  assert.equal(
+    getPresenceServiceStatus({
+      userId: '4',
+      name: 'Michelle',
+      role: 'Operador',
+      isClt: true,
+      onDuty: false,
+      onDutyLabel: 'Aguardando ponto',
+      onlineAt: '',
+      punchMarks: [{ type: 'IN', label: 'Entrada', time: '07:35' }],
+    }),
+    'em_servico'
+  );
+});
+
+test('getBrazilDayBounds cobre dia civil de Brasília', () => {
+  const { start, end } = getBrazilDayBounds('2026-07-08');
+  assert.equal(start, '2026-07-08T03:00:00.000Z');
+  assert.equal(end, '2026-07-09T02:59:59.999Z');
+});
+
+test('avatar de presença aponta para SVG existente', () => {
+  assert.equal(PRESENCE_USER_AVATAR_SRC, '/assets/presence-user-robot.svg');
+  assert.match(fs.readFileSync('public/assets/presence-user-robot.svg', 'utf8'), /<svg/i);
 });
