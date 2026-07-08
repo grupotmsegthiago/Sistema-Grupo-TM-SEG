@@ -6,11 +6,11 @@ const src = fs.readFileSync('lib/investment/accountBalanceSnapshots.ts', 'utf8')
 const apiSrc = fs.readFileSync('api/investment-snapshots.ts', 'utf8');
 const migrationSrc = fs.readFileSync('migrations/2026_07_08_account_balance_snapshots.sql', 'utf8');
 
-test('accountBalanceSnapshots usa Supabase (sem pg no bundle Vercel)', () => {
-  assert.match(src, /getSupabaseAdmin/);
-  assert.match(src, /from\('account_balance_snapshots'\)/);
-  assert.match(src, /\.insert\(payload\)/);
+test('accountBalanceSnapshots usa REST Supabase (sem pg nem supabase-js)', () => {
+  assert.match(src, /rest\/v1\/account_balance_snapshots/);
+  assert.match(src, /fetch\(/);
   assert.doesNotMatch(src, /from 'pg'/);
+  assert.doesNotMatch(src, /@supabase\/supabase-js/);
   assert.doesNotMatch(apiSrc, /DATABASE_URL indisponível/);
 });
 
