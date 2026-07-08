@@ -2,7 +2,7 @@ import type { TimeClockEntry } from './types';
 import { getNextTimeClockStage } from './stages';
 
 /** CLT em serviço: bateu entrada hoje e ainda não encerrou a jornada. */
-export function isCltOnDutyToday(entries: Pick<TimeClockEntry, 'type'>[]): boolean {
+export function isCltOnDutyToday(entries: Pick<TimeClockEntry, 'type' | 'timestamp'>[]): boolean {
   if (entries.length === 0) return false;
   const hasIn = entries.some((e) => e.type === 'IN');
   if (!hasIn) return false;
@@ -25,4 +25,19 @@ export function getOnDutyStageLabel(entries: Pick<TimeClockEntry, 'type'>[]): st
   if (next === 'BREAK_END') return 'Em almoço';
   if (next === 'OUT') return 'Em serviço';
   return 'Em serviço';
+}
+
+/** Minutos em serviço hoje (desde última entrada ou retorno do almoço). */
+export function getMinutesOnDutyToday(entries: Pick<TimeClockEntry, 'type' | 'timestamp'>[]): number {
+  if (!entries.length) return 0;
+  const sorted = [...entries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  let anchor: string | null = null;
+  for (const e of sorted) {
+    if (e.type === 'IN' || e.type === 'BREAK_END') anchor = e.timestamp;
+    if (e.type === 'OUT') anchor = null;
+  }
+  if (!anchor) return 0;
+  const start = new Date(anchor).getTime();
+  if (!Number.isFinite(start)) return 0;
+  return Math.max(0, Math.floor((Date.now() - start) / 60_000));
 }

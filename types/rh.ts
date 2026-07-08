@@ -58,6 +58,10 @@ export interface RhEmployee {
   manager_employee_id?: string;
   cost_center?: string;
   status: RhEmployeeStatus;
+  shift_type?: 'diurno' | 'noturno' | string;
+  requires_timeclock?: boolean;
+  face_photo_url?: string | null;
+  face_registered_at?: string | null;
   probation_end_date?: string;
   dismissal_date?: string;
   dismissal_reason?: string;

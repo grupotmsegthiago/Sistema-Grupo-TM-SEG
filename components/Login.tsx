@@ -4,6 +4,12 @@ import { Mail, Lock, Loader2, AlertCircle, ShieldCheck, Shield, Eye, EyeOff, Fin
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { enrichUserWithCltData } from '../lib/timeclock/cltEmployee';
+import {
+  hasFaceRegistered,
+  requiresTimeclockUser,
+} from '../lib/timeclock/eligibility';
+import FaceAuthGate from './FaceAuthGate';
+import type { TimeClockUserContext } from '../lib/timeclock/types';
 import { APP_VERSION } from '../constants';
 
 interface LoginProps {
@@ -19,6 +25,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [authPhase, setAuthPhase] = useState<'credentials' | 'face'>('credentials');
+  const [pendingUser, setPendingUser] = useState<TimeClockUserContext | null>(null);
+  const [faceMode, setFaceMode] = useState<'register' | 'verify'>('register');
 
   const bgImages = [
     'https://images.unsplash.com/photo-1614064641938-3bbee52942c7?q=80&w=2070&auto=format&fit=crop',
@@ -123,6 +132,14 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
       userData = await enrichUserWithCltData(userData);
 
+      if (requiresTimeclockUser(userData)) {
+        setPendingUser(userData);
+        setFaceMode(hasFaceRegistered(userData) ? 'verify' : 'register');
+        setAuthPhase('face');
+        setIsLoading(false);
+        return;
+      }
+
       localStorage.setItem('authToken', `tmseg-token-${userCheck.id}-${Date.now()}`);
       localStorage.setItem('userData', JSON.stringify(userData));
       localStorage.setItem('app_version', APP_VERSION);
@@ -137,6 +154,30 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       setIsLoading(false);
     }
   };
+
+  const completeLogin = async (userData: TimeClockUserContext, userId: string, userName: string) => {
+    localStorage.setItem('authToken', `tmseg-token-${userId}-${Date.now()}`);
+    localStorage.setItem('userData', JSON.stringify(userData));
+    localStorage.setItem('app_version', APP_VERSION);
+    await logAction('LOGIN', 'Auth', userId, `Login realizado: ${userName}`);
+    onLogin();
+  };
+
+  if (authPhase === 'face' && pendingUser) {
+    return (
+      <FaceAuthGate
+        user={pendingUser}
+        mode={faceMode}
+        onSuccess={(updated) => {
+          void completeLogin(updated, pendingUser.id, pendingUser.name);
+        }}
+        onCancel={() => {
+          setAuthPhase('credentials');
+          setPendingUser(null);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex font-sans overflow-y-auto relative min-h-screen-ios scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { Clock, BarChart3, History } from 'lucide-react';
+import { Clock, BarChart3, History, Activity } from 'lucide-react';
 import RhPageHeader from './shared/RhPageHeader';
 import TimeClockSystem from '../TimeClockSystem';
 import RHPointReport from '../RHPointReport';
 import RhTimeclockHistory from './RhTimeclockHistory';
+import RhPresenceReport from './RhPresenceReport';
 
 const RhTimeclockHub: React.FC = () => {
-  const [tab, setTab] = useState<'registro' | 'historico' | 'relatorio'>('registro');
+  const [tab, setTab] = useState<'registro' | 'historico' | 'relatorio' | 'presenca'>('registro');
 
   const tabBtn = (id: typeof tab, label: string, icon: React.ReactNode) => (
     <button
@@ -25,11 +26,13 @@ const RhTimeclockHub: React.FC = () => {
       <div className="flex flex-wrap gap-2 mb-4">
         {tabBtn('registro', 'Registro', <Clock size={14} />)}
         {tabBtn('historico', 'Histórico', <History size={14} />)}
+        {tabBtn('presenca', 'Presença ao vivo', <Activity size={14} />)}
         {tabBtn('relatorio', 'Relatório folha', <BarChart3 size={14} />)}
       </div>
 
       {tab === 'registro' && <TimeClockSystem />}
       {tab === 'historico' && <RhTimeclockHistory />}
+      {tab === 'presenca' && <RhPresenceReport />}
       {tab === 'relatorio' && <RHPointReport />}
     </div>
   );

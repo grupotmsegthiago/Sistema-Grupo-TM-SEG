@@ -1,7 +1,14 @@
 import React, { useEffect } from 'react';
-import { enrichUserWithCltData, isCltUser } from '../lib/timeclock/cltEmployee';
+import { enrichUserWithCltData } from '../lib/timeclock/cltEmployee';
 import { fetchTodayTimeClockEntries } from '../lib/timeclock/registerPunch';
-import { getOnDutyStageLabel, isCltOnDutyToday } from '../lib/timeclock/onDuty';
+import { getOnDutyStageLabel, isCltOnDutyToday, getMinutesOnDutyToday } from '../lib/timeclock/onDuty';
+import {
+  getActivityStatus,
+  getIdleMinutes,
+  getLastActivityAt,
+  touchUserActivity,
+} from '../lib/userActivityTracker';
+import { requiresTimeclockUser } from '../lib/timeclock/eligibility';
 import {
   onPresenceRefreshRequested,
   trackPresence,
@@ -51,22 +58,30 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
           const contractType = (user.contractType || '').toUpperCase() || undefined;
           let onDuty = false;
           let onDutyLabel = 'Online';
-          if (isCltUser(user)) {
+          let minutesOnDuty = 0;
+          if (requiresTimeclockUser(user)) {
             const entries = await fetchTodayTimeClockEntries(user.id);
             onDuty = isCltOnDutyToday(entries);
             onDutyLabel = getOnDutyStageLabel(entries);
+            minutesOnDuty = onDuty ? getMinutesOnDutyToday(entries) : 0;
           } else if (contractType) {
             onDutyLabel = contractType;
           }
+          const activityStatus = getActivityStatus();
+          const idleMinutes = getIdleMinutes();
           return {
             userId: user.id,
             name: user.name || 'Usuário',
             role: user.role || 'Operador',
             contractType,
-            isClt: isCltUser(user),
+            isClt: requiresTimeclockUser(user),
             onDuty,
             onDutyLabel,
             onlineAt: new Date().toISOString(),
+            lastActivityAt: getLastActivityAt(),
+            minutesOnDuty,
+            activityStatus,
+            idleMinutes,
           };
         } catch (err) {
           console.warn('[TMSEG_PRESENCE] enrich falhou, mantendo payload básico', err);
@@ -125,6 +140,9 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
       void heartbeat();
     });
 
+    const onActivity = () => void heartbeat();
+    window.addEventListener('tmseg:activity', onActivity);
+
     const onVisibility = () => {
       if (document.visibilityState === 'visible') void heartbeat();
     };
@@ -134,6 +152,7 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
       cancelled = true;
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       unsubscribeRefresh();
+      window.removeEventListener('tmseg:activity', onActivity);
       document.removeEventListener('visibilitychange', onVisibility);
       if (stopTracking) {
         try {

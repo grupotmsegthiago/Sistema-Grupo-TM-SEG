@@ -20,9 +20,9 @@ import {
 import type { TimeClockEntry, TimeClockStage, TimeClockUserContext } from '../lib/timeclock/types';
 import {
   enrichUserWithCltData,
-  isCltUser,
   saveEmployeeDigitalSignature,
 } from '../lib/timeclock/cltEmployee';
+import { requiresTimeclockUser } from '../lib/timeclock/eligibility';
 import {
   fetchTodayTimeClockEntries,
   registerTimeClockPunch,
@@ -34,9 +34,11 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onRegistered?: () => void;
+  /** Quando true, não permite fechar sem registrar (gate de entrada). */
+  forced?: boolean;
 }
 
-const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered }) => {
+const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced = false }) => {
   const { showNotification } = useNotification();
   const [step, setStep] = useState<Step>('face');
   const [user, setUser] = useState<TimeClockUserContext | null>(null);
@@ -66,8 +68,8 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered }) => {
       setUser(enriched);
       localStorage.setItem('userData', JSON.stringify(enriched));
 
-      if (!isCltUser(enriched)) {
-        setError('Seu usuário não está cadastrado como CLT no RH.');
+      if (!requiresTimeclockUser(enriched)) {
+        setError('Seu perfil não exige registro de ponto.');
         return;
       }
 
@@ -210,9 +212,11 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered }) => {
               <p className="text-[10px] text-gray-500 font-bold">{formatNowTimeBR()}</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="p-2 rounded-full hover:bg-gray-100">
-            <X size={18} />
-          </button>
+          {!forced && (
+            <button type="button" onClick={onClose} className="p-2 rounded-full hover:bg-gray-100">
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         <div className="p-5 space-y-4">

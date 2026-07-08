@@ -18,11 +18,11 @@ interface AvatarStyle {
 
 function bucketOf(user: PresenceUserState): Bucket {
   const label = (user.onDutyLabel || '').toLowerCase();
-  if (user.isClt) {
-    if (user.onDuty) {
-      if (label.includes('almoço') || label.includes('almoco')) return 'em_almoco';
-      return 'em_servico';
-    }
+  if (user.onDuty) {
+    if (label.includes('almoço') || label.includes('almoco')) return 'em_almoco';
+    return 'em_servico';
+  }
+  if (user.isClt || (user.contractType || '').toUpperCase() === 'CLT') {
     if (label.includes('aguardando')) return 'aguardando';
     return 'fora';
   }
@@ -60,7 +60,23 @@ function bucketOrder(b: Bucket): number {
 }
 
 function statusLine(user: PresenceUserState): string {
-  if (user.isClt) return user.onDutyLabel || 'Online';
+  if (user.isClt || user.onDuty) {
+    const base = user.onDutyLabel || 'Online';
+    if (user.onDuty && user.minutesOnDuty != null && user.minutesOnDuty > 0) {
+      const mins = `${user.minutesOnDuty} min`;
+      if (user.activityStatus === 'idle' && user.idleMinutes && user.idleMinutes > 0) {
+        return `${base} — Sem uso há ${user.idleMinutes} min`;
+      }
+      if (user.activityStatus === 'idle') {
+        return `${base} — Inativa`;
+      }
+      return `${base} — ${mins}`;
+    }
+    if (user.activityStatus === 'idle' && user.idleMinutes && user.idleMinutes > 0) {
+      return `${base} — Sem uso há ${user.idleMinutes} min`;
+    }
+    return base;
+  }
   const ct = (user.contractType || '').toUpperCase();
   if (ct && ct !== 'CLT') return ct;
   return 'Online';

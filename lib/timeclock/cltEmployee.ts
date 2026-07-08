@@ -1,5 +1,7 @@
 import { supabase } from '../supabase';
 import type { CltEmployeeInfo, TimeClockUserContext } from './types';
+import { employeeRequiresTimeclock } from './eligibility';
+import { normalizeShiftType } from './shiftRules';
 
 /** Status que permitem bater ponto (período de experiência também conta). */
 export const TIMECLOCK_ELIGIBLE_STATUSES = ['Ativo', 'Experiência'] as const;
@@ -26,7 +28,7 @@ function normalizeEmail(email: string | null | undefined): string {
 }
 
 const EMPLOYEE_SELECT =
-  'id, user_id, full_name, contract_type, digital_signature_url, matricula, status, email, deleted_at';
+  'id, user_id, full_name, contract_type, digital_signature_url, matricula, status, email, shift_type, requires_timeclock, face_photo_url, face_registered_at, deleted_at';
 
 /** Vincula automaticamente user_id quando o e-mail do login coincide com o do RH. */
 async function ensureEmployeeUserLink(
@@ -142,13 +144,18 @@ export async function enrichUserWithCltData(
 
   const contractType = String(employee.contract_type || '').trim().toUpperCase();
   const isClt = isCltContractType(contractType) && isEmployeeEligibleForTimeClock(employee.status);
+  const requiresTimeclock = employeeRequiresTimeclock(employee);
 
   return {
     ...user,
     employeeId: employee.id,
     contractType,
     isClt,
+    requiresTimeclock,
+    shiftType: normalizeShiftType(employee.shift_type),
     digitalSignatureUrl: employee.digital_signature_url || null,
+    facePhotoUrl: employee.face_photo_url || null,
+    faceRegisteredAt: employee.face_registered_at || null,
   };
 }
 

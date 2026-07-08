@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Clock, Fingerprint } from 'lucide-react';
 import TimeClockModal from './TimeClockModal';
 import { formatNowTimeBR } from '../lib/dateUtils';
-import { enrichUserWithCltData, isCltUser } from '../lib/timeclock/cltEmployee';
+import { enrichUserWithCltData } from '../lib/timeclock/cltEmployee';
+import { requiresTimeclockUser } from '../lib/timeclock/eligibility';
 import {
   TIME_CLOCK_STAGE_LABELS,
   getNextTimeClockStage,
@@ -30,7 +31,7 @@ const CltTimeClockBar: React.FC = () => {
       const enriched = await enrichUserWithCltData(raw);
       localStorage.setItem('userData', JSON.stringify(enriched));
 
-      if (!isCltUser(enriched)) {
+      if (!requiresTimeclockUser(enriched)) {
         setReady(false);
         setUser(null);
         return;

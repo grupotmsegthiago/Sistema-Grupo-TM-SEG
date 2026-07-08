@@ -115,11 +115,11 @@ test('estágios fora de ordem cronológica ainda respeitam sequência lógica', 
 
 // ─── Contrato e código-fonte crítico ───────────────────────────────────────
 
-test('registerPunch valida CLT antes de registrar', async () => {
+test('registerPunch valida elegibilidade antes de registrar', async () => {
   const src = await import('node:fs/promises').then((fs) =>
     fs.readFile('lib/timeclock/registerPunch.ts', 'utf8')
   );
-  assert.match(src, /isCltUser\(input\.user\)/);
+  assert.match(src, /requiresTimeclockUser/);
   assert.match(src, /ai_verification: aiVerified/);
   assert.match(src, /withTimeout/);
 });
@@ -156,6 +156,8 @@ test('API Vercel dedicada para leitura de ponto', async () => {
   );
   assert.match(vercel, /\/api\/rh\/timeclock\/entries/);
   assert.match(vercel, /rh-timeclock-entries/);
+  assert.match(vercel, /\/api\/rh\/timeclock\/punch/);
+  assert.match(vercel, /rh-timeclock-punch/);
   assert.match(vercel, /\/api\/rh\/timeclock\/init/);
   assert.match(vercel, /rh-timeclock-init/);
 });

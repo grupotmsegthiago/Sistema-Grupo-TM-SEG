@@ -26,14 +26,23 @@ export interface CltEmployeeInfo {
   matricula?: string | null;
   status?: string | null;
   email?: string | null;
+  shift_type?: string | null;
+  requires_timeclock?: boolean | null;
+  face_photo_url?: string | null;
+  face_registered_at?: string | null;
 }
 
 export interface TimeClockUserContext {
   id: string;
   name: string;
   email?: string;
+  role?: string;
   employeeId?: string;
   contractType?: string;
   isClt?: boolean;
+  requiresTimeclock?: boolean;
+  shiftType?: 'diurno' | 'noturno';
   digitalSignatureUrl?: string | null;
+  facePhotoUrl?: string | null;
+  faceRegisteredAt?: string | null;
 }

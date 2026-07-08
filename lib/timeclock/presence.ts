@@ -12,6 +12,14 @@ export interface PresenceUserState {
   onDuty: boolean;
   onDutyLabel: string;
   onlineAt: string;
+  /** Última interação real no sistema */
+  lastActivityAt?: string;
+  /** Minutos em serviço (desde batida IN / retorno almoço) */
+  minutesOnDuty?: number;
+  /** active | idle (>10min sem mexer) */
+  activityStatus?: 'active' | 'idle';
+  /** Minutos sem uso após limiar de inatividade */
+  idleMinutes?: number;
 }
 
 type RawPresenceMeta = Partial<PresenceUserState> | Record<string, unknown>;
@@ -38,6 +46,22 @@ function normalizePresenceMeta(meta: RawPresenceMeta): PresenceUserState | null 
       typeof meta.onlineAt === 'string' && meta.onlineAt.trim()
         ? meta.onlineAt.trim()
         : new Date(0).toISOString(),
+    lastActivityAt:
+      typeof meta.lastActivityAt === 'string' && meta.lastActivityAt.trim()
+        ? meta.lastActivityAt.trim()
+        : undefined,
+    minutesOnDuty:
+      typeof meta.minutesOnDuty === 'number' && Number.isFinite(meta.minutesOnDuty)
+        ? meta.minutesOnDuty
+        : undefined,
+    activityStatus:
+      meta.activityStatus === 'active' || meta.activityStatus === 'idle'
+        ? meta.activityStatus
+        : undefined,
+    idleMinutes:
+      typeof meta.idleMinutes === 'number' && Number.isFinite(meta.idleMinutes)
+        ? meta.idleMinutes
+        : undefined,
   };
 }
 

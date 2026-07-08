@@ -87,7 +87,9 @@ import FinancialInvoiceControl from './components/FinancialInvoiceControl';
 import MissionAlertMonitor from './components/MissionAlertMonitor';
 import UserPresenceTracker from './components/UserPresenceTracker';
 import PresenceDebugPanel from './components/PresenceDebugPanel';
+import TimeClockGate from './components/TimeClockGate';
 import AppErrorBoundary from './components/AppErrorBoundary';
+import { wireUserActivityTracker, touchUserActivity } from './lib/userActivityTracker';
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
@@ -189,6 +191,11 @@ const App: React.FC = () => {
           if (!isAuthenticated) setIsAuthenticated(true);
       } catch (e) { console.error(e); }
   };
+
+  useEffect(() => {
+    if (!isAuthenticated || isPublicRoute) return;
+    return wireUserActivityTracker();
+  }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {
     if (!isAuthenticated || isPublicRoute) return;
@@ -304,6 +311,8 @@ const App: React.FC = () => {
     setSelectedId(null);
     setCurrentScreen(screen);
     persistScreen(screen);
+    touchUserActivity();
+    window.dispatchEvent(new CustomEvent('tmseg:screen-change', { detail: screen }));
   };
   const handleEdit = (screen: string, id: string) => {
     setSelectedId(id);
@@ -429,6 +438,7 @@ const App: React.FC = () => {
     <QueryClientProvider client={queryClient}>
     <RealtimeProvider>
     <NotificationProvider>
+        <TimeClockGate onLogout={handleLogout} onCleared={() => {}}>
         <div className="flex min-h-screen-ios overflow-x-auto overflow-y-auto font-sans text-gray-800 relative" style={{ maxWidth: '100vw' }}>
         
         {rebootCountdown !== null && (
@@ -463,6 +473,7 @@ const App: React.FC = () => {
         {isProfileSettingsOpen && ( <ProfileSettingsModal onClose={() => setIsProfileSettingsOpen(false)} onSuccess={() => { setIsProfileSettingsOpen(false); alert("Dados atualizados com sucesso! Por segurança, por favor, faça login novamente."); handleLogout(); }} /> )}
         {billingMissionId && billingMission && ( <MissionFinancialModal isOpen={true} onClose={() => { setBillingMissionId(null); setBillingMission(null); }} mission={billingMission} onUpdate={() => { setBillingMissionId(null); setBillingMission(null); window.dispatchEvent(new CustomEvent('refreshMissions')); }} /> )}
         </div>
+        </TimeClockGate>
     </NotificationProvider>
     </RealtimeProvider>
     </QueryClientProvider>

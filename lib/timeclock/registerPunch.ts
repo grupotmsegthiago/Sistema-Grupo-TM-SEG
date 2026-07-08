@@ -6,7 +6,9 @@ import { withTimeout, TimeoutError } from '../promiseTimeout';
 import type { TimeClockEntry, TimeClockStage, TimeClockUserContext } from './types';
 import { getNextTimeClockStage } from './stages';
 import { fetchTodayTimeClockEntriesFromApi } from './fetchEntriesApi';
-import { isCltUser } from './cltEmployee';
+import { requiresTimeclockUser } from './eligibility';
+import { registerTimeClockPunchViaApi } from './punchApi';
+import { validateFaceAgainstRegistered } from './faceAuth';
 
 const SELFIE_VERIFY_TIMEOUT_MS = 25_000;
 
@@ -94,8 +96,8 @@ export interface RegisterTimeClockPunchInput {
 export async function registerTimeClockPunch(
   input: RegisterTimeClockPunchInput
 ): Promise<TimeClockEntry> {
-  if (!isCltUser(input.user)) {
-    throw new Error('Apenas funcionários CLT podem registrar ponto.');
+  if (!requiresTimeclockUser(input.user)) {
+    throw new Error('Seu perfil não exige registro de ponto.');
   }
 
   const history = await fetchTodayTimeClockEntries(input.user.id);
@@ -105,6 +107,33 @@ export async function registerTimeClockPunch(
   }
   if (expected !== input.stage) {
     throw new Error(`Próxima batida esperada: ${expected}.`);
+  }
+
+  if (input.user.facePhotoUrl) {
+    await validateFaceAgainstRegistered(input.user.facePhotoUrl, input.photoBase64);
+  } else {
+    const aiVerified = await verifySelfieForTimeClock(input.photoBase64);
+    if (!aiVerified) {
+      console.warn('[timeclock] Selfie sem validação IA (primeiro cadastro ou IA indisponível)');
+    }
+  }
+
+  try {
+    const entry = await registerTimeClockPunchViaApi({
+      stage: input.stage,
+      photoBase64: input.photoBase64,
+      signatureUrl: input.signatureUrl,
+      latitude: input.latitude,
+      longitude: input.longitude,
+    });
+    try {
+      requestPresenceRefresh();
+    } catch {
+      // não bloqueia
+    }
+    return entry;
+  } catch (apiErr) {
+    console.warn('[timeclock] API punch falhou, fallback Supabase:', apiErr);
   }
 
   const aiVerified = await verifySelfieForTimeClock(input.photoBase64);
@@ -124,7 +153,7 @@ export async function registerTimeClockPunch(
     metadata: {
       stage: input.stage,
       device: typeof window !== 'undefined' && window.innerWidth < 768 ? 'mobile' : 'desktop',
-      source: 'mission-screen',
+      source: 'client-fallback',
       ai_skipped: !aiVerified,
     },
   };

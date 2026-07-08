@@ -116,6 +116,9 @@
       "maxDuration": 120,
       "includeFiles": "migrations/2026_07_08_timeclock_fix_user_id.sql"
     },
+    "api/rh-timeclock-punch.ts": {
+      "maxDuration": 60
+    },
     "api/rh-employee-costs.ts": {
       "maxDuration": 60
     },
@@ -272,6 +275,10 @@
     {
       "source": "/api/rh/timeclock/init",
       "destination": "/api/rh-timeclock-init"
+    },
+    {
+      "source": "/api/rh/timeclock/punch",
+      "destination": "/api/rh-timeclock-punch"
     },
     {
       "source": "/api/toll/qualp",

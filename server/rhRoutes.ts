@@ -248,4 +248,13 @@ export function registerRhRoutes(
       res.status(500).json({ error: e.message });
     }
   });
+
+  app.post('/api/rh/timeclock/punch', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { handleTimeclockPunch } = await import('./timeclockPunch');
+      await handleTimeclockPunch(req, res);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
 }
