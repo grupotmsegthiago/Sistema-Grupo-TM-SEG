@@ -35,15 +35,18 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
   // cada ciclo). Só atualizamos mustPunch/shiftBlocked se algo mudar.
   const evaluate = useCallback(async (initial = false) => {
     if (initial) setLoading(true);
+    let rawUser: TimeClockUserContext | null = null;
     try {
       const raw = JSON.parse(localStorage.getItem('userData') || '{}') as TimeClockUserContext;
       if (!raw?.id) {
         setMustPunch(false);
         return;
       }
+      rawUser = raw;
       const enriched = await enrichUserWithCltData(raw);
       localStorage.setItem('userData', JSON.stringify(enriched));
       setUser(enriched);
+      rawUser = enriched;
 
       if (!requiresTimeclockUser(enriched)) {
         setMustPunch(false);
@@ -65,7 +68,14 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
       setModalOpen(window.allowed);
     } catch (e) {
       console.warn('[TimeClockGate] evaluate falhou:', e);
-      setMustPunch(false);
+      // Fail-closed: operadores/CLT não entram sem confirmação de ponto.
+      if (rawUser && requiresTimeclockUser(rawUser)) {
+        setMustPunch(true);
+        setShiftBlocked(false);
+        setModalOpen(true);
+      } else {
+        setMustPunch(false);
+      }
     } finally {
       if (initial) setLoading(false);
     }
@@ -121,7 +131,6 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
         onClose={() => {}}
         onRegistered={handleRegistered}
       />
-      <div className="pointer-events-none opacity-30 blur-sm">{children}</div>
     </>
   );
 };

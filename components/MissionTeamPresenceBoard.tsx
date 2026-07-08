@@ -10,6 +10,7 @@ import {
   getPresenceCategory,
   getPresenceServiceStatus,
   mergeRosterWithPresence,
+  formatPresenceShortName,
   type PresenceCategory,
   type PresenceServiceStatus,
   type PresenceUserState,
@@ -65,7 +66,7 @@ interface StatusStyle {
   text: string;
 }
 
-function statusStyle(status: PresenceServiceStatus): StatusStyle {
+function statusStyle(status: PresenceServiceStatus, isOnline: boolean): StatusStyle {
   switch (status) {
     case 'em_servico':
       return {
@@ -79,17 +80,29 @@ function statusStyle(status: PresenceServiceStatus): StatusStyle {
         dot: 'bg-red-500',
         text: 'text-red-600',
       };
+    case 'aguardando_ponto':
+      return {
+        border: 'border-amber-300',
+        dot: 'bg-amber-500',
+        text: 'text-amber-700',
+      };
+    case 'online':
+      return {
+        border: 'border-sky-300',
+        dot: 'bg-sky-500',
+        text: 'text-sky-700',
+      };
     default:
       return {
-        border: 'border-slate-300',
-        dot: 'bg-slate-400',
-        text: 'text-slate-500',
+        border: isOnline ? 'border-sky-200' : 'border-slate-300',
+        dot: isOnline ? 'bg-sky-400' : 'bg-slate-400',
+        text: isOnline ? 'text-sky-600' : 'text-slate-500',
       };
   }
 }
 
-function statusLine(user: PresenceUserState): string {
-  const status = getPresenceServiceStatus(user);
+function statusLine(user: PresenceUserState, isOnline: boolean): string {
+  const status = getPresenceServiceStatus(user, { isOnline });
   const base = PRESENCE_SERVICE_STATUS_LABELS[status];
   if (status === 'em_servico' && user.minutesOnDuty != null && user.minutesOnDuty > 0) {
     const mins = `${user.minutesOnDuty} min`;
@@ -105,7 +118,7 @@ function statusLine(user: PresenceUserState): string {
 }
 
 const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
-  const { onlineUsers, onlineCount, onDutyClt } = useOnlinePresence(enabled);
+  const { onlineUsers, onDutyClt } = useOnlinePresence(enabled);
   const { roster, punchLookup } = useTeamPresenceBoard(enabled);
 
   const onlineIds = useMemo(
@@ -119,8 +132,13 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
   );
 
   const emServicoCount = useMemo(
-    () => displayUsers.filter((u) => getPresenceServiceStatus(u) === 'em_servico').length,
-    [displayUsers]
+    () => displayUsers.filter((u) => getPresenceServiceStatus(u, { isOnline: onlineIds.has(u.userId) }) === 'em_servico').length,
+    [displayUsers, onlineIds]
+  );
+
+  const onlineOnBoard = useMemo(
+    () => displayUsers.filter((u) => onlineIds.has(u.userId)).length,
+    [displayUsers, onlineIds]
   );
 
   const grouped = useMemo(() => {
@@ -158,7 +176,7 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
         <div className="flex flex-wrap items-center gap-3 text-[10px] font-black uppercase">
           <span className="inline-flex items-center gap-1 text-green-700">
             <Circle size={8} className="fill-green-500 text-green-500" />
-            {onlineCount} online
+            {onlineOnBoard} online
           </span>
           <span className="inline-flex items-center gap-1 text-green-700">
             <Briefcase size={10} />
@@ -187,16 +205,16 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
                 ) : (
                   <div className="flex flex-wrap gap-3">
                     {users.map((user) => {
-                      const displayName = user.name || 'Usuário';
-                      const serviceStatus = getPresenceServiceStatus(user);
-                      const style = statusStyle(serviceStatus);
-                      const status = statusLine(user);
-                      const tooltip = buildPresenceTooltip(user);
+                      const displayName = formatPresenceShortName(user.name || 'Usuário');
                       const isOnline = onlineIds.has(user.userId);
+                      const serviceStatus = getPresenceServiceStatus(user, { isOnline });
+                      const style = statusStyle(serviceStatus, isOnline);
+                      const status = statusLine(user, isOnline);
+                      const tooltip = buildPresenceTooltip(user);
                       return (
                         <div
                           key={user.userId}
-                          className={`group relative flex flex-col items-center w-[76px] transition-opacity ${isOnline ? '' : 'opacity-50'}`}
+                          className={`group relative flex flex-col items-center w-[76px] transition-opacity ${isOnline ? '' : 'opacity-60'}`}
                         >
                           <div className="relative">
                             <div
@@ -209,7 +227,7 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
                             />
                           </div>
                           <p className="mt-1.5 text-[10px] font-bold text-gray-800 text-center leading-tight line-clamp-2 w-full">
-                            {displayName.split(' ')[0]}
+                            {displayName}
                           </p>
                           <p
                             className={`text-[8px] font-black uppercase truncate w-full text-center ${style.text}`}

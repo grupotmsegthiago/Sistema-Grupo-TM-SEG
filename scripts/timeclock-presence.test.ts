@@ -10,6 +10,7 @@ import {
   buildPunchMarks,
   buildPresenceTooltip,
   mergeRosterWithPresence,
+  formatPresenceShortName,
   PRESENCE_USER_AVATAR_SRC,
 } from '../lib/timeclock/presence.ts';
 import {
@@ -164,6 +165,41 @@ test('mergeRosterWithPresence mantém todos os cadastrados na tela (online + for
   assert.equal(ana.onDutyLabel, 'Fora de Serviço');
 });
 
+test('getPresenceServiceStatus distingue online sem ponto de fora offline', () => {
+  const awaiting = {
+    userId: 'u1',
+    name: 'Michelle',
+    role: 'Operador',
+    isClt: true,
+    onDuty: false,
+    onDutyLabel: 'Aguardando ponto',
+    onlineAt: '',
+  };
+  assert.equal(getPresenceServiceStatus(awaiting, { isOnline: true }), 'aguardando_ponto');
+  assert.equal(getPresenceServiceStatus(awaiting, { isOnline: false }), 'aguardando_ponto');
+  assert.equal(
+    getPresenceServiceStatus(
+      {
+        userId: 'u2',
+        name: 'Thiago',
+        role: 'Diretoria',
+        isClt: false,
+        onDuty: false,
+        onDutyLabel: 'Online',
+        onlineAt: '',
+      },
+      { isOnline: true },
+    ),
+    'online',
+  );
+});
+
+test('formatPresenceShortName diferencia homônimos', () => {
+  assert.equal(formatPresenceShortName('Beatriz de Carvalho Simões'), 'Beatriz S.');
+  assert.equal(formatPresenceShortName('BEATRIZ ROCHA'), 'BEATRIZ R.');
+  assert.equal(formatPresenceShortName('Thiago'), 'Thiago');
+});
+
 test('mergeRosterWithPresence não adiciona usuário online fora do roster fixo', () => {
   const online = [
     {
@@ -242,7 +278,7 @@ test('getPresenceServiceStatus simplifica para 3 estados', () => {
       onDutyLabel: 'Aguardando ponto',
       onlineAt: '',
     }),
-    'fora'
+    'aguardando_ponto'
   );
   assert.equal(
     getPresenceServiceStatus({

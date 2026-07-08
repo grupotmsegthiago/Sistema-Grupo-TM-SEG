@@ -3,9 +3,15 @@ import { getNextTimeClockStage } from './stages';
 import { isCltContractType, isEmployeeEligibleForTimeClock } from './cltEmployee';
 
 const DIRETORIA_ROLES = new Set(['diretoria', 'diretor', 'diretor(a)']);
+const OPERATIONAL_ROLES = new Set(['operador', 'operacional', 'avançado', 'avancado']);
 
 export function isDiretoriaRole(role: string | null | undefined): boolean {
   return DIRETORIA_ROLES.has(String(role || '').trim().toLowerCase());
+}
+
+/** Perfis de campo que devem bater ponto mesmo sem vínculo CLT explícito no RH. */
+export function isOperationalRole(role: string | null | undefined): boolean {
+  return OPERATIONAL_ROLES.has(String(role || '').trim().toLowerCase());
 }
 
 /** Funcionário RH deve bater ponto (CLT elegível, PJ marcado, ou flag explícita). */
@@ -28,6 +34,7 @@ export function requiresTimeclockUser(user: TimeClockUserContext | null | undefi
   if (isDiretoriaRole((user as any).role)) return false;
   if (user.requiresTimeclock === true) return true;
   if (user.isClt === true) return true;
+  if (isOperationalRole((user as any).role)) return true;
   return false;
 }
 

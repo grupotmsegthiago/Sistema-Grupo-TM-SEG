@@ -14,23 +14,31 @@ import { validateFaceAgainstRegistered } from './faceAuth';
 const SELFIE_VERIFY_TIMEOUT_MS = 25_000;
 
 export async function fetchTodayTimeClockEntries(userId: string): Promise<TimeClockEntry[]> {
+  const uid = String(userId);
+  const { start, end } = getBrazilDayBounds();
+
   try {
-    return await fetchTodayTimeClockEntriesFromApi(userId);
-  } catch (apiErr) {
-    const { start, end } = getBrazilDayBounds();
     const { data, error } = await supabase
       .from('time_clock')
       .select('*')
-      .eq('user_id', userId)
+      .eq('user_id', uid)
       .gte('timestamp', start)
       .lte('timestamp', end)
       .order('timestamp', { ascending: true });
 
-    if (error) {
-      const msg = apiErr instanceof Error ? apiErr.message : 'Falha na API';
-      throw new Error(error.message || msg);
+    if (!error) {
+      return (data || []) as TimeClockEntry[];
     }
-    return (data || []) as TimeClockEntry[];
+    console.warn('[timeclock] Supabase read falhou, tentando API:', error.message);
+  } catch (supabaseErr) {
+    console.warn('[timeclock] Supabase read exceção, tentando API:', supabaseErr);
+  }
+
+  try {
+    return await fetchTodayTimeClockEntriesFromApi(uid);
+  } catch (apiErr) {
+    const msg = apiErr instanceof Error ? apiErr.message : 'Falha na API';
+    throw new Error(msg);
   }
 }
 
@@ -137,11 +145,13 @@ export async function registerTimeClockPunch(
     console.warn('[timeclock] API punch falhou, fallback Supabase:', apiErr);
   }
 
-  const aiVerified = await verifySelfieForTimeClock(input.photoBase64);
+  const aiVerified = input.user.facePhotoUrl
+    ? true
+    : await verifySelfieForTimeClock(input.photoBase64);
   const photoUrl = await uploadTimeClockPhoto(input.user.id, input.photoBase64);
 
   const payload = {
-    user_id: input.user.id,
+    user_id: String(input.user.id),
     employee_id: input.user.employeeId || null,
     user_name: input.user.name,
     type: input.stage,

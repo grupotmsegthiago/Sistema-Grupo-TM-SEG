@@ -7,6 +7,10 @@ import {
   isEmployeeEligibleForTimeClock,
 } from '../lib/timeclock/cltEmployee.ts';
 import {
+  isOperationalRole,
+  requiresTimeclockUser,
+} from '../lib/timeclock/eligibility.ts';
+import {
   getNextTimeClockStage,
   isTimeClockJourneyComplete,
   TIME_CLOCK_STAGE_LABELS,
@@ -30,6 +34,13 @@ test('isCltUser reconhece flag isClt e contractType', () => {
   assert.equal(isCltUser({ id: '1', name: 'A', contractType: 'clt' }), true);
   assert.equal(isCltUser({ id: '1', name: 'A', contractType: 'PJ' }), false);
   assert.equal(isCltUser(null), false);
+});
+
+test('requiresTimeclockUser inclui perfis operacionais', () => {
+  assert.equal(requiresTimeclockUser({ id: '1', name: 'Op', role: 'Operador' }), true);
+  assert.equal(requiresTimeclockUser({ id: '2', name: 'Adv', role: 'AVANÇADO' }), true);
+  assert.equal(requiresTimeclockUser({ id: '3', name: 'Dir', role: 'Diretoria' }), false);
+  assert.equal(isOperationalRole('operacional'), true);
 });
 
 test('status Experiência é elegível para ponto', () => {

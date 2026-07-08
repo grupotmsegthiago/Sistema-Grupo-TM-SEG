@@ -15,7 +15,11 @@ export const TMSEG_PRESENCE_CHANNEL = 'tmseg-user-presence';
 export const PRESENCE_USER_AVATAR_SRC = '/assets/presence-user-robot.svg';
 
 export type PresenceCategory = 'operacao' | 'administrativo' | 'comercial';
-export type PresenceServiceStatus = 'em_servico' | 'fora' | 'em_almoco';
+export type PresenceServiceStatus = 'em_servico' | 'fora' | 'em_almoco' | 'online' | 'aguardando_ponto';
+
+export interface PresenceStatusOptions {
+  isOnline?: boolean;
+}
 
 export interface PresenceUserState {
   userId: string;
@@ -61,8 +65,11 @@ export function getPresenceCategory(role: string | null | undefined): PresenceCa
   return 'administrativo';
 }
 
-/** Status operacional simplificado para o quadro: Em serviço | Fora de Serviço | Em Almoço. */
-export function getPresenceServiceStatus(user: PresenceUserState): PresenceServiceStatus {
+/** Status operacional para o quadro: serviço, almoço, online, aguardando ponto ou fora. */
+export function getPresenceServiceStatus(
+  user: PresenceUserState,
+  options?: PresenceStatusOptions,
+): PresenceServiceStatus {
   const label = (user.onDutyLabel || '').toLowerCase();
   if (label.includes('almoço') || label.includes('almoco')) return 'em_almoco';
 
@@ -77,6 +84,13 @@ export function getPresenceServiceStatus(user: PresenceUserState): PresenceServi
 
   if (user.onDuty) return 'em_servico';
   if (label.includes('em serviço') || label.includes('em servico')) return 'em_servico';
+
+  const awaitingPunch =
+    label.includes('aguardando ponto') || (user.isClt && !hasIn && !hasOut);
+  if (options?.isOnline && awaitingPunch) return 'aguardando_ponto';
+  if (options?.isOnline) return 'online';
+  if (awaitingPunch) return 'aguardando_ponto';
+
   return 'fora';
 }
 
@@ -84,7 +98,19 @@ export const PRESENCE_SERVICE_STATUS_LABELS: Record<PresenceServiceStatus, strin
   em_servico: 'Em serviço',
   fora: 'Fora de Serviço',
   em_almoco: 'Em Almoço',
+  online: 'Online',
+  aguardando_ponto: 'Aguardando ponto',
 };
+
+/** Nome curto com inicial do sobrenome (evita confundir Beatriz/Beatriz, Thiago/Thiago). */
+export function formatPresenceShortName(name: string): string {
+  const parts = (name || 'Usuário').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'Usuário';
+  if (parts.length === 1) return parts[0];
+  const first = parts[0];
+  const lastInitial = parts[parts.length - 1].charAt(0).toUpperCase();
+  return `${first} ${lastInitial}.`;
+}
 
 export function buildPresenceTooltip(user: PresenceUserState): string {
   const lines: string[] = [];
@@ -222,6 +248,9 @@ export function mergeRosterWithPresence(
         merged.minutesOnDuty = fromPunch.minutesOnDuty;
         merged.punchMarks = fromPunch.punchMarks;
         merged.isClt = merged.isClt || fromPunch.isClt;
+      } else if (merged.isClt && !merged.punchMarks?.length && !merged.onDuty) {
+        merged.onDutyLabel = 'Aguardando ponto';
+        merged.onDuty = false;
       }
       result.push(merged);
       continue;
