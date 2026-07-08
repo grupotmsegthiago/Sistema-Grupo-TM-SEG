@@ -6,7 +6,7 @@ import { useLoadScript, Autocomplete } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
-import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, isIntentionalBillingOverride, extractCityFromAddress } from '../lib/financialUtils';
+import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, isIntentionalBillingOverride, isStaleManualBillingSave, extractCityFromAddress } from '../lib/financialUtils';
 import {
   isDhlSupplyClient,
   validateDhlTableName,
@@ -1699,7 +1699,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // Preserva overrides INTENCIONAIS (edição manual divergente, desconto, etc.).
           const revIntentional = isIntentionalBillingOverride(mission.revenue_edit_reason);
           const costIntentional = isIntentionalBillingOverride(mission.cost_edit_reason);
-          const canResyncSaved = dbValuesLoadedRef.current && !isSavingRef.current && lockAllowsRecalc && !isEffectivelyLocked;
+          const staleManualRev = isStaleManualBillingSave(mission.revenue_edit_reason);
+          const staleManualCost = isStaleManualBillingSave(mission.cost_edit_reason);
+          const staleManualBilling = staleManualRev || staleManualCost;
+          // OS travada (salva/aprovada): só re-sincroniza se foi "Salvamento manual
+          // confirmado" e o motor evoluiu (ex.: hora/km excedente passou a entrar).
+          const canResyncSaved = dbValuesLoadedRef.current && !isSavingRef.current && lockAllowsRecalc
+              && (!isEffectivelyLocked || staleManualBilling);
 
           if (canResyncSaved) {
               const currentRev = parseNumber(revenueInput);
@@ -1708,8 +1714,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   setRevenueInput(fmtBR(autoClientTotal));
               }
               const currentCost = parseNumber(costInput);
-              const needCost = !mission.is_same_os && !costIntentional && !userManuallyEditedRef.current && !isControllerRole
-                  && autoProviderTotal > 0 && Math.abs(currentCost - autoProviderTotal) > 1;
+              const needCost = !mission.is_same_os && !costIntentional && !isControllerRole
+                  && autoProviderTotal > 0 && Math.abs(currentCost - autoProviderTotal) > 1
+                  && (!userManuallyEditedRef.current || staleManualBilling);
               if (needCost) {
                   setCostInput(fmtBR(autoProviderTotal));
               } else if (mission.is_same_os && currentCost !== 0) {
@@ -1721,6 +1728,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               if ((needRev || needCost) && staleAutoResyncDoneRef.current !== mission.id) {
                   staleAutoResyncDoneRef.current = mission.id;
                   const r2 = (v: number) => Math.round(v * 100) / 100;
+                  const brl = (v: number) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                   const revServiceOnly = financialData.client.serviceTotal;
                   const costServiceOnly = mission.is_same_os ? 0 : financialData.provider.serviceTotal;
                   const toll = parseNumber(tollInput);
@@ -1730,14 +1738,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   };
                   if (needRev) {
                       payload.revenue_value = r2(revServiceOnly);
-                      payload.revenue_edit_reason = '';
+                      payload.revenue_edit_reason = `[Sistema - ${formatNowDateTimeBR()}] Recalculado pelo sistema — receita: ${brl(r2(revServiceOnly))}`;
                   }
                   if (needCost) {
                       payload.cost_value = r2(costServiceOnly);
-                      payload.cost_edit_reason = '';
-                  }
-                  if (!mission.billing_verified_by && (needRev || needCost)) {
-                      payload.billing_verified_by = null;
+                      payload.cost_edit_reason = `[Sistema - ${formatNowDateTimeBR()}] Recalculado pelo sistema — custo: ${brl(r2(costServiceOnly))}`;
                   }
                   (async () => {
                       try {
@@ -1745,8 +1750,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           if (error) throw error;
                           setMission((prev) => prev ? {
                               ...prev,
-                              ...(needRev ? { revenue_value: payload.revenue_value as number, revenue_edit_reason: '' } : {}),
-                              ...(needCost ? { cost_value: payload.cost_value as number, cost_edit_reason: '' } : {}),
+                              ...(needRev ? {
+                                  revenue_value: payload.revenue_value as number,
+                                  revenue_edit_reason: payload.revenue_edit_reason as string,
+                              } : {}),
+                              ...(needCost ? {
+                                  cost_value: payload.cost_value as number,
+                                  cost_edit_reason: payload.cost_edit_reason as string,
+                              } : {}),
                           } : prev);
                           await supabase.from('system_logs').insert([{
                               user_name: 'Sistema',
@@ -1764,7 +1775,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           }]);
                           showNotification(
                               'Cálculo atualizado',
-                              'Valor salvo anteriormente foi alinhado automaticamente ao cálculo da tabela.',
+                              'Totais alinhados automaticamente à soma base + km + hora + pedágio + deslocamento.',
                               'success',
                           );
                       } catch (e) {
