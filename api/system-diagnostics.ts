@@ -1,8 +1,4 @@
-import {
-  assertSystemDiagnosticsAccess,
-  extractAuthToken,
-} from '../lib/services/systemAccess.js';
-import { diagnosticoIntegracoes } from '../server/integracoesDiagnostics.js';
+import { extractAuthToken, assertSystemDiagnosticsAccess } from '../lib/services/systemAccess.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {
@@ -20,6 +16,7 @@ export default async function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
   try {
+    const { diagnosticoIntegracoes } = await import('../server/integracoesDiagnostics.js');
     const semOpcionais = String(req.query?.semOpcionais || req.query?.core || '') === '1'
       || String(req.query?.semOpcionais || '').toLowerCase() === 'true';
 
@@ -27,9 +24,7 @@ export default async function handler(req: any, res: any) {
       incluirOpcionais: !semOpcionais,
     });
 
-    const httpStatus = result.overall === 'down' ? 503 : result.overall === 'degraded' ? 200 : 200;
-
-    res.status(httpStatus).json({
+    res.status(result.overall === 'down' ? 503 : 200).json({
       ok: result.overall !== 'down',
       ...result,
     });

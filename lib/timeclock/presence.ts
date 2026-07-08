@@ -1,6 +1,5 @@
-import { formatTimeBR } from '../dateUtils';
-import { TIME_CLOCK_STAGE_SHORT } from './stages';
-import type { TimeClockEntry, TimeClockStage } from './types';
+import type { TimeClockEntry } from './types';
+import { buildPunchMarks, type PresencePunchMark } from './punchMarks';
 import {
   buildPresenceFromPunchEntries,
   resolvePunchEntriesForMember,
@@ -8,18 +7,15 @@ import {
   type TeamRosterMember,
 } from './teamPunchBoard';
 
+export type { PresencePunchMark } from './punchMarks';
+export { buildPunchMarks } from './punchMarks';
+
 export const TMSEG_PRESENCE_CHANNEL = 'tmseg-user-presence';
 /** Ícone de avatar para usuários online no quadro de presença. */
 export const PRESENCE_USER_AVATAR_SRC = '/assets/presence-user-robot.svg';
 
 export type PresenceCategory = 'operacao' | 'administrativo' | 'comercial';
 export type PresenceServiceStatus = 'em_servico' | 'fora' | 'em_almoco';
-
-export interface PresencePunchMark {
-  type: TimeClockStage;
-  label: string;
-  time: string;
-}
 
 export interface PresenceUserState {
   userId: string;
@@ -89,18 +85,6 @@ export const PRESENCE_SERVICE_STATUS_LABELS: Record<PresenceServiceStatus, strin
   fora: 'Fora de Serviço',
   em_almoco: 'Em Almoço',
 };
-
-export function buildPunchMarks(
-  entries: Pick<TimeClockEntry, 'type' | 'timestamp'>[]
-): PresencePunchMark[] {
-  return [...entries]
-    .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-    .map((entry) => ({
-      type: entry.type,
-      label: TIME_CLOCK_STAGE_SHORT[entry.type],
-      time: formatTimeBR(entry.timestamp),
-    }));
-}
 
 export function buildPresenceTooltip(user: PresenceUserState): string {
   const lines: string[] = [];

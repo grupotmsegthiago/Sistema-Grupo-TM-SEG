@@ -1,8 +1,5 @@
 import type { TimeClockEntry } from './types';
-import {
-  buildPunchMarks,
-  type PresenceUserState,
-} from './presence';
+import { buildPunchMarks } from './punchMarks';
 import {
   getMinutesOnDutyToday,
   getOnDutyStageLabel,
@@ -13,6 +10,14 @@ export interface TeamRosterMember {
   userId: string;
   name: string;
   role: string;
+}
+
+export interface PunchDerivedState {
+  isClt: boolean;
+  onDuty: boolean;
+  onDutyLabel: string;
+  minutesOnDuty?: number;
+  punchMarks: ReturnType<typeof buildPunchMarks>;
 }
 
 /** Chave estável para deduplicar pessoas (evita dois robôs do mesmo nome). */
@@ -118,10 +123,7 @@ export function resolvePunchEntriesForMember(
 export function buildPresenceFromPunchEntries(
   member: TeamRosterMember,
   entries: Pick<TimeClockEntry, 'type' | 'timestamp'>[],
-): Pick<
-  PresenceUserState,
-  'onDuty' | 'onDutyLabel' | 'minutesOnDuty' | 'punchMarks' | 'isClt'
-> {
+): PunchDerivedState {
   const punchMarks = buildPunchMarks(entries);
   const onDuty = isCltOnDutyToday(entries);
   const onDutyLabel = entries.length > 0 ? getOnDutyStageLabel(entries) : 'Fora de Serviço';

@@ -1,9 +1,4 @@
-import { createRhAdminClient } from '../lib/rh/adminSupabase.js';
-import {
-  assertSystemDiagnosticsAccess,
-  extractAuthToken,
-} from '../lib/services/systemAccess.js';
-import { loadTeamPresenceBoardData } from '../lib/services/teamPresenceBoardService.js';
+import { extractAuthToken, assertSystemDiagnosticsAccess } from '../lib/services/systemAccess.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {
@@ -21,6 +16,8 @@ export default async function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
   try {
+    const { createRhAdminClient } = await import('../lib/rh/adminSupabase.js');
+    const { loadTeamPresenceBoardData } = await import('../lib/services/teamPresenceBoardService.js');
     const sb = createRhAdminClient();
     const payload = await loadTeamPresenceBoardData(sb);
     res.status(200).json({ ok: true, ...payload });
