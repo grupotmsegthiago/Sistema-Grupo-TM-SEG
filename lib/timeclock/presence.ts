@@ -1,4 +1,6 @@
 export const TMSEG_PRESENCE_CHANNEL = 'tmseg-user-presence';
+/** Ícone de avatar para usuários online no quadro de presença. */
+export const PRESENCE_USER_AVATAR_SRC = '/assets/presence-user-robot.svg';
 
 export interface PresenceUserState {
   userId: string;
