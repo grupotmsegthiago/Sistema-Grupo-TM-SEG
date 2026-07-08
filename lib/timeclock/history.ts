@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import type { TimeClockEntry } from './types';
+import { fetchTimeClockEntriesFromApi } from './fetchEntriesApi';
 
 export interface CltEmployeeOption {
   id: string;
@@ -26,19 +27,26 @@ export async function fetchTimeClockHistory(params: {
   endDate: string;
   userId?: string;
 }): Promise<TimeClockEntry[]> {
-  let query = supabase
-    .from('time_clock')
-    .select('*')
-    .gte('timestamp', `${params.startDate}T00:00:00`)
-    .lte('timestamp', `${params.endDate}T23:59:59`);
+  try {
+    return await fetchTimeClockEntriesFromApi(params);
+  } catch (apiErr) {
+    let query = supabase
+      .from('time_clock')
+      .select('*')
+      .gte('timestamp', `${params.startDate}T00:00:00`)
+      .lte('timestamp', `${params.endDate}T23:59:59`);
 
-  if (params.userId) {
-    query = query.eq('user_id', params.userId);
+    if (params.userId) {
+      query = query.eq('user_id', params.userId);
+    }
+
+    const { data, error } = await query.order('timestamp', { ascending: false });
+    if (error) {
+      const msg = apiErr instanceof Error ? apiErr.message : 'Falha na API';
+      throw new Error(error.message || msg);
+    }
+    return (data || []) as TimeClockEntry[];
   }
-
-  const { data, error } = await query.order('timestamp', { ascending: false });
-  if (error) throw error;
-  return (data || []) as TimeClockEntry[];
 }
 
 export function groupHistoryByEmployee(

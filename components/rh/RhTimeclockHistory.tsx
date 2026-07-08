@@ -34,6 +34,7 @@ function groupByDay(entries: TimeClockEntry[]): { date: string; items: TimeClock
 const RhTimeclockHistory: React.FC = () => {
   const [tab, setTab] = useState<Tab>('geral');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [logs, setLogs] = useState<TimeClockEntry[]>([]);
   const [employees, setEmployees] = useState<CltEmployeeOption[]>([]);
   const [selectedEmployeeUserId, setSelectedEmployeeUserId] = useState('');
@@ -59,6 +60,7 @@ const RhTimeclockHistory: React.FC = () => {
 
   const loadLogs = async () => {
     setLoading(true);
+    setError('');
     try {
       const data = await fetchTimeClockHistory({
         startDate,
@@ -66,8 +68,9 @@ const RhTimeclockHistory: React.FC = () => {
         userId: tab === 'funcionario' && selectedEmployeeUserId ? selectedEmployeeUserId : undefined,
       });
       setLogs(data);
-    } catch {
+    } catch (e: any) {
       setLogs([]);
+      setError(e?.message || 'Falha ao carregar histórico de ponto');
     } finally {
       setLoading(false);
     }
@@ -157,6 +160,12 @@ const RhTimeclockHistory: React.FC = () => {
           </div>
         )}
       </div>
+
+      {error && (
+        <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-bold">
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="py-16 text-center">
