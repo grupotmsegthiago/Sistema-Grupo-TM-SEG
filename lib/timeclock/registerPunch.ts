@@ -1,6 +1,7 @@
 import { generateContent } from '../gemini';
 import { supabase } from '../supabase';
 import { formatIsoDateBR } from '../dateUtils';
+import { requestPresenceRefresh } from '../presenceChannel';
 import type { TimeClockEntry, TimeClockStage, TimeClockUserContext } from './types';
 import { getNextTimeClockStage } from './stages';
 
@@ -90,5 +91,12 @@ export async function registerTimeClockPunch(
 
   const { data, error } = await supabase.from('time_clock').insert([payload]).select('*').single();
   if (error) throw error;
+
+  try {
+    requestPresenceRefresh();
+  } catch {
+    // se o canal de presença ainda não estiver ativo, não bloqueia a batida
+  }
+
   return data as TimeClockEntry;
 }
