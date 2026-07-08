@@ -28,7 +28,8 @@ import {
 } from 'lucide-react';
 import { useLoadScript, Autocomplete, GoogleMap, Marker } from '@react-google-maps/api';
 import { googleMapsApiKey, libraries, googleMapsLoadConfig } from '../lib/maps';
-import { extractCoordinates, calculateDistance } from '../lib/utils';
+import { extractCoordinates } from '../lib/utils';
+import { fetchRouteProgress, normalizeProgressDestination, resolveRouteProgressPct } from '../lib/routeProgress';
 import DhlIntakeTimeline from './DhlIntakeTimeline';
 import TollConfirmationDialog from './TollConfirmationDialog';
 
@@ -1275,22 +1276,6 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         return { isDhl, destinationAddress, originCity, destCity, isRaio, raioFranchiseKm, appliedTableName, franchiseKm, suggestions };
     }, [editData, mission, clientTables, missionTotals]);
 
-    React.useEffect(() => {
-        const isAnomaly = missionTotals.plannedKm > 0 && missionTotals.traveled > 0 && missionTotals.traveled > missionTotals.plannedKm * 5;
-        if (isAnomaly) return;
-
-        if (missionTotals.traveled > 0 && missionTotals.plannedKm > 0) {
-            const pct = Math.round((missionTotals.traveled / missionTotals.plannedKm) * 100);
-            if (pct !== editData.manualProgress) {
-                setEditData(prev => ({ ...prev, manualProgress: pct }));
-            }
-        } else if (missionTotals.plannedKm > 0 && missionTotals.traveled === 0) {
-            if (editData.manualProgress !== 0) {
-                setEditData(prev => ({ ...prev, manualProgress: 0 }));
-            }
-        }
-    }, [missionTotals.traveled, missionTotals.plannedKm]);
-
     const loadMissionData = async () => {
         if (!mission) return;
         setIsLoadingData(true);
@@ -1545,7 +1530,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 mapLink: `https://www.google.com/maps?q=${place.geometry.location.lat()},${place.geometry.location.lng()}&z=17`
             }));
             setCurrentPreviewCoords({ lat: place.geometry.location.lat(), lng: place.geometry.location.lng() });
-            calculateProgressFromCoords(place.geometry.location.lat(), place.geometry.location.lng());
+            calculateProgressFromRoute(place.geometry.location.lat(), place.geometry.location.lng());
         }
     };
 
@@ -1563,26 +1548,39 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }
     };
 
-    const calculateProgressFromCoords = async (currentLat: number, currentLng: number) => {
-        if (!editData.origin) return;
-        if (!missionTotals.plannedKm || missionTotals.plannedKm <= 0) return;
-
+    /** Progresso via rota Google: origem → posição atual → destino (Distance Matrix). */
+    const calculateProgressFromRoute = async (currentLat: number, currentLng: number) => {
+        if (!editData.origin?.trim()) {
+            showNotification('Progresso', 'Informe a origem da missão para calcular o progresso.', 'warning');
+            return;
+        }
+        const destination = normalizeProgressDestination(editData.destination || mission?.destination || '', {
+            applyVtc02h: editData.applyVtc02h,
+            applyCeva200km: editData.applyCeva200km,
+            client: mission?.client,
+        });
+        if (!destination) {
+            showNotification('Progresso', 'Informe o destino da missão para calcular o progresso.', 'warning');
+            return;
+        }
         try {
-            const geocoder = new google.maps.Geocoder();
-            const originRes = await geocoder.geocode({ address: editData.origin });
-            
-            if (originRes.results && originRes.results[0]) {
-                const originLoc = originRes.results[0].geometry.location;
-                const distStraight = calculateDistance(originLoc.lat(), originLoc.lng(), currentLat, currentLng);
-                const distTraveledEst = distStraight * 1.25;
-                const totalPlanned = missionTotals.plannedKm;
-                const percentage = Math.min(99, Math.round((distTraveledEst / totalPlanned) * 100));
-                
-                setEditData(prev => ({ ...prev, manualProgress: percentage }));
-                showNotification('IA Logística', `Progresso da viagem atualizado: ${percentage}%`, 'info');
+            const result = await fetchRouteProgress({
+                origin: editData.origin.trim(),
+                destination,
+                current: `${currentLat},${currentLng}`,
+            });
+            if (result.success) {
+                setEditData(prev => ({ ...prev, manualProgress: result.progressPct }));
+                showNotification(
+                    'Progresso da Rota',
+                    `${result.progressPct}% — ${result.traveledKm} km de ${result.totalKm} km (origem → atual → destino)`,
+                    'info',
+                );
+            } else {
+                showNotification('Progresso', `Não foi possível calcular a rota: ${result.error || 'erro'}`, 'warning');
             }
         } catch (e) {
-            console.error("Falha no cálculo inteligente", e);
+            console.error('[Progresso Rota]', e);
         }
     };
 
@@ -1616,7 +1614,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             setEditData(prev => ({ ...prev, mapLink: standardLink }));
             showNotification('GPS Identificado', 'Resolvendo endereço...', 'success');
             const resolvedAddress = await reverseGeocode(coords.lat, coords.lng);
-            calculateProgressFromCoords(coords.lat, coords.lng);
+            calculateProgressFromRoute(coords.lat, coords.lng);
             const isRealAddress = resolvedAddress && !/^LAT\s/i.test(resolvedAddress);
             if (isRealAddress) {
                 showNotification('GPS Identificado', `Endereço: ${resolvedAddress}. Link e localização sincronizados.`, 'success');
@@ -2070,12 +2068,24 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 progressValue = 100;
             } else if (isOdometerAnomaly) {
                 progressValue = editData.manualProgress;
-            } else if (kmRodado > 0 && plannedDist > 0) {
-                progressValue = Math.min(100, Math.round((kmRodado / plannedDist) * 100));
-            } else if (editData.manualProgress > 0) {
-                progressValue = editData.manualProgress;
             } else {
-                progressValue = 0;
+                const routeProgress = await resolveRouteProgressPct({
+                    origin: editData.origin,
+                    destination: finalDestination,
+                    mapLink: editData.mapLink,
+                    applyVtc02h: editData.applyVtc02h,
+                    applyCeva200km: editData.applyCeva200km,
+                    client: mission?.client,
+                });
+                if (routeProgress) {
+                    progressValue = routeProgress.progressPct;
+                } else if (kmRodado > 0 && plannedDist > 0) {
+                    progressValue = Math.min(100, Math.round((kmRodado / plannedDist) * 100));
+                } else if (editData.manualProgress > 0) {
+                    progressValue = editData.manualProgress;
+                } else {
+                    progressValue = 0;
+                }
             }
 
             if (editData.provider && editData.provider.trim() !== '' && 

@@ -236,13 +236,36 @@ const GoalUpdateAreaChart: React.FC<{
     );
 };
 
-const MetricRow: React.FC<{ icon: React.ReactNode; label: string; value: string; valueClass?: string }> = ({ icon, label, value, valueClass = 'text-slate-800' }) => (
-    <div className="flex items-center gap-2.5 py-2 border-b border-slate-100 last:border-b-0">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500">{icon}</div>
-        <span className="flex-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</span>
-        <span className={`text-[11px] font-black tabular-nums ${valueClass}`}>{value}</span>
-    </div>
-);
+type MetricFlow = 'in' | 'out' | 'result';
+
+const MetricRow: React.FC<{
+    icon: React.ReactNode;
+    label: string;
+    amount: number;
+    flow: MetricFlow;
+    suffix?: string;
+}> = ({ icon, label, amount, flow, suffix }) => {
+    const isPositive = amount >= 0;
+    const valueClass =
+        flow === 'in'
+            ? 'text-emerald-600'
+            : flow === 'out'
+                ? 'text-red-600'
+                : isPositive
+                    ? 'text-emerald-600'
+                    : 'text-red-600';
+    const sign = flow === 'in' ? '(+)' : flow === 'out' ? '(-)' : isPositive ? '(+)' : '(-)';
+    const displayAmount = Math.abs(amount);
+    const value = `${sign} ${formatCurrency(displayAmount)}${suffix ? ` ${suffix}` : ''}`;
+
+    return (
+        <div className="flex items-center gap-2.5 py-2 border-b border-slate-100 last:border-b-0">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500">{icon}</div>
+            <span className="flex-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</span>
+            <span className={`text-[11px] font-black tabular-nums ${valueClass}`}>{value}</span>
+        </div>
+    );
+};
 
 // Janela CANÔNICA delegada para lib/missionFinancialsCanonical (mesma usada
 // pelo Relatório, Dashboard e worker do e-mail).
@@ -564,25 +587,27 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                         <MetricRow
                             icon={<Coins size={14} />}
                             label="Receita"
-                            value={`${formatCurrency(currentRevenue)} (${stats.percentage.toFixed(1)}%)`}
-                            valueClass={stats.textClass}
+                            amount={currentRevenue}
+                            flow="in"
+                            suffix={`(${stats.percentage.toFixed(1)}%)`}
                         />
                         <MetricRow
                             icon={<ShoppingCart size={14} />}
                             label="Custos operacionais"
-                            value={formatCurrency(currentCost)}
-                            valueClass="text-red-600"
+                            amount={currentCost}
+                            flow="out"
                         />
                         <MetricRow
                             icon={<Landmark size={14} />}
                             label="Lucro líquido"
-                            value={`${formatCurrency(stats.profit)} (${stats.marginPercent.toFixed(1)}%)`}
-                            valueClass={stats.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}
+                            amount={stats.profit}
+                            flow="result"
+                            suffix={`(${stats.marginPercent.toFixed(1)}%)`}
                         />
                         {torresCost > 0 && (
                             <>
-                                <MetricRow icon={<Zap size={14} />} label="Custo Torres" value={formatCurrency(torresCost)} valueClass="text-amber-600" />
-                                <MetricRow icon={<Target size={14} />} label="Custo fornecedores" value={formatCurrency(otherCost)} valueClass="text-slate-600" />
+                                <MetricRow icon={<Zap size={14} />} label="Custo Torres" amount={torresCost} flow="out" />
+                                <MetricRow icon={<Target size={14} />} label="Custo fornecedores" amount={otherCost} flow="out" />
                             </>
                         )}
                     </div>
