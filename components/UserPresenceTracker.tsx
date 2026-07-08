@@ -48,17 +48,21 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
         // Se conseguirmos enriquecer, retorna o payload completo; se falhar, quickPayload.
         try {
           const user = await enrichUserWithCltData(raw);
+          const contractType = (user.contractType || '').toUpperCase() || undefined;
           let onDuty = false;
           let onDutyLabel = 'Online';
           if (isCltUser(user)) {
             const entries = await fetchTodayTimeClockEntries(user.id);
             onDuty = isCltOnDutyToday(entries);
             onDutyLabel = getOnDutyStageLabel(entries);
+          } else if (contractType) {
+            onDutyLabel = contractType;
           }
           return {
             userId: user.id,
             name: user.name || 'Usuário',
             role: user.role || 'Operador',
+            contractType,
             isClt: isCltUser(user),
             onDuty,
             onDutyLabel,
