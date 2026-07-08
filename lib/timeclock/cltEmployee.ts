@@ -2,6 +2,7 @@ import { supabase } from '../supabase';
 import type { CltEmployeeInfo, TimeClockUserContext } from './types';
 import { employeeRequiresTimeclock } from './eligibility';
 import { normalizeShiftType } from './shiftRules';
+import { namesLikelyMatch } from './nameMatch';
 
 /** Status que permitem bater ponto (período de experiência também conta). */
 export const TIMECLOCK_ELIGIBLE_STATUSES = ['Ativo', 'Experiência'] as const;
@@ -109,17 +110,21 @@ export async function fetchEmployeeForUser(
     }
   }
 
-  // Fallback: nome do login contido no cadastro RH (ex.: login "Beatriz" → "BEATRIZ DE CARVALHO SIMÕES").
+  // Fallback: nome do login (ex.: "Daniel Pinto" → "DANIEL LUIZ LIMA PINTO").
   if (user.name) {
     const name = user.name.trim();
-    const { data: byName } = await supabase
+    const firstToken = name.split(/\s+/)[0];
+    const { data: candidates } = await supabase
       .from('rh_employees')
       .select(EMPLOYEE_SELECT)
-      .ilike('full_name', `%${name}%`)
+      .ilike('full_name', `%${firstToken}%`)
       .in('status', statusFilter)
       .is('deleted_at', null)
-      .limit(1)
-      .maybeSingle();
+      .limit(20);
+
+    const byName = (candidates || []).find((row) =>
+      namesLikelyMatch(String(row.full_name || ''), name),
+    );
 
     if (byName) {
       await ensureEmployeeUserLink(byName as CltEmployeeInfo & { email?: string | null }, user);

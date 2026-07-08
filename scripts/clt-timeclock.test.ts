@@ -43,6 +43,13 @@ test('requiresTimeclockUser inclui perfis operacionais', () => {
   assert.equal(isOperationalRole('operacional'), true);
 });
 
+test('namesLikelyMatch vincula Daniel Pinto ao cadastro RH', async () => {
+  const { namesLikelyMatch } = await import('../lib/timeclock/nameMatch.ts');
+  assert.equal(namesLikelyMatch('DANIEL LUIZ LIMA PINTO', 'Daniel Pinto'), true);
+  assert.equal(namesLikelyMatch('BEATRIZ DE CARVALHO SIMÕES', 'Beatriz'), true);
+  assert.equal(namesLikelyMatch('FABRÍCIO HONORATO', 'Michelle'), false);
+});
+
 test('status Experiência é elegível para ponto', () => {
   assert.equal(isEmployeeEligibleForTimeClock('Ativo'), true);
   assert.equal(isEmployeeEligibleForTimeClock('Experiência'), true);

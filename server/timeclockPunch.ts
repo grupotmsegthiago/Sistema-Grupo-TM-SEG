@@ -4,9 +4,10 @@ import {
   extractUserIdFromToken,
   resolveUserRoleFromToken,
 } from '../lib/rh/apiEmployeesAuth';
-import { isDiretoriaRole } from '../lib/timeclock/eligibility';
+import { isDiretoriaRole, employeeRequiresTimeclock } from '../lib/timeclock/eligibility';
 import { canPunchEntryNow } from '../lib/timeclock/shiftRules';
 import { getNextTimeClockStage } from '../lib/timeclock/stages';
+import { namesLikelyMatch } from '../lib/timeclock/nameMatch';
 import type { TimeClockStage } from '../lib/timeclock/types';
 import { formatIsoDateBR, getBrazilDayBounds } from '../lib/dateUtils';
 
@@ -16,22 +17,76 @@ function sb() {
   return client;
 }
 
+const EMPLOYEE_PUNCH_SELECT =
+  'id, user_id, full_name, contract_type, status, shift_type, requires_timeclock, face_photo_url, email';
+
 async function loadEmployeeForUser(userId: string) {
-  const { data } = await sb()
+  const client = sb();
+  const { data: byUser } = await client
     .from('rh_employees')
-    .select('id, user_id, full_name, contract_type, status, shift_type, requires_timeclock, face_photo_url')
+    .select(EMPLOYEE_PUNCH_SELECT)
     .eq('user_id', userId)
     .is('deleted_at', null)
     .maybeSingle();
-  return data;
+  if (byUser) return byUser;
+
+  const { data: userRow } = await client
+    .from('system_users')
+    .select('id, name, email')
+    .eq('id', userId)
+    .maybeSingle();
+  if (!userRow) return null;
+
+  const statusFilter = ['Ativo', 'Experiência'];
+
+  if (userRow.email) {
+    const { data: byEmail } = await client
+      .from('rh_employees')
+      .select(EMPLOYEE_PUNCH_SELECT)
+      .ilike('email', userRow.email.trim())
+      .in('status', statusFilter)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (byEmail) {
+      if (!byEmail.user_id) {
+        await client
+          .from('rh_employees')
+          .update({ user_id: userId, updated_at: new Date().toISOString() })
+          .eq('id', byEmail.id);
+      }
+      return { ...byEmail, user_id: byEmail.user_id || userId };
+    }
+  }
+
+  if (userRow.name) {
+    const firstToken = String(userRow.name).trim().split(/\s+/)[0];
+    const { data: candidates } = await client
+      .from('rh_employees')
+      .select(EMPLOYEE_PUNCH_SELECT)
+      .ilike('full_name', `%${firstToken}%`)
+      .in('status', statusFilter)
+      .is('deleted_at', null)
+      .limit(20);
+
+    const match = (candidates || []).find((row) =>
+      namesLikelyMatch(String(row.full_name || ''), userRow.name),
+    );
+    if (match) {
+      if (!match.user_id) {
+        await client
+          .from('rh_employees')
+          .update({ user_id: userId, updated_at: new Date().toISOString() })
+          .eq('id', match.id);
+      }
+      return { ...match, user_id: match.user_id || userId };
+    }
+  }
+
+  return null;
 }
 
 function requiresPunch(employee: any): boolean {
-  if (!employee) return false;
-  if (employee.requires_timeclock === true) return true;
-  const ct = String(employee.contract_type || '').toUpperCase();
-  const st = String(employee.status || '');
-  return ct === 'CLT' && ['Ativo', 'Experiência'].includes(st);
+  return employeeRequiresTimeclock(employee);
 }
 
 export async function handleTimeclockPunch(req: Request, res: Response): Promise<void> {
