@@ -79,6 +79,8 @@ async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): 
     const storedVersion = localStorage.getItem('app_version');
     if (storedVersion && storedVersion !== APP_VERSION) {
       console.log(`[Versão] Atualizado de ${storedVersion} → ${APP_VERSION}`);
+      // Mantém login: só atualiza a marca de versão local (não limpa authToken/userData).
+      localStorage.setItem('app_version', APP_VERSION);
       try {
         sessionStorage.clear();
       } catch {}
