@@ -2120,15 +2120,27 @@ export async function registerRoutes(
       if (!isGeminiConfigured()) {
         return res.status(503).json({
           ok: false,
+          code: 'KEY_MISSING',
           error: "Chave Gemini não configurada",
-          hint: "Configure GEMINI_API_KEY nas variáveis de ambiente da Vercel",
+          hint: "Configure GEMINI_API_KEY nas variáveis de ambiente da Vercel (Settings → Environment Variables) e faça redeploy.",
+          checkedEnvVars: ['GEMINI_API_KEY', 'AI_INTEGRATIONS_GEMINI_API_KEY', 'GOOGLE_GEMINI_API_KEY'],
         });
       }
       const ping = await pingGeminiHealth();
       res.json({ ok: true, model: ping.model, text: ping.text });
     } catch (error: any) {
       console.error("[Gemini Health]", error);
-      res.status(500).json({ ok: false, error: error.message || "Falha ao contactar Gemini" });
+      const classified = classifyGeminiError(error);
+      res.status(500).json({
+        ok: false,
+        code: classified.code,
+        error: classified.message,
+        hint: classified.code === 'KEY_INVALID'
+          ? 'Gere uma nova chave em Google AI Studio e atualize GEMINI_API_KEY na Vercel.'
+          : classified.code === 'BILLING' || classified.code === 'QUOTA'
+            ? 'Ative faturamento/créditos no Google AI Studio (aistudio.google.com).'
+            : 'Verifique GEMINI_API_KEY e o painel do Google AI Studio.',
+      });
     }
   });
 
