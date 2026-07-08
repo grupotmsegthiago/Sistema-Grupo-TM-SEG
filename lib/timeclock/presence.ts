@@ -4,6 +4,8 @@ export interface PresenceUserState {
   userId: string;
   name: string;
   role: string;
+  /** Tipo de contrato do funcionário (CLT, PJ, MEI, AUTONOMO, etc.). Vazio se não for funcionário RH. */
+  contractType?: string;
   isClt: boolean;
   onDuty: boolean;
   onDutyLabel: string;
@@ -20,6 +22,10 @@ function normalizePresenceMeta(meta: RawPresenceMeta): PresenceUserState | null 
     userId,
     name: typeof meta.name === 'string' && meta.name.trim() ? meta.name.trim() : 'Usuário',
     role: typeof meta.role === 'string' && meta.role.trim() ? meta.role.trim() : 'Online',
+    contractType:
+      typeof meta.contractType === 'string' && meta.contractType.trim()
+        ? meta.contractType.trim().toUpperCase()
+        : undefined,
     isClt: meta.isClt === true,
     onDuty: meta.onDuty === true,
     onDutyLabel:
