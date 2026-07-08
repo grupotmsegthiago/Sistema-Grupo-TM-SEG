@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { getBrazilDayBounds } from '../dateUtils';
 import type { TimeClockEntry } from './types';
 import { fetchTimeClockEntriesFromApi } from './fetchEntriesApi';
 import { TIMECLOCK_ELIGIBLE_STATUSES } from './cltEmployee';
@@ -31,22 +32,30 @@ export async function fetchTimeClockHistory(params: {
   try {
     return await fetchTimeClockEntriesFromApi(params);
   } catch (apiErr) {
-    let query = supabase
-      .from('time_clock')
-      .select('*')
-      .gte('timestamp', `${params.startDate}T00:00:00`)
-      .lte('timestamp', `${params.endDate}T23:59:59`);
+    try {
+      const sameDay = params.startDate === params.endDate;
+      let query = supabase.from('time_clock').select('*');
+      if (sameDay) {
+        const { start, end } = getBrazilDayBounds(params.startDate);
+        query = query.gte('timestamp', start).lte('timestamp', end);
+      } else {
+        const startBounds = getBrazilDayBounds(params.startDate);
+        const endBounds = getBrazilDayBounds(params.endDate);
+        query = query.gte('timestamp', startBounds.start).lte('timestamp', endBounds.end);
+      }
 
-    if (params.userId) {
-      query = query.eq('user_id', params.userId);
-    }
+      if (params.userId) {
+        query = query.eq('user_id', params.userId);
+      }
 
-    const { data, error } = await query.order('timestamp', { ascending: false });
-    if (error) {
-      const msg = apiErr instanceof Error ? apiErr.message : 'Falha na API';
-      throw new Error(error.message || msg);
+      const { data, error } = await query.order('timestamp', { ascending: false });
+      if (error) throw error;
+      return (data || []) as TimeClockEntry[];
+    } catch (supabaseErr) {
+      const apiMsg = apiErr instanceof Error ? apiErr.message : 'Falha na API';
+      const sbMsg = supabaseErr instanceof Error ? supabaseErr.message : 'Falha no Supabase';
+      throw new Error(sbMsg || apiMsg);
     }
-    return (data || []) as TimeClockEntry[];
   }
 }
 

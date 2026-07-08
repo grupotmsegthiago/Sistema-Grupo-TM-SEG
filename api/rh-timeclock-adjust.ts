@@ -3,12 +3,19 @@ import {
   extractUserIdFromToken,
   resolveUserRoleFromToken,
 } from '../lib/rh/apiEmployeesAuth.js';
-import { buildBrazilTimestampFromHm, getBrazilDayBounds } from '../lib/dateUtils.js';
-import { TIME_CLOCK_STAGE_LABELS, TIME_CLOCK_STAGE_ORDER } from '../lib/timeclock/stages.js';
-import type { TimeClockStage } from '../lib/timeclock/types.js';
 
 const DEFAULT_SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
 const TMSEG_REF = 'ajhmmjuewdsukecaimik';
+
+const TIME_CLOCK_STAGE_ORDER = ['IN', 'BREAK_START', 'BREAK_END', 'OUT'] as const;
+type TimeClockStage = (typeof TIME_CLOCK_STAGE_ORDER)[number];
+
+const TIME_CLOCK_STAGE_LABELS: Record<TimeClockStage, string> = {
+  IN: 'Entrada',
+  BREAK_START: 'Saída almoço',
+  BREAK_END: 'Retorno almoço',
+  OUT: 'Fim do expediente',
+};
 
 function authToken(req: any): string {
   return String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '') || String(req.headers?.['x-auth-token'] || '');
@@ -22,6 +29,25 @@ function decodeRef(key: string): string | null {
   } catch {
     return null;
   }
+}
+
+function getBrazilDayBounds(isoDate: string): { start: string; end: string } {
+  const date = isoDate.trim();
+  return {
+    start: new Date(`${date}T00:00:00-03:00`).toISOString(),
+    end: new Date(`${date}T23:59:59.999-03:00`).toISOString(),
+  };
+}
+
+function buildBrazilTimestampFromHm(isoDate: string, timeHm: string): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(timeHm || '').trim());
+  if (!m) throw new Error('Horário inválido — use HH:MM');
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h > 23 || min > 59) throw new Error('Horário inválido — use HH:MM entre 00:00 e 23:59');
+  const hh = String(h).padStart(2, '0');
+  const mm = String(min).padStart(2, '0');
+  return new Date(`${isoDate.trim()}T${hh}:${mm}:00-03:00`).toISOString();
 }
 
 async function adminSupabase() {
@@ -64,12 +90,12 @@ function validateStageOrder(times: Partial<Record<TimeClockStage, string | null>
 }
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') {
-    res.status(405).json({ error: 'method_not_allowed' });
-    return;
-  }
-
   try {
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'method_not_allowed' });
+      return;
+    }
+
     const token = authToken(req);
     const denied = await assertEmployeesApiAccess(token);
     if (denied) {
@@ -206,7 +232,9 @@ export default async function handler(req: any, res: any) {
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Falha ao ajustar ponto';
     console.error('[rh-timeclock-adjust]', message);
-    res.status(400).json({ ok: false, error: message });
+    if (!res.headersSent) {
+      res.status(400).json({ ok: false, error: message });
+    }
   }
 }
 

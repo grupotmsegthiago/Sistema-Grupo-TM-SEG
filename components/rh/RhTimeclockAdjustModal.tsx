@@ -7,7 +7,7 @@ import {
   getTimeClockEntryForStage,
 } from '../../lib/timeclock/stages';
 import type { TimeClockStage } from '../../lib/timeclock/types';
-import { fetchTimeClockEntriesFromApi } from '../../lib/timeclock/fetchEntriesApi';
+import { fetchTimeClockHistory } from '../../lib/timeclock/history';
 import { adjustTimeClockEntriesApi } from '../../lib/timeclock/adjustEntriesApi';
 import { fetchCltEmployeesForHistory } from '../../lib/timeclock/history';
 import { useNotification } from '../../lib/NotificationContext';
@@ -78,7 +78,7 @@ const RhTimeclockAdjustModal: React.FC<Props> = ({ isOpen, onClose, onSaved, pre
     setLoadError('');
     void (async () => {
       try {
-        const entries = await fetchTimeClockEntriesFromApi({ startDate: date, endDate: date, userId });
+        const entries = await fetchTimeClockHistory({ startDate: date, endDate: date, userId });
         if (cancelled) return;
         const next = emptyTimes();
         for (const stage of TIME_CLOCK_STAGE_ORDER) {

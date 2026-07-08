@@ -3,7 +3,6 @@ import {
   resolveUserRoleFromToken,
   roleCanAccessEmployees,
 } from '../lib/rh/apiEmployeesAuth.js';
-import { getBrazilDayBounds } from '../lib/dateUtils.js';
 
 const DEFAULT_SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
 const TMSEG_REF = 'ajhmmjuewdsukecaimik';
@@ -20,6 +19,14 @@ function decodeRef(key: string): string | null {
   } catch {
     return null;
   }
+}
+
+function getBrazilDayBounds(isoDate: string): { start: string; end: string } {
+  const date = isoDate.trim();
+  return {
+    start: new Date(`${date}T00:00:00-03:00`).toISOString(),
+    end: new Date(`${date}T23:59:59.999-03:00`).toISOString(),
+  };
 }
 
 async function adminSupabase() {
@@ -49,40 +56,40 @@ async function assertTimeclockReadAccess(token: string, requestedUserId?: string
 }
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'GET') {
-    res.status(405).json({ error: 'method_not_allowed' });
-    return;
-  }
-
-  const token = authToken(req);
-  const startDate = String(req.query?.start || req.query?.startDate || '').trim();
-  const endDate = String(req.query?.end || req.query?.endDate || '').trim();
-  const requestedUserId = String(req.query?.userId || req.query?.user_id || '').trim();
-
-  if (!startDate || !endDate) {
-    res.status(400).json({ ok: false, error: 'Parâmetros start e end são obrigatórios (YYYY-MM-DD)' });
-    return;
-  }
-
-  const callerId = extractUserIdFromToken(token);
-  if (!callerId) {
-    res.status(401).json({ ok: false, error: 'Não autorizado' });
-    return;
-  }
-
-  const denied = await assertTimeclockReadAccess(token, requestedUserId || undefined);
-  if (denied) {
-    res.status(denied === 'Não autorizado' ? 401 : 403).json({ ok: false, error: denied });
-    return;
-  }
-
-  const role = await resolveUserRoleFromToken(token);
-  const isAdmin = roleCanAccessEmployees(role);
-  const filterUserId = isAdmin ? (requestedUserId || '') : callerId;
-
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-
   try {
+    if (req.method !== 'GET') {
+      res.status(405).json({ error: 'method_not_allowed' });
+      return;
+    }
+
+    const token = authToken(req);
+    const startDate = String(req.query?.start || req.query?.startDate || '').trim();
+    const endDate = String(req.query?.end || req.query?.endDate || '').trim();
+    const requestedUserId = String(req.query?.userId || req.query?.user_id || '').trim();
+
+    if (!startDate || !endDate) {
+      res.status(400).json({ ok: false, error: 'Parâmetros start e end são obrigatórios (YYYY-MM-DD)' });
+      return;
+    }
+
+    const callerId = extractUserIdFromToken(token);
+    if (!callerId) {
+      res.status(401).json({ ok: false, error: 'Não autorizado' });
+      return;
+    }
+
+    const denied = await assertTimeclockReadAccess(token, requestedUserId || undefined);
+    if (denied) {
+      res.status(denied === 'Não autorizado' ? 401 : 403).json({ ok: false, error: denied });
+      return;
+    }
+
+    const role = await resolveUserRoleFromToken(token);
+    const isAdmin = roleCanAccessEmployees(role);
+    const filterUserId = isAdmin ? (requestedUserId || '') : callerId;
+
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+
     const sb = await adminSupabase();
     const sameDay = startDate === endDate;
     const bounds = sameDay ? getBrazilDayBounds(startDate) : null;
@@ -108,8 +115,10 @@ export default async function handler(req: any, res: any) {
       total: data?.length || 0,
     });
   } catch (e: any) {
-    console.error('[rh-timeclock-entries]', e?.message);
-    res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar registros de ponto' });
+    console.error('[rh-timeclock-entries]', e?.message || e);
+    if (!res.headersSent) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar registros de ponto' });
+    }
   }
 }
 
