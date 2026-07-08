@@ -87,12 +87,34 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
     setSignatureDraft(null);
     setPhotoBase64(null);
     void loadContext();
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setLocation(null),
-      { enableHighAccuracy: true, timeout: 15000 }
-    );
-    return () => stopCamera();
+
+    let geoFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const applyFallbackLocation = () => {
+      setLocation((prev) => prev ?? { lat: 0, lng: 0 });
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      geoFallbackTimer = setTimeout(applyFallbackLocation, 12_000);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (geoFallbackTimer) clearTimeout(geoFallbackTimer);
+          setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        },
+        () => {
+          if (geoFallbackTimer) clearTimeout(geoFallbackTimer);
+          applyFallbackLocation();
+        },
+        { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
+      );
+    } else {
+      applyFallbackLocation();
+    }
+
+    return () => {
+      if (geoFallbackTimer) clearTimeout(geoFallbackTimer);
+      stopCamera();
+    };
   }, [open]);
 
   useEffect(() => {
@@ -133,7 +155,7 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
 
   const handleFaceContinue = async () => {
     if (!location) {
-      setError('Aguardando localização GPS. Verifique se o GPS está ativo.');
+      setError('Aguardando localização. Se o GPS não responder, aguarde alguns segundos ou recarregue a página.');
       return;
     }
     setLoading(true);
@@ -199,8 +221,10 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
 
   if (!open) return null;
 
+  const overlayZ = forced ? 'z-[210]' : 'z-[120]';
+
   return (
-    <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4">
+    <div className={`fixed inset-0 ${overlayZ} flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4`}>
       <div className="bg-white w-full sm:max-w-lg max-h-[95vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl shadow-2xl border border-gray-200">
         <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
@@ -265,7 +289,7 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
               </div>
               <button
                 type="button"
-                disabled={loading || !location}
+                disabled={loading}
                 onClick={() => void handleFaceContinue()}
                 className="w-full py-4 rounded-2xl bg-red-700 text-white font-black uppercase text-sm flex items-center justify-center gap-2 disabled:opacity-50"
               >

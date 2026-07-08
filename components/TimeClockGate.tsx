@@ -65,7 +65,7 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
       const window = canPunchEntryNow(enriched.shiftType);
       setShiftBlocked(!window.allowed);
       setMustPunch(true);
-      setModalOpen(window.allowed);
+      setModalOpen((prev) => prev || window.allowed);
     } catch (e) {
       console.warn('[TimeClockGate] evaluate falhou:', e);
       // Fail-closed: operadores/CLT não entram sem confirmação de ponto.
@@ -100,7 +100,7 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
   return (
     <>
       {shiftBlocked && <ShiftWaitScreen shiftType={user?.shiftType} />}
-      {!shiftBlocked && (
+      {!shiftBlocked && !modalOpen && (
         <div className="fixed inset-0 z-[190] flex items-center justify-center bg-slate-950/90 p-4">
           <div className="max-w-lg w-full rounded-2xl border border-blue-500/30 bg-slate-900 p-6 text-center">
             <h2 className="text-lg font-black text-white uppercase mb-2">Bata seu ponto para iniciar</h2>
