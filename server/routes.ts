@@ -1,7 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { Modality } from "@google/genai";
 import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseServerKey, getSupabaseServiceRoleKey, getSupabaseUrl } from "./supabaseConfig";
 import webpush from "web-push";
@@ -77,6 +76,12 @@ import {
   pingGeminiHealth,
 } from "./geminiClient";
 import { resolveGeminiModel } from "../lib/geminiModels";
+import multer from "multer";
+import {
+  logPipelineTimings,
+  processPrintImage,
+} from "./printImagePipeline";
+import { isSupportedPrintMime, normalizePrintMime } from "../lib/printPipelineTypes";
 
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
@@ -2151,94 +2156,65 @@ export async function registerRoutes(
     }
   });
 
-  // Limpeza de print por IA (uso único, imagem NUNCA persiste): remove
-  // logotipos/marcas d'água/escritas de terceiros do print colado no
-  // "Atualizar Missão". O logotipo TM SEG é aplicado depois, no frontend.
-  app.post("/api/gemini/clean-print", requireAuth, async (req: Request, res: Response) => {
+  // Pipeline de limpeza de print (uso único — imagem NUNCA persiste no bucket).
+  // Detecta overlays via Gemini Flash; remove localmente com inpainting determinístico.
+  // Logotipo TM SEG completo é aplicado no frontend (lib/brandPhotoStamp.ts).
+  const printUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 },
+  });
+
+  app.post("/api/gemini/clean-print", requireAuth, printUpload.single('image'), async (req: Request, res: Response) => {
+    const reqStart = Date.now();
     try {
-      const { image } = req.body || {};
-      if (!image?.data || !image?.mimeType) return res.status(400).json({ error: 'Imagem ausente' });
-      if (typeof image.mimeType !== 'string' || !image.mimeType.startsWith('image/')) return res.status(400).json({ error: 'Tipo de arquivo inválido' });
-      if (typeof image.data !== 'string' || image.data.length > 20_000_000) return res.status(413).json({ error: 'Imagem grande demais para limpeza por IA' });
-      // PASSO 1 — detectar as REGIÕES com sobreposições (carimbo de câmera,
-      // marca d'água, logos colados — inclusive um logo TM SEG antigo colado
-      // na foto). A foto final é montada no frontend em RESOLUÇÃO ORIGINAL e a
-      // imagem regenerada pela IA (que sai em ~1024px, borrada) só é usada
-      // como remendo DENTRO dessas caixas — nunca como base da foto inteira.
-      const boxResp = await generateGeminiContent({
-        model: "gemini-2.5-flash",
-        contents: [{
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: image.mimeType, data: image.data } },
-            { text: "Detect every OVERLAY element stamped ON TOP of this photo: (1) date/time and city/location camera stamps, (2) watermarks, captions, app UI text or software names, (3) pasted/stamped company logos of ANY brand (including a 'TMSEG' shield logo if present as an overlay), (4) third-party company logos or brand names painted/printed on the truck or vehicle body. Do NOT include: vehicle license plates, road signs, or any text that is a physical part of the scene. Return a JSON array where each item is {\"box_2d\": [ymin, xmin, ymax, xmax], \"label\": string} with coordinates normalized to 0-1000. Return [] if there are no overlays." }
-          ]
-        }],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                box_2d: { type: "array", items: { type: "integer" } },
-                label: { type: "string" },
-              },
-              required: ["box_2d"],
-            },
-          },
-        },
-      });
-      let boxes: Array<{ box_2d: number[]; label?: string }> = [];
-      try { boxes = JSON.parse(boxResp.text || '[]'); } catch { boxes = []; }
-      boxes = (Array.isArray(boxes) ? boxes : []).filter(b => Array.isArray(b?.box_2d) && b.box_2d.length === 4);
-      if (boxes.length === 0) {
-        // Nada para remover — o frontend usa a foto original em qualidade cheia.
-        return res.json({ boxes: [] });
+      let buffer: Buffer | null = null;
+      let mimeType = '';
+      let uploadMs = 0;
+
+      if (req.file?.buffer) {
+        uploadMs = Date.now() - reqStart;
+        buffer = req.file.buffer;
+        mimeType = normalizePrintMime(req.file.mimetype || 'image/jpeg');
+      } else {
+        const { image } = req.body || {};
+        if (!image?.data || !image?.mimeType) return res.status(400).json({ error: 'Imagem ausente' });
+        mimeType = normalizePrintMime(image.mimeType);
+        if (!isSupportedPrintMime(mimeType)) return res.status(400).json({ error: 'Formato inválido. Use JPEG, PNG ou WEBP.' });
+        if (typeof image.data !== 'string' || image.data.length > 20_000_000) {
+          return res.status(413).json({ error: 'Imagem grande demais para processamento' });
+        }
+        const decodeStart = Date.now();
+        buffer = Buffer.from(image.data, 'base64');
+        uploadMs = Date.now() - decodeStart;
       }
 
-      // PASSO 2 — gerar a versão "limpa" (inpainting) para servir de remendo.
-      // Prompt em inglês: testado contra o carimbo de data/cidade de câmera —
-      // a versão em português preservava o carimbo; a em inglês remove
-      // carimbo, marcas d'água e logos de terceiros (inclusive na carroceria).
-      // IMPORTANTE (pedido do usuário): a PLACA do veículo é intocável —
-      // o modelo estava cobrindo a placa com retângulo branco; a instrução
-      // reforçada abaixo proíbe apagar/borrar/cobrir placas.
-      const editPrompt = "Produce a clean, realistic photograph without any text overlays, watermarks, logos, or digital text. Remove ALL text overlays from this image. This includes: (1) any date/time and city/location stamp printed on the photo (camera timestamp overlays), (2) any watermarks, captions, promotional text, phone numbers, Instagram handles, website addresses, app UI text or software names, (3) any pasted/stamped company logos of any brand (including a 'TMSEG' shield logo overlay if present), (4) any third-party company logos or brand names, including ones painted or printed on the truck/vehicle body. Smoothly and seamlessly blend and fill each removed area with its natural surrounding background (for example: clear sky with light clouds at the top, the car dashboard at the bottom, road, or vehicle surface) so that no trace, smudge or ghosting remains. CRITICAL: do not alter or blur the truck/vehicle itself, and the vehicle LICENSE PLATE must remain 100% untouched, visible and readable — NEVER remove, blur, cover, whiten or alter license plates. The same applies to road signs and any text that is a physical part of the scene (except third-party company logos). Do NOT enhance, retouch, sharpen, brighten or otherwise alter the photo quality — preserve the original exposure, colors, grain and blur exactly as they are. Keep everything else in the photo exactly the same: vehicle, license plate, road, map, route, landscape and framing. Do not add any new text, logo or element. Output only the edited image.";
-      let imgPart: any = null;
-      for (let attempt = 1; attempt <= 2 && !imgPart; attempt++) {
-        const response = await generateGeminiContent({
-          model: "gemini-2.5-flash-image",
-          contents: [{
-            role: "user",
-            parts: [
-              { inlineData: { mimeType: image.mimeType, data: image.data } },
-              { text: editPrompt }
-            ]
-          }],
-          config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
-        });
-        const parts = response.candidates?.[0]?.content?.parts || [];
-        imgPart = parts.find((p: any) => p.inlineData?.data) || null;
-        if (!imgPart) {
-          const txt = parts.map((p: any) => p.text).filter(Boolean).join(' ').slice(0, 300);
-          const block = (response as any).promptFeedback?.blockReason || '';
-          console.warn(`[clean-print] Tentativa ${attempt}: sem imagem na resposta. Texto: ${txt || '(vazio)'} | finishReason: ${response.candidates?.[0]?.finishReason || '?'} | block: ${block || '-'}`);
-          // O filtro de segurança do Gemini costuma BLOQUEAR pedidos de
-          // remoção de logo/marca d'água (blockReason SAFETY) — retentar não
-          // adianta. O frontend cobre as caixas com borrão local.
-          if (block) break;
-        }
-      }
-      if (!imgPart?.inlineData?.data) {
-        // Sem imagem editada: devolve só as caixas — o frontend faz o remendo
-        // local (borrão) por cima do carimbo/logo, mantendo a foto original nítida.
-        return res.json({ boxes });
-      }
-      res.json({ image: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png', boxes });
+      if (!buffer?.length) return res.status(400).json({ error: 'Imagem ausente ou vazia' });
+      if (!isSupportedPrintMime(mimeType)) return res.status(400).json({ error: 'Formato inválido. Use JPEG, PNG ou WEBP.' });
+
+      const enableGeminiPatch = process.env.PRINT_PIPELINE_GEMINI_PATCH === 'true';
+      const result = await processPrintImage(buffer, mimeType, { uploadMs, enableGeminiPatch });
+
+      logPipelineTimings(result.timings, {
+        cleaned: result.cleaned,
+        method: result.method,
+        boxes: result.boxes.length,
+        width: result.width,
+        height: result.height,
+      });
+
+      res.json({
+        image: result.buffer.toString('base64'),
+        mimeType: result.mimeType,
+        boxes: result.boxes,
+        cleaned: result.cleaned,
+        method: result.method,
+        width: result.width,
+        height: result.height,
+        timings: result.timings,
+      });
     } catch (error: any) {
-      console.error('Erro Gemini clean-print:', error);
-      res.status(500).json({ error: 'Falha ao limpar a imagem por IA' });
+      console.error('Erro print-pipeline clean-print:', error);
+      res.status(500).json({ error: error?.message || 'Falha ao processar a imagem' });
     }
   });
 

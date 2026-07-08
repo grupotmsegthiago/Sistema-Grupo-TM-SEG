@@ -24,6 +24,7 @@ import {
   stampBrandOverlays,
   waitUntil,
 } from '../lib/brandPhotoStamp';
+import type { PrintPipelineTimings } from '../lib/printPipelineTypes';
 import { useNotification } from '../lib/NotificationContext';
 import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
 import { 
@@ -949,160 +950,126 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [updatePrintPreview, setUpdatePrintPreview] = useState('');
     const [updatePrintProcessing, setUpdatePrintProcessing] = useState(false);
     const [updatePrintAiCleaned, setUpdatePrintAiCleaned] = useState(false);
+    const [updatePrintTimings, setUpdatePrintTimings] = useState<PrintPipelineTimings | null>(null);
     const updatePrintBlobRef = useRef<Blob | null>(null);
 
-    // Limpeza por IA (Gemini, via backend): detecta as REGIÕES com carimbo/
-    // logos colados (inclusive um logo TM SEG antigo) e devolve a imagem
-    // "limpa" para usar como REMENDO só dentro dessas regiões. A foto final é
-    // sempre montada na RESOLUÇÃO ORIGINAL — nunca substituída pela imagem
-    // regenerada da IA (que sai em ~1024px e deixava a foto borrada).
-    // Fail-soft: se a IA falhar, segue com a foto original.
-    const cleanPrintWithAI = async (file: File): Promise<{ src: string | null; boxes: number[][] } | null> => {
-        try {
-            const base64 = await new Promise<string>((resolve, reject) => {
-                const r = new FileReader();
-                r.onload = () => resolve(String(r.result).split(',')[1] || '');
-                r.onerror = () => reject(new Error('Falha ao ler imagem'));
-                r.readAsDataURL(file);
-            });
-            if (!base64) return null;
-            const resp = await authFetch('/api/gemini/clean-print', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: { mimeType: file.type || 'image/png', data: base64 } }),
-            });
-            if (!resp.ok) return null;
-            const j = await resp.json();
-            const boxes: number[][] = (Array.isArray(j?.boxes) ? j.boxes : [])
-                .map((b: any) => b?.box_2d)
-                .filter((b: any) => Array.isArray(b) && b.length === 4);
-            if (boxes.length === 0) return null;
-            // Sem imagem editada (ex.: filtro de segurança do Gemini bloqueou a
-            // remoção do logo): segue só com as caixas — o remendo vira borrão local.
-            return { src: j?.image ? `data:${j.mimeType || 'image/png'};base64,${j.image}` : null, boxes };
-        } catch (e) {
-            console.warn('[UpdatePrint] Limpeza por IA falhou (segue com a foto original):', e);
-            return null;
-        }
+    const SUPPORTED_PRINT_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+
+    const isPrintPipelineDebug = () =>
+      import.meta.env.DEV || localStorage.getItem('tmseg:print-pipeline-debug') === '1';
+
+    /** Envia print ao pipeline server-side (multipart) e retorna imagem limpa + timings. */
+    const processPrintOnServer = async (
+      file: File,
+    ): Promise<{ blob: Blob; cleaned: boolean; timings: PrintPipelineTimings } | null> => {
+      const mime = (file.type || 'image/jpeg').toLowerCase();
+      if (!SUPPORTED_PRINT_TYPES.has(mime)) {
+        showNotification('Formato inválido', 'Use JPEG, PNG ou WEBP.', 'error');
+        return null;
+      }
+      const uploadStart = performance.now();
+      try {
+        const token = localStorage.getItem('authToken') || '';
+        const form = new FormData();
+        form.append('image', file, file.name || 'print.jpg');
+        const resp = await fetch('/api/gemini/clean-print', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: { Authorization: `Bearer ${token}` },
+          body: form,
+        });
+        const clientUploadMs = Math.round(performance.now() - uploadStart);
+        if (!resp.ok) return null;
+        const j = await resp.json();
+        if (!j?.image) return null;
+        const blob = await fetch(`data:${j.mimeType || 'image/png'};base64,${j.image}`).then(r => r.blob());
+        const timings: PrintPipelineTimings = {
+          uploadMs: j.timings?.uploadMs ?? clientUploadMs,
+          readMs: j.timings?.readMs ?? 0,
+          detectionMs: j.timings?.detectionMs ?? 0,
+          removalMs: j.timings?.removalMs ?? 0,
+          logoMs: 0,
+          saveMs: j.timings?.saveMs ?? 0,
+          totalMs: (j.timings?.totalMs ?? 0) + clientUploadMs,
+        };
+        return { blob, cleaned: !!j.cleaned, timings };
+      } catch (e) {
+        console.warn('[UpdatePrint] Pipeline server falhou (segue com foto original):', e);
+        return null;
+      }
     };
 
-    // Carimbo padrão TM SEG — ver lib/brandPhotoStamp.ts
+    const applyBrandStampToBlob = async (source: Blob): Promise<{ blob: Blob; preview: string; logoMs: number }> => {
+      const logoStart = performance.now();
+      const photoUrl = URL.createObjectURL(source);
+      try {
+        const photo = await loadStampImage(photoUrl);
+        const { width: canvasW, height: canvasH, scale } = computeScaledCanvasSize(photo.naturalWidth, photo.naturalHeight);
+        let logo: HTMLImageElement | null = null;
+        try {
+          logo = await loadStampImage('/logo.png');
+        } catch (logoErr) {
+          console.warn('[UpdatePrint] Logo indisponível, segue sem carimbo:', logoErr);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = canvasW;
+        canvas.height = canvasH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas indisponível');
+        ctx.drawImage(photo, 0, 0, photo.naturalWidth, photo.naturalHeight, 0, 0, canvasW, canvasH);
+        if (logo) stampBrandOverlays(ctx, canvas.width, canvas.height, logo);
+        if (scale < 1) {
+          console.warn(`[UpdatePrint] Imagem reduzida de ${photo.naturalWidth}x${photo.naturalHeight} para ${canvasW}x${canvasH} (limite do navegador).`);
+        }
+        const blob: Blob = await new Promise((resolve, reject) =>
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('Falha ao gerar PNG')), 'image/png'),
+        );
+        const preview = canvas.toDataURL('image/png');
+        return { blob, preview, logoMs: Math.round(performance.now() - logoStart) };
+      } finally {
+        URL.revokeObjectURL(photoUrl);
+      }
+    };
 
     const processUpdatePrint = async (file: File) => {
-        setUpdatePrintProcessing(true);
-        try {
-            const loadImg = loadStampImage;
-            const cleaned = await cleanPrintWithAI(file);
-            setUpdatePrintAiCleaned(!!cleaned);
-            const photoUrl = URL.createObjectURL(file);
-            try {
-                // Base da foto = original; reduz só se passar do limite do canvas do navegador.
-                const photo = await loadImg(photoUrl);
-                const { width: canvasW, height: canvasH, scale } = computeScaledCanvasSize(photo.naturalWidth, photo.naturalHeight);
-                let logo: HTMLImageElement | null = null;
-                try {
-                    logo = await loadImg('/logo.png');
-                } catch (logoErr) {
-                    console.warn('[UpdatePrint] Logo indisponível, segue sem carimbo:', logoErr);
-                }
-                const canvas = document.createElement('canvas');
-                canvas.width = canvasW;
-                canvas.height = canvasH;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) throw new Error('Canvas indisponível');
-                ctx.drawImage(photo, 0, 0, photo.naturalWidth, photo.naturalHeight, 0, 0, canvasW, canvasH);
-                // Remendos só DENTRO das caixas detectadas (carimbo/logos):
-                // com imagem limpa da IA, cola o trecho limpo escalado; sem ela
-                // (filtro de segurança bloqueou), aplica borrão local forte.
-                if (cleaned) {
-                    try {
-                        let patchImg = cleaned.src ? await loadImg(cleaned.src) : null;
-                        const W = canvas.width, H = canvas.height;
-                        // Guarda de proporção: se a imagem da IA veio com aspect
-                        // ratio diferente do original (>5%), o mapeamento das
-                        // caixas ficaria torto — cai no remendo local.
-                        if (patchImg) {
-                            const arOrig = W / H, arPatch = patchImg.naturalWidth / patchImg.naturalHeight;
-                            if (Math.abs(arPatch - arOrig) / arOrig > 0.05) {
-                                console.warn('[UpdatePrint] Proporção da imagem da IA difere do original — usando remendo local.');
-                                patchImg = null;
-                            }
-                        }
-                        // ctx.filter não é suportado em todo navegador (iOS antigo):
-                        // detecta e usa pixelização determinística como alternativa.
-                        const filterSupported = typeof (ctx as any).filter === 'string';
-                        const localPatch = (dx: number, dy: number, dw: number, dh: number) => {
-                            if (filterSupported) {
-                                const blurPx = Math.max(16, Math.round(Math.max(dw, dh) / 6));
-                                ctx.save();
-                                ctx.beginPath();
-                                ctx.rect(dx, dy, dw, dh);
-                                ctx.clip();
-                                ctx.filter = `blur(${blurPx}px)`;
-                                ctx.drawImage(canvas, dx, dy, dw, dh, dx, dy, dw, dh);
-                                ctx.drawImage(canvas, dx, dy, dw, dh, dx, dy, dw, dh);
-                                ctx.restore();
-                                ctx.filter = 'none';
-                                return;
-                            }
-                            // Pixelização: reduz a região a ~8px de lado e volta
-                            // ampliada com suavização — funciona em qualquer navegador.
-                            const tiny = document.createElement('canvas');
-                            tiny.width = Math.max(2, Math.round(dw / Math.max(dw, dh) * 8));
-                            tiny.height = Math.max(2, Math.round(dh / Math.max(dw, dh) * 8));
-                            const tctx = tiny.getContext('2d');
-                            if (!tctx) return;
-                            tctx.drawImage(canvas, dx, dy, dw, dh, 0, 0, tiny.width, tiny.height);
-                            ctx.imageSmoothingEnabled = true;
-                            ctx.drawImage(tiny, 0, 0, tiny.width, tiny.height, dx, dy, dw, dh);
-                        };
-                        for (const [ymin, xmin, ymax, xmax] of cleaned.boxes) {
-                            // Coordenadas normalizadas 0-1000 + folga de 1,5%.
-                            const pad = 15;
-                            const y0 = Math.max(0, ymin - pad) / 1000, x0 = Math.max(0, xmin - pad) / 1000;
-                            const y1 = Math.min(1000, ymax + pad) / 1000, x1 = Math.min(1000, xmax + pad) / 1000;
-                            if (y1 <= y0 || x1 <= x0) continue;
-                            const dx = x0 * W, dy = y0 * H, dw = (x1 - x0) * W, dh = (y1 - y0) * H;
-                            if (patchImg) {
-                                const pw = patchImg.naturalWidth, ph = patchImg.naturalHeight;
-                                ctx.drawImage(patchImg, x0 * pw, y0 * ph, (x1 - x0) * pw, (y1 - y0) * ph, dx, dy, dw, dh);
-                            } else {
-                                localPatch(dx, dy, dw, dh);
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('[UpdatePrint] Remendo da IA falhou (segue com a foto original):', e);
-                        setUpdatePrintAiCleaned(false);
-                    }
-                }
-                // Carimbo da marca: logo TM SEG no canto superior direito +
-                // Instagram @grupo_tmseg e site no canto inferior direito.
-                if (logo) stampBrandOverlays(ctx, canvas.width, canvas.height, logo);
-                if (scale < 1) {
-                    console.warn(`[UpdatePrint] Imagem reduzida de ${photo.naturalWidth}x${photo.naturalHeight} para ${canvasW}x${canvasH} (limite do navegador).`);
-                }
-                const blob: Blob = await new Promise((resolve, reject) =>
-                    canvas.toBlob(b => b ? resolve(b) : reject(new Error('Falha ao gerar PNG')), 'image/png')
-                );
-                updatePrintBlobRef.current = blob;
-                setUpdatePrintPreview(canvas.toDataURL('image/jpeg', 0.85));
-            } finally {
-                URL.revokeObjectURL(photoUrl);
-            }
-        } catch (e) {
-            console.warn('[UpdatePrint] Falha ao processar print:', e);
-            updatePrintBlobRef.current = null;
-            setUpdatePrintPreview('');
-            showNotification('Erro', 'Não foi possível processar o print colado. Tente novamente.', 'error');
-        } finally {
-            setUpdatePrintProcessing(false);
+      setUpdatePrintProcessing(true);
+      setUpdatePrintTimings(null);
+      const totalStart = performance.now();
+      try {
+        const processed = await processPrintOnServer(file);
+        const sourceBlob = processed?.blob ?? file;
+        const stamped = await applyBrandStampToBlob(sourceBlob);
+        updatePrintBlobRef.current = stamped.blob;
+        setUpdatePrintPreview(stamped.preview);
+        setUpdatePrintAiCleaned(!!processed?.cleaned);
+
+        if (processed?.timings) {
+          const timings: PrintPipelineTimings = {
+            ...processed.timings,
+            logoMs: stamped.logoMs,
+            totalMs: Math.round(performance.now() - totalStart),
+          };
+          setUpdatePrintTimings(timings);
+          if (isPrintPipelineDebug()) {
+            console.info('[print-pipeline:client]', timings);
+          }
         }
+      } catch (e) {
+        console.warn('[UpdatePrint] Falha ao processar print:', e);
+        updatePrintBlobRef.current = null;
+        setUpdatePrintPreview('');
+        setUpdatePrintTimings(null);
+        showNotification('Erro', 'Não foi possível processar o print colado. Tente novamente.', 'error');
+      } finally {
+        setUpdatePrintProcessing(false);
+      }
     };
 
     const clearUpdatePrint = () => {
         updatePrintBlobRef.current = null;
         setUpdatePrintPreview('');
         setUpdatePrintAiCleaned(false);
+        setUpdatePrintTimings(null);
     };
 
     const [editData, setEditData] = useState({
@@ -4070,7 +4037,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             >
                                 {updatePrintProcessing ? (
                                     <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300" data-testid="status-update-print-processing">
-                                        <Loader2 className="h-4 w-4 animate-spin" /> Limpando logos de terceiros (IA) e aplicando logotipo TM SEG...
+                                        <Loader2 className="h-4 w-4 animate-spin" /> Detectando overlays, removendo marcas e aplicando logotipo TM SEG...
                                     </div>
                                 ) : updatePrintPreview ? (
                                     <>
@@ -4100,8 +4067,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 <div className="mt-2 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2" data-testid="text-update-print-ready">
                                     <CheckCircle2 size={14} className="shrink-0 text-emerald-400" />
                                     <p className="text-[10px] font-bold text-emerald-300">{updatePrintAiCleaned
-                                        ? 'Foto tratada: logos de terceiros removidos (IA) e logotipo TM SEG aplicado. Ela NÃO é salva no sistema — só vai junto na área de transferência ao salvar.'
-                                        : 'Logotipo TM SEG aplicado (limpeza por IA indisponível — confira se sobrou logo de terceiros). A foto NÃO é salva no sistema — só vai junto na área de transferência ao salvar.'}</p>
+                                        ? 'Foto tratada: overlays removidos e logotipo TM SEG aplicado. Não é salva no sistema — só vai na área de transferência ao salvar.'
+                                        : 'Logotipo TM SEG aplicado (nenhum overlay detectado ou limpeza indisponível). Não é salva no sistema — só vai na área de transferência ao salvar.'}</p>
+                                    {(isPrintPipelineDebug() && updatePrintTimings) && (
+                                        <div className="mt-2 rounded-lg border border-white/10 bg-slate-900/80 p-2 text-left font-mono text-[9px] text-slate-400" data-testid="print-pipeline-timings">
+                                            <p className="font-bold text-amber-300/90 mb-1">Pipeline debug (ms)</p>
+                                            <p>upload: {updatePrintTimings.uploadMs} · leitura: {updatePrintTimings.readMs} · detecção: {updatePrintTimings.detectionMs}</p>
+                                            <p>remoção: {updatePrintTimings.removalMs} · logo: {updatePrintTimings.logoMs} · salvamento: {updatePrintTimings.saveMs}</p>
+                                            <p className="text-emerald-400 font-bold">total: {updatePrintTimings.totalMs} ms</p>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
