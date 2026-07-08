@@ -27,6 +27,11 @@ import {
 import type { PrintPipelineTimings } from '../lib/printPipelineTypes';
 import { useNotification } from '../lib/NotificationContext';
 import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
+import {
+  isOdometerExemptForConclusion,
+  isOdometerExemptProvider,
+  isVeladaMission,
+} from '../lib/missionStatusRules';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
   Layers, Navigation, History, 
@@ -141,14 +146,8 @@ export interface FinalizeConfirmPayload {
     odometerPrintUrl: string | null;
 }
 
-// Fornecedores ATIVA e TM SEG enviam o KM final só DEPOIS da missão na conclusão.
-// Evidência do encerramento é obrigatória para TODOS os status terminais.
-export const isOdometerExemptProvider = (providerName?: string): boolean => {
-    const raw = (providerName || '').toUpperCase();
-    const tokens = raw.split(/[^A-Z0-9]+/).filter(Boolean);
-    const collapsed = raw.replace(/\s+/g, '');
-    return tokens.includes('ATIVA') || collapsed.includes('TMSEG') || collapsed.includes('TMSECURITY');
-};
+// Reexportado para testes e outros módulos que já importavam daqui.
+export { isOdometerExemptProvider } from '../lib/missionStatusRules';
 
 interface OdometerAiResult {
     concluido: boolean;
@@ -162,6 +161,7 @@ interface FinalizeChecklistDialogProps {
     kind: 'completed' | 'cancelled' | 'refused';
     osLabel: string;
     providerName: string;
+    missionType: string;
     dateLabel: string;
     isDhl: boolean;
     destinationAddress: string;
@@ -183,7 +183,7 @@ interface FinalizeChecklistDialogProps {
 }
 
 const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
-    isOpen, kind, osLabel, providerName, dateLabel, isDhl, destinationAddress, mapLink,
+    isOpen, kind, osLabel, providerName, missionType, dateLabel, isDhl, destinationAddress, mapLink,
     originCity, destCity, appliedTableName, isRaio, raioFranchiseKm, startKm, defaultEndKm,
     franchiseKm, suggestions, defaultDateTime, minDateTime, missionId, onConfirm, onCancel,
 }) => {
@@ -250,9 +250,9 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     const traveled = endKmNum != null && startKm >= 0 ? Math.max(0, endKmNum - startKm) : 0;
     const kmMismatch = isCompleted && franchiseKm > 0 && traveled > franchiseKm;
 
-    // Fornecedores ATIVA e TM SEG mandam o KM final só depois — para eles o
-    // KM final e o print do hodômetro NÃO são obrigatórios na conclusão.
-    const odometerExempt = isOdometerExemptProvider(providerName);
+    // VELADA com fornecedor: KM final obrigatório antes da conclusão real.
+    // Demais fornecedores ATIVA/TM SEG podem omitir hodômetro na conclusão.
+    const odometerExempt = isOdometerExemptForConclusion(providerName, missionType);
 
     // Evidência obrigatória em todo status terminal (Concluída, Cancelada, Recusada).
     // Na conclusão, ATIVA/TM SEG ainda podem omitir KM final; evidência é sempre exigida.
@@ -2044,7 +2044,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const _sKm = parseNumber(editData.startKm);
             const _eKm = parseNumber(editData.endKm);
             const _hasStart = _sKm > 0 && editData.startDate && editData.startTime;
-            const _exemptOdo = isOdometerExemptProvider(editData.provider);
+            const _exemptOdo = isOdometerExemptForConclusion(editData.provider, editData.missionType || mission.mission_type);
             const _hasEnd = (_exemptOdo ? true : (_eKm > 0 && _eKm >= _sKm)) && !!editData.endDate && !!editData.endTime;
             const _selected = editData.status as MissionStatus;
             const _isInFlight = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN].includes(_selected);
@@ -2082,7 +2082,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const _sKm = parseNumber(editData.startKm);
             const _eKm = parseNumber(editData.endKm);
             const _hasStart = _sKm > 0 && editData.startDate && editData.startTime;
-            const _exemptOdo = isOdometerExemptProvider(editData.provider);
+            const _exemptOdo = isOdometerExemptForConclusion(editData.provider, editData.missionType || mission.mission_type);
             const _hasEnd = (_exemptOdo ? true : (_eKm > 0 && _eKm >= _sKm)) && !!editData.endDate && !!editData.endTime;
             let _fs = editData.status as MissionStatus;
             const _isPending = _fs === MissionStatus.PENDING;
@@ -2179,11 +2179,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const sKm = parseNumber(editData.startKm);
             // KM final confirmado pelo operador (gate de conclusão) tem prioridade.
             const eKm = confirmedEndKmRef.current != null ? confirmedEndKmRef.current : parseNumber(editData.endKm);
-            // Fornecedores ATIVA/TM SEG (veladas/IBL) enviam o KM depois — para eles
-            // a conclusão NÃO exige KM (nem inicial nem final): o checklist de
-            // finalização só pede a data/hora de fim. Exigir start_km>0 deixava a OS
-            // presa (caía em PENDENTE e o status não mudava para Concluída).
-            const exemptOdo = isOdometerExemptProvider(editData.provider);
+            // VELADA com fornecedor fica PENDENTE até o KM FINAL — mesmo ATIVA/TM SEG.
+            const exemptOdo = isOdometerExemptForConclusion(editData.provider, editData.missionType || mission.mission_type);
             const hasStart = exemptOdo ? true : (sKm > 0 && !!editData.startDate && !!editData.startTime);
             const hasEnd = (exemptOdo ? true : (eKm > 0 && eKm >= sKm)) && !!endIso;
 
@@ -2203,7 +2200,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 if (!editData.endDate || !editData.endTime) missing.push('Hora Final');
                 if (!exemptOdo && sKm <= 0) missing.push('KM Inicial');
                 if (!exemptOdo && (eKm <= 0 || eKm < sKm)) missing.push('KM Final');
-                showNotification('Status Pendente', `Faltam dados obrigatórios: ${missing.join(', ')}. A OS ficará como PENDENTE até o preenchimento completo.`, 'warning');
+                const veladaMsg = isVeladaMission(editData.missionType || mission.mission_type)
+                    ? ' Missões VELADA permanecem PENDENTES até o KM FINAL do fornecedor.'
+                    : '';
+                showNotification('Status Pendente', `Faltam dados obrigatórios: ${missing.join(', ')}. A OS ficará como PENDENTE até o preenchimento completo.${veladaMsg}`, 'warning');
             }
 
             const plannedDist = missionTotals.plannedKm || 0;
@@ -4194,6 +4194,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
               kind={pendingFinalizeConfirm.kind}
               osLabel={mission?.id ? `OS ${mission.id}` : 'OS'}
               providerName={editData.provider || ''}
+              missionType={editData.missionType || mission.mission_type || 'Caracterizada'}
               dateLabel={editData.startDate ? formatDateBR(`${editData.startDate}T12:00:00`) : ''}
               isDhl={finalizeData.isDhl}
               destinationAddress={finalizeData.destinationAddress}
