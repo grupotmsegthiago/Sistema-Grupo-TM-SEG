@@ -316,6 +316,89 @@ describe('missionBillingAudit', () => {
     assert.ok(audit.client.tableName?.includes('ITAJAI'));
   });
 
+  it('valida fornecedor quando valor lançado bate com tabela real (motor auto divergente)', () => {
+    clearMissionBillingAuditCache();
+    const g8Name = 'COMANDO G8 - SEGURANCA PATRIMONIAL E TRANSPORTE DE VALORES LTDA';
+    const providerTables = [
+      {
+        id: '100km-real',
+        provider: g8Name,
+        operation_type: '100KM',
+        activation_cost: 480,
+        franchise_km: 100,
+        franchise_hours: 3,
+        cost_per_extra_km: 4,
+        cost_per_extra_hour: 60,
+      },
+      {
+        id: '200km-real',
+        provider: g8Name,
+        operation_type: '200KM',
+        activation_cost: 960,
+        franchise_km: 200,
+        franchise_hours: 6,
+        cost_per_extra_km: 4,
+        cost_per_extra_hour: 60,
+      },
+    ];
+    const providersList = [
+      {
+        name: g8Name,
+        auto_calc_enabled: true,
+        auto_base_value: 6200,
+        auto_base_km: 100,
+        auto_base_hr: 3,
+        auto_extra_km: 4,
+        auto_extra_hr: 90,
+      },
+    ];
+    const mission = makeMission({
+      provider: g8Name,
+      start_km: 62065,
+      end_km: 62171,
+      start_time: '2026-07-07T01:30:00+00:00',
+      end_time: '2026-07-07T05:16:07+00:00',
+    } as any);
+
+    const finAuto = calculateMissionFinancials(
+      mission,
+      baseTables.client as any,
+      providerTables as any,
+      undefined,
+      new Date(),
+      undefined,
+      providersList,
+    );
+    const finReal100 = calculateMissionFinancials(
+      mission,
+      baseTables.client as any,
+      providerTables as any,
+      undefined,
+      new Date(),
+      { providerTableId: '100km-real' },
+      providersList,
+    );
+
+    assert.ok(finAuto.provider.serviceTotal > finReal100.provider.serviceTotal + 100, 'motor auto deve divergir da tabela real');
+
+    const audit = computeMissionBillingAudit(
+      {
+        ...mission,
+        revenue_value: finAuto.client.serviceTotal,
+        cost_value: finReal100.provider.serviceTotal,
+      } as Mission,
+      baseTables.client as any,
+      providerTables as any,
+      undefined,
+      providersList,
+    );
+
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(Math.abs(audit.provider.diferenca) < 0.01);
+    assert.equal(audit.provider.tableName, '100KM');
+    assert.equal(audit.provider.esperado, finReal100.provider.serviceTotal);
+  });
+
   it('usa cache e invalida quando fingerprint muda', () => {
     clearMissionBillingAuditCache();
     const mission = makeMission({ revenue_value: 790, cost_value: 590 });

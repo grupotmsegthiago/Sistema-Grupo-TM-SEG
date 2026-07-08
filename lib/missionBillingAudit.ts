@@ -1,5 +1,6 @@
 import type { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { calculateMissionFinancials } from './financialUtils';
+import { isAutoMasterRow } from './providerAutoPricing';
 
 export type AuditStatusLevel = 'validado' | 'atencao' | 'erro' | 'pendente';
 
@@ -516,6 +517,141 @@ function buildAuditExecutiveSummary(
   return { conclusao, pontos, operacao: { kmRodado, duracaoHoras } };
 }
 
+const normEntityName = (s: string) =>
+  (s || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[.,/\\&-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+function isSyntheticTableId(id: unknown): boolean {
+  return String(id || '').startsWith('auto-');
+}
+
+function isAutoEngineTableSide(sideFin: { tableId?: string; tableName?: string }): boolean {
+  return isSyntheticTableId(sideFin.tableId) || (sideFin.tableName || '').toUpperCase().includes('AUTO');
+}
+
+function filterClientTablesForMission(mission: Mission, clientTables: ClientPriceTable[]): ClientPriceTable[] {
+  const missionClient = normEntityName(String((mission as any).originalClientName || mission.client || ''));
+  return clientTables.filter((t) => {
+    if (isAutoMasterRow(t as any)) return false;
+    if (!missionClient) return true;
+    const tc = normEntityName(String(t.client || ''));
+    return tc.includes(missionClient) || missionClient.includes(tc);
+  });
+}
+
+function filterProviderTablesForMission(mission: Mission, providerTables: ProviderCostTable[]): ProviderCostTable[] {
+  const target = normEntityName(mission.provider || '');
+  return providerTables.filter((t) => {
+    if (isAutoMasterRow(t as any)) return false;
+    if (!target) return true;
+    const tp = normEntityName(String(t.provider || ''));
+    if (!tp || tp.length <= 2) return false;
+    if (tp.includes(target) || target.includes(tp)) return true;
+    const words = target.split(/\s+/).filter((w) => w.length > 2);
+    return words.some((w) => tp.includes(w));
+  });
+}
+
+function shouldTryRealCatalogMatch(
+  sideFin: { tableId?: string; tableName?: string; serviceTotal: number },
+  lancado: number,
+): boolean {
+  const diff = Math.abs(round2(lancado - sideFin.serviceTotal));
+  if (diff < 0.005) return false;
+  // Foco: motor automático (ex. COMANDO G8 AUTO 100KM) vs tabela real do cadastro.
+  return isAutoEngineTableSide(sideFin);
+}
+
+/** Quando motor auto/snapshot erra, tenta casar valor lançado com tabela REAL do cadastro. */
+function tryMatchRealCatalogTable(
+  side: 'cliente' | 'fornecedor',
+  mission: Mission,
+  mObj: Mission,
+  lancado: number,
+  clientTables: ClientPriceTable[],
+  providerTables: ProviderCostTable[],
+  clientData: Client | undefined,
+  providers: any[] | null | undefined,
+  tableOverrides: Record<string, unknown> | undefined,
+  sideFin: { tableId?: string; tableName?: string; serviceTotal: number },
+  kmRodado: number,
+  tempoHours: number,
+  snap?: Record<string, unknown> | null,
+): SideAuditDetail | null {
+  if (!shouldTryRealCatalogMatch(sideFin, lancado)) return null;
+
+  const candidates =
+    side === 'cliente'
+      ? filterClientTablesForMission(mission, clientTables)
+      : filterProviderTablesForMission(mission, providerTables);
+
+  const snapTableName =
+    side === 'cliente' && snap?.tableName
+      ? normalizeTableLabel(String(snap.tableName))
+      : '';
+
+  type MatchRow = {
+    table: ClientPriceTable | ProviderCostTable;
+    sideFinCalc: ReturnType<typeof calculateMissionFinancials>['client'];
+    diff: number;
+  };
+
+  const matches: MatchRow[] = [];
+
+  for (const table of candidates) {
+    if (isSyntheticTableId(table.id)) continue;
+    const override = {
+      ...(tableOverrides || {}),
+      ...(side === 'cliente'
+        ? { clientTableId: String(table.id) }
+        : { providerTableId: String(table.id) }),
+    };
+    const calc = calculateMissionFinancials(
+      mObj,
+      clientTables,
+      providerTables,
+      clientData,
+      new Date(),
+      override,
+      providers,
+    );
+    const finSide = side === 'cliente' ? calc.client : calc.provider;
+    const diff = round2(lancado - finSide.serviceTotal);
+    if (Math.abs(diff) < 0.005) {
+      matches.push({ table, sideFinCalc: finSide, diff });
+    }
+  }
+
+  if (matches.length === 0) return null;
+
+  const pickBest = (): MatchRow => {
+    if (snapTableName && snapTableName !== '-') {
+      const bySnap = matches.find(
+        (m) => normalizeTableLabel(String(m.table.operation_type || '')) === snapTableName,
+      );
+      if (bySnap) return bySnap;
+    }
+    return [...matches].sort((a, b) => {
+      const kmA = (a.table as any).franchise_km || 0;
+      const kmB = (b.table as any).franchise_km || 0;
+      if (kmA !== kmB) return kmA - kmB;
+      const baseA = (a.table as any).activation_fee ?? (a.table as any).activation_cost ?? 0;
+      const baseB = (b.table as any).activation_fee ?? (b.table as any).activation_cost ?? 0;
+      return baseA - baseB;
+    })[0];
+  };
+
+  const best = pickBest();
+  const detail = buildSideDetail(best.sideFinCalc, kmRodado, tempoHours, lancado);
+  if (Math.abs(detail.diferenca) >= 0.005) return null;
+  return { ...detail, motivos: [] };
+}
+
 function resolveOverallStatus(
   clientDiff: number,
   providerDiff: number,
@@ -690,6 +826,42 @@ export function computeMissionBillingAudit(
     providerTempoHours,
     lancadoCusto,
   );
+
+  const clientCatalogMatch = tryMatchRealCatalogTable(
+    'cliente',
+    mission,
+    mObj,
+    lancadoReceita,
+    clientTables,
+    providerTables,
+    clientData,
+    providers,
+    tableOverrides,
+    fin.client,
+    fin.realTraveledKm,
+    fin.durationHours,
+    snap,
+  );
+  if (clientCatalogMatch) clientDetail = clientCatalogMatch;
+
+  if (!(mission as any).is_same_os) {
+    const providerCatalogMatch = tryMatchRealCatalogTable(
+      'fornecedor',
+      mission,
+      mObj,
+      lancadoCusto,
+      clientTables,
+      providerTables,
+      clientData,
+      providers,
+      tableOverrides,
+      fin.provider,
+      providerKmRodado,
+      providerTempoHours,
+      snap,
+    );
+    if (providerCatalogMatch) providerDetail = providerCatalogMatch;
+  }
 
   clientDetail = enrichSideMotivos(clientDetail, 'cliente', clientTableMissing);
   providerDetail = enrichSideMotivos(providerDetail, 'fornecedor', providerTableMissing);
