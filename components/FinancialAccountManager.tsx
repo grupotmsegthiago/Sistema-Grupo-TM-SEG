@@ -3,6 +3,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
 import { logAction } from '../lib/logger';
+import { parseAmountBR } from '../lib/utils';
+import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
@@ -86,11 +88,17 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
         setAsaasLoading(true);
         try {
             const res = await authFetch('/api/asaas/balances');
-            const data = await res.json();
+            const data = await parseJsonResponse(res);
+            if (!res.ok) {
+                throw new Error(data?.error || `Erro ao consultar saldos Asaas (${res.status})`);
+            }
             if (data.balances) setAsaasBalances(data.balances);
-        } catch {}
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Falha ao atualizar saldos';
+            showNotification('Saldos Asaas', msg, 'error');
+        }
         setAsaasLoading(false);
-    }, []);
+    }, [showNotification]);
 
     useEffect(() => {
         if (dbReady) {
@@ -183,27 +191,30 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
     const handleUpdateBalance = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!updateAccountId) return;
-        const newBal = parseFloat(newBalanceInput.replace(',', '.'));
-        if (isNaN(newBal)) return;
+        const newBal = parseAmountBR(newBalanceInput);
+        if (!Number.isFinite(newBal)) {
+            showNotification('Valor inválido', 'Informe um saldo válido. Ex.: 15000,50 ou 15000.50', 'error');
+            return;
+        }
 
         setIsProcessingUpdate(true);
         try {
             const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || '';
-            await authFetch('/api/investment/snapshots', {
+            const res = await authFetch('/api/investment/snapshots', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ account_id: updateAccountId, balance: newBal, notes: '', created_by: userName }),
             });
+            const payload = await parseJsonResponse(res);
+            if (!res.ok) {
+                throw new Error(payload?.error || `Erro ao registrar saldo (${res.status})`);
+            }
 
             const account = accounts.find(a => a.id === updateAccountId);
             if (account) {
                 const diff = newBal - account.current_calculated_balance;
                 if (Math.abs(diff) >= 0.01) {
                     const isGain = diff > 0;
-                    // Preferir categoria do grupo INVESTIMENTOS pra que o ajuste de saldo
-                    // não vaze para Contas a Pagar/Receber (filtro existente exclui INVESTIMENTOS).
-                    // Fallback: NAO_OPERACIONAL/Ajuste — nesse caso o filtro de
-                    // FinancialTransactionList ainda exclui via marcador no campo `notes`.
                     const cat = categories.find(c => c.group === 'INVESTIMENTOS')
                               || categories.find(c => c.group === 'NAO_OPERACIONAL' || c.name.includes('Ajuste'));
                     const adjRes = await supabase.from('financial_transactions').insert([{
@@ -220,12 +231,15 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
                         notes: `Atualização de saldo de investimento (${formatBRL(account.current_calculated_balance)} → ${formatBRL(newBal)})`,
                         created_by: userName,
                     }]);
-                    if (adjRes.error) { showNotification('Erro', 'Saldo atualizado, mas falhou ao registrar lançamento de ajuste: ' + adjRes.error.message, 'error'); }
+                    if (adjRes.error) {
+                        showNotification('Aviso', 'Saldo registrado, mas falhou ao criar lançamento de ajuste: ' + adjRes.error.message, 'error');
+                    }
                 }
             }
 
             setUpdateAccountId(null);
             setNewBalanceInput('');
+            showNotification('Saldo atualizado', 'O saldo do investimento foi registrado com sucesso.', 'success');
             fetchData();
         } catch (e) {
             const msg = e instanceof Error ? e.message : 'Erro desconhecido';
@@ -235,8 +249,18 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
 
     const handleDeleteSnapshot = async (id: number) => {
         if (!confirm('Excluir este registro de saldo?')) return;
-        await authFetch(`/api/investment/snapshots/${id}`, { method: 'DELETE' });
-        fetchData();
+        try {
+            const res = await authFetch(`/api/investment/snapshots/${id}`, { method: 'DELETE' });
+            const payload = await parseJsonResponse(res);
+            if (!res.ok) {
+                throw new Error(payload?.error || `Erro ao excluir (${res.status})`);
+            }
+            showNotification('Registro excluído', 'O histórico de saldo foi removido.', 'success');
+            fetchData();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+            showNotification('Erro', msg, 'error');
+        }
     };
 
     const handleSubmitAccount = async (e: React.FormEvent) => {
@@ -590,7 +614,18 @@ Responda de forma concisa e profissional, em português, formatado com markdown.
                                 <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Informe o Saldo Real do Investimento Hoje</label>
                                 <div className="relative">
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-gray-400">R$</span>
-                                    <input type="number" step="0.01" required autoFocus className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-lg font-black text-gray-900 focus:border-blue-500 outline-none" placeholder="0.00" value={newBalanceInput} onChange={e => setNewBalanceInput(e.target.value)} />
+                                    <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        autoComplete="off"
+                                        required
+                                        autoFocus
+                                        className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-lg font-black text-gray-900 focus:border-blue-500 outline-none"
+                                        placeholder="0,00"
+                                        value={newBalanceInput}
+                                        onChange={e => setNewBalanceInput(e.target.value)}
+                                        data-testid="input-update-balance"
+                                    />
                                 </div>
                                 <p className="text-[9px] text-gray-400 mt-1 flex items-center gap-1"><Clock size={10}/> Data e hora serão registradas automaticamente</p>
                             </div>
