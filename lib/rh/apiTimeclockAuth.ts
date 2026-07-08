@@ -3,7 +3,7 @@ import {
   extractUserIdFromToken,
   resolveUserRoleFromToken,
   roleCanAccessEmployees,
-} from './apiEmployeesAuth';
+} from './apiEmployeesAuth.js';
 
 export { extractUserIdFromToken };
 

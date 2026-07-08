@@ -1,8 +1,5 @@
 import {
-  assertTimeclockReadAccess,
   extractUserIdFromToken,
-} from '../lib/rh/apiTimeclockAuth.js';
-import {
   resolveUserRoleFromToken,
   roleCanAccessEmployees,
 } from '../lib/rh/apiEmployeesAuth.js';
@@ -37,6 +34,18 @@ async function adminSupabase() {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY indisponível neste ambiente');
   }
   return createClient(url, key);
+}
+
+async function assertTimeclockReadAccess(token: string, requestedUserId?: string): Promise<string | null> {
+  if (!token) return 'Não autorizado';
+  const callerId = extractUserIdFromToken(token);
+  if (!callerId) return 'Não autorizado';
+  const role = await resolveUserRoleFromToken(token);
+  if (roleCanAccessEmployees(role)) return null;
+  if (requestedUserId && requestedUserId !== callerId) {
+    return 'Permissão negada — você só pode ver seu próprio ponto';
+  }
+  return null;
 }
 
 export default async function handler(req: any, res: any) {
