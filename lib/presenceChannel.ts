@@ -26,8 +26,42 @@ const STALE_MS = 60_000; // se não recebeu ping há 60s, considera offline
 const CLEANUP_INTERVAL_MS = 20_000;
 
 const DEBUG = typeof window !== 'undefined';
+const DEBUG_BUFFER_LIMIT = 200;
+const debugBuffer: string[] = [];
+const debugListeners = new Set<(lines: string[]) => void>();
+
+function pushDebugLine(line: string): void {
+  debugBuffer.push(line);
+  if (debugBuffer.length > DEBUG_BUFFER_LIMIT) debugBuffer.shift();
+  for (const cb of debugListeners) {
+    try {
+      cb(debugBuffer.slice());
+    } catch {
+      // ignora
+    }
+  }
+}
+
+/** Assina os logs de presença em memória (usado pelo painel de debug). */
+export function subscribePresenceDebug(cb: (lines: string[]) => void): () => void {
+  debugListeners.add(cb);
+  cb(debugBuffer.slice());
+  return () => debugListeners.delete(cb);
+}
+
 const log = (...args: unknown[]) => {
-  if (DEBUG) console.log('[TMSEG_PRESENCE]', ...args);
+  if (!DEBUG) return;
+  console.log('[TMSEG_PRESENCE]', ...args);
+  const ts = new Date().toISOString().slice(11, 19);
+  const parts = args.map((a) => {
+    if (typeof a === 'string') return a;
+    try {
+      return JSON.stringify(a);
+    } catch {
+      return String(a);
+    }
+  });
+  pushDebugLine(`[${ts}] ${parts.join(' ')}`);
 };
 
 type PresenceListener = (users: PresenceUserState[]) => void;

@@ -86,6 +86,7 @@ import VendorVerificationControl from './components/VendorVerificationControl';
 import FinancialInvoiceControl from './components/FinancialInvoiceControl';
 import MissionAlertMonitor from './components/MissionAlertMonitor';
 import UserPresenceTracker from './components/UserPresenceTracker';
+import PresenceDebugPanel from './components/PresenceDebugPanel';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
@@ -412,6 +413,7 @@ const App: React.FC = () => {
         <Sidebar isOpen={isSidebarOpen} activeScreen={currentScreen} onNavigate={navigateTo} onLogout={handleLogout} />
         <PushNotificationManager />
         <UserPresenceTracker enabled={isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isResetPasswordRoute} />
+        <PresenceDebugPanel />
         {(() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); const allowed = ['operador', 'avançado', 'avancado']; return allowed.includes(r); } catch { return false; } })() && <MissionAlertMonitor />}
         <div className="flex-1 flex flex-col min-h-0 min-w-0 relative z-10 lg:pl-20">
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
