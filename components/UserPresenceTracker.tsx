@@ -9,6 +9,7 @@ import {
   touchUserActivity,
 } from '../lib/userActivityTracker';
 import { requiresTimeclockUser } from '../lib/timeclock/eligibility';
+import { buildPunchMarks } from '../lib/timeclock/presence';
 import {
   onPresenceRefreshRequested,
   trackPresence,
@@ -59,8 +60,10 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
           let onDuty = false;
           let onDutyLabel = 'Online';
           let minutesOnDuty = 0;
+          let punchMarks: ReturnType<typeof buildPunchMarks> | undefined;
           if (requiresTimeclockUser(user)) {
             const entries = await fetchTodayTimeClockEntries(user.id);
+            punchMarks = buildPunchMarks(entries);
             onDuty = isCltOnDutyToday(entries);
             onDutyLabel = getOnDutyStageLabel(entries);
             minutesOnDuty = onDuty ? getMinutesOnDutyToday(entries) : 0;
@@ -82,6 +85,7 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
             minutesOnDuty,
             activityStatus,
             idleMinutes,
+            punchMarks,
           };
         } catch (err) {
           console.warn('[TMSEG_PRESENCE] enrich falhou, mantendo payload básico', err);

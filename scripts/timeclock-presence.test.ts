@@ -2,7 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { isCltOnDutyToday, getOnDutyStageLabel } from '../lib/timeclock/onDuty.ts';
-import { parsePresenceState, getInitials } from '../lib/timeclock/presence.ts';
+import {
+  parsePresenceState,
+  getInitials,
+  getPresenceCategory,
+  getPresenceServiceStatus,
+  buildPunchMarks,
+  buildPresenceTooltip,
+} from '../lib/timeclock/presence.ts';
 
 test('isCltOnDutyToday após entrada sem saída', () => {
   assert.equal(isCltOnDutyToday([{ type: 'IN' }]), true);
@@ -93,4 +100,79 @@ test('quadro de presença usa ícone de robô em vez de iniciais', () => {
   assert.match(boardSrc, /PRESENCE_USER_AVATAR_SRC/);
   assert.match(boardSrc, /<img[\s\S]*src=\{PRESENCE_USER_AVATAR_SRC\}/);
   assert.doesNotMatch(boardSrc, /getInitials\(displayName\)/);
+});
+
+test('getPresenceCategory agrupa por Operação, Administrativo e Comercial', () => {
+  assert.equal(getPresenceCategory('Operador'), 'operacao');
+  assert.equal(getPresenceCategory('avançado'), 'operacao');
+  assert.equal(getPresenceCategory('Comercial'), 'comercial');
+  assert.equal(getPresenceCategory('Diretoria'), 'administrativo');
+  assert.equal(getPresenceCategory('Administrador'), 'administrativo');
+});
+
+test('getPresenceServiceStatus simplifica para 3 estados', () => {
+  assert.equal(
+    getPresenceServiceStatus({
+      userId: '1',
+      name: 'A',
+      role: 'Operador',
+      isClt: true,
+      onDuty: true,
+      onDutyLabel: 'Em serviço',
+      onlineAt: '',
+    }),
+    'em_servico'
+  );
+  assert.equal(
+    getPresenceServiceStatus({
+      userId: '2',
+      name: 'B',
+      role: 'Operador',
+      isClt: true,
+      onDuty: false,
+      onDutyLabel: 'Aguardando ponto',
+      onlineAt: '',
+    }),
+    'fora'
+  );
+  assert.equal(
+    getPresenceServiceStatus({
+      userId: '3',
+      name: 'C',
+      role: 'Operador',
+      isClt: true,
+      onDuty: true,
+      onDutyLabel: 'Em almoço',
+      onlineAt: '',
+    }),
+    'em_almoco'
+  );
+});
+
+test('buildPunchMarks e tooltip exibem marcações do dia', () => {
+  const marks = buildPunchMarks([
+    { type: 'IN', timestamp: '2026-07-08T10:30:00.000Z' },
+    { type: 'BREAK_START', timestamp: '2026-07-08T13:00:00.000Z' },
+  ]);
+  assert.equal(marks.length, 2);
+  assert.equal(marks[0].label, 'Entrada');
+  const tooltip = buildPresenceTooltip({
+    userId: 'u1',
+    name: 'Michelle',
+    role: 'Operador',
+    isClt: true,
+    onDuty: false,
+    onDutyLabel: 'Aguardando ponto',
+    onlineAt: '',
+    punchMarks: marks,
+  });
+  assert.match(tooltip, /Marcações de hoje/);
+  assert.match(tooltip, /Entrada:/);
+});
+
+test('quadro de presença divide por categorias fixas', () => {
+  const boardSrc = fs.readFileSync('components/MissionTeamPresenceBoard.tsx', 'utf8');
+  assert.match(boardSrc, /PRESENCE_CATEGORY_ORDER/);
+  assert.match(boardSrc, /PRESENCE_CATEGORY_LABELS/);
+  assert.match(boardSrc, /getPresenceCategory/);
 });

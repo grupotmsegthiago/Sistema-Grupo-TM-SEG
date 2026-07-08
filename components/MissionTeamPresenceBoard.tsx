@@ -1,172 +1,93 @@
 import React, { useMemo } from 'react';
-import { Users, Briefcase, Circle, Coffee, LogOut, Clock, BadgeCheck } from 'lucide-react';
+import { Users, Briefcase, Circle } from 'lucide-react';
 import { useOnlinePresence } from '../lib/useOnlinePresence';
-import { PRESENCE_USER_AVATAR_SRC, type PresenceUserState } from '../lib/timeclock/presence';
+import {
+  PRESENCE_CATEGORY_LABELS,
+  PRESENCE_CATEGORY_ORDER,
+  PRESENCE_SERVICE_STATUS_LABELS,
+  PRESENCE_USER_AVATAR_SRC,
+  buildPresenceTooltip,
+  getPresenceCategory,
+  getPresenceServiceStatus,
+  type PresenceCategory,
+  type PresenceServiceStatus,
+  type PresenceUserState,
+} from '../lib/timeclock/presence';
 
 interface Props {
   enabled?: boolean;
 }
 
-type Bucket = 'em_servico' | 'em_almoco' | 'fora' | 'aguardando' | 'pj' | 'outros';
-
-interface AvatarStyle {
-  bg: string;
-  text: string;
+interface StatusStyle {
   border: string;
   dot: string;
+  text: string;
 }
 
-function bucketOf(user: PresenceUserState): Bucket {
-  const label = (user.onDutyLabel || '').toLowerCase();
-  if (user.onDuty) {
-    if (label.includes('almoço') || label.includes('almoco')) return 'em_almoco';
-    return 'em_servico';
-  }
-  if (user.isClt || (user.contractType || '').toUpperCase() === 'CLT') {
-    if (label.includes('aguardando')) return 'aguardando';
-    return 'fora';
-  }
-  const ct = (user.contractType || '').toUpperCase();
-  if (ct && ct !== 'CLT') return 'pj';
-  return 'outros';
-}
-
-function bucketLabel(b: Bucket): string {
-  switch (b) {
+function statusStyle(status: PresenceServiceStatus): StatusStyle {
+  switch (status) {
     case 'em_servico':
-      return 'CLT em serviço';
+      return {
+        border: 'border-green-300',
+        dot: 'bg-green-500',
+        text: 'text-green-700',
+      };
     case 'em_almoco':
-      return 'CLT em almoço';
-    case 'fora':
-      return 'CLT fora do expediente';
-    case 'aguardando':
-      return 'CLT aguardando ponto';
-    case 'pj':
-      return 'PJ / Prestadores';
+      return {
+        border: 'border-red-300',
+        dot: 'bg-red-500',
+        text: 'text-red-600',
+      };
     default:
-      return 'Administrativo';
+      return {
+        border: 'border-slate-300',
+        dot: 'bg-slate-400',
+        text: 'text-slate-500',
+      };
   }
-}
-
-function bucketOrder(b: Bucket): number {
-  return {
-    em_servico: 0,
-    em_almoco: 1,
-    aguardando: 2,
-    pj: 3,
-    outros: 4,
-    fora: 5,
-  }[b];
 }
 
 function statusLine(user: PresenceUserState): string {
-  if (user.isClt || user.onDuty) {
-    const base = user.onDutyLabel || 'Online';
-    if (user.onDuty && user.minutesOnDuty != null && user.minutesOnDuty > 0) {
-      const mins = `${user.minutesOnDuty} min`;
-      if (user.activityStatus === 'idle' && user.idleMinutes && user.idleMinutes > 0) {
-        return `${base} — Sem uso há ${user.idleMinutes} min`;
-      }
-      if (user.activityStatus === 'idle') {
-        return `${base} — Inativa`;
-      }
-      return `${base} — ${mins}`;
-    }
+  const status = getPresenceServiceStatus(user);
+  const base = PRESENCE_SERVICE_STATUS_LABELS[status];
+  if (status === 'em_servico' && user.minutesOnDuty != null && user.minutesOnDuty > 0) {
+    const mins = `${user.minutesOnDuty} min`;
     if (user.activityStatus === 'idle' && user.idleMinutes && user.idleMinutes > 0) {
-      return `${base} — Sem uso há ${user.idleMinutes} min`;
+      return `${base} — ${mins} — Inativo ${user.idleMinutes}m`;
     }
-    return base;
+    return `${base} — ${mins}`;
   }
-  const ct = (user.contractType || '').toUpperCase();
-  if (ct && ct !== 'CLT') return ct;
-  return 'Online';
-}
-
-function statusIcon(b: Bucket) {
-  switch (b) {
-    case 'em_servico':
-      return <Briefcase size={9} />;
-    case 'em_almoco':
-      return <Coffee size={9} />;
-    case 'fora':
-      return <LogOut size={9} />;
-    case 'aguardando':
-      return <Clock size={9} />;
-    case 'pj':
-      return <BadgeCheck size={9} />;
-    default:
-      return <Circle size={8} className="fill-green-500 text-green-500" />;
+  if (user.activityStatus === 'idle' && user.idleMinutes && user.idleMinutes > 0) {
+    return `${base} — Inativo ${user.idleMinutes}m`;
   }
-}
-
-function avatarStyle(b: Bucket): AvatarStyle {
-  switch (b) {
-    case 'em_servico':
-      return {
-        bg: 'bg-blue-600',
-        text: 'text-white',
-        border: 'border-blue-300',
-        dot: 'bg-blue-500',
-      };
-    case 'em_almoco':
-      return {
-        bg: 'bg-amber-500',
-        text: 'text-white',
-        border: 'border-amber-200',
-        dot: 'bg-amber-500',
-      };
-    case 'fora':
-      return {
-        bg: 'bg-slate-200',
-        text: 'text-slate-600',
-        border: 'border-slate-300',
-        dot: 'bg-slate-400',
-      };
-    case 'aguardando':
-      return {
-        bg: 'bg-yellow-100',
-        text: 'text-yellow-800',
-        border: 'border-yellow-300',
-        dot: 'bg-yellow-500',
-      };
-    case 'pj':
-      return {
-        bg: 'bg-purple-100',
-        text: 'text-purple-800',
-        border: 'border-purple-300',
-        dot: 'bg-purple-500',
-      };
-    default:
-      return {
-        bg: 'bg-indigo-50',
-        text: 'text-indigo-800',
-        border: 'border-indigo-200',
-        dot: 'bg-green-500',
-      };
-  }
+  return base;
 }
 
 const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
   const { onlineUsers, onlineCount, onDutyClt } = useOnlinePresence(enabled);
 
   const grouped = useMemo(() => {
-    const groups: Partial<Record<Bucket, PresenceUserState[]>> = {};
-    for (const u of onlineUsers) {
-      const b = bucketOf(u);
-      (groups[b] = groups[b] || []).push(u);
+    const groups: Record<PresenceCategory, PresenceUserState[]> = {
+      operacao: [],
+      administrativo: [],
+      comercial: [],
+    };
+    for (const user of onlineUsers) {
+      const category = getPresenceCategory(user.role);
+      groups[category].push(user);
     }
-    // ordena os arrays alfabeticamente
-    for (const key of Object.keys(groups) as Bucket[]) {
-      groups[key]!.sort((a, b) =>
+    for (const key of PRESENCE_CATEGORY_ORDER) {
+      groups[key].sort((a, b) =>
         (a.name || 'Usuário').localeCompare(b.name || 'Usuário', 'pt-BR')
       );
     }
     return groups;
   }, [onlineUsers]);
 
-  const bucketsOrdered = useMemo(() => {
-    return (Object.keys(grouped) as Bucket[]).sort((a, b) => bucketOrder(a) - bucketOrder(b));
-  }, [grouped]);
+  const emServicoCount = useMemo(
+    () => onlineUsers.filter((u) => getPresenceServiceStatus(u) === 'em_servico').length,
+    [onlineUsers]
+  );
 
   if (!enabled) return null;
 
@@ -182,71 +103,92 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
             Equipe no sistema
           </h3>
         </div>
-        <div className="flex items-center gap-3 text-[10px] font-black uppercase">
+        <div className="flex flex-wrap items-center gap-3 text-[10px] font-black uppercase">
           <span className="inline-flex items-center gap-1 text-green-700">
             <Circle size={8} className="fill-green-500 text-green-500" />
             {onlineCount} online
           </span>
-          <span className="inline-flex items-center gap-1 text-blue-700">
+          <span className="inline-flex items-center gap-1 text-green-700">
             <Briefcase size={10} />
-            {onDutyClt.length} em serviço
+            {emServicoCount} em serviço
+          </span>
+          <span className="inline-flex items-center gap-1 text-slate-500">
+            <Circle size={8} className="fill-slate-400 text-slate-400" />
+            CLT em serviço: {onDutyClt.length}
           </span>
         </div>
       </div>
 
-      {bucketsOrdered.length === 0 ? (
+      {onlineCount === 0 ? (
         <p className="text-xs text-gray-500 font-medium">Nenhum usuário online no momento.</p>
       ) : (
-        <div className="space-y-3">
-          {bucketsOrdered.map((b) => (
-            <div key={b}>
-              <div className="flex items-center gap-1.5 mb-2 text-[10px] font-black uppercase tracking-wide text-gray-500">
-                {statusIcon(b)}
-                <span>
-                  {bucketLabel(b)} · {grouped[b]!.length}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                {grouped[b]!.map((user) => {
-                  const displayName = user.name || 'Usuário';
-                  const style = avatarStyle(b);
-                  const status = statusLine(user);
-                  return (
-                    <div
-                      key={user.userId}
-                      className="flex flex-col items-center w-[76px]"
-                      title={`${displayName} — ${user.role || 'Online'}${
-                        user.contractType ? ` — ${user.contractType}` : ''
-                      } — ${status}`}
-                    >
-                      <div className="relative">
+        <div className="space-y-4">
+          {PRESENCE_CATEGORY_ORDER.map((category) => {
+            const users = grouped[category];
+            return (
+              <div key={category}>
+                <div className="flex items-center gap-1.5 mb-2 text-[10px] font-black uppercase tracking-wide text-gray-500">
+                  <span>{PRESENCE_CATEGORY_LABELS[category]} · {users.length}</span>
+                </div>
+                {users.length === 0 ? (
+                  <p className="text-[10px] text-gray-400 font-medium mb-1">Ninguém online nesta categoria.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-3">
+                    {users.map((user) => {
+                      const displayName = user.name || 'Usuário';
+                      const serviceStatus = getPresenceServiceStatus(user);
+                      const style = statusStyle(serviceStatus);
+                      const status = statusLine(user);
+                      const tooltip = buildPresenceTooltip(user);
+                      return (
                         <div
-                          className={`w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center shadow-md border-2 bg-white ${style.border}`}
+                          key={user.userId}
+                          className="group relative flex flex-col items-center w-[76px]"
                         >
-                          <img
-                            src={PRESENCE_USER_AVATAR_SRC}
-                            alt=""
-                            aria-hidden
-                            className="w-10 h-10 object-contain select-none pointer-events-none"
-                            draggable={false}
-                          />
+                          <div className="relative">
+                            <div
+                              className={`w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center shadow-md border-2 bg-white ${style.border}`}
+                            >
+                              <img
+                                src={PRESENCE_USER_AVATAR_SRC}
+                                alt=""
+                                aria-hidden
+                                className="w-10 h-10 object-contain select-none pointer-events-none"
+                                draggable={false}
+                              />
+                            </div>
+                            <span
+                              className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${style.dot}`}
+                            />
+                          </div>
+                          <p className="mt-1.5 text-[10px] font-bold text-gray-800 text-center leading-tight line-clamp-2 w-full">
+                            {displayName.split(' ')[0]}
+                          </p>
+                          <p
+                            className={`text-[8px] font-black uppercase truncate w-full text-center ${style.text}`}
+                          >
+                            {status}
+                          </p>
+
+                          <div
+                            role="tooltip"
+                            className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 w-52 -translate-x-1/2 rounded-xl border border-gray-200 bg-gray-900 px-3 py-2 text-left text-[10px] font-medium leading-relaxed text-white opacity-0 shadow-xl transition-opacity duration-150 group-hover:opacity-100"
+                          >
+                            <p className="mb-1 font-black uppercase text-[9px] text-indigo-200">
+                              {displayName}
+                            </p>
+                            <pre className="whitespace-pre-wrap font-sans text-[10px] text-gray-100">
+                              {tooltip}
+                            </pre>
+                          </div>
                         </div>
-                        <span
-                          className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${style.dot}`}
-                        />
-                      </div>
-                      <p className="mt-1.5 text-[10px] font-bold text-gray-800 text-center leading-tight line-clamp-2 w-full">
-                        {displayName.split(' ')[0]}
-                      </p>
-                      <p className="text-[8px] font-black uppercase text-gray-400 truncate w-full text-center">
-                        {status}
-                      </p>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
