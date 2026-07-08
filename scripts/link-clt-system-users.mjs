@@ -67,7 +67,7 @@ function getPgPool() {
       '',
   ).trim();
   if (!connectionString) return null;
-  return new pg.Pool({ connectionString, max: 2, ssl: { rejectUnauthorized: false } });
+  return new pg.Pool({ connectionString, max: 2 });
 }
 
 async function applySchemaFixViaPg() {

@@ -32,7 +32,7 @@ function getPool(): pg.Pool | null {
   ).trim();
   if (!connectionString) return null;
   if (!pool) {
-    pool = new pg.Pool({ connectionString, max: +2, ssl: { rejectUnauthorized: false } });
+    pool = new pg.Pool({ connectionString, max: 2 });
   }
   return pool;
 }
