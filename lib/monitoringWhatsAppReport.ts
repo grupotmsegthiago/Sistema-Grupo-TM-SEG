@@ -109,7 +109,9 @@ export function buildMonitoringWhatsAppReport(input: MonitoringWhatsAppReportInp
 👮 *AGENTE 02:* ${formatAgentShortName(input.agent2)}
 
 📈*PROGRESSO DA MISSÃO:* ${formatProgressSquares(input.progress)}
+
 🏙️ *LOCALIZAÇÃO:* ${(input.locationCity || 'S/D').toUpperCase()}
 🗾 *LINK DO GOOGLE:* ${input.mapLink || 'N/A'}
+
 📣 *OCORRÊNCIA:* ${(input.occurrence || 'SEM INFORMAÇÃO').toUpperCase()}`;
 }

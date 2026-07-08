@@ -84,6 +84,43 @@ test('buildMonitoringWhatsAppReport segue o modelo oficial', () => {
   assert.ok(progressIdx < locationIdx);
   assert.ok(locationIdx < linkIdx);
   assert.ok(linkIdx < occurrenceIdx);
+
+  // Linha em branco entre progresso e localização, e entre link e ocorrência
+  assert.match(report, /📈\*PROGRESSO DA MISSÃO:\* 🟩🟩🟩🟩 100%\n\n🏙️ \*LOCALIZAÇÃO:\*/);
+  assert.match(report, /🗾 \*LINK DO GOOGLE:\* https:\/\/www\.google\.com\/maps[^\n]*\n\n📣 \*OCORRÊNCIA:\*/);
+});
+
+test('buildMonitoringWhatsAppReport: exemplo GTM-6312 com espaçamento oficial', () => {
+  const report = buildMonitoringWhatsAppReport({
+    osId: 'GTM-6312',
+    status: 'EM VIAGEM',
+    dateStr: '08/07/2026',
+    timeStr: '10:57',
+    operationType: 'CARACTERIZADA',
+    client: 'CESLOG',
+    origin: 'ESTR. DOS ROMEIROS, 49 - JARDIM BOM JESUS, PIRAPORA DO BOM JESUS - SP, 06550-000, BRASIL',
+    destination: 'ESTR. PARTICULAR DA CODESP - ILHA BARNABÉ, SANTOS - SP, 11095-710, BRASIL',
+    vehiclePlate: 'TIO4D31',
+    vehicleModel: 'ATEGO 1933SCE',
+    driverName: 'JOSE FRANCISCO DA FILHO',
+    driverPhone: '(13) 99671-5450',
+    escortVehicle: 'OVG5D55',
+    agent1: 'ADENILTON SILVA',
+    agent2: 'VALDEMIR CARNEIRO',
+    progress: 0,
+    occurrence: 'SEGUE MISSÃO',
+    locationCity: 'ITAPECERICA DA SERRA - SP, BRASIL',
+    mapLink: 'https://www.google.com/maps?q=-23.7538084,-46.7966622&z=17&hl=pt-BR',
+  });
+
+  assert.match(report, /^\*MONITORAMENTO GRUPO TMSEG\*/);
+  assert.match(report, /\*OS:\* GTM-6312 \| \*STATUS:\* EM VIAGEM\n\n🗓️/);
+  assert.match(report, /🏢 \*CLIENTE:\* CESLOG\n\n📍/);
+  assert.match(report, /🏁 \*DESTINO:\* .+\n\n🚛/);
+  assert.match(report, /📞 \*CONTATO:\* .+\n\n🚔/);
+  assert.match(report, /👮 \*AGENTE 02:\* VALDEMIR CARNEIRO\n\n📈\*PROGRESSO DA MISSÃO:\* ⬜⬜⬜⬜ 0%/);
+  assert.match(report, /📈\*PROGRESSO DA MISSÃO:\* ⬜⬜⬜⬜ 0%\n\n🏙️ \*LOCALIZAÇÃO:\* ITAPECERICA DA SERRA - SP, BRASIL/);
+  assert.match(report, /🗾 \*LINK DO GOOGLE:\* https:\/\/www\.google\.com\/maps[^\n]+\n\n📣 \*OCORRÊNCIA:\* SEGUE MISSÃO$/);
 });
 
 test('buildMonitoringWhatsAppReport: exemplo GTM-6238 em origem', () => {
