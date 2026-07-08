@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
-import { Download, FileText, Loader2, MapPin, Printer } from 'lucide-react';
+import { Download, FileText, Loader2, MapPin, PencilLine, Printer } from 'lucide-react';
 import { formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import {
   TIME_CLOCK_STAGE_LABELS,
@@ -11,6 +11,8 @@ import {
 import type { TimeClockEntry } from '../lib/timeclock/types';
 import { fetchTimeClockEntriesFromApi } from '../lib/timeclock/fetchEntriesApi';
 import { fetchCltEmployeesForHistory } from '../lib/timeclock/history';
+import { canAdjustTimeclock } from '../lib/rh/permissions';
+import RhTimeclockAdjustModal, { type TimeclockAdjustPreset } from './rh/RhTimeclockAdjustModal';
 
 type FolhaRow = {
   key: string;
@@ -50,6 +52,9 @@ const RHPointReport: React.FC = () => {
     const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
     const [selectedUser, setSelectedUser] = useState('ALL');
     const [viewMode, setViewMode] = useState<'folha' | 'detalhado'>('folha');
+    const [adjustOpen, setAdjustOpen] = useState(false);
+    const [adjustPreset, setAdjustPreset] = useState<TimeclockAdjustPreset | null>(null);
+    const canAdjust = canAdjustTimeclock();
 
     useEffect(() => {
         fetchUsers();
@@ -128,14 +133,34 @@ const RHPointReport: React.FC = () => {
         link.click();
     };
 
+    const openAdjust = (preset?: TimeclockAdjustPreset) => {
+        setAdjustPreset(preset || null);
+        setAdjustOpen(true);
+    };
+
     return (
         <div className="space-y-6 animate-fade-in pb-20">
+            <RhTimeclockAdjustModal
+                isOpen={adjustOpen}
+                onClose={() => setAdjustOpen(false)}
+                onSaved={() => fetchLogs()}
+                preset={adjustPreset}
+            />
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4 no-print">
                 <div>
                     <h2 className="text-xl font-bold text-gray-900 flex items-center gap-3"><FileText className="text-red-700"/> Folha de Ponto CLT</h2>
                     <p className="text-xs text-gray-500 mt-1 uppercase font-bold tracking-widest">Relatório padrão — entrada, almoço, retorno e saída</p>
                 </div>
                 <div className="flex gap-2">
+                    {canAdjust && (
+                      <button
+                        type="button"
+                        onClick={() => openAdjust()}
+                        className="bg-amber-50 text-amber-800 px-4 py-2 rounded-xl text-xs font-bold uppercase flex items-center gap-2 border border-amber-200 hover:bg-amber-100 transition-all"
+                      >
+                        <PencilLine size={16}/> Ajustar ponto
+                      </button>
+                    )}
                     <button onClick={exportCSV} className="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-xl text-xs font-bold uppercase flex items-center gap-2 border border-indigo-100 hover:bg-indigo-100 transition-all"><Download size={16}/> CSV</button>
                     <button onClick={() => window.print()} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase flex items-center gap-2 shadow-lg"><Printer size={16}/> PDF</button>
                 </div>
@@ -183,13 +208,14 @@ const RHPointReport: React.FC = () => {
                               <th key={stage} className="px-4 py-4 text-center">{TIME_CLOCK_STAGE_LABELS[stage]}</th>
                             ))}
                             <th className="px-4 py-4 text-center">Assinatura</th>
+                            {canAdjust && <th className="px-4 py-4 text-center">Ajuste</th>}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 bg-white">
                           {loading ? (
-                            <tr><td colSpan={7} className="p-12 text-center"><Loader2 className="animate-spin mx-auto text-red-600" /></td></tr>
+                            <tr><td colSpan={canAdjust ? 8 : 7} className="p-12 text-center"><Loader2 className="animate-spin mx-auto text-red-600" /></td></tr>
                           ) : folhaRows.length === 0 ? (
-                            <tr><td colSpan={7} className="p-12 text-center text-sm text-gray-500 font-bold">Nenhum registro no período</td></tr>
+                            <tr><td colSpan={canAdjust ? 8 : 7} className="p-12 text-center text-sm text-gray-500 font-bold">Nenhum registro no período</td></tr>
                           ) : folhaRows.map((row) => {
                             const lastSigned = [...row.entries].reverse().find((e) => e.signature_url);
                             return (
@@ -211,6 +237,17 @@ const RHPointReport: React.FC = () => {
                                     <span className="text-gray-400">—</span>
                                   )}
                                 </td>
+                                {canAdjust && (
+                                  <td className="px-4 py-4 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => openAdjust({ userId: row.userId, userName: row.userName, date: row.date })}
+                                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100"
+                                    >
+                                      <PencilLine size={12} /> Editar
+                                    </button>
+                                  </td>
+                                )}
                               </tr>
                             );
                           })}

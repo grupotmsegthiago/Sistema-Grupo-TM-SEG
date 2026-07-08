@@ -53,6 +53,11 @@ export function canEditRh(user: RhUserContext = getRhUser()): boolean {
   return false;
 }
 
+/** Ajuste manual de batidas (entrada, almoço, retorno, saída) — Diretoria e RH. */
+export function canAdjustTimeclock(user: RhUserContext = getRhUser()): boolean {
+  return canEditRh(user);
+}
+
 export function canViewSalary(user: RhUserContext = getRhUser()): boolean {
   return canEditRh(user) || isRhFinance(user) || user.permissions?.includes('rh-salaries');
 }

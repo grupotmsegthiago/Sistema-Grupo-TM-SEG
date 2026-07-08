@@ -77,6 +77,18 @@ export function getBrazilDayBounds(isoDate?: string): { date: string; start: str
   return { date, start, end };
 }
 
+/** Monta ISO UTC a partir de data (yyyy-mm-dd) e hora HH:MM em Brasília. */
+export function buildBrazilTimestampFromHm(isoDate: string, timeHm: string): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(timeHm || '').trim());
+  if (!m) throw new Error('Horário inválido — use HH:MM');
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h > 23 || min > 59) throw new Error('Horário inválido — use HH:MM entre 00:00 e 23:59');
+  const hh = String(h).padStart(2, '0');
+  const mm = String(min).padStart(2, '0');
+  return new Date(`${isoDate.trim()}T${hh}:${mm}:00-03:00`).toISOString();
+}
+
 /** Agora formatado para rodapés e logs visíveis. */
 export const formatNowDateTimeBR = (): string => formatDateTimeBR(new Date());
 

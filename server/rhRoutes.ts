@@ -257,4 +257,13 @@ export function registerRhRoutes(
       res.status(500).json({ ok: false, error: e.message });
     }
   });
+
+  app.post('/api/rh/timeclock/adjust', ...rhAuth, async (req: Request, res: Response) => {
+    try {
+      const { handleTimeclockAdjust } = await import('./timeclockAdjust');
+      await handleTimeclockAdjust(req, res);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
 }

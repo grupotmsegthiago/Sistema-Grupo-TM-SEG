@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { History, User, Users, Loader2, Download } from 'lucide-react';
+import { History, User, Users, Loader2, Download, PencilLine } from 'lucide-react';
 import { useRealtimeRefresh } from '../../lib/RealtimeProvider';
 import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../../lib/dateUtils';
 import {
@@ -15,6 +15,8 @@ import {
   groupHistoryByEmployee,
   type CltEmployeeOption,
 } from '../../lib/timeclock/history';
+import { canAdjustTimeclock } from '../../lib/rh/permissions';
+import RhTimeclockAdjustModal, { type TimeclockAdjustPreset } from './RhTimeclockAdjustModal';
 
 type Tab = 'geral' | 'funcionario';
 
@@ -44,6 +46,9 @@ const RhTimeclockHistory: React.FC = () => {
     return d.toISOString().slice(0, 10);
   });
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [adjustPreset, setAdjustPreset] = useState<TimeclockAdjustPreset | null>(null);
+  const canAdjust = canAdjustTimeclock();
 
   const loadEmployees = async () => {
     try {
@@ -109,8 +114,30 @@ const RhTimeclockHistory: React.FC = () => {
 
   const selectedEmployee = employees.find((e) => e.user_id === selectedEmployeeUserId);
 
+  const openAdjust = (preset?: TimeclockAdjustPreset) => {
+    setAdjustPreset(preset || null);
+    setAdjustOpen(true);
+  };
+
+  const adjustButton = (preset?: TimeclockAdjustPreset) =>
+    canAdjust ? (
+      <button
+        type="button"
+        onClick={() => openAdjust(preset)}
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100"
+      >
+        <PencilLine size={12} /> Editar
+      </button>
+    ) : null;
+
   return (
     <div className="space-y-4 pb-10">
+      <RhTimeclockAdjustModal
+        isOpen={adjustOpen}
+        onClose={() => setAdjustOpen(false)}
+        onSaved={() => void loadLogs()}
+        preset={adjustPreset}
+      />
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -129,6 +156,15 @@ const RhTimeclockHistory: React.FC = () => {
         <button type="button" onClick={exportCsv} className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase bg-indigo-50 text-indigo-700 border border-indigo-100">
           <Download size={14} /> CSV
         </button>
+        {canAdjust && (
+          <button
+            type="button"
+            onClick={() => openAdjust(tab === 'funcionario' && selectedEmployeeUserId ? { userId: selectedEmployeeUserId, userName: selectedEmployee?.full_name, date: endDate } : undefined)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100"
+          >
+            <PencilLine size={14} /> Ajustar ponto
+          </button>
+        )}
       </div>
 
       <div className="bg-white p-4 rounded-2xl border border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -202,6 +238,7 @@ const RhTimeclockHistory: React.FC = () => {
                       {TIME_CLOCK_STAGE_ORDER.map((s) => (
                         <th key={s} className="px-3 py-2 text-center">{TIME_CLOCK_STAGE_SHORT[s]}</th>
                       ))}
+                      {canAdjust && <th className="px-3 py-2 text-center">Ajuste</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -218,6 +255,11 @@ const RhTimeclockHistory: React.FC = () => {
                               </td>
                             );
                           })}
+                          {canAdjust && (
+                            <td className="px-3 py-2 text-center">
+                              {adjustButton({ userId: group.userId, userName: group.userName, date: day.date })}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -272,6 +314,7 @@ const RhTimeclockHistory: React.FC = () => {
                       {TIME_CLOCK_STAGE_ORDER.map((s) => (
                         <th key={s} className="px-3 py-3 text-center">{TIME_CLOCK_STAGE_LABELS[s]}</th>
                       ))}
+                      {canAdjust && <th className="px-3 py-3 text-center">Ajuste</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -286,6 +329,15 @@ const RhTimeclockHistory: React.FC = () => {
                             </td>
                           );
                         })}
+                        {canAdjust && selectedEmployeeUserId && (
+                          <td className="px-3 py-3 text-center">
+                            {adjustButton({
+                              userId: selectedEmployeeUserId,
+                              userName: selectedEmployee?.full_name,
+                              date: day.date,
+                            })}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>

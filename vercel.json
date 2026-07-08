@@ -119,6 +119,9 @@
     "api/rh-timeclock-punch.ts": {
       "maxDuration": 60
     },
+    "api/rh-timeclock-adjust.ts": {
+      "maxDuration": 60
+    },
     "api/rh-employee-costs.ts": {
       "maxDuration": 60
     },
@@ -285,6 +288,10 @@
     {
       "source": "/api/rh/timeclock/punch",
       "destination": "/api/rh-timeclock-punch"
+    },
+    {
+      "source": "/api/rh/timeclock/adjust",
+      "destination": "/api/rh-timeclock-adjust"
     },
     {
       "source": "/api/toll/qualp",
