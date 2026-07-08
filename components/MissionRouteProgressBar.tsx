@@ -105,7 +105,7 @@ const MissionRouteProgressBar: React.FC<Props> = ({
   const kmLabel = googleProgress
     ? `${googleProgress.totalKm.toFixed(1)}KM`
     : plannedKmLabel.replace(/\s*KM\s*/i, 'KM').replace(/\s+/g, '');
-  const carHalfWidthPx = 34;
+  const carHalfWidthPx = 30;
   const carLeft =
     pct <= 0 ? '0%' : pct >= 100 ? '100%' : `calc(${pct}% - ${carHalfWidthPx}px)`;
 
@@ -158,7 +158,7 @@ const MissionRouteProgressBar: React.FC<Props> = ({
               <img
                 src={ROUTE_PROGRESS_CAR_SRC}
                 alt="Veículo em rota"
-                className="h-8 w-auto max-w-[68px] object-contain select-none"
+                className="h-7 w-auto max-w-[60px] object-contain select-none"
                 style={{ filter: 'drop-shadow(0 2px 4px rgba(15, 23, 42, 0.35))' }}
                 draggable={false}
               />
