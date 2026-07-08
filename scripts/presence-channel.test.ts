@@ -19,8 +19,8 @@ test('tracker usa o singleton (não cria canal próprio)', () => {
 });
 
 test('singleton registra listeners antes de subscribe', () => {
-  const onIdx = singletonSrc.indexOf("channel.on('presence'");
-  const subIdx = singletonSrc.indexOf('channel.subscribe(');
+  const onIdx = singletonSrc.indexOf(".on('presence'");
+  const subIdx = singletonSrc.indexOf('.subscribe(');
   assert.ok(onIdx >= 0, 'deve registrar listeners de presence');
   assert.ok(subIdx >= 0, 'deve chamar subscribe');
   assert.ok(onIdx < subIdx, 'listeners devem ser registrados antes do subscribe');

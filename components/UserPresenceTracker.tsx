@@ -19,6 +19,7 @@ const HEARTBEAT_MS = 45_000;
 /** Mantém o usuário atual visível no canal de presença (online + CLT em serviço). */
 const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
   useEffect(() => {
+    console.log('[TMSEG_PRESENCE] UserPresenceTracker useEffect. enabled=', enabled);
     if (!enabled) return;
 
     let cancelled = false;
