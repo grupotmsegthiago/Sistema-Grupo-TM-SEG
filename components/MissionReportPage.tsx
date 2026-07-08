@@ -115,18 +115,32 @@ const MissionReportPage: React.FC = () => {
         return indexBillingAdjustments(all);
       };
 
+      const fetchTablePages = async (table: 'client_price_tables' | 'provider_cost_tables') => {
+        let all: any[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          const { data, error } = await supabase.from(table).select('*').range(from, from + pageSize - 1);
+          if (error) throw error;
+          if (data) all = all.concat(data);
+          if (!data || data.length < pageSize) break;
+          from += pageSize;
+        }
+        return all;
+      };
+
       const [missionsData, clientsRes, providersRes, cptRes, pctRes, allClientsRes, allProvidersRes, billingAdjMap] = await Promise.all([
         fetchAllPages(),
         supabase.from('clients').select('name, trading_name'),
         supabase.from('providers').select('name, trading_name'),
-        supabase.from('client_price_tables').select('*'),
-        supabase.from('provider_cost_tables').select('*'),
+        fetchTablePages('client_price_tables'),
+        fetchTablePages('provider_cost_tables'),
         supabase.from('clients').select('*'),
         supabase.from('providers').select('*'),
         fetchBillingAdjustments(),
       ]);
-      setClientPriceTables(cptRes.data || []);
-      setProviderCostTables(pctRes.data || []);
+      setClientPriceTables(cptRes || []);
+      setProviderCostTables(pctRes || []);
       setClientsData(allClientsRes.data || []);
       setProvidersData(allProvidersRes.data || []);
       setBillingAdjustmentsMap(billingAdjMap);
