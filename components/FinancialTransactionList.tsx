@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { authFetch } from '../lib/authFetch';
+import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { formatDateBR } from '../lib/dateUtils';
 import { logAction } from '../lib/logger';
 import { supabase } from '../lib/supabase';
@@ -78,12 +79,17 @@ const FinancialTransactionList: React.FC = () => {
         setLoadingBalances(true);
         try {
             const res = await authFetch('/api/asaas/balances');
-            if (res.ok) {
-                const json = await res.json();
-                if (json?.success && Array.isArray(json.balances)) setAsaasBalances(json.balances);
+            const json = await parseJsonResponse(res);
+            if (!res.ok) {
+                throw new Error(json?.error || `Erro ao consultar saldos Asaas (${res.status})`);
+            }
+            if (json?.success && Array.isArray(json.balances)) {
+                setAsaasBalances(json.balances);
             }
         } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Falha ao atualizar saldos';
             console.warn('[Asaas] Falha ao buscar saldos:', e);
+            showNotification('Saldos Asaas', msg, 'error');
         } finally {
             setLoadingBalances(false);
         }
