@@ -88,6 +88,7 @@ import MissionAlertMonitor from './components/MissionAlertMonitor';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
+import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
 
 // TEMPO DE INATIVIDADE (30 minutos)
 const INACTIVITY_LIMIT = 20 * 60 * 1000;
@@ -173,6 +174,11 @@ const App: React.FC = () => {
           if (needsUpdate) {
               localStorage.setItem('userData', JSON.stringify(user));
           }
+          const enriched = await enrichUserWithCltData({
+            ...user,
+            email: user.email,
+          });
+          localStorage.setItem('userData', JSON.stringify(enriched));
           if (data.client_id) {
               const { data: clientData } = await supabase.from('clients').select('name').eq('id', data.client_id).single();
               if (clientData && (clientData.name || '').toUpperCase().includes('CEVA')) {

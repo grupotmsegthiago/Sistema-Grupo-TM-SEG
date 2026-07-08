@@ -43,7 +43,7 @@ import ClientExecutiveDashboard from './ClientExecutiveDashboard';
 import ClientReportsTab from './ClientReportsTab';
 import ClientMissionRequest from './ClientMissionRequest';
 import ClientCommitteePresentation from './ClientCommitteePresentation';
-import MissionOperationalReport from './MissionOperationalReport';
+import CltTimeClockBar from './CltTimeClockBar';
 const cevaLogoPath = '/logo_ceva.png';
 
 
@@ -1800,7 +1800,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const handleViewHistory = (mission: Mission) => { setHistoryMissionId(mission.id); setIsHistoryModalOpen(true); };
   
     return (
-      <div className="space-y-6 animate-fade-in pb-20 relative">
+      <div className="space-y-6 animate-fade-in pb-28 relative">
         <div className={`p-6 rounded-xl shadow-sm border flex flex-col gap-6 ${isCevaClient ? 'bg-[#152c54] border-[#152c54]' : 'bg-white border-gray-200'}`}>
           <div className="flex flex-col 2xl:flex-row 2xl:items-center justify-between gap-6">
           <div className="2xl:w-[350px] shrink-0">
@@ -2367,6 +2367,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 </div>
             </div>
         )}
+        <CltTimeClockBar />
       </div>
     );
   };

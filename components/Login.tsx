@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, Lock, Loader2, AlertCircle, ShieldCheck, Shield, Eye, EyeOff, Fingerprint, Radio } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { logAction } from '../lib/logger';
+import { enrichUserWithCltData } from '../lib/timeclock/cltEmployee';
 import { APP_VERSION } from '../constants';
 
 interface LoginProps {
@@ -109,7 +109,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       const userPerms = userCheck.permissions || [];
       const combinedPermissions = [...new Set([...profilePerms, ...userPerms])];
 
-      const userData = {
+      let userData = {
         id: userCheck.id,
         name: userCheck.name,
         email: userCheck.email,
@@ -119,6 +119,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         providerId: userCheck.provider_id,
         force_password_change: userCheck.force_password_change
       };
+
+      userData = await enrichUserWithCltData(userData);
 
       localStorage.setItem('authToken', `tmseg-token-${userCheck.id}-${Date.now()}`);
       localStorage.setItem('userData', JSON.stringify(userData));
