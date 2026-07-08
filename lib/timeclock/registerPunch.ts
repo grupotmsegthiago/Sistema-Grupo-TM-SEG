@@ -1,4 +1,5 @@
 import { generateContent } from '../gemini';
+import { isGeminiUnavailableError } from '../geminiUnavailable';
 import { supabase } from '../supabase';
 import { getBrazilDayBounds } from '../dateUtils';
 import { requestPresenceRefresh } from '../presenceChannel';
@@ -62,7 +63,7 @@ export async function verifySelfieForTimeClock(photoBase64: string): Promise<boo
       return false;
     }
     const msg = e instanceof Error ? e.message : String(e);
-    if (/timeout|fetch|network|503|502|504/i.test(msg)) {
+    if (isGeminiUnavailableError(msg)) {
       console.warn('[timeclock] Verificação biométrica indisponível:', msg);
       return false;
     }

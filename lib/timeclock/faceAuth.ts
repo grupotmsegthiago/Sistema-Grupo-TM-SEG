@@ -1,4 +1,5 @@
 import { generateContent } from '../gemini';
+import { isGeminiUnavailableError } from '../geminiUnavailable';
 import { supabase } from '../supabase';
 import { withTimeout, TimeoutError } from '../promiseTimeout';
 
@@ -44,8 +45,8 @@ export async function validateFaceForRegistration(photoBase64: string): Promise<
       return;
     }
     const msg = e instanceof Error ? e.message : String(e);
-    if (/timeout|fetch|network|503|502|504/i.test(msg)) {
-      console.warn('[faceAuth] IA indisponível no cadastro:', msg);
+    if (isGeminiUnavailableError(msg)) {
+      console.warn('[faceAuth] IA indisponível no cadastro — permitindo sem validação automática:', msg);
       return;
     }
     throw e;
@@ -86,8 +87,8 @@ export async function validateFaceAgainstRegistered(
       return;
     }
     const msg = e instanceof Error ? e.message : String(e);
-    if (/timeout|fetch|network|503|502|504/i.test(msg)) {
-      console.warn('[faceAuth] IA indisponível na comparação:', msg);
+    if (isGeminiUnavailableError(msg)) {
+      console.warn('[faceAuth] IA indisponível na comparação — permitindo sem validação automática:', msg);
       return;
     }
     throw e;

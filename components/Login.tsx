@@ -133,6 +133,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       userData = await enrichUserWithCltData(userData);
 
       if (requiresTimeclockUser(userData)) {
+        // Token pendente: validação facial chama /api/gemini/generate antes do login completo.
+        localStorage.setItem('authToken', `tmseg-token-${userCheck.id}-${Date.now()}`);
         setPendingUser(userData);
         setFaceMode(hasFaceRegistered(userData) ? 'verify' : 'register');
         setAuthPhase('face');
@@ -172,6 +174,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           void completeLogin(updated, pendingUser.id, pendingUser.name);
         }}
         onCancel={() => {
+          localStorage.removeItem('authToken');
           setAuthPhase('credentials');
           setPendingUser(null);
         }}
