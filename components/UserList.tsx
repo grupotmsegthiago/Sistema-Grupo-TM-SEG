@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { authFetch } from '../lib/authFetch';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
@@ -33,6 +33,47 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
   const [equipmentMap, setEquipmentMap] = useState<{[userId: string]: { patrimony_id: string; type: string; brand: string; model: string }[]}>({});
 
   const [revealedPasswords, setRevealedPasswords] = useState<{[key: string]: boolean}>({});
+  const fetchSeqRef = useRef(0);
+
+  const buildEquipmentMap = (rows: { patrimony_id: string; type: string; brand: string; model: string; assigned_to?: string | null }[]) => {
+    const map: {[userId: string]: { patrimony_id: string; type: string; brand: string; model: string }[]} = {};
+    rows.forEach((eq) => {
+      if (!eq.assigned_to) return;
+      const uid = String(eq.assigned_to);
+      if (!map[uid]) map[uid] = [];
+      map[uid].push({ patrimony_id: eq.patrimony_id, type: eq.type, brand: eq.brand, model: eq.model });
+    });
+    return map;
+  };
+
+  const fetchEquipments = useCallback(async () => {
+    if (userType !== 'internal') return;
+    try {
+      const { data: fromTable, error: tableError } = await supabase
+        .from('patrimonio_equipments')
+        .select('patrimony_id, type, brand, model, assigned_to')
+        .is('deleted_at', null);
+
+      if (!tableError) {
+        setEquipmentMap(buildEquipmentMap(fromTable || []));
+        return;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      try {
+        const patRes = await authFetch('/api/patrimonio/equipments', { signal: controller.signal });
+        const patJson = await patRes.json();
+        if (patRes.ok && patJson.equipments?.length) {
+          setEquipmentMap(buildEquipmentMap(patJson.equipments));
+        }
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    } catch (eqErr) {
+      console.error('Erro ao carregar equipamentos:', eqErr);
+    }
+  }, [userType]);
 
   useEffect(() => {
     // Verificar permissão de Admin e Diretoria
@@ -67,6 +108,7 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
   };
 
   const fetchUsers = async () => {
+    const seq = ++fetchSeqRef.current;
     setIsLoading(true);
     setDbStatus(null);
     try {
@@ -146,53 +188,27 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
 
         setUsers(filteredUsers);
 
-        if (userType === 'internal') {
-          try {
-            const { data: fromTable } = await supabase
-              .from('patrimonio_equipments')
-              .select('patrimony_id, type, brand, model, assigned_to')
-              .is('deleted_at', null);
-            if (fromTable?.length) {
-              const map: {[userId: string]: { patrimony_id: string; type: string; brand: string; model: string }[]} = {};
-              fromTable.forEach((eq: any) => {
-                if (!eq.assigned_to) return;
-                const uid = String(eq.assigned_to);
-                if (!map[uid]) map[uid] = [];
-                map[uid].push({ patrimony_id: eq.patrimony_id, type: eq.type, brand: eq.brand, model: eq.model });
-              });
-              setEquipmentMap(map);
-            } else {
-              const patRes = await authFetch('/api/patrimonio/equipments');
-              const patJson = await patRes.json();
-              if (patRes.ok && patJson.equipments?.length) {
-                const map: {[userId: string]: { patrimony_id: string; type: string; brand: string; model: string }[]} = {};
-                patJson.equipments.forEach((eq: any) => {
-                  if (!eq.assigned_to) return;
-                  const uid = String(eq.assigned_to);
-                  if (!map[uid]) map[uid] = [];
-                  map[uid].push({ patrimony_id: eq.patrimony_id, type: eq.type, brand: eq.brand, model: eq.model });
-                });
-                setEquipmentMap(map);
-              }
-            }
-          } catch (eqErr) {
-            console.error('Erro ao carregar equipamentos:', eqErr);
-          }
-        }
-
     } catch (e: any) {
         console.error("Erro ao buscar usuários:", e);
         setDbStatus('error');
     } finally {
-        setIsLoading(false);
+        if (seq === fetchSeqRef.current) {
+          setIsLoading(false);
+        }
     }
   };
 
   useEffect(() => {
     fetchUsers();
-  }, [userType]);
+    if (userType === 'internal') {
+      void fetchEquipments();
+    }
+  }, [userType, fetchEquipments]);
 
   useRealtimeRefresh('system_users', () => fetchUsers());
+  useRealtimeRefresh('patrimonio_equipments', () => {
+    if (userType === 'internal') void fetchEquipments();
+  });
 
   const togglePassword = (id: string) => {
       setRevealedPasswords(prev => ({
@@ -310,7 +326,7 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
           )}
         </div>
         <div className="flex gap-2">
-            <button onClick={fetchUsers} className="p-2.5 border rounded-lg hover:bg-gray-50 text-gray-500">
+            <button onClick={() => { fetchUsers(); if (userType === 'internal') void fetchEquipments(); }} className="p-2.5 border rounded-lg hover:bg-gray-50 text-gray-500">
                 <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
             </button>
             <button 
