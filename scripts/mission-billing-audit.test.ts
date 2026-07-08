@@ -96,7 +96,7 @@ describe('missionBillingAudit', () => {
     assert.ok(audit.client.motivos.length > 0);
   });
 
-  it('marca ATENÇÃO para diferença menor que R$1', () => {
+  it('marca ATENÇÃO para diferença menor que R$1 sem salvamento manual', () => {
     clearMissionBillingAuditCache();
     const mission = makeMission();
     const fin = calculateMissionFinancials(
@@ -115,6 +115,68 @@ describe('missionBillingAudit', () => {
     );
     assert.equal(audit.overallStatus, 'atencao');
     assert.equal(audit.overallIcon, '🟡');
+  });
+
+  it('marca VALIDADO quando salvamento manual confirmado e diferença < R$1', () => {
+    clearMissionBillingAuditCache();
+    const dhlClient = 'CEVA LOGISTICS LTDA';
+    const clientTables = [
+      {
+        id: 'sp-rj',
+        client: dhlClient,
+        operation_type: 'SUDESTE - ESTADO DE SP E RJ',
+        activation_fee: 660,
+        franchise_km: 100,
+        franchise_hours: 3,
+        price_per_extra_km: 6.6,
+        price_per_extra_hour: 160,
+      },
+    ];
+    const providerTables = [
+      {
+        id: '100km',
+        provider: 'TORRES',
+        operation_type: '100KM',
+        activation_cost: 480,
+        franchise_km: 100,
+        franchise_hours: 3,
+        cost_per_extra_km: 4.8,
+        cost_per_extra_hour: 110,
+      },
+    ];
+    const mission = makeMission({
+      id: 'GTM-6284',
+      client: dhlClient,
+      provider: 'TORRES',
+      start_km: 48863,
+      end_km: 49006,
+      start_time: '2026-07-08T08:00:00+00:00',
+      end_time: '2026-07-08T12:06:00+00:00',
+      revenue_value: 1118.05,
+      cost_value: 805.57,
+      revenue_edit_reason:
+        '[THIAGO - 08/07/2026] Salvamento manual confirmado — receita: R$ 1.118,05',
+      cost_edit_reason:
+        '[THIAGO - 08/07/2026] Salvamento manual confirmado — custo: R$ 805,57',
+    } as any);
+
+    const audit = computeMissionBillingAudit(
+      mission,
+      clientTables as any,
+      providerTables as any,
+      undefined,
+      null,
+      undefined,
+      {
+        clientTableId: 'sp-rj',
+        providerTableId: '100km',
+      },
+    );
+
+    assert.equal(audit.overallStatus, 'validado');
+    assert.equal(audit.overallIcon, '🟢');
+    assert.ok(Math.abs(audit.client.diferenca - 0.92) < 0.01);
+    assert.equal(audit.client.status, 'validado');
   });
 
   it('respeita medição editada do fornecedor (provider_ops_edited)', () => {

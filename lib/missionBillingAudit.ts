@@ -650,7 +650,12 @@ function buildAuditExecutiveSummary(
 
   let conclusao: string;
   if (audit.overallStatus === 'validado') {
-    conclusao = 'Receita e custo conferem com o cálculo das tabelas aplicadas. Nenhuma divergência encontrada.';
+    const hasSmallManualDelta =
+      (Math.abs(audit.client.diferenca) >= 0.005 && Math.abs(audit.client.diferenca) < 1) ||
+      (Math.abs(audit.provider.diferenca) >= 0.005 && Math.abs(audit.provider.diferenca) < 1);
+    conclusao = hasSmallManualDelta
+      ? 'Valores confirmados manualmente pelo operador — diferença inferior a R$ 1,00 aceita na conferência.'
+      : 'Receita e custo conferem com o cálculo das tabelas aplicadas. Nenhuma divergência encontrada.';
   } else if (audit.overallStatus === 'atencao') {
     conclusao = 'Diferença inferior a R$ 1,00 — revisar antes de fechar, mas dentro da tolerância de atenção.';
   } else {
@@ -849,6 +854,7 @@ function resolveOverallStatus(
   clientDiff: number,
   providerDiff: number,
   hasComparableValues: boolean,
+  opts?: { clientManualSave?: boolean; providerManualSave?: boolean },
 ): Pick<MissionBillingAuditResult, 'overallStatus' | 'overallLabel' | 'overallIcon' | 'resultadoFinal'> {
   if (!hasComparableValues) {
     return {
@@ -859,9 +865,18 @@ function resolveOverallStatus(
     };
   }
 
-  const maxAbs = Math.max(Math.abs(clientDiff), Math.abs(providerDiff));
+  const sideOk = (diff: number, manualSave?: boolean) => {
+    const abs = Math.abs(round2(diff));
+    if (abs < 0.005) return true;
+    // Salvamento manual confirmado: diferença < R$ 1 não gera alerta.
+    if (abs < 1 && manualSave) return true;
+    return false;
+  };
 
-  if (maxAbs < 0.005) {
+  const clientOk = sideOk(clientDiff, opts?.clientManualSave);
+  const providerOk = sideOk(providerDiff, opts?.providerManualSave);
+
+  if (clientOk && providerOk) {
     return {
       overallStatus: 'validado',
       overallLabel: 'VALIDADO',
@@ -869,6 +884,11 @@ function resolveOverallStatus(
       resultadoFinal: 'VALIDADO',
     };
   }
+
+  const maxAbs = Math.max(
+    clientOk ? 0 : Math.abs(clientDiff),
+    providerOk ? 0 : Math.abs(providerDiff),
+  );
 
   if (maxAbs < 1) {
     return {
@@ -885,6 +905,23 @@ function resolveOverallStatus(
     overallIcon: '🔴',
     resultadoFinal: 'ERRO',
   };
+}
+
+/** Salvamento manual confirmado no modal — operador aceitou o valor lançado. */
+export function hasManualSaveConfirmed(editReason: string | null | undefined): boolean {
+  return String(editReason || '')
+    .toLowerCase()
+    .includes('salvamento manual confirmado');
+}
+
+function applyManualSaveTolerance(
+  detail: SideAuditDetail,
+  manualSave: boolean,
+): SideAuditDetail {
+  if (manualSave && Math.abs(detail.diferenca) >= 0.005 && Math.abs(detail.diferenca) < 1) {
+    return { ...detail, status: 'validado', motivos: [] };
+  }
+  return detail;
 }
 
 function emptyAuditSide(): SideAuditDetail {
@@ -1111,10 +1148,16 @@ export function computeMissionBillingAudit(
   clientDetail = enrichSideMotivos(clientDetail, 'cliente', clientTableMissing);
   providerDetail = enrichSideMotivos(providerDetail, 'fornecedor', providerTableMissing);
 
+  const clientManualSave = hasManualSaveConfirmed((mission as any).revenue_edit_reason);
+  const providerManualSave = hasManualSaveConfirmed((mission as any).cost_edit_reason);
+  clientDetail = applyManualSaveTolerance(clientDetail, clientManualSave);
+  providerDetail = applyManualSaveTolerance(providerDetail, providerManualSave);
+
   const overall = resolveOverallStatus(
     clientDetail.diferenca,
     providerDetail.diferenca,
     true,
+    { clientManualSave, providerManualSave },
   );
 
   const result: MissionBillingAuditResult = {
