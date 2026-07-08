@@ -558,13 +558,20 @@ function filterProviderTablesForMission(mission: Mission, providerTables: Provid
 }
 
 function shouldTryRealCatalogMatch(
-  sideFin: { tableId?: string; tableName?: string; serviceTotal: number },
+  sideFin: { tableId?: string; tableName?: string; serviceTotal: number; franchiseKm?: number },
   lancado: number,
+  kmRodado?: number,
 ): boolean {
   const diff = Math.abs(round2(lancado - sideFin.serviceTotal));
   if (diff < 0.005) return false;
-  // Foco: motor automático (ex. COMANDO G8 AUTO 100KM) vs tabela real do cadastro.
-  return isAutoEngineTableSide(sideFin);
+  // Motor automático (ex. COMANDO G8 AUTO 100KM) vs tabela real do cadastro.
+  if (isAutoEngineTableSide(sideFin)) return true;
+  // Cliente: franquia muito acima do KM rodado → provável seleção por KM previsto da rota
+  // (ex.: GTM-6258 com 127 km reais mas tabela RAIO 300KM por total_distance 320).
+  const franq = sideFin.franchiseKm ?? 0;
+  const km = kmRodado ?? 0;
+  if (km > 0 && franq >= 200 && franq >= km * 2) return true;
+  return false;
 }
 
 /** Quando motor auto/snapshot erra, tenta casar valor lançado com tabela REAL do cadastro. */
@@ -583,7 +590,7 @@ function tryMatchRealCatalogTable(
   tempoHours: number,
   snap?: Record<string, unknown> | null,
 ): SideAuditDetail | null {
-  if (!shouldTryRealCatalogMatch(sideFin, lancado)) return null;
+  if (!shouldTryRealCatalogMatch(sideFin, lancado, kmRodado)) return null;
 
   const candidates =
     side === 'cliente'

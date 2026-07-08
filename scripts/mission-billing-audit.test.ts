@@ -399,6 +399,102 @@ describe('missionBillingAudit', () => {
     assert.equal(audit.provider.esperado, finReal100.provider.serviceTotal);
   });
 
+  it('valida GTM-6258 quando cálculo usa tabela errada (RAIO 300KM) mas valor lançado bate com faixa 100KM', () => {
+    clearMissionBillingAuditCache();
+    const dhlClient = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
+    const g8Name = 'COMANDO G8 - SEGURANCA PATRIMONIAL E TRANSPORTE DE VALORES LTDA';
+    const clientTables = [
+      {
+        id: 'raio-es-300',
+        client: dhlClient,
+        operation_type: 'SUDESTE - RAIO ES 300KM',
+        activation_fee: 2070,
+        franchise_km: 300,
+        franchise_hours: 7,
+        price_per_extra_km: 6.9,
+        price_per_extra_hour: 145,
+      },
+      {
+        id: 'barueri-100',
+        client: dhlClient,
+        operation_type: 'SUDESTE - BARUERI-CAJAMAR 100KM',
+        activation_fee: 690,
+        franchise_km: 100,
+        franchise_hours: 3,
+        price_per_extra_km: 0,
+        price_per_extra_hour: 145,
+      },
+    ];
+    const providerTables = [
+      {
+        id: 'g8-100',
+        provider: g8Name,
+        operation_type: '100KM',
+        activation_cost: 480,
+        franchise_km: 100,
+        franchise_hours: 3,
+        cost_per_extra_km: 4.8,
+        cost_per_extra_hour: 100,
+      },
+    ];
+    const providersList = [
+      {
+        name: g8Name,
+        auto_calc_enabled: true,
+        auto_base_value: 6200,
+        auto_base_km: 100,
+        auto_base_hr: 3,
+        auto_extra_km: 4,
+        auto_extra_hr: 90,
+      },
+    ];
+    const mission = makeMission({
+      id: 'GTM-6258',
+      client: dhlClient,
+      provider: g8Name,
+      origin: 'AV. TAMBORE, 1440 - TAMBORÉ, BARUERI - SP',
+      destination: 'ROD. FERNÃO DIAS',
+      start_km: 268054,
+      end_km: 268181,
+      total_distance: 320,
+      start_time: '2026-07-07T01:30:00+00:00',
+      end_time: '2026-07-07T06:30:00+00:00',
+      revenue_value: 1166.3,
+      cost_value: 809.6,
+      billing_approved: true,
+      snapshot_data: {
+        clientTableId: 'raio-es-300',
+      },
+    } as any);
+
+    const finWrong = calculateMissionFinancials(
+      mission,
+      clientTables as any,
+      providerTables as any,
+      undefined,
+      new Date(),
+      { clientTableId: 'raio-es-300' },
+      providersList,
+    );
+    assert.equal(finWrong.client.serviceTotal, 2070, 'motor com tabela errada = 2070');
+
+    const audit = computeMissionBillingAudit(
+      mission,
+      clientTables as any,
+      providerTables as any,
+      undefined,
+      providersList,
+    );
+
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(Math.abs(audit.client.diferenca) < 0.01);
+    assert.ok(Math.abs(audit.provider.diferenca) < 0.01);
+    assert.equal(audit.client.lancado, 1166.3);
+    assert.equal(audit.provider.lancado, 809.6);
+    assert.ok((audit.client.tableName || '').includes('BARUERI-CAJAMAR'));
+    assert.equal(audit.provider.tableName, '100KM');
+  });
+
   it('usa cache e invalida quando fingerprint muda', () => {
     clearMissionBillingAuditCache();
     const mission = makeMission({ revenue_value: 790, cost_value: 590 });
