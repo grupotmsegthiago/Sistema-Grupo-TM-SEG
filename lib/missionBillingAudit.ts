@@ -206,6 +206,49 @@ function resolveSnapshotClientTableId(
   return { orphan: true };
 }
 
+/** Detecta snapshot com clientTableId divergente do tableName/activationFee congelados. */
+export function getSnapshotClientTableCorrection(
+  mission: Mission,
+  clientTables: ClientPriceTable[],
+): {
+  needsFix: boolean;
+  currentId?: string;
+  correctedId?: string;
+  correctedTable?: ClientPriceTable;
+  reason?: string;
+} {
+  const snap = (mission as any).snapshot_data as Record<string, unknown> | null | undefined;
+  if (!snap?.clientTableId) return { needsFix: false };
+
+  const currentId = String(snap.clientTableId);
+  const resolved = resolveSnapshotClientTableId(snap, clientTables, mission);
+  if (!resolved.id || resolved.id === currentId) return { needsFix: false };
+
+  const correctedTable = clientTables.find((t) => String(t.id) === resolved.id);
+  const tableFromId = clientTables.find((t) => String(t.id) === currentId);
+  const tableName = normalizeTableLabel(String(snap.tableName || ''));
+  const opFromId = normalizeTableLabel(tableFromId?.operation_type || '');
+
+  let reason = 'clientTableId diverge do snapshot';
+  if (tableName && tableName !== '-' && opFromId && opFromId !== tableName) {
+    reason = `ID apontava "${tableFromId?.operation_type}" mas snapshot tableName="${snap.tableName}"`;
+  } else if (
+    tableFromId &&
+    correctedTable &&
+    Math.abs(Number(tableFromId.activation_fee || 0) - Number(snap.activationFee || 0)) > 0.02
+  ) {
+    reason = `activationFee snapshot (${snap.activationFee}) ≠ tabela do ID (${tableFromId.activation_fee})`;
+  }
+
+  return {
+    needsFix: true,
+    currentId,
+    correctedId: resolved.id,
+    correctedTable,
+    reason,
+  };
+}
+
 function resolveSnapshotProviderTableId(
   snap: Record<string, unknown>,
   providerTables: ProviderCostTable[],
