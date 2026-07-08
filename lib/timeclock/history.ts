@@ -1,6 +1,7 @@
 import { supabase } from '../supabase';
 import type { TimeClockEntry } from './types';
 import { fetchTimeClockEntriesFromApi } from './fetchEntriesApi';
+import { TIMECLOCK_ELIGIBLE_STATUSES } from './cltEmployee';
 
 export interface CltEmployeeOption {
   id: string;
@@ -13,8 +14,8 @@ export async function fetchCltEmployeesForHistory(): Promise<CltEmployeeOption[]
   const { data, error } = await supabase
     .from('rh_employees')
     .select('id, user_id, full_name, matricula')
-    .eq('contract_type', 'CLT')
-    .eq('status', 'Ativo')
+    .ilike('contract_type', 'clt')
+    .in('status', TIMECLOCK_ELIGIBLE_STATUSES as unknown as string[])
     .is('deleted_at', null)
     .order('full_name');
 

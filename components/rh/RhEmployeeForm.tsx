@@ -199,7 +199,12 @@ const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved, embedded, initia
             <div><label className={RH_LABEL_CLASS}>Cargo</label><select className={RH_SELECT_CLASS} value={form.position_id || ''} onChange={(e) => set('position_id', e.target.value || null)}><option value="">Selecione</option>{positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
             <div><label className={RH_LABEL_CLASS}>Centro de custo</label><input className={RH_INPUT_CLASS} value={form.cost_center || ''} onChange={(e) => set('cost_center', e.target.value)} /></div>
             <div><label className={RH_LABEL_CLASS}>Fim experiência</label><input type="date" className={RH_INPUT_CLASS} value={form.probation_end_date || ''} onChange={(e) => set('probation_end_date', e.target.value)} /></div>
-            <div className="md:col-span-2"><label className={RH_LABEL_CLASS}>Vincular usuário do sistema</label><select className={RH_SELECT_CLASS} value={form.user_id || ''} onChange={(e) => set('user_id', e.target.value || null)}><option value="">Sem vínculo</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}</select></div>
+            <div className="md:col-span-2"><label className={RH_LABEL_CLASS}>Vincular usuário do sistema</label><select className={RH_SELECT_CLASS} value={form.user_id || ''} onChange={(e) => {
+              const uid = e.target.value || null;
+              set('user_id', uid);
+              const linked = users.find((u) => u.id === uid);
+              if (linked?.email) set('email', linked.email);
+            }}><option value="">Sem vínculo</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}</select><p className="text-[10px] text-gray-400 mt-1">Obrigatório para CLT bater ponto no app. O e-mail do usuário é sincronizado automaticamente.</p></div>
           </div>
         )}
 
