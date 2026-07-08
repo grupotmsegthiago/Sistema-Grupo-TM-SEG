@@ -14,7 +14,7 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
     return [...onlineUsers].sort((a, b) => {
       if (a.onDuty !== b.onDuty) return a.onDuty ? -1 : 1;
       if (a.isClt !== b.isClt) return a.isClt ? -1 : 1;
-      return a.name.localeCompare(b.name, 'pt-BR');
+      return (a.name || 'Usuário').localeCompare(b.name || 'Usuário', 'pt-BR');
     });
   }, [onlineUsers]);
 
@@ -47,12 +47,15 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
       ) : (
         <div className="flex flex-wrap gap-3">
           {sorted.map((user) => {
+            const displayName = user.name || 'Usuário';
+            const displayRole = user.role || 'Online';
+            const onDutyLabel = user.onDutyLabel || 'Online';
             const onDuty = user.isClt && user.onDuty;
             return (
               <div
                 key={user.userId}
                 className="flex flex-col items-center w-[72px]"
-                title={`${user.name} — ${user.role}${user.isClt ? ` — ${user.onDutyLabel}` : ''}`}
+                title={`${displayName} — ${displayRole}${user.isClt ? ` — ${onDutyLabel}` : ''}`}
               >
                 <div className="relative">
                   <div
@@ -64,7 +67,7 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
                           : 'bg-indigo-50 text-indigo-800 border-indigo-200'
                     }`}
                   >
-                    {getInitials(user.name)}
+                    {getInitials(displayName)}
                   </div>
                   <span
                     className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${
@@ -73,7 +76,7 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
                   />
                 </div>
                 <p className="mt-1.5 text-[9px] font-bold text-gray-800 text-center leading-tight line-clamp-2 w-full">
-                  {user.name.split(' ')[0]}
+                  {displayName.split(' ')[0]}
                 </p>
                 <p className="text-[8px] font-black uppercase text-gray-400 truncate w-full text-center">
                   {onDuty ? 'Em serviço' : user.isClt ? 'CLT' : 'Online'}

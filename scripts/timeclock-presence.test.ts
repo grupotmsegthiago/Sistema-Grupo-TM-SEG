@@ -30,3 +30,13 @@ test('parsePresenceState deduplica usuários', () => {
   assert.equal(users.length, 2);
   assert.equal(getInitials('Maria Silva'), 'MS');
 });
+
+test('parsePresenceState normaliza presença incompleta sem quebrar tela', () => {
+  const users = parsePresenceState({
+    u1: [{ userId: 'u1' }],
+    lixo: [{}],
+  });
+  assert.equal(users.length, 1);
+  assert.equal(users[0].name, 'Usuário');
+  assert.equal(users[0].role, 'Online');
+});

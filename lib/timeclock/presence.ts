@@ -10,17 +10,44 @@ export interface PresenceUserState {
   onlineAt: string;
 }
 
+type RawPresenceMeta = Partial<PresenceUserState> | Record<string, unknown>;
+
+function normalizePresenceMeta(meta: RawPresenceMeta): PresenceUserState | null {
+  const userId = typeof meta.userId === 'string' && meta.userId.trim() ? meta.userId.trim() : '';
+  if (!userId) return null;
+
+  return {
+    userId,
+    name: typeof meta.name === 'string' && meta.name.trim() ? meta.name.trim() : 'Usuário',
+    role: typeof meta.role === 'string' && meta.role.trim() ? meta.role.trim() : 'Online',
+    isClt: meta.isClt === true,
+    onDuty: meta.onDuty === true,
+    onDutyLabel:
+      typeof meta.onDutyLabel === 'string' && meta.onDutyLabel.trim()
+        ? meta.onDutyLabel.trim()
+        : 'Online',
+    onlineAt:
+      typeof meta.onlineAt === 'string' && meta.onlineAt.trim()
+        ? meta.onlineAt.trim()
+        : new Date(0).toISOString(),
+  };
+}
+
 export function parsePresenceState(
-  state: Record<string, PresenceUserState[]>
+  state: Record<string, RawPresenceMeta[] | RawPresenceMeta>
 ): PresenceUserState[] {
   const users: PresenceUserState[] = [];
-  for (const key of Object.keys(state)) {
-    const metas = state[key];
-    if (!Array.isArray(metas) || metas.length === 0) continue;
+  for (const key of Object.keys(state || {})) {
+    const raw = state[key];
+    const metas = Array.isArray(raw) ? raw : [raw];
+    if (metas.length === 0) continue;
     const latest = metas[metas.length - 1];
-    if (latest?.userId) users.push(latest);
+    const normalized = normalizePresenceMeta(latest || {});
+    if (normalized) users.push(normalized);
   }
-  return users.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  return users.sort((a, b) =>
+    (a.name || 'Usuário').localeCompare(b.name || 'Usuário', 'pt-BR')
+  );
 }
 
 export function getInitials(name: string): string {
