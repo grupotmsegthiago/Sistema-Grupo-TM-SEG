@@ -495,6 +495,23 @@ describe('missionBillingAudit', () => {
     assert.equal(audit.provider.tableName, '100KM');
   });
 
+  it('missão anterior a jun/2026 fica pendente fora do período', () => {
+    clearMissionBillingAuditCache();
+    const mission = makeMission({
+      start_time: '2026-05-15T08:00:00.000Z',
+      revenue_value: 790,
+      cost_value: 590,
+    } as any);
+    const audit = computeMissionBillingAudit(
+      mission,
+      baseTables.client as any,
+      baseTables.provider as any,
+    );
+    assert.equal(audit.overallStatus, 'pendente');
+    assert.equal(audit.skipped, true);
+    assert.ok(audit.skipReason?.includes('jun/2026'));
+  });
+
   it('usa cache e invalida quando fingerprint muda', () => {
     clearMissionBillingAuditCache();
     const mission = makeMission({ revenue_value: 790, cost_value: 590 });

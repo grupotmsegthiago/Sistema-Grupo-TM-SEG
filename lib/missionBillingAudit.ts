@@ -1,6 +1,8 @@
 import type { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { calculateMissionFinancials } from './financialUtils';
 import { isAutoMasterRow } from './providerAutoPricing';
+import { computeDhlBand } from './dhlAutoTableSelector';
+import { missionEligibleForBillingAudit } from './missionBillingAuditConfig';
 
 export type AuditStatusLevel = 'validado' | 'atencao' | 'erro' | 'pendente';
 
@@ -574,6 +576,22 @@ function shouldTryRealCatalogMatch(
   return false;
 }
 
+/** Reduz varredura do catálogo no batch — foca na faixa compatível com o KM rodado. */
+function narrowCatalogCandidates(
+  candidates: (ClientPriceTable | ProviderCostTable)[],
+  kmRodado: number,
+  isAutoSide: boolean,
+): (ClientPriceTable | ProviderCostTable)[] {
+  if (isAutoSide || kmRodado <= 0 || candidates.length <= 40) return candidates;
+  const band = computeDhlBand(kmRodado);
+  const narrowed = candidates.filter((t) => {
+    const fk = (t as any).franchise_km || 0;
+    if (fk <= 0) return false;
+    return Math.abs(fk - band) <= 50 || (fk >= kmRodado && fk <= band + 100);
+  });
+  return narrowed.length > 0 ? narrowed : candidates.slice(0, 40);
+}
+
 /** Quando motor auto/snapshot erra, tenta casar valor lançado com tabela REAL do cadastro. */
 function tryMatchRealCatalogTable(
   side: 'cliente' | 'fornecedor',
@@ -592,10 +610,13 @@ function tryMatchRealCatalogTable(
 ): SideAuditDetail | null {
   if (!shouldTryRealCatalogMatch(sideFin, lancado, kmRodado)) return null;
 
-  const candidates =
+  const candidates = narrowCatalogCandidates(
     side === 'cliente'
       ? filterClientTablesForMission(mission, clientTables)
-      : filterProviderTablesForMission(mission, providerTables);
+      : filterProviderTablesForMission(mission, providerTables),
+    kmRodado,
+    isAutoEngineTableSide(sideFin),
+  );
 
   const snapTableName =
     side === 'cliente' && snap?.tableName
@@ -713,6 +734,54 @@ export function computeMissionBillingAudit(
   const fingerprint = buildMissionAuditFingerprint(mission, hash);
   const cached = auditCache.get(fingerprint);
   if (cached) return cached;
+
+  if (!missionEligibleForBillingAudit(mission)) {
+    const emptySide = (): SideAuditDetail => ({
+      status: 'validado',
+      activation: 0,
+      franchiseKm: 0,
+      franchiseHours: 0,
+      kmRodado: 0,
+      kmExcedente: 0,
+      valorKmUnit: 0,
+      subtotalKm: 0,
+      tempoExecutadoHours: 0,
+      horaExcedente: 0,
+      valorHoraUnit: 0,
+      subtotalHora: 0,
+      esperado: 0,
+      lancado: 0,
+      diferenca: 0,
+      motivos: [],
+    });
+    const outside: MissionBillingAuditResult = {
+      missionId: mission.id || '',
+      overallStatus: 'pendente',
+      overallLabel: 'PENDENTE',
+      overallIcon: '⚪',
+      client: emptySide(),
+      provider: emptySide(),
+      resultadoFinal: 'ERRO',
+      cacheKey: fingerprint,
+      skipped: true,
+      skipReason: 'Fora do período de auditoria (a partir de jun/2026)',
+      resumo: buildAuditExecutiveSummary(
+        {
+          overallStatus: 'pendente',
+          overallLabel: 'PENDENTE',
+          client: emptySide(),
+          provider: emptySide(),
+          resultadoFinal: 'ERRO',
+          skipped: true,
+          skipReason: 'Fora do período de auditoria (a partir de jun/2026)',
+        },
+        0,
+        0,
+      ),
+    };
+    auditCache.set(fingerprint, outside);
+    return outside;
+  }
 
   const status = String((mission as any).status || '').toUpperCase();
   const isRefused = status.includes('RECUS');

@@ -1,16 +1,23 @@
 /**
- * Audita TODAS as OS concluídas/com valores e gera relatório consolidado.
+ * Audita OS no período configurado (jun/2026 até hoje por padrão).
  * Uso: npx tsx scripts/audit-all-missions.ts
+ *      npx tsx scripts/audit-all-missions.ts --all   # ignora filtro de período
  */
 import { createClient } from '@supabase/supabase-js';
-import { calculateMissionFinancials } from '../lib/financialUtils';
 import {
-  auditMissionsBatch,
   clearMissionBillingAuditCache,
   computeMissionBillingAudit,
+  computePricingTablesHash,
   type MissionBillingAuditResult,
 } from '../lib/missionBillingAudit';
+import {
+  BILLING_AUDIT_MIN_START,
+  filterMissionsForBillingAudit,
+  getBillingAuditBatchDateRange,
+} from '../lib/missionBillingAuditConfig';
 import type { Mission } from '../types';
+
+const AUDIT_ALL = process.argv.includes('--all');
 
 const cfg = {
   url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://ajhmmjuewdsukecaimik.supabase.co',
@@ -61,18 +68,43 @@ async function main() {
     fetchAll(sb, 'providers'),
   ]);
 
-  const missions = missionsRaw.map(mapMission);
-  console.log(`   ${missions.length} missões carregadas`);
+  const missionsAll = missionsRaw.map(mapMission);
+  const asOf = new Date();
+  const [periodStart, periodEnd] = getBillingAuditBatchDateRange(asOf);
+  const missions = AUDIT_ALL
+    ? missionsAll
+    : filterMissionsForBillingAudit(missionsAll, asOf);
+
+  console.log(`   ${missionsAll.length} missões no banco`);
+  if (AUDIT_ALL) {
+    console.log('   Modo --all: auditando todas (sem filtro de período)');
+  } else {
+    console.log(
+      `   Período auditoria: ${periodStart.toLocaleDateString('pt-BR')} → ${periodEnd.toLocaleDateString('pt-BR')} (${missions.length} OS)`,
+    );
+    console.log(`   (OS anteriores a ${BILLING_AUDIT_MIN_START} ficam fora — regra permanente para novas OS)`);
+  }
 
   clearMissionBillingAuditCache();
 
-  const auditMap = auditMissionsBatch(
-    missions,
-    clientTables as any,
-    providerTables as any,
-    clients as any,
-    providers as any,
-  );
+  const tablesHash = computePricingTablesHash(clientTables as any, providerTables as any);
+  const auditMap = new Map<string, MissionBillingAuditResult>();
+  const total = missions.length;
+  let done = 0;
+
+  for (const m of missions) {
+    const clientMatch = (clients as any[]).find(
+      (c) => c.name === (m as any).originalClientName || c.name === m.client,
+    );
+    auditMap.set(
+      m.id!,
+      computeMissionBillingAudit(m, clientTables as any, providerTables as any, clientMatch, providers as any, tablesHash),
+    );
+    done++;
+    if (done % 250 === 0 || done === total) {
+      console.log(`   Auditoria: ${done}/${total} (${Math.round((done / total) * 100)}%)`);
+    }
+  }
 
   const stats = { validado: 0, atencao: 0, erro: 0, pendente: 0, skipped: 0 };
   const erros: Array<{ id: string; audit: MissionBillingAuditResult; mission: Mission }> = [];
@@ -107,9 +139,10 @@ async function main() {
   });
 
   console.log('\n══════════════════════════════════════════');
-  console.log('  RELATÓRIO AUDITORIA — TODAS AS OS');
+  console.log(AUDIT_ALL ? '  RELATÓRIO AUDITORIA — TODAS AS OS' : '  RELATÓRIO AUDITORIA — JUN/2026 ATÉ HOJE');
   console.log('══════════════════════════════════════════');
-  console.log(`Total missões no banco:     ${missions.length}`);
+  console.log(`Total missões no banco:     ${missionsAll.length}`);
+  console.log(`No período auditado:        ${missions.length}`);
   console.log(`Auditáveis (com valores):   ${comparavel.length}`);
   console.log(`Pendentes / sem dados:      ${stats.skipped}`);
   console.log('');
