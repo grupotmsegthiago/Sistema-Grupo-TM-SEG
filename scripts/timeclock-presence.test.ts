@@ -115,6 +115,13 @@ test('quadro de presença usa robô inline (SVG) em vez de iniciais ou <img> ext
   assert.doesNotMatch(boardSrc, /getInitials\(displayName\)/);
 });
 
+test('quadro de presença distribui robôs na horizontal sem truncar status', () => {
+  const boardSrc = fs.readFileSync('components/MissionTeamPresenceBoard.tsx', 'utf8');
+  assert.match(boardSrc, /grid-cols-\[repeat\(auto-fill,minmax/);
+  assert.doesNotMatch(boardSrc, /w-\[76px\]/);
+  assert.doesNotMatch(boardSrc, /truncate w-full text-center/);
+});
+
 test('dedupeTeamRoster remove duplicata por userId e por nome', () => {
   const roster = dedupeTeamRoster([
     { userId: '5', name: 'Michelle Cristiane', role: 'Operador' },

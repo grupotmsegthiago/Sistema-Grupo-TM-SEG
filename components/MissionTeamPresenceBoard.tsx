@@ -204,7 +204,7 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
                 {users.length === 0 ? (
                   <p className="text-[10px] text-gray-400 font-medium mb-1">Nenhum usuário nesta categoria.</p>
                 ) : (
-                  <div className="flex flex-wrap gap-3">
+                  <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(7.25rem,1fr))] gap-x-3 gap-y-4">
                     {users.map((user) => {
                       const displayName = formatPresenceShortName(user.name || 'Usuário');
                       const isOnline = onlineIds.has(normalizePresenceUserId(user.userId));
@@ -215,9 +215,9 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
                       return (
                         <div
                           key={user.userId}
-                          className={`group relative flex flex-col items-center w-[76px] transition-opacity ${isOnline ? '' : 'opacity-60'}`}
+                          className={`group relative flex min-w-0 w-full flex-col items-center px-0.5 transition-opacity ${isOnline ? '' : 'opacity-60'}`}
                         >
-                          <div className="relative">
+                          <div className="relative shrink-0">
                             <div
                               className={`w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center shadow-md border-2 bg-white ${style.border}`}
                             >
@@ -227,11 +227,11 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
                               className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${style.dot}`}
                             />
                           </div>
-                          <p className="mt-1.5 text-[10px] font-bold text-gray-800 text-center leading-tight line-clamp-2 w-full">
+                          <p className="mt-1.5 w-full text-center text-[10px] font-bold leading-snug text-gray-800 break-words">
                             {displayName}
                           </p>
                           <p
-                            className={`text-[8px] font-black uppercase truncate w-full text-center ${style.text}`}
+                            className={`mt-0.5 w-full text-center text-[9px] font-black uppercase leading-snug whitespace-normal break-words ${style.text}`}
                           >
                             {status}
                           </p>
