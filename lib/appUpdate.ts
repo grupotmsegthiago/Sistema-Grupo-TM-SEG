@@ -65,6 +65,12 @@ export async function reloadForPublishedUpdate(
   flagKey = APP_UPDATE_RELOAD_FLAG
 ): Promise<void> {
   sessionStorage.setItem(flagKey, '1');
+  // Preserva sessão: atualiza app_version antes do reload para o App não cair no login.
+  try {
+    localStorage.setItem('app_version', server.version);
+  } catch {
+    /* ignore */
+  }
   await clearCachesAndServiceWorkers();
   const url = new URL(window.location.href);
   url.searchParams.set('_v', server.buildId || server.version);
