@@ -131,12 +131,6 @@
     "api/email-health.ts": {
       "maxDuration": 60
     },
-    "api/system-diagnostics.ts": {
-      "maxDuration": 120
-    },
-    "api/rh-team-presence-board.ts": {
-      "maxDuration": 60
-    },
     "api/version.ts": {
       "maxDuration": 10
     }
@@ -297,14 +291,6 @@
     {
       "source": "/api/email/health",
       "destination": "/api/email-health"
-    },
-    {
-      "source": "/api/system/diagnostics",
-      "destination": "/api/system-diagnostics"
-    },
-    {
-      "source": "/api/rh/team-presence-board",
-      "destination": "/api/rh-team-presence-board"
     },
     {
       "source": "/api/version",
