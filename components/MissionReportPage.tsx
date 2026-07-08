@@ -15,10 +15,11 @@ import {
   auditMissionsBatch,
   clearMissionBillingAuditCache,
   computeMissionBillingAudit,
-  indexBillingAdjustments,
+  fetchBillingAdjustmentsForMissionIds,
   type BillingAdjustmentRecord,
   type MissionBillingAuditResult,
 } from '../lib/missionBillingAudit';
+import { loadAllPricingTables, invalidatePricingTablesCache } from '../lib/pricingTablesLoader';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import {
   computeCanonicalRevenueCost,
@@ -39,6 +40,8 @@ const MissionReportPage: React.FC = () => {
   const [clientsData, setClientsData] = useState<any[]>([]);
   const [providersData, setProvidersData] = useState<any[]>([]);
   const [billingAdjustmentsMap, setBillingAdjustmentsMap] = useState<Map<string, BillingAdjustmentRecord>>(new Map());
+  const [refDataReady, setRefDataReady] = useState(false);
+  const realtimeDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [auditForModal, setAuditForModal] = useState<{ mission: Mission; audit: MissionBillingAuditResult } | null>(null);
 
   const [periodFilter, setPeriodFilter] = useState<'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM' | 'ALL'>('WEEK');
@@ -73,13 +76,20 @@ const MissionReportPage: React.FC = () => {
 
   const fetchMissions = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
+    clearMissionBillingAuditCache();
+    setRefDataReady(false);
     try {
       let query = supabase.from('missions').select('*').order('created_at', { ascending: false });
 
       if (currentUser?.clientId) {
         const { data: clientData } = await supabase.from('clients').select('name').eq('id', currentUser.clientId).single();
         if (clientData) query = query.eq('client', clientData.name);
-        else { setAllMissions([]); setIsLoading(false); return; }
+        else { setAllMissions([]); setBillingAdjustmentsMap(new Map()); setRefDataReady(true); setIsLoading(false); return; }
+      }
+
+      if (periodFilter !== 'ALL' && !(periodFilter === 'CUSTOM' && (!customStartDate || !customEndDate))) {
+        const [start, end] = getCanonicalDateRange(periodFilter, customStartDate, customEndDate);
+        query = query.gte('start_time', start.toISOString()).lte('start_time', end.toISOString());
       }
 
       const fetchAllPages = async () => {
@@ -96,54 +106,23 @@ const MissionReportPage: React.FC = () => {
         return all;
       };
 
-      const fetchBillingAdjustments = async () => {
-        let all: Array<{ entity_id?: string; details?: unknown }> = [];
-        let from = 0;
-        const pageSize = 1000;
-        while (true) {
-          const { data, error } = await supabase
-            .from('system_logs')
-            .select('entity_id, details, created_at')
-            .eq('entity', 'BillingAdjustment')
-            .order('created_at', { ascending: false })
-            .range(from, from + pageSize - 1);
-          if (error) throw error;
-          if (data) all = all.concat(data);
-          if (!data || data.length < pageSize) break;
-          from += pageSize;
-        }
-        return indexBillingAdjustments(all);
-      };
+      const missionsData = await fetchAllPages();
+      const missionIds = missionsData.map((m: any) => m.id).filter(Boolean);
 
-      const fetchTablePages = async (table: 'client_price_tables' | 'provider_cost_tables') => {
-        let all: any[] = [];
-        let from = 0;
-        const pageSize = 1000;
-        while (true) {
-          const { data, error } = await supabase.from(table).select('*').range(from, from + pageSize - 1);
-          if (error) throw error;
-          if (data) all = all.concat(data);
-          if (!data || data.length < pageSize) break;
-          from += pageSize;
-        }
-        return all;
-      };
-
-      const [missionsData, clientsRes, providersRes, cptRes, pctRes, allClientsRes, allProvidersRes, billingAdjMap] = await Promise.all([
-        fetchAllPages(),
+      const [clientsRes, providersRes, pricingTables, allClientsRes, allProvidersRes, billingAdjMap] = await Promise.all([
         supabase.from('clients').select('name, trading_name'),
         supabase.from('providers').select('name, trading_name'),
-        fetchTablePages('client_price_tables'),
-        fetchTablePages('provider_cost_tables'),
+        loadAllPricingTables(),
         supabase.from('clients').select('*'),
         supabase.from('providers').select('*'),
-        fetchBillingAdjustments(),
+        fetchBillingAdjustmentsForMissionIds(supabase, missionIds),
       ]);
-      setClientPriceTables(cptRes || []);
-      setProviderCostTables(pctRes || []);
+      setClientPriceTables(pricingTables.client || []);
+      setProviderCostTables(pricingTables.provider || []);
       setClientsData(allClientsRes.data || []);
       setProvidersData(allProvidersRes.data || []);
       setBillingAdjustmentsMap(billingAdjMap);
+      setRefDataReady(true);
 
       if (missionsData) {
         const clientVehicleIds = [...new Set(missionsData.map((m: any) => m.client_vehicle).filter((id: any) => id))];
@@ -206,18 +185,23 @@ const MissionReportPage: React.FC = () => {
       }
     } catch (err: any) {
       showNotification('Erro', err.message || 'Falha ao carregar missões', 'error');
+      setRefDataReady(false);
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, showNotification]);
+  }, [currentUser, showNotification, periodFilter, customStartDate, customEndDate]);
 
   useEffect(() => {
     if (currentUser) fetchMissions();
   }, [currentUser, fetchMissions]);
 
   useRealtimeRefresh(['missions', 'client_price_tables', 'provider_cost_tables', 'system_logs'], () => {
-    clearMissionBillingAuditCache();
-    if (currentUser) fetchMissions(true);
+    if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
+    realtimeDebounceRef.current = setTimeout(() => {
+      invalidatePricingTablesCache();
+      clearMissionBillingAuditCache();
+      if (currentUser) fetchMissions(true);
+    }, 1200);
   });
 
   const filteredMissions = useMemo(() => {
@@ -336,7 +320,7 @@ const MissionReportPage: React.FC = () => {
   // Para cada OS calcula receita base + pedágio + custo base + pedágio pago.
   // Pula REFUSED. Usa valores salvos quando há, senão estima via tabela.
   const auditByMission = useMemo(() => {
-    if (clientPriceTables.length === 0 && providerCostTables.length === 0) {
+    if (!refDataReady || clientPriceTables.length === 0) {
       return new Map<string, MissionBillingAuditResult>();
     }
     return auditMissionsBatch(
@@ -347,7 +331,7 @@ const MissionReportPage: React.FC = () => {
       providersData,
       billingAdjustmentsMap,
     );
-  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData, providersData, billingAdjustmentsMap]);
+  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData, providersData, billingAdjustmentsMap, refDataReady]);
 
   const openAuditModal = useCallback((mission: Mission) => {
     clearMissionBillingAuditCache(mission.id);
@@ -531,7 +515,7 @@ const MissionReportPage: React.FC = () => {
             </button>
             <button
               data-testid="btn-refresh-report"
-              onClick={() => { clearMissionBillingAuditCache(); fetchMissions(true); }}
+              onClick={() => { invalidatePricingTablesCache(); clearMissionBillingAuditCache(); fetchMissions(true); }}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-bold border border-gray-200 transition-colors"
             >
               <RefreshCw size={13} /> Atualizar
@@ -871,6 +855,11 @@ const MissionReportPage: React.FC = () => {
                         </>
                       )}
                       {canSeeFinancials && (() => {
+                        if (!refDataReady) {
+                          return (
+                            <td className="px-3 py-2 border-r border-gray-100 text-center text-[10px] text-gray-300">…</td>
+                          );
+                        }
                         const audit = auditByMission.get(m.id);
                         if (!audit || audit.skipped) {
                           return (
@@ -964,6 +953,7 @@ const MissionReportPage: React.FC = () => {
           onClose={() => setIsFinancialModalOpen(false)}
           mission={missionForFinancials}
           onUpdate={() => {
+            invalidatePricingTablesCache();
             clearMissionBillingAuditCache();
             fetchMissions(true);
           }}

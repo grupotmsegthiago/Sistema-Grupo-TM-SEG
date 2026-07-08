@@ -8,7 +8,7 @@ import {
   clearMissionBillingAuditCache,
   computeMissionBillingAudit,
   computePricingTablesHash,
-  indexBillingAdjustments,
+  fetchBillingAdjustmentsForMissionIds,
   type MissionBillingAuditResult,
 } from '../lib/missionBillingAudit';
 import {
@@ -69,32 +69,18 @@ async function main() {
     fetchAll(sb, 'providers'),
   ]);
 
-  const fetchBillingAdjustments = async () => {
-    let all: Array<{ entity_id?: string; details?: unknown; created_at?: string }> = [];
-    let from = 0;
-    while (true) {
-      const { data, error } = await sb
-        .from('system_logs')
-        .select('entity_id, details, created_at')
-        .eq('entity', 'BillingAdjustment')
-        .order('created_at', { ascending: false })
-        .range(from, from + 999);
-      if (error) throw error;
-      if (data) all = all.concat(data as any);
-      if (!data || data.length < 1000) break;
-      from += 1000;
-    }
-    return indexBillingAdjustments(all);
-  };
-  const billingAdjustmentsMap = await fetchBillingAdjustments();
-  console.log(`   BillingAdjustment carregados: ${billingAdjustmentsMap.size}`);
-
   const missionsAll = missionsRaw.map(mapMission);
   const asOf = new Date();
   const [periodStart, periodEnd] = getBillingAuditBatchDateRange(asOf);
   const missions = AUDIT_ALL
     ? missionsAll
     : filterMissionsForBillingAudit(missionsAll, asOf);
+
+  const billingAdjustmentsMap = await fetchBillingAdjustmentsForMissionIds(
+    sb,
+    missions.map((m) => m.id!).filter(Boolean),
+  );
+  console.log(`   BillingAdjustment carregados: ${billingAdjustmentsMap.size}`);
 
   console.log(`   ${missionsAll.length} missões no banco`);
   if (AUDIT_ALL) {

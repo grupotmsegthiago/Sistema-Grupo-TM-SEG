@@ -315,6 +315,32 @@ export function parseBillingAdjustment(details: unknown): BillingAdjustmentRecor
   }
 }
 
+/** Busca BillingAdjustment apenas das OS informadas (muito mais rápido que varrer system_logs inteiro). */
+export async function fetchBillingAdjustmentsForMissionIds(
+  supabaseClient: { from: (table: string) => any },
+  missionIds: string[],
+): Promise<Map<string, BillingAdjustmentRecord>> {
+  if (missionIds.length === 0) return new Map();
+
+  const uniqueIds = [...new Set(missionIds.filter(Boolean))];
+  const chunkSize = 150;
+  let rows: Array<{ entity_id?: string; details?: unknown; created_at?: string }> = [];
+
+  for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+    const chunk = uniqueIds.slice(i, i + chunkSize);
+    const { data, error } = await supabaseClient
+      .from('system_logs')
+      .select('entity_id, details, created_at')
+      .eq('entity', 'BillingAdjustment')
+      .in('entity_id', chunk)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    if (data) rows = rows.concat(data);
+  }
+
+  return indexBillingAdjustments(rows);
+}
+
 /** Monta mapa missionId → último BillingAdjustment (ordenar created_at desc). */
 export function indexBillingAdjustments(
   rows: Array<{ entity_id?: string; details?: unknown }>,
@@ -876,7 +902,7 @@ export function computeMissionBillingAudit(
 ): MissionBillingAuditResult {
   const hash = tablesHash ?? computePricingTablesHash(clientTables, providerTables);
   const adjKey = billingAdjustment
-    ? `|adj:${billingAdjustment.clientTableId || ''}:${billingAdjustment.providerTableId || ''}`
+    ? `|adj:${billingAdjustment.clientTableId || ''}:${billingAdjustment.providerTableId || ''}:${billingAdjustment.revenueTotal ?? ''}:${billingAdjustment.costTotal ?? ''}:${billingAdjustment.customClientBase ?? ''}:${billingAdjustment.customProviderBase ?? ''}`
     : '';
   const fingerprint = `${buildMissionAuditFingerprint(mission, hash)}${adjKey}`;
   const cached = auditCache.get(fingerprint);
