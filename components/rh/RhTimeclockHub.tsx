@@ -1,34 +1,36 @@
 import React, { useState } from 'react';
-import { Clock, BarChart3 } from 'lucide-react';
+import { Clock, BarChart3, History } from 'lucide-react';
 import RhPageHeader from './shared/RhPageHeader';
 import TimeClockSystem from '../TimeClockSystem';
 import RHPointReport from '../RHPointReport';
+import RhTimeclockHistory from './RhTimeclockHistory';
 
 const RhTimeclockHub: React.FC = () => {
-  const [tab, setTab] = useState<'registro' | 'relatorio'>('registro');
+  const [tab, setTab] = useState<'registro' | 'historico' | 'relatorio'>('registro');
+
+  const tabBtn = (id: typeof tab, label: string, icon: React.ReactNode) => (
+    <button
+      type="button"
+      onClick={() => setTab(id)}
+      className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase ${tab === id ? 'bg-black text-white' : 'bg-white border text-gray-600'}`}
+    >
+      {icon} {label}
+    </button>
+  );
 
   return (
     <div>
-      <RhPageHeader title="Folha de Ponto" subtitle="Registro facial e relatórios de jornada" icon={Clock} />
+      <RhPageHeader title="Folha de Ponto" subtitle="Registro facial, histórico e relatórios de jornada" icon={Clock} />
 
-      <div className="flex gap-2 mb-4">
-        <button
-          type="button"
-          onClick={() => setTab('registro')}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase ${tab === 'registro' ? 'bg-black text-white' : 'bg-white border text-gray-600'}`}
-        >
-          <Clock size={14} /> Registro de ponto
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('relatorio')}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase ${tab === 'relatorio' ? 'bg-black text-white' : 'bg-white border text-gray-600'}`}
-        >
-          <BarChart3 size={14} /> Relatório de ponto
-        </button>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {tabBtn('registro', 'Registro', <Clock size={14} />)}
+        {tabBtn('historico', 'Histórico', <History size={14} />)}
+        {tabBtn('relatorio', 'Relatório folha', <BarChart3 size={14} />)}
       </div>
 
-      {tab === 'registro' ? <TimeClockSystem /> : <RHPointReport />}
+      {tab === 'registro' && <TimeClockSystem />}
+      {tab === 'historico' && <RhTimeclockHistory />}
+      {tab === 'relatorio' && <RHPointReport />}
     </div>
   );
 };

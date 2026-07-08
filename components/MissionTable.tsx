@@ -44,6 +44,7 @@ import ClientReportsTab from './ClientReportsTab';
 import ClientMissionRequest from './ClientMissionRequest';
 import ClientCommitteePresentation from './ClientCommitteePresentation';
 import CltTimeClockBar from './CltTimeClockBar';
+import MissionTeamPresenceBoard from './MissionTeamPresenceBoard';
 const cevaLogoPath = '/logo_ceva.png';
 
 
@@ -1845,6 +1846,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 {onNewMission && !isRestrictedClientView && ( <button onClick={onNewMission} className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-black px-4 py-2.5 rounded-lg text-[11px] font-black transition-all shadow-md uppercase"> <Plus size={16} /> Nova Missão </button> )}
           </div>
           </div>
+
+          {!isRestrictedClientView && <MissionTeamPresenceBoard />}
 
           {!isRestrictedClientView && (
           <div className="flex flex-wrap gap-3 w-full justify-start overflow-visible">
