@@ -71,6 +71,7 @@ function notify(current: PresenceChannelState): void {
 function syncFromChannel(current: PresenceChannelState, origem: string): void {
   try {
     const raw = current.channel.presenceState() as Record<string, unknown>;
+    log(`sync (${origem}) raw presenceState =`, raw);
     const users = parsePresenceState(raw as any);
     current.users = users;
     log(`sync (${origem}) → ${users.length} usuário(s):`, users.map((u) => `${u.name} [${u.userId}]`));
@@ -104,12 +105,9 @@ function ensureState(): PresenceChannelState {
 
   const key = generatePresenceKey();
   log('criando canal de presença, key=', key);
-  const channel = supabase.channel(TMSEG_PRESENCE_CHANNEL, {
-    config: { presence: { key } },
-  });
 
   const current: PresenceChannelState = {
-    channel,
+    channel: null as unknown as RealtimeChannel,
     key,
     users: [],
     listeners: new Set(),
@@ -118,21 +116,37 @@ function ensureState(): PresenceChannelState {
     hasTracked: false,
   };
 
-  channel.on('presence', { event: 'sync' }, () => syncFromChannel(current, 'evt-sync'));
-  channel.on('presence', { event: 'join' }, () => syncFromChannel(current, 'evt-join'));
-  channel.on('presence', { event: 'leave' }, () => syncFromChannel(current, 'evt-leave'));
+  // Padrão recomendado pela documentação do Supabase: registrar listeners primeiro, subscrever depois
+  const channel = supabase
+    .channel(TMSEG_PRESENCE_CHANNEL, {
+      config: { presence: { key } },
+    })
+    .on('presence', { event: 'sync' }, () => {
+      log('evt sync recebido');
+      syncFromChannel(current, 'evt-sync');
+    })
+    .on('presence', { event: 'join' }, ({ key: k, newPresences }) => {
+      log('evt join recebido. key=', k, 'newPresences=', newPresences);
+      syncFromChannel(current, 'evt-join');
+    })
+    .on('presence', { event: 'leave' }, ({ key: k, leftPresences }) => {
+      log('evt leave recebido. key=', k, 'leftPresences=', leftPresences);
+      syncFromChannel(current, 'evt-leave');
+    })
+    .subscribe((status, err) => {
+      log('subscribe status =', status, err ? `err=${String(err)}` : '');
+      if (status === 'SUBSCRIBED') {
+        current.ready = true;
+        void performTrack(current, 'on-subscribed');
+        // 2 syncs — um imediato, um com pequeno delay para pegar o próprio track.
+        syncFromChannel(current, 'on-subscribed');
+        setTimeout(() => syncFromChannel(current, 'on-subscribed-delayed'), 500);
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        current.ready = false;
+      }
+    });
 
-  channel.subscribe((status) => {
-    log('subscribe status =', status);
-    if (status === 'SUBSCRIBED') {
-      current.ready = true;
-      void performTrack(current, 'on-subscribed');
-      syncFromChannel(current, 'on-subscribed');
-    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-      current.ready = false;
-    }
-  });
-
+  current.channel = channel;
   state = current;
   return current;
 }
