@@ -38,6 +38,18 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), injectSupabaseEnvPlugin(supabase)],
+    // Garante UMA única instância de React em todo o app. Sem o dedupe, uma
+    // reotimização de dependências do Vite no meio da sessão podia servir duas
+    // cópias do React, deixando o "dispatcher" nulo e quebrando os hooks com
+    // "Cannot read properties of null (reading 'useEffect')".
+    resolve: {
+      dedupe: ['react', 'react-dom'],
+    },
+    // Pré-empacota o React de forma estável no dev-server, evitando que um
+    // import descoberto tardiamente dispare nova otimização com hash diferente.
+    optimizeDeps: {
+      include: ['react', 'react-dom', 'react/jsx-runtime'],
+    },
     server: {
       host: '0.0.0.0',
       port: 5000,
