@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Users, Briefcase, Circle } from 'lucide-react';
 import { useOnlinePresence } from '../lib/useOnlinePresence';
+import { useTeamRoster } from '../lib/useTeamRoster';
 import {
   PRESENCE_CATEGORY_LABELS,
   PRESENCE_CATEGORY_ORDER,
@@ -8,6 +9,7 @@ import {
   buildPresenceTooltip,
   getPresenceCategory,
   getPresenceServiceStatus,
+  mergeRosterWithPresence,
   type PresenceCategory,
   type PresenceServiceStatus,
   type PresenceUserState,
@@ -104,6 +106,20 @@ function statusLine(user: PresenceUserState): string {
 
 const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
   const { onlineUsers, onlineCount, onDutyClt } = useOnlinePresence(enabled);
+  const roster = useTeamRoster(enabled);
+
+  // Conjunto de quem está realmente online (para dimir os cards de quem não está).
+  const onlineIds = useMemo(
+    () => new Set(onlineUsers.map((u) => u.userId)),
+    [onlineUsers]
+  );
+
+  // Lista exibida = TODOS os usuários cadastrados (sempre na tela). Quem está
+  // online usa o estado ao vivo; quem não está aparece como "Fora de Serviço".
+  const displayUsers = useMemo<PresenceUserState[]>(
+    () => mergeRosterWithPresence(roster, onlineUsers),
+    [roster, onlineUsers]
+  );
 
   const grouped = useMemo(() => {
     const groups: Record<PresenceCategory, PresenceUserState[]> = {
@@ -111,7 +127,7 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
       administrativo: [],
       comercial: [],
     };
-    for (const user of onlineUsers) {
+    for (const user of displayUsers) {
       const category = getPresenceCategory(user.role);
       groups[category].push(user);
     }
@@ -121,7 +137,7 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
       );
     }
     return groups;
-  }, [onlineUsers]);
+  }, [displayUsers]);
 
   const emServicoCount = useMemo(
     () => onlineUsers.filter((u) => getPresenceServiceStatus(u) === 'em_servico').length,
@@ -158,8 +174,8 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
         </div>
       </div>
 
-      {onlineCount === 0 ? (
-        <p className="text-xs text-gray-500 font-medium">Nenhum usuário online no momento.</p>
+      {displayUsers.length === 0 ? (
+        <p className="text-xs text-gray-500 font-medium">Nenhum usuário cadastrado.</p>
       ) : (
         <div className="space-y-4">
           {PRESENCE_CATEGORY_ORDER.map((category) => {
@@ -170,7 +186,7 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
                   <span>{PRESENCE_CATEGORY_LABELS[category]} · {users.length}</span>
                 </div>
                 {users.length === 0 ? (
-                  <p className="text-[10px] text-gray-400 font-medium mb-1">Ninguém online nesta categoria.</p>
+                  <p className="text-[10px] text-gray-400 font-medium mb-1">Nenhum usuário nesta categoria.</p>
                 ) : (
                   <div className="flex flex-wrap gap-3">
                     {users.map((user) => {
@@ -179,10 +195,11 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
                       const style = statusStyle(serviceStatus);
                       const status = statusLine(user);
                       const tooltip = buildPresenceTooltip(user);
+                      const isOnline = onlineIds.has(user.userId);
                       return (
                         <div
                           key={user.userId}
-                          className="group relative flex flex-col items-center w-[76px]"
+                          className={`group relative flex flex-col items-center w-[76px] transition-opacity ${isOnline ? '' : 'opacity-50'}`}
                         >
                           <div className="relative">
                             <div
