@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from './supabase';
 import { useRealtimeRefresh } from './RealtimeProvider';
+import { dedupeTeamRoster, type TeamRosterMember } from './timeclock/teamPunchBoard';
+import { employeeRequiresTimeclock } from './timeclock/eligibility';
 
-/** Membro da equipe interna (usuário cadastrado em system_users). */
-export interface TeamRosterMember {
-  userId: string;
-  name: string;
-  role: string;
-}
+export type { TeamRosterMember };
 
 function extractRole(row: { profiles?: unknown }): string {
   const p = row.profiles as { name?: string } | { name?: string }[] | null | undefined;
@@ -44,7 +41,28 @@ export function useTeamRoster(enabled = true): TeamRosterMember[] {
           name: u.name || 'Usuário',
           role: extractRole(u),
         }));
-      setRoster(list);
+
+      // Funcionários RH com login vinculado entram no quadro fixo (ex.: Michele).
+      let rhMembers: TeamRosterMember[] = [];
+      try {
+        const { data: rhData } = await supabase
+          .from('rh_employees')
+          .select('user_id, full_name, status, contract_type, requires_timeclock')
+          .is('deleted_at', null)
+          .not('user_id', 'is', null);
+        rhMembers = (rhData || [])
+          .filter((e: any) => employeeRequiresTimeclock(e))
+          .map((e: any) => ({
+            userId: String(e.user_id),
+            name: e.full_name || 'Funcionário',
+            role: 'Operador',
+          }));
+      } catch {
+        // mantém só system_users se RH falhar
+      }
+
+      const merged = dedupeTeamRoster([...list, ...rhMembers]);
+      setRoster(merged);
     } catch {
       // mantém o último roster conhecido em caso de falha de rede
     }

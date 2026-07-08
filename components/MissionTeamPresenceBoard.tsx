@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Users, Briefcase, Circle } from 'lucide-react';
 import { useOnlinePresence } from '../lib/useOnlinePresence';
 import { useTeamRoster } from '../lib/useTeamRoster';
+import { useTeamPunchToday } from '../lib/useTeamPunchToday';
 import {
   PRESENCE_CATEGORY_LABELS,
   PRESENCE_CATEGORY_ORDER,
@@ -107,18 +108,21 @@ function statusLine(user: PresenceUserState): string {
 const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
   const { onlineUsers, onlineCount, onDutyClt } = useOnlinePresence(enabled);
   const roster = useTeamRoster(enabled);
+  const { punchLookup } = useTeamPunchToday(enabled);
 
-  // Conjunto de quem está realmente online (para dimir os cards de quem não está).
   const onlineIds = useMemo(
     () => new Set(onlineUsers.map((u) => u.userId)),
     [onlineUsers]
   );
 
-  // Lista exibida = TODOS os usuários cadastrados (sempre na tela). Quem está
-  // online usa o estado ao vivo; quem não está aparece como "Fora de Serviço".
   const displayUsers = useMemo<PresenceUserState[]>(
-    () => mergeRosterWithPresence(roster, onlineUsers),
-    [roster, onlineUsers]
+    () => mergeRosterWithPresence(roster, onlineUsers, punchLookup),
+    [roster, onlineUsers, punchLookup]
+  );
+
+  const emServicoCount = useMemo(
+    () => displayUsers.filter((u) => getPresenceServiceStatus(u) === 'em_servico').length,
+    [displayUsers]
   );
 
   const grouped = useMemo(() => {
@@ -138,11 +142,6 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
     }
     return groups;
   }, [displayUsers]);
-
-  const emServicoCount = useMemo(
-    () => onlineUsers.filter((u) => getPresenceServiceStatus(u) === 'em_servico').length,
-    [onlineUsers]
-  );
 
   if (!enabled) return null;
 

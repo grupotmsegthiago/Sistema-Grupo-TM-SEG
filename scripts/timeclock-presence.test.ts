@@ -12,6 +12,11 @@ import {
   mergeRosterWithPresence,
   PRESENCE_USER_AVATAR_SRC,
 } from '../lib/timeclock/presence.ts';
+import {
+  buildTeamPunchLookup,
+  dedupeTeamRoster,
+  groupTodayEntriesByUser,
+} from '../lib/timeclock/teamPunchBoard.ts';
 import { getBrazilDayBounds } from '../lib/dateUtils.ts';
 
 test('isCltOnDutyToday após entrada sem saída', () => {
@@ -108,6 +113,29 @@ test('quadro de presença usa robô inline (SVG) em vez de iniciais ou <img> ext
   assert.doesNotMatch(boardSrc, /getInitials\(displayName\)/);
 });
 
+test('dedupeTeamRoster remove duplicata por userId e por nome', () => {
+  const roster = dedupeTeamRoster([
+    { userId: '5', name: 'Michelle Cristiane', role: 'Operador' },
+    { userId: '5', name: 'Michelle Cristiane', role: 'Operador' },
+    { userId: '99', name: 'Michelle Cristiane', role: 'RH' },
+    { userId: '7', name: 'Bruno', role: 'Comercial' },
+  ]);
+  assert.equal(roster.length, 2);
+  assert.equal(roster[0].userId, '5');
+  assert.equal(roster[1].userId, '7');
+});
+
+test('groupTodayEntriesByUser agrupa batidas sem duplicar cards', () => {
+  const map = groupTodayEntriesByUser([
+    { user_id: '5', type: 'IN', timestamp: '2026-07-08T10:00:00.000Z' },
+    { user_id: '5', type: 'BREAK_START', timestamp: '2026-07-08T13:00:00.000Z' },
+    { user_id: '7', type: 'IN', timestamp: '2026-07-08T09:00:00.000Z' },
+  ]);
+  assert.equal(map.size, 2);
+  assert.equal(map.get('5')?.length, 2);
+  assert.equal(map.get('5')?.[0].type, 'IN');
+});
+
 test('mergeRosterWithPresence mantém todos os cadastrados na tela (online + fora)', () => {
   const roster = [
     { userId: 'u1', name: 'Ana', role: 'Operador' },
@@ -136,7 +164,7 @@ test('mergeRosterWithPresence mantém todos os cadastrados na tela (online + for
   assert.equal(ana.onDutyLabel, 'Fora de Serviço');
 });
 
-test('mergeRosterWithPresence inclui usuário online que ainda não está no roster', () => {
+test('mergeRosterWithPresence não adiciona usuário online fora do roster fixo', () => {
   const online = [
     {
       userId: 'novo',
@@ -149,8 +177,38 @@ test('mergeRosterWithPresence inclui usuário online que ainda não está no ros
     },
   ];
   const merged = mergeRosterWithPresence([], online as any);
+  assert.equal(merged.length, 0);
+});
+
+test('mergeRosterWithPresence usa ponto do banco para offline (Michelle)', () => {
+  const roster = [{ userId: '5', name: 'Michelle Cristiane', role: 'Operador' }];
+  const punchLookup = buildTeamPunchLookup([
+    {
+      user_id: '5',
+      user_name: 'Michelle Cristiane',
+      type: 'IN',
+      timestamp: '2026-07-08T10:30:00.000Z',
+    },
+  ]);
+  const merged = mergeRosterWithPresence(roster, [], punchLookup);
   assert.equal(merged.length, 1);
-  assert.equal(merged[0].userId, 'novo');
+  assert.equal(getPresenceServiceStatus(merged[0]), 'em_servico');
+  assert.match(merged[0].onDutyLabel || '', /serviço|servico/i);
+});
+
+test('mergeRosterWithPresence resolve ponto por nome quando user_id diverge', () => {
+  const roster = [{ userId: '5', name: 'Michelle Cristiane Monteiro', role: 'Operador' }];
+  const punchLookup = buildTeamPunchLookup([
+    {
+      user_id: 'legado-uuid',
+      user_name: 'Michelle Cristiane Monteiro',
+      type: 'IN',
+      timestamp: '2026-07-08T08:00:00.000Z',
+    },
+  ]);
+  const merged = mergeRosterWithPresence(roster, [], punchLookup);
+  assert.equal(merged.length, 1);
+  assert.equal(getPresenceServiceStatus(merged[0]), 'em_servico');
 });
 
 test('getPresenceCategory agrupa por Operação, Administrativo e Comercial', () => {

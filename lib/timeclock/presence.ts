@@ -1,6 +1,12 @@
 import { formatTimeBR } from '../dateUtils';
 import { TIME_CLOCK_STAGE_SHORT } from './stages';
 import type { TimeClockEntry, TimeClockStage } from './types';
+import {
+  buildPresenceFromPunchEntries,
+  resolvePunchEntriesForMember,
+  type TeamPunchLookup,
+  type TeamRosterMember,
+} from './teamPunchBoard';
 
 export const TMSEG_PRESENCE_CHANNEL = 'tmseg-user-presence';
 /** Ícone de avatar para usuários online no quadro de presença. */
@@ -202,43 +208,68 @@ export function parsePresenceState(
 }
 
 /**
- * Mescla o roster (todos os usuários cadastrados) com a presença ao vivo.
- * Quem está online usa o estado real; quem não está aparece como
- * "Fora de Serviço". Assim os usuários ficam SEMPRE visíveis na tela e apenas
- * o status muda (Em serviço / Em almoço / Fora de Serviço).
+ * Mescla roster fixo + presença ao vivo + batidas do dia (banco).
+ * - Cada funcionário aparece UMA vez (sem duplicar por batida ou sessão).
+ * - Status Em serviço / Em almoço / Fora vem do ponto de hoje quando existir.
+ * - Online ao vivo enriquece atividade; offline com ponto usa dados do banco.
  */
 export function mergeRosterWithPresence(
-  roster: { userId: string; name: string; role: string }[],
-  onlineUsers: PresenceUserState[]
+  roster: TeamRosterMember[],
+  onlineUsers: PresenceUserState[],
+  punchLookup?: Map<string, Pick<TimeClockEntry, 'type' | 'timestamp'>[]> | TeamPunchLookup,
 ): PresenceUserState[] {
   const onlineMap = new Map(onlineUsers.map((u) => [u.userId, u]));
   const result: PresenceUserState[] = [];
-  const seen = new Set<string>();
+  const seenIds = new Set<string>();
+
   for (const member of roster) {
-    if (!member.userId || seen.has(member.userId)) continue;
-    seen.add(member.userId);
+    if (!member.userId || seenIds.has(member.userId)) continue;
+    seenIds.add(member.userId);
+
     const online = onlineMap.get(member.userId);
+    const punchEntries = resolvePunchEntriesForMember(member, punchLookup);
+
     if (online) {
-      result.push(online);
-    } else {
+      const merged: PresenceUserState = { ...online };
+      if (punchEntries?.length) {
+        const fromPunch = buildPresenceFromPunchEntries(member, punchEntries);
+        merged.onDuty = fromPunch.onDuty;
+        merged.onDutyLabel = fromPunch.onDutyLabel;
+        merged.minutesOnDuty = fromPunch.minutesOnDuty;
+        merged.punchMarks = fromPunch.punchMarks;
+        merged.isClt = merged.isClt || fromPunch.isClt;
+      }
+      result.push(merged);
+      continue;
+    }
+
+    if (punchEntries?.length) {
+      const fromPunch = buildPresenceFromPunchEntries(member, punchEntries);
       result.push({
         userId: member.userId,
         name: member.name || 'Usuário',
         role: member.role || 'Usuário',
-        isClt: false,
-        onDuty: false,
-        onDutyLabel: 'Fora de Serviço',
+        isClt: fromPunch.isClt,
+        onDuty: fromPunch.onDuty,
+        onDutyLabel: fromPunch.onDutyLabel,
+        minutesOnDuty: fromPunch.minutesOnDuty,
+        punchMarks: fromPunch.punchMarks,
         onlineAt: new Date(0).toISOString(),
       });
+      continue;
     }
+
+    result.push({
+      userId: member.userId,
+      name: member.name || 'Usuário',
+      role: member.role || 'Usuário',
+      isClt: false,
+      onDuty: false,
+      onDutyLabel: 'Fora de Serviço',
+      onlineAt: new Date(0).toISOString(),
+    });
   }
-  // Usuário online que ainda não veio no roster (ex.: cadastro recém-criado).
-  for (const user of onlineUsers) {
-    if (!seen.has(user.userId)) {
-      seen.add(user.userId);
-      result.push(user);
-    }
-  }
+
   return result;
 }
 
