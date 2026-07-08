@@ -21,6 +21,7 @@ import {
   createBrandedFallbackPhoto,
   dataUrlToBlob,
   loadStampImage,
+  stampBrandOnImageBlob,
   stampBrandOverlays,
   waitUntil,
 } from '../lib/brandPhotoStamp';
@@ -821,6 +822,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const confirmedEndTravelRef = useRef<string | null>(null);
     // Print do hodômetro confirmado no checklist (para relatório/foto/e-mails).
     const confirmedPrintUrlRef = useRef<string | null>(null);
+    const confirmedPrintBlobRef = useRef<Blob | null>(null);
+    const confirmedPrintBlobPromiseRef = useRef<Promise<Blob | null> | null>(null);
     // Relatório de fim de missão (dois botões: copiar texto / copiar foto).
     const [finalizeReport, setFinalizeReport] = useState<{ text: string; photoUrl: string | null } | null>(null);
     const [copiedReportText, setCopiedReportText] = useState(false);
@@ -836,6 +839,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         confirmedRealTimeRef.current = null;
         confirmedEndTravelRef.current = null;
         confirmedPrintUrlRef.current = null;
+        confirmedPrintBlobRef.current = null;
+        confirmedPrintBlobPromiseRef.current = null;
         setPendingFinalizeConfirm(null);
         // Print de atualização é estritamente da sessão: limpa ao abrir/trocar OS
         updatePrintBlobRef.current = null;
@@ -952,6 +957,25 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [updatePrintAiCleaned, setUpdatePrintAiCleaned] = useState(false);
     const [updatePrintTimings, setUpdatePrintTimings] = useState<PrintPipelineTimings | null>(null);
     const updatePrintBlobRef = useRef<Blob | null>(null);
+
+    /** Pré-processa a foto do hodômetro (checklist) em paralelo ao submit — evita
+     *  re-fetch + carimbo síncrono no fim da OS, que deixava o salvamento lento. */
+    const prefetchConfirmedPrintBlob = (url: string) => {
+        confirmedPrintBlobRef.current = null;
+        confirmedPrintBlobPromiseRef.current = (async () => {
+            try {
+                const resp = await fetch(url);
+                if (!resp.ok) return null;
+                const raw = await resp.blob();
+                const stamped = await stampBrandOnImageBlob(raw);
+                confirmedPrintBlobRef.current = stamped;
+                return stamped;
+            } catch (prefetchErr) {
+                console.warn('[FimDeMissao] Pré-carimbo da evidência falhou:', prefetchErr);
+                return null;
+            }
+        })();
+    };
 
     const SUPPORTED_PRINT_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
     const PRINT_PIPELINE_TIMEOUT_MS = 45_000;
@@ -2433,6 +2457,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 if (!iso) return '';
                 try { return formatDateTimeBR(iso); } catch { return ''; }
             };
+            let cachedStatusHistory: Array<{ changed_at: string; new_value: string }> | null = null;
             let dhlOriginAt = '', dhlInTransitAt = '', dhlCompletedAt = '';
             if (isDHL) {
                 try {
@@ -2442,6 +2467,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         .eq('mission_id', mission.id)
                         .eq('field_name', 'status')
                         .order('changed_at', { ascending: false });
+                    cachedStatusHistory = statusHist || null;
                     if (statusHist) {
                         const lastOf = (val: string) => (statusHist as any[]).find(h => h.new_value === val)?.changed_at;
                         dhlOriginAt = fmtDateTime(lastOf('Origem'));
@@ -2565,14 +2591,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             if (isNowCompleted) {
                 let originArrivalAt = '', operationStartAt = '';
                 try {
-                    const { data: marks } = await supabase
-                        .from('mission_history')
-                        .select('changed_at,new_value')
-                        .eq('mission_id', mission.id)
-                        .eq('field_name', 'status')
-                        .order('changed_at', { ascending: false });
-                    if (marks) {
-                        const lastOf = (val: string) => (marks as any[]).find(h => h.new_value === val)?.changed_at;
+                    if (!cachedStatusHistory) {
+                        const { data: marks } = await supabase
+                            .from('mission_history')
+                            .select('changed_at,new_value')
+                            .eq('mission_id', mission.id)
+                            .eq('field_name', 'status')
+                            .order('changed_at', { ascending: false });
+                        cachedStatusHistory = marks || null;
+                    }
+                    if (cachedStatusHistory) {
+                        const lastOf = (val: string) => cachedStatusHistory!.find(h => h.new_value === val)?.changed_at;
                         originArrivalAt = fmtDateTime(lastOf('Origem'));
                         operationStartAt = fmtDateTime(lastOf('Em Viagem'));
                     }
@@ -2607,63 +2636,32 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 // Foto: prioriza o print colado no COLAR PRINT (já com logo);
                 // senão, usa o print do hodômetro confirmado no checklist.
                 try {
-                    let photoBlob: Blob | null = updatePrintBlobRef.current;
+                    const hadExplicitPrintBeforeFallback = hasExplicitUpdatePrint(updatePrintBlobRef.current, updatePrintPreview);
+                    const hadOdometerEvidence = !!confirmedPrintUrlRef.current;
+                    let photoBlob: Blob | null = updatePrintBlobRef.current || confirmedPrintBlobRef.current;
+
+                    if (!photoBlob && confirmedPrintBlobPromiseRef.current) {
+                        try {
+                            photoBlob = await confirmedPrintBlobPromiseRef.current;
+                        } catch (prefetchWaitErr) {
+                            console.warn('[FimDeMissao] Espera do pré-carimbo falhou:', prefetchWaitErr);
+                        }
+                    }
+
                     if (!photoBlob && confirmedPrintUrlRef.current) {
                         try {
                             const resp = await fetch(confirmedPrintUrlRef.current);
                             if (resp.ok) {
-                                const raw = await resp.blob();
-                                // Foto do hodômetro do checklist: aplica o MESMO
-                                // carimbo da marca (logo + Instagram + site) antes
-                                // de copiar/enviar ao grupo. Também garante PNG
-                                // (ClipboardItem só aceita image/png).
-                                // A FOTO é obrigatória; o carimbo é best-effort:
-                                // qualquer falha de decodificação/logo não pode
-                                // derrubar a foto (fallback = PNG cru).
-                                if (raw.type === 'image/png') photoBlob = raw;
-                                try {
-                                    // Decodifica com fallback: createImageBitmap
-                                    // pode não existir/falhar em navegadores antigos.
-                                    let src: CanvasImageSource | null = null;
-                                    let sw = 0, sh = 0;
-                                    let objUrl = '';
-                                    try {
-                                        const bmp = await createImageBitmap(raw);
-                                        src = bmp; sw = bmp.width; sh = bmp.height;
-                                    } catch {
-                                        objUrl = URL.createObjectURL(raw);
-                                        const img = await loadStampImage(objUrl);
-                                        src = img; sw = img.naturalWidth; sh = img.naturalHeight;
-                                    }
-                                    try {
-                                        if (src && sw > 0 && sh > 0) {
-                                            const cv = document.createElement('canvas');
-                                            cv.width = sw; cv.height = sh;
-                                            const cctx = cv.getContext('2d');
-                                            if (cctx) {
-                                                cctx.drawImage(src, 0, 0);
-                                                try {
-                                                    const logoImg = await loadStampImage('/logo.png');
-                                                    stampBrandOverlays(cctx, cv.width, cv.height, logoImg);
-                                                } catch (logoErr) {
-                                                    console.warn('[FimDeMissao] Logo indisponível, foto segue sem carimbo:', logoErr);
-                                                }
-                                                const stamped = await new Promise<Blob | null>(res => cv.toBlob(res, 'image/png'));
-                                                if (stamped) photoBlob = stamped;
-                                            }
-                                        }
-                                    } finally {
-                                        if (objUrl) URL.revokeObjectURL(objUrl);
-                                    }
-                                } catch (stampErr) {
-                                    console.warn('[FimDeMissao] Carimbo falhou, foto segue original:', stampErr);
-                                }
+                                photoBlob = await stampBrandOnImageBlob(await resp.blob());
                             }
-                        } catch (photoErr) { console.warn('[FimDeMissao] Falha ao preparar foto:', photoErr); }
+                        } catch (photoErr) {
+                            console.warn('[FimDeMissao] Falha ao preparar foto da evidência:', photoErr);
+                        }
                     }
-                    const hadExplicitPrintBeforeFallback = hasExplicitUpdatePrint(updatePrintBlobRef.current, updatePrintPreview);
-                    const hadOdometerEvidence = !!confirmedPrintUrlRef.current;
-                    if (!photoBlob) {
+
+                    // Só gera foto de fallback (mapa TM SEG) quando há print/evidência —
+                    // evita chamada lenta ao Google Static Maps em conclusões sem foto.
+                    if (!photoBlob && (hadExplicitPrintBeforeFallback || hadOdometerEvidence)) {
                         photoBlob = await resolveGroupWhatsAppPhoto(`${finalStatus.toUpperCase()} — FIM DE MISSÃO`);
                     }
                     // Grupo: só envia com print colado ou evidência do hodômetro no
@@ -2709,18 +2707,21 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     setCopiedReportPhoto(false);
                 }
 
-                try {
-                    await authFetch('/api/email/mission-end', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            missionId: mission.id,
-                            odometerPrintUrl: confirmedPrintUrlRef.current || undefined,
-                            senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined,
-                        }),
-                    });
+                // E-mails de fim de missão em background — não bloqueia o fechamento do modal.
+                const missionEndPayload = {
+                    missionId: mission.id,
+                    odometerPrintUrl: confirmedPrintUrlRef.current || undefined,
+                    senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined,
+                };
+                void authFetch('/api/email/mission-end', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(missionEndPayload),
+                }).then(() => {
                     showNotification('E-mails de Fim de Missão', 'Enviados para cliente e fornecedor.', 'success');
-                } catch (mailErr) { console.error('[Email] Erro fim de missão:', mailErr); }
+                }).catch((mailErr) => {
+                    console.error('[Email] Erro fim de missão:', mailErr);
+                });
             }
 
             const vehiclePlateForEmail = searchVehicle || editData.client_vehicle_plate || '—';
@@ -2907,6 +2908,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         confirmedRealTimeRef.current = iso;
         confirmedEndTravelRef.current = endTravelIso;
         confirmedPrintUrlRef.current = odometerPrintUrl || null;
+        if (odometerPrintUrl) prefetchConfirmedPrintBlob(odometerPrintUrl);
 
         // Recálculo automático de pedágio (estimativa por IA / Gemini) ao
         // CONCLUIR. Não usamos a QualP aqui por custo; o endpoint
@@ -2916,11 +2918,15 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         // falha, mantém o gate manual de pedágio (tollConfirmedRef permanece false).
         if (mission && kind === 'completed' && !mission.billing_approved) {
             try {
-                const r = await authFetch('/api/toll/gemini-estimate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ origin: editData.origin, destination: editData.destination }),
-                });
+                const r = await withTimeout(
+                    authFetch('/api/toll/gemini-estimate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ origin: editData.origin, destination: editData.destination }),
+                    }),
+                    5000,
+                    'Estimativa de pedágio excedeu 5s',
+                );
                 const j = await r.json().catch(() => ({} as any));
                 if (j?.success && typeof j.tollValue === 'number') {
                     const v = Number(j.tollValue.toFixed(2));
@@ -2947,7 +2953,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     }
                 }
             } catch (e) {
-                console.warn('[FIM MISSÃO] Falha ao recalcular pedágio (IA):', e);
+                if (e instanceof TimeoutError) {
+                    console.warn('[FIM MISSÃO] Estimativa de pedágio (IA) expirou — segue sem bloquear a conclusão.');
+                } else {
+                    console.warn('[FIM MISSÃO] Falha ao recalcular pedágio (IA):', e);
+                }
             }
         }
 
