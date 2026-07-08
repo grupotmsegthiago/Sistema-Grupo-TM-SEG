@@ -16,6 +16,7 @@ import { GoogleMap, useLoadScript, Marker, InfoWindow } from '@react-google-maps
 import { googleMapsLoadConfig } from '../lib/maps';
 import { extractCoordinates } from '../lib/utils';
 import { copyTextAsync } from '../lib/clipboard';
+import { isMissionPendingKm } from '../lib/missionStatusRules';
 import {
   buildMonitoringWhatsAppReport,
   formatAgentShortName,
@@ -111,13 +112,7 @@ const StatCard: React.FC<StatCardProps> = ({ icon: Icon, title, value, bgColor, 
     </button>
 );
 
-const isMissionPending = (m: Mission) => {
-    if (m.status === MissionStatus.PENDING) return true;
-    if (m.status === MissionStatus.COMPLETED) {
-        if (m.endKm === null || m.endKm === undefined || m.endKm === 0) return true;
-    }
-    return false;
-};
+const isMissionPending = (m: Mission) => isMissionPendingKm(m);
 
 // Marco temporal solicitado: Janeiro de 2026
 const DATE_THRESHOLD_2026 = new Date('2026-01-01T00:00:00').getTime();

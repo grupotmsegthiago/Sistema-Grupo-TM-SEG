@@ -19,6 +19,7 @@ import MissionTimer from './MissionTimer';
 import { useNotification } from '../lib/NotificationContext';
 import { applyRegionSuffix, calculateMissionFinancials, auditMissionFinancials } from '../lib/financialUtils';
 import { formatProviderName, resolveLocationDisplay, extractCoordinates } from '../lib/utils';
+import { isMissionPendingKm } from '../lib/missionStatusRules';
 
 const geocodeCache: Record<string, string> = {};
 const geocodePending: Record<string, Promise<string>> = {};
@@ -406,10 +407,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
 
     const isActive = !isTerminal;
 
-    const isPendingKm = useMemo(() => {
-        return mission.status === MissionStatus.COMPLETED && 
-               (mission.endKm === null || mission.endKm === undefined || mission.endKm === 0);
-    }, [mission.status, mission.endKm]);
+    const isPendingKm = useMemo(() => isMissionPendingKm(mission), [mission.status, mission.endKm, (mission as any).end_km]);
 
     const missingInfo = useMemo(() => {
         const missing: string[] = [];
