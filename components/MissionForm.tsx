@@ -10,6 +10,7 @@ import { useNotification } from '../lib/NotificationContext';
 import { useLoadScript, Autocomplete } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { pickRouteEndpoints, resolveRouteDistanceClient } from '../lib/resolveRouteDistanceClient';
+import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
 
 import ClientForm from './ClientForm';
 import ProviderForm from './ProviderForm';
@@ -206,6 +207,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [tollDetails, setTollDetails] = useState<{ count: number; tolls: any[]; observacoes?: string; confianca?: string; provider?: string } | null>(null);
   const [tollFetchDone, setTollFetchDone] = useState(false);
   const lastTollRouteRef = useRef('');
+  const tollCalcGenRef = useRef(0);
+  const TOLL_PROVIDER_TIMEOUT_MS = 20_000;
   const [expandedStep, setExpandedStep] = useState<number>(1);
   const [driverQuestion, setDriverQuestion] = useState<'asking' | 'yes' | 'no' | null>(null);
   const [scheduleMode, setScheduleMode] = useState<'asking' | 'immediate' | 'scheduled' | null>(null);
@@ -238,8 +241,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       manualOverrides.toll ||
       tollFetchDone ||
       isSyntheticTollDest(formData.destination || '') ||
-      isCevaJundiaiToll(formData.origin || '', formData.destination || '', formData.client || '') ||
-      (!!selectedRouteId && !!formData.origin && !!formData.destination)
+      isCevaJundiaiToll(formData.origin || '', formData.destination || '', formData.client || '')
   );
   const step5Done = !!(formData.origin && formData.destination && selectedRouteId && formData.estimatedTime && manualRevenueTableId && tollLoaded && operatorConfirmedCalc);
   const isScheduledInPast = scheduleMode === 'scheduled' && formData.scheduledDate && formData.scheduledTime && new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`).getTime() < Date.now();
@@ -1075,30 +1077,39 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const calculateTollQualP = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; distance?: number; provider?: string } | null> => {
       try {
-          const resp = await authFetch('/api/toll/qualp', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ origin, destination, axis: 2 }),
-          });
+          const resp = await withTimeout(
+              authFetch('/api/toll/qualp', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ origin, destination, axis: 2 }),
+              }),
+              TOLL_PROVIDER_TIMEOUT_MS,
+              'Timeout QualP pedágio',
+          );
           if (!resp.ok) return null;
           const data = await resp.json();
-          if (data.success) {
+          // Aceita resposta com tollValue numérico mesmo se success=false (rota sem distância no QualP).
+          if (data.success || typeof data.tollValue === 'number') {
               return { value: data.tollValue || 0, count: data.tollCount || 0, tolls: data.tolls || [], distance: data.distance, provider: 'qualp' };
           }
           return null;
       } catch (e) {
-          console.error('Erro QualP pedágio:', e);
+          if (!(e instanceof TimeoutError)) console.error('Erro QualP pedágio:', e);
           return null;
       }
   };
 
   const calculateTollRapidApi = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; provider?: string } | null> => {
       try {
-          const resp = await authFetch('/api/toll/calculate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ origin, destination }),
-          });
+          const resp = await withTimeout(
+              authFetch('/api/toll/calculate', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ origin, destination }),
+              }),
+              TOLL_PROVIDER_TIMEOUT_MS,
+              'Timeout RapidAPI pedágio',
+          );
           if (!resp.ok) return null;
           const data = await resp.json();
           if (data.success && typeof data.tollValue === 'number') {
@@ -1111,18 +1122,22 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           }
           return null;
       } catch (e) {
-          console.error('Erro RapidAPI pedágio:', e);
+          if (!(e instanceof TimeoutError)) console.error('Erro RapidAPI pedágio:', e);
           return null;
       }
   };
 
   const calculateTollGemini = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; provider?: string; observacoes?: string; confianca?: string } | null> => {
       try {
-          const resp = await authFetch('/api/toll/gemini-estimate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ origin, destination }),
-          });
+          const resp = await withTimeout(
+              authFetch('/api/toll/gemini-estimate', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ origin, destination }),
+              }),
+              TOLL_PROVIDER_TIMEOUT_MS,
+              'Timeout estimativa IA pedágio',
+          );
           if (!resp.ok) return null;
           const data = await resp.json();
           if (data.success && typeof data.tollValue === 'number') {
@@ -1137,7 +1152,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           }
           return null;
       } catch (e) {
-          console.error('Erro Gemini pedágio:', e);
+          if (!(e instanceof TimeoutError)) console.error('Erro Gemini pedágio:', e);
           return null;
       }
   };
@@ -1167,25 +1182,39 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   };
 
   const calculateTollFromAPI = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; apiError?: string; distance?: number; duration?: string; provider?: string; observacoes?: string; confianca?: string } | null> => {
+      const gen = ++tollCalcGenRef.current;
       try {
           setIsCalculatingToll(true);
 
           const qualpResult = await calculateTollQualP(origin, destination);
+          if (gen !== tollCalcGenRef.current) return null;
           if (qualpResult) return qualpResult;
 
           const geminiResult = await calculateTollGemini(origin, destination);
+          if (gen !== tollCalcGenRef.current) return null;
           if (geminiResult) return geminiResult;
 
           const rapidResult = await calculateTollRapidApi(origin, destination);
+          if (gen !== tollCalcGenRef.current) return null;
           if (rapidResult) return rapidResult;
 
-          return { value: 0, count: 0, tolls: [], apiError: 'QualP indisponível e a estimativa por IA também falhou. Informe o pedágio manualmente, se houver.' };
+          return { value: 0, count: 0, tolls: [], apiError: 'Não foi possível calcular o pedágio automaticamente. Informe manualmente (R$ 0,00 se não houver).' };
       } catch (e) {
           console.error('Erro ao consultar pedágio:', e);
           return null;
       } finally {
-          setIsCalculatingToll(false);
+          if (gen === tollCalcGenRef.current) setIsCalculatingToll(false);
       }
+  };
+
+  /** Interrompe o cálculo automático e libera a OS com pedágio manual (R$ 0 ou valor informado). */
+  const skipTollCalculation = () => {
+      tollCalcGenRef.current += 1;
+      setIsCalculatingToll(false);
+      setTollFetchDone(true);
+      setTollDetails(null);
+      setFormData(prev => ({ ...prev, tollValue: prev.tollValue || '0' }));
+      showNotification('Pedágio', 'Cálculo automático interrompido. Informe o valor manualmente (R$ 0,00 se a rota não tiver pedágio).', 'info');
   };
 
   const applyTollForRoute = async (origin: string, destination: string, opts?: { notify?: boolean; force?: boolean }): Promise<number | null> => {
@@ -2801,12 +2830,17 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
                   {/* PEDÁGIO - STATUS DE CARREGAMENTO */}
                   {selectedRouteId && isCalculatingToll && (
-                      <div className="flex items-center gap-3 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl animate-pulse">
-                          <Loader2 size={18} className="animate-spin text-amber-600" />
-                          <div>
-                              <p className="text-[11px] font-black text-amber-800 uppercase">Calculando pedágio...</p>
-                              <p className="text-[9px] text-amber-600 font-bold">Aguarde. A OS não pode ser gerada sem o valor do pedágio.</p>
+                      <div className="flex items-center justify-between gap-3 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl">
+                          <div className="flex items-center gap-3 min-w-0">
+                              <Loader2 size={18} className="animate-spin text-amber-600 shrink-0" />
+                              <div className="min-w-0">
+                                  <p className="text-[11px] font-black text-amber-800 uppercase">Calculando pedágio...</p>
+                                  <p className="text-[9px] text-amber-600 font-bold">Aguarde até 60s ou informe manualmente (R$ 0,00 se não houver pedágio).</p>
+                              </div>
                           </div>
+                          <button type="button" onClick={skipTollCalculation} className="shrink-0 rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-[9px] font-black uppercase text-amber-800 hover:bg-amber-100" data-testid="button-skip-toll-calc">
+                              Informar manual
+                          </button>
                       </div>
                   )}
 
