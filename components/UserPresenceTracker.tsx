@@ -14,6 +14,7 @@ import {
   trackPresence,
   updatePresencePayload,
 } from '../lib/presenceChannel';
+import { removeUserPresenceDb, upsertUserPresenceDb } from '../lib/userPresenceDb';
 import type { PresenceUserState } from '../lib/timeclock/presence';
 import type { TimeClockUserContext } from '../lib/timeclock/types';
 
@@ -121,6 +122,7 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
       } else {
         stopTracking = trackPresence(payload);
       }
+      void upsertUserPresenceDb(payload);
     };
 
     const heartbeat = async (opts?: { activityOnly?: boolean; bypassThrottle?: boolean }) => {
@@ -218,6 +220,9 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
         } catch {
           // ignora
         }
+      }
+      if (lastGoodPayload?.userId) {
+        void removeUserPresenceDb(lastGoodPayload.userId);
       }
     };
   }, [enabled]);
