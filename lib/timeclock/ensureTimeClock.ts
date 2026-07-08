@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import pg from 'pg';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { TIMECLOCK_FIX_USER_ID_SQL } from './timeclockFixSql.js';
 
 const DEFAULT_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
 const TMSEG_REF = 'ajhmmjuewdsukecaimik';
@@ -64,7 +65,22 @@ function adminSupabase(): SupabaseClient {
 }
 
 function readSql(filename: string): string {
-  return fs.readFileSync(path.join(process.cwd(), 'migrations', filename), 'utf8');
+  if (filename === '2026_07_08_timeclock_fix_user_id.sql') {
+    return TIMECLOCK_FIX_USER_ID_SQL;
+  }
+  const candidates = [
+    path.join(process.cwd(), 'migrations', filename),
+    path.join(process.cwd(), '..', 'migrations', filename),
+    path.join('/var/task', 'migrations', filename),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8');
+    } catch {
+      /* tenta próximo caminho */
+    }
+  }
+  throw new Error(`Migration não encontrada: ${filename}`);
 }
 
 const LINK_BY_EMAIL_SQL = `
