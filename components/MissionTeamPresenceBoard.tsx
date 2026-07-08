@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Users, Briefcase, Circle, Coffee, LogOut, Clock, BadgeCheck } from 'lucide-react';
 import { useOnlinePresence } from '../lib/useOnlinePresence';
-import { getInitials, type PresenceUserState } from '../lib/timeclock/presence';
+import { PRESENCE_USER_AVATAR_SRC, type PresenceUserState } from '../lib/timeclock/presence';
 
 interface Props {
   enabled?: boolean;
@@ -205,9 +205,15 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
                     >
                       <div className="relative">
                         <div
-                          className={`w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-black shadow-md border-2 ${style.bg} ${style.text} ${style.border}`}
+                          className={`w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center shadow-md border-2 bg-white ${style.border}`}
                         >
-                          {getInitials(displayName)}
+                          <img
+                            src={PRESENCE_USER_AVATAR_SRC}
+                            alt=""
+                            aria-hidden
+                            className="w-10 h-10 object-contain select-none pointer-events-none"
+                            draggable={false}
+                          />
                         </div>
                         <span
                           className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${style.dot}`}

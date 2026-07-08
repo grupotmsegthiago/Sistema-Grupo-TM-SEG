@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { isCltOnDutyToday, getOnDutyStageLabel } from '../lib/timeclock/onDuty.ts';
 import { parsePresenceState, getInitials } from '../lib/timeclock/presence.ts';
 
@@ -85,4 +86,11 @@ test('parsePresenceState preserva contractType do payload', () => {
   // Normaliza para uppercase
   assert.equal(bruno.contractType, 'PJ');
   assert.equal(bruno.isClt, false);
+});
+
+test('quadro de presença usa ícone de robô em vez de iniciais', () => {
+  const boardSrc = fs.readFileSync('components/MissionTeamPresenceBoard.tsx', 'utf8');
+  assert.match(boardSrc, /PRESENCE_USER_AVATAR_SRC/);
+  assert.match(boardSrc, /<img[\s\S]*src=\{PRESENCE_USER_AVATAR_SRC\}/);
+  assert.doesNotMatch(boardSrc, /getInitials\(displayName\)/);
 });
