@@ -12,6 +12,7 @@ import {
   mergeRosterWithPresence,
   buildPresenceHeartbeatFromUser,
   formatPresenceShortName,
+  formatPresenceDurationMinutes,
   normalizePresenceUserId,
   PRESENCE_USER_AVATAR_SRC,
 } from '../lib/timeclock/presence.ts';
@@ -194,6 +195,13 @@ test('getPresenceServiceStatus distingue online sem ponto de fora offline', () =
     ),
     'online',
   );
+});
+
+test('formatPresenceDurationMinutes exibe horas e minutos', () => {
+  assert.equal(formatPresenceDurationMinutes(45), '45 min');
+  assert.equal(formatPresenceDurationMinutes(60), '1h');
+  assert.equal(formatPresenceDurationMinutes(323), '5h 23min');
+  assert.equal(formatPresenceDurationMinutes(323, { compact: true }), '5h 23m');
 });
 
 test('buildPresenceHeartbeatFromUser marca operador CLT como aguardando ponto', () => {

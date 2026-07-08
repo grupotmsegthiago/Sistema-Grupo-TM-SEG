@@ -123,6 +123,20 @@ export function formatPresenceShortName(name: string): string {
   return `${first} ${lastInitial}.`;
 }
 
+/** Converte minutos em texto legível (ex.: 323 → "5h 23min", 45 → "45 min"). */
+export function formatPresenceDurationMinutes(
+  totalMinutes: number,
+  opts?: { compact?: boolean },
+): string {
+  const mins = Math.max(0, Math.floor(totalMinutes));
+  const minSuffix = opts?.compact ? 'm' : 'min';
+  if (mins < 60) return `${mins} ${minSuffix}`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}${minSuffix}`;
+}
+
 export function buildPresenceTooltip(user: PresenceUserState): string {
   const lines: string[] = [];
   const status = getPresenceServiceStatus(user);
@@ -133,10 +147,10 @@ export function buildPresenceTooltip(user: PresenceUserState): string {
     lines.push(`Detalhe ponto: ${user.onDutyLabel}`);
   }
   if (user.minutesOnDuty != null && user.minutesOnDuty > 0 && status === 'em_servico') {
-    lines.push(`Tempo em serviço: ${user.minutesOnDuty} min`);
+    lines.push(`Tempo em serviço: ${formatPresenceDurationMinutes(user.minutesOnDuty)}`);
   }
   if (user.activityStatus === 'idle' && user.idleMinutes && user.idleMinutes > 0) {
-    lines.push(`Sem uso no sistema há ${user.idleMinutes} min`);
+    lines.push(`Sem uso no sistema há ${formatPresenceDurationMinutes(user.idleMinutes)}`);
   }
   lines.push('');
   if (user.punchMarks && user.punchMarks.length > 0) {
