@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
 import { Users, Briefcase, Circle } from 'lucide-react';
 import { useOnlinePresence } from '../lib/useOnlinePresence';
-import { useTeamRoster } from '../lib/useTeamRoster';
-import { useTeamPunchToday } from '../lib/useTeamPunchToday';
+import { useTeamPresenceBoard } from '../lib/services/useTeamPresenceBoard';
 import {
   PRESENCE_CATEGORY_LABELS,
   PRESENCE_CATEGORY_ORDER,
@@ -107,8 +106,7 @@ function statusLine(user: PresenceUserState): string {
 
 const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
   const { onlineUsers, onlineCount, onDutyClt } = useOnlinePresence(enabled);
-  const roster = useTeamRoster(enabled);
-  const { punchLookup } = useTeamPunchToday(enabled);
+  const { roster, punchLookup } = useTeamPresenceBoard(enabled);
 
   const onlineIds = useMemo(
     () => new Set(onlineUsers.map((u) => u.userId)),

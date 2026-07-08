@@ -1576,6 +1576,32 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/system/diagnostics", requireAuth, requireRole('diretoria', 'administrador', 'rh', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const { diagnosticoIntegracoes } = await import('./integracoesDiagnostics');
+      const semOpcionais = String(req.query?.semOpcionais || req.query?.core || '') === '1'
+        || String(req.query?.semOpcionais || '').toLowerCase() === 'true';
+      const result = await diagnosticoIntegracoes({ incluirOpcionais: !semOpcionais });
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(result.overall === 'down' ? 503 : 200).json({ ok: result.overall !== 'down', ...result });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  app.get("/api/rh/team-presence-board", requireAuth, requireRole('diretoria', 'administrador', 'rh', 'ceo'), async (_req: Request, res: Response) => {
+    try {
+      const { createRhAdminClient } = await import('../lib/rh/adminSupabase');
+      const { loadTeamPresenceBoardData } = await import('../lib/services/teamPresenceBoardService');
+      const sb = createRhAdminClient();
+      const payload = await loadTeamPresenceBoardData(sb);
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ ok: true, ...payload });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   app.post("/api/email/test-mission-emails", requireAuth, async (req: Request, res: Response) => {
     try {
       const { to } = req.body;
