@@ -9,7 +9,14 @@ import {
   AlertTriangle, ShieldAlert, BadgeCheck
 } from 'lucide-react';
 import MissionFinancialModal from './MissionFinancialModal';
+import MissionAuditModal from './MissionAuditModal';
 import { calculateMissionFinancials } from '../lib/financialUtils';
+import {
+  auditMissionsBatch,
+  clearMissionBillingAuditCache,
+  type MissionBillingAuditResult,
+} from '../lib/missionBillingAudit';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import {
   computeCanonicalRevenueCost,
   getCanonicalDateRange,
@@ -27,6 +34,8 @@ const MissionReportPage: React.FC = () => {
   const [clientPriceTables, setClientPriceTables] = useState<any[]>([]);
   const [providerCostTables, setProviderCostTables] = useState<any[]>([]);
   const [clientsData, setClientsData] = useState<any[]>([]);
+  const [providersData, setProvidersData] = useState<any[]>([]);
+  const [auditForModal, setAuditForModal] = useState<{ missionId: string; audit: MissionBillingAuditResult } | null>(null);
 
   const [periodFilter, setPeriodFilter] = useState<'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM' | 'ALL'>('WEEK');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -83,17 +92,19 @@ const MissionReportPage: React.FC = () => {
         return all;
       };
 
-      const [missionsData, clientsRes, providersRes, cptRes, pctRes, allClientsRes] = await Promise.all([
+      const [missionsData, clientsRes, providersRes, cptRes, pctRes, allClientsRes, allProvidersRes] = await Promise.all([
         fetchAllPages(),
         supabase.from('clients').select('name, trading_name'),
         supabase.from('providers').select('name, trading_name'),
         supabase.from('client_price_tables').select('*'),
         supabase.from('provider_cost_tables').select('*'),
         supabase.from('clients').select('*'),
+        supabase.from('providers').select('*'),
       ]);
       setClientPriceTables(cptRes.data || []);
       setProviderCostTables(pctRes.data || []);
       setClientsData(allClientsRes.data || []);
+      setProvidersData(allProvidersRes.data || []);
 
       if (missionsData) {
         const clientVehicleIds = [...new Set(missionsData.map((m: any) => m.client_vehicle).filter((id: any) => id))];
@@ -164,6 +175,11 @@ const MissionReportPage: React.FC = () => {
   useEffect(() => {
     if (currentUser) fetchMissions();
   }, [currentUser, fetchMissions]);
+
+  useRealtimeRefresh(['missions', 'client_price_tables', 'provider_cost_tables'], () => {
+    clearMissionBillingAuditCache();
+    if (currentUser) fetchMissions(true);
+  });
 
   const filteredMissions = useMemo(() => {
     let filtered = allMissions;
@@ -265,6 +281,7 @@ const MissionReportPage: React.FC = () => {
         showNotification('Bloqueado', data.error || 'OS aprovada — desfaça a aprovação antes de recalcular.', 'error');
       } else if (data.success) {
         showNotification('Sucesso', `OS ${missionId} recalculada: Receita R$ ${(data.new.revenue || 0).toFixed(2)} | Custo R$ ${(data.new.cost || 0).toFixed(2)}`, 'success');
+        clearMissionBillingAuditCache(missionId);
         fetchMissions(true);
       } else {
         showNotification('Erro', data.error || 'Falha ao recalcular', 'error');
@@ -279,6 +296,30 @@ const MissionReportPage: React.FC = () => {
   // CANÔNICO: cálculo único usado por todas as telas/worker.
   // Para cada OS calcula receita base + pedágio + custo base + pedágio pago.
   // Pula REFUSED. Usa valores salvos quando há, senão estima via tabela.
+  const auditByMission = useMemo(() => {
+    if (clientPriceTables.length === 0 && providerCostTables.length === 0) {
+      return new Map<string, MissionBillingAuditResult>();
+    }
+    return auditMissionsBatch(
+      filteredMissions,
+      clientPriceTables,
+      providerCostTables,
+      clientsData,
+      providersData,
+    );
+  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData, providersData]);
+
+  const auditSummary = useMemo(() => {
+    let validado = 0, atencao = 0, erro = 0, pendente = 0;
+    auditByMission.forEach((a) => {
+      if (a.overallStatus === 'validado') validado++;
+      else if (a.overallStatus === 'atencao') atencao++;
+      else if (a.overallStatus === 'erro') erro++;
+      else pendente++;
+    });
+    return { validado, atencao, erro, pendente };
+  }, [auditByMission]);
+
   const canonicalByMission = useMemo(() => {
     const refs = { clientTables: clientPriceTables, providerTables: providerCostTables, clientsData };
     const now = new Date();
@@ -375,6 +416,7 @@ const MissionReportPage: React.FC = () => {
       const data = await resp.json();
       if (data.success) {
         showNotification('Recálculo Concluído', `${data.updated} OS corrigidas de ${data.total} analisadas. ${data.skipped} sem divergência.`, 'success');
+        clearMissionBillingAuditCache();
         fetchMissions(true);
       } else {
         showNotification('Erro', data.error || 'Falha no recálculo', 'error');
@@ -404,6 +446,16 @@ const MissionReportPage: React.FC = () => {
             <FileBarChart size={22} className="text-red-600" />
             <h1 className="text-lg font-black text-gray-900 uppercase tracking-tight">Relatório de OS</h1>
             <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded">{filteredMissions.length} missões</span>
+            {canSeeFinancials && (
+              <div className="flex items-center gap-1.5 text-[10px] font-black">
+                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded">🟢 {auditSummary.validado}</span>
+                <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded">🟡 {auditSummary.atencao}</span>
+                <span className="bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded">🔴 {auditSummary.erro}</span>
+                {auditSummary.pendente > 0 && (
+                  <span className="bg-gray-100 text-gray-600 border border-gray-200 px-2 py-0.5 rounded">⚪ {auditSummary.pendente}</span>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -415,7 +467,7 @@ const MissionReportPage: React.FC = () => {
             </button>
             <button
               data-testid="btn-refresh-report"
-              onClick={() => fetchMissions(true)}
+              onClick={() => { clearMissionBillingAuditCache(); fetchMissions(true); }}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-bold border border-gray-200 transition-colors"
             >
               <RefreshCw size={13} /> Atualizar
@@ -622,6 +674,9 @@ const MissionReportPage: React.FC = () => {
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">% LUCRO</th>
                     </>
                   )}
+                  {canSeeFinancials && (
+                    <th className="px-3 py-2.5 text-center font-black border-r border-gray-700">STATUS AUDITORIA</th>
+                  )}
                   <th className="px-3 py-2.5 text-center font-black">FATURAMENTO</th>
                 </tr>
               </thead>
@@ -751,6 +806,38 @@ const MissionReportPage: React.FC = () => {
                           })()}
                         </>
                       )}
+                      {canSeeFinancials && (() => {
+                        const audit = auditByMission.get(m.id);
+                        if (!audit || audit.skipped) {
+                          return (
+                            <td className="px-3 py-2 border-r border-gray-100 text-center text-[10px] text-gray-400">—</td>
+                          );
+                        }
+                        const bg =
+                          audit.overallStatus === 'validado'
+                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
+                            : audit.overallStatus === 'atencao'
+                              ? 'bg-amber-50 hover:bg-amber-100 text-amber-800'
+                              : 'bg-red-50 hover:bg-red-100 text-red-800';
+                        return (
+                          <td className="px-3 py-2 border-r border-gray-100 text-center">
+                            <button
+                              type="button"
+                              data-testid={`btn-audit-${m.id}`}
+                              onClick={() => setAuditForModal({ missionId: m.id, audit })}
+                              className={`inline-flex flex-col items-center gap-0.5 px-2 py-1 rounded text-[10px] font-black transition-colors ${bg}`}
+                              title={
+                                audit.overallStatus === 'validado'
+                                  ? 'Faturamento validado'
+                                  : `Cliente Δ ${audit.client.diferenca.toFixed(2)} | Fornecedor Δ ${audit.provider.diferenca.toFixed(2)}`
+                              }
+                            >
+                              <span>{audit.overallIcon}</span>
+                              <span>{audit.overallLabel}</span>
+                            </button>
+                          </td>
+                        );
+                      })()}
                       <td className="px-3 py-2 text-center">
                         <div className="flex items-center gap-1 justify-center">
                         <button
@@ -795,6 +882,9 @@ const MissionReportPage: React.FC = () => {
                     <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totals.rev > 0 ? (totals.profit >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>
                       {totals.rev > 0 ? `${((totals.profit / totals.rev) * 100).toFixed(1)}%` : '-'}
                     </td>
+                    <td className="px-3 py-2.5 text-center border-r border-gray-600 text-[10px]">
+                      🟢{auditSummary.validado} 🟡{auditSummary.atencao} 🔴{auditSummary.erro}
+                    </td>
                     <td className="px-3 py-2.5"></td>
                   </tr>
                 </tfoot>
@@ -809,7 +899,18 @@ const MissionReportPage: React.FC = () => {
           isOpen={isFinancialModalOpen}
           onClose={() => setIsFinancialModalOpen(false)}
           mission={missionForFinancials}
-          onUpdate={() => fetchMissions(true)}
+          onUpdate={() => {
+            clearMissionBillingAuditCache();
+            fetchMissions(true);
+          }}
+        />
+      )}
+
+      {auditForModal && (
+        <MissionAuditModal
+          missionId={auditForModal.missionId}
+          audit={auditForModal.audit}
+          onClose={() => setAuditForModal(null)}
         />
       )}
     </div>
