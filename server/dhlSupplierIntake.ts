@@ -2329,6 +2329,7 @@ export function registerDhlIntakeRoutes(
       const validateAgentForSubmit = (a: any, label: string): string | null => {
         const required: [string, string][] = [
           ['nome', 'Nome'], ['cpf', 'CPF'], ['rg', 'RG'], ['orgao_emissor', 'Órgão emis./UF'],
+          ['cnh', 'CNH'], ['cnh_categoria', 'Categoria CNH'], ['cnh_vencimento', 'Vencimento CNH'],
           ['cnv_numero', 'CNV Número'], ['cnv_validade', 'Validade CNV'],
           ['celular', 'Celular'],
           ['rua', 'Rua'], ['numero', 'Número'], ['bairro', 'Bairro'],
@@ -2367,34 +2368,6 @@ export function registerDhlIntakeRoutes(
       if (!agent1?.id && !agent2?.id && cpf1 && cpf1 === cpf2) {
         return res.status(400).json({ error: 'Escoltista 1 e Escoltista 2 não podem ter o mesmo CPF.' });
       }
-
-      // Regra cruzada de CNH: PELO MENOS UM dos escoltistas precisa ter CNH e
-      // Vencimento CNH preenchidos. Bloqueia somente quando AMBOS estiverem sem.
-      const cnhStr = (a: any, k: string) => {
-        const v = a?.[k] ?? a?.[k.replace(/_([a-z])/g, (_: any, c: string) => c.toUpperCase())];
-        return v === undefined || v === null ? '' : String(v).trim();
-      };
-      const a1HasCnh = !!cnhStr(agent1, 'cnh') && !!cnhStr(agent1, 'cnh_vencimento');
-      const a2HasCnh = !!cnhStr(agent2, 'cnh') && !!cnhStr(agent2, 'cnh_vencimento');
-      if (!a1HasCnh && !a2HasCnh) {
-        return res.status(400).json({
-          error: 'Pelo menos UM dos escoltistas precisa ter CNH e Vencimento da CNH preenchidos.',
-        });
-      }
-      // Coerência por escoltista: se preencheu qualquer campo do bloco CNH,
-      // tem que preencher todos (número, categoria, vencimento).
-      const checkCnhBlock = (a: any, label: string): string | null => {
-        const num = cnhStr(a, 'cnh');
-        const cat = cnhStr(a, 'cnh_categoria');
-        const val = cnhStr(a, 'cnh_vencimento');
-        if (!num && !cat && !val) return null;
-        if (!num) return `${label}: informe o número da CNH.`;
-        if (!val) return `${label}: informe o Vencimento da CNH.`;
-        if (!cat) return `${label}: informe a Categoria da CNH.`;
-        return null;
-      };
-      const cnhErr = checkCnhBlock(agent1, 'Escoltista 1') || checkCnhBlock(agent2, 'Escoltista 2');
-      if (cnhErr) return res.status(400).json({ error: cnhErr });
 
       // Validação completa dos blocos para o submit FINAL (campos obrigatórios).
       const v1Err = validateAgentForSubmit(agent1, 'Escoltista 1');
