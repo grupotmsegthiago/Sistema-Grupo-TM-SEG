@@ -546,6 +546,14 @@ export const calculateMissionFinancials = (
     if (isCancelled) {
         distanceForCalculation = (hasValidKms && realTraveledKm > 0) ? realTraveledKm : 0;
     }
+
+    /** Distância para SELEÇÃO de faixa/tabela. OS concluída com hodômetro → KM real executado. */
+    const getTableSelectionDistance = () => {
+        if (isFinished && hasValidKms && realTraveledKm > 0) {
+            return realTraveledKm;
+        }
+        return Math.max(totalDistance, distanceForCalculation);
+    };
     
     const scheduledDate = parseSafeDate(mission.startTime || (mission as any).start_time); 
     const creationDate = parseSafeDate(mission.createdAt); 
@@ -901,7 +909,7 @@ export const calculateMissionFinancials = (
       const dhlResult = selectDhlClientTable(
         clientTablesFiltered,
         { origin: mission.origin || '', destination: mission.destination || '' },
-        totalDistance,
+        getTableSelectionDistance(),
         { clientName: dhlClientCanonical },
       );
       dhlEngineHandled = true;
@@ -914,7 +922,7 @@ export const calculateMissionFinancials = (
       }
     }
     if (!appliedClientTable && !dhlEngineHandled) {
-        const clientDistReference = Math.max(totalDistance, distanceForCalculation);
+        const clientDistReference = getTableSelectionDistance();
         const result = selectStrictTable(
             clientTablesFiltered, 
             clientDistReference, 
@@ -961,7 +969,7 @@ export const calculateMissionFinancials = (
     const normalizedDest = normalize(mission.destination || '');
     const isJundiai = normalizedOrigin.includes('JUNDIAI');
     const destHas200km = normalizedDest.includes('200KM') || normalizedDest.includes('200 KM') || normalizedDest.includes('ACOMPANHAMENTO');
-    const referenceDistance = Math.max(totalDistance, distanceForCalculation);
+    const referenceDistance = getTableSelectionDistance();
     let is200kmAccompaniment = destHas200km && !isZeroValueMission;
 
     const cevaLogitech = isCevaClient && (isJundiai || destHas200km);
@@ -1070,7 +1078,7 @@ export const calculateMissionFinancials = (
 
     const providerDistReference = manualTableOverrides?.providerOpsOverride 
         ? manualTableOverrides.providerOpsOverride.distanceKm 
-        : Math.max(totalDistance, distanceForCalculation);
+        : getTableSelectionDistance();
 
     if (effectiveProviderTableId) {
         appliedProviderTable = providerTables.find(t => t.id.toString() === effectiveProviderTableId);
@@ -1241,7 +1249,7 @@ export const calculateMissionFinancials = (
             ? 0
             : (manualTableOverrides?.providerOpsOverride
                 ? manualTableOverrides.providerOpsOverride.distanceKm
-                : (isFinished && hasValidKms ? realTraveledKm : Math.max(totalDistance, distanceForCalculation)));
+                : getTableSelectionDistance());
         const goldenStart = cancelledBeforeExecution ? null : ((mission as any).provider_start_time || mission.startTime || (mission as any).start_time);
         const goldenScheduled = cancelledBeforeExecution ? null : (mission.startTime || (mission as any).start_time);
         const goldenEnd = cancelledBeforeExecution ? null : ((mission as any).provider_end_time || mission.endTime || (mission as any).end_time);

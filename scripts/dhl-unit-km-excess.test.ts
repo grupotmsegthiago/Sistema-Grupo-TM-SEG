@@ -57,3 +57,55 @@ test('calculateMissionFinancials — DHL aplica KM excedente automático quando 
   assert.equal(result.client.unitPriceKm, 6.90);
   assert.equal(result.client.extraKmVal, 220.8);
 });
+
+test('calculateMissionFinancials — OS concluída seleciona tabela pelo KM real, não KM previsto da rota', () => {
+  const mission = {
+    id: 'GTM-6258-TEST',
+    client: 'DHL SUPPLY CHAIN (BRAZIL) LTDA',
+    provider: 'COMANDO G8 - SEGURANCA PATRIMONIAL E TRANSPORTE DE VALORES LTDA',
+    status: MissionStatus.COMPLETED,
+    origin: 'AV. TAMBORE, BARUERI - SP',
+    destination: 'ROD. FERNÃO DIAS',
+    start_km: 268054,
+    end_km: 268181,
+    total_distance: 320,
+    start_time: '2026-07-07T01:30:00+00:00',
+    end_time: '2026-07-07T06:30:00+00:00',
+    revenue_value: 1166.3,
+    cost_value: 809.6,
+    mission_type: 'Caracterizada',
+  } as any;
+
+  const clientTables = [
+    {
+      id: '100km',
+      client: 'DHL SUPPLY CHAIN (BRAZIL) LTDA',
+      operation_type: 'SUDESTE - DISTRIBUIÇÃO SP 100KM',
+      activation_fee: 690,
+      franchise_km: 100,
+      franchise_hours: 3,
+      price_per_extra_km: 17.6,
+      price_per_extra_hour: 145,
+    },
+    {
+      id: '300km',
+      client: 'DHL SUPPLY CHAIN (BRAZIL) LTDA',
+      operation_type: 'SUDESTE - RAIO SP 300KM',
+      activation_fee: 2070,
+      franchise_km: 300,
+      franchise_hours: 9,
+      price_per_extra_km: 6.9,
+      price_per_extra_hour: 145,
+    },
+  ] as any[];
+
+  const result = calculateMissionFinancials(mission, clientTables, [], undefined, new Date());
+
+  assert.ok(result.realTraveledKm === 127, 'KM real executado = 127');
+  assert.ok(
+    (result.client.tableName || '').includes('100KM'),
+    `deve usar faixa 100KM pelo KM real, não 300KM pelo previsto 320. Obtido: ${result.client.tableName}`,
+  );
+  assert.ok(!(result.client.tableName || '').includes('300KM'));
+  assert.ok(result.client.excessKm === 27, 'excedente calculado sobre 127 km reais (27 acima da franquia 100)');
+});
