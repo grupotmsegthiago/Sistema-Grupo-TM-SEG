@@ -14,6 +14,7 @@ test('accountBalanceSnapshots usa REST Supabase (sem pg nem supabase-js)', () =>
   assert.doesNotMatch(apiSrc, /DATABASE_URL indisponível/);
 });
 
-test('insertSnapshot grava via supabase', () => {
-  assert.match(src, /insert falhou/);
+test('insertSnapshot propaga erro detalhado do Supabase', () => {
+  assert.match(src, /throw new Error\(`insert \$\{res\.status\}/);
+  assert.match(apiSrc, /e\?\.message \|\| 'Falha ao gravar snapshot de saldo'/);
 });

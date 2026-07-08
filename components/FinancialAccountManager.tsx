@@ -5,6 +5,7 @@ import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
 import { logAction } from '../lib/logger';
 import { parseAmountBR } from '../lib/utils';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
+import { insertBalanceSnapshotDirect } from '../lib/investment/snapshotClient';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
@@ -200,14 +201,37 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
         setIsProcessingUpdate(true);
         try {
             const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || '';
-            const res = await authFetch('/api/investment/snapshots', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ account_id: updateAccountId, balance: newBal, notes: '', created_by: userName }),
-            });
-            const payload = await parseJsonResponse(res);
-            if (!res.ok) {
-                throw new Error(payload?.error || `Erro ao registrar saldo (${res.status})`);
+            let snapshotSaved = false;
+
+            try {
+                const res = await authFetch('/api/investment/snapshots', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ account_id: updateAccountId, balance: newBal, notes: '', created_by: userName }),
+                });
+                const payload = await parseJsonResponse(res);
+                if (!res.ok) {
+                    throw new Error(payload?.error || `Erro ao registrar saldo (${res.status})`);
+                }
+                snapshotSaved = true;
+            } catch (apiErr) {
+                try {
+                    await insertBalanceSnapshotDirect({
+                        account_id: updateAccountId,
+                        balance: newBal,
+                        notes: '',
+                        created_by: userName,
+                    });
+                    snapshotSaved = true;
+                } catch (directErr) {
+                    const apiMsg = apiErr instanceof Error ? apiErr.message : 'Falha na API';
+                    const directMsg = directErr instanceof Error ? directErr.message : 'Falha no Supabase';
+                    throw new Error(directMsg || apiMsg);
+                }
+            }
+
+            if (!snapshotSaved) {
+                throw new Error('Falha ao gravar snapshot de saldo. Tente novamente ou contate o suporte.');
             }
 
             const account = accounts.find(a => a.id === updateAccountId);

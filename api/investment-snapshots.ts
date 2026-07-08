@@ -26,13 +26,10 @@ export default async function handler(req: any, res: any) {
       notes: String(body.notes || ''),
       created_by: String(body.created_by || ''),
     });
-    if (!row) {
-      res.status(500).json({ error: 'Falha ao gravar snapshot de saldo. Tente novamente ou contate o suporte.' });
-      return;
-    }
     res.status(200).json(row);
   } catch (e: any) {
-    console.error('[investment/snapshots POST]', e?.message);
-    res.status(500).json({ error: e?.message || 'erro' });
+    const message = e?.message || 'Falha ao gravar snapshot de saldo';
+    console.error('[investment/snapshots POST]', message);
+    res.status(500).json({ error: message });
   }
 }
