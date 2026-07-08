@@ -6,6 +6,9 @@ import {
   type TeamPunchLookup,
   type TeamRosterMember,
 } from './teamPunchBoard';
+import { requiresTimeclockUser } from './eligibility';
+import { getOnDutyStageLabel, getMinutesOnDutyToday, isCltOnDutyToday } from './onDuty';
+import type { TimeClockUserContext } from './types';
 
 export type { PresencePunchMark } from './punchMarks';
 export { buildPunchMarks } from './punchMarks';
@@ -120,6 +123,20 @@ export function formatPresenceShortName(name: string): string {
   return `${first} ${lastInitial}.`;
 }
 
+/** Converte minutos em texto legível (ex.: 323 → "5h 23min", 45 → "45 min"). */
+export function formatPresenceDurationMinutes(
+  totalMinutes: number,
+  opts?: { compact?: boolean },
+): string {
+  const mins = Math.max(0, Math.floor(totalMinutes));
+  const minSuffix = opts?.compact ? 'm' : 'min';
+  if (mins < 60) return `${mins} ${minSuffix}`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}${minSuffix}`;
+}
+
 export function buildPresenceTooltip(user: PresenceUserState): string {
   const lines: string[] = [];
   const status = getPresenceServiceStatus(user);
@@ -130,10 +147,10 @@ export function buildPresenceTooltip(user: PresenceUserState): string {
     lines.push(`Detalhe ponto: ${user.onDutyLabel}`);
   }
   if (user.minutesOnDuty != null && user.minutesOnDuty > 0 && status === 'em_servico') {
-    lines.push(`Tempo em serviço: ${user.minutesOnDuty} min`);
+    lines.push(`Tempo em serviço: ${formatPresenceDurationMinutes(user.minutesOnDuty)}`);
   }
   if (user.activityStatus === 'idle' && user.idleMinutes && user.idleMinutes > 0) {
-    lines.push(`Sem uso no sistema há ${user.idleMinutes} min`);
+    lines.push(`Sem uso no sistema há ${formatPresenceDurationMinutes(user.idleMinutes)}`);
   }
   lines.push('');
   if (user.punchMarks && user.punchMarks.length > 0) {
@@ -231,6 +248,82 @@ export function parsePresenceState(
  * - Status Em serviço / Em almoço / Fora vem do ponto de hoje quando existir.
  * - Online ao vivo enriquece atividade; offline com ponto usa dados do banco.
  */
+export function buildPresenceHeartbeatFromUser(
+  user: TimeClockUserContext & { role?: string },
+  entries?: Pick<TimeClockEntry, 'type' | 'timestamp'>[],
+): PresenceUserState {
+  const mustClock = requiresTimeclockUser(user);
+  const contractType = (user.contractType || '').toUpperCase() || undefined;
+  const punchMarks = entries?.length ? buildPunchMarks(entries) : undefined;
+  const onDuty = entries?.length ? isCltOnDutyToday(entries) : false;
+  let onDutyLabel = 'Online';
+
+  if (entries?.length) {
+    onDutyLabel = getOnDutyStageLabel(entries);
+  } else if (mustClock) {
+    onDutyLabel = 'Aguardando ponto';
+  } else if (contractType) {
+    onDutyLabel = contractType;
+  }
+
+  return {
+    userId: normalizePresenceUserId(user.id),
+    name: user.name || 'Usuário',
+    role: user.role || 'Operador',
+    contractType,
+    isClt: mustClock,
+    onDuty,
+    onDutyLabel,
+    onlineAt: new Date().toISOString(),
+    minutesOnDuty: onDuty ? getMinutesOnDutyToday(entries || []) : 0,
+    punchMarks,
+  };
+}
+
+export function enrichPresenceWithPunchMarks(user: PresenceUserState): PresenceUserState {
+  const marks = user.punchMarks || [];
+  if (!marks.length) return user;
+
+  const hasIn = marks.some((m) => m.type === 'IN');
+  const hasOut = marks.some((m) => m.type === 'OUT');
+  const hasBreakStart = marks.some((m) => m.type === 'BREAK_START');
+  const hasBreakEnd = marks.some((m) => m.type === 'BREAK_END');
+
+  let onDuty = user.onDuty;
+  let onDutyLabel = user.onDutyLabel;
+
+  if (hasBreakStart && !hasBreakEnd) {
+    onDuty = true;
+    onDutyLabel = 'Em almoço';
+  } else if (hasIn && !hasOut) {
+    onDuty = true;
+    onDutyLabel = 'Em serviço';
+  } else if (hasOut) {
+    onDuty = false;
+    onDutyLabel = 'Fora do expediente';
+  }
+
+  return {
+    ...user,
+    isClt: user.isClt || true,
+    onDuty,
+    onDutyLabel,
+  };
+}
+
+/** Online à esquerda; fora de serviço/offline à direita; depois ordem alfabética. */
+export function sortPresenceBoardUsers(
+  users: PresenceUserState[],
+  onlineIds: Set<string>,
+): PresenceUserState[] {
+  return [...users].sort((a, b) => {
+    const aOnline = onlineIds.has(normalizePresenceUserId(a.userId));
+    const bOnline = onlineIds.has(normalizePresenceUserId(b.userId));
+    if (aOnline !== bOnline) return aOnline ? -1 : 1;
+    return (a.name || 'Usuário').localeCompare(b.name || 'Usuário', 'pt-BR');
+  });
+}
+
 export function mergeRosterWithPresence(
   roster: TeamRosterMember[],
   onlineUsers: PresenceUserState[],
@@ -251,7 +344,7 @@ export function mergeRosterWithPresence(
     const punchEntries = resolvePunchEntriesForMember(member, punchLookup);
 
     if (online) {
-      const merged: PresenceUserState = { ...online };
+      let merged = enrichPresenceWithPunchMarks({ ...online });
       if (punchEntries?.length) {
         const fromPunch = buildPresenceFromPunchEntries(member, punchEntries);
         merged.onDuty = fromPunch.onDuty;
@@ -259,7 +352,15 @@ export function mergeRosterWithPresence(
         merged.minutesOnDuty = fromPunch.minutesOnDuty;
         merged.punchMarks = fromPunch.punchMarks;
         merged.isClt = merged.isClt || fromPunch.isClt;
-      } else if (merged.isClt && !merged.punchMarks?.length && !merged.onDuty) {
+      } else if (
+        merged.isClt &&
+        !merged.punchMarks?.length &&
+        !merged.onDuty &&
+        !String(merged.onDutyLabel || '').toLowerCase().includes('serviço') &&
+        !String(merged.onDutyLabel || '').toLowerCase().includes('servico') &&
+        !String(merged.onDutyLabel || '').toLowerCase().includes('almoço') &&
+        !String(merged.onDutyLabel || '').toLowerCase().includes('almoco')
+      ) {
         merged.onDutyLabel = 'Aguardando ponto';
         merged.onDuty = false;
       }

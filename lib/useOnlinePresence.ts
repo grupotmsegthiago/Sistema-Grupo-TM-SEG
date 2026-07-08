@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { subscribePresence } from './presenceChannel';
+import {
+  mergePresenceSources,
+  subscribeUserPresenceDb,
+} from './userPresenceDb';
 import type { PresenceUserState } from './timeclock/presence';
 
 function presenceListEqual(a: PresenceUserState[], b: PresenceUserState[]): boolean {
@@ -30,11 +34,28 @@ export function useOnlinePresence(enabled = true) {
       setOnlineUsers([]);
       return;
     }
-    const unsubscribe = subscribePresence((users) => {
-      setOnlineUsers((prev) => (presenceListEqual(prev, users) ? prev : users));
+
+    let dbUsers: PresenceUserState[] = [];
+    let broadcastUsers: PresenceUserState[] = [];
+
+    const publish = () => {
+      const merged = mergePresenceSources(dbUsers, broadcastUsers);
+      setOnlineUsers((prev) => (presenceListEqual(prev, merged) ? prev : merged));
+    };
+
+    const unsubscribeDb = subscribeUserPresenceDb((users) => {
+      dbUsers = users;
+      publish();
     });
+
+    const unsubscribeBroadcast = subscribePresence((users) => {
+      broadcastUsers = users;
+      publish();
+    });
+
     return () => {
-      unsubscribe();
+      unsubscribeDb();
+      unsubscribeBroadcast();
     };
   }, [enabled]);
 

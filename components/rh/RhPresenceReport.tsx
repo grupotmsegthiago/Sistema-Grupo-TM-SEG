@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Activity, Users } from 'lucide-react';
 import { useOnlinePresence } from '../../lib/useOnlinePresence';
-import { PRESENCE_USER_AVATAR_SRC } from '../../lib/timeclock/presence';
+import { PRESENCE_USER_AVATAR_SRC, formatPresenceDurationMinutes } from '../../lib/timeclock/presence';
 
 /** Relatório RH: presença operacional em tempo real com atividade do sistema. */
 const RhPresenceReport: React.FC = () => {
@@ -19,10 +19,10 @@ const RhPresenceReport: React.FC = () => {
   const lineFor = (u: (typeof onlineUsers)[0]) => {
     const parts: string[] = [u.onDutyLabel || 'Online'];
     if (u.onDuty && u.minutesOnDuty != null && u.minutesOnDuty > 0) {
-      parts.push(`${u.minutesOnDuty} minutos`);
+      parts.push(formatPresenceDurationMinutes(u.minutesOnDuty));
     }
     if (u.activityStatus === 'idle' && u.idleMinutes && u.idleMinutes > 0) {
-      return `${u.name} — ${u.onDutyLabel} — Sem utilização no sistema há ${u.idleMinutes} minutos`;
+      return `${u.name} — ${u.onDutyLabel} — Sem utilização no sistema há ${formatPresenceDurationMinutes(u.idleMinutes)}`;
     }
     if (u.activityStatus === 'idle') {
       return `${u.name} — ${u.onDutyLabel} — Inativa (sem uso recente)`;

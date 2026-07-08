@@ -10,7 +10,11 @@ import {
   buildPunchMarks,
   buildPresenceTooltip,
   mergeRosterWithPresence,
+  enrichPresenceWithPunchMarks,
+  sortPresenceBoardUsers,
+  buildPresenceHeartbeatFromUser,
   formatPresenceShortName,
+  formatPresenceDurationMinutes,
   normalizePresenceUserId,
   PRESENCE_USER_AVATAR_SRC,
 } from '../lib/timeclock/presence.ts';
@@ -200,6 +204,79 @@ test('getPresenceServiceStatus distingue online sem ponto de fora offline', () =
     ),
     'online',
   );
+});
+
+test('sortPresenceBoardUsers agrupa online à esquerda', () => {
+  const users = [
+    { userId: '1', name: 'Zara', role: 'Operador', isClt: true, onDuty: false, onDutyLabel: 'Fora', onlineAt: '' },
+    { userId: '2', name: 'Ana', role: 'Operador', isClt: true, onDuty: true, onDutyLabel: 'Em serviço', onlineAt: '' },
+    { userId: '3', name: 'Bruno', role: 'Diretoria', isClt: false, onDuty: false, onDutyLabel: 'Online', onlineAt: '' },
+  ] as any[];
+  const onlineIds = new Set(['2', '3']);
+  const sorted = sortPresenceBoardUsers(users, onlineIds);
+  assert.deepEqual(sorted.map((u) => u.userId), ['2', '3', '1']);
+});
+
+test('enrichPresenceWithPunchMarks corrige aguardando ponto quando há IN', () => {
+  const enriched = enrichPresenceWithPunchMarks({
+    userId: '5',
+    name: 'Beatriz',
+    role: 'Operador',
+    isClt: true,
+    onDuty: false,
+    onDutyLabel: 'Aguardando ponto',
+    onlineAt: '',
+    punchMarks: [{ type: 'IN', label: 'Entrada', time: '07:35' }],
+  });
+  assert.equal(enriched.onDuty, true);
+  assert.equal(enriched.onDutyLabel, 'Em serviço');
+  assert.equal(getPresenceServiceStatus(enriched, { isOnline: true }), 'em_servico');
+});
+
+test('mergeRosterWithPresence usa punchMarks do heartbeat quando lookup vazio', () => {
+  const roster = [{ userId: '5', name: 'Beatriz de Carvalho Simões', role: 'Operador' }];
+  const online = [
+    {
+      userId: '5',
+      name: 'Beatriz de Carvalho Simões',
+      role: 'Operador',
+      isClt: true,
+      onDuty: false,
+      onDutyLabel: 'Aguardando ponto',
+      onlineAt: new Date().toISOString(),
+      punchMarks: [{ type: 'IN', label: 'Entrada', time: '07:35' }],
+    },
+  ];
+  const merged = mergeRosterWithPresence(roster, online as any);
+  assert.equal(getPresenceServiceStatus(merged[0], { isOnline: true }), 'em_servico');
+  assert.equal(merged[0].onDutyLabel, 'Em serviço');
+});
+
+test('formatPresenceDurationMinutes exibe horas e minutos', () => {
+  assert.equal(formatPresenceDurationMinutes(45), '45 min');
+  assert.equal(formatPresenceDurationMinutes(60), '1h');
+  assert.equal(formatPresenceDurationMinutes(323), '5h 23min');
+  assert.equal(formatPresenceDurationMinutes(323, { compact: true }), '5h 23m');
+});
+
+test('buildPresenceHeartbeatFromUser marca operador CLT como aguardando ponto', () => {
+  const payload = buildPresenceHeartbeatFromUser({
+    id: 4,
+    name: 'michelle dias',
+    role: 'AVANÇADO',
+  } as any);
+  assert.equal(payload.isClt, true);
+  assert.equal(payload.onDutyLabel, 'Aguardando ponto');
+  assert.equal(normalizePresenceUserId(payload.userId), '4');
+});
+
+test('buildPresenceHeartbeatFromUser reflete ponto IN como em serviço', () => {
+  const payload = buildPresenceHeartbeatFromUser(
+    { id: '5', name: 'Beatriz', role: 'Operador' } as any,
+    [{ type: 'IN', timestamp: '2026-07-08T10:30:00.000Z' }],
+  );
+  assert.equal(getPresenceServiceStatus(payload), 'em_servico');
+  assert.equal(payload.onDuty, true);
 });
 
 test('normalizePresenceUserId unifica number e string do login', () => {

@@ -10,7 +10,9 @@ import {
   getPresenceCategory,
   getPresenceServiceStatus,
   mergeRosterWithPresence,
+  sortPresenceBoardUsers,
   formatPresenceShortName,
+  formatPresenceDurationMinutes,
   normalizePresenceUserId,
   type PresenceCategory,
   type PresenceServiceStatus,
@@ -106,14 +108,14 @@ function statusLine(user: PresenceUserState, isOnline: boolean): string {
   const status = getPresenceServiceStatus(user, { isOnline });
   const base = PRESENCE_SERVICE_STATUS_LABELS[status];
   if (status === 'em_servico' && user.minutesOnDuty != null && user.minutesOnDuty > 0) {
-    const mins = `${user.minutesOnDuty} min`;
+    const mins = formatPresenceDurationMinutes(user.minutesOnDuty, { compact: true });
     if (user.activityStatus === 'idle' && user.idleMinutes && user.idleMinutes > 0) {
-      return `${base} — ${mins} — Inativo ${user.idleMinutes}m`;
+      return `${base} — ${mins} — Inativo ${formatPresenceDurationMinutes(user.idleMinutes, { compact: true })}`;
     }
     return `${base} — ${mins}`;
   }
   if (user.activityStatus === 'idle' && user.idleMinutes && user.idleMinutes > 0) {
-    return `${base} — Inativo ${user.idleMinutes}m`;
+    return `${base} — Inativo ${formatPresenceDurationMinutes(user.idleMinutes, { compact: true })}`;
   }
   return base;
 }
@@ -153,12 +155,10 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
       groups[category].push(user);
     }
     for (const key of PRESENCE_CATEGORY_ORDER) {
-      groups[key].sort((a, b) =>
-        (a.name || 'Usuário').localeCompare(b.name || 'Usuário', 'pt-BR')
-      );
+      groups[key] = sortPresenceBoardUsers(groups[key], onlineIds);
     }
     return groups;
-  }, [displayUsers]);
+  }, [displayUsers, onlineIds]);
 
   if (!enabled) return null;
 

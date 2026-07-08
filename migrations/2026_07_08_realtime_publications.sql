@@ -30,7 +30,8 @@ DECLARE
     'operational_reports',
     'monitored_processes',
     'system_settings',
-    'whatsapp_instances'
+    'whatsapp_instances',
+    'user_presence'
   ];
 BEGIN
   FOREACH tbl IN ARRAY target_tables LOOP

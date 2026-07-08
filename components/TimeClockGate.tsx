@@ -9,6 +9,9 @@ import {
 } from '../lib/timeclock/eligibility';
 import { canPunchEntryNow } from '../lib/timeclock/shiftRules';
 import { fetchTodayTimeClockEntries } from '../lib/timeclock/registerPunch';
+import { buildPresenceHeartbeatFromUser } from '../lib/timeclock/presence';
+import { upsertUserPresenceDb } from '../lib/userPresenceDb';
+import { requestPresenceRefresh } from '../lib/presenceChannel';
 import type { TimeClockUserContext } from '../lib/timeclock/types';
 
 interface Props {
@@ -55,6 +58,12 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
       }
 
       const entries = await fetchTodayTimeClockEntries(enriched.id);
+
+      if (requiresTimeclockUser(enriched)) {
+        void upsertUserPresenceDb(buildPresenceHeartbeatFromUser(enriched, entries));
+        requestPresenceRefresh();
+      }
+
       if (!needsEntryPunchToday(entries)) {
         setMustPunch(false);
         setShiftBlocked(false);
@@ -70,6 +79,8 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
       console.warn('[TimeClockGate] evaluate falhou:', e);
       // Fail-closed: operadores/CLT não entram sem confirmação de ponto.
       if (rawUser && requiresTimeclockUser(rawUser)) {
+        void upsertUserPresenceDb(buildPresenceHeartbeatFromUser(rawUser));
+        requestPresenceRefresh();
         setMustPunch(true);
         setShiftBlocked(false);
         setModalOpen(true);
@@ -89,8 +100,7 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
 
   const handleRegistered = () => {
     setModalOpen(false);
-    setMustPunch(false);
-    onCleared();
+    void evaluate(false);
   };
 
   if (loading) return null;
