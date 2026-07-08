@@ -1847,7 +1847,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           </div>
           </div>
 
-          {!isRestrictedClientView && <MissionTeamPresenceBoard />}
+          {!isRestrictedClientView && isDiretoriaRole && <MissionTeamPresenceBoard />}
 
           {!isRestrictedClientView && (
           <div className="flex flex-wrap gap-3 w-full justify-start overflow-visible">
