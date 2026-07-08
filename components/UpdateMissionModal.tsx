@@ -7,6 +7,7 @@ import { supabase, MISSION_UPDATES_BROADCAST_CHANNEL } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { clientFuzzyFilter, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
+import { optimizeImageForAI } from '../lib/imageForAI';
 import { showWhatsappCopyPopup } from '../lib/whatsappCopyFlow';
 import { hasExplicitUpdatePrint, shouldSendClientGroupWhatsApp } from '../lib/clientGroupUpdateFilter';
 import {
@@ -255,21 +256,13 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     // Na conclusão, ATIVA/TM SEG ainda podem omitir KM final; evidência é sempre exigida.
     const evidenceOk = !!odoUrl;
 
-    const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const res = String(reader.result || '');
-            resolve(res.includes(',') ? res.split(',')[1] : res);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
-
     const validateOdometer = async (file: File, targetKm: number | null) => {
         if (targetKm == null || targetKm <= 0) { setOdoErr('Informe o KM final antes de validar o print.'); return; }
         setOdoChecking(true); setOdoErr(''); setOdoResult(null); setOdoConfirmed(false);
         try {
-            const base64 = await fileToBase64(file);
+            // Reduz/comprime só a cópia enviada à IA (o print salvo como
+            // evidência continua em qualidade original) — leitura muito mais rápida.
+            const aiImage = await optimizeImageForAI(file);
             const prompt = `Você é um auditor de frotas. Analise a imagem do PAINEL/HODÔMETRO de um veículo e compare com o valor de KM FINAL informado pelo operador: ${targetKm}.
 Tarefas:
 1. Identifique se a imagem mostra de fato um hodômetro/painel de veículo (campo "concluido": true se for um hodômetro legível, false caso contrário).
@@ -278,7 +271,7 @@ Tarefas:
 4. Escreva uma justificativa curta em português (campo "justificativa").
 Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": boolean, "km_extraido": string|null, "divergencia": boolean, "justificativa": string}`;
             const raw = await generateContent({
-                contents: { parts: [ { inlineData: { mimeType: file.type || 'image/png', data: base64 } }, { text: prompt } ] },
+                contents: { parts: [ { inlineData: { mimeType: aiImage.mimeType, data: aiImage.data } }, { text: prompt } ] },
                 config: { responseMimeType: 'application/json' },
             });
             let txt = (raw || '').trim();
