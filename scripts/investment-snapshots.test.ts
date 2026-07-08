@@ -21,4 +21,5 @@ test('migration account_balance_snapshots cria tabela com RLS', () => {
 test('insertSnapshot tenta pg e depois supabase', () => {
   assert.match(src, /insert pg falhou, tentando Supabase/);
   assert.match(src, /insert supabase falhou/);
+  assert.match(src, /import\('pg'\)/);
 });

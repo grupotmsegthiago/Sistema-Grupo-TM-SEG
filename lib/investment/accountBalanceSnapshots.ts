@@ -1,4 +1,3 @@
-import pg from 'pg';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
   DEFAULT_SUPABASE_ANON_KEY,
@@ -30,7 +29,10 @@ DROP POLICY IF EXISTS "Allow all for account_balance_snapshots" ON public.accoun
 CREATE POLICY "Allow all for account_balance_snapshots" ON public.account_balance_snapshots
   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);`;
 
-let pool: pg.Pool | null = null;
+type PgPool = import('pg').Pool;
+
+let pool: PgPool | null = null;
+let poolInit: Promise<PgPool | null> | null = null;
 let supabaseAdmin: SupabaseClient | null = null;
 let tableEnsured = false;
 
@@ -44,7 +46,7 @@ function decodeRef(key: string): string | null {
   }
 }
 
-function getPool(): pg.Pool | null {
+async function getPool(): Promise<PgPool | null> {
   const connectionString = String(
     process.env.DATABASE_URL ||
       process.env.POSTGRES_URL ||
@@ -52,8 +54,20 @@ function getPool(): pg.Pool | null {
       '',
   ).trim();
   if (!connectionString) return null;
-  if (!pool) pool = new pg.Pool({ connectionString, max: 3 });
-  return pool;
+  if (pool) return pool;
+  if (!poolInit) {
+    poolInit = (async () => {
+      try {
+        const pg = await import('pg');
+        pool = new pg.default.Pool({ connectionString, max: 3 });
+        return pool;
+      } catch (err) {
+        console.warn('[account_balance_snapshots] pg indisponível (serverless?):', err);
+        return null;
+      }
+    })();
+  }
+  return poolInit;
 }
 
 function getSupabaseAdmin(): SupabaseClient | null {
@@ -86,7 +100,7 @@ function sinceIso(days: number): string {
 }
 
 async function ensureSnapshotsTablePg(): Promise<void> {
-  const p = getPool();
+  const p = await getPool();
   if (!p) return;
   await p.query(ENSURE_TABLE_SQL);
 }
@@ -108,7 +122,7 @@ async function ensureSnapshotsTableSupabase(): Promise<void> {
 
 export async function ensureSnapshotsTable(): Promise<void> {
   try {
-    if (getPool()) {
+    if (await getPool()) {
       await ensureSnapshotsTablePg();
       return;
     }
@@ -123,7 +137,7 @@ export async function listSnapshotsForAccount(
   days: number,
 ): Promise<BalanceSnapshotRow[]> {
   const since = sinceIso(days);
-  const p = getPool();
+  const p = await getPool();
   if (p) {
     try {
       const { rows } = await p.query(
@@ -156,7 +170,7 @@ export async function listSnapshotsForAccount(
 
 export async function listAllSnapshots(days: number): Promise<BalanceSnapshotRow[]> {
   const since = sinceIso(days);
-  const p = getPool();
+  const p = await getPool();
   if (p) {
     try {
       const { rows } = await p.query(
@@ -199,7 +213,7 @@ export async function insertSnapshot(input: {
     created_by: String(input.created_by || ''),
   };
 
-  const p = getPool();
+  const p = await getPool();
   if (p) {
     try {
       await ensureSnapshotsTablePg();
@@ -232,7 +246,7 @@ export async function insertSnapshot(input: {
 }
 
 export async function deleteSnapshot(id: number): Promise<boolean> {
-  const p = getPool();
+  const p = await getPool();
   if (p) {
     try {
       await p.query('DELETE FROM account_balance_snapshots WHERE id = $1', [id]);
