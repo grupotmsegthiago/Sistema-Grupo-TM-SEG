@@ -73,13 +73,21 @@ export async function fetchTimeClockEntriesFromApi(params: {
   }
 }
 
-export async function fetchTodayTimeClockEntriesFromApi(userId: string): Promise<TimeClockEntry[]> {
+export async function fetchTodayTimeClockEntriesFromApi(
+  userId: string,
+  options?: { shiftType?: string | null },
+): Promise<TimeClockEntry[]> {
   const { formatIsoDateBR } = await import('../dateUtils');
-  const today = formatIsoDateBR();
-  const entries = await fetchTimeClockEntriesFromApi({
-    startDate: today,
-    endDate: today,
-    userId,
-  });
-  return entries.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const { fetchActiveShiftEntries } = await import('./shiftEntries');
+
+  const fetchDay = async (uid: string, isoDate: string) => {
+    const entries = await fetchTimeClockEntriesFromApi({
+      startDate: isoDate,
+      endDate: isoDate,
+      userId: uid,
+    });
+    return entries.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  };
+
+  return fetchActiveShiftEntries(userId, fetchDay, options?.shiftType);
 }

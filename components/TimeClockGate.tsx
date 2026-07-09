@@ -54,7 +54,9 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
         return;
       }
 
-      const entries = await fetchTodayTimeClockEntries(enriched.id);
+      const entries = await fetchTodayTimeClockEntries(enriched.id, {
+        shiftType: enriched.shiftType,
+      });
       if (!needsEntryPunchToday(entries)) {
         setMustPunch(false);
         setShiftBlocked(false);

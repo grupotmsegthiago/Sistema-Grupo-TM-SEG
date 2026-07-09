@@ -6,10 +6,11 @@ import {
 } from '../lib/rh/apiEmployeesAuth';
 import { isDiretoriaRole, employeeRequiresTimeclock } from '../lib/timeclock/eligibility';
 import { canPunchEntryNow } from '../lib/timeclock/shiftRules';
+import { fetchActiveShiftEntries } from '../lib/timeclock/shiftEntries';
 import { getNextTimeClockStage } from '../lib/timeclock/stages';
 import { namesLikelyMatch } from '../lib/timeclock/nameMatch';
-import type { TimeClockStage } from '../lib/timeclock/types';
-import { formatIsoDateBR, getBrazilDayBounds } from '../lib/dateUtils';
+import type { TimeClockEntry, TimeClockStage } from '../lib/timeclock/types';
+import { getBrazilDayBounds } from '../lib/dateUtils';
 
 function sb() {
   const client = createSupabaseAdminClient();
@@ -89,6 +90,22 @@ function requiresPunch(employee: any): boolean {
   return employeeRequiresTimeclock(employee);
 }
 
+async function fetchDayPunchHistory(userId: string, isoDate: string): Promise<TimeClockEntry[]> {
+  const { start, end } = getBrazilDayBounds(isoDate);
+  const { data } = await sb()
+    .from('time_clock')
+    .select('type, timestamp')
+    .eq('user_id', userId)
+    .gte('timestamp', start)
+    .lte('timestamp', end)
+    .order('timestamp', { ascending: true });
+  return (data || []) as TimeClockEntry[];
+}
+
+async function fetchActivePunchHistory(userId: string, shiftType?: string | null): Promise<TimeClockEntry[]> {
+  return fetchActiveShiftEntries(userId, fetchDayPunchHistory, shiftType);
+}
+
 export async function handleTimeclockPunch(req: Request, res: Response): Promise<void> {
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   const userId = extractUserIdFromToken(token);
@@ -121,15 +138,7 @@ export async function handleTimeclockPunch(req: Request, res: Response): Promise
     return;
   }
 
-  const { start, end } = getBrazilDayBounds(formatIsoDateBR());
-  const { data: history } = await sb()
-    .from('time_clock')
-    .select('type, timestamp')
-    .eq('user_id', userId)
-    .gte('timestamp', start)
-    .lte('timestamp', end)
-    .order('timestamp', { ascending: true });
-
+  const history = await fetchActivePunchHistory(userId, employee?.shift_type);
   const expected = getNextTimeClockStage(history || []);
   if (expected === 'DONE') {
     res.status(400).json({ ok: false, error: 'Jornada de hoje já foi concluída.' });

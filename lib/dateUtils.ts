@@ -77,6 +77,14 @@ export function getBrazilDayBounds(isoDate?: string): { date: string; start: str
   return { date, start, end };
 }
 
+/** Dia civil anterior (yyyy-mm-dd) no fuso de Brasília. */
+export function getPreviousIsoDateBR(isoDate?: string): string {
+  const date = (isoDate || formatIsoDateBR()).trim();
+  const anchor = new Date(`${date}T12:00:00-03:00`);
+  anchor.setUTCDate(anchor.getUTCDate() - 1);
+  return anchor.toLocaleDateString('en-CA', { timeZone: TZ });
+}
+
 /** Monta ISO UTC a partir de data (yyyy-mm-dd) e hora HH:MM em Brasília. */
 export function buildBrazilTimestampFromHm(isoDate: string, timeHm: string): string {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(timeHm || '').trim());

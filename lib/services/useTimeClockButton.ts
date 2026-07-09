@@ -43,7 +43,9 @@ export function useTimeClockButton(): TimeClockButtonState {
       }
 
       setUser(enriched);
-      const entries = await fetchTodayTimeClockEntries(enriched.id);
+      const entries = await fetchTodayTimeClockEntries(enriched.id, {
+        shiftType: enriched.shiftType,
+      });
       setHistory(entries);
       setReady(true);
     } catch (e) {

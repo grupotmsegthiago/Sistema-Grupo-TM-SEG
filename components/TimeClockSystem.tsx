@@ -23,7 +23,9 @@ const TimeClockSystem: React.FC = () => {
     if (!user?.id) return;
     setLoadError('');
     try {
-      const entries = await fetchTodayTimeClockEntries(user.id);
+      const entries = await fetchTodayTimeClockEntries(user.id, {
+        shiftType: user.shiftType,
+      });
       setHistory(entries);
     } catch (e: any) {
       setHistory([]);

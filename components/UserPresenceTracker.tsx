@@ -74,7 +74,9 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
 
         if (mustClock) {
           try {
-            const entries = await fetchTodayTimeClockEntries(user.id);
+            const entries = await fetchTodayTimeClockEntries(user.id, {
+              shiftType: user.shiftType,
+            });
             punchMarks = buildPunchMarks(entries);
             onDuty = isCltOnDutyToday(entries);
             onDutyLabel = getOnDutyStageLabel(entries);

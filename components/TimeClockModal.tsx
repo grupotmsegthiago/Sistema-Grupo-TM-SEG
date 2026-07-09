@@ -72,7 +72,9 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
         return;
       }
 
-      const entries = await fetchTodayTimeClockEntries(enriched.id);
+      const entries = await fetchTodayTimeClockEntries(enriched.id, {
+        shiftType: enriched.shiftType,
+      });
       setHistory(entries);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Falha ao carregar dados do ponto.');

@@ -7,6 +7,9 @@ export const SHIFT_ENTRY_START: Record<ShiftType, { hour: number; minute: number
   noturno: { hour: 19, minute: 30 },
 };
 
+/** Plantão noturno segue até 08:00 do dia seguinte (entrada permitida nessa janela). */
+export const SHIFT_NOTURNO_PLANTAO_END = { hour: 8, minute: 0 };
+
 export const ACTIVITY_IDLE_MS = 10 * 60 * 1000;
 
 export function normalizeShiftType(value: string | null | undefined): ShiftType {
@@ -42,6 +45,15 @@ export interface ShiftWindowResult {
   waitUntilLabel?: string;
 }
 
+function formatHm(h: number, m: number): string {
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function isNoturnoEntryWindowAllowed(nowMin: number, startMin: number, endMin: number): boolean {
+  // Plantão 20:00→08:00: entrada após 19:30 OU entre 00:00 e 08:00 (cauda do plantão).
+  return nowMin >= startMin || nowMin < endMin;
+}
+
 /** Verifica se o operador pode bater a entrada (IN) agora. */
 export function canPunchEntryNow(
   shiftTypeInput: string | null | undefined,
@@ -53,16 +65,32 @@ export function canPunchEntryNow(
   const nowMin = minutesSinceMidnight(hour, minute);
   const startMin = minutesSinceMidnight(start.hour, start.minute);
 
+  if (shiftType === 'noturno') {
+    const endMin = minutesSinceMidnight(
+      SHIFT_NOTURNO_PLANTAO_END.hour,
+      SHIFT_NOTURNO_PLANTAO_END.minute,
+    );
+    if (isNoturnoEntryWindowAllowed(nowMin, startMin, endMin)) {
+      return { allowed: true, shiftType };
+    }
+    const label = formatHm(start.hour, start.minute);
+    return {
+      allowed: false,
+      shiftType,
+      waitUntilLabel: label,
+      message: `Turno noturno: batida de entrada liberada após ${label} ou durante o plantão (até ${formatHm(SHIFT_NOTURNO_PLANTAO_END.hour, SHIFT_NOTURNO_PLANTAO_END.minute)}).`,
+    };
+  }
+
   if (nowMin >= startMin) {
     return { allowed: true, shiftType };
   }
 
-  const label = `${String(start.hour).padStart(2, '0')}:${String(start.minute).padStart(2, '0')}`;
-  const turno = shiftType === 'noturno' ? 'noturno' : 'diurno';
+  const label = formatHm(start.hour, start.minute);
   return {
     allowed: false,
     shiftType,
     waitUntilLabel: label,
-    message: `Turno ${turno}: batida de entrada liberada após ${label}.`,
+    message: `Turno diurno: batida de entrada liberada após ${label}.`,
   };
 }

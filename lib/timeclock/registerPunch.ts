@@ -6,16 +6,17 @@ import { requestPresenceRefresh } from '../presenceChannel';
 import { withTimeout, TimeoutError } from '../promiseTimeout';
 import type { TimeClockEntry, TimeClockStage, TimeClockUserContext } from './types';
 import { getNextTimeClockStage } from './stages';
-import { fetchTodayTimeClockEntriesFromApi } from './fetchEntriesApi';
+import { fetchTimeClockEntriesFromApi } from './fetchEntriesApi';
 import { requiresTimeclockUser } from './eligibility';
 import { registerTimeClockPunchViaApi } from './punchApi';
 import { validateFaceAgainstRegistered } from './faceAuth';
+import { fetchActiveShiftEntries } from './shiftEntries';
 
 const SELFIE_VERIFY_TIMEOUT_MS = 25_000;
 
-export async function fetchTodayTimeClockEntries(userId: string): Promise<TimeClockEntry[]> {
+async function fetchDayTimeClockEntries(userId: string, isoDate: string): Promise<TimeClockEntry[]> {
   const uid = String(userId);
-  const { start, end } = getBrazilDayBounds();
+  const { start, end } = getBrazilDayBounds(isoDate);
 
   try {
     const { data, error } = await supabase
@@ -34,8 +35,21 @@ export async function fetchTodayTimeClockEntries(userId: string): Promise<TimeCl
     console.warn('[timeclock] Supabase read exceção, tentando API:', supabaseErr);
   }
 
+  const entries = await fetchTimeClockEntriesFromApi({
+    startDate: isoDate,
+    endDate: isoDate,
+    userId: uid,
+  });
+  return entries.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+}
+
+export async function fetchTodayTimeClockEntries(
+  userId: string,
+  options?: { shiftType?: string | null },
+): Promise<TimeClockEntry[]> {
+  const uid = String(userId);
   try {
-    return await fetchTodayTimeClockEntriesFromApi(uid);
+    return await fetchActiveShiftEntries(uid, fetchDayTimeClockEntries, options?.shiftType);
   } catch (apiErr) {
     const msg = apiErr instanceof Error ? apiErr.message : 'Falha na API';
     throw new Error(msg);
@@ -109,7 +123,9 @@ export async function registerTimeClockPunch(
     throw new Error('Seu perfil não exige registro de ponto.');
   }
 
-  const history = await fetchTodayTimeClockEntries(input.user.id);
+  const history = await fetchTodayTimeClockEntries(input.user.id, {
+    shiftType: input.user.shiftType,
+  });
   const expected = getNextTimeClockStage(history);
   if (expected === 'DONE') {
     throw new Error('Jornada de hoje já foi concluída.');
