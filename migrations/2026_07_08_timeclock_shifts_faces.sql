@@ -17,9 +17,9 @@ WHERE UPPER(COALESCE(contract_type, '')) = 'CLT'
   AND COALESCE(status, 'Ativo') IN ('Ativo', 'Experiência')
   AND deleted_at IS NULL;
 
--- Daniel PJ (RH002) — coordenador operacional
+-- Daniel PJ (RH002) — coordenador/auditor: isento de batida obrigatória no login
 UPDATE public.rh_employees
-SET requires_timeclock = true,
+SET requires_timeclock = false,
     shift_type = COALESCE(NULLIF(shift_type, ''), 'diurno')
 WHERE deleted_at IS NULL
   AND (

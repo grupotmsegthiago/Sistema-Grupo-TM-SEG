@@ -1,6 +1,6 @@
 import { supabase } from '../supabase';
 import type { CltEmployeeInfo, TimeClockUserContext } from './types';
-import { employeeRequiresTimeclock } from './eligibility';
+import { employeeRequiresTimeclock, isTimeclockExemptUser } from './eligibility';
 import { normalizeShiftType } from './shiftRules';
 import { namesLikelyMatch } from './nameMatch';
 
@@ -155,7 +155,12 @@ export async function enrichUserWithCltData(
 
   const contractType = String(employee.contract_type || '').trim().toUpperCase();
   const isClt = isCltContractType(contractType) && isEmployeeEligibleForTimeClock(employee.status);
-  const requiresTimeclock = employeeRequiresTimeclock(employee);
+  let requiresTimeclock = employeeRequiresTimeclock(employee);
+
+  // Isenção explícita (ex.: Daniel auditor) prevalece sobre flag no RH.
+  if (isTimeclockExemptUser(user)) {
+    requiresTimeclock = false;
+  }
 
   return {
     ...user,

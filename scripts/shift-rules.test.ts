@@ -39,6 +39,20 @@ test('diretoria não exige ponto', () => {
   );
 });
 
+test('Daniel (auditor) isento de ponto no login', async () => {
+  const { requiresTimeclockUser, isTimeclockExemptUser } = await import('../lib/timeclock/eligibility.ts');
+  const daniel = {
+    id: '6',
+    name: 'DANIEL LIMA',
+    email: 'daniel@grupotmseg.com.br',
+    requiresTimeclock: true,
+    isClt: false,
+    role: 'Operador',
+  };
+  assert.equal(isTimeclockExemptUser(daniel), true);
+  assert.equal(requiresTimeclockUser(daniel), false);
+});
+
 test('CLT elegível exige ponto', () => {
   assert.equal(
     employeeRequiresTimeclock({ contract_type: 'CLT', status: 'Ativo' }),

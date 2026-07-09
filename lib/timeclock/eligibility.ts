@@ -5,8 +5,20 @@ import { isCltContractType, isEmployeeEligibleForTimeClock } from './cltEmployee
 const DIRETORIA_ROLES = new Set(['diretoria', 'diretor', 'diretor(a)']);
 const OPERATIONAL_ROLES = new Set(['operador', 'operacional', 'avançado', 'avancado']);
 
+/** E-mails de gestão/auditoria isentos de batida de ponto no login. */
+const TIMECLOCK_EXEMPT_EMAILS = new Set(['daniel@grupotmseg.com.br']);
+
 export function isDiretoriaRole(role: string | null | undefined): boolean {
   return DIRETORIA_ROLES.has(String(role || '').trim().toLowerCase());
+}
+
+/** Daniel (auditor/coordenador) e perfis equivalentes não batem ponto. */
+export function isTimeclockExemptUser(user: TimeClockUserContext | null | undefined): boolean {
+  if (!user) return false;
+  if (isDiretoriaRole((user as { role?: string }).role)) return true;
+  const email = String(user.email || '').trim().toLowerCase();
+  if (email && TIMECLOCK_EXEMPT_EMAILS.has(email)) return true;
+  return false;
 }
 
 /** Perfis de campo que devem bater ponto mesmo sem vínculo CLT explícito no RH. */
@@ -31,7 +43,7 @@ export function employeeRequiresTimeclock(employee: {
 /** Usuário logado deve passar pelo fluxo de ponto. */
 export function requiresTimeclockUser(user: TimeClockUserContext | null | undefined): boolean {
   if (!user?.id) return false;
-  if (isDiretoriaRole((user as any).role)) return false;
+  if (isTimeclockExemptUser(user)) return false;
   if (user.requiresTimeclock === true) return true;
   if (user.isClt === true) return true;
   if (isOperationalRole((user as any).role)) return true;
