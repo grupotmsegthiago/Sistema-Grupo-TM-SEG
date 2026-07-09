@@ -12,6 +12,7 @@ import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
 import { showWhatsappCopyPopup } from '../lib/whatsappCopyFlow';
 import { hasExplicitUpdatePrint, shouldSendClientGroupWhatsApp } from '../lib/clientGroupUpdateFilter';
 import { resolveStatusForSaveSubmit, statusToRestoreOnFinalizeCancel } from '../lib/missionSaveStatus';
+import { isVeladaPassThroughTerminal, shouldDowngradeCompletedToPending } from '../lib/veladaFinalize';
 import {
   buildMonitoringWhatsAppReport,
   formatAgentShortName,
@@ -256,6 +257,10 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     // Fornecedores ATIVA e TM SEG mandam o KM final só depois — para eles o
     // KM final e o print do hodômetro NÃO são obrigatórios na conclusão.
     const odometerExempt = isOdometerExemptProvider(providerName);
+    const veladaPassThrough = isVeladaPassThroughTerminal({
+        odometerExempt,
+        kind: isCompleted ? 'completed' : isCancelled ? 'cancelled' : 'refused',
+    });
 
     // Evidência obrigatória em todo status terminal (Concluída, Cancelada, Recusada).
     // Na conclusão, ATIVA/TM SEG ainda podem omitir KM final; evidência é sempre exigida.
@@ -363,15 +368,18 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         (!isRefused && chkCities ? 1 : 0) +
         (steps.km && (endKmNum != null && endKmNum > 0 && (!kmMismatch || chkTable) && evidenceOk) ? 1 : 0) +
         (steps.cancel && dt && endTravelDt && endKmNum != null && endKmNum > 0 && evidenceOk ? 1 : 0);
-    // Fornecedores isentos (ATIVA / TM SEG) na conclusão: KM opcional, mas hora + evidência obrigatórios.
+    // Fornecedores isentos (ATIVA / TM SEG) na conclusão/cancelamento velada:
+    // KM opcional; hora + evidência obrigatórios (hodômetro entra depois).
     const essentialDone = isRefused
         ? (evidenceOk && !!dt)
         : isCompleted
             ? (!!dt && evidenceOk)
-            : (!!dt && !!endTravelDt && endKmNum != null && endKmNum > 0 && evidenceOk);
-    const doneSteps = (odometerExempt && isCompleted) ? (essentialDone ? totalSteps : 0) : rawDoneSteps;
+            : isCancelled && veladaPassThrough
+                ? (!!dt && !!endTravelDt && evidenceOk)
+                : (!!dt && !!endTravelDt && endKmNum != null && endKmNum > 0 && evidenceOk);
+    const doneSteps = veladaPassThrough ? (essentialDone ? totalSteps : 0) : rawDoneSteps;
     const progressPct = totalSteps > 0 ? Math.round((doneSteps / totalSteps) * 100) : 0;
-    const allDone = (odometerExempt && isCompleted) ? essentialDone : rawDoneSteps >= totalSteps;
+    const allDone = veladaPassThrough ? essentialDone : rawDoneSteps >= totalSteps;
 
     const handleConfirm = () => {
         if (isRefused) {
@@ -381,7 +389,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             }
             if (!evidenceOk) { setErr('Cole ou anexe a evidência do encerramento (obrigatório).'); return; }
             if (!dt) { setErr('Informe a data e a hora exata da recusa.'); return; }
-        } else if (!odometerExempt || !isCompleted) {
+        } else if (!veladaPassThrough) {
             if (!isRefused && !chkAddress) { setErr('Confirme o endereço de destino final.'); return; }
             if (isRaio && !raioAnswer) { setErr('Responda se a viatura rodou o raio.'); return; }
             if (isRaio && raioAnswer === 'no' && (raioRealKm || '').trim() === '') { setErr('Informe o raio realmente rodado (km).'); return; }
@@ -401,8 +409,13 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         } else if (isCancelled) {
             if (!dt) { setErr('Informe a data e a hora do cancelamento.'); return; }
             if (!endTravelDt) { setErr('Informe a data de fim de viagem.'); return; }
-            if (endKmNum == null || endKmNum <= 0) { setErr('Informe o KM final.'); return; }
-            if (startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
+            if (!veladaPassThrough) {
+                if (endKmNum == null || endKmNum <= 0) { setErr('Informe o KM final.'); return; }
+            }
+            if (endKmNum != null && endKmNum > 0 && startKm > 0 && endKmNum < startKm) {
+                setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`);
+                return;
+            }
             if (!evidenceOk) { setErr('Cole ou anexe a evidência do cancelamento (obrigatório).'); return; }
         }
 
@@ -676,12 +689,14 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
 
                     {/* 5 - Cancelamento (campos obrigatórios) */}
                     {isCancelled && (
-                        <FinSection n={isRaio ? 4 : 3} danger icon={<XCircle className="h-4 w-4" />} title="Missão cancelada — hora, KM e evidência obrigatórios">
+                        <FinSection n={isRaio ? 4 : 3} danger icon={<XCircle className="h-4 w-4" />} title={veladaPassThrough ? 'Cancelar missão velada — horas e evidência' : 'Missão cancelada — hora, KM e evidência obrigatórios'}>
                             <div className="rounded-lg border border-red-200 bg-red-50 p-3">
                                 <div className="flex items-start gap-2">
                                     <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
                                     <p className="text-[12px] font-medium text-red-900">
-                                        Confirme as datas, o KM final e anexe a evidência. A data do cancelamento define a cobrança de horas extras.
+                                        {veladaPassThrough
+                                            ? <>Fornecedor <b>{providerName}</b>: confirme as datas e anexe a evidência. O <b>KM final pode ser enviado depois</b>.</>
+                                            : 'Confirme as datas, o KM final e anexe a evidência. A data do cancelamento define a cobrança de horas extras.'}
                                     </p>
                                 </div>
                                 <div className="mt-3 grid grid-cols-2 gap-2">
@@ -689,7 +704,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                                     <FinDateField label="Data de fim de viagem *" value={endTravelDt} min={minDateTime} onChange={setEndTravelDt} testId="input-cancel-end-travel" />
                                 </div>
                                 <div className="mt-2">
-                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">KM final *</label>
+                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">KM final {veladaPassThrough ? '(opcional)' : '*'}</label>
                                     <input value={endKm} onChange={e => { setEndKm(e.target.value); setOdoResult(null); setOdoValidatedKm(null); setOdoConfirmed(false); }} inputMode="decimal" placeholder="Ex: 123456" className="mt-1 w-full rounded-md border border-red-300 bg-white px-2.5 py-1.5 text-[13px] font-semibold text-slate-800 outline-none focus:border-red-500" data-testid="input-confirm-end-km" />
                                 </div>
                             </div>
@@ -1983,7 +1998,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         // oficial. Em CANCELAMENTO não gravamos end_time — o motor usa
         // _cancelStatusAt; a hora real do cancelamento vai para o recálculo via
         // body do recalc-on-cancel.
-        if (confirmedRealTimeRef.current && editData.status !== MissionStatus.CANCELLED) {
+        const isCancelSubmit =
+            pendingFinalizeStatusRef.current === MissionStatus.CANCELLED
+            || editData.status === MissionStatus.CANCELLED;
+        if (confirmedRealTimeRef.current && !isCancelSubmit) {
             endIso = confirmedRealTimeRef.current;
         }
         if (endIso && new Date(endIso) < new Date(startIso) && !canEditTimes) {
@@ -2231,14 +2249,28 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 showNotification('IA Operacional', 'Detectamos todos os dados necessários. OS concluída automaticamente.', 'success');
             }
 
-            if (finalStatus === MissionStatus.COMPLETED && (!hasStart || !hasEnd)) {
+            if (finalStatus === MissionStatus.COMPLETED && shouldDowngradeCompletedToPending({
+                exemptOdo,
+                finalizeConfirmed: finalizeConfirmedRef.current,
+                hasStart,
+                hasEnd,
+            })) {
                 finalStatus = MissionStatus.PENDING;
                 const missing = [];
                 if (!exemptOdo && (!editData.startDate || !editData.startTime)) missing.push('Hora Inicial');
                 if (!editData.endDate || !editData.endTime) missing.push('Hora Final');
                 if (!exemptOdo && sKm <= 0) missing.push('KM Inicial');
                 if (!exemptOdo && (eKm <= 0 || eKm < sKm)) missing.push('KM Final');
-                showNotification('Status Pendente', `Faltam dados obrigatórios: ${missing.join(', ')}. A OS ficará como PENDENTE até o preenchimento completo.`, 'warning');
+                const veladaHint = exemptOdo && finalizeConfirmedRef.current
+                    ? ' Informe a hora final no checklist. O hodômetro (KM) pode ser preenchido depois.'
+                    : '';
+                showNotification(
+                    'Status Pendente',
+                    (missing.length
+                        ? `Faltam dados obrigatórios: ${missing.join(', ')}. A OS ficará como PENDENTE até o preenchimento completo.`
+                        : `Faltam dados para concluir 100%. A OS ficará como PENDENTE.${veladaHint}`),
+                    'warning',
+                );
             }
 
             const plannedDist = missionTotals.plannedKm || 0;
