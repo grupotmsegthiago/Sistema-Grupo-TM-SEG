@@ -11,6 +11,7 @@ import { optimizeImageForAI } from '../lib/imageForAI';
 import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
 import { showWhatsappCopyPopup } from '../lib/whatsappCopyFlow';
 import { hasExplicitUpdatePrint, shouldSendClientGroupWhatsApp } from '../lib/clientGroupUpdateFilter';
+import { resolveStatusForSaveSubmit, statusToRestoreOnFinalizeCancel } from '../lib/missionSaveStatus';
 import {
   buildMonitoringWhatsAppReport,
   formatAgentShortName,
@@ -2061,6 +2062,19 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             }
         }
 
+        // Salvar Alterações em fase inicial (Solicitada/Documentação/Agendada): operadores
+        // como Beatriz e Michelle cadastram equipe sem concluir. Se Concluída/Cancelada/
+        // Recusada ficou selecionada por engano, preservamos o status operacional no save.
+        const saveSubmitStatus = resolveStatusForSaveSubmit({
+            missionStatus: mission.status,
+            editStatus: editData.status,
+            originalStatus,
+            finalizeConfirmed: finalizeConfirmedRef.current,
+        });
+        if (saveSubmitStatus !== editData.status && !finalizeConfirmedRef.current) {
+            setEditData(prev => (prev.status === saveSubmitStatus ? prev : { ...prev, status: saveSubmitStatus }));
+        }
+
         // GATE de confirmação operacional (Concluir / Cancelar / Recusar): antes de
         // mudar o status terminal, o operador PRECISA confirmar KM final, hora exata
         // e evidência no sistema.
@@ -2070,7 +2084,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const _hasStart = _sKm > 0 && editData.startDate && editData.startTime;
             const _exemptOdo = isOdometerExemptProvider(editData.provider);
             const _hasEnd = (_exemptOdo ? true : (_eKm > 0 && _eKm >= _sKm)) && !!editData.endDate && !!editData.endTime;
-            const _selected = editData.status as MissionStatus;
+            const _selected = saveSubmitStatus as MissionStatus;
             const _isInFlight = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN].includes(_selected);
             const _isPending = _selected === MissionStatus.PENDING;
             const _isExplicitRevert = isCompletedMission && canRevertStatus && _selected === MissionStatus.IN_TRANSIT;
@@ -2189,7 +2203,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             if (editData.applyVtc02h && isVtcClient) finalDestination = '02 HORAS DE ACOMPANHAMENTO';
             else if (editData.applyCeva200km) finalDestination = '200KM DE ACOMPANHAMENTO';
 
-            let finalStatus = editData.status as MissionStatus;
+            let finalStatus = (finalizeConfirmedRef.current ? editData.status : saveSubmitStatus) as MissionStatus;
             // Gate de finalização: o resume() do checklist invoca um
             // handleUpdateSubmit capturado ANTES do setEditData({status}) ter
             // efeito, então editData.status aqui pode estar defasado (ex.:
@@ -2988,6 +3002,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         pendingFinalizeStatusRef.current = null;
         // Destrava o relógio ao vivo que foi congelado ao abrir o gate.
         setIsEndTimeLocked(false);
+        if (mission) {
+            const restore = statusToRestoreOnFinalizeCancel({
+                originalStatus,
+                missionStatus: mission.status,
+            });
+            setEditData(prev => (prev.status === restore ? prev : { ...prev, status: restore }));
+        }
     };
 
     // Atalho operacional: ao clicar em CONCLUÍDA / CANCELADA / RECUSADA numa OS ativa, abre
