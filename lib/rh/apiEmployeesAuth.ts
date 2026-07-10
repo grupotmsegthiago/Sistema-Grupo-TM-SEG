@@ -24,10 +24,24 @@ async function adminSupabase() {
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_SERVICE_KEY ||
     '';
-  if (!key || decodeRef(key) !== TMSEG_REF) {
+  if (!key) {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY indisponível neste ambiente');
   }
+  const ref = decodeRef(key);
+  if (ref && ref !== TMSEG_REF) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY de outro projeto Supabase');
+  }
   return createClient(url, key);
+}
+
+/** Não propaga exceção — evita 500 em rotas serverless quando o admin Supabase falha. */
+export async function safeResolveUserRoleFromToken(token: string): Promise<string | null> {
+  try {
+    return await resolveUserRoleFromToken(token);
+  } catch (e: any) {
+    console.warn('[auth] safeResolveUserRoleFromToken:', e?.message || e);
+    return null;
+  }
 }
 
 export function roleCanAccessEmployees(role: string | null | undefined): boolean {

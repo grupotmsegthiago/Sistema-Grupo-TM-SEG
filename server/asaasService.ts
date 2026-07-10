@@ -4,6 +4,10 @@ import {
   isValidPixTransferAmount,
   roundMoneyBrl,
 } from '../lib/asaasPixTransfer';
+import {
+  getAllBalancesCore,
+  invalidateAsaasBalancesCoreCache,
+} from './asaasBalancesCore';
 
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
 
@@ -144,7 +148,15 @@ async function asaasFetch(endpoint: string, options: RequestInit = {}, company?:
       signal: controller.signal,
       headers: { ...headers(company), ...(options.headers || {}) },
     });
-    const data = await res.json();
+    const text = await res.text();
+    let data: any = {};
+    if (text.trim()) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Resposta inválida do Asaas (${res.status})`);
+      }
+    }
     if (!res.ok) {
       const errMsg = data.errors?.map((e: any) => e.description).join('; ') || data.message || JSON.stringify(data);
       throw new Error(`Asaas API Error (${res.status}): ${errMsg}`);
@@ -506,43 +518,12 @@ export async function getBalance(company?: string): Promise<any> {
   return asaasFetch('/finance/balance', {}, company);
 }
 
-let cachedBalances: {
-  data: { company: string; name: string; balance: number; pendingBalance: number; error?: string }[];
-  ts: number;
-} | null = null;
-
-const BALANCE_CACHE_MS = 90_000;
-
 export async function getAllBalances(): Promise<{ company: string; name: string; balance: number; pendingBalance: number; error?: string }[]> {
-  if (cachedBalances && Date.now() - cachedBalances.ts < BALANCE_CACHE_MS) {
-    return cachedBalances.data;
-  }
-
-  const results = await Promise.all(
-    Object.entries(ASAAS_COMPANIES).map(async ([key, val]) => {
-      if (!val.apiKey) {
-        return { company: key, name: val.name, balance: 0, pendingBalance: 0, error: 'API Key não configurada' };
-      }
-      try {
-        const data = await asaasFetch('/finance/balance', {}, key);
-        return {
-          company: key,
-          name: val.name,
-          balance: data.balance || 0,
-          pendingBalance: data.totalPending || 0,
-        };
-      } catch (err: any) {
-        return { company: key, name: val.name, balance: 0, pendingBalance: 0, error: err.message };
-      }
-    }),
-  );
-
-  cachedBalances = { data: results, ts: Date.now() };
-  return results;
+  return getAllBalancesCore();
 }
 
 export function invalidateAsaasBalanceCache(): void {
-  cachedBalances = null;
+  invalidateAsaasBalancesCoreCache();
 }
 
 export function isKnownAsaasCompany(company: string): boolean {
@@ -586,7 +567,7 @@ export async function transferPixFromCompany(params: {
 }
 
 export function isAsaasConfigured(): boolean {
-  return Object.values(ASAAS_COMPANIES).some(c => !!c.apiKey);
+  return Object.values(ASAAS_COMPANIES).some((c) => !!String(c.apiKey || '').trim());
 }
 
 export function getAsaasCompanies(): { key: string; name: string; cnpj: string; configured: boolean; apiKey: string }[] {

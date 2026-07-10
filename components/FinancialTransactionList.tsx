@@ -100,8 +100,10 @@ const FinancialTransactionList: React.FC = () => {
             }
             if (json?.success && Array.isArray(json.balances)) {
                 setAsaasBalances(json.balances);
+            } else if (Array.isArray(json?.balances)) {
+                setAsaasBalances(json.balances);
             } else {
-                throw new Error('Resposta inválida do servidor de saldos');
+                throw new Error(json?.error || 'Resposta inválida do servidor de saldos');
             }
         } catch (e) {
             const msg = e instanceof TimeoutError
