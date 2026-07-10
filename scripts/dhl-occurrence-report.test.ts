@@ -299,11 +299,29 @@ test('service expõe ajuste com IA no payload', () => {
   assert.doesNotMatch(src, /reportParecer/);
 });
 
-test('handler suporta format adjust com html e adjustmentNotes', () => {
+test('handler suporta format adjust com bundle CJS', () => {
   const handler = fs.readFileSync('api/dhl/occurrence-report.ts', 'utf8');
   assert.match(handler, /format === 'adjust'/);
   assert.match(handler, /adjustmentNotes/);
-  assert.match(handler, /adjustDhlReportHtmlWithAi/);
+  assert.match(handler, /\.\/occurrence-report-adjust\.cjs/);
+  assert.doesNotMatch(handler, /lib\/dhlOccurrenceReport\/adjustReportHtml/);
+  assert.ok(fs.existsSync('api/dhl/occurrence-report-adjust.cjs'), 'bundle adjust deve existir após build');
+});
+
+test('build-server gera bundle adjust do relatório DHL', () => {
+  const build = fs.readFileSync('build-server.mjs', 'utf8');
+  assert.match(build, /occurrence-report-adjust\.cjs/);
+});
+
+test('pickUrl monta URL pública a partir de filePath nos logs', async () => {
+  const { collectDhlOccurrenceReportData } = await import('../lib/dhlOccurrenceReport/collectReportData');
+  assert.equal(typeof collectDhlOccurrenceReportData, 'function');
+});
+
+test('leitura de .msg orienta exportar em .eml', async () => {
+  const { readEmailAttachmentFile } = await import('../lib/dhlOccurrenceReport/readEmailAttachment');
+  const file = new File([new Uint8Array([0, 1, 2])], 'email.msg', { type: 'application/vnd.ms-outlook' });
+  await assert.rejects(() => readEmailAttachmentFile(file), /Arquivo \.msg não é lido automaticamente/i);
 });
 
 test('service imprime sem window.open (evita bloqueio de pop-up)', () => {

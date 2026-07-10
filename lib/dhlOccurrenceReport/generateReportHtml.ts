@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
@@ -74,17 +75,29 @@ export async function resolveTmSegLogoDataUri(): Promise<string> {
   return TMSEG_LOGO_SVG_DATA_URI;
 }
 
+export type DhlReportHtmlResult = {
+  html: string;
+  evidenceCount: number;
+  phasePhotoCount: number;
+};
+
 /** Gera HTML do Plano de Ação — sem jspdf (seguro para preview na Vercel). */
-export async function generateDhlOccurrenceReportHtml(input: DhlOccurrenceReportInput): Promise<string | null> {
+export async function generateDhlOccurrenceReportHtml(
+  input: DhlOccurrenceReportInput,
+  options?: { supabaseClient?: SupabaseClient },
+): Promise<DhlReportHtmlResult | null> {
   try {
-    const sb = getSupabase();
+    const sb = options?.supabaseClient ?? getSupabase();
     const data = await collectDhlOccurrenceReportData(sb, input);
     if (!data) return null;
     const logoDataUri = await resolveTmSegLogoDataUri();
-    return buildOccurrenceReportHtml(data, {
+    const html = buildOccurrenceReportHtml(data, {
       publicBaseUrl: getPublicBaseUrl(),
       logoDataUri,
     });
+    const evidenceCount = data.allEvidencePhotos?.length || 0;
+    const phasePhotoCount = data.phasePhotos.filter((p) => p.url).length;
+    return { html, evidenceCount, phasePhotoCount };
   } catch (err) {
     console.error('[dhlOccurrenceReportHtml]', err);
     return null;

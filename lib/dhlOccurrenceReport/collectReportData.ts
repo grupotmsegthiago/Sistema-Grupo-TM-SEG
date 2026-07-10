@@ -37,7 +37,10 @@ function parseDetails(raw: unknown): Record<string, unknown> {
 
 function pickUrl(details: Record<string, unknown>): string | null {
   const url = details.publicUrl || details.evidenceUrl || details.url || details.imageUrl;
-  return url ? String(url) : null;
+  if (url) return String(url);
+  const filePath = String(details.filePath || details.path || '').trim();
+  if (filePath) return publicStorageUrl(filePath);
+  return null;
 }
 
 function formatKm(value: unknown): string | null {

@@ -157,9 +157,7 @@ export default async function handler(req: any, res: any) {
         return;
       }
 
-      const { adjustDhlReportHtmlWithAi } = await import(
-        '../../lib/dhlOccurrenceReport/adjustReportHtml'
-      );
+      const { adjustDhlReportHtmlWithAi } = await import('./occurrence-report-adjust.cjs');
 
       const generateText = async (prompt: string): Promise<string> => {
         const response = await fetch(
@@ -205,11 +203,14 @@ export default async function handler(req: any, res: any) {
     };
 
     if (format === 'html' || format === 'preview') {
+      const sb = await supabaseAdmin();
       const { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } = await import(
         './occurrence-report-html.cjs'
       );
-      const html = await generateDhlOccurrenceReportHtml(input as DhlOccurrenceReportInput);
-      if (!html) {
+      const result = await generateDhlOccurrenceReportHtml(input as DhlOccurrenceReportInput, {
+        supabaseClient: sb,
+      });
+      if (!result?.html) {
         res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });
         return;
       }
@@ -218,7 +219,9 @@ export default async function handler(req: any, res: any) {
         ok: true,
         format: 'html',
         filename: dhlOccurrenceReportFilename(filenameBase).replace(/\.pdf$/i, '.html'),
-        html,
+        html: result.html,
+        evidenceCount: result.evidenceCount,
+        phasePhotoCount: result.phasePhotoCount,
       });
       return;
     }

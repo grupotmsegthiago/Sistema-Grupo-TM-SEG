@@ -7,7 +7,7 @@ const DEFAULT_183013_SUMMARY = `Na operação do dia 08/07/2026, a S.E. 183013 e
 Houve atraso na chegada à origem, com necessidade de remanejamento de viatura próximo ao horário programado.`;
 
 test('gera HTML do Plano de Ação para GTM-6296 / S.E. 183013', async () => {
-  const html = await generateDhlOccurrenceReportHtml({
+  const result = await generateDhlOccurrenceReportHtml({
     missionId: 'GTM-6296',
     factsSummary: DEFAULT_183013_SUMMARY,
     emailAttachmentText: 'Corpo do e-mail da DHL solicitando posicionamento.',
@@ -15,12 +15,12 @@ test('gera HTML do Plano de Ação para GTM-6296 / S.E. 183013', async () => {
     generatedAt: new Date().toISOString(),
   });
 
-  assert.ok(html, 'HTML não deve ser vazio');
-  assert.match(html!, /10\. Aprovação/i);
-  assert.match(html!, /5 Porquês/i);
-  assert.match(html!, /183013/);
-  assert.match(html!, /GTM-6296/);
-  assert.match(html!, /Foxconn Jundiaí|atraso na chegada/i);
+  assert.ok(result?.html, 'HTML não deve ser vazio');
+  assert.match(result!.html, /10\. Aprovação/i);
+  assert.match(result!.html, /5 Porquês/i);
+  assert.match(result!.html, /183013/);
+  assert.match(result!.html, /GTM-6296/);
+  assert.match(result!.html, /Foxconn Jundiaí|atraso na chegada/i);
 });
 
 test('handler retorna 401 JSON sem token (simulação local)', async () => {
@@ -64,9 +64,9 @@ test('build-server gera bundles CJS do relatório DHL em api/dhl', () => {
   assert.match(build, /api\/dhl\/occurrence-report-pdf\.cjs/);
 });
 
-test('vercel.json não usa bloco functions para occurrence-report', () => {
+test('vercel.json inclui bundles CJS do occurrence-report', () => {
   const vercel = fs.readFileSync('vercel.json', 'utf8');
   assert.match(vercel, /"source": "\/api\/dhl\/occurrence-report"/);
-  assert.doesNotMatch(vercel, /api\/dhl\/occurrence-report\.ts[\s\S]*maxDuration/);
+  assert.match(vercel, /occurrence-report-\{html,pdf,adjust\}\.cjs/);
   assert.doesNotMatch(vercel, /dhl-occurrence-report/);
 });

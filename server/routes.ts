@@ -2583,8 +2583,8 @@ export async function registerRoutes(
       const filenameBase = seFromBody || missionId;
 
       if (format === 'html' || format === 'preview') {
-        const html = await generateDhlOccurrenceReportHtml(input);
-        if (!html) {
+        const result = await generateDhlOccurrenceReportHtml(input);
+        if (!result?.html) {
           res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });
           return;
         }
@@ -2593,7 +2593,9 @@ export async function registerRoutes(
           ok: true,
           format: 'html',
           filename: dhlOccurrenceReportFilename(filenameBase).replace(/\.pdf$/i, '.html'),
-          html,
+          html: result.html,
+          evidenceCount: result.evidenceCount,
+          phasePhotoCount: result.phasePhotoCount,
         });
         return;
       }
@@ -2647,21 +2649,21 @@ export async function registerRoutes(
       const factsSummary =
         typeof req.query?.factsSummary === 'string' ? req.query.factsSummary : undefined;
 
-      const html = await generateDhlOccurrenceReportHtml({
+      const result = await generateDhlOccurrenceReportHtml({
         missionId,
         factsSummary,
         directorName,
         generatedAt: new Date().toISOString(),
       });
 
-      if (!html) {
+      if (!result?.html) {
         res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });
         return;
       }
 
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.setHeader('Cache-Control', 'no-store');
-      res.status(200).send(html);
+      res.status(200).send(result.html);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('[dhl/occurrence-report html]', message);

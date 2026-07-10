@@ -59,7 +59,11 @@ execSync(
   'npx esbuild lib/dhlOccurrenceReport/generateReportOutput.ts --bundle --platform=node --format=cjs --outfile=api/dhl/occurrence-report-pdf.cjs --packages=external',
   { stdio: 'inherit' },
 );
-console.log('DHL occurrence report bundles: api/dhl/occurrence-report-{html,pdf}.cjs');
+execSync(
+  'npx esbuild lib/dhlOccurrenceReport/adjustReportHtml.ts --bundle --platform=node --format=cjs --outfile=api/dhl/occurrence-report-adjust.cjs --packages=external',
+  { stdio: 'inherit' },
+);
+console.log('DHL occurrence report bundles: api/dhl/occurrence-report-{html,pdf,adjust}.cjs');
 
 // Bundle leve para api/index.ts na Vercel (carregado sob demanda, não no top-level).
 execSync(

@@ -25,6 +25,8 @@ type ReportJsonResponse = {
   html?: string;
   format?: string;
   hint?: string;
+  evidenceCount?: number;
+  phasePhotoCount?: number;
 };
 
 function buildPayload(params: GenerateDhlOccurrenceReportParams, format: 'html' | 'pdf') {
@@ -146,7 +148,7 @@ export async function adjustDhlOccurrenceReportHtml(
 export async function fetchDhlOccurrenceReportPreview(
   params: GenerateDhlOccurrenceReportParams,
   onProgress?: (progress: DhlReportProgress) => void,
-): Promise<{ html: string; filename: string }> {
+): Promise<{ html: string; filename: string; evidenceCount: number; phasePhotoCount: number }> {
   const json = await postOccurrenceReport(params, 'html', onProgress, PREVIEW_TIMEOUT_MS);
   if (!json.html) {
     throw new Error('Pré-visualização vazia — tente novamente.');
@@ -154,6 +156,8 @@ export async function fetchDhlOccurrenceReportPreview(
   return {
     html: json.html,
     filename: json.filename || `PA-DHL-${params.seNumber || params.missionId}.html`,
+    evidenceCount: json.evidenceCount ?? 0,
+    phasePhotoCount: json.phasePhotoCount ?? 0,
   };
 }
 

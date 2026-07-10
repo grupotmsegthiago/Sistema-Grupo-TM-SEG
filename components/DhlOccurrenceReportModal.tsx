@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Eye, ExternalLink, FileText, Link2, Loader2, Paperclip, Printer, Sparkles, X } from 'lucide-react';
 import type { Mission } from '../types';
-import { parseEmailThreadInput } from '../lib/dhlOccurrenceReport/parseEmailThread';
+import { readEmailAttachmentFile } from '../lib/dhlOccurrenceReport/readEmailAttachment';
 import {
   adjustDhlOccurrenceReportHtml,
   downloadDhlOccurrenceReportBlob,
@@ -25,28 +25,7 @@ const DEFAULT_183013_SUMMARY = `Na operação do dia 08/07/2026, a S.E. 183013 e
 Houve atraso na chegada à origem, com necessidade de remanejamento de viatura próximo ao horário programado, em razão do encerramento de operação logística anterior na mesma janela.
 A TM SEG manteve comunicação com a DHL, orientou a equipe quanto ao endereço correto e acompanhou a operação até a conclusão.`;
 
-const EMAIL_FILE_ACCEPT = '.eml,.msg,.txt,.pdf,.html,.htm,image/*';
-
-async function readEmailFile(file: File): Promise<string> {
-  const text = await file.text();
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return `[Arquivo anexado: ${file.name} — conteúdo vazio.]`;
-  }
-
-  const messages = parseEmailThreadInput(trimmed);
-  if (messages.length > 0) {
-    return messages
-      .map((msg) => {
-        const subject = msg.subject ? `Assunto: ${msg.subject}\n` : '';
-        return `${subject}De: ${msg.from}\nPara: ${msg.to}\nCc: ${msg.cc}\nData: ${msg.date}\n\n${msg.body}`;
-      })
-      .join('\n\n---\n\n')
-      .slice(0, 12000);
-  }
-
-  return trimmed.slice(0, 12000);
-}
+const EMAIL_FILE_ACCEPT = '.eml,.txt,.html,.htm';
 
 function DhlReportLoadingOverlay({
   percent,
@@ -107,7 +86,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
   const [emailLink, setEmailLink] = useState('');
   const [emailAttachmentText, setEmailAttachmentText] = useState('');
   const [emailFileName, setEmailFileName] = useState<string | null>(null);
-  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [evidenceStats, setEvidenceStats] = useState<{ total: number; phases: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMode, setLoadingMode] = useState<'preview' | 'pdf' | 'print' | 'adjust' | null>(null);
   const [progressPercent, setProgressPercent] = useState(0);
@@ -177,12 +156,12 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
   const handleEmailFile = async (file: File | null) => {
     if (!file) return;
     try {
-      const content = await readEmailFile(file);
+      const content = await readEmailAttachmentFile(file);
       setEmailAttachmentText(content);
       setEmailFileName(file.name);
       setError(null);
-    } catch {
-      setError('Não foi possível ler o arquivo de e-mail selecionado.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível ler o arquivo de e-mail selecionado.');
     }
   };
 
@@ -195,8 +174,9 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
     setProgressLabel('Gerando pré-visualização...');
 
     try {
-      const { html } = await fetchDhlOccurrenceReportPreview(reportParams, applyProgress);
+      const { html, evidenceCount, phasePhotoCount } = await fetchDhlOccurrenceReportPreview(reportParams, applyProgress);
       setPreviewHtml(html);
+      setEvidenceStats({ total: evidenceCount, phases: phasePhotoCount });
       setStep('preview');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao gerar pré-visualização');
@@ -379,8 +359,11 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
 
               <div>
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1 block">
-                  Anexar e-mail (.eml, .txt, .pdf)
+                  Anexar e-mail (.eml, .txt)
                 </label>
+                <p className="text-[10px] text-slate-500 mb-2">
+                  Exporte do Outlook como <strong>.eml</strong> ou <strong>.txt</strong>. Arquivos .msg e .pdf não são lidos automaticamente.
+                </p>
                 <label className={`inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-xs font-semibold ${loading ? 'opacity-50' : 'cursor-pointer hover:bg-slate-100'}`}>
                   <Paperclip size={14} />
                   {emailFileName ? `Arquivo: ${emailFileName}` : 'Selecionar arquivo de e-mail'}
@@ -462,6 +445,18 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
             </div>
 
             <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-900 shrink-0">
+              {evidenceStats && (
+                <p className="mb-1">
+                  Evidências no relatório: <strong>{evidenceStats.total}</strong> foto(s) total ·{' '}
+                  <strong>{evidenceStats.phases}</strong>/4 por etapa.
+                  {evidenceStats.total === 0 && (
+                    <span className="text-red-700 font-semibold">
+                      {' '}
+                      Nenhuma foto encontrada — verifique SUPABASE_SERVICE_ROLE_KEY na Vercel ou evidências na OS.
+                    </span>
+                  )}
+                </p>
+              )}
               Relatório <strong>completo</strong> com cores TM SEG, logo, fotos e todas as seções.
               Para PDF: <strong>Salvar PDF completo</strong> → na janela de impressão escolha
               &quot;Salvar como PDF&quot;. O botão &quot;PDF resumido&quot; gera apenas um rascunho sem layout.
