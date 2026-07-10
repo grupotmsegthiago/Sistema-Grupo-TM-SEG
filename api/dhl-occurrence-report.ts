@@ -62,7 +62,7 @@ export default async function handler(req: any, res: any) {
       generateDhlOccurrenceReportHtml,
       generateDhlOccurrenceReportPdf,
       dhlOccurrenceReportFilename,
-    } = await import('../server/dhlOccurrenceReportPdf.js');
+    } = await import('../lib/dhlOccurrenceReport/generateReportOutput.js');
 
     if (format === 'html' || format === 'preview') {
       const html = await generateDhlOccurrenceReportHtml(input);

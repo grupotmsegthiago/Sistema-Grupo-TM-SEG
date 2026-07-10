@@ -67,10 +67,15 @@ test('ações corretivas não citam advertência nominal ao parceiro', () => {
 test('handler standalone do Plano de Ação DHL existe na Vercel', () => {
   const handler = fs.readFileSync('api/dhl-occurrence-report.ts', 'utf8');
   assert.doesNotMatch(handler, /proxyToExpress/);
-  assert.match(handler, /generateDhlOccurrenceReportHtml/);
   const vercel = fs.readFileSync('vercel.json', 'utf8');
   assert.match(vercel, /api\/dhl-occurrence-report\.ts/);
   assert.match(vercel, /"source": "\/api\/dhl\/occurrence-report"/);
+});
+
+test('handler standalone importa geração apenas de lib/ (não server/)', () => {
+  const handler = fs.readFileSync('api/dhl-occurrence-report.ts', 'utf8');
+  assert.match(handler, /lib\/dhlOccurrenceReport\/generateReportOutput/);
+  assert.doesNotMatch(handler, /server\/dhlOccurrenceReportPdf/);
 });
 
 test('service usa parseJsonResponse para evitar erro de JSON inválido', () => {
