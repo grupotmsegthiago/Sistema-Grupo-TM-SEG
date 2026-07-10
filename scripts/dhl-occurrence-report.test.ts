@@ -66,8 +66,8 @@ test('ações corretivas não citam advertência nominal ao parceiro', () => {
 
 test('handler standalone do Plano de Ação DHL existe na Vercel', () => {
   const vercel = fs.readFileSync('vercel.json', 'utf8');
-  assert.match(vercel, /api\/dhl\/occurrence-report\.ts/);
   assert.match(vercel, /"source": "\/api\/dhl\/occurrence-report"/);
+  assert.match(vercel, /"destination": "\/api\/dhl\/occurrence-report"/);
   assert.doesNotMatch(vercel, /dhl-occurrence-report/);
 });
 

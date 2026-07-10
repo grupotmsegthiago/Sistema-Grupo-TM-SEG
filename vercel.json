@@ -203,6 +203,10 @@
       "destination": "/api/dhl/intake/by-mission?missionId=:missionId"
     },
     {
+      "source": "/api/dhl/occurrence-report",
+      "destination": "/api/dhl/occurrence-report"
+    },
+    {
       "source": "/api/gemini/health",
       "destination": "/api/gemini/health"
     },
