@@ -12,9 +12,9 @@ node_modules
 dist
 dist-ssr
 client/public/build-meta.json
+api/dhl/occurrence-report-html.cjs
+api/dhl/occurrence-report-pdf.cjs
 *.local
-
-# Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea

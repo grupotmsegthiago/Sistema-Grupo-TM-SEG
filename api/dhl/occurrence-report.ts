@@ -1,7 +1,4 @@
-import {
-  generateDhlOccurrenceReportHtml,
-  dhlOccurrenceReportFilename,
-} from '../../lib/dhlOccurrenceReport/generateReportHtml';
+import type { DhlOccurrenceReportInput } from '../../lib/dhlOccurrenceReport/types';
 
 const DEFAULT_SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
@@ -143,7 +140,10 @@ export default async function handler(req: any, res: any) {
     const filenameBase = seFromBody || missionId;
 
     if (format === 'html' || format === 'preview') {
-      const html = await generateDhlOccurrenceReportHtml(input);
+      const { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } = await import(
+        './occurrence-report-html.cjs'
+      );
+      const html = await generateDhlOccurrenceReportHtml(input as DhlOccurrenceReportInput);
       if (!html) {
         res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });
         return;
@@ -158,9 +158,10 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const pdf = await (
-      await import('../../lib/dhlOccurrenceReport/generateReportOutput')
-    ).generateDhlOccurrenceReportPdf(input, { embedPhotos: false });
+    const { generateDhlOccurrenceReportPdf, dhlOccurrenceReportFilename } = await import(
+      './occurrence-report-pdf.cjs'
+    );
+    const pdf = await generateDhlOccurrenceReportPdf(input as DhlOccurrenceReportInput, { embedPhotos: false });
     if (!pdf) {
       res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });
       return;

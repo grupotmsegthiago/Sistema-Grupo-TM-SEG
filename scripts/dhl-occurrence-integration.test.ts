@@ -49,12 +49,18 @@ test('handler retorna 401 JSON sem token (simulação local)', async () => {
   assert.equal(body.error, 'Não autorizado');
 });
 
-test('handler preview usa import estático de generateReportHtml sem jspdf', () => {
+test('handler preview carrega bundle CJS após auth, sem import estático de lib', () => {
   const handler = fs.readFileSync('api/dhl/occurrence-report.ts', 'utf8');
-  assert.match(handler, /from ['"].*generateReportHtml['"]/);
-  assert.doesNotMatch(handler, /await import\([\s\S]*generateReportHtml/);
+  assert.match(handler, /occurrence-report-html\.cjs/);
+  assert.doesNotMatch(handler, /from ['"].*lib\/dhlOccurrenceReport\/generateReportHtml['"]/);
   const htmlMod = fs.readFileSync('lib/dhlOccurrenceReport/generateReportHtml.ts', 'utf8');
   assert.doesNotMatch(htmlMod, /from ['"]jspdf['"]/);
+});
+
+test('build-server gera bundles CJS do relatório DHL', () => {
+  const build = fs.readFileSync('build-server.mjs', 'utf8');
+  assert.match(build, /occurrence-report-html\.cjs/);
+  assert.match(build, /occurrence-report-pdf\.cjs/);
 });
 
 test('vercel.json não usa bloco functions para occurrence-report (evita falha de deploy)', () => {
