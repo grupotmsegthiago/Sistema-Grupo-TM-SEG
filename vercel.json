@@ -28,6 +28,15 @@
     "api/route-progress.ts": {
       "maxDuration": 60
     },
+    "api/dhl/intake/generate.ts": {
+      "maxDuration": 300
+    },
+    "api/dhl/intake/by-mission.ts": {
+      "maxDuration": 60
+    },
+    "api/dhl/intake/by-mission/[missionId].ts": {
+      "maxDuration": 60
+    },
     "api/gemini/health.ts": {
       "maxDuration": 60
     },
@@ -180,6 +189,18 @@
     {
       "source": "/api/route-progress",
       "destination": "/api/route-progress"
+    },
+    {
+      "source": "/api/dhl/intake/generate",
+      "destination": "/api/dhl/intake/generate"
+    },
+    {
+      "source": "/api/dhl/intake/by-mission",
+      "destination": "/api/dhl/intake/by-mission"
+    },
+    {
+      "source": "/api/dhl/intake/by-mission/:missionId",
+      "destination": "/api/dhl/intake/by-mission?missionId=:missionId"
     },
     {
       "source": "/api/gemini/health",

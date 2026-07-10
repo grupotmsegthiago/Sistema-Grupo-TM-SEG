@@ -2,18 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-test('rotas DHL generate/by-mission não usam handlers isolados (caem no Express via api/index)', () => {
-  assert.throws(() => fs.readFileSync('api/dhl/intake/generate.ts', 'utf8'));
-  assert.throws(() => fs.readFileSync('api/dhl/intake/by-mission.ts', 'utf8'));
-  assert.throws(() => fs.readFileSync('api/dhl/intake/by-mission/[missionId].ts', 'utf8'));
+test('generate DHL usa handler standalone (sem proxy Express)', () => {
+  const src = fs.readFileSync('api/dhl/intake/generate.ts', 'utf8');
+  assert.doesNotMatch(src, /proxyToExpress/);
+  assert.match(src, /resolvePublicAppUrl/);
+  assert.match(src, /PROVIDER_EMAIL_REQUIRED/);
 });
 
-test('api/index encaminha para Express completo', () => {
-  const src = fs.readFileSync('api/index.ts', 'utf8');
-  assert.match(src, /proxyToExpress/);
+test('by-mission DHL usa handler standalone', () => {
+  const byMission = fs.readFileSync('api/dhl/intake/by-mission.ts', 'utf8');
+  assert.doesNotMatch(byMission, /proxyToExpress/);
+  assert.match(byMission, /dhl_supplier_intakes/);
 });
 
-test('Express expõe generate e by-mission com auth', () => {
+test('Express mantém rotas generate e by-mission para dev local', () => {
   const src = fs.readFileSync('server/dhlSupplierIntake.ts', 'utf8');
   assert.match(src, /app\.post\('\/api\/dhl\/intake\/generate', requireAuth/);
   assert.match(src, /app\.get\('\/api\/dhl\/intake\/by-mission', requireAuth/);
@@ -25,9 +27,9 @@ test('timeline usa URL canônica no link do fornecedor', () => {
   assert.doesNotMatch(src, /window\.location\.origin/);
 });
 
-test('vercel.json não declara funções isoladas para generate/by-mission DHL', () => {
+test('vercel.json declara funções DHL sem vercelApp.cjs', () => {
   const vercel = fs.readFileSync('vercel.json', 'utf8');
-  assert.doesNotMatch(vercel, /api\/dhl\/intake\/generate\.ts/);
-  assert.doesNotMatch(vercel, /api\/dhl\/intake\/by-mission/);
-  assert.match(vercel, /"source": "\/api\/\(.*\)"/);
+  assert.match(vercel, /api\/dhl\/intake\/generate\.ts/);
+  assert.match(vercel, /api\/dhl\/intake\/by-mission/);
+  assert.doesNotMatch(vercel, /api\/dhl\/intake\/generate\.ts[\s\S]*includeFiles.*vercelApp\.cjs/);
 });
