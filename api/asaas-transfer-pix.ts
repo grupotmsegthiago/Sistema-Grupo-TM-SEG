@@ -1,4 +1,4 @@
-import { assertAsaasApiAccess, extractAuthToken } from '../lib/services/asaasAccess.js';
+import { assertAsaasApiAccess, extractAuthToken } from '../lib/asaasApiAuth.js';
 import { isKnownAsaasCompany, transferPixFromCompany } from '../server/asaasService.js';
 
 /** Repasse Pix Asaas → financeiro@grupotmseg.com.br (reserva R$ 100 por conta). */

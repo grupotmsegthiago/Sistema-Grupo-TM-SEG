@@ -1,4 +1,4 @@
-import { assertAsaasApiAccess, extractAuthToken } from '../lib/services/asaasAccess.js';
+import { assertAsaasApiAccess, extractAuthToken } from '../lib/asaasApiAuth.js';
 import { getAllBalancesCore } from '../server/asaasBalancesCore.js';
 
 /** Saldos Asaas (TM Gestão, TM Seg, TM Security) — rota leve sem cold start do Express. */
