@@ -1,11 +1,11 @@
 import {
   getAllBalancesCore,
   invalidateAsaasBalancesCoreCache,
-} from './asaasBalancesCore';
+} from '../lib/asaasBalancesCore';
 import {
   isKnownAsaasCompany as isKnownAsaasCompanyCore,
   transferPixFromCompanyCore,
-} from './asaasTransferPixCore';
+} from '../lib/asaasTransferPixCore';
 import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity } from '../lib/asaasEnvKeys';
 
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
