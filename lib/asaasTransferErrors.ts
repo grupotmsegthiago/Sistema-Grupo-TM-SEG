@@ -10,6 +10,10 @@ const CRITICAL_AUTH =
 
 const IP_NOT_ALLOWED = /ip.*não.*segur|ip.*not.*allowed|whitelist/i;
 
+const DUPLICATE_TRANSFER = /409|conflict|duplicad|15 minutos/i;
+
+const ACCOUNTS_NOT_LINKED = /sem vínculo|sem vinculo|not linked/i;
+
 const CANCELLED_BY_WEBHOOK =
   /cancelad|recusad|falhou|failed|não foi autoriz|nao foi autoriz|webhook/i;
 
@@ -19,11 +23,24 @@ export function formatAsaasTransferError(raw: string): string {
 
   if (WITHDRAWAL_DENIED.test(msg)) {
     return (
-      'Não foi possível repassar o saldo. O sistema tentou repasse interno entre contas Asaas e Pix para ' +
-      `${ASAAS_PIX_FINANCEIRO_EMAIL}, mas a chave API não tem permissão de saque/transferência via API. ` +
-      'No painel Asaas de cada conta (TM Gestão, TM Seg, TM Security): Integrações → peça ao gerente ' +
-      'liberar transferências via API, ou configure webhook em Integrações → Mecanismos de segurança: ' +
-      'https://sistema.grupotmseg.com.br/api/asaas/transfer-approval'
+      'Não foi possível repassar o saldo. A chave API desta conta Asaas não tem permissão de saque/transferência via API. ' +
+      'Solicite ao gerente de contas Asaas a liberação para TM Gestão, TM Seg e TM Security. ' +
+      'O webhook de aprovação já está configurado em: https://sistema.grupotmseg.com.br/api/asaas/transfer-approval'
+    );
+  }
+
+  if (ACCOUNTS_NOT_LINKED.test(msg) && !WITHDRAWAL_DENIED.test(msg)) {
+    return (
+      'As contas Asaas ainda não estão vinculadas para repasse interno. O sistema tentará Pix para ' +
+      `${ASAAS_PIX_FINANCEIRO_EMAIL}. Se o erro persistir, peça ao Asaas o vínculo entre as subcontas ` +
+      'ou a liberação de transferência via API.'
+    );
+  }
+
+  if (DUPLICATE_TRANSFER.test(msg)) {
+    return (
+      'Já existe transferência idêntica nos últimos 15 minutos nesta conta Asaas. ' +
+      'Aguarde a conclusão ou altere o valor antes de tentar novamente.'
     );
   }
 

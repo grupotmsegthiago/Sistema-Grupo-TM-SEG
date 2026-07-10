@@ -77,6 +77,13 @@ const AsaasPixTransferModal: React.FC<Props> = ({ company, label, balance, onClo
       if (!res.ok || !json?.success) {
         throw new Error(json?.error || `Erro na transferência (${res.status})`);
       }
+      if (json?.pending) {
+        window.alert(
+          'Transferência registrada no Asaas (status pendente).\n\n' +
+            'O Asaas validará via webhook em até 30 segundos.\n' +
+            'Confira o extrato Asaas antes de repetir a operação.',
+        );
+      }
       onSuccess();
       onClose();
     } catch (err) {

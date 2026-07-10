@@ -39,10 +39,15 @@ export default async function handler(req: any, res: any) {
       value,
       description: body.description ? String(body.description) : undefined,
     });
+
+    const pending = String(transfer?.status || '').toUpperCase() === 'PENDING';
     res.status(200).json({
       success: true,
       transfer,
-      message: 'Transferência Pix solicitada com sucesso.',
+      pending,
+      message: pending
+        ? 'Transferência registrada no Asaas. Aprovação via webhook em até 30 segundos — confira o extrato.'
+        : 'Transferência solicitada com sucesso.',
     });
   } catch (e: any) {
     console.error('[asaas-transfer-pix]', e?.message || e);

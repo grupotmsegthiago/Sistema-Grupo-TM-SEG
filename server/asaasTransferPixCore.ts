@@ -11,6 +11,7 @@ import {
 } from '../lib/asaasPixTransfer.js';
 import { buildAsaasTransferExternalReference } from '../lib/asaasTransferApproval.js';
 import { formatAsaasTransferError } from '../lib/asaasTransferErrors.js';
+import { registerAsaasPendingTransfer } from '../lib/services/asaasPendingTransferService.js';
 import { invalidateAsaasBalancesCoreCache } from './asaasBalancesCore.js';
 
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
@@ -92,7 +93,62 @@ async function getBalance(apiKey: string): Promise<number> {
   return Number(data?.balance || 0);
 }
 
-/** Repasse para conta financeiro TM SEG (interna Asaas ou Pix). */
+async function registerPendingTransfer(
+  result: any,
+  company: string,
+  value: number,
+  mode: 'INTERNAL' | 'PIX',
+  externalReference: string,
+): Promise<void> {
+  const transferId = String(result?.id || '').trim();
+  if (!transferId) return;
+  try {
+    await registerAsaasPendingTransfer({
+      transferId,
+      company,
+      value,
+      mode,
+      externalReference,
+    });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.warn('[asaasTransfer] falha ao registrar pendente:', message);
+  }
+}
+
+async function createPixTransfer(
+  apiKey: string,
+  value: number,
+  description: string,
+  externalReference: string,
+): Promise<any> {
+  return asaasRequest(apiKey, '/transfers', {
+    method: 'POST',
+    body: JSON.stringify({
+      value,
+      operationType: 'PIX',
+      pixAddressKey: ASAAS_PIX_FINANCEIRO_EMAIL,
+      pixAddressKeyType: ASAAS_PIX_FINANCEIRO_KEY_TYPE,
+      description,
+      externalReference,
+    }),
+  });
+}
+
+async function createInternalTransfer(
+  apiKey: string,
+  value: number,
+  walletId: string,
+  description: string,
+  externalReference: string,
+): Promise<any> {
+  return asaasRequest(apiKey, '/transfers', {
+    method: 'POST',
+    body: JSON.stringify({ value, walletId, description, externalReference }),
+  });
+}
+
+/** Repasse para conta financeiro TM SEG (Pix ou interna Asaas). */
 export async function transferPixFromCompanyCore(params: {
   company: string;
   value: number;
@@ -112,41 +168,66 @@ export async function transferPixFromCompanyCore(params: {
   const description = params.description || `Repasse TM SEG — ${company}`;
   const externalReference = buildAsaasTransferExternalReference(company);
   const walletId = financeiroWalletId();
+  const pixFirst = readEnv('ASAAS_TRANSFER_PIX_FIRST') === 'true';
+  const skipInternal = readEnv('ASAAS_SKIP_INTERNAL_TRANSFER') === 'true';
+
+  let pixError: string | null = null;
   let internalError: string | null = null;
 
-  if (walletId) {
+  const attemptPix = async () => {
+    const result = await createPixTransfer(apiKey, value, description, externalReference);
+    await registerPendingTransfer(result, company, value, 'PIX', externalReference);
+    invalidateAsaasBalancesCoreCache();
+    return { ...result, transferMode: 'PIX' as const };
+  };
+
+  const attemptInternal = async () => {
+    if (!walletId) throw new Error('Wallet financeiro não configurado.');
+    const result = await createInternalTransfer(
+      apiKey,
+      value,
+      walletId,
+      description,
+      externalReference,
+    );
+    await registerPendingTransfer(result, company, value, 'INTERNAL', externalReference);
+    invalidateAsaasBalancesCoreCache();
+    return { ...result, transferMode: 'INTERNAL' as const, destinationWalletId: walletId };
+  };
+
+  if (pixFirst) {
     try {
-      const result = await asaasRequest(apiKey, '/transfers', {
-        method: 'POST',
-        body: JSON.stringify({ value, walletId, description, externalReference }),
-      });
-      invalidateAsaasBalancesCoreCache();
-      return { ...result, transferMode: 'INTERNAL', destinationWalletId: walletId };
+      return await attemptPix();
     } catch (e: unknown) {
-      internalError = e instanceof Error ? e.message : String(e);
-      console.warn('[asaasTransfer] repasse interno falhou:', internalError);
+      pixError = e instanceof Error ? e.message : String(e);
+      console.warn('[asaasTransfer] Pix falhou:', pixError);
+    }
+    if (!skipInternal && walletId) {
+      try {
+        return await attemptInternal();
+      } catch (e: unknown) {
+        internalError = e instanceof Error ? e.message : String(e);
+        console.warn('[asaasTransfer] repasse interno falhou:', internalError);
+      }
+    }
+  } else {
+    if (!skipInternal && walletId) {
+      try {
+        return await attemptInternal();
+      } catch (e: unknown) {
+        internalError = e instanceof Error ? e.message : String(e);
+        console.warn('[asaasTransfer] repasse interno falhou:', internalError);
+      }
+    }
+    try {
+      return await attemptPix();
+    } catch (e: unknown) {
+      pixError = e instanceof Error ? e.message : String(e);
     }
   }
 
-  try {
-    const result = await asaasRequest(apiKey, '/transfers', {
-      method: 'POST',
-      body: JSON.stringify({
-        value,
-        operationType: 'PIX',
-        pixAddressKey: ASAAS_PIX_FINANCEIRO_EMAIL,
-        pixAddressKeyType: ASAAS_PIX_FINANCEIRO_KEY_TYPE,
-        description,
-        externalReference,
-      }),
-    });
-    invalidateAsaasBalancesCoreCache();
-    return { ...result, transferMode: 'PIX' };
-  } catch (e: unknown) {
-    const pixError = e instanceof Error ? e.message : String(e);
-    const combined = internalError
-      ? `Repasse interno: ${internalError}. Pix: ${pixError}`
-      : pixError;
-    throw new Error(formatAsaasTransferError(combined));
-  }
+  const combined = [internalError ? `Repasse interno: ${internalError}` : null, pixError ? `Pix: ${pixError}` : null]
+    .filter(Boolean)
+    .join('. ');
+  throw new Error(formatAsaasTransferError(combined || 'Falha na transferência'));
 }

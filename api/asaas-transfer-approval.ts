@@ -3,6 +3,7 @@ import {
   parseAsaasWebhookBody,
   shouldApproveAsaasTransferWebhook,
 } from '../lib/asaasTransferApproval.js';
+import { isRegisteredAsaasPendingTransfer } from '../lib/services/asaasPendingTransferService.js';
 
 /** Asaas só considera entrega OK com HTTP 200 (docs/fila-pausada). */
 function respond(res: any, body: Record<string, unknown>) {
@@ -58,6 +59,13 @@ export default async function handler(req: any, res: any) {
 
     const transfer = (body.transfer || {}) as Record<string, any>;
     const financeiroWallet = financeiroWalletIdFromEnv();
+    const transferId = String(transfer.id || '').trim();
+
+    if (transferId && (await isRegisteredAsaasPendingTransfer(transferId))) {
+      console.log('[asaas-transfer-approval] APPROVED por ID registrado', transferId, transfer.value);
+      respond(res, { status: 'APPROVED' });
+      return;
+    }
 
     if (shouldApproveAsaasTransferWebhook(transfer, financeiroWallet)) {
       console.log('[asaas-transfer-approval] APPROVED', transfer.id, transfer.value);
