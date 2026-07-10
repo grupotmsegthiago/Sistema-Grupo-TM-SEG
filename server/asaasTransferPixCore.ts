@@ -9,6 +9,7 @@ import {
   isValidPixTransferAmount,
   roundMoneyBrl,
 } from '../lib/asaasPixTransfer.js';
+import { buildAsaasTransferExternalReference } from '../lib/asaasTransferApproval.js';
 import { formatAsaasTransferError } from '../lib/asaasTransferErrors.js';
 import { invalidateAsaasBalancesCoreCache } from './asaasBalancesCore.js';
 
@@ -109,6 +110,7 @@ export async function transferPixFromCompanyCore(params: {
   if (!check.ok) throw new Error(check.error);
 
   const description = params.description || `Repasse TM SEG — ${company}`;
+  const externalReference = buildAsaasTransferExternalReference(company);
   const walletId = financeiroWalletId();
   let internalError: string | null = null;
 
@@ -116,7 +118,7 @@ export async function transferPixFromCompanyCore(params: {
     try {
       const result = await asaasRequest(apiKey, '/transfers', {
         method: 'POST',
-        body: JSON.stringify({ value, walletId, description }),
+        body: JSON.stringify({ value, walletId, description, externalReference }),
       });
       invalidateAsaasBalancesCoreCache();
       return { ...result, transferMode: 'INTERNAL', destinationWalletId: walletId };
@@ -135,6 +137,7 @@ export async function transferPixFromCompanyCore(params: {
         pixAddressKey: ASAAS_PIX_FINANCEIRO_EMAIL,
         pixAddressKeyType: ASAAS_PIX_FINANCEIRO_KEY_TYPE,
         description,
+        externalReference,
       }),
     });
     invalidateAsaasBalancesCoreCache();

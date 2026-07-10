@@ -1,12 +1,8 @@
-import { ASAAS_PIX_FINANCEIRO_EMAIL } from '../lib/asaasPixTransfer.js';
-
-const DEFAULT_FINANCEIRO_WALLET_ID = '6641fec4-8476-48e3-90a8-3db6b14f538c';
-
-function financeiroWalletId(): string {
-  return (
-    String(process.env.ASAAS_FINANCEIRO_WALLET_ID || '').trim() || DEFAULT_FINANCEIRO_WALLET_ID
-  );
-}
+import {
+  financeiroWalletIdFromEnv,
+  parseAsaasWebhookBody,
+  shouldApproveAsaasTransferWebhook,
+} from '../lib/asaasTransferApproval.js';
 
 /** Asaas só considera entrega OK com HTTP 200 (docs/fila-pausada). */
 function respond(res: any, body: Record<string, unknown>) {
@@ -49,7 +45,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const body = req.body || {};
+    const body = parseAsaasWebhookBody(req.body);
     const type = String(body.type || '').toUpperCase();
 
     if (type !== 'TRANSFER') {
@@ -60,39 +56,26 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const transfer = body.transfer || {};
-    const operationType = String(transfer.operationType || '').toUpperCase();
-    const value = Number(transfer.value || 0);
-    const pixKey = String(
-      transfer.pixAddressKey ||
-        transfer.bankAccount?.pixAddressKey ||
-        '',
-    )
-      .trim()
-      .toLowerCase();
-    const walletId = String(transfer.walletId || transfer.destinationWalletId || '').trim();
-    const financeiroWallet = financeiroWalletId();
-    const destinoOk =
-      pixKey === ASAAS_PIX_FINANCEIRO_EMAIL.toLowerCase() ||
-      String(transfer.description || '').includes('Repasse TM SEG') ||
-      (operationType === 'INTERNAL' && walletId === financeiroWallet);
+    const transfer = (body.transfer || {}) as Record<string, any>;
+    const financeiroWallet = financeiroWalletIdFromEnv();
 
-    if (
-      value > 0 &&
-      destinoOk &&
-      (operationType === 'PIX' || operationType === 'INTERNAL' || transfer.type === 'INTERNAL')
-    ) {
-      console.log('[asaas-transfer-approval] APPROVED', transfer.id, value);
+    if (shouldApproveAsaasTransferWebhook(transfer, financeiroWallet)) {
+      console.log('[asaas-transfer-approval] APPROVED', transfer.id, transfer.value);
       respond(res, { status: 'APPROVED' });
       return;
     }
 
     console.warn('[asaas-transfer-approval] REFUSED', {
       id: transfer.id,
-      operationType,
-      value,
-      pixKey,
-      walletId,
+      operationType: transfer.operationType,
+      transferType: transfer.type,
+      value: transfer.value,
+      externalReference: transfer.externalReference,
+      pixKey:
+        transfer.pixAddressKey ||
+        transfer.bankAccount?.pixAddressKey ||
+        transfer.externalAccount?.addressKey,
+      walletId: transfer.walletId || transfer.destinationWalletId,
     });
     respond(res, {
       status: 'REFUSED',

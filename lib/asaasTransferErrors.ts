@@ -10,6 +10,9 @@ const CRITICAL_AUTH =
 
 const IP_NOT_ALLOWED = /ip.*não.*segur|ip.*not.*allowed|whitelist/i;
 
+const CANCELLED_BY_WEBHOOK =
+  /cancelad|recusad|falhou|failed|não foi autoriz|nao foi autoriz|webhook/i;
+
 export function formatAsaasTransferError(raw: string): string {
   const msg = String(raw || '').trim();
   if (!msg) return 'Falha na transferência Pix. Tente novamente.';
@@ -35,6 +38,14 @@ export function formatAsaasTransferError(raw: string): string {
     return (
       'IP do servidor não está na whitelist do Asaas. Cadastre os IPs de saída da Vercel ' +
       'em Integrações → IPs autorizados (ou use webhook de aprovação de transferências).'
+    );
+  }
+
+  if (CANCELLED_BY_WEBHOOK.test(msg)) {
+    return (
+      'A transferência foi criada no Asaas, mas o webhook de aprovação recusou ou não respondeu a tempo. ' +
+      'Verifique em Integrações → Webhooks os logs (deve retornar HTTP 200 com status APPROVED). ' +
+      'URL: https://sistema.grupotmseg.com.br/api/asaas/transfer-approval'
     );
   }
 
