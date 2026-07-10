@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assertAsaasApiAccess,
   principalCanAccessAsaasApi,
   roleCanAccessAsaasApi,
-} from '../lib/services/asaasAccess.ts';
+} from '../lib/asaasApiAuth.ts';
 
 test('roleCanAccessAsaasApi aceita perfis financeiros', () => {
   assert.equal(roleCanAccessAsaasApi('financeiro'), true);
@@ -13,37 +14,53 @@ test('roleCanAccessAsaasApi aceita perfis financeiros', () => {
 });
 
 test('principalCanAccessAsaasApi aceita permissão fin-transactions', () => {
-  const principal = {
-    id: 'u1',
-    name: 'Teste',
-    email: 't@x.com',
-    role: 'comercial',
-    clientId: null,
-    permissions: ['fin-transactions'],
-  };
-  assert.equal(principalCanAccessAsaasApi(principal), true);
+  assert.equal(
+    principalCanAccessAsaasApi({ role: 'comercial', permissions: ['fin-transactions'] }),
+    true,
+  );
+});
+
+test('principalCanAccessAsaasApi aceita qualquer permissão fin-*', () => {
+  assert.equal(
+    principalCanAccessAsaasApi({ role: 'comercial', permissions: ['fin-dashboard'] }),
+    true,
+  );
 });
 
 test('principalCanAccessAsaasApi aceita wildcard', () => {
-  const principal = {
-    id: 'u1',
-    name: 'Admin',
-    email: 'a@x.com',
-    role: 'rh',
-    clientId: null,
-    permissions: ['*'],
-  };
-  assert.equal(principalCanAccessAsaasApi(principal), true);
+  assert.equal(
+    principalCanAccessAsaasApi({ role: 'rh', permissions: ['*'] }),
+    true,
+  );
 });
 
 test('principalCanAccessAsaasApi nega sem role nem permissão', () => {
-  const principal = {
-    id: 'u1',
-    name: 'Operador',
-    email: 'o@x.com',
-    role: 'operador',
-    clientId: null,
-    permissions: ['missions'],
-  };
-  assert.equal(principalCanAccessAsaasApi(principal), false);
+  assert.equal(
+    principalCanAccessAsaasApi({ role: 'operador', permissions: ['missions'] }),
+    false,
+  );
+});
+
+test('assertAsaasApiAccess aceita fallback por headers quando userId confere', async () => {
+  const token = 'tmseg-token-42-1783678641263';
+  const denied = await assertAsaasApiAccess(token, {
+    headers: {
+      'x-tmseg-user-id': '42',
+      'x-tmseg-role': 'financeiro',
+      'x-tmseg-permissions': '[]',
+    },
+  });
+  assert.equal(denied, null);
+});
+
+test('assertAsaasApiAccess nega headers com userId divergente', async () => {
+  const token = 'tmseg-token-42-1783678641263';
+  const denied = await assertAsaasApiAccess(token, {
+    headers: {
+      'x-tmseg-user-id': '99',
+      'x-tmseg-role': 'financeiro',
+      'x-tmseg-permissions': '[]',
+    },
+  });
+  assert.equal(denied, 'Permissão negada');
 });

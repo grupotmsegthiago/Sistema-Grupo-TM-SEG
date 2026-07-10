@@ -10,7 +10,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const token = extractAuthToken(req);
-    const denied = await assertAsaasApiAccess(token);
+    const denied = await assertAsaasApiAccess(token, req);
     if (denied) {
       res.status(denied === 'Não autorizado' ? 401 : 403).json({ ok: false, error: denied });
       return;
