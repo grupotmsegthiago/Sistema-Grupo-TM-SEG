@@ -1,4 +1,4 @@
-import { createSupabaseAdminClient } from '../../server/supabaseConfig.js';
+import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 
 export function extractUserIdFromToken(token: string): string | null {
   const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);

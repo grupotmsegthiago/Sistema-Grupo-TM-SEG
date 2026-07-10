@@ -1,4 +1,4 @@
-import { createSupabaseAdminClient } from '../../server/supabaseConfig.js';
+import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 import { extractUserIdFromToken } from '../rh/apiEmployeesAuth.js';
 
 export type ResolvedPrincipal = {
