@@ -95,8 +95,12 @@ async function preloadPhaseImages(
   return map;
 }
 
-async function buildPdfBuffer(data: Awaited<ReturnType<typeof collectDhlOccurrenceReportData>>): Promise<Buffer> {
+async function buildPdfBuffer(
+  data: Awaited<ReturnType<typeof collectDhlOccurrenceReportData>>,
+  options?: { embedPhotos?: boolean },
+): Promise<Buffer> {
   if (!data) throw new Error('Dados da missão indisponíveis');
+  const embedPhotos = options?.embedPhotos === true;
 
   const narrative = buildOccurrenceNarrative(data);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -180,28 +184,39 @@ async function buildPdfBuffer(data: Awaited<ReturnType<typeof collectDhlOccurren
   y += 4;
 
   section('Evidências fotográficas');
-  const imageCache = await preloadPhaseImages(data.phasePhotos);
-  for (const photo of data.phasePhotos) {
-    y = ensureSpace(doc, y, 58, margin);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    const timeLabel = photo.at ? formatTimeBR(photo.at) : '—';
-    doc.text(`${photo.label} — ${timeLabel}`, margin, y);
-    y += 5;
-    const cached = photo.url ? imageCache.get(photo.url) : null;
-    if (cached) {
-      try {
-        doc.addImage(cached.data, cached.format, margin, y, contentW / 2, 36);
-        y += 40;
-        continue;
-      } catch {
-        /* fallback texto */
+  if (embedPhotos) {
+    const imageCache = await preloadPhaseImages(data.phasePhotos);
+    for (const photo of data.phasePhotos) {
+      y = ensureSpace(doc, y, 58, margin);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      const timeLabel = photo.at ? formatTimeBR(photo.at) : '—';
+      doc.text(`${photo.label} — ${timeLabel}`, margin, y);
+      y += 5;
+      const cached = photo.url ? imageCache.get(photo.url) : null;
+      if (cached) {
+        try {
+          doc.addImage(cached.data, cached.format, margin, y, contentW / 2, 36);
+          y += 40;
+          continue;
+        } catch {
+          /* fallback texto */
+        }
       }
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor('#666');
+      y = wrapText(doc, 'Evidência não registrada no sistema para esta etapa.', margin, y, contentW);
+      doc.setTextColor('#111');
+      y += 4;
     }
-    doc.setFont('helvetica', 'italic');
-    doc.setTextColor('#666');
-    y = wrapText(doc, 'Evidência não registrada no sistema para esta etapa.', margin, y, contentW);
-    doc.setTextColor('#111');
+  } else {
+    y = wrapText(
+      doc,
+      'Fotos disponíveis na pré-visualização HTML. Use Imprimir → Salvar como PDF para incluir imagens.',
+      margin,
+      y,
+      contentW,
+    );
     y += 4;
   }
 
@@ -244,12 +259,19 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-export async function generateDhlOccurrenceReportPdf(input: DhlOccurrenceReportInput): Promise<Buffer | null> {
+export async function generateDhlOccurrenceReportPdf(
+  input: DhlOccurrenceReportInput,
+  options?: { embedPhotos?: boolean },
+): Promise<Buffer | null> {
   try {
     const sb = getSupabase();
     const data = await collectDhlOccurrenceReportData(sb, input);
     if (!data) return null;
-    return await withTimeout(buildPdfBuffer(data), PDF_GENERATION_TIMEOUT_MS, 'Geração do PDF');
+    return await withTimeout(
+      buildPdfBuffer(data, { embedPhotos: options?.embedPhotos ?? false }),
+      PDF_GENERATION_TIMEOUT_MS,
+      'Geração do PDF',
+    );
   } catch (err) {
     console.error('[dhlOccurrenceReportPdf]', err);
     throw err instanceof Error ? err : new Error(String(err));
@@ -261,7 +283,9 @@ export async function generateDhlOccurrenceReportHtml(input: DhlOccurrenceReport
     const sb = getSupabase();
     const data = await collectDhlOccurrenceReportData(sb, input);
     if (!data) return null;
-    return buildOccurrenceReportHtml(data);
+    const publicBaseUrl =
+      process.env.APP_PUBLIC_URL || process.env.SYSTEM_URL || 'https://sistema.grupotmseg.com.br';
+    return buildOccurrenceReportHtml(data, { publicBaseUrl });
   } catch {
     return null;
   }

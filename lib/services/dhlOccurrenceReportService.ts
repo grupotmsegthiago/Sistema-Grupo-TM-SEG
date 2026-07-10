@@ -1,6 +1,7 @@
 import { authFetch } from '../authFetch';
 
 const REQUEST_TIMEOUT_MS = 90000;
+const PREVIEW_TIMEOUT_MS = 45000;
 
 export type GenerateDhlOccurrenceReportParams = {
   missionId: string;
@@ -15,12 +16,26 @@ export type DhlReportProgress = {
   label: string;
 };
 
-type PdfJsonResponse = {
+type ReportJsonResponse = {
   ok?: boolean;
   error?: string;
   filename?: string;
   pdfBase64?: string;
+  html?: string;
+  format?: string;
+  hint?: string;
 };
+
+function buildPayload(params: GenerateDhlOccurrenceReportParams, format: 'html' | 'pdf') {
+  return {
+    missionId: params.missionId,
+    seNumber: params.seNumber,
+    format,
+    factsSummary: params.factsSummary?.trim() || undefined,
+    emailLink: params.emailLink?.trim() || undefined,
+    emailAttachmentText: params.emailAttachmentText?.trim() || undefined,
+  };
+}
 
 function base64ToBlob(base64: string, contentType = 'application/pdf'): Blob {
   const binary = atob(base64);
@@ -31,92 +46,80 @@ function base64ToBlob(base64: string, contentType = 'application/pdf'): Blob {
   return new Blob([bytes], { type: contentType });
 }
 
-export async function generateDhlOccurrenceReportPdf(
+async function postOccurrenceReport(
   params: GenerateDhlOccurrenceReportParams,
+  format: 'html' | 'pdf',
   onProgress?: (progress: DhlReportProgress) => void,
-): Promise<{ blob: Blob; filename: string }> {
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<ReportJsonResponse> {
   const report = (percent: number, label: string) => {
     onProgress?.({ percent: Math.min(100, Math.max(0, percent)), label });
   };
 
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    report(8, 'Preparando dados da OS...');
+    report(format === 'html' ? 15 : 10, 'Enviando dados ao servidor...');
 
-    let waitPercent = 8;
-    const waitTimer = window.setInterval(() => {
-      if (waitPercent < 48) {
-        waitPercent += 1;
-        report(waitPercent, 'Coletando horários, fotos e evidências da OS...');
-      }
-    }, 1200);
+    const res = await authFetch('/api/dhl/occurrence-report', {
+      method: 'POST',
+      signal: controller.signal,
+      body: JSON.stringify(buildPayload(params, format)),
+    });
 
-    let res: Response;
-    try {
-      res = await authFetch('/api/dhl/occurrence-report', {
-        method: 'POST',
-        signal: controller.signal,
-        body: JSON.stringify({
-          missionId: params.missionId,
-          seNumber: params.seNumber,
-          factsSummary: params.factsSummary?.trim() || undefined,
-          emailLink: params.emailLink?.trim() || undefined,
-          emailAttachmentText: params.emailAttachmentText?.trim() || undefined,
-        }),
-      });
-    } finally {
-      window.clearInterval(waitTimer);
+    report(format === 'html' ? 70 : 60, format === 'html' ? 'Montando pré-visualização...' : 'Gerando PDF...');
+
+    const json = (await res.json()) as ReportJsonResponse;
+
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || `Erro ao gerar relatório (${res.status})`);
     }
 
-    report(55, 'Montando PDF com logo TM SEG e assinatura...');
-
-    const contentType = res.headers.get('content-type') || '';
-
-    if (!res.ok) {
-      let message = `Erro ao gerar relatório (${res.status})`;
-      try {
-        const json = (await res.json()) as PdfJsonResponse;
-        if (json?.error) message = String(json.error);
-      } catch {
-        /* mantém mensagem padrão */
-      }
-      throw new Error(message);
-    }
-
-    if (contentType.includes('application/json')) {
-      report(78, 'Recebendo documento do servidor...');
-      const json = (await res.json()) as PdfJsonResponse;
-      if (!json.ok || !json.pdfBase64) {
-        throw new Error(json.error || 'Resposta inválida ao gerar PDF');
-      }
-      report(92, 'Finalizando arquivo PDF...');
-      const filename = json.filename || `PA-DHL-${params.seNumber || params.missionId}.pdf`;
-      const blob = base64ToBlob(json.pdfBase64);
-      report(100, 'Download pronto!');
-      return { blob, filename };
-    }
-
-    report(85, 'Processando arquivo PDF...');
-    const blob = await res.blob();
-    if (!blob.size) {
-      throw new Error('PDF vazio — tente novamente em alguns segundos');
-    }
-    report(100, 'Download pronto!');
-    return {
-      blob,
-      filename: `PA-DHL-${params.seNumber || params.missionId}.pdf`,
-    };
+    report(100, format === 'html' ? 'Pré-visualização pronta!' : 'PDF pronto!');
+    return json;
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error('Tempo esgotado ao gerar o PDF. Tente novamente.');
+      throw new Error(
+        format === 'html'
+          ? 'Tempo esgotado ao carregar a pré-visualização. Tente novamente.'
+          : 'Tempo esgotado ao gerar o PDF. Use a pré-visualização e Imprimir → Salvar como PDF.',
+      );
     }
     if (err instanceof Error) throw err;
     throw new Error('Falha ao gerar relatório DHL');
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+/** Pré-visualização HTML — rápida, com fotos e textos editáveis antes do PDF. */
+export async function fetchDhlOccurrenceReportPreview(
+  params: GenerateDhlOccurrenceReportParams,
+  onProgress?: (progress: DhlReportProgress) => void,
+): Promise<{ html: string; filename: string }> {
+  const json = await postOccurrenceReport(params, 'html', onProgress, PREVIEW_TIMEOUT_MS);
+  if (!json.html) {
+    throw new Error('Pré-visualização vazia — tente novamente.');
+  }
+  return {
+    html: json.html,
+    filename: json.filename || `PA-DHL-${params.seNumber || params.missionId}.html`,
+  };
+}
+
+export async function generateDhlOccurrenceReportPdf(
+  params: GenerateDhlOccurrenceReportParams,
+  onProgress?: (progress: DhlReportProgress) => void,
+): Promise<{ blob: Blob; filename: string }> {
+  const json = await postOccurrenceReport(params, 'pdf', onProgress, 45000);
+  if (!json.pdfBase64) {
+    throw new Error(json.error || 'Resposta inválida ao gerar PDF');
+  }
+  return {
+    blob: base64ToBlob(json.pdfBase64),
+    filename: json.filename || `PA-DHL-${params.seNumber || params.missionId}.pdf`,
+  };
 }
 
 export function downloadDhlOccurrenceReportBlob(blob: Blob, filename: string): void {
@@ -128,4 +131,35 @@ export function downloadDhlOccurrenceReportBlob(blob: Blob, filename: string): v
   a.click();
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Abre pré-visualização em nova aba para Imprimir → Salvar como PDF (com fotos). */
+export function openDhlOccurrenceReportPrintPreview(html: string, title: string): void {
+  const popup = window.open('', '_blank', 'noopener,noreferrer');
+  if (!popup) {
+    throw new Error('Pop-up bloqueado. Permita pop-ups para salvar o PDF com fotos.');
+  }
+  popup.document.open();
+  popup.document.write(html);
+  popup.document.close();
+  popup.document.title = title;
+  popup.focus();
+  window.setTimeout(() => {
+    try {
+      popup.print();
+    } catch {
+      /* usuário pode imprimir manualmente */
+    }
+  }, 600);
+}
+
+export function openDhlOccurrenceReportHtmlInNewTab(html: string): void {
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const popup = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!popup) {
+    URL.revokeObjectURL(url);
+    throw new Error('Pop-up bloqueado. Permita pop-ups para abrir a pré-visualização.');
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

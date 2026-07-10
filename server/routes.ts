@@ -2578,21 +2578,42 @@ export async function registerRoutes(
         generatedAt: new Date().toISOString(),
       };
 
-      const pdf = await generateDhlOccurrenceReportPdf(input);
+      const format = String(req.body?.format || 'pdf').trim().toLowerCase();
+      const seFromBody = String(req.body?.seNumber || '').trim();
+      const filenameBase = seFromBody || missionId;
+
+      if (format === 'html' || format === 'preview') {
+        const html = await generateDhlOccurrenceReportHtml(input);
+        if (!html) {
+          res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });
+          return;
+        }
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(200).json({
+          ok: true,
+          format: 'html',
+          filename: dhlOccurrenceReportFilename(filenameBase).replace(/\.pdf$/i, '.html'),
+          html,
+        });
+        return;
+      }
+
+      const pdf = await generateDhlOccurrenceReportPdf(input, { embedPhotos: false });
       if (!pdf) {
         res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });
         return;
       }
 
-      const seFromBody = String(req.body?.seNumber || '').trim();
-      const filename = dhlOccurrenceReportFilename(seFromBody || missionId);
+      const filename = dhlOccurrenceReportFilename(filenameBase);
 
       res.setHeader('Cache-Control', 'no-store');
       res.status(200).json({
         ok: true,
+        format: 'pdf',
         filename,
         pdfBase64: pdf.toString('base64'),
         contentType: 'application/pdf',
+        hint: 'Para PDF com fotos, use a pré-visualização e Imprimir → Salvar como PDF.',
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

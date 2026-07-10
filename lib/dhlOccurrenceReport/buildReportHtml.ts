@@ -75,9 +75,12 @@ export function buildOccurrenceNarrative(data: DhlOccurrenceReportData): {
   return { factsSummary, emailReference, rootCause, correctiveActions, preventiveActions };
 }
 
-export function buildOccurrenceReportHtml(data: DhlOccurrenceReportData): string {
+export function buildOccurrenceReportHtml(data: DhlOccurrenceReportData, options?: { publicBaseUrl?: string }): string {
   const narrative = buildOccurrenceNarrative(data);
-  const logoUrl = '/logo.png';
+  const base =
+    String(options?.publicBaseUrl || '').trim().replace(/\/$/, '')
+    || (typeof window !== 'undefined' ? window.location.origin : 'https://sistema.grupotmseg.com.br');
+  const logoUrl = `${base}/logo.png`;
   const generatedLabel = formatDateTimeBR(data.generatedAt);
 
   const marksRows = data.marks
@@ -137,6 +140,8 @@ export function buildOccurrenceReportHtml(data: DhlOccurrenceReportData): string
     .photo-time { color: ${BRAND.muted}; font-weight: 600; }
     .photo-card img { width: 100%; max-height: 180px; object-fit: contain; border-radius: 4px; background: #fff; }
     .photo-missing { min-height: 72px; display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: ${BRAND.muted}; font-size: 8.5pt; text-align: center; padding: 8px; border-radius: 4px; }
+    .no-print { margin: 12px 0 0; padding: 10px; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 8px; font-size: 9pt; color: #1e3a5f; }
+    @media print { .no-print { display: none !important; } }
     .signature { margin-top: 24px; display: flex; justify-content: space-between; gap: 24px; }
     .signature-box { flex: 1; border-top: 1px solid #334155; padding-top: 8px; min-height: 72px; }
     .signature-box strong { display: block; font-size: 10pt; }
@@ -204,6 +209,7 @@ export function buildOccurrenceReportHtml(data: DhlOccurrenceReportData): string
   </div>
 
   <p class="footer">Documento gerado eletronicamente pelo Sistema Grupo TM SEG em ${generatedLabel} (horário de Brasília).</p>
+  <p class="no-print">Para salvar em PDF: use <strong>Imprimir</strong> → <strong>Salvar como PDF</strong> no navegador.</p>
 </body>
 </html>`;
 }
