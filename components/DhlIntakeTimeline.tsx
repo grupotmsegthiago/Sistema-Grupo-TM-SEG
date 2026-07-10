@@ -1,5 +1,6 @@
 import { formatDateTimeBR } from '../lib/dateUtils';
 import { CANONICAL_PUBLIC_ORIGIN } from '../lib/publicAppUrl';
+import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { useEffect, useState, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import {
@@ -227,7 +228,7 @@ const DhlIntakeTimeline: React.FC<Props> = ({
         credentials: 'include',
         body: JSON.stringify({ missionId, channel }),
       });
-      const j = await r.json().catch(() => ({} as any));
+      const j = await parseJsonResponse(r);
       if (!r.ok || !j?.url) {
         if (j?.code === 'PROVIDER_EMAIL_REQUIRED') {
           setErrorMsg(`O fornecedor ${j.providerName || ''} ainda não tem e-mail cadastrado. Abra "Editar OS" para cadastrar o e-mail e gerar o link, ou use "Só WhatsApp".`);

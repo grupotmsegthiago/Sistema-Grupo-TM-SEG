@@ -18,6 +18,7 @@ import ClientRouteForm from './ClientRouteForm';
 import ClientVehicleForm from './ClientVehicleForm';
 import { formatProviderName } from '../lib/utils';
 import { extractUF, UF_TO_REGION, clientFuzzyFilter } from '../lib/financialUtils';
+import { parseJsonResponse } from '../lib/parseJsonResponse';
 
 const INPUT_CLASS = "w-full bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-red-500/10 focus:border-red-500 text-sm h-11 transition-all text-gray-700 pl-12 pr-4";
 const LABEL_CLASS = "text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest";
@@ -291,7 +292,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         credentials: 'include',
         body: JSON.stringify({ missionId: osId, channel, saveAsDefault }),
       });
-      const j = await r.json();
+      const j = await parseJsonResponse(r);
       if (r.ok && j.url) {
         setDhlLinkModal({ open: true, missionId: osId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '', channel, emailSent: !!j.emailSent, providerEmail: j.providerEmail || '', whatsappSent: !!j.whatsappSent, whatsappError: j.whatsappError || null });
         const wantsEmail = channel === 'email' || channel === 'both';
@@ -399,7 +400,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         credentials: 'include',
         body: JSON.stringify({ missionId }),
       });
-      const j = await r.json();
+      const j = await parseJsonResponse(r);
       if (r.ok && j.url) {
         setDhlLinkModal({ open: true, missionId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '', channel: 'both', emailSent: !!j.emailSent, providerEmail: j.providerEmail || '', whatsappSent: !!j.whatsappSent, whatsappError: j.whatsappError || null });
       } else if (j.code === 'PROVIDER_EMAIL_REQUIRED') {
@@ -456,7 +457,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         credentials: 'include',
         body: JSON.stringify({ missionId: osId, channel: 'email' }),
       });
-      const j = await r.json();
+      const j = await parseJsonResponse(r);
       if (!r.ok || !j.url) {
         const errMsg = j.error || 'erro desconhecido';
         if (/banco ainda não tem as tabelas/i.test(errMsg)) {
@@ -1521,7 +1522,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               credentials: 'include',
               body: JSON.stringify({ missionId: finalId }),
             });
-            const j = await r.json();
+            const j = await parseJsonResponse(r);
             if (r.ok && j.url) {
               setDhlLinkModal({ open: true, missionId: finalId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '', channel: 'both', emailSent: !!j.emailSent, providerEmail: j.providerEmail || '', whatsappSent: !!j.whatsappSent, whatsappError: j.whatsappError || null });
             } else {

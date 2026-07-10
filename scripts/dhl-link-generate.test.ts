@@ -2,19 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-test('generate DHL usa proxy do Express completo (não handler duplicado)', () => {
-  const src = fs.readFileSync('api/dhl/intake/generate.ts', 'utf8');
+test('rotas DHL generate/by-mission não usam handlers isolados (caem no Express via api/index)', () => {
+  assert.throws(() => fs.readFileSync('api/dhl/intake/generate.ts', 'utf8'));
+  assert.throws(() => fs.readFileSync('api/dhl/intake/by-mission.ts', 'utf8'));
+  assert.throws(() => fs.readFileSync('api/dhl/intake/by-mission/[missionId].ts', 'utf8'));
+});
+
+test('api/index encaminha para Express completo', () => {
+  const src = fs.readFileSync('api/index.ts', 'utf8');
   assert.match(src, /proxyToExpress/);
-  assert.doesNotMatch(src, /dhl_supplier_intakes/);
 });
 
-test('by-mission DHL usa proxy do Express', () => {
-  const byMission = fs.readFileSync('api/dhl/intake/by-mission.ts', 'utf8');
-  assert.match(byMission, /proxyToExpress/);
-});
-
-test('Express expõe by-mission com query missionId', () => {
+test('Express expõe generate e by-mission com auth', () => {
   const src = fs.readFileSync('server/dhlSupplierIntake.ts', 'utf8');
+  assert.match(src, /app\.post\('\/api\/dhl\/intake\/generate', requireAuth/);
   assert.match(src, /app\.get\('\/api\/dhl\/intake\/by-mission', requireAuth/);
 });
 
@@ -24,7 +25,9 @@ test('timeline usa URL canônica no link do fornecedor', () => {
   assert.doesNotMatch(src, /window\.location\.origin/);
 });
 
-test('vercel inclui vercelApp.cjs no generate DHL', () => {
+test('vercel.json não declara funções isoladas para generate/by-mission DHL', () => {
   const vercel = fs.readFileSync('vercel.json', 'utf8');
-  assert.match(vercel, /api\/dhl\/intake\/generate\.ts[\s\S]*includeFiles.*vercelApp\.cjs/);
+  assert.doesNotMatch(vercel, /api\/dhl\/intake\/generate\.ts/);
+  assert.doesNotMatch(vercel, /api\/dhl\/intake\/by-mission/);
+  assert.match(vercel, /"source": "\/api\/\(.*\)"/);
 });
