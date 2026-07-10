@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Eye, ExternalLink, FileText, Link2, Loader2, Paperclip, Printer, X } from 'lucide-react';
 import type { Mission } from '../types';
+import { parseEmailThreadInput } from '../lib/dhlOccurrenceReport/parseEmailThread';
 import {
   downloadDhlOccurrenceReportBlob,
   downloadDhlOccurrenceReportHtml,
@@ -28,8 +29,22 @@ const EMAIL_FILE_ACCEPT = '.eml,.msg,.txt,.pdf,.html,.htm,image/*';
 async function readEmailFile(file: File): Promise<string> {
   const text = await file.text();
   const trimmed = text.trim();
-  if (trimmed) return trimmed.slice(0, 12000);
-  return `[Arquivo anexado: ${file.name} — conteúdo binário não convertido automaticamente. Cole o texto do e-mail no resumo, se necessário.]`;
+  if (!trimmed) {
+    return `[Arquivo anexado: ${file.name} — conteúdo vazio.]`;
+  }
+
+  const messages = parseEmailThreadInput(trimmed);
+  if (messages.length > 0) {
+    return messages
+      .map((msg) => {
+        const subject = msg.subject ? `Assunto: ${msg.subject}\n` : '';
+        return `${subject}De: ${msg.from}\nPara: ${msg.to}\nCc: ${msg.cc}\nData: ${msg.date}\n\n${msg.body}`;
+      })
+      .join('\n\n---\n\n')
+      .slice(0, 12000);
+  }
+
+  return trimmed.slice(0, 12000);
 }
 
 function DhlReportLoadingOverlay({

@@ -16,7 +16,8 @@ test('gera HTML do Plano de Ação para GTM-6296 / S.E. 183013', async () => {
   });
 
   assert.ok(html, 'HTML não deve ser vazio');
-  assert.match(html!, /Plano de Ação/i);
+  assert.match(html!, /10\. Aprovação/i);
+  assert.match(html!, /5 Porquês/i);
   assert.match(html!, /183013/);
   assert.match(html!, /GTM-6296/);
   assert.match(html!, /Foxconn Jundiaí|atraso na chegada/i);

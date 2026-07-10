@@ -211,6 +211,7 @@ export async function collectDhlOccurrenceReportData(
         )?.new_value?.split('|').pop()?.trim() || null;
 
     let clientVehiclePlate: string | null = null;
+    let clientVehicleModel: string | null = null;
     const clientVehicleId = mission.client_vehicle || mission.client_vehicle_id;
     if (clientVehicleId) {
       const { data: cv } = await sb
@@ -219,17 +220,36 @@ export async function collectDhlOccurrenceReportData(
         .eq('id', clientVehicleId)
         .maybeSingle();
       if (cv?.plate) clientVehiclePlate = cv.plate;
+      if (cv?.model) clientVehicleModel = cv.model;
     }
 
     let escortVehiclePlate: string | null = null;
+    let escortVehicleModel: string | null = null;
     if (mission.vehicle_id) {
       const { data: veh } = await sb.from('vehicles').select('plate,model').eq('id', mission.vehicle_id).maybeSingle();
       if (veh?.plate) escortVehiclePlate = veh.plate;
+      if (veh?.model) escortVehicleModel = veh.model;
     }
 
+    const scheduledMissionAt =
+      rows.find((h) => h.field_name === 'status' && h.new_value === 'Agendada')?.changed_at || null;
+
+    let odometerStartKm: string | null = null;
+    let odometerEndKm: string | null = null;
     const evidence: EvidenceRow[] = [];
     for (const log of logs || []) {
       const details = parseDetails(log.details);
+      const rawKm = details.km ?? details.odometer ?? details.hodometro ?? details.hodômetro;
+      if (rawKm != null) {
+        const km = String(rawKm).trim();
+        const ctx = String(details.context || log.action_type || '').toLowerCase();
+        if (!odometerStartKm && (ctx.includes('inicial') || ctx.includes('origem') || log.action_type?.includes('start'))) {
+          odometerStartKm = km.includes('km') ? km : `${km} km`;
+        }
+        if (ctx.includes('final') || ctx.includes('conclus') || ctx.includes('terminal') || log.action_type?.includes('odometer')) {
+          odometerEndKm = km.includes('km') ? km : `${km} km`;
+        }
+      }
       const url = pickUrl(details);
       if (!url) continue;
       evidence.push({
@@ -282,8 +302,14 @@ export async function collectDhlOccurrenceReportData(
       destinationOperational,
       clientVehiclePlate,
       escortVehiclePlate,
+      clientVehicleModel,
+      escortVehicleModel,
       agents,
       scheduledOriginAt: mission.start_time || null,
+      scheduledMissionAt,
+      missionCreatedAt: mission.created_at || null,
+      odometerStartKm,
+      odometerEndKm,
       marks,
       phasePhotos,
       delayMinutesAtOrigin,

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { buildOccurrenceNarrative, buildOccurrenceReportHtml } from '../lib/dhlOccurrenceReport/buildReportHtml';
+import { parseEmailThreadInput } from '../lib/dhlOccurrenceReport/parseEmailThread';
 import { roleCanGenerateDhlOccurrenceReport } from '../lib/services/dhlOccurrenceReportAccess';
 import type { DhlOccurrenceReportData } from '../lib/dhlOccurrenceReport/types';
 
@@ -25,6 +26,12 @@ const baseData: DhlOccurrenceReportData = {
   emailAttachmentText: null,
   directorName: 'Thiago',
   generatedAt: '2026-07-10T17:00:00.000Z',
+  missionCreatedAt: '2026-07-07T23:43:00.000Z',
+  clientVehicleModel: 'P 360 A4X2',
+  escortVehicleModel: 'MOBI LIKE',
+  scheduledMissionAt: '2026-07-08T13:29:00.000Z',
+  odometerStartKm: '64.958 km',
+  odometerEndKm: '64.968 km',
 };
 
 test('acesso ao relatório restrito à diretoria', () => {
@@ -44,7 +51,7 @@ test('narrativa inclui referência de e-mail quando informada', () => {
   assert.match(narrative.emailReference || '', /Corpo do e-mail/i);
 });
 
-test('narrativa não expõe nominalmente o parceiro operacional', () => {
+test('narrativa do PDF resumido não expõe nominalmente o parceiro', () => {
   const narrative = buildOccurrenceNarrative(baseData);
   const blob = JSON.stringify(narrative).toUpperCase();
   assert.doesNotMatch(blob, /COMANDO G8/);
@@ -78,15 +85,87 @@ test('handler standalone carrega bundle HTML sem jspdf no preview', () => {
   assert.doesNotMatch(handler, /server\/dhlOccurrenceReportPdf/);
 });
 
-test('HTML incorpora logo TM SEG em base64 quando informado', () => {
+test('HTML completo inclui seções 1 a 10 do modelo DHL', () => {
   const html = buildOccurrenceReportHtml(baseData, {
     logoDataUri: 'data:image/png;base64,AAAA',
   });
-  assert.match(html, /data:image\/png;base64,AAAA/);
-  assert.match(html, /--brand-navy: #0d3b66/);
-  assert.match(html, /--brand-wine: #450a0a/);
-  assert.match(html, /8\. Compromisso/);
-  assert.match(html, /Evidências fotográficas/);
+  assert.match(html, /1\. Objetivo do documento/i);
+  assert.match(html, /5 Porquês/i);
+  assert.match(html, /Ações de contenção/i);
+  assert.match(html, /Indicadores de acompanhamento/i);
+  assert.match(html, /10\. Aprovação/i);
+  assert.match(html, /PA-DHL-183013/);
+});
+
+test('parser de e-mail remove ruído MIME e extrai mensagens Outlook', () => {
+  const sample = `De:
+ANTONIA CALINE (DHL)
+Para:
+Thiago | Grupo TM SEG
+Data:
+qua., 8 de jul. de 2026, 15:21
+
+Senhores, boa tarde!
+Venho formalizar o relato de uma ocorrência.`;
+  const messages = parseEmailThreadInput(sample);
+  assert.equal(messages.length, 1);
+  assert.match(messages[0].body, /Senhores, boa tarde/);
+  assert.doesNotMatch(messages[0].body, /ARC-Seal/);
+});
+
+test('parser extrai thread Outlook com De/Para/Cc/Data em linhas separadas', () => {
+  const sample = `De:
+Para:
+Cc:
+Data:
+RES: Notificação de Ocorrência – SE 183013
+ANTONIA CALINE DUARTE DA SILVA (DHL Supply Chain)
+antoniacaline.duartedasilva@dhl.com
+Thiago | Grupo TM SEG thiago@grupotmseg.com.br
+Patrick Carneiro Almeida (DHL Supply Chain) Patrick.CarneiroA@dhl.com
+qua., 8 de jul. de 2026, 15:21
+Senhores, boa tarde!
+Venho formalizar o relato.
+
+De:
+Para:
+Cc:
+Data:
+Patrick Carneiro Almeida (DHL Supply Chain) Patrick.CarneiroA@dhl.com
+Thiago | Grupo TM SEG thiago@grupotmseg.com.br
+coordenacao.GR coordenacao.GR@dhl.com
+qua., 8 de jul. de 2026, 15:26
+Boa tarde!
+Quais serão as ações corretivas?`;
+
+  const messages = parseEmailThreadInput(sample);
+  assert.equal(messages.length, 2);
+  assert.match(messages[0].from, /ANTONIA CALINE/i);
+  assert.match(messages[0].from, /antoniacaline/i);
+  assert.match(messages[0].to, /Thiago/i);
+  assert.match(messages[0].subject, /RES:/i);
+  assert.match(messages[0].date, /15:21/);
+  assert.match(messages[1].body, /ações corretivas/i);
+});
+
+test('HTML completo formata histórico de e-mails na seção 2.1', () => {
+  const html = buildOccurrenceReportHtml(
+    {
+      ...baseData,
+      emailAttachmentText: `De:
+Para:
+Cc:
+Data:
+Patrick Carneiro (DHL) patrick@dhl.com
+Thiago thiago@grupotmseg.com.br
+qua., 8 de jul. de 2026, 15:26
+Boa tarde! Precisamos do plano de ação.`,
+    },
+    { logoDataUri: 'data:image/png;base64,AAAA' },
+  );
+  assert.match(html, /2\.1 Referência \/ histórico de e-mails/i);
+  assert.match(html, /email-card/i);
+  assert.match(html, /plano de ação/i);
 });
 
 test('service imprime sem window.open (evita bloqueio de pop-up)', () => {

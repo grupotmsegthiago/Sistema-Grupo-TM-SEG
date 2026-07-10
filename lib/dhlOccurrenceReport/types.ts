@@ -42,4 +42,10 @@ export interface DhlOccurrenceReportData {
   emailAttachmentText: string | null;
   directorName: string;
   generatedAt: string;
+  missionCreatedAt: string | null;
+  clientVehicleModel: string | null;
+  escortVehicleModel: string | null;
+  scheduledMissionAt: string | null;
+  odometerStartKm: string | null;
+  odometerEndKm: string | null;
 }
