@@ -49,20 +49,17 @@ if (fs.existsSync(clientPublic)) {
 
 console.log('Frontend files (HTML, assets, ícones PWA, manifest, sw.js) movidos para dist/public/');
 
-const dhlBundleDir = 'dist';
-fs.mkdirSync(dhlBundleDir, { recursive: true });
-
 // Bundles autocontidos para api/dhl/occurrence-report.ts na Vercel (evita módulos
-// aninhados ausentes no file tracing). Saída em dist/ — mesmo padrão de vercelApp.cjs.
+// aninhados ausentes no file tracing quando importados de lib/).
 execSync(
-  `npx esbuild lib/dhlOccurrenceReport/generateReportHtml.ts --bundle --platform=node --format=cjs --outfile=${dhlBundleDir}/occurrence-report-html.cjs --packages=external`,
+  'npx esbuild lib/dhlOccurrenceReport/generateReportHtml.ts --bundle --platform=node --format=cjs --outfile=api/dhl/occurrence-report-html.cjs --packages=external',
   { stdio: 'inherit' },
 );
 execSync(
-  `npx esbuild lib/dhlOccurrenceReport/generateReportOutput.ts --bundle --platform=node --format=cjs --outfile=${dhlBundleDir}/occurrence-report-pdf.cjs --packages=external`,
+  'npx esbuild lib/dhlOccurrenceReport/generateReportOutput.ts --bundle --platform=node --format=cjs --outfile=api/dhl/occurrence-report-pdf.cjs --packages=external',
   { stdio: 'inherit' },
 );
-console.log(`DHL occurrence report bundles: ${dhlBundleDir}/occurrence-report-{html,pdf}.cjs`);
+console.log('DHL occurrence report bundles: api/dhl/occurrence-report-{html,pdf}.cjs');
 
 // Bundle leve para api/index.ts na Vercel (carregado sob demanda, não no top-level).
 execSync(

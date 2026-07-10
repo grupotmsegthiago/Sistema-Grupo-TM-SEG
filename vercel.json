@@ -37,10 +37,6 @@
     "api/dhl/intake/by-mission/[missionId].ts": {
       "maxDuration": 60
     },
-    "api/dhl/occurrence-report.ts": {
-      "maxDuration": 120,
-      "includeFiles": "dist/occurrence-report-*.cjs"
-    },
     "api/gemini/health.ts": {
       "maxDuration": 60
     },

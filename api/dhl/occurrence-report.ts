@@ -141,7 +141,7 @@ export default async function handler(req: any, res: any) {
 
     if (format === 'html' || format === 'preview') {
       const { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } = await import(
-        '../../dist/occurrence-report-html.cjs'
+        './occurrence-report-html.cjs'
       );
       const html = await generateDhlOccurrenceReportHtml(input as DhlOccurrenceReportInput);
       if (!html) {
@@ -159,7 +159,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const { generateDhlOccurrenceReportPdf, dhlOccurrenceReportFilename } = await import(
-      '../../dist/occurrence-report-pdf.cjs'
+      './occurrence-report-pdf.cjs'
     );
     const pdf = await generateDhlOccurrenceReportPdf(input as DhlOccurrenceReportInput, { embedPhotos: false });
     if (!pdf) {
