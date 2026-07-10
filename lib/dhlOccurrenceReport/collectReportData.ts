@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../dateUtils';
+import { isImageEvidenceUrl } from './photoUtils';
 import type {
   DhlOccurrenceReportData,
   DhlOccurrenceReportInput,
@@ -13,13 +14,14 @@ type EvidenceRow = {
   at: string;
   context: string;
   actionType: string;
+  filePath: string;
 };
 
 const PHASE_LABELS: Record<DhlReportPhase, string> = {
   origem: 'Origem',
   em_viagem: 'Em viagem',
   destino: 'Chegada no destino',
-  conclusao: 'Conclusão da OS',
+  conclusao: 'Conclusão da OS — KM final',
 };
 
 function parseDetails(raw: unknown): Record<string, unknown> {
@@ -44,14 +46,15 @@ function formatKm(value: unknown): string | null {
   return `${n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 3 })} km`;
 }
 
-function pushEvidence(pool: EvidenceRow[], item: { url: string; at?: string; context?: string; actionType?: string }): void {
+function pushEvidence(pool: EvidenceRow[], item: { url: string; at?: string; context?: string; actionType?: string; filePath?: string }): void {
   const url = String(item.url || '').trim();
-  if (!url || pool.some((p) => p.url === url)) return;
+  if (!url || !isImageEvidenceUrl(url) || pool.some((p) => p.url === url)) return;
   pool.push({
     url,
     at: item.at || '',
     context: item.context || '',
     actionType: item.actionType || '',
+    filePath: item.filePath || '',
   });
 }
 
@@ -123,11 +126,16 @@ async function collectMissionEvidence(
     const files = await listStorageFiles(sb, prefix);
     for (const file of files) {
       if (prefix === 'espelhamento' && !file.name.includes(missionId)) continue;
+      const actionType = file.fullPath.includes('/odometer/') ? 'odometer_storage' : 'storage';
+      const context = file.fullPath.includes('/odometer/')
+        ? 'Hodômetro — KM final'
+        : 'Arquivo mission-evidence';
       pushEvidence(pool, {
         url: publicStorageUrl(file.fullPath),
         at: file.created_at,
-        context: 'Arquivo mission-evidence',
-        actionType: 'storage',
+        context,
+        actionType,
+        filePath: file.fullPath,
       });
     }
   }
@@ -181,40 +189,64 @@ function buildPhasePhotos(input: {
     return null;
   };
 
+  const pickChronological = (): EvidenceRow | null => {
+    const sorted = [...pool]
+      .filter((e) => !used.has(e.url))
+      .sort((a, b) => {
+        const ta = new Date(a.at).getTime();
+        const tb = new Date(b.at).getTime();
+        if (!Number.isFinite(ta) && !Number.isFinite(tb)) return 0;
+        if (!Number.isFinite(ta)) return 1;
+        if (!Number.isFinite(tb)) return -1;
+        return ta - tb;
+      });
+    const found = sorted[0] || null;
+    if (found) used.add(found.url);
+    return found;
+  };
+
+  const pickMirroring = (): EvidenceRow | null => {
+    if (input.mirroringUrl && isImageEvidenceUrl(input.mirroringUrl) && !used.has(input.mirroringUrl)) {
+      used.add(input.mirroringUrl);
+      return { url: input.mirroringUrl, at: '', context: 'Espelhamento', actionType: 'mirroring', filePath: '' };
+    }
+    return pickBy((e) => e.actionType === 'mirroring' || e.actionType === 'mirror_proof')
+      || pickBy((e) => /espelh|origem|solicita/i.test(`${e.context} ${e.actionType} ${e.filePath}`));
+  };
+
+  const pickDeslocamento = (): EvidenceRow | null => {
+    if (input.deslocUrl && isImageEvidenceUrl(input.deslocUrl) && !used.has(input.deslocUrl)) {
+      used.add(input.deslocUrl);
+      return { url: input.deslocUrl, at: '', context: 'Deslocamento DHL', actionType: 'dhl_deslocamento_print', filePath: '' };
+    }
+    return pickBy((e) => e.actionType === 'dhl_deslocamento_print')
+      || pickBy((e) => /desloc/i.test(`${e.context} ${e.actionType} ${e.filePath}`));
+  };
+
+  const pickOdometerFinal = (): EvidenceRow | null =>
+    pickBy((e) => e.actionType === 'odometer_print' || e.actionType === 'odometer_storage')
+    || pickBy((e) => /\/odometer\//i.test(e.url) || /\/odometer\//i.test(e.filePath))
+    || pickBy((e) => /hod[oô]metr|km final|conclus/i.test(`${e.context} ${e.actionType}`));
+
   const phases: Array<{ phase: DhlReportPhase; at: string | null; pick: () => EvidenceRow | null }> = [
-    {
-      phase: 'origem',
-      at: input.marks.originArrival || null,
-      pick: () =>
-        pickBy((e) => e.actionType === 'mirroring' || e.actionType === 'mirror_proof')
-        || pickBy((e) => /espelh|origem|solicita/i.test(`${e.context} ${e.actionType}`))
-        || (input.mirroringUrl && !used.has(input.mirroringUrl)
-          ? (used.add(input.mirroringUrl), { url: input.mirroringUrl, at: '', context: 'Espelhamento', actionType: 'mirroring' })
-          : null),
-    },
+    { phase: 'origem', at: input.marks.originArrival || null, pick: pickMirroring },
     {
       phase: 'em_viagem',
       at: input.marks.inTransit || null,
-      pick: () =>
-        pickBy((e) => e.actionType === 'dhl_deslocamento_print')
-        || pickBy((e) => /desloc|viagem|percurso/i.test(`${e.context} ${e.actionType}`))
-        || (input.deslocUrl && !used.has(input.deslocUrl)
-          ? (used.add(input.deslocUrl), { url: input.deslocUrl, at: '', context: 'Deslocamento DHL', actionType: 'dhl_deslocamento_print' })
-          : null),
+      pick: () => pickDeslocamento() || nearestEvidence(pool, input.marks.inTransit, used) || pickChronological(),
     },
     {
       phase: 'destino',
       at: input.marks.destinationArrival || null,
       pick: () =>
         pickBy((e) => /destino|chegada/i.test(`${e.context} ${e.actionType}`))
-        || nearestEvidence(pool, input.marks.destinationArrival, used),
+        || nearestEvidence(pool, input.marks.destinationArrival, used)
+        || pickChronological(),
     },
     {
       phase: 'conclusao',
       at: input.marks.completed || null,
-      pick: () =>
-        pickBy((e) => e.actionType === 'odometer_print' || /hod[oô]metr|conclus|terminal/i.test(`${e.context} ${e.actionType}`))
-        || nearestEvidence(pool, input.marks.completed, used),
+      pick: () => pickOdometerFinal() || nearestEvidence(pool, input.marks.completed, used) || pickChronological(),
     },
   ];
 
@@ -333,6 +365,7 @@ export async function collectDhlOccurrenceReportData(
           at: String(log.created_at || details.uploadedAt || ''),
           context: String(details.context || log.action_type || ''),
           actionType: String(log.action_type || ''),
+          filePath: String(details.filePath || ''),
         });
       }
 

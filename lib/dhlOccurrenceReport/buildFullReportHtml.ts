@@ -1,15 +1,16 @@
 import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../dateUtils';
 import { formatEmailThreadHtml } from './formatEmailThreadHtml';
+import { isImageEvidenceUrl } from './photoUtils';
 import { parseEmailThreadInput } from './parseEmailThread';
 import type { DhlOccurrenceReportData } from './types';
 
 const BRAND = {
-  navy: '#0d3b66',
-  wine: '#450a0a',
-  wineDark: '#7f1d1d',
-  light: '#e8eef4',
+  red: '#dc2626',
+  redDark: '#991b1b',
+  black: '#111827',
+  light: '#fef2f2',
   text: '#1a1a1a',
-  muted: '#5a6570',
+  muted: '#6b7280',
 };
 
 function esc(text: string): string {
@@ -43,37 +44,58 @@ function plateLabel(plate: string | null, model: string | null): string {
 function reportStyles(): string {
   return `
     :root {
-      --brand-navy: ${BRAND.navy};
-      --brand-wine: ${BRAND.wine};
-      --brand-wine-dark: ${BRAND.wineDark};
+      --brand-red: ${BRAND.red};
+      --brand-red-dark: ${BRAND.redDark};
+      --brand-black: ${BRAND.black};
       --brand-light: ${BRAND.light};
     }
     @page { size: A4; margin: 14mm 14mm 16mm; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; color: ${BRAND.text}; font-size: 10pt; line-height: 1.45; margin: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: ${BRAND.text}; font-size: 10pt; line-height: 1.45; margin: 0; background: #fff; }
     .cover-title { text-align: center; margin-bottom: 6px; }
-    .cover-title h1 { margin: 0; font-size: 15pt; color: var(--brand-navy); text-transform: uppercase; }
-    .cover-title p { margin: 4px 0 0; color: ${BRAND.muted}; font-size: 10pt; }
-    .header { display: flex; align-items: center; gap: 16px; border-bottom: 3px solid var(--brand-wine); padding-bottom: 12px; margin-bottom: 16px; }
-    .header img { height: 52px; width: auto; }
-    h2 { font-size: 11pt; color: var(--brand-navy); border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin: 16px 0 8px; page-break-after: avoid; }
-    h3 { font-size: 10pt; color: var(--brand-navy); margin: 12px 0 6px; }
-    table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 9pt; page-break-inside: avoid; }
-    th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; vertical-align: top; }
-    th { background: var(--brand-light); color: var(--brand-navy); font-weight: 700; }
-    .meta td:first-child { font-weight: 700; width: 32%; background: #f8fafc; }
-    .summary, .quote { background: #f8fafc; border-left: 4px solid var(--brand-wine); padding: 10px 12px; margin: 8px 0; }
-    .quote { font-style: italic; }
-    .photos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .photo-card { border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; page-break-inside: avoid; }
-    .photo-card img { width: 100%; max-height: 170px; object-fit: contain; border-radius: 4px; }
-    .photo-missing { min-height: 64px; display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: ${BRAND.muted}; font-size: 8.5pt; text-align: center; padding: 8px; }
+    .cover-title h1 { margin: 0; font-size: 15pt; color: #fff; text-transform: uppercase; letter-spacing: 0.03em; }
+    .cover-title p { margin: 4px 0 0; color: #fecaca; font-size: 10pt; }
+    .header {
+      display: flex; align-items: center; gap: 16px;
+      background: linear-gradient(135deg, ${BRAND.red} 0%, ${BRAND.redDark} 52%, ${BRAND.black} 100%);
+      border-bottom: 3px solid ${BRAND.black};
+      padding: 14px 16px; margin: -0px -0px 16px; border-radius: 0 0 8px 8px;
+    }
+    .header img { height: 52px; width: auto; max-width: 180px; object-fit: contain; background: transparent; }
+    h2 {
+      font-size: 11pt; color: var(--brand-red-dark);
+      border-bottom: 2px solid var(--brand-red);
+      padding-bottom: 4px; margin: 16px 0 8px;
+      page-break-after: avoid; break-after: avoid-page;
+    }
+    h3 { font-size: 10pt; color: var(--brand-black); margin: 12px 0 6px; page-break-after: avoid; break-after: avoid-page; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 9pt; page-break-inside: avoid; break-inside: avoid-page; }
+    th, td { border: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
+    th { background: linear-gradient(180deg, #fee2e2 0%, #fecaca 100%); color: var(--brand-black); font-weight: 700; }
+    .meta td:first-child { font-weight: 700; width: 32%; background: #fafafa; }
+    .summary, .quote {
+      background: linear-gradient(90deg, #fef2f2 0%, #fff 100%);
+      border-left: 4px solid var(--brand-red);
+      padding: 10px 12px; margin: 8px 0;
+      page-break-inside: avoid; break-inside: avoid-page;
+    }
+    .quote { font-style: normal; }
+    .section-root-cause { page-break-inside: avoid; break-inside: avoid-page; }
+    .photos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; page-break-inside: avoid; }
+    .photo-card {
+      border: 1px solid #fca5a5; border-radius: 6px; padding: 8px;
+      page-break-inside: avoid; break-inside: avoid-page;
+      background: linear-gradient(180deg, #fff 0%, #fef2f2 100%);
+    }
+    .photo-card h4 { color: var(--brand-red-dark) !important; }
+    .photo-card img { width: 100%; max-height: 200px; object-fit: contain; border-radius: 4px; background: #fff; }
+    .photo-missing { min-height: 64px; display: flex; align-items: center; justify-content: center; background: #f3f4f6; color: ${BRAND.muted}; font-size: 8.5pt; text-align: center; padding: 8px; border-radius: 4px; }
     .timeline td:first-child { width: 28%; font-weight: 600; }
-    .cronograma { font-family: ui-monospace, monospace; font-size: 8.5pt; background: #f8fafc; padding: 10px; border-radius: 6px; white-space: pre-line; }
-    .signature { margin-top: 20px; border-top: 1px solid #334155; padding-top: 8px; }
-    .visto { font-size: 13pt; font-weight: 700; color: var(--brand-wine-dark); letter-spacing: 0.08em; }
+    .cronograma { font-family: ui-monospace, monospace; font-size: 8.5pt; background: #fef2f2; padding: 10px; border-radius: 6px; white-space: pre-line; border-left: 3px solid var(--brand-red); }
+    .signature { margin-top: 20px; border-top: 2px solid var(--brand-black); padding-top: 8px; }
+    .visto { font-size: 13pt; font-weight: 700; color: var(--brand-red-dark); letter-spacing: 0.08em; }
     .footer { margin-top: 16px; font-size: 8.5pt; color: ${BRAND.muted}; text-align: center; }
-    .no-print { margin-top: 10px; padding: 8px; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 6px; font-size: 8.5pt; }
-    @media print { .no-print { display: none !important; } }
+    .no-print { margin-top: 10px; padding: 8px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; font-size: 8.5pt; }
+    @media print { .no-print { display: none !important; } .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; } th { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
     ul.compact { margin: 6px 0 6px 18px; padding: 0; }
     ul.compact li { margin-bottom: 4px; }
   `;
@@ -100,10 +122,7 @@ export function buildFullOccurrenceReportHtml(
   data: DhlOccurrenceReportData,
   options?: { publicBaseUrl?: string; logoDataUri?: string },
 ): string {
-  const base =
-    String(options?.publicBaseUrl || '').trim().replace(/\/$/, '')
-    || 'https://sistema.grupotmseg.com.br';
-  const logoSrc = String(options?.logoDataUri || '').trim() || `${base}/logo.png`;
+  const logoSrc = String(options?.logoDataUri || '').trim();
   const generatedLabel = formatDateTimeBR(data.generatedAt);
   const emissionDate = formatDateBR(data.generatedAt);
   const provider = data.provider || 'parceiro operacional';
@@ -119,10 +138,10 @@ export function buildFullOccurrenceReportHtml(
   const photoBlocks = data.phasePhotos
     .map((p) => {
       const when = p.at ? formatTimeBR(p.at) : '—';
-      const img = p.url
-        ? `<img src="${p.url}" alt="${esc(p.label)}" />`
+      const img = p.url && isImageEvidenceUrl(p.url)
+        ? `<img src="${p.url}" alt="${esc(p.label)}" crossorigin="anonymous" />`
         : `<div class="photo-missing">Evidência não registrada no sistema para esta etapa.</div>`;
-      return `<div class="photo-card"><h4 style="margin:0 0 6px;font-size:9pt;color:#0d3b66">${esc(p.label)} — ${when}</h4>${img}</div>`;
+      return `<div class="photo-card"><h4 style="margin:0 0 6px;font-size:9pt">${esc(p.label)} — ${when}</h4>${img}</div>`;
     })
     .join('');
 
@@ -160,7 +179,7 @@ export function buildFullOccurrenceReportHtml(
 </head>
 <body>
   <header class="header">
-    <img src="${logoSrc}" alt="Grupo TM SEG" />
+    ${logoSrc ? `<img src="${logoSrc}" alt="Grupo TM SEG" />` : '<div style="font-size:18pt;font-weight:700;color:#fff">GRUPO TM SEG</div>'}
     <div>
       <div class="cover-title" style="text-align:left">
         <h1>Plano de Ação e Justificativa de Ocorrência</h1>
@@ -241,23 +260,25 @@ export function buildFullOccurrenceReportHtml(
 
   <h2>4. Justificativa do atraso e análise de causa raiz</h2>
   <h3>4.1 Síntese executiva</h3>
-  <p>O atraso de <strong>${delayHuman}</strong> na chegada à origem da S.E. ${esc(data.seNumber)} não decorreu de falha no aceite ou no registro da missão pela TM SEG. A OS foi aberta em <strong>${missionCreated ? `${formatDateBR(missionCreated)} às ${formatTimeBR(missionCreated)}` : '—'}</strong>. A ocorrência está associada à execução do parceiro <strong>${esc(provider)}</strong>.</p>
+  <p>O atraso de <strong>${delayHuman}</strong> na chegada à origem da S.E. ${esc(data.seNumber)} não decorreu de falha no aceite ou no registro da missão pela TM SEG. A OS foi aberta em <strong>${missionCreated ? `${formatDateBR(missionCreated)} às ${formatTimeBR(missionCreated)}` : '—'}</strong>. A ocorrência está associada a um descompasso pontual na execução operacional do parceiro <strong>${esc(provider)}</strong>, já acionado para alinhamento e melhoria contínua.</p>
 
   <h3>4.2 Versão do parceiro</h3>
-  <p>O fornecedor alega necessidade de <strong>troca de viatura (VTR) no meio do percurso</strong>, sem conclusão satisfatória dos motivos da indisponibilidade da viatura originalmente designada.</p>
+  <p>O fornecedor informou necessidade de <strong>troca de viatura (VTR) no meio do percurso</strong>. A TM SEG segue apurando os detalhes operacionais para consolidar o entendimento completo dos fatos, com foco em prevenção de reincidência.</p>
 
+  <div class="section-root-cause">
   <h3>4.3 Conclusão da apuração TM SEG (causa raiz)</h3>
-  <div class="quote"><strong>Falha no planejamento e na gestão de capacidade logística do parceiro ${esc(provider)}</strong>, com alocação de viatura ainda vinculada a operação anterior sem margem de segurança temporal, obrigando remanejamento e troca de VTR em campo.</div>
+  <div class="quote"><strong>Identificamos um descompasso no planejamento e na gestão de capacidade logística do parceiro ${esc(provider)}</strong>, com alocação de viatura ainda vinculada a operação anterior sem margem de segurança temporal, o que exigiu remanejamento e troca de VTR em campo. A TM SEG reforça junto ao parceiro o compromisso com a melhoria dos processos para que situações semelhantes não se repitam, preservando o padrão de qualidade exigido pela operação DHL.</div>
+  </div>
 
   <h3>4.4 Análise complementar — método dos 5 Porquês</h3>
   <table>
     <thead><tr><th>Nível</th><th>Pergunta</th><th>Resposta</th></tr></thead>
     <tbody>
       <tr><td>1</td><td>Por que houve atraso na origem?</td><td>A viatura chegou à origem somente às ${formatTimeBR(originArrival)} (registro sistêmico).</td></tr>
-      <tr><td>2</td><td>Por que a viatura não chegou no horário programado?</td><td>Foi necessário trocar a VTR durante o deslocamento.</td></tr>
-      <tr><td>3</td><td>Por que foi necessário trocar a VTR?</td><td>A viatura designada não estava disponível a tempo para assumir a missão.</td></tr>
-      <tr><td>4</td><td>Por que a viatura não estava disponível?</td><td>Estava alocada em outra operação sem desalocação com antecedência suficiente.</td></tr>
-      <tr><td>5</td><td>Por que não houve substituição preventiva?</td><td>O parceiro não acionou fluxo de backup com antecedência; a TM SEG foi informada tardiamente.</td></tr>
+      <tr><td>2</td><td>Por que a viatura não chegou no horário programado?</td><td>Foi necessário reorganizar a VTR durante o deslocamento.</td></tr>
+      <tr><td>3</td><td>Por que foi necessário reorganizar a VTR?</td><td>A viatura designada não estava disponível a tempo para assumir a missão.</td></tr>
+      <tr><td>4</td><td>Por que a viatura não estava disponível?</td><td>Havia sobreposição com outra operação, sem desalocação com antecedência suficiente.</td></tr>
+      <tr><td>5</td><td>Por que não houve substituição preventiva?</td><td>O fluxo de backup não foi acionado com a antecedência necessária; a TM SEG foi informada em momento posterior ao ideal.</td></tr>
     </tbody>
   </table>
 
@@ -268,7 +289,7 @@ export function buildFullOccurrenceReportHtml(
       <tr><td>C1</td><td>Comunicação imediata à DHL assim que identificada a necessidade de troca de viatura</td><td>Concluída</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
       <tr><td>C2</td><td>Orientação da equipe para correção de rota (destino → origem)</td><td>Concluída</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
       <tr><td>C3</td><td>Acompanhamento operacional contínuo até a conclusão da missão</td><td>Concluída</td><td>${formatDateBR(completed)}</td></tr>
-      <tr><td>C4</td><td>Abertura de apuração formal junto ao parceiro ${esc(provider)}</td><td>Concluída</td><td>${emissionDate}</td></tr>
+      <tr><td>C4</td><td>Alinhamento formal e apuração junto ao parceiro ${esc(provider)}, com plano de melhoria</td><td>Concluída</td><td>${emissionDate}</td></tr>
       <tr><td>C5</td><td>Retorno formal à DHL com relato estruturado dos fatos</td><td>Concluída</td><td>${emissionDate}</td></tr>
     </tbody>
   </table>
@@ -278,9 +299,9 @@ export function buildFullOccurrenceReportHtml(
   <table>
     <thead><tr><th>ID</th><th>Ação</th><th>Responsável</th><th>Prazo</th><th>Indicador</th></tr></thead>
     <tbody>
-      <tr><td>AC-01</td><td>Concluir apuração documentada com ${esc(provider)} e compromisso de não reincidência</td><td>Coordenação Operacional TM SEG</td><td>17/07/2026</td><td>Termo arquivado</td></tr>
-      <tr><td>AC-02</td><td>Advertência formal e registro no scorecard de fornecedores</td><td>Gestão de Fornecedores TM SEG</td><td>14/07/2026</td><td>Registro no sistema</td></tr>
-      <tr><td>AC-03</td><td>Suspender alocação em missões críticas DHL/Foxconn até conclusão das ações</td><td>Coordenação Operacional TM SEG</td><td>Imediato</td><td>Sem novas missões críticas</td></tr>
+      <tr><td>AC-01</td><td>Concluir apuração documentada com ${esc(provider)} e plano de melhoria para evitar reincidência</td><td>Coordenação Operacional TM SEG</td><td>17/07/2026</td><td>Termo arquivado</td></tr>
+      <tr><td>AC-02</td><td>Registro formal no scorecard de fornecedores e reforço de SLA</td><td>Gestão de Fornecedores TM SEG</td><td>14/07/2026</td><td>Registro no sistema</td></tr>
+      <tr><td>AC-03</td><td>Revisão temporária de alocação em missões críticas DHL/Foxconn até conclusão das ações</td><td>Coordenação Operacional TM SEG</td><td>Imediato</td><td>Plano de capacidade validado</td></tr>
       <tr><td>AC-04</td><td>Plano de capacidade diário do parceiro (VTRs × missões) até D-1 às 18:00</td><td>${esc(provider)} / TM SEG</td><td>14/07/2026</td><td>Planilha conferida</td></tr>
       <tr><td>AC-05</td><td>Reunião de alinhamento operacional (SLA, janelas, substituição)</td><td>Coordenação Operacional TM SEG</td><td>16/07/2026</td><td>Ata assinada</td></tr>
     </tbody>
@@ -324,7 +345,7 @@ export function buildFullOccurrenceReportHtml(
   <h2>8. Compromisso da TM SEG</h2>
   <ul class="compact">
     <li>Transparência total na comunicação de ocorrências e planos de ação.</li>
-    <li>Responsabilização dos parceiros que não cumprirem os SLAs acordados.</li>
+    <li>Trabalho conjunto com parceiros para elevar o padrão operacional e cumprir os SLAs acordados.</li>
     <li>Melhoria contínua dos processos de monitoramento, substituição e prevenção.</li>
     <li>Acompanhamento ativo com relatórios periódicos à DHL durante o período de estabilização.</li>
   </ul>

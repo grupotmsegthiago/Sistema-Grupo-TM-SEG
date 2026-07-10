@@ -95,6 +95,24 @@ test('HTML completo inclui seções 1 a 10 do modelo DHL', () => {
   assert.match(html, /Indicadores de acompanhamento/i);
   assert.match(html, /10\. Aprovação/i);
   assert.match(html, /PA-DHL-183013/);
+  assert.match(html, /linear-gradient/i);
+  assert.match(html, /section-root-cause/i);
+});
+
+test('HTML inclui logo embutido e label KM final na conclusão', () => {
+  const html = buildOccurrenceReportHtml(
+    {
+      ...baseData,
+      phasePhotos: baseData.phasePhotos.map((p) =>
+        p.phase === 'conclusao'
+          ? { ...p, url: 'https://example.com/odometer/final.png', label: 'Conclusão da OS — KM final' }
+          : p,
+      ),
+    },
+    { logoDataUri: 'data:image/png;base64,BBBB' },
+  );
+  assert.match(html, /data:image\/png;base64,BBBB/);
+  assert.match(html, /KM final/i);
 });
 
 test('parser de e-mail remove ruído MIME e extrai mensagens Outlook', () => {

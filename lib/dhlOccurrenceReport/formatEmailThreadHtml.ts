@@ -39,23 +39,23 @@ export function formatEmailThreadHtml(messages: EmailThreadMessage[]): string {
   <style>
     .email-thread { margin: 12px 0; }
     .email-card {
-      border: 1px solid #cbd5e1;
-      border-left: 4px solid #0d3b66;
+      border: 1px solid #fca5a5;
+      border-left: 4px solid #dc2626;
       border-radius: 8px;
       padding: 12px 14px;
       margin-bottom: 12px;
-      background: #fff;
+      background: linear-gradient(180deg, #fff 0%, #fef2f2 100%);
       page-break-inside: avoid;
     }
     .email-card-header { display: flex; gap: 10px; margin-bottom: 8px; }
     .email-index {
       display: inline-flex; align-items: center; justify-content: center;
       min-width: 22px; height: 22px; border-radius: 999px;
-      background: #e8eef4; color: #0d3b66; font-size: 9pt; font-weight: 700;
+      background: #fee2e2; color: #991b1b; font-size: 9pt; font-weight: 700;
     }
     .email-meta { font-size: 9pt; color: #334155; line-height: 1.45; }
-    .email-meta .lbl { font-weight: 700; color: #0d3b66; }
-    .email-subject { font-size: 9.5pt; color: #0d3b66; margin: 0 0 8px; }
+    .email-meta .lbl { font-weight: 700; color: #991b1b; }
+    .email-subject { font-size: 9.5pt; color: #111827; margin: 0 0 8px; }
     .email-body { font-size: 9.5pt; color: #1a1a1a; line-height: 1.5; white-space: normal; }
   </style>
   <div class="email-thread">${cards}</div>`;
