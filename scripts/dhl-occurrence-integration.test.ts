@@ -51,7 +51,7 @@ test('handler retorna 401 JSON sem token (simulação local)', async () => {
 
 test('handler preview carrega bundle CJS após auth, sem import estático de lib', () => {
   const handler = fs.readFileSync('api/dhl/occurrence-report.ts', 'utf8');
-  assert.match(handler, /occurrence-report-html\.cjs/);
+  assert.match(handler, /lib\/dhlOccurrenceReport\/bundles\/occurrence-report-html\.cjs/);
   assert.doesNotMatch(handler, /from ['"].*lib\/dhlOccurrenceReport\/generateReportHtml['"]/);
   const htmlMod = fs.readFileSync('lib/dhlOccurrenceReport/generateReportHtml.ts', 'utf8');
   assert.doesNotMatch(htmlMod, /from ['"]jspdf['"]/);
@@ -59,6 +59,7 @@ test('handler preview carrega bundle CJS após auth, sem import estático de lib
 
 test('build-server gera bundles CJS do relatório DHL', () => {
   const build = fs.readFileSync('build-server.mjs', 'utf8');
+  assert.match(build, /dhlBundleDir/);
   assert.match(build, /occurrence-report-html\.cjs/);
   assert.match(build, /occurrence-report-pdf\.cjs/);
 });

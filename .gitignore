@@ -14,6 +14,7 @@ dist-ssr
 client/public/build-meta.json
 api/dhl/occurrence-report-html.cjs
 api/dhl/occurrence-report-pdf.cjs
+lib/dhlOccurrenceReport/bundles/
 *.local
 .vscode/*
 !.vscode/extensions.json
