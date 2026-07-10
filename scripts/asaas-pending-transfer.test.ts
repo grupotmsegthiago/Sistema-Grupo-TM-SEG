@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   isPendingTransferInMemory,
   rememberPendingTransferInMemory,
-} from '../lib/services/asaasPendingTransferService.ts';
+} from '../lib/asaasPendingTransferMemory.ts';
 
 test('rememberPendingTransferInMemory reconhece ID por 20 minutos', () => {
   rememberPendingTransferInMemory('tr_abc123');

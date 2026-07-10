@@ -1,47 +1,17 @@
 /**
- * Registro de transferências Asaas aguardando aprovação via webhook.
- * Memória (mesma instância) + system_logs (entre funções Vercel).
+ * Registro de transferências pendentes — usado apenas em rotas pesadas (transfer-pix).
+ * O webhook NÃO importa este módulo (evita FUNCTION_INVOCATION_FAILED na Vercel).
  */
 
-import { createSupabaseAdminClient } from '../supabaseAdmin.js';
+import {
+  isPendingTransferInMemory,
+  rememberPendingTransferInMemory,
+} from '../asaasPendingTransferMemory.js';
 
-const MEMORY_TTL_MS = 20 * 60 * 1000;
 const ACTION_TYPE = 'asaas_pending_transfer';
+const MEMORY_TTL_MS = 20 * 60 * 1000;
 
-type GlobalPending = Map<string, number>;
-
-function memoryStore(): GlobalPending {
-  const g = globalThis as typeof globalThis & { __asaasPendingTransfers?: GlobalPending };
-  if (!g.__asaasPendingTransfers) g.__asaasPendingTransfers = new Map();
-  return g.__asaasPendingTransfers;
-}
-
-function pruneMemory(): void {
-  const now = Date.now();
-  for (const [id, expiresAt] of memoryStore()) {
-    if (expiresAt <= now) memoryStore().delete(id);
-  }
-}
-
-export function rememberPendingTransferInMemory(transferId: string): void {
-  const id = String(transferId || '').trim();
-  if (!id) return;
-  pruneMemory();
-  memoryStore().set(id, Date.now() + MEMORY_TTL_MS);
-}
-
-export function isPendingTransferInMemory(transferId: string): boolean {
-  const id = String(transferId || '').trim();
-  if (!id) return false;
-  pruneMemory();
-  const expiresAt = memoryStore().get(id);
-  if (!expiresAt) return false;
-  if (expiresAt <= Date.now()) {
-    memoryStore().delete(id);
-    return false;
-  }
-  return true;
-}
+export { isPendingTransferInMemory, rememberPendingTransferInMemory };
 
 export async function registerAsaasPendingTransfer(params: {
   transferId: string;
@@ -56,10 +26,11 @@ export async function registerAsaasPendingTransfer(params: {
   rememberPendingTransferInMemory(transferId);
 
   try {
+    const { createSupabaseAdminClient } = await import('../supabaseAdmin.js');
     const sb = createSupabaseAdminClient();
     if (!sb) return;
 
-    await sb.from('system_logs').insert({
+    const { error } = await sb.from('system_logs').insert({
       user_name: 'Sistema',
       action_type: ACTION_TYPE,
       entity: 'AsaasTransfer',
@@ -72,6 +43,10 @@ export async function registerAsaasPendingTransfer(params: {
         registeredAt: new Date().toISOString(),
       }),
     });
+
+    if (error) {
+      console.warn('[asaasPendingTransfer] insert falhou:', error.message);
+    }
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
     console.warn('[asaasPendingTransfer] falha ao registrar:', message);
@@ -85,6 +60,7 @@ export async function isRegisteredAsaasPendingTransfer(transferId: string): Prom
   if (isPendingTransferInMemory(id)) return true;
 
   try {
+    const { createSupabaseAdminClient } = await import('../supabaseAdmin.js');
     const sb = createSupabaseAdminClient();
     if (!sb) return false;
 
