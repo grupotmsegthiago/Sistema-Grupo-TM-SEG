@@ -25,6 +25,7 @@ import { formatProviderName } from '../lib/utils';
 import { copyTextAsync } from '../lib/clipboard';
 import { buildAuditSummaryData, type AuditSummaryData } from '../lib/auditSummaryBuilder';
 import AuditSummaryPanel from './AuditSummaryPanel';
+import DhlOccurrenceReportModal from './DhlOccurrenceReportModal';
 import { formatDateTimeBR, formatNowDateTimeBR, formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import html2canvas from 'html2canvas';
@@ -419,6 +420,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [auditSummaryEditText, setAuditSummaryEditText] = useState('');
   const [auditSummaryView, setAuditSummaryView] = useState<'visual' | 'text'>('visual');
   const [auditSummaryLoading, setAuditSummaryLoading] = useState(false);
+  const [dhlOccurrenceReportOpen, setDhlOccurrenceReportOpen] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<{
     clientSuggestion: { tableId: string; tableName: string; reason: string } | null;
     providerSuggestion: { tableId: string; tableName: string; reason: string } | null;
@@ -513,6 +515,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isBarbaraFinance = useMemo(() => {
     return userNameLower.includes('barbara') || userNameLower.includes('bárbara');
   }, [userNameLower]);
+  const isDiretoriaRole = userRoleLower === 'diretoria';
+  const dhlSeNumber = String((mission as any)?.dhl_se_number || '').trim();
+  const showDhlOccurrenceReportBtn =
+    isDiretoriaRole
+    && !!mission
+    && isDhlSupplyClient(mission.originalClientName || mission.client)
+    && !!dhlSeNumber;
   const canEditVerifiedProviderTotal = isBarbaraFinance
     || ['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower);
   const isControllerRole = userRoleLower === 'controller';
@@ -3454,6 +3463,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               {auditSummaryLoading ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
               Resumo
             </button>
+            {showDhlOccurrenceReportBtn && (
+              <button
+                type="button"
+                data-testid="button-dhl-occurrence-report-audit"
+                onClick={() => setDhlOccurrenceReportOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-md active:scale-95 bg-[#450a0a] text-white hover:bg-[#7f1d1d] border border-red-900/40"
+                title="Gerar Plano de Ação DHL em PDF (somente diretoria)"
+              >
+                <FileText size={12} />
+                Plano DHL
+              </button>
+            )}
             <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors"><X size={24}/></button>
           </div>
           </div>
@@ -5730,6 +5751,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 )}
                                 <div className="flex flex-col sm:flex-row gap-3">
+                                {showDhlOccurrenceReportBtn && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setDhlOccurrenceReportOpen(true)}
+                                    className="px-5 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 bg-[#450a0a] text-white hover:bg-[#7f1d1d] border border-red-900/30"
+                                    data-testid="button-dhl-occurrence-report-footer"
+                                  >
+                                    <FileText size={16} />
+                                    Plano de Ação DHL
+                                  </button>
+                                )}
                                 <button onClick={() => handleUpdate(false)} disabled={isUpdating || (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked} className={`px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 ${((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={isEffectivelyLocked ? 'Faturamento travado — destrave para editar' : ''} data-testid="button-save-adjustments">
                                     {isUpdating ? <Loader2 size={16} className="animate-spin" /> : (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? <Lock size={16} /> : <Save size={16} />} {(currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado (Diretoria)' : 'Salvar Ajustes'}
                                 </button>
@@ -5783,6 +5815,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         onClose={() => { setShowTollConfirmDialog(false); setTollConfirmAutoOpened(true); }}
         onConfirm={applyTollConfirmation}
       />
+      {mission && dhlOccurrenceReportOpen && (
+        <DhlOccurrenceReportModal
+          mission={{ ...mission, dhl_se_number: dhlSeNumber }}
+          isOpen={dhlOccurrenceReportOpen}
+          onClose={() => setDhlOccurrenceReportOpen(false)}
+        />
+      )}
     </div>
   );
 };
