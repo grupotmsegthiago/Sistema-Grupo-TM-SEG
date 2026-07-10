@@ -1313,10 +1313,11 @@ export function registerDhlIntakeRoutes(
       // Reaproveita intake pendente da mesma OS+fornecedor (dedup) — evita spam e múltiplos tokens válidos
       let token = '';
       let intake: any = null;
+      const providerIdKey = provider.id != null ? String(provider.id) : null;
       const { data: existingIntake } = await sb.from('dhl_supplier_intakes')
         .select('*')
         .eq('mission_id', mission.id)
-        .eq('provider_id', provider.id)
+        .eq('provider_id', providerIdKey)
         .eq('status', 'pendente')
         .order('created_at', { ascending: false })
         .limit(1)
@@ -1343,7 +1344,7 @@ export function registerDhlIntakeRoutes(
         const { data: inserted, error: iErr } = await sb.from('dhl_supplier_intakes').insert([{
           token,
           mission_id: mission.id,
-          provider_id: provider.id != null ? String(provider.id) : null,
+          provider_id: providerIdKey,
           provider_name: provider.trading_name || provider.name,
           status: 'pendente',
           sent_to_email: providerEmail || null,
@@ -1561,12 +1562,11 @@ export function registerDhlIntakeRoutes(
   app.post('/api/dhl/intake/:id/resume-reminders', requireAuth, (req, res) => togglePausedReminders(req, res, false));
 
   // ──────────────────────────────────────────────────────────────
-  // GET /api/dhl/intake/by-mission/:missionId — lista intakes (auth)
-  // Mostra no painel da OS os links ativos, preenchidos e cancelados.
+  // GET /api/dhl/intake/by-mission — lista intakes (auth)
+  // Suporta ?missionId= (frontend) e /:missionId (legado).
   // ──────────────────────────────────────────────────────────────
-  app.get('/api/dhl/intake/by-mission/:missionId', requireAuth, async (req: Request, res: Response) => {
+  const listIntakesByMission = async (req: Request, res: Response, missionId: string) => {
     try {
-      const { missionId } = req.params;
       if (!missionId) return res.status(400).json({ error: 'missionId é obrigatório' });
       const sb = getSb();
       const canSeeSnapshots = await userCanSeeSnapshots(req);
@@ -1584,7 +1584,6 @@ export function registerDhlIntakeRoutes(
       const intakeList = (data || []) as any[];
       const intakeIds = intakeList.map(it => it.id).filter(Boolean);
 
-      // Busca histórico de reenvios para todos os intakes desta OS.
       let resendsByIntake: Map<string, any[]> = new Map();
       if (intakeIds.length > 0) {
         const { data: resends, error: rErr } = await sb.from('dhl_supplier_intake_resends')
@@ -1592,7 +1591,6 @@ export function registerDhlIntakeRoutes(
           .in('intake_id', intakeIds)
           .order('sent_at', { ascending: false });
         if (rErr) {
-          // Tabela ausente (migração não aplicada): degrade gracioso, segue sem histórico.
           const code = (rErr as any)?.code || '';
           const msg = String((rErr as any)?.message || '');
           if (!(code === 'PGRST205' || code === '42P01' || /could not find the table|schema cache|does not exist/i.test(msg))) {
@@ -1626,6 +1624,16 @@ export function registerDhlIntakeRoutes(
       console.error('[DHL Intake] by-mission exception:', e);
       return res.status(500).json({ error: e?.message || 'Erro interno' });
     }
+  };
+
+  app.get('/api/dhl/intake/by-mission', requireAuth, async (req: Request, res: Response) => {
+    const missionId = String(req.query?.missionId || req.query?.id || '').trim();
+    return listIntakesByMission(req, res, missionId);
+  });
+
+  app.get('/api/dhl/intake/by-mission/:missionId', requireAuth, async (req: Request, res: Response) => {
+    const missionId = String(req.params.missionId || '').trim();
+    return listIntakesByMission(req, res, missionId);
   });
 
   // ──────────────────────────────────────────────────────────────

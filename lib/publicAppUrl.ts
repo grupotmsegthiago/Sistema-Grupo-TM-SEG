@@ -1,5 +1,5 @@
-/** URL pública estável do sistema (links WhatsApp, e-mail, intake fornecedor). */
-const CANONICAL_PUBLIC_ORIGIN = 'https://sistema.grupotmseg.com.br';
+/** URL pública canônica do sistema (links WhatsApp, e-mail, intake fornecedor). */
+export const CANONICAL_PUBLIC_ORIGIN = 'https://sistema.grupotmseg.com.br';
 
 /** Subdomínio legado sem registro DNS — normaliza para o domínio canônico. */
 const LEGACY_BAD_HOST = 'app.grupotmseg.com.br';
