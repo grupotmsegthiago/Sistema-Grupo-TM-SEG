@@ -122,6 +122,7 @@ export default async function handler(req: any, res: any) {
 
     const directorName = await resolveDirectorName(token);
     const factsSummary = typeof body.factsSummary === 'string' ? body.factsSummary : undefined;
+    const reportParecer = typeof body.reportParecer === 'string' ? body.reportParecer : undefined;
     const emailLink = typeof body.emailLink === 'string' ? body.emailLink : undefined;
     const emailAttachmentText =
       typeof body.emailAttachmentText === 'string' ? body.emailAttachmentText : undefined;
@@ -129,6 +130,7 @@ export default async function handler(req: any, res: any) {
     const input = {
       missionId,
       factsSummary,
+      reportParecer,
       emailLink,
       emailAttachmentText,
       directorName,

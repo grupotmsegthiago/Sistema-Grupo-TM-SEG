@@ -96,9 +96,40 @@ function reportStyles(): string {
     .footer { margin-top: 16px; font-size: 8.5pt; color: ${BRAND.muted}; text-align: center; }
     .no-print { margin-top: 10px; padding: 8px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; font-size: 8.5pt; }
     @media print { .no-print { display: none !important; } .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; } th { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+    .parecer-diretoria {
+      background: linear-gradient(135deg, #fef2f2 0%, #fff 55%, #f9fafb 100%);
+      border: 2px solid var(--brand-red);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin: 12px 0 16px;
+      page-break-inside: avoid; break-inside: avoid-page;
+    }
+    .parecer-diretoria .parecer-meta { font-size: 8.5pt; color: ${BRAND.muted}; margin-bottom: 8px; }
+    .parecer-diretoria .parecer-body { font-size: 10pt; line-height: 1.55; white-space: pre-line; }
     ul.compact { margin: 6px 0 6px 18px; padding: 0; }
     ul.compact li { margin-bottom: 4px; }
   `;
+}
+
+function buildParecerSection(data: DhlOccurrenceReportData, emissionDate: string): string {
+  const parecer = data.reportParecer?.trim();
+  if (!parecer) return '';
+
+  return `
+  <h2>8.1 Parecer da Diretoria — conclusão e linha de raciocínio</h2>
+  <div class="parecer-diretoria section-root-cause">
+    <p class="parecer-meta"><strong>${esc(data.directorName)}</strong> · ${emissionDate} · Registro formal independente de e-mails e evidências anexas</p>
+    <div class="parecer-body">${esc(parecer).replace(/\n/g, '<br/>')}</div>
+  </div>`;
+}
+
+function buildRootCauseBlock(data: DhlOccurrenceReportData, provider: string): string {
+  const parecer = data.reportParecer?.trim();
+  if (parecer) {
+    return `<div class="quote">A conclusão da apuração e a linha de raciocínio adotada pela TM SEG estão consolidadas no <strong>Parecer da Diretoria (Seção 8.1)</strong>, que prevalece sobre os textos automáticos deste documento quando houver necessidade de ajuste ou contextualização específica da ocorrência.</div>`;
+  }
+
+  return `<div class="quote"><strong>Identificamos um descompasso no planejamento e na gestão de capacidade logística do parceiro ${esc(provider)}</strong>, com alocação de viatura ainda vinculada a operação anterior sem margem de segurança temporal, o que exigiu remanejamento e troca de VTR em campo. A TM SEG reforça junto ao parceiro o compromisso com a melhoria dos processos para que situações semelhantes não se repitam, preservando o padrão de qualidade exigido pela operação DHL.</div>`;
 }
 
 function buildEmailSection(data: DhlOccurrenceReportData): string {
@@ -134,6 +165,9 @@ export function buildFullOccurrenceReportHtml(
   const scheduledOrigin = data.scheduledOriginAt;
   const missionCreated = data.missionCreatedAt;
   const scheduledMission = data.scheduledMissionAt;
+
+  const parecerSection = buildParecerSection(data, emissionDate);
+  const rootCauseBlock = buildRootCauseBlock(data, provider);
 
   const photoBlocks = data.phasePhotos
     .map((p) => {
@@ -267,7 +301,7 @@ export function buildFullOccurrenceReportHtml(
 
   <div class="section-root-cause">
   <h3>4.3 Conclusão da apuração TM SEG (causa raiz)</h3>
-  <div class="quote"><strong>Identificamos um descompasso no planejamento e na gestão de capacidade logística do parceiro ${esc(provider)}</strong>, com alocação de viatura ainda vinculada a operação anterior sem margem de segurança temporal, o que exigiu remanejamento e troca de VTR em campo. A TM SEG reforça junto ao parceiro o compromisso com a melhoria dos processos para que situações semelhantes não se repitam, preservando o padrão de qualidade exigido pela operação DHL.</div>
+  ${rootCauseBlock}
   </div>
 
   <h3>4.4 Análise complementar — método dos 5 Porquês</h3>
@@ -350,6 +384,8 @@ export function buildFullOccurrenceReportHtml(
     <li>Acompanhamento ativo com relatórios periódicos à DHL durante o período de estabilização.</li>
   </ul>
 
+  ${parecerSection}
+
   <h2>9. Anexos e registros de apoio</h2>
   <table>
     <thead><tr><th>Anexo</th><th>Descrição</th></tr></thead>
@@ -359,6 +395,7 @@ export function buildFullOccurrenceReportHtml(
       <tr><td>C</td><td>Evidências fotográficas por etapa (Seção 3.3)</td></tr>
       <tr><td>D</td><td>Histórico de e-mails com DHL (Seção 2.1)</td></tr>
       <tr><td>E</td><td>Registro de contato e apuração com ${esc(provider)}</td></tr>
+      ${data.reportParecer?.trim() ? '<tr><td>F</td><td>Parecer da Diretoria — conclusão e linha de raciocínio (Seção 8.1)</td></tr>' : ''}
     </tbody>
   </table>
 

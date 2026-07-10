@@ -16,6 +16,8 @@ export interface DhlReportOperationalMark {
 export interface DhlOccurrenceReportInput {
   missionId: string;
   factsSummary?: string | null;
+  /** Parecer da diretoria — linha de raciocínio e conclusão (independente de e-mails/evidências). */
+  reportParecer?: string | null;
   emailLink?: string | null;
   emailAttachmentText?: string | null;
   directorName?: string | null;
@@ -38,6 +40,7 @@ export interface DhlOccurrenceReportData {
   phasePhotos: DhlReportPhasePhoto[];
   delayMinutesAtOrigin: number | null;
   factsSummary: string | null;
+  reportParecer: string | null;
   emailLink: string | null;
   emailAttachmentText: string | null;
   directorName: string;

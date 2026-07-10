@@ -102,6 +102,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
   const [factsSummary, setFactsSummary] = useState(() =>
     seNumber === '183013' ? DEFAULT_183013_SUMMARY : '',
   );
+  const [reportParecer, setReportParecer] = useState('');
   const [emailLink, setEmailLink] = useState('');
   const [emailAttachmentText, setEmailAttachmentText] = useState('');
   const [emailFileName, setEmailFileName] = useState<string | null>(null);
@@ -118,6 +119,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
     missionId: mission.id,
     seNumber,
     factsSummary,
+    reportParecer,
     emailLink,
     emailAttachmentText,
   };
@@ -369,6 +371,26 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
                     className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-xs disabled:bg-slate-50"
                   />
                 )}
+              </div>
+
+              <div className="rounded-xl border-2 border-[#dc2626]/30 bg-gradient-to-br from-red-50 via-white to-slate-50 p-4 space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-wider text-[#991b1b] block">
+                  Parecer da Diretoria — conclusão e linha de raciocínio
+                </label>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Registre aqui o parecer oficial que deve orientar a conclusão do relatório.
+                  Este texto é <strong>independente</strong> dos e-mails e evidências — use para corrigir
+                  ou complementar pontos que a IA não captou, mantendo um único contexto para a DHL.
+                </p>
+                <textarea
+                  value={reportParecer}
+                  onChange={(e) => setReportParecer(e.target.value)}
+                  rows={7}
+                  disabled={loading}
+                  placeholder="Ex.: Após apuração, concluímos que o atraso decorreu de... As ações adotadas foram... Comprometemo-nos a..."
+                  className="w-full rounded-xl border border-red-200 px-3 py-2 text-sm text-slate-800 focus:border-[#dc2626] outline-none disabled:bg-slate-50"
+                  data-testid="input-dhl-occurrence-parecer"
+                />
               </div>
 
               {error && (

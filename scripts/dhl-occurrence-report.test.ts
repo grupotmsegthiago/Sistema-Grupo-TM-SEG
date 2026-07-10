@@ -22,6 +22,7 @@ const baseData: DhlOccurrenceReportData = {
   phasePhotos: [],
   delayMinutesAtOrigin: 86,
   factsSummary: null,
+  reportParecer: null,
   emailLink: null,
   emailAttachmentText: null,
   directorName: 'Thiago',
@@ -217,6 +218,24 @@ Boa tarde! Precisamos do plano de ação.`,
   assert.match(html, /2\.1 Referência \/ histórico de e-mails/i);
   assert.match(html, /email-card/i);
   assert.match(html, /plano de ação/i);
+});
+
+test('HTML inclui seção 8.1 quando parecer da diretoria é informado', () => {
+  const parecer =
+    'Após apuração interna, concluímos que o atraso foi pontual e já acionamos o parceiro para plano de melhoria.';
+  const html = buildOccurrenceReportHtml(
+    { ...baseData, reportParecer: parecer },
+    { logoDataUri: 'data:image/png;base64,CCCC' },
+  );
+  assert.match(html, /8\.1 Parecer da Diretoria/i);
+  assert.match(html, /Após apuração interna/i);
+  assert.match(html, /Seção 8\.1/i);
+  assert.match(html, /Anexo[\s\S]*F[\s\S]*Parecer da Diretoria/i);
+});
+
+test('service envia reportParecer no payload', () => {
+  const src = fs.readFileSync('lib/services/dhlOccurrenceReportService.ts', 'utf8');
+  assert.match(src, /reportParecer/);
 });
 
 test('service imprime sem window.open (evita bloqueio de pop-up)', () => {

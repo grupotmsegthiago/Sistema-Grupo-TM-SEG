@@ -8,6 +8,7 @@ export type GenerateDhlOccurrenceReportParams = {
   missionId: string;
   seNumber?: string;
   factsSummary?: string;
+  reportParecer?: string;
   emailLink?: string;
   emailAttachmentText?: string;
 };
@@ -33,6 +34,7 @@ function buildPayload(params: GenerateDhlOccurrenceReportParams, format: 'html' 
     seNumber: params.seNumber,
     format,
     factsSummary: params.factsSummary?.trim() || undefined,
+    reportParecer: params.reportParecer?.trim() || undefined,
     emailLink: params.emailLink?.trim() || undefined,
     emailAttachmentText: params.emailAttachmentText?.trim() || undefined,
   };
