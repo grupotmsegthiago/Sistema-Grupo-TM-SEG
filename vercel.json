@@ -148,6 +148,9 @@
     },
     "api/asaas-transfer-pix.ts": {
       "maxDuration": 60
+    },
+    "api/asaas-transfer-approval.ts": {
+      "maxDuration": 30
     }
   },
   "rewrites": [
@@ -330,6 +333,10 @@
     {
       "source": "/api/asaas/transfer-pix",
       "destination": "/api/asaas-transfer-pix"
+    },
+    {
+      "source": "/api/asaas/transfer-approval",
+      "destination": "/api/asaas-transfer-approval"
     },
     {
       "source": "/api/(.*)",

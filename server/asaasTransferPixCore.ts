@@ -9,6 +9,7 @@ import {
   isValidPixTransferAmount,
   roundMoneyBrl,
 } from '../lib/asaasPixTransfer.js';
+import { formatAsaasTransferError } from '../lib/asaasTransferErrors.js';
 import { invalidateAsaasBalancesCoreCache } from './asaasBalancesCore.js';
 
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
@@ -66,7 +67,7 @@ async function asaasRequest(
         data?.errors?.map((e: any) => e.description).join('; ') ||
         data?.message ||
         `HTTP ${res.status}`;
-      throw new Error(`Asaas: ${errMsg}`);
+      throw new Error(formatAsaasTransferError(errMsg));
     }
 
     return data;

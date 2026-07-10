@@ -11,6 +11,7 @@ import {
   isValidPixTransferAmount,
   roundMoneyBrl,
 } from '../lib/asaasPixTransfer';
+import { formatAsaasTransferError } from '../lib/asaasTransferErrors';
 
 interface Props {
   company: string;
@@ -83,7 +84,7 @@ const AsaasPixTransferModal: React.FC<Props> = ({ company, label, balance, onClo
         err instanceof TimeoutError
           ? 'A solicitação demorou demais. Verifique o extrato Asaas antes de tentar novamente.'
           : err instanceof Error
-            ? err.message
+            ? formatAsaasTransferError(err.message)
             : 'Falha na transferência Pix';
       setError(msg);
     } finally {
