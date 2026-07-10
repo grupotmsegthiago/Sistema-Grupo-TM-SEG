@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { buildOccurrenceNarrative } from '../lib/dhlOccurrenceReport/buildReportHtml';
+import { buildOccurrenceNarrative, buildOccurrenceReportHtml } from '../lib/dhlOccurrenceReport/buildReportHtml';
 import { roleCanGenerateDhlOccurrenceReport } from '../lib/services/dhlOccurrenceReportAccess';
 import type { DhlOccurrenceReportData } from '../lib/dhlOccurrenceReport/types';
 
@@ -76,6 +76,25 @@ test('handler standalone carrega bundle HTML sem jspdf no preview', () => {
   assert.match(handler, /\.\/occurrence-report-html\.cjs/);
   assert.doesNotMatch(handler, /proxyToExpress/);
   assert.doesNotMatch(handler, /server\/dhlOccurrenceReportPdf/);
+});
+
+test('HTML incorpora logo TM SEG em base64 quando informado', () => {
+  const html = buildOccurrenceReportHtml(baseData, {
+    logoDataUri: 'data:image/png;base64,AAAA',
+  });
+  assert.match(html, /data:image\/png;base64,AAAA/);
+  assert.match(html, /--brand-navy: #0d3b66/);
+  assert.match(html, /--brand-wine: #450a0a/);
+  assert.match(html, /8\. Compromisso/);
+  assert.match(html, /Evidências fotográficas/);
+});
+
+test('service imprime sem window.open (evita bloqueio de pop-up)', () => {
+  const src = fs.readFileSync('lib/services/dhlOccurrenceReportService.ts', 'utf8');
+  assert.match(src, /printDhlOccurrenceReportHtml/);
+  assert.match(src, /dhl-occurrence-print-frame/);
+  assert.doesNotMatch(src, /window\.open\('', '_blank'/);
+  assert.match(src, /downloadDhlOccurrenceReportHtml/);
 });
 
 test('service usa parseJsonResponse para evitar erro de JSON inválido', () => {

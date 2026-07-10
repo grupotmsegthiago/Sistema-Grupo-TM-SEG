@@ -3,9 +3,11 @@ import { Eye, ExternalLink, FileText, Link2, Loader2, Paperclip, Printer, X } fr
 import type { Mission } from '../types';
 import {
   downloadDhlOccurrenceReportBlob,
+  downloadDhlOccurrenceReportHtml,
   fetchDhlOccurrenceReportPreview,
   generateDhlOccurrenceReportPdf,
-  openDhlOccurrenceReportPrintPreview,
+  openDhlOccurrenceReportHtmlInNewTab,
+  printDhlOccurrenceReportHtml,
   type DhlReportProgress,
 } from '../lib/services/dhlOccurrenceReportService';
 
@@ -210,13 +212,44 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
 
   const handlePrintPdf = () => {
     if (!previewHtml) {
-      setError('Gere a pré-visualização antes de salvar o PDF com fotos.');
+      setError('Gere a pré-visualização antes de salvar o PDF completo.');
       return;
     }
     try {
-      openDhlOccurrenceReportPrintPreview(previewHtml, `Plano DHL S.E. ${seNumber}`);
+      setError(null);
+      printDhlOccurrenceReportHtml(previewHtml, `Plano DHL S.E. ${seNumber}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível abrir a impressão.');
+      setError(
+        err instanceof Error
+          ? `${err.message} Use "Baixar HTML" e abra o arquivo no navegador.`
+          : 'Não foi possível abrir a impressão.',
+      );
+    }
+  };
+
+  const handleDownloadHtml = () => {
+    if (!previewHtml) {
+      setError('Gere a pré-visualização antes de baixar o relatório.');
+      return;
+    }
+    try {
+      setError(null);
+      downloadDhlOccurrenceReportHtml(previewHtml, `PA-DHL-${seNumber}.html`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível baixar o HTML.');
+    }
+  };
+
+  const handleOpenFullTab = () => {
+    if (!previewHtml) {
+      setError('Gere a pré-visualização antes de abrir o relatório.');
+      return;
+    }
+    try {
+      setError(null);
+      openDhlOccurrenceReportHtmlInNewTab(previewHtml);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível abrir em nova aba.');
     }
   };
 
@@ -349,8 +382,9 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
         ) : (
           <>
             <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-900 shrink-0">
-              Revise o documento abaixo. Para corrigir textos, clique em <strong>Editar textos</strong>.
-              Para PDF com fotos: <strong>Salvar PDF (com fotos)</strong> → Imprimir → Salvar como PDF.
+              Relatório <strong>completo</strong> com cores TM SEG, logo, fotos e todas as seções.
+              Para PDF: <strong>Salvar PDF completo</strong> → na janela de impressão escolha
+              &quot;Salvar como PDF&quot;. O botão &quot;PDF resumido&quot; gera apenas um rascunho sem layout.
             </div>
 
             <div className="flex-1 min-h-[50vh] bg-slate-100 p-2 sm:p-3 overflow-hidden">
@@ -396,13 +430,34 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
                 </button>
                 <button
                   type="button"
+                  onClick={handleOpenFullTab}
+                  disabled={loading || !previewHtml}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[#0d3b66] text-[#0d3b66] text-sm font-bold"
+                  data-testid="button-open-full-dhl-report-tab"
+                >
+                  <ExternalLink size={14} />
+                  Abrir completo
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadHtml}
+                  disabled={loading || !previewHtml}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[#0d3b66] text-[#0d3b66] text-sm font-bold"
+                  data-testid="button-download-html-dhl-report"
+                >
+                  <FileText size={14} />
+                  Baixar HTML
+                </button>
+                <button
+                  type="button"
                   onClick={() => void handleDownloadPdf()}
                   disabled={loading}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[#450a0a] text-[#450a0a] text-sm font-bold"
+                  title="Versão resumida gerada no servidor — sem logo, fotos nem layout completo"
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-400 text-slate-600 text-sm font-semibold"
                   data-testid="button-download-pdf-light-dhl-report"
                 >
                   {loading && loadingMode === 'pdf' ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-                  PDF rápido
+                  PDF resumido
                 </button>
                 <button
                   type="button"
@@ -412,7 +467,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
                   data-testid="button-print-pdf-dhl-report"
                 >
                   <Printer size={16} />
-                  Salvar PDF (com fotos)
+                  Salvar PDF completo
                 </button>
               </div>
             </div>

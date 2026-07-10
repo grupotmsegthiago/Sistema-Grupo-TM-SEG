@@ -134,33 +134,76 @@ export function downloadDhlOccurrenceReportBlob(blob: Blob, filename: string): v
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** Abre pré-visualização em nova aba para Imprimir → Salvar como PDF (com fotos). */
-export function openDhlOccurrenceReportPrintPreview(html: string, title: string): void {
-  const popup = window.open('', '_blank', 'noopener,noreferrer');
-  if (!popup) {
-    throw new Error('Pop-up bloqueado. Permita pop-ups para salvar o PDF com fotos.');
-  }
-  popup.document.open();
-  popup.document.write(html);
-  popup.document.close();
-  popup.document.title = title;
-  popup.focus();
-  window.setTimeout(() => {
-    try {
-      popup.print();
-    } catch {
-      /* usuário pode imprimir manualmente */
-    }
-  }, 600);
+/** Baixa o relatório HTML completo (layout TM SEG, fotos e seções). */
+export function downloadDhlOccurrenceReportHtml(html: string, filename: string): void {
+  const safeName = filename.endsWith('.html') ? filename : `${filename.replace(/\.pdf$/i, '')}.html`;
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = safeName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+const PRINT_FRAME_ID = 'dhl-occurrence-print-frame';
+
+/**
+ * Imprime o HTML completo na mesma página (sem pop-up).
+ * Evita bloqueio do navegador ao salvar PDF com fotos e layout TM SEG.
+ */
+export function printDhlOccurrenceReportHtml(html: string, title?: string): void {
+  const existing = document.getElementById(PRINT_FRAME_ID);
+  if (existing) existing.remove();
+
+  const iframe = document.createElement('iframe');
+  iframe.id = PRINT_FRAME_ID;
+  iframe.setAttribute('title', title || 'Impressão Plano de Ação DHL');
+  iframe.style.cssText =
+    'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none';
+
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
+  if (!doc) {
+    iframe.remove();
+    throw new Error('Não foi possível preparar a impressão do relatório.');
+  }
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  const runPrint = () => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch {
+      /* usuário pode usar Baixar HTML ou imprimir pela pré-visualização */
+    }
+    window.setTimeout(() => iframe.remove(), 3000);
+  };
+
+  window.setTimeout(runPrint, 400);
+}
+
+/** Abre HTML completo em nova aba via navegação (menos bloqueio que window.open vazio). */
 export function openDhlOccurrenceReportHtmlInNewTab(html: string): void {
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
-  const popup = window.open(url, '_blank', 'noopener,noreferrer');
-  if (!popup) {
-    URL.revokeObjectURL(url);
-    throw new Error('Pop-up bloqueado. Permita pop-ups para abrir a pré-visualização.');
-  }
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** @deprecated Use printDhlOccurrenceReportHtml — mantido como alias. */
+export function openDhlOccurrenceReportPrintPreview(html: string, title: string): void {
+  printDhlOccurrenceReportHtml(html, title);
 }

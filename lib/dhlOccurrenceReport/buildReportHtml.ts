@@ -75,12 +75,15 @@ export function buildOccurrenceNarrative(data: DhlOccurrenceReportData): {
   return { factsSummary, emailReference, rootCause, correctiveActions, preventiveActions };
 }
 
-export function buildOccurrenceReportHtml(data: DhlOccurrenceReportData, options?: { publicBaseUrl?: string }): string {
+export function buildOccurrenceReportHtml(
+  data: DhlOccurrenceReportData,
+  options?: { publicBaseUrl?: string; logoDataUri?: string },
+): string {
   const narrative = buildOccurrenceNarrative(data);
   const base =
     String(options?.publicBaseUrl || '').trim().replace(/\/$/, '')
     || (typeof window !== 'undefined' ? window.location.origin : 'https://sistema.grupotmseg.com.br');
-  const logoUrl = `${base}/logo.png`;
+  const logoSrc = String(options?.logoDataUri || '').trim() || `${base}/logo.png`;
   const generatedLabel = formatDateTimeBR(data.generatedAt);
 
   const marksRows = data.marks
@@ -151,7 +154,7 @@ export function buildOccurrenceReportHtml(data: DhlOccurrenceReportData, options
 </head>
 <body>
   <header class="header">
-    <img src="${logoUrl}" alt="Grupo TM SEG" />
+    <img src="${logoSrc}" alt="Grupo TM SEG" />
     <div class="header-text">
       <h1>Plano de Ação e Justificativa de Ocorrência</h1>
       <p>DHL Supply Chain — Operação com S.E. ${data.seNumber} · OS ${data.missionId}</p>
