@@ -1,12 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../dateUtils';
+import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../dateUtils.js';
 import type {
   DhlOccurrenceReportData,
   DhlOccurrenceReportInput,
   DhlReportPhase,
   DhlReportPhasePhoto,
   DhlReportOperationalMark,
-} from './types';
+} from './types.js';
 
 type EvidenceRow = {
   url: string;

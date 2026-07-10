@@ -2,13 +2,13 @@ import { jsPDF } from 'jspdf';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
-import { buildOccurrenceNarrative } from './buildReportHtml';
-import { collectDhlOccurrenceReportData } from './collectReportData';
-import type { DhlOccurrenceReportInput } from './types';
-import { formatDateTimeBR, formatTimeBR } from '../dateUtils';
-import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from '../supabaseAdmin';
+import { buildOccurrenceNarrative } from './buildReportHtml.js';
+import { collectDhlOccurrenceReportData } from './collectReportData.js';
+import type { DhlOccurrenceReportInput } from './types.js';
+import { formatDateTimeBR, formatTimeBR } from '../dateUtils.js';
+import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from '../supabaseAdmin.js';
 
-export { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } from './generateReportHtml';
+export { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } from './generateReportHtml.js';
 
 const BRAND_WINE = '#450a0a';
 const BRAND_NAVY = '#0d3b66';

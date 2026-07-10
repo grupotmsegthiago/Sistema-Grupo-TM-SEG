@@ -1,5 +1,5 @@
-import type { DhlOccurrenceReportData } from './types';
-import { formatDateTimeBR, formatTimeBR } from '../dateUtils';
+import type { DhlOccurrenceReportData } from './types.js';
+import { formatDateTimeBR, formatTimeBR } from '../dateUtils.js';
 
 const BRAND = {
   navy: '#0d3b66',

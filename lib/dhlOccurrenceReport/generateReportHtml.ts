@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
-import { buildOccurrenceReportHtml } from './buildReportHtml';
-import { collectDhlOccurrenceReportData } from './collectReportData';
-import type { DhlOccurrenceReportInput } from './types';
-import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from '../supabaseAdmin';
+import { buildOccurrenceReportHtml } from './buildReportHtml.js';
+import { collectDhlOccurrenceReportData } from './collectReportData.js';
+import type { DhlOccurrenceReportInput } from './types.js';
+import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from '../supabaseAdmin.js';
 
 function getSupabase() {
   return createSupabaseAdminClient() ?? createClient(getSupabaseUrl(), getSupabaseAnonKey());

@@ -1,7 +1,7 @@
 import {
   generateDhlOccurrenceReportHtml,
   dhlOccurrenceReportFilename,
-} from '../../lib/dhlOccurrenceReport/generateReportHtml';
+} from '../../lib/dhlOccurrenceReport/generateReportHtml.js';
 
 const DEFAULT_SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
@@ -159,7 +159,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const pdf = await (
-      await import('../../lib/dhlOccurrenceReport/generateReportOutput')
+      await import('../../lib/dhlOccurrenceReport/generateReportOutput.js')
     ).generateDhlOccurrenceReportPdf(input, { embedPhotos: false });
     if (!pdf) {
       res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });
