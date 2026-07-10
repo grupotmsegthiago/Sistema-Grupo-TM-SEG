@@ -11,6 +11,8 @@ import {
   buildPresenceTooltip,
   mergeRosterWithPresence,
   formatPresenceShortName,
+  formatPresenceStatusLine,
+  partitionPresenceBoardUsers,
   normalizePresenceUserId,
   PRESENCE_USER_AVATAR_SRC,
 } from '../lib/timeclock/presence.ts';
@@ -373,4 +375,65 @@ test('getBrazilDayBounds cobre dia civil de Brasília', () => {
 test('avatar de presença aponta para SVG existente', () => {
   assert.equal(PRESENCE_USER_AVATAR_SRC, '/assets/presence-user-robot.svg');
   assert.match(fs.readFileSync('public/assets/presence-user-robot.svg', 'utf8'), /<svg/i);
+});
+
+test('partitionPresenceBoardUsers separa conectados à esquerda e ordena por status', () => {
+  const users = [
+    {
+      userId: '1',
+      name: 'Zeca',
+      role: 'Operador',
+      isClt: true,
+      onDuty: false,
+      onDutyLabel: 'Fora de Serviço',
+      onlineAt: '',
+    },
+    {
+      userId: '2',
+      name: 'Ana',
+      role: 'Operador',
+      isClt: true,
+      onDuty: true,
+      onDutyLabel: 'Em serviço',
+      onlineAt: new Date().toISOString(),
+      punchMarks: [{ type: 'IN', label: 'Entrada', time: '08:00' }],
+    },
+    {
+      userId: '3',
+      name: 'Bruno',
+      role: 'RH',
+      isClt: false,
+      onDuty: false,
+      onDutyLabel: 'Online',
+      onlineAt: new Date().toISOString(),
+      lastActivityAt: '2026-07-10T16:00:00.000Z',
+    },
+  ] as any[];
+
+  const isOnline = (u: { userId: string }) => u.userId === '2' || u.userId === '3';
+  const { online, offline } = partitionPresenceBoardUsers(users, isOnline);
+
+  assert.equal(online.length, 2);
+  assert.equal(offline.length, 1);
+  assert.equal(offline[0].name, 'Zeca');
+  assert.equal(online[0].name, 'Ana');
+  assert.equal(online[1].name, 'Bruno');
+});
+
+test('formatPresenceStatusLine usa HH:MM em vez de minutos', () => {
+  const line = formatPresenceStatusLine(
+    {
+      userId: '1',
+      name: 'Ana',
+      role: 'Operador',
+      isClt: true,
+      onDuty: true,
+      onDutyLabel: 'Em serviço',
+      onlineAt: '2026-07-10T16:00:00.000Z',
+      punchMarks: [{ type: 'IN', label: 'Entrada', time: '08:15' }],
+    },
+    true,
+  );
+  assert.match(line, /desde 08:15/);
+  assert.doesNotMatch(line, /min/i);
 });

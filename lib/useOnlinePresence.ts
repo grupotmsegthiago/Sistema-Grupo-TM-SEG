@@ -14,6 +14,8 @@ function presenceListEqual(a: PresenceUserState[], b: PresenceUserState[]): bool
       x.activityStatus !== y.activityStatus ||
       x.idleMinutes !== y.idleMinutes ||
       x.minutesOnDuty !== y.minutesOnDuty ||
+      x.onlineAt !== y.onlineAt ||
+      x.lastActivityAt !== y.lastActivityAt ||
       JSON.stringify(x.punchMarks || []) !== JSON.stringify(y.punchMarks || [])
     ) {
       return false;

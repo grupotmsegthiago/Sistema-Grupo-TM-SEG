@@ -1,4 +1,5 @@
 import type { TimeClockEntry } from './types';
+import { formatTimeBR } from '../dateUtils';
 import { buildPunchMarks, type PresencePunchMark } from './punchMarks';
 import {
   buildPresenceFromPunchEntries,
@@ -110,6 +111,101 @@ export const PRESENCE_SERVICE_STATUS_LABELS: Record<PresenceServiceStatus, strin
   aguardando_ponto: 'Aguardando ponto',
 };
 
+/** Ordem de exibição no quadro: serviço → online → aguardando → almoço → fora. */
+export const PRESENCE_BOARD_STATUS_ORDER: PresenceServiceStatus[] = [
+  'em_servico',
+  'online',
+  'aguardando_ponto',
+  'em_almoco',
+  'fora',
+];
+
+export function getPresenceStatusSortRank(status: PresenceServiceStatus): number {
+  const idx = PRESENCE_BOARD_STATUS_ORDER.indexOf(status);
+  return idx >= 0 ? idx : 99;
+}
+
+function comparePresenceUsers(
+  a: PresenceUserState,
+  b: PresenceUserState,
+  isOnlineFn: (user: PresenceUserState) => boolean,
+): number {
+  const statusA = getPresenceServiceStatus(a, { isOnline: isOnlineFn(a) });
+  const statusB = getPresenceServiceStatus(b, { isOnline: isOnlineFn(b) });
+  const rankDiff =
+    getPresenceStatusSortRank(statusA) - getPresenceStatusSortRank(statusB);
+  if (rankDiff !== 0) return rankDiff;
+  return (a.name || 'Usuário').localeCompare(b.name || 'Usuário', 'pt-BR');
+}
+
+/** Separa conectados (esquerda) e desconectados (direita), cada lado na ordem de status. */
+export function partitionPresenceBoardUsers(
+  users: PresenceUserState[],
+  isOnlineFn: (user: PresenceUserState) => boolean,
+): { online: PresenceUserState[]; offline: PresenceUserState[] } {
+  const online: PresenceUserState[] = [];
+  const offline: PresenceUserState[] = [];
+  for (const user of users) {
+    if (isOnlineFn(user)) online.push(user);
+    else offline.push(user);
+  }
+  online.sort((a, b) => comparePresenceUsers(a, b, isOnlineFn));
+  offline.sort((a, b) => comparePresenceUsers(a, b, isOnlineFn));
+  return { online, offline };
+}
+
+function getServiceTimeFromMarks(user: PresenceUserState): string | null {
+  const marks = user.punchMarks || [];
+  let anchor: string | null = null;
+  for (const mark of marks) {
+    if (mark.type === 'IN' || mark.type === 'BREAK_END') anchor = mark.time;
+  }
+  return anchor;
+}
+
+function getLunchStartFromMarks(user: PresenceUserState): string | null {
+  const marks = user.punchMarks || [];
+  for (let i = marks.length - 1; i >= 0; i -= 1) {
+    if (marks[i].type === 'BREAK_START') return marks[i].time;
+  }
+  return null;
+}
+
+/** Linha de status com horários HH:MM (Brasília), sem exibir minutos corridos. */
+export function formatPresenceStatusLine(
+  user: PresenceUserState,
+  isOnline: boolean,
+): string {
+  const status = getPresenceServiceStatus(user, { isOnline });
+  const base = PRESENCE_SERVICE_STATUS_LABELS[status];
+  const lastAccess = formatTimeBR(user.lastActivityAt || user.onlineAt, '');
+
+  if (status === 'em_servico') {
+    const since = getServiceTimeFromMarks(user);
+    if (since) return `${base} — desde ${since}`;
+    if (lastAccess) return `${base} — ${lastAccess}`;
+    return base;
+  }
+
+  if (status === 'em_almoco') {
+    const since = getLunchStartFromMarks(user);
+    if (since) return `${base} — desde ${since}`;
+    if (lastAccess) return `${base} — ${lastAccess}`;
+    return base;
+  }
+
+  if (status === 'online' || status === 'aguardando_ponto') {
+    if (lastAccess) return `${base} — ${lastAccess}`;
+    return base;
+  }
+
+  if (isOnline && lastAccess) {
+    return `${base} — ${lastAccess}`;
+  }
+
+  return base;
+}
+
 /** Nome curto com inicial do sobrenome (evita confundir Beatriz/Beatriz, Thiago/Thiago). */
 export function formatPresenceShortName(name: string): string {
   const parts = (name || 'Usuário').trim().split(/\s+/).filter(Boolean);
@@ -130,10 +226,16 @@ export function buildPresenceTooltip(user: PresenceUserState): string {
     lines.push(`Detalhe ponto: ${user.onDutyLabel}`);
   }
   if (user.minutesOnDuty != null && user.minutesOnDuty > 0 && status === 'em_servico') {
-    lines.push(`Tempo em serviço: ${user.minutesOnDuty} min`);
+    const since = getServiceTimeFromMarks(user);
+    lines.push(since ? `Em serviço desde: ${since}` : `Tempo em serviço: ${user.minutesOnDuty} min`);
   }
-  if (user.activityStatus === 'idle' && user.idleMinutes && user.idleMinutes > 0) {
-    lines.push(`Sem uso no sistema há ${user.idleMinutes} min`);
+  if (user.lastActivityAt) {
+    lines.push(`Último acesso: ${formatTimeBR(user.lastActivityAt)}`);
+  } else if (user.onlineAt && user.onlineAt !== new Date(0).toISOString()) {
+    lines.push(`Conectado desde: ${formatTimeBR(user.onlineAt)}`);
+  }
+  if (user.activityStatus === 'idle' && user.lastActivityAt) {
+    lines.push(`Sem uso desde: ${formatTimeBR(user.lastActivityAt)}`);
   }
   lines.push('');
   if (user.punchMarks && user.punchMarks.length > 0) {

@@ -21,8 +21,8 @@ interface Props {
   enabled: boolean;
 }
 
-const HEARTBEAT_MS = 45_000;
-const ACTIVITY_HEARTBEAT_MIN_MS = 15_000;
+const HEARTBEAT_MS = 30_000;
+const ACTIVITY_HEARTBEAT_MIN_MS = 10_000;
 
 /** Mantém o usuário atual visível no canal de presença (online + CLT em serviço). */
 const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
