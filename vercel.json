@@ -29,13 +29,16 @@
       "maxDuration": 60
     },
     "api/dhl/intake/generate.ts": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "dist/vercelApp.cjs"
     },
     "api/dhl/intake/by-mission.ts": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "dist/vercelApp.cjs"
     },
     "api/dhl/intake/by-mission/[missionId].ts": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "dist/vercelApp.cjs"
     },
     "api/gemini/health.ts": {
       "maxDuration": 60

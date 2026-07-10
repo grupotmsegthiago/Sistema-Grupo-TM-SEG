@@ -1,4 +1,5 @@
 import { formatDateTimeBR } from '../lib/dateUtils';
+import { CANONICAL_PUBLIC_ORIGIN } from '../lib/publicAppUrl';
 import { useEffect, useState, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import {
@@ -195,8 +196,7 @@ const DhlIntakeTimeline: React.FC<Props> = ({
     return () => window.removeEventListener('dhl-intake-changed', onChange);
   }, [missionId, load]);
 
-  const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-  const buildPublicLink = (token: string) => `${baseOrigin}/fornecedor/dhl?token=${token}`;
+  const buildPublicLink = (token: string) => `${CANONICAL_PUBLIC_ORIGIN}/fornecedor/dhl?token=${token}`;
 
   const copyLink = async (url: string) => {
     try {
