@@ -5,6 +5,7 @@ import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
 import { logAction } from '../lib/logger';
 import { parseAmountBR } from '../lib/utils';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
+import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
 import { insertBalanceSnapshotDirect } from '../lib/investment/snapshotClient';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
@@ -88,14 +89,20 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
     const fetchAsaasBalances = useCallback(async () => {
         setAsaasLoading(true);
         try {
-            const res = await authFetch('/api/asaas/balances');
+            const res = await withTimeout(
+                authFetch('/api/asaas/balances'),
+                25_000,
+                'Tempo esgotado ao consultar saldos Asaas',
+            );
             const data = await parseJsonResponse(res);
             if (!res.ok) {
                 throw new Error(data?.error || `Erro ao consultar saldos Asaas (${res.status})`);
             }
             if (data.balances) setAsaasBalances(data.balances);
         } catch (e) {
-            const msg = e instanceof Error ? e.message : 'Falha ao atualizar saldos';
+            const msg = e instanceof TimeoutError
+                ? 'Consulta demorou demais. Tente atualizar novamente.'
+                : e instanceof Error ? e.message : 'Falha ao atualizar saldos';
             showNotification('Saldos Asaas', msg, 'error');
         }
         setAsaasLoading(false);

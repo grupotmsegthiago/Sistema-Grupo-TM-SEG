@@ -142,6 +142,9 @@
     },
     "api/version.ts": {
       "maxDuration": 10
+    },
+    "api/asaas-balances.ts": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
@@ -316,6 +319,10 @@
     {
       "source": "/api/version",
       "destination": "/api/version"
+    },
+    {
+      "source": "/api/asaas/balances",
+      "destination": "/api/asaas-balances"
     },
     {
       "source": "/api/(.*)",

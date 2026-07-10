@@ -129,16 +129,28 @@ async function asaasFetch(endpoint: string, options: RequestInit = {}, company?:
     console.log(`[Asaas] ${options.method} ${endpoint} | Empresa: ${entry.name} | CNPJ: ${entry.cnpj} | Key: ${keyPrefix}`);
   }
   const url = `${ASAAS_BASE_URL}${endpoint}`;
-  const res = await fetch(url, {
-    ...options,
-    headers: { ...headers(company), ...(options.headers || {}) },
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    const errMsg = data.errors?.map((e: any) => e.description).join('; ') || data.message || JSON.stringify(data);
-    throw new Error(`Asaas API Error (${res.status}): ${errMsg}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12_000);
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: { ...headers(company), ...(options.headers || {}) },
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const errMsg = data.errors?.map((e: any) => e.description).join('; ') || data.message || JSON.stringify(data);
+      throw new Error(`Asaas API Error (${res.status}): ${errMsg}`);
+    }
+    return data;
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new Error('Timeout ao consultar Asaas (12s)');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return data;
 }
 
 export async function findCustomerByCpfCnpj(cpfCnpj: string, company?: string): Promise<AsaasCustomer | null> {
@@ -487,25 +499,38 @@ export async function getBalance(company?: string): Promise<any> {
   return asaasFetch('/finance/balance', {}, company);
 }
 
+let cachedBalances: {
+  data: { company: string; name: string; balance: number; pendingBalance: number; error?: string }[];
+  ts: number;
+} | null = null;
+
+const BALANCE_CACHE_MS = 90_000;
+
 export async function getAllBalances(): Promise<{ company: string; name: string; balance: number; pendingBalance: number; error?: string }[]> {
-  const results: { company: string; name: string; balance: number; pendingBalance: number; error?: string }[] = [];
-  for (const [key, val] of Object.entries(ASAAS_COMPANIES)) {
-    if (!val.apiKey) {
-      results.push({ company: key, name: val.name, balance: 0, pendingBalance: 0, error: 'API Key não configurada' });
-      continue;
-    }
-    try {
-      const data = await asaasFetch('/finance/balance', {}, key);
-      results.push({
-        company: key,
-        name: val.name,
-        balance: data.balance || 0,
-        pendingBalance: data.totalPending || 0,
-      });
-    } catch (err: any) {
-      results.push({ company: key, name: val.name, balance: 0, pendingBalance: 0, error: err.message });
-    }
+  if (cachedBalances && Date.now() - cachedBalances.ts < BALANCE_CACHE_MS) {
+    return cachedBalances.data;
   }
+
+  const results = await Promise.all(
+    Object.entries(ASAAS_COMPANIES).map(async ([key, val]) => {
+      if (!val.apiKey) {
+        return { company: key, name: val.name, balance: 0, pendingBalance: 0, error: 'API Key não configurada' };
+      }
+      try {
+        const data = await asaasFetch('/finance/balance', {}, key);
+        return {
+          company: key,
+          name: val.name,
+          balance: data.balance || 0,
+          pendingBalance: data.totalPending || 0,
+        };
+      } catch (err: any) {
+        return { company: key, name: val.name, balance: 0, pendingBalance: 0, error: err.message };
+      }
+    }),
+  );
+
+  cachedBalances = { data: results, ts: Date.now() };
   return results;
 }
 

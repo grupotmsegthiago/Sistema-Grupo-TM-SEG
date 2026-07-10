@@ -7,6 +7,7 @@ import { logAction } from '../lib/logger';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
+import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
 import { FinancialTransaction, TransactionType, TransactionStatus, FinancialAccount, FinancialCategory } from '../types';
 import { 
   Plus, Search, Edit, Trash2, RefreshCw, 
@@ -74,24 +75,48 @@ const FinancialTransactionList: React.FC = () => {
     // Saldos Asaas (TM Gestão, TM Seg, TM Security)
     const [asaasBalances, setAsaasBalances] = useState<Array<{ company: string; name: string; balance: number; pendingBalance: number; error?: string }>>([]);
     const [loadingBalances, setLoadingBalances] = useState(false);
+    const [balancesLoadedOnce, setBalancesLoadedOnce] = useState(false);
+
+    const ASAAS_CARD_KEYS = ['TM GESTÃO', 'TM SEGURANCA', 'TM SECURITY'] as const;
 
     const fetchAsaasBalances = async () => {
         setLoadingBalances(true);
         try {
-            const res = await authFetch('/api/asaas/balances');
+            const res = await withTimeout(
+                authFetch('/api/asaas/balances'),
+                25_000,
+                'Tempo esgotado ao consultar saldos Asaas',
+            );
             const json = await parseJsonResponse(res);
             if (!res.ok) {
                 throw new Error(json?.error || `Erro ao consultar saldos Asaas (${res.status})`);
             }
             if (json?.success && Array.isArray(json.balances)) {
                 setAsaasBalances(json.balances);
+            } else {
+                throw new Error('Resposta inválida do servidor de saldos');
             }
         } catch (e) {
-            const msg = e instanceof Error ? e.message : 'Falha ao atualizar saldos';
+            const msg = e instanceof TimeoutError
+                ? 'Consulta demorou demais. Toque em atualizar para tentar de novo.'
+                : e instanceof Error ? e.message : 'Falha ao atualizar saldos';
             console.warn('[Asaas] Falha ao buscar saldos:', e);
-            showNotification('Saldos Asaas', msg, 'error');
+            setAsaasBalances((prev) => {
+                if (prev.length > 0) return prev;
+                return ASAAS_CARD_KEYS.map((company) => ({
+                    company,
+                    name: company,
+                    balance: 0,
+                    pendingBalance: 0,
+                    error: msg,
+                }));
+            });
+            if (!balancesLoadedOnce) {
+                showNotification('Saldos Asaas', msg, 'error');
+            }
         } finally {
             setLoadingBalances(false);
+            setBalancesLoadedOnce(true);
         }
     };
 
@@ -1259,7 +1284,7 @@ const FinancialTransactionList: React.FC = () => {
                                     </button>
                                 </div>
                                 <p className={`text-sm font-black uppercase tracking-tight ${co.accent} mb-1`}>{co.label}</p>
-                                {loadingBalances && !entry ? (
+                                {loadingBalances && !entry && !balancesLoadedOnce ? (
                                     <div className="flex items-center gap-2 text-gray-400">
                                         <Loader2 size={14} className="animate-spin" />
                                         <span className="text-xs">Carregando...</span>
