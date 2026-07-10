@@ -70,6 +70,15 @@ import {
 } from "../lib/auditSummarySettingsShared";
 import { verifyWebhookSecret } from "./cronAuth";
 import {
+  assertDhlOccurrenceReportAccess,
+  resolveDirectorNameFromToken,
+} from "../lib/services/dhlOccurrenceReportAccess";
+import {
+  dhlOccurrenceReportFilename,
+  generateDhlOccurrenceReportHtml,
+  generateDhlOccurrenceReportPdf,
+} from "./dhlOccurrenceReportPdf";
+import {
   generateGeminiContent,
   generateGeminiContentStream,
   isGeminiConfigured,
@@ -2535,6 +2544,100 @@ export async function registerRoutes(
   }
   registerDhlIntakeRoutes(app, requireAuth, requireRole, resolveUserRole, resolvePrincipal);
   registerRhRoutes(app, requireAuth, requireRole);
+
+  // POST/GET /api/dhl/occurrence-report — Plano de Ação DHL (somente diretoria)
+  app.post('/api/dhl/occurrence-report', requireAuth, requireRole('diretoria'), async (req: Request, res: Response) => {
+    try {
+      const token = (req as any).authToken as string;
+      const denied = await assertDhlOccurrenceReportAccess(token);
+      if (denied) {
+        res.status(denied === 'Não autorizado' ? 401 : 403).json({ ok: false, error: denied });
+        return;
+      }
+
+      const missionId = String(req.body?.missionId || '').trim();
+      if (!missionId) {
+        res.status(400).json({ ok: false, error: 'missionId obrigatório' });
+        return;
+      }
+
+      const directorName = await resolveDirectorNameFromToken(token);
+      const factsSummary =
+        typeof req.body?.factsSummary === 'string' ? req.body.factsSummary : undefined;
+
+      const input = {
+        missionId,
+        factsSummary,
+        directorName,
+        generatedAt: new Date().toISOString(),
+      };
+
+      const pdf = await generateDhlOccurrenceReportPdf(input);
+      if (!pdf) {
+        res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });
+        return;
+      }
+
+      const seFromBody = String(req.body?.seNumber || '').trim();
+      const filename = dhlOccurrenceReportFilename(seFromBody || missionId);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).send(pdf);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[dhl/occurrence-report]', message);
+      res.status(500).json({ ok: false, error: message || 'Falha ao gerar relatório' });
+    }
+  });
+
+  app.get('/api/dhl/occurrence-report', requireAuth, requireRole('diretoria'), async (req: Request, res: Response) => {
+    try {
+      const token = (req as any).authToken as string;
+      const denied = await assertDhlOccurrenceReportAccess(token);
+      if (denied) {
+        res.status(denied === 'Não autorizado' ? 401 : 403).json({ ok: false, error: denied });
+        return;
+      }
+
+      const format = String(req.query?.format || '');
+      if (format !== 'html') {
+        res.status(405).json({ ok: false, error: 'method_not_allowed' });
+        return;
+      }
+
+      const missionId = String(req.query?.missionId || '').trim();
+      if (!missionId) {
+        res.status(400).json({ ok: false, error: 'missionId obrigatório' });
+        return;
+      }
+
+      const directorName = await resolveDirectorNameFromToken(token);
+      const factsSummary =
+        typeof req.query?.factsSummary === 'string' ? req.query.factsSummary : undefined;
+
+      const html = await generateDhlOccurrenceReportHtml({
+        missionId,
+        factsSummary,
+        directorName,
+        generatedAt: new Date().toISOString(),
+      });
+
+      if (!html) {
+        res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });
+        return;
+      }
+
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).send(html);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[dhl/occurrence-report html]', message);
+      res.status(500).json({ ok: false, error: message || 'Falha ao gerar relatório' });
+    }
+  });
 
   app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
     try {

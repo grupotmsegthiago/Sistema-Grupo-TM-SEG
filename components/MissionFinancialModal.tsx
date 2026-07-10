@@ -515,13 +515,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isBarbaraFinance = useMemo(() => {
     return userNameLower.includes('barbara') || userNameLower.includes('bárbara');
   }, [userNameLower]);
-  const canGenerateDhlOccurrenceReport = useMemo(() => {
-    if (userRoleLower === 'diretoria') return true;
-    if (userNameLower.includes('thiago moreira')) return true;
-    if (userNameLower.includes('thiago') && !userNameLower.includes('arruda')) return true;
-    if (userNameLower.includes('plinio') || userNameLower.includes('plínio')) return true;
-    return false;
-  }, [userRoleLower, userNameLower]);
+  const canGenerateDhlOccurrenceReport = useMemo(() => userRoleLower === 'diretoria', [userRoleLower]);
   const dhlSeNumber = String((mission as any)?.dhl_se_number || '').trim();
   const showDhlOccurrenceReportBtn =
     canGenerateDhlOccurrenceReport

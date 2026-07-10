@@ -5,15 +5,9 @@ import {
 
 export function roleCanGenerateDhlOccurrenceReport(
   role: string | null | undefined,
-  userName?: string | null,
+  _userName?: string | null,
 ): boolean {
-  const r = String(role || '').trim().toLowerCase();
-  const n = String(userName || '').trim().toLowerCase();
-  if (r === 'diretoria') return true;
-  if (n.includes('thiago moreira')) return true;
-  if (n.includes('thiago') && !n.includes('arruda')) return true;
-  if (n.includes('plinio') || n.includes('plínio')) return true;
-  return false;
+  return String(role || '').trim().toLowerCase() === 'diretoria';
 }
 
 export function extractAuthToken(req: {

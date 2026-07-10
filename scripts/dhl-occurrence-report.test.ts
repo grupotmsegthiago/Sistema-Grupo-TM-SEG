@@ -24,9 +24,9 @@ const baseData: DhlOccurrenceReportData = {
   generatedAt: '2026-07-10T17:00:00.000Z',
 };
 
-test('acesso ao relatório inclui diretoria e thiago por nome', () => {
+test('acesso ao relatório restrito à diretoria', () => {
   assert.equal(roleCanGenerateDhlOccurrenceReport('diretoria', 'Qualquer'), true);
-  assert.equal(roleCanGenerateDhlOccurrenceReport('operador', 'Thiago Moreira'), true);
+  assert.equal(roleCanGenerateDhlOccurrenceReport('operador', 'Thiago Moreira'), false);
   assert.equal(roleCanGenerateDhlOccurrenceReport('administrador', 'Thiago Arruda'), false);
   assert.equal(roleCanGenerateDhlOccurrenceReport('operador', 'Michelle Dias'), false);
 });
