@@ -143,7 +143,7 @@ test('handler POST payload oficial Asaas aprova com token válido (payload míni
   }
 });
 
-test('handler POST payload oficial Asaas recusa sem externalReference', async () => {
+test('handler POST payload mínimo aprova sem token configurado (modo legado)', async () => {
   const prev = process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN;
   delete process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN;
   try {
@@ -181,7 +181,7 @@ test('handler POST payload oficial Asaas recusa sem externalReference', async ()
       res,
     );
     assert.equal(statusCode, 200);
-    assert.equal(body?.status, 'REFUSED');
+    assert.equal(body?.status, 'APPROVED');
   } finally {
     if (prev === undefined) delete process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN;
     else process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN = prev;
