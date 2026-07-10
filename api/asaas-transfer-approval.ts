@@ -1,5 +1,13 @@
 import { ASAAS_PIX_FINANCEIRO_EMAIL } from '../lib/asaasPixTransfer.js';
 
+const DEFAULT_FINANCEIRO_WALLET_ID = '6641fec4-8476-48e3-90a8-3db6b14f538c';
+
+function financeiroWalletId(): string {
+  return (
+    String(process.env.ASAAS_FINANCEIRO_WALLET_ID || '').trim() || DEFAULT_FINANCEIRO_WALLET_ID
+  );
+}
+
 /**
  * Webhook de aprovação de saques/transferências Asaas.
  * Configure em: Asaas → Integrações → Mecanismos de segurança → URL deste endpoint.
@@ -42,11 +50,18 @@ export default async function handler(req: any, res: any) {
     )
       .trim()
       .toLowerCase();
+    const walletId = String(transfer.walletId || transfer.destinationWalletId || '').trim();
+    const financeiroWallet = financeiroWalletId();
     const destinoOk =
       pixKey === ASAAS_PIX_FINANCEIRO_EMAIL.toLowerCase() ||
-      String(transfer.description || '').includes('Repasse TM SEG');
+      String(transfer.description || '').includes('Repasse TM SEG') ||
+      (operationType === 'INTERNAL' && walletId === financeiroWallet);
 
-    if (operationType === 'PIX' && value > 0 && destinoOk) {
+    if (
+      value > 0 &&
+      destinoOk &&
+      (operationType === 'PIX' || operationType === 'INTERNAL' || transfer.type === 'INTERNAL')
+    ) {
       console.log('[asaas-transfer-approval] APPROVED', transfer.id, value);
       res.status(200).json({ status: 'APPROVED' });
       return;

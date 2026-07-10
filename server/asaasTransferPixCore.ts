@@ -1,6 +1,6 @@
 /**
- * Transferência Pix Asaas — módulo leve para rotas serverless Vercel.
- * Evita importar o asaasService completo.
+ * Transferência Asaas — módulo leve para rotas serverless Vercel.
+ * Tenta repasse interno (walletId) antes de Pix externo.
  */
 
 import {
@@ -13,6 +13,7 @@ import { formatAsaasTransferError } from '../lib/asaasTransferErrors.js';
 import { invalidateAsaasBalancesCoreCache } from './asaasBalancesCore.js';
 
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
+const DEFAULT_FINANCEIRO_WALLET_ID = '6641fec4-8476-48e3-90a8-3db6b14f538c';
 
 function readEnv(...names: string[]): string {
   for (const name of names) {
@@ -20,6 +21,10 @@ function readEnv(...names: string[]): string {
     if (value) return value;
   }
   return '';
+}
+
+function financeiroWalletId(): string {
+  return readEnv('ASAAS_FINANCEIRO_WALLET_ID') || DEFAULT_FINANCEIRO_WALLET_ID;
 }
 
 function companyApiKeys(): Record<string, string> {
@@ -67,7 +72,7 @@ async function asaasRequest(
         data?.errors?.map((e: any) => e.description).join('; ') ||
         data?.message ||
         `HTTP ${res.status}`;
-      throw new Error(formatAsaasTransferError(errMsg));
+      throw new Error(`Asaas: ${errMsg}`);
     }
 
     return data;
@@ -86,7 +91,7 @@ async function getBalance(apiKey: string): Promise<number> {
   return Number(data?.balance || 0);
 }
 
-/** Transfere Pix para financeiro@grupotmseg.com.br mantendo reserva mínima na conta. */
+/** Repasse para conta financeiro TM SEG (interna Asaas ou Pix). */
 export async function transferPixFromCompanyCore(params: {
   company: string;
   value: number;
@@ -103,17 +108,42 @@ export async function transferPixFromCompanyCore(params: {
   const check = isValidPixTransferAmount(value, balance);
   if (!check.ok) throw new Error(check.error);
 
-  const result = await asaasRequest(apiKey, '/transfers', {
-    method: 'POST',
-    body: JSON.stringify({
-      value,
-      operationType: 'PIX',
-      pixAddressKey: ASAAS_PIX_FINANCEIRO_EMAIL,
-      pixAddressKeyType: ASAAS_PIX_FINANCEIRO_KEY_TYPE,
-      description: params.description || `Repasse TM SEG — ${company}`,
-    }),
-  });
+  const description = params.description || `Repasse TM SEG — ${company}`;
+  const walletId = financeiroWalletId();
+  let internalError: string | null = null;
 
-  invalidateAsaasBalancesCoreCache();
-  return result;
+  if (walletId) {
+    try {
+      const result = await asaasRequest(apiKey, '/transfers', {
+        method: 'POST',
+        body: JSON.stringify({ value, walletId, description }),
+      });
+      invalidateAsaasBalancesCoreCache();
+      return { ...result, transferMode: 'INTERNAL', destinationWalletId: walletId };
+    } catch (e: unknown) {
+      internalError = e instanceof Error ? e.message : String(e);
+      console.warn('[asaasTransfer] repasse interno falhou:', internalError);
+    }
+  }
+
+  try {
+    const result = await asaasRequest(apiKey, '/transfers', {
+      method: 'POST',
+      body: JSON.stringify({
+        value,
+        operationType: 'PIX',
+        pixAddressKey: ASAAS_PIX_FINANCEIRO_EMAIL,
+        pixAddressKeyType: ASAAS_PIX_FINANCEIRO_KEY_TYPE,
+        description,
+      }),
+    });
+    invalidateAsaasBalancesCoreCache();
+    return { ...result, transferMode: 'PIX' };
+  } catch (e: unknown) {
+    const pixError = e instanceof Error ? e.message : String(e);
+    const combined = internalError
+      ? `Repasse interno: ${internalError}. Pix: ${pixError}`
+      : pixError;
+    throw new Error(formatAsaasTransferError(combined));
+  }
 }

@@ -1,5 +1,7 @@
 /** Mensagens amigáveis para erros comuns da API Asaas em transferências Pix. */
 
+import { ASAAS_PIX_FINANCEIRO_EMAIL } from './asaasPixTransfer.js';
+
 const WITHDRAWAL_DENIED =
   /não possui permissão.*saque|sem permissão.*saque|withdrawal.*permission|invalid_action/i;
 
@@ -14,10 +16,11 @@ export function formatAsaasTransferError(raw: string): string {
 
   if (WITHDRAWAL_DENIED.test(msg)) {
     return (
-      'A chave API do Asaas (TM Gestão/Seg/Security) não tem permissão para saques via API. ' +
-      'No painel Asaas: Integrações → fale com o gerente de contas para liberar transferências via API, ' +
-      'ou configure IP fixo da Vercel + webhook de aprovação em Integrações → Mecanismos de segurança ' +
-      `(URL: https://sistema.grupotmseg.com.br/api/asaas/transfer-approval).`
+      'Não foi possível repassar o saldo. O sistema tentou repasse interno entre contas Asaas e Pix para ' +
+      `${ASAAS_PIX_FINANCEIRO_EMAIL}, mas a chave API não tem permissão de saque/transferência via API. ` +
+      'No painel Asaas de cada conta (TM Gestão, TM Seg, TM Security): Integrações → peça ao gerente ' +
+      'liberar transferências via API, ou configure webhook em Integrações → Mecanismos de segurança: ' +
+      'https://sistema.grupotmseg.com.br/api/asaas/transfer-approval'
     );
   }
 

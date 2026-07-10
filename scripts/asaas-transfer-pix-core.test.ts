@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-test('transferPixFromCompanyCore valida empresa e chama Asaas', async () => {
+test('transferPixFromCompanyCore prioriza repasse interno por walletId', async () => {
   const originalFetch = globalThis.fetch;
-  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const calls: Array<{ url: string; body: string }> = [];
 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    calls.push({ url, init });
+    const body = String(init?.body || '');
+    calls.push({ url, body });
     if (url.includes('/finance/balance')) {
       return {
         ok: true,
@@ -15,9 +16,20 @@ test('transferPixFromCompanyCore valida empresa e chama Asaas', async () => {
       } as Response;
     }
     if (url.includes('/transfers')) {
+      const parsed = JSON.parse(body);
+      if (parsed.walletId) {
+        return {
+          ok: true,
+          text: async () => JSON.stringify({ id: 'tr_int', type: 'INTERNAL', status: 'PENDING' }),
+        } as Response;
+      }
       return {
-        ok: true,
-        text: async () => JSON.stringify({ id: 'tr_1', status: 'PENDING' }),
+        ok: false,
+        status: 403,
+        text: async () =>
+          JSON.stringify({
+            errors: [{ description: 'sem permissão saque' }],
+          }),
       } as Response;
     }
     return { ok: false, status: 404, text: async () => '{}' } as Response;
@@ -25,35 +37,54 @@ test('transferPixFromCompanyCore valida empresa e chama Asaas', async () => {
 
   try {
     process.env.ASAAS_API_KEY = 'key-gestao';
-    const { transferPixFromCompanyCore, isKnownAsaasCompany } = await import(
-      '../server/asaasTransferPixCore.ts'
-    );
-    assert.equal(isKnownAsaasCompany('TM GESTÃO'), true);
+    const { transferPixFromCompanyCore } = await import('../server/asaasTransferPixCore.ts');
     const result = await transferPixFromCompanyCore({ company: 'TM GESTÃO', value: 50 });
-    assert.equal(result.id, 'tr_1');
-    assert.equal(calls.length, 2);
-    const transferBody = JSON.parse(String(calls[1].init?.body || '{}'));
-    assert.equal(transferBody.value, 50);
-    assert.equal(transferBody.pixAddressKey, 'financeiro@grupotmseg.com.br');
+    assert.equal(result.transferMode, 'INTERNAL');
+    assert.equal(calls.filter((c) => c.url.includes('/transfers')).length, 1);
+    const body = JSON.parse(calls.find((c) => c.url.includes('/transfers'))!.body);
+    assert.equal(body.walletId, '6641fec4-8476-48e3-90a8-3db6b14f538c');
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('transferPixFromCompanyCore rejeita valor acima do disponível', async () => {
+test('transferPixFromCompanyCore faz fallback Pix se interno falhar', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => ({
-    ok: true,
-    text: async () => JSON.stringify({ balance: 500 }),
-  })) as typeof fetch;
+  let transferAttempt = 0;
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/finance/balance')) {
+      return {
+        ok: true,
+        text: async () => JSON.stringify({ balance: 500 }),
+      } as Response;
+    }
+    if (url.includes('/transfers')) {
+      transferAttempt += 1;
+      const body = JSON.parse(String(init?.body || '{}'));
+      if (body.walletId) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () =>
+            JSON.stringify({ errors: [{ description: 'Contas sem vínculo' }] }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        text: async () => JSON.stringify({ id: 'tr_pix', operationType: 'PIX' }),
+      } as Response;
+    }
+    return { ok: false, status: 404, text: async () => '{}' } as Response;
+  }) as typeof fetch;
 
   try {
     process.env.ASAAS_API_KEY = 'key-gestao';
     const { transferPixFromCompanyCore } = await import('../server/asaasTransferPixCore.ts');
-    await assert.rejects(
-      () => transferPixFromCompanyCore({ company: 'TM GESTÃO', value: 401 }),
-      /máximo/i,
-    );
+    const result = await transferPixFromCompanyCore({ company: 'TM GESTÃO', value: 50 });
+    assert.equal(result.transferMode, 'PIX');
+    assert.equal(transferAttempt, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }

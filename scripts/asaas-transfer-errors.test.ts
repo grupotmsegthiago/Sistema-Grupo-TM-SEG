@@ -6,7 +6,7 @@ test('formatAsaasTransferError explica permissão de saque', () => {
   const msg = formatAsaasTransferError(
     'Asaas: A chave de API fornecida não possui permissão para realizar operações de saque via API.',
   );
-  assert.match(msg, /chave API do Asaas/i);
+  assert.match(msg, /repasse interno/i);
   assert.match(msg, /transfer-approval/i);
 });
 
