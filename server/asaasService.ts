@@ -1,13 +1,11 @@
 import {
-  ASAAS_PIX_FINANCEIRO_EMAIL,
-  ASAAS_PIX_FINANCEIRO_KEY_TYPE,
-  isValidPixTransferAmount,
-  roundMoneyBrl,
-} from '../lib/asaasPixTransfer';
-import {
   getAllBalancesCore,
   invalidateAsaasBalancesCoreCache,
 } from './asaasBalancesCore';
+import {
+  isKnownAsaasCompany as isKnownAsaasCompanyCore,
+  transferPixFromCompanyCore,
+} from './asaasTransferPixCore';
 
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
 
@@ -527,7 +525,7 @@ export function invalidateAsaasBalanceCache(): void {
 }
 
 export function isKnownAsaasCompany(company: string): boolean {
-  return Object.prototype.hasOwnProperty.call(ASAAS_COMPANIES, company);
+  return isKnownAsaasCompanyCore(company) || Object.prototype.hasOwnProperty.call(ASAAS_COMPANIES, company);
 }
 
 /** Transfere Pix para financeiro@grupotmseg.com.br mantendo reserva mínima na conta. */
@@ -536,34 +534,7 @@ export async function transferPixFromCompany(params: {
   value: number;
   description?: string;
 }): Promise<any> {
-  const company = String(params.company || '').trim();
-  if (!isKnownAsaasCompany(company)) {
-    throw new Error('Empresa Asaas inválida.');
-  }
-
-  const balanceData = await getBalance(company);
-  const balance = Number(balanceData?.balance || 0);
-  const value = roundMoneyBrl(params.value);
-  const check = isValidPixTransferAmount(value, balance);
-  if (!check.ok) throw new Error(check.error);
-
-  const result = await asaasFetch(
-    '/transfers',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        value,
-        operationType: 'PIX',
-        pixAddressKey: ASAAS_PIX_FINANCEIRO_EMAIL,
-        pixAddressKeyType: ASAAS_PIX_FINANCEIRO_KEY_TYPE,
-        description: params.description || `Repasse TM SEG — ${company}`,
-      }),
-    },
-    company,
-  );
-
-  invalidateAsaasBalanceCache();
-  return result;
+  return transferPixFromCompanyCore(params);
 }
 
 export function isAsaasConfigured(): boolean {

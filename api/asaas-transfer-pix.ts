@@ -1,5 +1,8 @@
 import { assertAsaasApiAccess, extractAuthToken } from '../lib/asaasApiAuth.js';
-import { isKnownAsaasCompany, transferPixFromCompany } from '../server/asaasService.js';
+import {
+  isKnownAsaasCompany,
+  transferPixFromCompanyCore,
+} from '../server/asaasTransferPixCore.js';
 
 /** Repasse Pix Asaas → financeiro@grupotmseg.com.br (reserva R$ 100 por conta). */
 export default async function handler(req: any, res: any) {
@@ -31,7 +34,7 @@ export default async function handler(req: any, res: any) {
 
     res.setHeader('Cache-Control', 'no-store');
 
-    const transfer = await transferPixFromCompany({
+    const transfer = await transferPixFromCompanyCore({
       company,
       value,
       description: body.description ? String(body.description) : undefined,
