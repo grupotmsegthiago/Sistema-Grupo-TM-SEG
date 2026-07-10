@@ -18,6 +18,15 @@ function delayLabel(minutes: number | null): string {
   return `${m} min de atraso na chegada à origem.`;
 }
 
+function buildEmailReferenceBlock(data: DhlOccurrenceReportData): string | null {
+  const parts: string[] = [];
+  const link = String(data.emailLink || '').trim();
+  const attachment = String(data.emailAttachmentText || '').trim();
+  if (link) parts.push(`Referência de e-mail: ${link}`);
+  if (attachment) parts.push(attachment);
+  return parts.length ? parts.join('\n\n') : null;
+}
+
 function buildDefaultFactsSummary(data: DhlOccurrenceReportData): string {
   const originMark = data.marks.find((m) => m.label === 'Chegada na origem');
   const scheduled = data.marks.find((m) => m.label === 'Horário programado (origem)');
@@ -34,11 +43,13 @@ function buildDefaultFactsSummary(data: DhlOccurrenceReportData): string {
 
 export function buildOccurrenceNarrative(data: DhlOccurrenceReportData): {
   factsSummary: string;
+  emailReference: string | null;
   rootCause: string;
   correctiveActions: string[];
   preventiveActions: string[];
 } {
   const factsSummary = data.factsSummary?.trim() || buildDefaultFactsSummary(data);
+  const emailReference = buildEmailReferenceBlock(data);
 
   const rootCause = [
     'Após apuração interna, a TM SEG compreende que a ocorrência decorreu de um descompasso pontual entre a programação da missão e a liberação da viatura prevista,',
@@ -61,7 +72,7 @@ export function buildOccurrenceNarrative(data: DhlOccurrenceReportData): {
     'Reunião de alinhamento com a rede de parceiros da base para reforço de SLA e comunicação de risco — sem exposição nominal em relatórios ao cliente.',
   ];
 
-  return { factsSummary, rootCause, correctiveActions, preventiveActions };
+  return { factsSummary, emailReference, rootCause, correctiveActions, preventiveActions };
 }
 
 export function buildOccurrenceReportHtml(data: DhlOccurrenceReportData): string {
@@ -159,6 +170,7 @@ export function buildOccurrenceReportHtml(data: DhlOccurrenceReportData): string
 
   <h2>2. Resumo dos fatos</h2>
   <div class="summary">${narrative.factsSummary}</div>
+  ${narrative.emailReference ? `<h2>2.1 Referência / anexo de e-mails</h2><div class="summary">${narrative.emailReference.replace(/\n/g, '<br/>')}</div>` : ''}
 
   <h2>3. Marcos operacionais (Brasília — HH:MM)</h2>
   <table>

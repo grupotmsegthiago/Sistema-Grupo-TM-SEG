@@ -16,6 +16,8 @@ export interface DhlReportOperationalMark {
 export interface DhlOccurrenceReportInput {
   missionId: string;
   factsSummary?: string | null;
+  emailLink?: string | null;
+  emailAttachmentText?: string | null;
   directorName?: string | null;
   generatedAt?: string;
 }
@@ -36,6 +38,8 @@ export interface DhlOccurrenceReportData {
   phasePhotos: DhlReportPhasePhoto[];
   delayMinutesAtOrigin: number | null;
   factsSummary: string | null;
+  emailLink: string | null;
+  emailAttachmentText: string | null;
   directorName: string;
   generatedAt: string;
 }

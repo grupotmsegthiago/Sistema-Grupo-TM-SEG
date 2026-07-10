@@ -2564,10 +2564,16 @@ export async function registerRoutes(
       const directorName = await resolveDirectorNameFromToken(token);
       const factsSummary =
         typeof req.body?.factsSummary === 'string' ? req.body.factsSummary : undefined;
+      const emailLink =
+        typeof req.body?.emailLink === 'string' ? req.body.emailLink : undefined;
+      const emailAttachmentText =
+        typeof req.body?.emailAttachmentText === 'string' ? req.body.emailAttachmentText : undefined;
 
       const input = {
         missionId,
         factsSummary,
+        emailLink,
+        emailAttachmentText,
         directorName,
         generatedAt: new Date().toISOString(),
       };
@@ -2581,10 +2587,13 @@ export async function registerRoutes(
       const seFromBody = String(req.body?.seNumber || '').trim();
       const filename = dhlOccurrenceReportFilename(seFromBody || missionId);
 
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('Cache-Control', 'no-store');
-      res.status(200).send(pdf);
+      res.status(200).json({
+        ok: true,
+        filename,
+        pdfBase64: pdf.toString('base64'),
+        contentType: 'application/pdf',
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('[dhl/occurrence-report]', message);

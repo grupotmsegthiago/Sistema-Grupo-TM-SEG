@@ -288,6 +288,8 @@ export async function collectDhlOccurrenceReportData(
       phasePhotos,
       delayMinutesAtOrigin,
       factsSummary: input.factsSummary?.trim() || null,
+      emailLink: input.emailLink?.trim() || null,
+      emailAttachmentText: input.emailAttachmentText?.trim() || null,
       directorName: input.directorName?.trim() || 'Diretoria — Grupo TM SEG',
       generatedAt: input.generatedAt || new Date().toISOString(),
     };

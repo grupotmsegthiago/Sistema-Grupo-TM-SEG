@@ -20,6 +20,8 @@ const baseData: DhlOccurrenceReportData = {
   phasePhotos: [],
   delayMinutesAtOrigin: 86,
   factsSummary: null,
+  emailLink: null,
+  emailAttachmentText: null,
   directorName: 'Thiago',
   generatedAt: '2026-07-10T17:00:00.000Z',
 };
@@ -29,6 +31,16 @@ test('acesso ao relatório restrito à diretoria', () => {
   assert.equal(roleCanGenerateDhlOccurrenceReport('operador', 'Thiago Moreira'), false);
   assert.equal(roleCanGenerateDhlOccurrenceReport('administrador', 'Thiago Arruda'), false);
   assert.equal(roleCanGenerateDhlOccurrenceReport('operador', 'Michelle Dias'), false);
+});
+
+test('narrativa inclui referência de e-mail quando informada', () => {
+  const narrative = buildOccurrenceNarrative({
+    ...baseData,
+    emailLink: 'https://mail.example.com/thread/123',
+    emailAttachmentText: 'Corpo do e-mail da DHL solicitando posicionamento.',
+  });
+  assert.match(narrative.emailReference || '', /mail\.example\.com/i);
+  assert.match(narrative.emailReference || '', /Corpo do e-mail/i);
 });
 
 test('narrativa não expõe nominalmente o parceiro operacional', () => {
