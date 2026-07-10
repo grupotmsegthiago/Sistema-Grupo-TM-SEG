@@ -28,6 +28,7 @@ import {
   waitUntil,
 } from '../lib/brandPhotoStamp';
 import type { PrintPipelineTimings } from '../lib/printPipelineTypes';
+import DhlOccurrenceReportModal from './DhlOccurrenceReportModal';
 import { useNotification } from '../lib/NotificationContext';
 import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
 import { 
@@ -37,7 +38,7 @@ import {
   Loader2, Search, ChevronDown, UserPlus, Package, ShieldCheck, Check, BadgeCheck, Sparkles,
   Milestone, Timer, Calendar, Globe, Briefcase, Zap, TrendingUp, RefreshCw, User, Phone, CheckCircle2, Mail,
   ExternalLink, Radar, ArrowRightLeft, TableProperties, Gauge, XCircle, CalendarClock, CircleDot,
-  ClipboardList, UserX
+  ClipboardList, UserX, FileText
 } from 'lucide-react';
 import { useLoadScript, Autocomplete, GoogleMap, Marker } from '@react-google-maps/api';
 import { googleMapsApiKey, libraries, googleMapsLoadConfig } from '../lib/maps';
@@ -960,6 +961,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [originalStatus, setOriginalStatus] = useState('');
     const [deslocFile, setDeslocFile] = useState<File | null>(null);
     const [deslocSending, setDeslocSending] = useState(false);
+    const [dhlOccurrenceReportOpen, setDhlOccurrenceReportOpen] = useState(false);
     const [deslocExistingUrl, setDeslocExistingUrl] = useState('');
     const [mirroringFile, setMirroringFile] = useState<File | null>(null);
     const [mirroringPreview, setMirroringPreview] = useState('');
@@ -3734,6 +3736,20 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             {((mission?.client || '').toUpperCase().includes('DHL')) && (
                                 <div><label className={LABEL_CLASS}><span className="text-red-600 font-black">Nº S.E. (DHL)</span></label><input type="text" className={`${INPUT_CLASS} border-red-300 bg-yellow-50/40`} placeholder="Ex: SE-123456 / 4912345" value={editData.dhl_se_number} onChange={e => setEditData({...editData, dhl_se_number: e.target.value.toUpperCase()})} data-testid="input-edit-dhl-se-number" /></div>
                             )}
+                            {isDiretoria && String(editData.dhl_se_number || mission?.dhl_se_number || '').trim() && (
+                                <div className="md:col-span-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setDhlOccurrenceReportOpen(true)}
+                                        className="inline-flex items-center gap-2 rounded-xl border-2 border-[#0d3b66] bg-[#e8eef4] px-4 py-2.5 text-[11px] font-black uppercase tracking-wide text-[#0d3b66] hover:bg-[#dce6f0] transition-colors"
+                                        data-testid="button-open-dhl-occurrence-report"
+                                    >
+                                        <FileText size={16} />
+                                        Gerar Plano de Ação DHL (PDF)
+                                    </button>
+                                    <p className="text-[9px] text-slate-500 mt-1">Somente diretoria — inclui horários, fotos por etapa e assinatura.</p>
+                                </div>
+                            )}
                             {((mission?.client || '').toUpperCase().includes('DHL')) && (
                                 <div><label className={LABEL_CLASS}><span className="text-amber-700 font-black">Nº SM (DHL)</span></label><input type="text" className={`${INPUT_CLASS} border-amber-300 bg-amber-50/40`} placeholder="Ex: SM-789012 (opcional)" value={editData.dhl_sm_number} onChange={e => setEditData({...editData, dhl_sm_number: e.target.value.toUpperCase()})} data-testid="input-edit-dhl-sm-number" /></div>
                             )}
@@ -4347,6 +4363,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 </div>
               </div>
             </div>
+          )}
+          {mission && dhlOccurrenceReportOpen && (
+            <DhlOccurrenceReportModal
+              mission={{ ...mission, dhl_se_number: editData.dhl_se_number || mission.dhl_se_number }}
+              isOpen={dhlOccurrenceReportOpen}
+              onClose={() => setDhlOccurrenceReportOpen(false)}
+            />
           )}
         </div>
     );

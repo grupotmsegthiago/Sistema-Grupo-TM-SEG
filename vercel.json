@@ -155,6 +155,10 @@
     "api/relatorios-dhl-se-183013.ts": {
       "maxDuration": 30,
       "includeFiles": "public/docs/**"
+    },
+    "api/dhl-occurrence-report.ts": {
+      "maxDuration": 60,
+      "includeFiles": "public/logo.png"
     }
   },
   "rewrites": [
@@ -345,6 +349,10 @@
     {
       "source": "/relatorios/dhl-se-183013",
       "destination": "/api/relatorios-dhl-se-183013"
+    },
+    {
+      "source": "/api/dhl/occurrence-report",
+      "destination": "/api/dhl-occurrence-report"
     },
     {
       "source": "/docs/:path*",
