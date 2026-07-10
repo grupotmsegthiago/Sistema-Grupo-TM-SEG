@@ -57,7 +57,7 @@ function decodeJwtRole(key: string): string | null {
   }
 }
 
-function pickServerKey(url: string): string {
+function pickServerKey(): string {
   const serviceCandidates = [
     process.env.SUPABASE_SERVICE_ROLE_KEY,
     process.env.SUPABASE_SERVICE_KEY,
@@ -96,7 +96,7 @@ async function supabaseAdmin() {
       '',
   );
   const url = envUrl.includes(TMSEG_SUPABASE_REF) ? envUrl : DEFAULT_SUPABASE_URL;
-  return createClient(url, pickServerKey(url));
+  return createClient(url, pickServerKey());
 }
 
 async function resolveRole(token: string): Promise<string | null> {

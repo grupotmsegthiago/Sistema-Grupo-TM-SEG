@@ -17,3 +17,8 @@ interface ImportMeta {
 
 declare const __TMSEG_BUILD_ID__: string;
 declare const __TMSEG_BUILD_VERSION__: string;
+
+// Bundles CJS gerados no build (build-server.mjs) para as funções serverless
+// do relatório DHL. Não possuem .d.ts; declaramos como módulo para evitar
+// TS7016 (implicit any) sem alterar o comportamento em runtime.
+declare module '*.cjs';

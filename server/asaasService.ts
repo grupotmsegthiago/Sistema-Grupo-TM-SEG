@@ -10,7 +10,7 @@ import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity } from '../lib/asaa
 
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
 
-const GRUPO_TMSEG_WALLET_ID = '6641fec4-8476-48e3-90a8-3db6b14f538c';
+export const GRUPO_TMSEG_WALLET_ID = '6641fec4-8476-48e3-90a8-3db6b14f538c';
 
 interface CompanyConfig {
   apiKey: string;

@@ -271,7 +271,7 @@ async function checkPlugNotas(): Promise<IntegracaoDiagResult> {
       const result = await testPlugNotasConnection();
       return {
         ok: result.ok,
-        detalhes: { env: getPlugNotasEnv(), ...result },
+        detalhes: { ...result, env: getPlugNotasEnv() },
         erro: result.error,
       };
     },

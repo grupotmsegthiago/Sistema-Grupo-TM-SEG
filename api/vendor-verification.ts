@@ -41,7 +41,7 @@ function missionIdOf(req: any): string {
   return String(req.query?.missionId || req.params?.missionId || "").trim();
 }
 
-async function handleGet(req: any, res: any, missionId: string) {
+async function handleGet(_req: any, res: any, missionId: string) {
   try {
     const sb = await supabase();
     const { data: mission, error } = await sb
