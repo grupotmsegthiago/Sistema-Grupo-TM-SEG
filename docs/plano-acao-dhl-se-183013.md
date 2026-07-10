@@ -27,15 +27,19 @@ Formalizar, de forma estruturada e transparente, a **justificativa do atraso** r
 |------|---------|
 | **Data da operação** | 08 de julho de 2026 |
 | **Nº S.E.** | 183013 |
-| **Placa da viatura** | FQO6B16 |
+| **Nº OS TM SEG** | GTM-6296 |
+| **Placa transportada (cliente)** | FQO6B16 — P 360 A4X2 |
+| **Viatura escolta (parceiro)** | TXW5H42 — MOBI LIKE |
 | **Cliente** | DHL Supply Chain |
 | **Operação** | FOXCONN / Apple |
-| **Local de origem** | Unidade Foxconn — Jundiaí/SP |
-| **Horário programado (origem)** | 11:00 |
-| **Horário real de chegada (origem)** | 12:19 |
-| **Atraso total** | 1 hora e 19 minutos |
-| **Data/hora de aceite da missão** | 07/07/2026 às 20:31 |
+| **Local de origem** | Av. Caminho de Goiás, 100 — Jardim São Bento, Jundiaí/SP |
+| **Destino operacional** | Rod. Vice-Prefeito Hermenegildo Tonoli, 1500 — Novo Horizonte, Jundiaí/SP |
+| **Horário programado (origem)** | 08/07/2026 — 11:00 (Brasília) |
+| **Chegada na origem (registro sistêmico)** | 08/07/2026 — 12:26 (Brasília) |
+| **Atraso na origem** | 1 hora e 26 minutos |
+| **Data/hora de abertura da OS** | 07/07/2026 às 20:43 (Brasília) |
 | **Fornecedor operacional (parceiro)** | Comando G8 |
+| **Agentes** | José Augusto de O. Martins / José Fernando Luiz |
 | **Referência adicional** | S.E. 183014 — desconsiderada conforme confirmação DHL (10/07/2026) |
 
 ---
@@ -56,13 +60,40 @@ Formalizar, de forma estruturada e transparente, a **justificativa do atraso** r
 
 | Horário / Data | Evento |
 |----------------|--------|
-| 07/07/2026 — 20:31 | TM SEG aceita a missão SE 183013 no sistema. |
+| 07/07/2026 — 20:43 | OS GTM-6296 criada no sistema TM SEG (S.E. 183013). |
 | 08/07/2026 — (pré-operação) | Monitoramento operacional contínuo conforme rotina TM SEG (ciclos de 30 min a 1 h). |
+| 08/07/2026 — 10:29 | Missão agendada com Comando G8 e equipe designada. |
 | 08/07/2026 — 11:00 | Horário programado de chegada à origem (Foxconn Jundiaí). |
 | 08/07/2026 — (durante deslocamento) | Parceiro Comando G8 informa necessidade de troca de viatura; TM SEG comunica imediatamente a DHL e mantém acompanhamento. |
 | 08/07/2026 — (contato DHL) | Identificado que agentes haviam se direcionado inicialmente ao endereço de destino; central orienta deslocamento para origem correta. |
-| 08/07/2026 — 12:19 | Chegada da viatura ao ponto de origem — atraso de 1h19. |
-| 08/07/2026 — (pós-chegada) | Acompanhamento mantido até conclusão da operação. |
+| 08/07/2026 — 12:26 | **Chegada na origem** — registro sistêmico (status *Origem*). |
+| 08/07/2026 — 13:00 | Saída da origem / início da operação (status *Em Viagem*). |
+| 08/07/2026 — 13:37 | **Chegada no destino** — registro sistêmico (*CHEGADA NO DESTINO*). |
+| 08/07/2026 — 14:05 | **Fim da missão** — status *Concluída* no sistema TM SEG. |
+
+### 3.2 Registro operacional oficial (sistema TM SEG)
+
+Marcos extraídos do histórico da OS **GTM-6296** (horário de Brasília):
+
+| Marco operacional | Data | Hora | Fonte no sistema |
+|-------------------|------|------|------------------|
+| Agendamento | 08/07/2026 | 10:29 | `mission_history` — status Agendada |
+| **Chegada na origem** | 08/07/2026 | **12:26** | `mission_history` — status Origem |
+| Início da operação (saída da origem) | 08/07/2026 | 13:00 | `mission_history` — status Em Viagem |
+| **Chegada no destino** | 08/07/2026 | **13:37** | `mission_history` — ocorrência *CHEGADA NO DESTINO* |
+| **Fim da missão** | 08/07/2026 | **14:05** | `mission_history` — status Concluída |
+| Hodômetro — KM inicial | — | — | 64.958 km |
+| Hodômetro — KM final | — | — | 64.968 km (10 km rodados) |
+
+**Endereço registrado na chegada ao destino:** Rodovia Vice-Prefeito Hermenegildo Tonoli, 1500 — Novo Horizonte — Jundiaí/SP.
+
+### 3.3 Evidência fotográfica — solicitação DHL
+
+Evidência anexada na abertura da OS (solicitação do cliente DHL), arquivada no sistema TM SEG:
+
+![Evidência da solicitação DHL — S.E. 183013](evidence/GTM-6296-solicitacao-dhl.png)
+
+*Figura 1 — Print da solicitação DHL vinculada à S.E. 183013 (OS GTM-6296). Arquivo: `mission-evidence/GTM-6296/1783467790311_0.png`.*
 
 ---
 
@@ -70,7 +101,7 @@ Formalizar, de forma estruturada e transparente, a **justificativa do atraso** r
 
 ### 4.1 Síntese executiva
 
-O atraso de **1h19** na chegada à origem da S.E. 183013 **não decorreu de falha no aceite ou no registro da missão** pela TM SEG. A missão foi aceita em **07/07/2026 às 20:31**, com antecedência adequada para planejamento. A ocorrência está **diretamente associada à execução do parceiro operacional Comando G8**, com contribuição de falhas no encadeamento logístico de alocação de viatura e equipe.
+O atraso de **1h26** na chegada à origem da S.E. 183013 **não decorreu de falha no aceite ou no registro da missão** pela TM SEG. A OS foi aberta em **07/07/2026 às 20:43**, com antecedência adequada para planejamento. A ocorrência está **diretamente associada à execução do parceiro operacional Comando G8**, com contribuição de falhas no encadeamento logístico de alocação de viatura e equipe.
 
 ### 4.2 Versão do parceiro (Comando G8)
 
@@ -86,7 +117,7 @@ Após contato direto com o responsável do parceiro e cruzamento com o históric
 
 | Nível | Pergunta | Resposta |
 |-------|----------|----------|
-| 1 | Por que houve atraso na origem? | A viatura chegou à Foxconn Jundiaí somente às 12:19. |
+| 1 | Por que houve atraso na origem? | A viatura chegou à Foxconn Jundiaí somente às 12:26 (registro sistêmico). |
 | 2 | Por que a viatura não chegou às 11:00? | Foi necessário trocar a VTR durante o deslocamento. |
 | 3 | Por que foi necessário trocar a VTR? | A viatura originalmente designada não estava disponível a tempo para assumir a missão. |
 | 4 | Por que a viatura não estava disponível? | Estava alocada em outra operação e não havia concluído/desalocado com antecedência suficiente. |
@@ -188,10 +219,12 @@ Imprevistos podem ocorrer em qualquer operação logística de escolta armada. C
 
 | Anexo | Descrição |
 |-------|-----------|
-| A | Registro de aceite da missão SE 183013 (07/07/2026 — 20:31) |
-| B | Logs de monitoramento e comunicações com DHL (08/07/2026) |
-| C | Registro de contato e apuração com Comando G8 |
-| D | Ata de reunião de alinhamento (a ser produzida — AC-05) |
+| A | Registro de abertura da OS GTM-6296 / S.E. 183013 (07/07/2026 — 20:43) |
+| B | Marcos operacionais com horários de origem, destino e fim (Seção 3.2) |
+| C | Evidência fotográfica da solicitação DHL (Figura 1) |
+| D | Logs de monitoramento e comunicações com DHL (08/07/2026) |
+| E | Registro de contato e apuração com Comando G8 |
+| F | Ata de reunião de alinhamento (a ser produzida — AC-05) |
 
 *Os anexos operacionais podem ser disponibilizados mediante solicitação da DHL.*
 

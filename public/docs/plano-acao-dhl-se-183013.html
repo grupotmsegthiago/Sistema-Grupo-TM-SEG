@@ -27,7 +27,7 @@
       background: #fff;
       border-radius: 12px;
       box-shadow: 0 8px 32px rgba(13, 59, 102, 0.12);
-      max-width: 560px;
+      max-width: 640px;
       width: 100%;
       overflow: hidden;
     }
@@ -42,36 +42,55 @@
       line-height: 1.35;
       margin-bottom: 6px;
     }
-    .header p {
-      font-size: 0.875rem;
-      opacity: 0.9;
-    }
-    .body {
-      padding: 28px 32px 32px;
-    }
+    .header p { font-size: 0.875rem; opacity: 0.9; }
+    .body { padding: 28px 32px 32px; }
     .meta {
       background: var(--brand-light);
       border-radius: 8px;
       padding: 16px 18px;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
       font-size: 0.875rem;
       line-height: 1.6;
     }
-    .meta dt {
-      font-weight: 600;
-      color: var(--brand);
-      display: inline;
-    }
-    .meta dd {
-      display: inline;
-      margin: 0 0 0 4px;
-    }
+    .meta dt { font-weight: 600; color: var(--brand); display: inline; }
+    .meta dd { display: inline; margin: 0 0 0 4px; }
     .meta div + div { margin-top: 6px; }
-    .actions {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+    .times {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+      margin-bottom: 20px;
     }
+    .times th, .times td {
+      border: 1px solid #d0d7de;
+      padding: 8px 10px;
+      text-align: left;
+    }
+    .times th { background: #e8eef4; color: var(--brand); }
+    .times strong { color: var(--brand); }
+    h2.section {
+      font-size: 0.875rem;
+      color: var(--brand);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .photo-wrap {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .photo-wrap img {
+      max-width: 100%;
+      max-height: 280px;
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+    }
+    .photo-wrap figcaption {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+    .actions { display: flex; flex-direction: column; gap: 12px; }
     .btn {
       display: inline-flex;
       align-items: center;
@@ -119,14 +138,32 @@
     <div class="body">
       <dl class="meta">
         <div><dt>Documento:</dt> <dd>PA-DHL-2026-001</dd></div>
-        <div><dt>S.E.:</dt> <dd>183013 — Placa FQO6B16</dd></div>
+        <div><dt>S.E. / OS:</dt> <dd>183013 — GTM-6296 — Placa FQO6B16</dd></div>
         <div><dt>Data da operação:</dt> <dd>08/07/2026</dd></div>
-        <div><dt>Emissão:</dt> <dd>10/07/2026</dd></div>
+        <div><dt>Programado (origem):</dt> <dd>11:00 — Chegada real: <strong>12:26</strong> (atraso 1h26)</dd></div>
         <div><dt>Elaborado por:</dt> <dd>Grupo TM SEG</dd></div>
       </dl>
+
+      <h2 class="section">Marcos operacionais (Brasília)</h2>
+      <table class="times">
+        <thead>
+          <tr><th>Marco</th><th>Horário</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Chegada na origem</td><td><strong>12:26</strong></td></tr>
+          <tr><td>Chegada no destino</td><td><strong>13:37</strong></td></tr>
+          <tr><td>Fim da missão</td><td><strong>14:05</strong></td></tr>
+        </tbody>
+      </table>
+
+      <figure class="photo-wrap">
+        <img src="/docs/evidence/GTM-6296-solicitacao-dhl.png" alt="Evidência solicitação DHL SE 183013" />
+        <figcaption>Evidência da solicitação DHL — S.E. 183013</figcaption>
+      </figure>
+
       <div class="actions">
         <a class="btn btn-primary" href="/relatorios/dhl-se-183013?pdf=1" download="PA-DHL-2026-001-SE-183013.pdf">
-          ⬇ Baixar relatório em PDF
+          ⬇ Baixar relatório completo em PDF
         </a>
         <a class="btn btn-secondary" href="/relatorios/dhl-se-183013?pdf=1" target="_blank" rel="noopener">
           Abrir PDF no navegador

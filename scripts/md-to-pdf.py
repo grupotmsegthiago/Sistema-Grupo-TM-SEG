@@ -67,6 +67,14 @@ pre {
 hr { border: none; border-top: 1px solid #ccc; margin: 16px 0; }
 strong { color: #111; }
 em { color: #444; }
+img {
+  max-width: 100%;
+  max-height: 420px;
+  display: block;
+  margin: 12px auto;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
 """
 
 def main() -> int:
