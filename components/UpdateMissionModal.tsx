@@ -918,7 +918,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const isDiretoria = useMemo(() => {
         if (!currentUser) return false;
         const role = (currentUser.role || '').toLowerCase();
-        return role === 'diretoria';
+        const name = (currentUser.name || '').toLowerCase();
+        if (role === 'diretoria') return true;
+        if (name.includes('thiago moreira')) return true;
+        if (name.includes('thiago') && !name.includes('arruda')) return true;
+        if (name.includes('plinio') || name.includes('plínio')) return true;
+        return false;
     }, [currentUser]);
     const canEditApproved = hasPrivilegedOsEdit;
     const canRevertStatus = hasPrivilegedOsEdit;

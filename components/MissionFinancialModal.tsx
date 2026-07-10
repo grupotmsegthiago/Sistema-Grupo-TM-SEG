@@ -515,10 +515,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isBarbaraFinance = useMemo(() => {
     return userNameLower.includes('barbara') || userNameLower.includes('bárbara');
   }, [userNameLower]);
-  const isDiretoriaRole = userRoleLower === 'diretoria';
+  const canGenerateDhlOccurrenceReport = useMemo(() => {
+    if (userRoleLower === 'diretoria') return true;
+    if (userNameLower.includes('thiago moreira')) return true;
+    if (userNameLower.includes('thiago') && !userNameLower.includes('arruda')) return true;
+    if (userNameLower.includes('plinio') || userNameLower.includes('plínio')) return true;
+    return false;
+  }, [userRoleLower, userNameLower]);
   const dhlSeNumber = String((mission as any)?.dhl_se_number || '').trim();
   const showDhlOccurrenceReportBtn =
-    isDiretoriaRole
+    canGenerateDhlOccurrenceReport
     && !!mission
     && isDhlSupplyClient(mission.originalClientName || mission.client)
     && !!dhlSeNumber;
@@ -3748,6 +3754,23 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           </div>
         </header>
 
+        {showDhlOccurrenceReportBtn && (
+          <div
+            className="shrink-0 px-3 py-2.5 sm:px-5 bg-gradient-to-r from-[#450a0a] to-[#7f1d1d] border-b border-red-950/30"
+            data-testid="bar-dhl-occurrence-report-mobile"
+          >
+            <button
+              type="button"
+              onClick={() => setDhlOccurrenceReportOpen(true)}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-[0.99] text-white px-4 py-3 text-xs sm:text-sm font-black uppercase tracking-wide border border-white/25 shadow-lg"
+              data-testid="button-dhl-occurrence-report-banner"
+            >
+              <FileText size={18} className="shrink-0" />
+              Gerar Plano de Ação DHL (PDF)
+            </button>
+          </div>
+        )}
+
         <div ref={modalContentRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50 pb-32">
             {isSnapshotFrozen && (
                 <div data-testid="snapshot-frozen-banner" className="bg-amber-50 border-2 border-amber-400 rounded-xl p-4 flex items-center gap-3 shadow-sm">
@@ -5716,8 +5739,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         </div>
                     )}
 
-                    <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-gray-200 z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
-                        <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+                    <div className="sticky bottom-0 left-0 right-0 p-3 sm:p-4 bg-white/95 backdrop-blur-md border-t border-gray-200 z-[20] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                        <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 md:gap-6">
                             <div className="flex flex-wrap gap-4 md:gap-12 items-center justify-center md:justify-start">
                                 <div>
                                     <p className="text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">Resultado Operacional Final</p>
@@ -5743,19 +5766,30 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 )}
                             </div>
-                            <div className="flex flex-col gap-1.5 w-full md:w-auto shrink-0">
+                            <div className="flex flex-col gap-2 w-full md:w-auto shrink-0 order-first md:order-none">
+                                {showDhlOccurrenceReportBtn && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setDhlOccurrenceReportOpen(true)}
+                                    className="w-full px-5 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 min-h-[48px] bg-[#450a0a] text-white hover:bg-[#7f1d1d] border border-red-900/30 md:hidden"
+                                    data-testid="button-dhl-occurrence-report-footer-mobile"
+                                  >
+                                    <FileText size={16} />
+                                    Plano de Ação DHL
+                                  </button>
+                                )}
                                 {savedByInfo && (
                                     <div className="flex items-center justify-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5" data-testid="saved-by-indicator">
                                         <Save size={11} className="text-emerald-600" />
                                         <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wide">Salvo por {savedByInfo}</span>
                                     </div>
                                 )}
-                                <div className="flex flex-col sm:flex-row gap-3">
+                                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                                 {showDhlOccurrenceReportBtn && (
                                   <button
                                     type="button"
                                     onClick={() => setDhlOccurrenceReportOpen(true)}
-                                    className="px-5 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 bg-[#450a0a] text-white hover:bg-[#7f1d1d] border border-red-900/30"
+                                    className="hidden md:flex px-5 py-3 rounded-xl text-xs font-black uppercase items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 bg-[#450a0a] text-white hover:bg-[#7f1d1d] border border-red-900/30"
                                     data-testid="button-dhl-occurrence-report-footer"
                                   >
                                     <FileText size={16} />

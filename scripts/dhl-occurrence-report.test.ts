@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildOccurrenceNarrative } from '../lib/dhlOccurrenceReport/buildReportHtml';
+import { roleCanGenerateDhlOccurrenceReport } from '../lib/services/dhlOccurrenceReportAccess';
 import type { DhlOccurrenceReportData } from '../lib/dhlOccurrenceReport/types';
 
 const baseData: DhlOccurrenceReportData = {
@@ -22,6 +23,13 @@ const baseData: DhlOccurrenceReportData = {
   directorName: 'Thiago',
   generatedAt: '2026-07-10T17:00:00.000Z',
 };
+
+test('acesso ao relatório inclui diretoria e thiago por nome', () => {
+  assert.equal(roleCanGenerateDhlOccurrenceReport('diretoria', 'Qualquer'), true);
+  assert.equal(roleCanGenerateDhlOccurrenceReport('operador', 'Thiago Moreira'), true);
+  assert.equal(roleCanGenerateDhlOccurrenceReport('administrador', 'Thiago Arruda'), false);
+  assert.equal(roleCanGenerateDhlOccurrenceReport('operador', 'Michelle Dias'), false);
+});
 
 test('narrativa não expõe nominalmente o parceiro operacional', () => {
   const narrative = buildOccurrenceNarrative(baseData);
