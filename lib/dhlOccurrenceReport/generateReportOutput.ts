@@ -1,14 +1,18 @@
 import { jsPDF } from 'jspdf';
-import fs from 'node:fs';
-import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
-import { buildOccurrenceNarrative } from './buildReportHtml';
-import { collectDhlOccurrenceReportData } from './collectReportData';
-import type { DhlOccurrenceReportInput } from './types';
-import { formatDateTimeBR, formatTimeBR } from '../dateUtils';
-import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from '../supabaseAdmin';
+import { buildOccurrenceNarrative } from './buildReportHtml.js';
+import { collectDhlOccurrenceReportData } from './collectReportData.js';
+import type { DhlOccurrenceReportInput } from './types.js';
+import { formatDateTimeBR, formatTimeBR } from '../dateUtils.js';
+import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from '../supabaseAdmin.js';
+import {
+  dhlOccurrenceReportFilename,
+  generateDhlOccurrenceReportHtml,
+  getPublicBaseUrl,
+  resolveTmSegLogoDataUri,
+} from './generateReportHtml.js';
 
-export { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } from './generateReportHtml';
+export { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename };
 
 const BRAND_WINE = '#450a0a';
 const BRAND_NAVY = '#0d3b66';
@@ -18,18 +22,6 @@ const PDF_GENERATION_TIMEOUT_MS = 55000;
 
 function getSupabase() {
   return createSupabaseAdminClient() ?? createClient(getSupabaseUrl(), getSupabaseAnonKey());
-}
-
-function resolveLocalAsset(...parts: string[]): string | null {
-  const candidates = [
-    path.resolve(process.cwd(), ...parts),
-    path.resolve(process.cwd(), 'dist', 'public', ...parts.slice(1)),
-    path.resolve(process.cwd(), 'client', 'public', ...parts.slice(1)),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return null;
 }
 
 async function fetchWithTimeout(url: string, timeoutMs = IMAGE_FETCH_TIMEOUT_MS): Promise<Response> {
@@ -42,17 +34,13 @@ async function fetchWithTimeout(url: string, timeoutMs = IMAGE_FETCH_TIMEOUT_MS)
   }
 }
 
+/** Carrega imagem remota (Supabase Storage ou site) via fetch — sem fs no serverless. */
 async function loadImageBase64(url: string): Promise<string | null> {
   try {
-    if (url.startsWith('/')) {
-      const local = resolveLocalAsset('public', url.replace(/^\//, ''));
-      if (local) {
-        const buf = fs.readFileSync(local);
-        const ext = path.extname(local).toLowerCase() === '.png' ? 'PNG' : 'JPEG';
-        return `data:image/${ext.toLowerCase()};base64,${buf.toString('base64')}`;
-      }
-    }
-    const res = await fetchWithTimeout(url);
+    const fetchUrl = url.startsWith('/')
+      ? `${getPublicBaseUrl()}${url}`
+      : url;
+    const res = await fetchWithTimeout(fetchUrl);
     if (!res.ok) return null;
     const buf = Buffer.from(await res.arrayBuffer());
     const ctype = res.headers.get('content-type') || 'image/png';
@@ -111,10 +99,14 @@ async function buildPdfBuffer(
   const contentW = pageW - margin * 2;
   let y = margin;
 
-  const logoPath = resolveLocalAsset('public', 'logo.png');
-  if (logoPath) {
-    const logoB64 = fs.readFileSync(logoPath).toString('base64');
-    doc.addImage(`data:image/png;base64,${logoB64}`, 'PNG', margin, y, 34, 14);
+  const logoDataUri = await resolveTmSegLogoDataUri();
+  if (logoDataUri && !logoDataUri.includes('svg+xml')) {
+    try {
+      const format: 'PNG' | 'JPEG' = logoDataUri.includes('image/png') ? 'PNG' : 'JPEG';
+      doc.addImage(logoDataUri, format, margin, y, 34, 14);
+    } catch {
+      /* logo opcional */
+    }
   }
 
   doc.setTextColor(BRAND_NAVY);

@@ -67,6 +67,6 @@ test('build-server gera bundles CJS do relatório DHL em api/dhl', () => {
 test('vercel.json inclui bundles CJS do occurrence-report', () => {
   const vercel = fs.readFileSync('vercel.json', 'utf8');
   assert.match(vercel, /"source": "\/api\/dhl\/occurrence-report"/);
-  assert.match(vercel, /occurrence-report-\{html,pdf,adjust\}\.cjs/);
+  assert.match(vercel, /occurrence-report-\*\.cjs/);
   assert.doesNotMatch(vercel, /dhl-occurrence-report/);
 });

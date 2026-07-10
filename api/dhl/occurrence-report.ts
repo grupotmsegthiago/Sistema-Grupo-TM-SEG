@@ -1,4 +1,12 @@
-import type { DhlOccurrenceReportInput } from '../../lib/dhlOccurrenceReport/types';
+/** Payload mínimo do relatório DHL — evita import estático de lib/ no handler Vercel. */
+type DhlOccurrenceReportInput = {
+  missionId: string;
+  factsSummary?: string | null;
+  emailLink?: string | null;
+  emailAttachmentText?: string | null;
+  directorName?: string | null;
+  generatedAt?: string;
+};
 
 const DEFAULT_SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
@@ -37,22 +45,58 @@ function decodeSupabaseRef(key: string): string | null {
   }
 }
 
-async function supabaseAdmin() {
-  const { createClient } = await import('@supabase/supabase-js');
-  const envUrl = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '');
-  const url = envUrl.includes(TMSEG_SUPABASE_REF) ? envUrl : DEFAULT_SUPABASE_URL;
-  const keys = [
+function decodeJwtRole(key: string): string | null {
+  try {
+    const part = key.split('.')[1];
+    if (!part) return null;
+    const json = Buffer.from(part, 'base64url').toString('utf8');
+    const payload = JSON.parse(json) as { role?: string };
+    return payload.role ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function pickServerKey(url: string): string {
+  const serviceCandidates = [
     process.env.SUPABASE_SERVICE_ROLE_KEY,
     process.env.SUPABASE_SERVICE_KEY,
+    process.env.TMSEG_SUPABASE_SERVICE_ROLE_KEY,
+  ];
+  for (const candidate of serviceCandidates) {
+    const key = String(candidate || '').trim();
+    if (!key) continue;
+    if (decodeSupabaseRef(key) !== TMSEG_SUPABASE_REF) continue;
+    if (decodeJwtRole(key) === 'anon') continue;
+    return key;
+  }
+
+  const anonCandidates = [
     process.env.SUPABASE_ANON_KEY,
     process.env.VITE_SUPABASE_ANON_KEY,
+    process.env.TMSEG_SUPABASE_ANON_KEY,
     DEFAULT_SUPABASE_ANON_KEY,
   ];
-  const key =
-    keys.map((k) => String(k || '').trim()).find(
-      (k) => k === DEFAULT_SUPABASE_ANON_KEY || decodeSupabaseRef(k) === TMSEG_SUPABASE_REF,
-    ) || DEFAULT_SUPABASE_ANON_KEY;
-  return createClient(url, key);
+  for (const candidate of anonCandidates) {
+    const key = String(candidate || '').trim();
+    if (!key) continue;
+    if (key === DEFAULT_SUPABASE_ANON_KEY || decodeSupabaseRef(key) === TMSEG_SUPABASE_REF) {
+      return key;
+    }
+  }
+  return DEFAULT_SUPABASE_ANON_KEY;
+}
+
+async function supabaseAdmin() {
+  const { createClient } = await import('@supabase/supabase-js');
+  const envUrl = String(
+    process.env.SUPABASE_URL ||
+      process.env.VITE_SUPABASE_URL ||
+      process.env.TMSEG_SUPABASE_URL ||
+      '',
+  );
+  const url = envUrl.includes(TMSEG_SUPABASE_REF) ? envUrl : DEFAULT_SUPABASE_URL;
+  return createClient(url, pickServerKey(url));
 }
 
 async function resolveRole(token: string): Promise<string | null> {

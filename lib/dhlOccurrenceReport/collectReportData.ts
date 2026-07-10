@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../dateUtils';
-import { isImageEvidenceUrl } from './photoUtils';
+import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../dateUtils.js';
+import { getSupabaseUrl } from '../supabaseAdmin.js';
+import { isImageEvidenceUrl } from './photoUtils.js';
 import type {
   DhlOccurrenceReportData,
   DhlOccurrenceReportInput,
@@ -8,7 +9,7 @@ import type {
   DhlReportPhase,
   DhlReportPhasePhoto,
   DhlReportOperationalMark,
-} from './types';
+} from './types.js';
 
 type EvidenceRow = {
   url: string;
@@ -129,7 +130,7 @@ async function listStorageFiles(
 }
 
 function publicStorageUrl(storagePath: string): string {
-  const base = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://ajhmmjuewdsukecaimik.supabase.co';
+  const base = getSupabaseUrl();
   const clean = storagePath.replace(/^\/+/, '');
   return `${base.replace(/\/$/, '')}/storage/v1/object/public/mission-evidence/${clean}`;
 }

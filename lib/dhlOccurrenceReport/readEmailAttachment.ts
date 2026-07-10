@@ -1,4 +1,4 @@
-import { parseEmailThreadInput } from './parseEmailThread';
+import { parseEmailThreadInput } from './parseEmailThread.js';
 
 const MAX_EMAIL_CHARS = 12000;
 

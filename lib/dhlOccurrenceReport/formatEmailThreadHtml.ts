@@ -1,4 +1,4 @@
-import type { EmailThreadMessage } from './parseEmailThread';
+import type { EmailThreadMessage } from './parseEmailThread.js';
 
 function esc(text: string): string {
   return String(text || '')

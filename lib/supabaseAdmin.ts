@@ -24,7 +24,11 @@ function warnForeignProjectOnce(): void {
 }
 
 function pickServerUrl(): string {
-  const candidates = [process.env.SUPABASE_URL, process.env.VITE_SUPABASE_URL];
+  const candidates = [
+    process.env.SUPABASE_URL,
+    process.env.VITE_SUPABASE_URL,
+    process.env.TMSEG_SUPABASE_URL,
+  ];
   for (const candidate of candidates) {
     const value = cleanEnv(candidate);
     if (isValidHttpUrl(value) && isTmSegSupabaseUrl(value)) return value;
@@ -34,7 +38,11 @@ function pickServerUrl(): string {
 }
 
 function pickServerAnonKey(url: string): string {
-  const candidates = [process.env.SUPABASE_ANON_KEY, process.env.VITE_SUPABASE_ANON_KEY];
+  const candidates = [
+    process.env.SUPABASE_ANON_KEY,
+    process.env.VITE_SUPABASE_ANON_KEY,
+    process.env.TMSEG_SUPABASE_ANON_KEY,
+  ];
   for (const candidate of candidates) {
     const value = cleanEnv(candidate);
     if (isTmSegSupabaseAnonKey(value, url)) return value;
@@ -73,6 +81,7 @@ export function getSupabaseServiceRoleKey(): string {
   const candidates = [
     process.env.SUPABASE_SERVICE_ROLE_KEY,
     process.env.SUPABASE_SERVICE_KEY,
+    process.env.TMSEG_SUPABASE_SERVICE_ROLE_KEY,
   ];
 
   for (const candidate of candidates) {

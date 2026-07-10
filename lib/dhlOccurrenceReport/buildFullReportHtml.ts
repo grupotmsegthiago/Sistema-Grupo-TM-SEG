@@ -1,8 +1,8 @@
-import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../dateUtils';
-import { formatEmailThreadHtml } from './formatEmailThreadHtml';
-import { isImageEvidenceUrl } from './photoUtils';
-import { parseEmailThreadInput } from './parseEmailThread';
-import type { DhlOccurrenceReportData } from './types';
+import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../dateUtils.js';
+import { formatEmailThreadHtml } from './formatEmailThreadHtml.js';
+import { isImageEvidenceUrl } from './photoUtils.js';
+import { parseEmailThreadInput } from './parseEmailThread.js';
+import type { DhlOccurrenceReportData } from './types.js';
 
 const BRAND = {
   red: '#dc2626',

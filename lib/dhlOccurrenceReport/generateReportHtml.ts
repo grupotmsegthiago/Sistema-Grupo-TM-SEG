@@ -1,11 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import fs from 'node:fs';
-import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
-import { buildOccurrenceReportHtml } from './buildReportHtml';
-import { collectDhlOccurrenceReportData } from './collectReportData';
-import type { DhlOccurrenceReportInput } from './types';
-import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from '../supabaseAdmin';
+import { buildOccurrenceReportHtml } from './buildReportHtml.js';
+import { collectDhlOccurrenceReportData } from './collectReportData.js';
+import type { DhlOccurrenceReportInput } from './types.js';
+import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from '../supabaseAdmin.js';
 
 /** SVG inline — fallback se PNG não estiver disponível no runtime serverless. */
 const TMSEG_LOGO_SVG_DATA_URI =
@@ -15,7 +13,7 @@ function getSupabase() {
   return createSupabaseAdminClient() ?? createClient(getSupabaseUrl(), getSupabaseAnonKey());
 }
 
-function getPublicBaseUrl(): string {
+export function getPublicBaseUrl(): string {
   return (
     process.env.APP_PUBLIC_URL
     || process.env.SYSTEM_URL
@@ -23,32 +21,8 @@ function getPublicBaseUrl(): string {
   ).replace(/\/$/, '');
 }
 
-/** Incorpora logo TM SEG em base64 para funcionar em iframe/print/PDF sem URL externa. */
+/** Incorpora logo TM SEG em base64 via URL pública (sem fs — compatível com Vercel serverless). */
 export async function resolveTmSegLogoDataUri(): Promise<string> {
-  const localCandidates = [
-    path.join(process.cwd(), 'public', 'logo.png'),
-    path.join(process.cwd(), 'dist', 'public', 'logo.png'),
-    path.join(process.cwd(), 'client', 'public', 'logo.png'),
-  ];
-
-  if (typeof __dirname !== 'undefined') {
-    localCandidates.push(
-      path.join(__dirname, '..', '..', 'public', 'logo.png'),
-      path.join(__dirname, '..', '..', 'dist', 'public', 'logo.png'),
-    );
-  }
-
-  for (const candidate of localCandidates) {
-    try {
-      if (fs.existsSync(candidate)) {
-        const buf = fs.readFileSync(candidate);
-        return `data:image/png;base64,${buf.toString('base64')}`;
-      }
-    } catch {
-      /* tenta próximo caminho */
-    }
-  }
-
   const fetchCandidates = [
     getPublicBaseUrl(),
     'https://sistema.grupotmseg.com.br',
