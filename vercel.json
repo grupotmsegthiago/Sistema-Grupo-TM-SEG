@@ -145,6 +145,9 @@
     },
     "api/asaas-balances.ts": {
       "maxDuration": 60
+    },
+    "api/asaas-transfer-pix.ts": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
@@ -323,6 +326,10 @@
     {
       "source": "/api/asaas/balances",
       "destination": "/api/asaas-balances"
+    },
+    {
+      "source": "/api/asaas/transfer-pix",
+      "destination": "/api/asaas-transfer-pix"
     },
     {
       "source": "/api/(.*)",

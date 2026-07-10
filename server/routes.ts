@@ -14,7 +14,7 @@ import { runEmailHealthCheck } from "./emailHealth";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { registerRhRoutes } from "./rhRoutes";
 import { runRhMigrations } from "./rhMigrations";
-import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
+import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances, transferPixFromCompany } from "./asaasService";
 import {
   getWhatsappProvider,
   isMetaWhatsAppConfigured,
@@ -5770,6 +5770,29 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       res.json({ success: true, balances });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/asaas/transfer-pix", requireAuth, requireRole('administrador', 'diretoria', 'financeiro', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const company = String(req.body?.company || '').trim();
+      const value = Number(req.body?.value);
+      if (!company) {
+        res.status(400).json({ ok: false, error: 'Empresa Asaas inválida.' });
+        return;
+      }
+      if (!Number.isFinite(value) || value <= 0) {
+        res.status(400).json({ ok: false, error: 'Valor inválido.' });
+        return;
+      }
+      const transfer = await transferPixFromCompany({
+        company,
+        value,
+        description: req.body?.description ? String(req.body.description) : undefined,
+      });
+      res.json({ success: true, transfer, message: 'Transferência Pix solicitada com sucesso.' });
+    } catch (err: any) {
+      res.status(400).json({ ok: false, error: err.message });
     }
   });
 

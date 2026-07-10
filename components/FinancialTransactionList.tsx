@@ -17,12 +17,14 @@ import {
   ArrowRight, AlertCircle, ClipboardCheck, Receipt, 
   FileCheck, BarChart3, Lock, ChevronRight, Eye,
   Building2, Truck, CircleDollarSign, Clock, Filter,
-  Upload
+  Upload, Send
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import FinancialTransactionForm from './FinancialTransactionForm';
 import BankStatementImporter from './BankStatementImporter';
 import FinancialDocConferencia from './FinancialDocConferencia';
+import AsaasPixTransferModal from './AsaasPixTransferModal';
+import { calcMaxPixTransfer } from '../lib/asaasPixTransfer';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -76,6 +78,11 @@ const FinancialTransactionList: React.FC = () => {
     const [asaasBalances, setAsaasBalances] = useState<Array<{ company: string; name: string; balance: number; pendingBalance: number; error?: string }>>([]);
     const [loadingBalances, setLoadingBalances] = useState(false);
     const [balancesLoadedOnce, setBalancesLoadedOnce] = useState(false);
+    const [pixTransferCard, setPixTransferCard] = useState<{
+        company: string;
+        label: string;
+        balance: number;
+    } | null>(null);
 
     const ASAAS_CARD_KEYS = ['TM GESTÃO', 'TM SEGURANCA', 'TM SECURITY'] as const;
 
@@ -1231,6 +1238,22 @@ const FinancialTransactionList: React.FC = () => {
                     <BankStatementImporter onClose={() => setIsImportOpen(false)} onSuccess={() => { setIsImportOpen(false); fetchTransactions(); }} />
                 </div>
             )}
+            {pixTransferCard && (
+                <AsaasPixTransferModal
+                    company={pixTransferCard.company}
+                    label={pixTransferCard.label}
+                    balance={pixTransferCard.balance}
+                    onClose={() => setPixTransferCard(null)}
+                    onSuccess={() => {
+                        showNotification(
+                            'Pix enviado',
+                            `Transferência solicitada de ${pixTransferCard.label} para financeiro@grupotmseg.com.br.`,
+                            'success',
+                        );
+                        void fetchAsaasBalances();
+                    }}
+                />
+            )}
 
             <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
                 <div>
@@ -1270,6 +1293,8 @@ const FinancialTransactionList: React.FC = () => {
                     const balance = entry?.balance ?? 0;
                     const pending = entry?.pendingBalance ?? 0;
                     const hasError = !!entry?.error;
+                    const maxPix = calcMaxPixTransfer(balance);
+                    const canTransferPix = balancesLoadedOnce && !hasError && maxPix > 0;
                     return (
                         <div key={co.key} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" data-testid={`card-asaas-${co.key.replace(/\s+/g, '-').toLowerCase()}`}>
                             <div className={`h-1.5 bg-gradient-to-r ${co.color}`}></div>
@@ -1303,6 +1328,23 @@ const FinancialTransactionList: React.FC = () => {
                                             <p className="text-[11px] text-gray-500 mt-1">
                                                 Pendente: <span className="font-bold text-amber-600">{pending.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                                             </p>
+                                        )}
+                                        {balancesLoadedOnce && !hasError && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setPixTransferCard({ company: co.key, label: co.label, balance })}
+                                                disabled={!canTransferPix}
+                                                title={
+                                                    canTransferPix
+                                                        ? 'Transferir Pix para financeiro@grupotmseg.com.br'
+                                                        : 'Saldo insuficiente após reserva de R$ 100,00'
+                                                }
+                                                className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 py-2 text-[10px] font-black uppercase tracking-wide text-teal-800 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                                data-testid={`btn-pix-transfer-${co.key.replace(/\s+/g, '-').toLowerCase()}`}
+                                            >
+                                                <Send size={12} />
+                                                Transferir Pix
+                                            </button>
                                         )}
                                     </>
                                 )}
