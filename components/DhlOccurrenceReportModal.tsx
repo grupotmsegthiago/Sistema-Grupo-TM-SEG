@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Eye, ExternalLink, FileText, Link2, Loader2, Paperclip, Printer, X } from 'lucide-react';
+import { Eye, ExternalLink, FileText, Link2, Loader2, Paperclip, Printer, Sparkles, X } from 'lucide-react';
 import type { Mission } from '../types';
 import { parseEmailThreadInput } from '../lib/dhlOccurrenceReport/parseEmailThread';
 import {
+  adjustDhlOccurrenceReportHtml,
   downloadDhlOccurrenceReportBlob,
   downloadDhlOccurrenceReportHtml,
   fetchDhlOccurrenceReportPreview,
@@ -102,13 +103,13 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
   const [factsSummary, setFactsSummary] = useState(() =>
     seNumber === '183013' ? DEFAULT_183013_SUMMARY : '',
   );
-  const [reportParecer, setReportParecer] = useState('');
+  const [aiAdjustmentNotes, setAiAdjustmentNotes] = useState('');
   const [emailLink, setEmailLink] = useState('');
   const [emailAttachmentText, setEmailAttachmentText] = useState('');
   const [emailFileName, setEmailFileName] = useState<string | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loadingMode, setLoadingMode] = useState<'preview' | 'pdf' | 'print' | null>(null);
+  const [loadingMode, setLoadingMode] = useState<'preview' | 'pdf' | 'print' | 'adjust' | null>(null);
   const [progressPercent, setProgressPercent] = useState(0);
   const [progressLabel, setProgressLabel] = useState('Iniciando...');
   const [error, setError] = useState<string | null>(null);
@@ -119,7 +120,6 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
     missionId: mission.id,
     seNumber,
     factsSummary,
-    reportParecer,
     emailLink,
     emailAttachmentText,
   };
@@ -200,6 +200,39 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
       setStep('preview');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao gerar pré-visualização');
+    } finally {
+      resetLoading();
+    }
+  };
+
+  const handleAiAdjust = async () => {
+    if (!previewHtml) {
+      setError('Gere a pré-visualização antes de pedir ajustes à IA.');
+      return;
+    }
+    if (!aiAdjustmentNotes.trim()) {
+      setError('Descreva o que deseja ajustar no relatório (tom, contexto, menções ao parceiro, etc.).');
+      return;
+    }
+
+    setLoading(true);
+    setLoadingMode('adjust');
+    setError(null);
+    targetPercentRef.current = 10;
+    setProgressPercent(10);
+    setProgressLabel('A IA está ajustando o contexto do relatório...');
+
+    try {
+      const adjusted = await adjustDhlOccurrenceReportHtml(
+        previewHtml,
+        aiAdjustmentNotes,
+        mission.id,
+        applyProgress,
+      );
+      setPreviewHtml(adjusted);
+      setAiAdjustmentNotes('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao ajustar relatório com IA');
     } finally {
       resetLoading();
     }
@@ -373,26 +406,6 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
                 )}
               </div>
 
-              <div className="rounded-xl border-2 border-[#dc2626]/30 bg-gradient-to-br from-red-50 via-white to-slate-50 p-4 space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-wider text-[#991b1b] block">
-                  Parecer da Diretoria — conclusão e linha de raciocínio
-                </label>
-                <p className="text-[11px] text-slate-600 leading-relaxed">
-                  Registre aqui o parecer oficial que deve orientar a conclusão do relatório.
-                  Este texto é <strong>independente</strong> dos e-mails e evidências — use para corrigir
-                  ou complementar pontos que a IA não captou, mantendo um único contexto para a DHL.
-                </p>
-                <textarea
-                  value={reportParecer}
-                  onChange={(e) => setReportParecer(e.target.value)}
-                  rows={7}
-                  disabled={loading}
-                  placeholder="Ex.: Após apuração, concluímos que o atraso decorreu de... As ações adotadas foram... Comprometemo-nos a..."
-                  className="w-full rounded-xl border border-red-200 px-3 py-2 text-sm text-slate-800 focus:border-[#dc2626] outline-none disabled:bg-slate-50"
-                  data-testid="input-dhl-occurrence-parecer"
-                />
-              </div>
-
               {error && (
                 <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                   {error}
@@ -418,6 +431,36 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
           </>
         ) : (
           <>
+            <div className="px-4 py-3 bg-gradient-to-r from-[#111827] via-[#7f1d1d] to-[#dc2626] border-b border-[#991b1b] text-white shrink-0 space-y-2">
+              <p className="text-[11px] leading-relaxed opacity-95">
+                Leia o relatório abaixo. Se o <strong>tom ou contexto</strong> não estiver adequado para enviar à DHL,
+                descreva o ajuste desejado e clique em <strong>Ajustar com IA</strong>.
+              </p>
+              <textarea
+                value={aiAdjustmentNotes}
+                onChange={(e) => setAiAdjustmentNotes(e.target.value)}
+                rows={3}
+                disabled={loading}
+                placeholder='Ex.: O relatório está falando mal do fornecedor. Ajuste para tom construtivo, use "parceiro/fornecedor" no texto geral e cite o nome completo só na identificação.'
+                className="w-full rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-xs text-white placeholder:text-white/60 focus:border-white outline-none disabled:opacity-50"
+                data-testid="input-dhl-occurrence-ai-adjust"
+              />
+              <button
+                type="button"
+                onClick={() => void handleAiAdjust()}
+                disabled={loading || !previewHtml || !aiAdjustmentNotes.trim()}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white text-[#991b1b] text-xs font-bold hover:bg-red-50 disabled:opacity-50"
+                data-testid="button-ai-adjust-dhl-report"
+              >
+                {loading && loadingMode === 'adjust' ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Sparkles size={14} />
+                )}
+                Ajustar com IA
+              </button>
+            </div>
+
             <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-900 shrink-0">
               Relatório <strong>completo</strong> com cores TM SEG, logo, fotos e todas as seções.
               Para PDF: <strong>Salvar PDF completo</strong> → na janela de impressão escolha

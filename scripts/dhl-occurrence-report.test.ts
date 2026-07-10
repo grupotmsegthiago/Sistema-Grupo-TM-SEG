@@ -23,7 +23,6 @@ const baseData: DhlOccurrenceReportData = {
   allEvidencePhotos: [],
   delayMinutesAtOrigin: 86,
   factsSummary: null,
-  reportParecer: null,
   emailLink: null,
   emailAttachmentText: null,
   directorName: 'Thiago',
@@ -257,22 +256,54 @@ Boa tarde! Precisamos do plano de ação.`,
   assert.match(html, /plano de ação/i);
 });
 
-test('HTML inclui seção 8.1 quando parecer da diretoria é informado', () => {
-  const parecer =
-    'Após apuração interna, concluímos que o atraso foi pontual e já acionamos o parceiro para plano de melhoria.';
-  const html = buildOccurrenceReportHtml(
-    { ...baseData, reportParecer: parecer },
-    { logoDataUri: 'data:image/png;base64,CCCC' },
-  );
-  assert.match(html, /8\.1 Parecer da Diretoria/i);
-  assert.match(html, /Após apuração interna/i);
-  assert.match(html, /Seção 8\.1/i);
-  assert.match(html, /Anexo[\s\S]*G[\s\S]*Parecer da Diretoria/i);
+test('HTML marca trechos editáveis para ajuste com IA', () => {
+  const html = buildOccurrenceReportHtml(baseData, {
+    logoDataUri: 'data:image/png;base64,AAAA',
+  });
+  assert.match(html, /data-dhl-editable="facts-summary"/);
+  assert.match(html, /data-dhl-editable="sec-4-1-sintese"/);
+  assert.match(html, /data-dhl-editable="sec-4-3-causa-raiz"/);
+  assert.doesNotMatch(html, /8\.1 Parecer da Diretoria/i);
 });
 
-test('service envia reportParecer no payload', () => {
+test('ajuste com IA aplica patches nos blocos editáveis', async () => {
+  const { extractEditableBlocks, applyEditablePatches, adjustDhlReportHtmlWithAi } = await import(
+    '../lib/dhlOccurrenceReport/adjustReportHtml'
+  );
+  const html = `<p data-dhl-editable="sec-4-1-sintese">Texto acusatório sobre o fornecedor COMANDO G8.</p>`;
+  const blocks = extractEditableBlocks(html);
+  assert.equal(blocks.length, 1);
+  assert.match(blocks[0].html, /COMANDO G8/);
+
+  const patched = applyEditablePatches(html, {
+    'sec-4-1-sintese': 'Texto construtivo sobre o parceiro operacional.',
+  });
+  assert.match(patched, /parceiro operacional/);
+  assert.doesNotMatch(patched, /COMANDO G8/);
+
+  const adjusted = await adjustDhlReportHtmlWithAi(
+    html,
+    'Suavize o tom e use parceiro em vez do nome',
+    async () =>
+      JSON.stringify({
+        patches: [{ id: 'sec-4-1-sintese', html: 'Texto construtivo sobre o parceiro.' }],
+      }),
+  );
+  assert.match(adjusted, /parceiro/);
+});
+
+test('service expõe ajuste com IA no payload', () => {
   const src = fs.readFileSync('lib/services/dhlOccurrenceReportService.ts', 'utf8');
-  assert.match(src, /reportParecer/);
+  assert.match(src, /adjustDhlOccurrenceReportHtml/);
+  assert.match(src, /format: 'adjust'/);
+  assert.doesNotMatch(src, /reportParecer/);
+});
+
+test('handler suporta format adjust com html e adjustmentNotes', () => {
+  const handler = fs.readFileSync('api/dhl/occurrence-report.ts', 'utf8');
+  assert.match(handler, /format === 'adjust'/);
+  assert.match(handler, /adjustmentNotes/);
+  assert.match(handler, /adjustDhlReportHtmlWithAi/);
 });
 
 test('service imprime sem window.open (evita bloqueio de pop-up)', () => {

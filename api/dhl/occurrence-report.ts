@@ -122,24 +122,87 @@ export default async function handler(req: any, res: any) {
 
     const directorName = await resolveDirectorName(token);
     const factsSummary = typeof body.factsSummary === 'string' ? body.factsSummary : undefined;
-    const reportParecer = typeof body.reportParecer === 'string' ? body.reportParecer : undefined;
     const emailLink = typeof body.emailLink === 'string' ? body.emailLink : undefined;
     const emailAttachmentText =
       typeof body.emailAttachmentText === 'string' ? body.emailAttachmentText : undefined;
 
+    const format = String(body.format || 'pdf').trim().toLowerCase();
+    const seFromBody = String(body.seNumber || '').trim();
+    const filenameBase = seFromBody || missionId;
+
+    if (format === 'adjust') {
+      const html = typeof body.html === 'string' ? body.html : '';
+      const adjustmentNotes =
+        typeof body.adjustmentNotes === 'string' ? body.adjustmentNotes : '';
+      if (!html.trim()) {
+        res.status(400).json({ ok: false, error: 'html obrigatório para ajuste com IA' });
+        return;
+      }
+      if (!adjustmentNotes.trim()) {
+        res.status(400).json({ ok: false, error: 'Descreva o que deseja ajustar no relatório' });
+        return;
+      }
+
+      const geminiKey = String(
+        process.env.AI_INTEGRATIONS_GEMINI_API_KEY ||
+          process.env.GEMINI_API_KEY ||
+          process.env.GOOGLE_GEMINI_API_KEY ||
+          '',
+      ).trim();
+      if (!geminiKey) {
+        res.status(503).json({
+          ok: false,
+          error: 'IA indisponível — configure GEMINI_API_KEY na Vercel.',
+        });
+        return;
+      }
+
+      const { adjustDhlReportHtmlWithAi } = await import(
+        '../../lib/dhlOccurrenceReport/adjustReportHtml'
+      );
+
+      const generateText = async (prompt: string): Promise<string> => {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Referer: 'https://sistema.grupotmseg.com.br/',
+            },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: prompt }] }],
+              generationConfig: { maxOutputTokens: 8192, temperature: 0.35 },
+            }),
+          },
+        );
+        const data = (await response.json()) as {
+          error?: { message?: string };
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        };
+        if (!response.ok) {
+          throw new Error(data?.error?.message || `Gemini HTTP ${response.status}`);
+        }
+        const text =
+          data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
+        if (!text.trim()) throw new Error('A IA retornou resposta vazia.');
+        return text;
+      };
+
+      const adjustedHtml = await adjustDhlReportHtmlWithAi(html, adjustmentNotes, generateText);
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json({ ok: true, format: 'adjust', html: adjustedHtml });
+      return;
+    }
+
     const input = {
       missionId,
       factsSummary,
-      reportParecer,
       emailLink,
       emailAttachmentText,
       directorName,
       generatedAt: new Date().toISOString(),
     };
-
-    const format = String(body.format || 'pdf').trim().toLowerCase();
-    const seFromBody = String(body.seNumber || '').trim();
-    const filenameBase = seFromBody || missionId;
 
     if (format === 'html' || format === 'preview') {
       const { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } = await import(

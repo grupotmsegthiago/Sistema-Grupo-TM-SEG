@@ -99,40 +99,17 @@ function reportStyles(): string {
     .footer { margin-top: 16px; font-size: 8.5pt; color: ${BRAND.muted}; text-align: center; }
     .no-print { margin-top: 10px; padding: 8px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; font-size: 8.5pt; }
     @media print { .no-print { display: none !important; } .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; } th { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-    .parecer-diretoria {
-      background: linear-gradient(135deg, #fef2f2 0%, #fff 55%, #f9fafb 100%);
-      border: 2px solid var(--brand-red);
-      border-radius: 8px;
-      padding: 14px 16px;
-      margin: 12px 0 16px;
-      page-break-inside: avoid; break-inside: avoid-page;
-    }
-    .parecer-diretoria .parecer-meta { font-size: 8.5pt; color: ${BRAND.muted}; margin-bottom: 8px; }
-    .parecer-diretoria .parecer-body { font-size: 10pt; line-height: 1.55; white-space: pre-line; }
     ul.compact { margin: 6px 0 6px 18px; padding: 0; }
     ul.compact li { margin-bottom: 4px; }
   `;
 }
 
-function buildParecerSection(data: DhlOccurrenceReportData, emissionDate: string): string {
-  const parecer = data.reportParecer?.trim();
-  if (!parecer) return '';
-
-  return `
-  <h2>8.1 Parecer da Diretoria — conclusão e linha de raciocínio</h2>
-  <div class="parecer-diretoria section-root-cause">
-    <p class="parecer-meta"><strong>${esc(data.directorName)}</strong> · ${emissionDate} · Registro formal independente de e-mails e evidências anexas</p>
-    <div class="parecer-body">${esc(parecer).replace(/\n/g, '<br/>')}</div>
-  </div>`;
+function editable(id: string): string {
+  return `data-dhl-editable="${id}"`;
 }
 
 function buildRootCauseBlock(data: DhlOccurrenceReportData, provider: string): string {
-  const parecer = data.reportParecer?.trim();
-  if (parecer) {
-    return `<div class="quote">A conclusão da apuração e a linha de raciocínio adotada pela TM SEG estão consolidadas no <strong>Parecer da Diretoria (Seção 8.1)</strong>, que prevalece sobre os textos automáticos deste documento quando houver necessidade de ajuste ou contextualização específica da ocorrência.</div>`;
-  }
-
-  return `<div class="quote"><strong>Identificamos um descompasso no planejamento e na gestão de capacidade logística do parceiro ${esc(provider)}</strong>, com alocação de viatura ainda vinculada a operação anterior sem margem de segurança temporal, o que exigiu remanejamento e troca de VTR em campo. A TM SEG reforça junto ao parceiro o compromisso com a melhoria dos processos para que situações semelhantes não se repitam, preservando o padrão de qualidade exigido pela operação DHL.</div>`;
+  return `<div class="quote" ${editable('sec-4-3-causa-raiz')}><strong>Identificamos um descompasso no planejamento e na gestão de capacidade logística do parceiro ${esc(provider)}</strong>, com alocação de viatura ainda vinculada a operação anterior sem margem de segurança temporal, o que exigiu remanejamento e troca de VTR em campo. A TM SEG reforça junto ao parceiro o compromisso com a melhoria dos processos para que situações semelhantes não se repitam, preservando o padrão de qualidade exigido pela operação DHL.</div>`;
 }
 
 function buildEmailSection(data: DhlOccurrenceReportData): string {
@@ -169,7 +146,6 @@ export function buildFullOccurrenceReportHtml(
   const missionCreated = data.missionCreatedAt;
   const scheduledMission = data.scheduledMissionAt;
 
-  const parecerSection = buildParecerSection(data, emissionDate);
   const rootCauseBlock = buildRootCauseBlock(data, provider);
 
   const photoBlocks = data.phasePhotos
@@ -270,7 +246,7 @@ export function buildFullOccurrenceReportHtml(
   </table>
 
   <h2>3. Descrição dos fatos (5W2H)</h2>
-  <div class="summary">${esc(factsSummary).replace(/\n/g, '<br/>')}</div>
+  <div class="summary" ${editable('facts-summary')}>${esc(factsSummary).replace(/\n/g, '<br/>')}</div>
   ${emailSection}
 
   <table>
@@ -279,10 +255,10 @@ export function buildFullOccurrenceReportHtml(
       <tr><td>O quê?</td><td>Atraso na chegada da equipe de escolta à origem e deslocamento inicial da viatura para endereço divergente do programado (destino em vez de origem).</td></tr>
       <tr><td>Quando?</td><td>Operação do dia ${formatDateBR(scheduledOrigin)}, com horário contratual de atendimento às ${formatTimeBR(scheduledOrigin)} na origem.</td></tr>
       <tr><td>Onde?</td><td>Origem: ${esc(data.origin)}.</td></tr>
-      <tr><td>Quem?</td><td>Equipe S.E. ${esc(data.seNumber)}, executada pelo parceiro ${esc(provider)}, sob gestão operacional da TM SEG.</td></tr>
-      <tr><td>Por quê?</td><td>Falha no planejamento logístico do parceiro e necessidade de remanejamento/troca de viatura em campo.</td></tr>
-      <tr><td>Como?</td><td>A viatura designada não concluiu a operação anterior a tempo; houve troca de VTR em deslocamento e orientação da central para correção de rota.</td></tr>
-      <tr><td>Impacto?</td><td>Comprometimento do cronograma operacional do cliente e desgaste operacional em operação de alta criticidade.</td></tr>
+      <tr><td>Quem?</td><td ${editable('5w2h-quem')}>Equipe S.E. ${esc(data.seNumber)}, executada pelo parceiro ${esc(provider)}, sob gestão operacional da TM SEG.</td></tr>
+      <tr><td>Por quê?</td><td ${editable('5w2h-porque')}>Falha no planejamento logístico do parceiro e necessidade de remanejamento/troca de viatura em campo.</td></tr>
+      <tr><td>Como?</td><td ${editable('5w2h-como')}>A viatura designada não concluiu a operação anterior a tempo; houve troca de VTR em deslocamento e orientação da central para correção de rota.</td></tr>
+      <tr><td>Impacto?</td><td ${editable('5w2h-impacto')}>Comprometimento do cronograma operacional do cliente e desgaste operacional em operação de alta criticidade.</td></tr>
     </tbody>
   </table>
 
@@ -315,10 +291,10 @@ export function buildFullOccurrenceReportHtml(
 
   <h2>4. Justificativa do atraso e análise de causa raiz</h2>
   <h3>4.1 Síntese executiva</h3>
-  <p>O atraso de <strong>${delayHuman}</strong> na chegada à origem da S.E. ${esc(data.seNumber)} não decorreu de falha no aceite ou no registro da missão pela TM SEG. A OS foi aberta em <strong>${missionCreated ? `${formatDateBR(missionCreated)} às ${formatTimeBR(missionCreated)}` : '—'}</strong>. A ocorrência está associada a um descompasso pontual na execução operacional do parceiro <strong>${esc(provider)}</strong>, já acionado para alinhamento e melhoria contínua.</p>
+  <p ${editable('sec-4-1-sintese')}>O atraso de <strong>${delayHuman}</strong> na chegada à origem da S.E. ${esc(data.seNumber)} não decorreu de falha no aceite ou no registro da missão pela TM SEG. A OS foi aberta em <strong>${missionCreated ? `${formatDateBR(missionCreated)} às ${formatTimeBR(missionCreated)}` : '—'}</strong>. A ocorrência está associada a um descompasso pontual na execução operacional do parceiro, já acionado para alinhamento e melhoria contínua.</p>
 
   <h3>4.2 Versão do parceiro</h3>
-  <p>O fornecedor informou necessidade de <strong>troca de viatura (VTR) no meio do percurso</strong>. A TM SEG segue apurando os detalhes operacionais para consolidar o entendimento completo dos fatos, com foco em prevenção de reincidência.</p>
+  <p ${editable('sec-4-2-parceiro')}>O fornecedor informou necessidade de <strong>troca de viatura (VTR) no meio do percurso</strong>. A TM SEG segue apurando os detalhes operacionais para consolidar o entendimento completo dos fatos, com foco em prevenção de reincidência.</p>
 
   <div class="section-root-cause">
   <h3>4.3 Conclusão da apuração TM SEG (causa raiz)</h3>
@@ -330,10 +306,10 @@ export function buildFullOccurrenceReportHtml(
     <thead><tr><th>Nível</th><th>Pergunta</th><th>Resposta</th></tr></thead>
     <tbody>
       <tr><td>1</td><td>Por que houve atraso na origem?</td><td>A viatura chegou à origem somente às ${formatTimeBR(originArrival)} (registro sistêmico).</td></tr>
-      <tr><td>2</td><td>Por que a viatura não chegou no horário programado?</td><td>Foi necessário reorganizar a VTR durante o deslocamento.</td></tr>
-      <tr><td>3</td><td>Por que foi necessário reorganizar a VTR?</td><td>A viatura designada não estava disponível a tempo para assumir a missão.</td></tr>
-      <tr><td>4</td><td>Por que a viatura não estava disponível?</td><td>Havia sobreposição com outra operação, sem desalocação com antecedência suficiente.</td></tr>
-      <tr><td>5</td><td>Por que não houve substituição preventiva?</td><td>O fluxo de backup não foi acionado com a antecedência necessária; a TM SEG foi informada em momento posterior ao ideal.</td></tr>
+      <tr><td>2</td><td>Por que a viatura não chegou no horário programado?</td><td ${editable('5pq-2')}>Foi necessário reorganizar a VTR durante o deslocamento.</td></tr>
+      <tr><td>3</td><td>Por que foi necessário reorganizar a VTR?</td><td ${editable('5pq-3')}>A viatura designada não estava disponível a tempo para assumir a missão.</td></tr>
+      <tr><td>4</td><td>Por que a viatura não estava disponível?</td><td ${editable('5pq-4')}>Havia sobreposição com outra operação, sem desalocação com antecedência suficiente.</td></tr>
+      <tr><td>5</td><td>Por que não houve substituição preventiva?</td><td ${editable('5pq-5')}>O fluxo de backup não foi acionado com a antecedência necessária; a TM SEG foi informada em momento posterior ao ideal.</td></tr>
     </tbody>
   </table>
 
@@ -344,7 +320,7 @@ export function buildFullOccurrenceReportHtml(
       <tr><td>C1</td><td>Comunicação imediata à DHL assim que identificada a necessidade de troca de viatura</td><td>Concluída</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
       <tr><td>C2</td><td>Orientação da equipe para correção de rota (destino → origem)</td><td>Concluída</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
       <tr><td>C3</td><td>Acompanhamento operacional contínuo até a conclusão da missão</td><td>Concluída</td><td>${formatDateBR(completed)}</td></tr>
-      <tr><td>C4</td><td>Alinhamento formal e apuração junto ao parceiro ${esc(provider)}, com plano de melhoria</td><td>Concluída</td><td>${emissionDate}</td></tr>
+      <tr><td>C4</td><td ${editable('contencao-c4')}>Alinhamento formal e apuração junto ao parceiro, com plano de melhoria</td><td>Concluída</td><td>${emissionDate}</td></tr>
       <tr><td>C5</td><td>Retorno formal à DHL com relato estruturado dos fatos</td><td>Concluída</td><td>${emissionDate}</td></tr>
     </tbody>
   </table>
@@ -354,7 +330,7 @@ export function buildFullOccurrenceReportHtml(
   <table>
     <thead><tr><th>ID</th><th>Ação</th><th>Responsável</th><th>Prazo</th><th>Indicador</th></tr></thead>
     <tbody>
-      <tr><td>AC-01</td><td>Concluir apuração documentada com ${esc(provider)} e plano de melhoria para evitar reincidência</td><td>Coordenação Operacional TM SEG</td><td>17/07/2026</td><td>Termo arquivado</td></tr>
+      <tr><td>AC-01</td><td ${editable('ac-01')}>Concluir apuração documentada com o parceiro e plano de melhoria para evitar reincidência</td><td>Coordenação Operacional TM SEG</td><td>17/07/2026</td><td>Termo arquivado</td></tr>
       <tr><td>AC-02</td><td>Registro formal no scorecard de fornecedores e reforço de SLA</td><td>Gestão de Fornecedores TM SEG</td><td>14/07/2026</td><td>Registro no sistema</td></tr>
       <tr><td>AC-03</td><td>Revisão temporária de alocação em missões críticas DHL/Foxconn até conclusão das ações</td><td>Coordenação Operacional TM SEG</td><td>Imediato</td><td>Plano de capacidade validado</td></tr>
       <tr><td>AC-04</td><td>Plano de capacidade diário do parceiro (VTRs × missões) até D-1 às 18:00</td><td>${esc(provider)} / TM SEG</td><td>14/07/2026</td><td>Planilha conferida</td></tr>
@@ -395,17 +371,16 @@ export function buildFullOccurrenceReportHtml(
       <tr><td>Reincidência do parceiro em operações DHL</td><td>0</td><td>Mensal</td><td>Gestão de Fornecedores</td></tr>
     </tbody>
   </table>
-  <p><em>Referência histórica TM SEG: mais de 380 missões aceitas e realizadas na operação DHL, sendo esta a primeira ocorrência de atraso significativo.</em></p>
+  <p ${editable('sec-7-referencia')}><em>Referência histórica TM SEG: mais de 380 missões aceitas e realizadas na operação DHL, sendo esta a primeira ocorrência de atraso significativo.</em></p>
 
   <h2>8. Compromisso da TM SEG</h2>
   <ul class="compact">
-    <li>Transparência total na comunicação de ocorrências e planos de ação.</li>
-    <li>Trabalho conjunto com parceiros para elevar o padrão operacional e cumprir os SLAs acordados.</li>
-    <li>Melhoria contínua dos processos de monitoramento, substituição e prevenção.</li>
-    <li>Acompanhamento ativo com relatórios periódicos à DHL durante o período de estabilização.</li>
+    <li ${editable('commit-1')}>Transparência total na comunicação de ocorrências e planos de ação.</li>
+    <li ${editable('commit-2')}>Trabalho conjunto com parceiros para elevar o padrão operacional e cumprir os SLAs acordados.</li>
+    <li ${editable('commit-3')}>Melhoria contínua dos processos de monitoramento, substituição e prevenção.</li>
+    <li ${editable('commit-4')}>Acompanhamento ativo com relatórios periódicos à DHL durante o período de estabilização.</li>
   </ul>
 
-  ${parecerSection}
 
   <h2>9. Anexos e registros de apoio</h2>
   <table>
@@ -417,7 +392,6 @@ export function buildFullOccurrenceReportHtml(
       <tr><td>D</td><td>Todas as evidências do sistema — Atualizar OS e anexos (Seção 3.4)</td></tr>
       <tr><td>E</td><td>Histórico de e-mails com DHL (Seção 2.1)</td></tr>
       <tr><td>F</td><td>Registro de contato e apuração com ${esc(provider)}</td></tr>
-      ${data.reportParecer?.trim() ? '<tr><td>G</td><td>Parecer da Diretoria — conclusão e linha de raciocínio (Seção 8.1)</td></tr>' : ''}
     </tbody>
   </table>
 

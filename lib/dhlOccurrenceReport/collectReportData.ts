@@ -517,7 +517,6 @@ export async function collectDhlOccurrenceReportData(
       allEvidencePhotos,
       delayMinutesAtOrigin,
       factsSummary: input.factsSummary?.trim() || null,
-      reportParecer: input.reportParecer?.trim() || null,
       emailLink: input.emailLink?.trim() || null,
       emailAttachmentText: input.emailAttachmentText?.trim() || null,
       directorName: input.directorName?.trim() || 'Diretoria — Grupo TM SEG',

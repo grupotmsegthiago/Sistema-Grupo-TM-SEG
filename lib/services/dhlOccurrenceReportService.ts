@@ -8,7 +8,6 @@ export type GenerateDhlOccurrenceReportParams = {
   missionId: string;
   seNumber?: string;
   factsSummary?: string;
-  reportParecer?: string;
   emailLink?: string;
   emailAttachmentText?: string;
 };
@@ -34,7 +33,6 @@ function buildPayload(params: GenerateDhlOccurrenceReportParams, format: 'html' 
     seNumber: params.seNumber,
     format,
     factsSummary: params.factsSummary?.trim() || undefined,
-    reportParecer: params.reportParecer?.trim() || undefined,
     emailLink: params.emailLink?.trim() || undefined,
     emailAttachmentText: params.emailAttachmentText?.trim() || undefined,
   };
@@ -96,7 +94,55 @@ async function postOccurrenceReport(
   }
 }
 
-/** Pré-visualização HTML — rápida, com fotos e textos editáveis antes do PDF. */
+/** Ajusta tom/contexto do HTML já gerado com observações da diretoria (IA). */
+export async function adjustDhlOccurrenceReportHtml(
+  html: string,
+  adjustmentNotes: string,
+  missionId: string,
+  onProgress?: (progress: DhlReportProgress) => void,
+): Promise<string> {
+  const report = (percent: number, label: string) => {
+    onProgress?.({ percent: Math.min(100, Math.max(0, percent)), label });
+  };
+
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    report(15, 'Enviando observações para a IA...');
+
+    const res = await authFetch('/api/dhl/occurrence-report', {
+      method: 'POST',
+      signal: controller.signal,
+      body: JSON.stringify({
+        missionId,
+        format: 'adjust',
+        html,
+        adjustmentNotes: adjustmentNotes.trim(),
+      }),
+    });
+
+    report(70, 'Aplicando ajustes no relatório...');
+
+    const json = (await parseJsonResponse(res)) as ReportJsonResponse & { html?: string };
+
+    if (!res.ok || !json.ok || !json.html) {
+      throw new Error(json.error || `Erro ao ajustar relatório (${res.status})`);
+    }
+
+    report(100, 'Relatório ajustado!');
+    return json.html;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Tempo esgotado ao ajustar o relatório. Tente novamente.');
+    }
+    if (err instanceof Error) throw err;
+    throw new Error('Falha ao ajustar relatório DHL com IA');
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 export async function fetchDhlOccurrenceReportPreview(
   params: GenerateDhlOccurrenceReportParams,
   onProgress?: (progress: DhlReportProgress) => void,
