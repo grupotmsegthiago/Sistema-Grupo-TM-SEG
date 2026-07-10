@@ -49,10 +49,17 @@ test('handler retorna 401 JSON sem token (simulação local)', async () => {
   assert.equal(body.error, 'Não autorizado');
 });
 
-test('handler preview usa generateReportHtml sem jspdf', () => {
+test('handler preview usa import estático de generateReportHtml sem jspdf', () => {
   const handler = fs.readFileSync('api/dhl/occurrence-report.ts', 'utf8');
-  assert.match(handler, /generateReportHtml\.js/);
-  assert.doesNotMatch(handler, /generateReportOutput\.js[\s\S]*format === 'html'/);
+  assert.match(handler, /from ['"].*generateReportHtml['"]/);
+  assert.doesNotMatch(handler, /await import\([\s\S]*generateReportHtml/);
   const htmlMod = fs.readFileSync('lib/dhlOccurrenceReport/generateReportHtml.ts', 'utf8');
   assert.doesNotMatch(htmlMod, /from ['"]jspdf['"]/);
+});
+
+test('vercel.json inclui lib do relatório DHL na função occurrence-report', () => {
+  const vercel = fs.readFileSync('vercel.json', 'utf8');
+  assert.match(vercel, /api\/dhl\/occurrence-report\.ts/);
+  assert.match(vercel, /lib\/\{dhlOccurrenceReport\/\*\*,dateUtils\.ts,supabaseAdmin\.ts\}/);
+  assert.doesNotMatch(vercel, /dhl-occurrence-report/);
 });
