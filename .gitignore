@@ -12,9 +12,8 @@ node_modules
 dist
 dist-ssr
 client/public/build-meta.json
-api/dhl/occurrence-report-html.cjs
-api/dhl/occurrence-report-pdf.cjs
-lib/dhlOccurrenceReport/bundles/
+dist/occurrence-report-html.cjs
+dist/occurrence-report-pdf.cjs
 *.local
 .vscode/*
 !.vscode/extensions.json
