@@ -3,6 +3,8 @@
  * Evita importar o asaasService completo (~NF, clientes, etc.).
  */
 
+import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity, readFirstEnv } from '../lib/asaasEnvKeys';
+
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
 
 export type AsaasBalanceRow = {
@@ -14,11 +16,7 @@ export type AsaasBalanceRow = {
 };
 
 function readEnv(...names: string[]): string {
-  for (const name of names) {
-    const value = String(process.env[name] || '').trim();
-    if (value) return value;
-  }
-  return '';
+  return readFirstEnv(...names);
 }
 
 function companyConfigs(): Record<string, { apiKey: string; name: string }> {
@@ -28,11 +26,11 @@ function companyConfigs(): Record<string, { apiKey: string; name: string }> {
       name: 'TM GESTÃO',
     },
     'TM SEGURANCA': {
-      apiKey: readEnv('ASAAS_API_KEY_TMSECURITY', 'ASAAS_API_KEY_TM_SEGURANCA'),
+      apiKey: getAsaasApiKeyTmSeguranca(),
       name: 'Tm Seguranca Consultoria & Tecnologia Integrada Ltda',
     },
     'TM SECURITY': {
-      apiKey: readEnv('ASAAS_API_KEY_TMSECURITY_60', 'ASAAS_API_KEY_TM_SECURITY'),
+      apiKey: getAsaasApiKeyTmSecurity(),
       name: 'TM Security Gestão Corporativa Ltda',
     },
   };

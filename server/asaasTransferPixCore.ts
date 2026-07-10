@@ -11,6 +11,7 @@ import {
 } from '../lib/asaasPixTransfer.js';
 import { buildAsaasTransferExternalReference } from '../lib/asaasTransferApproval.js';
 import { formatAsaasTransferError } from '../lib/asaasTransferErrors.js';
+import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity, readFirstEnv } from '../lib/asaasEnvKeys.js';
 import { registerAsaasPendingTransfer } from '../lib/services/asaasPendingTransferService.js';
 import { invalidateAsaasBalancesCoreCache } from './asaasBalancesCore.js';
 
@@ -18,11 +19,7 @@ const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
 const DEFAULT_FINANCEIRO_WALLET_ID = '6641fec4-8476-48e3-90a8-3db6b14f538c';
 
 function readEnv(...names: string[]): string {
-  for (const name of names) {
-    const value = String(process.env[name] || '').trim();
-    if (value) return value;
-  }
-  return '';
+  return readFirstEnv(...names);
 }
 
 function financeiroWalletId(): string {
@@ -32,8 +29,8 @@ function financeiroWalletId(): string {
 function companyApiKeys(): Record<string, string> {
   return {
     'TM GESTÃO': readEnv('ASAAS_API_KEY'),
-    'TM SEGURANCA': readEnv('ASAAS_API_KEY_TMSECURITY', 'ASAAS_API_KEY_TM_SEGURANCA'),
-    'TM SECURITY': readEnv('ASAAS_API_KEY_TMSECURITY_60', 'ASAAS_API_KEY_TM_SECURITY'),
+    'TM SEGURANCA': getAsaasApiKeyTmSeguranca(),
+    'TM SECURITY': getAsaasApiKeyTmSecurity(),
   };
 }
 

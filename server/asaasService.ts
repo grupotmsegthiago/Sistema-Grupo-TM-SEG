@@ -6,6 +6,7 @@ import {
   isKnownAsaasCompany as isKnownAsaasCompanyCore,
   transferPixFromCompanyCore,
 } from './asaasTransferPixCore';
+import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity } from '../lib/asaasEnvKeys';
 
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
 
@@ -45,7 +46,7 @@ const ASAAS_COMPANIES: Record<string, CompanyConfig> = {
     },
   },
   'TM SEGURANCA': {
-    apiKey: process.env.ASAAS_API_KEY_TMSECURITY || '',
+    apiKey: getAsaasApiKeyTmSeguranca(),
     cnpj: '28804378000167',
     name: 'Tm Seguranca Consultoria & Tecnologia Integrada Ltda',
     aliases: ['TM SEGURANÇA', 'TM SEGURANCA', 'TMSEGURANCA', 'TMSEGURANÇA', 'SEGURANÇA', 'SEGURANCA', 'TM SEGURANCA CONSULTORIA'],
@@ -58,7 +59,7 @@ const ASAAS_COMPANIES: Record<string, CompanyConfig> = {
     },
   },
   'TM SECURITY': {
-    apiKey: process.env.ASAAS_API_KEY_TMSECURITY_60 || '',
+    apiKey: getAsaasApiKeyTmSecurity(),
     cnpj: '60508931000127',
     name: 'TM Security Gestão Corporativa Ltda',
     aliases: ['TM SECURITY', 'TMSECURITY', 'SECURITY', 'TM SECURITY GESTAO', 'TM SECURITY GESTÃO'],
