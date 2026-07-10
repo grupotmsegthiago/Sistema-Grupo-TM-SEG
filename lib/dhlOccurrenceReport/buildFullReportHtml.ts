@@ -56,7 +56,7 @@ function reportStyles(): string {
     .cover-title p { margin: 4px 0 0; color: #fecaca; font-size: 10pt; }
     .header {
       display: flex; align-items: center; gap: 16px;
-      background: linear-gradient(135deg, ${BRAND.red} 0%, ${BRAND.redDark} 52%, ${BRAND.black} 100%);
+      background: linear-gradient(135deg, ${BRAND.black} 0%, ${BRAND.redDark} 55%, ${BRAND.red} 100%);
       border-bottom: 3px solid ${BRAND.black};
       padding: 14px 16px; margin: -0px -0px 16px; border-radius: 0 0 8px 8px;
     }
@@ -89,6 +89,9 @@ function reportStyles(): string {
     .photo-card h4 { color: var(--brand-red-dark) !important; }
     .photo-card img { width: 100%; max-height: 200px; object-fit: contain; border-radius: 4px; background: #fff; }
     .photo-missing { min-height: 64px; display: flex; align-items: center; justify-content: center; background: #f3f4f6; color: ${BRAND.muted}; font-size: 8.5pt; text-align: center; padding: 8px; border-radius: 4px; }
+    .photos-all-evidence { page-break-inside: auto; }
+    .photos-all-evidence .photo-card { margin-bottom: 4px; }
+    .photo-meta { font-size: 7.5pt; color: ${BRAND.muted}; margin-top: 4px; }
     .timeline td:first-child { width: 28%; font-weight: 600; }
     .cronograma { font-family: ui-monospace, monospace; font-size: 8.5pt; background: #fef2f2; padding: 10px; border-radius: 6px; white-space: pre-line; border-left: 3px solid var(--brand-red); }
     .signature { margin-top: 20px; border-top: 2px solid var(--brand-black); padding-top: 8px; }
@@ -176,6 +179,18 @@ export function buildFullOccurrenceReportHtml(
         ? `<img src="${p.url}" alt="${esc(p.label)}" crossorigin="anonymous" />`
         : `<div class="photo-missing">Evidência não registrada no sistema para esta etapa.</div>`;
       return `<div class="photo-card"><h4 style="margin:0 0 6px;font-size:9pt">${esc(p.label)} — ${when}</h4>${img}</div>`;
+    })
+    .join('');
+
+  const allEvidenceBlocks = (data.allEvidencePhotos || [])
+    .filter((e) => e.url && isImageEvidenceUrl(e.url))
+    .map((e) => {
+      const when = e.at ? `${formatDateBR(e.at)} ${formatTimeBR(e.at)}` : '—';
+      return `<div class="photo-card">
+        <h4 style="margin:0 0 6px;font-size:9pt">${esc(e.label)}</h4>
+        <img src="${e.url}" alt="${esc(e.label)}" crossorigin="anonymous" />
+        <div class="photo-meta">${esc(when)} · ${esc(e.source)}</div>
+      </div>`;
     })
     .join('');
 
@@ -292,6 +307,12 @@ export function buildFullOccurrenceReportHtml(
   <h3>3.3 Evidências fotográficas por etapa</h3>
   <div class="photos">${photoBlocks}</div>
 
+  ${allEvidenceBlocks ? `
+  <h3>3.4 Todas as evidências registradas no sistema</h3>
+  <p style="font-size:9pt;color:${BRAND.muted};margin:4px 0 8px">Inclui prints e anexos da <strong>Atualizar OS</strong>, criação da OS, hodômetro, espelhamento, deslocamento DHL e demais uploads em <code>mission-evidence</code>.</p>
+  <div class="photos photos-all-evidence">${allEvidenceBlocks}</div>
+  ` : ''}
+
   <h2>4. Justificativa do atraso e análise de causa raiz</h2>
   <h3>4.1 Síntese executiva</h3>
   <p>O atraso de <strong>${delayHuman}</strong> na chegada à origem da S.E. ${esc(data.seNumber)} não decorreu de falha no aceite ou no registro da missão pela TM SEG. A OS foi aberta em <strong>${missionCreated ? `${formatDateBR(missionCreated)} às ${formatTimeBR(missionCreated)}` : '—'}</strong>. A ocorrência está associada a um descompasso pontual na execução operacional do parceiro <strong>${esc(provider)}</strong>, já acionado para alinhamento e melhoria contínua.</p>
@@ -393,9 +414,10 @@ export function buildFullOccurrenceReportHtml(
       <tr><td>A</td><td>Registro de abertura da OS ${esc(data.missionId)} / S.E. ${esc(data.seNumber)}</td></tr>
       <tr><td>B</td><td>Marcos operacionais com horários (Seção 3.2)</td></tr>
       <tr><td>C</td><td>Evidências fotográficas por etapa (Seção 3.3)</td></tr>
-      <tr><td>D</td><td>Histórico de e-mails com DHL (Seção 2.1)</td></tr>
-      <tr><td>E</td><td>Registro de contato e apuração com ${esc(provider)}</td></tr>
-      ${data.reportParecer?.trim() ? '<tr><td>F</td><td>Parecer da Diretoria — conclusão e linha de raciocínio (Seção 8.1)</td></tr>' : ''}
+      <tr><td>D</td><td>Todas as evidências do sistema — Atualizar OS e anexos (Seção 3.4)</td></tr>
+      <tr><td>E</td><td>Histórico de e-mails com DHL (Seção 2.1)</td></tr>
+      <tr><td>F</td><td>Registro de contato e apuração com ${esc(provider)}</td></tr>
+      ${data.reportParecer?.trim() ? '<tr><td>G</td><td>Parecer da Diretoria — conclusão e linha de raciocínio (Seção 8.1)</td></tr>' : ''}
     </tbody>
   </table>
 

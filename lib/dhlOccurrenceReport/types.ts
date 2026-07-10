@@ -8,6 +8,15 @@ export interface DhlReportPhasePhoto {
   note: string | null;
 }
 
+/** Evidência fotográfica coletada do sistema (Atualizar OS, storage, logs). */
+export interface DhlReportEvidenceItem {
+  url: string;
+  label: string;
+  actionType: string;
+  at: string | null;
+  source: string;
+}
+
 export interface DhlReportOperationalMark {
   label: string;
   at: string | null;
@@ -38,6 +47,8 @@ export interface DhlOccurrenceReportData {
   scheduledOriginAt: string | null;
   marks: DhlReportOperationalMark[];
   phasePhotos: DhlReportPhasePhoto[];
+  /** Todas as evidências fotográficas encontradas no sistema para esta OS. */
+  allEvidencePhotos: DhlReportEvidenceItem[];
   delayMinutesAtOrigin: number | null;
   factsSummary: string | null;
   reportParecer: string | null;

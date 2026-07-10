@@ -4,6 +4,7 @@ import { isImageEvidenceUrl } from './photoUtils';
 import type {
   DhlOccurrenceReportData,
   DhlOccurrenceReportInput,
+  DhlReportEvidenceItem,
   DhlReportPhase,
   DhlReportPhasePhoto,
   DhlReportOperationalMark,
@@ -44,6 +45,50 @@ function formatKm(value: unknown): string | null {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
   return `${n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 3 })} km`;
+}
+
+function evidenceLabel(item: EvidenceRow): string {
+  const map: Record<string, string> = {
+    mirroring: 'Espelhamento na origem',
+    mirror_proof: 'Comprovante espelhamento (intake DHL)',
+    dhl_deslocamento_print: 'Print aprovação deslocamento DHL',
+    odometer_print: 'Hodômetro — print KM final',
+    odometer_storage: 'Hodômetro (storage)',
+    evidence_upload: 'Evidência — criação/atualização OS',
+    terminal_status_confirmed: 'Confirmação status terminal (Atualizar OS)',
+    refused_status_evidence: 'Evidência — recusa da OS',
+    cancel_status_evidence: 'Evidência — cancelamento da OS',
+    storage: 'Arquivo mission-evidence',
+  };
+  const ctx = String(item.context || '').trim();
+  if (ctx) return ctx;
+  return map[item.actionType] || item.actionType || 'Evidência fotográfica';
+}
+
+function evidenceSource(item: EvidenceRow): string {
+  if (item.filePath) return `Storage: ${item.filePath}`;
+  if (item.actionType === 'mirroring' || item.actionType === 'mirror_proof') return 'missions / dhl_supplier_intakes';
+  if (item.actionType) return `system_logs — ${item.actionType}`;
+  return 'mission-evidence';
+}
+
+function buildAllEvidencePhotos(pool: EvidenceRow[]): DhlReportEvidenceItem[] {
+  return [...pool]
+    .sort((a, b) => {
+      const ta = new Date(a.at).getTime();
+      const tb = new Date(b.at).getTime();
+      if (!Number.isFinite(ta) && !Number.isFinite(tb)) return 0;
+      if (!Number.isFinite(ta)) return 1;
+      if (!Number.isFinite(tb)) return -1;
+      return ta - tb;
+    })
+    .map((item) => ({
+      url: item.url,
+      label: evidenceLabel(item),
+      actionType: item.actionType,
+      at: item.at || null,
+      source: evidenceSource(item),
+    }));
 }
 
 function pushEvidence(pool: EvidenceRow[], item: { url: string; at?: string; context?: string; actionType?: string; filePath?: string }): void {
@@ -121,15 +166,42 @@ async function collectMissionEvidence(
     /* intake opcional */
   }
 
-  const storagePrefixes = [missionId, `odometer/${missionId}`, 'espelhamento'];
+  const storagePrefixes = [
+    missionId,
+    `odometer/${missionId}`,
+    `refused/${missionId}`,
+    `cancelled/${missionId}`,
+    `dhl-mirror-proof/${missionId}`,
+    'espelhamento',
+  ];
   for (const prefix of storagePrefixes) {
     const files = await listStorageFiles(sb, prefix);
     for (const file of files) {
       if (prefix === 'espelhamento' && !file.name.includes(missionId)) continue;
-      const actionType = file.fullPath.includes('/odometer/') ? 'odometer_storage' : 'storage';
-      const context = file.fullPath.includes('/odometer/')
-        ? 'Hodômetro — KM final'
-        : 'Arquivo mission-evidence';
+      let actionType = 'storage';
+      let context = 'Arquivo mission-evidence';
+      if (file.fullPath.includes('/odometer/')) {
+        actionType = 'odometer_storage';
+        context = 'Hodômetro — KM final (Atualizar OS)';
+      } else if (file.fullPath.includes('/refused/')) {
+        actionType = 'refused_status_evidence';
+        context = 'Evidência — recusa da OS (Atualizar OS)';
+      } else if (file.fullPath.includes('/cancelled/')) {
+        actionType = 'cancel_status_evidence';
+        context = 'Evidência — cancelamento da OS (Atualizar OS)';
+      } else if (file.fullPath.includes('/dhl-mirror-proof/')) {
+        actionType = 'mirror_proof';
+        context = 'Comprovante espelhamento (intake DHL)';
+      } else if (file.fullPath.includes('/deslocamento_')) {
+        actionType = 'dhl_deslocamento_print';
+        context = 'Print aprovação deslocamento DHL';
+      } else if (file.fullPath.includes('/espelhamento/')) {
+        actionType = 'mirroring';
+        context = 'Espelhamento na origem (Atualizar OS)';
+      } else if (file.fullPath.startsWith(`${missionId}/`)) {
+        actionType = 'evidence_upload';
+        context = 'Evidência — pasta da OS (criação/atualização)';
+      }
       pushEvidence(pool, {
         url: publicStorageUrl(file.fullPath),
         at: file.created_at,
@@ -224,9 +296,10 @@ function buildPhasePhotos(input: {
   };
 
   const pickOdometerFinal = (): EvidenceRow | null =>
-    pickBy((e) => e.actionType === 'odometer_print' || e.actionType === 'odometer_storage')
+    pickBy((e) => e.actionType === 'terminal_status_confirmed')
+    || pickBy((e) => e.actionType === 'odometer_print' || e.actionType === 'odometer_storage')
     || pickBy((e) => /\/odometer\//i.test(e.url) || /\/odometer\//i.test(e.filePath))
-    || pickBy((e) => /hod[oô]metr|km final|conclus/i.test(`${e.context} ${e.actionType}`));
+    || pickBy((e) => /hod[oô]metr|km final|conclus|terminal/i.test(`${e.context} ${e.actionType}`));
 
   const phases: Array<{ phase: DhlReportPhase; at: string | null; pick: () => EvidenceRow | null }> = [
     { phase: 'origem', at: input.marks.originArrival || null, pick: pickMirroring },
@@ -288,7 +361,7 @@ export async function collectDhlOccurrenceReportData(
     const seNumber = String(mission.dhl_se_number || '').trim();
     if (!seNumber) return null;
 
-    const [{ data: history }, { data: logs }] = await Promise.all([
+    const [{ data: history }, { data: logs }, { data: evidenceLogs }] = await Promise.all([
       sb
         .from('mission_history')
         .select('changed_at,field_name,new_value')
@@ -297,6 +370,12 @@ export async function collectDhlOccurrenceReportData(
       sb
         .from('system_logs')
         .select('created_at,action_type,details,entity')
+        .eq('entity_id', missionId)
+        .order('created_at', { ascending: true }),
+      sb
+        .from('system_logs')
+        .select('created_at,action_type,details,entity')
+        .eq('entity', 'MissionEvidence')
         .eq('entity_id', missionId)
         .order('created_at', { ascending: true }),
     ]);
@@ -356,13 +435,13 @@ export async function collectDhlOccurrenceReportData(
     let odometerStartKm: string | null = formatKm(mission.start_km);
     let odometerEndKm: string | null = formatKm(mission.end_km);
 
-    for (const log of logs || []) {
+    for (const log of [...(logs || []), ...(evidenceLogs || [])]) {
       const details = parseDetails(log.details);
       const url = pickUrl(details);
       if (url) {
         pushEvidence(evidence, {
           url,
-          at: String(log.created_at || details.uploadedAt || ''),
+          at: String(log.created_at || details.uploadedAt || details.confirmedAt || ''),
           context: String(details.context || log.action_type || ''),
           actionType: String(log.action_type || ''),
           filePath: String(details.filePath || ''),
@@ -411,6 +490,8 @@ export async function collectDhlOccurrenceReportData(
       deslocUrl: mission.dhl_deslocamento_approval_url || null,
     });
 
+    const allEvidencePhotos = buildAllEvidencePhotos(evidence);
+
     const agents = [mission.agent1, mission.agent2].filter(Boolean).map(String);
 
     return {
@@ -433,6 +514,7 @@ export async function collectDhlOccurrenceReportData(
       odometerEndKm,
       marks,
       phasePhotos,
+      allEvidencePhotos,
       delayMinutesAtOrigin,
       factsSummary: input.factsSummary?.trim() || null,
       reportParecer: input.reportParecer?.trim() || null,

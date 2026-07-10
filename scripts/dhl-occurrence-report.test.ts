@@ -20,6 +20,7 @@ const baseData: DhlOccurrenceReportData = {
   scheduledOriginAt: '2026-07-08T14:00:00+00:00',
   marks: [],
   phasePhotos: [],
+  allEvidencePhotos: [],
   delayMinutesAtOrigin: 86,
   factsSummary: null,
   reportParecer: null,
@@ -84,6 +85,42 @@ test('handler standalone carrega bundle HTML sem jspdf no preview', () => {
   assert.match(handler, /\.\/occurrence-report-html\.cjs/);
   assert.doesNotMatch(handler, /proxyToExpress/);
   assert.doesNotMatch(handler, /server\/dhlOccurrenceReportPdf/);
+});
+
+test('HTML completo usa degradê preto para vermelho no cabeçalho', () => {
+  const html = buildOccurrenceReportHtml(baseData, {
+    logoDataUri: 'data:image/png;base64,AAAA',
+  });
+  assert.match(html, /linear-gradient\(135deg, #111827 0%, #991b1b 55%, #dc2626 100%\)/);
+});
+
+test('HTML inclui seção 3.4 com todas evidências do sistema', () => {
+  const html = buildOccurrenceReportHtml(
+    {
+      ...baseData,
+      allEvidencePhotos: [
+        {
+          url: 'https://example.com/storage/mission-evidence/GTM-6296/deslocamento.png',
+          label: 'Print aprovação deslocamento DHL',
+          actionType: 'dhl_deslocamento_print',
+          at: '2026-07-08T15:00:00+00:00',
+          source: 'system_logs — dhl_deslocamento_print',
+        },
+        {
+          url: 'https://example.com/storage/mission-evidence/odometer/GTM-6296/final.png',
+          label: 'Hodômetro — print KM final',
+          actionType: 'odometer_print',
+          at: '2026-07-08T18:00:00+00:00',
+          source: 'Storage: odometer/GTM-6296/final.png',
+        },
+      ],
+    },
+    { logoDataUri: 'data:image/png;base64,DDDD' },
+  );
+  assert.match(html, /3\.4 Todas as evidências registradas no sistema/i);
+  assert.match(html, /Atualizar OS/i);
+  assert.match(html, /deslocamento\.png/);
+  assert.match(html, /final\.png/);
 });
 
 test('HTML completo inclui seções 1 a 10 do modelo DHL', () => {
@@ -230,7 +267,7 @@ test('HTML inclui seção 8.1 quando parecer da diretoria é informado', () => {
   assert.match(html, /8\.1 Parecer da Diretoria/i);
   assert.match(html, /Após apuração interna/i);
   assert.match(html, /Seção 8\.1/i);
-  assert.match(html, /Anexo[\s\S]*F[\s\S]*Parecer da Diretoria/i);
+  assert.match(html, /Anexo[\s\S]*G[\s\S]*Parecer da Diretoria/i);
 });
 
 test('service envia reportParecer no payload', () => {
