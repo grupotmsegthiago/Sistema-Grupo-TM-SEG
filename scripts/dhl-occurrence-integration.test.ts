@@ -57,9 +57,9 @@ test('handler preview usa import estático de generateReportHtml sem jspdf', () 
   assert.doesNotMatch(htmlMod, /from ['"]jspdf['"]/);
 });
 
-test('vercel.json inclui lib do relatório DHL na função occurrence-report', () => {
+test('vercel.json não usa bloco functions para occurrence-report (evita falha de deploy)', () => {
   const vercel = fs.readFileSync('vercel.json', 'utf8');
-  assert.match(vercel, /api\/dhl\/occurrence-report\.ts/);
-  assert.match(vercel, /lib\/\{dhlOccurrenceReport\/\*\*,dateUtils\.ts,supabaseAdmin\.ts\}/);
+  assert.match(vercel, /"source": "\/api\/dhl\/occurrence-report"/);
+  assert.doesNotMatch(vercel, /api\/dhl\/occurrence-report\.ts[\s\S]*maxDuration/);
   assert.doesNotMatch(vercel, /dhl-occurrence-report/);
 });
