@@ -1,6 +1,6 @@
 import {
   extractUserIdFromToken,
-  resolveUserRoleFromToken,
+  safeResolveUserRoleFromToken,
 } from '../rh/apiEmployeesAuth';
 
 export function roleCanGenerateDhlOccurrenceReport(
@@ -25,7 +25,7 @@ export async function assertDhlOccurrenceReportAccess(token: string): Promise<st
   const userId = extractUserIdFromToken(token);
   if (!userId) return 'Não autorizado';
 
-  const role = await resolveUserRoleFromToken(token);
+  const role = await safeResolveUserRoleFromToken(token);
   const directorName = await resolveDirectorNameFromToken(token);
   if (!roleCanGenerateDhlOccurrenceReport(role, directorName)) {
     return 'Permissão negada — apenas Diretoria pode gerar este relatório';

@@ -2,11 +2,13 @@ import { jsPDF } from 'jspdf';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
-import { buildOccurrenceNarrative, buildOccurrenceReportHtml } from './buildReportHtml';
+import { buildOccurrenceNarrative } from './buildReportHtml';
 import { collectDhlOccurrenceReportData } from './collectReportData';
 import type { DhlOccurrenceReportInput } from './types';
 import { formatDateTimeBR, formatTimeBR } from '../dateUtils';
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from '../supabaseAdmin';
+
+export { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } from './generateReportHtml';
 
 const BRAND_WINE = '#450a0a';
 const BRAND_NAVY = '#0d3b66';
@@ -276,21 +278,4 @@ export async function generateDhlOccurrenceReportPdf(
     console.error('[dhlOccurrenceReportPdf]', err);
     throw err instanceof Error ? err : new Error(String(err));
   }
-}
-
-export async function generateDhlOccurrenceReportHtml(input: DhlOccurrenceReportInput): Promise<string | null> {
-  try {
-    const sb = getSupabase();
-    const data = await collectDhlOccurrenceReportData(sb, input);
-    if (!data) return null;
-    const publicBaseUrl =
-      process.env.APP_PUBLIC_URL || process.env.SYSTEM_URL || 'https://sistema.grupotmseg.com.br';
-    return buildOccurrenceReportHtml(data, { publicBaseUrl });
-  } catch {
-    return null;
-  }
-}
-
-export function dhlOccurrenceReportFilename(seNumber: string): string {
-  return `PA-DHL-${seNumber}.pdf`;
 }

@@ -72,9 +72,10 @@ test('handler standalone do Plano de Ação DHL existe na Vercel', () => {
   assert.match(vercel, /"source": "\/api\/dhl\/occurrence-report"/);
 });
 
-test('handler standalone importa geração apenas de lib/ (não server/)', () => {
+test('handler standalone importa HTML de lib/ sem jspdf no preview', () => {
   const handler = fs.readFileSync('api/dhl-occurrence-report.ts', 'utf8');
-  assert.match(handler, /lib\/dhlOccurrenceReport\/generateReportOutput/);
+  assert.match(handler, /generateReportHtml/);
+  assert.doesNotMatch(handler, /proxyToExpress/);
   assert.doesNotMatch(handler, /server\/dhlOccurrenceReportPdf/);
 });
 
