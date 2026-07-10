@@ -1,4 +1,5 @@
 import { authFetch } from '../authFetch';
+import { parseJsonResponse } from '../parseJsonResponse';
 
 const REQUEST_TIMEOUT_MS = 90000;
 const PREVIEW_TIMEOUT_MS = 45000;
@@ -70,7 +71,7 @@ async function postOccurrenceReport(
 
     report(format === 'html' ? 70 : 60, format === 'html' ? 'Montando pré-visualização...' : 'Gerando PDF...');
 
-    const json = (await res.json()) as ReportJsonResponse;
+    const json = (await parseJsonResponse(res)) as ReportJsonResponse;
 
     if (!res.ok || !json.ok) {
       throw new Error(json.error || `Erro ao gerar relatório (${res.status})`);

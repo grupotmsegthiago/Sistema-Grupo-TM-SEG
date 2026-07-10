@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { buildOccurrenceNarrative } from '../lib/dhlOccurrenceReport/buildReportHtml';
 import { roleCanGenerateDhlOccurrenceReport } from '../lib/services/dhlOccurrenceReportAccess';
 import type { DhlOccurrenceReportData } from '../lib/dhlOccurrenceReport/types';
@@ -61,4 +62,19 @@ test('ações corretivas não citam advertência nominal ao parceiro', () => {
   const joined = narrative.correctiveActions.join(' ').toUpperCase();
   assert.doesNotMatch(joined, /COMANDO/);
   assert.doesNotMatch(joined, /ADVERTÊNCIA/);
+});
+
+test('handler standalone do Plano de Ação DHL existe na Vercel', () => {
+  const handler = fs.readFileSync('api/dhl-occurrence-report.ts', 'utf8');
+  assert.doesNotMatch(handler, /proxyToExpress/);
+  assert.match(handler, /generateDhlOccurrenceReportHtml/);
+  const vercel = fs.readFileSync('vercel.json', 'utf8');
+  assert.match(vercel, /api\/dhl-occurrence-report\.ts/);
+  assert.match(vercel, /"source": "\/api\/dhl\/occurrence-report"/);
+});
+
+test('service usa parseJsonResponse para evitar erro de JSON inválido', () => {
+  const src = fs.readFileSync('lib/services/dhlOccurrenceReportService.ts', 'utf8');
+  assert.match(src, /parseJsonResponse/);
+  assert.doesNotMatch(src, /await res\.json\(\)/);
 });
