@@ -151,6 +151,10 @@
     },
     "api/asaas-transfer-approval.ts": {
       "maxDuration": 30
+    },
+    "api/relatorios-dhl-se-183013.ts": {
+      "maxDuration": 30,
+      "includeFiles": "public/docs/**"
     }
   },
   "rewrites": [
@@ -339,11 +343,19 @@
       "destination": "/api/asaas-transfer-approval"
     },
     {
+      "source": "/relatorios/dhl-se-183013",
+      "destination": "/api/relatorios-dhl-se-183013"
+    },
+    {
+      "source": "/docs/:path*",
+      "destination": "/docs/:path*"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!docs/|assets/|manifest\\.json|icon-|sw\\.js|build-meta\\.json).*)",
       "destination": "/index.html"
     }
   ],
