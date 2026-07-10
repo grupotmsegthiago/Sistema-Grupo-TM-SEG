@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { buildOccurrenceNarrative, buildOccurrenceReportHtml } from '../lib/dhlOccurrenceReport/buildReportHtml';
-import { parseEmailThreadInput } from '../lib/dhlOccurrenceReport/parseEmailThread';
+import { parseEmailThreadInput, decodeQuotedPrintable, decodeMimeWords } from '../lib/dhlOccurrenceReport/parseEmailThread';
 import { roleCanGenerateDhlOccurrenceReport } from '../lib/services/dhlOccurrenceReportAccess';
 import type { DhlOccurrenceReportData } from '../lib/dhlOccurrenceReport/types';
 
@@ -146,6 +146,39 @@ Quais serão as ações corretivas?`;
   assert.match(messages[0].subject, /RES:/i);
   assert.match(messages[0].date, /15:21/);
   assert.match(messages[1].body, /ações corretivas/i);
+});
+
+test('parser decodifica quoted-printable e remove HTML MIME do corpo', () => {
+  const sample = `From: Thiago <thiago@grupotmseg.com.br>
+To: Antonia <antonia@dhl.com>
+Subject: =?utf-8?Q?Notifica=C3=A7=C3=A3o?=
+Date: Wed, 8 Jul 2026 15:21:00 -0300
+Content-Type: multipart/alternative; boundary="abc"
+
+--abc
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Senhores, boa tarde!
+Venho formalizar o relato de uma ocorr=EAncia.
+
+--abc
+Content-Type: text/html; charset="utf-8"
+
+<html><body><p>HTML ignorado</p></body></html>
+--abc--`;
+
+  const messages = parseEmailThreadInput(sample);
+  assert.equal(messages.length, 1);
+  assert.match(messages[0].body, /Senhores, boa tarde/);
+  assert.match(messages[0].body, /ocorrência/i);
+  assert.doesNotMatch(messages[0].body, /<html/i);
+  assert.doesNotMatch(messages[0].body, /=EAncia/);
+});
+
+test('decodeQuotedPrintable decodifica acentos', () => {
+  assert.match(decodeQuotedPrintable('apura=C3=A7=C3=A3o'), /apuração/);
+  assert.match(decodeMimeWords('=?utf-8?Q?Notifica=C3=A7=C3=A3o?='), /Notificação/);
 });
 
 test('HTML completo formata histórico de e-mails na seção 2.1', () => {

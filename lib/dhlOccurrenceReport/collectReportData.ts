@@ -33,16 +33,34 @@ function parseDetails(raw: unknown): Record<string, unknown> {
 }
 
 function pickUrl(details: Record<string, unknown>): string | null {
-  const url = details.publicUrl || details.evidenceUrl || details.url;
+  const url = details.publicUrl || details.evidenceUrl || details.url || details.imageUrl;
   return url ? String(url) : null;
+}
+
+function formatKm(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return `${n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 3 })} km`;
+}
+
+function pushEvidence(pool: EvidenceRow[], item: { url: string; at?: string; context?: string; actionType?: string }): void {
+  const url = String(item.url || '').trim();
+  if (!url || pool.some((p) => p.url === url)) return;
+  pool.push({
+    url,
+    at: item.at || '',
+    context: item.context || '',
+    actionType: item.actionType || '',
+  });
 }
 
 async function listStorageFiles(
   sb: SupabaseClient,
-  missionId: string,
-): Promise<Array<{ name: string; created_at: string }>> {
+  folderPath: string,
+): Promise<Array<{ name: string; created_at: string; fullPath: string }>> {
   try {
-    const { data, error } = await sb.storage.from('mission-evidence').list(missionId, {
+    const { data, error } = await sb.storage.from('mission-evidence').list(folderPath, {
       limit: 100,
       sortBy: { column: 'created_at', order: 'asc' },
     });
@@ -52,15 +70,69 @@ async function listStorageFiles(
       .map((f) => ({
         name: f.name,
         created_at: f.created_at || f.updated_at || '',
+        fullPath: folderPath ? `${folderPath}/${f.name}` : f.name,
       }));
   } catch {
     return [];
   }
 }
 
-function publicStorageUrl(missionId: string, fileName: string): string {
+function publicStorageUrl(storagePath: string): string {
   const base = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://ajhmmjuewdsukecaimik.supabase.co';
-  return `${base.replace(/\/$/, '')}/storage/v1/object/public/mission-evidence/${missionId}/${fileName}`;
+  const clean = storagePath.replace(/^\/+/, '');
+  return `${base.replace(/\/$/, '')}/storage/v1/object/public/mission-evidence/${clean}`;
+}
+
+async function collectMissionEvidence(
+  sb: SupabaseClient,
+  missionId: string,
+  mission: Record<string, unknown>,
+): Promise<EvidenceRow[]> {
+  const pool: EvidenceRow[] = [];
+
+  const mirroringUrl = String(mission.mirroring_evidence_url || '').trim();
+  if (mirroringUrl) {
+    pushEvidence(pool, { url: mirroringUrl, context: 'Espelhamento', actionType: 'mirroring' });
+  }
+
+  const deslocUrl = String(mission.dhl_deslocamento_approval_url || '').trim();
+  if (deslocUrl) {
+    pushEvidence(pool, { url: deslocUrl, context: 'Deslocamento DHL', actionType: 'dhl_deslocamento_print' });
+  }
+
+  try {
+    const { data: intake } = await sb
+      .from('dhl_supplier_intakes')
+      .select('mirror_proof_url, updated_at')
+      .eq('mission_id', missionId)
+      .maybeSingle();
+    if (intake?.mirror_proof_url) {
+      pushEvidence(pool, {
+        url: String(intake.mirror_proof_url),
+        at: String(intake.updated_at || ''),
+        context: 'Espelhamento intake DHL',
+        actionType: 'mirror_proof',
+      });
+    }
+  } catch {
+    /* intake opcional */
+  }
+
+  const storagePrefixes = [missionId, `odometer/${missionId}`, 'espelhamento'];
+  for (const prefix of storagePrefixes) {
+    const files = await listStorageFiles(sb, prefix);
+    for (const file of files) {
+      if (prefix === 'espelhamento' && !file.name.includes(missionId)) continue;
+      pushEvidence(pool, {
+        url: publicStorageUrl(file.fullPath),
+        at: file.created_at,
+        context: 'Arquivo mission-evidence',
+        actionType: 'storage',
+      });
+    }
+  }
+
+  return pool;
 }
 
 function nearestEvidence(
@@ -95,57 +167,59 @@ function buildPhasePhotos(input: {
   marks: Record<string, string | null>;
   evidence: EvidenceRow[];
   mirroringUrl: string | null;
-  missionId: string;
-  storageFiles: Array<{ name: string; created_at: string }>;
+  deslocUrl: string | null;
 }): DhlReportPhasePhoto[] {
   const used = new Set<string>();
   const pool = [...input.evidence];
 
-  for (const file of input.storageFiles) {
-    const url = publicStorageUrl(input.missionId, file.name);
-    if (pool.some((p) => p.url === url)) continue;
-    pool.push({
-      url,
-      at: file.created_at,
-      context: 'Arquivo mission-evidence',
-      actionType: 'storage',
-    });
-  }
+  const pickBy = (predicate: (e: EvidenceRow) => boolean): EvidenceRow | null => {
+    const found = pool.find((e) => !used.has(e.url) && predicate(e));
+    if (found) {
+      used.add(found.url);
+      return found;
+    }
+    return null;
+  };
 
-  const phases: Array<{ phase: DhlReportPhase; at: string | null; prefer?: (e: EvidenceRow) => boolean }> = [
-    { phase: 'origem', at: input.marks.originArrival || null },
-    { phase: 'em_viagem', at: input.marks.inTransit || null },
-    { phase: 'destino', at: input.marks.destinationArrival || null },
-    { phase: 'conclusao', at: input.marks.completed || null },
+  const phases: Array<{ phase: DhlReportPhase; at: string | null; pick: () => EvidenceRow | null }> = [
+    {
+      phase: 'origem',
+      at: input.marks.originArrival || null,
+      pick: () =>
+        pickBy((e) => e.actionType === 'mirroring' || e.actionType === 'mirror_proof')
+        || pickBy((e) => /espelh|origem|solicita/i.test(`${e.context} ${e.actionType}`))
+        || (input.mirroringUrl && !used.has(input.mirroringUrl)
+          ? (used.add(input.mirroringUrl), { url: input.mirroringUrl, at: '', context: 'Espelhamento', actionType: 'mirroring' })
+          : null),
+    },
+    {
+      phase: 'em_viagem',
+      at: input.marks.inTransit || null,
+      pick: () =>
+        pickBy((e) => e.actionType === 'dhl_deslocamento_print')
+        || pickBy((e) => /desloc|viagem|percurso/i.test(`${e.context} ${e.actionType}`))
+        || (input.deslocUrl && !used.has(input.deslocUrl)
+          ? (used.add(input.deslocUrl), { url: input.deslocUrl, at: '', context: 'Deslocamento DHL', actionType: 'dhl_deslocamento_print' })
+          : null),
+    },
+    {
+      phase: 'destino',
+      at: input.marks.destinationArrival || null,
+      pick: () =>
+        pickBy((e) => /destino|chegada/i.test(`${e.context} ${e.actionType}`))
+        || nearestEvidence(pool, input.marks.destinationArrival, used),
+    },
+    {
+      phase: 'conclusao',
+      at: input.marks.completed || null,
+      pick: () =>
+        pickBy((e) => e.actionType === 'odometer_print' || /hod[oô]metr|conclus|terminal/i.test(`${e.context} ${e.actionType}`))
+        || nearestEvidence(pool, input.marks.completed, used),
+    },
   ];
 
-  return phases.map(({ phase, at }) => {
-    let picked: EvidenceRow | null = null;
-
-    if (phase === 'origem' && input.mirroringUrl) {
-      picked = {
-        url: input.mirroringUrl,
-        at: at || '',
-        context: 'Evidência de espelhamento',
-        actionType: 'mirroring',
-      };
-      used.add(input.mirroringUrl);
-    }
-
-    if (!picked) {
-      const prefer = (e: EvidenceRow) => {
-        const ctx = e.context.toLowerCase();
-        if (phase === 'conclusao') {
-          return e.actionType.includes('odometer') || e.actionType.includes('terminal') || ctx.includes('hodômetro') || ctx.includes('hodometro') || ctx.includes('conclus');
-        }
-        if (phase === 'origem') return ctx.includes('origem') || ctx.includes('espelh') || ctx.includes('solicita');
-        if (phase === 'destino') return ctx.includes('destino') || ctx.includes('chegada');
-        if (phase === 'em_viagem') return ctx.includes('viagem') || ctx.includes('percurso');
-        return false;
-      };
-      picked = pool.find((e) => !used.has(e.url) && prefer(e)) || nearestEvidence(pool, at, used);
-    }
-
+  const result = phases.map(({ phase, at, pick }) => {
+    const picked = pick();
     return {
       phase,
       label: PHASE_LABELS[phase],
@@ -154,6 +228,18 @@ function buildPhasePhotos(input: {
       note: picked ? picked.context : 'Evidência não registrada no sistema para esta etapa.',
     };
   });
+
+  for (const photo of result) {
+    if (photo.url) continue;
+    const leftover = pool.find((e) => !used.has(e.url));
+    if (leftover) {
+      used.add(leftover.url);
+      photo.url = leftover.url;
+      photo.note = leftover.context;
+    }
+  }
+
+  return result;
 }
 
 export async function collectDhlOccurrenceReportData(
@@ -170,7 +256,7 @@ export async function collectDhlOccurrenceReportData(
     const seNumber = String(mission.dhl_se_number || '').trim();
     if (!seNumber) return null;
 
-    const [{ data: history }, { data: logs }, storageFiles] = await Promise.all([
+    const [{ data: history }, { data: logs }] = await Promise.all([
       sb
         .from('mission_history')
         .select('changed_at,field_name,new_value')
@@ -178,11 +264,12 @@ export async function collectDhlOccurrenceReportData(
         .order('changed_at', { ascending: true }),
       sb
         .from('system_logs')
-        .select('created_at,action_type,details')
+        .select('created_at,action_type,details,entity')
         .eq('entity_id', missionId)
         .order('created_at', { ascending: true }),
-      listStorageFiles(sb, missionId),
     ]);
+
+    const evidence = await collectMissionEvidence(sb, missionId, mission as Record<string, unknown>);
 
     const rows = history || [];
     const lastStatus = (val: string) =>
@@ -234,30 +321,32 @@ export async function collectDhlOccurrenceReportData(
     const scheduledMissionAt =
       rows.find((h) => h.field_name === 'status' && h.new_value === 'Agendada')?.changed_at || null;
 
-    let odometerStartKm: string | null = null;
-    let odometerEndKm: string | null = null;
-    const evidence: EvidenceRow[] = [];
+    let odometerStartKm: string | null = formatKm(mission.start_km);
+    let odometerEndKm: string | null = formatKm(mission.end_km);
+
     for (const log of logs || []) {
       const details = parseDetails(log.details);
+      const url = pickUrl(details);
+      if (url) {
+        pushEvidence(evidence, {
+          url,
+          at: String(log.created_at || details.uploadedAt || ''),
+          context: String(details.context || log.action_type || ''),
+          actionType: String(log.action_type || ''),
+        });
+      }
+
       const rawKm = details.km ?? details.odometer ?? details.hodometro ?? details.hodômetro;
       if (rawKm != null) {
         const km = String(rawKm).trim();
         const ctx = String(details.context || log.action_type || '').toLowerCase();
-        if (!odometerStartKm && (ctx.includes('inicial') || ctx.includes('origem') || log.action_type?.includes('start'))) {
+        if (!odometerStartKm && (ctx.includes('inicial') || ctx.includes('origem') || String(log.action_type || '').includes('start'))) {
           odometerStartKm = km.includes('km') ? km : `${km} km`;
         }
-        if (ctx.includes('final') || ctx.includes('conclus') || ctx.includes('terminal') || log.action_type?.includes('odometer')) {
+        if (ctx.includes('final') || ctx.includes('conclus') || ctx.includes('terminal') || String(log.action_type || '').includes('odometer')) {
           odometerEndKm = km.includes('km') ? km : `${km} km`;
         }
       }
-      const url = pickUrl(details);
-      if (!url) continue;
-      evidence.push({
-        url,
-        at: String(log.created_at || details.uploadedAt || ''),
-        context: String(details.context || log.action_type || ''),
-        actionType: String(log.action_type || ''),
-      });
     }
 
     const marks: DhlReportOperationalMark[] = [
@@ -286,8 +375,7 @@ export async function collectDhlOccurrenceReportData(
       },
       evidence,
       mirroringUrl: mission.mirroring_evidence_url || null,
-      missionId,
-      storageFiles,
+      deslocUrl: mission.dhl_deslocamento_approval_url || null,
     });
 
     const agents = [mission.agent1, mission.agent2].filter(Boolean).map(String);

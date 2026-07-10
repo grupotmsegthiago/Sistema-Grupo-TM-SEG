@@ -8,32 +8,180 @@ export type EmailThreadMessage = {
 };
 
 const MIME_NOISE =
-  /^(ARC-|Received:|Authentication-Results:|Return-Path:|Delivered-To:|X-MS-|Content-Type:|Content-Transfer-Encoding:|MIME-Version:|Message-ID:|DKIM-Signature:|List-|boundary=)/i;
+  /^(ARC-|Received:|Authentication-Results:|Return-Path:|Delivered-To:|X-MS-|Content-Type:|Content-Transfer-Encoding:|MIME-Version:|Message-ID:|DKIM-Signature:|List-|boundary=|Content-Disposition:)/i;
 
 const DATE_LINE_RE =
   /^(seg|ter|qua|qui|sex|s[aá]b|dom)\.?,?\s+\d{1,2}\s+de\s+[a-zçãõáéíóú]+\.?\s+de\s+\d{4}(?:,\s*\d{1,2}:\d{2})?/i;
 
-const SUBJECT_RE = /^(RES|RE|Fwd):\s*.+/i;
+const DATE_PT_RE =
+  /^(enviada? em|enviado|data)\s*:\s*(.+)$/i;
+
+const SUBJECT_RE = /^(RES|RE|Fwd|Assunto):\s*.+/i;
 
 const PAGE_MARKER_RE = /^\d+\s*\/\s*\d+\s*$|^--\s*\d+\s+of\s+\d+\s*--\s*$/i;
 
 const SIGNATURE_NOISE_RE =
   /^(Estrada dos Alpes|CEP:|Phone:|E-mail:|www\.|GOGREEN|DHL Supply Chain - Excellence|Gerenciamento de Risco|Transportation Security|Monitoring Operator|Atenciosamente,?)$/i;
 
-function cleanBody(raw: string): string {
-  return raw
+const HTML_BLOCK_RE = /<html[\s\S]*$/i;
+const MIME_BOUNDARY_RE = /^--[A-Za-z0-9_=.-]+$/m;
+
+/** Decodifica quoted-printable (=E7=, quebras suaves =\n). */
+export function decodeQuotedPrintable(input: string): string {
+  const softBreaks = String(input || '').replace(/=\r?\n/g, '');
+  const bytes: number[] = [];
+  for (let i = 0; i < softBreaks.length; i += 1) {
+    if (softBreaks[i] === '=' && /^[0-9A-Fa-f]{2}/.test(softBreaks.slice(i + 1, i + 3))) {
+      bytes.push(parseInt(softBreaks.slice(i + 1, i + 3), 16));
+      i += 2;
+      continue;
+    }
+    bytes.push(softBreaks.charCodeAt(i));
+  }
+  const buf = Buffer.from(bytes);
+  const asUtf8 = buf.toString('utf8');
+  if (!asUtf8.includes('\uFFFD')) return asUtf8;
+  return buf.toString('latin1');
+}
+
+function maybeDecodeQuotedPrintable(input: string): string {
+  const s = String(input || '');
+  if (!/=(?:[0-9A-Fa-f]{2}|\r?\n)/.test(s)) return s;
+  return decodeQuotedPrintable(s);
+}
+
+/** Decodifica cabeçalhos MIME (=?utf-8?Q?...?=). */
+export function decodeMimeWords(input: string): string {
+  return String(input || '').replace(
+    /=\?([^?]+)\?([BQbq])\?([^?]*)\?=/g,
+    (match, _charset, encoding, text) => {
+      try {
+        if (encoding.toUpperCase() === 'B') {
+          return Buffer.from(text, 'base64').toString('utf8');
+        }
+        return decodeQuotedPrintable(text.replace(/_/g, ' '));
+      } catch {
+        return match;
+      }
+    },
+  );
+}
+
+function stripHtml(raw: string): string {
+  return String(raw || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"');
+}
+
+function extractPlainFromMime(body: string): string {
+  const normalized = String(body || '').replace(/\r\n/g, '\n');
+
+  const plainMatch = normalized.match(
+    /Content-Type:\s*text\/plain[^\n]*\n(?:Content-Transfer-Encoding:[^\n]*\n)?(?:[^\n]*\n)*?\n([\s\S]*?)(?=\n--[^\n]+|\nContent-Type:|$)/i,
+  );
+  if (plainMatch) {
+    const chunk = plainMatch[1];
+    const isQp = /Content-Transfer-Encoding:\s*quoted-printable/i.test(plainMatch[0]);
+    return isQp ? decodeQuotedPrintable(chunk) : chunk;
+  }
+
+  const htmlMatch = normalized.match(
+    /Content-Type:\s*text\/html[^\n]*\n(?:Content-Transfer-Encoding:[^\n]*\n)?(?:[^\n]*\n)*?\n([\s\S]*?)(?=\n--[^\n]+|\nContent-Type:|$)/i,
+  );
+  if (htmlMatch) {
+    const chunk = htmlMatch[1];
+    const isQp = /Content-Transfer-Encoding:\s*quoted-printable/i.test(htmlMatch[0]);
+    const decoded = isQp ? decodeQuotedPrintable(chunk) : chunk;
+    return stripHtml(decoded);
+  }
+
+  return normalized;
+}
+
+function sanitizeEmailBody(raw: string): string {
+  let body = maybeDecodeQuotedPrintable(String(raw || ''));
+  body = decodeMimeWords(body);
+
+  if (HTML_BLOCK_RE.test(body) || /<html/i.test(body)) {
+    const plain = extractPlainFromMime(body);
+    body = plain || stripHtml(body);
+  }
+
+  body = body
     .split('\n')
-    .filter((line) => !MIME_NOISE.test(line.trim()))
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return true;
+      if (MIME_NOISE.test(t)) return false;
+      if (MIME_BOUNDARY_RE.test(t)) return false;
+      if (/^--_[0-9A-Za-z_]+/.test(t)) return false;
+      if (/^\[cid:/i.test(t)) return false;
+      if (/^<meta /i.test(t)) return false;
+      if (/^@font-face/i.test(t)) return false;
+      if (/^\/\* Font Definitions \*\//i.test(t)) return false;
+      if (/^\.MsoNormal/i.test(t)) return false;
+      return true;
+    })
     .join('\n')
-    .replace(/\r\n/g, '\n')
+    .replace(HTML_BLOCK_RE, '')
+    .replace(/\[cid:[^\]]+\]/gi, '')
+    .replace(/_{5,}/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  return body;
+}
+
+function cleanBody(raw: string): string {
+  return sanitizeEmailBody(raw);
 }
 
 function pickField(block: string, label: string): string {
   const re = new RegExp(`^${label}\\s*:\\s*(.*)$`, 'im');
   const match = block.match(re);
-  return match ? match[1].trim() : '';
+  return match ? decodeMimeWords(match[1].trim()) : '';
+}
+
+function pickFoldedField(block: string, label: string): string {
+  const lines = block.replace(/\r\n/g, '\n').split('\n');
+  const labelRe = new RegExp(`^${label}\\s*:\\s*(.*)$`, 'i');
+  const parts: string[] = [];
+  let capturing = false;
+
+  for (const line of lines) {
+    if (labelRe.test(line)) {
+      const m = line.match(labelRe);
+      parts.push(m?.[1]?.trim() || '');
+      capturing = true;
+      continue;
+    }
+    if (capturing) {
+      if (/^\s+/.test(line)) {
+        parts.push(line.trim());
+        continue;
+      }
+      break;
+    }
+  }
+
+  return decodeMimeWords(parts.join(' ').trim());
+}
+
+function extractDateFromBody(body: string): string {
+  for (const line of body.split('\n')) {
+    const m = line.match(DATE_PT_RE);
+    if (m) return m[2].trim();
+    if (DATE_LINE_RE.test(line.trim())) return line.trim();
+  }
+  return '';
 }
 
 function stripOutlookHeaders(lines: string[]): string[] {
@@ -73,7 +221,6 @@ function splitMetadataLines(metaLines: string[]): { from: string; to: string; cc
   return { from, to, cc };
 }
 
-/** Formato exportado do Outlook: cabeçalhos De/Para/Cc/Data em linhas separadas. */
 function parseOutlookMultilineBlock(block: string): EmailThreadMessage | null {
   const rawLines = block.replace(/\r\n/g, '\n').split('\n');
   let lines = stripOutlookHeaders(rawLines.map((l) => l.trim()));
@@ -81,7 +228,7 @@ function parseOutlookMultilineBlock(block: string): EmailThreadMessage | null {
 
   let subject = '';
   if (SUBJECT_RE.test(lines[0])) {
-    subject = lines.shift()!;
+    subject = decodeMimeWords(lines.shift()!.replace(/^Assunto:\s*/i, ''));
   }
 
   const dateIdx = lines.findIndex((l) => DATE_LINE_RE.test(l));
@@ -128,15 +275,15 @@ export function parseOutlookStyleThread(text: string): EmailThreadMessage[] {
       const from = pickField(block, 'De');
       const to = pickField(block, 'Para');
       const cc = pickField(block, 'Cc');
-      const date = pickField(block, 'Data');
-
-      let subject = '';
-      const subjectMatch = block.match(/^RES:\s*.+|^RE:\s*.+|^Fwd:\s*.+/im);
-      if (subjectMatch && !subjectMatch[0].startsWith('De:')) {
-        subject = subjectMatch[0].trim();
+      let date = pickField(block, 'Data');
+      let subject = pickField(block, 'Assunto');
+      if (!subject) {
+        const subjectMatch = block.match(/^(RES|RE|Fwd):\s*.+/im);
+        if (subjectMatch) subject = decodeMimeWords(subjectMatch[0].trim());
       }
 
       let body = block
+        .replace(/^Assunto:\s*.+\n/im, '')
         .replace(/^De:\s*.+\n/im, '')
         .replace(/^Para:\s*.+\n/im, '')
         .replace(/^Cc:\s*.+\n/im, '')
@@ -144,6 +291,14 @@ export function parseOutlookStyleThread(text: string): EmailThreadMessage[] {
         .replace(/^\d+\s*\/\s*\d+\s*$/gm, '')
         .replace(/^--\s*\d+\s+of\s+\d+\s*--\s*$/gim, '')
         .trim();
+
+      if (!date || date === '—') {
+        date = extractDateFromBody(body) || '—';
+        body = body
+          .split('\n')
+          .filter((l) => !DATE_PT_RE.test(l.trim()))
+          .join('\n');
+      }
 
       const cleaned = cleanBody(body);
       if (!from && !to && !cleaned) continue;
@@ -166,7 +321,65 @@ export function parseOutlookStyleThread(text: string): EmailThreadMessage[] {
   return messages;
 }
 
-/** Parser simples de .eml — extrai cabeçalhos e corpo legível. */
+function splitEmlParts(text: string): string[] {
+  const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
+  const byFrom = normalized.split(/(?=^From:\s)/m).filter((p) => p.trim());
+  if (byFrom.length > 1) return byFrom;
+
+  const bySeparator = normalized.split(/\n_{3,}\n/).filter((p) => p.trim());
+  if (bySeparator.length > 1) return bySeparator;
+
+  return [normalized];
+}
+
+function parseSingleEmlPart(text: string): EmailThreadMessage | null {
+  const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
+  if (!normalized) return null;
+
+  const headerEnd = normalized.search(/\n\n/);
+  const headers = headerEnd >= 0 ? normalized.slice(0, headerEnd) : normalized;
+  const bodyRaw = headerEnd >= 0 ? normalized.slice(headerEnd + 2) : '';
+
+  const from = pickFoldedField(headers, 'From') || pickFoldedField(headers, 'De');
+  const to = pickFoldedField(headers, 'To') || pickFoldedField(headers, 'Para');
+  const cc = pickFoldedField(headers, 'Cc');
+  let date =
+    pickFoldedField(headers, 'Date')
+    || pickFoldedField(headers, 'Data')
+    || pickField(headers, 'Enviada em')
+    || pickField(headers, 'Enviado');
+  const subject = pickFoldedField(headers, 'Subject') || pickFoldedField(headers, 'Assunto');
+
+  let body = extractPlainFromMime(bodyRaw);
+  if (!body || body.length < 8) {
+    body = bodyRaw;
+  }
+  body = cleanBody(body);
+
+  if (!date || date === '—') {
+    date = extractDateFromBody(body) || '—';
+    if (date !== '—') {
+      body = body
+        .split('\n')
+        .filter((l) => !DATE_PT_RE.test(l.trim()))
+        .join('\n')
+        .trim();
+    }
+  }
+
+  if (!from && !to && !body) return null;
+
+  return {
+    from: from || '—',
+    to: to || '—',
+    cc: cc || '—',
+    date: date || '—',
+    subject: decodeMimeWords(subject || ''),
+    body: body || '—',
+  };
+}
+
+/** Parser de .eml — extrai cabeçalhos, decodifica MIME e separa thread. */
 export function parseEmlContent(text: string): EmailThreadMessage[] {
   const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
   if (!normalized) return [];
@@ -175,37 +388,15 @@ export function parseEmlContent(text: string): EmailThreadMessage[] {
     return parseOutlookStyleThread(normalized);
   }
 
-  const headerEnd = normalized.search(/\n\n/);
-  const headers = headerEnd >= 0 ? normalized.slice(0, headerEnd) : normalized;
-  const bodyRaw = headerEnd >= 0 ? normalized.slice(headerEnd + 2) : '';
-
-  const from = pickField(headers, 'From') || pickField(headers, 'De');
-  const to = pickField(headers, 'To') || pickField(headers, 'Para');
-  const cc = pickField(headers, 'Cc');
-  const date = pickField(headers, 'Date') || pickField(headers, 'Data');
-  const subject = pickField(headers, 'Subject') || pickField(headers, 'Assunto');
-
-  const body = cleanBody(
-    bodyRaw
-      .replace(/^[A-Za-z0-9+/=\s]{60,}$/gm, '')
-      .replace(/^--[^\n]+$/gm, '')
-      .trim(),
-  );
-
-  if (!from && !to && !body) {
-    return parseOutlookStyleThread(normalized);
+  const parts = splitEmlParts(normalized);
+  const messages: EmailThreadMessage[] = [];
+  for (const part of parts) {
+    const msg = parseSingleEmlPart(part);
+    if (msg) messages.push(msg);
   }
 
-  return [
-    {
-      from: from || '—',
-      to: to || '—',
-      cc: cc || '—',
-      date: date || '—',
-      subject: subject || '—',
-      body: body || '—',
-    },
-  ];
+  if (messages.length) return messages;
+  return parseOutlookStyleThread(normalized);
 }
 
 /** Normaliza entrada de e-mail (Outlook, .eml ou texto colado) para mensagens estruturadas. */
@@ -214,9 +405,9 @@ export function parseEmailThreadInput(text: string): EmailThreadMessage[] {
   if (!raw) return [];
 
   if (/^Received:|^ARC-|^From:/im.test(raw) && !/^De:/im.test(raw)) {
-    const outlookLike = parseOutlookStyleThread(raw);
-    if (outlookLike.length) return outlookLike;
-    return parseEmlContent(raw);
+    const eml = parseEmlContent(raw);
+    if (eml.length) return eml;
+    return parseOutlookStyleThread(raw);
   }
 
   const outlook = parseOutlookStyleThread(raw);
