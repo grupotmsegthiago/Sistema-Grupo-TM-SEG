@@ -23,7 +23,7 @@ test('gera HTML do Plano de Ação para GTM-6296 / S.E. 183013', async () => {
 });
 
 test('handler retorna 401 JSON sem token (simulação local)', async () => {
-  const handler = (await import('../api/dhl-occurrence-report.ts')).default;
+  const handler = (await import('../api/dhl/occurrence-report.ts')).default;
   let statusCode = 0;
   let body: Record<string, unknown> = {};
 
@@ -50,7 +50,7 @@ test('handler retorna 401 JSON sem token (simulação local)', async () => {
 });
 
 test('handler preview usa generateReportHtml sem jspdf', () => {
-  const handler = fs.readFileSync('api/dhl-occurrence-report.ts', 'utf8');
+  const handler = fs.readFileSync('api/dhl/occurrence-report.ts', 'utf8');
   assert.match(handler, /generateReportHtml\.js/);
   assert.doesNotMatch(handler, /generateReportOutput\.js[\s\S]*format === 'html'/);
   const htmlMod = fs.readFileSync('lib/dhlOccurrenceReport/generateReportHtml.ts', 'utf8');

@@ -68,7 +68,7 @@ async function resolveRole(token: string): Promise<string | null> {
     const name = Array.isArray(profile) ? profile[0]?.name : profile?.name;
     return String(name || '').trim().toLowerCase() || null;
   } catch (err) {
-    console.warn('[dhl-occurrence-report] resolveRole:', err);
+    console.warn('[dhl/occurrence-report] resolveRole:', err);
     return null;
   }
 }
@@ -139,7 +139,7 @@ export default async function handler(req: any, res: any) {
 
     if (format === 'html' || format === 'preview') {
       const { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } = await import(
-        '../lib/dhlOccurrenceReport/generateReportHtml.js'
+        '../../lib/dhlOccurrenceReport/generateReportHtml.js'
       );
       const html = await generateDhlOccurrenceReportHtml(input);
       if (!html) {
@@ -157,7 +157,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const { generateDhlOccurrenceReportPdf, dhlOccurrenceReportFilename } = await import(
-      '../lib/dhlOccurrenceReport/generateReportOutput.js'
+      '../../lib/dhlOccurrenceReport/generateReportOutput.js'
     );
     const pdf = await generateDhlOccurrenceReportPdf(input, { embedPhotos: false });
     if (!pdf) {
@@ -176,7 +176,7 @@ export default async function handler(req: any, res: any) {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error('[dhl-occurrence-report]', message);
+    console.error('[dhl/occurrence-report]', message);
     if (!res.headersSent) {
       res.status(500).json({ ok: false, error: message || 'Falha ao gerar relatório' });
     }
