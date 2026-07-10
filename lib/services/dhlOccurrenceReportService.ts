@@ -10,6 +10,11 @@ export type GenerateDhlOccurrenceReportParams = {
   emailAttachmentText?: string;
 };
 
+export type DhlReportProgress = {
+  percent: number;
+  label: string;
+};
+
 type PdfJsonResponse = {
   ok?: boolean;
   error?: string;
@@ -28,22 +33,44 @@ function base64ToBlob(base64: string, contentType = 'application/pdf'): Blob {
 
 export async function generateDhlOccurrenceReportPdf(
   params: GenerateDhlOccurrenceReportParams,
+  onProgress?: (progress: DhlReportProgress) => void,
 ): Promise<{ blob: Blob; filename: string }> {
+  const report = (percent: number, label: string) => {
+    onProgress?.({ percent: Math.min(100, Math.max(0, percent)), label });
+  };
+
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const res = await authFetch('/api/dhl/occurrence-report', {
-      method: 'POST',
-      signal: controller.signal,
-      body: JSON.stringify({
-        missionId: params.missionId,
-        seNumber: params.seNumber,
-        factsSummary: params.factsSummary?.trim() || undefined,
-        emailLink: params.emailLink?.trim() || undefined,
-        emailAttachmentText: params.emailAttachmentText?.trim() || undefined,
-      }),
-    });
+    report(8, 'Preparando dados da OS...');
+
+    let waitPercent = 8;
+    const waitTimer = window.setInterval(() => {
+      if (waitPercent < 48) {
+        waitPercent += 1;
+        report(waitPercent, 'Coletando horários, fotos e evidências da OS...');
+      }
+    }, 1200);
+
+    let res: Response;
+    try {
+      res = await authFetch('/api/dhl/occurrence-report', {
+        method: 'POST',
+        signal: controller.signal,
+        body: JSON.stringify({
+          missionId: params.missionId,
+          seNumber: params.seNumber,
+          factsSummary: params.factsSummary?.trim() || undefined,
+          emailLink: params.emailLink?.trim() || undefined,
+          emailAttachmentText: params.emailAttachmentText?.trim() || undefined,
+        }),
+      });
+    } finally {
+      window.clearInterval(waitTimer);
+    }
+
+    report(55, 'Montando PDF com logo TM SEG e assinatura...');
 
     const contentType = res.headers.get('content-type') || '';
 
@@ -59,21 +86,24 @@ export async function generateDhlOccurrenceReportPdf(
     }
 
     if (contentType.includes('application/json')) {
+      report(78, 'Recebendo documento do servidor...');
       const json = (await res.json()) as PdfJsonResponse;
       if (!json.ok || !json.pdfBase64) {
         throw new Error(json.error || 'Resposta inválida ao gerar PDF');
       }
+      report(92, 'Finalizando arquivo PDF...');
       const filename = json.filename || `PA-DHL-${params.seNumber || params.missionId}.pdf`;
-      return {
-        blob: base64ToBlob(json.pdfBase64),
-        filename,
-      };
+      const blob = base64ToBlob(json.pdfBase64);
+      report(100, 'Download pronto!');
+      return { blob, filename };
     }
 
+    report(85, 'Processando arquivo PDF...');
     const blob = await res.blob();
     if (!blob.size) {
       throw new Error('PDF vazio — tente novamente em alguns segundos');
     }
+    report(100, 'Download pronto!');
     return {
       blob,
       filename: `PA-DHL-${params.seNumber || params.missionId}.pdf`,
