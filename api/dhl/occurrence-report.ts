@@ -1,4 +1,17 @@
 /** Payload mínimo do relatório DHL — evita import estático de lib/ no handler Vercel. */
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+// Bundles CJS gerados no build (build-server.mjs) — carregados via require (confiável na Vercel).
+// NUNCA importar de ../../lib/... aqui: lib/ não existe em /var/task no runtime serverless.
+const require = createRequire(import.meta.url);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function loadDhlReportBundle<T>(filename: string): T {
+  return require(path.join(__dirname, filename)) as T;
+}
+
 type DhlOccurrenceReportInput = {
   missionId: string;
   factsSummary?: string | null;
@@ -201,7 +214,13 @@ export default async function handler(req: any, res: any) {
         return;
       }
 
-      const { adjustDhlReportHtmlWithAi } = await import('./_occurrence-report-adjust.cjs');
+      const { adjustDhlReportHtmlWithAi } = loadDhlReportBundle<{
+        adjustDhlReportHtmlWithAi: (
+          html: string,
+          notes: string,
+          generateText: (prompt: string) => Promise<string>,
+        ) => Promise<string>;
+      }>('_occurrence-report-adjust.cjs');
 
       const generateText = async (prompt: string): Promise<string> => {
         const response = await fetch(
@@ -248,9 +267,10 @@ export default async function handler(req: any, res: any) {
 
     if (format === 'html' || format === 'preview') {
       const sb = await supabaseAdmin();
-      const { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } = await import(
-        './_occurrence-report-html.cjs'
-      );
+      const { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } = loadDhlReportBundle<{
+        generateDhlOccurrenceReportHtml: (...args: unknown[]) => Promise<{ html?: string; evidenceCount?: number; phasePhotoCount?: number }>;
+        dhlOccurrenceReportFilename: (base: string) => string;
+      }>('_occurrence-report-html.cjs');
       const result = await generateDhlOccurrenceReportHtml(input as DhlOccurrenceReportInput, {
         supabaseClient: sb,
       });
@@ -270,9 +290,10 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const { generateDhlOccurrenceReportPdf, dhlOccurrenceReportFilename } = await import(
-      './_occurrence-report-pdf.cjs'
-    );
+    const { generateDhlOccurrenceReportPdf, dhlOccurrenceReportFilename } = loadDhlReportBundle<{
+      generateDhlOccurrenceReportPdf: (...args: unknown[]) => Promise<Buffer | null>;
+      dhlOccurrenceReportFilename: (base: string) => string;
+    }>('_occurrence-report-pdf.cjs');
     const pdf = await generateDhlOccurrenceReportPdf(input as DhlOccurrenceReportInput, { embedPhotos: false });
     if (!pdf) {
       res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });

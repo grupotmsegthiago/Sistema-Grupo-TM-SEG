@@ -52,21 +52,23 @@ test('handler retorna 401 JSON sem token (simulação local)', async () => {
 
 test('handler preview carrega bundle CJS após auth, sem import estático de lib', () => {
   const handler = fs.readFileSync('api/dhl/occurrence-report.ts', 'utf8');
-  assert.match(handler, /\.\/occurrence-report-html\.cjs/);
+  assert.match(handler, /_occurrence-report-html\.cjs/);
+  assert.match(handler, /loadDhlReportBundle/);
   assert.doesNotMatch(handler, /from ['"].*lib\/dhlOccurrenceReport\/generateReportHtml['"]/);
+  assert.doesNotMatch(handler, /import\s*\(\s*['"]\.\.\/\.\.\/lib\/dhlOccurrenceReport/);
   const htmlMod = fs.readFileSync('lib/dhlOccurrenceReport/generateReportHtml.ts', 'utf8');
   assert.doesNotMatch(htmlMod, /from ['"]jspdf['"]/);
 });
 
 test('build-server gera bundles CJS do relatório DHL em api/dhl', () => {
   const build = fs.readFileSync('build-server.mjs', 'utf8');
-  assert.match(build, /api\/dhl\/occurrence-report-html\.cjs/);
-  assert.match(build, /api\/dhl\/occurrence-report-pdf\.cjs/);
+  assert.match(build, /api\/dhl\/_occurrence-report-html\.cjs/);
+  assert.match(build, /api\/dhl\/_occurrence-report-pdf\.cjs/);
 });
 
 test('vercel.json inclui bundles CJS do occurrence-report', () => {
   const vercel = fs.readFileSync('vercel.json', 'utf8');
   assert.match(vercel, /"source": "\/api\/dhl\/occurrence-report"/);
-  assert.match(vercel, /occurrence-report-\*\.cjs/);
+  assert.match(vercel, /_occurrence-report-\*\.cjs/);
   assert.doesNotMatch(vercel, /dhl-occurrence-report/);
 });
