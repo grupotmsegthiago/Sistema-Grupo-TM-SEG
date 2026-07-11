@@ -9,7 +9,21 @@ const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function loadDhlReportBundle<T>(filename: string): T {
-  return require(path.join(__dirname, filename)) as T;
+  const candidates = [
+    path.join(process.cwd(), 'dist', 'dhl-bundles', filename),
+    path.join(__dirname, filename),
+    path.join(process.cwd(), 'api', 'dhl', filename),
+  ];
+  let lastErr: unknown;
+  for (const candidate of candidates) {
+    try {
+      return require(candidate) as T;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  throw new Error(`Bundle DHL não encontrado (${filename}): ${detail}`);
 }
 
 type DhlOccurrenceReportInput = {

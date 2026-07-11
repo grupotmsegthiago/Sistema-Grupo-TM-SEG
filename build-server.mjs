@@ -26,7 +26,7 @@ fs.mkdirSync(publicDir, { recursive: true });
 // _redirects), o que deixava ícones do PWA (apple-touch-icon.png,
 // icon-*.png), manifest.json e sw.js órfãos em dist/ e nunca servidos
 // em produção. Resultado: iPhone nunca recebia o logo no atalho.
-const skipEntries = new Set(['public', 'index.cjs', 'vercelApp.cjs']);
+const skipEntries = new Set(['public', 'index.cjs', 'vercelApp.cjs', 'dhl-bundles']);
 const entries = fs.readdirSync(distDir);
 for (const entry of entries) {
   if (skipEntries.has(entry)) continue;
@@ -67,6 +67,17 @@ execSync(
   { stdio: 'inherit' },
 );
 console.log('DHL occurrence report bundles: api/dhl/_occurrence-report-{html,pdf,adjust}.cjs');
+
+const dhlBundlesDir = path.join(distDir, 'dhl-bundles');
+fs.mkdirSync(dhlBundlesDir, { recursive: true });
+for (const name of [
+  '_occurrence-report-html.cjs',
+  '_occurrence-report-pdf.cjs',
+  '_occurrence-report-adjust.cjs',
+]) {
+  fs.copyFileSync(path.join('api', 'dhl', name), path.join(dhlBundlesDir, name));
+}
+console.log('DHL occurrence report bundles copiados para dist/dhl-bundles/');
 
 // Bundle leve para api/index.ts na Vercel (carregado sob demanda, não no top-level).
 execSync(

@@ -64,6 +64,7 @@ test('build-server gera bundles CJS do relatório DHL em api/dhl', () => {
   const build = fs.readFileSync('build-server.mjs', 'utf8');
   assert.match(build, /api\/dhl\/_occurrence-report-html\.cjs/);
   assert.match(build, /api\/dhl\/_occurrence-report-pdf\.cjs/);
+  assert.match(build, /dist\/dhl-bundles/);
 });
 
 test('vercel.json roteia occurrence-report sem handler legado dhl-occurrence-report', () => {
@@ -75,7 +76,7 @@ test('vercel.json roteia occurrence-report sem handler legado dhl-occurrence-rep
 test('vercel.json inclui bundles CJS no deploy da função occurrence-report', () => {
   const vercel = fs.readFileSync('vercel.json', 'utf8');
   assert.match(vercel, /"api\/dhl\/occurrence-report\.ts"/);
-  assert.match(vercel, /"includeFiles": "api\/dhl\/_occurrence-report-\*\.cjs"/);
+  assert.match(vercel, /"includeFiles": "dist\/dhl-bundles\/\*\*"/);
 });
 
 test('bundles _occurrence-report-*.cjs existem no repositório para runtime Vercel', () => {
