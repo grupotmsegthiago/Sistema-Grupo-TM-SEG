@@ -90,7 +90,7 @@
     },
     "api/dhl/occurrence-report.ts": {
       "maxDuration": 120,
-      "includeFiles": "api/dhl/occurrence-report-*.cjs"
+      "includeFiles": "api/dhl/_occurrence-report-*.cjs"
     },
     "api/cron/email-queue.ts": {
       "maxDuration": 120,

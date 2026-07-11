@@ -81,7 +81,7 @@ test('handler standalone do Plano de Ação DHL existe na Vercel', () => {
 
 test('handler standalone carrega bundle HTML sem jspdf no preview', () => {
   const handler = fs.readFileSync('api/dhl/occurrence-report.ts', 'utf8');
-  assert.match(handler, /\.\/occurrence-report-html\.cjs/);
+  assert.match(handler, /\.\/_occurrence-report-html\.cjs/);
   assert.doesNotMatch(handler, /proxyToExpress/);
   assert.doesNotMatch(handler, /server\/dhlOccurrenceReportPdf/);
 });
@@ -303,9 +303,9 @@ test('handler suporta format adjust com bundle CJS', () => {
   const handler = fs.readFileSync('api/dhl/occurrence-report.ts', 'utf8');
   assert.match(handler, /format === 'adjust'/);
   assert.match(handler, /adjustmentNotes/);
-  assert.match(handler, /\.\/occurrence-report-adjust\.cjs/);
+  assert.match(handler, /\.\/_occurrence-report-adjust\.cjs/);
   assert.doesNotMatch(handler, /lib\/dhlOccurrenceReport\/adjustReportHtml/);
-  assert.ok(fs.existsSync('api/dhl/occurrence-report-adjust.cjs'), 'bundle adjust deve existir após build');
+  assert.ok(fs.existsSync('api/dhl/_occurrence-report-adjust.cjs'), 'bundle adjust deve existir após build');
 });
 
 test('build-server gera bundle adjust do relatório DHL', () => {

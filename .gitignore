@@ -12,8 +12,9 @@ node_modules
 dist
 dist-ssr
 client/public/build-meta.json
-api/dhl/occurrence-report-html.cjs
-api/dhl/occurrence-report-pdf.cjs
+api/dhl/_occurrence-report-html.cjs
+api/dhl/_occurrence-report-pdf.cjs
+api/dhl/_occurrence-report-adjust.cjs
 *.local
 .vscode/*
 !.vscode/extensions.json
