@@ -93,7 +93,8 @@
       "includeFiles": "api/dhl/occurrence-report-*.cjs"
     },
     "api/cron/email-queue.ts": {
-      "maxDuration": 120
+      "maxDuration": 120,
+      "includeFiles": "dist/vercelApp.cjs"
     },
     "api/password-reset-request.ts": {
       "maxDuration": 120

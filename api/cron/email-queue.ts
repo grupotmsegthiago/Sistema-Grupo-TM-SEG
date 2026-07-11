@@ -1,27 +1,32 @@
-function verifyCronRequest(req: any): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    console.warn('[Cron] CRON_SECRET não configurado — rejeitando chamada.');
-    return false;
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+
+let handler: any = null;
+let bootError: Error | null = null;
+
+async function proxyToExpress(req: any, res: any) {
+  try {
+    if (!handler) {
+      if (bootError) {
+        res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
+        return;
+      }
+      const serverless = require("serverless-http");
+      const { getApp } = require("../../dist/vercelApp.cjs");
+      const app = await getApp();
+      handler = serverless(app, { binary: true });
+    }
+    return handler(req, res);
+  } catch (e: any) {
+    bootError = e instanceof Error ? e : new Error(String(e));
+    console.error("[Vercel] Falha ao iniciar cron email-queue:", bootError);
+    res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
   }
-  return String(req.headers?.authorization || '') === `Bearer ${secret}`;
 }
 
-export default async function handler(req: any, res: any) {
-  if (req.method !== 'GET') {
-    res.status(405).json({ error: 'method_not_allowed' });
-    return;
-  }
-  if (!verifyCronRequest(req)) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return;
-  }
-  try {
-    const { runClientEmailQueueCycle } = await import('../lib/email/clientEmailQueue.js');
-    await runClientEmailQueueCycle();
-    res.status(200).json({ ok: true });
-  } catch (e: any) {
-    console.error('[cron/email-queue]', e?.message);
-    res.status(500).json({ error: e?.message || 'Cron failed' });
-  }
-}
+export default proxyToExpress;
+export const config = {
+  api: { bodyParser: false as const },
+  maxDuration: 120,
+};
