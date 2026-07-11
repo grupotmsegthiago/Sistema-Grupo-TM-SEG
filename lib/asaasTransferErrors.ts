@@ -21,11 +21,49 @@ const ACCOUNTS_NOT_LINKED = /sem vínculo|sem vinculo|not linked/i;
 const CANCELLED_BY_WEBHOOK =
   /cancelad|recusad|falhou|failed|não foi autoriz|nao foi autoriz|webhook/i;
 
+type CombinedTransferErrors = {
+  internal?: string;
+  pix?: string;
+};
+
+function splitCombinedTransferErrors(msg: string): CombinedTransferErrors {
+  const marker = '. Pix:';
+  const idx = msg.indexOf(marker);
+  if (!msg.startsWith('Repasse interno:') || idx < 0) return {};
+  return {
+    internal: msg.slice('Repasse interno:'.length, idx).trim(),
+    pix: msg.slice(idx + marker.length).trim(),
+  };
+}
+
+function withdrawalDeniedMessage(): string {
+  return (
+    'A chave API desta conta na Vercel não consegue transferir (o saldo até aparece, mas o saque via API é recusado). ' +
+    'Se no Replit/Torres a mesma conta já transfere sem pedir liberação ao Asaas, copie para a Vercel **as mesmas** variáveis do Replit: ' +
+    'TMSEGURANCA, ASAAS_API_KEY, ASAAS_API_KEY_TMSECURITY_60, ASAAS_FINANCEIRO_WALLET_ID e ASAAS_TRANSFER_WEBHOOK_TOKEN. ' +
+    'Chaves diferentes (ou criadas antes da configuração no Asaas) causam exatamente esse erro. ' +
+    'Só depois de confirmar que as chaves são idênticas, revise Integrações → Mecanismos de segurança no painel Asaas.'
+  );
+}
+
+function accountsNotLinkedMessage(): string {
+  return (
+    'Repasse interno entre contas Asaas falhou: as subcontas ainda não estão vinculadas (wallet financeiro). ' +
+    'No Replit isso costuma funcionar com o mesmo ASAAS_FINANCEIRO_WALLET_ID — confira se esse ID na Vercel é igual ao do Replit. ' +
+    'O sistema tentará Pix em seguida; se a chave Pix de destino não estiver cadastrada no painel, cadastre ' +
+    `${ASAAS_PIX_FINANCEIRO_EMAIL} em Transferências → Cadastrar nova conta.`
+  );
+}
+
 export function formatAsaasTransferError(raw: string): string {
   const msg = String(raw || '').trim();
   if (!msg) return 'Falha na transferência Pix. Tente novamente.';
 
-  if (PIX_DEST_NOT_REGISTERED.test(msg)) {
+  const combined = splitCombinedTransferErrors(msg);
+  const internal = combined.internal || '';
+  const pix = combined.pix || '';
+
+  if (PIX_DEST_NOT_REGISTERED.test(pix || internal || msg)) {
     return (
       `A chave Pix de destino (${ASAAS_PIX_FINANCEIRO_EMAIL}) precisa ser cadastrada uma vez no painel Asaas ` +
       'da conta de origem, em Transferências → Cadastrar nova conta, antes de aceitar transferências via API ' +
@@ -33,23 +71,16 @@ export function formatAsaasTransferError(raw: string): string {
     );
   }
 
-  if (WITHDRAWAL_DENIED.test(msg)) {
-    return (
-      'Esta conta Asaas ainda não tem liberação de saque/transferência via API. ' +
-      'No painel da conta (TM Gestão, TM Seg ou TM Security): Integrações → Mecanismos de segurança — ' +
-      'habilite transferência via API e escolha o webhook de autorização como mecanismo de segurança ' +
-      '(URL já configurada: https://sistema.grupotmseg.com.br/api/asaas/transfer-approval). ' +
-      'Se a opção não aparecer ou continuar recusando, abra chamado com o gerente de contas Asaas pedindo ' +
-      'liberação de saque/transferência via API. Após liberar, regenere a chave API se o Asaas solicitar.'
-    );
+  if (internal && ACCOUNTS_NOT_LINKED.test(internal) && pix && WITHDRAWAL_DENIED.test(pix)) {
+    return `${accountsNotLinkedMessage()} Em seguida: ${withdrawalDeniedMessage()}`;
   }
 
-  if (ACCOUNTS_NOT_LINKED.test(msg) && !WITHDRAWAL_DENIED.test(msg)) {
-    return (
-      'As contas Asaas ainda não estão vinculadas para repasse interno. O sistema tentará Pix para ' +
-      `${ASAAS_PIX_FINANCEIRO_EMAIL}. Se o erro persistir, peça ao Asaas o vínculo entre as subcontas ` +
-      'ou a liberação de transferência via API.'
-    );
+  if (ACCOUNTS_NOT_LINKED.test(internal || msg) && !WITHDRAWAL_DENIED.test(pix || msg)) {
+    return accountsNotLinkedMessage();
+  }
+
+  if (WITHDRAWAL_DENIED.test(pix || msg)) {
+    return withdrawalDeniedMessage();
   }
 
   if (DUPLICATE_TRANSFER.test(msg)) {
@@ -73,7 +104,7 @@ export function formatAsaasTransferError(raw: string): string {
     );
   }
 
-  if (CANCELLED_BY_WEBHOOK.test(msg) && !WITHDRAWAL_DENIED.test(msg)) {
+  if (CANCELLED_BY_WEBHOOK.test(internal || msg) && !WITHDRAWAL_DENIED.test(pix || msg)) {
     return (
       'A transferência foi criada no Asaas, mas o webhook de aprovação recusou ou não respondeu a tempo. ' +
       'Verifique em Integrações → Webhooks se a fila está ativa e a URL está correta. ' +

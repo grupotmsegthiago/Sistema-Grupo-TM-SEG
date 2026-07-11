@@ -63,6 +63,7 @@ async function handleAdminDiagnosticGet(req: any, res: any): Promise<boolean> {
   }
 
   const { expectedToken } = webhookTokenDiagnostics(req);
+  const { summarizeAsaasTransferEnv } = await import('../lib/asaasEnvKeys.js');
   res.status(200).json({
     ok: true,
     endpoint: 'asaas-transfer-approval',
@@ -72,6 +73,9 @@ async function handleAdminDiagnosticGet(req: any, res: any): Promise<boolean> {
     authorizedPixKey: ASAAS_PIX_FINANCEIRO_EMAIL,
     financeiroWalletId: financeiroWalletIdFromEnv(),
     externalReferencePrefix: 'tmseg-repasse-',
+    asaasEnv: summarizeAsaasTransferEnv(),
+    hint:
+      'Compare asaasEnv com o Replit (mesmo length/sourceEnv por conta). Saldo OK + transferência recusada = chave API diferente na Vercel.',
   });
   return true;
 }

@@ -1,32 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getAsaasApiKeyTmSeguranca } from '../lib/asaasEnvKeys.ts';
+import { summarizeAsaasKeyEnv } from '../lib/asaasEnvKeys.ts';
 
-test('getAsaasApiKeyTmSeguranca prioriza TMSEGURANCA na Vercel', () => {
-  const prev = {
-    TMSEGURANCA: process.env.TMSEGURANCA,
-    TMSEGURANÇA: process.env.TMSEGURANÇA,
-    ASAAS_API_KEY_TMSECURITY: process.env.ASAAS_API_KEY_TMSECURITY,
-    ASAAS_API_KEY_TM_SEGURANCA: process.env.ASAAS_API_KEY_TM_SEGURANCA,
-  };
-
+test('summarizeAsaasKeyEnv não expõe valor da chave', () => {
+  const prev = process.env.TMSEGURANCA;
+  process.env.TMSEGURANCA = '$aact_prod_test_key_12345';
   try {
-    delete process.env.TMSEGURANCA;
-    delete process.env.TMSEGURANÇA;
-    delete process.env.ASAAS_API_KEY_TMSECURITY;
-    delete process.env.ASAAS_API_KEY_TM_SEGURANCA;
-
-    process.env.TMSEGURANCA = 'chave-vercel-tmseguranca';
-    process.env.ASAAS_API_KEY_TMSECURITY = 'chave-legada';
-    assert.equal(getAsaasApiKeyTmSeguranca(), 'chave-vercel-tmseguranca');
-
-    delete process.env.TMSEGURANCA;
-    process.env.ASAAS_API_KEY_TMSECURITY = 'chave-legada-fallback';
-    assert.equal(getAsaasApiKeyTmSeguranca(), 'chave-legada-fallback');
+    const s = summarizeAsaasKeyEnv(['TMSEGURANCA']);
+    assert.equal(s.configured, true);
+    assert.equal(s.sourceEnv, 'TMSEGURANCA');
+    assert.equal(s.production, true);
+    assert.equal(s.sandbox, false);
+    assert.ok(s.length > 10);
   } finally {
-    for (const [k, v] of Object.entries(prev)) {
-      if (v === undefined) delete (process.env as Record<string, string | undefined>)[k];
-      else process.env[k] = v;
-    }
+    if (prev === undefined) delete process.env.TMSEGURANCA;
+    else process.env.TMSEGURANCA = prev;
   }
 });

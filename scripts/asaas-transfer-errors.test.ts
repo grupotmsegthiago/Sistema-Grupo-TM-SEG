@@ -3,22 +3,29 @@ import assert from 'node:assert/strict';
 import { formatAsaasTransferError } from '../lib/asaasTransferErrors.ts';
 import { ASAAS_PIX_FINANCEIRO_EMAIL } from '../lib/asaasPixTransfer.ts';
 
-test('formatAsaasTransferError orienta liberação de saque via API no painel Asaas', () => {
+test('formatAsaasTransferError orienta copiar chaves do Replit quando saque via API falha', () => {
   const msg = formatAsaasTransferError(
     'Asaas: A chave de API fornecida não possui permissão para realizar operações de saque via API.',
   );
-  assert.match(msg, /Mecanismos de segurança/i);
-  assert.match(msg, /gerente de contas Asaas/i);
-  assert.match(msg, /regenere a chave API/i);
-  assert.doesNotMatch(msg, /webhook de aprovação recusou/i);
+  assert.match(msg, /Replit/i);
+  assert.match(msg, /TMSEGURANCA/i);
+  assert.match(msg, /mesmas/i);
 });
 
 test('formatAsaasTransferError prioriza permissão de saque sobre webhook no erro combinado', () => {
   const msg = formatAsaasTransferError(
     'Repasse interno: Asaas: webhook recusou. Pix: A chave de API não possui permissão para saque via API.',
   );
-  assert.match(msg, /liberação de saque/i);
+  assert.match(msg, /Replit/i);
   assert.doesNotMatch(msg, /webhook de aprovação recusou/i);
+});
+
+test('formatAsaasTransferError explica repasse interno sem vínculo + Pix sem permissão', () => {
+  const msg = formatAsaasTransferError(
+    'Repasse interno: Asaas: Contas sem vínculo. Pix: A chave de API não possui permissão para saque via API.',
+  );
+  assert.match(msg, /vinculadas|vínculo/i);
+  assert.match(msg, /Replit/i);
 });
 
 test('formatAsaasTransferError orienta cadastro da chave Pix de destino', () => {
