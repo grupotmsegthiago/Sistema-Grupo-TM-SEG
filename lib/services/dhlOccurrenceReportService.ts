@@ -185,6 +185,10 @@ export type DhlReportHistoryItem = {
   created_at: string;
 };
 
+// Histórico usa o MESMO endpoint do relatório (POST /api/dhl/occurrence-report
+// com `format`), servido pelo handler standalone da Vercel. O catch-all Express
+// (/api/index) não é confiável em produção, por isso não criamos sub-rotas.
+
 /** Salva o HTML atual do relatório como uma nova versão no histórico. */
 export async function saveDhlOccurrenceReport(params: {
   missionId: string;
@@ -195,9 +199,10 @@ export async function saveDhlOccurrenceReport(params: {
   aiGenerated?: boolean;
   label?: string;
 }): Promise<{ id: string; version: number; createdAt: string }> {
-  const res = await authFetch('/api/dhl/occurrence-report/save', {
+  const res = await authFetch('/api/dhl/occurrence-report', {
     method: 'POST',
     body: JSON.stringify({
+      format: 'save',
       missionId: params.missionId,
       seNumber: params.seNumber,
       html: params.html,
@@ -224,9 +229,10 @@ export async function saveDhlOccurrenceReport(params: {
 export async function listDhlOccurrenceReportHistory(
   missionId: string,
 ): Promise<DhlReportHistoryItem[]> {
-  const res = await authFetch(
-    `/api/dhl/occurrence-report/history?missionId=${encodeURIComponent(missionId)}`,
-  );
+  const res = await authFetch('/api/dhl/occurrence-report', {
+    method: 'POST',
+    body: JSON.stringify({ format: 'history', missionId }),
+  });
   const json = (await parseJsonResponse(res)) as {
     ok?: boolean;
     error?: string;
@@ -240,11 +246,13 @@ export async function listDhlOccurrenceReportHistory(
 
 /** Carrega o HTML completo de uma versão salva do relatório. */
 export async function getDhlOccurrenceReportVersion(
-  id: string,
+  missionId: string,
+  reportId: string,
 ): Promise<{ html: string; version: number; label: string; createdAt: string }> {
-  const res = await authFetch(
-    `/api/dhl/occurrence-report/history/${encodeURIComponent(id)}`,
-  );
+  const res = await authFetch('/api/dhl/occurrence-report', {
+    method: 'POST',
+    body: JSON.stringify({ format: 'history-get', missionId, reportId }),
+  });
   const json = (await parseJsonResponse(res)) as {
     ok?: boolean;
     error?: string;

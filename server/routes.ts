@@ -2607,6 +2607,75 @@ export async function registerRoutes(
       const seFromBody = String(req.body?.seNumber || '').trim();
       const filenameBase = seFromBody || missionId;
 
+      // ── Histórico/versionamento (salvar, listar, abrir versão) ──
+      if (format === 'save') {
+        const html = typeof req.body?.html === 'string' ? req.body.html : '';
+        if (!html.trim()) {
+          res.status(400).json({ ok: false, error: 'html obrigatório para salvar' });
+          return;
+        }
+        const { data: last } = await supabaseAdmin
+          .from('dhl_occurrence_reports')
+          .select('version')
+          .eq('mission_id', missionId)
+          .order('version', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const nextVersion = (last?.version || 0) + 1;
+        const { data: inserted, error } = await supabaseAdmin
+          .from('dhl_occurrence_reports')
+          .insert({
+            mission_id: missionId,
+            se_number: seFromBody || null,
+            version: nextVersion,
+            label: String(req.body?.label || '').trim(),
+            report_html: html,
+            facts_summary: typeof req.body?.factsSummary === 'string' ? req.body.factsSummary : null,
+            email_link: typeof req.body?.emailLink === 'string' ? req.body.emailLink : null,
+            ai_generated: req.body?.aiGenerated === true,
+            created_by: directorName,
+          })
+          .select('id, version, created_at')
+          .single();
+        if (error) throw error;
+        res.status(200).json({ ok: true, id: inserted.id, version: inserted.version, createdAt: inserted.created_at });
+        return;
+      }
+
+      if (format === 'history') {
+        const { data, error } = await supabaseAdmin
+          .from('dhl_occurrence_reports')
+          .select('id, version, label, se_number, ai_generated, created_by, created_at')
+          .eq('mission_id', missionId)
+          .order('version', { ascending: false });
+        if (error) throw error;
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(200).json({ ok: true, versions: data || [] });
+        return;
+      }
+
+      if (format === 'history-get') {
+        const reportId = String(req.body?.reportId || '').trim();
+        if (!reportId) {
+          res.status(400).json({ ok: false, error: 'reportId obrigatório' });
+          return;
+        }
+        const { data, error } = await supabaseAdmin
+          .from('dhl_occurrence_reports')
+          .select('id, mission_id, se_number, version, label, report_html, facts_summary, ai_generated, created_by, created_at')
+          .eq('id', reportId)
+          .eq('mission_id', missionId)
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) {
+          res.status(404).json({ ok: false, error: 'Versão não encontrada' });
+          return;
+        }
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(200).json({ ok: true, report: data });
+        return;
+      }
+
       if (format === 'html' || format === 'preview') {
         const generateText = isGeminiConfigured()
           ? async (prompt: string): Promise<string> => {
@@ -2702,122 +2771,6 @@ export async function registerRoutes(
       const message = err instanceof Error ? err.message : String(err);
       console.error('[dhl/occurrence-report html]', message);
       res.status(500).json({ ok: false, error: message || 'Falha ao gerar relatório' });
-    }
-  });
-
-  // ── Histórico/versionamento do Plano de Ação DHL (somente diretoria) ──
-
-  // POST /api/dhl/occurrence-report/save — salva uma nova versão do relatório
-  app.post('/api/dhl/occurrence-report/save', requireAuth, requireRole('diretoria'), async (req: Request, res: Response) => {
-    try {
-      const token = (req as any).authToken as string;
-      const denied = await assertDhlOccurrenceReportAccess(token);
-      if (denied) {
-        res.status(denied === 'Não autorizado' ? 401 : 403).json({ ok: false, error: denied });
-        return;
-      }
-
-      const missionId = String(req.body?.missionId || '').trim();
-      const html = typeof req.body?.html === 'string' ? req.body.html : '';
-      if (!missionId || !html.trim()) {
-        res.status(400).json({ ok: false, error: 'missionId e html são obrigatórios' });
-        return;
-      }
-
-      const createdBy = await resolveDirectorNameFromToken(token);
-      const { data: last } = await supabaseAdmin
-        .from('dhl_occurrence_reports')
-        .select('version')
-        .eq('mission_id', missionId)
-        .order('version', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const nextVersion = (last?.version || 0) + 1;
-
-      const { data: inserted, error } = await supabaseAdmin
-        .from('dhl_occurrence_reports')
-        .insert({
-          mission_id: missionId,
-          se_number: String(req.body?.seNumber || '').trim() || null,
-          version: nextVersion,
-          label: String(req.body?.label || '').trim(),
-          report_html: html,
-          facts_summary: typeof req.body?.factsSummary === 'string' ? req.body.factsSummary : null,
-          email_link: typeof req.body?.emailLink === 'string' ? req.body.emailLink : null,
-          ai_generated: req.body?.aiGenerated === true,
-          created_by: createdBy,
-        })
-        .select('id, version, created_at')
-        .single();
-      if (error) throw error;
-
-      res.status(200).json({ ok: true, id: inserted.id, version: inserted.version, createdAt: inserted.created_at });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error('[dhl/occurrence-report save]', message);
-      res.status(500).json({ ok: false, error: message || 'Falha ao salvar versão do relatório' });
-    }
-  });
-
-  // GET /api/dhl/occurrence-report/history?missionId= — lista versões (sem o HTML)
-  app.get('/api/dhl/occurrence-report/history', requireAuth, requireRole('diretoria'), async (req: Request, res: Response) => {
-    try {
-      const token = (req as any).authToken as string;
-      const denied = await assertDhlOccurrenceReportAccess(token);
-      if (denied) {
-        res.status(denied === 'Não autorizado' ? 401 : 403).json({ ok: false, error: denied });
-        return;
-      }
-      const missionId = String(req.query?.missionId || '').trim();
-      if (!missionId) {
-        res.status(400).json({ ok: false, error: 'missionId obrigatório' });
-        return;
-      }
-      const { data, error } = await supabaseAdmin
-        .from('dhl_occurrence_reports')
-        .select('id, version, label, se_number, ai_generated, created_by, created_at')
-        .eq('mission_id', missionId)
-        .order('version', { ascending: false });
-      if (error) throw error;
-      res.setHeader('Cache-Control', 'no-store');
-      res.status(200).json({ ok: true, versions: data || [] });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error('[dhl/occurrence-report history]', message);
-      res.status(500).json({ ok: false, error: message || 'Falha ao listar histórico' });
-    }
-  });
-
-  // GET /api/dhl/occurrence-report/history/:id — retorna o HTML de uma versão salva
-  app.get('/api/dhl/occurrence-report/history/:id', requireAuth, requireRole('diretoria'), async (req: Request, res: Response) => {
-    try {
-      const token = (req as any).authToken as string;
-      const denied = await assertDhlOccurrenceReportAccess(token);
-      if (denied) {
-        res.status(denied === 'Não autorizado' ? 401 : 403).json({ ok: false, error: denied });
-        return;
-      }
-      const id = String(req.params?.id || '').trim();
-      if (!id) {
-        res.status(400).json({ ok: false, error: 'id obrigatório' });
-        return;
-      }
-      const { data, error } = await supabaseAdmin
-        .from('dhl_occurrence_reports')
-        .select('id, mission_id, se_number, version, label, report_html, facts_summary, ai_generated, created_by, created_at')
-        .eq('id', id)
-        .maybeSingle();
-      if (error) throw error;
-      if (!data) {
-        res.status(404).json({ ok: false, error: 'Versão não encontrada' });
-        return;
-      }
-      res.setHeader('Cache-Control', 'no-store');
-      res.status(200).json({ ok: true, report: data });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error('[dhl/occurrence-report history get]', message);
-      res.status(500).json({ ok: false, error: message || 'Falha ao carregar versão' });
     }
   });
 
