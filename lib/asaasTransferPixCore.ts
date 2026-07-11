@@ -8,11 +8,11 @@ import {
   ASAAS_PIX_FINANCEIRO_KEY_TYPE,
   isValidPixTransferAmount,
   roundMoneyBrl,
-} from '../lib/asaasPixTransfer.js';
-import { buildAsaasTransferExternalReference } from '../lib/asaasTransferApproval.js';
-import { formatAsaasTransferError } from '../lib/asaasTransferErrors.js';
-import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity, readFirstEnv } from '../lib/asaasEnvKeys.js';
-import { registerAsaasPendingTransfer } from '../lib/services/asaasPendingTransferService.js';
+} from './asaasPixTransfer.js';
+import { buildAsaasTransferExternalReference } from './asaasTransferApproval.js';
+import { formatAsaasTransferError } from './asaasTransferErrors.js';
+import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity, readFirstEnv } from './asaasEnvKeys.js';
+import { registerAsaasPendingTransfer } from './services/asaasPendingTransferService.js';
 import { invalidateAsaasBalancesCoreCache } from './asaasBalancesCore.js';
 
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';

@@ -22,7 +22,7 @@ test('getAllBalancesCore consulta empresas em paralelo', async () => {
     process.env.ASAAS_API_KEY_TMSECURITY = 'key-seg';
     process.env.ASAAS_API_KEY_TMSECURITY_60 = 'key-security';
 
-    const { getAllBalancesCore, invalidateAsaasBalancesCoreCache } = await import('../server/asaasBalancesCore.ts');
+    const { getAllBalancesCore, invalidateAsaasBalancesCoreCache } = await import('../lib/asaasBalancesCore.ts');
     invalidateAsaasBalancesCoreCache();
     const balances = await getAllBalancesCore();
     assert.equal(balances.length, 3);
@@ -45,7 +45,7 @@ test('getAllBalancesCore retorna erro por empresa sem derrubar as demais', async
     delete process.env.ASAAS_API_KEY_TMSECURITY;
     delete process.env.ASAAS_API_KEY_TMSECURITY_60;
 
-    const { getAllBalancesCore, invalidateAsaasBalancesCoreCache } = await import('../server/asaasBalancesCore.ts');
+    const { getAllBalancesCore, invalidateAsaasBalancesCoreCache } = await import('../lib/asaasBalancesCore.ts');
     invalidateAsaasBalancesCoreCache();
     const balances = await getAllBalancesCore();
     assert.equal(balances.length, 3);

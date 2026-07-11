@@ -1,7 +1,19 @@
-import { assertAsaasApiAccess, extractAuthToken } from '../lib/asaasApiAuth.js';
-import { getAllBalancesCore } from '../server/asaasBalancesCore.js';
+import {
+  extractUserIdFromToken,
+  safeResolveUserRoleFromToken,
+} from '../lib/rh/apiEmployeesAuth.js';
+import { getAllBalancesCore } from '../lib/asaasBalancesCore.js';
 
-/** Saldos Asaas (TM Gestão, TM Seg, TM Security) — rota leve sem cold start do Express. */
+const ALLOWED_ROLES = new Set(['administrador', 'diretoria', 'financeiro', 'ceo']);
+
+function authToken(req: any): string {
+  return (
+    String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '') ||
+    String(req.headers?.['x-auth-token'] || '')
+  );
+}
+
+/** Saldos Asaas (TM Gestão, TM Seg, TM Security) — imports apenas de /lib (Vercel serverless). */
 export default async function handler(req: any, res: any) {
   try {
     if (req.method !== 'GET') {
@@ -9,10 +21,16 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const token = extractAuthToken(req);
-    const denied = await assertAsaasApiAccess(token, req);
-    if (denied) {
-      res.status(denied === 'Não autorizado' ? 401 : 403).json({ ok: false, error: denied });
+    const token = authToken(req);
+    const userId = extractUserIdFromToken(token);
+    if (!userId) {
+      res.status(401).json({ ok: false, error: 'Não autorizado' });
+      return;
+    }
+
+    const role = await safeResolveUserRoleFromToken(token);
+    if (!role || !ALLOWED_ROLES.has(role)) {
+      res.status(403).json({ ok: false, error: 'Permissão negada' });
       return;
     }
 

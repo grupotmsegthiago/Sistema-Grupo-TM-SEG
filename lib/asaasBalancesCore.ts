@@ -1,9 +1,9 @@
 /**
- * Módulo leve para consulta de saldos Asaas (rotas serverless Vercel).
- * Evita importar o asaasService completo (~NF, clientes, etc.).
+ * Consulta de saldos Asaas (rotas serverless Vercel + Express).
+ * Mantido em /lib para evitar FUNCTION_INVOCATION_FAILED ao importar de /server na Vercel.
  */
 
-import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity, readFirstEnv } from '../lib/asaasEnvKeys';
+import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity, readFirstEnv } from './asaasEnvKeys.js';
 
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
 
