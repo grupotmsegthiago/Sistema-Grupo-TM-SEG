@@ -3,7 +3,11 @@
 import { ASAAS_PIX_FINANCEIRO_EMAIL } from './asaasPixTransfer.js';
 
 const WITHDRAWAL_DENIED =
-  /não possui permissão.*saque|sem permissão.*saque|withdrawal.*permission|invalid_action/i;
+  /não possui permissão.*saque|sem permissão.*saque|permissão.*saque.*api|withdrawal.*permission|invalid_action/i;
+
+/** Chave/conta Pix de destino ainda não cadastrada no painel Asaas. */
+const PIX_DEST_NOT_REGISTERED =
+  /chave.*pix.*(não|nao).*(cadastr|encontr|registr|válid|valid)|conta.*(não|nao).*(cadastr|encontr|registr)|destino.*(não|nao).*cadastr|cadastr.*nova conta|conta bancária.*(não|nao).*cadastr|informe uma conta cadastrada|benefici[aá]rio.*(não|nao).*cadastr|pix.*key.*not.*found|transfer.*account.*not.*registered/i;
 
 const CRITICAL_AUTH =
   /autorização crítica|critical.*authorization|token.*sms|token.*app/i;
@@ -21,11 +25,22 @@ export function formatAsaasTransferError(raw: string): string {
   const msg = String(raw || '').trim();
   if (!msg) return 'Falha na transferência Pix. Tente novamente.';
 
+  if (PIX_DEST_NOT_REGISTERED.test(msg)) {
+    return (
+      `A chave Pix de destino (${ASAAS_PIX_FINANCEIRO_EMAIL}) precisa ser cadastrada uma vez no painel Asaas ` +
+      'da conta de origem, em Transferências → Cadastrar nova conta, antes de aceitar transferências via API ' +
+      'para esse destino. Depois de salvar, tente o repasse novamente.'
+    );
+  }
+
   if (WITHDRAWAL_DENIED.test(msg)) {
     return (
-      'Não foi possível repassar o saldo. A chave API desta conta Asaas não tem permissão de saque/transferência via API. ' +
-      'Solicite ao gerente de contas Asaas a liberação para TM Gestão, TM Seg e TM Security. ' +
-      'O webhook de aprovação já está configurado em: https://sistema.grupotmseg.com.br/api/asaas/transfer-approval'
+      'Esta conta Asaas ainda não tem liberação de saque/transferência via API. ' +
+      'No painel da conta (TM Gestão, TM Seg ou TM Security): Integrações → Mecanismos de segurança — ' +
+      'habilite transferência via API e escolha o webhook de autorização como mecanismo de segurança ' +
+      '(URL já configurada: https://sistema.grupotmseg.com.br/api/asaas/transfer-approval). ' +
+      'Se a opção não aparecer ou continuar recusando, abra chamado com o gerente de contas Asaas pedindo ' +
+      'liberação de saque/transferência via API. Após liberar, regenere a chave API se o Asaas solicitar.'
     );
   }
 
@@ -58,12 +73,11 @@ export function formatAsaasTransferError(raw: string): string {
     );
   }
 
-  if (CANCELLED_BY_WEBHOOK.test(msg)) {
+  if (CANCELLED_BY_WEBHOOK.test(msg) && !WITHDRAWAL_DENIED.test(msg)) {
     return (
       'A transferência foi criada no Asaas, mas o webhook de aprovação recusou ou não respondeu a tempo. ' +
       'Verifique em Integrações → Webhooks se a fila está ativa e a URL está correta. ' +
-      'URL: https://sistema.grupotmseg.com.br/api/asaas/transfer-approval ' +
-      `(detalhe Asaas: ${msg.slice(0, 200)})`
+      'URL: https://sistema.grupotmseg.com.br/api/asaas/transfer-approval'
     );
   }
 
