@@ -260,6 +260,39 @@ Boa tarde! Precisamos do plano de ação.`,
   assert.doesNotMatch(html, /Histórico de e-mails com DHL/i);
 });
 
+test('buildPhasePhotos preenche o destino com foto ao redor da conclusão (fallback temporal)', async () => {
+  const { buildPhasePhotos } = await import('../lib/dhlOccurrenceReport/collectReportData');
+  const img = (n: string) => `https://x.supabase.co/storage/v1/object/public/mission-evidence/${n}.png`;
+  // Sem foto específica de "destino"; há fotos em origem, viagem e conclusão.
+  const evidence = [
+    { url: img('origem'), at: '2026-07-08T14:05:00Z', context: 'Espelhamento na origem', actionType: 'mirroring', filePath: '' },
+    { url: img('viagem'), at: '2026-07-08T15:00:00Z', context: 'Deslocamento DHL', actionType: 'dhl_deslocamento_print', filePath: '' },
+    { url: img('perto-conclusao'), at: '2026-07-08T17:50:00Z', context: 'Foto operacional', actionType: 'evidence_upload', filePath: '' },
+    { url: img('hodometro'), at: '2026-07-08T18:00:00Z', context: 'Hodômetro KM final', actionType: 'odometer_print', filePath: '' },
+  ];
+  const photos = buildPhasePhotos({
+    marks: {
+      originArrival: '2026-07-08T14:00:00Z',
+      inTransit: '2026-07-08T15:00:00Z',
+      destinationArrival: '2026-07-08T17:30:00Z',
+      completed: '2026-07-08T18:00:00Z',
+    },
+    evidence,
+    mirroringUrl: null,
+    deslocUrl: null,
+  });
+  // Todos os 4 campos devem estar preenchidos, incluindo o destino.
+  assert.equal(photos.length, 4);
+  for (const p of photos) {
+    assert.ok(p.url, `campo ${p.phase} deveria ter foto`);
+  }
+  const destino = photos.find((p) => p.phase === 'destino');
+  assert.ok(destino?.url, 'destino deve ser preenchido pelo fallback temporal');
+  // não deve haver URLs duplicadas entre as etapas
+  const urls = photos.map((p) => p.url);
+  assert.equal(new Set(urls).size, urls.length, 'cada etapa usa uma foto distinta');
+});
+
 test('geração via IA preenche blocos com base no contexto e NÃO copia o e-mail', async () => {
   const { generateDhlReportHtmlWithAi } = await import(
     '../lib/dhlOccurrenceReport/adjustReportHtml'
@@ -337,6 +370,31 @@ test('service expõe ajuste com IA no payload', () => {
   assert.match(src, /adjustDhlOccurrenceReportHtml/);
   assert.match(src, /format: 'adjust'/);
   assert.doesNotMatch(src, /reportParecer/);
+});
+
+test('histórico: rotas Express, migração e service conectados', () => {
+  const routes = fs.readFileSync('server/routes.ts', 'utf8');
+  // migração da tabela de versões
+  assert.match(routes, /CREATE TABLE IF NOT EXISTS dhl_occurrence_reports/);
+  assert.match(routes, /DISABLE ROW LEVEL SECURITY/);
+  // rotas de histórico (somente diretoria)
+  assert.match(routes, /post\('\/api\/dhl\/occurrence-report\/save'/);
+  assert.match(routes, /get\('\/api\/dhl\/occurrence-report\/history'/);
+  assert.match(routes, /get\('\/api\/dhl\/occurrence-report\/history\/:id'/);
+  assert.match(routes, /requireRole\('diretoria'\)[\s\S]*occurrence-report\/save/);
+
+  const service = fs.readFileSync('lib/services/dhlOccurrenceReportService.ts', 'utf8');
+  assert.match(service, /export async function saveDhlOccurrenceReport/);
+  assert.match(service, /export async function listDhlOccurrenceReportHistory/);
+  assert.match(service, /export async function getDhlOccurrenceReportVersion/);
+  assert.match(service, /\/api\/dhl\/occurrence-report\/save/);
+  assert.match(service, /\/api\/dhl\/occurrence-report\/history/);
+
+  const modal = fs.readFileSync('components/DhlOccurrenceReportModal.tsx', 'utf8');
+  assert.match(modal, /Salvar vers[aã]o/);
+  assert.match(modal, /Hist[oó]rico/);
+  assert.match(modal, /handleSaveVersion/);
+  assert.match(modal, /handleOpenVersion/);
 });
 
 test('handler suporta format adjust com bundle CJS', () => {
