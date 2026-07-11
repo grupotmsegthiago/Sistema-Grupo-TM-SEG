@@ -134,10 +134,31 @@ function reportStyles() {
       font-size: 11pt; color: var(--brand-red-dark);
       border-bottom: 2px solid var(--brand-red);
       padding-bottom: 4px; margin: 16px 0 8px;
-      page-break-after: avoid; break-after: avoid-page;
+      break-after: avoid-page;
+      page-break-after: avoid;
     }
-    h3 { font-size: 10pt; color: var(--brand-black); margin: 12px 0 6px; page-break-after: avoid; break-after: avoid-page; }
-    table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 9pt; page-break-inside: avoid; break-inside: avoid-page; }
+    h3, h4 {
+      font-size: 10pt; color: var(--brand-black);
+      margin: 12px 0 6px;
+      break-after: avoid-page;
+      page-break-after: avoid;
+    }
+    h4 { font-size: 9pt; margin: 0 0 6px; }
+    /* Mant\xE9m o primeiro bloco logo ap\xF3s o t\xEDtulo na mesma p\xE1gina */
+    h2 + p, h2 + div, h2 + table, h2 + ul,
+    h3 + p, h3 + div, h3 + table, h3 + ul,
+    h4 + img, h4 + div {
+      break-before: avoid-page;
+      page-break-before: avoid;
+    }
+    p { orphans: 3; widows: 3; }
+    table {
+      width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 9pt;
+      break-inside: auto;
+      page-break-inside: auto;
+    }
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
     th, td { border: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
     th { background: linear-gradient(180deg, #fee2e2 0%, #fecaca 100%); color: var(--brand-black); font-weight: 700; }
     .meta td:first-child { font-weight: 700; width: 32%; background: #fafafa; }
@@ -149,7 +170,22 @@ function reportStyles() {
     }
     .quote { font-style: normal; }
     .section-root-cause { page-break-inside: avoid; break-inside: avoid-page; }
-    .photos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; page-break-inside: avoid; }
+    .subsection {
+      break-inside: avoid-page;
+      page-break-inside: avoid;
+      margin-bottom: 6px;
+    }
+    .subsection-loose {
+      break-inside: auto;
+      page-break-inside: auto;
+      margin-bottom: 6px;
+    }
+    .subsection-loose > h2,
+    .subsection-loose > h3 {
+      break-after: avoid-page;
+      page-break-after: avoid;
+    }
+    .photos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; break-inside: auto; page-break-inside: auto; }
     .photo-card {
       border: 1px solid #fca5a5; border-radius: 6px; padding: 8px;
       page-break-inside: avoid; break-inside: avoid-page;
@@ -172,6 +208,9 @@ function reportStyles() {
       .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .photo-card img { max-height: 220px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      h2, h3, h4 { break-after: avoid-page; page-break-after: avoid; }
+      .subsection { break-inside: avoid-page; page-break-inside: avoid; }
+      thead { display: table-header-group; }
     }
     ul.compact { margin: 6px 0 6px 18px; padding: 0; }
     ul.compact li { margin-bottom: 4px; }
@@ -254,9 +293,12 @@ function buildFullOccurrenceReportHtml(data, options) {
     <tr><td>Classifica\xE7\xE3o</td><td>Uso operacional \u2014 apresenta\xE7\xE3o ao cliente final</td></tr>
   </table>
 
+  <div class="subsection">
   <h2>1. Objetivo do documento</h2>
   <p>Formalizar, de forma estruturada e transparente, a justificativa do atraso registrado na opera\xE7\xE3o de escolta vinculada \xE0 <strong>S.E. n\xBA ${esc(data.seNumber)}</strong>, bem como o plano de a\xE7\xE3o com medidas corretivas e preventivas adotadas pela TM SEG, visando a apresenta\xE7\xE3o \xE0 DHL Supply Chain e ao cliente final (Foxconn / Apple).</p>
+  </div>
 
+  <div class="subsection">
   <h2>2. Identifica\xE7\xE3o da ocorr\xEAncia</h2>
   <table class="meta">
     <tr><td>Data da opera\xE7\xE3o</td><td>${formatDateBR(scheduledOrigin || missionCreated)}</td></tr>
@@ -276,7 +318,9 @@ function buildFullOccurrenceReportHtml(data, options) {
     <tr><td>Agentes</td><td>${esc(data.agents.join(" / ") || "\u2014")}</td></tr>
     <tr><td>Emiss\xE3o do relat\xF3rio</td><td>${generatedLabel} (Bras\xEDlia)</td></tr>
   </table>
+  </div>
 
+  <div class="subsection-loose">
   <h2>3. Descri\xE7\xE3o dos fatos (5W2H)</h2>
   <div class="summary" ${editable("facts-summary")}>${esc(factsSummary).replace(/\n/g, "<br/>")}</div>
 
@@ -292,7 +336,9 @@ function buildFullOccurrenceReportHtml(data, options) {
       <tr><td>Impacto?</td><td ${editable("5w2h-impacto")}>Comprometimento do cronograma operacional do cliente e desgaste operacional em opera\xE7\xE3o de alta criticidade.</td></tr>
     </tbody>
   </table>
+  </div>
 
+  <div class="subsection">
   <h3>3.1 Linha do tempo resumida</h3>
   <table class="timeline">
     <tr><td>${missionCreated ? `${formatDateBR(missionCreated)} \u2014 ${formatTimeBR(missionCreated)}` : "\u2014"}</td><td>OS ${esc(data.missionId)} criada no sistema TM SEG (S.E. ${esc(data.seNumber)}).</td></tr>
@@ -303,35 +349,47 @@ function buildFullOccurrenceReportHtml(data, options) {
     <tr><td>${formatDateBR(destinationArrival)} \u2014 ${formatTimeBR(destinationArrival)}</td><td><strong>Chegada no destino</strong> \u2014 registro sist\xEAmico.</td></tr>
     <tr><td>${formatDateBR(completed)} \u2014 ${formatTimeBR(completed)}</td><td><strong>Fim da miss\xE3o</strong> \u2014 status Conclu\xEDda.</td></tr>
   </table>
+  </div>
 
+  <div class="subsection">
   <h3>3.2 Registro operacional oficial (sistema TM SEG)</h3>
   <table>
     <thead><tr><th>Marco operacional</th><th>Data / Hora</th><th>Fonte no sistema</th></tr></thead>
     <tbody>${operationalRows}</tbody>
   </table>
   ${data.destinationOperational ? `<p><strong>Endere\xE7o registrado na chegada ao destino:</strong> ${esc(data.destinationOperational)}.</p>` : ""}
+  </div>
 
+  <div class="subsection-loose">
   <h3>3.3 Evid\xEAncias fotogr\xE1ficas por etapa</h3>
   <div class="photos">${photoBlocks}</div>
+  </div>
 
   ${allEvidenceBlocks ? `
+  <div class="subsection-loose">
   <h3>3.4 Todas as evid\xEAncias registradas no sistema</h3>
   <p style="font-size:9pt;color:${BRAND.muted};margin:4px 0 8px">Inclui prints e anexos da <strong>Atualizar OS</strong>, cria\xE7\xE3o da OS, hod\xF4metro, espelhamento, deslocamento DHL e demais uploads em <code>mission-evidence</code>.</p>
   <div class="photos photos-all-evidence">${allEvidenceBlocks}</div>
+  </div>
   ` : ""}
 
   <h2>4. Justificativa do atraso e an\xE1lise de causa raiz</h2>
+  <div class="subsection">
   <h3>4.1 S\xEDntese executiva</h3>
   <p ${editable("sec-4-1-sintese")}>O atraso de <strong>${delayHuman}</strong> na chegada \xE0 origem da S.E. ${esc(data.seNumber)} n\xE3o decorreu de falha no aceite ou no registro da miss\xE3o pela TM SEG. A OS foi aberta em <strong>${missionCreated ? `${formatDateBR(missionCreated)} \xE0s ${formatTimeBR(missionCreated)}` : "\u2014"}</strong>. A ocorr\xEAncia est\xE1 associada a um descompasso pontual na execu\xE7\xE3o operacional do parceiro, j\xE1 acionado para alinhamento e melhoria cont\xEDnua.</p>
+  </div>
 
+  <div class="subsection">
   <h3>4.2 Vers\xE3o do parceiro</h3>
   <p ${editable("sec-4-2-parceiro")}>O fornecedor informou necessidade de <strong>troca de viatura (VTR) no meio do percurso</strong>. A TM SEG segue apurando os detalhes operacionais para consolidar o entendimento completo dos fatos, com foco em preven\xE7\xE3o de reincid\xEAncia.</p>
+  </div>
 
-  <div class="section-root-cause">
+  <div class="subsection section-root-cause">
   <h3>4.3 Conclus\xE3o da apura\xE7\xE3o TM SEG (causa raiz)</h3>
   ${rootCauseBlock}
   </div>
 
+  <div class="subsection">
   <h3>4.4 An\xE1lise complementar \u2014 m\xE9todo dos 5 Porqu\xEAs</h3>
   <table>
     <thead><tr><th>N\xEDvel</th><th>Pergunta</th><th>Resposta</th></tr></thead>
@@ -343,7 +401,9 @@ function buildFullOccurrenceReportHtml(data, options) {
       <tr><td>5</td><td>Por que n\xE3o houve substitui\xE7\xE3o preventiva?</td><td ${editable("5pq-5")}>O fluxo de backup n\xE3o foi acionado com a anteced\xEAncia necess\xE1ria; a TM SEG foi informada em momento posterior ao ideal.</td></tr>
     </tbody>
   </table>
+  </div>
 
+  <div class="subsection-loose">
   <h2>5. A\xE7\xF5es de conten\xE7\xE3o (imediatas \u2014 j\xE1 executadas)</h2>
   <table>
     <thead><tr><th>#</th><th>A\xE7\xE3o</th><th>Status</th><th>Data</th></tr></thead>
@@ -355,8 +415,10 @@ function buildFullOccurrenceReportHtml(data, options) {
       <tr><td>C5</td><td>Retorno formal \xE0 DHL com relato estruturado dos fatos</td><td>Conclu\xEDda</td><td>${emissionDate}</td></tr>
     </tbody>
   </table>
+  </div>
 
   <h2>6. Plano de a\xE7\xE3o \u2014 medidas corretivas e preventivas</h2>
+  <div class="subsection-loose">
   <h3>6.1 A\xE7\xF5es corretivas</h3>
   <table>
     <thead><tr><th>ID</th><th>A\xE7\xE3o</th><th>Respons\xE1vel</th><th>Prazo</th><th>Indicador</th></tr></thead>
@@ -368,7 +430,9 @@ function buildFullOccurrenceReportHtml(data, options) {
       <tr><td>AC-05</td><td>Reuni\xE3o de alinhamento operacional (SLA, janelas, substitui\xE7\xE3o)</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>16/07/2026</td><td>Ata assinada</td></tr>
     </tbody>
   </table>
+  </div>
 
+  <div class="subsection-loose">
   <h3>6.2 A\xE7\xF5es preventivas</h3>
   <table>
     <thead><tr><th>ID</th><th>A\xE7\xE3o</th><th>Respons\xE1vel</th><th>Prazo</th><th>Indicador</th></tr></thead>
@@ -381,7 +445,9 @@ function buildFullOccurrenceReportHtml(data, options) {
       <tr><td>AP-06</td><td>Reporte semanal de desempenho DHL (4 semanas)</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>Semanal</td><td>Relat\xF3rio \xE0s segundas</td></tr>
     </tbody>
   </table>
+  </div>
 
+  <div class="subsection">
   <h3>6.3 Cronograma consolidado</h3>
   <div class="cronograma">${emissionDate} \u2500\u2500\u25CF Emiss\xE3o deste plano de a\xE7\xE3o
 14/07/2026 \u2500\u2500\u25CF AP-01, AP-03, AP-05 em vigor | AC-02, AC-04 iniciados
@@ -390,7 +456,9 @@ function buildFullOccurrenceReportHtml(data, options) {
 21/07/2026 \u2500\u2500\u25CF AP-02 \u2014 Protocolo de backup operacional
 24/07/2026 \u2500\u2500\u25CF AP-04 \u2014 Reuni\xE3o geral de parceiros Sudeste
 14/08/2026 \u2500\u2500\u25CF Encerramento do ciclo de acompanhamento intensivo (4 semanas)</div>
+  </div>
 
+  <div class="subsection-loose">
   <h2>7. Indicadores de acompanhamento (KPIs)</h2>
   <table>
     <thead><tr><th>Indicador</th><th>Meta</th><th>Frequ\xEAncia</th><th>Respons\xE1vel</th></tr></thead>
@@ -403,7 +471,9 @@ function buildFullOccurrenceReportHtml(data, options) {
     </tbody>
   </table>
   <p ${editable("sec-7-referencia")}><em>Refer\xEAncia hist\xF3rica TM SEG: mais de 380 miss\xF5es aceitas e realizadas na opera\xE7\xE3o DHL, sendo esta a primeira ocorr\xEAncia de atraso significativo.</em></p>
+  </div>
 
+  <div class="subsection">
   <h2>8. Compromisso da TM SEG</h2>
   <ul class="compact">
     <li ${editable("commit-1")}>Transpar\xEAncia total na comunica\xE7\xE3o de ocorr\xEAncias e planos de a\xE7\xE3o.</li>
@@ -411,8 +481,9 @@ function buildFullOccurrenceReportHtml(data, options) {
     <li ${editable("commit-3")}>Melhoria cont\xEDnua dos processos de monitoramento, substitui\xE7\xE3o e preven\xE7\xE3o.</li>
     <li ${editable("commit-4")}>Acompanhamento ativo com relat\xF3rios peri\xF3dicos \xE0 DHL durante o per\xEDodo de estabiliza\xE7\xE3o.</li>
   </ul>
+  </div>
 
-
+  <div class="subsection">
   <h2>9. Anexos e registros de apoio</h2>
   <table>
     <thead><tr><th>Anexo</th><th>Descri\xE7\xE3o</th></tr></thead>
@@ -424,7 +495,9 @@ function buildFullOccurrenceReportHtml(data, options) {
       <tr><td>E</td><td>Registro de contato e apura\xE7\xE3o com ${esc(provider)}</td></tr>
     </tbody>
   </table>
+  </div>
 
+  <div class="subsection">
   <h2>10. Aprova\xE7\xE3o</h2>
   <table>
     <thead><tr><th>Fun\xE7\xE3o</th><th>Nome</th><th>Assinatura</th><th>Data</th></tr></thead>
@@ -433,12 +506,15 @@ function buildFullOccurrenceReportHtml(data, options) {
       <tr><td>Coordena\xE7\xE3o Operacional</td><td>_______________________</td><td>_______________________</td><td>___/___/2026</td></tr>
     </tbody>
   </table>
+  </div>
 
+  <div class="subsection">
   <div class="signature">
     <div class="visto">VISTO</div>
     <strong>${esc(data.directorName)}</strong><br />
     Diretoria \u2014 Grupo TM SEG<br />
     ${generatedLabel}
+  </div>
   </div>
 
   <p class="footer">Documento gerado eletronicamente pelo Sistema Grupo TM SEG em ${generatedLabel} (hor\xE1rio de Bras\xEDlia).<br />

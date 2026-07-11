@@ -137,6 +137,16 @@ test('HTML completo inclui seções 1 a 10 do modelo DHL', () => {
   assert.match(html, /PA-DHL-183013/);
   assert.match(html, /linear-gradient/i);
   assert.match(html, /section-root-cause/i);
+  assert.match(html, /class="subsection"/);
+  assert.match(html, /break-after: avoid-page/);
+  assert.match(html, /display: table-header-group/);
+});
+
+test('HTML agrupa 4.4 título com tabela (evita título órfão na impressão)', () => {
+  const html = buildOccurrenceReportHtml(baseData, {
+    logoDataUri: 'data:image/png;base64,AAAA',
+  });
+  assert.match(html, /subsection[\s\S]*4\.4 Análise complementar[\s\S]*5 Porquês[\s\S]*<table>/);
 });
 
 test('HTML inclui logo embutido e label KM final na conclusão', () => {
