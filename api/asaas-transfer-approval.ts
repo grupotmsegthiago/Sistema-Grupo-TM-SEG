@@ -42,16 +42,6 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const expectedToken = String(process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN || '').trim();
-    const receivedToken = readWebhookToken(req);
-    const tokenOk = !expectedToken || receivedToken === expectedToken;
-
-    if (expectedToken && !tokenOk) {
-      console.warn('[asaas-transfer-approval] token inválido ou ausente');
-      respond(res, { status: 'REFUSED', refuseReason: 'token_invalido' });
-      return;
-    }
-
     const body = parseAsaasWebhookBody(req.body);
     const type = String(body.type || '').toUpperCase();
 
@@ -68,6 +58,11 @@ export default async function handler(req: any, res: any) {
     const transferId = String(transfer.id || '').trim();
     const value = Number(transfer.value || 0);
 
+    /**
+     * Repasses originados pelo sistema (externalReference tmseg-repasse-* ou destino
+     * financeiro) são avaliados antes do token: o painel Asaas frequentemente não
+     * envia o header asaas-access-token no webhook de aprovação.
+     */
     if (transferId && isPendingTransferInMemory(transferId)) {
       console.log('[asaas-transfer-approval] APPROVED memória', transferId, value);
       respond(res, { status: 'APPROVED' });
@@ -77,6 +72,16 @@ export default async function handler(req: any, res: any) {
     if (shouldApproveAsaasTransferWebhook(transfer, financeiroWallet)) {
       console.log('[asaas-transfer-approval] APPROVED regras', transferId, value);
       respond(res, { status: 'APPROVED' });
+      return;
+    }
+
+    const expectedToken = String(process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN || '').trim();
+    const receivedToken = readWebhookToken(req);
+    const tokenOk = !expectedToken || receivedToken === expectedToken;
+
+    if (expectedToken && !tokenOk) {
+      console.warn('[asaas-transfer-approval] token inválido ou ausente');
+      respond(res, { status: 'REFUSED', refuseReason: 'token_invalido' });
       return;
     }
 
