@@ -50,11 +50,34 @@ function applyEditablePatches(html, patches) {
   let result = html;
   for (const [id, newInner] of Object.entries(patches)) {
     if (!id || newInner == null) continue;
-    const re = new RegExp(
-      `(<[a-z][a-z0-9]*[^>]*\\sdata-dhl-editable="${escapeRegex(id)}"[^>]*>)([\\s\\S]*?)(</[a-z][a-z0-9]*>)`,
+    const openRe = new RegExp(
+      `<([a-z][a-z0-9]*)[^>]*\\sdata-dhl-editable="${escapeRegex(id)}"[^>]*>`,
       "i"
     );
-    result = result.replace(re, `$1${newInner}$3`);
+    const open = openRe.exec(result);
+    if (!open) continue;
+    const tagName = open[1];
+    const contentStart = open.index + open[0].length;
+    const tagRe = new RegExp(`<(/?)${tagName}(\\s[^>]*?)?(/?)>`, "gi");
+    tagRe.lastIndex = contentStart;
+    let depth = 1;
+    let closeStart = -1;
+    let m;
+    while ((m = tagRe.exec(result)) !== null) {
+      const isClosing = m[1] === "/";
+      const isSelfClosing = m[3] === "/";
+      if (isClosing) {
+        depth -= 1;
+        if (depth === 0) {
+          closeStart = m.index;
+          break;
+        }
+      } else if (!isSelfClosing) {
+        depth += 1;
+      }
+    }
+    if (closeStart === -1) continue;
+    result = result.slice(0, contentStart) + newInner + result.slice(closeStart);
   }
   return result;
 }

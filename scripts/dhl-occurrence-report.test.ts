@@ -260,6 +260,31 @@ Boa tarde! Precisamos do plano de ação.`,
   assert.doesNotMatch(html, /Histórico de e-mails com DHL/i);
 });
 
+test('applyEditablePatches substitui bloco INTEIRO mesmo com <strong> aninhado (sem duplicar)', async () => {
+  const { applyEditablePatches, extractEditableBlocks } = await import(
+    '../lib/dhlOccurrenceReport/adjustReportHtml'
+  );
+  // Bloco no formato real da seção 4.1: contém <strong> aninhados.
+  const html =
+    '<p data-dhl-editable="sec-4-1-sintese">O atraso de <strong>86 minutos</strong> na chegada à origem da S.E. 183013 não decorreu de falha. A OS foi aberta em <strong>08/07 às 10:00</strong>. Texto redundante original.</p>';
+
+  const patched = applyEditablePatches(html, {
+    'sec-4-1-sintese': 'Texto novo e profissional gerado pela IA.',
+  });
+
+  // O conteúdo antigo deve sumir por completo (não pode sobrar resquício).
+  assert.match(patched, /Texto novo e profissional gerado pela IA\./);
+  assert.doesNotMatch(patched, /Texto redundante original/);
+  assert.doesNotMatch(patched, /86 minutos/);
+  assert.doesNotMatch(patched, /A OS foi aberta em/);
+  // A tag externa e o atributo editável devem ser preservados e bem-formados.
+  assert.match(patched, /<p data-dhl-editable="sec-4-1-sintese">Texto novo e profissional gerado pela IA\.<\/p>/);
+  // e o bloco continua re-extraível (1 único bloco).
+  const blocks = extractEditableBlocks(patched);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].html, 'Texto novo e profissional gerado pela IA.');
+});
+
 test('buildPhasePhotos preenche o destino com foto ao redor da conclusão (fallback temporal)', async () => {
   const { buildPhasePhotos } = await import('../lib/dhlOccurrenceReport/collectReportData');
   const img = (n: string) => `https://x.supabase.co/storage/v1/object/public/mission-evidence/${n}.png`;

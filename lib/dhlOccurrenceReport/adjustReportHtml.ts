@@ -26,16 +26,54 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** Aplica patches de HTML nos blocos editáveis (preserva tags externas). */
+/**
+ * Aplica patches de HTML nos blocos editáveis (preserva a tag externa e troca
+ * só o conteúdo interno).
+ *
+ * IMPORTANTE: substitui o conteúdo até a tag de fechamento CORRETA do bloco,
+ * mesmo quando o bloco contém HTML aninhado (ex.: <strong>, <em>). Uma regex
+ * simples `</[a-z]+>` fecharia no primeiro `</strong>` interno, deixando o
+ * texto original e gerando duplicidade — por isso contamos o aninhamento do
+ * mesmo elemento (tagName) para achar o fechamento certo.
+ */
 export function applyEditablePatches(html: string, patches: Record<string, string>): string {
   let result = html;
   for (const [id, newInner] of Object.entries(patches)) {
     if (!id || newInner == null) continue;
-    const re = new RegExp(
-      `(<[a-z][a-z0-9]*[^>]*\\sdata-dhl-editable="${escapeRegex(id)}"[^>]*>)([\\s\\S]*?)(</[a-z][a-z0-9]*>)`,
+
+    const openRe = new RegExp(
+      `<([a-z][a-z0-9]*)[^>]*\\sdata-dhl-editable="${escapeRegex(id)}"[^>]*>`,
       'i',
     );
-    result = result.replace(re, `$1${newInner}$3`);
+    const open = openRe.exec(result);
+    if (!open) continue;
+
+    const tagName = open[1];
+    const contentStart = open.index + open[0].length;
+
+    // Varre a partir do fim da tag de abertura contando aberturas/fechamentos
+    // do MESMO tagName até zerar a profundidade (fechamento do bloco).
+    const tagRe = new RegExp(`<(/?)${tagName}(\\s[^>]*?)?(/?)>`, 'gi');
+    tagRe.lastIndex = contentStart;
+    let depth = 1;
+    let closeStart = -1;
+    let m: RegExpExecArray | null;
+    while ((m = tagRe.exec(result)) !== null) {
+      const isClosing = m[1] === '/';
+      const isSelfClosing = m[3] === '/';
+      if (isClosing) {
+        depth -= 1;
+        if (depth === 0) {
+          closeStart = m.index;
+          break;
+        }
+      } else if (!isSelfClosing) {
+        depth += 1;
+      }
+    }
+    if (closeStart === -1) continue;
+
+    result = result.slice(0, contentStart) + newInner + result.slice(closeStart);
   }
   return result;
 }
