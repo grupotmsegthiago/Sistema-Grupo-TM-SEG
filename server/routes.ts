@@ -1842,6 +1842,10 @@ export async function registerRoutes(
       const { data: missionCheck } = await supabase.from('missions').select('*').eq('id', missionId).single();
       if (!missionCheck) return res.status(404).json({ error: 'Missão não encontrada' });
 
+      if (missionCheck.is_same_os) {
+        return res.json({ success: true, skipped: true, message: 'OS vinculada (Mesma OS) — fornecedor não notificado.' });
+      }
+
       const missionData = {
         id: missionId,
         client: missionCheck.client || '',
@@ -1953,8 +1957,8 @@ export async function registerRoutes(
         results.client = await sendMissionEndToClient({ ...endData, _noEmailAlert: true, _alertEntity: 'Cliente', _alertName: endData.client }, fallback, senderName);
       }
 
-      // Fornecedor
-      if (endData.provider) {
+      // Fornecedor — Mesma OS (filha) não notifica fornecedor
+      if (endData.provider && !m.is_same_os) {
         const { email: provEmail } = await findProviderEmail(endData.provider);
         if (provEmail) {
           results.provider = await sendMissionEndToProvider(endData, provEmail, senderName);
@@ -1999,7 +2003,10 @@ export async function registerRoutes(
       const { email: provEmail } = await findProviderEmail(provider);
       if (!provEmail) return res.json({ success: false, message: 'Fornecedor sem e-mail cadastrado' });
 
-      const { data: missionCheck } = await supabase.from('missions').select('client').eq('id', missionId).single();
+      const { data: missionCheck } = await supabase.from('missions').select('client, is_same_os').eq('id', missionId).single();
+      if (missionCheck?.is_same_os) {
+        return res.json({ success: true, skipped: true, message: 'OS vinculada (Mesma OS) — fornecedor não notificado.' });
+      }
       const missionData = { id: missionId, client: missionCheck?.client || '', provider, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada', driver_name: '', driver_phone: '' };
       const success = await sendMissionChangeNotificationToProvider(missionData, provEmail, vehiclePlate || '', changes, senderName);
       res.json({ success, message: success ? 'E-mail de alteração enviado ao fornecedor!' : 'Falha ao enviar' });

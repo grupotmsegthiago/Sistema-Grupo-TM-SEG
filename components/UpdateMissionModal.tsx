@@ -2381,6 +2381,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 // Constraint check_valor_zero_motivo exige edit_reason quando valor = 0.
                 updateData.revenue_edit_reason = 'OS Recusada — zerado automaticamente';
                 updateData.cost_edit_reason = 'OS Recusada — zerado automaticamente';
+            } else if (editData.isSameOs) {
+                updateData.cost_value = 0;
+                updateData.toll_value_provider = 0;
             }
 
             console.log(`[LOCATION] Enviando localização para OS ${mission.id}:`, {
@@ -2813,7 +2816,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 (originalStatus === MissionStatus.SOLICITED || !mission.provider || mission.provider !== editData.provider);
             const pendingProvider = mission.email_pending_provider === true;
             let pendingProviderPayload: any = null;
-            if ((providerChanged && (finalStatus === MissionStatus.DOCUMENTATION || finalStatus === MissionStatus.SOLICITED)) || pendingProvider) {
+            if (!editData.isSameOs && ((providerChanged && (finalStatus === MissionStatus.DOCUMENTATION || finalStatus === MissionStatus.SOLICITED)) || pendingProvider)) {
                 pendingProviderPayload = {
                     missionId: mission.id,
                     provider: editData.provider,
@@ -2902,7 +2905,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 driverChanges.push({ field: 'Destino', oldValue: mission.destination, newValue: finalDestination.toUpperCase() });
             }
 
-            if (driverChanges.length > 0 && editData.provider) {
+            if (driverChanges.length > 0 && editData.provider && !editData.isSameOs) {
                 try {
                     await authFetch('/api/email/mission-change-provider', {
                         method: 'POST',

@@ -1434,6 +1434,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     if (scheduledDateTime.getTime() < now.getTime() - toleranceMs) {
         return alert("Não é possível agendar uma missão no passado. Ajuste a data e horário para um momento futuro.");
     }
+    if (formData.isSameOs && !formData.parentMissionId?.trim()) {
+        return alert('Para OS vinculada (Mesma OS), informe a OS mãe antes de salvar.');
+    }
 
     setIsSaving(true);
 
@@ -1474,6 +1477,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 mission_type: formData.missionType || 'Caracterizada', 
                 revenue_value: parseFloat(formData.revenueValue) || 0, cost_value: formData.isSameOs ? 0 : (parseFloat(formData.costValue) || 0),
                 toll_value: resolvedTollValue,
+                ...(formData.isSameOs ? { toll_value_provider: 0 } : {}),
                 valor_zero_motivo: valorZeroMotivo,
                 ...(formData.isSameOs ? { is_same_os: true, parent_mission_id: formData.parentMissionId || null } : {}), current_location: 'Solicitação Criada',
                 client_vehicle: vehicleId ? parseInt(vehicleId) : null,
@@ -1511,9 +1515,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         await uploadDhlDeslocamentoPrint(finalId);
 
         // ── Gerar link público para o fornecedor e abrir modal ──
-        // Vale para TODOS os clientes: DHL sempre; demais quando há fornecedor
-        // selecionado (o link pede Escoltistas + Veículo ao fornecedor).
-        if (clientUpper.includes('DHL') || !!formData.provider) {
+        // Mesma OS (filha): não notifica fornecedor — custo zerado, cliente cobra normal.
+        if (!formData.isSameOs && (clientUpper.includes('DHL') || !!formData.provider)) {
           try {
             const token = localStorage.getItem('authToken') || '';
             const r = await fetch('/api/dhl/intake/generate', {
@@ -1566,7 +1569,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             senderName: userData.name || undefined
         };
 
-        const pendingProviderPayload = formData.provider ? {
+        const pendingProviderPayload = formData.provider && !formData.isSameOs ? {
             missionId: finalId,
             provider: formData.provider,
             vehiclePlate,
@@ -1579,11 +1582,19 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             senderName: userData.name || undefined
         } : undefined;
 
-        setEmailConfirmDialog({
-            clientPayload: pendingClientPayload,
-            providerPayload: pendingProviderPayload,
-            onSaveCallback: () => onSaveAndContinue(finalId)
-        });
+        if (formData.isSameOs) {
+            showNotification('Mesma OS', 'OS filha criada com custo zerado. Fornecedor não será notificado.', 'success');
+        }
+
+        if (!pendingClientPayload && !pendingProviderPayload) {
+            onSaveAndContinue(finalId);
+        } else {
+            setEmailConfirmDialog({
+                clientPayload: pendingClientPayload,
+                providerPayload: pendingProviderPayload,
+                onSaveCallback: () => onSaveAndContinue(finalId)
+            });
+        }
     } catch (e: any) { alert("Erro ao salvar: " + e.message); } finally { setIsSaving(false); }
   };
 
@@ -1703,6 +1714,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                     ? 'Você deseja realmente enviar o e-mail ao cliente?'
                     : 'Você deseja realmente enviar o e-mail ao fornecedor?'}
               </p>
+              {emailConfirmDialog.clientPayload && !emailConfirmDialog.providerPayload && formData.isSameOs && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-3">
+                  OS vinculada (Mesma OS): o fornecedor não receberá solicitação.
+                </p>
+              )}
               <p className="text-xs text-gray-400 mb-5">
                 {emailConfirmDialog.clientPayload && <span className="block mb-1">📧 <strong>Cliente:</strong> {emailConfirmDialog.clientPayload.client}</span>}
                 {emailConfirmDialog.providerPayload && <span className="block">📧 <strong>Fornecedor:</strong> {emailConfirmDialog.providerPayload.provider}</span>}

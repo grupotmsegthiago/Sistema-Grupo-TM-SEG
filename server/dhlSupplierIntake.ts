@@ -1195,6 +1195,14 @@ export function registerDhlIntakeRoutes(
       const { data: mission, error: mErr } = await sb.from('missions').select('*').eq('id', missionId).single();
       if (mErr || !mission) return res.status(404).json({ error: 'Missão não encontrada' });
 
+      if (mission.is_same_os) {
+        return res.status(400).json({
+          error: 'OS vinculada (Mesma OS) — fornecedor não é notificado.',
+          code: 'SAME_OS_NO_PROVIDER',
+          skipped: true,
+        });
+      }
+
       // Fluxo generalizado: o link de coleta de dados do fornecedor vale para
       // TODOS os clientes. O comportamento específico da DHL (Nº S.E. obrigatório,
       // instruções técnicas de espelhamento, identidade visual amarela) fica
