@@ -285,7 +285,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
     setError(null);
     setNotice(null);
     try {
-      const { html, version } = await getDhlOccurrenceReportVersion(id);
+      const { html, version } = await getDhlOccurrenceReportVersion(mission.id, id);
       setPreviewHtml(html);
       setHistoryOpen(false);
       setNotice(`Exibindo a versão ${version} salva.`);

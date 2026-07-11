@@ -372,23 +372,31 @@ test('service expõe ajuste com IA no payload', () => {
   assert.doesNotMatch(src, /reportParecer/);
 });
 
-test('histórico: rotas Express, migração e service conectados', () => {
+test('histórico: handler standalone, Express, migração e service conectados', () => {
+  // Migração automática (Express startup) + garantia no handler standalone
   const routes = fs.readFileSync('server/routes.ts', 'utf8');
-  // migração da tabela de versões
   assert.match(routes, /CREATE TABLE IF NOT EXISTS dhl_occurrence_reports/);
   assert.match(routes, /DISABLE ROW LEVEL SECURITY/);
-  // rotas de histórico (somente diretoria)
-  assert.match(routes, /post\('\/api\/dhl\/occurrence-report\/save'/);
-  assert.match(routes, /get\('\/api\/dhl\/occurrence-report\/history'/);
-  assert.match(routes, /get\('\/api\/dhl\/occurrence-report\/history\/:id'/);
-  assert.match(routes, /requireRole\('diretoria'\)[\s\S]*occurrence-report\/save/);
+  // branches de histórico no POST base (mesmo path do relatório)
+  assert.match(routes, /format === 'save'/);
+  assert.match(routes, /format === 'history'/);
+  assert.match(routes, /format === 'history-get'/);
+
+  // Handler standalone (produção) trata os mesmos formatos e garante a tabela
+  const handler = fs.readFileSync('api/dhl/occurrence-report.ts', 'utf8');
+  assert.match(handler, /format === 'save'/);
+  assert.match(handler, /format === 'history'/);
+  assert.match(handler, /ensureReportsTable/);
+  assert.match(handler, /dhl_occurrence_reports/);
 
   const service = fs.readFileSync('lib/services/dhlOccurrenceReportService.ts', 'utf8');
   assert.match(service, /export async function saveDhlOccurrenceReport/);
   assert.match(service, /export async function listDhlOccurrenceReportHistory/);
   assert.match(service, /export async function getDhlOccurrenceReportVersion/);
-  assert.match(service, /\/api\/dhl\/occurrence-report\/save/);
-  assert.match(service, /\/api\/dhl\/occurrence-report\/history/);
+  // usa o path base do relatório com format (não sub-rotas do Express)
+  assert.match(service, /format: 'save'/);
+  assert.match(service, /format: 'history'/);
+  assert.doesNotMatch(service, /occurrence-report\/save/);
 
   const modal = fs.readFileSync('components/DhlOccurrenceReportModal.tsx', 'utf8');
   assert.match(modal, /Salvar vers[aã]o/);

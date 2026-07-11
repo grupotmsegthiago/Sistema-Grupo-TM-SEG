@@ -203,6 +203,39 @@ function makeGeminiGenerateText(): ((prompt: string) => Promise<string>) | null 
 }
 
 /**
+ * Garante a tabela de histórico de relatórios. O handler standalone não passa
+ * pelas migrações do Express, então cria a tabela sob demanda (idempotente).
+ */
+async function ensureReportsTable(sb: any): Promise<void> {
+  try {
+    await sb.rpc('exec_sql', {
+      sql: `
+        CREATE TABLE IF NOT EXISTS dhl_occurrence_reports (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          mission_id TEXT NOT NULL,
+          se_number TEXT,
+          version INTEGER NOT NULL DEFAULT 1,
+          label TEXT DEFAULT '',
+          report_html TEXT NOT NULL,
+          facts_summary TEXT,
+          email_link TEXT,
+          ai_generated BOOLEAN DEFAULT false,
+          created_by TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_dhl_occurrence_reports_mission
+          ON dhl_occurrence_reports (mission_id, version DESC);
+        ALTER TABLE dhl_occurrence_reports DISABLE ROW LEVEL SECURITY;
+      `,
+    });
+  } catch (e: unknown) {
+    // Tabela pode já existir ou exec_sql indisponível — o insert/select seguinte
+    // reportará o erro real, se houver.
+    console.warn('[dhl-occurrence-report] ensureReportsTable:', (e as Error)?.message);
+  }
+}
+
+/**
  * Plano de Ação DHL — handler standalone na Vercel (sem Express/vercelApp.cjs).
  * POST /api/dhl/occurrence-report
  */
@@ -244,6 +277,80 @@ export default async function handler(req: any, res: any) {
     const format = String(body.format || 'pdf').trim().toLowerCase();
     const seFromBody = String(body.seNumber || '').trim();
     const filenameBase = seFromBody || missionId;
+
+    // ── Histórico/versionamento — persiste no Supabase (handler standalone
+    // garante a tabela, pois não passa pelas migrações do Express). ──
+    if (format === 'save' || format === 'history' || format === 'history-get') {
+      const sb = await supabaseAdmin();
+      await ensureReportsTable(sb);
+
+      if (format === 'save') {
+        const html = typeof body.html === 'string' ? body.html : '';
+        if (!html.trim()) {
+          res.status(400).json({ ok: false, error: 'html obrigatório para salvar' });
+          return;
+        }
+        const { data: last } = await sb
+          .from('dhl_occurrence_reports')
+          .select('version')
+          .eq('mission_id', missionId)
+          .order('version', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const nextVersion = ((last?.version as number) || 0) + 1;
+        const { data: inserted, error } = await sb
+          .from('dhl_occurrence_reports')
+          .insert({
+            mission_id: missionId,
+            se_number: seFromBody || null,
+            version: nextVersion,
+            label: String(body.label || '').trim(),
+            report_html: html,
+            facts_summary: factsSummary ?? null,
+            email_link: emailLink ?? null,
+            ai_generated: body.aiGenerated === true,
+            created_by: directorName,
+          })
+          .select('id, version, created_at')
+          .single();
+        if (error) throw error;
+        res.status(200).json({ ok: true, id: inserted.id, version: inserted.version, createdAt: inserted.created_at });
+        return;
+      }
+
+      if (format === 'history') {
+        const { data, error } = await sb
+          .from('dhl_occurrence_reports')
+          .select('id, version, label, se_number, ai_generated, created_by, created_at')
+          .eq('mission_id', missionId)
+          .order('version', { ascending: false });
+        if (error) throw error;
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(200).json({ ok: true, versions: data || [] });
+        return;
+      }
+
+      // history-get
+      const reportId = String(body.reportId || '').trim();
+      if (!reportId) {
+        res.status(400).json({ ok: false, error: 'reportId obrigatório' });
+        return;
+      }
+      const { data, error } = await sb
+        .from('dhl_occurrence_reports')
+        .select('id, mission_id, se_number, version, label, report_html, facts_summary, ai_generated, created_by, created_at')
+        .eq('id', reportId)
+        .eq('mission_id', missionId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        res.status(404).json({ ok: false, error: 'Versão não encontrada' });
+        return;
+      }
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json({ ok: true, report: data });
+      return;
+    }
 
     if (format === 'adjust') {
       const html = typeof body.html === 'string' ? body.html : '';
