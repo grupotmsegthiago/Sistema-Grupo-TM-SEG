@@ -1,4 +1,4 @@
-import { BCC_RECIPIENTS, SMTP_FROM, sendMail } from './smtp.js';
+import { SMTP_FROM, sendMail } from './smtp.js';
 
 function dhlTemplate(content: string, isDhl: boolean = true): string {
   const accent = isDhl ? '#FFCC00' : '#D40511';

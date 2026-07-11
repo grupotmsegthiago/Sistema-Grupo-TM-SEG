@@ -34,6 +34,6 @@ async function proxyToExpress(req: any, res: any) {
 
 export default proxyToExpress;
 export const config = {
-  api: { bodyParser: false as const },
+  api: { bodyParser: false },
   maxDuration: 300,
 };

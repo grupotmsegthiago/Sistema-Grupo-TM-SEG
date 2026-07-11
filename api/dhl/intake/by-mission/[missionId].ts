@@ -1,1 +1,1 @@
-export { default } from '../../by-mission.js';
+export { default } from "../by-mission";

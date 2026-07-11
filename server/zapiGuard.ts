@@ -1,6 +1,6 @@
 // ── Trava do número oficial do bot (Z-API) ─────────────────────────────────
 import { getDefaultWhatsappInstance } from "./whatsapp/instanceStore";
-import { createWhatsappProvider, getDefaultWhatsappProvider } from "./whatsapp/providerRegistry";
+import { getDefaultWhatsappProvider } from "./whatsapp/providerRegistry";
 import { expectedOfficialPhone } from "./whatsapp/types";
 import { zapiFetchWith, credsFromInstance } from "./whatsapp/zapiHttp";
 

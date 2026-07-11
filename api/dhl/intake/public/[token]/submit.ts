@@ -1,1 +1,1 @@
-export { default } from "../../../dhl-intake-public-submit";
+export { default } from "../../../../dhl-intake-public-submit";
