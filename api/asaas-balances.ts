@@ -1,5 +1,5 @@
 import { assertAsaasApiAccess, extractAuthToken } from '../lib/asaasApiAuth.js';
-import { getAllBalancesCore } from '../lib/asaasBalancesCore.js';
+import { getAllBalancesCore, invalidateAsaasBalancesCoreCache } from '../lib/asaasBalancesCore.js';
 
 /** Saldos Asaas (TM Gestão, TM Seg, TM Security) — rota leve sem cold start do Express. */
 export default async function handler(req: any, res: any) {
@@ -17,6 +17,11 @@ export default async function handler(req: any, res: any) {
     }
 
     res.setHeader('Cache-Control', 'no-store');
+
+    const refresh =
+      String(req.query?.refresh || req.query?.nocache || '').trim() === '1' ||
+      String(req.headers?.['x-refresh-balances'] || '').trim() === '1';
+    if (refresh) invalidateAsaasBalancesCoreCache();
 
     const balances = await getAllBalancesCore();
     res.status(200).json({ success: true, balances });

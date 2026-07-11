@@ -22,3 +22,4 @@ client/public/build-meta.json
 *.njsproj
 *.sln
 *.sw?
+.vercel

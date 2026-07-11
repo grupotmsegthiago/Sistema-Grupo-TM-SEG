@@ -73,9 +73,9 @@ async function handleAdminDiagnosticGet(req: any, res: any): Promise<boolean> {
     authorizedPixKey: ASAAS_PIX_FINANCEIRO_EMAIL,
     financeiroWalletId: financeiroWalletIdFromEnv(),
     externalReferencePrefix: 'tmseg-repasse-',
-    asaasEnv: summarizeAsaasTransferEnv(),
+    asaasEnv: await summarizeAsaasTransferEnv(true),
     hint:
-      'Compare asaasEnv com o Replit (mesmo length/sourceEnv por conta). Saldo OK + transferência recusada = chave API diferente na Vercel.',
+      'Compare fingerprint e balanceProbe por conta. Mesmo length com fingerprint diferente = valor colado errado na Vercel (aspas, espaço ou chave antiga). Após corrigir TMSEGURANCA, faça redeploy.',
   });
   return true;
 }
