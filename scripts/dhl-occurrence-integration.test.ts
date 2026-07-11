@@ -72,6 +72,12 @@ test('vercel.json roteia occurrence-report sem handler legado dhl-occurrence-rep
   assert.doesNotMatch(vercel, /dhl-occurrence-report/);
 });
 
+test('vercel.json inclui bundles CJS no deploy da função occurrence-report', () => {
+  const vercel = fs.readFileSync('vercel.json', 'utf8');
+  assert.match(vercel, /"api\/dhl\/occurrence-report\.ts"/);
+  assert.match(vercel, /"includeFiles": "api\/dhl\/_occurrence-report-\*\.cjs"/);
+});
+
 test('bundles _occurrence-report-*.cjs existem no repositório para runtime Vercel', () => {
   assert.ok(fs.existsSync('api/dhl/_occurrence-report-adjust.cjs'));
   assert.ok(fs.existsSync('api/dhl/_occurrence-report-html.cjs'));

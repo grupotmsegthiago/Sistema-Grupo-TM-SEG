@@ -77,6 +77,7 @@ test('handler standalone do Plano de Ação DHL existe na Vercel', () => {
   assert.match(vercel, /"source": "\/api\/dhl\/occurrence-report"/);
   assert.match(vercel, /"destination": "\/api\/dhl\/occurrence-report"/);
   assert.doesNotMatch(vercel, /dhl-occurrence-report/);
+  assert.match(vercel, /"includeFiles": "api\/dhl\/_occurrence-report-\*\.cjs"/);
 });
 
 test('handler standalone carrega bundle HTML sem jspdf no preview', () => {
