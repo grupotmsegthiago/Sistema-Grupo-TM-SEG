@@ -25,7 +25,7 @@ const DEFAULT_183013_SUMMARY = `Na operação do dia 08/07/2026, a S.E. 183013 e
 Houve atraso na chegada à origem, com necessidade de remanejamento de viatura próximo ao horário programado, em razão do encerramento de operação logística anterior na mesma janela.
 A TM SEG manteve comunicação com a DHL, orientou a equipe quanto ao endereço correto e acompanhou a operação até a conclusão.`;
 
-const EMAIL_FILE_ACCEPT = '.eml,.txt,.html,.htm';
+const EMAIL_FILE_ACCEPT = '.eml,.txt,.html,.htm,.pdf';
 
 function DhlReportLoadingOverlay({
   percent,
@@ -360,10 +360,11 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
 
               <div>
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1 block">
-                  Anexar e-mail (.eml, .txt)
+                  Anexar e-mail (.eml, .txt, .pdf)
                 </label>
                 <p className="text-[10px] text-slate-500 mb-2">
-                  Exporte do Outlook como <strong>.eml</strong> ou <strong>.txt</strong>. Arquivos .msg e .pdf não são lidos automaticamente.
+                  Exporte do Outlook como <strong>.eml</strong>, <strong>.txt</strong> ou <strong>.pdf</strong> (texto selecionável).
+                  Arquivos <strong>.msg</strong> e PDFs só-imagem (scan) não são lidos automaticamente.
                 </p>
                 <label className={`inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-xs font-semibold ${loading ? 'opacity-50' : 'cursor-pointer hover:bg-slate-100'}`}>
                   <Paperclip size={14} />

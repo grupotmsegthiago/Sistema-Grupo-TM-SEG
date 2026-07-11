@@ -327,6 +327,24 @@ test('leitura de .msg orienta exportar em .eml', async () => {
   await assert.rejects(() => readEmailAttachmentFile(file), /Arquivo \.msg não é lido automaticamente/i);
 });
 
+const SAMPLE_PDF_BYTES = new Uint8Array(
+  Buffer.from(
+    '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/MediaBox[0 0 200 200]/Parent 2 0 R/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n4 0 obj<</Length 55>>stream\nBT /F1 12 Tf 10 100 Td (Email DHL teste) Tj ET\nendstream\nendobj\n5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\nxref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000261 00000 n \n0000000367 00000 n \ntrailer<</Size 6/Root 1 0 R>>\nstartxref\n441\n%%EOF',
+  ),
+);
+
+test('readEmailAttachmentFile extrai texto de PDF', async () => {
+  const { readEmailAttachmentFile } = await import('../lib/dhlOccurrenceReport/readEmailAttachment');
+  const file = new File([SAMPLE_PDF_BYTES], 'thread-dhl.pdf', { type: 'application/pdf' });
+  const text = await readEmailAttachmentFile(file);
+  assert.match(text, /Email DHL teste/i);
+});
+
+test('modal aceita .pdf no seletor de anexo', () => {
+  const src = fs.readFileSync('components/DhlOccurrenceReportModal.tsx', 'utf8');
+  assert.match(src, /EMAIL_FILE_ACCEPT = '\.eml,\.txt,\.html,\.htm,\.pdf'/);
+});
+
 test('service imprime sem window.open (evita bloqueio de pop-up)', () => {
   const src = fs.readFileSync('lib/services/dhlOccurrenceReportService.ts', 'utf8');
   assert.match(src, /printDhlOccurrenceReportHtml/);
