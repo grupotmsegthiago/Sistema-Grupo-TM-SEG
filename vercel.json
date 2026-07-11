@@ -88,10 +88,6 @@
     "api/email-mission-solicited.ts": {
       "maxDuration": 120
     },
-    "api/dhl/occurrence-report.ts": {
-      "maxDuration": 300,
-      "includeFiles": "dist/dhl-bundles/**"
-    },
     "api/cron/email-queue.ts": {
       "maxDuration": 120
     },

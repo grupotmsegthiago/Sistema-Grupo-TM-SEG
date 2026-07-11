@@ -1,30 +1,30 @@
 /** Payload mínimo do relatório DHL — evita import estático de lib/ no handler Vercel. */
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 
-// Bundles CJS gerados no build (build-server.mjs) — carregados via require (confiável na Vercel).
-// NUNCA importar de ../../lib/... aqui: lib/ não existe em /var/task no runtime serverless.
+// Bundles CJS gerados no build (build-server.mjs) — requires ESTÁTICOS para o file
+// tracer da Vercel incluir os .cjs no bundle da função. require(path.join(...))
+// dinâmico + includeFiles em vercel.json quebravam deploy (ERROR 0ms) ou runtime.
 const require = createRequire(import.meta.url);
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-function loadDhlReportBundle<T>(filename: string): T {
-  const candidates = [
-    path.join(process.cwd(), 'dist', 'dhl-bundles', filename),
-    path.join(__dirname, filename),
-    path.join(process.cwd(), 'api', 'dhl', filename),
-  ];
-  let lastErr: unknown;
-  for (const candidate of candidates) {
-    try {
-      return require(candidate) as T;
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
-  throw new Error(`Bundle DHL não encontrado (${filename}): ${detail}`);
-}
+const dhlReportAdjustBundle = require('./_occurrence-report-adjust.cjs') as {
+  adjustDhlReportHtmlWithAi: (
+    html: string,
+    notes: string,
+    generateText: (prompt: string) => Promise<string>,
+  ) => Promise<string>;
+};
+
+const dhlReportHtmlBundle = require('./_occurrence-report-html.cjs') as {
+  generateDhlOccurrenceReportHtml: (
+    ...args: unknown[]
+  ) => Promise<{ html?: string; evidenceCount?: number; phasePhotoCount?: number }>;
+  dhlOccurrenceReportFilename: (base: string) => string;
+};
+
+const dhlReportPdfBundle = require('./_occurrence-report-pdf.cjs') as {
+  generateDhlOccurrenceReportPdf: (...args: unknown[]) => Promise<Buffer | null>;
+  dhlOccurrenceReportFilename: (base: string) => string;
+};
 
 type DhlOccurrenceReportInput = {
   missionId: string;
@@ -228,13 +228,7 @@ export default async function handler(req: any, res: any) {
         return;
       }
 
-      const { adjustDhlReportHtmlWithAi } = loadDhlReportBundle<{
-        adjustDhlReportHtmlWithAi: (
-          html: string,
-          notes: string,
-          generateText: (prompt: string) => Promise<string>,
-        ) => Promise<string>;
-      }>('_occurrence-report-adjust.cjs');
+      const { adjustDhlReportHtmlWithAi } = dhlReportAdjustBundle;
 
       const generateText = async (prompt: string): Promise<string> => {
         const response = await fetch(
@@ -281,10 +275,7 @@ export default async function handler(req: any, res: any) {
 
     if (format === 'html' || format === 'preview') {
       const sb = await supabaseAdmin();
-      const { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } = loadDhlReportBundle<{
-        generateDhlOccurrenceReportHtml: (...args: unknown[]) => Promise<{ html?: string; evidenceCount?: number; phasePhotoCount?: number }>;
-        dhlOccurrenceReportFilename: (base: string) => string;
-      }>('_occurrence-report-html.cjs');
+      const { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } = dhlReportHtmlBundle;
       const result = await generateDhlOccurrenceReportHtml(input as DhlOccurrenceReportInput, {
         supabaseClient: sb,
       });
@@ -304,10 +295,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const { generateDhlOccurrenceReportPdf, dhlOccurrenceReportFilename } = loadDhlReportBundle<{
-      generateDhlOccurrenceReportPdf: (...args: unknown[]) => Promise<Buffer | null>;
-      dhlOccurrenceReportFilename: (base: string) => string;
-    }>('_occurrence-report-pdf.cjs');
+    const { generateDhlOccurrenceReportPdf, dhlOccurrenceReportFilename } = dhlReportPdfBundle;
     const pdf = await generateDhlOccurrenceReportPdf(input as DhlOccurrenceReportInput, { embedPhotos: false });
     if (!pdf) {
       res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });
