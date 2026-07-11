@@ -30,6 +30,13 @@ Usar Node 22+ (projeto declara `24.x` em `package.json`; Node 22 funciona para b
 - Dev local: Supabase vem do build (`lib/supabasePublicEnv` / defaults no código).
 - Produção (Vercel): `GEMINI_API_KEY`, chaves Supabase service role, etc. configuradas no painel Vercel — não commitar `.env`.
 
+### Chave Gemini (`GEMINI_API_KEY`)
+
+- **Onde configurar:** quase toda a IA (Plano de Ação DHL, chatbot, importadores, estimativa de pedágio) roda na **Vercel** — basta a chave lá. O **Supabase** só precisa da chave para a Edge Function `reconcile-statement` (conciliação de extrato bancário por IA), que lê `API_KEY` ou `GEMINI_API_KEY` via `supabase secrets set`. Se não usa esse recurso, não precisa configurar no Supabase.
+- O código lê a chave em cascata: `AI_INTEGRATIONS_GEMINI_API_KEY` → `GEMINI_API_KEY` → `GOOGLE_GEMINI_API_KEY` → `VITE_GEMINI_API_KEY` (ver `server/geminiClient.ts`, `api/gemini/*.ts`, `api/dhl/occurrence-report.ts`).
+- **Referer:** as chamadas Gemini via REST enviam header `Referer` que precisa bater com a restrição da chave. O valor autorizado é `https://sistema-grupo-tm-seg.vercel.app/` (ver `api/gemini/generate.ts`); usar o domínio custom faz o Google responder `GenerateContent are blocked`.
+- **Formato de chave:** o Google migrou para chaves `AQ.Ab8...`. Elas funcionam via `?key=` na REST API, mas chaves `AQ.` **não restritas** podem ser bloqueadas pelo Google (`API_KEY_SERVICE_BLOCKED`, HTTP 401 `UNAUTHENTICATED`). Se aparecer 401, gere/regenere a chave no Google AI Studio e restrinja-a à **Generative Language API**.
+
 ### Plano de Ação DHL (`/api/dhl/occurrence-report`)
 
 - Handler: `api/dhl/occurrence-report.ts`
