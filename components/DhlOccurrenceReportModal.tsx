@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Eye, ExternalLink, FileText, Link2, Loader2, Paperclip, Printer, Sparkles, X } from 'lucide-react';
+import { Eye, ExternalLink, FileText, History, Link2, Loader2, Paperclip, Printer, Save, Sparkles, X } from 'lucide-react';
 import type { Mission } from '../types';
 import { readEmailAttachmentFile } from '../lib/dhlOccurrenceReport/readEmailAttachment';
 import {
@@ -8,8 +8,12 @@ import {
   downloadDhlOccurrenceReportHtml,
   fetchDhlOccurrenceReportPreview,
   generateDhlOccurrenceReportPdf,
+  getDhlOccurrenceReportVersion,
+  listDhlOccurrenceReportHistory,
   openDhlOccurrenceReportHtmlInNewTab,
   printDhlOccurrenceReportHtml,
+  saveDhlOccurrenceReport,
+  type DhlReportHistoryItem,
   type DhlReportProgress,
 } from '../lib/services/dhlOccurrenceReportService';
 
@@ -93,6 +97,11 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
   const [progressPercent, setProgressPercent] = useState(0);
   const [progressLabel, setProgressLabel] = useState('Iniciando...');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [history, setHistory] = useState<DhlReportHistoryItem[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [savingVersion, setSavingVersion] = useState(false);
   const targetPercentRef = useRef(0);
   const tickRef = useRef<number | null>(null);
 
@@ -216,6 +225,74 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
       setError(err instanceof Error ? err.message : 'Falha ao ajustar relatório com IA');
     } finally {
       resetLoading();
+    }
+  };
+
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const versions = await listDhlOccurrenceReportHistory(mission.id);
+      setHistory(versions);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao carregar histórico');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleToggleHistory = () => {
+    const next = !historyOpen;
+    setHistoryOpen(next);
+    setNotice(null);
+    if (next) void loadHistory();
+  };
+
+  const handleSaveVersion = async () => {
+    if (!previewHtml) {
+      setError('Gere a pré-visualização antes de salvar.');
+      return;
+    }
+    const label = window.prompt(
+      'Rótulo desta versão (opcional). Ex.: "Enviado ao cliente em 11/07"',
+      '',
+    );
+    if (label === null) return; // usuário cancelou
+    setSavingVersion(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const { version } = await saveDhlOccurrenceReport({
+        missionId: mission.id,
+        seNumber,
+        html: previewHtml,
+        factsSummary,
+        emailLink,
+        aiGenerated: !!(emailAttachmentText.trim() || emailLink.trim()),
+        label: label.trim(),
+      });
+      setNotice(`Versão ${version} salva no histórico.`);
+      setHistoryOpen(true);
+      void loadHistory();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao salvar versão');
+    } finally {
+      setSavingVersion(false);
+    }
+  };
+
+  const handleOpenVersion = async (id: string) => {
+    setHistoryLoading(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const { html, version } = await getDhlOccurrenceReportVersion(id);
+      setPreviewHtml(html);
+      setHistoryOpen(false);
+      setNotice(`Exibindo a versão ${version} salva.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao abrir versão');
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -465,16 +542,79 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
             </div>
 
             <div className="flex-1 min-h-[50vh] bg-slate-100 p-2 sm:p-3 overflow-hidden">
-              {previewHtml && (
-                <iframe
-                  title={`Pré-visualização Plano DHL S.E. ${seNumber}`}
-                  srcDoc={previewHtml}
-                  className="w-full h-full min-h-[50vh] rounded-lg border border-slate-300 bg-white"
-                  data-testid="iframe-dhl-occurrence-preview"
-                />
+              {historyOpen ? (
+                <div
+                  className="w-full h-full min-h-[50vh] rounded-lg border border-slate-300 bg-white overflow-y-auto p-4"
+                  data-testid="dhl-occurrence-history-panel"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-black text-[#0d3b66] flex items-center gap-2">
+                      <History size={16} /> Histórico de versões
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => setHistoryOpen(false)}
+                      className="text-xs font-semibold text-slate-500 underline"
+                    >
+                      Voltar ao relatório
+                    </button>
+                  </div>
+                  {historyLoading ? (
+                    <p className="text-sm text-slate-500 flex items-center gap-2">
+                      <Loader2 size={14} className="animate-spin" /> Carregando...
+                    </p>
+                  ) : history.length === 0 ? (
+                    <p className="text-sm text-slate-500">
+                      Nenhuma versão salva para esta OS ainda. Gere o relatório e clique em
+                      <strong> Salvar versão</strong> para guardar no histórico.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {history.map((h) => (
+                        <li
+                          key={h.id}
+                          className="flex items-center justify-between gap-3 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-slate-800">
+                              Versão {h.version}
+                              {h.label ? <span className="font-normal text-slate-600"> — {h.label}</span> : ''}
+                            </p>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              {new Date(h.created_at).toLocaleString('pt-BR')} · {h.created_by || '—'}
+                              {h.ai_generated ? ' · IA' : ''}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenVersion(h.id)}
+                            className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#0d3b66] text-white text-xs font-bold hover:bg-[#0a2f52]"
+                            data-testid="button-open-dhl-version"
+                          >
+                            <Eye size={13} /> Abrir
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : (
+                previewHtml && (
+                  <iframe
+                    title={`Pré-visualização Plano DHL S.E. ${seNumber}`}
+                    srcDoc={previewHtml}
+                    className="w-full h-full min-h-[50vh] rounded-lg border border-slate-300 bg-white"
+                    data-testid="iframe-dhl-occurrence-preview"
+                  />
+                )
               )}
             </div>
 
+            {notice && (
+              <p className="mx-5 mt-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 shrink-0">
+                {notice}
+              </p>
+            )}
             {error && (
               <p className="mx-5 mt-2 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 shrink-0">
                 {error}
@@ -482,18 +622,42 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
             )}
 
             <div className="flex flex-wrap gap-2 justify-between p-4 border-t border-slate-200 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setStep('edit');
-                  setError(null);
-                }}
-                disabled={loading}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-semibold text-slate-700"
-                data-testid="button-back-edit-dhl-report"
-              >
-                Editar textos
-              </button>
+              <div className="flex flex-wrap gap-2 items-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep('edit');
+                    setError(null);
+                  }}
+                  disabled={loading}
+                  className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-semibold text-slate-700"
+                  data-testid="button-back-edit-dhl-report"
+                >
+                  Editar textos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveVersion()}
+                  disabled={loading || savingVersion || !previewHtml}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50"
+                  data-testid="button-save-dhl-version"
+                >
+                  {savingVersion ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Salvar versão
+                </button>
+                <button
+                  type="button"
+                  onClick={handleToggleHistory}
+                  disabled={loading}
+                  className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-bold ${
+                    historyOpen ? 'bg-[#0d3b66] text-white border-[#0d3b66]' : 'border-[#0d3b66] text-[#0d3b66]'
+                  }`}
+                  data-testid="button-history-dhl-report"
+                >
+                  <History size={14} />
+                  Histórico
+                </button>
+              </div>
 
               <div className="flex flex-wrap gap-2 justify-end">
                 <button

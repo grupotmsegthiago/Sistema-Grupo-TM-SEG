@@ -175,6 +175,97 @@ export async function generateDhlOccurrenceReportPdf(
   };
 }
 
+export type DhlReportHistoryItem = {
+  id: string;
+  version: number;
+  label: string;
+  se_number: string | null;
+  ai_generated: boolean;
+  created_by: string | null;
+  created_at: string;
+};
+
+/** Salva o HTML atual do relatório como uma nova versão no histórico. */
+export async function saveDhlOccurrenceReport(params: {
+  missionId: string;
+  seNumber?: string;
+  html: string;
+  factsSummary?: string;
+  emailLink?: string;
+  aiGenerated?: boolean;
+  label?: string;
+}): Promise<{ id: string; version: number; createdAt: string }> {
+  const res = await authFetch('/api/dhl/occurrence-report/save', {
+    method: 'POST',
+    body: JSON.stringify({
+      missionId: params.missionId,
+      seNumber: params.seNumber,
+      html: params.html,
+      factsSummary: params.factsSummary,
+      emailLink: params.emailLink,
+      aiGenerated: params.aiGenerated === true,
+      label: params.label,
+    }),
+  });
+  const json = (await parseJsonResponse(res)) as {
+    ok?: boolean;
+    error?: string;
+    id?: string;
+    version?: number;
+    createdAt?: string;
+  };
+  if (!res.ok || !json.ok || !json.id) {
+    throw new Error(json.error || `Erro ao salvar versão (${res.status})`);
+  }
+  return { id: json.id, version: json.version || 1, createdAt: json.createdAt || '' };
+}
+
+/** Lista as versões salvas do relatório de uma OS (sem o HTML). */
+export async function listDhlOccurrenceReportHistory(
+  missionId: string,
+): Promise<DhlReportHistoryItem[]> {
+  const res = await authFetch(
+    `/api/dhl/occurrence-report/history?missionId=${encodeURIComponent(missionId)}`,
+  );
+  const json = (await parseJsonResponse(res)) as {
+    ok?: boolean;
+    error?: string;
+    versions?: DhlReportHistoryItem[];
+  };
+  if (!res.ok || !json.ok) {
+    throw new Error(json.error || `Erro ao listar histórico (${res.status})`);
+  }
+  return json.versions || [];
+}
+
+/** Carrega o HTML completo de uma versão salva do relatório. */
+export async function getDhlOccurrenceReportVersion(
+  id: string,
+): Promise<{ html: string; version: number; label: string; createdAt: string }> {
+  const res = await authFetch(
+    `/api/dhl/occurrence-report/history/${encodeURIComponent(id)}`,
+  );
+  const json = (await parseJsonResponse(res)) as {
+    ok?: boolean;
+    error?: string;
+    report?: {
+      report_html?: string;
+      version?: number;
+      label?: string;
+      created_at?: string;
+    };
+  };
+  if (!res.ok || !json.ok || !json.report?.report_html) {
+    throw new Error(json.error || `Erro ao carregar versão (${res.status})`);
+  }
+  return {
+    html: json.report.report_html,
+    version: json.report.version || 1,
+    label: json.report.label || '',
+    createdAt: json.report.created_at || '',
+  };
+}
+
 export function downloadDhlOccurrenceReportBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

@@ -818,7 +818,7 @@ async function collectMissionEvidence(sb, missionId, mission) {
   }
   return pool;
 }
-function nearestEvidence(items, targetIso, used) {
+function pickDirectional(items, targetIso, used, direction, maxMs = Number.POSITIVE_INFINITY) {
   if (!targetIso || !items.length) return null;
   const target = new Date(targetIso).getTime();
   if (!Number.isFinite(target)) return null;
@@ -828,13 +828,16 @@ function nearestEvidence(items, targetIso, used) {
     if (used.has(item.url)) continue;
     const t = new Date(item.at).getTime();
     if (!Number.isFinite(t)) continue;
-    const diff = Math.abs(t - target);
+    const delta = t - target;
+    if (direction === "after" && delta < 0) continue;
+    if (direction === "before" && delta > 0) continue;
+    const diff = Math.abs(delta);
     if (diff < bestDiff) {
       bestDiff = diff;
       best = item;
     }
   }
-  if (best && bestDiff <= 3 * 60 * 60 * 1e3) {
+  if (best && bestDiff <= maxMs) {
     used.add(best.url);
     return best;
   }
@@ -879,26 +882,40 @@ function buildPhasePhotos(input) {
     return pickBy((e) => e.actionType === "dhl_deslocamento_print") || pickBy((e) => /desloc/i.test(`${e.context} ${e.actionType} ${e.filePath}`));
   };
   const pickOdometerFinal = () => pickBy((e) => e.actionType === "terminal_status_confirmed") || pickBy((e) => e.actionType === "odometer_print" || e.actionType === "odometer_storage") || pickBy((e) => /\/odometer\//i.test(e.url) || /\/odometer\//i.test(e.filePath)) || pickBy((e) => /hod[oô]metr|km final|conclus|terminal/i.test(`${e.context} ${e.actionType}`));
+  const originAt = input.marks.originArrival || null;
+  const inTransitAt = input.marks.inTransit || null;
+  const destinoAt = input.marks.destinationArrival || null;
+  const completedAt = input.marks.completed || null;
+  const specific = {
+    origem: pickMirroring(),
+    em_viagem: pickDeslocamento(),
+    destino: pickBy((e) => /destino|chegada/i.test(`${e.context} ${e.actionType}`)),
+    conclusao: pickOdometerFinal()
+  };
   const phases = [
-    { phase: "origem", at: input.marks.originArrival || null, pick: pickMirroring },
+    {
+      phase: "origem",
+      at: originAt,
+      resolve: () => specific.origem || pickDirectional(pool, originAt, used, "after") || pickDirectional(pool, originAt, used, "before") || pickChronological()
+    },
     {
       phase: "em_viagem",
-      at: input.marks.inTransit || null,
-      pick: () => pickDeslocamento() || nearestEvidence(pool, input.marks.inTransit, used) || pickChronological()
+      at: inTransitAt,
+      resolve: () => specific.em_viagem || pickDirectional(pool, inTransitAt, used, "after") || pickDirectional(pool, inTransitAt, used, "before") || pickChronological()
     },
     {
       phase: "destino",
-      at: input.marks.destinationArrival || null,
-      pick: () => pickBy((e) => /destino|chegada/i.test(`${e.context} ${e.actionType}`)) || nearestEvidence(pool, input.marks.destinationArrival, used) || pickChronological()
+      at: destinoAt,
+      resolve: () => specific.destino || pickDirectional(pool, destinoAt, used, "after") || pickDirectional(pool, destinoAt, used, "before") || pickDirectional(pool, completedAt, used, "after") || pickDirectional(pool, completedAt, used, "before") || pickChronological()
     },
     {
       phase: "conclusao",
-      at: input.marks.completed || null,
-      pick: () => pickOdometerFinal() || nearestEvidence(pool, input.marks.completed, used) || pickChronological()
+      at: completedAt,
+      resolve: () => specific.conclusao || pickDirectional(pool, completedAt, used, "before") || pickDirectional(pool, completedAt, used, "after") || pickChronological()
     }
   ];
-  const result = phases.map(({ phase, at, pick }) => {
-    const picked = pick();
+  const result = phases.map(({ phase, at, resolve }) => {
+    const picked = resolve();
     return {
       phase,
       label: PHASE_LABELS[phase],
