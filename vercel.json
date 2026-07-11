@@ -89,8 +89,7 @@
       "maxDuration": 120
     },
     "api/dhl/occurrence-report.ts": {
-      "maxDuration": 120,
-      "includeFiles": "api/dhl/_occurrence-report-*.cjs"
+      "maxDuration": 120
     },
     "api/cron/email-queue.ts": {
       "maxDuration": 120,
