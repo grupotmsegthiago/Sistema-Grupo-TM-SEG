@@ -1,7 +1,9 @@
 /** Lê a primeira variável de ambiente não vazia (ordem = prioridade). */
 export function readFirstEnv(...names: string[]): string {
   for (const name of names) {
-    const value = String(process.env[name] || '').trim();
+    const raw = String(process.env[name] || '').trim();
+    if (!raw) continue;
+    const value = raw.replace(/^["']|["']$/g, '').trim();
     if (value) return value;
   }
   return '';
@@ -11,6 +13,7 @@ export function readFirstEnv(...names: string[]): string {
 export function getAsaasApiKeyTmSeguranca(): string {
   return readFirstEnv(
     'TMSEGURANCA',
+    'ASAAS_TMSEGURANCA_API',
     'TMSEGURANÇA',
     'ASAAS_API_KEY_TMSECURITY',
     'ASAAS_API_KEY_TM_SEGURANCA',
@@ -35,6 +38,7 @@ export type AsaasKeyEnvSummary = {
 
 const TM_SEGURANCA_ENV_NAMES = [
   'TMSEGURANCA',
+  'ASAAS_TMSEGURANCA_API',
   'TMSEGURANÇA',
   'ASAAS_API_KEY_TMSECURITY',
   'ASAAS_API_KEY_TM_SEGURANCA',
@@ -45,7 +49,9 @@ export function summarizeAsaasKeyEnv(names: readonly string[]): AsaasKeyEnvSumma
   let sourceEnv: string | null = null;
   let value = '';
   for (const name of names) {
-    const v = String(process.env[name] || '').trim();
+    const raw = String(process.env[name] || '').trim();
+    if (!raw) continue;
+    const v = raw.replace(/^["']|["']$/g, '').trim();
     if (v) {
       sourceEnv = name;
       value = v;
