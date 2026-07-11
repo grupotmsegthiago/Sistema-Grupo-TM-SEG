@@ -1,5 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+test('api asaas-balances importa core de lib/ (Vercel serverless)', () => {
+  const src = fs.readFileSync('api/asaas-balances.ts', 'utf8');
+  assert.match(src, /lib\/asaasBalancesCore/);
+  assert.doesNotMatch(src, /server\/asaasBalancesCore/);
+});
 
 test('getAllBalancesCore consulta empresas em paralelo', async () => {
   const originalFetch = globalThis.fetch;
@@ -22,7 +29,7 @@ test('getAllBalancesCore consulta empresas em paralelo', async () => {
     process.env.ASAAS_API_KEY_TMSECURITY = 'key-seg';
     process.env.ASAAS_API_KEY_TMSECURITY_60 = 'key-security';
 
-    const { getAllBalancesCore, invalidateAsaasBalancesCoreCache } = await import('../server/asaasBalancesCore.ts');
+    const { getAllBalancesCore, invalidateAsaasBalancesCoreCache } = await import('../lib/asaasBalancesCore.ts');
     invalidateAsaasBalancesCoreCache();
     const balances = await getAllBalancesCore();
     assert.equal(balances.length, 3);
@@ -45,12 +52,12 @@ test('getAllBalancesCore retorna erro por empresa sem derrubar as demais', async
     delete process.env.ASAAS_API_KEY_TMSECURITY;
     delete process.env.ASAAS_API_KEY_TMSECURITY_60;
 
-    const { getAllBalancesCore, invalidateAsaasBalancesCoreCache } = await import('../server/asaasBalancesCore.ts');
+    const { getAllBalancesCore, invalidateAsaasBalancesCoreCache } = await import('../lib/asaasBalancesCore.ts');
     invalidateAsaasBalancesCoreCache();
     const balances = await getAllBalancesCore();
     assert.equal(balances.length, 3);
     assert.match(balances[0].error || '', /Asaas/i);
-    assert.match(balances[1].error || '', /API Key/i);
+    assert.match(balances[1].error || '', /Chave API não configurada|API Key/i);
   } finally {
     globalThis.fetch = originalFetch;
   }

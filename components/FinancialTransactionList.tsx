@@ -106,9 +106,14 @@ const FinancialTransactionList: React.FC = () => {
                 throw new Error(json?.error || 'Resposta inválida do servidor de saldos');
             }
         } catch (e) {
-            const msg = e instanceof TimeoutError
+            const raw = e instanceof TimeoutError
                 ? 'Consulta demorou demais. Toque em atualizar para tentar de novo.'
                 : e instanceof Error ? e.message : 'Falha ao atualizar saldos';
+            const msg = /FUNCTION_INVOCATION_FAILED|server error has occurred/i.test(raw)
+                ? 'Servidor Asaas indisponível — aguarde o deploy ou contate o suporte.'
+                : raw.includes('Erro do servidor (')
+                  ? `Falha na API de saldos (${raw.replace('Erro do servidor ', '')}). Tente atualizar.`
+                  : raw;
             console.warn('[Asaas] Falha ao buscar saldos:', e);
             setAsaasBalances((prev) => {
                 if (prev.length > 0) return prev;

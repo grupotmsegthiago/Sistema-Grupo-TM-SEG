@@ -8,14 +8,22 @@ import {
   ASAAS_PIX_FINANCEIRO_KEY_TYPE,
   isValidPixTransferAmount,
   roundMoneyBrl,
-} from '../lib/asaasPixTransfer.js';
-import { buildAsaasTransferExternalReference } from '../lib/asaasTransferApproval.js';
-import { formatAsaasTransferError } from '../lib/asaasTransferErrors.js';
-import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity, readFirstEnv } from '../lib/asaasEnvKeys.js';
-import { registerAsaasPendingTransfer } from '../lib/services/asaasPendingTransferService.js';
+} from './asaasPixTransfer.js';
+import { buildAsaasTransferExternalReference } from './asaasTransferApproval.js';
+import { formatAsaasTransferError } from './asaasTransferErrors.js';
+import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity, readFirstEnv } from './asaasEnvKeys.js';
+import { registerAsaasPendingTransfer } from './services/asaasPendingTransferService.js';
 import { invalidateAsaasBalancesCoreCache } from './asaasBalancesCore.js';
 
-const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
+function asaasBaseUrl(): string {
+  const custom = readFirstEnv('ASAAS_API_BASE_URL', 'ASAAS_BASE_URL');
+  if (custom) return custom.replace(/\/$/, '');
+  const keySample = readFirstEnv('ASAAS_API_KEY', 'TMSEGURANCA');
+  if (keySample.includes('_hmlg_') || keySample.includes('_sandbox_')) {
+    return 'https://sandbox.asaas.com/api/v3';
+  }
+  return 'https://api.asaas.com/v3';
+}
 const DEFAULT_FINANCEIRO_WALLET_ID = '6641fec4-8476-48e3-90a8-3db6b14f538c';
 
 function readEnv(...names: string[]): string {
@@ -46,7 +54,7 @@ async function asaasRequest(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 25_000);
   try {
-    const res = await fetch(`${ASAAS_BASE_URL}${path}`, {
+    const res = await fetch(`${asaasBaseUrl()}${path}`, {
       ...init,
       signal: controller.signal,
       headers: {

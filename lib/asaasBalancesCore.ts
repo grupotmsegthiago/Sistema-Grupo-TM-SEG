@@ -3,9 +3,35 @@
  * Evita importar o asaasService completo (~NF, clientes, etc.).
  */
 
-import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity, readFirstEnv } from '../lib/asaasEnvKeys';
+import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity, readFirstEnv } from './asaasEnvKeys.js';
 
-const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
+function asaasBaseUrl(): string {
+  const custom = readFirstEnv('ASAAS_API_BASE_URL', 'ASAAS_BASE_URL');
+  if (custom) return custom.replace(/\/$/, '');
+  const keySample = readFirstEnv('ASAAS_API_KEY', 'TMSEGURANCA');
+  if (keySample.includes('_hmlg_') || keySample.includes('_sandbox_')) {
+    return 'https://sandbox.asaas.com/api/v3';
+  }
+  return 'https://api.asaas.com/v3';
+}
+
+function formatAsaasHttpError(status: number, data: any): string {
+  if (status === 401 || status === 403) {
+    return 'Chave API Asaas inválida ou expirada — confira na Vercel (produção: $aact_prod_...)';
+  }
+  if (status === 301 || status === 302) {
+    return 'Asaas redirecionou a requisição — chave de sandbox em URL de produção (ou vice-versa)';
+  }
+  const parts = (data?.errors || []).map((e: { description?: string; code?: string }) => {
+    const desc = String(e?.description || e?.code || '').trim();
+    const code = e?.code ? ` (${e.code})` : '';
+    return desc ? `${desc}${code}` : '';
+  }).filter(Boolean);
+  if (parts.length) return `Asaas: ${parts.join('; ')}`;
+  const msg = String(data?.message || '').trim();
+  if (msg) return `Asaas: ${msg}`;
+  return `Asaas HTTP ${status}`;
+}
 
 export type AsaasBalanceRow = {
   company: string;
@@ -40,7 +66,7 @@ async function fetchAsaasBalance(apiKey: string): Promise<{ balance: number; tot
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12_000);
   try {
-    const res = await fetch(`${ASAAS_BASE_URL}/finance/balance`, {
+    const res = await fetch(`${asaasBaseUrl()}/finance/balance`, {
       method: 'GET',
       signal: controller.signal,
       headers: {
@@ -55,16 +81,20 @@ async function fetchAsaasBalance(apiKey: string): Promise<{ balance: number; tot
       try {
         data = JSON.parse(text);
       } catch {
-        throw new Error(`Resposta inválida do Asaas (${res.status})`);
+        if (res.status === 301 || res.status === 302) {
+          throw new Error(formatAsaasHttpError(res.status, {}));
+        }
+        const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 120);
+        throw new Error(
+          snippet
+            ? `Resposta inválida do Asaas (${res.status}): ${snippet}`
+            : `Resposta inválida do Asaas (${res.status})`,
+        );
       }
     }
 
     if (!res.ok) {
-      const errMsg =
-        data?.errors?.map((e: any) => e.description).join('; ') ||
-        data?.message ||
-        `HTTP ${res.status}`;
-      throw new Error(`Asaas: ${errMsg}`);
+      throw new Error(formatAsaasHttpError(res.status, data));
     }
 
     return {
@@ -102,7 +132,7 @@ export async function getAllBalancesCore(): Promise<AsaasBalanceRow[]> {
           name: cfg.name,
           balance: 0,
           pendingBalance: 0,
-          error: 'API Key não configurada no servidor',
+          error: 'Chave API não configurada na Vercel (ASAAS_API_KEY / TMSEGURANCA / ASAAS_API_KEY_TMSECURITY_60)',
         };
       }
       try {

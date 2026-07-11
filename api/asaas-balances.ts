@@ -1,5 +1,5 @@
 import { assertAsaasApiAccess, extractAuthToken } from '../lib/asaasApiAuth.js';
-import { getAllBalancesCore } from '../server/asaasBalancesCore.js';
+import { getAllBalancesCore } from '../lib/asaasBalancesCore.js';
 
 /** Saldos Asaas (TM Gestão, TM Seg, TM Security) — rota leve sem cold start do Express. */
 export default async function handler(req: any, res: any) {

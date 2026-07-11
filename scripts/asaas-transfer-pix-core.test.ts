@@ -37,7 +37,7 @@ test('transferPixFromCompanyCore prioriza repasse interno por walletId', async (
 
   try {
     process.env.ASAAS_API_KEY = 'key-gestao';
-    const { transferPixFromCompanyCore } = await import('../server/asaasTransferPixCore.ts');
+    const { transferPixFromCompanyCore } = await import('../lib/asaasTransferPixCore.ts');
     const result = await transferPixFromCompanyCore({ company: 'TM GESTÃO', value: 50 });
     assert.equal(result.transferMode, 'INTERNAL');
     assert.equal(calls.filter((c) => c.url.includes('/transfers')).length, 1);
@@ -85,7 +85,7 @@ test('transferPixFromCompanyCore faz fallback Pix se interno falhar', async () =
 
   try {
     process.env.ASAAS_API_KEY = 'key-gestao';
-    const { transferPixFromCompanyCore } = await import('../server/asaasTransferPixCore.ts');
+    const { transferPixFromCompanyCore } = await import('../lib/asaasTransferPixCore.ts');
     const result = await transferPixFromCompanyCore({ company: 'TM GESTÃO', value: 50 });
     assert.equal(result.transferMode, 'PIX');
     assert.equal(transferAttempt, 2);

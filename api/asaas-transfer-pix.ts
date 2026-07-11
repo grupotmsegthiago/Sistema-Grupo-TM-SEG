@@ -2,7 +2,7 @@ import { assertAsaasApiAccess, extractAuthToken } from '../lib/asaasApiAuth.js';
 import {
   isKnownAsaasCompany,
   transferPixFromCompanyCore,
-} from '../server/asaasTransferPixCore.js';
+} from '../lib/asaasTransferPixCore.js';
 
 /** Repasse Pix Asaas → financeiro@grupotmseg.com.br (reserva R$ 100 por conta). */
 export default async function handler(req: any, res: any) {
