@@ -92,8 +92,7 @@
       "maxDuration": 120
     },
     "api/cron/email-queue.ts": {
-      "maxDuration": 120,
-      "includeFiles": "dist/vercelApp.cjs"
+      "maxDuration": 120
     },
     "api/password-reset-request.ts": {
       "maxDuration": 120
