@@ -87,6 +87,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
   const [emailAttachmentText, setEmailAttachmentText] = useState('');
   const [emailFileName, setEmailFileName] = useState<string | null>(null);
   const [evidenceStats, setEvidenceStats] = useState<{ total: number; phases: number } | null>(null);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMode, setLoadingMode] = useState<'preview' | 'pdf' | 'print' | 'adjust' | null>(null);
   const [progressPercent, setProgressPercent] = useState(0);
