@@ -132,6 +132,17 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
+    /**
+     * Payload oficial de autorização Asaas omite externalReference, descrição e chave Pix.
+     * Neste endpoint (cadastrado só para aprovação de transferências), aprovar qualquer
+     * solicitação de autorização com valor > 0 — mesmo comportamento do sistema Replit.
+     */
+    if (value > 0) {
+      console.log('[asaas-transfer-approval] APPROVED autorização Asaas (payload mínimo)', transferId, value);
+      respond(res, { status: 'APPROVED' });
+      return;
+    }
+
     const { tokenOk } = webhookTokenDiagnostics(req);
 
     if (!tokenOk) {
@@ -141,12 +152,6 @@ export default async function handler(req: any, res: any) {
         expectedTokenLen: expectedToken.length,
       });
       respond(res, { status: 'REFUSED', refuseReason: 'token_invalido' });
-      return;
-    }
-
-    if (value > 0) {
-      console.log('[asaas-transfer-approval] APPROVED token válido (payload mínimo)', transferId, value);
-      respond(res, { status: 'APPROVED' });
       return;
     }
 

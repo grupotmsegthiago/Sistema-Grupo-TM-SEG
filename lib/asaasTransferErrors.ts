@@ -61,8 +61,9 @@ export function formatAsaasTransferError(raw: string): string {
   if (CANCELLED_BY_WEBHOOK.test(msg)) {
     return (
       'A transferência foi criada no Asaas, mas o webhook de aprovação recusou ou não respondeu a tempo. ' +
-      'Verifique em Integrações → Webhooks os logs (deve retornar HTTP 200 com status APPROVED). ' +
-      'URL: https://sistema.grupotmseg.com.br/api/asaas/transfer-approval'
+      'Verifique em Integrações → Webhooks se a fila está ativa e a URL está correta. ' +
+      'URL: https://sistema.grupotmseg.com.br/api/asaas/transfer-approval ' +
+      `(detalhe Asaas: ${msg.slice(0, 200)})`
     );
   }
 

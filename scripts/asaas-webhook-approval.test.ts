@@ -33,7 +33,7 @@ test('handler GET retorna HTTP 200 para validação de URL', async () => {
   assert.equal(body?.ok, true);
 });
 
-test('handler POST token inválido retorna 200 REFUSED (não 401)', async () => {
+test('handler POST payload mínimo Asaas aprova sem token (autorização da conta)', async () => {
   const prev = process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN;
   process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN = 'token-esperado-teste';
   try {
@@ -44,18 +44,44 @@ test('handler POST token inválido retorna 200 REFUSED (não 401)', async () => 
       {
         method: 'POST',
         headers: { 'asaas-access-token': 'errado' },
-        body: { type: 'TRANSFER', transfer: { value: 1 } },
+        body: {
+          type: 'TRANSFER',
+          transfer: {
+            id: 'minimal-oficial',
+            type: 'BANK_ACCOUNT',
+            value: 400,
+            operationType: 'PIX',
+            description: null,
+            bankAccount: { pixAddressKey: null },
+          },
+        },
       },
       res,
     );
     const { statusCode, body } = get();
     assert.equal(statusCode, 200);
-    assert.equal(body?.status, 'REFUSED');
-    assert.equal(body?.refuseReason, 'token_invalido');
+    assert.equal(body?.status, 'APPROVED');
   } finally {
     if (prev === undefined) delete process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN;
     else process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN = prev;
   }
+});
+
+test('handler POST autorização com valor zero retorna REFUSED', async () => {
+  const mod = await import('../api/asaas-transfer-approval.ts');
+  const handler = mod.default;
+  const { res, get } = mockRes();
+  await handler(
+    {
+      method: 'POST',
+      headers: {},
+      body: { type: 'TRANSFER', transfer: { value: 0 } },
+    },
+    res,
+  );
+  const { statusCode, body } = get();
+  assert.equal(statusCode, 200);
+  assert.equal(body?.status, 'REFUSED');
 });
 
 test('handler POST tmseg-repasse aprova mesmo com token inválido no header', async () => {
