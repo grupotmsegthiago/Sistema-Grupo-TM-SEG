@@ -201,7 +201,7 @@ export default async function handler(req: any, res: any) {
         return;
       }
 
-      const { adjustDhlReportHtmlWithAi } = await import('./occurrence-report-adjust.cjs');
+      const { adjustDhlReportHtmlWithAi } = await import('./_occurrence-report-adjust.cjs');
 
       const generateText = async (prompt: string): Promise<string> => {
         const response = await fetch(
@@ -249,7 +249,7 @@ export default async function handler(req: any, res: any) {
     if (format === 'html' || format === 'preview') {
       const sb = await supabaseAdmin();
       const { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } = await import(
-        './occurrence-report-html.cjs'
+        './_occurrence-report-html.cjs'
       );
       const result = await generateDhlOccurrenceReportHtml(input as DhlOccurrenceReportInput, {
         supabaseClient: sb,
@@ -271,7 +271,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const { generateDhlOccurrenceReportPdf, dhlOccurrenceReportFilename } = await import(
-      './occurrence-report-pdf.cjs'
+      './_occurrence-report-pdf.cjs'
     );
     const pdf = await generateDhlOccurrenceReportPdf(input as DhlOccurrenceReportInput, { embedPhotos: false });
     if (!pdf) {
