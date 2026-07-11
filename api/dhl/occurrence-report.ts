@@ -237,7 +237,12 @@ export default async function handler(req: any, res: any) {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Referer: 'https://sistema.grupotmseg.com.br/',
+              // A chave Gemini tem restrição de HTTP referrer. O Referer precisa
+              // ser exatamente o domínio autorizado na chave (mesmo usado em
+              // api/gemini/generate.ts e api/gemini/health.ts). Usar o domínio
+              // custom (sistema.grupotmseg.com.br) faz o Google bloquear a
+              // chamada com "GenerateContent are blocked".
+              Referer: 'https://sistema-grupo-tm-seg.vercel.app/',
             },
             body: JSON.stringify({
               contents: [{ role: 'user', parts: [{ text: prompt }] }],

@@ -317,6 +317,22 @@ test('build-server gera bundle adjust do relatório DHL', () => {
   assert.match(build, /_occurrence-report-adjust\.cjs/);
 });
 
+test('ajuste com IA usa o Referer autorizado na chave Gemini', () => {
+  // A chave Gemini tem restrição de HTTP referrer. O handler de ajuste precisa
+  // enviar o mesmo Referer autorizado usado pelos endpoints Gemini que
+  // funcionam (api/gemini/generate.ts e api/gemini/health.ts). Usar o domínio
+  // custom faz o Google bloquear com "GenerateContent are blocked".
+  const handler = fs.readFileSync('api/dhl/occurrence-report.ts', 'utf8');
+  const generate = fs.readFileSync('api/gemini/generate.ts', 'utf8');
+  const authorizedRefererMatch = generate.match(
+    /GEMINI_REFERER\s*=\s*["']([^"']+)["']/,
+  );
+  assert.ok(authorizedRefererMatch, 'api/gemini/generate.ts deve definir GEMINI_REFERER');
+  const authorizedReferer = authorizedRefererMatch![1];
+  assert.match(handler, new RegExp(`Referer:\\s*['"]${authorizedReferer.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`));
+  assert.doesNotMatch(handler, /Referer:\s*['"]https:\/\/sistema\.grupotmseg\.com\.br\//);
+});
+
 test('pickUrl monta URL pública a partir de filePath nos logs', async () => {
   const { collectDhlOccurrenceReportData } = await import('../lib/dhlOccurrenceReport/collectReportData');
   assert.equal(typeof collectDhlOccurrenceReportData, 'function');
