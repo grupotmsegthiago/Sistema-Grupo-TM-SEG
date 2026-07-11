@@ -2583,7 +2583,16 @@ export async function registerRoutes(
       const filenameBase = seFromBody || missionId;
 
       if (format === 'html' || format === 'preview') {
-        const result = await generateDhlOccurrenceReportHtml(input);
+        const generateText = isGeminiConfigured()
+          ? async (prompt: string): Promise<string> => {
+              const r = await generateGeminiContent({
+                contents: prompt,
+                config: { maxOutputTokens: 8192, temperature: 0.35 },
+              });
+              return r.text || '';
+            }
+          : undefined;
+        const result = await generateDhlOccurrenceReportHtml(input, { generateText });
         if (!result?.html) {
           res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });
           return;

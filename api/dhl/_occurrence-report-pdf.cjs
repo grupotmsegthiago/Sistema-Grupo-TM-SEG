@@ -71,55 +71,6 @@ var formatTimeBR = (date, fallback = "\u2014") => {
   return d.toLocaleTimeString("pt-BR", TIME_HM);
 };
 
-// lib/dhlOccurrenceReport/formatEmailThreadHtml.ts
-function esc(text) {
-  return String(text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-function formatEmailThreadHtml(messages) {
-  if (!messages.length) return "";
-  const cards = messages.map((msg, index) => {
-    const subjectBlock = msg.subject ? `<p class="email-subject"><strong>${esc(msg.subject)}</strong></p>` : "";
-    return `
-      <article class="email-card">
-        <header class="email-card-header">
-          <span class="email-index">${index + 1}</span>
-          <div class="email-meta">
-            <div><span class="lbl">De:</span> ${esc(msg.from)}</div>
-            <div><span class="lbl">Para:</span> ${esc(msg.to)}</div>
-            ${msg.cc && msg.cc !== "\u2014" ? `<div><span class="lbl">Cc:</span> ${esc(msg.cc)}</div>` : ""}
-            <div><span class="lbl">Data:</span> ${esc(msg.date)}</div>
-          </div>
-        </header>
-        ${subjectBlock}
-        <div class="email-body">${esc(msg.body).replace(/\n/g, "<br/>")}</div>
-      </article>`;
-  }).join("");
-  return `
-  <style>
-    .email-thread { margin: 12px 0; }
-    .email-card {
-      border: 1px solid #fca5a5;
-      border-left: 4px solid #dc2626;
-      border-radius: 8px;
-      padding: 12px 14px;
-      margin-bottom: 12px;
-      background: linear-gradient(180deg, #fff 0%, #fef2f2 100%);
-      page-break-inside: avoid;
-    }
-    .email-card-header { display: flex; gap: 10px; margin-bottom: 8px; }
-    .email-index {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-width: 22px; height: 22px; border-radius: 999px;
-      background: #fee2e2; color: #991b1b; font-size: 9pt; font-weight: 700;
-    }
-    .email-meta { font-size: 9pt; color: #334155; line-height: 1.45; }
-    .email-meta .lbl { font-weight: 700; color: #991b1b; }
-    .email-subject { font-size: 9.5pt; color: #111827; margin: 0 0 8px; }
-    .email-body { font-size: 9.5pt; color: #1a1a1a; line-height: 1.5; white-space: normal; }
-  </style>
-  <div class="email-thread">${cards}</div>`;
-}
-
 // lib/dhlOccurrenceReport/photoUtils.ts
 function isImageEvidenceUrl(url) {
   const clean = String(url || "").trim().split("?")[0].toLowerCase();
@@ -127,300 +78,6 @@ function isImageEvidenceUrl(url) {
   if (/\.(pdf|doc|docx|eml|msg)$/i.test(clean)) return false;
   if (/\.(png|jpe?g|webp|gif|bmp)$/i.test(clean)) return true;
   return clean.includes("/storage/v1/object/public/");
-}
-
-// lib/dhlOccurrenceReport/parseEmailThread.ts
-var MIME_NOISE = /^(ARC-|Received:|Authentication-Results:|Return-Path:|Delivered-To:|X-MS-|Content-Type:|Content-Transfer-Encoding:|MIME-Version:|Message-ID:|DKIM-Signature:|List-|boundary=|Content-Disposition:)/i;
-var DATE_LINE_RE = /^(seg|ter|qua|qui|sex|s[aá]b|dom)\.?,?\s+\d{1,2}\s+de\s+[a-zçãõáéíóú]+\.?\s+de\s+\d{4}(?:,\s*\d{1,2}:\d{2})?/i;
-var DATE_PT_RE = /^(enviada? em|enviado|data)\s*:\s*(.+)$/i;
-var SUBJECT_RE = /^(RES|RE|Fwd|Assunto):\s*.+/i;
-var PAGE_MARKER_RE = /^\d+\s*\/\s*\d+\s*$|^--\s*\d+\s+of\s+\d+\s*--\s*$/i;
-var SIGNATURE_NOISE_RE = /^(Estrada dos Alpes|CEP:|Phone:|E-mail:|www\.|GOGREEN|DHL Supply Chain - Excellence|Gerenciamento de Risco|Transportation Security|Monitoring Operator|Atenciosamente,?)$/i;
-var HTML_BLOCK_RE = /<html[\s\S]*$/i;
-var MIME_BOUNDARY_RE = /^--[A-Za-z0-9_=.-]+$/m;
-function decodeQuotedPrintable(input) {
-  const softBreaks = String(input || "").replace(/=\r?\n/g, "");
-  const bytes = [];
-  for (let i = 0; i < softBreaks.length; i += 1) {
-    if (softBreaks[i] === "=" && /^[0-9A-Fa-f]{2}/.test(softBreaks.slice(i + 1, i + 3))) {
-      bytes.push(parseInt(softBreaks.slice(i + 1, i + 3), 16));
-      i += 2;
-      continue;
-    }
-    bytes.push(softBreaks.charCodeAt(i));
-  }
-  const buf = Buffer.from(bytes);
-  const asUtf8 = buf.toString("utf8");
-  if (!asUtf8.includes("\uFFFD")) return asUtf8;
-  return buf.toString("latin1");
-}
-function maybeDecodeQuotedPrintable(input) {
-  const s = String(input || "");
-  if (!/=(?:[0-9A-Fa-f]{2}|\r?\n)/.test(s)) return s;
-  return decodeQuotedPrintable(s);
-}
-function decodeMimeWords(input) {
-  return String(input || "").replace(
-    /=\?([^?]+)\?([BQbq])\?([^?]*)\?=/g,
-    (match, _charset, encoding, text) => {
-      try {
-        if (encoding.toUpperCase() === "B") {
-          return Buffer.from(text, "base64").toString("utf8");
-        }
-        return decodeQuotedPrintable(text.replace(/_/g, " "));
-      } catch {
-        return match;
-      }
-    }
-  );
-}
-function stripHtml(raw) {
-  return String(raw || "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"');
-}
-function extractPlainFromMime(body) {
-  const normalized = String(body || "").replace(/\r\n/g, "\n");
-  const plainMatch = normalized.match(
-    /Content-Type:\s*text\/plain[^\n]*\n(?:Content-Transfer-Encoding:[^\n]*\n)?(?:[^\n]*\n)*?\n([\s\S]*?)(?=\n--[^\n]+|\nContent-Type:|$)/i
-  );
-  if (plainMatch) {
-    const chunk = plainMatch[1];
-    const isQp = /Content-Transfer-Encoding:\s*quoted-printable/i.test(plainMatch[0]);
-    return isQp ? decodeQuotedPrintable(chunk) : chunk;
-  }
-  const htmlMatch = normalized.match(
-    /Content-Type:\s*text\/html[^\n]*\n(?:Content-Transfer-Encoding:[^\n]*\n)?(?:[^\n]*\n)*?\n([\s\S]*?)(?=\n--[^\n]+|\nContent-Type:|$)/i
-  );
-  if (htmlMatch) {
-    const chunk = htmlMatch[1];
-    const isQp = /Content-Transfer-Encoding:\s*quoted-printable/i.test(htmlMatch[0]);
-    const decoded = isQp ? decodeQuotedPrintable(chunk) : chunk;
-    return stripHtml(decoded);
-  }
-  return normalized;
-}
-function sanitizeEmailBody(raw) {
-  let body = maybeDecodeQuotedPrintable(String(raw || ""));
-  body = decodeMimeWords(body);
-  if (HTML_BLOCK_RE.test(body) || /<html/i.test(body)) {
-    const plain = extractPlainFromMime(body);
-    body = plain || stripHtml(body);
-  }
-  body = body.split("\n").filter((line) => {
-    const t = line.trim();
-    if (!t) return true;
-    if (MIME_NOISE.test(t)) return false;
-    if (MIME_BOUNDARY_RE.test(t)) return false;
-    if (/^--_[0-9A-Za-z_]+/.test(t)) return false;
-    if (/^\[cid:/i.test(t)) return false;
-    if (/^<meta /i.test(t)) return false;
-    if (/^@font-face/i.test(t)) return false;
-    if (/^\/\* Font Definitions \*\//i.test(t)) return false;
-    if (/^\.MsoNormal/i.test(t)) return false;
-    return true;
-  }).join("\n").replace(HTML_BLOCK_RE, "").replace(/\[cid:[^\]]+\]/gi, "").replace(/_{5,}/g, "").replace(/\n{3,}/g, "\n\n").trim();
-  return body;
-}
-function cleanBody(raw) {
-  return sanitizeEmailBody(raw);
-}
-function pickField(block, label) {
-  const re = new RegExp(`^${label}\\s*:\\s*(.*)$`, "im");
-  const match = block.match(re);
-  return match ? decodeMimeWords(match[1].trim()) : "";
-}
-function pickFoldedField(block, label) {
-  const lines = block.replace(/\r\n/g, "\n").split("\n");
-  const labelRe = new RegExp(`^${label}\\s*:\\s*(.*)$`, "i");
-  const parts = [];
-  let capturing = false;
-  for (const line of lines) {
-    if (labelRe.test(line)) {
-      const m = line.match(labelRe);
-      parts.push(m?.[1]?.trim() || "");
-      capturing = true;
-      continue;
-    }
-    if (capturing) {
-      if (/^\s+/.test(line)) {
-        parts.push(line.trim());
-        continue;
-      }
-      break;
-    }
-  }
-  return decodeMimeWords(parts.join(" ").trim());
-}
-function extractDateFromBody(body) {
-  for (const line of body.split("\n")) {
-    const m = line.match(DATE_PT_RE);
-    if (m) return m[2].trim();
-    if (DATE_LINE_RE.test(line.trim())) return line.trim();
-  }
-  return "";
-}
-function stripOutlookHeaders(lines) {
-  const result = [];
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (/^(De|Para|Cc|Data):$/i.test(trimmed)) continue;
-    if (PAGE_MARKER_RE.test(trimmed)) continue;
-    result.push(trimmed);
-  }
-  return result.filter(Boolean);
-}
-function isInlineOutlookFormat(block) {
-  return /^De:\s+\S/im.test(block) && !/^De:\s*$/im.test(block);
-}
-function isStandaloneEmailLine(line) {
-  const t = line.trim();
-  if (!t.includes("@")) return false;
-  if (t.includes("(") && t.includes(")")) return false;
-  if (/,/.test(t) && t.split("@").length > 2) return false;
-  return /^[\w.\-| ]+@[\w.-]+\.[a-z]{2,}$/i.test(t) || /^[\w.-]+@[\w.-]+\.[a-z]{2,}$/i.test(t);
-}
-function splitMetadataLines(metaLines) {
-  if (!metaLines.length) return { from: "\u2014", to: "\u2014", cc: "\u2014" };
-  let idx = 0;
-  let from = metaLines[idx++] || "\u2014";
-  if (idx < metaLines.length && isStandaloneEmailLine(metaLines[idx])) {
-    from = `${from}
-${metaLines[idx++]}`;
-  }
-  const to = metaLines[idx++] || "\u2014";
-  const cc = idx < metaLines.length ? metaLines.slice(idx).join(" ") : "\u2014";
-  return { from, to, cc };
-}
-function parseOutlookMultilineBlock(block) {
-  const rawLines = block.replace(/\r\n/g, "\n").split("\n");
-  let lines = stripOutlookHeaders(rawLines.map((l) => l.trim()));
-  if (!lines.length) return null;
-  let subject = "";
-  if (SUBJECT_RE.test(lines[0])) {
-    subject = decodeMimeWords(lines.shift().replace(/^Assunto:\s*/i, ""));
-  }
-  const dateIdx = lines.findIndex((l) => DATE_LINE_RE.test(l));
-  if (dateIdx < 0) return null;
-  const date = lines[dateIdx];
-  const metaLines = lines.slice(0, dateIdx).filter((l) => !SIGNATURE_NOISE_RE.test(l) && !PAGE_MARKER_RE.test(l));
-  const bodyLines = lines.slice(dateIdx + 1).filter((l) => !SIGNATURE_NOISE_RE.test(l) && !PAGE_MARKER_RE.test(l));
-  const { from, to, cc } = splitMetadataLines(metaLines);
-  const body = cleanBody(bodyLines.join("\n")) || "\u2014";
-  if (!from && !to && body === "\u2014") return null;
-  return { from, to, cc, date, subject, body };
-}
-function parseOutlookStyleThread(text) {
-  const normalized = String(text || "").replace(/\r\n/g, "\n").trim();
-  if (!normalized) return [];
-  const chunks = normalized.split(/(?=^De:\s*$|^De:\s)/im).filter((c) => c.trim());
-  const messages = [];
-  for (const chunk of chunks) {
-    const block = chunk.trim();
-    if (!/^De:/im.test(block)) continue;
-    if (/^De:\s*$/im.test(block) || /^De:\s*\n\s*Para:\s*$/im.test(block)) {
-      const parsed2 = parseOutlookMultilineBlock(block);
-      if (parsed2) {
-        messages.push(parsed2);
-        continue;
-      }
-    }
-    if (isInlineOutlookFormat(block)) {
-      const from = pickField(block, "De");
-      const to = pickField(block, "Para");
-      const cc = pickField(block, "Cc");
-      let date = pickField(block, "Data");
-      let subject = pickField(block, "Assunto");
-      if (!subject) {
-        const subjectMatch = block.match(/^(RES|RE|Fwd):\s*.+/im);
-        if (subjectMatch) subject = decodeMimeWords(subjectMatch[0].trim());
-      }
-      let body = block.replace(/^Assunto:\s*.+\n/im, "").replace(/^De:\s*.+\n/im, "").replace(/^Para:\s*.+\n/im, "").replace(/^Cc:\s*.+\n/im, "").replace(/^Data:\s*.+\n/im, "").replace(/^\d+\s*\/\s*\d+\s*$/gm, "").replace(/^--\s*\d+\s+of\s+\d+\s*--\s*$/gim, "").trim();
-      if (!date || date === "\u2014") {
-        date = extractDateFromBody(body) || "\u2014";
-        body = body.split("\n").filter((l) => !DATE_PT_RE.test(l.trim())).join("\n");
-      }
-      const cleaned = cleanBody(body);
-      if (!from && !to && !cleaned) continue;
-      messages.push({
-        from: from || "\u2014",
-        to: to || "\u2014",
-        cc: cc || "\u2014",
-        date: date || "\u2014",
-        subject,
-        body: cleaned || "\u2014"
-      });
-      continue;
-    }
-    const parsed = parseOutlookMultilineBlock(block);
-    if (parsed) messages.push(parsed);
-  }
-  return messages;
-}
-function splitEmlParts(text) {
-  const normalized = String(text || "").replace(/\r\n/g, "\n").trim();
-  const byFrom = normalized.split(/(?=^From:\s)/m).filter((p) => p.trim());
-  if (byFrom.length > 1) return byFrom;
-  const bySeparator = normalized.split(/\n_{3,}\n/).filter((p) => p.trim());
-  if (bySeparator.length > 1) return bySeparator;
-  return [normalized];
-}
-function parseSingleEmlPart(text) {
-  const normalized = String(text || "").replace(/\r\n/g, "\n").trim();
-  if (!normalized) return null;
-  const headerEnd = normalized.search(/\n\n/);
-  const headers = headerEnd >= 0 ? normalized.slice(0, headerEnd) : normalized;
-  const bodyRaw = headerEnd >= 0 ? normalized.slice(headerEnd + 2) : "";
-  const from = pickFoldedField(headers, "From") || pickFoldedField(headers, "De");
-  const to = pickFoldedField(headers, "To") || pickFoldedField(headers, "Para");
-  const cc = pickFoldedField(headers, "Cc");
-  let date = pickFoldedField(headers, "Date") || pickFoldedField(headers, "Data") || pickField(headers, "Enviada em") || pickField(headers, "Enviado");
-  const subject = pickFoldedField(headers, "Subject") || pickFoldedField(headers, "Assunto");
-  let body = extractPlainFromMime(bodyRaw);
-  if (!body || body.length < 8) {
-    body = bodyRaw;
-  }
-  body = cleanBody(body);
-  if (!date || date === "\u2014") {
-    date = extractDateFromBody(body) || "\u2014";
-    if (date !== "\u2014") {
-      body = body.split("\n").filter((l) => !DATE_PT_RE.test(l.trim())).join("\n").trim();
-    }
-  }
-  if (!from && !to && !body) return null;
-  return {
-    from: from || "\u2014",
-    to: to || "\u2014",
-    cc: cc || "\u2014",
-    date: date || "\u2014",
-    subject: decodeMimeWords(subject || ""),
-    body: body || "\u2014"
-  };
-}
-function parseEmlContent(text) {
-  const normalized = String(text || "").replace(/\r\n/g, "\n").trim();
-  if (!normalized) return [];
-  if (/^De:\s*$/im.test(normalized) || normalized.split(/^De:\s*$/im).length > 2) {
-    return parseOutlookStyleThread(normalized);
-  }
-  const parts = splitEmlParts(normalized);
-  const messages = [];
-  for (const part of parts) {
-    const msg = parseSingleEmlPart(part);
-    if (msg) messages.push(msg);
-  }
-  if (messages.length) return messages;
-  return parseOutlookStyleThread(normalized);
-}
-function parseEmailThreadInput(text) {
-  const raw = String(text || "").trim();
-  if (!raw) return [];
-  if (/^Received:|^ARC-|^From:/im.test(raw) && !/^De:/im.test(raw)) {
-    const eml = parseEmlContent(raw);
-    if (eml.length) return eml;
-    return parseOutlookStyleThread(raw);
-  }
-  const outlook = parseOutlookStyleThread(raw);
-  if (outlook.length > 0) return outlook;
-  return parseEmlContent(raw);
 }
 
 // lib/dhlOccurrenceReport/buildFullReportHtml.ts
@@ -432,7 +89,7 @@ var BRAND = {
   text: "#1a1a1a",
   muted: "#6b7280"
 };
-function esc2(text) {
+function esc(text) {
   return String(text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 function formatDelayHuman(minutes) {
@@ -519,23 +176,7 @@ function editable(id) {
   return `data-dhl-editable="${id}"`;
 }
 function buildRootCauseBlock(data, provider) {
-  return `<div class="quote" ${editable("sec-4-3-causa-raiz")}><strong>Identificamos um descompasso no planejamento e na gest\xE3o de capacidade log\xEDstica do parceiro ${esc2(provider)}</strong>, com aloca\xE7\xE3o de viatura ainda vinculada a opera\xE7\xE3o anterior sem margem de seguran\xE7a temporal, o que exigiu remanejamento e troca de VTR em campo. A TM SEG refor\xE7a junto ao parceiro o compromisso com a melhoria dos processos para que situa\xE7\xF5es semelhantes n\xE3o se repitam, preservando o padr\xE3o de qualidade exigido pela opera\xE7\xE3o DHL.</div>`;
-}
-function buildEmailSection(data) {
-  const parts = [];
-  if (data.emailLink?.trim()) {
-    parts.push(`<p><strong>Refer\xEAncia de e-mail:</strong> ${esc2(data.emailLink.trim())}</p>`);
-  }
-  if (data.emailAttachmentText?.trim()) {
-    const messages = parseEmailThreadInput(data.emailAttachmentText);
-    if (messages.length > 0) {
-      parts.push(formatEmailThreadHtml(messages));
-    } else {
-      parts.push(`<div class="summary">${esc2(data.emailAttachmentText).replace(/\n/g, "<br/>")}</div>`);
-    }
-  }
-  if (!parts.length) return "";
-  return `<h2>2.1 Refer\xEAncia / hist\xF3rico de e-mails (DHL)</h2>${parts.join("")}`;
+  return `<div class="quote" ${editable("sec-4-3-causa-raiz")}><strong>Identificamos um descompasso no planejamento e na gest\xE3o de capacidade log\xEDstica do parceiro ${esc(provider)}</strong>, com aloca\xE7\xE3o de viatura ainda vinculada a opera\xE7\xE3o anterior sem margem de seguran\xE7a temporal, o que exigiu remanejamento e troca de VTR em campo. A TM SEG refor\xE7a junto ao parceiro o compromisso com a melhoria dos processos para que situa\xE7\xF5es semelhantes n\xE3o se repitam, preservando o padr\xE3o de qualidade exigido pela opera\xE7\xE3o DHL.</div>`;
 }
 function buildFullOccurrenceReportHtml(data, options) {
   const logoSrc = String(options?.logoDataUri || "").trim();
@@ -553,15 +194,15 @@ function buildFullOccurrenceReportHtml(data, options) {
   const rootCauseBlock = buildRootCauseBlock(data, provider);
   const photoBlocks = data.phasePhotos.map((p) => {
     const when = p.at ? formatTimeBR(p.at) : "\u2014";
-    const img = p.url && isImageEvidenceUrl(p.url) ? `<img src="${p.url}" alt="${esc2(p.label)}" crossorigin="anonymous" />` : `<div class="photo-missing">Evid\xEAncia n\xE3o registrada no sistema para esta etapa.</div>`;
-    return `<div class="photo-card"><h4 style="margin:0 0 6px;font-size:9pt">${esc2(p.label)} \u2014 ${when}</h4>${img}</div>`;
+    const img = p.url && isImageEvidenceUrl(p.url) ? `<img src="${p.url}" alt="${esc(p.label)}" crossorigin="anonymous" />` : `<div class="photo-missing">Evid\xEAncia n\xE3o registrada no sistema para esta etapa.</div>`;
+    return `<div class="photo-card"><h4 style="margin:0 0 6px;font-size:9pt">${esc(p.label)} \u2014 ${when}</h4>${img}</div>`;
   }).join("");
   const allEvidenceBlocks = (data.allEvidencePhotos || []).filter((e) => e.url && isImageEvidenceUrl(e.url)).map((e) => {
     const when = e.at ? `${formatDateBR(e.at)} ${formatTimeBR(e.at)}` : "\u2014";
     return `<div class="photo-card">
-        <h4 style="margin:0 0 6px;font-size:9pt">${esc2(e.label)}</h4>
-        <img src="${e.url}" alt="${esc2(e.label)}" crossorigin="anonymous" />
-        <div class="photo-meta">${esc2(when)} \xB7 ${esc2(e.source)}</div>
+        <h4 style="margin:0 0 6px;font-size:9pt">${esc(e.label)}</h4>
+        <img src="${e.url}" alt="${esc(e.label)}" crossorigin="anonymous" />
+        <div class="photo-meta">${esc(when)} \xB7 ${esc(e.source)}</div>
       </div>`;
   }).join("");
   const operationalRows = [
@@ -578,15 +219,14 @@ function buildFullOccurrenceReportHtml(data, options) {
     const timeCell = typeof source === "string" && source.includes("km") ? "\u2014" : when;
     const sourceCell = typeof source === "string" && source.includes("km") ? "\u2014" : src;
     const detailCell = typeof source === "string" && source.includes("km") ? src : sourceCell;
-    return `<tr><td>${esc2(String(label))}</td><td>${timeCell}</td><td>${esc2(String(detailCell))}</td></tr>`;
+    return `<tr><td>${esc(String(label))}</td><td>${timeCell}</td><td>${esc(String(detailCell))}</td></tr>`;
   }).join("");
   const factsSummary = data.factsSummary?.trim() || `Na opera\xE7\xE3o do dia ${formatDateBR(scheduledOrigin || missionCreated)}, a S.E. ${data.seNumber} estava programada para atendimento na origem \xE0s ${formatTimeBR(scheduledOrigin)}. Houve atraso na chegada \xE0 origem (${delayHuman}), com necessidade de remanejamento de viatura. A TM SEG manteve comunica\xE7\xE3o com a DHL e acompanhou a opera\xE7\xE3o at\xE9 a conclus\xE3o.`;
-  const emailSection = buildEmailSection(data);
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Plano de A\xE7\xE3o DHL \u2014 S.E. ${esc2(data.seNumber)}</title>
+  <title>Plano de A\xE7\xE3o DHL \u2014 S.E. ${esc(data.seNumber)}</title>
   <style>${reportStyles()}</style>
 </head>
 <body>
@@ -601,7 +241,7 @@ function buildFullOccurrenceReportHtml(data, options) {
   </header>
 
   <table class="meta">
-    <tr><td>Documento</td><td>PA-DHL-${esc2(data.seNumber)}</td></tr>
+    <tr><td>Documento</td><td>PA-DHL-${esc(data.seNumber)}</td></tr>
     <tr><td>Data de emiss\xE3o</td><td>${emissionDate}</td></tr>
     <tr><td>Elaborado por</td><td>Grupo TM SEG \u2014 Opera\xE7\xF5es / Gerenciamento de Risco</td></tr>
     <tr><td>Destinat\xE1rio</td><td>DHL Supply Chain \u2014 Gerenciamento de Risco</td></tr>
@@ -610,39 +250,38 @@ function buildFullOccurrenceReportHtml(data, options) {
   </table>
 
   <h2>1. Objetivo do documento</h2>
-  <p>Formalizar, de forma estruturada e transparente, a justificativa do atraso registrado na opera\xE7\xE3o de escolta vinculada \xE0 <strong>S.E. n\xBA ${esc2(data.seNumber)}</strong>, bem como o plano de a\xE7\xE3o com medidas corretivas e preventivas adotadas pela TM SEG, visando a apresenta\xE7\xE3o \xE0 DHL Supply Chain e ao cliente final (Foxconn / Apple).</p>
+  <p>Formalizar, de forma estruturada e transparente, a justificativa do atraso registrado na opera\xE7\xE3o de escolta vinculada \xE0 <strong>S.E. n\xBA ${esc(data.seNumber)}</strong>, bem como o plano de a\xE7\xE3o com medidas corretivas e preventivas adotadas pela TM SEG, visando a apresenta\xE7\xE3o \xE0 DHL Supply Chain e ao cliente final (Foxconn / Apple).</p>
 
   <h2>2. Identifica\xE7\xE3o da ocorr\xEAncia</h2>
   <table class="meta">
     <tr><td>Data da opera\xE7\xE3o</td><td>${formatDateBR(scheduledOrigin || missionCreated)}</td></tr>
-    <tr><td>N\xBA S.E.</td><td>${esc2(data.seNumber)}</td></tr>
-    <tr><td>N\xBA OS TM SEG</td><td>${esc2(data.missionId)}</td></tr>
-    <tr><td>Placa transportada (cliente)</td><td>${esc2(plateLabel(data.clientVehiclePlate, data.clientVehicleModel))}</td></tr>
-    <tr><td>Viatura escolta (parceiro)</td><td>${esc2(plateLabel(data.escortVehiclePlate, data.escortVehicleModel))}</td></tr>
-    <tr><td>Cliente</td><td>${esc2(data.client)}</td></tr>
+    <tr><td>N\xBA S.E.</td><td>${esc(data.seNumber)}</td></tr>
+    <tr><td>N\xBA OS TM SEG</td><td>${esc(data.missionId)}</td></tr>
+    <tr><td>Placa transportada (cliente)</td><td>${esc(plateLabel(data.clientVehiclePlate, data.clientVehicleModel))}</td></tr>
+    <tr><td>Viatura escolta (parceiro)</td><td>${esc(plateLabel(data.escortVehiclePlate, data.escortVehicleModel))}</td></tr>
+    <tr><td>Cliente</td><td>${esc(data.client)}</td></tr>
     <tr><td>Opera\xE7\xE3o</td><td>FOXCONN / Apple</td></tr>
-    <tr><td>Local de origem</td><td>${esc2(data.origin)}</td></tr>
-    <tr><td>Destino operacional</td><td>${esc2(data.destinationOperational || data.destination)}</td></tr>
+    <tr><td>Local de origem</td><td>${esc(data.origin)}</td></tr>
+    <tr><td>Destino operacional</td><td>${esc(data.destinationOperational || data.destination)}</td></tr>
     <tr><td>Hor\xE1rio programado (origem)</td><td>${formatDateBR(scheduledOrigin)} \u2014 ${formatTimeBR(scheduledOrigin)} (Bras\xEDlia)</td></tr>
     <tr><td>Chegada na origem (registro sist\xEAmico)</td><td>${formatDateBR(originArrival)} \u2014 ${formatTimeBR(originArrival)} (Bras\xEDlia)</td></tr>
     <tr><td>Atraso na origem</td><td>${delayHuman}</td></tr>
     <tr><td>Data/hora de abertura da OS</td><td>${missionCreated ? `${formatDateBR(missionCreated)} \xE0s ${formatTimeBR(missionCreated)} (Bras\xEDlia)` : "\u2014"}</td></tr>
-    <tr><td>Fornecedor operacional (parceiro)</td><td>${esc2(provider)}</td></tr>
-    <tr><td>Agentes</td><td>${esc2(data.agents.join(" / ") || "\u2014")}</td></tr>
+    <tr><td>Fornecedor operacional (parceiro)</td><td>${esc(provider)}</td></tr>
+    <tr><td>Agentes</td><td>${esc(data.agents.join(" / ") || "\u2014")}</td></tr>
     <tr><td>Emiss\xE3o do relat\xF3rio</td><td>${generatedLabel} (Bras\xEDlia)</td></tr>
   </table>
 
   <h2>3. Descri\xE7\xE3o dos fatos (5W2H)</h2>
-  <div class="summary" ${editable("facts-summary")}>${esc2(factsSummary).replace(/\n/g, "<br/>")}</div>
-  ${emailSection}
+  <div class="summary" ${editable("facts-summary")}>${esc(factsSummary).replace(/\n/g, "<br/>")}</div>
 
   <table>
     <thead><tr><th>Pergunta</th><th>Resposta</th></tr></thead>
     <tbody>
       <tr><td>O qu\xEA?</td><td>Atraso na chegada da equipe de escolta \xE0 origem e deslocamento inicial da viatura para endere\xE7o divergente do programado (destino em vez de origem).</td></tr>
       <tr><td>Quando?</td><td>Opera\xE7\xE3o do dia ${formatDateBR(scheduledOrigin)}, com hor\xE1rio contratual de atendimento \xE0s ${formatTimeBR(scheduledOrigin)} na origem.</td></tr>
-      <tr><td>Onde?</td><td>Origem: ${esc2(data.origin)}.</td></tr>
-      <tr><td>Quem?</td><td ${editable("5w2h-quem")}>Equipe S.E. ${esc2(data.seNumber)}, executada pelo parceiro ${esc2(provider)}, sob gest\xE3o operacional da TM SEG.</td></tr>
+      <tr><td>Onde?</td><td>Origem: ${esc(data.origin)}.</td></tr>
+      <tr><td>Quem?</td><td ${editable("5w2h-quem")}>Equipe S.E. ${esc(data.seNumber)}, executada pelo parceiro ${esc(provider)}, sob gest\xE3o operacional da TM SEG.</td></tr>
       <tr><td>Por qu\xEA?</td><td ${editable("5w2h-porque")}>Falha no planejamento log\xEDstico do parceiro e necessidade de remanejamento/troca de viatura em campo.</td></tr>
       <tr><td>Como?</td><td ${editable("5w2h-como")}>A viatura designada n\xE3o concluiu a opera\xE7\xE3o anterior a tempo; houve troca de VTR em deslocamento e orienta\xE7\xE3o da central para corre\xE7\xE3o de rota.</td></tr>
       <tr><td>Impacto?</td><td ${editable("5w2h-impacto")}>Comprometimento do cronograma operacional do cliente e desgaste operacional em opera\xE7\xE3o de alta criticidade.</td></tr>
@@ -651,8 +290,8 @@ function buildFullOccurrenceReportHtml(data, options) {
 
   <h3>3.1 Linha do tempo resumida</h3>
   <table class="timeline">
-    <tr><td>${missionCreated ? `${formatDateBR(missionCreated)} \u2014 ${formatTimeBR(missionCreated)}` : "\u2014"}</td><td>OS ${esc2(data.missionId)} criada no sistema TM SEG (S.E. ${esc2(data.seNumber)}).</td></tr>
-    <tr><td>${scheduledMission ? `${formatDateBR(scheduledMission)} \u2014 ${formatTimeBR(scheduledMission)}` : "\u2014"}</td><td>Miss\xE3o agendada com ${esc2(provider)} e equipe designada.</td></tr>
+    <tr><td>${missionCreated ? `${formatDateBR(missionCreated)} \u2014 ${formatTimeBR(missionCreated)}` : "\u2014"}</td><td>OS ${esc(data.missionId)} criada no sistema TM SEG (S.E. ${esc(data.seNumber)}).</td></tr>
+    <tr><td>${scheduledMission ? `${formatDateBR(scheduledMission)} \u2014 ${formatTimeBR(scheduledMission)}` : "\u2014"}</td><td>Miss\xE3o agendada com ${esc(provider)} e equipe designada.</td></tr>
     <tr><td>${formatDateBR(scheduledOrigin)} \u2014 ${formatTimeBR(scheduledOrigin)}</td><td>Hor\xE1rio programado de chegada \xE0 origem.</td></tr>
     <tr><td>${formatDateBR(originArrival)} \u2014 ${formatTimeBR(originArrival)}</td><td><strong>Chegada na origem</strong> \u2014 registro sist\xEAmico (status Origem).</td></tr>
     <tr><td>${formatDateBR(inTransit)} \u2014 ${formatTimeBR(inTransit)}</td><td>Sa\xEDda da origem / in\xEDcio da opera\xE7\xE3o (status Em Viagem).</td></tr>
@@ -665,7 +304,7 @@ function buildFullOccurrenceReportHtml(data, options) {
     <thead><tr><th>Marco operacional</th><th>Data / Hora</th><th>Fonte no sistema</th></tr></thead>
     <tbody>${operationalRows}</tbody>
   </table>
-  ${data.destinationOperational ? `<p><strong>Endere\xE7o registrado na chegada ao destino:</strong> ${esc2(data.destinationOperational)}.</p>` : ""}
+  ${data.destinationOperational ? `<p><strong>Endere\xE7o registrado na chegada ao destino:</strong> ${esc(data.destinationOperational)}.</p>` : ""}
 
   <h3>3.3 Evid\xEAncias fotogr\xE1ficas por etapa</h3>
   <div class="photos">${photoBlocks}</div>
@@ -678,7 +317,7 @@ function buildFullOccurrenceReportHtml(data, options) {
 
   <h2>4. Justificativa do atraso e an\xE1lise de causa raiz</h2>
   <h3>4.1 S\xEDntese executiva</h3>
-  <p ${editable("sec-4-1-sintese")}>O atraso de <strong>${delayHuman}</strong> na chegada \xE0 origem da S.E. ${esc2(data.seNumber)} n\xE3o decorreu de falha no aceite ou no registro da miss\xE3o pela TM SEG. A OS foi aberta em <strong>${missionCreated ? `${formatDateBR(missionCreated)} \xE0s ${formatTimeBR(missionCreated)}` : "\u2014"}</strong>. A ocorr\xEAncia est\xE1 associada a um descompasso pontual na execu\xE7\xE3o operacional do parceiro, j\xE1 acionado para alinhamento e melhoria cont\xEDnua.</p>
+  <p ${editable("sec-4-1-sintese")}>O atraso de <strong>${delayHuman}</strong> na chegada \xE0 origem da S.E. ${esc(data.seNumber)} n\xE3o decorreu de falha no aceite ou no registro da miss\xE3o pela TM SEG. A OS foi aberta em <strong>${missionCreated ? `${formatDateBR(missionCreated)} \xE0s ${formatTimeBR(missionCreated)}` : "\u2014"}</strong>. A ocorr\xEAncia est\xE1 associada a um descompasso pontual na execu\xE7\xE3o operacional do parceiro, j\xE1 acionado para alinhamento e melhoria cont\xEDnua.</p>
 
   <h3>4.2 Vers\xE3o do parceiro</h3>
   <p ${editable("sec-4-2-parceiro")}>O fornecedor informou necessidade de <strong>troca de viatura (VTR) no meio do percurso</strong>. A TM SEG segue apurando os detalhes operacionais para consolidar o entendimento completo dos fatos, com foco em preven\xE7\xE3o de reincid\xEAncia.</p>
@@ -720,7 +359,7 @@ function buildFullOccurrenceReportHtml(data, options) {
       <tr><td>AC-01</td><td ${editable("ac-01")}>Concluir apura\xE7\xE3o documentada com o parceiro e plano de melhoria para evitar reincid\xEAncia</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>17/07/2026</td><td>Termo arquivado</td></tr>
       <tr><td>AC-02</td><td>Registro formal no scorecard de fornecedores e refor\xE7o de SLA</td><td>Gest\xE3o de Fornecedores TM SEG</td><td>14/07/2026</td><td>Registro no sistema</td></tr>
       <tr><td>AC-03</td><td>Revis\xE3o tempor\xE1ria de aloca\xE7\xE3o em miss\xF5es cr\xEDticas DHL/Foxconn at\xE9 conclus\xE3o das a\xE7\xF5es</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>Imediato</td><td>Plano de capacidade validado</td></tr>
-      <tr><td>AC-04</td><td>Plano de capacidade di\xE1rio do parceiro (VTRs \xD7 miss\xF5es) at\xE9 D-1 \xE0s 18:00</td><td>${esc2(provider)} / TM SEG</td><td>14/07/2026</td><td>Planilha conferida</td></tr>
+      <tr><td>AC-04</td><td>Plano de capacidade di\xE1rio do parceiro (VTRs \xD7 miss\xF5es) at\xE9 D-1 \xE0s 18:00</td><td>${esc(provider)} / TM SEG</td><td>14/07/2026</td><td>Planilha conferida</td></tr>
       <tr><td>AC-05</td><td>Reuni\xE3o de alinhamento operacional (SLA, janelas, substitui\xE7\xE3o)</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>16/07/2026</td><td>Ata assinada</td></tr>
     </tbody>
   </table>
@@ -741,7 +380,7 @@ function buildFullOccurrenceReportHtml(data, options) {
   <h3>6.3 Cronograma consolidado</h3>
   <div class="cronograma">${emissionDate} \u2500\u2500\u25CF Emiss\xE3o deste plano de a\xE7\xE3o
 14/07/2026 \u2500\u2500\u25CF AP-01, AP-03, AP-05 em vigor | AC-02, AC-04 iniciados
-16/07/2026 \u2500\u2500\u25CF AC-05 \u2014 Reuni\xE3o ${esc2(provider)}
+16/07/2026 \u2500\u2500\u25CF AC-05 \u2014 Reuni\xE3o ${esc(provider)}
 17/07/2026 \u2500\u2500\u25CF AC-01 conclu\xEDdo | AP-06 \u2014 1\xBA relat\xF3rio semanal
 21/07/2026 \u2500\u2500\u25CF AP-02 \u2014 Protocolo de backup operacional
 24/07/2026 \u2500\u2500\u25CF AP-04 \u2014 Reuni\xE3o geral de parceiros Sudeste
@@ -773,12 +412,11 @@ function buildFullOccurrenceReportHtml(data, options) {
   <table>
     <thead><tr><th>Anexo</th><th>Descri\xE7\xE3o</th></tr></thead>
     <tbody>
-      <tr><td>A</td><td>Registro de abertura da OS ${esc2(data.missionId)} / S.E. ${esc2(data.seNumber)}</td></tr>
+      <tr><td>A</td><td>Registro de abertura da OS ${esc(data.missionId)} / S.E. ${esc(data.seNumber)}</td></tr>
       <tr><td>B</td><td>Marcos operacionais com hor\xE1rios (Se\xE7\xE3o 3.2)</td></tr>
       <tr><td>C</td><td>Evid\xEAncias fotogr\xE1ficas por etapa (Se\xE7\xE3o 3.3)</td></tr>
       <tr><td>D</td><td>Todas as evid\xEAncias do sistema \u2014 Atualizar OS e anexos (Se\xE7\xE3o 3.4)</td></tr>
-      <tr><td>E</td><td>Hist\xF3rico de e-mails com DHL (Se\xE7\xE3o 2.1)</td></tr>
-      <tr><td>F</td><td>Registro de contato e apura\xE7\xE3o com ${esc2(provider)}</td></tr>
+      <tr><td>E</td><td>Registro de contato e apura\xE7\xE3o com ${esc(provider)}</td></tr>
     </tbody>
   </table>
 
@@ -786,14 +424,14 @@ function buildFullOccurrenceReportHtml(data, options) {
   <table>
     <thead><tr><th>Fun\xE7\xE3o</th><th>Nome</th><th>Assinatura</th><th>Data</th></tr></thead>
     <tbody>
-      <tr><td>Dire\xE7\xE3o / Opera\xE7\xF5es</td><td>${esc2(data.directorName)}</td><td>_______________________</td><td>${emissionDate}</td></tr>
+      <tr><td>Dire\xE7\xE3o / Opera\xE7\xF5es</td><td>${esc(data.directorName)}</td><td>_______________________</td><td>${emissionDate}</td></tr>
       <tr><td>Coordena\xE7\xE3o Operacional</td><td>_______________________</td><td>_______________________</td><td>___/___/2026</td></tr>
     </tbody>
   </table>
 
   <div class="signature">
     <div class="visto">VISTO</div>
-    <strong>${esc2(data.directorName)}</strong><br />
+    <strong>${esc(data.directorName)}</strong><br />
     Diretoria \u2014 Grupo TM SEG<br />
     ${generatedLabel}
   </div>
@@ -1411,6 +1049,97 @@ async function collectDhlOccurrenceReportData(sb, input) {
 
 // lib/dhlOccurrenceReport/generateReportHtml.ts
 var import_supabase_js2 = require("@supabase/supabase-js");
+
+// lib/dhlOccurrenceReport/adjustReportHtml.ts
+var EDITABLE_BLOCK_RE = /<([a-z][a-z0-9]*)[^>]*\sdata-dhl-editable="([^"]+)"[^>]*>([\s\S]*?)<\/\1>/gi;
+function extractEditableBlocks(html) {
+  const blocks = [];
+  const seen = /* @__PURE__ */ new Set();
+  let match;
+  const re = new RegExp(EDITABLE_BLOCK_RE.source, EDITABLE_BLOCK_RE.flags);
+  while ((match = re.exec(html)) !== null) {
+    const id = match[2];
+    if (seen.has(id)) continue;
+    seen.add(id);
+    blocks.push({ id, html: match[3].trim() });
+  }
+  return blocks;
+}
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function applyEditablePatches(html, patches) {
+  let result = html;
+  for (const [id, newInner] of Object.entries(patches)) {
+    if (!id || newInner == null) continue;
+    const re = new RegExp(
+      `(<[a-z][a-z0-9]*[^>]*\\sdata-dhl-editable="${escapeRegex(id)}"[^>]*>)([\\s\\S]*?)(</[a-z][a-z0-9]*>)`,
+      "i"
+    );
+    result = result.replace(re, `$1${newInner}$3`);
+  }
+  return result;
+}
+function parseGeminiAdjustmentJson(raw) {
+  const trimmed = String(raw || "").trim();
+  const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error("A IA n\xE3o retornou JSON v\xE1lido para o ajuste.");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    throw new Error("Resposta da IA em formato inv\xE1lido.");
+  }
+  const out = {};
+  for (const patch of parsed.patches || []) {
+    const id = String(patch.id || "").trim();
+    const html = String(patch.html ?? "").trim();
+    if (id && html) out[id] = html;
+  }
+  if (!Object.keys(out).length) {
+    throw new Error("A IA n\xE3o sugeriu altera\xE7\xF5es. Tente reformular a observa\xE7\xE3o.");
+  }
+  return out;
+}
+function buildDhlReportGenerationPrompt(blocks, context) {
+  return `Voc\xEA \xE9 analista s\xEAnior de opera\xE7\xF5es e gerenciamento de risco da TM SEG e vai redigir o conte\xFAdo de um Plano de A\xE7\xE3o e Justificativa de Ocorr\xEAncia para a DHL Supply Chain (opera\xE7\xE3o Foxconn/Apple).
+
+Sua tarefa: com base em (1) DADOS DO SISTEMA (fatos reais e imut\xE1veis da miss\xE3o), (2) CONTEXTO DO E-MAIL do cliente (o problema apontado) e (3) OBSERVA\xC7\xD5ES DA DIRETORIA, escrever o conte\xFAdo de cada bloco edit\xE1vel do relat\xF3rio \u2014 explicando o que aconteceu, a causa e o plano de a\xE7\xE3o \u2014 de forma completa, coesa e profissional.
+
+REGRAS OBRIGAT\xD3RIAS:
+1. Responda APENAS com JSON v\xE1lido, sem markdown: {"patches":[{"id":"...","html":"..."}]}
+2. Retorne um patch para CADA bloco fornecido (todos os ids recebidos), com o texto final adequado ao papel do bloco.
+3. N\xC3O copie e cole o e-mail. Use-o apenas como fonte para entender o ocorrido e sintetizar. N\xC3O inclua cabe\xE7alhos de e-mail (De/Para/Cc/Data), assinaturas nem trechos literais.
+4. N\xC3O invente fatos: use somente o que est\xE1 nos DADOS DO SISTEMA e no CONTEXTO DO E-MAIL. Preserve exatamente n\xFAmeros de S.E., OS, datas, hor\xE1rios, placas e nomes de clientes (DHL, Foxconn, Apple).
+5. Em textos narrativos, prefira "parceiro" ou "fornecedor" em vez de citar o nome comercial do parceiro. Tom construtivo e profissional, sem linguagem punitiva ou acusat\xF3ria que manche a imagem do parceiro.
+6. Mantenha HTML simples no campo html: <strong>, <em>, <br/> quando necess\xE1rio. Respeite o formato de cada bloco: respostas de c\xE9lula de tabela devem ser curtas e diretas; blocos de s\xEDntese/causa podem ser um par\xE1grafo.
+7. Escreva em portugu\xEAs do Brasil. Se faltar informa\xE7\xE3o para algum bloco, produza um texto coerente e neutro com base no que existe, sem inventar dados factuais.
+
+DADOS DO SISTEMA (fatos reais):
+${context.factsBlock}
+
+CONTEXTO DO E-MAIL DO CLIENTE (n\xE3o copiar; apenas sintetizar):
+${context.emailText.trim() || "(sem anexo de e-mail)"}
+${context.emailLink.trim() ? `Refer\xEAncia de e-mail: ${context.emailLink.trim()}` : ""}
+
+OBSERVA\xC7\xD5ES DA DIRETORIA:
+${context.userSummary.trim() || "(sem observa\xE7\xF5es adicionais)"}
+
+BLOCOS A PREENCHER (JSON com id e conte\xFAdo atual como refer\xEAncia de formato):
+${JSON.stringify(blocks.map((b) => ({ id: b.id, html_atual: b.html })), null, 2)}`;
+}
+async function generateDhlReportHtmlWithAi(html, context, generateText) {
+  const blocks = extractEditableBlocks(html);
+  if (!blocks.length) return html;
+  const prompt = buildDhlReportGenerationPrompt(blocks, context);
+  const response = await generateText(prompt);
+  const patches = parseGeminiAdjustmentJson(response);
+  return applyEditablePatches(html, patches);
+}
+
+// lib/dhlOccurrenceReport/generateReportHtml.ts
 var TMSEG_LOGO_SVG_DATA_URI = "data:image/svg+xml;base64," + Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="220" height="52" viewBox="0 0 220 52"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#111827"/><stop offset="55%" stop-color="#991b1b"/><stop offset="100%" stop-color="#dc2626"/></linearGradient></defs><rect width="220" height="52" rx="6" fill="url(#g)"/><text x="110" y="33" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="18" font-weight="700">GRUPO TM SEG</text></svg>`).toString("base64");
 function getSupabase() {
   return createSupabaseAdminClient() ?? (0, import_supabase_js2.createClient)(getSupabaseUrl(), getSupabaseAnonKey());
@@ -1441,19 +1170,65 @@ async function resolveTmSegLogoDataUri() {
   }
   return TMSEG_LOGO_SVG_DATA_URI;
 }
+function plateLabel2(plate, model) {
+  const p = String(plate || "").trim();
+  const m = String(model || "").trim();
+  if (p && m) return `${p} \u2014 ${m}`;
+  return p || m || "\u2014";
+}
+function markWhen(at) {
+  return at ? `${formatDateBR(at)} ${formatTimeBR(at)} (Bras\xEDlia)` : "\u2014";
+}
+function buildAiContext(data) {
+  const facts = [
+    `N\xBA S.E.: ${data.seNumber}`,
+    `N\xBA OS TM SEG: ${data.missionId}`,
+    `Cliente: ${data.client}`,
+    `Opera\xE7\xE3o: FOXCONN / Apple`,
+    `Parceiro/fornecedor operacional: ${data.provider}`,
+    `Local de origem: ${data.origin}`,
+    `Destino operacional: ${data.destinationOperational || data.destination}`,
+    `Placa transportada (cliente): ${plateLabel2(data.clientVehiclePlate, data.clientVehicleModel)}`,
+    `Viatura de escolta (parceiro): ${plateLabel2(data.escortVehiclePlate, data.escortVehicleModel)}`,
+    `Agentes: ${data.agents.join(" / ") || "\u2014"}`,
+    `Abertura da OS: ${markWhen(data.missionCreatedAt)}`,
+    `Hor\xE1rio programado na origem: ${markWhen(data.scheduledOriginAt)}`,
+    `Atraso registrado na origem (minutos): ${data.delayMinutesAtOrigin ?? 0}`,
+    `Hod\xF4metro inicial: ${data.odometerStartKm || "\u2014"}`,
+    `Hod\xF4metro final: ${data.odometerEndKm || "\u2014"}`,
+    "Marcos operacionais (registro sist\xEAmico):",
+    ...data.marks.map((m) => `  - ${m.label}: ${markWhen(m.at)}`)
+  ].join("\n");
+  return {
+    factsBlock: facts,
+    emailText: data.emailAttachmentText || "",
+    emailLink: data.emailLink || "",
+    userSummary: data.factsSummary || ""
+  };
+}
 async function generateDhlOccurrenceReportHtml(input, options) {
   try {
     const sb = options?.supabaseClient ?? getSupabase();
     const data = await collectDhlOccurrenceReportData(sb, input);
     if (!data) return null;
     const logoDataUri = await resolveTmSegLogoDataUri();
-    const html = buildOccurrenceReportHtml(data, {
+    let html = buildOccurrenceReportHtml(data, {
       publicBaseUrl: getPublicBaseUrl(),
       logoDataUri
     });
+    let aiGenerated = false;
+    const hasEmailContext = !!(data.emailAttachmentText?.trim() || data.emailLink?.trim());
+    if (options?.generateText && hasEmailContext) {
+      try {
+        html = await generateDhlReportHtmlWithAi(html, buildAiContext(data), options.generateText);
+        aiGenerated = true;
+      } catch (err) {
+        console.error("[dhlOccurrenceReportHtml] IA de gera\xE7\xE3o falhou, usando template:", err);
+      }
+    }
     const evidenceCount = data.allEvidencePhotos?.length || 0;
     const phasePhotoCount = data.phasePhotos.filter((p) => p.url).length;
-    return { html, evidenceCount, phasePhotoCount };
+    return { html, evidenceCount, phasePhotoCount, aiGenerated };
   } catch (err) {
     console.error("[dhlOccurrenceReportHtml]", err);
     return null;
@@ -1583,11 +1358,6 @@ async function buildPdfBuffer(data, options) {
   section("Resumo dos fatos");
   y = wrapText(doc, narrative.factsSummary, margin, y, contentW);
   y += 4;
-  if (narrative.emailReference) {
-    section("Refer\xEAncia / anexo de e-mails");
-    y = wrapText(doc, narrative.emailReference, margin, y, contentW);
-    y += 4;
-  }
   section("Marcos operacionais (Bras\xEDlia)");
   for (const mark of data.marks) {
     const when = mark.at ? `${formatTimeBR(mark.at)} \u2014 ${formatDateTimeBR(mark.at).split(" ")[0]}` : "\u2014";

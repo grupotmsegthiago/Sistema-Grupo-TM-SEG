@@ -159,6 +159,50 @@ async function resolveDirectorName(token: string): Promise<string> {
 }
 
 /**
+ * Cria a função generateText do Gemini (REST) usada tanto na geração do
+ * relatório (a partir do e-mail/contexto) quanto no "Ajustar com IA".
+ * Retorna null quando não há chave configurada.
+ */
+function makeGeminiGenerateText(): ((prompt: string) => Promise<string>) | null {
+  const geminiKey = String(
+    process.env.AI_INTEGRATIONS_GEMINI_API_KEY ||
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_GEMINI_API_KEY ||
+      '',
+  ).trim();
+  if (!geminiKey) return null;
+
+  return async (prompt: string): Promise<string> => {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Referer autorizado na chave Gemini (mesmo de api/gemini/generate.ts).
+          Referer: 'https://sistema-grupo-tm-seg.vercel.app/',
+        },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 8192, temperature: 0.35 },
+        }),
+      },
+    );
+    const data = (await response.json()) as {
+      error?: { message?: string };
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    if (!response.ok) {
+      throw new Error(data?.error?.message || `Gemini HTTP ${response.status}`);
+    }
+    const text =
+      data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
+    if (!text.trim()) throw new Error('A IA retornou resposta vazia.');
+    return text;
+  };
+}
+
+/**
  * Plano de Ação DHL — handler standalone na Vercel (sem Express/vercelApp.cjs).
  * POST /api/dhl/occurrence-report
  */
@@ -214,13 +258,8 @@ export default async function handler(req: any, res: any) {
         return;
       }
 
-      const geminiKey = String(
-        process.env.AI_INTEGRATIONS_GEMINI_API_KEY ||
-          process.env.GEMINI_API_KEY ||
-          process.env.GOOGLE_GEMINI_API_KEY ||
-          '',
-      ).trim();
-      if (!geminiKey) {
+      const generateText = makeGeminiGenerateText();
+      if (!generateText) {
         res.status(503).json({
           ok: false,
           error: 'IA indisponível — configure GEMINI_API_KEY na Vercel.',
@@ -229,40 +268,6 @@ export default async function handler(req: any, res: any) {
       }
 
       const { adjustDhlReportHtmlWithAi } = dhlReportAdjustBundle;
-
-      const generateText = async (prompt: string): Promise<string> => {
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              // A chave Gemini tem restrição de HTTP referrer. O Referer precisa
-              // ser exatamente o domínio autorizado na chave (mesmo usado em
-              // api/gemini/generate.ts e api/gemini/health.ts). Usar o domínio
-              // custom (sistema.grupotmseg.com.br) faz o Google bloquear a
-              // chamada com "GenerateContent are blocked".
-              Referer: 'https://sistema-grupo-tm-seg.vercel.app/',
-            },
-            body: JSON.stringify({
-              contents: [{ role: 'user', parts: [{ text: prompt }] }],
-              generationConfig: { maxOutputTokens: 8192, temperature: 0.35 },
-            }),
-          },
-        );
-        const data = (await response.json()) as {
-          error?: { message?: string };
-          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-        };
-        if (!response.ok) {
-          throw new Error(data?.error?.message || `Gemini HTTP ${response.status}`);
-        }
-        const text =
-          data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
-        if (!text.trim()) throw new Error('A IA retornou resposta vazia.');
-        return text;
-      };
-
       const adjustedHtml = await adjustDhlReportHtmlWithAi(html, adjustmentNotes, generateText);
       res.setHeader('Cache-Control', 'no-store');
       res.status(200).json({ ok: true, format: 'adjust', html: adjustedHtml });
@@ -283,6 +288,7 @@ export default async function handler(req: any, res: any) {
       const { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename } = dhlReportHtmlBundle;
       const result = await generateDhlOccurrenceReportHtml(input as DhlOccurrenceReportInput, {
         supabaseClient: sb,
+        generateText: makeGeminiGenerateText() || undefined,
       });
       if (!result?.html) {
         res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });

@@ -22,8 +22,10 @@ var adjustReportHtml_exports = {};
 __export(adjustReportHtml_exports, {
   adjustDhlReportHtmlWithAi: () => adjustDhlReportHtmlWithAi,
   applyEditablePatches: () => applyEditablePatches,
+  buildDhlReportGenerationPrompt: () => buildDhlReportGenerationPrompt,
   buildGeminiAdjustmentPrompt: () => buildGeminiAdjustmentPrompt,
   extractEditableBlocks: () => extractEditableBlocks,
+  generateDhlReportHtmlWithAi: () => generateDhlReportHtmlWithAi,
   parseGeminiAdjustmentJson: () => parseGeminiAdjustmentJson
 });
 module.exports = __toCommonJS(adjustReportHtml_exports);
@@ -104,6 +106,41 @@ function parseGeminiAdjustmentJson(raw) {
   }
   return out;
 }
+function buildDhlReportGenerationPrompt(blocks, context) {
+  return `Voc\xEA \xE9 analista s\xEAnior de opera\xE7\xF5es e gerenciamento de risco da TM SEG e vai redigir o conte\xFAdo de um Plano de A\xE7\xE3o e Justificativa de Ocorr\xEAncia para a DHL Supply Chain (opera\xE7\xE3o Foxconn/Apple).
+
+Sua tarefa: com base em (1) DADOS DO SISTEMA (fatos reais e imut\xE1veis da miss\xE3o), (2) CONTEXTO DO E-MAIL do cliente (o problema apontado) e (3) OBSERVA\xC7\xD5ES DA DIRETORIA, escrever o conte\xFAdo de cada bloco edit\xE1vel do relat\xF3rio \u2014 explicando o que aconteceu, a causa e o plano de a\xE7\xE3o \u2014 de forma completa, coesa e profissional.
+
+REGRAS OBRIGAT\xD3RIAS:
+1. Responda APENAS com JSON v\xE1lido, sem markdown: {"patches":[{"id":"...","html":"..."}]}
+2. Retorne um patch para CADA bloco fornecido (todos os ids recebidos), com o texto final adequado ao papel do bloco.
+3. N\xC3O copie e cole o e-mail. Use-o apenas como fonte para entender o ocorrido e sintetizar. N\xC3O inclua cabe\xE7alhos de e-mail (De/Para/Cc/Data), assinaturas nem trechos literais.
+4. N\xC3O invente fatos: use somente o que est\xE1 nos DADOS DO SISTEMA e no CONTEXTO DO E-MAIL. Preserve exatamente n\xFAmeros de S.E., OS, datas, hor\xE1rios, placas e nomes de clientes (DHL, Foxconn, Apple).
+5. Em textos narrativos, prefira "parceiro" ou "fornecedor" em vez de citar o nome comercial do parceiro. Tom construtivo e profissional, sem linguagem punitiva ou acusat\xF3ria que manche a imagem do parceiro.
+6. Mantenha HTML simples no campo html: <strong>, <em>, <br/> quando necess\xE1rio. Respeite o formato de cada bloco: respostas de c\xE9lula de tabela devem ser curtas e diretas; blocos de s\xEDntese/causa podem ser um par\xE1grafo.
+7. Escreva em portugu\xEAs do Brasil. Se faltar informa\xE7\xE3o para algum bloco, produza um texto coerente e neutro com base no que existe, sem inventar dados factuais.
+
+DADOS DO SISTEMA (fatos reais):
+${context.factsBlock}
+
+CONTEXTO DO E-MAIL DO CLIENTE (n\xE3o copiar; apenas sintetizar):
+${context.emailText.trim() || "(sem anexo de e-mail)"}
+${context.emailLink.trim() ? `Refer\xEAncia de e-mail: ${context.emailLink.trim()}` : ""}
+
+OBSERVA\xC7\xD5ES DA DIRETORIA:
+${context.userSummary.trim() || "(sem observa\xE7\xF5es adicionais)"}
+
+BLOCOS A PREENCHER (JSON com id e conte\xFAdo atual como refer\xEAncia de formato):
+${JSON.stringify(blocks.map((b) => ({ id: b.id, html_atual: b.html })), null, 2)}`;
+}
+async function generateDhlReportHtmlWithAi(html, context, generateText) {
+  const blocks = extractEditableBlocks(html);
+  if (!blocks.length) return html;
+  const prompt = buildDhlReportGenerationPrompt(blocks, context);
+  const response = await generateText(prompt);
+  const patches = parseGeminiAdjustmentJson(response);
+  return applyEditablePatches(html, patches);
+}
 async function adjustDhlReportHtmlWithAi(html, adjustmentNotes, generateText) {
   const notes = adjustmentNotes.trim();
   if (!notes) {
@@ -122,7 +159,9 @@ async function adjustDhlReportHtmlWithAi(html, adjustmentNotes, generateText) {
 0 && (module.exports = {
   adjustDhlReportHtmlWithAi,
   applyEditablePatches,
+  buildDhlReportGenerationPrompt,
   buildGeminiAdjustmentPrompt,
   extractEditableBlocks,
+  generateDhlReportHtmlWithAi,
   parseGeminiAdjustmentJson
 });

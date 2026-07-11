@@ -2,7 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@supabase/supabase-js';
 import { buildOccurrenceReportHtml } from './buildReportHtml.js';
 import { collectDhlOccurrenceReportData } from './collectReportData.js';
-import type { DhlOccurrenceReportInput } from './types.js';
+import { generateDhlReportHtmlWithAi, type DhlReportAiContext } from './adjustReportHtml.js';
+import type { DhlOccurrenceReportData, DhlOccurrenceReportInput } from './types.js';
+import { formatDateBR, formatTimeBR } from '../dateUtils.js';
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from '../supabaseAdmin.js';
 
 /** SVG inline — fallback se PNG não estiver disponível no runtime serverless. */
@@ -53,25 +55,86 @@ export type DhlReportHtmlResult = {
   html: string;
   evidenceCount: number;
   phasePhotoCount: number;
+  /** true quando a narrativa foi gerada pela IA a partir do e-mail/contexto. */
+  aiGenerated: boolean;
 };
+
+function plateLabel(plate: string | null, model: string | null): string {
+  const p = String(plate || '').trim();
+  const m = String(model || '').trim();
+  if (p && m) return `${p} — ${m}`;
+  return p || m || '—';
+}
+
+function markWhen(at: string | null): string {
+  return at ? `${formatDateBR(at)} ${formatTimeBR(at)} (Brasília)` : '—';
+}
+
+/** Monta o contexto factual (dados reais do sistema) + e-mail para a IA. */
+function buildAiContext(data: DhlOccurrenceReportData): DhlReportAiContext {
+  const facts = [
+    `Nº S.E.: ${data.seNumber}`,
+    `Nº OS TM SEG: ${data.missionId}`,
+    `Cliente: ${data.client}`,
+    `Operação: FOXCONN / Apple`,
+    `Parceiro/fornecedor operacional: ${data.provider}`,
+    `Local de origem: ${data.origin}`,
+    `Destino operacional: ${data.destinationOperational || data.destination}`,
+    `Placa transportada (cliente): ${plateLabel(data.clientVehiclePlate, data.clientVehicleModel)}`,
+    `Viatura de escolta (parceiro): ${plateLabel(data.escortVehiclePlate, data.escortVehicleModel)}`,
+    `Agentes: ${data.agents.join(' / ') || '—'}`,
+    `Abertura da OS: ${markWhen(data.missionCreatedAt)}`,
+    `Horário programado na origem: ${markWhen(data.scheduledOriginAt)}`,
+    `Atraso registrado na origem (minutos): ${data.delayMinutesAtOrigin ?? 0}`,
+    `Hodômetro inicial: ${data.odometerStartKm || '—'}`,
+    `Hodômetro final: ${data.odometerEndKm || '—'}`,
+    'Marcos operacionais (registro sistêmico):',
+    ...data.marks.map((m) => `  - ${m.label}: ${markWhen(m.at)}`),
+  ].join('\n');
+
+  return {
+    factsBlock: facts,
+    emailText: data.emailAttachmentText || '',
+    emailLink: data.emailLink || '',
+    userSummary: data.factsSummary || '',
+  };
+}
 
 /** Gera HTML do Plano de Ação — sem jspdf (seguro para preview na Vercel). */
 export async function generateDhlOccurrenceReportHtml(
   input: DhlOccurrenceReportInput,
-  options?: { supabaseClient?: SupabaseClient },
+  options?: {
+    supabaseClient?: SupabaseClient;
+    generateText?: (prompt: string) => Promise<string>;
+  },
 ): Promise<DhlReportHtmlResult | null> {
   try {
     const sb = options?.supabaseClient ?? getSupabase();
     const data = await collectDhlOccurrenceReportData(sb, input);
     if (!data) return null;
     const logoDataUri = await resolveTmSegLogoDataUri();
-    const html = buildOccurrenceReportHtml(data, {
+    let html = buildOccurrenceReportHtml(data, {
       publicBaseUrl: getPublicBaseUrl(),
       logoDataUri,
     });
+
+    // Quando há e-mail do cliente anexado e a IA está disponível, o relatório é
+    // redigido pela IA a partir dos dados do sistema + contexto do e-mail
+    // (o e-mail NÃO é copiado). Se a IA falhar, mantém o texto-padrão (template).
+    let aiGenerated = false;
+    const hasEmailContext = !!(data.emailAttachmentText?.trim() || data.emailLink?.trim());
+    if (options?.generateText && hasEmailContext) {
+      try {
+        html = await generateDhlReportHtmlWithAi(html, buildAiContext(data), options.generateText);
+        aiGenerated = true;
+      } catch (err) {
+        console.error('[dhlOccurrenceReportHtml] IA de geração falhou, usando template:', err);
+      }
+    }
+
     const evidenceCount = data.allEvidencePhotos?.length || 0;
     const phasePhotoCount = data.phasePhotos.filter((p) => p.url).length;
-    return { html, evidenceCount, phasePhotoCount };
+    return { html, evidenceCount, phasePhotoCount, aiGenerated };
   } catch (err) {
     console.error('[dhlOccurrenceReportHtml]', err);
     return null;

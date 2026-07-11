@@ -156,12 +156,6 @@ async function buildPdfBuffer(
   y = wrapText(doc, narrative.factsSummary, margin, y, contentW);
   y += 4;
 
-  if (narrative.emailReference) {
-    section('Referência / anexo de e-mails');
-    y = wrapText(doc, narrative.emailReference, margin, y, contentW);
-    y += 4;
-  }
-
   section('Marcos operacionais (Brasília)');
   for (const mark of data.marks) {
     const when = mark.at ? `${formatTimeBR(mark.at)} — ${formatDateTimeBR(mark.at).split(' ')[0]}` : '—';
