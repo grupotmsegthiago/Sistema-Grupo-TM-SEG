@@ -268,6 +268,11 @@ test('applyEditablePatches substitui bloco INTEIRO mesmo com <strong> aninhado (
   const html =
     '<p data-dhl-editable="sec-4-1-sintese">O atraso de <strong>86 minutos</strong> na chegada à origem da S.E. 183013 não decorreu de falha. A OS foi aberta em <strong>08/07 às 10:00</strong>. Texto redundante original.</p>';
 
+  const blocksBefore = extractEditableBlocks(html);
+  assert.equal(blocksBefore.length, 1);
+  assert.match(blocksBefore[0].html, /86 minutos/);
+  assert.match(blocksBefore[0].html, /Texto redundante original/);
+
   const patched = applyEditablePatches(html, {
     'sec-4-1-sintese': 'Texto novo e profissional gerado pela IA.',
   });

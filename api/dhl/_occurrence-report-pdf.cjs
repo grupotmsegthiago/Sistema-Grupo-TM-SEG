@@ -1068,22 +1068,43 @@ async function collectDhlOccurrenceReportData(sb, input) {
 var import_supabase_js2 = require("@supabase/supabase-js");
 
 // lib/dhlOccurrenceReport/adjustReportHtml.ts
-var EDITABLE_BLOCK_RE = /<([a-z][a-z0-9]*)[^>]*\sdata-dhl-editable="([^"]+)"[^>]*>([\s\S]*?)<\/\1>/gi;
+var EDITABLE_OPEN_RE = /<([a-z][a-z0-9]*)[^>]*\sdata-dhl-editable="([^"]+)"[^>]*>/gi;
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function findMatchingCloseTagIndex(html, tagName, contentStart) {
+  const tagRe = new RegExp(`<(/?)${tagName}(\\s[^>]*?)?(/?)>`, "gi");
+  tagRe.lastIndex = contentStart;
+  let depth = 1;
+  let m;
+  while ((m = tagRe.exec(html)) !== null) {
+    const isClosing = m[1] === "/";
+    const isSelfClosing = m[3] === "/";
+    if (isClosing) {
+      depth -= 1;
+      if (depth === 0) return m.index;
+    } else if (!isSelfClosing) {
+      depth += 1;
+    }
+  }
+  return -1;
+}
 function extractEditableBlocks(html) {
   const blocks = [];
   const seen = /* @__PURE__ */ new Set();
+  const re = new RegExp(EDITABLE_OPEN_RE.source, EDITABLE_OPEN_RE.flags);
   let match;
-  const re = new RegExp(EDITABLE_BLOCK_RE.source, EDITABLE_BLOCK_RE.flags);
   while ((match = re.exec(html)) !== null) {
     const id = match[2];
     if (seen.has(id)) continue;
     seen.add(id);
-    blocks.push({ id, html: match[3].trim() });
+    const tagName = match[1];
+    const contentStart = match.index + match[0].length;
+    const closeStart = findMatchingCloseTagIndex(html, tagName, contentStart);
+    if (closeStart === -1) continue;
+    blocks.push({ id, html: html.slice(contentStart, closeStart).trim() });
   }
   return blocks;
-}
-function escapeRegex(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 function applyEditablePatches(html, patches) {
   let result = html;
@@ -1097,24 +1118,7 @@ function applyEditablePatches(html, patches) {
     if (!open) continue;
     const tagName = open[1];
     const contentStart = open.index + open[0].length;
-    const tagRe = new RegExp(`<(/?)${tagName}(\\s[^>]*?)?(/?)>`, "gi");
-    tagRe.lastIndex = contentStart;
-    let depth = 1;
-    let closeStart = -1;
-    let m;
-    while ((m = tagRe.exec(result)) !== null) {
-      const isClosing = m[1] === "/";
-      const isSelfClosing = m[3] === "/";
-      if (isClosing) {
-        depth -= 1;
-        if (depth === 0) {
-          closeStart = m.index;
-          break;
-        }
-      } else if (!isSelfClosing) {
-        depth += 1;
-      }
-    }
+    const closeStart = findMatchingCloseTagIndex(result, tagName, contentStart);
     if (closeStart === -1) continue;
     result = result.slice(0, contentStart) + newInner + result.slice(closeStart);
   }

@@ -4,26 +4,49 @@ export type DhlEditableBlock = {
   html: string;
 };
 
-const EDITABLE_BLOCK_RE =
-  /<([a-z][a-z0-9]*)[^>]*\sdata-dhl-editable="([^"]+)"[^>]*>([\s\S]*?)<\/\1>/gi;
+const EDITABLE_OPEN_RE =
+  /<([a-z][a-z0-9]*)[^>]*\sdata-dhl-editable="([^"]+)"[^>]*>/gi;
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Índice da tag de fechamento do elemento (depth 0), respeitando aninhamento do mesmo tagName. */
+function findMatchingCloseTagIndex(html: string, tagName: string, contentStart: number): number {
+  const tagRe = new RegExp(`<(/?)${tagName}(\\s[^>]*?)?(/?)>`, 'gi');
+  tagRe.lastIndex = contentStart;
+  let depth = 1;
+  let m: RegExpExecArray | null;
+  while ((m = tagRe.exec(html)) !== null) {
+    const isClosing = m[1] === '/';
+    const isSelfClosing = m[3] === '/';
+    if (isClosing) {
+      depth -= 1;
+      if (depth === 0) return m.index;
+    } else if (!isSelfClosing) {
+      depth += 1;
+    }
+  }
+  return -1;
+}
 
 /** Extrai trechos marcados com data-dhl-editable no HTML do relatório. */
 export function extractEditableBlocks(html: string): DhlEditableBlock[] {
   const blocks: DhlEditableBlock[] = [];
   const seen = new Set<string>();
+  const re = new RegExp(EDITABLE_OPEN_RE.source, EDITABLE_OPEN_RE.flags);
   let match: RegExpExecArray | null;
-  const re = new RegExp(EDITABLE_BLOCK_RE.source, EDITABLE_BLOCK_RE.flags);
   while ((match = re.exec(html)) !== null) {
     const id = match[2];
     if (seen.has(id)) continue;
     seen.add(id);
-    blocks.push({ id, html: match[3].trim() });
+    const tagName = match[1];
+    const contentStart = match.index + match[0].length;
+    const closeStart = findMatchingCloseTagIndex(html, tagName, contentStart);
+    if (closeStart === -1) continue;
+    blocks.push({ id, html: html.slice(contentStart, closeStart).trim() });
   }
   return blocks;
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
@@ -50,27 +73,7 @@ export function applyEditablePatches(html: string, patches: Record<string, strin
 
     const tagName = open[1];
     const contentStart = open.index + open[0].length;
-
-    // Varre a partir do fim da tag de abertura contando aberturas/fechamentos
-    // do MESMO tagName até zerar a profundidade (fechamento do bloco).
-    const tagRe = new RegExp(`<(/?)${tagName}(\\s[^>]*?)?(/?)>`, 'gi');
-    tagRe.lastIndex = contentStart;
-    let depth = 1;
-    let closeStart = -1;
-    let m: RegExpExecArray | null;
-    while ((m = tagRe.exec(result)) !== null) {
-      const isClosing = m[1] === '/';
-      const isSelfClosing = m[3] === '/';
-      if (isClosing) {
-        depth -= 1;
-        if (depth === 0) {
-          closeStart = m.index;
-          break;
-        }
-      } else if (!isSelfClosing) {
-        depth += 1;
-      }
-    }
+    const closeStart = findMatchingCloseTagIndex(result, tagName, contentStart);
     if (closeStart === -1) continue;
 
     result = result.slice(0, contentStart) + newInner + result.slice(closeStart);
@@ -96,13 +99,14 @@ ${adjustmentNotes.trim()}
 
 REGRAS OBRIGATÓRIAS:
 1. Responda APENAS com JSON válido, sem markdown: {"patches":[{"id":"...","html":"..."}]}
-2. Inclua somente blocos que precisam mudar; omita blocos iguais ao original.
+2. Inclua todos os blocos que as instruções do diretor exigem alterar. Se pedir menos repetição, tom mais profissional ou texto mais curto, REESCREVA por completo os blocos afetados (em especial sec-4-1-sintese) — nunca devolva o mesmo texto ou uma cópia quase idêntica.
 3. Preserve números de S.E., OS, datas, horários, placas e nomes de clientes (DHL, Foxconn, Apple) exatamente como estão.
 4. Em textos narrativos gerais, prefira "parceiro" ou "fornecedor" em vez de citar repetidamente o nome comercial do parceiro — salvo na tabela de identificação (bloco fornecedor-identificacao) onde o nome completo pode permanecer.
 5. Tom construtivo e profissional para apresentação ao cliente; evite linguagem punitiva, acusatória ou que manche a imagem do parceiro.
 6. Mantenha HTML simples no campo html: <strong>, <em>, <br/> quando necessário.
 7. Não invente fatos novos; reescreva com base no conteúdo existente e nas instruções.
 8. Não altere blocos de e-mails (ids que começam com email-).
+9. Elimine repetições e trechos duplicados dentro de cada bloco; um único parágrafo coeso por bloco narrativo.
 
 BLOCOS ATUAIS (JSON):
 ${JSON.stringify(payload, null, 2)}`;
