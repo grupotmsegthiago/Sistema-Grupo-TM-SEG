@@ -239,7 +239,7 @@ test('decodeQuotedPrintable decodifica acentos', () => {
   assert.match(decodeMimeWords('=?utf-8?Q?Notifica=C3=A7=C3=A3o?='), /Notificação/);
 });
 
-test('HTML completo formata histórico de e-mails na seção 2.1', () => {
+test('HTML template NÃO copia/cola o e-mail (sem seção 2.1)', () => {
   const html = buildOccurrenceReportHtml(
     {
       ...baseData,
@@ -254,9 +254,46 @@ Boa tarde! Precisamos do plano de ação.`,
     },
     { logoDataUri: 'data:image/png;base64,AAAA' },
   );
-  assert.match(html, /2\.1 Referência \/ histórico de e-mails/i);
-  assert.match(html, /email-card/i);
-  assert.match(html, /plano de ação/i);
+  assert.doesNotMatch(html, /2\.1 Referência \/ histórico de e-mails/i);
+  assert.doesNotMatch(html, /email-card/i);
+  assert.doesNotMatch(html, /patrick@dhl\.com/i);
+  assert.doesNotMatch(html, /Histórico de e-mails com DHL/i);
+});
+
+test('geração via IA preenche blocos com base no contexto e NÃO copia o e-mail', async () => {
+  const { generateDhlReportHtmlWithAi } = await import(
+    '../lib/dhlOccurrenceReport/adjustReportHtml'
+  );
+  const html =
+    '<div class="summary" data-dhl-editable="facts-summary">TEXTO PADRÃO DO TEMPLATE</div>' +
+    '<p data-dhl-editable="sec-4-1-sintese">SÍNTESE PADRÃO</p>';
+  const context = {
+    factsBlock: 'Nº S.E.: 183013\nAtraso registrado na origem (minutos): 86',
+    emailText: 'De: Antonia (DHL)\nBoa tarde, a escolta atrasou e precisamos de posicionamento.',
+    emailLink: 'https://mail.example.com/thread/1',
+    userSummary: 'Houve remanejamento de viatura.',
+  };
+
+  let capturedPrompt = '';
+  const generateText = async (prompt: string): Promise<string> => {
+    capturedPrompt = prompt;
+    return JSON.stringify({
+      patches: [
+        { id: 'facts-summary', html: 'Síntese redigida pela IA a partir do contexto da operação.' },
+        { id: 'sec-4-1-sintese', html: 'Análise executiva gerada pela IA.' },
+      ],
+    });
+  };
+
+  const out = await generateDhlReportHtmlWithAi(html, context, generateText);
+  assert.match(out, /Síntese redigida pela IA/);
+  assert.match(out, /Análise executiva gerada pela IA/);
+  assert.doesNotMatch(out, /TEXTO PADRÃO DO TEMPLATE/);
+  assert.doesNotMatch(out, /SÍNTESE PADRÃO/);
+  // o prompt deve levar o contexto do e-mail e proibir a cópia literal
+  assert.match(capturedPrompt, /a escolta atrasou/);
+  assert.match(capturedPrompt, /N[ÃA]O copie e cole o e-mail/i);
+  assert.match(capturedPrompt, /Nº S\.E\.: 183013/);
 });
 
 test('HTML marca trechos editáveis para ajuste com IA', () => {

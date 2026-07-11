@@ -1,7 +1,5 @@
 import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../dateUtils.js';
-import { formatEmailThreadHtml } from './formatEmailThreadHtml.js';
 import { isImageEvidenceUrl } from './photoUtils.js';
-import { parseEmailThreadInput } from './parseEmailThread.js';
 import type { DhlOccurrenceReportData } from './types.js';
 
 const BRAND = {
@@ -112,23 +110,6 @@ function buildRootCauseBlock(data: DhlOccurrenceReportData, provider: string): s
   return `<div class="quote" ${editable('sec-4-3-causa-raiz')}><strong>Identificamos um descompasso no planejamento e na gestão de capacidade logística do parceiro ${esc(provider)}</strong>, com alocação de viatura ainda vinculada a operação anterior sem margem de segurança temporal, o que exigiu remanejamento e troca de VTR em campo. A TM SEG reforça junto ao parceiro o compromisso com a melhoria dos processos para que situações semelhantes não se repitam, preservando o padrão de qualidade exigido pela operação DHL.</div>`;
 }
 
-function buildEmailSection(data: DhlOccurrenceReportData): string {
-  const parts: string[] = [];
-  if (data.emailLink?.trim()) {
-    parts.push(`<p><strong>Referência de e-mail:</strong> ${esc(data.emailLink.trim())}</p>`);
-  }
-  if (data.emailAttachmentText?.trim()) {
-    const messages = parseEmailThreadInput(data.emailAttachmentText);
-    if (messages.length > 0) {
-      parts.push(formatEmailThreadHtml(messages));
-    } else {
-      parts.push(`<div class="summary">${esc(data.emailAttachmentText).replace(/\n/g, '<br/>')}</div>`);
-    }
-  }
-  if (!parts.length) return '';
-  return `<h2>2.1 Referência / histórico de e-mails (DHL)</h2>${parts.join('')}`;
-}
-
 export function buildFullOccurrenceReportHtml(
   data: DhlOccurrenceReportData,
   options?: { publicBaseUrl?: string; logoDataUri?: string },
@@ -193,8 +174,6 @@ export function buildFullOccurrenceReportHtml(
     data.factsSummary?.trim()
     || `Na operação do dia ${formatDateBR(scheduledOrigin || missionCreated)}, a S.E. ${data.seNumber} estava programada para atendimento na origem às ${formatTimeBR(scheduledOrigin)}. Houve atraso na chegada à origem (${delayHuman}), com necessidade de remanejamento de viatura. A TM SEG manteve comunicação com a DHL e acompanhou a operação até a conclusão.`;
 
-  const emailSection = buildEmailSection(data);
-
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -247,7 +226,6 @@ export function buildFullOccurrenceReportHtml(
 
   <h2>3. Descrição dos fatos (5W2H)</h2>
   <div class="summary" ${editable('facts-summary')}>${esc(factsSummary).replace(/\n/g, '<br/>')}</div>
-  ${emailSection}
 
   <table>
     <thead><tr><th>Pergunta</th><th>Resposta</th></tr></thead>
@@ -390,8 +368,7 @@ export function buildFullOccurrenceReportHtml(
       <tr><td>B</td><td>Marcos operacionais com horários (Seção 3.2)</td></tr>
       <tr><td>C</td><td>Evidências fotográficas por etapa (Seção 3.3)</td></tr>
       <tr><td>D</td><td>Todas as evidências do sistema — Atualizar OS e anexos (Seção 3.4)</td></tr>
-      <tr><td>E</td><td>Histórico de e-mails com DHL (Seção 2.1)</td></tr>
-      <tr><td>F</td><td>Registro de contato e apuração com ${esc(provider)}</td></tr>
+      <tr><td>E</td><td>Registro de contato e apuração com ${esc(provider)}</td></tr>
     </tbody>
   </table>
 

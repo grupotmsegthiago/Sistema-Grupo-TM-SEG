@@ -98,6 +98,68 @@ export function parseGeminiAdjustmentJson(raw: string): Record<string, string> {
   return out;
 }
 
+/** Contexto factual + e-mail do cliente usado pela IA para gerar o relatório. */
+export type DhlReportAiContext = {
+  /** Bloco de texto com os dados reais/imutáveis da missão (do sistema). */
+  factsBlock: string;
+  /** Texto extraído do anexo de e-mail do cliente (contexto do problema). */
+  emailText: string;
+  /** Link de referência do e-mail, se houver. */
+  emailLink: string;
+  /** Observações adicionais digitadas pela diretoria, se houver. */
+  userSummary: string;
+};
+
+export function buildDhlReportGenerationPrompt(
+  blocks: DhlEditableBlock[],
+  context: DhlReportAiContext,
+): string {
+  return `Você é analista sênior de operações e gerenciamento de risco da TM SEG e vai redigir o conteúdo de um Plano de Ação e Justificativa de Ocorrência para a DHL Supply Chain (operação Foxconn/Apple).
+
+Sua tarefa: com base em (1) DADOS DO SISTEMA (fatos reais e imutáveis da missão), (2) CONTEXTO DO E-MAIL do cliente (o problema apontado) e (3) OBSERVAÇÕES DA DIRETORIA, escrever o conteúdo de cada bloco editável do relatório — explicando o que aconteceu, a causa e o plano de ação — de forma completa, coesa e profissional.
+
+REGRAS OBRIGATÓRIAS:
+1. Responda APENAS com JSON válido, sem markdown: {"patches":[{"id":"...","html":"..."}]}
+2. Retorne um patch para CADA bloco fornecido (todos os ids recebidos), com o texto final adequado ao papel do bloco.
+3. NÃO copie e cole o e-mail. Use-o apenas como fonte para entender o ocorrido e sintetizar. NÃO inclua cabeçalhos de e-mail (De/Para/Cc/Data), assinaturas nem trechos literais.
+4. NÃO invente fatos: use somente o que está nos DADOS DO SISTEMA e no CONTEXTO DO E-MAIL. Preserve exatamente números de S.E., OS, datas, horários, placas e nomes de clientes (DHL, Foxconn, Apple).
+5. Em textos narrativos, prefira "parceiro" ou "fornecedor" em vez de citar o nome comercial do parceiro. Tom construtivo e profissional, sem linguagem punitiva ou acusatória que manche a imagem do parceiro.
+6. Mantenha HTML simples no campo html: <strong>, <em>, <br/> quando necessário. Respeite o formato de cada bloco: respostas de célula de tabela devem ser curtas e diretas; blocos de síntese/causa podem ser um parágrafo.
+7. Escreva em português do Brasil. Se faltar informação para algum bloco, produza um texto coerente e neutro com base no que existe, sem inventar dados factuais.
+
+DADOS DO SISTEMA (fatos reais):
+${context.factsBlock}
+
+CONTEXTO DO E-MAIL DO CLIENTE (não copiar; apenas sintetizar):
+${context.emailText.trim() || '(sem anexo de e-mail)'}
+${context.emailLink.trim() ? `Referência de e-mail: ${context.emailLink.trim()}` : ''}
+
+OBSERVAÇÕES DA DIRETORIA:
+${context.userSummary.trim() || '(sem observações adicionais)'}
+
+BLOCOS A PREENCHER (JSON com id e conteúdo atual como referência de formato):
+${JSON.stringify(blocks.map((b) => ({ id: b.id, html_atual: b.html })), null, 2)}`;
+}
+
+/**
+ * Gera o conteúdo narrativo do relatório via IA a partir do contexto (dados do
+ * sistema + e-mail do cliente) e aplica nos blocos data-dhl-editable, mantendo
+ * o layout/estrutura do template. Os dados factuais duros (tabelas, fotos,
+ * marcos) não são tocados — só os blocos editáveis.
+ */
+export async function generateDhlReportHtmlWithAi(
+  html: string,
+  context: DhlReportAiContext,
+  generateText: (prompt: string) => Promise<string>,
+): Promise<string> {
+  const blocks = extractEditableBlocks(html);
+  if (!blocks.length) return html;
+  const prompt = buildDhlReportGenerationPrompt(blocks, context);
+  const response = await generateText(prompt);
+  const patches = parseGeminiAdjustmentJson(response);
+  return applyEditablePatches(html, patches);
+}
+
 export async function adjustDhlReportHtmlWithAi(
   html: string,
   adjustmentNotes: string,
