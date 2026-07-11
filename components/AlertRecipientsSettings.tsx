@@ -1,3 +1,4 @@
+import React, { useEffect, useState } from 'react';
 import { formatDateTimeBR } from '../lib/dateUtils';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { AlertTriangle, Save, Loader2, RefreshCw, History, Mail } from 'lucide-react';
