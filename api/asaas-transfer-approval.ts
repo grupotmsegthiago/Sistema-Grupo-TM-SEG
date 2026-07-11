@@ -1,6 +1,11 @@
+import { ASAAS_PIX_FINANCEIRO_EMAIL } from '../lib/asaasPixTransfer.js';
 import {
+  buildAsaasTransferWebhookPublicUrl,
+  extractAsaasTransferWebhookPayload,
   financeiroWalletIdFromEnv,
+  normalizeAsaasWebhookToken,
   parseAsaasWebhookBody,
+  readAsaasWebhookAccessToken,
   shouldApproveAsaasTransferWebhook,
 } from '../lib/asaasTransferApproval.js';
 import { isPendingTransferInMemory } from '../lib/asaasPendingTransferMemory.js';
@@ -10,19 +15,77 @@ function respond(res: any, body: Record<string, unknown>) {
   res.status(200).json(body);
 }
 
-function readWebhookToken(req: { headers?: Record<string, string | string[] | undefined> }): string {
-  const raw = req.headers?.['asaas-access-token'] ?? req.headers?.['Asaas-Access-Token'];
-  if (Array.isArray(raw)) return String(raw[0] || '').trim();
-  return String(raw || '').trim();
+function webhookTokenDiagnostics(req: { headers?: Record<string, string | string[] | undefined> }) {
+  const expectedToken = normalizeAsaasWebhookToken(process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN || '');
+  const receivedToken = readAsaasWebhookAccessToken(req);
+  const tokenOk = !expectedToken || receivedToken === expectedToken;
+  return { expectedToken, receivedToken, tokenOk };
+}
+
+function logWebhookPost(
+  req: { headers?: Record<string, string | string[] | undefined> },
+  body: Record<string, any>,
+  payload: ReturnType<typeof extractAsaasTransferWebhookPayload>,
+) {
+  const { expectedToken, receivedToken } = webhookTokenDiagnostics(req);
+  console.log('[asaas-transfer-approval] POST', {
+    event: payload.event,
+    type: payload.type,
+    id: payload.transfer.id,
+    operationType: payload.transfer.operationType,
+    value: payload.transfer.value,
+    externalReference: payload.transfer.externalReference,
+    bodyKeys: Object.keys(body).slice(0, 25),
+    tokenHeaders: {
+      'asaas-access-token': Boolean(req.headers?.['asaas-access-token']),
+      'Asaas-Access-Token': Boolean(req.headers?.['Asaas-Access-Token']),
+    },
+    receivedTokenLen: receivedToken.length,
+    expectedTokenLen: expectedToken.length,
+    isNotificationOnly: payload.isNotificationOnly,
+    isAuthorizationRequest: payload.isAuthorizationRequest,
+  });
+}
+
+async function handleAdminDiagnosticGet(req: any, res: any): Promise<boolean> {
+  const hasAuth =
+    Boolean(req.headers?.authorization || req.headers?.Authorization) ||
+    Boolean(req.headers?.['x-auth-token']);
+
+  if (!hasAuth) return false;
+
+  const { extractAuthToken, assertAsaasApiAccess } = await import('../lib/asaasApiAuth.js');
+  const token = extractAuthToken(req);
+  const denied = await assertAsaasApiAccess(token, req);
+  if (denied) {
+    res.status(denied === 'Não autorizado' ? 401 : 403).json({ ok: false, error: denied });
+    return true;
+  }
+
+  const { expectedToken } = webhookTokenDiagnostics(req);
+  res.status(200).json({
+    ok: true,
+    endpoint: 'asaas-transfer-approval',
+    mode: 'admin-diagnostic',
+    webhookUrl: buildAsaasTransferWebhookPublicUrl(req),
+    tokenConfigured: Boolean(expectedToken),
+    authorizedPixKey: ASAAS_PIX_FINANCEIRO_EMAIL,
+    financeiroWalletId: financeiroWalletIdFromEnv(),
+    externalReferencePrefix: 'tmseg-repasse-',
+  });
+  return true;
 }
 
 /**
  * Webhook de aprovação de saques/transferências Asaas.
- * Módulo leve — sem Supabase (evita FUNCTION_INVOCATION_FAILED na Vercel).
+ * Rota pública — sem auth de sessão/JWT no POST. Módulo leve, sem Supabase no POST.
  */
 export default async function handler(req: any, res: any) {
   try {
     if (req.method === 'GET' || req.method === 'HEAD') {
+      if (req.method === 'GET' && (await handleAdminDiagnosticGet(req, res))) {
+        return;
+      }
       respond(res, {
         ok: true,
         endpoint: 'asaas-transfer-approval',
@@ -43,26 +106,20 @@ export default async function handler(req: any, res: any) {
     }
 
     const body = parseAsaasWebhookBody(req.body);
-    const type = String(body.type || '').toUpperCase();
+    const payload = extractAsaasTransferWebhookPayload(body);
+    logWebhookPost(req, body, payload);
 
-    if (type !== 'TRANSFER') {
-      respond(res, {
-        status: 'REFUSED',
-        refuseReason: `Tipo ${type || 'desconhecido'} não autorizado automaticamente`,
-      });
+    if (payload.isNotificationOnly || !payload.isAuthorizationRequest) {
+      console.log('[asaas-transfer-approval] APPROVED ignorado (notificação)', payload.event || payload.type);
+      respond(res, { status: 'APPROVED' });
       return;
     }
 
-    const transfer = (body.transfer || {}) as Record<string, any>;
+    const transfer = payload.transfer;
     const financeiroWallet = financeiroWalletIdFromEnv();
     const transferId = String(transfer.id || '').trim();
     const value = Number(transfer.value || 0);
 
-    /**
-     * Repasses originados pelo sistema (externalReference tmseg-repasse-* ou destino
-     * financeiro) são avaliados antes do token: o painel Asaas frequentemente não
-     * envia o header asaas-access-token no webhook de aprovação.
-     */
     if (transferId && isPendingTransferInMemory(transferId)) {
       console.log('[asaas-transfer-approval] APPROVED memória', transferId, value);
       respond(res, { status: 'APPROVED' });
@@ -75,21 +132,19 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const expectedToken = String(process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN || '').trim();
-    const receivedToken = readWebhookToken(req);
-    const tokenOk = !expectedToken || receivedToken === expectedToken;
+    const { tokenOk } = webhookTokenDiagnostics(req);
 
-    if (expectedToken && !tokenOk) {
-      console.warn('[asaas-transfer-approval] token inválido ou ausente');
+    if (!tokenOk) {
+      const { expectedToken, receivedToken } = webhookTokenDiagnostics(req);
+      console.warn('[asaas-transfer-approval] token inválido ou ausente', {
+        receivedTokenLen: receivedToken.length,
+        expectedTokenLen: expectedToken.length,
+      });
       respond(res, { status: 'REFUSED', refuseReason: 'token_invalido' });
       return;
     }
 
-    /**
-     * Payload oficial Asaas (BANK_ACCOUNT + PIX) vem sem chave Pix, descrição
-     * nem externalReference. Com token válido, aprovar transferências da conta.
-     */
-    if (tokenOk && value > 0) {
+    if (value > 0) {
       console.log('[asaas-transfer-approval] APPROVED token válido (payload mínimo)', transferId, value);
       respond(res, { status: 'APPROVED' });
       return;

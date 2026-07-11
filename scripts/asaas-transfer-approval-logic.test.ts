@@ -2,11 +2,42 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildAsaasTransferExternalReference,
+  extractAsaasTransferWebhookPayload,
   isTmSegRepasseExternalReference,
+  normalizeAsaasWebhookToken,
   shouldApproveAsaasTransferWebhook,
 } from '../lib/asaasTransferApproval.ts';
 
 const FINANCEIRO_WALLET = '6641fec4-8476-48e3-90a8-3db6b14f538c';
+
+test('normalizeAsaasWebhookToken remove Bearer', () => {
+  assert.equal(normalizeAsaasWebhookToken('Bearer abc'), 'abc');
+  assert.equal(normalizeAsaasWebhookToken('  token  '), 'token');
+});
+
+test('extractAsaasTransferWebhookPayload lê formato event+data', () => {
+  const parsed = extractAsaasTransferWebhookPayload({
+    event: 'TRANSFER',
+    data: {
+      id: 'x1',
+      value: 10,
+      operationType: 'PIX',
+      pixAddressKey: 'Financeiro@GrupoTMSEG.com.br',
+    },
+  });
+  assert.equal(parsed.isAuthorizationRequest, true);
+  assert.equal(parsed.transfer.id, 'x1');
+  assert.equal(parsed.transfer.pixAddressKey, 'Financeiro@GrupoTMSEG.com.br');
+});
+
+test('extractAsaasTransferWebhookPayload marca TRANSFER_DONE como notificação', () => {
+  const parsed = extractAsaasTransferWebhookPayload({
+    event: 'TRANSFER_DONE',
+    transfer: { id: 'done', value: 100 },
+  });
+  assert.equal(parsed.isNotificationOnly, true);
+  assert.equal(parsed.isAuthorizationRequest, false);
+});
 
 test('buildAsaasTransferExternalReference gera prefixo tmseg-repasse', () => {
   const ref = buildAsaasTransferExternalReference('TM SEGURANCA');

@@ -3,6 +3,21 @@ import { ASAAS_PIX_FINANCEIRO_EMAIL } from './asaasPixTransfer.js';
 /** Prefixo em externalReference para identificar repasses originados pelo sistema. */
 export const ASAAS_TRANSFER_EXTERNAL_REF_PREFIX = 'tmseg-repasse-';
 
+/**
+ * Eventos de notificação Asaas — não exigem APPROVED/REFUSED de autorização.
+ * Responder APPROVED evita pausa da fila de webhooks no painel.
+ */
+export const ASAAS_TRANSFER_NOTIFICATION_EVENTS = new Set([
+  'TRANSFER_DONE',
+  'TRANSFER_FAILED',
+  'TRANSFER_CREATED',
+  'TRANSFER_PENDING',
+  'TRANSFER_IN_BANK_PROCESSING',
+  'TRANSFER_BANK_PROCESSING',
+  'TRANSFER_CANCELLED',
+  'TRANSFER_CANCELED',
+]);
+
 const DEFAULT_FINANCEIRO_WALLET_ID = '6641fec4-8476-48e3-90a8-3db6b14f538c';
 
 export function financeiroWalletIdFromEnv(): string {
@@ -34,6 +49,95 @@ export function parseAsaasWebhookBody(body: unknown): Record<string, any> {
     }
   }
   return (body as Record<string, any>) || {};
+}
+
+/** Remove prefixo Bearer e espaços do token do webhook Asaas. */
+export function normalizeAsaasWebhookToken(raw: unknown): string {
+  return String(raw || '')
+    .replace(/^Bearer\s+/i, '')
+    .trim();
+}
+
+export function readAsaasWebhookAccessToken(req: {
+  headers?: Record<string, string | string[] | undefined>;
+}): string {
+  const raw = req.headers?.['asaas-access-token'] ?? req.headers?.['Asaas-Access-Token'];
+  if (Array.isArray(raw)) return normalizeAsaasWebhookToken(raw[0]);
+  return normalizeAsaasWebhookToken(raw);
+}
+
+export type AsaasTransferWebhookPayload = {
+  event: string;
+  type: string;
+  transfer: Record<string, any>;
+  isNotificationOnly: boolean;
+  isAuthorizationRequest: boolean;
+};
+
+/**
+ * Extrai transferência do payload Asaas em múltiplos formatos:
+ * { type, transfer }, { event, transfer }, { event, data }, ou campos na raiz.
+ */
+export function extractAsaasTransferWebhookPayload(
+  root: Record<string, any>,
+): AsaasTransferWebhookPayload {
+  const event = String(root.event || '').trim();
+  const type = String(root.type || '').trim();
+  const label = (event || type).toUpperCase();
+
+  let transfer: Record<string, any> = {};
+
+  if (root.transfer && typeof root.transfer === 'object' && !Array.isArray(root.transfer)) {
+    transfer = { ...root.transfer };
+  } else if (root.data && typeof root.data === 'object' && !Array.isArray(root.data)) {
+    const data = root.data as Record<string, any>;
+    if (data.transfer && typeof data.transfer === 'object' && !Array.isArray(data.transfer)) {
+      transfer = { ...data.transfer };
+    } else {
+      transfer = { ...data };
+    }
+  } else if (
+    root.id ||
+    root.value != null ||
+    root.pixAddressKey ||
+    root.operationType ||
+    root.externalReference
+  ) {
+    transfer = { ...root };
+  }
+
+  if (!transfer.id && root.id) transfer.id = root.id;
+  if (transfer.value == null && root.value != null) transfer.value = root.value;
+  if (!transfer.operationType && root.operationType) transfer.operationType = root.operationType;
+  if (!transfer.externalReference && root.externalReference) {
+    transfer.externalReference = root.externalReference;
+  }
+
+  const isNotificationOnly = ASAAS_TRANSFER_NOTIFICATION_EVENTS.has(label);
+  const isAuthorizationRequest =
+    !isNotificationOnly &&
+    (label === 'TRANSFER' ||
+      Boolean(
+        transfer.id ||
+          transfer.value != null ||
+          transfer.pixAddressKey ||
+          transfer.operationType ||
+          transfer.externalReference,
+      ));
+
+  return { event, type, transfer, isNotificationOnly, isAuthorizationRequest };
+}
+
+export function buildAsaasTransferWebhookPublicUrl(req: {
+  headers?: Record<string, string | string[] | undefined>;
+}): string {
+  const proto = String(req.headers?.['x-forwarded-proto'] || 'https').split(',')[0].trim();
+  const host = String(
+    req.headers?.['x-forwarded-host'] || req.headers?.host || 'sistema.grupotmseg.com.br',
+  )
+    .split(',')[0]
+    .trim();
+  return `${proto}://${host}/api/asaas/transfer-approval`;
 }
 
 function normalizePixKey(transfer: Record<string, any>): string {
