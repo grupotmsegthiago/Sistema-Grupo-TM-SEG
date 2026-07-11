@@ -96,7 +96,12 @@ function reportStyles(): string {
     .visto { font-size: 13pt; font-weight: 700; color: var(--brand-red-dark); letter-spacing: 0.08em; }
     .footer { margin-top: 16px; font-size: 8.5pt; color: ${BRAND.muted}; text-align: center; }
     .no-print { margin-top: 10px; padding: 8px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; font-size: 8.5pt; }
-    @media print { .no-print { display: none !important; } .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; } th { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+    @media print {
+      .no-print { display: none !important; }
+      .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .photo-card img { max-height: 220px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
     ul.compact { margin: 6px 0 6px 18px; padding: 0; }
     ul.compact li { margin-bottom: 4px; }
   `;
@@ -133,7 +138,7 @@ export function buildFullOccurrenceReportHtml(
     .map((p) => {
       const when = p.at ? formatTimeBR(p.at) : '—';
       const img = p.url && isImageEvidenceUrl(p.url)
-        ? `<img src="${p.url}" alt="${esc(p.label)}" crossorigin="anonymous" />`
+        ? `<img src="${p.url}" alt="${esc(p.label)}" />`
         : `<div class="photo-missing">Evidência não registrada no sistema para esta etapa.</div>`;
       return `<div class="photo-card"><h4 style="margin:0 0 6px;font-size:9pt">${esc(p.label)} — ${when}</h4>${img}</div>`;
     })
@@ -145,7 +150,7 @@ export function buildFullOccurrenceReportHtml(
       const when = e.at ? `${formatDateBR(e.at)} ${formatTimeBR(e.at)}` : '—';
       return `<div class="photo-card">
         <h4 style="margin:0 0 6px;font-size:9pt">${esc(e.label)}</h4>
-        <img src="${e.url}" alt="${esc(e.label)}" crossorigin="anonymous" />
+        <img src="${e.url}" alt="${esc(e.label)}" />
         <div class="photo-meta">${esc(when)} · ${esc(e.source)}</div>
       </div>`;
     })

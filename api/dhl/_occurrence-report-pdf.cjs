@@ -167,7 +167,12 @@ function reportStyles() {
     .visto { font-size: 13pt; font-weight: 700; color: var(--brand-red-dark); letter-spacing: 0.08em; }
     .footer { margin-top: 16px; font-size: 8.5pt; color: ${BRAND.muted}; text-align: center; }
     .no-print { margin-top: 10px; padding: 8px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; font-size: 8.5pt; }
-    @media print { .no-print { display: none !important; } .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; } th { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+    @media print {
+      .no-print { display: none !important; }
+      .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .photo-card img { max-height: 220px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
     ul.compact { margin: 6px 0 6px 18px; padding: 0; }
     ul.compact li { margin-bottom: 4px; }
   `;
@@ -194,14 +199,14 @@ function buildFullOccurrenceReportHtml(data, options) {
   const rootCauseBlock = buildRootCauseBlock(data, provider);
   const photoBlocks = data.phasePhotos.map((p) => {
     const when = p.at ? formatTimeBR(p.at) : "\u2014";
-    const img = p.url && isImageEvidenceUrl(p.url) ? `<img src="${p.url}" alt="${esc(p.label)}" crossorigin="anonymous" />` : `<div class="photo-missing">Evid\xEAncia n\xE3o registrada no sistema para esta etapa.</div>`;
+    const img = p.url && isImageEvidenceUrl(p.url) ? `<img src="${p.url}" alt="${esc(p.label)}" />` : `<div class="photo-missing">Evid\xEAncia n\xE3o registrada no sistema para esta etapa.</div>`;
     return `<div class="photo-card"><h4 style="margin:0 0 6px;font-size:9pt">${esc(p.label)} \u2014 ${when}</h4>${img}</div>`;
   }).join("");
   const allEvidenceBlocks = (data.allEvidencePhotos || []).filter((e) => e.url && isImageEvidenceUrl(e.url)).map((e) => {
     const when = e.at ? `${formatDateBR(e.at)} ${formatTimeBR(e.at)}` : "\u2014";
     return `<div class="photo-card">
         <h4 style="margin:0 0 6px;font-size:9pt">${esc(e.label)}</h4>
-        <img src="${e.url}" alt="${esc(e.label)}" crossorigin="anonymous" />
+        <img src="${e.url}" alt="${esc(e.label)}" />
         <div class="photo-meta">${esc(when)} \xB7 ${esc(e.source)}</div>
       </div>`;
   }).join("");
@@ -1064,6 +1069,44 @@ async function collectDhlOccurrenceReportData(sb, input) {
   }
 }
 
+// lib/dhlOccurrenceReport/fetchImageDataUri.ts
+var IMAGE_FETCH_TIMEOUT_MS = 12e3;
+function getPublicBaseUrl() {
+  return (process.env.APP_PUBLIC_URL || process.env.SYSTEM_URL || "https://sistema.grupotmseg.com.br").replace(/\/$/, "");
+}
+async function fetchWithTimeout(url, timeoutMs = IMAGE_FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function fetchImageDataUri(url) {
+  try {
+    const raw = String(url || "").trim();
+    if (!raw) return null;
+    if (raw.startsWith("data:image/")) return raw;
+    const fetchUrl = raw.startsWith("/") ? `${getPublicBaseUrl()}${raw}` : raw;
+    const res = await fetchWithTimeout(fetchUrl);
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length < 20) return null;
+    const ctype = String(res.headers.get("content-type") || "").toLowerCase();
+    if (ctype.includes("svg")) return null;
+    let mime = "image/jpeg";
+    if (ctype.includes("png")) mime = "image/png";
+    else if (ctype.includes("webp")) mime = "image/webp";
+    else if (ctype.includes("gif")) mime = "image/gif";
+    else if (/\.png(\?|$)/i.test(fetchUrl)) mime = "image/png";
+    else if (/\.webp(\?|$)/i.test(fetchUrl)) mime = "image/webp";
+    return `data:${mime};base64,${buf.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
 // lib/dhlOccurrenceReport/generateReportHtml.ts
 var import_supabase_js2 = require("@supabase/supabase-js");
 
@@ -1183,17 +1226,48 @@ async function generateDhlReportHtmlWithAi(html, context, generateText) {
   return applyEditablePatches(html, patches);
 }
 
+// lib/dhlOccurrenceReport/embedReportImages.ts
+function collectReportImageUrls(input) {
+  const urls = /* @__PURE__ */ new Set();
+  for (const photo of input.phasePhotos) {
+    const url = String(photo.url || "").trim();
+    if (url && isImageEvidenceUrl(url)) urls.add(url);
+  }
+  for (const photo of input.allEvidencePhotos || []) {
+    const url = String(photo.url || "").trim();
+    if (url && isImageEvidenceUrl(url)) urls.add(url);
+  }
+  return [...urls];
+}
+async function embedRemoteImagesInHtml(html, urls) {
+  const unique = [...new Set(urls.filter(Boolean))];
+  if (!unique.length) return html;
+  const replacements = /* @__PURE__ */ new Map();
+  await Promise.all(
+    unique.map(async (url) => {
+      const dataUri = await fetchImageDataUri(url);
+      if (dataUri) replacements.set(url, dataUri);
+    })
+  );
+  if (!replacements.size) return html;
+  let result = html;
+  for (const [url, dataUri] of replacements) {
+    result = result.split(url).join(dataUri);
+  }
+  return result;
+}
+
 // lib/dhlOccurrenceReport/generateReportHtml.ts
 var TMSEG_LOGO_SVG_DATA_URI = "data:image/svg+xml;base64," + Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="220" height="52" viewBox="0 0 220 52"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#111827"/><stop offset="55%" stop-color="#991b1b"/><stop offset="100%" stop-color="#dc2626"/></linearGradient></defs><rect width="220" height="52" rx="6" fill="url(#g)"/><text x="110" y="33" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="18" font-weight="700">GRUPO TM SEG</text></svg>`).toString("base64");
 function getSupabase() {
   return createSupabaseAdminClient() ?? (0, import_supabase_js2.createClient)(getSupabaseUrl(), getSupabaseAnonKey());
 }
-function getPublicBaseUrl() {
+function getPublicBaseUrl2() {
   return (process.env.APP_PUBLIC_URL || process.env.SYSTEM_URL || "https://sistema.grupotmseg.com.br").replace(/\/$/, "");
 }
 async function resolveTmSegLogoDataUri() {
   const fetchCandidates = [
-    getPublicBaseUrl(),
+    getPublicBaseUrl2(),
     "https://sistema.grupotmseg.com.br"
   ].map((base) => `${base.replace(/\/$/, "")}/logo.png`);
   for (const logoUrl of fetchCandidates) {
@@ -1257,7 +1331,7 @@ async function generateDhlOccurrenceReportHtml(input, options) {
     if (!data) return null;
     const logoDataUri = await resolveTmSegLogoDataUri();
     let html = buildOccurrenceReportHtml(data, {
-      publicBaseUrl: getPublicBaseUrl(),
+      publicBaseUrl: getPublicBaseUrl2(),
       logoDataUri
     });
     let aiGenerated = false;
@@ -1269,6 +1343,12 @@ async function generateDhlOccurrenceReportHtml(input, options) {
       } catch (err) {
         console.error("[dhlOccurrenceReportHtml] IA de gera\xE7\xE3o falhou, usando template:", err);
       }
+    }
+    try {
+      const imageUrls = collectReportImageUrls(data);
+      html = await embedRemoteImagesInHtml(html, imageUrls);
+    } catch (err) {
+      console.error("[dhlOccurrenceReportHtml] Falha ao embutir fotos, mantendo URLs remotas:", err);
     }
     const evidenceCount = data.allEvidencePhotos?.length || 0;
     const phasePhotoCount = data.phasePhotos.filter((p) => p.url).length;
@@ -1286,32 +1366,12 @@ function dhlOccurrenceReportFilename(seNumber) {
 var BRAND_WINE = "#450a0a";
 var BRAND_NAVY = "#0d3b66";
 var BRAND_LIGHT = "#e8eef4";
-var IMAGE_FETCH_TIMEOUT_MS = 8e3;
 var PDF_GENERATION_TIMEOUT_MS = 55e3;
 function getSupabase2() {
   return createSupabaseAdminClient() ?? (0, import_supabase_js3.createClient)(getSupabaseUrl(), getSupabaseAnonKey());
 }
-async function fetchWithTimeout(url, timeoutMs = IMAGE_FETCH_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
 async function loadImageBase64(url) {
-  try {
-    const fetchUrl = url.startsWith("/") ? `${getPublicBaseUrl()}${url}` : url;
-    const res = await fetchWithTimeout(fetchUrl);
-    if (!res.ok) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
-    const ctype = res.headers.get("content-type") || "image/png";
-    const fmt = ctype.includes("png") ? "PNG" : "JPEG";
-    return `data:image/${fmt.toLowerCase()};base64,${buf.toString("base64")}`;
-  } catch {
-    return null;
-  }
+  return fetchImageDataUri(url);
 }
 function ensureSpace(doc, y, need, margin) {
   const pageH = doc.internal.pageSize.getHeight();

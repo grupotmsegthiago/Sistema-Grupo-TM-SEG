@@ -2,13 +2,13 @@ import { jsPDF } from 'jspdf';
 import { createClient } from '@supabase/supabase-js';
 import { buildOccurrenceNarrative } from './buildReportHtml.js';
 import { collectDhlOccurrenceReportData } from './collectReportData.js';
+import { fetchImageDataUri } from './fetchImageDataUri.js';
 import type { DhlOccurrenceReportInput } from './types.js';
 import { formatDateTimeBR, formatTimeBR } from '../dateUtils.js';
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from '../supabaseAdmin.js';
 import {
   dhlOccurrenceReportFilename,
   generateDhlOccurrenceReportHtml,
-  getPublicBaseUrl,
   resolveTmSegLogoDataUri,
 } from './generateReportHtml.js';
 
@@ -17,38 +17,14 @@ export { generateDhlOccurrenceReportHtml, dhlOccurrenceReportFilename };
 const BRAND_WINE = '#450a0a';
 const BRAND_NAVY = '#0d3b66';
 const BRAND_LIGHT = '#e8eef4';
-const IMAGE_FETCH_TIMEOUT_MS = 8000;
 const PDF_GENERATION_TIMEOUT_MS = 55000;
 
 function getSupabase() {
   return createSupabaseAdminClient() ?? createClient(getSupabaseUrl(), getSupabaseAnonKey());
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = IMAGE_FETCH_TIMEOUT_MS): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** Carrega imagem remota (Supabase Storage ou site) via fetch — sem fs no serverless. */
 async function loadImageBase64(url: string): Promise<string | null> {
-  try {
-    const fetchUrl = url.startsWith('/')
-      ? `${getPublicBaseUrl()}${url}`
-      : url;
-    const res = await fetchWithTimeout(fetchUrl);
-    if (!res.ok) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
-    const ctype = res.headers.get('content-type') || 'image/png';
-    const fmt = ctype.includes('png') ? 'PNG' : 'JPEG';
-    return `data:image/${fmt.toLowerCase()};base64,${buf.toString('base64')}`;
-  } catch {
-    return null;
-  }
+  return fetchImageDataUri(url);
 }
 
 function ensureSpace(doc: jsPDF, y: number, need: number, margin: number): number {

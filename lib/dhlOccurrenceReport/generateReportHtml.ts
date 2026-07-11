@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { buildOccurrenceReportHtml } from './buildReportHtml.js';
 import { collectDhlOccurrenceReportData } from './collectReportData.js';
 import { generateDhlReportHtmlWithAi, type DhlReportAiContext } from './adjustReportHtml.js';
+import { collectReportImageUrls, embedRemoteImagesInHtml } from './embedReportImages.js';
 import type { DhlOccurrenceReportData, DhlOccurrenceReportInput } from './types.js';
 import { formatDateBR, formatTimeBR } from '../dateUtils.js';
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from '../supabaseAdmin.js';
@@ -130,6 +131,15 @@ export async function generateDhlOccurrenceReportHtml(
       } catch (err) {
         console.error('[dhlOccurrenceReportHtml] IA de geração falhou, usando template:', err);
       }
+    }
+
+    // Embute fotos em base64 no HTML para impressão/PDF e download funcionarem
+    // sem depender de URLs remotas, CORS ou tempo de carregamento no browser.
+    try {
+      const imageUrls = collectReportImageUrls(data);
+      html = await embedRemoteImagesInHtml(html, imageUrls);
+    } catch (err) {
+      console.error('[dhlOccurrenceReportHtml] Falha ao embutir fotos, mantendo URLs remotas:', err);
     }
 
     const evidenceCount = data.allEvidencePhotos?.length || 0;

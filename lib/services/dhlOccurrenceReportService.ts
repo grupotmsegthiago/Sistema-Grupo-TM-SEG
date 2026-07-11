@@ -337,7 +337,36 @@ export function printDhlOccurrenceReportHtml(html: string, title?: string): void
     window.setTimeout(() => iframe.remove(), 3000);
   };
 
-  window.setTimeout(runPrint, 400);
+  const waitForImagesThenPrint = () => {
+    const images = doc ? Array.from(doc.images) : [];
+    if (!images.length) {
+      runPrint();
+      return;
+    }
+
+    const pending = images.filter((img) => !(img.complete && img.naturalHeight > 0));
+    if (!pending.length) {
+      runPrint();
+      return;
+    }
+
+    let remaining = pending.length;
+    const maxWait = window.setTimeout(runPrint, 20000);
+    const onDone = () => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        window.clearTimeout(maxWait);
+        runPrint();
+      }
+    };
+
+    for (const img of pending) {
+      img.addEventListener('load', onDone, { once: true });
+      img.addEventListener('error', onDone, { once: true });
+    }
+  };
+
+  window.setTimeout(waitForImagesThenPrint, 150);
 }
 
 /** Abre HTML completo em nova aba via navegação (menos bloqueio que window.open vazio). */

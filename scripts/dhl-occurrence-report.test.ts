@@ -290,6 +290,62 @@ test('applyEditablePatches substitui bloco INTEIRO mesmo com <strong> aninhado (
   assert.equal(blocks[0].html, 'Texto novo e profissional gerado pela IA.');
 });
 
+test('collectReportImageUrls deduplica fotos de etapas e galeria 3.4', async () => {
+  const { collectReportImageUrls } = await import('../lib/dhlOccurrenceReport/embedReportImages');
+  const urls = collectReportImageUrls({
+    phasePhotos: [
+      { url: 'https://x.supabase.co/storage/v1/object/public/mission-evidence/a.png' },
+      { url: null },
+    ],
+    allEvidencePhotos: [
+      { url: 'https://x.supabase.co/storage/v1/object/public/mission-evidence/a.png' },
+      { url: 'https://x.supabase.co/storage/v1/object/public/mission-evidence/b.jpg' },
+    ],
+  });
+  assert.equal(urls.length, 2);
+  assert.ok(urls.includes('https://x.supabase.co/storage/v1/object/public/mission-evidence/b.jpg'));
+});
+
+test('embedRemoteImagesInHtml substitui URLs remotas por data URI', async () => {
+  const { embedRemoteImagesInHtml } = await import('../lib/dhlOccurrenceReport/embedReportImages');
+  const remote = 'https://x.supabase.co/storage/v1/object/public/mission-evidence/foto.png';
+  const html = `<img src="${remote}" alt="teste" />`;
+  const pngBytes = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(pngBytes, { status: 200, headers: { 'content-type': 'image/png' } });
+  try {
+    const out = await embedRemoteImagesInHtml(html, [remote]);
+    assert.match(out, /data:image\/png;base64,/);
+    assert.doesNotMatch(out, /supabase\.co\/storage/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('HTML do relatório DHL não usa crossorigin nas fotos (evita bloqueio CORS na impressão)', () => {
+  const html = buildOccurrenceReportHtml(baseData, {
+    logoDataUri: 'data:image/png;base64,AAAA',
+  });
+  assert.doesNotMatch(html, /crossorigin="anonymous"/);
+});
+
+test('service de impressão aguarda carregamento das imagens antes do print', () => {
+  const src = fs.readFileSync('lib/services/dhlOccurrenceReportService.ts', 'utf8');
+  assert.match(src, /waitForImagesThenPrint/);
+  assert.match(src, /addEventListener\('load'/);
+  assert.doesNotMatch(src, /setTimeout\(runPrint, 400\)/);
+});
+
+test('generateReportHtml embute fotos no HTML após montar o relatório', () => {
+  const src = fs.readFileSync('lib/dhlOccurrenceReport/generateReportHtml.ts', 'utf8');
+  assert.match(src, /embedRemoteImagesInHtml/);
+  assert.match(src, /collectReportImageUrls/);
+});
+
 test('buildPhasePhotos preenche o destino com foto ao redor da conclusão (fallback temporal)', async () => {
   const { buildPhasePhotos } = await import('../lib/dhlOccurrenceReport/collectReportData');
   const img = (n: string) => `https://x.supabase.co/storage/v1/object/public/mission-evidence/${n}.png`;
