@@ -551,6 +551,13 @@ test('modal aceita .pdf no seletor de anexo', () => {
   assert.match(src, /EMAIL_FILE_ACCEPT = '\.eml,\.txt,\.html,\.htm,\.pdf'/);
 });
 
+test('modal expõe Salvar PDF completo fixo no rodapé mobile', () => {
+  const src = fs.readFileSync('components/DhlOccurrenceReportModal.tsx', 'utf8');
+  assert.match(src, /button-print-pdf-dhl-report-mobile/);
+  assert.match(src, /100dvh/);
+  assert.match(src, /safe-area-inset-bottom/);
+});
+
 test('service imprime sem window.open (evita bloqueio de pop-up)', () => {
   const src = fs.readFileSync('lib/services/dhlOccurrenceReportService.ts', 'utf8');
   assert.match(src, /printDhlOccurrenceReportHtml/);

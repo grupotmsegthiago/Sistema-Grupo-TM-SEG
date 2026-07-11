@@ -362,10 +362,12 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-2 sm:p-4">
+    <div className="fixed inset-0 z-[120] flex items-stretch sm:items-center justify-center bg-black/50 p-0 sm:p-2 md:p-4">
       <div
-        className={`relative w-full rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col ${
-          step === 'preview' ? 'max-w-5xl max-h-[96vh]' : 'max-w-xl max-h-[92vh]'
+        className={`relative w-full bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col ${
+          step === 'preview'
+            ? 'max-w-5xl h-[100dvh] sm:h-auto sm:max-h-[96vh] rounded-none sm:rounded-2xl'
+            : 'max-w-xl max-h-[92vh] rounded-2xl mx-2 sm:mx-0 my-2 sm:my-0'
         }`}
         data-testid="modal-dhl-occurrence-report"
       >
@@ -493,6 +495,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
           </>
         ) : (
           <>
+            <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
             <div className="px-4 py-3 bg-gradient-to-r from-[#111827] via-[#7f1d1d] to-[#dc2626] border-b border-[#991b1b] text-white shrink-0 space-y-2">
               <p className="text-[11px] leading-relaxed opacity-95">
                 Leia o relatório abaixo. Se o <strong>tom ou contexto</strong> não estiver adequado para enviar à DHL,
@@ -541,7 +544,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
               &quot;Salvar como PDF&quot;. O botão &quot;PDF resumido&quot; gera apenas um rascunho sem layout.
             </div>
 
-            <div className="flex-1 min-h-[50vh] bg-slate-100 p-2 sm:p-3 overflow-hidden">
+            <div className="flex-1 min-h-[200px] max-sm:min-h-[160px] sm:min-h-[50vh] bg-slate-100 p-2 sm:p-3 overflow-hidden">
               {historyOpen ? (
                 <div
                   className="w-full h-full min-h-[50vh] rounded-lg border border-slate-300 bg-white overflow-y-auto p-4"
@@ -603,26 +606,42 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
                   <iframe
                     title={`Pré-visualização Plano DHL S.E. ${seNumber}`}
                     srcDoc={previewHtml}
-                    className="w-full h-full min-h-[50vh] rounded-lg border border-slate-300 bg-white"
+                    className="w-full h-full min-h-[160px] sm:min-h-[50vh] rounded-lg border border-slate-300 bg-white"
                     data-testid="iframe-dhl-occurrence-preview"
                   />
                 )
               )}
             </div>
 
-            {notice && (
-              <p className="mx-5 mt-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 shrink-0">
-                {notice}
-              </p>
-            )}
             {error && (
-              <p className="mx-5 mt-2 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 shrink-0">
+              <p className="mx-4 sm:mx-5 mb-2 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 shrink-0">
                 {error}
               </p>
             )}
+            </div>
 
-            <div className="flex flex-wrap gap-2 justify-between p-4 border-t border-slate-200 shrink-0">
-              <div className="flex flex-wrap gap-2 items-center">
+            {notice && (
+              <p className="mx-4 sm:mx-5 mt-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 shrink-0">
+                {notice}
+              </p>
+            )}
+
+            <div className="shrink-0 border-t border-slate-200 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.08)] z-10 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <div className="sm:hidden px-3 pt-3">
+                <button
+                  type="button"
+                  onClick={handlePrintPdf}
+                  disabled={loading || !previewHtml}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl bg-[#450a0a] hover:bg-[#7f1d1d] text-white text-sm font-bold disabled:opacity-50"
+                  data-testid="button-print-pdf-dhl-report-mobile"
+                >
+                  <Printer size={18} />
+                  Salvar PDF completo
+                </button>
+              </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-2 sm:justify-between p-3 sm:p-4">
+              <div className="flex flex-wrap gap-2 items-center max-sm:justify-center">
                 <button
                   type="button"
                   onClick={() => {
@@ -659,7 +678,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
                 </button>
               </div>
 
-              <div className="flex flex-wrap gap-2 justify-end">
+              <div className="flex flex-wrap gap-2 justify-end max-sm:overflow-x-auto max-sm:flex-nowrap max-sm:pb-1 max-sm:-mx-1 max-sm:px-1">
                 <button
                   type="button"
                   onClick={() => void handlePreview()}
@@ -704,13 +723,14 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
                   type="button"
                   onClick={handlePrintPdf}
                   disabled={loading || !previewHtml}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#450a0a] hover:bg-[#7f1d1d] text-white text-sm font-bold"
+                  className="hidden sm:inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#450a0a] hover:bg-[#7f1d1d] text-white text-sm font-bold disabled:opacity-50"
                   data-testid="button-print-pdf-dhl-report"
                 >
                   <Printer size={16} />
                   Salvar PDF completo
                 </button>
               </div>
+            </div>
             </div>
           </>
         )}
