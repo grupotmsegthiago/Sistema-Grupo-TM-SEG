@@ -115,6 +115,11 @@ export function isIntentionalBillingOverride(editReason: string | null | undefin
     return true;
 }
 
+/** Salvamento manual confirmado — valor salvo pode estar defasado vs motor atual. */
+export function isStaleManualBillingSave(editReason: string | null | undefined): boolean {
+    return String(editReason || '').toLowerCase().includes('salvamento manual confirmado');
+}
+
 /** Busca todas as tabelas de preço do cliente (paginado — evita corte em 1000 linhas). */
 export async function fetchClientPriceTables(
     supabase: { from: (table: string) => { select: (cols: string) => any } },
