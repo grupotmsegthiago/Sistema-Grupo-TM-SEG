@@ -6,7 +6,6 @@ import { formatDateTimeAuditBR } from '../lib/dateUtils';
 import {
   getCanonicalDateRange,
   sumCanonical,
-  computeCanonicalRevenueCost,
   type CanonicalPeriod,
 } from '../lib/missionFinancialsCanonical';
 import {
@@ -22,8 +21,8 @@ import { canViewGoalMonetaryData } from '../lib/goalPermissions';
 import LowMarginDialog, { LOW_MARGIN_THRESHOLD_PCT } from './LowMarginDialog';
 import { MissionStatus } from '../types';
 import {
-  isLowMarginVerified,
   loadLowMarginVerifiedMap,
+  partitionLowMarginMissions,
   resolveLowMarginScopeKey,
 } from '../lib/lowMarginVerified';
 
@@ -371,20 +370,17 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         [resolvedHistoryKey],
     );
 
-    const lowMarginCount = useMemo(() => {
-        if (!parentClientTables || !parentProviderTables || !parentClientsData) return 0;
+    const lowMarginPartition = useMemo(() => {
+        if (!parentClientTables || !parentProviderTables || !parentClientsData) {
+            return { pending: [], verified: [] };
+        }
         const refs = { clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData };
         const verifiedMap = loadLowMarginVerifiedMap(lowMarginScopeKey);
-        let count = 0;
-        for (const m of filteredMissions) {
-            if (m.status === MissionStatus.REFUSED) continue;
-            const r = computeCanonicalRevenueCost(m, refs, currentTime);
-            if (r.rev <= 0 && r.cost <= 0) continue;
-            const marginPct = r.rev > 0 ? ((r.rev - r.cost) / r.rev) * 100 : -100;
-            if (marginPct < LOW_MARGIN_THRESHOLD_PCT && !isLowMarginVerified(verifiedMap, m.id, r.rev, r.cost)) count += 1;
-        }
-        return count;
+        return partitionLowMarginMissions(filteredMissions, refs, verifiedMap, LOW_MARGIN_THRESHOLD_PCT, currentTime);
     }, [filteredMissions, parentClientTables, parentProviderTables, parentClientsData, currentTime, lowMarginScopeKey, lowMarginVerifiedTick]);
+
+    const lowMarginPendingCount = lowMarginPartition.pending.length;
+    const lowMarginTotalCount = lowMarginPartition.pending.length + lowMarginPartition.verified.length;
 
     const goal = useMemo(
         () => getGoalForPeriod(viewPeriod, customStartDate, customEndDate, dailyGoal, monthlyGoal),
@@ -641,15 +637,25 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                             flow="result"
                             suffix={`(${stats.marginPercent.toFixed(1)}%)`}
                             trailingAction={
-                                onOpenMission && lowMarginCount > 0 ? (
+                                onOpenMission && lowMarginTotalCount > 0 ? (
                                     <button
                                         type="button"
                                         onClick={() => setIsLowMarginOpen(true)}
-                                        className="inline-flex items-center gap-0.5 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-amber-800 hover:bg-amber-100 transition"
-                                        title={`Ver ${lowMarginCount} OS com margem abaixo de ${LOW_MARGIN_THRESHOLD_PCT}%`}
+                                        className={`inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide transition ${
+                                            lowMarginPendingCount > 0
+                                                ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                                                : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                                        }`}
+                                        title={
+                                            lowMarginPendingCount > 0
+                                                ? `${lowMarginPendingCount} OS pendentes · ${lowMarginPartition.verified.length} verificadas`
+                                                : `${lowMarginPartition.verified.length} OS verificadas neste filtro`
+                                        }
                                         data-testid="button-open-low-margin-from-goal"
                                     >
-                                        {lowMarginCount} &lt;{LOW_MARGIN_THRESHOLD_PCT}%
+                                        {lowMarginPendingCount > 0
+                                            ? `${lowMarginPendingCount} <${LOW_MARGIN_THRESHOLD_PCT}%`
+                                            : `✓ ${lowMarginPartition.verified.length}`}
                                         <ChevronRight size={10} />
                                     </button>
                                 ) : null

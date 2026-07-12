@@ -1,13 +1,15 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { X, Percent, Download, ExternalLink, AlertTriangle, Search, Layers, Link2, Check } from 'lucide-react';
-import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable, Client } from '../types';
+import { Mission, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { computeCanonicalRevenueCost, type CanonicalRefs } from '../lib/missionFinancialsCanonical';
 import {
   getCurrentUserName,
-  isLowMarginVerified,
   loadLowMarginVerifiedMap,
   markLowMarginVerified,
+  partitionLowMarginMissions,
+  type LowMarginMissionRow,
 } from '../lib/lowMarginVerified';
+import { formatDateTimeBR } from '../lib/dateUtils';
 
 export const LOW_MARGIN_THRESHOLD_PCT = 20;
 
@@ -28,14 +30,6 @@ interface Props {
   onVerified?: () => void;
   onOpenMission: (m: Mission) => void;
 }
-
-type Row = {
-  m: any;
-  rev: number;
-  cost: number;
-  profit: number;
-  marginPct: number;
-};
 
 type ChildSummary = {
   id: string;
@@ -174,7 +168,7 @@ const LowMarginDialog: React.FC<Props> = ({
     [verifiedScopeKey, verifiedTick],
   );
 
-  const handleVerify = (r: Row, group: GroupSummary | null, childIds: string[]) => {
+  const handleVerify = (r: LowMarginMissionRow, group: GroupSummary | null, childIds: string[]) => {
     const items: Array<{ missionId: string; rev: number; cost: number }> = [
       { missionId: r.m.id, rev: r.rev, cost: r.cost },
     ];
@@ -196,49 +190,34 @@ const LowMarginDialog: React.FC<Props> = ({
     onVerified?.();
   };
 
-  const rows: Row[] = useMemo(() => {
-    if (!isOpen) return [];
-    const out: Row[] = [];
-    for (const m of missions || []) {
-      if (m.status === MissionStatus.REFUSED) continue;
-      const r = computeCanonicalRevenueCost(m, refs);
-      if (r.rev <= 0 && r.cost <= 0) continue;
-      const marginPct = r.rev > 0 ? ((r.rev - r.cost) / r.rev) * 100 : -100;
-      if (marginPct < LOW_MARGIN_THRESHOLD_PCT) {
-        if (isLowMarginVerified(verifiedMap, m.id, r.rev, r.cost)) continue;
-        out.push({
-          m,
-          rev: r.rev,
-          cost: r.cost,
-          profit: r.rev - r.cost,
-          marginPct,
-        });
-      }
-    }
-    out.sort((a, b) => a.marginPct - b.marginPct);
-    return out;
+  const { pending: pendingRows, verified: verifiedRows } = useMemo(() => {
+    if (!isOpen) return { pending: [], verified: [] };
+    return partitionLowMarginMissions(missions, refs, verifiedMap, LOW_MARGIN_THRESHOLD_PCT);
   }, [isOpen, missions, refs, verifiedMap]);
 
-  const filteredRows = useMemo(() => {
+  const filterBySearch = (list: LowMarginMissionRow[]) => {
     const q = search.trim().toUpperCase();
-    if (!q) return rows;
-    return rows.filter((r) => {
+    if (!q) return list;
+    return list.filter((r) => {
       const id = String(r.m.id || '').toUpperCase();
       const cli = String(r.m.client || '').toUpperCase();
       const prov = String(r.m.provider || '').toUpperCase();
       return id.includes(q) || cli.includes(q) || prov.includes(q);
     });
-  }, [rows, search]);
+  };
 
-  const totals = useMemo(() => {
-    const t = { count: filteredRows.length, rev: 0, cost: 0, profit: 0 };
-    for (const r of filteredRows) {
+  const filteredPendingRows = useMemo(() => filterBySearch(pendingRows), [pendingRows, search]);
+  const filteredVerifiedRows = useMemo(() => filterBySearch(verifiedRows), [verifiedRows, search]);
+
+  const pendingTotals = useMemo(() => {
+    const t = { count: filteredPendingRows.length, rev: 0, cost: 0, profit: 0 };
+    for (const r of filteredPendingRows) {
       t.rev += r.rev;
       t.cost += r.cost;
       t.profit += r.profit;
     }
     return t;
-  }, [filteredRows]);
+  }, [filteredPendingRows]);
 
   const exportCsv = () => {
     const header = [
@@ -246,6 +225,7 @@ const LowMarginDialog: React.FC<Props> = ({
       'Cliente',
       'Fornecedor',
       'Status',
+      'Conferencia',
       'OS_Mae',
       'Qtd_Filhas',
       'Receita',
@@ -256,9 +236,15 @@ const LowMarginDialog: React.FC<Props> = ({
       'Custo_Grupo',
       'Lucro_Grupo',
       'Margem_Grupo%',
+      'Verificado_Por',
+      'Verificado_Em',
     ];
     const lines = [header.join(';')];
-    for (const r of filteredRows) {
+    const allExport = [
+      ...filteredPendingRows.map((r) => ({ r, conferencia: 'PENDENTE' as const })),
+      ...filteredVerifiedRows.map((r) => ({ r, conferencia: 'VERIFICADO' as const })),
+    ];
+    for (const { r, conferencia } of allExport) {
       const childCount = (childrenByParent.get(r.m.id) || []).length;
       const group = childCount > 0 ? buildGroupSummary(r.m.id, missionPool, refs) : null;
       lines.push([
@@ -266,6 +252,7 @@ const LowMarginDialog: React.FC<Props> = ({
         (r.m.client || '').replace(/;/g, ','),
         (r.m.provider || '').replace(/;/g, ','),
         r.m.status || '',
+        conferencia,
         childCount > 0 ? 'SIM' : 'NAO',
         String(childCount),
         r.rev.toFixed(2).replace('.', ','),
@@ -276,6 +263,8 @@ const LowMarginDialog: React.FC<Props> = ({
         group ? group.groupCost.toFixed(2).replace('.', ',') : '',
         group ? group.groupProfit.toFixed(2).replace('.', ',') : '',
         group ? group.groupMarginPct.toFixed(1).replace('.', ',') : '',
+        r.verifiedEntry?.by || '',
+        r.verifiedEntry?.at ? formatDateTimeBR(r.verifiedEntry.at) : '',
       ].join(';'));
     }
     const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
@@ -286,6 +275,164 @@ const LowMarginDialog: React.FC<Props> = ({
     a.download = `os-margem-abaixo-${LOW_MARGIN_THRESHOLD_PCT}pct-${stamp}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const renderMissionRow = (r: LowMarginMissionRow, mode: 'pending' | 'verified') => {
+    const isLoss = r.profit < 0;
+    const childCount = (childrenByParent.get(r.m.id) || []).length;
+    const isMother = childCount > 0;
+    const group = isMother ? buildGroupSummary(r.m.id, missionPool, refs) : null;
+    const groupLoss = (group?.groupProfit ?? 0) < 0;
+    const rowClass =
+      mode === 'verified'
+        ? 'border-b border-emerald-100 hover:bg-emerald-50/50 bg-emerald-50/20'
+        : 'border-b border-gray-100 hover:bg-amber-50/40';
+    const testId =
+      mode === 'verified' ? `row-low-margin-verified-${r.m.id}` : `row-low-margin-${r.m.id}`;
+
+    return (
+      <React.Fragment key={`${mode}-${r.m.id}`}>
+        <tr className={`${rowClass} transition`} data-testid={testId}>
+          <td className="px-4 py-2 font-mono font-bold text-gray-900 text-xs">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span>{r.m.id}</span>
+              {isMother && (
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-black uppercase tracking-wide cursor-help select-none"
+                  onMouseEnter={(e) => openParentPopover(r.m.id, e)}
+                  onMouseLeave={scheduleClose}
+                  onClick={(e) => toggleParentPopover(r.m.id, e)}
+                  data-testid={`badge-mother-${r.m.id}`}
+                >
+                  <Layers size={9} /> OS MÃE
+                  <span className="bg-amber-600 text-white rounded-full px-1 leading-none">{childCount}</span>
+                </span>
+              )}
+              {mode === 'verified' && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black uppercase">
+                  <Check size={9} /> Verificado
+                </span>
+              )}
+            </div>
+          </td>
+          <td className="px-3 py-2 text-gray-700 max-w-[200px] truncate" title={r.m.client || ''}>
+            {r.m.client || '—'}
+          </td>
+          <td className="px-3 py-2 text-gray-600 max-w-[180px] truncate" title={r.m.provider || ''}>
+            {r.m.provider || '—'}
+          </td>
+          {mode === 'verified' ? (
+            <td className="px-3 py-2 text-[10px] text-emerald-800">
+              <span className="font-semibold">{r.verifiedEntry?.by || '—'}</span>
+              {r.verifiedEntry?.at && (
+                <span className="block text-[9px] text-emerald-600">{formatDateTimeBR(r.verifiedEntry.at)}</span>
+              )}
+            </td>
+          ) : (
+            <td className="px-3 py-2">
+              <span className="inline-block px-2 py-0.5 text-[10px] font-semibold rounded-full bg-gray-100 text-gray-700">
+                {r.m.status || '—'}
+              </span>
+            </td>
+          )}
+          <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(r.rev)}</td>
+          <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(r.cost)}</td>
+          <td className={`px-3 py-2 text-right font-mono font-bold ${isLoss ? 'text-red-700' : mode === 'verified' ? 'text-emerald-700' : 'text-amber-700'}`}>
+            {fmt(r.profit)}
+          </td>
+          <td
+            className={`px-3 py-2 text-right font-mono font-bold ${
+              r.marginPct < 0 ? 'text-red-700' : r.marginPct < 10 ? 'text-amber-600' : 'text-orange-600'
+            }`}
+          >
+            {r.marginPct.toFixed(1)}%
+          </td>
+          <td className="px-3 py-2 text-right">
+            <div className="flex items-center justify-end gap-1 flex-wrap">
+              {mode === 'pending' && (
+                <button
+                  type="button"
+                  onClick={() => handleVerify(r, group, (childrenByParent.get(r.m.id) || []).map((c) => c.id))}
+                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition"
+                  title="Marcar como verificada — vai para a seção Já verificadas"
+                  data-testid={`button-verify-low-margin-${r.m.id}`}
+                >
+                  <Check size={11} /> Verificado
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  onOpenMission(r.m);
+                  onClose();
+                }}
+                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition"
+                title="Abrir financeiro da OS"
+                data-testid={`button-open-low-margin-${r.m.id}`}
+              >
+                Abrir <ExternalLink size={11} />
+              </button>
+            </div>
+          </td>
+        </tr>
+        {isMother && group && (
+          <tr className="border-b border-amber-100 bg-amber-50/30" data-testid={`row-low-margin-group-${r.m.id}`}>
+            <td colSpan={9} className="px-4 py-2.5">
+              <div className="rounded-xl border border-amber-200 bg-white/80 p-2.5 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-amber-800 flex items-center gap-1">
+                    <Layers size={11} /> Resumo do grupo (mãe + {childCount} filha{childCount !== 1 ? 's' : ''})
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                    <span className="text-gray-600">
+                      Receita grupo: <strong className="text-gray-900">{fmt(group.groupRev)}</strong>
+                    </span>
+                    <span className="text-gray-600">
+                      Custo grupo: <strong className="text-gray-900">{fmt(group.groupCost)}</strong>
+                    </span>
+                    <span className={`font-black ${groupLoss ? 'text-red-700' : 'text-emerald-700'}`}>
+                      {groupLoss ? 'Prejuízo grupo' : 'Lucro grupo'}: {fmt(group.groupProfit)} ({group.groupMarginPct.toFixed(1)}%)
+                    </span>
+                  </div>
+                </div>
+                <div className="grid gap-1">
+                  <div className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-amber-50 border border-amber-200 text-[10px]">
+                    <span className="font-mono font-black text-amber-800">
+                      {r.m.id} <span className="text-[8px] text-amber-600">(MÃE)</span>
+                    </span>
+                    <div className="flex items-center gap-3 font-mono">
+                      <span className="text-green-700">{fmt(group.motherRev)}</span>
+                      <span className="text-red-600">{fmt(group.motherCost)}</span>
+                      <span className={group.motherProfit < 0 ? 'text-red-700 font-bold' : 'text-emerald-700 font-bold'}>
+                        {fmt(group.motherProfit)}
+                      </span>
+                    </div>
+                  </div>
+                  {group.children.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-blue-50 border border-blue-200 text-[10px]"
+                      data-testid={`row-low-margin-child-${c.id}`}
+                    >
+                      <span className="font-mono font-bold text-blue-800 flex items-center gap-1">
+                        <Link2 size={9} /> {c.id}
+                        <span className="text-[8px] font-semibold text-blue-600 uppercase">{c.status}</span>
+                      </span>
+                      <div className="flex items-center gap-3 font-mono">
+                        <span className="text-green-700">{fmt(c.rev)}</span>
+                        <span className={c.cost > 0 ? 'text-red-600' : 'text-gray-400'}>{fmt(c.cost)}</span>
+                        <span className={c.profit < 0 ? 'text-red-700 font-bold' : 'text-emerald-700 font-bold'}>
+                          {fmt(c.profit)} ({c.marginPct.toFixed(1)}%)
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </td>
+          </tr>
+        )}
+      </React.Fragment>
+    );
   };
 
   if (!isOpen) return null;
@@ -333,7 +480,7 @@ const LowMarginDialog: React.FC<Props> = ({
           </div>
           <button
             onClick={exportCsv}
-            disabled={filteredRows.length === 0}
+            disabled={filteredPendingRows.length === 0 && filteredVerifiedRows.length === 0}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 rounded-lg transition"
             data-testid="button-export-low-margin"
           >
@@ -342,24 +489,31 @@ const LowMarginDialog: React.FC<Props> = ({
         </div>
 
         <div className="flex items-center justify-between gap-3 px-5 py-2.5 bg-amber-50/50 border-b border-amber-100">
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-sm flex-wrap">
             <AlertTriangle size={14} className="text-amber-600" />
-            <span className="font-bold text-amber-800">{totals.count}</span>
-            <span className="text-gray-700">{totals.count === 1 ? 'OS' : 'OSs'} listada{totals.count === 1 ? '' : 's'}</span>
+            <span className="font-bold text-amber-800">{pendingTotals.count}</span>
+            <span className="text-gray-700">
+              {pendingTotals.count === 1 ? 'pendente' : 'pendentes'}
+            </span>
+            {filteredVerifiedRows.length > 0 && (
+              <span className="text-emerald-700 text-xs font-bold">
+                · {filteredVerifiedRows.length} verificada{filteredVerifiedRows.length !== 1 ? 's' : ''}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-4 text-xs">
             <span className="text-gray-600">
-              Receita: <span className="font-bold text-gray-900">{fmt(totals.rev)}</span>
+              Receita pendentes: <span className="font-bold text-gray-900">{fmt(pendingTotals.rev)}</span>
             </span>
             <span className="text-gray-600">
-              Custo: <span className="font-bold text-gray-900">{fmt(totals.cost)}</span>
+              Custo pendentes: <span className="font-bold text-gray-900">{fmt(pendingTotals.cost)}</span>
             </span>
-            <span className="text-amber-800 font-bold">Lucro: {fmt(totals.profit)}</span>
+            <span className="text-amber-800 font-bold">Lucro pendentes: {fmt(pendingTotals.profit)}</span>
           </div>
         </div>
 
         <div className="flex-1 overflow-auto">
-          {filteredRows.length === 0 ? (
+          {filteredPendingRows.length === 0 && filteredVerifiedRows.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center text-gray-500">
               <Percent size={42} className="text-emerald-400 mb-3" />
               <p className="text-sm font-semibold text-gray-700">
@@ -367,163 +521,62 @@ const LowMarginDialog: React.FC<Props> = ({
               </p>
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-white border-b border-gray-200 shadow-sm z-10">
-                <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-gray-600">
-                  <th className="px-4 py-2.5">OS</th>
-                  <th className="px-3 py-2.5">Cliente</th>
-                  <th className="px-3 py-2.5">Fornecedor</th>
-                  <th className="px-3 py-2.5">Status</th>
-                  <th className="px-3 py-2.5 text-right">Receita</th>
-                  <th className="px-3 py-2.5 text-right">Custo</th>
-                  <th className="px-3 py-2.5 text-right">Lucro</th>
-                  <th className="px-3 py-2.5 text-right">Margem</th>
-                  <th className="px-3 py-2.5"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.map((r) => {
-                  const isLoss = r.profit < 0;
-                  const childCount = (childrenByParent.get(r.m.id) || []).length;
-                  const isMother = childCount > 0;
-                  const group = isMother ? buildGroupSummary(r.m.id, missionPool, refs) : null;
-                  const groupLoss = (group?.groupProfit ?? 0) < 0;
+            <>
+              {filteredPendingRows.length === 0 ? (
+                <div className="px-5 py-4 bg-emerald-50 border-b border-emerald-100 text-center">
+                  <p className="text-sm font-semibold text-emerald-800">Todas as OS abaixo de {LOW_MARGIN_THRESHOLD_PCT}% foram verificadas neste filtro.</p>
+                  <p className="text-xs text-emerald-700 mt-1">Confira o histórico na seção abaixo.</p>
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-white border-b border-gray-200 shadow-sm z-10">
+                    <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-gray-600">
+                      <th className="px-4 py-2.5">OS</th>
+                      <th className="px-3 py-2.5">Cliente</th>
+                      <th className="px-3 py-2.5">Fornecedor</th>
+                      <th className="px-3 py-2.5">Status</th>
+                      <th className="px-3 py-2.5 text-right">Receita</th>
+                      <th className="px-3 py-2.5 text-right">Custo</th>
+                      <th className="px-3 py-2.5 text-right">Lucro</th>
+                      <th className="px-3 py-2.5 text-right">Margem</th>
+                      <th className="px-3 py-2.5"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPendingRows.map((r) => renderMissionRow(r, 'pending'))}
+                  </tbody>
+                </table>
+              )}
 
-                  return (
-                    <React.Fragment key={r.m.id}>
-                      <tr
-                        className="border-b border-gray-100 hover:bg-amber-50/40 transition"
-                        data-testid={`row-low-margin-${r.m.id}`}
-                      >
-                        <td className="px-4 py-2 font-mono font-bold text-gray-900 text-xs">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span>{r.m.id}</span>
-                            {isMother && (
-                              <span
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-black uppercase tracking-wide cursor-help select-none"
-                                onMouseEnter={(e) => openParentPopover(r.m.id, e)}
-                                onMouseLeave={scheduleClose}
-                                onClick={(e) => toggleParentPopover(r.m.id, e)}
-                                data-testid={`badge-mother-${r.m.id}`}
-                              >
-                                <Layers size={9} /> OS MÃE
-                                <span className="bg-amber-600 text-white rounded-full px-1 leading-none">{childCount}</span>
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-gray-700 max-w-[200px] truncate" title={r.m.client || ''}>
-                          {r.m.client || '—'}
-                        </td>
-                        <td className="px-3 py-2 text-gray-600 max-w-[180px] truncate" title={r.m.provider || ''}>
-                          {r.m.provider || '—'}
-                        </td>
-                        <td className="px-3 py-2">
-                          <span className="inline-block px-2 py-0.5 text-[10px] font-semibold rounded-full bg-gray-100 text-gray-700">
-                            {r.m.status || '—'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(r.rev)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(r.cost)}</td>
-                        <td
-                          className={`px-3 py-2 text-right font-mono font-bold ${isLoss ? 'text-red-700' : 'text-amber-700'}`}
-                        >
-                          {fmt(r.profit)}
-                        </td>
-                        <td
-                          className={`px-3 py-2 text-right font-mono font-bold ${
-                            r.marginPct < 0 ? 'text-red-700' : r.marginPct < 10 ? 'text-amber-600' : 'text-orange-600'
-                          }`}
-                        >
-                          {r.marginPct.toFixed(1)}%
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <div className="flex items-center justify-end gap-1 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => handleVerify(r, group, (childrenByParent.get(r.m.id) || []).map((c) => c.id))}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition"
-                              title="Marcar como verificada e remover desta fila"
-                              data-testid={`button-verify-low-margin-${r.m.id}`}
-                            >
-                              <Check size={11} /> Verificado
-                            </button>
-                            <button
-                              onClick={() => {
-                                onOpenMission(r.m);
-                                onClose();
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition"
-                              title="Abrir financeiro da OS"
-                              data-testid={`button-open-low-margin-${r.m.id}`}
-                            >
-                              Abrir <ExternalLink size={11} />
-                            </button>
-                          </div>
-                        </td>
+              {filteredVerifiedRows.length > 0 && (
+                <div className="border-t-4 border-emerald-200">
+                  <div className="px-5 py-2.5 bg-emerald-50/80 border-b border-emerald-100 flex items-center gap-2">
+                    <Check size={14} className="text-emerald-600" />
+                    <span className="text-xs font-black uppercase tracking-wider text-emerald-800">
+                      Já verificadas ({filteredVerifiedRows.length})
+                    </span>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-emerald-50/90 border-b border-emerald-100 z-10">
+                      <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-emerald-800">
+                        <th className="px-4 py-2.5">OS</th>
+                        <th className="px-3 py-2.5">Cliente</th>
+                        <th className="px-3 py-2.5">Fornecedor</th>
+                        <th className="px-3 py-2.5">Conferência</th>
+                        <th className="px-3 py-2.5 text-right">Receita</th>
+                        <th className="px-3 py-2.5 text-right">Custo</th>
+                        <th className="px-3 py-2.5 text-right">Lucro</th>
+                        <th className="px-3 py-2.5 text-right">Margem</th>
+                        <th className="px-3 py-2.5"></th>
                       </tr>
-                      {isMother && group && (
-                        <tr className="border-b border-amber-100 bg-amber-50/30" data-testid={`row-low-margin-group-${r.m.id}`}>
-                          <td colSpan={9} className="px-4 py-2.5">
-                            <div className="rounded-xl border border-amber-200 bg-white/80 p-2.5 space-y-2">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <p className="text-[10px] font-black uppercase tracking-wider text-amber-800 flex items-center gap-1">
-                                  <Layers size={11} /> Resumo do grupo (mãe + {childCount} filha{childCount !== 1 ? 's' : ''})
-                                </p>
-                                <div className="flex flex-wrap items-center gap-2 text-[10px]">
-                                  <span className="text-gray-600">
-                                    Receita grupo: <strong className="text-gray-900">{fmt(group.groupRev)}</strong>
-                                  </span>
-                                  <span className="text-gray-600">
-                                    Custo grupo: <strong className="text-gray-900">{fmt(group.groupCost)}</strong>
-                                  </span>
-                                  <span className={`font-black ${groupLoss ? 'text-red-700' : 'text-emerald-700'}`}>
-                                    {groupLoss ? 'Prejuízo grupo' : 'Lucro grupo'}: {fmt(group.groupProfit)} ({group.groupMarginPct.toFixed(1)}%)
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="grid gap-1">
-                                <div className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-amber-50 border border-amber-200 text-[10px]">
-                                  <span className="font-mono font-black text-amber-800">
-                                    {r.m.id} <span className="text-[8px] text-amber-600">(MÃE)</span>
-                                  </span>
-                                  <div className="flex items-center gap-3 font-mono">
-                                    <span className="text-green-700">{fmt(group.motherRev)}</span>
-                                    <span className="text-red-600">{fmt(group.motherCost)}</span>
-                                    <span className={group.motherProfit < 0 ? 'text-red-700 font-bold' : 'text-emerald-700 font-bold'}>
-                                      {fmt(group.motherProfit)}
-                                    </span>
-                                  </div>
-                                </div>
-                                {group.children.map((c) => (
-                                  <div
-                                    key={c.id}
-                                    className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-blue-50 border border-blue-200 text-[10px]"
-                                    data-testid={`row-low-margin-child-${c.id}`}
-                                  >
-                                    <span className="font-mono font-bold text-blue-800 flex items-center gap-1">
-                                      <Link2 size={9} /> {c.id}
-                                      <span className="text-[8px] font-semibold text-blue-600 uppercase">{c.status}</span>
-                                    </span>
-                                    <div className="flex items-center gap-3 font-mono">
-                                      <span className="text-green-700">{fmt(c.rev)}</span>
-                                      <span className={c.cost > 0 ? 'text-red-600' : 'text-gray-400'}>{fmt(c.cost)}</span>
-                                      <span className={c.profit < 0 ? 'text-red-700 font-bold' : 'text-emerald-700 font-bold'}>
-                                        {fmt(c.profit)} ({c.marginPct.toFixed(1)}%)
-                                      </span>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                      {filteredVerifiedRows.map((r) => renderMissionRow(r, 'verified'))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
