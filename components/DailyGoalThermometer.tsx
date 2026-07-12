@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, useId } from 'react';
-import { Target, Loader2, Trophy, Zap, Clock, RefreshCw, Coins, ShoppingCart, Landmark, TrendingDown, TrendingUp, Minus } from 'lucide-react';
-import { ClientPriceTable, ProviderCostTable, Client } from '../types';
+import { Target, Loader2, Trophy, Zap, Clock, RefreshCw, Coins, ShoppingCart, Landmark, TrendingDown, TrendingUp, Minus, ChevronRight } from 'lucide-react';
+import { ClientPriceTable, ProviderCostTable, Client, Mission } from '../types';
 import { useNotification } from '../lib/NotificationContext';
 import { formatDateTimeAuditBR } from '../lib/dateUtils';
 import {
   getCanonicalDateRange,
   sumCanonical,
+  computeCanonicalRevenueCost,
   type CanonicalPeriod,
 } from '../lib/missionFinancialsCanonical';
 import {
@@ -18,6 +19,8 @@ import {
   type GoalUpdateSnapshot,
 } from '../lib/goalUpdateHistory';
 import { canViewGoalMonetaryData } from '../lib/goalPermissions';
+import LowMarginDialog, { LOW_MARGIN_THRESHOLD_PCT } from './LowMarginDialog';
+import { MissionStatus } from '../types';
 
 const DEFAULT_DAILY_GOAL = 35000.00;
 const DEFAULT_MONTHLY_GOAL = 700000.00;
@@ -68,6 +71,7 @@ interface Props {
     accentClass?: string; // ex.: "from-yellow-400 to-red-600" para o ícone DHL
     historyKey?: string; // chave única para histórico de atualizações (diretoria)
     canSeeMonetary?: boolean; // permissão financeira resolvida pelo componente pai
+    onOpenMission?: (m: Mission) => void;
 }
 
 const formatCurrency = (val: number) => {
@@ -246,7 +250,8 @@ const MetricRow: React.FC<{
     amount: number;
     flow: MetricFlow;
     suffix?: string;
-}> = ({ icon, label, amount, flow, suffix }) => {
+    trailingAction?: React.ReactNode;
+}> = ({ icon, label, amount, flow, suffix, trailingAction }) => {
     const isPositive = amount >= 0;
     const valueClass =
         flow === 'in'
@@ -261,10 +266,13 @@ const MetricRow: React.FC<{
     const value = `${sign} ${formatCurrency(displayAmount)}${suffix ? ` ${suffix}` : ''}`;
 
     return (
-        <div className="flex items-center gap-2.5 py-2 border-b border-slate-100 last:border-b-0">
+        <div className="flex items-center gap-2 py-2 border-b border-slate-100 last:border-b-0">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500">{icon}</div>
-            <span className="flex-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</span>
-            <span className={`text-[11px] font-black tabular-nums ${valueClass}`}>{value}</span>
+            <span className="flex-1 min-w-0 text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</span>
+            <div className="flex items-center gap-1 shrink-0">
+                {trailingAction}
+                <span className={`text-[11px] font-black tabular-nums ${valueClass}`}>{value}</span>
+            </div>
         </div>
     );
 };
@@ -277,7 +285,7 @@ function getDateRange(viewPeriod: string, customStartDate?: string, customEndDat
     return getCanonicalDateRange(period, customStartDate, customEndDate);
 }
 
-const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customStartDate, customEndDate, missions: parentMissions, clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData, lastDataUpdatedAt, onRefreshMissions, clientFilter, dailyGoalOverride, monthlyGoalOverride, titleSuffix, accentClass, historyKey: historyKeyProp, canSeeMonetary: canSeeMonetaryProp }) => {
+const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customStartDate, customEndDate, missions: parentMissions, clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData, lastDataUpdatedAt, onRefreshMissions, clientFilter, dailyGoalOverride, monthlyGoalOverride, titleSuffix, accentClass, historyKey: historyKeyProp, canSeeMonetary: canSeeMonetaryProp, onOpenMission }) => {
     const { showNotification } = useNotification();
     const dailyGoal = typeof dailyGoalOverride === 'number' ? dailyGoalOverride : DEFAULT_DAILY_GOAL;
     const monthlyGoal = typeof monthlyGoalOverride === 'number' ? monthlyGoalOverride : DEFAULT_MONTHLY_GOAL;
@@ -286,6 +294,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
     const [currentTime, setCurrentTime] = useState(new Date());
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [updateHistory, setUpdateHistory] = useState<GoalUpdateSnapshot[]>([]);
+    const [isLowMarginOpen, setIsLowMarginOpen] = useState(false);
     const lastRecordedFetchAt = useRef<{ key: string; ts: number } | null>(null);
     const pendingManualRecord = useRef(false);
 
@@ -350,6 +359,20 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
     }, [filteredMissions, parentClientTables, parentProviderTables, parentClientsData, currentTime]);
 
     const otherCost = Math.max(0, currentCost - torresCost);
+
+    const lowMarginCount = useMemo(() => {
+        if (!parentClientTables || !parentProviderTables || !parentClientsData) return 0;
+        const refs = { clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData };
+        let count = 0;
+        for (const m of filteredMissions) {
+            if (m.status === MissionStatus.REFUSED) continue;
+            const r = computeCanonicalRevenueCost(m, refs, currentTime);
+            if (r.rev <= 0 && r.cost <= 0) continue;
+            const marginPct = r.rev > 0 ? ((r.rev - r.cost) / r.rev) * 100 : -100;
+            if (marginPct < LOW_MARGIN_THRESHOLD_PCT) count += 1;
+        }
+        return count;
+    }, [filteredMissions, parentClientTables, parentProviderTables, parentClientsData, currentTime]);
 
     const goal = useMemo(
         () => getGoalForPeriod(viewPeriod, customStartDate, customEndDate, dailyGoal, monthlyGoal),
@@ -605,6 +628,20 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                             amount={stats.profit}
                             flow="result"
                             suffix={`(${stats.marginPercent.toFixed(1)}%)`}
+                            trailingAction={
+                                onOpenMission && lowMarginCount > 0 ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsLowMarginOpen(true)}
+                                        className="inline-flex items-center gap-0.5 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-amber-800 hover:bg-amber-100 transition"
+                                        title={`Ver ${lowMarginCount} OS com margem abaixo de ${LOW_MARGIN_THRESHOLD_PCT}%`}
+                                        data-testid="button-open-low-margin-from-goal"
+                                    >
+                                        {lowMarginCount} &lt;{LOW_MARGIN_THRESHOLD_PCT}%
+                                        <ChevronRight size={10} />
+                                    </button>
+                                ) : null
+                            }
                         />
                         {torresCost > 0 && (
                             <>
@@ -615,6 +652,20 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                     </div>
                 )}
             </div>
+
+            {isLowMarginOpen && onOpenMission && parentClientTables && parentProviderTables && parentClientsData && (
+                <LowMarginDialog
+                    isOpen={isLowMarginOpen}
+                    onClose={() => setIsLowMarginOpen(false)}
+                    missions={filteredMissions}
+                    clientTables={parentClientTables}
+                    providerTables={parentProviderTables}
+                    clientsData={parentClientsData}
+                    periodLabel={chartPeriodLabel}
+                    scopeLabel={titleSuffix ? `Meta ${titleSuffix}` : 'Meta Geral'}
+                    onOpenMission={onOpenMission}
+                />
+            )}
 
             <style>{`
                 @keyframes shimmer-fast {

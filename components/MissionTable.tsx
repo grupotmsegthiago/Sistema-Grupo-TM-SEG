@@ -1872,6 +1872,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    monthlyGoalOverride={35000 * 20}
                    historyKey="meta-geral"
                    canSeeMonetary={canSeeGoalFinancials}
+                   onOpenMission={(m) => handleOpenFinancialModal(m)}
                 />
              </div>
              <div className="w-full sm:w-[320px] sm:shrink-0 flex overflow-visible">
@@ -1895,6 +1896,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    accentClass="from-yellow-400 to-red-600"
                    historyKey="meta-dhl"
                    canSeeMonetary={canSeeGoalFinancials}
+                   onOpenMission={(m) => handleOpenFinancialModal(m)}
                 />
              </div>
              <div className="w-full sm:w-[320px] sm:shrink-0 flex overflow-visible">
@@ -1914,6 +1916,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    accentClass="from-blue-500 to-indigo-700"
                    historyKey="meta-total"
                    canSeeMonetary={canSeeGoalFinancials}
+                   onOpenMission={(m) => handleOpenFinancialModal(m)}
                 />
              </div>
              </>
