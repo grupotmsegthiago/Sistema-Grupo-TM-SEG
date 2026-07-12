@@ -40,7 +40,11 @@ export async function resolvePrincipalFromToken(token: string): Promise<Resolved
     }
     if (!data || data.status !== 'Ativo') return null;
 
-    const profile = data.profiles as { name?: string; permissions?: string[] } | null;
+    const profileRaw = data.profiles as
+      | { name?: string; permissions?: string[] }
+      | { name?: string; permissions?: string[] }[]
+      | null;
+    const profile = Array.isArray(profileRaw) ? profileRaw[0] : profileRaw;
     const profilePerms = Array.isArray(profile?.permissions) ? profile.permissions : [];
     const userPerms = Array.isArray(data.permissions) ? data.permissions : [];
 

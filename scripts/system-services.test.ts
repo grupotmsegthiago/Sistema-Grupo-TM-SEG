@@ -39,12 +39,12 @@ test('serialize/deserialize TeamPunchLookup mantém batidas por usuário', () =>
   assert.equal(restored.byUserId.get('5')?.[0].type, 'IN');
 });
 
-test('API billing usa imports estáticos de systemAccess (Vercel serverless)', async () => {
+test('API billing usa billingApiAuth com fallback authFetch (Vercel serverless)', async () => {
   const fs = await import('node:fs/promises');
   for (const file of ['api/billing-dashboard.ts', 'api/billing-sync.ts', 'api/billing-ensure-schema.ts']) {
     const src = await fs.readFile(file, 'utf8');
-    assert.match(src, /import \{ extractAuthToken, assertBillingAccess \} from '\.\.\/lib\/services\/systemAccess\.js'/);
-    assert.doesNotMatch(src, /await import\('\.\.\/lib\/services\/systemAccess/);
+    assert.match(src, /import \{ assertBillingApiAccess, extractAuthToken \} from '\.\.\/lib\/billingApiAuth\.js'/);
+    assert.match(src, /assertBillingApiAccess\(token, req\)/);
   }
 });
 

@@ -145,10 +145,11 @@ describe('dashboardDiretoria aggregations', () => {
 });
 
 describe('DiretoriaSistemaTab auth', () => {
-  it('usa localStorage authToken (não Supabase session)', async () => {
+  it('usa authFetch com localStorage authToken (não Supabase session)', async () => {
     const src = await import('node:fs/promises').then((fs) =>
       fs.readFile('components/dashboard/DiretoriaSistemaTab.tsx', 'utf8'),
     );
+    assert.match(src, /authFetch/);
     assert.match(src, /localStorage\.getItem\('authToken'\)/);
     assert.doesNotMatch(src, /supabase\.auth\.getSession/);
     assert.doesNotMatch(src, /from '\.\.\/\.\.\/lib\/supabase'/);

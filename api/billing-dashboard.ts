@@ -1,4 +1,4 @@
-import { extractAuthToken, assertBillingAccess } from '../lib/services/systemAccess.js';
+import { assertBillingApiAccess, extractAuthToken } from '../lib/billingApiAuth.js';
 
 /** Painel de custos IA — handler leve (evita cold start do Express). */
 export default async function handler(req: any, res: any) {
@@ -8,7 +8,7 @@ export default async function handler(req: any, res: any) {
   }
 
   const token = extractAuthToken(req);
-  const denied = await assertBillingAccess(token);
+  const denied = await assertBillingApiAccess(token, req);
   if (denied) {
     res.status(denied === 'Não autorizado' ? 401 : 403).json({ ok: false, error: denied });
     return;

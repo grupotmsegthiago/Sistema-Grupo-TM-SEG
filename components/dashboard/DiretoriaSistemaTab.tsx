@@ -3,6 +3,7 @@ import {
   RefreshCw, Loader2, Cpu, Thermometer, AlertTriangle, CheckCircle2,
   Download, Sparkles, TrendingDown,
 } from 'lucide-react';
+import { authFetch } from '../../lib/authFetch';
 import type { BillingMonthSummary, BillingUsageRow, TokenEfficiencyReport } from '../../lib/dashboardDiretoria/billingTypes';
 
 const fmtBRL = (v: number) =>
@@ -27,7 +28,7 @@ async function fetchJsonWithTimeout(url: string, init: RequestInit = {}, ms = FE
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
   try {
-    const r = await fetch(url, { ...init, signal: ctrl.signal });
+    const r = await authFetch(url, { ...init, signal: ctrl.signal });
     const j = await r.json().catch(() => ({}));
     return { ok: r.ok, status: r.status, json: j };
   } catch (e: unknown) {
