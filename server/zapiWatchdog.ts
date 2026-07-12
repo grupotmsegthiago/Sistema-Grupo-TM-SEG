@@ -105,8 +105,13 @@ export async function runZapiWatchdogTick(): Promise<void> {
     void notifyZapiDisconnected(row, 'vigia').catch((e) => {
       console.error('[Z-API Vigia] Falha no alerta de desconexão:', e?.message || e);
     });
+  }
+
+  if (afterStreak.incidentOpen || afterStreak.downStreak >= CONFIRM_CHECKS) {
     void attemptZapiAutoReconnect('watchdog').then((r) => {
-      if (r.attempted) console.log(`[Z-API Vigia] Auto-reconnect: ${r.phase} — ${r.message}`);
+      if (r.attempted || r.phase === 'skipped') {
+        console.log(`[Z-API Vigia] Auto-reconnect: ${r.phase} — ${r.message}`);
+      }
     }).catch(() => {});
   }
 }

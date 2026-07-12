@@ -4,8 +4,10 @@ import { getDefaultWhatsappInstance, instanceConfigured } from "./whatsapp/insta
 import { credsFromInstance, zapiFetchWith } from "./whatsapp/zapiHttp";
 import { fetchZapiExtensionToken } from "./whatsapp/zapiExtensionToken";
 import { logWhatsappSessionEvent } from "./whatsappTelemetry";
+import { loadZapiWatchdogState } from "./zapiWatchdogState";
 
 const COOLDOWN_MS = 30 * 60 * 1000;
+const INCIDENT_RETRY_MS = 5 * 60 * 1000;
 const LAST_ATTEMPT_KEY = "zapi_watchdog_last_restart_at";
 
 export type AutoReconnectSource = "watchdog" | "webhook" | "api" | "cron";
@@ -27,7 +29,7 @@ export function isWhatsappAutoReconnectEnabled(): boolean {
 
 export function getAutoReconnectPolicyMessage(): string {
   if (isWhatsappAutoReconnectEnabled()) {
-    return "Reconexão automática ativa (padrão): após queda confirmada, tenta restore-session e restart (cooldown 30 min). Desative com WHATSAPP_AUTO_RECONNECT=false.";
+    return "Reconexão automática ativa (padrão): vigia a cada 1 min; após queda, tenta restore-session + restart a cada 5 min enquanto offline.";
   }
   return "Reconexão automática desativada (WHATSAPP_AUTO_RECONNECT=false). Use o botão Reconectar via API.";
 }
@@ -108,13 +110,15 @@ export async function attemptZapiAutoReconnect(
 
   if (!force) {
     const last = await loadLastAttemptMs();
-    if (last != null && Date.now() - last < COOLDOWN_MS) {
-      const waitMin = Math.ceil((COOLDOWN_MS - (Date.now() - last)) / 60_000);
+    const incidentOpen = (await loadZapiWatchdogState()).incidentOpen;
+    const cooldown = incidentOpen ? INCIDENT_RETRY_MS : COOLDOWN_MS;
+    if (last != null && Date.now() - last < cooldown) {
+      const waitMin = Math.ceil((cooldown - (Date.now() - last)) / 60_000);
       return {
         attempted: false,
         ok: false,
         phase: "skipped",
-        message: `Cooldown ativo — aguarde ~${waitMin} min antes de nova tentativa.`,
+        message: `Cooldown ativo — próxima tentativa em ~${waitMin} min.`,
       };
     }
   }
