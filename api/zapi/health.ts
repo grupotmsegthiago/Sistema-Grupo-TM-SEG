@@ -1,4 +1,4 @@
-import { getDefaultWhatsappInstance, instanceConfigured, runWhatsappInstanceMigrations } from '../server/whatsapp/instanceStore.js';
+import { getDefaultWhatsappInstance, instanceConfigured, invalidateDefaultCache } from '../server/whatsapp/instanceStore.js';
 import { credsFromInstance, zapiFetchWith } from '../server/whatsapp/zapiHttp.js';
 
 /** Smoke test público da Z-API (sem expor tokens). */
@@ -11,7 +11,7 @@ export default async function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store');
 
   try {
-    await runWhatsappInstanceMigrations();
+    invalidateDefaultCache();
     const row = await getDefaultWhatsappInstance(true);
     if (!row || !instanceConfigured(row)) {
       res.status(503).json({ ok: false, configured: false, error: 'Instância WhatsApp não configurada' });
