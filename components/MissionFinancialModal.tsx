@@ -28,6 +28,11 @@ import AuditSummaryPanel from './AuditSummaryPanel';
 import DhlOccurrenceReportModal from './DhlOccurrenceReportModal';
 import { formatDateTimeBR, formatNowDateTimeBR, formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import {
+  getMissionOpsDisplayStatus,
+  getMissionOpsMissingFields,
+  isMissionOpsIncomplete,
+} from '../lib/missionOpsIncomplete';
 import html2canvas from 'html2canvas';
 import FilterableSelect, { type FilterableSelectOption } from './FilterableSelect';
 
@@ -510,6 +515,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const userNameLower = useMemo(() => {
     try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); return ((u.name || u.username || '') as string).toLowerCase(); } catch { return ''; }
   }, []);
+  const opsMissingFields = useMemo(
+    () => (mission ? getMissionOpsMissingFields(mission) : []),
+    [mission],
+  );
+  const opsIncomplete = opsMissingFields.length > 0;
+  const opsDisplayStatus = useMemo(
+    () => (mission ? getMissionOpsDisplayStatus(mission) : '—'),
+    [mission],
+  );
+  const opsDataSectionRef = useRef<HTMLDivElement>(null);
   // Financeiro (Bárbara): liberação permanente para editar e aprovar faturamento,
   // inclusive OS verificadas pelo Controller ou já salvas/aprovadas.
   const isBarbaraFinance = useMemo(() => {
@@ -2336,6 +2351,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       // Só é exigido quando a missão está Concluída ou Cancelada.
       const missionStatusTrim = (mission.status || '').trim();
       const requiresTollGate = missionStatusTrim === 'Concluída' || missionStatusTrim === 'Cancelada';
+      if (approve && opsIncomplete) {
+          showNotification(
+              'Dados Operacionais Pendentes',
+              `Preencha e salve antes de aprovar: ${opsMissingFields.join(' • ')}`,
+              'error',
+          );
+          opsDataSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+      }
       if (approve && !mission.billing_approved && requiresTollGate && !isBarbaraFinance) {
           if (!tollConfirmed) {
               setShowTollConfirmDialog(true);
@@ -3968,6 +3992,34 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         </div>
                     )}
 
+                    {opsIncomplete && (
+                        <div
+                            className="bg-amber-50 border-2 border-amber-400 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3"
+                            data-testid="banner-ops-incomplete"
+                        >
+                            <AlertTriangle size={20} className="text-amber-600 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-xs font-black text-amber-900 uppercase tracking-wide">
+                                    Dados operacionais pendentes — aprovação bloqueada
+                                </p>
+                                <p className="text-[10px] text-amber-800 font-bold mt-0.5">
+                                    Faltam: {opsMissingFields.join(' • ')}. Preencha em &quot;Dados Cliente&quot; e clique Salvar.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsEditingOpsData(true);
+                                    opsDataSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }}
+                                className="shrink-0 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-black uppercase transition-colors"
+                                data-testid="button-go-ops-data"
+                            >
+                                Preencher dados
+                            </button>
+                        </div>
+                    )}
+
                     <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
                         <div className="flex flex-wrap gap-6 items-center justify-between">
                             <div className="flex-1 min-w-[120px]">
@@ -4008,13 +4060,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             </div>
                             <div className="flex-1 min-w-[120px] text-right">
                                  <p className={LABEL_CLASS}>Status da OS</p>
-                                 <p className="text-lg font-bold text-gray-600 uppercase">{mission.status}</p>
+                                 <p className={`text-lg font-black uppercase ${opsIncomplete ? 'text-amber-700' : 'text-gray-600'}`} data-testid="text-mission-ops-status">
+                                     {opsDisplayStatus}
+                                 </p>
+                                 {opsIncomplete && (
+                                     <p className="text-[8px] font-bold text-amber-600 uppercase mt-0.5">Aguardando dados</p>
+                                 )}
                             </div>
                         </div>
 
                         <div className="mt-4 pt-4 border-t border-gray-100">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="bg-green-50/50 border border-green-200 rounded-xl p-3">
+                                <div ref={opsDataSectionRef} className="bg-green-50/50 border border-green-200 rounded-xl p-3">
                                     <div className="flex items-center justify-between mb-3">
                                         <p className="text-[10px] font-black text-green-700 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={12}/> Dados Cliente</p>
                                         {(canEditClientData || canEditEndTimeOnly) && canEditOpsEvenIfLocked && !isEditingOpsData && (
@@ -4028,7 +4085,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         )}
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
-                                        <div>
+                                        <div className={opsMissingFields.includes('HORA INICIAL') ? 'rounded-lg ring-2 ring-red-300 bg-red-50/80 p-1' : ''}>
                                             <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">Hora Inicial</p>
                                             {isEditingOpsData && canEditOpsData ? (
                                                 <input type="datetime-local" value={editStartTime} onChange={e => setEditStartTime(e.target.value)} className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" data-testid="input-start-time" />
@@ -4036,7 +4093,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 <p className="text-sm font-bold text-gray-700 font-mono">{mission.startTime ? formatDateTimeBR(mission.startTime) : '---'}</p>
                                             )}
                                         </div>
-                                        <div>
+                                        <div className={opsMissingFields.includes('KM INICIAL') ? 'rounded-lg ring-2 ring-red-300 bg-red-50/80 p-1' : ''}>
                                             <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">KM Inicial</p>
                                             {isEditingOpsData && canEditOpsData ? (
                                                 <input type="number" step="0.1" value={editStartKm} onChange={e => setEditStartKm(e.target.value)} placeholder="0" className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" data-testid="input-start-km" />
@@ -4044,7 +4101,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 <p className="text-sm font-bold text-gray-700 font-mono">{mission.startKm ? `${safeNumber(mission.startKm).toLocaleString('pt-BR')} km` : '---'}</p>
                                             )}
                                         </div>
-                                        <div>
+                                        <div className={opsMissingFields.includes('HORA FINAL') ? 'rounded-lg ring-2 ring-red-300 bg-red-50/80 p-1' : ''}>
                                             <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">Hora Final</p>
                                             {isEditingOpsData ? (
                                                 <input type="datetime-local" value={editEndTime} onChange={e => setEditEndTime(e.target.value)} className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" data-testid="input-end-time" />
@@ -4052,7 +4109,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 <p className="text-sm font-bold text-gray-700 font-mono">{mission.endTime ? formatDateTimeBR(mission.endTime) : '---'}</p>
                                             )}
                                         </div>
-                                        <div>
+                                        <div className={opsMissingFields.includes('KM FINAL') ? 'rounded-lg ring-2 ring-red-300 bg-red-50/80 p-1' : ''}>
                                             <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">KM Final</p>
                                             {isEditingOpsData && canEditOpsData ? (
                                                 <input type="number" step="0.1" value={editEndKm} onChange={e => setEditEndKm(e.target.value)} placeholder="0" className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" data-testid="input-end-km" />
@@ -5795,14 +5852,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 
-                                    disabled={isUpdating || (requiresTollGate && !tollConfirmed && !isBarbaraFinance) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))} 
-                                    className={`flex-[1.2] sm:flex-none px-2 sm:px-6 py-2 rounded-lg sm:rounded-xl font-black uppercase text-[9px] sm:text-xs shadow-md flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 h-9 sm:h-10 ${requiresTollGate && !tollConfirmed && !isBarbaraFinance ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    disabled={isUpdating || opsIncomplete || (requiresTollGate && !tollConfirmed && !isBarbaraFinance) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))} 
+                                    className={`flex-[1.2] sm:flex-none px-2 sm:px-6 py-2 rounded-lg sm:rounded-xl font-black uppercase text-[9px] sm:text-xs shadow-md flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 h-9 sm:h-10 ${opsIncomplete ? 'bg-gray-400 cursor-not-allowed text-gray-200' : requiresTollGate && !tollConfirmed && !isBarbaraFinance ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    title={opsIncomplete ? `Preencha: ${opsMissingFields.join(', ')}` : undefined}
                                     data-testid="button-approve-billing"
                                 >
                                     <span className="flex items-center gap-1 sm:gap-2">
-                                        {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (!currentApprovalStatus.isPrivilegedReapprover && (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria)) ? <Lock size={14} className="text-amber-600 shrink-0" /> : <CheckCircle2 size={14} className="shrink-0" />} 
+                                        {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : opsIncomplete ? <AlertTriangle size={14} className="shrink-0" /> : (!currentApprovalStatus.isPrivilegedReapprover && (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria)) ? <Lock size={14} className="text-amber-600 shrink-0" /> : <CheckCircle2 size={14} className="shrink-0" />} 
                                         <span className="truncate">
-                                        {currentApprovalStatus.isPrivilegedReapprover && currentApprovalStatus.isFullyApproved
+                                        {opsIncomplete
+                                            ? 'Dados pendentes'
+                                            : currentApprovalStatus.isPrivilegedReapprover && currentApprovalStatus.isFullyApproved
                                             ? 'Re-Aprovar'
                                             : (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')
                                             ? 'Pendente' 

@@ -110,11 +110,11 @@ const StatCard: React.FC<StatCardProps> = ({ icon: Icon, title, value, bgColor, 
     </button>
 );
 
+import { isMissionOpsIncomplete } from '../lib/missionOpsIncomplete';
+
 const isMissionPending = (m: Mission) => {
     if (m.status === MissionStatus.PENDING) return true;
-    if (m.status === MissionStatus.COMPLETED) {
-        if (m.endKm === null || m.endKm === undefined || m.endKm === 0) return true;
-    }
+    if (isMissionOpsIncomplete(m)) return true;
     return false;
 };
 

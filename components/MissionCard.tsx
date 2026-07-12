@@ -19,6 +19,7 @@ import MissionTimer from './MissionTimer';
 import { useNotification } from '../lib/NotificationContext';
 import { applyRegionSuffix, calculateMissionFinancials, auditMissionFinancials } from '../lib/financialUtils';
 import { formatProviderName, resolveLocationDisplay, extractCoordinates } from '../lib/utils';
+import { isMissionOpsIncomplete, getMissionOpsMissingFields, isOpsAlertRecipient } from '../lib/missionOpsIncomplete';
 
 const geocodeCache: Record<string, string> = {};
 const geocodePending: Record<string, Promise<string>> = {};
@@ -406,10 +407,16 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
 
     const isActive = !isTerminal;
 
-    const isPendingKm = useMemo(() => {
-        return mission.status === MissionStatus.COMPLETED && 
-               (mission.endKm === null || mission.endKm === undefined || mission.endKm === 0);
-    }, [mission.status, mission.endKm]);
+    const opsMissingFields = useMemo(() => getMissionOpsMissingFields(mission), [mission]);
+
+    const showOpsPendingAlert = useMemo(() => {
+        try {
+            const user = JSON.parse(localStorage.getItem('userData') || '{}');
+            return isOpsAlertRecipient(user) && isMissionOpsIncomplete(mission);
+        } catch {
+            return false;
+        }
+    }, [mission]);
 
     const missingInfo = useMemo(() => {
         const missing: string[] = [];
@@ -674,9 +681,14 @@ Qualquer dúvida, estamos a disposição.
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-pulse pointer-events-none"></div>
                 </div>
             )}
-            {!hideProviderInfo && (missingInfo.length > 0 || isPendingKm) && (
+            {showOpsPendingAlert && (
+                <div className={`bg-red-600 text-white text-[12px] font-bold uppercase py-1.5 px-3 flex items-center justify-center gap-2 animate-pulse ${isExtraHourActive ? '' : 'rounded-t-xl'}`} data-testid="banner-ops-pending-card">
+                    <AlertOctagon size={12} strokeWidth={3} /> PENDENTE: {opsMissingFields.join(' • ')}
+                </div>
+            )}
+            {!showOpsPendingAlert && !hideProviderInfo && missingInfo.length > 0 && (
                 <div className={`bg-red-600 text-white text-[12px] font-bold uppercase py-1.5 px-3 flex items-center justify-center gap-2 animate-pulse ${isExtraHourActive ? '' : 'rounded-t-xl'}`}>
-                    <AlertOctagon size={12} strokeWidth={3} /> PENDENTE: {isPendingKm ? ['KM FINAL', ...missingInfo].join(' • ') : missingInfo.join(' • ')}
+                    <AlertOctagon size={12} strokeWidth={3} /> PENDENTE: {missingInfo.join(' • ')}
                 </div>
             )}
             {(() => {
@@ -700,7 +712,7 @@ Qualquer dúvida, estamos a disposição.
                 if (urgent) {
                     return (
                         <div
-                            className={`relative text-[12px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 overflow-hidden ${isExtraHourActive || (missingInfo.length > 0 || isPendingKm) ? '' : 'rounded-t-xl'} animate-pulse`}
+                            className={`relative text-[12px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 overflow-hidden ${isExtraHourActive || showOpsPendingAlert || missingInfo.length > 0 ? '' : 'rounded-t-xl'} animate-pulse`}
                             style={{ background: 'repeating-linear-gradient(135deg, #facc15 0 12px, #dc2626 12px 24px)', color: '#1f2937', textShadow: '0 1px 0 rgba(255,255,255,0.6)' }}
                             title={`${isDhlBanner ? 'Fornecedor DHL' : 'Fornecedor'} ainda nao preencheu — missao comeca em menos de 2 horas`}
                         >
@@ -713,7 +725,7 @@ Qualquer dúvida, estamos a disposição.
                 }
                 return (
                     <div
-                        className={`bg-amber-300 text-amber-950 text-[12px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 border-y-2 border-amber-600 ${isExtraHourActive || (missingInfo.length > 0 || isPendingKm) ? '' : 'rounded-t-xl'}`}
+                        className={`bg-amber-300 text-amber-950 text-[12px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 border-y-2 border-amber-600 ${isExtraHourActive || showOpsPendingAlert || missingInfo.length > 0 ? '' : 'rounded-t-xl'}`}
                         title={`${isDhlBanner ? 'Fornecedor DHL' : 'Fornecedor'} ainda nao preencheu os dados — cobrar preenchimento`}
                     >
                         <AlertTriangle size={12} strokeWidth={3} /> PENDENTE {fornecedorLabel} PREENCHER {hoursLabel ? `• INICIO EM ${hoursLabel}` : ''}
@@ -740,8 +752,8 @@ Qualquer dúvida, estamos a disposição.
                                 <Link2 size={10} /> MÃE: {mission.parent_mission_id}
                             </span>
                         )}
-                        <span className={`px-1.5 py-0.5 rounded text-[11px] font-extrabold uppercase border tracking-wider ${isPendingKm && !hideProviderInfo ? 'bg-amber-100 text-amber-800 border-amber-300' : getStatusBadgeClass(mission.status)}`}>
-                            {isPendingKm && !hideProviderInfo ? 'PENDENTE KM' : mission.status}
+                        <span className={`px-1.5 py-0.5 rounded text-[11px] font-extrabold uppercase border tracking-wider ${showOpsPendingAlert ? 'bg-amber-100 text-amber-800 border-amber-300' : getStatusBadgeClass(mission.status)}`}>
+                            {showOpsPendingAlert ? 'PENDENTE DADOS' : mission.status}
                         </span>
                         {(() => {
                             if (tollConfirmation) {
@@ -827,8 +839,8 @@ Qualquer dúvida, estamos a disposição.
                         <div className="flex items-center gap-2"><div className="p-0.5 bg-blue-50 rounded text-blue-600 shrink-0"><FileText size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Criação</span><span className="text-[12px] font-bold text-gray-800">{formatDateTime(mission.createdAt)}</span></div></div>
                         <div className="flex items-center gap-2"><div className="p-0.5 bg-orange-50 rounded text-orange-600 shrink-0"><Clock size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Agendamento</span><span className="text-[12px] font-bold text-gray-800">{mission.startTime ? formatDateTime(mission.startTime) : 'Imediato'}</span></div></div>
                     </div>
-                    <MissionTimer status={isPendingKm && !hideProviderInfo ? MissionStatus.PENDING : mission.status} startTime={mission.startTime} createdAt={mission.createdAt} />
-                    <div className="w-full">{isActive && !(isPendingKm && !hideProviderInfo) ? (<AgingTimelineBar minutes={minutesSinceUpdate} status={mission.status} />) : (<div className="h-6 w-full text-center text-[12px] text-gray-400 font-bold uppercase tracking-wider opacity-50">{isPendingKm && !hideProviderInfo ? 'KM PENDENTE' : '-'}</div>)}</div>
+                    <MissionTimer status={showOpsPendingAlert ? MissionStatus.PENDING : mission.status} startTime={mission.startTime} createdAt={mission.createdAt} />
+                    <div className="w-full">{isActive && !showOpsPendingAlert ? (<AgingTimelineBar minutes={minutesSinceUpdate} status={mission.status} />) : (<div className="h-6 w-full text-center text-[12px] text-gray-400 font-bold uppercase tracking-wider opacity-50">{showOpsPendingAlert ? 'DADOS PENDENTES' : '-'}</div>)}</div>
                 </div>
                 
                 <div className="sm:col-span-1 xl:col-span-3 p-2.5 xl:p-3 flex flex-col justify-center bg-gray-50/20 border-r border-gray-100 min-w-0">
