@@ -2643,7 +2643,7 @@ export async function registerRoutes(
     console.warn('[Migration] RH:', e?.message || 'falhou');
   }
   try {
-    const { runBillingUsageMigrations } = await import('./billingUsageMigrations');
+    const { runBillingUsageMigrations } = await import('./billingUsageMigrations.js');
     await runBillingUsageMigrations();
   } catch (e: any) {
     console.warn('[Migration] Billing usage:', e?.message || 'falhou');
