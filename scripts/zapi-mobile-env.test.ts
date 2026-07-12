@@ -45,6 +45,15 @@ describe("zapiMobileEnv", () => {
     restore();
   });
 
+  it("getZapiMobileEnvCreds inclui clientToken de ZAPI_CLIENT_TOKEN", () => {
+    process.env.ZAPI_MOBILE_ID = "MOBILE-ID";
+    process.env.ZAPI_MOBILE_TOKEN = "MOBILE-TOK";
+    process.env.ZAPI_CLIENT_TOKEN = "CLIENT-TOK";
+    const c = getZapiMobileEnvCreds();
+    assert.equal(c?.clientToken, "CLIENT-TOK");
+    restore();
+  });
+
   it("getZapiMobileEnvCreds prioriza ZAPI_MOBILE_* e rótulo ZAPI_MOBILE_INSTANCIA", () => {
     process.env.ZAPI_MOBILE_ID = "MOBILE-ID";
     process.env.ZAPI_MOBILE_TOKEN = "MOBILE-TOK";

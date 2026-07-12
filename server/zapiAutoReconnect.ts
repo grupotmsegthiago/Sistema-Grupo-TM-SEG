@@ -149,6 +149,32 @@ async function attemptMobileWaOldReconnect(
     body: JSON.stringify({ ddi, phone, method: "wa_old" }),
   });
 
+  const requestCodeUnavailable = req.data?.error === "NOT_FOUND"
+    || String(req.data?.message || "").includes("Unable to find matching target resource method");
+
+  if (requestCodeUnavailable) {
+    const full = `${ddi}${phone}`;
+    const link = await zapiFetchWith(creds, `phone-code/${full}`, { method: "GET" });
+    const linkCode = String(link.data?.code || link.data?.value || "").trim() || null;
+    if (linkCode) {
+      return {
+        attempted: true,
+        ok: false,
+        phase: "wa_old",
+        message: `Instância Z-API sem endpoint wa_old — use no WhatsApp Business: Aparelhos conectados → Conectar → Vincular com número → código ${linkCode}.`,
+        connectedAfter: false,
+        details: { requestCode: req.data, phoneLinkCode: linkCode, fallback: "phone-code" },
+      };
+    }
+    return {
+      attempted: true,
+      ok: false,
+      phase: "wa_old",
+      message: "Endpoint mobile/request-code indisponível nesta instância Z-API — confira no painel Z-API se o tipo é MOBILE ou use QR em Configurações → WhatsApp.",
+      details: { requestCode: req.data },
+    };
+  }
+
   if (!req.ok || req.data?.success === false) {
     const captcha = req.data?.captcha;
     const msg = captcha
@@ -297,9 +323,9 @@ export async function attemptZapiAutoReconnect(
     };
   }
 
-  const restart = await zapiFetchWith(creds, "restart", { method: "POST" });
+  let restart = await zapiFetchWith(creds, "restart", { method: "GET" });
   if (!restart.ok) {
-    await zapiFetchWith(creds, "restart", { method: "GET" });
+    restart = await zapiFetchWith(creds, "restart", { method: "POST" });
   }
   await sleep(4000);
   status = await readLiveStatus(creds);
