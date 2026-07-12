@@ -2,7 +2,7 @@ import {
   DEFAULT_SUPABASE_ANON_KEY,
   DEFAULT_SUPABASE_URL,
   TMSEG_SUPABASE_PROJECT_REF,
-} from './supabaseDefaults';
+} from './supabaseDefaults.js';
 
 export function cleanEnv(value: unknown): string {
   if (value == null) return '';

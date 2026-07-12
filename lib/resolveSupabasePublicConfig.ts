@@ -1,4 +1,4 @@
-import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from './supabaseDefaults';
+import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from './supabaseDefaults.js';
 import {
   cleanEnv,
   isTmSegSupabaseAnonKey,

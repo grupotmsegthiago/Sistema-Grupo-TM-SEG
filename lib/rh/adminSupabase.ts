@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { DEFAULT_SUPABASE_URL, TMSEG_SUPABASE_PROJECT_REF } from '../supabaseDefaults';
+import { DEFAULT_SUPABASE_URL, TMSEG_SUPABASE_PROJECT_REF } from '../supabaseDefaults.js';
 
 function decodeRef(key: string): string | null {
   try {
