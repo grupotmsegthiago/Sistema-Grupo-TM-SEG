@@ -589,6 +589,63 @@ test('modal expõe chat do agente de IA com histórico', () => {
   assert.match(src, /import React, \{[^}]*useState/);
 });
 
+test('pré-visualização injeta Editar/Excluir em blocos editáveis', async () => {
+  const {
+    injectDhlPreviewEditControls,
+    stripDhlPreviewEditControls,
+    plainTextToEditableInner,
+    editableInnerToPlainText,
+    labelForEditableId,
+    isDhlPreviewEditorMessage,
+  } = await import('../lib/dhlOccurrenceReport/previewEditor');
+  const { applyEditablePatches } = await import('../lib/dhlOccurrenceReport/adjustReportHtml');
+
+  const html =
+    '<html><head></head><body>' +
+    '<p data-dhl-editable="sec-1-objetivo">Texto da seção 1.</p>' +
+    '<tr data-dhl-editable="row-ac-02" data-dhl-adjust-only="1"><td>AC-02</td><td>Ação teste</td></tr>' +
+    '</body></html>';
+
+  const preview = injectDhlPreviewEditControls(html);
+  assert.match(preview, /dhl-preview-editor-script/);
+  assert.match(preview, /dhl-edit-toolbar/);
+  assert.match(preview, /dhl-edit-actions/);
+  assert.match(preview, /attachRowActions/);
+
+  const stripped = stripDhlPreviewEditControls(preview);
+  assert.doesNotMatch(stripped, /dhl-preview-editor-script/);
+  assert.match(stripped, /sec-1-objetivo/);
+
+  assert.equal(labelForEditableId('row-ac-02'), 'Linha AC-02');
+  assert.equal(labelForEditableId('sec-1-objetivo'), '1. Objetivo do documento');
+
+  const plain = editableInnerToPlainText('<strong>Olá</strong> mundo');
+  assert.match(plain, /Olá mundo/);
+  const inner = plainTextToEditableInner('Linha nova', 'P');
+  assert.match(inner, /Linha nova/);
+
+  const deleted = applyEditablePatches(html, { 'row-ac-02': '' });
+  assert.doesNotMatch(deleted, /row-ac-02/);
+
+  assert.equal(
+    isDhlPreviewEditorMessage({ source: 'dhl-report-preview', action: 'delete', id: 'x', tagName: 'TR' }),
+    true,
+  );
+  assert.equal(isDhlPreviewEditorMessage({ source: 'other', action: 'delete', id: 'x', tagName: 'TR' }), false);
+
+  const modal = fs.readFileSync('components/DhlOccurrenceReportModal.tsx', 'utf8');
+  assert.match(modal, /injectDhlPreviewEditControls/);
+  assert.match(modal, /modal-dhl-manual-edit/);
+  assert.match(modal, /isDhlPreviewEditorMessage/);
+});
+
+test('HTML marca sec-1-objetivo editável', () => {
+  const html = buildOccurrenceReportHtml(baseData, {
+    logoDataUri: 'data:image/png;base64,AAAA',
+  });
+  assert.match(html, /data-dhl-editable="sec-1-objetivo"/);
+});
+
 test('histórico: handler standalone, Express, migração e service conectados', () => {
   // Migração automática (Express startup) + garantia no handler standalone
   const routes = fs.readFileSync('server/routes.ts', 'utf8');

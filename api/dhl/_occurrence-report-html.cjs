@@ -298,7 +298,7 @@ function buildFullOccurrenceReportHtml(data, options) {
 
   <div class="subsection">
   <h2>1. Objetivo do documento</h2>
-  <p>Formalizar, de forma estruturada e transparente, a justificativa do atraso registrado na opera\xE7\xE3o de escolta vinculada \xE0 <strong>S.E. n\xBA ${esc(data.seNumber)}</strong>, bem como o plano de a\xE7\xE3o com medidas corretivas e preventivas adotadas pela TM SEG, visando a apresenta\xE7\xE3o \xE0 DHL Supply Chain e ao cliente final (Foxconn / Apple).</p>
+  <p ${editable("sec-1-objetivo")}>Formalizar, de forma estruturada e transparente, a justificativa do atraso registrado na opera\xE7\xE3o de escolta vinculada \xE0 <strong>S.E. n\xBA ${esc(data.seNumber)}</strong>, bem como o plano de a\xE7\xE3o com medidas corretivas e preventivas adotadas pela TM SEG, visando a apresenta\xE7\xE3o \xE0 DHL Supply Chain e ao cliente final (Foxconn / Apple).</p>
   </div>
 
   <div class="subsection">
