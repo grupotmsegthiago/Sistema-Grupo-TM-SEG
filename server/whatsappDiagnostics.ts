@@ -147,6 +147,11 @@ function buildRecommendations(input: {
     },
     {
       priority: "critical",
+      title: "Não usar WhatsApp Business no chip do bot",
+      detail: "WhatsApp Business ou segundo app no mesmo número do bot compete com a Z-API e causa quedas frequentes. Use um aparelho dedicado só com WhatsApp normal.",
+    },
+    {
+      priority: "critical",
       title: "Não abrir WhatsApp Web no mesmo número",
       detail: "Qualquer sessão Web manual no mesmo chip compete com a Z-API e pode derrubar o bot.",
     },

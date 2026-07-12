@@ -503,6 +503,28 @@ const WhatsAppConnectionPanel: React.FC = () => {
                     : `Desconectado${info?.status?.error ? `: ${info.status.error}` : info?.lastError ? `: ${info.lastError}` : ''}`}
                 </div>
 
+                {!connected && isZapi && (
+                  <div className="p-4 rounded-lg border border-red-200 bg-red-50 text-red-950 text-xs space-y-2">
+                    <p className="font-black uppercase text-[10px] tracking-wide">Checklist de recuperação</p>
+                    <ol className="list-decimal list-inside space-y-1 leading-relaxed">
+                      <li>Celular <strong>dedicado do bot</strong> ligado, WhatsApp aberto, Wi‑Fi estável (sem economia de bateria).</li>
+                      <li><strong>Não</strong> usar WhatsApp Business nem WhatsApp Web no mesmo chip do bot.</li>
+                      <li>Clique <strong>Reconectar via API</strong> (restore-session + restart automático).</li>
+                      <li>Se não voltar: <strong>Código extensão</strong> → colar na extensão Z-API Conector no Chrome.</li>
+                      <li>Instância mobile: <strong>Pop-up no app</strong> ou SMS no painel abaixo.</li>
+                    </ol>
+                    <p className="text-[10px] opacity-80">O vigia tenta reconectar sozinho após queda (cooldown 30 min). Quedas por celular offline ou sessão expirada exigem passos acima.</p>
+                  </div>
+                )}
+
+                <div className="p-4 rounded-lg border border-blue-100 bg-blue-50/80 text-blue-950 text-xs space-y-2">
+                  <p className="font-black uppercase text-[10px] tracking-wide">Z-API hoje vs Meta Cloud API (oficial)</p>
+                  <p className="leading-relaxed">
+                    <strong>Z-API (atual):</strong> depende do celular ligado e da sessão WhatsApp — pode cair com Web/Business no mesmo número.
+                    <strong className="block mt-1">Meta oficial:</strong> envios pela API Graph sem celular 24h; muito mais estável para automação, porém custo por conversa, templates aprovados e migração de código (provider Meta ainda em desenvolvimento no sistema).
+                  </p>
+                </div>
+
                 {message && (
                   <p className="text-sm bg-blue-50 border border-blue-100 text-blue-900 p-3 rounded-lg">{message}</p>
                 )}
@@ -522,7 +544,7 @@ const WhatsAppConnectionPanel: React.FC = () => {
                     <div className="font-mono text-[10px] bg-white p-2 rounded border break-all">
                       Status entrega: {typeof window !== 'undefined' ? `${window.location.origin}/api/zapi/webhook/message-status` : '/api/zapi/webhook/message-status'}
                     </div>
-                    <p className="text-[10px] opacity-80">Vigia: 1 min. Auto-reconnect via API se WHATSAPP_AUTO_RECONNECT=true (restore-session + restart).</p>
+                    <p className="text-[10px] opacity-80">Vigia: 1 min. Auto-reconnect ativo por padrão (restore-session + restart). Desative com WHATSAPP_AUTO_RECONNECT=false na Vercel.</p>
                   </div>
                 )}
 

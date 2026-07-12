@@ -19,15 +19,17 @@ export type AutoReconnectResult = {
   details?: Record<string, unknown>;
 };
 
+/** Ativo por padrão; desative com WHATSAPP_AUTO_RECONNECT=false na Vercel. */
 export function isWhatsappAutoReconnectEnabled(): boolean {
-  return String(process.env.WHATSAPP_AUTO_RECONNECT || "").trim().toLowerCase() === "true";
+  const raw = String(process.env.WHATSAPP_AUTO_RECONNECT ?? "true").trim().toLowerCase();
+  return raw !== "false" && raw !== "0" && raw !== "no";
 }
 
 export function getAutoReconnectPolicyMessage(): string {
   if (isWhatsappAutoReconnectEnabled()) {
-    return "Reconexão automática ativa: após queda confirmada, tenta restore-session e restart (cooldown 30 min).";
+    return "Reconexão automática ativa (padrão): após queda confirmada, tenta restore-session e restart (cooldown 30 min). Desative com WHATSAPP_AUTO_RECONNECT=false.";
   }
-  return "Reconexão automática desativada. Defina WHATSAPP_AUTO_RECONNECT=true na Vercel ou use o botão Reconectar via API.";
+  return "Reconexão automática desativada (WHATSAPP_AUTO_RECONNECT=false). Use o botão Reconectar via API.";
 }
 
 async function loadLastAttemptMs(): Promise<number | null> {
