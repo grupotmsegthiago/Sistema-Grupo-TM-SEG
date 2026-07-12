@@ -658,6 +658,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                     isOpen={isLowMarginOpen}
                     onClose={() => setIsLowMarginOpen(false)}
                     missions={filteredMissions}
+                    allMissions={parentMissions}
                     clientTables={parentClientTables}
                     providerTables={parentProviderTables}
                     clientsData={parentClientsData}
