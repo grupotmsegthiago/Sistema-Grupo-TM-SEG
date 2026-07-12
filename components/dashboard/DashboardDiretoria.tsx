@@ -26,7 +26,7 @@ import {
   fmtBRL,
   fmtShort,
 } from '../../lib/dashboardDiretoria/aggregations';
-import { buildYearOptions, createDefaultPeriod } from '../../lib/dashboardDiretoria/periodUtils';
+import { buildYearOptions, createDefaultPeriod, formatPeriodRangeHint } from '../../lib/dashboardDiretoria/periodUtils';
 import type { DashboardPeriod, DashboardPeriodMode, DiretoriaTab } from '../../lib/dashboardDiretoria/types';
 import { MARGIN_GOAL_PCT } from '../../lib/dashboardDiretoria/types';
 
@@ -70,15 +70,15 @@ const Card: React.FC<{ title: string; subtitle?: string; className?: string; chi
   </div>
 );
 
-const KpiTile: React.FC<{ label: string; value: string; sub?: string; accent?: string; icon?: React.ReactNode }> = ({
-  label, value, sub, accent = 'text-gray-900', icon,
+const KpiTile: React.FC<{ label: string; value: string; sub?: string; accent?: string; icon?: React.ReactNode; compact?: boolean }> = ({
+  label, value, sub, accent = 'text-gray-900', icon, compact = false,
 }) => (
   <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
     <div className="flex justify-between items-start gap-2">
       <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">{label}</p>
       {icon}
     </div>
-    <p className={`text-lg font-black font-mono mt-1 ${accent}`}>{value}</p>
+    <p className={`${compact ? 'text-sm' : 'text-lg'} font-black font-mono mt-1 leading-tight ${accent}`}>{value}</p>
     {sub && <p className="text-[10px] text-gray-500 mt-0.5">{sub}</p>}
   </div>
 );
@@ -108,6 +108,17 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const cash = useMemo(
     () => computeCashKpis(data.transactions, data.allTransactions, data.categories, data.accounts, period),
     [data.transactions, data.allTransactions, data.categories, data.accounts, period],
+  );
+
+  const periodRangeHint = useMemo(() => formatPeriodRangeHint(period), [period]);
+
+  const totalIncomeInPeriod = useMemo(
+    () => Math.round((cash.incomePaid + cash.pendingReceivable) * 100) / 100,
+    [cash.incomePaid, cash.pendingReceivable],
+  );
+  const totalExpenseInPeriod = useMemo(
+    () => Math.round((cash.expensePaid + cash.pendingPayable) * 100) / 100,
+    [cash.expensePaid, cash.pendingPayable],
   );
 
   const cashFlow = useMemo(() => buildDailyCashFlow(data.allTransactions, period), [data.allTransactions, period]);
@@ -166,20 +177,35 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
   const cashKpiRow = (
     <div className="space-y-3" data-testid="cash-summary-diretoria">
+      {periodRangeHint && (
+        <p className="text-[10px] text-gray-500 font-medium">{periodRangeHint}</p>
+      )}
       <div className="grid grid-cols-2 gap-3">
-        <KpiTile label="Entrou" value={fmtShort(cash.incomePaid)} sub="Pagos no período" accent="text-green-600" icon={<ArrowUpCircle size={16} className="text-green-500" />} />
-        <KpiTile label="Saiu" value={fmtShort(cash.expensePaid)} sub="Pagos no período" accent="text-red-600" icon={<ArrowDownCircle size={16} className="text-red-500" />} />
-        <KpiTile label="Falta entrar" value={fmtShort(cash.pendingReceivable)} sub="A receber (venc. no período)" accent="text-green-600" />
-        <KpiTile label="Falta pagar" value={fmtShort(cash.pendingPayable)} sub="A pagar (venc. no período)" accent="text-red-600" />
+        <KpiTile label="Entrou" value={fmtBRL(cash.incomePaid)} sub="Já recebido (data do pagamento)" accent="text-green-600" icon={<ArrowUpCircle size={16} className="text-green-500" />} compact />
+        <KpiTile label="Saiu" value={fmtBRL(cash.expensePaid)} sub="Já pago (data do pagamento)" accent="text-red-600" icon={<ArrowDownCircle size={16} className="text-red-500" />} compact />
+        <KpiTile label="Falta entrar" value={fmtBRL(cash.pendingReceivable)} sub="Ainda em aberto (venc. no período)" accent="text-green-600" compact />
+        <KpiTile label="Falta pagar" value={fmtBRL(cash.pendingPayable)} sub="Ainda em aberto (venc. no período)" accent="text-red-600" compact />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="bg-green-50 border border-green-100 rounded-xl p-3">
+          <p className="text-[10px] uppercase tracking-wider text-green-700 font-black">Total entradas no período</p>
+          <p className="text-sm font-black font-mono text-green-800 mt-1">{fmtBRL(totalIncomeInPeriod)}</p>
+          <p className="text-[10px] text-green-700 mt-0.5">Pagas + a receber (vencimento no período)</p>
+        </div>
+        <div className="bg-red-50 border border-red-100 rounded-xl p-3">
+          <p className="text-[10px] uppercase tracking-wider text-red-700 font-black">Total saídas no período</p>
+          <p className="text-sm font-black font-mono text-red-800 mt-1">{fmtBRL(totalExpenseInPeriod)}</p>
+          <p className="text-[10px] text-red-700 mt-0.5">Pagas + a pagar (vencimento no período)</p>
+        </div>
       </div>
       <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
         <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">Previsão do caixa</p>
-        <p className="text-[11px] text-gray-500 mt-0.5">A receber − A pagar (vencimento no período)</p>
+        <p className="text-[11px] text-gray-500 mt-0.5">Saldo pendente: a receber − a pagar (vencimento no período)</p>
         <p className={`text-2xl font-black font-mono mt-2 ${cash.cashForecast >= 0 ? 'text-green-600' : 'text-red-600'}`}>
           {fmtBRL(cash.cashForecast)}
         </p>
         <p className="text-[10px] text-gray-400 mt-1 font-mono">
-          {fmtShort(cash.pendingReceivable)} − {fmtShort(cash.pendingPayable)}
+          {fmtBRL(cash.pendingReceivable)} − {fmtBRL(cash.pendingPayable)}
         </p>
       </div>
     </div>

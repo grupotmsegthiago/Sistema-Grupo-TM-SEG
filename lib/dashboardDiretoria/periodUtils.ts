@@ -82,6 +82,15 @@ export function formatPeriodLabel(period: DashboardPeriod, now = new Date()): st
   return `${MONTH_NAMES[period.month]} ${period.year}`;
 }
 
+/** Sufixo quando o filtro Mês é o mês corrente (acumulado até hoje). */
+export function formatPeriodRangeHint(period: DashboardPeriod, now = new Date()): string | null {
+  const mode: DashboardPeriodMode = period.mode ?? 'month';
+  if (mode !== 'month') return null;
+  const isCurrentMonth = period.year === now.getFullYear() && period.month === now.getMonth();
+  if (!isCurrentMonth) return null;
+  return `Período: 01/${pad(period.month + 1)}/${period.year} até ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+}
+
 /** Mês de referência para RH/comissões (sempre calendário do “agora” em hoje/semana). */
 export function getRhReferenceMonth(period: DashboardPeriod, now = new Date()): string {
   const mode: DashboardPeriodMode = period.mode ?? 'month';
