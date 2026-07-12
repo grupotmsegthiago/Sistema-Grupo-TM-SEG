@@ -19,6 +19,8 @@ import {
   formatCursorMembership,
   getCursorSessionToken,
   isCursorSessionConfigured,
+  cursorEventBillingCategory,
+  isCursorOnDemandUsageEvent,
 } from './cursorUsageApi.js';
 
 export type { BillingSource, BillingUsageRow, BillingMonthSummary, TokenEfficiencyReport };
@@ -217,7 +219,26 @@ export function getBillingDashboardMeta(): BillingDashboardMeta {
   };
 }
 
-/** Linhas exibíveis no log (exclui resumo interno e pings de sync). */
+/** Separa uso incluído no pacote vs cobrança extra (on-demand). */
+export function aggregateCursorBillingRows(rows: BillingUsageRow[]): {
+  includedUsageValueBrl: number;
+  onDemandBrl: number;
+} {
+  let includedUsageValueBrl = 0;
+  let onDemandBrl = 0;
+  for (const row of rows) {
+    if (row.source !== 'cursor_dashboard') continue;
+    const meta = row.metadata as { billingCategory?: string; kind?: string; type?: string } | null;
+    if (meta?.type === 'cursor_usage_summary') continue;
+    const cat = meta?.billingCategory || cursorEventBillingCategory(String(meta?.kind || ''));
+    const brl = Number(row.amount_brl || 0);
+    if (cat === 'on_demand') onDemandBrl = round2(onDemandBrl + brl);
+    else if (cat === 'included') includedUsageValueBrl = round2(includedUsageValueBrl + brl);
+  }
+  return { includedUsageValueBrl, onDemandBrl };
+}
+
+/** Remove linhas internas (resumo de sync, snapshot) da tabela exibida. */
 export function filterBillingLogRows(rows: BillingUsageRow[]): BillingUsageRow[] {
   return rows.filter((r) => {
     if (r.source === 'sync') return false;
@@ -268,7 +289,9 @@ export async function getBillingMonthSummary(month = referenceMonthFromDate()): 
 
   const cursorSpentBrl = await sumMonthSpentBrl(month, 'cursor_dashboard');
   const stripeSpentBrl = await sumMonthSpentBrl(month, 'cursor_stripe');
-  let spentBrl = round2(cursorSpentBrl + stripeSpentBrl);
+  const entries = filterBillingLogRows(await getBillingUsageLog(500, month));
+  const { includedUsageValueBrl, onDemandBrl } = aggregateCursorBillingRows(entries);
+  let extraBrl = 0;
   const hasCursorMirror = Boolean(cursorSummary && cursorMeta?.billingCycleStart);
 
   if (hasCursorMirror) {
@@ -285,27 +308,39 @@ export async function getBillingMonthSummary(month = referenceMonthFromDate()): 
     planLimitUsd = subscriptionUsd;
     planLimitBrl = usdToBrl(subscriptionUsd);
 
-    if (spentBrl <= 0 && onDemandSpentUsd > 0) {
-      spentBrl = usdToBrl(onDemandSpentUsd);
+    // Cobrança extra: on-demand da API ou soma de eventos USAGE_BASED
+    extraBrl = onDemandBrl;
+    if (onDemandSpentUsd > 0) {
+      extraBrl = round2(Math.max(extraBrl, usdToBrl(onDemandSpentUsd)));
     }
   } else if (stripeSpentBrl > 0) {
     dataSource = 'stripe';
-    spentBrl = stripeSpentBrl;
-  } else {
-    spentBrl = await sumMonthSpentBrl(month);
+    extraBrl = stripeSpentBrl;
+  } else if (cursorSpentBrl > 0) {
+    extraBrl = onDemandBrl || 0;
   }
 
+  const spentBrl = extraBrl;
   const spentUsd = brlToUsd(spentBrl, exchangeRate, iofPct);
-  const extraBrl = round2(Math.max(0, spentBrl - planLimitBrl));
-  const usagePct = planLimitBrl > 0 ? round2((spentBrl / planLimitBrl) * 100) : 0;
-  const planBalanceBrl = round2(Math.max(0, planLimitBrl - spentBrl));
-  const entries = filterBillingLogRows(await getBillingUsageLog(500, month));
-  const isPlaceholder = !hasCursorMirror && spentBrl <= 0 && entries.length === 0;
+
+  // Barra/termômetro: % do pacote INCLUÍDO consumido (não valor R$ vs assinatura)
+  const usagePct =
+    planIncludedPercentUsed != null && hasCursorMirror
+      ? round2(planIncludedPercentUsed)
+      : planLimitBrl > 0 && includedUsageValueBrl > 0
+        ? round2((includedUsageValueBrl / planLimitBrl) * 100)
+        : 0;
+
+  const subscriptionBrl = planLimitBrl;
+  const planBalanceBrl = round2(Math.max(0, subscriptionBrl - extraBrl));
+  const isPlaceholder = !hasCursorMirror && extraBrl <= 0 && includedUsageValueBrl <= 0 && entries.length === 0;
 
   let thermometer: BillingMonthSummary['thermometer'] = 'ok';
-  if (!isPlaceholder) {
-    if (usagePct >= 100) thermometer = 'critical';
+  if (!isPlaceholder && hasCursorMirror) {
+    if (usagePct >= 100 || extraBrl > 0) thermometer = 'critical';
     else if (usagePct >= 75) thermometer = 'warning';
+  } else if (!isPlaceholder && extraBrl > 0) {
+    thermometer = 'critical';
   }
 
   return {
@@ -330,6 +365,8 @@ export async function getBillingMonthSummary(month = referenceMonthFromDate()): 
     lastSyncedAt,
     onDemandSpentUsd,
     planIncludedPercentUsed,
+    includedUsageValueBrl: hasCursorMirror ? includedUsageValueBrl : undefined,
+    subscriptionBrl: hasCursorMirror ? subscriptionBrl : undefined,
   };
 }
 
@@ -458,6 +495,7 @@ export async function syncCursorBilling(): Promise<SyncBillingResult> {
         token_id: evt.model || null,
         metadata: {
           type: 'cursor_usage_event',
+          billingCategory: cursorEventBillingCategory(String(evt.kind || '')),
           model: evt.model,
           kind: evt.kind,
           chargedCents: evt.chargedCents,

@@ -93,6 +93,24 @@ export function eventAmountUsd(evt: CursorUsageEvent): number {
   return parseUsdFromUsageCost(evt.usageBasedCosts);
 }
 
+/** Uso medido dentro do pacote (Ultra/Pro/Business) — não é cobrança extra. */
+export function isCursorIncludedUsageEvent(evt: Pick<CursorUsageEvent, 'kind'>): boolean {
+  const k = String(evt.kind || '').toUpperCase();
+  return k.includes('INCLUDED') || k.includes('_IN_ULTRA') || k.includes('_IN_PRO') || k.includes('_IN_BUSINESS');
+}
+
+/** Uso on-demand / acima do pacote — cobrança adicional. */
+export function isCursorOnDemandUsageEvent(evt: Pick<CursorUsageEvent, 'kind'>): boolean {
+  const k = String(evt.kind || '').toUpperCase();
+  return k.includes('USAGE_BASED');
+}
+
+export function cursorEventBillingCategory(kind: string): 'included' | 'on_demand' | 'other' {
+  if (isCursorOnDemandUsageEvent({ kind })) return 'on_demand';
+  if (isCursorIncludedUsageEvent({ kind })) return 'included';
+  return 'other';
+}
+
 function sessionHeaders(sessionToken: string): Record<string, string> {
   return { Cookie: `WorkosCursorSessionToken=${sessionToken.trim()}` };
 }
