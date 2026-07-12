@@ -143,3 +143,14 @@ describe('dashboardDiretoria aggregations', () => {
     assert.deepEqual(flow[1], { day: '11/07', inflow: 0, outflow: 50 });
   });
 });
+
+describe('DiretoriaSistemaTab auth', () => {
+  it('usa localStorage authToken (não Supabase session)', async () => {
+    const src = await import('node:fs/promises').then((fs) =>
+      fs.readFile('components/dashboard/DiretoriaSistemaTab.tsx', 'utf8'),
+    );
+    assert.match(src, /localStorage\.getItem\('authToken'\)/);
+    assert.doesNotMatch(src, /supabase\.auth\.getSession/);
+    assert.doesNotMatch(src, /from '\.\.\/\.\.\/lib\/supabase'/);
+  });
+});

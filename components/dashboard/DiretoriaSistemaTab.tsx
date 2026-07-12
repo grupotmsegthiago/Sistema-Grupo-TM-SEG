@@ -3,7 +3,6 @@ import {
   RefreshCw, Loader2, Cpu, Thermometer, AlertTriangle, CheckCircle2,
   Download, Sparkles, TrendingDown,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 import type { BillingMonthSummary, BillingUsageRow, TokenEfficiencyReport } from '../../lib/dashboardDiretoria/billingTypes';
 
 const fmtBRL = (v: number) =>
@@ -19,9 +18,8 @@ const THERM_COLORS = {
   critical: { bar: 'bg-red-600', text: 'text-red-700', bg: 'bg-red-50 border-red-200' },
 };
 
-async function authHeaders(): Promise<Record<string, string>> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem('authToken');
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -58,7 +56,7 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
     setLoading(true);
     setError(null);
     try {
-      const headers = await authHeaders();
+      const headers = authHeaders();
       if (!headers.Authorization) {
         throw new Error('Sessão expirada — faça login novamente.');
       }
@@ -103,7 +101,7 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
     setSyncing(true);
     setError(null);
     try {
-      const headers = { ...(await authHeaders()), 'Content-Type': 'application/json' };
+      const headers = { ...authHeaders(), 'Content-Type': 'application/json' };
       const { ok, json } = await fetchJsonWithTimeout('/api/billing/sync', { method: 'POST', headers });
       if (!ok) throw new Error(json.error || json.message || 'Sync falhou');
       await load();
