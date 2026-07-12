@@ -19,7 +19,6 @@ import {
 } from '../lib/goalUpdateHistory';
 import { canViewGoalMonetaryData } from '../lib/goalPermissions';
 import LowMarginDialog, { LOW_MARGIN_THRESHOLD_PCT } from './LowMarginDialog';
-import { MissionStatus } from '../types';
 import {
   loadLowMarginVerifiedMap,
   partitionLowMarginMissions,
