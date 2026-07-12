@@ -21,6 +21,65 @@ Na máquina Windows: commit na `dev`, depois `.\publicar.ps1` (merge `dev` → `
 
 ## Cursor Cloud specific instructions
 
+### Redução de retrabalho (regras do agente)
+
+Regras consolidadas — aplicar **sempre**, antes de codar, publicar ou abrir PR.
+
+#### Escopo e preservação
+
+- **Diff mínimo:** resolver só o pedido; não refatorar OS, Financeiro, Asaas, eNotas ou integrações críticas sem autorização explícita.
+- **Não remover** comentários explicativos nem lógica existente “por limpeza”.
+- **Dúvida = parar:** se não tiver 100% de certeza do impacto, explicar o risco e perguntar antes de alterar.
+- **Consistência:** mudou backend (`server/`, `api/`), verificar frontend (`components/`, `lib/`) e vice-versa.
+
+#### Antes de mexer no código — diagnosticar infra
+
+Ordem obrigatória em falhas de integração (WhatsApp, Gemini, Asaas, Supabase):
+
+1. **Ambiente** — variáveis na Vercel / secrets (nomes exatos, case-sensitive).
+2. **Produção** — endpoint de health ou smoke test (`/api/health`, `/api/gemini/health`, status Z-API).
+3. **Banco** — registro em Supabase (ex.: `whatsapp_instances`) pode ter credencial correta mesmo com env incompleto.
+4. **Só então** alterar código.
+
+Evita retrabalho típico: “Z-API não configurada” com token válido no banco mas `ZAPI_MOBILE_TOKEN` ausente na Vercel, ou `ZAPI_CLIENT_TOKEN` errado (HTTP 403) enquanto o Supabase tem o token certo.
+
+#### Testar antes de entregar
+
+Preferência permanente do Thiago — **nunca** dizer “pronto” ou “publicado” sem evidência:
+
+1. Implementar → 2. Testar → 3. Corrigir se falhar → 4. Só então informar (commit/publicar só se pedido).
+
+Checklist mínimo:
+
+| Escopo | Comando / verificação |
+|--------|------------------------|
+| Build | `npm run build` |
+| TS/TSX editado | lints nos arquivos; **manter `import React` quando usar hooks** (build passa sem isso; produção quebra com `useState is not defined`) |
+| Backend/API | `GET /api/health`; curl/fetch nas rotas alteradas |
+| Frontend | Supabase injetado no build; login sem erro JS se possível |
+| Testes do escopo | `bash scripts/run-tests.sh` ou `npx tsx --test scripts/*.test.ts` relacionados |
+| Publicação | após merge/push: aguardar deploy; validar prod (`/api/version`, health, tela de login) |
+
+#### Git, PR e publicação
+
+- **Reutilizar** branch/PR existente no mesmo escopo — evitar branches duplicadas.
+- Cloud Agent: branch `cursor/<nome>-3b22`; commit + push + PR antes de considerar entregue.
+- **Publicar** (`publicar`, `deploy`, `colocar no ar`): commit na `dev` → `.\publicar.ps1` (merge `dev`→`main`, push) → confirmar deploy Vercel — **sem pedir confirmação**.
+- Nunca commitar `.env`, segredos nem `package-lock.json` gerado só por `npm install` em ambiente diferente do CI.
+
+#### Custo de tokens (Cursor / Gemini)
+
+- **Gemini:** Flash para tarefas simples; modelos maiores só para relatórios complexos (DHL, conciliação).
+- **Cursor:** diff pequeno, uma passada de teste no escopo, evitar re-explorar o codebase quando AGENTS.md ou memória já têm a resposta.
+- Billing/espelho Cursor: ver seção [Custos de IA](#custos-de-ia-cursor--stripe--gemini) abaixo.
+
+#### Incidentes conhecidos (não repetir)
+
+- Remoção acidental de `import React` em `.tsx` → produção quebra; build não detecta.
+- `AI_INTEGRATIONS_GEMINI_API_KEY` na Vercel vence `GEMINI_API_KEY` — atualizar precedência + redeploy.
+- `vercel.json` > 50 entradas em `functions` → deploy ERROR 0ms.
+- Z-API: faltam **três** vars (`ZAPI_MOBILE_ID`, `ZAPI_MOBILE_TOKEN`, `ZAPI_CLIENT_TOKEN`); Client-Token errado = 403; `mobile/request-code` pode retornar NOT_FOUND → fallback `phone-code` / QR.
+
 ### Node
 
 Usar Node 22+ (projeto declara `24.x` em `package.json`; Node 22 funciona para build/testes).
@@ -48,17 +107,29 @@ Usar Node 22+ (projeto declara `24.x` em `package.json`; Node 22 funciona para b
 
 ### WhatsApp Z-API (mobile)
 
-Variáveis na Vercel (recomendado):
+Variáveis na Vercel (**as três são obrigatórias** para env + sync):
 
-- `ZAPI_MOBILE_ID` — Instance ID da instância **mobile** (ex. Central Torres)
-- `ZAPI_MOBILE_TOKEN` — Token da instância
-- `ZAPI_MOBILE_INSTANCIA` — Rótulo exibido no painel (ex. `Central Torres`)
+- `ZAPI_MOBILE_ID` — Instance ID da instância **mobile**
+- `ZAPI_MOBILE_TOKEN` — Token da instância (sem isso, fallback env falha mesmo com ID correto)
+- `ZAPI_CLIENT_TOKEN` — Token de segurança da **conta** Z-API (header `Client-Token` em toda chamada; valor errado → HTTP 403)
+- `ZAPI_MOBILE_INSTANCIA` — Rótulo no painel (ex. `Monitoramento 24h`)
 
-Na subida do servidor, `syncMobileInstanceFromEnv()` atualiza a instância padrão no Supabase quando `ZAPI_MOBILE_ID` + `ZAPI_MOBILE_TOKEN` existem.
-
-Opcional: `ZAPI_CLIENT_TOKEN` (token de segurança do painel Z-API) se a API retornar *client-token is not configured*.
+Na subida do servidor, `syncMobileInstanceFromEnv()` atualiza a instância padrão no Supabase quando `ZAPI_MOBILE_ID` + `ZAPI_MOBILE_TOKEN` existem (inclui `zapi_client_token` quando definido no env).
 
 Legado: `ZAPI_INSTANCE_ID` / `ZAPI_TOKEN` continuam como fallback.
+
+**Diagnóstico rápido (antes de alterar código):**
+
+1. Listar vars ZAPI na Vercel — confirmar que `ZAPI_MOBILE_TOKEN` existe (não só ID + CLIENT_TOKEN).
+2. Testar `/status` com Client-Token do **Supabase** (`whatsapp_instances.zapi_client_token`) vs env — 403 indica env errado.
+3. `GET /api/zapi/health` ou `npx tsx scripts/whatsapp-diagnostics-report.ts 7d`.
+
+**Reconexão do bot (celular obrigatório se desconectado):**
+
+- Painel: Configurações → WhatsApp → **Reconectar via API** (restore → GET restart → fallback phone-code).
+- Auto-reconnect: retry a cada 5 min; `wa_old` só funciona se a instância no painel Z-API for tipo **MOBILE**.
+- Se `mobile/request-code` retorna NOT_FOUND: vincular via **código phone-code** (WhatsApp Business → Aparelhos conectados → Vincular com número) ou QR no painel Z-API.
+- **Não resolve** sozinho: celular offline (`smartphoneConnected=false`), sessão extensão expirada (Z-API Conector), WhatsApp Web no mesmo número.
 
 ### Deploy Vercel — troubleshooting
 
@@ -82,13 +153,7 @@ Legado: `ZAPI_INSTANCE_ID` / `ZAPI_TOKEN` continuam como fallback.
   - `OPERATIONAL_SAVINGS_BRL` (padrão 715 — planilha Situação Geral Faturamento)
 - APIs: `GET /api/billing/dashboard`, `POST /api/billing/sync`, `POST /api/billing/log-usage`.
 
-**Regras do agente (redução de custo e retrabalho):**
-
-- Diff mínimo; não refatorar OS, Financeiro, Asaas ou eNotas sem autorização explícita.
-- Testar antes de entregar: `npm run build` + testes do escopo.
-- Evitar tokens repetidos no mesmo escopo — reutilizar branch/PR existente.
-- Gemini: Flash para tarefas simples; modelos maiores só para relatórios complexos.
-- Preservar `import React` em `.tsx` ao editar cabeçalhos.
+Regras gerais de custo/retrabalho: ver [Redução de retrabalho](#redução-de-retrabalho-regras-do-agente) no topo desta seção.
 
 ### Testes DHL relevantes
 
@@ -96,14 +161,3 @@ Legado: `ZAPI_INSTANCE_ID` / `ZAPI_TOKEN` continuam como fallback.
 npx tsx --test scripts/dhl-occurrence-integration.test.ts scripts/dhl-occurrence-report.test.ts
 node --import tsx --import ./scripts/test-loaders/register.mjs --test scripts/dhl-occurrence-report-render.test.tsx
 ```
-
-### React / TSX
-
-Após editar cabeçalhos de `.tsx`, manter `import React, { useState, ... } from 'react'` quando usar hooks — build passa sem isso e produção quebra.
-
-### WhatsApp Z-API — reconexão
-
-- Diagnóstico: `npx tsx scripts/whatsapp-diagnostics-report.ts 7d`
-- Reconectar manual (API): `POST /api/whatsapp/connection/reconnect` ou botão **Reconectar via API** em Configurações → WhatsApp
-- Auto-reconnect: restore-session → restart → **wa_old** (pop-up no WhatsApp Business). Retry a cada 5 min. `ZAPI_INSTANCE_TYPE=mobile` (padrão).
-- **Não resolve** sozinho: celular offline (`smartphoneConnected=false`), sessão extensão expirada (usar Z-API Conector), WhatsApp Web manual no mesmo número
