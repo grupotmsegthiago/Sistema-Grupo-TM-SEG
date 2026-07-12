@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import WhatsAppStatusBanner from './components/WhatsAppStatusBanner';
+import WhatsAppOfflineModal from './components/WhatsAppOfflineModal';
 import Login from './components/Login';
 import ResetPassword from './components/ResetPassword';
 import { APP_VERSION } from './constants';
@@ -477,6 +478,7 @@ const App: React.FC = () => {
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />
             <WhatsAppStatusBanner />
+            <WhatsAppOfflineModal />
             <main className="flex-1 overflow-x-auto overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="w-full mx-auto relative">
                 <AppErrorBoundary onReset={() => {

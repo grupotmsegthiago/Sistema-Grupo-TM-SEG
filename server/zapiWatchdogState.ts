@@ -1,5 +1,6 @@
 // ── Estado persistido do vigia Z-API (serverless/Vercel não mantém memória) ───
 import { createSupabaseAdminClient } from "./supabaseConfig";
+import { clearZapiReconnectLock } from "./zapiReconnectLock";
 
 const SETTINGS_KEY = "zapi_watchdog_state";
 
@@ -103,6 +104,7 @@ export async function closeZapiIncident(): Promise<ZapiWatchdogState> {
   state.incidentOpen = false;
   state.incidentStartedAt = null;
   await saveZapiWatchdogState(state);
+  await clearZapiReconnectLock();
   return state;
 }
 

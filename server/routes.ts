@@ -49,6 +49,14 @@ import {
 import { buildWhatsappDiagnosticsReport } from "./whatsappDiagnostics";
 import { handleZapiConnectionWebhook } from "./zapiConnectionWebhook";
 import { attemptZapiAutoReconnect, getAutoReconnectPolicyMessage, isWhatsappAutoReconnectEnabled } from "./zapiAutoReconnect";
+import {
+  claimZapiReconnectLock,
+  heartbeatZapiReconnectLock,
+  loadZapiReconnectLock,
+  releaseZapiReconnectLock,
+  updateZapiReconnectLock,
+} from "./zapiReconnectLock";
+import { fetchWhatsappPhoneLinkCode, getWhatsappBotStatusSnapshot } from "./whatsappBotStatus";
 import { runForensicEquipmentRecovery, parseEquipmentFromBackupJson } from "./equipmentForensicRecovery";
 import { runFullEquipmentScan } from "./equipmentBackupService";
 import {
@@ -1373,6 +1381,99 @@ export async function registerRoutes(
       res.type('text/plain').send(sql);
     } catch (e: any) {
       res.status(500).json({ error: 'Não foi possível ler migration: ' + (e?.message || 'erro') });
+    }
+  });
+
+  app.get('/api/whatsapp/bot-status', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const snapshot = await getWhatsappBotStatusSnapshot();
+      res.json(snapshot);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/whatsapp/bot-status/claim', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const token = (req as any).authToken as string;
+      const principal = await resolvePrincipal(token);
+      if (!principal) return res.status(403).json({ error: 'Usuário não encontrado' });
+      const result = await claimZapiReconnectLock(principal.id, principal.name || principal.email || 'Usuário');
+      res.status(result.ok ? 200 : 409).json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/whatsapp/bot-status/heartbeat', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const token = (req as any).authToken as string;
+      const principal = await resolvePrincipal(token);
+      if (!principal) return res.status(403).json({ error: 'Usuário não encontrado' });
+      const lock = await heartbeatZapiReconnectLock(principal.id);
+      res.json({ lock });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/whatsapp/bot-status/release', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const token = (req as any).authToken as string;
+      const principal = await resolvePrincipal(token);
+      if (!principal) return res.status(403).json({ error: 'Usuário não encontrado' });
+      const force = req.body?.force === true && ['diretoria', 'administrador', 'ceo', 'admin'].includes(principal.role);
+      await releaseZapiReconnectLock(principal.id, force);
+      res.json({ ok: true, lock: await loadZapiReconnectLock() });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/whatsapp/bot-status/generate-code', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const token = (req as any).authToken as string;
+      const principal = await resolvePrincipal(token);
+      if (!principal) return res.status(403).json({ error: 'Usuário não encontrado' });
+
+      const current = await loadZapiReconnectLock();
+      if (!current || current.holderId !== principal.id) {
+        return res.status(409).json({
+          ok: false,
+          error: current
+            ? `${current.holderName} já está reconectando o bot.`
+            : 'Assuma a reconexão antes de gerar o código.',
+          lock: current,
+        });
+      }
+
+      await updateZapiReconnectLock(principal.id, { phase: 'generating' });
+
+      const reconnect = await attemptZapiAutoReconnect('api', { force: true, skipEnabledCheck: true });
+      let phoneLinkCode = typeof reconnect.details?.phoneLinkCode === 'string'
+        ? reconnect.details.phoneLinkCode
+        : null;
+
+      if (!phoneLinkCode && !reconnect.connectedAfter) {
+        phoneLinkCode = await fetchWhatsappPhoneLinkCode();
+      }
+
+      const lock = await updateZapiReconnectLock(principal.id, {
+        phase: phoneLinkCode ? 'code_ready' : 'claimed',
+        phoneLinkCode,
+        reconnectMessage: reconnect.message,
+      });
+
+      res.json({
+        ok: !!phoneLinkCode || reconnect.connectedAfter === true,
+        connected: reconnect.connectedAfter === true,
+        phoneLinkCode,
+        message: reconnect.message,
+        lock,
+        reconnect,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 

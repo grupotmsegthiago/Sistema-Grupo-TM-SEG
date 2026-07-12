@@ -126,6 +126,7 @@ Legado: `ZAPI_INSTANCE_ID` / `ZAPI_TOKEN` continuam como fallback.
 
 **Reconexão do bot (celular obrigatório se desconectado):**
 
+- **Popup global (tempo real):** `WhatsAppOfflineModal` — todos os usuários logados veem modal quando bot offline; lock em `system_settings.zapi_reconnect_lock` garante que **só um** gera código; demais veem quem assumiu. Realtime via `whatsapp_instances` + `system_settings` + broadcast `whatsapp-bot-status`.
 - Painel: Configurações → WhatsApp → **Reconectar via API** (restore → GET restart → fallback phone-code).
 - Auto-reconnect: retry a cada 5 min; `wa_old` só funciona se a instância no painel Z-API for tipo **MOBILE**.
 - Se `mobile/request-code` retorna NOT_FOUND: vincular via **código phone-code** (WhatsApp Business → Aparelhos conectados → Vincular com número) ou QR no painel Z-API.

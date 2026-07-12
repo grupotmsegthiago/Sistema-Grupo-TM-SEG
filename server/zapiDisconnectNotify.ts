@@ -5,6 +5,7 @@ import { fetchZapiExtensionToken } from "./whatsapp/zapiExtensionToken";
 import { credsFromInstance } from "./whatsapp/zapiHttp";
 import type { WhatsappInstanceRecord } from "./whatsapp/types";
 import { openZapiIncident } from "./zapiWatchdogState";
+import { clearZapiReconnectLock } from "./zapiReconnectLock";
 
 const ALERT_RECIPIENTS = ["thiago@grupotmseg.com.br", "operacional@grupotmseg.com.br"];
 
@@ -15,6 +16,7 @@ export async function notifyZapiDisconnected(
   source: string,
 ): Promise<{ alerted: boolean }> {
   const { shouldAlert, state, dropsLast24h } = await openZapiIncident(source);
+  await clearZapiReconnectLock();
   if (!shouldAlert) return { alerted: false };
 
   const incidentStartedAt = state.incidentStartedAt || nowSP();
