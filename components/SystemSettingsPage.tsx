@@ -62,6 +62,18 @@ const authHeaders = (): Record<string, string> => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
+const SETTINGS_FETCH_TIMEOUT_MS = 25_000;
+
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, ms = SETTINGS_FETCH_TIMEOUT_MS): Promise<Response> => {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...options, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const fmtTime = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
 const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () => {
@@ -399,12 +411,14 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   };
 
   const fetchAll = async () => {
-    setIsLoading(true);
+    const blockPage = settings === null && defaults === null;
+    if (blockPage) setIsLoading(true);
     setLoadError(null);
     try {
+      const headers = authHeaders();
       const [sRes, hRes] = await Promise.all([
-        fetch('/api/admin/system-settings/daily-reports', { headers: authHeaders() }),
-        fetch('/api/admin/system-settings/daily-reports/history', { headers: authHeaders() }),
+        fetchWithTimeout('/api/admin/system-settings/daily-reports', { headers }),
+        fetchWithTimeout('/api/admin/system-settings/daily-reports/history', { headers }),
       ]);
       const sJson = await parseJsonResponse(sRes);
       const hJson = await parseJsonResponse(hRes);
@@ -420,18 +434,15 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
         setDefaults(null);
       }
       if (hJson?.ok) setHistory(hJson.history || []);
-      if (sJson?.ok) {
-        await Promise.all([
-          fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode, manualRunsFilterFrom, manualRunsFilterTo),
-          fetchRuns(),
-        ]);
-      }
+      // Execuções manuais/agendadas são informativas — não bloqueiam a tela principal.
+      if (sJson?.ok) void fetchRuns();
     } catch (e: any) {
-      setLoadError(e?.message || 'Erro ao carregar configurações.');
+      const aborted = e?.name === 'AbortError';
+      setLoadError(aborted ? 'Tempo esgotado ao carregar configurações. Verifique a conexão e tente novamente.' : (e?.message || 'Erro ao carregar configurações.'));
       setSettings(null);
       setDefaults(null);
     } finally {
-      setIsLoading(false);
+      if (blockPage) setIsLoading(false);
     }
   };
 
