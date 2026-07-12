@@ -6,6 +6,7 @@ import { runFinancialReportTick } from "./financialReportWorker";
 import { runClientEmailQueueCycle } from "./clientEmailQueueWorker";
 import { runDhlWorkerTick } from "./dhlSupplierIntake";
 import { runZapiWatchdogTick } from "./zapiWatchdog";
+import { runBillingSyncTick } from "./billingSyncWorker";
 
 type CronJob = () => Promise<unknown>;
 
@@ -36,6 +37,7 @@ export function registerCronRoutes(app: Express): void {
   cronRoute(app, "/api/cron/email-queue", () => runClientEmailQueueCycle());
   cronRoute(app, "/api/cron/dhl", () => runDhlWorkerTick());
   cronRoute(app, "/api/cron/zapi", () => runZapiWatchdogTick());
+  cronRoute(app, "/api/cron/billing-sync", () => runBillingSyncTick());
 
   cronRoute(app, "/api/cron/maintenance", async () => {
     const { runMaintenanceTick } = await import("./maintenanceJobs");

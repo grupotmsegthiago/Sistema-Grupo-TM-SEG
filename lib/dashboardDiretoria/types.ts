@@ -1,6 +1,6 @@
 import type { Client, ClientPriceTable, FinancialCategory, FinancialTransaction, Mission, ProviderCostTable } from '../../types';
 
-export type DiretoriaTab = 'geral' | 'financeiro' | 'operacao' | 'clientes' | 'rh';
+export type DiretoriaTab = 'geral' | 'financeiro' | 'operacao' | 'clientes' | 'rh' | 'sistema';
 
 /** Hoje (00:00–23:59), semana (seg–dom) ou mês calendário */
 export type DashboardPeriodMode = 'today' | 'week' | 'month';

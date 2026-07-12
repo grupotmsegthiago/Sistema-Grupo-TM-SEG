@@ -6,8 +6,9 @@ import {
 import {
   Crown, RefreshCw, Loader2, AlertTriangle, Wallet, Users,
   Target, CheckCircle2, ChevronRight, Building2, DollarSign,
-  ArrowUpCircle, ArrowDownCircle, BarChart3,
+  ArrowUpCircle, ArrowDownCircle,   BarChart3,
 } from 'lucide-react';
+import DiretoriaSistemaTab from './DiretoriaSistemaTab';
 import { useDashboardDiretoriaData } from '../../lib/dashboardDiretoria/useDashboardDiretoriaData';
 import {
   buildArApByMonth,
@@ -42,6 +43,7 @@ const TABS: { id: DiretoriaTab; label: string }[] = [
   { id: 'operacao', label: 'Operação' },
   { id: 'clientes', label: 'Clientes & Fornecedores' },
   { id: 'rh', label: 'RH & Comissões' },
+  { id: 'sistema', label: 'Sistema' },
 ];
 
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -532,12 +534,15 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
     </div>
   );
 
+  const renderSistema = () => <DiretoriaSistemaTab onNavigate={goTo} />;
+
   const tabContent: Record<DiretoriaTab, () => React.ReactNode> = {
     geral: renderGeral,
     financeiro: renderFinanceiro,
     operacao: renderOperacao,
     clientes: renderClientes,
     rh: renderRh,
+    sistema: renderSistema,
   };
 
   return (
