@@ -3750,7 +3750,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
         {showDhlOccurrenceReportBtn && (
           <div
-            className="shrink-0 px-3 py-2.5 sm:px-5 bg-gradient-to-r from-[#450a0a] to-[#7f1d1d] border-b border-red-950/30"
+            className="hidden sm:block shrink-0 px-3 py-2.5 sm:px-5 bg-gradient-to-r from-[#450a0a] to-[#7f1d1d] border-b border-red-950/30"
             data-testid="bar-dhl-occurrence-report-mobile"
           >
             <button
@@ -3765,7 +3765,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           </div>
         )}
 
-        <div ref={modalContentRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50 pb-32">
+        <div ref={modalContentRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-gray-50 pb-4 sm:pb-6">
             {isSnapshotFrozen && (
                 <div data-testid="snapshot-frozen-banner" className="bg-amber-50 border-2 border-amber-400 rounded-xl p-4 flex items-center gap-3 shadow-sm">
                     <div className="bg-amber-500 p-2 rounded-lg"><Lock size={20} className="text-white" /></div>
@@ -5733,95 +5733,97 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         </div>
                     )}
 
-                    <div className="sticky bottom-0 left-0 right-0 p-3 sm:p-4 bg-white/95 backdrop-blur-md border-t border-gray-200 z-[20] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-                        <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 md:gap-6">
-                            <div className="flex flex-wrap gap-4 md:gap-12 items-center justify-center md:justify-start">
-                                <div>
-                                    <p className="text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">Resultado Operacional Final</p>
-                                    <h3 className={`text-3xl font-black font-mono tracking-tighter ${footerProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                </div>
+            )}
+        </div>
+
+        {financialData && !isLoading && (
+                    <div
+                        className="shrink-0 border-t border-gray-200 bg-white z-20 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-2 py-2 sm:px-4 sm:py-3 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
+                        data-testid="audit-footer-actions"
+                    >
+                        <div className="max-w-5xl mx-auto flex flex-col gap-2 md:flex-row md:justify-between md:items-center md:gap-4">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 justify-center md:justify-start">
+                                <div className="flex items-baseline gap-1.5 md:block">
+                                    <p className="text-[8px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest md:mb-0.5">Resultado</p>
+                                    <h3 className={`text-base sm:text-2xl md:text-3xl font-black font-mono tracking-tighter leading-none ${footerProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                         {formatCurrency(footerProfit)}
                                     </h3>
                                 </div>
-                                <div className="border-l border-gray-200 pl-4 md:pl-12">
-                                    <p className="text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">Margem Líquida %</p>
-                                    <h3 className="text-xl md:text-3xl font-black font-mono tracking-tighter text-blue-600">
+                                <div className="hidden sm:block border-l border-gray-200 pl-3 md:pl-8">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase mb-0.5 tracking-widest">Margem Líquida %</p>
+                                    <h3 className="text-xl md:text-3xl font-black font-mono tracking-tighter text-blue-600 leading-none">
                                         {footerMarginPct.toFixed(1)}%
                                     </h3>
                                 </div>
+                                <div className="sm:hidden text-[10px] font-black font-mono text-blue-600">
+                                    {footerMarginPct.toFixed(1)}%
+                                </div>
                                 {!currentApprovalStatus.isFullyApproved && (
-                                    <div className="border-l border-gray-200 pl-4 md:pl-6">
-                                        <p className="text-[10px] font-black text-amber-600 uppercase mb-0.5 tracking-widest">Aprovações</p>
-                                        <div className="flex gap-1.5">
-                                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${currentApprovalStatus.hasAuditor ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>AUD</span>
-                                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${currentApprovalStatus.hasFinanceiro ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>FIN</span>
-                                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${currentApprovalStatus.hasController ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-400'}`}>CTR</span>
-                                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${currentApprovalStatus.hasDiretoria ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}>DIR</span>
+                                    <div className="border-l border-gray-200 pl-2 md:pl-4">
+                                        <div className="flex gap-1">
+                                            <span className={`text-[8px] font-black px-1 py-0.5 rounded ${currentApprovalStatus.hasAuditor ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>AUD</span>
+                                            <span className={`text-[8px] font-black px-1 py-0.5 rounded ${currentApprovalStatus.hasFinanceiro ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>FIN</span>
+                                            <span className={`text-[8px] font-black px-1 py-0.5 rounded ${currentApprovalStatus.hasController ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-400'}`}>CTR</span>
+                                            <span className={`text-[8px] font-black px-1 py-0.5 rounded ${currentApprovalStatus.hasDiretoria ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}>DIR</span>
                                         </div>
                                     </div>
                                 )}
                             </div>
-                            <div className="flex flex-col gap-2 w-full md:w-auto shrink-0 order-first md:order-none">
-                                {showDhlOccurrenceReportBtn && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setDhlOccurrenceReportOpen(true)}
-                                    className="w-full px-5 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 min-h-[48px] bg-[#450a0a] text-white hover:bg-[#7f1d1d] border border-red-900/30 md:hidden"
-                                    data-testid="button-dhl-occurrence-report-footer-mobile"
-                                  >
-                                    <FileText size={16} />
-                                    Plano de Ação DHL
-                                  </button>
-                                )}
+                            <div className="flex flex-col gap-1.5 w-full md:w-auto shrink-0">
                                 {savedByInfo && (
-                                    <div className="flex items-center justify-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5" data-testid="saved-by-indicator">
-                                        <Save size={11} className="text-emerald-600" />
-                                        <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wide">Salvo por {savedByInfo}</span>
+                                    <div className="hidden sm:flex items-center justify-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1" data-testid="saved-by-indicator">
+                                        <Save size={10} className="text-emerald-600" />
+                                        <span className="text-[9px] font-black text-emerald-700 uppercase tracking-wide">Salvo por {savedByInfo}</span>
                                     </div>
                                 )}
-                                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                                <div className="flex gap-1.5 sm:gap-2">
                                 {showDhlOccurrenceReportBtn && (
                                   <button
                                     type="button"
                                     onClick={() => setDhlOccurrenceReportOpen(true)}
-                                    className="hidden md:flex px-5 py-3 rounded-xl text-xs font-black uppercase items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 bg-[#450a0a] text-white hover:bg-[#7f1d1d] border border-red-900/30"
+                                    className="flex-1 sm:flex-none px-2 sm:px-4 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 bg-[#450a0a] text-white hover:bg-[#7f1d1d] border border-red-900/30"
                                     data-testid="button-dhl-occurrence-report-footer"
                                   >
-                                    <FileText size={16} />
-                                    Plano de Ação DHL
+                                    <FileText size={14} className="shrink-0" />
+                                    <span className="truncate">Plano DHL</span>
                                   </button>
                                 )}
-                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked} className={`px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 ${((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={isEffectivelyLocked ? 'Faturamento travado — destrave para editar' : ''} data-testid="button-save-adjustments">
-                                    {isUpdating ? <Loader2 size={16} className="animate-spin" /> : (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? <Lock size={16} /> : <Save size={16} />} {(currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado (Diretoria)' : 'Salvar Ajustes'}
+                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={isEffectivelyLocked ? 'Faturamento travado — destrave para editar' : ''} data-testid="button-save-adjustments">
+                                    {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? <Lock size={14} className="shrink-0" /> : <Save size={14} className="shrink-0" />}
+                                    <span className="truncate">{(currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado' : 'Salvar'}</span>
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 
                                     disabled={isUpdating || (requiresTollGate && !tollConfirmed && !isBarbaraFinance) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))} 
-                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${requiresTollGate && !tollConfirmed && !isBarbaraFinance ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    className={`flex-[1.2] sm:flex-none px-2 sm:px-6 py-2 rounded-lg sm:rounded-xl font-black uppercase text-[9px] sm:text-xs shadow-md flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 h-9 sm:h-10 ${requiresTollGate && !tollConfirmed && !isBarbaraFinance ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
                                     data-testid="button-approve-billing"
                                 >
-                                    <span className="flex items-center gap-2">
-                                        {isUpdating ? <Loader2 size={16} className="animate-spin" /> : (!currentApprovalStatus.isPrivilegedReapprover && (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria)) ? <Lock size={16} className="text-amber-600" /> : <CheckCircle2 size={16} />} 
+                                    <span className="flex items-center gap-1 sm:gap-2">
+                                        {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (!currentApprovalStatus.isPrivilegedReapprover && (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria)) ? <Lock size={14} className="text-amber-600 shrink-0" /> : <CheckCircle2 size={14} className="shrink-0" />} 
+                                        <span className="truncate">
                                         {currentApprovalStatus.isPrivilegedReapprover && currentApprovalStatus.isFullyApproved
-                                            ? 'Re-Aprovar Faturamento'
+                                            ? 'Re-Aprovar'
                                             : (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')
-                                            ? 'OS Pendente — Não Aprovável' 
+                                            ? 'Pendente' 
                                             : requiresTollGate && !tollConfirmed && !isBarbaraFinance 
-                                                ? 'Confirme o Pedágio' 
+                                                ? 'Pedágio' 
                                                 : currentApprovalStatus.lockedByDiretoria
-                                                    ? 'Bloqueado — Somente Diretoria'
+                                                    ? 'Bloqueado'
                                                     : currentApprovalStatus.blockedForCurrentUser
-                                                        ? 'Aprovação Pendente'
+                                                        ? 'Aguardando'
                                                         : currentApprovalStatus.isFullyApproved 
-                                                            ? 'Já Aprovado (Completo)' 
-                                                            : 'Aprovar Faturamento'}
+                                                            ? 'Aprovado' 
+                                                            : 'Aprovar'}
+                                        </span>
                                     </span>
                                     {currentApprovalStatus.blockedForCurrentUser && !isZeroCostError && tollConfirmed && mission?.status !== MissionStatus.PENDING && (
-                                        <span className="text-[9px] font-bold text-amber-600 normal-case">
+                                        <span className="hidden sm:block text-[9px] font-bold text-amber-600 normal-case">
                                             {currentApprovalStatus.blockedMessage}
                                         </span>
                                     )}
                                     {!currentApprovalStatus.blockedForCurrentUser && currentApprovalStatus.hasPartial && !isZeroCostError && tollConfirmed && mission?.status !== MissionStatus.PENDING && (
-                                        <span className="text-[9px] font-bold text-gray-500 normal-case">
+                                        <span className="hidden sm:block text-[9px] font-bold text-gray-500 normal-case">
                                             Aguardando: {currentApprovalStatus.missing.join(', ')} ({currentApprovalStatus.waitingDays}d)
                                         </span>
                                     )}
@@ -5830,9 +5832,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+        )}
       </div>
       <TollConfirmationDialog
         isOpen={showTollConfirmDialog}
