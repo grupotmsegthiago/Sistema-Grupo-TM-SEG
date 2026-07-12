@@ -72,7 +72,7 @@ describe('dashboardDiretoria aggregations', () => {
     assert.equal(cash.cashResult, 3000);
   });
 
-  it('computeCashKpis calcula previsão do caixa (a pagar − a receber)', () => {
+  it('computeCashKpis calcula previsão do caixa (a receber − a pagar)', () => {
     const transactions = [
       { id: 't1', type: 'INCOME', status: 'PENDING', amount: 1000, due_date: '2026-08-01', category_id: 'c0' },
       { id: 't2', type: 'INCOME', status: 'SCHEDULED', amount: 500, due_date: '2026-08-05', category_id: 'c0' },
@@ -84,6 +84,6 @@ describe('dashboardDiretoria aggregations', () => {
     const cash = computeCashKpis([], transactions, categories, [], period);
     assert.equal(cash.pendingReceivable, 1500);
     assert.equal(cash.pendingPayable, 1000);
-    assert.equal(cash.cashForecast, -500);
+    assert.equal(cash.cashForecast, 500);
   });
 });

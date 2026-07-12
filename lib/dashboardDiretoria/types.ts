@@ -45,7 +45,7 @@ export interface CashKpis {
   cashResult: number;
   cashMarginPct: number;
   totalCash: number;
-  /** Contas a pagar − contas a receber (pendências globais) */
+  /** Contas a receber − contas a pagar (positivo = sobra prevista no caixa) */
   cashForecast: number;
 }
 

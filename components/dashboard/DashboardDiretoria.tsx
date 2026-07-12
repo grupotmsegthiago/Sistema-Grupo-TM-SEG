@@ -168,12 +168,12 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
       </div>
       <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
         <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">Previsão do caixa</p>
-        <p className="text-[11px] text-gray-500 mt-0.5">Contas a pagar − Contas a receber</p>
-        <p className={`text-2xl font-black font-mono mt-2 ${cash.cashForecast <= 0 ? 'text-green-600' : 'text-red-600'}`}>
+        <p className="text-[11px] text-gray-500 mt-0.5">Contas a receber − Contas a pagar</p>
+        <p className={`text-2xl font-black font-mono mt-2 ${cash.cashForecast >= 0 ? 'text-green-600' : 'text-red-600'}`}>
           {fmtBRL(cash.cashForecast)}
         </p>
         <p className="text-[10px] text-gray-400 mt-1 font-mono">
-          {fmtShort(cash.pendingPayable)} − {fmtShort(cash.pendingReceivable)}
+          {fmtShort(cash.pendingReceivable)} − {fmtShort(cash.pendingPayable)}
         </p>
       </div>
     </div>
