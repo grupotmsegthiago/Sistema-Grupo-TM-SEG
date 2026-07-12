@@ -505,15 +505,17 @@ const WhatsAppConnectionPanel: React.FC = () => {
 
                 {!connected && isZapi && (
                   <div className="p-4 rounded-lg border border-red-200 bg-red-50 text-red-950 text-xs space-y-2">
-                    <p className="font-black uppercase text-[10px] tracking-wide">Checklist de recuperação</p>
+                    <p className="font-black uppercase text-[10px] tracking-wide">Reconexão automática (mobile wa_old)</p>
                     <ol className="list-decimal list-inside space-y-1 leading-relaxed">
-                      <li>Celular <strong>dedicado do bot</strong> ligado, WhatsApp aberto, Wi‑Fi estável (sem economia de bateria).</li>
-                      <li><strong>Não</strong> usar WhatsApp Business nem WhatsApp Web no mesmo chip do bot.</li>
-                      <li>Clique <strong>Reconectar via API</strong> (restore-session + restart automático).</li>
-                      <li>Se não voltar: <strong>Código extensão</strong> → colar na extensão Z-API Conector no Chrome.</li>
-                      <li>Instância mobile: <strong>Pop-up no app</strong> ou SMS no painel abaixo.</li>
+                      <li>eSIM do bot ligado, <strong>WhatsApp Business</strong> aberto, Wi‑Fi estável.</li>
+                      <li>O vigia envia <strong>pop-up no app</strong> a cada ~5 min após queda — confirme no celular (1 toque).</li>
+                      <li>Ou clique <strong>Reconectar via API</strong> (restore + restart + wa_old).</li>
+                      <li>Se pedir código/PIN: use os campos abaixo ou botão <strong>Pop-up no app</strong>.</li>
+                      <li>Instância web (legado): <strong>Código extensão</strong> no Chrome — evite se já usa mobile.</li>
                     </ol>
-                    <p className="text-[10px] opacity-80">O vigia tenta reconectar sozinho após queda (cooldown 30 min). Quedas por celular offline ou sessão expirada exigem passos acima.</p>
+                    <p className="text-[10px] opacity-80 font-bold text-amber-900">
+                      No painel Z-API a instância deve ser tipo <strong>MOBILE</strong> (não Web). Depois disso o vigia envia pop-up wa_old no WhatsApp Business do eSIM.
+                    </p>
                   </div>
                 )}
 

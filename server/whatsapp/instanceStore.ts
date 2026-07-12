@@ -46,6 +46,22 @@ function mapRow(r: any): WhatsappInstanceRecord {
   };
 }
 
+export async function ensureDefaultInstanceMobileType(): Promise<void> {
+  const wantMobile = (process.env.ZAPI_INSTANCE_TYPE ?? "mobile").toLowerCase() !== "web";
+  if (!wantMobile) return;
+  const client = sb();
+  if (!client) return;
+  try {
+    await client
+      .from("whatsapp_instances")
+      .update({ instance_type: "mobile", updated_at: new Date().toISOString() })
+      .eq("is_default", true)
+      .neq("instance_type", "mobile");
+  } catch (e: any) {
+    console.warn("[WhatsApp Instâncias] ensure mobile:", e?.message || e);
+  }
+}
+
 export async function runWhatsappInstanceMigrations(): Promise<void> {
   const client = sb();
   if (!client) return;
@@ -89,6 +105,7 @@ export async function runWhatsappInstanceMigrations(): Promise<void> {
       `,
     });
     await seedDefaultFromEnvIfEmpty();
+    await ensureDefaultInstanceMobileType();
   } catch (e: any) {
     console.warn("[WhatsApp Instâncias] Migration:", e?.message || e);
   }
@@ -108,7 +125,7 @@ export async function seedDefaultFromEnvIfEmpty(): Promise<void> {
     return;
   }
 
-  const type = (process.env.ZAPI_INSTANCE_TYPE || "web").toLowerCase() === "mobile" ? "mobile" : "web";
+  const type = (process.env.ZAPI_INSTANCE_TYPE || "mobile").toLowerCase() === "web" ? "web" : "mobile";
   const phone = (process.env.ZAPI_OFFICIAL_PHONE || process.env.META_WHATSAPP_DISPLAY_PHONE || "11926839456")
     .replace(/\D/g, "")
     .replace(/^55/, "");
@@ -205,7 +222,7 @@ function envFallbackInstance(): WhatsappInstanceRecord | null {
     slug: "central",
     label: "Central (env fallback)",
     provider: "zapi",
-    instance_type: (process.env.ZAPI_INSTANCE_TYPE || "web") === "mobile" ? "mobile" : "web",
+    instance_type: (process.env.ZAPI_INSTANCE_TYPE || "mobile") === "web" ? "web" : "mobile",
     zapi_instance_id: instanceId,
     zapi_token: token,
     zapi_client_token: process.env.ZAPI_CLIENT_TOKEN || null,

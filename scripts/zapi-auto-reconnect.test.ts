@@ -2,7 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getAutoReconnectPolicyMessage,
+  isWaOldReconnectEnabled,
   isWhatsappAutoReconnectEnabled,
+  shouldUseMobileWaOld,
 } from '../server/zapiAutoReconnect';
 
 describe('zapiAutoReconnect policy', () => {
@@ -23,5 +25,22 @@ describe('zapiAutoReconnect policy', () => {
     assert.match(getAutoReconnectPolicyMessage(), /ativa/i);
     if (prev !== undefined) process.env.WHATSAPP_AUTO_RECONNECT = prev;
     else delete process.env.WHATSAPP_AUTO_RECONNECT;
+  });
+
+  it('wa_old ativo por padrão para instância mobile', () => {
+    const prev = process.env.ZAPI_WA_OLD_RECONNECT;
+    delete process.env.ZAPI_WA_OLD_RECONNECT;
+    assert.equal(isWaOldReconnectEnabled(), true);
+    assert.equal(
+      shouldUseMobileWaOld({
+        instance_type: 'mobile',
+      } as any),
+      true,
+    );
+    if (prev !== undefined) process.env.ZAPI_WA_OLD_RECONNECT = prev;
+  });
+
+  it('política menciona wa_old quando ativo', () => {
+    assert.match(getAutoReconnectPolicyMessage(), /wa_old/i);
   });
 });

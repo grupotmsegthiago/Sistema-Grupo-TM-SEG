@@ -69,5 +69,5 @@ Após editar cabeçalhos de `.tsx`, manter `import React, { useState, ... } from
 
 - Diagnóstico: `npx tsx scripts/whatsapp-diagnostics-report.ts 7d`
 - Reconectar manual (API): `POST /api/whatsapp/connection/reconnect` ou botão **Reconectar via API** em Configurações → WhatsApp
-- Auto-reconnect no vigia/webhook: **ativo por padrão** (`restore-session` → `restart`, cooldown 30 min). Desative com `WHATSAPP_AUTO_RECONNECT=false` na Vercel.
+- Auto-reconnect: restore-session → restart → **wa_old** (pop-up no WhatsApp Business). Retry a cada 5 min. `ZAPI_INSTANCE_TYPE=mobile` (padrão).
 - **Não resolve** sozinho: celular offline (`smartphoneConnected=false`), sessão extensão expirada (usar Z-API Conector), WhatsApp Web manual no mesmo número
