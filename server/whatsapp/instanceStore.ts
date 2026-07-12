@@ -170,7 +170,7 @@ export async function syncMobileInstanceFromEnv(): Promise<void> {
     .replace(/\D/g, "")
     .replace(/^55/, "");
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     provider: "zapi" as const,
     instance_type: "mobile" as const,
     zapi_instance_id: envCreds.instanceId,
@@ -181,6 +181,7 @@ export async function syncMobileInstanceFromEnv(): Promise<void> {
     enabled: true,
     updated_at: new Date().toISOString(),
   };
+  if (envCreds.clientToken) payload.zapi_client_token = envCreds.clientToken;
 
   const { data: def } = await client
     .from("whatsapp_instances")

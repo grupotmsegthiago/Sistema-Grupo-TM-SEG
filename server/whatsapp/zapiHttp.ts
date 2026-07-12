@@ -47,10 +47,12 @@ export function credsFromInstance(row: {
   instance_type: ZapiInstanceType | null;
 }): ZapiCredentials | null {
   if (!row.zapi_instance_id || !row.zapi_token) return null;
+  const dbClient = String(row.zapi_client_token || "").trim();
+  const envClient = String(process.env.ZAPI_CLIENT_TOKEN || "").trim();
   return {
     instance: row.zapi_instance_id,
     token: row.zapi_token,
-    clientToken: row.zapi_client_token || "",
+    clientToken: dbClient || envClient,
     type: row.instance_type === "mobile" ? "mobile" : "web",
   };
 }
