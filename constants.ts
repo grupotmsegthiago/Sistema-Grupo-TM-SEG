@@ -152,6 +152,15 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   { name: 'Relatórios', icon: 'FileBarChart', id: 'reports' },
+  {
+    name: 'Diretoria',
+    icon: 'Crown',
+    id: 'diretoria-group',
+    children: [
+      { name: 'Cockpit Executivo', id: 'diretoria-cockpit' },
+      { name: 'Relatório Geral', id: 'fin-report' },
+    ],
+  },
   { 
     name: 'Configurações', 
     icon: 'Settings', 

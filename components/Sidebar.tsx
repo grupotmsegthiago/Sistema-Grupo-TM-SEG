@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, MapPin, Truck, Users, FileBarChart, Settings, 
-  Briefcase, UserCog, ChevronDown, ChevronRight, Circle, LogOut, DollarSign, Bot, Wallet, Map, MessageCircle, Scale, RefreshCw
+  Briefcase, UserCog, ChevronDown, ChevronRight, Circle, LogOut, DollarSign, Bot, Wallet, Map, MessageCircle, Scale, RefreshCw, Crown
 } from 'lucide-react';
 import { NAV_ITEMS, APP_VERSION } from '../constants';
 import { NavItem } from '../constants'; // Explicit import to avoid TS error if NAV_ITEMS interface isn't exported correctly
@@ -148,6 +148,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
       case 'Wallet': return <Wallet size={24} />;
       case 'MessageCircle': return <MessageCircle size={24} />;
       case 'Scale': return <Scale size={24} />;
+      case 'Crown': return <Crown size={24} />;
       default: return <LayoutDashboard size={24} />;
     }
   };
@@ -174,6 +175,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
     if (role === 'financeiro') {
         if (itemId === 'finance-group' || itemId === 'fin-report') return true;
     }
+
+    // Cockpit Diretoria — somente Diretoria e Administrador
+    const diretoriaScreens = new Set(['diretoria-group', 'diretoria-cockpit']);
+    if (diretoriaScreens.has(itemId) && (role === 'diretoria' || role === 'administrador')) {
+      return true;
+    }
+    if (itemId === 'fin-report' && role === 'diretoria') return true;
 
     if (role === 'comercial') {
         const forbiddenGroups = ['finance-group', 'settings-group'];
