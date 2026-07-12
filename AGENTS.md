@@ -46,7 +46,19 @@ Usar Node 22+ (projeto declara `24.x` em `package.json`; Node 22 funciona para b
 - **Importante:** usar `require('./_occurrence-report-*.cjs')` **estático** no handler. `require` dinâmico com `path.join` ou bloco `includeFiles` em `vercel.json` para `api/dhl/occurrence-report.ts` causou deploy **ERROR 0ms** (falha de configuração antes do build).
 - PDF no anexo: leitura no **browser** via `pdfjs-dist` (`lib/dhlOccurrenceReport/extractPdfText.ts`).
 
-### Deploy Vercel — troubleshooting
+### WhatsApp Z-API (mobile)
+
+Variáveis na Vercel (recomendado):
+
+- `ZAPI_MOBILE_ID` — Instance ID da instância **mobile** (ex. Central Torres)
+- `ZAPI_MOBILE_TOKEN` — Token da instância
+- `ZAPI_MOBILE_INSTANCIA` — Rótulo exibido no painel (ex. `Central Torres`)
+
+Na subida do servidor, `syncMobileInstanceFromEnv()` atualiza a instância padrão no Supabase quando `ZAPI_MOBILE_ID` + `ZAPI_MOBILE_TOKEN` existem.
+
+Opcional: `ZAPI_CLIENT_TOKEN` (token de segurança do painel Z-API) se a API retornar *client-token is not configured*.
+
+Legado: `ZAPI_INSTANCE_ID` / `ZAPI_TOKEN` continuam como fallback.
 
 1. **Deployments** → último da `main`: status Ready vs Error.
 2. Deploy **ERROR 0ms / builds=[]**: quase sempre `vercel.json` inválido — comparar com commit que passou (ex.: sem entrada `functions` para `occurrence-report.ts`).

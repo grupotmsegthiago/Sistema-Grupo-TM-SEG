@@ -116,15 +116,14 @@ async function getDefaultZapiCreds(sb: any): Promise<ZapiCreds | null> {
     };
   }
 
-  const instance = String(process.env.ZAPI_INSTANCE_ID || "").trim();
-  const token = String(process.env.ZAPI_TOKEN || "").trim();
-  if (!instance || !token) return null;
+  const envCreds = (await import("../server/whatsapp/zapiMobileEnv")).getZapiMobileEnvCreds();
+  if (!envCreds) return null;
   const ddi = digitsOnly(process.env.ZAPI_OFFICIAL_DDI || "55") || "55";
   const local = digitsOnly(process.env.ZAPI_OFFICIAL_PHONE || process.env.META_WHATSAPP_DISPLAY_PHONE || "11926839456");
   return {
-    instance,
-    token,
-    clientToken: String(process.env.ZAPI_CLIENT_TOKEN || "").trim(),
+    instance: envCreds.instanceId,
+    token: envCreds.token,
+    clientToken: envCreds.clientToken,
     officialPhone: local.startsWith(ddi) ? local : `${ddi}${local}`,
   };
 }

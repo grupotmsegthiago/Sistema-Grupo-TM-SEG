@@ -2,6 +2,7 @@
 
 import { getDefaultWhatsappInstance } from "./whatsapp/instanceStore";
 import { credsFromInstance, zapiBasePathFor, zapiFetchWith, zapiHeadersFor, type ZapiCredentials } from "./whatsapp/zapiHttp";
+import { getZapiMobileEnvCreds } from "./whatsapp/zapiMobileEnv";
 import type { ZapiInstanceType } from "./whatsapp/types";
 
 export type { ZapiInstanceType, ZapiCredentials };
@@ -12,14 +13,13 @@ async function resolveCreds(): Promise<ZapiCredentials | null> {
     const c = credsFromInstance(row);
     if (c) return c;
   }
-  const instance = process.env.ZAPI_INSTANCE_ID || "";
-  const token = process.env.ZAPI_TOKEN || "";
-  if (!instance || !token) return null;
+  const envCreds = getZapiMobileEnvCreds();
+  if (!envCreds) return null;
   return {
-    instance,
-    token,
-    clientToken: process.env.ZAPI_CLIENT_TOKEN || "",
-    type: (process.env.ZAPI_INSTANCE_TYPE || "web") === "mobile" ? "mobile" : "web",
+    instance: envCreds.instanceId,
+    token: envCreds.token,
+    clientToken: envCreds.clientToken,
+    type: envCreds.explicitMobileEnv || (process.env.ZAPI_INSTANCE_TYPE || "mobile").toLowerCase() !== "web" ? "mobile" : "web",
   };
 }
 

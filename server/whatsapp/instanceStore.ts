@@ -6,6 +6,7 @@ import {
   type WhatsappProviderId,
   type ZapiInstanceType,
 } from "./types";
+import { getZapiMobileEnvCreds, hasExplicitZapiMobileEnv } from "./zapiMobileEnv";
 
 const CACHE_TTL_MS = 30_000;
 let cachedDefault: WhatsappInstanceRecord | null = null;
@@ -105,6 +106,7 @@ export async function runWhatsappInstanceMigrations(): Promise<void> {
       `,
     });
     await seedDefaultFromEnvIfEmpty();
+    await syncMobileInstanceFromEnv();
     await ensureDefaultInstanceMobileType();
   } catch (e: any) {
     console.warn("[WhatsApp Instâncias] Migration:", e?.message || e);
@@ -118,26 +120,27 @@ export async function seedDefaultFromEnvIfEmpty(): Promise<void> {
   const { count } = await client.from("whatsapp_instances").select("id", { count: "exact", head: true });
   if (count && count > 0) return;
 
-  const instanceId = process.env.ZAPI_INSTANCE_ID || "";
-  const token = process.env.ZAPI_TOKEN || "";
-  if (!instanceId || !token) {
+  const envCreds = getZapiMobileEnvCreds();
+  if (!envCreds) {
     console.log("[WhatsApp Instâncias] Tabela vazia e sem ZAPI_* no .env — cadastre via Configurações.");
     return;
   }
 
-  const type = (process.env.ZAPI_INSTANCE_TYPE || "mobile").toLowerCase() === "web" ? "web" : "mobile";
+  const type: ZapiInstanceType = hasExplicitZapiMobileEnv() || (process.env.ZAPI_INSTANCE_TYPE || "mobile").toLowerCase() !== "web"
+    ? "mobile"
+    : "web";
   const phone = (process.env.ZAPI_OFFICIAL_PHONE || process.env.META_WHATSAPP_DISPLAY_PHONE || "11926839456")
     .replace(/\D/g, "")
     .replace(/^55/, "");
 
   await client.from("whatsapp_instances").insert([{
     slug: "central",
-    label: "Central TM SEG",
+    label: envCreds.label,
     provider: (process.env.WHATSAPP_PROVIDER || "zapi").toLowerCase() === "meta" ? "meta" : "zapi",
     instance_type: type,
-    zapi_instance_id: instanceId,
-    zapi_token: token,
-    zapi_client_token: process.env.ZAPI_CLIENT_TOKEN || null,
+    zapi_instance_id: envCreds.instanceId,
+    zapi_token: envCreds.token,
+    zapi_client_token: envCreds.clientToken || null,
     meta_phone_number_id: process.env.META_WHATSAPP_PHONE_NUMBER_ID || null,
     meta_access_token: process.env.META_WHATSAPP_ACCESS_TOKEN || null,
     meta_api_version: process.env.META_WHATSAPP_API_VERSION || "v21.0",
@@ -147,7 +150,68 @@ export async function seedDefaultFromEnvIfEmpty(): Promise<void> {
     enabled: true,
   }]);
   invalidateDefaultCache();
-  console.log("[WhatsApp Instâncias] Instância padrão 'central' criada a partir do .env (migração única).");
+  console.log(`[WhatsApp Instâncias] Instância padrão 'central' criada a partir do ambiente (${envCreds.label}).`);
+}
+
+/**
+ * Atualiza a instância padrão no banco quando ZAPI_MOBILE_ID + ZAPI_MOBILE_TOKEN estão no ambiente.
+ * Garante que produção use Central Torres (mobile) sem editar manualmente no painel.
+ */
+export async function syncMobileInstanceFromEnv(): Promise<void> {
+  if (!hasExplicitZapiMobileEnv()) return;
+  const envCreds = getZapiMobileEnvCreds();
+  if (!envCreds) return;
+
+  const client = sb();
+  if (!client) return;
+
+  const phone = (process.env.ZAPI_OFFICIAL_PHONE || process.env.META_WHATSAPP_DISPLAY_PHONE || "11926839456")
+    .replace(/\D/g, "")
+    .replace(/^55/, "");
+
+  const payload = {
+    provider: "zapi" as const,
+    instance_type: "mobile" as const,
+    zapi_instance_id: envCreds.instanceId,
+    zapi_token: envCreds.token,
+    label: envCreds.label,
+    official_ddi: process.env.ZAPI_OFFICIAL_DDI || "55",
+    official_phone: phone,
+    enabled: true,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data: def } = await client
+    .from("whatsapp_instances")
+    .select("id, zapi_instance_id")
+    .eq("is_default", true)
+    .maybeSingle();
+
+  if (def?.id) {
+    await client.from("whatsapp_instances").update(payload).eq("id", def.id);
+    invalidateDefaultCache();
+    console.log(`[WhatsApp Instâncias] Instância padrão atualizada via ZAPI_MOBILE_* (${envCreds.label}).`);
+    return;
+  }
+
+  const { count } = await client.from("whatsapp_instances").select("id", { count: "exact", head: true });
+  if (count && count > 0) {
+    const { data: first } = await client
+      .from("whatsapp_instances")
+      .select("id")
+      .order("created_at")
+      .limit(1)
+      .maybeSingle();
+    if (first?.id) {
+      await client.from("whatsapp_instances").update({ ...payload, is_default: true }).eq("id", first.id);
+      await client.from("whatsapp_instances").update({ is_default: false }).neq("id", first.id);
+      invalidateDefaultCache();
+      console.log(`[WhatsApp Instâncias] Primeira instância promovida e atualizada via ZAPI_MOBILE_* (${envCreds.label}).`);
+    }
+    return;
+  }
+
+  await seedDefaultFromEnvIfEmpty();
 }
 
 export function invalidateDefaultCache() {
@@ -212,20 +276,22 @@ export async function getDefaultWhatsappInstance(force = false): Promise<Whatsap
 
 /** Fallback temporário enquanto não há registro no banco. */
 function envFallbackInstance(): WhatsappInstanceRecord | null {
-  const instanceId = process.env.ZAPI_INSTANCE_ID || "";
-  const token = process.env.ZAPI_TOKEN || "";
-  if (!instanceId || !token) return null;
+  const envCreds = getZapiMobileEnvCreds();
+  if (!envCreds) return null;
   const now = new Date().toISOString();
   const phone = (process.env.ZAPI_OFFICIAL_PHONE || "11926839456").replace(/\D/g, "").replace(/^55/, "");
+  const type: ZapiInstanceType = envCreds.explicitMobileEnv || (process.env.ZAPI_INSTANCE_TYPE || "mobile").toLowerCase() !== "web"
+    ? "mobile"
+    : "web";
   return {
     id: "env-fallback",
     slug: "central",
-    label: "Central (env fallback)",
+    label: envCreds.label,
     provider: "zapi",
-    instance_type: (process.env.ZAPI_INSTANCE_TYPE || "mobile") === "web" ? "web" : "mobile",
-    zapi_instance_id: instanceId,
-    zapi_token: token,
-    zapi_client_token: process.env.ZAPI_CLIENT_TOKEN || null,
+    instance_type: type,
+    zapi_instance_id: envCreds.instanceId,
+    zapi_token: envCreds.token,
+    zapi_client_token: envCreds.clientToken || null,
     meta_phone_number_id: null,
     meta_access_token: null,
     meta_api_version: null,
