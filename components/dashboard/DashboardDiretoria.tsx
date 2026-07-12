@@ -159,13 +159,23 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   );
 
   const cashKpiRow = (
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-      <KpiTile label="Entradas (pagas)" value={fmtShort(cash.incomePaid)} accent="text-green-600" icon={<ArrowUpCircle size={16} className="text-green-500" />} />
-      <KpiTile label="Saídas (pagas)" value={fmtShort(cash.expensePaid)} accent="text-red-600" icon={<ArrowDownCircle size={16} className="text-red-500" />} />
-      <KpiTile label="Resultado Caixa" value={fmtShort(cash.cashResult)} accent={cash.cashResult >= 0 ? 'text-green-600' : 'text-red-600'} />
-      <KpiTile label="A Receber" value={fmtShort(cash.pendingReceivable)} accent="text-green-600" />
-      <KpiTile label="A Pagar" value={fmtShort(cash.pendingPayable)} accent="text-red-600" />
-      <KpiTile label="Saldo Contas" value={fmtShort(cash.totalCash)} accent="text-indigo-600" icon={<Wallet size={16} className="text-indigo-500" />} />
+    <div className="space-y-3" data-testid="cash-summary-diretoria">
+      <div className="grid grid-cols-2 gap-3">
+        <KpiTile label="Entrou" value={fmtShort(cash.incomePaid)} sub="Pagos no período" accent="text-green-600" icon={<ArrowUpCircle size={16} className="text-green-500" />} />
+        <KpiTile label="Saiu" value={fmtShort(cash.expensePaid)} sub="Pagos no período" accent="text-red-600" icon={<ArrowDownCircle size={16} className="text-red-500" />} />
+        <KpiTile label="Falta entrar" value={fmtShort(cash.pendingReceivable)} sub="Contas a receber" accent="text-green-600" />
+        <KpiTile label="Falta pagar" value={fmtShort(cash.pendingPayable)} sub="Contas a pagar" accent="text-red-600" />
+      </div>
+      <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+        <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">Previsão do caixa</p>
+        <p className="text-[11px] text-gray-500 mt-0.5">Contas a pagar − Contas a receber</p>
+        <p className={`text-2xl font-black font-mono mt-2 ${cash.cashForecast <= 0 ? 'text-green-600' : 'text-red-600'}`}>
+          {fmtBRL(cash.cashForecast)}
+        </p>
+        <p className="text-[10px] text-gray-400 mt-1 font-mono">
+          {fmtShort(cash.pendingPayable)} − {fmtShort(cash.pendingReceivable)}
+        </p>
+      </div>
     </div>
   );
 

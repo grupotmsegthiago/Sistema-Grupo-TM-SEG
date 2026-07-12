@@ -45,7 +45,7 @@ describe('dashboardDiretoria aggregations', () => {
   it('buildCriticalAlerts sinaliza margem baixa', () => {
     const alerts = buildCriticalAlerts({
       operational: { grossMarginPct: 15, grossRevenue: 10000, grossProfit: 1500, variableCost: 8500, missionCount: 10 },
-      cash: { incomePaid: 0, expensePaid: 0, pendingReceivable: 0, pendingPayable: 0, overduePayable: 0, cashResult: 0, cashMarginPct: 0, totalCash: 100000 },
+      cash: { incomePaid: 0, expensePaid: 0, pendingReceivable: 0, pendingPayable: 0, overduePayable: 0, cashResult: 0, cashMarginPct: 0, totalCash: 100000, cashForecast: 0 },
       pendingApprovals: [],
       missions: [],
       refs: { clientTables: [], providerTables: [], clientsData: [] },
@@ -70,5 +70,20 @@ describe('dashboardDiretoria aggregations', () => {
     const cash = computeCashKpis(transactions, transactions, categories, [{ id: 'a1', initial_balance: 1000 }], period);
     assert.equal(op.grossProfit, 400);
     assert.equal(cash.cashResult, 3000);
+  });
+
+  it('computeCashKpis calcula previsão do caixa (a pagar − a receber)', () => {
+    const transactions = [
+      { id: 't1', type: 'INCOME', status: 'PENDING', amount: 1000, due_date: '2026-08-01', category_id: 'c0' },
+      { id: 't2', type: 'INCOME', status: 'SCHEDULED', amount: 500, due_date: '2026-08-05', category_id: 'c0' },
+      { id: 't3', type: 'EXPENSE', status: 'PENDING', amount: 800, due_date: '2026-08-10', category_id: 'c1', category_name: 'Fornecedor' },
+      { id: 't4', type: 'EXPENSE', status: 'OVERDUE', amount: 200, due_date: '2026-06-01', category_id: 'c1', category_name: 'Aluguel' },
+    ] as any[];
+    const categories = [{ id: 'c1', name: 'Aluguel', type: 'EXPENSE', group: 'DESPESAS_FIXAS' }] as any[];
+    const period = { year: 2026, month: 6 };
+    const cash = computeCashKpis([], transactions, categories, [], period);
+    assert.equal(cash.pendingReceivable, 1500);
+    assert.equal(cash.pendingPayable, 1000);
+    assert.equal(cash.cashForecast, -500);
   });
 });

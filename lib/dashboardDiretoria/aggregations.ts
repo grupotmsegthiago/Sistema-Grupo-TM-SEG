@@ -112,6 +112,8 @@ export function computeCashKpis(
     }, 0),
   );
 
+  const cashForecast = round2(pendingPayable - pendingReceivable);
+
   return {
     incomePaid,
     expensePaid,
@@ -121,6 +123,7 @@ export function computeCashKpis(
     cashResult,
     cashMarginPct,
     totalCash,
+    cashForecast,
   };
 }
 

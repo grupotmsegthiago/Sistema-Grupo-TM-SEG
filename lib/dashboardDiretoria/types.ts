@@ -45,6 +45,8 @@ export interface CashKpis {
   cashResult: number;
   cashMarginPct: number;
   totalCash: number;
+  /** Contas a pagar − contas a receber (pendências globais) */
+  cashForecast: number;
 }
 
 export interface DashboardDiretoriaData {
