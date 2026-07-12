@@ -73,19 +73,36 @@ describe('dashboardDiretoria aggregations', () => {
     assert.equal(cash.cashResult, 3000);
   });
 
-  it('computeCashKpis calcula previsão do caixa (a receber − a pagar)', () => {
+  it('computeCashKpis calcula previsão do caixa (a receber − a pagar) no período', () => {
     const transactions = [
-      { id: 't1', type: 'INCOME', status: 'PENDING', amount: 1000, due_date: '2026-08-01', category_id: 'c0' },
-      { id: 't2', type: 'INCOME', status: 'SCHEDULED', amount: 500, due_date: '2026-08-05', category_id: 'c0' },
-      { id: 't3', type: 'EXPENSE', status: 'PENDING', amount: 800, due_date: '2026-08-10', category_id: 'c1', category_name: 'Fornecedor' },
-      { id: 't4', type: 'EXPENSE', status: 'OVERDUE', amount: 200, due_date: '2026-06-01', category_id: 'c1', category_name: 'Aluguel' },
+      { id: 't1', type: 'INCOME', status: 'PENDING', amount: 1000, due_date: '2026-07-05', category_id: 'c0' },
+      { id: 't2', type: 'INCOME', status: 'SCHEDULED', amount: 500, due_date: '2026-07-10', category_id: 'c0' },
+      { id: 't3', type: 'EXPENSE', status: 'PENDING', amount: 800, due_date: '2026-07-15', category_id: 'c1', category_name: 'Fornecedor' },
+      { id: 't4', type: 'EXPENSE', status: 'OVERDUE', amount: 200, due_date: '2026-07-20', category_id: 'c1', category_name: 'Aluguel' },
+      { id: 't5', type: 'INCOME', status: 'PENDING', amount: 9999, due_date: '2026-08-01', category_id: 'c0' },
     ] as any[];
     const categories = [{ id: 'c1', name: 'Aluguel', type: 'EXPENSE', group: 'DESPESAS_FIXAS' }] as any[];
     const period = { mode: 'month' as const, year: 2026, month: 6 };
-    const cash = computeCashKpis([], transactions, categories, [], period);
+    const endOfJuly = new Date(2026, 6, 31, 12, 0, 0);
+    const cash = computeCashKpis([], transactions, categories, [], period, endOfJuly);
     assert.equal(cash.pendingReceivable, 1500);
     assert.equal(cash.pendingPayable, 1000);
     assert.equal(cash.cashForecast, 500);
+  });
+
+  it('computeCashKpis filtra pendências por vencimento na semana', () => {
+    const transactions = [
+      { id: 't1', type: 'INCOME', status: 'PENDING', amount: 1000, due_date: '2026-07-10', category_id: 'c0' },
+      { id: 't2', type: 'INCOME', status: 'PENDING', amount: 5000, due_date: '2026-08-01', category_id: 'c0' },
+      { id: 't3', type: 'EXPENSE', status: 'PENDING', amount: 800, due_date: '2026-07-11', category_id: 'c1', category_name: 'X' },
+    ] as any[];
+    const categories = [{ id: 'c1', name: 'X', type: 'EXPENSE', group: 'DESPESAS_FIXAS' }] as any[];
+    const period = { mode: 'week' as const, year: 2026, month: 6 };
+    const sunday = new Date(2026, 6, 12, 12, 0, 0);
+    const cash = computeCashKpis([], transactions, categories, [], period, sunday);
+    assert.equal(cash.pendingReceivable, 1000);
+    assert.equal(cash.pendingPayable, 800);
+    assert.equal(cash.cashForecast, 200);
   });
 
   it('computeCashKpis usa payment_date para pagos no período (não due_date)', () => {

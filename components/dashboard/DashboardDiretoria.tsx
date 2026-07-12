@@ -169,12 +169,12 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
       <div className="grid grid-cols-2 gap-3">
         <KpiTile label="Entrou" value={fmtShort(cash.incomePaid)} sub="Pagos no período" accent="text-green-600" icon={<ArrowUpCircle size={16} className="text-green-500" />} />
         <KpiTile label="Saiu" value={fmtShort(cash.expensePaid)} sub="Pagos no período" accent="text-red-600" icon={<ArrowDownCircle size={16} className="text-red-500" />} />
-        <KpiTile label="Falta entrar" value={fmtShort(cash.pendingReceivable)} sub="Contas a receber" accent="text-green-600" />
-        <KpiTile label="Falta pagar" value={fmtShort(cash.pendingPayable)} sub="Contas a pagar" accent="text-red-600" />
+        <KpiTile label="Falta entrar" value={fmtShort(cash.pendingReceivable)} sub="A receber (venc. no período)" accent="text-green-600" />
+        <KpiTile label="Falta pagar" value={fmtShort(cash.pendingPayable)} sub="A pagar (venc. no período)" accent="text-red-600" />
       </div>
       <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
         <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">Previsão do caixa</p>
-        <p className="text-[11px] text-gray-500 mt-0.5">Contas a receber − Contas a pagar</p>
+        <p className="text-[11px] text-gray-500 mt-0.5">A receber − A pagar (vencimento no período)</p>
         <p className={`text-2xl font-black font-mono mt-2 ${cash.cashForecast >= 0 ? 'text-green-600' : 'text-red-600'}`}>
           {fmtBRL(cash.cashForecast)}
         </p>

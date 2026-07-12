@@ -25,6 +25,24 @@ function filterPaidTransactionsInPeriod(
   });
 }
 
+function getDueDateIso(t: FinancialTransaction): string {
+  return String(t.due_date || '').slice(0, 10);
+}
+
+/** Pendências (a receber/pagar) filtradas pelo vencimento dentro do período. */
+function filterPendingTransactionsInPeriod(
+  transactions: FinancialTransaction[],
+  period: DashboardPeriod,
+  now = new Date(),
+): FinancialTransaction[] {
+  const { startIso, endIso } = getPeriodRange(period, now);
+  return transactions.filter(t => {
+    if (!['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status)) return false;
+    const d = getDueDateIso(t);
+    return d >= startIso && d <= endIso;
+  });
+}
+
 export const fmtBRL = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 });
 
@@ -94,14 +112,16 @@ export function computeCashKpis(
       .reduce((s, t) => s + Number(t.amount || 0), 0),
   );
 
+  const pendingInPeriod = filterPendingTransactionsInPeriod(allTransactions, period, now);
+
   const pendingReceivable = round2(
-    allTransactions
-      .filter(t => t.type === 'INCOME' && ['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status))
+    pendingInPeriod
+      .filter(t => t.type === 'INCOME')
       .reduce((s, t) => s + Number(t.amount || 0), 0),
   );
   const pendingPayable = round2(
-    allTransactions
-      .filter(t => t.type === 'EXPENSE' && ['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status))
+    pendingInPeriod
+      .filter(t => t.type === 'EXPENSE')
       .reduce((s, t) => s + Number(t.amount || 0), 0),
   );
   const overduePayable = round2(
