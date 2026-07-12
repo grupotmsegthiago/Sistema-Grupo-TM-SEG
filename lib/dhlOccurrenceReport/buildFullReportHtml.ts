@@ -252,7 +252,7 @@ export function buildFullOccurrenceReportHtml(
 
   <div class="subsection">
   <h2>1. Objetivo do documento</h2>
-  <p>Formalizar, de forma estruturada e transparente, a justificativa do atraso registrado na operação de escolta vinculada à <strong>S.E. nº ${esc(data.seNumber)}</strong>, bem como o plano de ação com medidas corretivas e preventivas adotadas pela TM SEG, visando a apresentação à DHL Supply Chain e ao cliente final (Foxconn / Apple).</p>
+  <p ${editable('sec-1-objetivo')}>Formalizar, de forma estruturada e transparente, a justificativa do atraso registrado na operação de escolta vinculada à <strong>S.E. nº ${esc(data.seNumber)}</strong>, bem como o plano de ação com medidas corretivas e preventivas adotadas pela TM SEG, visando a apresentação à DHL Supply Chain e ao cliente final (Foxconn / Apple).</p>
   </div>
 
   <div class="subsection">

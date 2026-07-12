@@ -1,6 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Eye, ExternalLink, FileText, History, Link2, Loader2, Paperclip, Printer, RotateCcw, Save, Send, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Eye, ExternalLink, FileText, History, Link2, Loader2, Paperclip, Pencil, Printer, RotateCcw, Save, Send, X } from 'lucide-react';
 import type { Mission } from '../types';
+import { applyEditablePatches } from '../lib/dhlOccurrenceReport/adjustReportHtml';
+import {
+  editableInnerToPlainText,
+  injectDhlPreviewEditControls,
+  isDhlPreviewEditorMessage,
+  labelForEditableId,
+  plainTextToEditableInner,
+  stripDhlPreviewEditControls,
+} from '../lib/dhlOccurrenceReport/previewEditor';
 import { readEmailAttachmentFile } from '../lib/dhlOccurrenceReport/readEmailAttachment';
 import {
   adjustDhlOccurrenceReportHtml,
@@ -28,6 +37,12 @@ type Step = 'edit' | 'preview';
 type AiChatMessage = {
   role: 'user' | 'assistant';
   content: string;
+};
+
+type ManualEditState = {
+  id: string;
+  tagName: string;
+  text: string;
 };
 
 const DEFAULT_183013_SUMMARY = `Na operação do dia 08/07/2026, a S.E. 183013 estava programada para atendimento na origem (Foxconn Jundiaí) às 11:00.
@@ -93,6 +108,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
   );
   const [aiAdjustmentNotes, setAiAdjustmentNotes] = useState('');
   const [aiChatMessages, setAiChatMessages] = useState<AiChatMessage[]>([]);
+  const [manualEdit, setManualEdit] = useState<ManualEditState | null>(null);
   const aiChatEndRef = useRef<HTMLDivElement | null>(null);
   const [emailLink, setEmailLink] = useState('');
   const [emailAttachmentText, setEmailAttachmentText] = useState('');
@@ -119,6 +135,48 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
     emailLink,
     emailAttachmentText,
   };
+
+  const previewSrcDoc = useMemo(
+    () => (previewHtml ? injectDhlPreviewEditControls(previewHtml) : null),
+    [previewHtml],
+  );
+
+  const cleanPreviewHtml = (html: string | null) =>
+    html ? stripDhlPreviewEditControls(html) : '';
+
+  useEffect(() => {
+    if (!isOpen || step !== 'preview') return;
+
+    const onMessage = (event: MessageEvent) => {
+      if (!isDhlPreviewEditorMessage(event.data)) return;
+      const msg = event.data;
+      if (msg.action === 'delete') {
+        const label = labelForEditableId(msg.id);
+        if (!window.confirm(`Excluir "${label}" do relatório?`)) return;
+        setPreviewHtml((current) => {
+          if (!current) return current;
+          return applyEditablePatches(cleanPreviewHtml(current), { [msg.id]: '' });
+        });
+        setNotice(`Item "${label}" removido. Salve a versão para guardar no histórico.`);
+        setError(null);
+        return;
+      }
+      const tagName = String(msg.tagName || 'P').toUpperCase();
+      let text = editableInnerToPlainText(msg.html);
+      if (tagName === 'TR') {
+        const cells =
+          msg.html.match(/<td[^>]*>([\s\S]*?)<\/td>/gi)?.map((td) =>
+            editableInnerToPlainText(td.replace(/<\/?td[^>]*>/gi, '')),
+          ) || [];
+        if (cells.length) text = cells.join('\t');
+      }
+      setManualEdit({ id: msg.id, tagName, text });
+      setError(null);
+    };
+
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [isOpen, step]);
 
   useEffect(() => {
     return () => {
@@ -233,7 +291,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
 
     try {
       const adjusted = await adjustDhlOccurrenceReportHtml(
-        previewHtml,
+        cleanPreviewHtml(previewHtml),
         notes,
         mission.id,
         applyProgress,
@@ -259,6 +317,18 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
   const handleClearAiChat = () => {
     setAiChatMessages([]);
     setAiAdjustmentNotes('');
+    setError(null);
+  };
+
+  const handleSaveManualEdit = () => {
+    if (!manualEdit || !previewHtml) return;
+    const newInner = plainTextToEditableInner(manualEdit.text, manualEdit.tagName);
+    const label = labelForEditableId(manualEdit.id);
+    setPreviewHtml(
+      applyEditablePatches(cleanPreviewHtml(previewHtml), { [manualEdit.id]: newInner }),
+    );
+    setManualEdit(null);
+    setNotice(`"${label}" atualizado.`);
     setError(null);
   };
 
@@ -298,7 +368,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
       const { version } = await saveDhlOccurrenceReport({
         missionId: mission.id,
         seNumber,
-        html: previewHtml,
+        html: cleanPreviewHtml(previewHtml),
         factsSummary,
         emailLink,
         aiGenerated: !!(emailAttachmentText.trim() || emailLink.trim()),
@@ -359,7 +429,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
     }
     try {
       setError(null);
-      printDhlOccurrenceReportHtml(previewHtml, `Plano DHL S.E. ${seNumber}`);
+      printDhlOccurrenceReportHtml(cleanPreviewHtml(previewHtml), `Plano DHL S.E. ${seNumber}`);
     } catch (err) {
       setError(
         err instanceof Error
@@ -376,7 +446,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
     }
     try {
       setError(null);
-      downloadDhlOccurrenceReportHtml(previewHtml, `PA-DHL-${seNumber}.html`);
+      downloadDhlOccurrenceReportHtml(cleanPreviewHtml(previewHtml), `PA-DHL-${seNumber}.html`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível baixar o HTML.');
     }
@@ -389,7 +459,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
     }
     try {
       setError(null);
-      openDhlOccurrenceReportHtmlInNewTab(previewHtml);
+      openDhlOccurrenceReportHtmlInNewTab(cleanPreviewHtml(previewHtml));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível abrir em nova aba.');
     }
@@ -644,6 +714,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
                 </p>
               )}
               Relatório <strong>completo</strong> com cores TM SEG, logo, fotos e todas as seções.
+              Passe o mouse nos trechos destacados para <strong>Editar</strong> ou <strong>Excluir</strong> linhas e textos.
               Para PDF: <strong>Salvar PDF completo</strong> → na janela de impressão escolha
               &quot;Salvar como PDF&quot;. O botão &quot;PDF resumido&quot; gera apenas um rascunho sem layout.
             </div>
@@ -706,10 +777,10 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
                   )}
                 </div>
               ) : (
-                previewHtml && (
+                previewSrcDoc && (
                   <iframe
                     title={`Pré-visualização Plano DHL S.E. ${seNumber}`}
-                    srcDoc={previewHtml}
+                    srcDoc={previewSrcDoc}
                     className="w-full h-full min-h-[160px] sm:min-h-[50vh] rounded-lg border border-slate-300 bg-white"
                     data-testid="iframe-dhl-occurrence-preview"
                   />
@@ -839,6 +910,64 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
           </>
         )}
       </div>
+
+      {manualEdit && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4"
+          data-testid="modal-dhl-manual-edit"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 bg-[#0d3b66] text-white">
+              <h3 className="text-sm font-black flex items-center gap-2">
+                <Pencil size={16} />
+                Editar — {labelForEditableId(manualEdit.id)}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setManualEdit(null)}
+                className="p-1 rounded hover:bg-white/10"
+                aria-label="Fechar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                {manualEdit.tagName === 'TR'
+                  ? 'Edite as colunas separadas por tabulação (Tab). Para linhas do plano de ação, mantenha ID, ação, responsável, prazo e indicador.'
+                  : 'Edite o texto. Quebras de linha serão preservadas no relatório.'}
+              </p>
+              <textarea
+                value={manualEdit.text}
+                onChange={(e) => setManualEdit({ ...manualEdit, text: e.target.value })}
+                rows={8}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-[#0d3b66] outline-none font-mono"
+                data-testid="input-dhl-manual-edit"
+              />
+              <div className="flex flex-wrap gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setManualEdit(null)}
+                  className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-semibold text-slate-600"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveManualEdit}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold"
+                  data-testid="button-save-dhl-manual-edit"
+                >
+                  <Save size={14} />
+                  Salvar no relatório
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
