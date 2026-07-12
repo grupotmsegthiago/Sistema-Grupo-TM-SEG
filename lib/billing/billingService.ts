@@ -281,7 +281,7 @@ export async function getBillingMonthSummary(month = referenceMonthFromDate()): 
     planIncludedPercentUsed =
       cursorMeta?.planIncludedPercentUsed != null ? Number(cursorMeta.planIncludedPercentUsed) : null;
 
-    const subscriptionUsd = Number(cursorMeta?.subscriptionUsd || 0) || getPlanMonthlyUsd();
+    const subscriptionUsd = getPlanMonthlyUsd();
     planLimitUsd = subscriptionUsd;
     planLimitBrl = usdToBrl(subscriptionUsd);
 
