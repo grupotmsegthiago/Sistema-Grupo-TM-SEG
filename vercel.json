@@ -383,6 +383,42 @@
       "destination": "/api/whatsapp/bot-status"
     },
     {
+      "source": "/api/whatsapp/bot-status/claim",
+      "destination": "/api/whatsapp-bot-status-claim"
+    },
+    {
+      "source": "/api/whatsapp/bot-status/heartbeat",
+      "destination": "/api/whatsapp-bot-status-heartbeat"
+    },
+    {
+      "source": "/api/whatsapp/bot-status/release",
+      "destination": "/api/whatsapp-bot-status-release"
+    },
+    {
+      "source": "/api/whatsapp/bot-status/generate-code",
+      "destination": "/api/whatsapp-bot-status-generate-code"
+    },
+    {
+      "source": "/api/whatsapp/instances",
+      "destination": "/api/whatsapp-instances"
+    },
+    {
+      "source": "/api/whatsapp/connection/status",
+      "destination": "/api/whatsapp-connection-status"
+    },
+    {
+      "source": "/api/whatsapp/connection/reconnect",
+      "destination": "/api/whatsapp-connection-reconnect"
+    },
+    {
+      "source": "/api/whatsapp/connection/bootstrap",
+      "destination": "/api/whatsapp-connection-bootstrap"
+    },
+    {
+      "source": "/api/whatsapp/connection/qr-code",
+      "destination": "/api/whatsapp-connection-qr-code"
+    },
+    {
       "source": "/api/admin/system-settings/daily-reports",
       "destination": "/api/admin/system-settings-daily-reports"
     },

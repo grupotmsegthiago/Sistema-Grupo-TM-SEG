@@ -5,6 +5,8 @@ const DEFAULT_SUPABASE_URL = "https://ajhmmjuewdsukecaimik.supabase.co";
 const DEFAULT_SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk";
 
+const WHATSAPP_ADMIN_ROLES = new Set(["diretoria", "administrador", "ceo", "admin"]);
+
 export type LitePrincipal = {
   id: string;
   name: string | null;
@@ -12,8 +14,10 @@ export type LitePrincipal = {
   role: string;
 };
 
-export function readBearer(req: any): string {
-  return String(req.headers?.authorization || "").replace(/^Bearer\s+/i, "").trim()
+export function readBearer(req: { headers?: Record<string, unknown> }): string {
+  const auth = req.headers?.authorization || req.headers?.Authorization;
+  const raw = Array.isArray(auth) ? auth[0] : auth;
+  return String(raw || "").replace(/^Bearer\s+/i, "").trim()
     || String(req.headers?.["x-auth-token"] || "").trim();
 }
 
@@ -47,12 +51,19 @@ export async function resolveLitePrincipal(token: string): Promise<LitePrincipal
   if (!data || data.status !== "Ativo") return null;
   return {
     id: String(data.id),
-    name: (data as any).name || null,
-    email: (data as any).email || null,
-    role: String((data as any).profiles?.name || "").toLowerCase(),
+    name: (data as { name?: string }).name || null,
+    email: (data as { email?: string }).email || null,
+    role: String((data as { profiles?: { name?: string } }).profiles?.name || "").toLowerCase(),
   };
 }
 
 export function hasRole(principal: LitePrincipal, ...roles: string[]): boolean {
-  return roles.map((r) => r.toLowerCase()).includes(principal.role);
+  const normalized = principal.role.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return roles.map((r) => r.toLowerCase()).includes(normalized)
+    || roles.map((r) => r.toLowerCase()).includes(principal.role);
+}
+
+export function isWhatsappAdmin(principal: LitePrincipal): boolean {
+  const role = principal.role.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return WHATSAPP_ADMIN_ROLES.has(role) || WHATSAPP_ADMIN_ROLES.has(principal.role);
 }

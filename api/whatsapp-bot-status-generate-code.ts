@@ -1,0 +1,73 @@
+/** POST /api/whatsapp/bot-status/generate-code — leve */
+import { readBearer, resolveLitePrincipal } from "../lib/tmsegAuth.js";
+import {
+  attemptReconnect,
+  fetchPhoneLinkCode,
+  getInstance,
+  instanceConfigured,
+  loadReconnectLock,
+  updateReconnectLock,
+} from "../lib/whatsappLiteApi.js";
+
+export default async function handler(req: { method?: string }, res: {
+  status: (n: number) => { json: (b: unknown) => void };
+  setHeader: (k: string, v: string) => void;
+}) {
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "method_not_allowed" });
+    return;
+  }
+  res.setHeader("Cache-Control", "no-store");
+
+  const token = readBearer(req);
+  if (!token) return res.status(401).json({ error: "Não autorizado" });
+  const principal = await resolveLitePrincipal(token);
+  if (!principal) return res.status(403).json({ error: "Usuário não encontrado" });
+
+  try {
+    const current = await loadReconnectLock();
+    if (!current || current.holderId !== principal.id) {
+      return res.status(409).json({
+        ok: false,
+        error: current
+          ? `${current.holderName} já está reconectando o bot.`
+          : "Assuma a reconexão antes de gerar o código.",
+        lock: current,
+      });
+    }
+
+    await updateReconnectLock(principal.id, { phase: "generating" });
+
+    const reconnect = await attemptReconnect(true);
+    let phoneLinkCode = typeof reconnect.details?.phoneLinkCode === "string"
+      ? reconnect.details.phoneLinkCode
+      : null;
+
+    if (!phoneLinkCode && !reconnect.connectedAfter) {
+      const row = await getInstance();
+      if (row && instanceConfigured(row)) {
+        phoneLinkCode = await fetchPhoneLinkCode(row);
+      }
+    }
+
+    const lock = await updateReconnectLock(principal.id, {
+      phase: phoneLinkCode ? "code_ready" : "claimed",
+      phoneLinkCode,
+      reconnectMessage: reconnect.message,
+    });
+
+    res.status(200).json({
+      ok: !!phoneLinkCode || reconnect.connectedAfter === true,
+      connected: reconnect.connectedAfter === true,
+      phoneLinkCode,
+      message: reconnect.message,
+      lock,
+      reconnect,
+    });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: message });
+  }
+}
+
+export const config = { maxDuration: 90 };

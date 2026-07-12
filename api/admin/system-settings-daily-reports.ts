@@ -1,7 +1,7 @@
 /**
  * GET /api/admin/system-settings/daily-reports — leve (sem Express).
  */
-import { hasRole, readBearer, resolveLitePrincipal, supabaseLite } from "../_lib/tmsegAuth";
+import { hasRole, readBearer, resolveLitePrincipal, supabaseLite } from "../../lib/tmsegAuth.js";
 
 const KEY = "daily_reports";
 
