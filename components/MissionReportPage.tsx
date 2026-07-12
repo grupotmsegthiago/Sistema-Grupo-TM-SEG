@@ -16,6 +16,7 @@ import {
   clearMissionBillingAuditCache,
   computeMissionBillingAudit,
   fetchBillingAdjustmentsForMissionIds,
+  type AuditStatusLevel,
   type BillingAdjustmentRecord,
   type MissionBillingAuditResult,
 } from '../lib/missionBillingAudit';
@@ -28,6 +29,27 @@ import {
   filterMissionsByPeriod,
   type CanonicalResult,
 } from '../lib/missionFinancialsCanonical';
+
+const AUDIT_SORT_PRIORITY: Record<AuditStatusLevel, number> = {
+  erro: 0,
+  atencao: 1,
+  pendente: 2,
+  validado: 3,
+  em_viagem: 4,
+};
+
+function resolveMissionAuditLevel(
+  mission: Mission,
+  auditByMission: Map<string, MissionBillingAuditResult>,
+): AuditStatusLevel {
+  if (!isTerminalMissionStatusForAudit(mission.status)) return 'em_viagem';
+  const audit = auditByMission.get(mission.id);
+  if (!audit || audit.skipped) {
+    if (audit?.overallStatus === 'pendente') return 'pendente';
+    return 'pendente';
+  }
+  return audit.overallStatus;
+}
 
 const MissionReportPage: React.FC = () => {
   const { showNotification } = useNotification();
@@ -54,6 +76,7 @@ const MissionReportPage: React.FC = () => {
   const [clientFilter, setClientFilter] = useState('');
   const [providerFilter, setProviderFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [auditStatusFilter, setAuditStatusFilter] = useState<AuditStatusLevel | ''>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(true);
 
@@ -242,8 +265,27 @@ const MissionReportPage: React.FC = () => {
       );
     }
 
-    return [...filtered].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    return filtered;
   }, [allMissions, periodFilter, customStartDate, customEndDate, clientFilter, providerFilter, statusFilter, searchTerm]);
+
+  const displayMissions = useMemo(() => {
+    let list = filteredMissions;
+    if (auditStatusFilter) {
+      list = list.filter(
+        (m) => resolveMissionAuditLevel(m, auditByMission) === auditStatusFilter,
+      );
+    }
+    return [...list].sort((a, b) => {
+      const priorityA = AUDIT_SORT_PRIORITY[resolveMissionAuditLevel(a, auditByMission)];
+      const priorityB = AUDIT_SORT_PRIORITY[resolveMissionAuditLevel(b, auditByMission)];
+      if (priorityA !== priorityB) return priorityA - priorityB;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [filteredMissions, auditStatusFilter, auditByMission]);
+
+  const toggleAuditStatusFilter = useCallback((level: AuditStatusLevel) => {
+    setAuditStatusFilter((prev) => (prev === level ? '' : level));
+  }, []);
 
   const uniqueClients = useMemo(() => [...new Set(allMissions.map(m => m.client).filter(Boolean))].sort(), [allMissions]);
   const uniqueProviders = useMemo(() => [...new Set(allMissions.map(m => m.provider).filter(Boolean))].sort(), [allMissions]);
@@ -461,9 +503,9 @@ const MissionReportPage: React.FC = () => {
     if (canSeeFinancials) headers.push('Receita', 'Custo', 'Ped. Recebido', 'Ped. Pago', 'Desloc. Recebido', 'Desloc. Pago', 'Resultado', '% Lucro');
 
     const exportParentIds = new Set<string>();
-    filteredMissions.forEach(m => { if (m.is_same_os && m.parent_mission_id) exportParentIds.add(m.parent_mission_id); });
+    displayMissions.forEach(m => { if (m.is_same_os && m.parent_mission_id) exportParentIds.add(m.parent_mission_id); });
 
-    const rows = filteredMissions.map((m, i) => {
+    const rows = displayMissions.map((m, i) => {
       const c = canonicalByMission.get(m.id);
       const rev = c?.revBase || 0;
       const cost = c?.costBase || 0;
@@ -552,17 +594,81 @@ const MissionReportPage: React.FC = () => {
           <div className="flex items-center gap-3">
             <FileBarChart size={22} className="text-red-600" />
             <h1 className="text-lg font-black text-gray-900 uppercase tracking-tight">Relatório de OS</h1>
-            <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded">{filteredMissions.length} missões</span>
+            <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded" data-testid="report-mission-count">
+              {auditStatusFilter
+                ? `${displayMissions.length} de ${filteredMissions.length} missões`
+                : `${displayMissions.length} missões`}
+            </span>
             {canSeeFinancials && (
               <div className="flex items-center gap-1.5 text-[10px] font-black">
-                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded">🟢 {auditSummary.validado}</span>
-                <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded">🟡 {auditSummary.atencao}</span>
-                <span className="bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded">🔴 {auditSummary.erro}</span>
-                {auditSummary.pendente > 0 && (
-                  <span className="bg-gray-100 text-gray-600 border border-gray-200 px-2 py-0.5 rounded">⚪ {auditSummary.pendente}</span>
+                <button
+                  type="button"
+                  data-testid="filter-audit-validado"
+                  onClick={() => toggleAuditStatusFilter('validado')}
+                  title="Filtrar VALIDADO"
+                  className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
+                    auditStatusFilter === 'validado'
+                      ? 'bg-emerald-600 text-white border-emerald-700 ring-2 ring-emerald-300'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                  }`}
+                >
+                  🟢 {auditSummary.validado}
+                </button>
+                <button
+                  type="button"
+                  data-testid="filter-audit-atencao"
+                  onClick={() => toggleAuditStatusFilter('atencao')}
+                  title="Filtrar ATENÇÃO"
+                  className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
+                    auditStatusFilter === 'atencao'
+                      ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
+                      : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                  }`}
+                >
+                  🟡 {auditSummary.atencao}
+                </button>
+                <button
+                  type="button"
+                  data-testid="filter-audit-erro"
+                  onClick={() => toggleAuditStatusFilter('erro')}
+                  title="Filtrar ERRO"
+                  className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
+                    auditStatusFilter === 'erro'
+                      ? 'bg-red-600 text-white border-red-700 ring-2 ring-red-300'
+                      : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                  }`}
+                >
+                  🔴 {auditSummary.erro}
+                </button>
+                {(auditSummary.pendente > 0 || auditStatusFilter === 'pendente') && (
+                  <button
+                    type="button"
+                    data-testid="filter-audit-pendente"
+                    onClick={() => toggleAuditStatusFilter('pendente')}
+                    title="Filtrar PENDENTE"
+                    className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
+                      auditStatusFilter === 'pendente'
+                        ? 'bg-gray-600 text-white border-gray-700 ring-2 ring-gray-300'
+                        : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                    }`}
+                  >
+                    ⚪ {auditSummary.pendente}
+                  </button>
                 )}
-                {auditSummary.emViagem > 0 && (
-                  <span className="bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 rounded">🛣️ {auditSummary.emViagem}</span>
+                {(auditSummary.emViagem > 0 || auditStatusFilter === 'em_viagem') && (
+                  <button
+                    type="button"
+                    data-testid="filter-audit-em-viagem"
+                    onClick={() => toggleAuditStatusFilter('em_viagem')}
+                    title="Filtrar EM VIAGEM"
+                    className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
+                      auditStatusFilter === 'em_viagem'
+                        ? 'bg-sky-600 text-white border-sky-700 ring-2 ring-sky-300'
+                        : 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100'
+                    }`}
+                  >
+                    🛣️ {auditSummary.emViagem}
+                  </button>
                 )}
                 {auditBusy && (
                   <span className="text-gray-400 font-bold px-1 flex items-center gap-1">
@@ -713,10 +819,10 @@ const MissionReportPage: React.FC = () => {
               )}
             </div>
 
-            {(clientFilter || providerFilter || statusFilter || searchTerm) && (
+            {(clientFilter || providerFilter || statusFilter || searchTerm || auditStatusFilter) && (
               <button
                 data-testid="btn-clear-filters"
-                onClick={() => { setClientFilter(''); setProviderFilter(''); setStatusFilter(''); setSearchTerm(''); }}
+                onClick={() => { setClientFilter(''); setProviderFilter(''); setStatusFilter(''); setSearchTerm(''); setAuditStatusFilter(''); }}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
               >
                 <X size={10} /> Limpar
@@ -754,7 +860,7 @@ const MissionReportPage: React.FC = () => {
             <Loader2 size={32} className="animate-spin mb-2 text-red-600" />
             <p className="text-sm font-medium">Carregando...</p>
           </div>
-        ) : filteredMissions.length === 0 ? (
+        ) : displayMissions.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-gray-400">
             <List size={40} className="mx-auto mb-3 opacity-30" />
             <p className="font-bold">Nenhuma OS encontrada para os filtros selecionados</p>
@@ -796,7 +902,7 @@ const MissionReportPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredMissions.map((m, idx) => {
+                {displayMissions.map((m, idx) => {
                   // Usa o cálculo CANÔNICO (mesmo do Termômetro/Dashboard/Worker)
                   // para que a soma das linhas BATA com o total do rodapé.
                   const c = canonicalByMission.get(m.id);
@@ -1022,7 +1128,7 @@ const MissionReportPage: React.FC = () => {
                   );
                 })}
               </tbody>
-              {filteredMissions.length > 0 && canSeeFinancials && (
+              {displayMissions.length > 0 && canSeeFinancials && (
                 <tfoot>
                   <tr className="bg-gray-800 text-white font-black text-xs">
                     <td colSpan={13} className="px-3 py-2.5 text-right border-r border-gray-600">TOTAIS →</td>
