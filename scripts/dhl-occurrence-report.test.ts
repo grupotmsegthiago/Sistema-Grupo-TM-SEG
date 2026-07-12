@@ -432,6 +432,8 @@ test('HTML marca trechos editáveis para ajuste com IA', () => {
   assert.match(html, /data-dhl-editable="facts-summary"/);
   assert.match(html, /data-dhl-editable="sec-4-1-sintese"/);
   assert.match(html, /data-dhl-editable="sec-4-3-causa-raiz"/);
+  assert.match(html, /data-dhl-editable="row-ac-02"[^>]*data-dhl-adjust-only="1"/);
+  assert.match(html, /data-dhl-editable="cronograma"/);
   assert.doesNotMatch(html, /8\.1 Parecer da Diretoria/i);
 });
 
@@ -459,6 +461,72 @@ test('ajuste com IA aplica patches nos blocos editáveis', async () => {
       }),
   );
   assert.match(adjusted, /parceiro/);
+});
+
+test('ajuste com IA exclui linha colada com (excluir isso) e atualiza cronograma', async () => {
+  const {
+    extractEditableBlocks,
+    applyEditablePatches,
+    adjustDhlReportHtmlWithAi,
+    buildGeminiAdjustmentPrompt,
+    parseGeminiAdjustmentJson,
+  } = await import('../lib/dhlOccurrenceReport/adjustReportHtml');
+
+  const html =
+    `<table><tbody>` +
+    `<tr data-dhl-editable="row-ac-01" data-dhl-adjust-only="1"><td>AC-01</td><td>Apuração</td></tr>` +
+    `<tr data-dhl-editable="row-ac-02" data-dhl-adjust-only="1"><td>AC-02</td><td>Registro formal no scorecard de fornecedores e reforço de SLA</td><td>Gestão de Fornecedores TM SEG</td><td>14/07/2026</td><td>Registro no sistema</td></tr>` +
+    `<tr data-dhl-editable="row-ac-03" data-dhl-adjust-only="1"><td>AC-03</td><td>Revisão temporária</td></tr>` +
+    `</tbody></table>` +
+    `<div class="cronograma" data-dhl-editable="cronograma">14/07/2026 ──● AC-02, AC-04 iniciados</div>`;
+
+  // Geração inicial NÃO deve incluir linhas adjust-only
+  const genBlocks = extractEditableBlocks(html);
+  assert.equal(genBlocks.some((b) => b.id === 'row-ac-02'), false);
+  assert.equal(genBlocks.some((b) => b.id === 'cronograma'), true);
+
+  // Ajuste COM IA inclui as linhas
+  const adjustBlocks = extractEditableBlocks(html, { includeAdjustOnly: true });
+  assert.ok(adjustBlocks.some((b) => b.id === 'row-ac-02'));
+  assert.match(adjustBlocks.find((b) => b.id === 'row-ac-02')!.html, /scorecard/);
+
+  const removed = applyEditablePatches(html, {
+    'row-ac-02': '',
+    cronograma: '14/07/2026 ──● AC-04 iniciados',
+  });
+  assert.doesNotMatch(removed, /row-ac-02/);
+  assert.doesNotMatch(removed, /scorecard/);
+  assert.match(removed, /row-ac-01/);
+  assert.match(removed, /row-ac-03/);
+  assert.match(removed, /AC-04 iniciados/);
+  assert.doesNotMatch(removed, /AC-02, AC-04/);
+
+  const notes =
+    'AC-02\tRegistro formal no scorecard de fornecedores e reforço de SLA\tGestão de Fornecedores TM SEG\t14/07/2026\tRegistro no sistema (excluir isso)';
+  const prompt = buildGeminiAdjustmentPrompt(adjustBlocks, notes);
+  assert.match(prompt, /MODO COLAR \+ INSTRUÇÃO/);
+  assert.match(prompt, /excluir isso/);
+  assert.match(prompt, /row-ac-02/);
+  assert.match(prompt, /Faça SOMENTE o que foi pedido/);
+
+  const deletePatches = parseGeminiAdjustmentJson(
+    JSON.stringify({ patches: [{ id: 'row-ac-02', html: '' }] }),
+  );
+  assert.equal(deletePatches['row-ac-02'], '');
+
+  let capturedPrompt = '';
+  const adjusted = await adjustDhlReportHtmlWithAi(html, notes, async (p) => {
+    capturedPrompt = p;
+    return JSON.stringify({
+      patches: [
+        { id: 'row-ac-02', html: '' },
+        { id: 'cronograma', html: '14/07/2026 ──● AC-04 iniciados' },
+      ],
+    });
+  });
+  assert.match(capturedPrompt, /excluir isso/);
+  assert.doesNotMatch(adjusted, /scorecard/);
+  assert.match(adjusted, /AC-04 iniciados/);
 });
 
 test('service expõe ajuste com IA no payload', () => {

@@ -498,15 +498,15 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
             <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
             <div className="px-4 py-3 bg-gradient-to-r from-[#111827] via-[#7f1d1d] to-[#dc2626] border-b border-[#991b1b] text-white shrink-0 space-y-2">
               <p className="text-[11px] leading-relaxed opacity-95">
-                Leia o relatório abaixo. Se o <strong>tom ou contexto</strong> não estiver adequado para enviar à DHL,
-                descreva o ajuste desejado e clique em <strong>Ajustar com IA</strong>.
+                Leia o relatório abaixo. Cole um trecho e diga o que fazer (ex.: <strong>(excluir isso)</strong>),
+                ou descreva um ajuste de tom/contexto, e clique em <strong>Ajustar com IA</strong>.
               </p>
               <textarea
                 value={aiAdjustmentNotes}
                 onChange={(e) => setAiAdjustmentNotes(e.target.value)}
                 rows={3}
                 disabled={loading}
-                placeholder='Ex.: O relatório está falando mal do fornecedor. Ajuste para tom construtivo, use "parceiro/fornecedor" no texto geral e cite o nome completo só na identificação.'
+                placeholder={'Ex.: AC-02\tRegistro formal no scorecard...\tRegistro no sistema (excluir isso)\nOu: Ajuste o tom para construtivo e use "parceiro/fornecedor" no texto geral.'}
                 className="w-full rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-xs text-white placeholder:text-white/60 focus:border-white outline-none disabled:opacity-50"
                 data-testid="input-dhl-occurrence-ai-adjust"
               />

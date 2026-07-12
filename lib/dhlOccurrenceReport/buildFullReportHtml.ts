@@ -150,6 +150,11 @@ function editable(id: string): string {
   return `data-dhl-editable="${id}"`;
 }
 
+/** Linha de tabela editável só no "Ajustar com IA" (não reescrita na geração inicial). */
+function editableRow(id: string): string {
+  return `data-dhl-editable="${id}" data-dhl-adjust-only="1"`;
+}
+
 function buildRootCauseBlock(data: DhlOccurrenceReportData, provider: string): string {
   return `<div class="quote" ${editable('sec-4-3-causa-raiz')}><strong>Identificamos um descompasso no planejamento e na gestão de capacidade logística do parceiro ${esc(provider)}</strong>, com alocação de viatura ainda vinculada a operação anterior sem margem de segurança temporal, o que exigiu remanejamento e troca de VTR em campo. A TM SEG reforça junto ao parceiro o compromisso com a melhoria dos processos para que situações semelhantes não se repitam, preservando o padrão de qualidade exigido pela operação DHL.</div>`;
 }
@@ -360,11 +365,11 @@ export function buildFullOccurrenceReportHtml(
   <table>
     <thead><tr><th>#</th><th>Ação</th><th>Status</th><th>Data</th></tr></thead>
     <tbody>
-      <tr><td>C1</td><td>Comunicação imediata à DHL assim que identificada a necessidade de troca de viatura</td><td>Concluída</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
-      <tr><td>C2</td><td>Orientação da equipe para correção de rota (destino → origem)</td><td>Concluída</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
-      <tr><td>C3</td><td>Acompanhamento operacional contínuo até a conclusão da missão</td><td>Concluída</td><td>${formatDateBR(completed)}</td></tr>
-      <tr><td>C4</td><td ${editable('contencao-c4')}>Alinhamento formal e apuração junto ao parceiro, com plano de melhoria</td><td>Concluída</td><td>${emissionDate}</td></tr>
-      <tr><td>C5</td><td>Retorno formal à DHL com relato estruturado dos fatos</td><td>Concluída</td><td>${emissionDate}</td></tr>
+      <tr ${editableRow('row-c1')}><td>C1</td><td>Comunicação imediata à DHL assim que identificada a necessidade de troca de viatura</td><td>Concluída</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
+      <tr ${editableRow('row-c2')}><td>C2</td><td>Orientação da equipe para correção de rota (destino → origem)</td><td>Concluída</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
+      <tr ${editableRow('row-c3')}><td>C3</td><td>Acompanhamento operacional contínuo até a conclusão da missão</td><td>Concluída</td><td>${formatDateBR(completed)}</td></tr>
+      <tr ${editableRow('row-c4')}><td>C4</td><td ${editable('contencao-c4')}>Alinhamento formal e apuração junto ao parceiro, com plano de melhoria</td><td>Concluída</td><td>${emissionDate}</td></tr>
+      <tr ${editableRow('row-c5')}><td>C5</td><td>Retorno formal à DHL com relato estruturado dos fatos</td><td>Concluída</td><td>${emissionDate}</td></tr>
     </tbody>
   </table>
   </div>
@@ -375,11 +380,11 @@ export function buildFullOccurrenceReportHtml(
   <table>
     <thead><tr><th>ID</th><th>Ação</th><th>Responsável</th><th>Prazo</th><th>Indicador</th></tr></thead>
     <tbody>
-      <tr><td>AC-01</td><td ${editable('ac-01')}>Concluir apuração documentada com o parceiro e plano de melhoria para evitar reincidência</td><td>Coordenação Operacional TM SEG</td><td>17/07/2026</td><td>Termo arquivado</td></tr>
-      <tr><td>AC-02</td><td>Registro formal no scorecard de fornecedores e reforço de SLA</td><td>Gestão de Fornecedores TM SEG</td><td>14/07/2026</td><td>Registro no sistema</td></tr>
-      <tr><td>AC-03</td><td>Revisão temporária de alocação em missões críticas DHL/Foxconn até conclusão das ações</td><td>Coordenação Operacional TM SEG</td><td>Imediato</td><td>Plano de capacidade validado</td></tr>
-      <tr><td>AC-04</td><td>Plano de capacidade diário do parceiro (VTRs × missões) até D-1 às 18:00</td><td>${esc(provider)} / TM SEG</td><td>14/07/2026</td><td>Planilha conferida</td></tr>
-      <tr><td>AC-05</td><td>Reunião de alinhamento operacional (SLA, janelas, substituição)</td><td>Coordenação Operacional TM SEG</td><td>16/07/2026</td><td>Ata assinada</td></tr>
+      <tr ${editableRow('row-ac-01')}><td>AC-01</td><td ${editable('ac-01')}>Concluir apuração documentada com o parceiro e plano de melhoria para evitar reincidência</td><td>Coordenação Operacional TM SEG</td><td>17/07/2026</td><td>Termo arquivado</td></tr>
+      <tr ${editableRow('row-ac-02')}><td>AC-02</td><td>Registro formal no scorecard de fornecedores e reforço de SLA</td><td>Gestão de Fornecedores TM SEG</td><td>14/07/2026</td><td>Registro no sistema</td></tr>
+      <tr ${editableRow('row-ac-03')}><td>AC-03</td><td>Revisão temporária de alocação em missões críticas DHL/Foxconn até conclusão das ações</td><td>Coordenação Operacional TM SEG</td><td>Imediato</td><td>Plano de capacidade validado</td></tr>
+      <tr ${editableRow('row-ac-04')}><td>AC-04</td><td>Plano de capacidade diário do parceiro (VTRs × missões) até D-1 às 18:00</td><td>${esc(provider)} / TM SEG</td><td>14/07/2026</td><td>Planilha conferida</td></tr>
+      <tr ${editableRow('row-ac-05')}><td>AC-05</td><td>Reunião de alinhamento operacional (SLA, janelas, substituição)</td><td>Coordenação Operacional TM SEG</td><td>16/07/2026</td><td>Ata assinada</td></tr>
     </tbody>
   </table>
   </div>
@@ -389,19 +394,19 @@ export function buildFullOccurrenceReportHtml(
   <table>
     <thead><tr><th>ID</th><th>Ação</th><th>Responsável</th><th>Prazo</th><th>Indicador</th></tr></thead>
     <tbody>
-      <tr><td>AP-01</td><td>Monitoramento reduzido (15 min) nas 2 h que antecedem a origem</td><td>Central de Monitoramento TM SEG</td><td>14/07/2026</td><td>Log ≤ 15 min</td></tr>
-      <tr><td>AP-02</td><td>Gatilho automático de risco e viatura de backup na região</td><td>Coordenação Operacional TM SEG</td><td>21/07/2026</td><td>Simulação documentada</td></tr>
-      <tr><td>AP-03</td><td>Check-in GPS + confirmação verbal de origem antes do horário</td><td>Central de Monitoramento TM SEG</td><td>14/07/2026</td><td>100% missões DHL</td></tr>
-      <tr><td>AP-04</td><td>Reunião de reforço com parceiros da base Sudeste DHL</td><td>Gestão de Fornecedores TM SEG</td><td>24/07/2026</td><td>Lista de presença</td></tr>
-      <tr><td>AP-05</td><td>Briefing de aceite: VTR dedicada sem sobreposição de janela</td><td>Coordenação Operacional TM SEG</td><td>14/07/2026</td><td>Checklist no aceite</td></tr>
-      <tr><td>AP-06</td><td>Reporte semanal de desempenho DHL (4 semanas)</td><td>Coordenação Operacional TM SEG</td><td>Semanal</td><td>Relatório às segundas</td></tr>
+      <tr ${editableRow('row-ap-01')}><td>AP-01</td><td>Monitoramento reduzido (15 min) nas 2 h que antecedem a origem</td><td>Central de Monitoramento TM SEG</td><td>14/07/2026</td><td>Log ≤ 15 min</td></tr>
+      <tr ${editableRow('row-ap-02')}><td>AP-02</td><td>Gatilho automático de risco e viatura de backup na região</td><td>Coordenação Operacional TM SEG</td><td>21/07/2026</td><td>Simulação documentada</td></tr>
+      <tr ${editableRow('row-ap-03')}><td>AP-03</td><td>Check-in GPS + confirmação verbal de origem antes do horário</td><td>Central de Monitoramento TM SEG</td><td>14/07/2026</td><td>100% missões DHL</td></tr>
+      <tr ${editableRow('row-ap-04')}><td>AP-04</td><td>Reunião de reforço com parceiros da base Sudeste DHL</td><td>Gestão de Fornecedores TM SEG</td><td>24/07/2026</td><td>Lista de presença</td></tr>
+      <tr ${editableRow('row-ap-05')}><td>AP-05</td><td>Briefing de aceite: VTR dedicada sem sobreposição de janela</td><td>Coordenação Operacional TM SEG</td><td>14/07/2026</td><td>Checklist no aceite</td></tr>
+      <tr ${editableRow('row-ap-06')}><td>AP-06</td><td>Reporte semanal de desempenho DHL (4 semanas)</td><td>Coordenação Operacional TM SEG</td><td>Semanal</td><td>Relatório às segundas</td></tr>
     </tbody>
   </table>
   </div>
 
   <div class="subsection">
   <h3>6.3 Cronograma consolidado</h3>
-  <div class="cronograma">${emissionDate} ──● Emissão deste plano de ação
+  <div class="cronograma" ${editable('cronograma')}>${emissionDate} ──● Emissão deste plano de ação
 14/07/2026 ──● AP-01, AP-03, AP-05 em vigor | AC-02, AC-04 iniciados
 16/07/2026 ──● AC-05 — Reunião ${esc(provider)}
 17/07/2026 ──● AC-01 concluído | AP-06 — 1º relatório semanal

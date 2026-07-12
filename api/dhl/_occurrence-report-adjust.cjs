@@ -30,8 +30,12 @@ __export(adjustReportHtml_exports, {
 });
 module.exports = __toCommonJS(adjustReportHtml_exports);
 var EDITABLE_OPEN_RE = /<([a-z][a-z0-9]*)[^>]*\sdata-dhl-editable="([^"]+)"[^>]*>/gi;
+var DELETE_MARKERS = /* @__PURE__ */ new Set(["", "__DELETE__", "__REMOVE__", "__EXCLUIR__"]);
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function isDeletePatch(html) {
+  return DELETE_MARKERS.has(String(html || "").trim());
 }
 function findMatchingCloseTagIndex(html, tagName, contentStart) {
   const tagRe = new RegExp(`<(/?)${tagName}(\\s[^>]*?)?(/?)>`, "gi");
@@ -50,7 +54,8 @@ function findMatchingCloseTagIndex(html, tagName, contentStart) {
   }
   return -1;
 }
-function extractEditableBlocks(html) {
+function extractEditableBlocks(html, options) {
+  const includeAdjustOnly = !!options?.includeAdjustOnly;
   const blocks = [];
   const seen = /* @__PURE__ */ new Set();
   const re = new RegExp(EDITABLE_OPEN_RE.source, EDITABLE_OPEN_RE.flags);
@@ -58,6 +63,9 @@ function extractEditableBlocks(html) {
   while ((match = re.exec(html)) !== null) {
     const id = match[2];
     if (seen.has(id)) continue;
+    const openTag = match[0];
+    const isAdjustOnly = /\sdata-dhl-adjust-only(?:\s|=)/i.test(openTag);
+    if (isAdjustOnly && !includeAdjustOnly) continue;
     seen.add(id);
     const tagName = match[1];
     const contentStart = match.index + match[0].length;
@@ -78,9 +86,17 @@ function applyEditablePatches(html, patches) {
     const open = openRe.exec(result);
     if (!open) continue;
     const tagName = open[1];
+    const openStart = open.index;
     const contentStart = open.index + open[0].length;
     const closeStart = findMatchingCloseTagIndex(result, tagName, contentStart);
     if (closeStart === -1) continue;
+    const closeTagRe = new RegExp(`^</${tagName}\\s*>`, "i");
+    const closeMatch = result.slice(closeStart).match(closeTagRe);
+    const closeEnd = closeStart + (closeMatch ? closeMatch[0].length : 0);
+    if (isDeletePatch(newInner)) {
+      result = result.slice(0, openStart) + result.slice(closeEnd);
+      continue;
+    }
     result = result.slice(0, contentStart) + newInner + result.slice(closeStart);
   }
   return result;
@@ -92,21 +108,33 @@ function buildGeminiAdjustmentPrompt(blocks, adjustmentNotes) {
   };
   return `Voc\xEA \xE9 editor s\xEAnior de relat\xF3rios operacionais da TM SEG para a DHL Supply Chain.
 
-O diretor leu o Plano de A\xE7\xE3o gerado e pediu AJUSTES DE CONTEXTO/TOM \u2014 n\xE3o \xE9 um parecer novo, \xE9 corre\xE7\xE3o editorial do que j\xE1 est\xE1 escrito.
+O diretor leu o Plano de A\xE7\xE3o gerado e pediu AJUSTES PONTUAIS \u2014 n\xE3o \xE9 um parecer novo, \xE9 corre\xE7\xE3o editorial do que j\xE1 est\xE1 escrito.
 
 INSTRU\xC7\xD5ES DO DIRETOR (prioridade m\xE1xima):
 ${adjustmentNotes.trim()}
 
+MODO COLAR + INSTRU\xC7\xC3O (estilo Gemini \u2014 obrigat\xF3rio respeitar):
+O diretor frequentemente cola um trecho do relat\xF3rio e acrescenta uma ordem curta, por exemplo:
+"AC-02	Registro formal no scorecard de fornecedores e refor\xE7o de SLA	Gest\xE3o de Fornecedores TM SEG	14/07/2026	Registro no sistema (excluir isso)"
+Interprete assim:
+- O texto colado identifica O QUE alterar: encontre o bloco cujo html cont\xE9m esse trecho (ou o ID da a\xE7\xE3o, ex. AC-02 \u2192 id row-ac-02).
+- A parte entre par\xEAnteses \u2014 ou a frase de comando ap\xF3s o trecho \u2014 \xE9 a A\xC7\xC3O (excluir/remover/apagar/reescrever/suavizar/alterar prazo/etc.).
+- Fa\xE7a SOMENTE o que foi pedido. N\xE3o reescreva tom, narrativa ou outros blocos n\xE3o mencionados.
+- Para EXCLUIR uma linha/a\xE7\xE3o/campo: devolva {"id":"row-ac-02","html":""} (html vazio remove o elemento). Tamb\xE9m aceito "__DELETE__".
+- Se o bloco "cronograma" citar o ID exclu\xEDdo (ex. AC-02), atualize o cronograma removendo s\xF3 essa refer\xEAncia, sem inventar novos marcos.
+- Se pedir para reescrever/alterar um trecho colado, devolva o html novo s\xF3 do(s) bloco(s) afetado(s).
+
 REGRAS OBRIGAT\xD3RIAS:
 1. Responda APENAS com JSON v\xE1lido, sem markdown: {"patches":[{"id":"...","html":"..."}]}
-2. Inclua todos os blocos que as instru\xE7\xF5es do diretor exigem alterar. Se pedir menos repeti\xE7\xE3o, tom mais profissional ou texto mais curto, REESCREVA por completo os blocos afetados (em especial sec-4-1-sintese) \u2014 nunca devolva o mesmo texto ou uma c\xF3pia quase id\xEAntica.
-3. Preserve n\xFAmeros de S.E., OS, datas, hor\xE1rios, placas e nomes de clientes (DHL, Foxconn, Apple) exatamente como est\xE3o.
+2. Inclua apenas os blocos que as instru\xE7\xF5es do diretor exigem alterar. Se pedir menos repeti\xE7\xE3o, tom mais profissional ou texto mais curto, REESCREVA por completo os blocos afetados (em especial sec-4-1-sintese) \u2014 nunca devolva o mesmo texto ou uma c\xF3pia quase id\xEAntica.
+3. Preserve n\xFAmeros de S.E., OS, datas, hor\xE1rios, placas e nomes de clientes (DHL, Foxconn, Apple) exatamente como est\xE3o \u2014 salvo se o diretor pedir altera\xE7\xE3o expl\xEDcita.
 4. Em textos narrativos gerais, prefira "parceiro" ou "fornecedor" em vez de citar repetidamente o nome comercial do parceiro \u2014 salvo na tabela de identifica\xE7\xE3o (bloco fornecedor-identificacao) onde o nome completo pode permanecer.
-5. Tom construtivo e profissional para apresenta\xE7\xE3o ao cliente; evite linguagem punitiva, acusat\xF3ria ou que manche a imagem do parceiro.
-6. Mantenha HTML simples no campo html: <strong>, <em>, <br/> quando necess\xE1rio.
+5. Tom construtivo e profissional para apresenta\xE7\xE3o ao cliente; evite linguagem punitiva, acusat\xF3ria ou que manche a imagem do parceiro \u2014 salvo se o ajuste for s\xF3 exclus\xE3o pontual (a\xED n\xE3o mude o tom do restante).
+6. Mantenha HTML simples no campo html: <strong>, <em>, <br/> e, em linhas de tabela (ids row-*), as c\xE9lulas <td>...</td> quando for reescrever (n\xE3o excluir).
 7. N\xE3o invente fatos novos; reescreva com base no conte\xFAdo existente e nas instru\xE7\xF5es.
 8. N\xE3o altere blocos de e-mails (ids que come\xE7am com email-).
-9. Elimine repeti\xE7\xF5es e trechos duplicados dentro de cada bloco; um \xFAnico par\xE1grafo coeso por bloco narrativo.
+9. Elimine repeti\xE7\xF5es e trechos duplicados dentro de cada bloco reescrito; um \xFAnico par\xE1grafo coeso por bloco narrativo.
+10. Ids de linha do plano de a\xE7\xE3o usam o padr\xE3o row-ac-01, row-ap-03, row-c4 etc. Use-os para exclus\xE3o/edi\xE7\xE3o de linhas inteiras.
 
 BLOCOS ATUAIS (JSON):
 ${JSON.stringify(payload, null, 2)}`;
@@ -126,8 +154,8 @@ function parseGeminiAdjustmentJson(raw) {
   const out = {};
   for (const patch of parsed.patches || []) {
     const id = String(patch.id || "").trim();
-    const html = String(patch.html ?? "").trim();
-    if (id && html) out[id] = html;
+    if (!id || patch.html == null) continue;
+    out[id] = String(patch.html).trim();
   }
   if (!Object.keys(out).length) {
     throw new Error("A IA n\xE3o sugeriu altera\xE7\xF5es. Tente reformular a observa\xE7\xE3o.");
@@ -174,7 +202,7 @@ async function adjustDhlReportHtmlWithAi(html, adjustmentNotes, generateText) {
   if (!notes) {
     throw new Error("Descreva o que deseja ajustar no relat\xF3rio.");
   }
-  const blocks = extractEditableBlocks(html);
+  const blocks = extractEditableBlocks(html, { includeAdjustOnly: true });
   if (!blocks.length) {
     throw new Error("Nenhum trecho edit\xE1vel encontrado no relat\xF3rio.");
   }
