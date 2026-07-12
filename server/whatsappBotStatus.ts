@@ -13,7 +13,8 @@ export type WhatsappBotStatusSnapshot = {
   lock: ZapiReconnectLock | null;
 };
 
-export async function getWhatsappBotStatusSnapshot(): Promise<WhatsappBotStatusSnapshot> {
+export async function getWhatsappBotStatusSnapshot(options: { live?: boolean } = {}): Promise<WhatsappBotStatusSnapshot> {
+  const live = options.live === true;
   const watchdog = await loadZapiWatchdogState();
   const lock = await loadZapiReconnectLock();
 
@@ -29,29 +30,22 @@ export async function getWhatsappBotStatusSnapshot(): Promise<WhatsappBotStatusS
     };
   }
 
-  const creds = credsFromInstance(row);
-  if (!creds) {
-    return {
-      configured: false,
-      online: false,
-      label: row.label,
-      lastError: row.last_error,
-      incidentOpen: watchdog.incidentOpen,
-      lock: isLockActive(lock) ? lock : null,
-    };
-  }
-
   let online = row.last_connected === true;
   let lastError = row.last_error;
 
-  try {
-    const { ok, data } = await zapiFetchWith(creds, "status", { method: "GET" });
-    if (ok && data) {
-      online = data.connected === true && data.smartphoneConnected !== false;
-      if (!online && data.error) lastError = String(data.error);
+  if (live) {
+    const creds = credsFromInstance(row);
+    if (creds) {
+      try {
+        const { ok, data } = await zapiFetchWith(creds, "status", { method: "GET" });
+        if (ok && data) {
+          online = data.connected === true && data.smartphoneConnected !== false;
+          if (!online && data.error) lastError = String(data.error);
+        }
+      } catch {
+        /* usa cache do banco */
+      }
     }
-  } catch {
-    /* usa cache do banco */
   }
 
   return {

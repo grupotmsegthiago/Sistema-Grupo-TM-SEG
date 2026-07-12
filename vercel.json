@@ -379,6 +379,14 @@
       "destination": "/docs/:path*"
     },
     {
+      "source": "/api/whatsapp/bot-status",
+      "destination": "/api/whatsapp/bot-status"
+    },
+    {
+      "source": "/api/admin/system-settings/daily-reports",
+      "destination": "/api/admin/system-settings-daily-reports"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index"
     },

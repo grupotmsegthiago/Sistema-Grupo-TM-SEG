@@ -416,29 +416,31 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
     setLoadError(null);
     try {
       const headers = authHeaders();
-      const [sRes, hRes] = await Promise.all([
-        fetchWithTimeout('/api/admin/system-settings/daily-reports', { headers }),
-        fetchWithTimeout('/api/admin/system-settings/daily-reports/history', { headers }),
-      ]);
+      const sRes = await fetchWithTimeout('/api/admin/system-settings/daily-reports', { headers });
       const sJson = await parseJsonResponse(sRes);
-      const hJson = await parseJsonResponse(hRes);
       if (sJson?.ok) {
         setSettings(sJson.settings);
         setDefaults(sJson.defaults);
         setUpdatedBy(sJson.updatedBy);
         setUpdatedAt(sJson.updatedAt);
+        void fetchRuns();
       } else {
         const msg = sJson?.error || (sRes.status === 403 ? 'Sem permissão para acessar esta tela.' : 'Erro ao carregar configurações.');
         setLoadError(msg);
         setSettings(null);
         setDefaults(null);
       }
-      if (hJson?.ok) setHistory(hJson.history || []);
-      // Execuções manuais/agendadas são informativas — não bloqueiam a tela principal.
-      if (sJson?.ok) void fetchRuns();
+
+      // Histórico não bloqueia a tela (WhatsApp / e-mail ficam acessíveis).
+      void fetchWithTimeout('/api/admin/system-settings/daily-reports/history', { headers })
+        .then(async (hRes) => {
+          const hJson = await parseJsonResponse(hRes);
+          if (hJson?.ok) setHistory(hJson.history || []);
+        })
+        .catch(() => { /* opcional */ });
     } catch (e: any) {
       const aborted = e?.name === 'AbortError';
-      setLoadError(aborted ? 'Tempo esgotado ao carregar configurações. Verifique a conexão e tente novamente.' : (e?.message || 'Erro ao carregar configurações.'));
+      setLoadError(aborted ? 'Tempo esgotado ao carregar relatórios diários. A seção WhatsApp abaixo continua disponível.' : (e?.message || 'Erro ao carregar configurações.'));
       setSettings(null);
       setDefaults(null);
     } finally {
@@ -518,35 +520,20 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
 
   if (isLoading) {
     return (
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center gap-3">
-        <Loader2 className="animate-spin text-gray-500" />
-        <span className="text-gray-600">Carregando configurações...</span>
+      <div className="space-y-6" data-testid="page-system-settings-loading">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center gap-3">
+          <Loader2 className="animate-spin text-gray-500" />
+          <span className="text-gray-600">Carregando configurações…</span>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-green-200">
+          <p className="text-sm font-bold text-green-900 mb-3">WhatsApp — reconexão do bot (já disponível)</p>
+          <WhatsAppConnectionPanel />
+        </div>
       </div>
     );
   }
 
-  if (loadError || !settings || !defaults) {
-    return (
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-red-200 space-y-4" data-testid="page-system-settings-error">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="text-red-600 shrink-0 mt-0.5" />
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">Não foi possível abrir Configurações do Sistema</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              {loadError || 'Dados indisponíveis.'} Apenas perfis <strong>Diretoria</strong> e <strong>Administrador</strong> têm acesso completo.
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={fetchAll}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-red-700 hover:bg-red-800 rounded-lg"
-        >
-          <RefreshCw size={14} /> Tentar novamente
-        </button>
-      </div>
-    );
-  }
+  const reportsReady = !!settings && !!defaults;
 
   return (
     <div className="space-y-6" data-testid="page-system-settings">
@@ -557,7 +544,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
               <Settings className="text-blue-600" /> Configurações do Sistema
             </h2>
             <p className="text-sm text-gray-500 mt-1">
-              Parâmetros operacionais que antes exigiam deploy. Tudo é gravado em <code className="bg-gray-100 px-1 rounded">system_settings</code> e auditado em <code className="bg-gray-100 px-1 rounded">system_logs</code>.
+              Parâmetros operacionais gravados em <code className="bg-gray-100 px-1 rounded">system_settings</code>.
             </p>
           </div>
           <button onClick={fetchAll} className="text-xs text-gray-500 hover:text-gray-800 flex items-center gap-1" data-testid="button-refresh">
@@ -566,6 +553,39 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
         </div>
       </div>
 
+      <div className="bg-white p-4 rounded-xl border-2 border-green-200 shadow-sm">
+        <p className="text-xs font-black uppercase tracking-wide text-green-800 mb-1">Reconectar bot WhatsApp (mobile)</p>
+        <p className="text-sm text-gray-600 mb-4">
+          Se o bot caiu: clique <strong>Reconectar via API</strong> ou <strong>Gerar código</strong> abaixo.
+          No celular eSIM (11 92683-9456): WhatsApp Business → Aparelhos conectados → Vincular com número.
+        </p>
+        <WhatsAppConnectionPanel />
+      </div>
+
+      <WhatsAppTelemetryDashboard />
+
+      {!reportsReady && (
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-amber-200 space-y-4" data-testid="page-system-settings-error">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Relatórios diários indisponíveis</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                {loadError || 'Não foi possível carregar os relatórios por e-mail.'} Apenas perfis <strong>Diretoria</strong> e <strong>Administrador</strong> editam esta seção.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={fetchAll}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-amber-700 hover:bg-amber-800 rounded-lg"
+          >
+            <RefreshCw size={14} /> Tentar carregar relatórios
+          </button>
+        </div>
+      )}
+
+      {reportsReady && (
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
         <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
           <div className="flex items-start gap-3">
@@ -810,14 +830,11 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
           </span>
         </div>
       </div>
+      )}
 
       <AlertRecipientsSettings />
 
       <EmailHealthPanel />
-
-      <WhatsAppConnectionPanel />
-
-      <WhatsAppTelemetryDashboard />
 
       <AuditSummarySettings />
 
