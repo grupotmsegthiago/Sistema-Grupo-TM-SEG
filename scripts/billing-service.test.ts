@@ -6,7 +6,7 @@ import {
   getPlanLimitBrl,
   buildTokenEfficiencyReport,
   referenceMonthFromDate,
-} from '../services/billingService.js';
+} from '../server/billingServiceCore.js';
 
 describe('billingService', () => {
   it('usdToBrl aplica câmbio 5.50 e IOF 4.38%', () => {

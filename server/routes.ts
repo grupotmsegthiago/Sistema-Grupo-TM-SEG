@@ -1611,7 +1611,7 @@ export async function registerRoutes(
 
   app.get('/api/billing/summary', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
     try {
-      const { getBillingMonthSummary } = await import('../services/billingService.js');
+      const { getBillingMonthSummary } = await import('./billingService.js');
       const month = typeof req.query.month === 'string' ? req.query.month : undefined;
       const summary = await getBillingMonthSummary(month);
       res.setHeader('Cache-Control', 'no-store');
@@ -1623,7 +1623,7 @@ export async function registerRoutes(
 
   app.get('/api/billing/usage-log', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
     try {
-      const { getBillingUsageLog, buildTokenEfficiencyReport } = await import('../services/billingService.js');
+      const { getBillingUsageLog, buildTokenEfficiencyReport } = await import('./billingService.js');
       const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 80));
       const month = typeof req.query.month === 'string' ? req.query.month : undefined;
       const rows = await getBillingUsageLog(limit, month);
@@ -1647,7 +1647,7 @@ export async function registerRoutes(
 
   app.post('/api/billing/sync', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
     try {
-      const { syncBillingUsage } = await import('../services/billingService.js');
+      const { syncBillingUsage } = await import('./billingService.js');
       const result = await syncBillingUsage();
       res.status(result.ok ? 200 : 502).json(result);
     } catch (err: any) {
@@ -1657,7 +1657,7 @@ export async function registerRoutes(
 
   app.post('/api/billing/log-usage', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
     try {
-      const { recordBillingUsage } = await import('../services/billingService.js');
+      const { recordBillingUsage } = await import('./billingService.js');
       const body = req.body || {};
       const row = await recordBillingUsage({
         source: body.source || 'agent_token',

@@ -1,4 +1,4 @@
-import { syncBillingUsage } from '../services/billingService.js';
+import { syncBillingUsage } from './billingService.js';
 
 /** Cron diário — sincroniza faturas Stripe (Cursor) para billing_usage. */
 export async function runBillingSyncTick(): Promise<unknown> {

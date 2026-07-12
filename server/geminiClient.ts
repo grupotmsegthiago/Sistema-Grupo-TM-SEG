@@ -95,7 +95,7 @@ async function logGeminiBillingUsage(model: string, response: { usageMetadata?: 
   const inTok = Number(meta?.promptTokenCount || 0);
   const outTok = Number(meta?.candidatesTokenCount || 0);
   if (inTok === 0 && outTok === 0) return;
-  const { recordBillingUsage } = await import('../services/billingService.js');
+  const { recordBillingUsage } = await import('./billingService.js');
   const usd = estimateGeminiUsd(model, inTok, outTok);
   await recordBillingUsage({
     source: 'gemini',
