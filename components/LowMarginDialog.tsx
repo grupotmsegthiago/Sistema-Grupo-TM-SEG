@@ -1,7 +1,13 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { X, Percent, Download, ExternalLink, AlertTriangle, Search, Layers, Link2 } from 'lucide-react';
+import { X, Percent, Download, ExternalLink, AlertTriangle, Search, Layers, Link2, Check } from 'lucide-react';
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { computeCanonicalRevenueCost, type CanonicalRefs } from '../lib/missionFinancialsCanonical';
+import {
+  getCurrentUserName,
+  isLowMarginVerified,
+  loadLowMarginVerifiedMap,
+  markLowMarginVerified,
+} from '../lib/lowMarginVerified';
 
 export const LOW_MARGIN_THRESHOLD_PCT = 20;
 
@@ -17,6 +23,9 @@ interface Props {
   clientsData: Client[];
   periodLabel: string;
   scopeLabel?: string;
+  /** Escopo do filtro (ex.: low-margin-meta-total-MONTH-2026-07). */
+  verifiedScopeKey: string;
+  onVerified?: () => void;
   onOpenMission: (m: Mission) => void;
 }
 
@@ -100,9 +109,12 @@ const LowMarginDialog: React.FC<Props> = ({
   clientsData,
   periodLabel,
   scopeLabel,
+  verifiedScopeKey,
+  onVerified,
   onOpenMission,
 }) => {
   const [search, setSearch] = useState('');
+  const [verifiedTick, setVerifiedTick] = useState(0);
   const [hoverParent, setHoverParent] = useState<{ id: string; top: number; left: number } | null>(null);
   const closeTimer = useRef<number | null>(null);
 
@@ -157,6 +169,33 @@ const LowMarginDialog: React.FC<Props> = ({
     return buildGroupSummary(hoverParent.id, missionPool, refs);
   }, [hoverParent, missionPool, refs]);
 
+  const verifiedMap = useMemo(
+    () => loadLowMarginVerifiedMap(verifiedScopeKey),
+    [verifiedScopeKey, verifiedTick],
+  );
+
+  const handleVerify = (r: Row, group: GroupSummary | null, childIds: string[]) => {
+    const items: Array<{ missionId: string; rev: number; cost: number }> = [
+      { missionId: r.m.id, rev: r.rev, cost: r.cost },
+    ];
+    if (group) {
+      for (const c of group.children) {
+        items.push({ missionId: c.id, rev: c.rev, cost: c.cost });
+      }
+    } else {
+      for (const cid of childIds) {
+        const child = missionPool.find((m) => m?.id === cid);
+        if (!child) continue;
+        const cr = computeCanonicalRevenueCost(child, refs);
+        const cost = child.is_same_os ? 0 : cr.cost;
+        items.push({ missionId: cid, rev: cr.rev, cost });
+      }
+    }
+    markLowMarginVerified(verifiedScopeKey, items, getCurrentUserName());
+    setVerifiedTick((t) => t + 1);
+    onVerified?.();
+  };
+
   const rows: Row[] = useMemo(() => {
     if (!isOpen) return [];
     const out: Row[] = [];
@@ -166,6 +205,7 @@ const LowMarginDialog: React.FC<Props> = ({
       if (r.rev <= 0 && r.cost <= 0) continue;
       const marginPct = r.rev > 0 ? ((r.rev - r.cost) / r.rev) * 100 : -100;
       if (marginPct < LOW_MARGIN_THRESHOLD_PCT) {
+        if (isLowMarginVerified(verifiedMap, m.id, r.rev, r.cost)) continue;
         out.push({
           m,
           rev: r.rev,
@@ -177,7 +217,7 @@ const LowMarginDialog: React.FC<Props> = ({
     }
     out.sort((a, b) => a.marginPct - b.marginPct);
     return out;
-  }, [isOpen, missions, refs]);
+  }, [isOpen, missions, refs, verifiedMap]);
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toUpperCase();
@@ -398,17 +438,28 @@ const LowMarginDialog: React.FC<Props> = ({
                           {r.marginPct.toFixed(1)}%
                         </td>
                         <td className="px-3 py-2 text-right">
-                          <button
-                            onClick={() => {
-                              onOpenMission(r.m);
-                              onClose();
-                            }}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition"
-                            title="Abrir financeiro da OS"
-                            data-testid={`button-open-low-margin-${r.m.id}`}
-                          >
-                            Abrir <ExternalLink size={11} />
-                          </button>
+                          <div className="flex items-center justify-end gap-1 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleVerify(r, group, (childrenByParent.get(r.m.id) || []).map((c) => c.id))}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition"
+                              title="Marcar como verificada e remover desta fila"
+                              data-testid={`button-verify-low-margin-${r.m.id}`}
+                            >
+                              <Check size={11} /> Verificado
+                            </button>
+                            <button
+                              onClick={() => {
+                                onOpenMission(r.m);
+                                onClose();
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition"
+                              title="Abrir financeiro da OS"
+                              data-testid={`button-open-low-margin-${r.m.id}`}
+                            >
+                              Abrir <ExternalLink size={11} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                       {isMother && group && (

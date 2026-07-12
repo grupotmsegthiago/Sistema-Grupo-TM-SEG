@@ -21,6 +21,11 @@ import {
 import { canViewGoalMonetaryData } from '../lib/goalPermissions';
 import LowMarginDialog, { LOW_MARGIN_THRESHOLD_PCT } from './LowMarginDialog';
 import { MissionStatus } from '../types';
+import {
+  isLowMarginVerified,
+  loadLowMarginVerifiedMap,
+  resolveLowMarginScopeKey,
+} from '../lib/lowMarginVerified';
 
 const DEFAULT_DAILY_GOAL = 35000.00;
 const DEFAULT_MONTHLY_GOAL = 700000.00;
@@ -295,6 +300,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [updateHistory, setUpdateHistory] = useState<GoalUpdateSnapshot[]>([]);
     const [isLowMarginOpen, setIsLowMarginOpen] = useState(false);
+    const [lowMarginVerifiedTick, setLowMarginVerifiedTick] = useState(0);
     const lastRecordedFetchAt = useRef<{ key: string; ts: number } | null>(null);
     const pendingManualRecord = useRef(false);
 
@@ -360,19 +366,25 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
 
     const otherCost = Math.max(0, currentCost - torresCost);
 
+    const lowMarginScopeKey = useMemo(
+        () => resolveLowMarginScopeKey(resolvedHistoryKey),
+        [resolvedHistoryKey],
+    );
+
     const lowMarginCount = useMemo(() => {
         if (!parentClientTables || !parentProviderTables || !parentClientsData) return 0;
         const refs = { clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData };
+        const verifiedMap = loadLowMarginVerifiedMap(lowMarginScopeKey);
         let count = 0;
         for (const m of filteredMissions) {
             if (m.status === MissionStatus.REFUSED) continue;
             const r = computeCanonicalRevenueCost(m, refs, currentTime);
             if (r.rev <= 0 && r.cost <= 0) continue;
             const marginPct = r.rev > 0 ? ((r.rev - r.cost) / r.rev) * 100 : -100;
-            if (marginPct < LOW_MARGIN_THRESHOLD_PCT) count += 1;
+            if (marginPct < LOW_MARGIN_THRESHOLD_PCT && !isLowMarginVerified(verifiedMap, m.id, r.rev, r.cost)) count += 1;
         }
         return count;
-    }, [filteredMissions, parentClientTables, parentProviderTables, parentClientsData, currentTime]);
+    }, [filteredMissions, parentClientTables, parentProviderTables, parentClientsData, currentTime, lowMarginScopeKey, lowMarginVerifiedTick]);
 
     const goal = useMemo(
         () => getGoalForPeriod(viewPeriod, customStartDate, customEndDate, dailyGoal, monthlyGoal),
@@ -664,6 +676,8 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                     clientsData={parentClientsData}
                     periodLabel={chartPeriodLabel}
                     scopeLabel={titleSuffix ? `Meta ${titleSuffix}` : 'Meta Geral'}
+                    verifiedScopeKey={lowMarginScopeKey}
+                    onVerified={() => setLowMarginVerifiedTick((t) => t + 1)}
                     onOpenMission={onOpenMission}
                 />
             )}
