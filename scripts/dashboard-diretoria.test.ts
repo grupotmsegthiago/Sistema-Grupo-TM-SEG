@@ -8,9 +8,18 @@ import {
   buildCriticalAlerts,
   buildDailyCashFlow,
 } from '../lib/dashboardDiretoria/aggregations';
+import { getPeriodRange, getCashMovementDate, formatPeriodRangeHint } from '../lib/dashboardDiretoria/periodUtils';
 import { MissionStatus } from '../types';
 
 describe('dashboardDiretoria aggregations', () => {
+  it('formatPeriodRangeHint indica acumulado até hoje no mês corrente', () => {
+    const now = new Date(2026, 6, 12, 12, 0, 0);
+    const hint = formatPeriodRangeHint({ mode: 'month', year: 2026, month: 6 }, now);
+    assert.equal(hint, 'Período: 01/07/2026 até 12/07/2026');
+    const past = formatPeriodRangeHint({ mode: 'month', year: 2026, month: 5 }, now);
+    assert.equal(past, null);
+  });
+
   it('computeFinancialKpis soma receita canônica e despesas pagas', () => {
     const missions = [{
       id: '1',
