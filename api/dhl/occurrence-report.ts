@@ -11,7 +11,10 @@ const dhlReportAdjustBundle = require('./_occurrence-report-adjust.cjs') as {
     html: string,
     notes: string,
     generateText: (prompt: string) => Promise<string>,
-  ) => Promise<string>;
+    options?: {
+      conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    },
+  ) => Promise<{ html: string; reply: string }>;
 };
 
 const dhlReportHtmlBundle = require('./_occurrence-report-html.cjs') as {
@@ -356,6 +359,20 @@ export default async function handler(req: any, res: any) {
       const html = typeof body.html === 'string' ? body.html : '';
       const adjustmentNotes =
         typeof body.adjustmentNotes === 'string' ? body.adjustmentNotes : '';
+      const conversationHistory = Array.isArray(body.conversationHistory)
+        ? (body.conversationHistory as Array<{ role?: string; content?: string }>)
+            .filter(
+              (m) =>
+                (m?.role === 'user' || m?.role === 'assistant') &&
+                typeof m.content === 'string' &&
+                m.content.trim(),
+            )
+            .map((m) => ({
+              role: m.role as 'user' | 'assistant',
+              content: String(m.content).trim(),
+            }))
+            .slice(-12)
+        : [];
       if (!html.trim()) {
         res.status(400).json({ ok: false, error: 'html obrigatório para ajuste com IA' });
         return;
@@ -375,9 +392,16 @@ export default async function handler(req: any, res: any) {
       }
 
       const { adjustDhlReportHtmlWithAi } = dhlReportAdjustBundle;
-      const adjustedHtml = await adjustDhlReportHtmlWithAi(html, adjustmentNotes, generateText);
+      const adjusted = await adjustDhlReportHtmlWithAi(html, adjustmentNotes, generateText, {
+        conversationHistory,
+      });
       res.setHeader('Cache-Control', 'no-store');
-      res.status(200).json({ ok: true, format: 'adjust', html: adjustedHtml });
+      res.status(200).json({
+        ok: true,
+        format: 'adjust',
+        html: adjusted.html,
+        reply: adjusted.reply,
+      });
       return;
     }
 

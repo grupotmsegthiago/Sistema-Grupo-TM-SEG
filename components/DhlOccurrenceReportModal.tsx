@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Eye, ExternalLink, FileText, History, Link2, Loader2, Paperclip, Printer, Save, Sparkles, X } from 'lucide-react';
+import { Eye, ExternalLink, FileText, History, Link2, Loader2, Paperclip, Printer, RotateCcw, Save, Send, X } from 'lucide-react';
 import type { Mission } from '../types';
 import { readEmailAttachmentFile } from '../lib/dhlOccurrenceReport/readEmailAttachment';
 import {
@@ -24,6 +24,11 @@ type Props = {
 };
 
 type Step = 'edit' | 'preview';
+
+type AiChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
 
 const DEFAULT_183013_SUMMARY = `Na operação do dia 08/07/2026, a S.E. 183013 estava programada para atendimento na origem (Foxconn Jundiaí) às 11:00.
 Houve atraso na chegada à origem, com necessidade de remanejamento de viatura próximo ao horário programado, em razão do encerramento de operação logística anterior na mesma janela.
@@ -87,6 +92,8 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
     seNumber === '183013' ? DEFAULT_183013_SUMMARY : '',
   );
   const [aiAdjustmentNotes, setAiAdjustmentNotes] = useState('');
+  const [aiChatMessages, setAiChatMessages] = useState<AiChatMessage[]>([]);
+  const aiChatEndRef = useRef<HTMLDivElement | null>(null);
   const [emailLink, setEmailLink] = useState('');
   const [emailAttachmentText, setEmailAttachmentText] = useState('');
   const [emailFileName, setEmailFileName] = useState<string | null>(null);
@@ -147,6 +154,11 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
     };
   }, [loading]);
 
+  useEffect(() => {
+    if (!aiChatMessages.length) return;
+    aiChatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [aiChatMessages, loadingMode]);
+
   const applyProgress = (progress: DhlReportProgress) => {
     targetPercentRef.current = progress.percent;
     setProgressLabel(progress.label);
@@ -187,6 +199,8 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
       const { html, evidenceCount, phasePhotoCount } = await fetchDhlOccurrenceReportPreview(reportParams, applyProgress);
       setPreviewHtml(html);
       setEvidenceStats({ total: evidenceCount, phases: phasePhotoCount });
+      setAiChatMessages([]);
+      setAiAdjustmentNotes('');
       setStep('preview');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao gerar pré-visualização');
@@ -200,32 +214,52 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
       setError('Gere a pré-visualização antes de pedir ajustes à IA.');
       return;
     }
-    if (!aiAdjustmentNotes.trim()) {
-      setError('Descreva o que deseja ajustar no relatório (tom, contexto, menções ao parceiro, etc.).');
+    const notes = aiAdjustmentNotes.trim();
+    if (!notes) {
+      setError('Digite o que deseja ajustar (ex.: cole uma linha e escreva "(excluir isso)").');
       return;
     }
+
+    const historyBeforeTurn = aiChatMessages.slice(-12);
+    setAiChatMessages((prev) => [...prev, { role: 'user', content: notes }]);
+    setAiAdjustmentNotes('');
 
     setLoading(true);
     setLoadingMode('adjust');
     setError(null);
     targetPercentRef.current = 10;
     setProgressPercent(10);
-    setProgressLabel('A IA está ajustando o contexto do relatório...');
+    setProgressLabel('Agente de IA aplicando o pedido no relatório...');
 
     try {
       const adjusted = await adjustDhlOccurrenceReportHtml(
         previewHtml,
-        aiAdjustmentNotes,
+        notes,
         mission.id,
         applyProgress,
+        { conversationHistory: historyBeforeTurn },
       );
-      setPreviewHtml(adjusted);
-      setAiAdjustmentNotes('');
+      setPreviewHtml(adjusted.html);
+      setAiChatMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: adjusted.reply },
+      ]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao ajustar relatório com IA');
+      const message = err instanceof Error ? err.message : 'Falha ao ajustar relatório com IA';
+      setError(message);
+      setAiChatMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: `Não consegui aplicar o ajuste: ${message}` },
+      ]);
     } finally {
       resetLoading();
     }
+  };
+
+  const handleClearAiChat = () => {
+    setAiChatMessages([]);
+    setAiAdjustmentNotes('');
+    setError(null);
   };
 
   const loadHistory = async () => {
@@ -497,33 +531,103 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
           <>
             <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
             <div className="px-4 py-3 bg-gradient-to-r from-[#111827] via-[#7f1d1d] to-[#dc2626] border-b border-[#991b1b] text-white shrink-0 space-y-2">
-              <p className="text-[11px] leading-relaxed opacity-95">
-                Leia o relatório abaixo. Cole um trecho e diga o que fazer (ex.: <strong>(excluir isso)</strong>),
-                ou descreva um ajuste de tom/contexto, e clique em <strong>Ajustar com IA</strong>.
-              </p>
-              <textarea
-                value={aiAdjustmentNotes}
-                onChange={(e) => setAiAdjustmentNotes(e.target.value)}
-                rows={3}
-                disabled={loading}
-                placeholder={'Ex.: AC-02\tRegistro formal no scorecard...\tRegistro no sistema (excluir isso)\nOu: Ajuste o tom para construtivo e use "parceiro/fornecedor" no texto geral.'}
-                className="w-full rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-xs text-white placeholder:text-white/60 focus:border-white outline-none disabled:opacity-50"
-                data-testid="input-dhl-occurrence-ai-adjust"
-              />
-              <button
-                type="button"
-                onClick={() => void handleAiAdjust()}
-                disabled={loading || !previewHtml || !aiAdjustmentNotes.trim()}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white text-[#991b1b] text-xs font-bold hover:bg-red-50 disabled:opacity-50"
-                data-testid="button-ai-adjust-dhl-report"
-              >
-                {loading && loadingMode === 'adjust' ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Sparkles size={14} />
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[11px] leading-relaxed opacity-95">
+                  <strong>Agente de IA</strong> — converse como no Gemini/ChatGPT. Cada pedido atualiza o
+                  relatório e o histórico da conversa é mantido nesta sessão.
+                </p>
+                {aiChatMessages.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearAiChat}
+                    disabled={loading}
+                    className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-[10px] font-bold uppercase tracking-wide disabled:opacity-50"
+                    data-testid="button-clear-dhl-ai-chat"
+                    title="Limpar conversa"
+                  >
+                    <RotateCcw size={12} />
+                    Limpar
+                  </button>
                 )}
-                Ajustar com IA
-              </button>
+              </div>
+
+              <div
+                className="max-h-36 overflow-y-auto rounded-lg border border-white/20 bg-black/20 px-2.5 py-2 space-y-2"
+                data-testid="dhl-ai-chat-history"
+              >
+                {aiChatMessages.length === 0 ? (
+                  <p className="text-[11px] text-white/65 leading-relaxed">
+                    Ex.: cole uma linha do plano e diga <strong>(excluir isso)</strong>. Depois peça outro
+                    ajuste — o agente lembra o que já fez.
+                  </p>
+                ) : (
+                  aiChatMessages.map((msg, idx) => (
+                    <div
+                      key={`${msg.role}-${idx}`}
+                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`max-w-[92%] rounded-lg px-2.5 py-1.5 text-[11px] leading-relaxed whitespace-pre-wrap ${
+                          msg.role === 'user'
+                            ? 'bg-white text-[#7f1d1d]'
+                            : 'bg-white/15 text-white border border-white/20'
+                        }`}
+                        data-testid={
+                          msg.role === 'user' ? 'dhl-ai-chat-user' : 'dhl-ai-chat-assistant'
+                        }
+                      >
+                        <span className="block text-[9px] font-black uppercase tracking-wider opacity-70 mb-0.5">
+                          {msg.role === 'user' ? 'Você' : 'Agente'}
+                        </span>
+                        {msg.content}
+                      </div>
+                    </div>
+                  ))
+                )}
+                {loading && loadingMode === 'adjust' && (
+                  <div className="flex justify-start">
+                    <div className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 border border-white/20 px-2.5 py-1.5 text-[11px] text-white/90">
+                      <Loader2 size={12} className="animate-spin" />
+                      Aplicando no relatório...
+                    </div>
+                  </div>
+                )}
+                <div ref={aiChatEndRef} />
+              </div>
+
+              <div className="flex gap-2 items-end">
+                <textarea
+                  value={aiAdjustmentNotes}
+                  onChange={(e) => setAiAdjustmentNotes(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (!loading && previewHtml && aiAdjustmentNotes.trim()) {
+                        void handleAiAdjust();
+                      }
+                    }
+                  }}
+                  rows={2}
+                  disabled={loading}
+                  placeholder={'Ex.: AC-02 ... Registro no sistema (excluir isso)\nShift+Enter = nova linha · Enter = enviar'}
+                  className="flex-1 rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-xs text-white placeholder:text-white/60 focus:border-white outline-none disabled:opacity-50"
+                  data-testid="input-dhl-occurrence-ai-adjust"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleAiAdjust()}
+                  disabled={loading || !previewHtml || !aiAdjustmentNotes.trim()}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white text-[#991b1b] text-xs font-bold hover:bg-red-50 disabled:opacity-50 shrink-0"
+                  data-testid="button-ai-adjust-dhl-report"
+                >
+                  {loading && loadingMode === 'adjust' ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Send size={14} />
+                  )}
+                  Enviar
+                </button>
+              </div>
             </div>
 
             <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-900 shrink-0">

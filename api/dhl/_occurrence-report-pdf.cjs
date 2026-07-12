@@ -1262,7 +1262,7 @@ function applyEditablePatches(html, patches) {
   }
   return result;
 }
-function parseGeminiAdjustmentJson(raw) {
+function parseGeminiAdjustmentResponse(raw) {
   const trimmed = String(raw || "").trim();
   const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
@@ -1274,16 +1274,20 @@ function parseGeminiAdjustmentJson(raw) {
   } catch {
     throw new Error("Resposta da IA em formato inv\xE1lido.");
   }
-  const out = {};
+  const patches = {};
   for (const patch of parsed.patches || []) {
     const id = String(patch.id || "").trim();
     if (!id || patch.html == null) continue;
-    out[id] = String(patch.html).trim();
+    patches[id] = String(patch.html).trim();
   }
-  if (!Object.keys(out).length) {
+  if (!Object.keys(patches).length) {
     throw new Error("A IA n\xE3o sugeriu altera\xE7\xF5es. Tente reformular a observa\xE7\xE3o.");
   }
-  return out;
+  const reply = String(parsed.reply || "").trim() || "Pronto \u2014 apliquei o ajuste solicitado no relat\xF3rio.";
+  return { patches, reply };
+}
+function parseGeminiAdjustmentJson(raw) {
+  return parseGeminiAdjustmentResponse(raw).patches;
 }
 function buildDhlReportGenerationPrompt(blocks, context) {
   return `Voc\xEA \xE9 analista s\xEAnior de opera\xE7\xF5es e gerenciamento de risco da TM SEG e vai redigir o conte\xFAdo de um Plano de A\xE7\xE3o e Justificativa de Ocorr\xEAncia para a DHL Supply Chain (opera\xE7\xE3o Foxconn/Apple).
