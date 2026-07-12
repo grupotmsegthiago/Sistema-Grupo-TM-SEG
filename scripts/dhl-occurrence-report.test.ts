@@ -458,9 +458,11 @@ test('ajuste com IA aplica patches nos blocos editáveis', async () => {
     async () =>
       JSON.stringify({
         patches: [{ id: 'sec-4-1-sintese', html: 'Texto construtivo sobre o parceiro.' }],
+        reply: 'Suavizei o tom e usei parceiro.',
       }),
   );
-  assert.match(adjusted, /parceiro/);
+  assert.match(adjusted.html, /parceiro/);
+  assert.match(adjusted.reply, /parceiro/i);
 });
 
 test('ajuste com IA exclui linha colada com (excluir isso) e atualiza cronograma', async () => {
@@ -507,7 +509,7 @@ test('ajuste com IA exclui linha colada com (excluir isso) e atualiza cronograma
   assert.match(prompt, /MODO COLAR \+ INSTRUÇÃO/);
   assert.match(prompt, /excluir isso/);
   assert.match(prompt, /row-ac-02/);
-  assert.match(prompt, /Faça SOMENTE o que foi pedido/);
+  assert.match(prompt, /PEDIDO ATUAL/);
 
   const deletePatches = parseGeminiAdjustmentJson(
     JSON.stringify({ patches: [{ id: 'row-ac-02', html: '' }] }),
@@ -522,18 +524,69 @@ test('ajuste com IA exclui linha colada com (excluir isso) e atualiza cronograma
         { id: 'row-ac-02', html: '' },
         { id: 'cronograma', html: '14/07/2026 ──● AC-04 iniciados' },
       ],
+      reply: 'Removi a linha AC-02 e atualizei o cronograma.',
     });
   });
   assert.match(capturedPrompt, /excluir isso/);
-  assert.doesNotMatch(adjusted, /scorecard/);
-  assert.match(adjusted, /AC-04 iniciados/);
+  assert.doesNotMatch(adjusted.html, /scorecard/);
+  assert.match(adjusted.html, /AC-04 iniciados/);
+  assert.match(adjusted.reply, /AC-02/);
+});
+
+test('agente de IA mantém histórico da conversa no prompt e responde reply', async () => {
+  const { adjustDhlReportHtmlWithAi, buildGeminiAdjustmentPrompt, extractEditableBlocks } =
+    await import('../lib/dhlOccurrenceReport/adjustReportHtml');
+
+  const html =
+    `<tr data-dhl-editable="row-ac-02" data-dhl-adjust-only="1"><td>AC-02</td><td>Scorecard</td></tr>` +
+    `<tr data-dhl-editable="row-ac-03" data-dhl-adjust-only="1"><td>AC-03</td><td>Revisão</td></tr>`;
+
+  const history = [
+    { role: 'user' as const, content: 'Exclua AC-02' },
+    { role: 'assistant' as const, content: 'Removi a linha AC-02.' },
+  ];
+  const blocks = extractEditableBlocks(html, { includeAdjustOnly: true });
+  const prompt = buildGeminiAdjustmentPrompt(blocks, 'Agora exclua também a AC-03', history);
+  assert.match(prompt, /HISTÓRICO DA CONVERSA/);
+  assert.match(prompt, /Exclua AC-02/);
+  assert.match(prompt, /Removi a linha AC-02/);
+  assert.match(prompt, /Agora exclua também a AC-03/);
+  assert.match(prompt, /"reply"/);
+
+  let captured = '';
+  const result = await adjustDhlReportHtmlWithAi(
+    html,
+    'Agora exclua também a AC-03',
+    async (p) => {
+      captured = p;
+      return JSON.stringify({
+        patches: [{ id: 'row-ac-03', html: '' }],
+        reply: 'Removi também a linha AC-03.',
+      });
+    },
+    { conversationHistory: history },
+  );
+  assert.match(captured, /HISTÓRICO DA CONVERSA/);
+  assert.match(captured, /Exclua AC-02/);
+  assert.doesNotMatch(result.html, /row-ac-03/);
+  assert.match(result.html, /row-ac-02/);
+  assert.equal(result.reply, 'Removi também a linha AC-03.');
 });
 
 test('service expõe ajuste com IA no payload', () => {
   const src = fs.readFileSync('lib/services/dhlOccurrenceReportService.ts', 'utf8');
   assert.match(src, /adjustDhlOccurrenceReportHtml/);
   assert.match(src, /format: 'adjust'/);
+  assert.match(src, /conversationHistory/);
   assert.doesNotMatch(src, /reportParecer/);
+});
+
+test('modal expõe chat do agente de IA com histórico', () => {
+  const src = fs.readFileSync('components/DhlOccurrenceReportModal.tsx', 'utf8');
+  assert.match(src, /aiChatMessages/);
+  assert.match(src, /dhl-ai-chat-history/);
+  assert.match(src, /conversationHistory/);
+  assert.match(src, /import React, \{[^}]*useState/);
 });
 
 test('histórico: handler standalone, Express, migração e service conectados', () => {
@@ -573,6 +626,8 @@ test('handler suporta format adjust com bundle CJS', () => {
   const handler = fs.readFileSync('api/dhl/occurrence-report.ts', 'utf8');
   assert.match(handler, /format === 'adjust'/);
   assert.match(handler, /adjustmentNotes/);
+  assert.match(handler, /conversationHistory/);
+  assert.match(handler, /reply: adjusted\.reply/);
   assert.match(handler, /require\('\.\/_occurrence-report-adjust\.cjs'\)/);
   assert.doesNotMatch(handler, /loadDhlReportBundle/);
   assert.doesNotMatch(handler, /lib\/dhlOccurrenceReport\/adjustReportHtml/);

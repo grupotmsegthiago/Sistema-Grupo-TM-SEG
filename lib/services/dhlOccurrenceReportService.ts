@@ -102,7 +102,10 @@ export async function adjustDhlOccurrenceReportHtml(
   adjustmentNotes: string,
   missionId: string,
   onProgress?: (progress: DhlReportProgress) => void,
-): Promise<string> {
+  options?: {
+    conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  },
+): Promise<{ html: string; reply: string }> {
   const report = (percent: number, label: string) => {
     onProgress?.({ percent: Math.min(100, Math.max(0, percent)), label });
   };
@@ -111,7 +114,7 @@ export async function adjustDhlOccurrenceReportHtml(
   const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    report(15, 'Enviando observações para a IA...');
+    report(15, 'Enviando pedido ao agente de IA...');
 
     const res = await authFetch('/api/dhl/occurrence-report', {
       method: 'POST',
@@ -121,19 +124,28 @@ export async function adjustDhlOccurrenceReportHtml(
         format: 'adjust',
         html,
         adjustmentNotes: adjustmentNotes.trim(),
+        conversationHistory: (options?.conversationHistory || []).slice(-12),
       }),
     });
 
     report(70, 'Aplicando ajustes no relatório...');
 
-    const json = (await parseJsonResponse(res)) as ReportJsonResponse & { html?: string };
+    const json = (await parseJsonResponse(res)) as ReportJsonResponse & {
+      html?: string;
+      reply?: string;
+    };
 
     if (!res.ok || !json.ok || !json.html) {
       throw new Error(json.error || `Erro ao ajustar relatório (${res.status})`);
     }
 
     report(100, 'Relatório ajustado!');
-    return json.html;
+    return {
+      html: json.html,
+      reply:
+        String(json.reply || '').trim() ||
+        'Pronto — apliquei o ajuste solicitado no relatório.',
+    };
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       throw new Error('Tempo esgotado ao ajustar o relatório. Tente novamente.');

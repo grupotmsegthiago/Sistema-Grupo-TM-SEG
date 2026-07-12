@@ -2784,6 +2784,62 @@ export async function registerRoutes(
         return;
       }
 
+      if (format === 'adjust') {
+        const html = typeof req.body?.html === 'string' ? req.body.html : '';
+        const adjustmentNotes =
+          typeof req.body?.adjustmentNotes === 'string' ? req.body.adjustmentNotes : '';
+        const conversationHistory = Array.isArray(req.body?.conversationHistory)
+          ? (req.body.conversationHistory as Array<{ role?: string; content?: string }>)
+              .filter(
+                (m) =>
+                  (m?.role === 'user' || m?.role === 'assistant') &&
+                  typeof m.content === 'string' &&
+                  m.content.trim(),
+              )
+              .map((m) => ({
+                role: m.role as 'user' | 'assistant',
+                content: String(m.content).trim(),
+              }))
+              .slice(-12)
+          : [];
+        if (!html.trim()) {
+          res.status(400).json({ ok: false, error: 'html obrigatório para ajuste com IA' });
+          return;
+        }
+        if (!adjustmentNotes.trim()) {
+          res.status(400).json({ ok: false, error: 'Descreva o que deseja ajustar no relatório' });
+          return;
+        }
+        if (!isGeminiConfigured()) {
+          res.status(503).json({
+            ok: false,
+            error: 'IA indisponível — configure GEMINI_API_KEY.',
+          });
+          return;
+        }
+        const { adjustDhlReportHtmlWithAi } = await import(
+          '../lib/dhlOccurrenceReport/adjustReportHtml.js'
+        );
+        const generateText = async (prompt: string): Promise<string> => {
+          const r = await generateGeminiContent({
+            contents: prompt,
+            config: { maxOutputTokens: 8192, temperature: 0.35 },
+          });
+          return r.text || '';
+        };
+        const adjusted = await adjustDhlReportHtmlWithAi(html, adjustmentNotes, generateText, {
+          conversationHistory,
+        });
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(200).json({
+          ok: true,
+          format: 'adjust',
+          html: adjusted.html,
+          reply: adjusted.reply,
+        });
+        return;
+      }
+
       const pdf = await generateDhlOccurrenceReportPdf(input, { embedPhotos: false });
       if (!pdf) {
         res.status(404).json({ ok: false, error: 'Missão não encontrada ou sem S.E. DHL' });

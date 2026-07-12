@@ -116,20 +116,48 @@ export function applyEditablePatches(html: string, patches: Record<string, strin
   return result;
 }
 
+/** Mensagem do agente de ajuste (histórico estilo ChatGPT/Gemini). */
+export type DhlAiChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+/** Resultado de um turno do agente: HTML atualizado + resposta curta. */
+export type DhlAdjustAiResult = {
+  html: string;
+  reply: string;
+};
+
+const MAX_CHAT_HISTORY = 12;
+
+function formatConversationHistory(history: DhlAiChatMessage[] | undefined): string {
+  const turns = (history || [])
+    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && String(m.content || '').trim())
+    .slice(-MAX_CHAT_HISTORY);
+  if (!turns.length) return '(primeiro pedido desta conversa — sem histórico prévio)';
+  return turns
+    .map((m) => `${m.role === 'user' ? 'DIRETOR' : 'AGENTE'}: ${String(m.content).trim()}`)
+    .join('\n');
+}
+
 export function buildGeminiAdjustmentPrompt(
   blocks: DhlEditableBlock[],
   adjustmentNotes: string,
+  conversationHistory?: DhlAiChatMessage[],
 ): string {
   const payload = {
-    instrucoes_da_diretoria: adjustmentNotes.trim(),
+    pedido_atual: adjustmentNotes.trim(),
     blocos: blocks.map((b) => ({ id: b.id, html: b.html })),
   };
 
-  return `Você é editor sênior de relatórios operacionais da TM SEG para a DHL Supply Chain.
+  return `Você é um AGENTE editor de relatórios operacionais da TM SEG para a DHL Supply Chain (estilo assistente conversacional).
 
-O diretor leu o Plano de Ação gerado e pediu AJUSTES PONTUAIS — não é um parecer novo, é correção editorial do que já está escrito.
+Você mantém uma conversa com o diretor: cada pedido é um turno. O HTML dos blocos abaixo já reflete os ajustes anteriores desta sessão. Use o HISTÓRICO para entender referências ("faça o mesmo", "agora a AC-03", "também tire isso", "desfaça o tom").
 
-INSTRUÇÕES DO DIRETOR (prioridade máxima):
+HISTÓRICO DA CONVERSA:
+${formatConversationHistory(conversationHistory)}
+
+PEDIDO ATUAL DO DIRETOR (prioridade máxima — aplique isto sobre os BLOCOS ATUAIS):
 ${adjustmentNotes.trim()}
 
 MODO COLAR + INSTRUÇÃO (estilo Gemini — obrigatório respeitar):
@@ -138,14 +166,14 @@ O diretor frequentemente cola um trecho do relatório e acrescenta uma ordem cur
 Interprete assim:
 - O texto colado identifica O QUE alterar: encontre o bloco cujo html contém esse trecho (ou o ID da ação, ex. AC-02 → id row-ac-02).
 - A parte entre parênteses — ou a frase de comando após o trecho — é a AÇÃO (excluir/remover/apagar/reescrever/suavizar/alterar prazo/etc.).
-- Faça SOMENTE o que foi pedido. Não reescreva tom, narrativa ou outros blocos não mencionados.
+- Faça SOMENTE o que o PEDIDO ATUAL pede. Não desfaça ajustes anteriores nem reescreva blocos não mencionados.
 - Para EXCLUIR uma linha/ação/campo: devolva {"id":"row-ac-02","html":""} (html vazio remove o elemento). Também aceito "__DELETE__".
 - Se o bloco "cronograma" citar o ID excluído (ex. AC-02), atualize o cronograma removendo só essa referência, sem inventar novos marcos.
 - Se pedir para reescrever/alterar um trecho colado, devolva o html novo só do(s) bloco(s) afetado(s).
 
 REGRAS OBRIGATÓRIAS:
-1. Responda APENAS com JSON válido, sem markdown: {"patches":[{"id":"...","html":"..."}]}
-2. Inclua apenas os blocos que as instruções do diretor exigem alterar. Se pedir menos repetição, tom mais profissional ou texto mais curto, REESCREVA por completo os blocos afetados (em especial sec-4-1-sintese) — nunca devolva o mesmo texto ou uma cópia quase idêntica.
+1. Responda APENAS com JSON válido, sem markdown: {"patches":[{"id":"...","html":"..."}],"reply":"frase curta em português confirmando o que fez"}
+2. Inclua apenas os blocos que o PEDIDO ATUAL exige alterar. Se pedir menos repetição, tom mais profissional ou texto mais curto, REESCREVA por completo os blocos afetados (em especial sec-4-1-sintese) — nunca devolva o mesmo texto ou uma cópia quase idêntica.
 3. Preserve números de S.E., OS, datas, horários, placas e nomes de clientes (DHL, Foxconn, Apple) exatamente como estão — salvo se o diretor pedir alteração explícita.
 4. Em textos narrativos gerais, prefira "parceiro" ou "fornecedor" em vez de citar repetidamente o nome comercial do parceiro — salvo na tabela de identificação (bloco fornecedor-identificacao) onde o nome completo pode permanecer.
 5. Tom construtivo e profissional para apresentação ao cliente; evite linguagem punitiva, acusatória ou que manche a imagem do parceiro — salvo se o ajuste for só exclusão pontual (aí não mude o tom do restante).
@@ -154,38 +182,53 @@ REGRAS OBRIGATÓRIAS:
 8. Não altere blocos de e-mails (ids que começam com email-).
 9. Elimine repetições e trechos duplicados dentro de cada bloco reescrito; um único parágrafo coeso por bloco narrativo.
 10. Ids de linha do plano de ação usam o padrão row-ac-01, row-ap-03, row-c4 etc. Use-os para exclusão/edição de linhas inteiras.
+11. O campo "reply" deve ter 1–2 frases curtas em português (ex.: "Removi a linha AC-02 e atualizei o cronograma."). Sem markdown.
 
 BLOCOS ATUAIS (JSON):
 ${JSON.stringify(payload, null, 2)}`;
 }
 
-export function parseGeminiAdjustmentJson(raw: string): Record<string, string> {
+export function parseGeminiAdjustmentResponse(raw: string): {
+  patches: Record<string, string>;
+  reply: string;
+} {
   const trimmed = String(raw || '').trim();
   const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     throw new Error('A IA não retornou JSON válido para o ajuste.');
   }
 
-  let parsed: { patches?: Array<{ id?: string; html?: string }> };
+  let parsed: { patches?: Array<{ id?: string; html?: string }>; reply?: string };
   try {
-    parsed = JSON.parse(jsonMatch[0]) as { patches?: Array<{ id?: string; html?: string }> };
+    parsed = JSON.parse(jsonMatch[0]) as {
+      patches?: Array<{ id?: string; html?: string }>;
+      reply?: string;
+    };
   } catch {
     throw new Error('Resposta da IA em formato inválido.');
   }
 
-  const out: Record<string, string> = {};
+  const patches: Record<string, string> = {};
   for (const patch of parsed.patches || []) {
     const id = String(patch.id || '').trim();
     if (!id || patch.html == null) continue;
     // html vazio é válido = exclusão do bloco/linha
-    out[id] = String(patch.html).trim();
+    patches[id] = String(patch.html).trim();
   }
 
-  if (!Object.keys(out).length) {
+  if (!Object.keys(patches).length) {
     throw new Error('A IA não sugeriu alterações. Tente reformular a observação.');
   }
 
-  return out;
+  const reply =
+    String(parsed.reply || '').trim() ||
+    'Pronto — apliquei o ajuste solicitado no relatório.';
+
+  return { patches, reply };
+}
+
+export function parseGeminiAdjustmentJson(raw: string): Record<string, string> {
+  return parseGeminiAdjustmentResponse(raw).patches;
 }
 
 /** Contexto factual + e-mail do cliente usado pela IA para gerar o relatório. */
@@ -254,7 +297,8 @@ export async function adjustDhlReportHtmlWithAi(
   html: string,
   adjustmentNotes: string,
   generateText: (prompt: string) => Promise<string>,
-): Promise<string> {
+  options?: { conversationHistory?: DhlAiChatMessage[] },
+): Promise<DhlAdjustAiResult> {
   const notes = adjustmentNotes.trim();
   if (!notes) {
     throw new Error('Descreva o que deseja ajustar no relatório.');
@@ -265,8 +309,11 @@ export async function adjustDhlReportHtmlWithAi(
     throw new Error('Nenhum trecho editável encontrado no relatório.');
   }
 
-  const prompt = buildGeminiAdjustmentPrompt(blocks, notes);
+  const prompt = buildGeminiAdjustmentPrompt(blocks, notes, options?.conversationHistory);
   const response = await generateText(prompt);
-  const patches = parseGeminiAdjustmentJson(response);
-  return applyEditablePatches(html, patches);
+  const { patches, reply } = parseGeminiAdjustmentResponse(response);
+  return {
+    html: applyEditablePatches(html, patches),
+    reply,
+  };
 }

@@ -26,7 +26,8 @@ __export(adjustReportHtml_exports, {
   buildGeminiAdjustmentPrompt: () => buildGeminiAdjustmentPrompt,
   extractEditableBlocks: () => extractEditableBlocks,
   generateDhlReportHtmlWithAi: () => generateDhlReportHtmlWithAi,
-  parseGeminiAdjustmentJson: () => parseGeminiAdjustmentJson
+  parseGeminiAdjustmentJson: () => parseGeminiAdjustmentJson,
+  parseGeminiAdjustmentResponse: () => parseGeminiAdjustmentResponse
 });
 module.exports = __toCommonJS(adjustReportHtml_exports);
 var EDITABLE_OPEN_RE = /<([a-z][a-z0-9]*)[^>]*\sdata-dhl-editable="([^"]+)"[^>]*>/gi;
@@ -101,16 +102,25 @@ function applyEditablePatches(html, patches) {
   }
   return result;
 }
-function buildGeminiAdjustmentPrompt(blocks, adjustmentNotes) {
+var MAX_CHAT_HISTORY = 12;
+function formatConversationHistory(history) {
+  const turns = (history || []).filter((m) => m && (m.role === "user" || m.role === "assistant") && String(m.content || "").trim()).slice(-MAX_CHAT_HISTORY);
+  if (!turns.length) return "(primeiro pedido desta conversa \u2014 sem hist\xF3rico pr\xE9vio)";
+  return turns.map((m) => `${m.role === "user" ? "DIRETOR" : "AGENTE"}: ${String(m.content).trim()}`).join("\n");
+}
+function buildGeminiAdjustmentPrompt(blocks, adjustmentNotes, conversationHistory) {
   const payload = {
-    instrucoes_da_diretoria: adjustmentNotes.trim(),
+    pedido_atual: adjustmentNotes.trim(),
     blocos: blocks.map((b) => ({ id: b.id, html: b.html }))
   };
-  return `Voc\xEA \xE9 editor s\xEAnior de relat\xF3rios operacionais da TM SEG para a DHL Supply Chain.
+  return `Voc\xEA \xE9 um AGENTE editor de relat\xF3rios operacionais da TM SEG para a DHL Supply Chain (estilo assistente conversacional).
 
-O diretor leu o Plano de A\xE7\xE3o gerado e pediu AJUSTES PONTUAIS \u2014 n\xE3o \xE9 um parecer novo, \xE9 corre\xE7\xE3o editorial do que j\xE1 est\xE1 escrito.
+Voc\xEA mant\xE9m uma conversa com o diretor: cada pedido \xE9 um turno. O HTML dos blocos abaixo j\xE1 reflete os ajustes anteriores desta sess\xE3o. Use o HIST\xD3RICO para entender refer\xEAncias ("fa\xE7a o mesmo", "agora a AC-03", "tamb\xE9m tire isso", "desfa\xE7a o tom").
 
-INSTRU\xC7\xD5ES DO DIRETOR (prioridade m\xE1xima):
+HIST\xD3RICO DA CONVERSA:
+${formatConversationHistory(conversationHistory)}
+
+PEDIDO ATUAL DO DIRETOR (prioridade m\xE1xima \u2014 aplique isto sobre os BLOCOS ATUAIS):
 ${adjustmentNotes.trim()}
 
 MODO COLAR + INSTRU\xC7\xC3O (estilo Gemini \u2014 obrigat\xF3rio respeitar):
@@ -119,14 +129,14 @@ O diretor frequentemente cola um trecho do relat\xF3rio e acrescenta uma ordem c
 Interprete assim:
 - O texto colado identifica O QUE alterar: encontre o bloco cujo html cont\xE9m esse trecho (ou o ID da a\xE7\xE3o, ex. AC-02 \u2192 id row-ac-02).
 - A parte entre par\xEAnteses \u2014 ou a frase de comando ap\xF3s o trecho \u2014 \xE9 a A\xC7\xC3O (excluir/remover/apagar/reescrever/suavizar/alterar prazo/etc.).
-- Fa\xE7a SOMENTE o que foi pedido. N\xE3o reescreva tom, narrativa ou outros blocos n\xE3o mencionados.
+- Fa\xE7a SOMENTE o que o PEDIDO ATUAL pede. N\xE3o desfa\xE7a ajustes anteriores nem reescreva blocos n\xE3o mencionados.
 - Para EXCLUIR uma linha/a\xE7\xE3o/campo: devolva {"id":"row-ac-02","html":""} (html vazio remove o elemento). Tamb\xE9m aceito "__DELETE__".
 - Se o bloco "cronograma" citar o ID exclu\xEDdo (ex. AC-02), atualize o cronograma removendo s\xF3 essa refer\xEAncia, sem inventar novos marcos.
 - Se pedir para reescrever/alterar um trecho colado, devolva o html novo s\xF3 do(s) bloco(s) afetado(s).
 
 REGRAS OBRIGAT\xD3RIAS:
-1. Responda APENAS com JSON v\xE1lido, sem markdown: {"patches":[{"id":"...","html":"..."}]}
-2. Inclua apenas os blocos que as instru\xE7\xF5es do diretor exigem alterar. Se pedir menos repeti\xE7\xE3o, tom mais profissional ou texto mais curto, REESCREVA por completo os blocos afetados (em especial sec-4-1-sintese) \u2014 nunca devolva o mesmo texto ou uma c\xF3pia quase id\xEAntica.
+1. Responda APENAS com JSON v\xE1lido, sem markdown: {"patches":[{"id":"...","html":"..."}],"reply":"frase curta em portugu\xEAs confirmando o que fez"}
+2. Inclua apenas os blocos que o PEDIDO ATUAL exige alterar. Se pedir menos repeti\xE7\xE3o, tom mais profissional ou texto mais curto, REESCREVA por completo os blocos afetados (em especial sec-4-1-sintese) \u2014 nunca devolva o mesmo texto ou uma c\xF3pia quase id\xEAntica.
 3. Preserve n\xFAmeros de S.E., OS, datas, hor\xE1rios, placas e nomes de clientes (DHL, Foxconn, Apple) exatamente como est\xE3o \u2014 salvo se o diretor pedir altera\xE7\xE3o expl\xEDcita.
 4. Em textos narrativos gerais, prefira "parceiro" ou "fornecedor" em vez de citar repetidamente o nome comercial do parceiro \u2014 salvo na tabela de identifica\xE7\xE3o (bloco fornecedor-identificacao) onde o nome completo pode permanecer.
 5. Tom construtivo e profissional para apresenta\xE7\xE3o ao cliente; evite linguagem punitiva, acusat\xF3ria ou que manche a imagem do parceiro \u2014 salvo se o ajuste for s\xF3 exclus\xE3o pontual (a\xED n\xE3o mude o tom do restante).
@@ -135,11 +145,12 @@ REGRAS OBRIGAT\xD3RIAS:
 8. N\xE3o altere blocos de e-mails (ids que come\xE7am com email-).
 9. Elimine repeti\xE7\xF5es e trechos duplicados dentro de cada bloco reescrito; um \xFAnico par\xE1grafo coeso por bloco narrativo.
 10. Ids de linha do plano de a\xE7\xE3o usam o padr\xE3o row-ac-01, row-ap-03, row-c4 etc. Use-os para exclus\xE3o/edi\xE7\xE3o de linhas inteiras.
+11. O campo "reply" deve ter 1\u20132 frases curtas em portugu\xEAs (ex.: "Removi a linha AC-02 e atualizei o cronograma."). Sem markdown.
 
 BLOCOS ATUAIS (JSON):
 ${JSON.stringify(payload, null, 2)}`;
 }
-function parseGeminiAdjustmentJson(raw) {
+function parseGeminiAdjustmentResponse(raw) {
   const trimmed = String(raw || "").trim();
   const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
@@ -151,16 +162,20 @@ function parseGeminiAdjustmentJson(raw) {
   } catch {
     throw new Error("Resposta da IA em formato inv\xE1lido.");
   }
-  const out = {};
+  const patches = {};
   for (const patch of parsed.patches || []) {
     const id = String(patch.id || "").trim();
     if (!id || patch.html == null) continue;
-    out[id] = String(patch.html).trim();
+    patches[id] = String(patch.html).trim();
   }
-  if (!Object.keys(out).length) {
+  if (!Object.keys(patches).length) {
     throw new Error("A IA n\xE3o sugeriu altera\xE7\xF5es. Tente reformular a observa\xE7\xE3o.");
   }
-  return out;
+  const reply = String(parsed.reply || "").trim() || "Pronto \u2014 apliquei o ajuste solicitado no relat\xF3rio.";
+  return { patches, reply };
+}
+function parseGeminiAdjustmentJson(raw) {
+  return parseGeminiAdjustmentResponse(raw).patches;
 }
 function buildDhlReportGenerationPrompt(blocks, context) {
   return `Voc\xEA \xE9 analista s\xEAnior de opera\xE7\xF5es e gerenciamento de risco da TM SEG e vai redigir o conte\xFAdo de um Plano de A\xE7\xE3o e Justificativa de Ocorr\xEAncia para a DHL Supply Chain (opera\xE7\xE3o Foxconn/Apple).
@@ -197,7 +212,7 @@ async function generateDhlReportHtmlWithAi(html, context, generateText) {
   const patches = parseGeminiAdjustmentJson(response);
   return applyEditablePatches(html, patches);
 }
-async function adjustDhlReportHtmlWithAi(html, adjustmentNotes, generateText) {
+async function adjustDhlReportHtmlWithAi(html, adjustmentNotes, generateText, options) {
   const notes = adjustmentNotes.trim();
   if (!notes) {
     throw new Error("Descreva o que deseja ajustar no relat\xF3rio.");
@@ -206,10 +221,13 @@ async function adjustDhlReportHtmlWithAi(html, adjustmentNotes, generateText) {
   if (!blocks.length) {
     throw new Error("Nenhum trecho edit\xE1vel encontrado no relat\xF3rio.");
   }
-  const prompt = buildGeminiAdjustmentPrompt(blocks, notes);
+  const prompt = buildGeminiAdjustmentPrompt(blocks, notes, options?.conversationHistory);
   const response = await generateText(prompt);
-  const patches = parseGeminiAdjustmentJson(response);
-  return applyEditablePatches(html, patches);
+  const { patches, reply } = parseGeminiAdjustmentResponse(response);
+  return {
+    html: applyEditablePatches(html, patches),
+    reply
+  };
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
@@ -219,5 +237,6 @@ async function adjustDhlReportHtmlWithAi(html, adjustmentNotes, generateText) {
   buildGeminiAdjustmentPrompt,
   extractEditableBlocks,
   generateDhlReportHtmlWithAi,
-  parseGeminiAdjustmentJson
+  parseGeminiAdjustmentJson,
+  parseGeminiAdjustmentResponse
 });
