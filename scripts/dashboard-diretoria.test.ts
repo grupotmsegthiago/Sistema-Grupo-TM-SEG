@@ -6,6 +6,7 @@ import {
   computeCashKpis,
   buildQuotesFunnel,
   buildCriticalAlerts,
+  buildDailyCashFlow,
 } from '../lib/dashboardDiretoria/aggregations';
 import { MissionStatus } from '../types';
 
@@ -60,8 +61,8 @@ describe('dashboardDiretoria aggregations', () => {
       revenue_value: 1000, cost_value: 600, billing_approved: true, client: 'A',
     }];
     const transactions = [
-      { id: 't1', type: 'INCOME', status: 'PAID', amount: 5000, due_date: '2026-07-12', category_id: 'c0' },
-      { id: 't2', type: 'EXPENSE', status: 'PAID', amount: 2000, due_date: '2026-07-12', category_id: 'c1', category_name: 'Aluguel' },
+      { id: 't1', type: 'INCOME', status: 'PAID', amount: 5000, due_date: '2026-07-12', payment_date: '2026-07-12', category_id: 'c0' },
+      { id: 't2', type: 'EXPENSE', status: 'PAID', amount: 2000, due_date: '2026-07-12', payment_date: '2026-07-12', category_id: 'c1', category_name: 'Aluguel' },
     ] as any[];
     const categories = [{ id: 'c1', name: 'Aluguel', type: 'EXPENSE', group: 'DESPESAS_FIXAS' }] as any[];
     const refs = { clientTables: [], providerTables: [], clientsData: [] };
@@ -85,5 +86,34 @@ describe('dashboardDiretoria aggregations', () => {
     assert.equal(cash.pendingReceivable, 1500);
     assert.equal(cash.pendingPayable, 1000);
     assert.equal(cash.cashForecast, 500);
+  });
+
+  it('computeCashKpis usa payment_date para pagos no período (não due_date)', () => {
+    const transactions = [
+      { id: 't1', type: 'INCOME', status: 'PAID', amount: 1000, due_date: '2026-08-01', payment_date: '2026-07-12T14:00:00', category_id: 'c0' },
+      { id: 't2', type: 'EXPENSE', status: 'PAID', amount: 400, due_date: '2026-08-05', payment_date: '2026-07-12', category_id: 'c1', category_name: 'Aluguel' },
+      { id: 't3', type: 'INCOME', status: 'PAID', amount: 999, due_date: '2026-07-12', payment_date: '2026-06-01', category_id: 'c0' },
+    ] as any[];
+    const categories = [{ id: 'c1', name: 'Aluguel', type: 'EXPENSE', group: 'DESPESAS_FIXAS' }] as any[];
+    const period = { mode: 'today' as const, year: 2026, month: 6 };
+    const sunday = new Date(2026, 6, 12, 12, 0, 0);
+    const cash = computeCashKpis([], transactions, categories, [], period, sunday);
+    assert.equal(cash.incomePaid, 1000);
+    assert.equal(cash.expensePaid, 400);
+    assert.equal(cash.cashResult, 600);
+  });
+
+  it('buildDailyCashFlow agrupa entradas/saídas por data de pagamento no período', () => {
+    const transactions = [
+      { id: 't1', type: 'INCOME', status: 'PAID', amount: 100, due_date: '2026-08-01', payment_date: '2026-07-10', category_id: 'c0' },
+      { id: 't2', type: 'EXPENSE', status: 'PAID', amount: 50, due_date: '2026-08-01', payment_date: '2026-07-11', category_id: 'c1', category_name: 'X' },
+      { id: 't3', type: 'INCOME', status: 'PAID', amount: 200, due_date: '2026-07-12', payment_date: '2026-06-01', category_id: 'c0' },
+    ] as any[];
+    const period = { mode: 'week' as const, year: 2026, month: 6 };
+    const sunday = new Date(2026, 6, 12, 12, 0, 0);
+    const flow = buildDailyCashFlow(transactions, period, sunday);
+    assert.equal(flow.length, 2);
+    assert.deepEqual(flow[0], { day: '10/07', inflow: 100, outflow: 0 });
+    assert.deepEqual(flow[1], { day: '11/07', inflow: 0, outflow: 50 });
   });
 });

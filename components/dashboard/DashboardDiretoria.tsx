@@ -110,7 +110,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
     [data.transactions, data.allTransactions, data.categories, data.accounts, period],
   );
 
-  const cashFlow = useMemo(() => buildDailyCashFlow(data.transactions), [data.transactions]);
+  const cashFlow = useMemo(() => buildDailyCashFlow(data.allTransactions, period), [data.allTransactions, period]);
   const marginSeries = useMemo(() => buildMarginVsGoalSeries(data.missions, data.refs, period), [data.missions, data.refs, period]);
   const topPayers = useMemo(() => buildTopClientsByRevenue(data.missions, data.refs, period), [data.missions, data.refs, period]);
   const clientBars = useMemo(() => buildClientRevenueCostBars(data.missions, data.refs, period), [data.missions, data.refs, period]);

@@ -1,6 +1,16 @@
 import type { DashboardPeriod, DashboardPeriodMode } from './types';
+import type { FinancialTransaction } from '../../types';
 
 const pad = (n: number) => String(n).padStart(2, '0');
+
+/** Data de movimentação de caixa: pagamento quando PAID, senão vencimento. */
+export function getCashMovementDate(t: FinancialTransaction): string {
+  if (t.status === 'PAID') {
+    const paid = String(t.payment_date || '').slice(0, 10);
+    if (paid) return paid;
+  }
+  return String(t.due_date || '').slice(0, 10);
+}
 
 export function toIsoDate(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;

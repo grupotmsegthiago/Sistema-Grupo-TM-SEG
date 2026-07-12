@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { useRealtimeRefresh } from '../RealtimeProvider';
 import type { Client, ClientPriceTable, FinancialCategory, FinancialTransaction, Mission, ProviderCostTable } from '../../types';
-import { formatPeriodLabel, getPeriodRange, getRhReferenceMonth, type DashboardPeriod } from './periodUtils';
+import { formatPeriodLabel, getCashMovementDate, getPeriodRange, getRhReferenceMonth, type DashboardPeriod } from './periodUtils';
 import type { DashboardDiretoriaData, DashboardRefs } from './types';
 
 async function fetchAllPages<T>(buildQuery: (from: number, size: number) => Promise<{ data: T[] | null; error: any }>, pageSize = 1000): Promise<T[]> {
@@ -99,7 +99,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
       const allTrans = transRes as FinancialTransaction[];
       setAllTransactions(allTrans);
       setTransactions(allTrans.filter(t => {
-        const d = String(t.due_date || '').slice(0, 10);
+        const d = getCashMovementDate(t);
         return d >= startIso && d <= endIso;
       }));
       setCategories((catRes.data || []) as FinancialCategory[]);

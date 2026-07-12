@@ -6,11 +6,24 @@ import {
   sumCanonical,
   type CanonicalRefs,
 } from '../missionFinancialsCanonical';
-import { getPeriodRange } from './periodUtils';
+import { getPeriodRange, getCashMovementDate } from './periodUtils';
 import type { CriticalAlert, DashboardPeriod, PendingApprovalItem } from './types';
 import { DEFAULT_MONTHLY_REVENUE_GOAL, MARGIN_GOAL_PCT } from './types';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+function filterPaidTransactionsInPeriod(
+  transactions: FinancialTransaction[],
+  period: DashboardPeriod,
+  now = new Date(),
+): FinancialTransaction[] {
+  const { startIso, endIso } = getPeriodRange(period, now);
+  return transactions.filter(t => {
+    if (t.status !== 'PAID') return false;
+    const d = getCashMovementDate(t);
+    return d >= startIso && d <= endIso;
+  });
+}
 
 export const fmtBRL = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 });
@@ -60,17 +73,14 @@ function isInvestmentExpense(t: FinancialTransaction, investmentIds: Set<string>
 }
 
 export function computeCashKpis(
-  periodTransactions: FinancialTransaction[],
+  _periodTransactions: FinancialTransaction[],
   allTransactions: FinancialTransaction[],
   categories: FinancialCategory[],
   accounts: Array<{ id: string; initial_balance: number }>,
   period: DashboardPeriod,
+  now = new Date(),
 ): CashKpis {
-  const { startIso, endIso } = getPeriodRange(period);
-  const inPeriod = periodTransactions.filter(t => {
-    const d = String(t.due_date || '').slice(0, 10);
-    return d >= startIso && d <= endIso;
-  });
+  const inPeriod = filterPaidTransactionsInPeriod(allTransactions, period, now);
 
   const investmentIds = new Set(categories.filter(c => c.group === 'INVESTIMENTOS').map(c => c.id));
   const today = new Date().toISOString().slice(0, 10);
@@ -161,11 +171,13 @@ export function computeFinancialKpis(
 
 export function buildDailyCashFlow(
   transactions: FinancialTransaction[],
+  period: DashboardPeriod,
+  now = new Date(),
 ): Array<{ day: string; inflow: number; outflow: number }> {
+  const paidInPeriod = filterPaidTransactionsInPeriod(transactions, period, now);
   const map = new Map<string, { inflow: number; outflow: number }>();
-  for (const t of transactions) {
-    if (t.status !== 'PAID') continue;
-    const day = String(t.due_date || '').slice(0, 10);
+  for (const t of paidInPeriod) {
+    const day = getCashMovementDate(t);
     if (!day) continue;
     const row = map.get(day) || { inflow: 0, outflow: 0 };
     const amt = Number(t.amount) || 0;
