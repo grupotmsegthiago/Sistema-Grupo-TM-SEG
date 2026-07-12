@@ -11,6 +11,8 @@ const fmtBRL = (v: number) =>
 
 const fmtPct = (v: number) => `${v.toFixed(1)}%`;
 
+const FETCH_TIMEOUT_MS = 25_000;
+
 const THERM_COLORS = {
   ok: { bar: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
   warning: { bar: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
@@ -21,6 +23,23 @@ async function authHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function fetchJsonWithTimeout(url: string, init: RequestInit = {}, ms = FETCH_TIMEOUT_MS) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, { ...init, signal: ctrl.signal });
+    const j = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, json: j };
+  } catch (e: unknown) {
+    if (e instanceof Error && e.name === 'AbortError') {
+      throw new Error('Tempo esgotado ao carregar custos de IA — tente Atualizar novamente.');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 interface Props {
@@ -40,24 +59,24 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
     setError(null);
     try {
       const headers = await authHeaders();
+      if (!headers.Authorization) {
+        throw new Error('Sessão expirada — faça login novamente.');
+      }
+
       const ensureSchema = async () => {
-        const r = await fetch('/api/billing/ensure-schema', { method: 'POST', headers });
-        const j = await r.json();
-        if (!r.ok || !j.ok) throw new Error(j.message || j.error || 'Falha ao criar tabela billing_usage');
+        const { ok, json } = await fetchJsonWithTimeout('/api/billing/ensure-schema', {
+          method: 'POST',
+          headers,
+        });
+        if (!ok || !json.ok) throw new Error(json.message || json.error || 'Falha ao criar tabela billing_usage');
       };
 
       const fetchData = async () => {
-        const [sumRes, logRes] = await Promise.all([
-          fetch('/api/billing/summary', { headers }),
-          fetch('/api/billing/usage-log?limit=80', { headers }),
-        ]);
-        const sumJson = await sumRes.json();
-        const logJson = await logRes.json();
-        if (!sumRes.ok) throw new Error(sumJson.error || 'Falha ao carregar resumo');
-        if (!logRes.ok) throw new Error(logJson.error || 'Falha ao carregar log');
-        setSummary(sumJson.summary);
-        setLogs(logJson.rows || []);
-        setReport(logJson.efficiency || null);
+        const { ok, json } = await fetchJsonWithTimeout('/api/billing/dashboard?limit=80', { headers });
+        if (!ok) throw new Error(json.error || 'Falha ao carregar custos de IA');
+        setSummary(json.summary ?? null);
+        setLogs(json.rows || []);
+        setReport(json.efficiency || null);
       };
 
       try {
@@ -82,11 +101,11 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
 
   const syncStripe = useCallback(async () => {
     setSyncing(true);
+    setError(null);
     try {
       const headers = { ...(await authHeaders()), 'Content-Type': 'application/json' };
-      const r = await fetch('/api/billing/sync', { method: 'POST', headers });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || j.message || 'Sync falhou');
+      const { ok, json } = await fetchJsonWithTimeout('/api/billing/sync', { method: 'POST', headers });
+      if (!ok) throw new Error(json.error || json.message || 'Sync falhou');
       await load();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
@@ -106,7 +125,7 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
 
   const therm = summary ? THERM_COLORS[summary.thermometer] : THERM_COLORS.ok;
 
-  if (loading && !summary) {
+  if (loading && !summary && !error) {
     return (
       <div className="flex items-center gap-2 p-8 text-gray-500" data-testid="tab-sistema-loading">
         <Loader2 className="animate-spin text-red-700" /> Carregando custos de IA…
@@ -117,8 +136,16 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
   return (
     <div className="space-y-4" data-testid="tab-sistema">
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-xl px-4 py-3 flex items-center gap-2">
-          <AlertTriangle size={16} /> {error}
+        <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-xl px-4 py-3 flex flex-wrap items-center gap-2">
+          <AlertTriangle size={16} className="shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="text-xs font-bold text-red-700 underline"
+          >
+            Tentar novamente
+          </button>
         </div>
       )}
 
@@ -128,18 +155,31 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
             <Cpu size={20} className="text-red-700" /> Plano &amp; custos de IA
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            {summary?.planName} · câmbio {summary?.exchangeRate.toFixed(2)} + IOF {summary?.iofPct}%
+            {summary
+              ? `${summary.planName} · câmbio ${summary.exchangeRate.toFixed(2)} + IOF ${summary.iofPct}%`
+              : 'Resumo indisponível — use Atualizar ou Sincronizar Stripe'}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void syncStripe()}
-          disabled={syncing}
-          className="flex items-center gap-2 bg-red-700 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-red-800 disabled:opacity-60"
-        >
-          {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-          Sincronizar Stripe
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading}
+            className="flex items-center gap-2 border border-gray-300 text-gray-700 text-xs font-bold px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-60"
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            Atualizar
+          </button>
+          <button
+            type="button"
+            onClick={() => void syncStripe()}
+            disabled={syncing}
+            className="flex items-center gap-2 bg-red-700 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-red-800 disabled:opacity-60"
+          >
+            {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            Sincronizar Stripe
+          </button>
+        </div>
       </div>
 
       {summary && (

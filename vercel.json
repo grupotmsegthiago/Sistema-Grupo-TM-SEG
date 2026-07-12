@@ -331,6 +331,26 @@
       "destination": "/api/system-diagnostics"
     },
     {
+      "source": "/api/billing/dashboard",
+      "destination": "/api/billing-dashboard"
+    },
+    {
+      "source": "/api/billing/summary",
+      "destination": "/api/billing-dashboard"
+    },
+    {
+      "source": "/api/billing/usage-log",
+      "destination": "/api/billing-dashboard"
+    },
+    {
+      "source": "/api/billing/sync",
+      "destination": "/api/billing-sync"
+    },
+    {
+      "source": "/api/billing/ensure-schema",
+      "destination": "/api/billing-ensure-schema"
+    },
+    {
       "source": "/api/rh/team-presence-board",
       "destination": "/api/rh-team-presence-board"
     },
