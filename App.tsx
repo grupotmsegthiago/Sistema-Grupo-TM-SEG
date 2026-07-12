@@ -94,7 +94,7 @@ import { wireUserActivityTracker, touchUserActivity } from './lib/userActivityTr
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
-import { persistScreen, resolveInitialScreen } from './lib/screenNavigation';
+import { persistScreen, resolveInitialScreen, getRoleDefaultScreen, getScreenFromUrl } from './lib/screenNavigation';
 
 // TEMPO DE INATIVIDADE (30 minutos) — só conta com a aba visível/ativa
 const INACTIVITY_LIMIT = 30 * 60 * 1000;
@@ -195,6 +195,15 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!isAuthenticated || isPublicRoute) return;
+    const roleDefault = getRoleDefaultScreen();
+    if (roleDefault && !getScreenFromUrl()) {
+      setCurrentScreen(roleDefault);
+      persistScreen(roleDefault);
+    }
+  }, [isAuthenticated, isPublicRoute]);
+
+  useEffect(() => {
+    if (!isAuthenticated || isPublicRoute) return;
     return wireUserActivityTracker();
   }, [isAuthenticated, isPublicRoute]);
 
@@ -268,7 +277,14 @@ const App: React.FC = () => {
     try {
       const u = JSON.parse(localStorage.getItem('userData') || '{}');
       setMotivationPending(shouldShowMotivation(u.id || u.email || 'anon'));
-    } catch { setMotivationPending(true); }
+      const roleDefault = getRoleDefaultScreen();
+      if (roleDefault) {
+        setCurrentScreen(roleDefault);
+        persistScreen(roleDefault);
+      }
+    } catch {
+      setMotivationPending(true);
+    }
   };
 
   const handleOpenBillingMission = async (missionId: string) => {

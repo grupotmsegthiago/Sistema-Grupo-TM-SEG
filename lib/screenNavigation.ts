@@ -2,6 +2,9 @@
 
 export const SCREEN_STORAGE_KEY = 'tmseg_current_screen';
 
+/** Tela padrão do perfil Diretoria ao abrir o sistema */
+export const DIRECTORIA_COCKPIT_SCREEN = 'diretoria-cockpit';
+
 const PAGE_PARAM = 'page';
 
 export function getScreenFromUrl(): string | null {
@@ -24,8 +27,25 @@ export function getStoredScreen(): string | null {
   return null;
 }
 
+/** Retorna a tela inicial preferida pelo perfil (ex.: Diretoria → cockpit). */
+export function getRoleDefaultScreen(): string | null {
+  try {
+    const raw = localStorage.getItem('userData');
+    if (!raw) return null;
+    const role = String(JSON.parse(raw)?.role || '').toLowerCase();
+    if (role === 'diretoria') return DIRECTORIA_COCKPIT_SCREEN;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 export function resolveInitialScreen(fallback = 'dashboard'): string {
-  return getScreenFromUrl() || getStoredScreen() || fallback;
+  const fromUrl = getScreenFromUrl();
+  if (fromUrl) return fromUrl;
+  const roleScreen = getRoleDefaultScreen();
+  if (roleScreen) return roleScreen;
+  return getStoredScreen() || fallback;
 }
 
 /** Atualiza ?page= sem recarregar — preserva outras query params (openMission, etc.). */
