@@ -46,6 +46,12 @@ Usar Node 22+ (projeto declara `24.x` em `package.json`; Node 22 funciona para b
 - **Importante:** usar `require('./_occurrence-report-*.cjs')` **estático** no handler. `require` dinâmico com `path.join` ou bloco `includeFiles` em `vercel.json` para `api/dhl/occurrence-report.ts` causou deploy **ERROR 0ms** (falha de configuração antes do build).
 - PDF no anexo: leitura no **browser** via `pdfjs-dist` (`lib/dhlOccurrenceReport/extractPdfText.ts`).
 
+### Rotas de API na Vercel (gotcha crítico)
+
+- **O catch-all `/api/(.*)` → `api/index` (Express/`vercelApp.cjs`) NÃO responde de forma confiável em produção** (timeout, inclusive em rotas antigas como `GET /api/monitored-processes`). Por isso o projeto serve tudo que é crítico por **handlers standalone** em `api/*.ts` (cada um com `rewrite` próprio no `vercel.json`).
+- **Ao criar uma rota nova que precise funcionar em produção, faça um handler standalone** (ou adicione um `format`/parâmetro a um handler standalone existente). NÃO confie em adicionar só a rota no Express (`server/routes.ts`) — ela funciona em dev local, mas dá timeout em produção.
+- Exemplo: o histórico do Plano de Ação DHL usa `POST /api/dhl/occurrence-report` com `format: 'save' | 'history' | 'history-get'` no handler standalone `api/dhl/occurrence-report.ts` (que também garante a tabela via `ensureReportsTable`, pois não passa pelas migrações do Express).
+
 ### Deploy Vercel — troubleshooting
 
 1. **Deployments** → último da `main`: status Ready vs Error.
