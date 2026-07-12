@@ -70,15 +70,17 @@ Legado: `ZAPI_INSTANCE_ID` / `ZAPI_TOKEN` continuam como fallback.
 
 ### Custos de IA (Cursor / Stripe / Gemini)
 
-- Serviço: `services/billingService.ts` — `syncBillingUsage()`, conversão USD→BRL (câmbio `BILLING_USD_RATE` padrão 5.50 + IOF `BILLING_IOF_PCT` 4.38%).
-- Tabela Supabase: `billing_usage` — migration `migrations/2026_07_12_billing_usage.sql`.
-- UI: Cockpit Diretoria → aba **Sistema** (progresso do plano, termômetro, log por token).
+- Serviço: `lib/billing/billingService.ts` — `syncCursorBilling()`, `syncBillingUsage()`, conversão USD→BRL (câmbio `BILLING_USD_RATE` padrão 5.50 + IOF `BILLING_IOF_PCT` 4.38%).
+- **Espelho real Cursor:** `CURSOR_SESSION_TOKEN` = cookie `WorkosCursorSessionToken` de [cursor.com/dashboard](https://cursor.com/dashboard) (API não oficial). Botão **Sincronizar Cursor** na aba Sistema.
+- Tabela Supabase: `billing_usage` — migrations `2026_07_12_billing_usage.sql`, `2026_07_13_billing_cursor_source.sql` (source `cursor_dashboard`).
+- UI: Cockpit Diretoria → aba **Sistema** (espelho fatura, termômetro, eventos por modelo).
 - Cron diário: `GET /api/cron/billing-sync` às 06:00 UTC (`CRON_SECRET`).
 - Variáveis Vercel:
-  - `STRIPE_SECRET_KEY`, `STRIPE_CURSOR_CUSTOMER_ID` (faturas Cursor)
+  - `CURSOR_SESSION_TOKEN` (obrigatório para espelho real do dashboard Cursor)
+  - `STRIPE_SECRET_KEY`, `STRIPE_CURSOR_CUSTOMER_ID` (opcional — faturas Stripe)
   - `CURSOR_PLAN_MONTHLY_USD` ou `CURSOR_PLAN_MONTHLY_BRL`, `CURSOR_PLAN_NAME`
   - `OPERATIONAL_SAVINGS_BRL` (padrão 715 — planilha Situação Geral Faturamento)
-- APIs: `GET /api/billing/summary`, `GET /api/billing/usage-log`, `POST /api/billing/sync`, `POST /api/billing/log-usage`.
+- APIs: `GET /api/billing/dashboard`, `POST /api/billing/sync`, `POST /api/billing/log-usage`.
 
 **Regras do agente (redução de custo e retrabalho):**
 

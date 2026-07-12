@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 
-const MIGRATION_FILE = '2026_07_12_billing_usage.sql';
+const MIGRATION_FILES = ['2026_07_12_billing_usage.sql', '2026_07_13_billing_cursor_source.sql'];
 
 function splitStatements(sql: string): string[] {
   return sql
@@ -24,28 +24,32 @@ export async function runBillingUsageMigrations(): Promise<{ ok: boolean; messag
     return { ok: false, message: 'Supabase admin indisponível' };
   }
 
-  const sqlPath = path.join(process.cwd(), 'migrations', MIGRATION_FILE);
-  if (!fs.existsSync(sqlPath)) {
-    return { ok: false, message: `Arquivo de migration ausente: ${MIGRATION_FILE}` };
-  }
-
-  const sql = fs.readFileSync(sqlPath, 'utf8');
-  const statements = splitStatements(sql);
   const errors: string[] = [];
 
-  for (const statement of statements) {
-    try {
-      const { error } = await client.rpc('exec_sql', { sql: `${statement};` });
-      if (error) {
-        const msg = String(error.message || error);
+  for (const migrationFile of MIGRATION_FILES) {
+    const sqlPath = path.join(process.cwd(), 'migrations', migrationFile);
+    if (!fs.existsSync(sqlPath)) {
+      console.warn(`[Billing] Migration ausente (ignorado): ${migrationFile}`);
+      continue;
+    }
+
+    const sql = fs.readFileSync(sqlPath, 'utf8');
+    const statements = splitStatements(sql);
+
+    for (const statement of statements) {
+      try {
+        const { error } = await client.rpc('exec_sql', { sql: `${statement};` });
+        if (error) {
+          const msg = String(error.message || error);
+          if (!msg.includes('already exists') && !msg.includes('duplicate')) {
+            errors.push(msg.slice(0, 160));
+          }
+        }
+      } catch (e: any) {
+        const msg = String(e?.message || e);
         if (!msg.includes('already exists') && !msg.includes('duplicate')) {
           errors.push(msg.slice(0, 160));
         }
-      }
-    } catch (e: any) {
-      const msg = String(e?.message || e);
-      if (!msg.includes('already exists') && !msg.includes('duplicate')) {
-        errors.push(msg.slice(0, 160));
       }
     }
   }

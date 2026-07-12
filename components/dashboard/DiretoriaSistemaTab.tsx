@@ -4,7 +4,7 @@ import {
   Download, Sparkles, TrendingDown,
 } from 'lucide-react';
 import { authFetch } from '../../lib/authFetch';
-import type { BillingMonthSummary, BillingUsageRow, TokenEfficiencyReport } from '../../lib/dashboardDiretoria/billingTypes';
+import type { BillingMonthSummary, BillingUsageRow, TokenEfficiencyReport, BillingDashboardMeta } from '../../lib/dashboardDiretoria/billingTypes';
 
 const fmtBRL = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 });
@@ -51,6 +51,8 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
   const [summary, setSummary] = useState<BillingMonthSummary | null>(null);
   const [logs, setLogs] = useState<BillingUsageRow[]>([]);
   const [report, setReport] = useState<TokenEfficiencyReport | null>(null);
+  const [meta, setMeta] = useState<BillingDashboardMeta | null>(null);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -76,6 +78,7 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
         setSummary(json.summary ?? null);
         setLogs(json.rows || []);
         setReport(json.efficiency || null);
+        setMeta(json.meta ?? null);
       };
 
       try {
@@ -101,10 +104,12 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
   const syncStripe = useCallback(async () => {
     setSyncing(true);
     setError(null);
+    setSyncMessage(null);
     try {
       const headers = { ...authHeaders(), 'Content-Type': 'application/json' };
       const { ok, json } = await fetchJsonWithTimeout('/api/billing/sync', { method: 'POST', headers });
       if (!ok) throw new Error(json.error || json.message || 'Sync falhou');
+      setSyncMessage(json.message || 'Sincronização concluída.');
       await load();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
@@ -134,6 +139,25 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
 
   return (
     <div className="space-y-4" data-testid="tab-sistema">
+      {syncMessage && !error && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm rounded-xl px-4 py-3">
+          {syncMessage}
+        </div>
+      )}
+
+      {summary?.isPlaceholder && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-xl px-4 py-3">
+          <p className="font-bold">Valores ainda não espelham sua fatura Cursor</p>
+          <p className="text-xs mt-1">
+            O painel mostra estimativas padrão até você sincronizar. Configure{' '}
+            <code className="bg-amber-100 px-1 rounded">CURSOR_SESSION_TOKEN</code> na Vercel
+            (cookie <strong>WorkosCursorSessionToken</strong> em{' '}
+            <a href="https://cursor.com/dashboard" target="_blank" rel="noreferrer" className="underline font-bold">cursor.com/dashboard</a>
+            ) e clique em <strong>Sincronizar Cursor</strong>.
+          </p>
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-xl px-4 py-3 flex flex-wrap items-center gap-2">
           <AlertTriangle size={16} className="shrink-0" />
@@ -155,9 +179,17 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
             {summary
-              ? `${summary.planName} · câmbio ${summary.exchangeRate.toFixed(2)} + IOF ${summary.iofPct}%`
-              : 'Resumo indisponível — use Atualizar ou Sincronizar Stripe'}
+              ? summary.isPlaceholder
+                ? 'Aguardando espelho do dashboard Cursor'
+                : `${summary.planName} · ciclo ${summary.billingCycleStart ? new Date(summary.billingCycleStart).toLocaleDateString('pt-BR') : '—'} → ${summary.billingCycleEnd ? new Date(summary.billingCycleEnd).toLocaleDateString('pt-BR') : '—'} · câmbio ${summary.exchangeRate.toFixed(2)} + IOF ${summary.iofPct}%`
+              : 'Resumo indisponível — use Atualizar ou Sincronizar Cursor'}
           </p>
+          {summary?.lastSyncedAt && !summary.isPlaceholder && (
+            <p className="text-[10px] text-gray-400 mt-0.5">
+              Última sync: {new Date(summary.lastSyncedAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
+              {summary.dataSource === 'cursor' ? ' · fonte: dashboard Cursor' : ''}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -176,7 +208,7 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
             className="flex items-center gap-2 bg-red-700 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-red-800 disabled:opacity-60"
           >
             {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Sincronizar Stripe
+            Sincronizar Cursor
           </button>
         </div>
       </div>
@@ -188,10 +220,18 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
               <div className="flex items-center gap-2">
                 <Thermometer size={18} className={therm.text} />
                 <span className={`text-sm font-black uppercase ${therm.text}`}>
-                  {summary.thermometer === 'critical' ? 'Estourando o plano' : summary.thermometer === 'warning' ? 'Atenção ao limite' : 'Dentro do plano'}
+                  {summary.isPlaceholder
+                    ? 'Aguardando dados reais'
+                    : summary.thermometer === 'critical'
+                      ? 'Estourando o plano'
+                      : summary.thermometer === 'warning'
+                        ? 'Atenção ao limite'
+                        : 'Dentro do plano'}
                 </span>
               </div>
-              <span className="text-xs font-mono text-gray-600">{fmtPct(summary.usagePct)} do mensal</span>
+              <span className="text-xs font-mono text-gray-600">
+                {summary.isPlaceholder ? '—' : fmtPct(summary.usagePct)} do mensal
+              </span>
             </div>
 
             <div className="h-4 w-full rounded-full bg-white/80 border border-gray-200 overflow-hidden flex">
@@ -260,7 +300,7 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
 
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-sm font-black text-gray-900 uppercase">Log por token</h3>
+          <h3 className="text-sm font-black text-gray-900 uppercase">Espelho da fatura — eventos Cursor</h3>
           <button
             type="button"
             onClick={() => onNavigate?.('cost-optimization')}
@@ -274,7 +314,7 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
             <thead className="bg-gray-50 text-[10px] uppercase text-gray-500 font-black">
               <tr>
                 <th className="px-3 py-2">Data e hora</th>
-                <th className="px-3 py-2">Token</th>
+                <th className="px-3 py-2">Modelo / agente</th>
                 <th className="px-3 py-2">Resumo</th>
                 <th className="px-3 py-2 text-right">Custo (R$)</th>
                 <th className="px-3 py-2 text-right">Saldo plano</th>
@@ -284,7 +324,9 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
               {logs.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-3 py-6 text-center text-gray-400">
-                    Nenhum lançamento — configure STRIPE_SECRET_KEY e sincronize, ou registre uso via API.
+                    {meta?.cursorConfigured
+                      ? 'Nenhum evento cobrado neste ciclo — clique em Sincronizar Cursor.'
+                      : 'Configure CURSOR_SESSION_TOKEN na Vercel e sincronize para espelhar gastos reais do dashboard Cursor.'}
                   </td>
                 </tr>
               ) : logs.map(row => (

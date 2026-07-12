@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS public.billing_usage (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   reference_month TEXT NOT NULL,
-  source TEXT NOT NULL CHECK (source IN ('cursor_stripe', 'gemini', 'agent_token', 'manual', 'sync')),
+  source TEXT NOT NULL CHECK (source IN ('cursor_stripe', 'cursor_dashboard', 'gemini', 'agent_token', 'manual', 'sync')),
   external_id TEXT,
   token_id TEXT,
   summary TEXT NOT NULL,
