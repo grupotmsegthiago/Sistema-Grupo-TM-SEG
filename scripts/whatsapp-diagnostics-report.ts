@@ -3,7 +3,6 @@
  * Relatório diagnóstico do bot WhatsApp (requer SUPABASE_SERVICE_ROLE_KEY + Z-API no .env ou banco).
  * Uso: npx tsx scripts/whatsapp-diagnostics-report.ts [today|7d|15d]
  */
-import "dotenv/config";
 import { buildWhatsappDiagnosticsReport } from "../server/whatsappDiagnostics";
 import { runWhatsappTelemetryMigrations } from "../server/whatsappTelemetry";
 import { runWhatsappInstanceMigrations } from "../server/whatsapp/instanceStore";

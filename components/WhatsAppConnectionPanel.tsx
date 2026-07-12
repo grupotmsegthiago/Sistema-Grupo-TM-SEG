@@ -195,6 +195,26 @@ const WhatsAppConnectionPanel: React.FC = () => {
     }
   };
 
+  const runApiReconnect = async (force = false) => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const r = await fetch('/api/whatsapp/connection/reconnect', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ force }),
+      });
+      const data = await r.json();
+      setMessage(data.message || JSON.stringify(data));
+      await refreshStatus(selected?.id);
+      await loadInstances();
+    } catch (e: any) {
+      setMessage(e?.message || 'Erro ao reconectar');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const runBootstrap = async () => {
     setBusy(true);
     setMessage(null);
@@ -502,12 +522,16 @@ const WhatsAppConnectionPanel: React.FC = () => {
                     <div className="font-mono text-[10px] bg-white p-2 rounded border break-all">
                       Status entrega: {typeof window !== 'undefined' ? `${window.location.origin}/api/zapi/webhook/message-status` : '/api/zapi/webhook/message-status'}
                     </div>
-                    <p className="text-[10px] opacity-80">Vigia automático: a cada 1 min + e-mail/push com código extensão na queda.</p>
+                    <p className="text-[10px] opacity-80">Vigia: 1 min. Auto-reconnect via API se WHATSAPP_AUTO_RECONNECT=true (restore-session + restart).</p>
                   </div>
                 )}
 
                 {isZapi && (
                   <div className="flex flex-wrap gap-2">
+                    <button type="button" disabled={busy} onClick={() => void runApiReconnect(false)}
+                      className="text-xs font-bold px-4 py-2 rounded-lg bg-red-700 text-white hover:bg-red-800 disabled:opacity-50 flex items-center gap-1">
+                      <RefreshCw size={14} /> Reconectar via API
+                    </button>
                     <button type="button" disabled={busy} onClick={() => void runBootstrap()}
                       className="text-xs font-bold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
                       {busy ? 'Aguarde…' : 'Iniciar conexão automática'}

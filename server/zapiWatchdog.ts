@@ -6,6 +6,7 @@ import { markSessionDisconnected, markSessionReconnected } from "./zapiConnectio
 import { getDefaultWhatsappInstance, instanceConfigured } from "./whatsapp/instanceStore";
 import { credsFromInstance, zapiFetchWith } from "./whatsapp/zapiHttp";
 import { notifyZapiDisconnected, notifyZapiReconnected } from "./zapiDisconnectNotify";
+import { attemptZapiAutoReconnect } from "./zapiAutoReconnect";
 import {
   closeZapiIncident,
   incrementDownStreak,
@@ -104,6 +105,9 @@ export async function runZapiWatchdogTick(): Promise<void> {
     void notifyZapiDisconnected(row, 'vigia').catch((e) => {
       console.error('[Z-API Vigia] Falha no alerta de desconexão:', e?.message || e);
     });
+    void attemptZapiAutoReconnect('watchdog').then((r) => {
+      if (r.attempted) console.log(`[Z-API Vigia] Auto-reconnect: ${r.phase} — ${r.message}`);
+    }).catch(() => {});
   }
 }
 

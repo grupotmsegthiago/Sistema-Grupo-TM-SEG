@@ -3,6 +3,7 @@ import { logWhatsappSessionEvent } from "./whatsappTelemetry";
 import { markSessionDisconnected, markSessionReconnected } from "./zapiConnectionState";
 import { getDefaultWhatsappInstance } from "./whatsapp/instanceStore";
 import { notifyZapiDisconnected, notifyZapiReconnected } from "./zapiDisconnectNotify";
+import { attemptZapiAutoReconnect } from "./zapiAutoReconnect";
 import { closeZapiIncident, loadZapiWatchdogState } from "./zapiWatchdogState";
 
 const nowSP = () => new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
@@ -50,6 +51,9 @@ export async function handleZapiConnectionWebhook(body: any): Promise<{ handled:
         void notifyZapiDisconnected(row, "webhook").catch((e) => {
           console.error("[Z-API Webhook] Falha alerta desconexão:", e?.message || e);
         });
+        void attemptZapiAutoReconnect("webhook").then((r) => {
+          if (r.attempted) console.log(`[Z-API Webhook] Auto-reconnect: ${r.phase} — ${r.message}`);
+        }).catch(() => {});
       }
       continue;
     }

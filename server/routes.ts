@@ -48,6 +48,7 @@ import {
 } from "./whatsappTelemetry";
 import { buildWhatsappDiagnosticsReport } from "./whatsappDiagnostics";
 import { handleZapiConnectionWebhook } from "./zapiConnectionWebhook";
+import { attemptZapiAutoReconnect, getAutoReconnectPolicyMessage, isWhatsappAutoReconnectEnabled } from "./zapiAutoReconnect";
 import { runForensicEquipmentRecovery, parseEquipmentFromBackupJson } from "./equipmentForensicRecovery";
 import { runFullEquipmentScan } from "./equipmentBackupService";
 import {
@@ -1391,8 +1392,8 @@ export async function registerRoutes(
         configured: instanceConfigured(row),
         instanceType: row.instance_type || 'web',
         officialPhone: official,
-        autoConnect: false,
-        autoConnectDisabledReason: 'Reconexão automática desativada por segurança anti-ban; reconecte manualmente pelo painel Z-API.',
+        autoConnect: isWhatsappAutoReconnectEnabled(),
+        autoConnectDisabledReason: getAutoReconnectPolicyMessage(),
         status,
         connectedPhone,
         phoneMatchesOfficial: connectedPhone === official,
@@ -1410,6 +1411,16 @@ export async function registerRoutes(
       const provider = await resolveWhatsappProvider(req);
       if (!provider) return res.status(503).json({ error: 'WhatsApp não configurado no banco' });
       res.json(await provider.bootstrapConnection(true));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/whatsapp/connection/reconnect', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const force = req.body?.force === true;
+      const result = await attemptZapiAutoReconnect('api', { force, skipEnabledCheck: true });
+      res.status(result.ok ? 200 : result.attempted ? 502 : 400).json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

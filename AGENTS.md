@@ -64,3 +64,10 @@ node --import tsx --import ./scripts/test-loaders/register.mjs --test scripts/dh
 ### React / TSX
 
 Após editar cabeçalhos de `.tsx`, manter `import React, { useState, ... } from 'react'` quando usar hooks — build passa sem isso e produção quebra.
+
+### WhatsApp Z-API — reconexão
+
+- Diagnóstico: `npx tsx scripts/whatsapp-diagnostics-report.ts 7d`
+- Reconectar manual (API): `POST /api/whatsapp/connection/reconnect` ou botão **Reconectar via API** em Configurações → WhatsApp
+- Auto-reconnect no vigia/webhook: `WHATSAPP_AUTO_RECONNECT=true` na Vercel (tenta `restore-session` → `restart`, cooldown 30 min)
+- **Não resolve** sozinho: celular offline (`smartphoneConnected=false`), sessão extensão expirada (usar Z-API Conector), WhatsApp Web manual no mesmo número
