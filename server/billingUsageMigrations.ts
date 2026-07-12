@@ -1,35 +1,63 @@
+import fs from 'fs';
+import path from 'path';
 import { createSupabaseAdminClient } from './supabaseConfig';
 
-const MIGRATION_SQL = `
-CREATE TABLE IF NOT EXISTS public.billing_usage (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  reference_month TEXT NOT NULL,
-  source TEXT NOT NULL CHECK (source IN ('cursor_stripe', 'gemini', 'agent_token', 'manual', 'sync')),
-  external_id TEXT,
-  token_id TEXT,
-  summary TEXT NOT NULL,
-  amount_usd NUMERIC(12, 4) DEFAULT 0,
-  exchange_rate NUMERIC(8, 4) NOT NULL DEFAULT 5.50,
-  iof_pct NUMERIC(6, 4) NOT NULL DEFAULT 4.38,
-  amount_brl NUMERIC(12, 2) NOT NULL,
-  plan_balance_brl NUMERIC(12, 2),
-  metadata JSONB DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_billing_usage_month ON public.billing_usage (reference_month, recorded_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_usage_external ON public.billing_usage (source, external_id) WHERE external_id IS NOT NULL;
-`;
+const MIGRATION_FILE = '2026_07_12_billing_usage.sql';
 
-export async function runBillingUsageMigrations(): Promise<void> {
+function splitStatements(sql: string): string[] {
+  return sql
+    .split(';')
+    .map((block) =>
+      block
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('--'))
+        .join('\n')
+        .trim(),
+    )
+    .filter(Boolean);
+}
+
+/** Cria/atualiza tabela billing_usage (monitoramento custos IA). Idempotente. */
+export async function runBillingUsageMigrations(): Promise<{ ok: boolean; message: string }> {
   const client = createSupabaseAdminClient();
-  if (!client) return;
-  try {
-    await client.rpc('exec_sql', { sql: MIGRATION_SQL });
-    console.log('[Billing] Tabela billing_usage verificada.');
-  } catch (e: any) {
-    const msg = String(e?.message || e);
-    if (msg.includes('already exists') || msg.includes('duplicate')) return;
-    console.warn('[Billing] Migration:', msg);
+  if (!client) {
+    return { ok: false, message: 'Supabase admin indisponível' };
   }
+
+  const sqlPath = path.join(process.cwd(), 'migrations', MIGRATION_FILE);
+  if (!fs.existsSync(sqlPath)) {
+    return { ok: false, message: `Arquivo de migration ausente: ${MIGRATION_FILE}` };
+  }
+
+  const sql = fs.readFileSync(sqlPath, 'utf8');
+  const statements = splitStatements(sql);
+  const errors: string[] = [];
+
+  for (const statement of statements) {
+    try {
+      const { error } = await client.rpc('exec_sql', { sql: `${statement};` });
+      if (error) {
+        const msg = String(error.message || error);
+        if (!msg.includes('already exists') && !msg.includes('duplicate')) {
+          errors.push(msg.slice(0, 160));
+        }
+      }
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (!msg.includes('already exists') && !msg.includes('duplicate')) {
+        errors.push(msg.slice(0, 160));
+      }
+    }
+  }
+
+  const { error: verifyErr } = await client.from('billing_usage').select('id').limit(1);
+  if (verifyErr) {
+    return { ok: false, message: verifyErr.message || 'Tabela billing_usage inacessível após migration' };
+  }
+
+  if (errors.length) {
+    console.warn('[Billing] Migration avisos:', errors.join(' | '));
+  }
+  console.log('[Billing] Tabela billing_usage verificada.');
+  return { ok: true, message: 'billing_usage OK' };
 }

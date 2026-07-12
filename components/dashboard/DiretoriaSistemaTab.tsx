@@ -40,17 +40,37 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
     setError(null);
     try {
       const headers = await authHeaders();
-      const [sumRes, logRes] = await Promise.all([
-        fetch('/api/billing/summary', { headers }),
-        fetch('/api/billing/usage-log?limit=80', { headers }),
-      ]);
-      const sumJson = await sumRes.json();
-      const logJson = await logRes.json();
-      if (!sumRes.ok) throw new Error(sumJson.error || 'Falha ao carregar resumo');
-      if (!logRes.ok) throw new Error(logJson.error || 'Falha ao carregar log');
-      setSummary(sumJson.summary);
-      setLogs(logJson.rows || []);
-      setReport(logJson.efficiency || null);
+      const ensureSchema = async () => {
+        const r = await fetch('/api/billing/ensure-schema', { method: 'POST', headers });
+        const j = await r.json();
+        if (!r.ok || !j.ok) throw new Error(j.message || j.error || 'Falha ao criar tabela billing_usage');
+      };
+
+      const fetchData = async () => {
+        const [sumRes, logRes] = await Promise.all([
+          fetch('/api/billing/summary', { headers }),
+          fetch('/api/billing/usage-log?limit=80', { headers }),
+        ]);
+        const sumJson = await sumRes.json();
+        const logJson = await logRes.json();
+        if (!sumRes.ok) throw new Error(sumJson.error || 'Falha ao carregar resumo');
+        if (!logRes.ok) throw new Error(logJson.error || 'Falha ao carregar log');
+        setSummary(sumJson.summary);
+        setLogs(logJson.rows || []);
+        setReport(logJson.efficiency || null);
+      };
+
+      try {
+        await fetchData();
+      } catch (firstErr: unknown) {
+        const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+        if (/billing_usage|schema cache|does not exist/i.test(msg)) {
+          await ensureSchema();
+          await fetchData();
+        } else {
+          throw firstErr;
+        }
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

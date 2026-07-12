@@ -1635,6 +1635,16 @@ export async function registerRoutes(
     }
   });
 
+  app.post('/api/billing/ensure-schema', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
+    try {
+      const { runBillingUsageMigrations } = await import('./billingUsageMigrations.js');
+      const result = await runBillingUsageMigrations();
+      res.status(result.ok ? 200 : 500).json(result);
+    } catch (err: any) {
+      res.status(500).json({ ok: false, message: err?.message || 'Erro ao criar billing_usage' });
+    }
+  });
+
   app.post('/api/billing/sync', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
     try {
       const { syncBillingUsage } = await import('../services/billingService.js');
