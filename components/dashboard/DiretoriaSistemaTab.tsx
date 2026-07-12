@@ -11,6 +11,23 @@ const fmtBRL = (v: number) =>
 
 const fmtPct = (v: number) => `${v.toFixed(1)}%`;
 
+const BILLING_CATEGORY_LABEL: Record<string, string> = {
+  included: 'Incluído no plano',
+  on_demand: 'Cobrança extra',
+  other: '—',
+};
+
+function rowBillingCategory(row: BillingUsageRow): string {
+  const meta = row.metadata as { billingCategory?: string; kind?: string } | null;
+  if (meta?.billingCategory && BILLING_CATEGORY_LABEL[meta.billingCategory]) {
+    return meta.billingCategory;
+  }
+  const kind = String(meta?.kind || '');
+  if (kind.toUpperCase().includes('USAGE_BASED')) return 'on_demand';
+  if (kind.toUpperCase().includes('INCLUDED') || kind.includes('_IN_ULTRA')) return 'included';
+  return 'other';
+}
+
 const FETCH_TIMEOUT_MS = 25_000;
 
 const THERM_COLORS = {
@@ -222,15 +239,21 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
                 <span className={`text-sm font-black uppercase ${therm.text}`}>
                   {summary.isPlaceholder
                     ? 'Aguardando dados reais'
-                    : summary.thermometer === 'critical'
-                      ? 'Estourando o plano'
-                      : summary.thermometer === 'warning'
-                        ? 'Atenção ao limite'
-                        : 'Dentro do plano'}
+                    : summary.extraBrl > 0
+                      ? 'Cobrança extra ativa'
+                      : summary.usagePct >= 100
+                        ? 'Pacote incluído esgotado'
+                        : summary.thermometer === 'warning'
+                          ? 'Atenção ao pacote'
+                          : 'Dentro do pacote'}
                 </span>
               </div>
               <span className="text-xs font-mono text-gray-600">
-                {summary.isPlaceholder ? '—' : fmtPct(summary.usagePct)} do mensal
+                {summary.isPlaceholder
+                  ? '—'
+                  : summary.extraBrl > 0
+                    ? `${fmtBRL(summary.extraBrl)} extra no ciclo`
+                    : `${fmtPct(summary.usagePct)} do pacote incluído`}
               </span>
             </div>
 
@@ -249,23 +272,39 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
               )}
             </div>
             <div className="flex flex-wrap justify-between text-[10px] text-gray-600 mt-2 font-mono">
-              <span>Gasto: {fmtBRL(summary.spentBrl)}</span>
-              <span>Limite: {fmtBRL(summary.planLimitBrl)}</span>
-              {summary.extraBrl > 0 && <span className="text-red-600 font-bold">Extra: {fmtBRL(summary.extraBrl)}</span>}
-              <span>Saldo: {fmtBRL(summary.planBalanceBrl)}</span>
+              <span>Assinatura: {fmtBRL(summary.subscriptionBrl ?? summary.planLimitBrl)}</span>
+              {summary.includedUsageValueBrl != null && summary.includedUsageValueBrl > 0 && (
+                <span>Uso incluído (info): {fmtBRL(summary.includedUsageValueBrl)}</span>
+              )}
+              {summary.extraBrl > 0 && (
+                <span className="text-red-600 font-bold">Extra: {fmtBRL(summary.extraBrl)}</span>
+              )}
             </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-              <p className="text-[10px] uppercase text-gray-400 font-black">Gasto no mês</p>
-              <p className="text-lg font-black font-mono text-gray-900">{fmtBRL(summary.spentBrl)}</p>
+              <p className="text-[10px] uppercase text-gray-400 font-black">Assinatura mensal</p>
+              <p className="text-lg font-black font-mono text-gray-900">
+                {fmtBRL(summary.subscriptionBrl ?? summary.planLimitBrl)}
+              </p>
+              <p className="text-[10px] text-gray-500">Ultra — já pago no ciclo</p>
             </div>
             <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-              <p className="text-[10px] uppercase text-gray-400 font-black">Saldo assinatura</p>
-              <p className={`text-lg font-black font-mono ${summary.planBalanceBrl <= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                {fmtBRL(summary.planBalanceBrl)}
+              <p className="text-[10px] uppercase text-gray-400 font-black">Uso incluído</p>
+              <p className="text-lg font-black font-mono text-sky-700">
+                {summary.includedUsageValueBrl != null ? fmtBRL(summary.includedUsageValueBrl) : '—'}
               </p>
+              <p className="text-[10px] text-gray-500">
+                {summary.isPlaceholder ? '—' : `${fmtPct(summary.usagePct)} do pacote · informativo`}
+              </p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+              <p className="text-[10px] uppercase text-gray-400 font-black">Cobrança extra</p>
+              <p className={`text-lg font-black font-mono ${summary.extraBrl > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                {fmtBRL(summary.extraBrl)}
+              </p>
+              <p className="text-[10px] text-gray-500">On-demand além do pacote</p>
             </div>
             <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
               <p className="text-[10px] uppercase text-gray-400 font-black">Economia operacional</p>
@@ -317,7 +356,7 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
                 <th className="px-3 py-2">Modelo / agente</th>
                 <th className="px-3 py-2">Resumo</th>
                 <th className="px-3 py-2 text-right">Custo (R$)</th>
-                <th className="px-3 py-2 text-right">Saldo plano</th>
+                <th className="px-3 py-2 text-right">Tipo</th>
               </tr>
             </thead>
             <tbody>
@@ -339,8 +378,18 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
                   </td>
                   <td className="px-3 py-2 text-gray-800 max-w-[240px] truncate" title={row.summary}>{row.summary}</td>
                   <td className="px-3 py-2 text-right font-mono font-bold text-gray-900">{fmtBRL(Number(row.amount_brl))}</td>
-                  <td className="px-3 py-2 text-right font-mono text-emerald-700">
-                    {row.plan_balance_brl != null ? fmtBRL(Number(row.plan_balance_brl)) : '—'}
+                  <td className="px-3 py-2 text-right text-[10px] font-bold">
+                    {(() => {
+                      const cat = rowBillingCategory(row);
+                      const label = BILLING_CATEGORY_LABEL[cat] || '—';
+                      const cls =
+                        cat === 'on_demand'
+                          ? 'text-red-600'
+                          : cat === 'included'
+                            ? 'text-sky-700'
+                            : 'text-gray-500';
+                      return <span className={cls}>{label}</span>;
+                    })()}
                   </td>
                 </tr>
               ))}
@@ -351,7 +400,7 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
 
       <div className="flex items-center gap-2 text-[10px] text-gray-500">
         <CheckCircle2 size={12} className="text-emerald-600" />
-        <span>Exportável para planilha: Data · Token · Resumo · Custo R$ · Saldo assinatura</span>
+        <span>Exportável para planilha: Data · Token · Resumo · Custo R$ · Tipo (incluído/extra)</span>
         <Download size={12} />
       </div>
     </div>

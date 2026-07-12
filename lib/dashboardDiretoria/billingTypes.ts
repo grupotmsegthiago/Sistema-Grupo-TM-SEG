@@ -20,27 +20,33 @@ export interface BillingUsageRow {
 export interface BillingMonthSummary {
   referenceMonth: string;
   planName: string;
+  /** Assinatura mensal fixa (ex.: Ultra US$ 200) em BRL */
   planLimitBrl: number;
   planLimitUsd: number;
+  /** Cobrança extra / on-demand no ciclo (além da assinatura) */
   spentBrl: number;
   spentUsd: number;
   extraBrl: number;
+  /** % do pacote incluído consumido (fonte: dashboard Cursor) */
   usagePct: number;
+  /** @deprecated use extraBrl — mantido por compatibilidade (= assinatura - 0 extra conceptual) */
   planBalanceBrl: number;
   operationalSavingsBrl: number;
   exchangeRate: number;
   iofPct: number;
   entryCount: number;
   thermometer: 'ok' | 'warning' | 'critical';
-  /** Origem dos números exibidos */
   dataSource: BillingDataSource;
-  /** true quando ainda não houve sync Cursor/Stripe */
   isPlaceholder: boolean;
   billingCycleStart?: string | null;
   billingCycleEnd?: string | null;
   lastSyncedAt?: string | null;
   onDemandSpentUsd?: number;
   planIncludedPercentUsed?: number | null;
+  /** Valor contábil do uso dentro do pacote (informativo — já pago na assinatura) */
+  includedUsageValueBrl?: number;
+  /** Assinatura mensal em BRL (= planLimitBrl) */
+  subscriptionBrl?: number;
 }
 
 export interface BillingDashboardMeta {
