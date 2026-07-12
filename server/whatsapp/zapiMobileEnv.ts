@@ -1,5 +1,14 @@
 /** Credenciais Z-API mobile via ambiente (Vercel / .env). */
 
+/** Nome exibido no painel e na instância padrão do bot WhatsApp. */
+export const WHATSAPP_BOT_DISPLAY_NAME = "Monitoramento 24h";
+
+/** Número oficial do bot (sem DDI). */
+export const OFFICIAL_BOT_PHONE_LOCAL = "11926839456";
+
+/** Rótulo legado — migrado automaticamente para {@link WHATSAPP_BOT_DISPLAY_NAME}. */
+export const LEGACY_BOT_DISPLAY_NAME = "Central TM SEG";
+
 export type ZapiMobileEnvCreds = {
   instanceId: string;
   token: string;
@@ -27,7 +36,7 @@ export function getZapiMobileEnvCreds(): ZapiMobileEnvCreds | null {
   ).trim();
   if (!instanceId || !token) return null;
 
-  const label = String(process.env.ZAPI_MOBILE_INSTANCIA || "").trim() || "Central TM SEG";
+  const label = String(process.env.ZAPI_MOBILE_INSTANCIA || "").trim() || WHATSAPP_BOT_DISPLAY_NAME;
   const clientToken = String(process.env.ZAPI_CLIENT_TOKEN || "").trim();
 
   return { instanceId, token, label, clientToken, explicitMobileEnv: explicitMobile };

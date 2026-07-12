@@ -331,7 +331,7 @@ const WhatsAppConnectionPanel: React.FC = () => {
 
         {instances.length === 0 ? (
           <p className="text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
-            Nenhuma instância cadastrada. Na primeira subida com ZAPI_* no .env, o sistema cria &quot;Central TM SEG&quot; automaticamente.
+            Nenhuma instância cadastrada. Na primeira subida com ZAPI_* no .env, o sistema cria &quot;Monitoramento 24h&quot; automaticamente.
           </p>
         ) : (
           <div className="overflow-x-auto">

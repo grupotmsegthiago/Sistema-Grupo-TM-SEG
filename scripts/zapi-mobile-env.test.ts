@@ -35,6 +35,16 @@ describe("zapiMobileEnv", () => {
     restore();
   });
 
+  it("rótulo padrão é Monitoramento 24h quando ZAPI_MOBILE_INSTANCIA vazio", () => {
+    process.env.ZAPI_MOBILE_ID = "MOBILE-ID";
+    process.env.ZAPI_MOBILE_TOKEN = "MOBILE-TOK";
+    delete process.env.ZAPI_MOBILE_INSTANCIA;
+    const c = getZapiMobileEnvCreds();
+    assert.ok(c);
+    assert.equal(c!.label, "Monitoramento 24h");
+    restore();
+  });
+
   it("getZapiMobileEnvCreds prioriza ZAPI_MOBILE_* e rótulo ZAPI_MOBILE_INSTANCIA", () => {
     process.env.ZAPI_MOBILE_ID = "MOBILE-ID";
     process.env.ZAPI_MOBILE_TOKEN = "MOBILE-TOK";

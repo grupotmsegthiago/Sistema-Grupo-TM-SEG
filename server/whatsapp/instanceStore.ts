@@ -6,7 +6,7 @@ import {
   type WhatsappProviderId,
   type ZapiInstanceType,
 } from "./types";
-import { getZapiMobileEnvCreds, hasExplicitZapiMobileEnv } from "./zapiMobileEnv";
+import { getZapiMobileEnvCreds, hasExplicitZapiMobileEnv, OFFICIAL_BOT_PHONE_LOCAL, LEGACY_BOT_DISPLAY_NAME, WHATSAPP_BOT_DISPLAY_NAME } from "./zapiMobileEnv";
 
 const CACHE_TTL_MS = 30_000;
 let cachedDefault: WhatsappInstanceRecord | null = null;
@@ -107,6 +107,7 @@ export async function runWhatsappInstanceMigrations(): Promise<void> {
     });
     await seedDefaultFromEnvIfEmpty();
     await syncMobileInstanceFromEnv();
+    await migrateLegacyBotDisplayName();
     await ensureDefaultInstanceMobileType();
   } catch (e: any) {
     console.warn("[WhatsApp Instâncias] Migration:", e?.message || e);
@@ -129,7 +130,7 @@ export async function seedDefaultFromEnvIfEmpty(): Promise<void> {
   const type: ZapiInstanceType = hasExplicitZapiMobileEnv() || (process.env.ZAPI_INSTANCE_TYPE || "mobile").toLowerCase() !== "web"
     ? "mobile"
     : "web";
-  const phone = (process.env.ZAPI_OFFICIAL_PHONE || process.env.META_WHATSAPP_DISPLAY_PHONE || "11926839456")
+  const phone = (process.env.ZAPI_OFFICIAL_PHONE || process.env.META_WHATSAPP_DISPLAY_PHONE || OFFICIAL_BOT_PHONE_LOCAL)
     .replace(/\D/g, "")
     .replace(/^55/, "");
 
@@ -155,7 +156,7 @@ export async function seedDefaultFromEnvIfEmpty(): Promise<void> {
 
 /**
  * Atualiza a instância padrão no banco quando ZAPI_MOBILE_ID + ZAPI_MOBILE_TOKEN estão no ambiente.
- * Garante que produção use Central Torres (mobile) sem editar manualmente no painel.
+ * Garante que produção use a instância mobile (Monitoramento 24h) sem editar manualmente no painel.
  */
 export async function syncMobileInstanceFromEnv(): Promise<void> {
   if (!hasExplicitZapiMobileEnv()) return;
@@ -165,7 +166,7 @@ export async function syncMobileInstanceFromEnv(): Promise<void> {
   const client = sb();
   if (!client) return;
 
-  const phone = (process.env.ZAPI_OFFICIAL_PHONE || process.env.META_WHATSAPP_DISPLAY_PHONE || "11926839456")
+  const phone = (process.env.ZAPI_OFFICIAL_PHONE || process.env.META_WHATSAPP_DISPLAY_PHONE || OFFICIAL_BOT_PHONE_LOCAL)
     .replace(/\D/g, "")
     .replace(/^55/, "");
 
@@ -212,6 +213,36 @@ export async function syncMobileInstanceFromEnv(): Promise<void> {
   }
 
   await seedDefaultFromEnvIfEmpty();
+}
+
+/** Renomeia rótulo legado da instância padrão para o nome oficial do bot. */
+export async function migrateLegacyBotDisplayName(): Promise<void> {
+  const client = sb();
+  if (!client) return;
+  try {
+    const { data: def } = await client
+      .from("whatsapp_instances")
+      .select("id, label, official_phone")
+      .eq("is_default", true)
+      .maybeSingle();
+    if (!def?.id) return;
+
+    const patch: Record<string, string> = { updated_at: new Date().toISOString() };
+    if (def.label === LEGACY_BOT_DISPLAY_NAME) patch.label = WHATSAPP_BOT_DISPLAY_NAME;
+
+    const normPhone = String(def.official_phone || "").replace(/\D/g, "").replace(/^55/, "");
+    if (!normPhone || normPhone !== OFFICIAL_BOT_PHONE_LOCAL) {
+      patch.official_phone = OFFICIAL_BOT_PHONE_LOCAL;
+    }
+
+    if (Object.keys(patch).length <= 1) return;
+
+    await client.from("whatsapp_instances").update(patch).eq("id", def.id);
+    invalidateDefaultCache();
+    console.log(`[WhatsApp Instâncias] Identidade do bot atualizada (${WHATSAPP_BOT_DISPLAY_NAME}, ${OFFICIAL_BOT_PHONE_LOCAL}).`);
+  } catch (e: any) {
+    console.warn("[WhatsApp Instâncias] migrateLegacyBotDisplayName:", e?.message || e);
+  }
 }
 
 export function invalidateDefaultCache() {
@@ -279,7 +310,7 @@ function envFallbackInstance(): WhatsappInstanceRecord | null {
   const envCreds = getZapiMobileEnvCreds();
   if (!envCreds) return null;
   const now = new Date().toISOString();
-  const phone = (process.env.ZAPI_OFFICIAL_PHONE || "11926839456").replace(/\D/g, "").replace(/^55/, "");
+  const phone = (process.env.ZAPI_OFFICIAL_PHONE || OFFICIAL_BOT_PHONE_LOCAL).replace(/\D/g, "").replace(/^55/, "");
   const type: ZapiInstanceType = envCreds.explicitMobileEnv || (process.env.ZAPI_INSTANCE_TYPE || "mobile").toLowerCase() !== "web"
     ? "mobile"
     : "web";
