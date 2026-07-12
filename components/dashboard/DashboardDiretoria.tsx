@@ -26,8 +26,8 @@ import {
   fmtBRL,
   fmtShort,
 } from '../../lib/dashboardDiretoria/aggregations';
-import { buildYearOptions } from '../../lib/dashboardDiretoria/periodUtils';
-import type { DiretoriaTab } from '../../lib/dashboardDiretoria/types';
+import { buildYearOptions, createDefaultPeriod } from '../../lib/dashboardDiretoria/periodUtils';
+import type { DashboardPeriod, DashboardPeriodMode, DiretoriaTab } from '../../lib/dashboardDiretoria/types';
 import { MARGIN_GOAL_PCT } from '../../lib/dashboardDiretoria/types';
 
 const CHART_COLORS = ['#dc2626', '#16a34a', '#2563eb', '#d97706', '#7c3aed', '#0891b2'];
@@ -87,10 +87,16 @@ interface Props {
   onNavigate?: (screenId: string) => void;
 }
 
+const PERIOD_MODES: { id: DashboardPeriodMode; label: string }[] = [
+  { id: 'today', label: 'Hoje' },
+  { id: 'week', label: 'Semana' },
+  { id: 'month', label: 'Mês' },
+];
+
 const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const now = new Date();
   const [tab, setTab] = useState<DiretoriaTab>('geral');
-  const [period, setPeriod] = useState({ year: now.getFullYear(), month: now.getMonth() });
+  const [period, setPeriod] = useState<DashboardPeriod>(() => createDefaultPeriod(now));
 
   const data = useDashboardDiretoriaData(period);
 
@@ -548,22 +554,43 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 bg-white p-1.5 rounded-2xl border border-gray-200">
-            <select
-              value={period.month}
-              onChange={e => setPeriod(p => ({ ...p, month: Number(e.target.value) }))}
-              className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-2 font-bold"
-              data-testid="filter-month"
-            >
-              {MONTHS.map((m, i) => <option key={m} value={i}>{m}</option>)}
-            </select>
-            <select
-              value={period.year}
-              onChange={e => setPeriod(p => ({ ...p, year: Number(e.target.value) }))}
-              className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-2 font-bold"
-              data-testid="filter-year"
-            >
-              {buildYearOptions(4).map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
+            <div className="flex rounded-xl border border-gray-200 overflow-hidden" data-testid="filter-period-mode">
+              {PERIOD_MODES.map(m => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setPeriod(p => ({ ...p, mode: m.id }))}
+                  className={`px-3 py-2 text-xs font-bold transition-colors ${
+                    period.mode === m.id
+                      ? 'bg-red-700 text-white'
+                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                  }`}
+                  data-testid={`filter-mode-${m.id}`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            {period.mode === 'month' && (
+              <>
+                <select
+                  value={period.month}
+                  onChange={e => setPeriod(p => ({ ...p, month: Number(e.target.value) }))}
+                  className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-2 font-bold"
+                  data-testid="filter-month"
+                >
+                  {MONTHS.map((m, i) => <option key={m} value={i}>{m}</option>)}
+                </select>
+                <select
+                  value={period.year}
+                  onChange={e => setPeriod(p => ({ ...p, year: Number(e.target.value) }))}
+                  className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-2 font-bold"
+                  data-testid="filter-year"
+                >
+                  {buildYearOptions(4).map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </>
+            )}
             <button
               type="button"
               onClick={data.refresh}

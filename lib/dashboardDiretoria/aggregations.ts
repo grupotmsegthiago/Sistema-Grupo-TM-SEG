@@ -6,7 +6,7 @@ import {
   sumCanonical,
   type CanonicalRefs,
 } from '../missionFinancialsCanonical';
-import { getMonthRange } from './periodUtils';
+import { getPeriodRange } from './periodUtils';
 import type { CriticalAlert, DashboardPeriod, PendingApprovalItem } from './types';
 import { DEFAULT_MONTHLY_REVENUE_GOAL, MARGIN_GOAL_PCT } from './types';
 
@@ -35,7 +35,7 @@ export function computeOperationalKpis(
   period: DashboardPeriod,
   now = new Date(),
 ): OperationalKpis {
-  const { start, end } = getMonthRange(period);
+  const { start, end } = getPeriodRange(period);
   const inPeriod = filterMissionsByPeriod(missions, start, end);
   const totals = sumCanonical(inPeriod, refs, now);
   const grossRevenue = round2(totals.rev);
@@ -66,7 +66,7 @@ export function computeCashKpis(
   accounts: Array<{ id: string; initial_balance: number }>,
   period: DashboardPeriod,
 ): CashKpis {
-  const { startIso, endIso } = getMonthRange(period);
+  const { startIso, endIso } = getPeriodRange(period);
   const inPeriod = periodTransactions.filter(t => {
     const d = String(t.due_date || '').slice(0, 10);
     return d >= startIso && d <= endIso;
@@ -184,7 +184,7 @@ export function buildMarginVsGoalSeries(
   period: DashboardPeriod,
   now = new Date(),
 ): Array<{ label: string; margin: number; goal: number }> {
-  const { start, end } = getMonthRange(period);
+  const { start, end } = getPeriodRange(period);
   const inPeriod = filterMissionsByPeriod(missions, start, end);
   const byDay = new Map<string, { rev: number; profit: number }>();
   for (const m of inPeriod) {
@@ -215,7 +215,7 @@ export function buildTopClientsByRevenue(
   limit = 5,
   now = new Date(),
 ): Array<{ name: string; revenue: number }> {
-  const { start, end } = getMonthRange(period);
+  const { start, end } = getPeriodRange(period);
   const inPeriod = filterMissionsByPeriod(missions, start, end);
   const map = new Map<string, number>();
   for (const m of inPeriod) {
@@ -237,7 +237,7 @@ export function buildClientRevenueCostBars(
   limit = 6,
   now = new Date(),
 ): Array<{ name: string; revenue: number; cost: number }> {
-  const { start, end } = getMonthRange(period);
+  const { start, end } = getPeriodRange(period);
   const inPeriod = filterMissionsByPeriod(missions, start, end);
   const map = new Map<string, { revenue: number; cost: number }>();
   for (const m of inPeriod) {

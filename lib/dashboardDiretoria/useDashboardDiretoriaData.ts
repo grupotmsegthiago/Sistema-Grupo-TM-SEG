@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { useRealtimeRefresh } from '../RealtimeProvider';
 import type { Client, ClientPriceTable, FinancialCategory, FinancialTransaction, Mission, ProviderCostTable } from '../../types';
-import { formatPeriodLabel, getMonthRange, type DashboardPeriod } from './periodUtils';
+import { formatPeriodLabel, getPeriodRange, getRhReferenceMonth, type DashboardPeriod } from './periodUtils';
 import type { DashboardDiretoriaData, DashboardRefs } from './types';
 
 async function fetchAllPages<T>(buildQuery: (from: number, size: number) => Promise<{ data: T[] | null; error: any }>, pageSize = 1000): Promise<T[]> {
@@ -46,13 +46,13 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
     setLoading(true);
     setError(null);
     try {
-      const { startIso, endIso } = getMonthRange(period);
+      const { startIso, endIso } = getPeriodRange(period);
       const rangeStart = `${startIso}T00:00:00`;
       const rangeEnd = `${endIso}T23:59:59`;
       const rangeOr = `and(start_time.gte.${rangeStart},start_time.lte.${rangeEnd}),and(start_time.is.null,created_at.gte.${rangeStart},created_at.lte.${rangeEnd})`;
       const openOr = 'status.in.("Pendente","Solicitada","Documentação","Agendada","Origem","Em Viagem"),and(status.eq."Concluída",billing_approved.not.is.true)';
 
-      const monthRef = `${period.year}-${String(period.month + 1).padStart(2, '0')}`;
+      const monthRef = getRhReferenceMonth(period);
 
       const [
         inRangeMissions,
@@ -133,7 +133,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
     } finally {
       setLoading(false);
     }
-  }, [period.year, period.month]);
+  }, [period.mode, period.year, period.month]);
 
   useEffect(() => { void load(); }, [load]);
 

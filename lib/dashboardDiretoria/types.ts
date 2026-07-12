@@ -2,9 +2,13 @@ import type { Client, ClientPriceTable, FinancialCategory, FinancialTransaction,
 
 export type DiretoriaTab = 'geral' | 'financeiro' | 'operacao' | 'clientes' | 'rh';
 
+/** Hoje (00:00–23:59), semana (seg–dom) ou mês calendário */
+export type DashboardPeriodMode = 'today' | 'week' | 'month';
+
 export interface DashboardPeriod {
+  mode: DashboardPeriodMode;
   year: number;
-  month: number; // 0–11
+  month: number; // 0–11 (usado quando mode === 'month')
 }
 
 export interface CriticalAlert {

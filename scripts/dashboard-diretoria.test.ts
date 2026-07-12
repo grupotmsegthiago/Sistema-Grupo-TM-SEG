@@ -25,7 +25,7 @@ describe('dashboardDiretoria aggregations', () => {
     ] as any[];
     const categories = [{ id: 'c1', name: 'Aluguel', type: 'EXPENSE', group: 'DESPESAS_FIXAS' }] as any[];
     const refs = { clientTables: [], providerTables: [], clientsData: [] };
-    const kpis = computeFinancialKpis(missions, transactions, categories, refs, { year: 2026, month: 6 });
+    const kpis = computeFinancialKpis(missions, transactions, categories, refs, { mode: 'month', year: 2026, month: 6 });
     assert.equal(kpis.grossRevenue, 1000);
     assert.equal(kpis.variableCost, 600);
     assert.equal(kpis.expenses, 100);
@@ -65,7 +65,7 @@ describe('dashboardDiretoria aggregations', () => {
     ] as any[];
     const categories = [{ id: 'c1', name: 'Aluguel', type: 'EXPENSE', group: 'DESPESAS_FIXAS' }] as any[];
     const refs = { clientTables: [], providerTables: [], clientsData: [] };
-    const period = { year: 2026, month: 6 };
+    const period = { mode: 'month' as const, year: 2026, month: 6 };
     const op = computeOperationalKpis(missions, refs, period);
     const cash = computeCashKpis(transactions, transactions, categories, [{ id: 'a1', initial_balance: 1000 }], period);
     assert.equal(op.grossProfit, 400);
@@ -80,7 +80,7 @@ describe('dashboardDiretoria aggregations', () => {
       { id: 't4', type: 'EXPENSE', status: 'OVERDUE', amount: 200, due_date: '2026-06-01', category_id: 'c1', category_name: 'Aluguel' },
     ] as any[];
     const categories = [{ id: 'c1', name: 'Aluguel', type: 'EXPENSE', group: 'DESPESAS_FIXAS' }] as any[];
-    const period = { year: 2026, month: 6 };
+    const period = { mode: 'month' as const, year: 2026, month: 6 };
     const cash = computeCashKpis([], transactions, categories, [], period);
     assert.equal(cash.pendingReceivable, 1500);
     assert.equal(cash.pendingPayable, 1000);
