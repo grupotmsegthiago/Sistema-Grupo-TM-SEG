@@ -1,9 +1,11 @@
 import {
   extractUserIdFromToken,
   resolveUserRoleFromToken,
-} from '../rh/apiEmployeesAuth';
+  safeResolveUserRoleFromToken,
+} from '../rh/apiEmployeesAuth.js';
 
 const SYSTEM_ADMIN_ROLES = new Set(['diretoria', 'administrador', 'rh', 'ceo']);
+const BILLING_ADMIN_ROLES = new Set(['diretoria', 'administrador', 'ceo']);
 
 export function roleCanAccessSystemDiagnostics(role: string | null | undefined): boolean {
   return SYSTEM_ADMIN_ROLES.has(String(role || '').trim().toLowerCase());
@@ -36,4 +38,20 @@ export function extractAuthToken(req: {
   headers?: Record<string, string | string[] | undefined>;
 }): string {
   return authTokenFromHeader(req);
+}
+
+export function roleCanAccessBilling(role: string | null | undefined): boolean {
+  return BILLING_ADMIN_ROLES.has(String(role || '').trim().toLowerCase());
+}
+
+/** Retorna null se autorizado; mensagem de erro se negado. */
+export async function assertBillingAccess(token: string): Promise<string | null> {
+  if (!token) return 'Não autorizado';
+
+  const role = await safeResolveUserRoleFromToken(token);
+  if (!roleCanAccessBilling(role)) {
+    return 'Permissão negada — apenas Diretoria, Administrador ou CEO';
+  }
+
+  return null;
 }

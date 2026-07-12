@@ -1,3 +1,5 @@
+import { extractAuthToken, assertBillingAccess } from '../lib/services/systemAccess.js';
+
 /** Painel de custos IA — handler leve (evita cold start do Express). */
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {
@@ -5,23 +7,14 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
+  const token = extractAuthToken(req);
+  const denied = await assertBillingAccess(token);
+  if (denied) {
+    res.status(denied === 'Não autorizado' ? 401 : 403).json({ ok: false, error: denied });
+    return;
+  }
+
   try {
-    const { extractAuthToken } = await import('../lib/services/systemAccess.js');
-    const { safeResolveUserRoleFromToken } = await import('../lib/rh/apiEmployeesAuth.js');
-
-    const token = extractAuthToken(req);
-    if (!token) {
-      res.status(401).json({ ok: false, error: 'Não autorizado' });
-      return;
-    }
-
-    const role = await safeResolveUserRoleFromToken(token);
-    const allowed = new Set(['diretoria', 'administrador', 'ceo']);
-    if (!role || !allowed.has(role.toLowerCase())) {
-      res.status(403).json({ ok: false, error: 'Permissão negada — apenas Diretoria, Administrador ou CEO' });
-      return;
-    }
-
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit) || 80));
     const month = typeof req.query?.month === 'string' ? req.query.month : undefined;
 

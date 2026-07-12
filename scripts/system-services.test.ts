@@ -39,6 +39,20 @@ test('serialize/deserialize TeamPunchLookup mantém batidas por usuário', () =>
   assert.equal(restored.byUserId.get('5')?.[0].type, 'IN');
 });
 
+test('API billing usa imports estáticos de systemAccess (Vercel serverless)', async () => {
+  const fs = await import('node:fs/promises');
+  for (const file of ['api/billing-dashboard.ts', 'api/billing-sync.ts', 'api/billing-ensure-schema.ts']) {
+    const src = await fs.readFile(file, 'utf8');
+    assert.match(src, /import \{ extractAuthToken, assertBillingAccess \} from '\.\.\/lib\/services\/systemAccess\.js'/);
+    assert.doesNotMatch(src, /await import\('\.\.\/lib\/services\/systemAccess/);
+  }
+});
+
+test('systemAccess importa apiEmployeesAuth com extensão .js', async () => {
+  const src = await import('node:fs/promises').then((fs) => fs.readFile('lib/services/systemAccess.ts', 'utf8'));
+  assert.match(src, /from '\.\.\/rh\/apiEmployeesAuth\.js'/);
+});
+
 test('API system-diagnostics e rh-team-presence-board existem', async () => {
   const fs = await import('node:fs/promises');
   const diag = await fs.readFile('api/system-diagnostics.ts', 'utf8');
