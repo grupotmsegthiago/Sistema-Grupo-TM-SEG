@@ -4,8 +4,9 @@ import {
   LineChart, Line, PieChart, Pie, Cell, Legend, ComposedChart, Area,
 } from 'recharts';
 import {
-  Crown, RefreshCw, Loader2, AlertTriangle, TrendingUp, Wallet, Users,
-  Briefcase, Target, CheckCircle2, ChevronRight, Building2, Percent, DollarSign,
+  Crown, RefreshCw, Loader2, AlertTriangle, Wallet, Users,
+  Target, CheckCircle2, ChevronRight, Building2, DollarSign,
+  ArrowUpCircle, ArrowDownCircle, BarChart3,
 } from 'lucide-react';
 import { useDashboardDiretoriaData } from '../../lib/dashboardDiretoria/useDashboardDiretoriaData';
 import {
@@ -20,7 +21,8 @@ import {
   buildPendingApprovals,
   buildQuotesFunnel,
   buildTopClientsByRevenue,
-  computeFinancialKpis,
+  computeCashKpis,
+  computeOperationalKpis,
   fmtBRL,
   fmtShort,
 } from '../../lib/dashboardDiretoria/aggregations';
@@ -28,7 +30,11 @@ import { buildYearOptions } from '../../lib/dashboardDiretoria/periodUtils';
 import type { DiretoriaTab } from '../../lib/dashboardDiretoria/types';
 import { MARGIN_GOAL_PCT } from '../../lib/dashboardDiretoria/types';
 
-const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+const CHART_COLORS = ['#dc2626', '#16a34a', '#2563eb', '#d97706', '#7c3aed', '#0891b2'];
+const GRID_STROKE = '#e5e7eb';
+const AXIS_TICK = { fontSize: 10, fontWeight: 700 as const, fill: '#6b7280' };
+const COLOR_INCOME = '#16a34a';
+const COLOR_EXPENSE = '#dc2626';
 
 const TABS: { id: DiretoriaTab; label: string }[] = [
   { id: 'geral', label: 'Visão Geral' },
@@ -40,13 +46,13 @@ const TABS: { id: DiretoriaTab; label: string }[] = [
 
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-const DarkTooltip = ({ active, payload, label }: any) => {
+const FinTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-slate-900 border border-slate-600 text-slate-100 px-3 py-2 rounded-lg shadow-xl text-xs">
-      <p className="font-bold mb-1 text-slate-300">{label}</p>
+    <div className="bg-white border border-gray-200 text-gray-800 px-3 py-2 rounded-lg shadow-lg text-xs">
+      <p className="font-bold mb-1 text-gray-500">{label}</p>
       {payload.map((p: any, i: number) => (
-        <p key={i} style={{ color: p.color }}>{p.name}: {typeof p.value === 'number' && Math.abs(p.value) > 50 ? fmtBRL(p.value) : p.value}</p>
+        <p key={i} style={{ color: p.color }} className="font-mono font-bold">{p.name}: {typeof p.value === 'number' && Math.abs(p.value) > 50 ? fmtBRL(p.value) : p.value}</p>
       ))}
     </div>
   );
@@ -55,23 +61,25 @@ const DarkTooltip = ({ active, payload, label }: any) => {
 const Card: React.FC<{ title: string; subtitle?: string; className?: string; children: React.ReactNode; testId?: string }> = ({
   title, subtitle, className = '', children, testId,
 }) => (
-  <div
-    data-testid={testId}
-    className={`bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 shadow-lg ${className}`}
-  >
+  <div data-testid={testId} className={`bg-white border border-gray-200 rounded-xl p-4 shadow-sm ${className}`}>
     <div className="mb-3">
-      <h3 className="text-sm font-bold text-slate-100">{title}</h3>
-      {subtitle && <p className="text-[11px] text-slate-400 mt-0.5">{subtitle}</p>}
+      <h3 className="text-sm font-black text-gray-900 uppercase tracking-wide">{title}</h3>
+      {subtitle && <p className="text-[11px] text-gray-500 mt-0.5">{subtitle}</p>}
     </div>
     {children}
   </div>
 );
 
-const KpiTile: React.FC<{ label: string; value: string; sub?: string; accent?: string }> = ({ label, value, sub, accent = 'text-blue-400' }) => (
-  <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-3">
-    <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{label}</p>
-    <p className={`text-lg font-black mt-1 ${accent}`}>{value}</p>
-    {sub && <p className="text-[10px] text-slate-500 mt-0.5">{sub}</p>}
+const KpiTile: React.FC<{ label: string; value: string; sub?: string; accent?: string; icon?: React.ReactNode }> = ({
+  label, value, sub, accent = 'text-gray-900', icon,
+}) => (
+  <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+    <div className="flex justify-between items-start gap-2">
+      <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">{label}</p>
+      {icon}
+    </div>
+    <p className={`text-lg font-black font-mono mt-1 ${accent}`}>{value}</p>
+    {sub && <p className="text-[10px] text-gray-500 mt-0.5">{sub}</p>}
   </div>
 );
 
@@ -86,9 +94,14 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
   const data = useDashboardDiretoriaData(period);
 
-  const kpis = useMemo(
-    () => computeFinancialKpis(data.missions, data.transactions, data.categories, data.refs, period),
-    [data.missions, data.transactions, data.categories, data.refs, period],
+  const operational = useMemo(
+    () => computeOperationalKpis(data.missions, data.refs, period),
+    [data.missions, data.refs, period],
+  );
+
+  const cash = useMemo(
+    () => computeCashKpis(data.transactions, data.allTransactions, data.categories, data.accounts, period),
+    [data.transactions, data.allTransactions, data.categories, data.accounts, period],
   );
 
   const cashFlow = useMemo(() => buildDailyCashFlow(data.transactions), [data.transactions]);
@@ -98,21 +111,21 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const funnel = useMemo(() => buildQuotesFunnel(data.quotes), [data.quotes]);
   const statusCounts = useMemo(() => buildMissionStatusCounts(data.missions), [data.missions]);
   const parentSummary = useMemo(() => buildParentMissionsSummary(data.missions), [data.missions]);
-  const arAp = useMemo(() => buildArApByMonth(data.transactions), [data.transactions]);
+  const arAp = useMemo(() => buildArApByMonth(data.allTransactions), [data.allTransactions]);
   const expenseDonut = useMemo(() => buildExpenseDonut(data.transactions, data.categories), [data.transactions, data.categories]);
   const pendingApprovals = useMemo(() => buildPendingApprovals(data.missions, data.refs), [data.missions, data.refs]);
   const openQuotes = useMemo(() => data.quotes.filter(q => q.status !== 'Aprovada').length, [data.quotes]);
 
   const alerts = useMemo(
     () => buildCriticalAlerts({
-      kpis,
+      operational,
+      cash,
       pendingApprovals,
       missions: data.missions,
       refs: data.refs,
-      accountBalance: data.accountBalance,
       openQuotes,
     }),
-    [kpis, pendingApprovals, data.missions, data.refs, data.accountBalance, openQuotes],
+    [operational, cash, pendingApprovals, data.missions, data.refs, openQuotes],
   );
 
   const goTo = useCallback((screen?: string) => {
@@ -121,36 +134,45 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
   if (data.loading && data.missions.length === 0) {
     return (
-      <div className="flex items-center gap-3 p-8 text-slate-300" data-testid="dashboard-diretoria-loading">
-        <Loader2 className="animate-spin" /> Carregando cockpit da diretoria…
+      <div className="flex items-center gap-3 p-8 text-gray-500" data-testid="dashboard-diretoria-loading">
+        <Loader2 className="animate-spin text-red-700" /> Carregando cockpit da diretoria…
       </div>
     );
   }
 
   if (data.error && data.missions.length === 0) {
     return (
-      <div className="bg-red-950/40 border border-red-800 rounded-xl p-6 text-red-200" data-testid="dashboard-diretoria-error">
+      <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-red-800" data-testid="dashboard-diretoria-error">
         <p className="font-bold flex items-center gap-2"><AlertTriangle size={18} /> {data.error}</p>
-        <button type="button" onClick={data.refresh} className="mt-3 text-sm underline">Tentar novamente</button>
+        <button type="button" onClick={data.refresh} className="mt-3 text-sm font-bold text-red-700 underline">Tentar novamente</button>
       </div>
     );
   }
 
-  const kpiRow = (
+  const operationalKpiRow = (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <KpiTile label="Receita OS" value={fmtShort(operational.grossRevenue)} sub="Faturamento canônico" accent="text-green-600" icon={<ArrowUpCircle size={16} className="text-green-500" />} />
+      <KpiTile label="Margem OS" value={`${operational.grossMarginPct.toFixed(1)}%`} sub={`Meta ${MARGIN_GOAL_PCT}%`} accent="text-gray-900" />
+      <KpiTile label="Custos OS" value={fmtShort(operational.variableCost)} accent="text-red-600" icon={<ArrowDownCircle size={16} className="text-red-500" />} />
+      <KpiTile label="Lucro Operacional" value={fmtShort(operational.grossProfit)} accent={operational.grossProfit >= 0 ? 'text-green-600' : 'text-red-600'} />
+    </div>
+  );
+
+  const cashKpiRow = (
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-      <KpiTile label="Receita Bruta" value={fmtShort(kpis.grossRevenue)} accent="text-emerald-400" />
-      <KpiTile label="Margem Bruta" value={`${kpis.grossMarginPct.toFixed(1)}%`} sub={`Meta ${MARGIN_GOAL_PCT}%`} accent="text-blue-400" />
-      <KpiTile label="Custos Variáveis" value={fmtShort(kpis.variableCost)} accent="text-amber-400" />
-      <KpiTile label="Despesas Pagas" value={fmtShort(kpis.expenses)} accent="text-orange-400" />
-      <KpiTile label="Lucro Líquido" value={fmtShort(kpis.netProfit)} accent={kpis.netProfit >= 0 ? 'text-emerald-300' : 'text-red-400'} />
-      <KpiTile label="EBITDA Est." value={fmtShort(kpis.ebitda)} accent="text-violet-400" />
+      <KpiTile label="Entradas (pagas)" value={fmtShort(cash.incomePaid)} accent="text-green-600" icon={<ArrowUpCircle size={16} className="text-green-500" />} />
+      <KpiTile label="Saídas (pagas)" value={fmtShort(cash.expensePaid)} accent="text-red-600" icon={<ArrowDownCircle size={16} className="text-red-500" />} />
+      <KpiTile label="Resultado Caixa" value={fmtShort(cash.cashResult)} accent={cash.cashResult >= 0 ? 'text-green-600' : 'text-red-600'} />
+      <KpiTile label="A Receber" value={fmtShort(cash.pendingReceivable)} accent="text-green-600" />
+      <KpiTile label="A Pagar" value={fmtShort(cash.pendingPayable)} accent="text-red-600" />
+      <KpiTile label="Saldo Contas" value={fmtShort(cash.totalCash)} accent="text-indigo-600" icon={<Wallet size={16} className="text-indigo-500" />} />
     </div>
   );
 
   const alertsWidget = (
     <Card title="Alertas Críticos" subtitle="Mesmos gatilhos dos e-mails operacionais" testId="widget-alertas-criticos">
       {alerts.length === 0 ? (
-        <p className="text-sm text-slate-400 flex items-center gap-2"><CheckCircle2 size={16} className="text-emerald-500" /> Nenhum alerta crítico no período.</p>
+        <p className="text-sm text-gray-500 flex items-center gap-2"><CheckCircle2 size={16} className="text-green-600" /> Nenhum alerta crítico no período.</p>
       ) : (
         <ul className="space-y-2">
           {alerts.map(a => (
@@ -159,13 +181,13 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
                 type="button"
                 onClick={() => goTo(a.actionScreen)}
                 className={`w-full text-left rounded-lg px-3 py-2 border transition-colors ${
-                  a.severity === 'critical' ? 'bg-red-950/50 border-red-800 hover:bg-red-900/40' :
-                  a.severity === 'warning' ? 'bg-amber-950/40 border-amber-800 hover:bg-amber-900/30' :
-                  'bg-slate-900/50 border-slate-600 hover:bg-slate-800/60'
+                  a.severity === 'critical' ? 'bg-red-50 border-red-200 hover:bg-red-100' :
+                  a.severity === 'warning' ? 'bg-amber-50 border-amber-200 hover:bg-amber-100' :
+                  'bg-gray-50 border-gray-200 hover:bg-gray-100'
                 }`}
               >
-                <p className="text-xs font-bold text-slate-100">{a.title}</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">{a.detail}</p>
+                <p className="text-xs font-bold text-gray-900">{a.title}</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">{a.detail}</p>
               </button>
             </li>
           ))}
@@ -177,18 +199,18 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const approvalsWidget = (
     <Card title="Aprovações Pendentes" subtitle="OS concluídas sem faturamento liberado">
       {pendingApprovals.length === 0 ? (
-        <p className="text-sm text-slate-500">Nenhuma OS pendente de aprovação.</p>
+        <p className="text-sm text-gray-500">Nenhuma OS pendente de aprovação.</p>
       ) : (
         <ul className="space-y-2 max-h-48 overflow-y-auto">
           {pendingApprovals.map(item => (
-            <li key={item.id} className="flex items-center justify-between text-xs bg-slate-900/50 rounded-lg px-3 py-2 border border-slate-700">
-              <span className="text-slate-200 truncate pr-2">{item.label}</span>
-              <span className="font-mono text-emerald-400 shrink-0">{fmtShort(item.amount)}</span>
+            <li key={item.id} className="flex items-center justify-between text-xs bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
+              <span className="text-gray-700 truncate pr-2">{item.label}</span>
+              <span className="font-mono text-green-600 font-bold shrink-0">{fmtShort(item.amount)}</span>
             </li>
           ))}
         </ul>
       )}
-      <button type="button" onClick={() => goTo('missions')} className="mt-3 text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1">
+      <button type="button" onClick={() => goTo('missions')} className="mt-3 text-[11px] text-red-700 hover:text-red-800 font-bold flex items-center gap-1">
         Abrir Painel de OS <ChevronRight size={12} />
       </button>
     </Card>
@@ -196,20 +218,25 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
   const renderGeral = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-      <div className="lg:col-span-12">{kpiRow}</div>
+      <div className="lg:col-span-12 space-y-3">
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Operação (OS)</p>
+        {operationalKpiRow}
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Caixa (Contas a Pagar/Receber)</p>
+        {cashKpiRow}
+      </div>
 
       <div className="lg:col-span-6">
         <Card title="Fluxo de Caixa Diário" subtitle="Entradas vs. saídas (pagas no período)">
           <div className="h-52">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={cashFlow}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => fmtShort(v)} />
-                <Tooltip content={<DarkTooltip />} />
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                <XAxis dataKey="day" tick={AXIS_TICK} />
+                <YAxis tick={AXIS_TICK} tickFormatter={v => fmtShort(v)} />
+                <Tooltip content={<FinTooltip />} />
                 <Legend />
-                <Bar dataKey="inflow" name="Entradas" fill="#10b981" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="outflow" name="Saídas" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="inflow" name="Entradas" fill={COLOR_INCOME} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="outflow" name="Saídas" fill={COLOR_EXPENSE} radius={[4, 4, 0, 0]} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -221,15 +248,15 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
           <div className="h-52">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={funnel} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => fmtShort(v)} />
-                <YAxis type="category" dataKey="label" width={70} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                <Tooltip content={<DarkTooltip />} />
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                <XAxis type="number" tick={AXIS_TICK} tickFormatter={v => fmtShort(v)} />
+                <YAxis type="category" dataKey="label" width={70} tick={AXIS_TICK} />
+                <Tooltip content={<FinTooltip />} />
                 <Bar dataKey="value" name="Valor" fill="#3b82f6" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <p className="text-[10px] text-slate-500 mt-2">{funnel.reduce((s, f) => s + f.count, 0)} propostas no funil</p>
+          <p className="text-[10px] text-gray-500 mt-2">{funnel.reduce((s, f) => s + f.count, 0)} propostas no funil</p>
         </Card>
       </div>
 
@@ -238,10 +265,10 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={topPayers}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 9 }} interval={0} angle={-20} textAnchor="end" height={50} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => fmtShort(v)} />
-                <Tooltip content={<DarkTooltip />} />
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                <XAxis dataKey="name" tick={{ ...AXIS_TICK, fontSize: 9 }} interval={0} angle={-20} textAnchor="end" height={50} />
+                <YAxis tick={AXIS_TICK} tickFormatter={v => fmtShort(v)} />
+                <Tooltip content={<FinTooltip />} />
                 <Bar dataKey="revenue" name="Receita" fill="#2563eb" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -254,10 +281,10 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={marginSeries}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 9 }} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} unit="%" />
-                <Tooltip content={<DarkTooltip />} />
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 9 }} />
+                <YAxis tick={AXIS_TICK} unit="%" />
+                <Tooltip content={<FinTooltip />} />
                 <Line type="monotone" dataKey="margin" name="Margem %" stroke="#10b981" strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="goal" name="Meta" stroke="#f59e0b" strokeDasharray="4 4" dot={false} />
               </LineChart>
@@ -277,7 +304,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
             <KpiTile label="Comissões pendentes" value={fmtShort(data.rhSnapshot.commissionsPending)} accent="text-amber-400" />
             <KpiTile label="Bonificações" value={fmtShort(data.rhSnapshot.bonuses)} accent="text-pink-400" />
           </div>
-          <button type="button" onClick={() => goTo('rh-dashboard')} className="mt-3 text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1">
+          <button type="button" onClick={() => goTo('rh-dashboard')} className="mt-3 text-[11px] text-red-700 hover:text-red-800 font-bold flex items-center gap-1">
             Abrir Dashboard RH <ChevronRight size={12} />
           </button>
         </Card>
@@ -287,18 +314,18 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
   const renderFinanceiro = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-      <div className="lg:col-span-12">{kpiRow}</div>
+      <div className="lg:col-span-12">{cashKpiRow}</div>
       <div className="lg:col-span-8">
         <Card title="Fluxo de Caixa Diário" subtitle="Transações pagas">
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={cashFlow}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => fmtShort(v)} />
-                <Tooltip content={<DarkTooltip />} />
-                <Area type="monotone" dataKey="inflow" name="Entradas" fill="#10b98133" stroke="#10b981" />
-                <Area type="monotone" dataKey="outflow" name="Saídas" fill="#ef444433" stroke="#ef4444" />
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                <XAxis dataKey="day" tick={AXIS_TICK} />
+                <YAxis tick={AXIS_TICK} tickFormatter={v => fmtShort(v)} />
+                <Tooltip content={<FinTooltip />} />
+                <Area type="monotone" dataKey="inflow" name="Entradas" fill="#16a34a22" stroke={COLOR_INCOME} />
+                <Area type="monotone" dataKey="outflow" name="Saídas" fill="#dc262622" stroke={COLOR_EXPENSE} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -312,7 +339,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
                 <Pie data={expenseDonut} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
                   {expenseDonut.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                 </Pie>
-                <Tooltip content={<DarkTooltip />} />
+                <Tooltip content={<FinTooltip />} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -323,13 +350,13 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={arAp}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => fmtShort(v)} />
-                <Tooltip content={<DarkTooltip />} />
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                <XAxis dataKey="month" tick={AXIS_TICK} />
+                <YAxis tick={AXIS_TICK} tickFormatter={v => fmtShort(v)} />
+                <Tooltip content={<FinTooltip />} />
                 <Legend />
-                <Bar dataKey="receber" name="A Receber" fill="#10b981" />
-                <Bar dataKey="pagar" name="A Pagar" fill="#ef4444" />
+                <Bar dataKey="receber" name="A Receber" fill={COLOR_INCOME} />
+                <Bar dataKey="pagar" name="A Pagar" fill={COLOR_EXPENSE} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -342,20 +369,20 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const renderOperacao = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
       <div className="lg:col-span-4 grid grid-cols-2 gap-3">
-        <KpiTile label="OS no período" value={String(kpis.missionCount)} />
-        <KpiTile label="OS Mãe ativas" value={String(parentSummary.active)} sub={`${parentSummary.total} grupos`} accent="text-blue-400" />
-        <KpiTile label="Propostas abertas" value={String(openQuotes)} accent="text-amber-400" />
-        <KpiTile label="Margem operacional" value={`${kpis.grossMarginPct.toFixed(1)}%`} accent="text-emerald-400" />
+        <KpiTile label="OS no período" value={String(operational.missionCount)} />
+        <KpiTile label="OS Mãe ativas" value={String(parentSummary.active)} sub={`${parentSummary.total} grupos`} accent="text-gray-900" />
+        <KpiTile label="Propostas abertas" value={String(openQuotes)} accent="text-amber-600" />
+        <KpiTile label="Margem operacional" value={`${operational.grossMarginPct.toFixed(1)}%`} accent="text-green-600" />
       </div>
       <div className="lg:col-span-8">
         <Card title="Status das Missões" subtitle="Distribuição atual (período + abertas)">
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={statusCounts}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="status" tick={{ fill: '#94a3b8', fontSize: 9 }} interval={0} angle={-15} textAnchor="end" height={45} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} allowDecimals={false} />
-                <Tooltip content={<DarkTooltip />} />
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                <XAxis dataKey="status" tick={{ ...AXIS_TICK, fontSize: 9 }} interval={0} angle={-15} textAnchor="end" height={45} />
+                <YAxis tick={AXIS_TICK} allowDecimals={false} />
+                <Tooltip content={<FinTooltip />} />
                 <Bar dataKey="count" name="Quantidade" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -367,11 +394,11 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
           <div className="space-y-3">
             {funnel.map((stage, i) => (
               <div key={stage.key}>
-                <div className="flex justify-between text-xs text-slate-300 mb-1">
+                <div className="flex justify-between text-xs text-gray-600 mb-1">
                   <span>{stage.label}</span>
                   <span>{stage.count} · {fmtShort(stage.value)}</span>
                 </div>
-                <div className="h-2 bg-slate-900 rounded-full overflow-hidden">
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full"
                     style={{ width: `${Math.max(8, 100 - i * 28)}%`, backgroundColor: CHART_COLORS[i] }}
@@ -393,13 +420,13 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={clientBars}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 9 }} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => fmtShort(v)} />
-                <Tooltip content={<DarkTooltip />} />
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                <XAxis dataKey="name" tick={{ ...AXIS_TICK, fontSize: 9 }} />
+                <YAxis tick={AXIS_TICK} tickFormatter={v => fmtShort(v)} />
+                <Tooltip content={<FinTooltip />} />
                 <Legend />
-                <Bar dataKey="revenue" name="Receita" fill="#10b981" />
-                <Bar dataKey="cost" name="Custo" fill="#ef4444" />
+                <Bar dataKey="revenue" name="Receita" fill={COLOR_INCOME} />
+                <Bar dataKey="cost" name="Custo" fill={COLOR_EXPENSE} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -409,9 +436,9 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
         <Card title="Top Faturamento">
           <ul className="space-y-2">
             {topPayers.map((c, i) => (
-              <li key={c.name} className="flex items-center justify-between text-xs bg-slate-900/50 rounded-lg px-3 py-2 border border-slate-700">
-                <span className="text-slate-300"><span className="text-slate-500 mr-2">#{i + 1}</span>{c.name}</span>
-                <span className="font-mono text-emerald-400">{fmtShort(c.revenue)}</span>
+              <li key={c.name} className="flex items-center justify-between text-xs bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
+                <span className="text-gray-700"><span className="text-gray-400 mr-2">#{i + 1}</span>{c.name}</span>
+                <span className="font-mono text-green-600 font-bold">{fmtShort(c.revenue)}</span>
               </li>
             ))}
           </ul>
@@ -422,12 +449,12 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
           <div className="h-52">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={arAp}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => fmtShort(v)} />
-                <Tooltip content={<DarkTooltip />} />
-                <Bar dataKey="receber" name="Receber" fill="#10b981" />
-                <Bar dataKey="pagar" name="Pagar" fill="#ef4444" />
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                <XAxis dataKey="month" tick={AXIS_TICK} />
+                <YAxis tick={AXIS_TICK} tickFormatter={v => fmtShort(v)} />
+                <Tooltip content={<FinTooltip />} />
+                <Bar dataKey="receber" name="Receber" fill={COLOR_INCOME} />
+                <Bar dataKey="pagar" name="Pagar" fill={COLOR_EXPENSE} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -454,10 +481,10 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
                 { name: 'Comissões', value: data.rhSnapshot.commissionsPending },
                 { name: 'Bonificações', value: data.rhSnapshot.bonuses },
               ]}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => fmtShort(v)} />
-                <Tooltip content={<DarkTooltip />} />
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                <XAxis dataKey="name" tick={AXIS_TICK} />
+                <YAxis tick={AXIS_TICK} tickFormatter={v => fmtShort(v)} />
+                <Tooltip content={<FinTooltip />} />
                 <Bar dataKey="value" name="Valor" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -477,10 +504,10 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
                 key={link.id}
                 type="button"
                 onClick={() => goTo(link.id)}
-                className="flex items-center gap-2 bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-3 text-left hover:bg-slate-800 transition-colors"
+                className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3 text-left hover:bg-gray-100 transition-colors"
               >
-                <link.icon size={16} className="text-blue-400" />
-                <span className="text-xs font-semibold text-slate-200">{link.label}</span>
+                <link.icon size={16} className="text-red-700" />
+                <span className="text-xs font-semibold text-gray-800">{link.label}</span>
               </button>
             ))}
           </div>
@@ -498,22 +525,23 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   };
 
   return (
-    <div className="space-y-4 pb-16" data-testid="dashboard-diretoria">
-      <div className="bg-slate-900 border border-slate-700 rounded-xl p-5 shadow-xl">
+    <div className="space-y-4 pb-16 bg-gray-50/50 p-2 rounded-2xl animate-fade-in" data-testid="dashboard-diretoria">
+      <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-black text-slate-50 flex items-center gap-2">
-              <Crown className="text-amber-400" /> Cockpit Diretoria Executiva
+            <h1 className="text-xl font-black text-gray-900 flex items-center gap-2">
+              <div className="p-2 bg-red-700 text-white rounded-xl shadow-lg shadow-red-200"><Crown size={18} /></div>
+              Cockpit Diretoria Executiva
             </h1>
-            <p className="text-sm text-slate-400 mt-1">
-              Visão consolidada — {data.periodLabel} · {kpis.missionCount} OS · margem {kpis.grossMarginPct.toFixed(1)}%
+            <p className="text-sm text-gray-500 mt-1 ml-12">
+              {data.periodLabel} · {operational.missionCount} OS no período · margem OS {operational.grossMarginPct.toFixed(1)}%
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 bg-white p-1.5 rounded-2xl border border-gray-200">
             <select
               value={period.month}
               onChange={e => setPeriod(p => ({ ...p, month: Number(e.target.value) }))}
-              className="bg-slate-800 border border-slate-600 text-slate-200 text-sm rounded-lg px-3 py-2"
+              className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-2 font-bold"
               data-testid="filter-month"
             >
               {MONTHS.map((m, i) => <option key={m} value={i}>{m}</option>)}
@@ -521,7 +549,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
             <select
               value={period.year}
               onChange={e => setPeriod(p => ({ ...p, year: Number(e.target.value) }))}
-              className="bg-slate-800 border border-slate-600 text-slate-200 text-sm rounded-lg px-3 py-2"
+              className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-2 font-bold"
               data-testid="filter-year"
             >
               {buildYearOptions(4).map(y => <option key={y} value={y}>{y}</option>)}
@@ -530,7 +558,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
               type="button"
               onClick={data.refresh}
               disabled={data.loading}
-              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+              className="inline-flex items-center gap-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-sm"
             >
               {data.loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
               Atualizar
@@ -538,16 +566,16 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 mt-4 border-t border-slate-700 pt-4">
+        <div className="flex flex-wrap gap-2 mt-4 border-t border-gray-100 pt-4">
           {TABS.map(t => (
             <button
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
                 tab === t.id
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40'
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-750'
+                  ? 'bg-red-700 text-white shadow-md'
+                  : 'bg-gray-50 text-gray-500 hover:text-gray-800 hover:bg-gray-100'
               }`}
               data-testid={`tab-${t.id}`}
             >
@@ -557,7 +585,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
         </div>
       </div>
 
-      <div className="bg-slate-950/50 rounded-xl">
+      <div className="rounded-xl">
         {tabContent[tab]()}
       </div>
     </div>

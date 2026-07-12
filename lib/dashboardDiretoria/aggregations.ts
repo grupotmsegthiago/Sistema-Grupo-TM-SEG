@@ -21,17 +21,110 @@ export const fmtShort = (v: number) => {
   return fmtBRL(v);
 };
 
-export interface FinancialKpis {
-  grossRevenue: number;
-  grossMarginPct: number;
-  variableCost: number;
+export interface FinancialKpis extends OperationalKpis {
+  /** @deprecated use operational + cash KPIs separately */
   expenses: number;
   taxes: number;
   netProfit: number;
   ebitda: number;
-  missionCount: number;
 }
 
+export function computeOperationalKpis(
+  missions: any[],
+  refs: CanonicalRefs,
+  period: DashboardPeriod,
+  now = new Date(),
+): OperationalKpis {
+  const { start, end } = getMonthRange(period);
+  const inPeriod = filterMissionsByPeriod(missions, start, end);
+  const totals = sumCanonical(inPeriod, refs, now);
+  const grossRevenue = round2(totals.rev);
+  const variableCost = round2(totals.cost);
+  const grossProfit = round2(totals.profit);
+  const grossMarginPct = grossRevenue > 0 ? round2((grossProfit / grossRevenue) * 100) : 0;
+  return {
+    grossRevenue,
+    variableCost,
+    grossProfit,
+    grossMarginPct,
+    missionCount: totals.count,
+  };
+}
+
+function isInvestmentExpense(t: FinancialTransaction, investmentIds: Set<string>, categories: FinancialCategory[]): boolean {
+  if (investmentIds.has(t.category_id)) return true;
+  const catName = (t.category_name || '').toLowerCase();
+  if (catName.includes('investimento') || catName.includes('aplicaç') || catName.includes('resgate') || catName.includes('ajuste de saldo')) return true;
+  const cat = categories.find(c => c.id === t.category_id);
+  return cat?.group === 'INVESTIMENTOS';
+}
+
+export function computeCashKpis(
+  periodTransactions: FinancialTransaction[],
+  allTransactions: FinancialTransaction[],
+  categories: FinancialCategory[],
+  accounts: Array<{ id: string; initial_balance: number }>,
+  period: DashboardPeriod,
+): CashKpis {
+  const { startIso, endIso } = getMonthRange(period);
+  const inPeriod = periodTransactions.filter(t => {
+    const d = String(t.due_date || '').slice(0, 10);
+    return d >= startIso && d <= endIso;
+  });
+
+  const investmentIds = new Set(categories.filter(c => c.group === 'INVESTIMENTOS').map(c => c.id));
+  const today = new Date().toISOString().slice(0, 10);
+
+  const incomePaid = round2(
+    inPeriod.filter(t => t.type === 'INCOME' && t.status === 'PAID').reduce((s, t) => s + Number(t.amount || 0), 0),
+  );
+  const expensePaid = round2(
+    inPeriod
+      .filter(t => t.type === 'EXPENSE' && t.status === 'PAID' && !isInvestmentExpense(t, investmentIds, categories))
+      .reduce((s, t) => s + Number(t.amount || 0), 0),
+  );
+
+  const pendingReceivable = round2(
+    allTransactions
+      .filter(t => t.type === 'INCOME' && ['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status))
+      .reduce((s, t) => s + Number(t.amount || 0), 0),
+  );
+  const pendingPayable = round2(
+    allTransactions
+      .filter(t => t.type === 'EXPENSE' && ['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status))
+      .reduce((s, t) => s + Number(t.amount || 0), 0),
+  );
+  const overduePayable = round2(
+    allTransactions
+      .filter(t => t.type === 'EXPENSE' && ['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status) && String(t.due_date || '').slice(0, 10) < today)
+      .reduce((s, t) => s + Number(t.amount || 0), 0),
+  );
+
+  const cashResult = round2(incomePaid - expensePaid);
+  const cashMarginPct = incomePaid > 0 ? round2((cashResult / incomePaid) * 100) : 0;
+
+  const totalCash = round2(
+    accounts.reduce((sum, acc) => {
+      const accTrans = allTransactions.filter(t => t.account_id === acc.id && t.status === 'PAID');
+      const income = accTrans.filter(t => t.type === 'INCOME').reduce((s, t) => s + Number(t.amount || 0), 0);
+      const expense = accTrans.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + Number(t.amount || 0), 0);
+      return sum + Number(acc.initial_balance || 0) + income - expense;
+    }, 0),
+  );
+
+  return {
+    incomePaid,
+    expensePaid,
+    pendingReceivable,
+    pendingPayable,
+    overduePayable,
+    cashResult,
+    cashMarginPct,
+    totalCash,
+  };
+}
+
+/** Mantido para testes legados — não usar na UI (mistura operacional + caixa). */
 export function computeFinancialKpis(
   missions: any[],
   transactions: FinancialTransaction[],
@@ -40,16 +133,9 @@ export function computeFinancialKpis(
   period: DashboardPeriod,
   now = new Date(),
 ): FinancialKpis {
-  const { start, end } = getMonthRange(period);
-  const inPeriod = filterMissionsByPeriod(missions, start, end);
-  const totals = sumCanonical(inPeriod, refs, now);
-  const grossRevenue = round2(totals.rev);
-  const variableCost = round2(totals.cost);
-  const grossMarginPct = grossRevenue > 0 ? round2((totals.profit / grossRevenue) * 100) : 0;
-
+  const op = computeOperationalKpis(missions, refs, period, now);
   const investmentIds = new Set(categories.filter(c => c.group === 'INVESTIMENTOS').map(c => c.id));
   const taxIds = new Set(categories.filter(c => c.tag === 'IMPOSTO').map(c => c.id));
-
   let expenses = 0;
   let taxes = 0;
   for (const t of transactions) {
@@ -61,18 +147,12 @@ export function computeFinancialKpis(
   }
   expenses = round2(expenses);
   taxes = round2(taxes);
-  const netProfit = round2(totals.profit - expenses - taxes);
-  const ebitda = round2(totals.profit - expenses);
-
   return {
-    grossRevenue,
-    grossMarginPct,
-    variableCost,
+    ...op,
     expenses,
     taxes,
-    netProfit,
-    ebitda,
-    missionCount: totals.count,
+    netProfit: round2(op.grossProfit - expenses - taxes),
+    ebitda: round2(op.grossProfit - expenses),
   };
 }
 
@@ -211,10 +291,10 @@ export function buildParentMissionsSummary(missions: any[]): { total: number; ac
 }
 
 export function buildArApByMonth(
-  transactions: FinancialTransaction[],
+  allTransactions: FinancialTransaction[],
 ): Array<{ month: string; receber: number; pagar: number }> {
   const map = new Map<string, { receber: number; pagar: number }>();
-  for (const t of transactions) {
+  for (const t of allTransactions) {
     if (!['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status)) continue;
     const month = String(t.due_date || '').slice(0, 7);
     if (!month) continue;
@@ -268,23 +348,23 @@ export function buildPendingApprovals(missions: any[], refs: CanonicalRefs, now 
 }
 
 export function buildCriticalAlerts(input: {
-  kpis: FinancialKpis;
+  operational: OperationalKpis;
+  cash: CashKpis;
   pendingApprovals: PendingApprovalItem[];
   missions: any[];
   refs: CanonicalRefs;
-  accountBalance?: number;
   openQuotes: number;
   now?: Date;
 }): CriticalAlert[] {
   const alerts: CriticalAlert[] = [];
   const now = input.now || new Date();
 
-  if (input.kpis.grossMarginPct < 20 && input.kpis.grossRevenue > 0) {
+  if (input.operational.grossMarginPct < 20 && input.operational.grossRevenue > 0) {
     alerts.push({
       id: 'low-margin',
       severity: 'critical',
-      title: 'Margem abaixo de 20%',
-      detail: `Margem bruta do período: ${input.kpis.grossMarginPct.toFixed(1)}% (meta ${MARGIN_GOAL_PCT}%).`,
+      title: 'Margem operacional abaixo de 20%',
+      detail: `Margem das OS no período: ${input.operational.grossMarginPct.toFixed(1)}% (meta ${MARGIN_GOAL_PCT}%).`,
       actionScreen: 'missions',
     });
   }
@@ -299,13 +379,23 @@ export function buildCriticalAlerts(input: {
     });
   }
 
-  if (typeof input.accountBalance === 'number' && input.accountBalance < 50_000) {
+  if (input.cash.totalCash < 50_000) {
     alerts.push({
       id: 'low-cash',
       severity: 'critical',
       title: 'Fluxo de caixa baixo',
-      detail: `Saldo consolidado estimado: ${fmtBRL(input.accountBalance)}.`,
+      detail: `Saldo consolidado nas contas: ${fmtBRL(input.cash.totalCash)}.`,
       actionScreen: 'fin-dashboard',
+    });
+  }
+
+  if (input.cash.overduePayable > 0) {
+    alerts.push({
+      id: 'overdue-payable',
+      severity: 'warning',
+      title: 'Contas a pagar vencidas',
+      detail: `${fmtBRL(input.cash.overduePayable)} em títulos vencidos.`,
+      actionScreen: 'fin-transactions',
     });
   }
 
@@ -334,8 +424,8 @@ export function buildCriticalAlerts(input: {
     });
   }
 
-  if (input.kpis.grossRevenue < DEFAULT_MONTHLY_REVENUE_GOAL * 0.5) {
-    const pct = ((input.kpis.grossRevenue / DEFAULT_MONTHLY_REVENUE_GOAL) * 100).toFixed(0);
+  if (input.operational.grossRevenue < DEFAULT_MONTHLY_REVENUE_GOAL * 0.5) {
+    const pct = ((input.operational.grossRevenue / DEFAULT_MONTHLY_REVENUE_GOAL) * 100).toFixed(0);
     alerts.push({
       id: 'revenue-goal',
       severity: 'warning',

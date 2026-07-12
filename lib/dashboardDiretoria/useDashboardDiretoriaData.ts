@@ -24,6 +24,8 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
   const [error, setError] = useState<string | null>(null);
   const [missions, setMissions] = useState<Mission[]>([]);
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
+  const [allTransactions, setAllTransactions] = useState<FinancialTransaction[]>([]);
+  const [accounts, setAccounts] = useState<Array<{ id: string; initial_balance: number }>>([]);
   const [categories, setCategories] = useState<FinancialCategory[]>([]);
   const [quotes, setQuotes] = useState<DashboardDiretoriaData['quotes']>([]);
   const [accountBalance, setAccountBalance] = useState(0);
@@ -77,11 +79,11 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
         supabase.from('provider_cost_tables').select('*'),
         supabase.from('clients').select('*'),
         fetchAllPages((from, size) =>
-          supabase.from('financial_transactions').select('*').gte('due_date', startIso).lte('due_date', endIso).order('due_date', { ascending: true }).range(from, from + size - 1)
+          supabase.from('financial_transactions').select('*').order('due_date', { ascending: false }).range(from, from + size - 1)
         ),
         supabase.from('financial_categories').select('*'),
         supabase.from('quotes').select('id, client_name, status, total_value, created_at').order('created_at', { ascending: false }).limit(500),
-        supabase.from('financial_accounts').select('initial_balance, status').eq('status', 'Ativo'),
+        supabase.from('financial_accounts').select('id, initial_balance, status').eq('status', 'Ativo'),
         supabase.from('rh_employees').select('status').is('deleted_at', null),
         supabase.from('rh_salary_configs').select('base_salary').is('deleted_at', null),
         supabase.from('rh_commissions').select('commission_amount, paid_at').eq('reference_month', monthRef).is('deleted_at', null),
@@ -93,9 +95,17 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
       for (const m of openMissions as Mission[]) if (!byId.has(m.id)) byId.set(m.id, m);
 
       setMissions(Array.from(byId.values()));
-      setTransactions(transRes as FinancialTransaction[]);
+
+      const allTrans = transRes as FinancialTransaction[];
+      setAllTransactions(allTrans);
+      setTransactions(allTrans.filter(t => {
+        const d = String(t.due_date || '').slice(0, 10);
+        return d >= startIso && d <= endIso;
+      }));
       setCategories((catRes.data || []) as FinancialCategory[]);
       setQuotes((quotesRes.data || []) as DashboardDiretoriaData['quotes']);
+      const accs = (accountsRes.data || []).map((a: any) => ({ id: a.id, initial_balance: Number(a.initial_balance || 0) }));
+      setAccounts(accs);
       setRefs({
         clientTables: (clientTablesRes.data || []) as ClientPriceTable[],
         providerTables: (providerTablesRes.data || []) as ProviderCostTable[],
@@ -116,7 +126,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
         commissionsPending,
         bonuses,
       });
-      setAccountBalance((accountsRes.data || []).reduce((s: number, a: any) => s + Number(a.initial_balance || 0), 0));
+      setAccountBalance(0);
     } catch (e: any) {
       console.error('[DashboardDiretoria]', e);
       setError(e?.message || 'Falha ao carregar dados do cockpit.');
@@ -139,9 +149,11 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
     periodLabel: formatPeriodLabel(period),
     missions,
     transactions,
+    allTransactions,
     categories,
     quotes,
     refs,
+    accounts,
     accountBalance,
     rhSnapshot,
     refresh: load,

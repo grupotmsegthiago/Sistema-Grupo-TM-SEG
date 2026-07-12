@@ -28,13 +28,35 @@ export interface DashboardRefs {
   clientsData: Client[];
 }
 
+export interface OperationalKpis {
+  grossRevenue: number;
+  variableCost: number;
+  grossProfit: number;
+  grossMarginPct: number;
+  missionCount: number;
+}
+
+export interface CashKpis {
+  incomePaid: number;
+  expensePaid: number;
+  pendingReceivable: number;
+  pendingPayable: number;
+  overduePayable: number;
+  cashResult: number;
+  cashMarginPct: number;
+  totalCash: number;
+}
+
 export interface DashboardDiretoriaData {
   loading: boolean;
   error: string | null;
   period: DashboardPeriod;
   periodLabel: string;
   missions: Mission[];
+  /** Transações com vencimento no período selecionado */
   transactions: FinancialTransaction[];
+  /** Todas as transações (saldo, pendências globais) */
+  allTransactions: FinancialTransaction[];
   categories: FinancialCategory[];
   quotes: Array<{
     id: string;
@@ -44,6 +66,7 @@ export interface DashboardDiretoriaData {
     created_at: string;
   }>;
   refs: DashboardRefs;
+  accounts: Array<{ id: string; initial_balance: number }>;
   accountBalance: number;
   rhSnapshot: {
     totalEmployees: number;
@@ -55,5 +78,6 @@ export interface DashboardDiretoriaData {
   refresh: () => void;
 }
 
+/** Meta de margem operacional (OS) — alinhada ao termômetro / diretoria */
 export const MARGIN_GOAL_PCT = 40;
 export const DEFAULT_MONTHLY_REVENUE_GOAL = 700_000;
