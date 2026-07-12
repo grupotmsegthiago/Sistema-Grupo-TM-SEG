@@ -14,7 +14,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { syncBillingUsage } = await import('../server/billingService.js');
+    const { syncBillingUsage } = await import('../lib/billing/billingService.js');
     const result = await syncBillingUsage();
     res.status(result.ok ? 200 : 502).json(result);
   } catch (e: unknown) {

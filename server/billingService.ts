@@ -1,1 +1,1 @@
-export * from './billingServiceCore.js';
+export * from '../lib/billing/billingService.js';

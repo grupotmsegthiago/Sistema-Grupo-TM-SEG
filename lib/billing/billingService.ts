@@ -2,9 +2,9 @@
  * Serviço de monitoramento de custos de IA (Cursor/Stripe + uso interno).
  * Conversão: USD × câmbio comercial × (1 + IOF%).
  */
-import { createSupabaseAdminClient } from '../lib/supabaseAdmin.js';
+import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 
-import type { BillingSource, BillingUsageRow, BillingMonthSummary, TokenEfficiencyReport } from '../lib/dashboardDiretoria/billingTypes.js';
+import type { BillingSource, BillingUsageRow, BillingMonthSummary, TokenEfficiencyReport } from '../dashboardDiretoria/billingTypes.js';
 
 export type { BillingSource, BillingUsageRow, BillingMonthSummary, TokenEfficiencyReport };
 

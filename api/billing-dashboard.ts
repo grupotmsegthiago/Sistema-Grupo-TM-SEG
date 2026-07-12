@@ -24,7 +24,7 @@ export default async function handler(req: any, res: any) {
       getBillingMonthSummary,
       getBillingUsageLog,
       buildTokenEfficiencyReport,
-    } = await import('../server/billingService.js');
+    } = await import('../lib/billing/billingService.js');
 
     const [summary, rows] = await Promise.all([
       getBillingMonthSummary(month),
