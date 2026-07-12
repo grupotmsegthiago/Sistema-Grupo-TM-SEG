@@ -219,6 +219,9 @@ function reportStyles() {
 function editable(id) {
   return `data-dhl-editable="${id}"`;
 }
+function editableRow(id) {
+  return `data-dhl-editable="${id}" data-dhl-adjust-only="1"`;
+}
 function buildRootCauseBlock(data, provider) {
   return `<div class="quote" ${editable("sec-4-3-causa-raiz")}><strong>Identificamos um descompasso no planejamento e na gest\xE3o de capacidade log\xEDstica do parceiro ${esc(provider)}</strong>, com aloca\xE7\xE3o de viatura ainda vinculada a opera\xE7\xE3o anterior sem margem de seguran\xE7a temporal, o que exigiu remanejamento e troca de VTR em campo. A TM SEG refor\xE7a junto ao parceiro o compromisso com a melhoria dos processos para que situa\xE7\xF5es semelhantes n\xE3o se repitam, preservando o padr\xE3o de qualidade exigido pela opera\xE7\xE3o DHL.</div>`;
 }
@@ -408,11 +411,11 @@ function buildFullOccurrenceReportHtml(data, options) {
   <table>
     <thead><tr><th>#</th><th>A\xE7\xE3o</th><th>Status</th><th>Data</th></tr></thead>
     <tbody>
-      <tr><td>C1</td><td>Comunica\xE7\xE3o imediata \xE0 DHL assim que identificada a necessidade de troca de viatura</td><td>Conclu\xEDda</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
-      <tr><td>C2</td><td>Orienta\xE7\xE3o da equipe para corre\xE7\xE3o de rota (destino \u2192 origem)</td><td>Conclu\xEDda</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
-      <tr><td>C3</td><td>Acompanhamento operacional cont\xEDnuo at\xE9 a conclus\xE3o da miss\xE3o</td><td>Conclu\xEDda</td><td>${formatDateBR(completed)}</td></tr>
-      <tr><td>C4</td><td ${editable("contencao-c4")}>Alinhamento formal e apura\xE7\xE3o junto ao parceiro, com plano de melhoria</td><td>Conclu\xEDda</td><td>${emissionDate}</td></tr>
-      <tr><td>C5</td><td>Retorno formal \xE0 DHL com relato estruturado dos fatos</td><td>Conclu\xEDda</td><td>${emissionDate}</td></tr>
+      <tr ${editableRow("row-c1")}><td>C1</td><td>Comunica\xE7\xE3o imediata \xE0 DHL assim que identificada a necessidade de troca de viatura</td><td>Conclu\xEDda</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
+      <tr ${editableRow("row-c2")}><td>C2</td><td>Orienta\xE7\xE3o da equipe para corre\xE7\xE3o de rota (destino \u2192 origem)</td><td>Conclu\xEDda</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
+      <tr ${editableRow("row-c3")}><td>C3</td><td>Acompanhamento operacional cont\xEDnuo at\xE9 a conclus\xE3o da miss\xE3o</td><td>Conclu\xEDda</td><td>${formatDateBR(completed)}</td></tr>
+      <tr ${editableRow("row-c4")}><td>C4</td><td ${editable("contencao-c4")}>Alinhamento formal e apura\xE7\xE3o junto ao parceiro, com plano de melhoria</td><td>Conclu\xEDda</td><td>${emissionDate}</td></tr>
+      <tr ${editableRow("row-c5")}><td>C5</td><td>Retorno formal \xE0 DHL com relato estruturado dos fatos</td><td>Conclu\xEDda</td><td>${emissionDate}</td></tr>
     </tbody>
   </table>
   </div>
@@ -423,11 +426,11 @@ function buildFullOccurrenceReportHtml(data, options) {
   <table>
     <thead><tr><th>ID</th><th>A\xE7\xE3o</th><th>Respons\xE1vel</th><th>Prazo</th><th>Indicador</th></tr></thead>
     <tbody>
-      <tr><td>AC-01</td><td ${editable("ac-01")}>Concluir apura\xE7\xE3o documentada com o parceiro e plano de melhoria para evitar reincid\xEAncia</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>17/07/2026</td><td>Termo arquivado</td></tr>
-      <tr><td>AC-02</td><td>Registro formal no scorecard de fornecedores e refor\xE7o de SLA</td><td>Gest\xE3o de Fornecedores TM SEG</td><td>14/07/2026</td><td>Registro no sistema</td></tr>
-      <tr><td>AC-03</td><td>Revis\xE3o tempor\xE1ria de aloca\xE7\xE3o em miss\xF5es cr\xEDticas DHL/Foxconn at\xE9 conclus\xE3o das a\xE7\xF5es</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>Imediato</td><td>Plano de capacidade validado</td></tr>
-      <tr><td>AC-04</td><td>Plano de capacidade di\xE1rio do parceiro (VTRs \xD7 miss\xF5es) at\xE9 D-1 \xE0s 18:00</td><td>${esc(provider)} / TM SEG</td><td>14/07/2026</td><td>Planilha conferida</td></tr>
-      <tr><td>AC-05</td><td>Reuni\xE3o de alinhamento operacional (SLA, janelas, substitui\xE7\xE3o)</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>16/07/2026</td><td>Ata assinada</td></tr>
+      <tr ${editableRow("row-ac-01")}><td>AC-01</td><td ${editable("ac-01")}>Concluir apura\xE7\xE3o documentada com o parceiro e plano de melhoria para evitar reincid\xEAncia</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>17/07/2026</td><td>Termo arquivado</td></tr>
+      <tr ${editableRow("row-ac-02")}><td>AC-02</td><td>Registro formal no scorecard de fornecedores e refor\xE7o de SLA</td><td>Gest\xE3o de Fornecedores TM SEG</td><td>14/07/2026</td><td>Registro no sistema</td></tr>
+      <tr ${editableRow("row-ac-03")}><td>AC-03</td><td>Revis\xE3o tempor\xE1ria de aloca\xE7\xE3o em miss\xF5es cr\xEDticas DHL/Foxconn at\xE9 conclus\xE3o das a\xE7\xF5es</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>Imediato</td><td>Plano de capacidade validado</td></tr>
+      <tr ${editableRow("row-ac-04")}><td>AC-04</td><td>Plano de capacidade di\xE1rio do parceiro (VTRs \xD7 miss\xF5es) at\xE9 D-1 \xE0s 18:00</td><td>${esc(provider)} / TM SEG</td><td>14/07/2026</td><td>Planilha conferida</td></tr>
+      <tr ${editableRow("row-ac-05")}><td>AC-05</td><td>Reuni\xE3o de alinhamento operacional (SLA, janelas, substitui\xE7\xE3o)</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>16/07/2026</td><td>Ata assinada</td></tr>
     </tbody>
   </table>
   </div>
@@ -437,19 +440,19 @@ function buildFullOccurrenceReportHtml(data, options) {
   <table>
     <thead><tr><th>ID</th><th>A\xE7\xE3o</th><th>Respons\xE1vel</th><th>Prazo</th><th>Indicador</th></tr></thead>
     <tbody>
-      <tr><td>AP-01</td><td>Monitoramento reduzido (15 min) nas 2 h que antecedem a origem</td><td>Central de Monitoramento TM SEG</td><td>14/07/2026</td><td>Log \u2264 15 min</td></tr>
-      <tr><td>AP-02</td><td>Gatilho autom\xE1tico de risco e viatura de backup na regi\xE3o</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>21/07/2026</td><td>Simula\xE7\xE3o documentada</td></tr>
-      <tr><td>AP-03</td><td>Check-in GPS + confirma\xE7\xE3o verbal de origem antes do hor\xE1rio</td><td>Central de Monitoramento TM SEG</td><td>14/07/2026</td><td>100% miss\xF5es DHL</td></tr>
-      <tr><td>AP-04</td><td>Reuni\xE3o de refor\xE7o com parceiros da base Sudeste DHL</td><td>Gest\xE3o de Fornecedores TM SEG</td><td>24/07/2026</td><td>Lista de presen\xE7a</td></tr>
-      <tr><td>AP-05</td><td>Briefing de aceite: VTR dedicada sem sobreposi\xE7\xE3o de janela</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>14/07/2026</td><td>Checklist no aceite</td></tr>
-      <tr><td>AP-06</td><td>Reporte semanal de desempenho DHL (4 semanas)</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>Semanal</td><td>Relat\xF3rio \xE0s segundas</td></tr>
+      <tr ${editableRow("row-ap-01")}><td>AP-01</td><td>Monitoramento reduzido (15 min) nas 2 h que antecedem a origem</td><td>Central de Monitoramento TM SEG</td><td>14/07/2026</td><td>Log \u2264 15 min</td></tr>
+      <tr ${editableRow("row-ap-02")}><td>AP-02</td><td>Gatilho autom\xE1tico de risco e viatura de backup na regi\xE3o</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>21/07/2026</td><td>Simula\xE7\xE3o documentada</td></tr>
+      <tr ${editableRow("row-ap-03")}><td>AP-03</td><td>Check-in GPS + confirma\xE7\xE3o verbal de origem antes do hor\xE1rio</td><td>Central de Monitoramento TM SEG</td><td>14/07/2026</td><td>100% miss\xF5es DHL</td></tr>
+      <tr ${editableRow("row-ap-04")}><td>AP-04</td><td>Reuni\xE3o de refor\xE7o com parceiros da base Sudeste DHL</td><td>Gest\xE3o de Fornecedores TM SEG</td><td>24/07/2026</td><td>Lista de presen\xE7a</td></tr>
+      <tr ${editableRow("row-ap-05")}><td>AP-05</td><td>Briefing de aceite: VTR dedicada sem sobreposi\xE7\xE3o de janela</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>14/07/2026</td><td>Checklist no aceite</td></tr>
+      <tr ${editableRow("row-ap-06")}><td>AP-06</td><td>Reporte semanal de desempenho DHL (4 semanas)</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>Semanal</td><td>Relat\xF3rio \xE0s segundas</td></tr>
     </tbody>
   </table>
   </div>
 
   <div class="subsection">
   <h3>6.3 Cronograma consolidado</h3>
-  <div class="cronograma">${emissionDate} \u2500\u2500\u25CF Emiss\xE3o deste plano de a\xE7\xE3o
+  <div class="cronograma" ${editable("cronograma")}>${emissionDate} \u2500\u2500\u25CF Emiss\xE3o deste plano de a\xE7\xE3o
 14/07/2026 \u2500\u2500\u25CF AP-01, AP-03, AP-05 em vigor | AC-02, AC-04 iniciados
 16/07/2026 \u2500\u2500\u25CF AC-05 \u2014 Reuni\xE3o ${esc(provider)}
 17/07/2026 \u2500\u2500\u25CF AC-01 conclu\xEDdo | AP-06 \u2014 1\xBA relat\xF3rio semanal
@@ -1097,8 +1100,12 @@ async function collectDhlOccurrenceReportData(sb, input) {
 
 // lib/dhlOccurrenceReport/adjustReportHtml.ts
 var EDITABLE_OPEN_RE = /<([a-z][a-z0-9]*)[^>]*\sdata-dhl-editable="([^"]+)"[^>]*>/gi;
+var DELETE_MARKERS = /* @__PURE__ */ new Set(["", "__DELETE__", "__REMOVE__", "__EXCLUIR__"]);
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function isDeletePatch(html) {
+  return DELETE_MARKERS.has(String(html || "").trim());
 }
 function findMatchingCloseTagIndex(html, tagName, contentStart) {
   const tagRe = new RegExp(`<(/?)${tagName}(\\s[^>]*?)?(/?)>`, "gi");
@@ -1117,7 +1124,8 @@ function findMatchingCloseTagIndex(html, tagName, contentStart) {
   }
   return -1;
 }
-function extractEditableBlocks(html) {
+function extractEditableBlocks(html, options) {
+  const includeAdjustOnly = !!options?.includeAdjustOnly;
   const blocks = [];
   const seen = /* @__PURE__ */ new Set();
   const re = new RegExp(EDITABLE_OPEN_RE.source, EDITABLE_OPEN_RE.flags);
@@ -1125,6 +1133,9 @@ function extractEditableBlocks(html) {
   while ((match = re.exec(html)) !== null) {
     const id = match[2];
     if (seen.has(id)) continue;
+    const openTag = match[0];
+    const isAdjustOnly = /\sdata-dhl-adjust-only(?:\s|=)/i.test(openTag);
+    if (isAdjustOnly && !includeAdjustOnly) continue;
     seen.add(id);
     const tagName = match[1];
     const contentStart = match.index + match[0].length;
@@ -1145,9 +1156,17 @@ function applyEditablePatches(html, patches) {
     const open = openRe.exec(result);
     if (!open) continue;
     const tagName = open[1];
+    const openStart = open.index;
     const contentStart = open.index + open[0].length;
     const closeStart = findMatchingCloseTagIndex(result, tagName, contentStart);
     if (closeStart === -1) continue;
+    const closeTagRe = new RegExp(`^</${tagName}\\s*>`, "i");
+    const closeMatch = result.slice(closeStart).match(closeTagRe);
+    const closeEnd = closeStart + (closeMatch ? closeMatch[0].length : 0);
+    if (isDeletePatch(newInner)) {
+      result = result.slice(0, openStart) + result.slice(closeEnd);
+      continue;
+    }
     result = result.slice(0, contentStart) + newInner + result.slice(closeStart);
   }
   return result;
@@ -1167,8 +1186,8 @@ function parseGeminiAdjustmentJson(raw) {
   const out = {};
   for (const patch of parsed.patches || []) {
     const id = String(patch.id || "").trim();
-    const html = String(patch.html ?? "").trim();
-    if (id && html) out[id] = html;
+    if (!id || patch.html == null) continue;
+    out[id] = String(patch.html).trim();
   }
   if (!Object.keys(out).length) {
     throw new Error("A IA n\xE3o sugeriu altera\xE7\xF5es. Tente reformular a observa\xE7\xE3o.");
