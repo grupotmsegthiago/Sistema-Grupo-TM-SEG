@@ -4,7 +4,22 @@
  */
 import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 
-import type { BillingSource, BillingUsageRow, BillingMonthSummary, TokenEfficiencyReport } from '../dashboardDiretoria/billingTypes.js';
+import type {
+  BillingSource,
+  BillingUsageRow,
+  BillingMonthSummary,
+  TokenEfficiencyReport,
+  BillingDashboardMeta,
+  BillingDataSource,
+} from '../dashboardDiretoria/billingTypes.js';
+import {
+  eventAmountUsd,
+  fetchAllCursorUsageEvents,
+  fetchCursorUsageSummary,
+  formatCursorMembership,
+  getCursorSessionToken,
+  isCursorSessionConfigured,
+} from './cursorUsageApi.js';
 
 export type { BillingSource, BillingUsageRow, BillingMonthSummary, TokenEfficiencyReport };
 
@@ -152,17 +167,64 @@ export async function recordBillingUsage(input: BillingUsageInput): Promise<Bill
   }
 }
 
-async function sumMonthSpentBrl(month: string): Promise<number> {
+async function sumMonthSpentBrl(month: string, source?: BillingSource): Promise<number> {
+  try {
+    const client = sb();
+    let q = client.from('billing_usage').select('amount_brl, metadata').eq('reference_month', month);
+    if (source) q = q.eq('source', source);
+    const { data } = await q;
+    return round2(
+      (data || []).reduce((s, r) => {
+        const meta = r.metadata as { type?: string } | null;
+        if (meta?.type === 'cursor_usage_summary') return s;
+        return s + Number(r.amount_brl || 0);
+      }, 0),
+    );
+  } catch {
+    return 0;
+  }
+}
+
+async function getLatestCursorSummaryRow(): Promise<BillingUsageRow | null> {
   try {
     const client = sb();
     const { data } = await client
       .from('billing_usage')
-      .select('amount_brl')
-      .eq('reference_month', month);
-    return round2((data || []).reduce((s, r) => s + Number(r.amount_brl || 0), 0));
+      .select('*')
+      .eq('source', 'cursor_dashboard')
+      .order('recorded_at', { ascending: false })
+      .limit(20);
+    const rows = (data || []) as BillingUsageRow[];
+    return rows.find(r => (r.metadata as { type?: string } | null)?.type === 'cursor_usage_summary') || null;
   } catch {
-    return 0;
+    return null;
   }
+}
+
+async function deleteCursorDashboardMonth(month: string): Promise<void> {
+  try {
+    const client = sb();
+    await client.from('billing_usage').delete().eq('source', 'cursor_dashboard').eq('reference_month', month);
+  } catch (e: unknown) {
+    console.warn('[billingService] deleteCursorDashboardMonth:', e instanceof Error ? e.message : e);
+  }
+}
+
+export function getBillingDashboardMeta(): BillingDashboardMeta {
+  return {
+    cursorConfigured: isCursorSessionConfigured(),
+    stripeConfigured: Boolean(String(process.env.STRIPE_SECRET_KEY || '').trim()),
+  };
+}
+
+/** Linhas exibíveis no log (exclui resumo interno e pings de sync). */
+export function filterBillingLogRows(rows: BillingUsageRow[]): BillingUsageRow[] {
+  return rows.filter((r) => {
+    if (r.source === 'sync') return false;
+    const meta = r.metadata as { type?: string } | null;
+    if (meta?.type === 'cursor_usage_summary') return false;
+    return true;
+  });
 }
 
 export async function getBillingUsageLog(limit = 100, month?: string): Promise<BillingUsageRow[]> {
@@ -180,36 +242,94 @@ export async function getBillingUsageLog(limit = 100, month?: string): Promise<B
 }
 
 export async function getBillingMonthSummary(month = referenceMonthFromDate()): Promise<BillingMonthSummary> {
-  const planLimitBrl = getPlanLimitBrl();
-  const planLimitUsd = getPlanMonthlyUsd();
-  const spentBrl = await sumMonthSpentBrl(month);
   const exchangeRate = getBillingExchangeRate();
   const iofPct = getBillingIofPct();
+  const cursorSummary = await getLatestCursorSummaryRow();
+  const cursorMeta = cursorSummary?.metadata as {
+    type?: string;
+    billingCycleStart?: string;
+    billingCycleEnd?: string;
+    membershipType?: string;
+    onDemandUsedCents?: number;
+    subscriptionUsd?: number;
+    planIncludedPercentUsed?: number;
+    syncedAt?: string;
+  } | null;
+
+  let dataSource: BillingDataSource = 'env_defaults';
+  let planName = getPlanName();
+  let planLimitUsd = getPlanMonthlyUsd();
+  let planLimitBrl = getPlanLimitBrl();
+  let billingCycleStart: string | null = null;
+  let billingCycleEnd: string | null = null;
+  let lastSyncedAt: string | null = null;
+  let onDemandSpentUsd = 0;
+  let planIncludedPercentUsed: number | null = null;
+
+  const cursorSpentBrl = await sumMonthSpentBrl(month, 'cursor_dashboard');
+  const stripeSpentBrl = await sumMonthSpentBrl(month, 'cursor_stripe');
+  let spentBrl = round2(cursorSpentBrl + stripeSpentBrl);
+  const hasCursorMirror = Boolean(cursorSummary && cursorMeta?.billingCycleStart);
+
+  if (hasCursorMirror) {
+    dataSource = stripeSpentBrl > 0 ? 'mixed' : 'cursor';
+    planName = formatCursorMembership(cursorMeta?.membershipType);
+    billingCycleStart = cursorMeta?.billingCycleStart || null;
+    billingCycleEnd = cursorMeta?.billingCycleEnd || null;
+    lastSyncedAt = cursorMeta?.syncedAt || cursorSummary?.recorded_at || null;
+    onDemandSpentUsd = round4(Number(cursorMeta?.onDemandUsedCents || 0) / 100);
+    planIncludedPercentUsed =
+      cursorMeta?.planIncludedPercentUsed != null ? Number(cursorMeta.planIncludedPercentUsed) : null;
+
+    const subscriptionUsd = Number(cursorMeta?.subscriptionUsd || 0) || getPlanMonthlyUsd();
+    planLimitUsd = subscriptionUsd;
+    planLimitBrl = usdToBrl(subscriptionUsd);
+
+    if (spentBrl <= 0 && onDemandSpentUsd > 0) {
+      spentBrl = usdToBrl(onDemandSpentUsd);
+    }
+  } else if (stripeSpentBrl > 0) {
+    dataSource = 'stripe';
+    spentBrl = stripeSpentBrl;
+  } else {
+    spentBrl = await sumMonthSpentBrl(month);
+  }
+
   const spentUsd = brlToUsd(spentBrl, exchangeRate, iofPct);
   const extraBrl = round2(Math.max(0, spentBrl - planLimitBrl));
   const usagePct = planLimitBrl > 0 ? round2((spentBrl / planLimitBrl) * 100) : 0;
   const planBalanceBrl = round2(Math.max(0, planLimitBrl - spentBrl));
-  const entries = await getBillingUsageLog(500, month);
+  const entries = filterBillingLogRows(await getBillingUsageLog(500, month));
+  const isPlaceholder = !hasCursorMirror && spentBrl <= 0 && entries.length === 0;
 
   let thermometer: BillingMonthSummary['thermometer'] = 'ok';
-  if (usagePct >= 100) thermometer = 'critical';
-  else if (usagePct >= 75) thermometer = 'warning';
+  if (!isPlaceholder) {
+    if (usagePct >= 100) thermometer = 'critical';
+    else if (usagePct >= 75) thermometer = 'warning';
+  }
 
   return {
     referenceMonth: month,
-    planName: getPlanName(),
+    planName: isPlaceholder ? `${planName} (estimado — sincronize)` : planName,
     planLimitBrl,
     planLimitUsd,
     spentBrl,
     spentUsd,
     extraBrl,
-    usagePct,
-    planBalanceBrl,
+    usagePct: isPlaceholder ? 0 : usagePct,
+    planBalanceBrl: isPlaceholder ? planLimitBrl : planBalanceBrl,
     operationalSavingsBrl: getOperationalSavingsBrl(),
     exchangeRate,
     iofPct,
     entryCount: entries.length,
-    thermometer,
+    thermometer: isPlaceholder ? 'ok' : thermometer,
+    dataSource,
+    isPlaceholder,
+    billingCycleStart,
+    billingCycleEnd,
+    lastSyncedAt,
+    onDemandSpentUsd,
+    planIncludedPercentUsed,
   };
 }
 
@@ -258,10 +378,145 @@ async function fetchStripeInvoiceLines(): Promise<StripeInvoiceLine[]> {
 }
 
 /**
- * Sincroniza faturas Stripe (Cursor) e grava em billing_usage.
- * Idempotente via external_id (invoice id).
+ * Espelha fatura/gastos do dashboard Cursor (API não oficial).
+ * Requer CURSOR_SESSION_TOKEN = cookie WorkosCursorSessionToken.
+ */
+export async function syncCursorBilling(): Promise<SyncBillingResult> {
+  const sessionToken = getCursorSessionToken();
+  if (!sessionToken) {
+    return {
+      ok: false,
+      inserted: 0,
+      skipped: 0,
+      errors: ['CURSOR_SESSION_TOKEN ausente'],
+      message:
+        'Configure CURSOR_SESSION_TOKEN na Vercel: em cursor.com/dashboard → DevTools → Cookies → WorkosCursorSessionToken',
+    };
+  }
+
+  const errors: string[] = [];
+  let inserted = 0;
+  let skipped = 0;
+
+  try {
+    const summary = await fetchCursorUsageSummary(sessionToken);
+    const month = referenceMonthFromDate(new Date(summary.billingCycleStart));
+    const startMs = String(new Date(summary.billingCycleStart).getTime());
+    const endMs = String(new Date(summary.billingCycleEnd).getTime());
+
+    await deleteCursorDashboardMonth(month);
+
+    const events = await fetchAllCursorUsageEvents(sessionToken, {
+      startDate: startMs,
+      endDate: endMs,
+      pageSize: 100,
+      maxPages: 50,
+    });
+
+    const membershipType = summary.membershipType || 'unknown';
+    const onDemandUsed = Number(summary.individualUsage?.onDemand?.used || 0);
+    const planIncludedPercent = summary.individualUsage?.plan?.totalPercentUsed ?? null;
+    const subscriptionUsd = getPlanMonthlyUsd();
+
+    const summaryRow = await recordBillingUsage({
+      source: 'cursor_dashboard',
+      external_id: `cursor-summary-${summary.billingCycleStart}`,
+      summary: `Espelho Cursor — ${formatCursorMembership(membershipType)}`,
+      amount_usd: 0,
+      amount_brl: 0,
+      recorded_at: summary.billingCycleEnd,
+      metadata: {
+        type: 'cursor_usage_summary',
+        billingCycleStart: summary.billingCycleStart,
+        billingCycleEnd: summary.billingCycleEnd,
+        membershipType,
+        onDemandUsedCents: onDemandUsed,
+        subscriptionUsd,
+        planIncludedPercentUsed: planIncludedPercent,
+        planUsed: summary.individualUsage?.plan?.used,
+        planLimit: summary.individualUsage?.plan?.limit,
+        syncedAt: new Date().toISOString(),
+      },
+    });
+    if (summaryRow) inserted += 1;
+
+    for (const evt of events) {
+      const amountUsd = eventAmountUsd(evt);
+      const isChargeable = evt.isChargeable !== false && amountUsd > 0;
+      if (!isChargeable) {
+        skipped += 1;
+        continue;
+      }
+
+      const extId = `cursor-evt-${evt.timestamp}-${String(evt.model || 'model').slice(0, 40)}`;
+      const row = await recordBillingUsage({
+        source: 'cursor_dashboard',
+        external_id: extId.slice(0, 180),
+        summary: `${evt.model || 'modelo'} · ${evt.isHeadless ? 'agent' : 'IDE'} · ${evt.usageBasedCosts || `$${amountUsd.toFixed(2)}`}`,
+        amount_usd: amountUsd,
+        recorded_at: new Date(Number(evt.timestamp)).toISOString(),
+        token_id: evt.model || null,
+        metadata: {
+          type: 'cursor_usage_event',
+          model: evt.model,
+          kind: evt.kind,
+          chargedCents: evt.chargedCents,
+          usageBasedCosts: evt.usageBasedCosts,
+          tokenUsage: evt.tokenUsage,
+          isHeadless: evt.isHeadless,
+          isChargeable: evt.isChargeable,
+        },
+      });
+      if (row) inserted += 1;
+      else skipped += 1;
+    }
+
+    return {
+      ok: true,
+      inserted,
+      skipped,
+      errors,
+      message: `Cursor sincronizado — ${formatCursorMembership(membershipType)} · ${inserted} lançamentos no ciclo ${summary.billingCycleStart.slice(0, 10)} → ${summary.billingCycleEnd.slice(0, 10)}`,
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    errors.push(msg);
+    return { ok: false, inserted, skipped, errors, message: msg };
+  }
+}
+
+/**
+ * Sincroniza Cursor (espelho real) e, se configurado, faturas Stripe.
  */
 export async function syncBillingUsage(): Promise<SyncBillingResult> {
+  const cursorResult = await syncCursorBilling();
+  if (cursorResult.ok && cursorResult.inserted > 0) {
+    const stripeLines = await fetchStripeInvoiceLines();
+    if (stripeLines.length > 0) {
+      let stripeInserted = 0;
+      for (const line of stripeLines) {
+        const row = await recordBillingUsage({
+          source: 'cursor_stripe',
+          external_id: line.id,
+          summary: `[Stripe] ${line.summary}`,
+          amount_usd: line.amountUsd,
+          recorded_at: line.recordedAt,
+          metadata: { stripe_invoice_id: line.id },
+        });
+        if (row) stripeInserted += 1;
+      }
+      return {
+        ...cursorResult,
+        message: `${cursorResult.message} · Stripe: +${stripeInserted} fatura(s).`,
+      };
+    }
+    return cursorResult;
+  }
+
+  if (isCursorSessionConfigured()) {
+    return cursorResult;
+  }
+
   const errors: string[] = [];
   let inserted = 0;
   let skipped = 0;
@@ -270,11 +525,12 @@ export async function syncBillingUsage(): Promise<SyncBillingResult> {
     const lines = await fetchStripeInvoiceLines();
     if (lines.length === 0 && !process.env.STRIPE_SECRET_KEY) {
       return {
-        ok: true,
+        ok: false,
         inserted: 0,
         skipped: 0,
-        errors: [],
-        message: 'STRIPE_SECRET_KEY não configurada — sync ignorado (use log manual ou agent_token).',
+        errors: ['CURSOR_SESSION_TOKEN e STRIPE_SECRET_KEY ausentes'],
+        message:
+          'Configure CURSOR_SESSION_TOKEN (espelho Cursor) ou STRIPE_SECRET_KEY na Vercel para importar gastos reais.',
       };
     }
 
@@ -305,7 +561,7 @@ export async function syncBillingUsage(): Promise<SyncBillingResult> {
       inserted,
       skipped,
       errors,
-      message: `Sync concluído — ${inserted} lançamentos novos.`,
+      message: `Stripe sincronizado — ${inserted} lançamentos novos.`,
     };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

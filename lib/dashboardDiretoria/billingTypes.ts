@@ -1,4 +1,5 @@
-export type BillingSource = 'cursor_stripe' | 'gemini' | 'agent_token' | 'manual' | 'sync';
+export type BillingSource = 'cursor_stripe' | 'cursor_dashboard' | 'gemini' | 'agent_token' | 'manual' | 'sync';
+export type BillingDataSource = 'cursor' | 'stripe' | 'env_defaults' | 'mixed';
 
 export interface BillingUsageRow {
   id: string;
@@ -31,6 +32,20 @@ export interface BillingMonthSummary {
   iofPct: number;
   entryCount: number;
   thermometer: 'ok' | 'warning' | 'critical';
+  /** Origem dos números exibidos */
+  dataSource: BillingDataSource;
+  /** true quando ainda não houve sync Cursor/Stripe */
+  isPlaceholder: boolean;
+  billingCycleStart?: string | null;
+  billingCycleEnd?: string | null;
+  lastSyncedAt?: string | null;
+  onDemandSpentUsd?: number;
+  planIncludedPercentUsed?: number | null;
+}
+
+export interface BillingDashboardMeta {
+  cursorConfigured: boolean;
+  stripeConfigured: boolean;
 }
 
 export interface TokenEfficiencyReport {
