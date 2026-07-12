@@ -71,6 +71,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [runningKey, setRunningKey] = useState<ReportKey | null>(null);
   const [runResults, setRunResults] = useState<Partial<Record<ReportKey, RunResult>>>({});
@@ -399,6 +400,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
 
   const fetchAll = async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       const [sRes, hRes] = await Promise.all([
         fetch('/api/admin/system-settings/daily-reports', { headers: authHeaders() }),
@@ -412,15 +414,22 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
         setUpdatedBy(sJson.updatedBy);
         setUpdatedAt(sJson.updatedAt);
       } else {
-        alert('Erro ao carregar: ' + (sJson?.error || 'desconhecido'));
+        const msg = sJson?.error || (sRes.status === 403 ? 'Sem permissão para acessar esta tela.' : 'Erro ao carregar configurações.');
+        setLoadError(msg);
+        setSettings(null);
+        setDefaults(null);
       }
       if (hJson?.ok) setHistory(hJson.history || []);
-      await Promise.all([
-        fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode, manualRunsFilterFrom, manualRunsFilterTo),
-        fetchRuns(),
-      ]);
+      if (sJson?.ok) {
+        await Promise.all([
+          fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode, manualRunsFilterFrom, manualRunsFilterTo),
+          fetchRuns(),
+        ]);
+      }
     } catch (e: any) {
-      alert('Erro ao carregar configurações: ' + (e?.message || 'desconhecido'));
+      setLoadError(e?.message || 'Erro ao carregar configurações.');
+      setSettings(null);
+      setDefaults(null);
     } finally {
       setIsLoading(false);
     }
@@ -496,11 +505,34 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
     catch { return iso; }
   };
 
-  if (isLoading || !settings || !defaults) {
+  if (isLoading) {
     return (
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center gap-3">
         <Loader2 className="animate-spin text-gray-500" />
         <span className="text-gray-600">Carregando configurações...</span>
+      </div>
+    );
+  }
+
+  if (loadError || !settings || !defaults) {
+    return (
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-red-200 space-y-4" data-testid="page-system-settings-error">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Não foi possível abrir Configurações do Sistema</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              {loadError || 'Dados indisponíveis.'} Apenas perfis <strong>Diretoria</strong> e <strong>Administrador</strong> têm acesso completo.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={fetchAll}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-red-700 hover:bg-red-800 rounded-lg"
+        >
+          <RefreshCw size={14} /> Tentar novamente
+        </button>
       </div>
     );
   }

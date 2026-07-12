@@ -16,7 +16,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onLogout }) => {
-  const [expandedMenus, setExpandedMenus] = useState<string[]>(['monitoring-group', 'finance-group', 'commercial-group', 'clients-group', 'providers-group']);
+  const [expandedMenus, setExpandedMenus] = useState<string[]>(['monitoring-group', 'finance-group', 'commercial-group', 'clients-group', 'providers-group', 'settings-group']);
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -219,6 +219,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         return avancadoAllowed.includes(itemId) || userPermissions.includes(itemId);
     }
 
+    // Diretoria e Administrador: acesso ao menu Configurações (sem depender de permissão explícita em cada item)
+    const settingsScreens = new Set([
+      'settings-group', 'db-maintenance', 'cost-optimization', 'internal-users',
+      'equipment-manager', 'profiles', 'system-settings', 'system-logs', 'server-stats',
+      'manual-override-settings',
+    ]);
+    if (settingsScreens.has(itemId) && (role === 'diretoria' || role === 'administrador')) {
+      return true;
+    }
+
     if (isAdmin) return true;
     return userPermissions.includes(itemId);
   };
@@ -268,7 +278,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         </button>
 
         {hasChildren && isExpanded && (
-           <div className={`bg-black/20 py-2 transition-all animate-fade-in ${isOpen ? 'block' : 'hidden lg:group-hover:block'}`}>
+           <div className="bg-black/20 py-2 transition-all animate-fade-in block">
               {visibleChildren?.map(child => {
                  const isChildSelected = activeScreen === child.id;
                  return (
