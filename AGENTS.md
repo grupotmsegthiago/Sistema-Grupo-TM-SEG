@@ -60,11 +60,33 @@ Opcional: `ZAPI_CLIENT_TOKEN` (token de segurança do painel Z-API) se a API ret
 
 Legado: `ZAPI_INSTANCE_ID` / `ZAPI_TOKEN` continuam como fallback.
 
+### Deploy Vercel — troubleshooting
+
 1. **Deployments** → último da `main`: status Ready vs Error.
-2. Deploy **ERROR 0ms / builds=[]**: quase sempre `vercel.json` inválido — comparar com commit que passou (ex.: sem entrada `functions` para `occurrence-report.ts`).
-3. **Runtime** `Cannot find module .../_occurrence-report-html.cjs`: bundles não empacotados — corrigir requires estáticos no handler, não `includeFiles` em `dist/` gitignored.
-4. **Vercel Agent** (painel → Agent): pode listar deploys, inspecionar falhas e redeploy — útil quando o token CLI não está disponível.
-5. `VERCEL_TOKEN` no ambiente cloud: precisa ser token válido de [vercel.com/account/tokens](https://vercel.com/account/tokens) (escopo deploy). Token inválido retorna `invalidToken` na API.
+2. Deploy **ERROR 0ms / builds=[]**: quase sempre `vercel.json` inválido — limite de **50 entradas** em `functions` ou JSON inválido.
+3. **Runtime** `Cannot find module .../_occurrence-report-html.cjs`: bundles não empacotados — corrigir requires estáticos no handler.
+4. **Vercel Agent** (painel → Agent): pode listar deploys e inspecionar falhas.
+5. `VERCEL_TOKEN` no ambiente cloud: token válido de [vercel.com/account/tokens](https://vercel.com/account/tokens).
+
+### Custos de IA (Cursor / Stripe / Gemini)
+
+- Serviço: `services/billingService.ts` — `syncBillingUsage()`, conversão USD→BRL (câmbio `BILLING_USD_RATE` padrão 5.50 + IOF `BILLING_IOF_PCT` 4.38%).
+- Tabela Supabase: `billing_usage` — migration `migrations/2026_07_12_billing_usage.sql`.
+- UI: Cockpit Diretoria → aba **Sistema** (progresso do plano, termômetro, log por token).
+- Cron diário: `GET /api/cron/billing-sync` às 06:00 UTC (`CRON_SECRET`).
+- Variáveis Vercel:
+  - `STRIPE_SECRET_KEY`, `STRIPE_CURSOR_CUSTOMER_ID` (faturas Cursor)
+  - `CURSOR_PLAN_MONTHLY_USD` ou `CURSOR_PLAN_MONTHLY_BRL`, `CURSOR_PLAN_NAME`
+  - `OPERATIONAL_SAVINGS_BRL` (padrão 715 — planilha Situação Geral Faturamento)
+- APIs: `GET /api/billing/summary`, `GET /api/billing/usage-log`, `POST /api/billing/sync`, `POST /api/billing/log-usage`.
+
+**Regras do agente (redução de custo e retrabalho):**
+
+- Diff mínimo; não refatorar OS, Financeiro, Asaas ou eNotas sem autorização explícita.
+- Testar antes de entregar: `npm run build` + testes do escopo.
+- Evitar tokens repetidos no mesmo escopo — reutilizar branch/PR existente.
+- Gemini: Flash para tarefas simples; modelos maiores só para relatórios complexos.
+- Preservar `import React` em `.tsx` ao editar cabeçalhos.
 
 ### Testes DHL relevantes
 

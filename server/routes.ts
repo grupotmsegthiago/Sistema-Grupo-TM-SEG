@@ -1609,6 +1609,60 @@ export async function registerRoutes(
     }
   });
 
+  app.get('/api/billing/summary', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const { getBillingMonthSummary } = await import('../services/billingService.js');
+      const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+      const summary = await getBillingMonthSummary(month);
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ ok: true, summary });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  app.get('/api/billing/usage-log', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const { getBillingUsageLog, buildTokenEfficiencyReport } = await import('../services/billingService.js');
+      const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 80));
+      const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+      const rows = await getBillingUsageLog(limit, month);
+      const efficiency = buildTokenEfficiencyReport(rows);
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ ok: true, rows, efficiency });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  app.post('/api/billing/sync', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
+    try {
+      const { syncBillingUsage } = await import('../services/billingService.js');
+      const result = await syncBillingUsage();
+      res.status(result.ok ? 200 : 502).json(result);
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  app.post('/api/billing/log-usage', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const { recordBillingUsage } = await import('../services/billingService.js');
+      const body = req.body || {};
+      const row = await recordBillingUsage({
+        source: body.source || 'agent_token',
+        summary: String(body.summary || 'Uso de agente IA'),
+        amount_usd: body.amount_usd != null ? Number(body.amount_usd) : undefined,
+        amount_brl: body.amount_brl != null ? Number(body.amount_brl) : undefined,
+        token_id: body.token_id ? String(body.token_id) : undefined,
+        metadata: body.metadata,
+      });
+      res.json({ ok: !!row, row });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   app.get("/api/rh/team-presence-board", requireAuth, requireRole('diretoria', 'administrador', 'rh', 'ceo'), async (_req: Request, res: Response) => {
     try {
       const { createRhAdminClient } = await import('../lib/rh/adminSupabase');
@@ -2577,6 +2631,12 @@ export async function registerRoutes(
     await runRhMigrations();
   } catch (e: any) {
     console.warn('[Migration] RH:', e?.message || 'falhou');
+  }
+  try {
+    const { runBillingUsageMigrations } = await import('./billingUsageMigrations');
+    await runBillingUsageMigrations();
+  } catch (e: any) {
+    console.warn('[Migration] Billing usage:', e?.message || 'falhou');
   }
   registerDhlIntakeRoutes(app, requireAuth, requireRole, resolveUserRole, resolvePrincipal);
   registerRhRoutes(app, requireAuth, requireRole);
