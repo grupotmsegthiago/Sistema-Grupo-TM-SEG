@@ -40,9 +40,6 @@
     "api/gemini/health.ts": {
       "maxDuration": 60
     },
-    "api/zapi/health.ts": {
-      "maxDuration": 30
-    },
     "api/gemini/generate.ts": {
       "maxDuration": 300
     },
