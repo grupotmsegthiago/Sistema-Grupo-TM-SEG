@@ -59,12 +59,13 @@ export default async function handler(req: { method?: string }, res: {
         registrationError = sanitizeWhatsappError(reg.text) || `HTTP ${reg.status}`;
       }
 
-      // Diagnóstico: o que a Z-API devolve de verdade no request-code
-      const wa = await zapiFetch(creds, "mobile/request-code", {
+      // Path oficial: mobile/request-registration-code (não mobile/request-code)
+      const wa = await zapiFetch(creds, "mobile/request-registration-code", {
         method: "POST",
         body: JSON.stringify({ ddi, phone: phoneLocal, method: "wa_old" }),
       });
       waOldProbe = {
+        path: "mobile/request-registration-code",
         httpStatus: wa.status,
         ok: wa.ok,
         success: wa.data?.success ?? null,
@@ -79,11 +80,12 @@ export default async function handler(req: { method?: string }, res: {
         phoneSent: { ddi, phone: phoneLocal },
       };
 
-      const voice = await zapiFetch(creds, "mobile/request-code", {
+      const voice = await zapiFetch(creds, "mobile/request-registration-code", {
         method: "POST",
         body: JSON.stringify({ ddi, phone: phoneLocal, method: "voice" }),
       });
       voiceProbe = {
+        path: "mobile/request-registration-code",
         httpStatus: voice.status,
         ok: voice.ok,
         success: voice.data?.success ?? null,
