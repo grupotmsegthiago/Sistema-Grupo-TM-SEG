@@ -1,4 +1,5 @@
 // ── Estado persistido do vigia Z-API (serverless/Vercel não mantém memória) ───
+import { clearModalDismiss } from "../lib/whatsappLiteApi.js";
 import { createSupabaseAdminClient } from "./supabaseConfig";
 import { clearZapiReconnectLock } from "./zapiReconnectLock";
 
@@ -105,6 +106,7 @@ export async function closeZapiIncident(): Promise<ZapiWatchdogState> {
   state.incidentStartedAt = null;
   await saveZapiWatchdogState(state);
   await clearZapiReconnectLock();
+  await clearModalDismiss();
   return state;
 }
 

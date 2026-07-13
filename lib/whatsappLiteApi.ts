@@ -53,7 +53,15 @@ export type ZapiCreds = {
 };
 
 const LOCK_KEY = "zapi_reconnect_lock";
+export const MODAL_DISMISS_KEY = "zapi_reconnect_modal_dismissed";
 export const RECONNECT_LOCK_TTL_MS = 10 * 60 * 1000;
+
+export type ModalDismissRecord = {
+  at: string;
+  userId: string;
+  userName: string;
+  incidentStartedAt: string | null;
+};
 
 export type ReconnectLock = {
   holderId: string;
@@ -565,18 +573,83 @@ export async function releaseReconnectLock(holderId: string, force = false): Pro
   await persistLock(null);
 }
 
+function normalizeModalDismiss(raw: unknown): ModalDismissRecord | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as ModalDismissRecord;
+  if (!o.at || !o.userId) return null;
+  return {
+    at: String(o.at),
+    userId: String(o.userId),
+    userName: String(o.userName || "Usuário"),
+    incidentStartedAt: typeof o.incidentStartedAt === "string" ? o.incidentStartedAt : null,
+  };
+}
+
+export function isModalDismissedForIncident(
+  dismiss: ModalDismissRecord | null,
+  incidentStartedAt: string | null,
+  online: boolean,
+): boolean {
+  if (online || !dismiss) return false;
+  const cur = incidentStartedAt ?? null;
+  const rec = dismiss.incidentStartedAt ?? null;
+  return cur === rec;
+}
+
+export async function loadModalDismiss(): Promise<ModalDismissRecord | null> {
+  const client = sb();
+  const { data } = await client.from("system_settings").select("value").eq("key", MODAL_DISMISS_KEY).maybeSingle();
+  return normalizeModalDismiss(data?.value);
+}
+
+export async function clearModalDismiss(): Promise<void> {
+  const client = createSupabaseAdminClient();
+  if (!client) return;
+  await client.from("system_settings").delete().eq("key", MODAL_DISMISS_KEY);
+}
+
+export async function dismissReconnectModal(userId: string, userName: string): Promise<ModalDismissRecord> {
+  const client = sb();
+  const { data: watchRow } = await client
+    .from("system_settings")
+    .select("value")
+    .eq("key", "zapi_watchdog_state")
+    .maybeSingle();
+  const watch = watchRow?.value && typeof watchRow.value === "object"
+    ? watchRow.value as { incidentStartedAt?: string | null }
+    : {};
+  const record: ModalDismissRecord = {
+    at: new Date().toISOString(),
+    userId: String(userId || "").trim(),
+    userName: String(userName || "").trim() || "Usuário",
+    incidentStartedAt: typeof watch.incidentStartedAt === "string" ? watch.incidentStartedAt : null,
+  };
+  await client.from("system_settings").upsert([{
+    key: MODAL_DISMISS_KEY,
+    value: record,
+    updated_by: record.userName,
+    updated_at: record.at,
+  }], { onConflict: "key" });
+  return record;
+}
+
 export async function getBotStatusSnapshot() {
   await ensureWhatsappInstancesFromEnv().catch(() => { /* tabela pode não existir ainda */ });
   const client = sb();
-  const [{ data: inst }, { data: lockRow }, { data: watchRow }] = await Promise.all([
+  const [{ data: inst }, { data: lockRow }, { data: watchRow }, { data: dismissRow }] = await Promise.all([
     client.from("whatsapp_instances").select("id,label,last_connected,last_error,enabled,is_default").eq("is_default", true).maybeSingle(),
     client.from("system_settings").select("value").eq("key", LOCK_KEY).maybeSingle(),
     client.from("system_settings").select("value").eq("key", "zapi_watchdog_state").maybeSingle(),
+    client.from("system_settings").select("value").eq("key", MODAL_DISMISS_KEY).maybeSingle(),
   ]);
 
   const online = inst?.enabled !== false && inst?.last_connected === true;
-  const watch = watchRow?.value && typeof watchRow.value === "object" ? watchRow.value as { incidentOpen?: boolean } : {};
+  const watch = watchRow?.value && typeof watchRow.value === "object"
+    ? watchRow.value as { incidentOpen?: boolean; incidentStartedAt?: string | null }
+    : {};
   const lock = normalizeLock(lockRow?.value);
+  const modalDismiss = normalizeModalDismiss(dismissRow?.value);
+  const incidentStartedAt = typeof watch.incidentStartedAt === "string" ? watch.incidentStartedAt : null;
 
   const rawLabel = inst?.label || null;
   const label = safeWhatsappInstanceLabel(rawLabel);
@@ -597,5 +670,7 @@ export async function getBotStatusSnapshot() {
     lastError,
     incidentOpen: watch.incidentOpen === true || !online,
     lock,
+    modalDismissed: isModalDismissedForIncident(modalDismiss, incidentStartedAt, online),
+    modalDismissedBy: modalDismiss?.userName || null,
   };
 }
