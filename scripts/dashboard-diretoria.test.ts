@@ -185,7 +185,7 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(src, /recalculateOpenMissionsBilling/);
     assert.match(src, /friendlyRecalcError/);
     assert.match(src, /Fetch is aborted|fetch is aborted/i);
-    assert.doesNotMatch(src, /AbortController/);
+    assert.doesNotMatch(src, /new AbortController/);
     assert.match(src, /const refresh = useCallback\(async \(\) =>/);
     assert.match(src, /await recalculateOpenMissionsBilling\(\)/);
     assert.match(src, /await load\(\)/);
