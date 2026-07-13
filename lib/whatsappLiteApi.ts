@@ -501,12 +501,17 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
     };
   }
 
-  if (!req.ok || req.data?.success === false) {
+  const zapiError = String(req.data?.error || req.data?.message || "").trim();
+  const success = req.data?.success === true;
+  // Z-API às vezes devolve HTTP 200 com { error: "NOT_FOUND" } sem success=true
+  if (!req.ok || req.data?.success === false || zapiError || !success) {
+    const errLabel = zapiError || req.text || `Falha request-code (${useMethod})`;
+    const friendly = /not_found/i.test(errLabel)
+      ? `Z-API respondeu NOT_FOUND no ${useMethod} para ${parts.display} (não enviou pop-up/SMS/ligação). Confirme no celular: WhatsApp Business aberto e logado nesse número no eSIM. Se já estiver, o registro via API está bloqueado nesta conta — reconecte pelo painel developer.z-api.io desta instância ou fale com o suporte Z-API. SMS está bloqueado; phone-code web está em rate limit.`
+      : sanitizeWhatsappError(errLabel) || errLabel;
     return {
       ok: false,
-      error: sanitizeWhatsappError(String(
-        req.data?.error || req.data?.message || req.text || `Falha request-code (${useMethod})`,
-      )),
+      error: friendly,
       data: req.data,
       phase: "request_code",
       method: useMethod,

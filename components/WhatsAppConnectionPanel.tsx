@@ -317,17 +317,20 @@ const WhatsAppConnectionPanel: React.FC = () => {
       const req = data.requestCode || {};
       const phoneLabel = data.phoneDisplay || '+55 (11) 92683-9456';
       const raw = req.data ? ` | Z-API: ${JSON.stringify(req.data)}` : '';
-      if (req.ok) {
+      if (req.ok && req.data?.success === true) {
         setMessage(
           method === 'wa_old'
-            ? `✅ Pedido wa_old aceito para ${phoneLabel}. Se NÃO aparecer pop-up: o WhatsApp Business desse número precisa estar aberto no eSIM (conta já logada). SMS está bloqueado na Z-API; tente Ligação.${raw}`
+            ? `✅ Pop-up aceito pela Z-API para ${phoneLabel}. Deixe o WhatsApp Business aberto no eSIM e confirme o aviso na tela (não digite código de 8 letras).${raw}`
             : method === 'voice'
               ? `✅ Ligação solicitada para ${phoneLabel}. Atenda a chamada no eSIM e anote o código.${raw}`
               : (req.message || `Código solicitado via ${method} para ${phoneLabel}. Digite abaixo e confirme.${raw}`),
         );
       } else {
         const detail = req.error || data.error || `Falha ao solicitar código (${method})`;
-        setMessage(`${detail} (número: ${phoneLabel})${raw}`);
+        const notFoundHint = /not_found/i.test(String(detail) + JSON.stringify(req.data || {}))
+          ? ' Nada foi enviado ao celular — a Z-API não encontrou o registro (NOT_FOUND).'
+          : '';
+        setMessage(`❌ ${detail}${notFoundHint} (número: ${phoneLabel})${raw}`);
       }
     } catch (e: any) {
       setMessage(e?.message || 'Erro ao solicitar código');
