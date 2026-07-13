@@ -54,11 +54,10 @@ export function getPeriodRange(
     return { start, end, startIso: toIsoDate(start), endIso: toIsoDate(end) };
   }
 
-  const isCurrentMonth = period.year === now.getFullYear() && period.month === now.getMonth();
+  // Mês = calendário completo (01 → último dia), inclusive o mês corrente.
+  // Assim "Falta entrar/pagar" inclui vencimentos ainda por cair no mês.
   const start = new Date(period.year, period.month, 1, 0, 0, 0, 0);
-  const end = isCurrentMonth
-    ? new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-    : new Date(period.year, period.month + 1, 0, 23, 59, 59, 999);
+  const end = new Date(period.year, period.month + 1, 0, 23, 59, 59, 999);
   const startIso = `${period.year}-${pad(period.month + 1)}-01`;
   const endIso = `${period.year}-${pad(period.month + 1)}-${pad(end.getDate())}`;
   return { start, end, startIso, endIso };
@@ -82,13 +81,14 @@ export function formatPeriodLabel(period: DashboardPeriod, now = new Date()): st
   return `${MONTH_NAMES[period.month]} ${period.year}`;
 }
 
-/** Sufixo quando o filtro Mês é o mês corrente (acumulado até hoje). */
-export function formatPeriodRangeHint(period: DashboardPeriod, now = new Date()): string | null {
+/** Sempre mostra o intervalo calendário do mês selecionado (01 → último dia). */
+export function formatPeriodRangeHint(period: DashboardPeriod, _now = new Date()): string | null {
   const mode: DashboardPeriodMode = period.mode ?? 'month';
   if (mode !== 'month') return null;
-  const isCurrentMonth = period.year === now.getFullYear() && period.month === now.getMonth();
-  if (!isCurrentMonth) return null;
-  return `Período: 01/${pad(period.month + 1)}/${period.year} até ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+  const { startIso, endIso } = getPeriodRange(period, _now);
+  const [, sm, sd] = startIso.split('-');
+  const [, em, ed] = endIso.split('-');
+  return `Período: ${sd}/${sm}/${period.year} até ${ed}/${em}/${period.year}`;
 }
 
 /** Mês de referência para RH/comissões (sempre calendário do “agora” em hoje/semana). */

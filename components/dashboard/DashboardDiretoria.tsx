@@ -170,10 +170,10 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
   const operationalKpiRow = (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <KpiTile label="Receita OS" value={fmtShort(operational.grossRevenue)} sub="Faturamento canônico" accent="text-green-600" icon={<ArrowUpCircle size={16} className="text-green-500" />} />
+      <KpiTile label="Receita OS" value={fmtBRL(operational.grossRevenue)} sub="Faturamento canônico" accent="text-green-600" icon={<ArrowUpCircle size={16} className="text-green-500" />} />
       <KpiTile label="Margem OS" value={`${operational.grossMarginPct.toFixed(1)}%`} sub={`Meta ${MARGIN_GOAL_PCT}%`} accent="text-gray-900" />
-      <KpiTile label="Custos OS" value={fmtShort(operational.variableCost)} accent="text-red-600" icon={<ArrowDownCircle size={16} className="text-red-500" />} />
-      <KpiTile label="Lucro Operacional" value={fmtShort(operational.grossProfit)} accent={operational.grossProfit >= 0 ? 'text-green-600' : 'text-red-600'} />
+      <KpiTile label="Custos OS" value={fmtBRL(operational.variableCost)} accent="text-red-600" icon={<ArrowDownCircle size={16} className="text-red-500" />} />
+      <KpiTile label="Lucro Operacional" value={fmtBRL(operational.grossProfit)} accent={operational.grossProfit >= 0 ? 'text-green-600' : 'text-red-600'} />
     </div>
   );
 

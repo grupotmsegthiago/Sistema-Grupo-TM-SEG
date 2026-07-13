@@ -12,12 +12,19 @@ import { getPeriodRange, getCashMovementDate, formatPeriodRangeHint } from '../l
 import { MissionStatus } from '../types';
 
 describe('dashboardDiretoria aggregations', () => {
-  it('formatPeriodRangeHint indica acumulado até hoje no mês corrente', () => {
+  it('formatPeriodRangeHint mostra mês calendário completo (01 → último dia)', () => {
     const now = new Date(2026, 6, 12, 12, 0, 0);
     const hint = formatPeriodRangeHint({ mode: 'month', year: 2026, month: 6 }, now);
-    assert.equal(hint, 'Período: 01/07/2026 até 12/07/2026');
+    assert.equal(hint, 'Período: 01/07/2026 até 31/07/2026');
     const past = formatPeriodRangeHint({ mode: 'month', year: 2026, month: 5 }, now);
-    assert.equal(past, null);
+    assert.equal(past, 'Período: 01/06/2026 até 30/06/2026');
+  });
+
+  it('getPeriodRange no mês corrente vai até o último dia (não corta em hoje)', () => {
+    const now = new Date(2026, 6, 13, 12, 0, 0);
+    const range = getPeriodRange({ mode: 'month', year: 2026, month: 6 }, now);
+    assert.equal(range.startIso, '2026-07-01');
+    assert.equal(range.endIso, '2026-07-31');
   });
 
   it('computeFinancialKpis soma receita canônica e despesas pagas', () => {
@@ -97,6 +104,18 @@ describe('dashboardDiretoria aggregations', () => {
     assert.equal(cash.pendingReceivable, 1500);
     assert.equal(cash.pendingPayable, 1000);
     assert.equal(cash.cashForecast, 500);
+  });
+
+  it('computeCashKpis no mês corrente inclui vencimentos após hoje', () => {
+    const transactions = [
+      { id: 't1', type: 'INCOME', status: 'PENDING', amount: 2000, due_date: '2026-07-05', category_id: 'c0' },
+      { id: 't2', type: 'INCOME', status: 'PENDING', amount: 3000, due_date: '2026-07-25', category_id: 'c0' },
+      { id: 't3', type: 'INCOME', status: 'PENDING', amount: 9999, due_date: '2026-08-02', category_id: 'c0' },
+    ] as any[];
+    const period = { mode: 'month' as const, year: 2026, month: 6 };
+    const midJuly = new Date(2026, 6, 13, 12, 0, 0);
+    const cash = computeCashKpis([], transactions, [], [], period, midJuly);
+    assert.equal(cash.pendingReceivable, 5000);
   });
 
   it('computeCashKpis filtra pendências por vencimento na semana', () => {
