@@ -207,7 +207,6 @@ const LowMarginDialog: React.FC<Props> = ({
   };
 
   const filteredPendingRows = useMemo(() => filterBySearch(pendingRows), [pendingRows, search]);
-  const filteredVerifiedRows = useMemo(() => filterBySearch(verifiedRows), [verifiedRows, search]);
 
   const pendingTotals = useMemo(() => {
     const t = { count: filteredPendingRows.length, rev: 0, cost: 0, profit: 0 };
@@ -236,15 +235,9 @@ const LowMarginDialog: React.FC<Props> = ({
       'Custo_Grupo',
       'Lucro_Grupo',
       'Margem_Grupo%',
-      'Verificado_Por',
-      'Verificado_Em',
     ];
     const lines = [header.join(';')];
-    const allExport = [
-      ...filteredPendingRows.map((r) => ({ r, conferencia: 'PENDENTE' as const })),
-      ...filteredVerifiedRows.map((r) => ({ r, conferencia: 'VERIFICADO' as const })),
-    ];
-    for (const { r, conferencia } of allExport) {
+    for (const r of filteredPendingRows) {
       const childCount = (childrenByParent.get(r.m.id) || []).length;
       const group = childCount > 0 ? buildGroupSummary(r.m.id, missionPool, refs) : null;
       lines.push([
@@ -252,7 +245,7 @@ const LowMarginDialog: React.FC<Props> = ({
         (r.m.client || '').replace(/;/g, ','),
         (r.m.provider || '').replace(/;/g, ','),
         r.m.status || '',
-        conferencia,
+        'PENDENTE',
         childCount > 0 ? 'SIM' : 'NAO',
         String(childCount),
         r.rev.toFixed(2).replace('.', ','),
@@ -263,8 +256,6 @@ const LowMarginDialog: React.FC<Props> = ({
         group ? group.groupCost.toFixed(2).replace('.', ',') : '',
         group ? group.groupProfit.toFixed(2).replace('.', ',') : '',
         group ? group.groupMarginPct.toFixed(1).replace('.', ',') : '',
-        r.verifiedEntry?.by || '',
-        r.verifiedEntry?.at ? formatDateTimeBR(r.verifiedEntry.at) : '',
       ].join(';'));
     }
     const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
@@ -354,7 +345,7 @@ const LowMarginDialog: React.FC<Props> = ({
                   type="button"
                   onClick={() => handleVerify(r, group, (childrenByParent.get(r.m.id) || []).map((c) => c.id))}
                   className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition"
-                  title="Marcar como verificada — vai para a seção Já verificadas"
+                  title="Marcar como verificada — some da fila de pendentes"
                   data-testid={`button-verify-low-margin-${r.m.id}`}
                 >
                   <Check size={11} /> Verificado
@@ -480,7 +471,7 @@ const LowMarginDialog: React.FC<Props> = ({
           </div>
           <button
             onClick={exportCsv}
-            disabled={filteredPendingRows.length === 0 && filteredVerifiedRows.length === 0}
+            disabled={filteredPendingRows.length === 0}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 rounded-lg transition"
             data-testid="button-export-low-margin"
           >
@@ -495,9 +486,9 @@ const LowMarginDialog: React.FC<Props> = ({
             <span className="text-gray-700">
               {pendingTotals.count === 1 ? 'pendente' : 'pendentes'}
             </span>
-            {filteredVerifiedRows.length > 0 && (
+            {verifiedRows.length > 0 && (
               <span className="text-emerald-700 text-xs font-bold">
-                · {filteredVerifiedRows.length} verificada{filteredVerifiedRows.length !== 1 ? 's' : ''}
+                · {verifiedRows.length} já verificada{verifiedRows.length !== 1 ? 's' : ''} (ocultas)
               </span>
             )}
           </div>
@@ -513,70 +504,43 @@ const LowMarginDialog: React.FC<Props> = ({
         </div>
 
         <div className="flex-1 overflow-auto">
-          {filteredPendingRows.length === 0 && filteredVerifiedRows.length === 0 ? (
+          {filteredPendingRows.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center text-gray-500">
               <Percent size={42} className="text-emerald-400 mb-3" />
-              <p className="text-sm font-semibold text-gray-700">
-                Nenhuma OS com margem abaixo de {LOW_MARGIN_THRESHOLD_PCT}% no período.
-              </p>
+              {verifiedRows.length > 0 ? (
+                <>
+                  <p className="text-sm font-semibold text-emerald-800">
+                    Nenhuma OS pendente de verificação neste filtro.
+                  </p>
+                  <p className="text-xs text-emerald-700 mt-1">
+                    {verifiedRows.length} OS abaixo de {LOW_MARGIN_THRESHOLD_PCT}% já foram verificadas e não aparecem mais na fila.
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm font-semibold text-gray-700">
+                  Nenhuma OS com margem abaixo de {LOW_MARGIN_THRESHOLD_PCT}% no período.
+                </p>
+              )}
             </div>
           ) : (
-            <>
-              {filteredPendingRows.length === 0 ? (
-                <div className="px-5 py-4 bg-emerald-50 border-b border-emerald-100 text-center">
-                  <p className="text-sm font-semibold text-emerald-800">Todas as OS abaixo de {LOW_MARGIN_THRESHOLD_PCT}% foram verificadas neste filtro.</p>
-                  <p className="text-xs text-emerald-700 mt-1">Confira o histórico na seção abaixo.</p>
-                </div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-white border-b border-gray-200 shadow-sm z-10">
-                    <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-gray-600">
-                      <th className="px-4 py-2.5">OS</th>
-                      <th className="px-3 py-2.5">Cliente</th>
-                      <th className="px-3 py-2.5">Fornecedor</th>
-                      <th className="px-3 py-2.5">Status</th>
-                      <th className="px-3 py-2.5 text-right">Receita</th>
-                      <th className="px-3 py-2.5 text-right">Custo</th>
-                      <th className="px-3 py-2.5 text-right">Lucro</th>
-                      <th className="px-3 py-2.5 text-right">Margem</th>
-                      <th className="px-3 py-2.5"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPendingRows.map((r) => renderMissionRow(r, 'pending'))}
-                  </tbody>
-                </table>
-              )}
-
-              {filteredVerifiedRows.length > 0 && (
-                <div className="border-t-4 border-emerald-200">
-                  <div className="px-5 py-2.5 bg-emerald-50/80 border-b border-emerald-100 flex items-center gap-2">
-                    <Check size={14} className="text-emerald-600" />
-                    <span className="text-xs font-black uppercase tracking-wider text-emerald-800">
-                      Já verificadas ({filteredVerifiedRows.length})
-                    </span>
-                  </div>
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-emerald-50/90 border-b border-emerald-100 z-10">
-                      <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-emerald-800">
-                        <th className="px-4 py-2.5">OS</th>
-                        <th className="px-3 py-2.5">Cliente</th>
-                        <th className="px-3 py-2.5">Fornecedor</th>
-                        <th className="px-3 py-2.5">Conferência</th>
-                        <th className="px-3 py-2.5 text-right">Receita</th>
-                        <th className="px-3 py-2.5 text-right">Custo</th>
-                        <th className="px-3 py-2.5 text-right">Lucro</th>
-                        <th className="px-3 py-2.5 text-right">Margem</th>
-                        <th className="px-3 py-2.5"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredVerifiedRows.map((r) => renderMissionRow(r, 'verified'))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white border-b border-gray-200 shadow-sm z-10">
+                <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-gray-600">
+                  <th className="px-4 py-2.5">OS</th>
+                  <th className="px-3 py-2.5">Cliente</th>
+                  <th className="px-3 py-2.5">Fornecedor</th>
+                  <th className="px-3 py-2.5">Status</th>
+                  <th className="px-3 py-2.5 text-right">Receita</th>
+                  <th className="px-3 py-2.5 text-right">Custo</th>
+                  <th className="px-3 py-2.5 text-right">Lucro</th>
+                  <th className="px-3 py-2.5 text-right">Margem</th>
+                  <th className="px-3 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPendingRows.map((r) => renderMissionRow(r, 'pending'))}
+              </tbody>
+            </table>
           )}
         </div>
       </div>
