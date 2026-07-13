@@ -9,6 +9,7 @@ import {
   WHATSAPP_BOT_DISPLAY_NAME,
 } from "./zapiMobileEnv.js";
 import { looksLikeZapiSecret, safeWhatsappInstanceLabel, sanitizeWhatsappError } from "./whatsappDisplayUtils.js";
+import { buildMobileConnectionDiagnosis } from "./whatsappMobileDiagnosis.js";
 
 function sb() {
   const client = createSupabaseAdminClient();
@@ -515,15 +516,11 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
     const phoneLinkCode = await fetchPhoneLinkCode(row);
     let friendly: string;
     if (req.data?.blocked === true) {
-      friendly = phoneLinkCode
-        ? `WhatsApp bloqueou pop-up/SMS/ligação para ${parts.display} (sem appealToken — a Z-API não consegue desbanir). Use o código de vinculação ${phoneLinkCode} no Business: Aparelhos conectados → Vincular com número. Ou escaneie o QR.`
-        : `WhatsApp bloqueou o envio (${useMethod}) para ${parts.display}, sem appealToken para desbanimento. Use QR no painel ou app.z-api.io.`;
+      friendly = `WhatsApp bloqueou pop-up/SMS/ligação para ${parts.display} (blocked sem appealToken — a Z-API não desbloqueia). Instância MOBILE NÃO conecta com código de 8 letras. No painel Z-API, converta para WEB e use QR/código em Aparelhos conectados — ou abra chamado na Z-API.`;
     } else if (useMethod === "sms" && Number(req.data?.smsWaitSeconds) === -1) {
-      friendly = phoneLinkCode
-        ? `SMS bloqueado (smsWaitSeconds=-1). Código de vinculação disponível: ${phoneLinkCode}`
-        : `SMS bloqueado pela Z-API/WhatsApp para ${parts.display}. Tente ligação ou QR.`;
+      friendly = `SMS bloqueado (smsWaitSeconds=-1) para ${parts.display}. Em MOBILE, tente ligação/pop-up; se também blocked, converta a instância para WEB.`;
     } else if (useMethod === "wa_old" && avail.data?.waOldEligible === false) {
-      friendly = `Pop-up wa_old não elegível agora para ${parts.display}. Tente ligação ou código/QR.`;
+      friendly = `Pop-up wa_old não elegível agora para ${parts.display}. Tente ligação ou converta para WEB.`;
     } else if (/unable to find matching target resource method/i.test(zapiError)) {
       friendly = `Rota Z-API inválida no request-registration-code — confira Client-Token e tipo MOBILE no painel.`;
     } else {
@@ -540,10 +537,12 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
       registration: avail.data,
       phoneUsed: payload,
       phoneDisplay: parts.display,
-      phoneLinkCode,
-      message: phoneLinkCode
-        ? `Fallback phone-code: ${phoneLinkCode} — no eSIM: Aparelhos conectados → Vincular com número.`
-        : undefined,
+      phoneLinkCode: req.data?.blocked === true ? null : phoneLinkCode,
+      message: req.data?.blocked === true
+        ? "Registro MOBILE bloqueado pelo WhatsApp. Código de vinculação (8 letras) não resolve neste modo."
+        : (phoneLinkCode
+          ? `Fallback phone-code só é válido se a instância for WEB: ${phoneLinkCode}`
+          : undefined),
     };
   }
 
@@ -684,6 +683,56 @@ export async function attemptReconnect(force = false): Promise<ReconnectResult> 
   }
 
   const phoneLinkCode = await fetchPhoneLinkCode(row);
+
+  // MOBILE: tentar registro real antes de oferecer phone-code (que é fluxo WEB).
+  if (creds.type === "mobile") {
+    const pairing = await requestMobilePairingCode(row, "wa_old");
+    if (pairing.ok) {
+      return {
+        attempted: true,
+        ok: false,
+        phase: "wa_old",
+        message: pairing.message || "Pop-up enviado — confirme no WhatsApp Business do eSIM.",
+        connectedAfter: false,
+        details: { pairing, force },
+      };
+    }
+    const blocked = pairing.data?.blocked === true;
+    const diagnosis = buildMobileConnectionDiagnosis({
+      instanceType: "mobile",
+      connected: false,
+      registrationAvailable: (pairing as any).registration || null,
+      requestCodeResult: pairing.data,
+      phoneLinkCode,
+    });
+    if (blocked || diagnosis.recommendedPath === "convert_to_web") {
+      return {
+        attempted: true,
+        ok: false,
+        phase: "mobile_registration_blocked",
+        message: diagnosis.summaryPt,
+        connectedAfter: false,
+        details: {
+          pairing,
+          diagnosis,
+          phoneLinkCode: phoneLinkCode || null,
+          force,
+          note: phoneLinkCode
+            ? "phone-code gerado, mas NÃO conecta instância MOBILE — só serve se converter para WEB."
+            : undefined,
+        },
+      };
+    }
+    return {
+      attempted: true,
+      ok: false,
+      phase: "wa_old",
+      message: pairing.error || "Falha no registro mobile.",
+      connectedAfter: false,
+      details: { pairing, diagnosis, phoneLinkCode, force },
+    };
+  }
+
   if (phoneLinkCode) {
     return {
       attempted: true,
