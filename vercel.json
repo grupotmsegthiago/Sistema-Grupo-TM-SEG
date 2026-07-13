@@ -212,7 +212,7 @@
     },
     {
       "source": "/api/zapi/health",
-      "destination": "/api/zapi/health"
+      "destination": "/api/zapi-health"
     },
     {
       "source": "/api/gemini/generate",
