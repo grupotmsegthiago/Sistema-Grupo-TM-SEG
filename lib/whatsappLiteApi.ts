@@ -8,6 +8,7 @@ import {
   OFFICIAL_BOT_PHONE_LOCAL,
   WHATSAPP_BOT_DISPLAY_NAME,
 } from "./zapiMobileEnv.js";
+import { looksLikeZapiSecret, safeWhatsappInstanceLabel, sanitizeWhatsappError } from "./whatsappDisplayUtils.js";
 
 function sb() {
   const client = createSupabaseAdminClient();
@@ -142,12 +143,14 @@ export async function ensureWhatsappInstancesFromEnv(): Promise<void> {
     ? "mobile" as const
     : "web" as const;
 
+  const safeLabel = safeWhatsappInstanceLabel(envCreds.label);
+
   const payload: Record<string, unknown> = {
     provider: "zapi",
     instance_type: type,
     zapi_instance_id: envCreds.instanceId,
     zapi_token: envCreds.token,
-    label: envCreds.label || WHATSAPP_BOT_DISPLAY_NAME,
+    label: safeLabel,
     official_ddi: process.env.ZAPI_OFFICIAL_DDI || "55",
     official_phone: phone,
     enabled: true,
@@ -171,7 +174,7 @@ export async function ensureWhatsappInstancesFromEnv(): Promise<void> {
   if (!count || count === 0) {
     const { error } = await client.from("whatsapp_instances").insert([{
       slug: "central",
-      label: payload.label,
+      label: safeLabel,
       provider: "zapi",
       instance_type: type,
       zapi_instance_id: envCreds.instanceId,
@@ -499,27 +502,31 @@ async function persistLock(lock: ReconnectLock | null): Promise<void> {
   }], { onConflict: "key" });
 }
 
-export async function claimReconnectLock(holderId: string, holderName: string) {
+export async function claimReconnectLock(
+  holderId: string,
+  holderName: string,
+  options: { force?: boolean } = {},
+) {
   const id = String(holderId || "").trim();
   const name = String(holderName || "").trim() || "Usuário";
   if (!id) return { ok: false, lock: null, reason: "Usuário inválido" };
 
   const current = await loadReconnectLock();
-  if (current && current.holderId !== id) {
+  if (current && current.holderId !== id && !options.force) {
     return { ok: false, lock: current, reason: `${current.holderName} já está reconectando o bot.` };
   }
 
   const lock: ReconnectLock = {
     holderId: id,
     holderName: name,
-    acquiredAt: current?.holderId === id ? current.acquiredAt : new Date().toISOString(),
+    acquiredAt: current?.holderId === id && !options.force ? current.acquiredAt : new Date().toISOString(),
     expiresAt: new Date(Date.now() + RECONNECT_LOCK_TTL_MS).toISOString(),
-    phase: current?.holderId === id ? (current.phase || "claimed") : "claimed",
-    phoneLinkCode: current?.holderId === id ? current.phoneLinkCode : null,
-    reconnectMessage: current?.holderId === id ? current.reconnectMessage : null,
+    phase: options.force ? "claimed" : (current?.holderId === id ? (current.phase || "claimed") : "claimed"),
+    phoneLinkCode: options.force ? null : (current?.holderId === id ? current.phoneLinkCode : null),
+    reconnectMessage: options.force ? null : (current?.holderId === id ? current.reconnectMessage : null),
   };
   await persistLock(lock);
-  return { ok: true, lock };
+  return { ok: true, lock, tookOver: options.force && !!current && current.holderId !== id };
 }
 
 export async function heartbeatReconnectLock(holderId: string): Promise<ReconnectLock | null> {
@@ -562,7 +569,7 @@ export async function getBotStatusSnapshot() {
   await ensureWhatsappInstancesFromEnv().catch(() => { /* tabela pode não existir ainda */ });
   const client = sb();
   const [{ data: inst }, { data: lockRow }, { data: watchRow }] = await Promise.all([
-    client.from("whatsapp_instances").select("label,last_connected,last_error,enabled,is_default").eq("is_default", true).maybeSingle(),
+    client.from("whatsapp_instances").select("id,label,last_connected,last_error,enabled,is_default").eq("is_default", true).maybeSingle(),
     client.from("system_settings").select("value").eq("key", LOCK_KEY).maybeSingle(),
     client.from("system_settings").select("value").eq("key", "zapi_watchdog_state").maybeSingle(),
   ]);
@@ -571,11 +578,23 @@ export async function getBotStatusSnapshot() {
   const watch = watchRow?.value && typeof watchRow.value === "object" ? watchRow.value as { incidentOpen?: boolean } : {};
   const lock = normalizeLock(lockRow?.value);
 
+  const rawLabel = inst?.label || null;
+  const label = safeWhatsappInstanceLabel(rawLabel);
+  const lastError = sanitizeWhatsappError(inst?.last_error);
+
+  if (inst?.id && rawLabel && looksLikeZapiSecret(rawLabel)) {
+    void client.from("whatsapp_instances").update({
+      label: WHATSAPP_BOT_DISPLAY_NAME,
+      last_error: sanitizeWhatsappError(inst.last_error),
+      updated_at: new Date().toISOString(),
+    }).eq("id", inst.id);
+  }
+
   return {
     configured: !!inst,
     online,
-    label: inst?.label || null,
-    lastError: inst?.last_error || null,
+    label,
+    lastError,
     incidentOpen: watch.incidentOpen === true || !online,
     lock,
   };

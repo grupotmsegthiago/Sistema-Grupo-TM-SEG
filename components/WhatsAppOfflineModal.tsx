@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Copy, Loader2, RefreshCw, Smartphone, WifiOff, X } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
+import { sanitizeWhatsappError } from '../lib/whatsappDisplayUtils';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { supabase, WHATSAPP_BOT_BROADCAST_CHANNEL } from '../lib/supabase';
 
@@ -46,6 +47,15 @@ function broadcastBotStatus(payload: Partial<BotStatus>) {
   });
 }
 
+function isReconnectAdmin(user: LocalUser | null): boolean {
+  const role = String(user?.role || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return ['diretoria', 'administrador', 'ceo', 'admin'].includes(role);
+}
+
 const ESIM_PHONE = '(11) 92683-9456';
 const CODE_URGENT_MSG = 'Mande URGENTE esse código para o Thiago — só ele consegue vincular no eSIM agora.';
 
@@ -73,6 +83,7 @@ const WhatsAppOfflineModal: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const user = useMemo(() => readUser(), []);
   const userId = String(user?.id || '');
+  const reconnectAdmin = isReconnectAdmin(user);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchStatus = useCallback(async () => {
@@ -114,6 +125,13 @@ const WhatsAppOfflineModal: React.FC = () => {
   const lock = status?.lock || null;
   const isHolder = !!lock && lock.holderId === userId;
   const showModal = !!status?.configured && !status.online && !dismissed;
+
+  // Diretoria/Admin (ex.: Thiago): popup volta sozinho enquanto bot offline.
+  useEffect(() => {
+    if (!status?.configured || status.online || !reconnectAdmin || !dismissed) return;
+    const t = setTimeout(() => setDismissed(false), 90_000);
+    return () => clearTimeout(t);
+  }, [status?.configured, status?.online, reconnectAdmin, dismissed]);
 
   const copyCodeToClipboard = async (code: string) => {
     const text = buildCopyText(code, status?.label);
@@ -161,12 +179,16 @@ const WhatsAppOfflineModal: React.FC = () => {
     };
   }, [showModal, isHolder]);
 
-  const claimAndGenerate = async () => {
+  const claimAndGenerate = async (forceTakeover = false) => {
     setBusy(true);
     setMessage(null);
     setCopied(false);
+    setDismissed(false);
     try {
-      const claimRes = await authFetch('/api/whatsapp/bot-status/claim', { method: 'POST' });
+      const claimRes = await authFetch('/api/whatsapp/bot-status/claim', {
+        method: 'POST',
+        body: JSON.stringify({ force: forceTakeover }),
+      });
       const claimData = await claimRes.json();
       if (claimData.lock) {
         setStatus((s) => (s ? { ...s, lock: claimData.lock } : s));
@@ -229,6 +251,8 @@ const WhatsAppOfflineModal: React.FC = () => {
   if (!showModal) return null;
 
   const phoneCode = lock?.phoneLinkCode || null;
+  const displayLabel = status?.label || 'Monitoramento 24h';
+  const displayError = sanitizeWhatsappError(status?.lastError);
 
   return (
     <div
@@ -246,7 +270,7 @@ const WhatsAppOfflineModal: React.FC = () => {
               Bot WhatsApp OFFLINE
             </h2>
             <p className="text-xs opacity-90 font-medium normal-case">
-              {status?.label || 'Monitoramento 24h'} — envios interrompidos
+              {displayLabel} — envios interrompidos
             </p>
           </div>
         </div>
@@ -257,17 +281,23 @@ const WhatsAppOfflineModal: React.FC = () => {
             Assim que alguém assumir, os demais ficam em modo leitura até reconectar.
           </p>
 
-          {status?.lastError && (
+          {reconnectAdmin && (
+            <p className="text-xs bg-blue-50 border border-blue-200 text-blue-900 p-3 rounded-lg">
+              <strong>Diretoria:</strong> você pode assumir a reconexão e gerar <strong>novo código</strong> a qualquer momento (ex.: se o anterior expirou no eSIM).
+            </p>
+          )}
+
+          {displayError && (
             <p className="text-xs bg-red-50 border border-red-100 text-red-800 p-3 rounded-lg">
-              {status.lastError}
+              {displayError}
             </p>
           )}
 
           {lock && !isHolder && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-950 p-4 rounded-lg">
+            <div className="bg-amber-50 border border-amber-200 text-amber-950 p-4 rounded-lg space-y-3">
               <p className="font-bold">{lock.holderName} está reconectando</p>
-              <p className="text-xs mt-1 opacity-80">
-                Desde {new Date(lock.acquiredAt).toLocaleTimeString('pt-BR')} — aguarde a confirmação no celular.
+              <p className="text-xs opacity-80">
+                Desde {new Date(lock.acquiredAt).toLocaleTimeString('pt-BR')} — aguarde ou assuma se o código expirou.
               </p>
               {lock.phase === 'code_ready' && lock.phoneLinkCode && (
                 <div className="mt-2 space-y-2">
@@ -283,6 +313,17 @@ const WhatsAppOfflineModal: React.FC = () => {
                     <Copy size={14} /> Copiar código e instruções
                   </button>
                 </div>
+              )}
+              {reconnectAdmin && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void claimAndGenerate(true)}
+                  className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white text-sm font-bold py-3 px-4 rounded-xl disabled:opacity-50"
+                >
+                  {busy ? <Loader2 className="animate-spin" size={18} /> : <Smartphone size={18} />}
+                  Assumir e gerar NOVO código
+                </button>
               )}
             </div>
           )}
@@ -318,9 +359,18 @@ const WhatsAppOfflineModal: React.FC = () => {
                         className="w-full flex items-center justify-center gap-2 bg-gray-200 hover:bg-gray-300 text-gray-900 font-bold py-3 px-4 rounded-xl"
                         data-testid="button-close-whatsapp-modal"
                       >
-                        <X size={18} /> Fechar
+                        <X size={18} /> Fechar (volta em ~1 min se ainda offline)
                       </button>
                     )}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void generateCode()}
+                      className="w-full flex items-center justify-center gap-2 border-2 border-red-300 text-red-800 hover:bg-red-50 font-bold py-2.5 px-4 rounded-xl disabled:opacity-50"
+                    >
+                      {busy ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+                      Gerar NOVO código (se expirou)
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -351,7 +401,7 @@ const WhatsAppOfflineModal: React.FC = () => {
             <button
               type="button"
               disabled={busy}
-              onClick={() => void claimAndGenerate()}
+              onClick={() => void claimAndGenerate(false)}
               className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white font-bold py-3 px-4 rounded-xl disabled:opacity-50"
             >
               {busy ? <Loader2 className="animate-spin" size={18} /> : <Smartphone size={18} />}
