@@ -144,7 +144,7 @@ async function attemptMobileWaOldReconnect(
     };
   }
 
-  const req = await zapiFetchWith(mc, "mobile/request-code", {
+  const req = await zapiFetchWith(mc, "mobile/request-registration-code", {
     method: "POST",
     body: JSON.stringify({ ddi, phone, method: "wa_old" }),
   });
@@ -161,7 +161,7 @@ async function attemptMobileWaOldReconnect(
         attempted: true,
         ok: false,
         phase: "wa_old",
-        message: `Instância Z-API sem endpoint wa_old — use no WhatsApp Business: Aparelhos conectados → Conectar → Vincular com número → código ${linkCode}.`,
+        message: `request-registration-code indisponível — use no WhatsApp Business: Aparelhos conectados → Vincular com número → código ${linkCode}.`,
         connectedAfter: false,
         details: { requestCode: req.data, phoneLinkCode: linkCode, fallback: "phone-code" },
       };
@@ -170,7 +170,7 @@ async function attemptMobileWaOldReconnect(
       attempted: true,
       ok: false,
       phase: "wa_old",
-      message: "Endpoint mobile/request-code indisponível nesta instância Z-API — confira no painel Z-API se o tipo é MOBILE ou use QR em Configurações → WhatsApp.",
+      message: "Endpoint mobile/request-registration-code indisponível — confira tipo MOBILE no painel Z-API ou use QR em Configurações → WhatsApp.",
       details: { requestCode: req.data },
     };
   }

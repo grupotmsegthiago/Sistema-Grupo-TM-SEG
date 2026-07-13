@@ -60,7 +60,7 @@ export default async function handler(req: { method?: string }, res: {
         registrationError = sanitizeWhatsappError(reg.text) || `HTTP ${reg.status}`;
       }
 
-      // Testa formatos de telefone — Z-API devolve NOT_FOUND com payload errado ou registro indisponível.
+      // Path oficial: mobile/request-registration-code
       const phoneVariants: Array<{ label: string; ddi: string; phone: string }> = [
         { label: "ddi+local", ddi, phone: phoneLocal },
         {
@@ -75,7 +75,7 @@ export default async function handler(req: { method?: string }, res: {
       for (const v of phoneVariants) {
         const body: Record<string, string> = { phone: v.phone, method: "wa_old" };
         if (v.ddi) body.ddi = v.ddi;
-        const wa = await zapiFetch(creds, "mobile/request-code", {
+        const wa = await zapiFetch(creds, "mobile/request-registration-code", {
           method: "POST",
           body: JSON.stringify(body),
         });
@@ -84,7 +84,10 @@ export default async function handler(req: { method?: string }, res: {
           sent: body,
           httpStatus: wa.status,
           success: wa.data?.success ?? null,
+          blocked: wa.data?.blocked ?? null,
           error: wa.data?.error || wa.data?.message || (!wa.ok ? wa.text : null),
+          smsWaitSeconds: wa.data?.smsWaitSeconds ?? null,
+          voiceWaitSeconds: wa.data?.voiceWaitSeconds ?? null,
           hasCaptcha: typeof wa.data?.captcha === "string",
           keys: wa.data ? Object.keys(wa.data) : [],
         });
@@ -94,16 +97,18 @@ export default async function handler(req: { method?: string }, res: {
       waOldProbe = primary
         ? {
             ...primary,
+            path: "mobile/request-registration-code",
             variants: variantProbes,
             anySuccess: variantProbes.some((p) => p.success === true),
           }
         : null;
 
-      const voice = await zapiFetch(creds, "mobile/request-code", {
+      const voice = await zapiFetch(creds, "mobile/request-registration-code", {
         method: "POST",
         body: JSON.stringify({ ddi, phone: phoneLocal, method: "voice" }),
       });
       voiceProbe = {
+        path: "mobile/request-registration-code",
         httpStatus: voice.status,
         ok: voice.ok,
         success: voice.data?.success ?? null,

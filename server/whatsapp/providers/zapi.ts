@@ -186,7 +186,7 @@ export class ZapiWhatsappProvider implements WhatsappProvider {
 
   async mobileRequestCode(method: "sms" | "voice" | "wa_old" = "wa_old") {
     const { ddi, phone } = officialPhoneParts(this.instance);
-    const { ok, data, text } = await zapiFetchWith(this.creds(), "mobile/request-code", {
+    const { ok, data, text } = await zapiFetchWith(this.creds(), "mobile/request-registration-code", {
       method: "POST",
       body: JSON.stringify({ ddi, phone, method }),
     });
@@ -194,7 +194,7 @@ export class ZapiWhatsappProvider implements WhatsappProvider {
   }
 
   async mobileConfirmCode(code: string) {
-    const { ok, data, text } = await zapiFetchWith(this.creds(), "mobile/confirm-code", {
+    const { ok, data, text } = await zapiFetchWith(this.creds(), "mobile/confirm-registration-code", {
       method: "POST",
       body: JSON.stringify({ code: String(code).trim() }),
     });
@@ -203,7 +203,7 @@ export class ZapiWhatsappProvider implements WhatsappProvider {
   }
 
   async mobileConfirmSecurityCode(pin: string) {
-    const { ok, data, text } = await zapiFetchWith(this.creds(), "mobile/confirm-security-code", {
+    const { ok, data, text } = await zapiFetchWith(this.creds(), "mobile/confirm-pin-code", {
       method: "POST",
       body: JSON.stringify({ code: String(pin).trim() }),
     });

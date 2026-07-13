@@ -457,7 +457,11 @@ export async function fetchPhoneLinkCodeDetailed(row: InstanceRow): Promise<{
   return { code: null, error: err, httpStatus: status, raw: data };
 }
 
-/** Fluxo mobile: registration-available → request-code (wa_old/sms). */
+/**
+ * Fluxo mobile (docs Z-API):
+ * registration-available → request-registration-code → (respond-captcha) → confirm-registration-code → confirm-pin-code
+ * Paths reais (não os slugs da URL do Mintlify): ver curl em developer.z-api.io/mobile/request-code
+ */
 export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old" | "sms" | "voice" = "wa_old") {
   const creds = credsFromRow(row);
   if (!creds) return { ok: false, error: "Credenciais incompletas", data: null as Record<string, unknown> | null };
@@ -481,7 +485,8 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
   }
 
   const useMethod = method;
-  const req = await zapiFetch(creds, "mobile/request-code", {
+  // Path oficial: /mobile/request-registration-code (NÃO /mobile/request-code)
+  const req = await zapiFetch(creds, "mobile/request-registration-code", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -503,17 +508,23 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
 
   const zapiErrorCode = String(req.data?.error || "").trim();
   const zapiErrorMsg = String(req.data?.message || "").trim();
-  const zapiError = [zapiErrorCode, zapiErrorMsg].filter(Boolean).join(": ") || String(req.data?.error || req.data?.message || "").trim();
+  const zapiError = [zapiErrorCode, zapiErrorMsg].filter(Boolean).join(": ");
   const success = req.data?.success === true;
-  // Z-API às vezes devolve HTTP 200 com { error: "NOT_FOUND" } sem success=true
   if (!req.ok || req.data?.success === false || zapiError || !success) {
-    const errLabel = zapiError || req.text || `Falha request-code (${useMethod})`;
-    const routingBroken = /unable to find matching target resource method/i.test(errLabel);
-    const friendly = routingBroken
-      ? `Bug/rota da Z-API: mobile/request-code (${useMethod}) responde "Unable to find matching target resource method" — o pop-up/SMS/ligação NÃO sai da API. Abra o painel app.z-api.io desta instância e reconecte por lá, ou escaneie o QR no sistema. SMS bloqueado; phone-code em rate limit. Abra chamado no suporte Z-API citando esse erro.`
-      : /not_found/i.test(errLabel)
-        ? `Z-API respondeu NOT_FOUND no ${useMethod} para ${parts.display} (nada enviado ao celular). WhatsApp Business precisa estar aberto/logado no eSIM; se já estiver, use o painel Z-API. SMS bloqueado; phone-code em rate limit.`
-        : sanitizeWhatsappError(errLabel) || errLabel;
+    let friendly: string;
+    if (req.data?.blocked === true) {
+      friendly = `WhatsApp bloqueou o envio (${useMethod}) para ${parts.display}. Aguarde ou tente outro método / painel Z-API.`;
+    } else if (useMethod === "sms" && Number(req.data?.smsWaitSeconds) === -1) {
+      friendly = `SMS bloqueado pela Z-API/WhatsApp para ${parts.display} (smsWaitSeconds=-1). Tente ligação (voice) ou pop-up (wa_old) se elegível.`;
+    } else if (useMethod === "wa_old" && avail.data?.waOldEligible === false) {
+      friendly = `Pop-up wa_old não elegível agora para ${parts.display}. Tente ligação (voice) ou aguarde liberação do SMS.`;
+    } else if (/unable to find matching target resource method/i.test(zapiError)) {
+      friendly = `Rota Z-API inválida no request-registration-code — confira Client-Token e tipo MOBILE no painel.`;
+    } else {
+      friendly = sanitizeWhatsappError(zapiError || req.text || `Falha request-registration-code (${useMethod})`)
+        || zapiError
+        || `Falha ao solicitar código (${useMethod})`;
+    }
     return {
       ok: false,
       error: friendly,
@@ -546,7 +557,7 @@ export async function confirmMobilePairingCode(code: string) {
   if (!row || !instanceConfigured(row)) return { ok: false, error: "Instância não configurada", data: null as Record<string, unknown> | null };
   const creds = credsFromRow(row);
   if (!creds) return { ok: false, error: "Credenciais incompletas", data: null as Record<string, unknown> | null };
-  const { ok, data, text } = await zapiFetch(creds, "mobile/confirm-code", {
+  const { ok, data, text } = await zapiFetch(creds, "mobile/confirm-registration-code", {
     method: "POST",
     body: JSON.stringify({ code: String(code).trim() }),
   });
@@ -565,7 +576,7 @@ export async function confirmMobileSecurityPin(pin: string) {
   if (!row || !instanceConfigured(row)) return { ok: false, error: "Instância não configurada", data: null as Record<string, unknown> | null };
   const creds = credsFromRow(row);
   if (!creds) return { ok: false, error: "Credenciais incompletas", data: null as Record<string, unknown> | null };
-  const { ok, data, text } = await zapiFetch(creds, "mobile/confirm-security-code", {
+  const { ok, data, text } = await zapiFetch(creds, "mobile/confirm-pin-code", {
     method: "POST",
     body: JSON.stringify({ code: String(pin).trim() }),
   });
