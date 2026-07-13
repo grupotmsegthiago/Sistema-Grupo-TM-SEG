@@ -84,6 +84,8 @@ export function toPublicInstance(row: InstanceRow) {
   const { zapi_token, zapi_client_token, meta_access_token, ...rest } = row;
   return {
     ...rest,
+    label: safeWhatsappInstanceLabel(rest.label),
+    last_error: sanitizeWhatsappError(rest.last_error),
     has_zapi_token: !!zapi_token,
     has_meta_token: !!meta_access_token,
     zapi_token_masked: zapi_token ? maskSecret(zapi_token) : undefined,
@@ -236,6 +238,20 @@ export async function listInstances(): Promise<InstanceRow[]> {
 
   // Mantém credenciais Z-API da Vercel alinhadas quando configuradas.
   await ensureWhatsappInstancesFromEnv().catch(() => { /* não bloqueia listagem */ });
+
+  // Corrige label com URL/token Z-API gravado erroneamente no banco.
+  for (const row of rows) {
+    if (row.label && looksLikeZapiSecret(row.label)) {
+      const fixed = safeWhatsappInstanceLabel(row.label);
+      void client.from("whatsapp_instances").update({
+        label: fixed,
+        last_error: sanitizeWhatsappError(row.last_error),
+        updated_at: new Date().toISOString(),
+      }).eq("id", row.id);
+      row.label = fixed;
+    }
+  }
+
   return rows;
 }
 
@@ -571,6 +587,103 @@ export async function releaseReconnectLock(holderId: string, force = false): Pro
   if (!current) return;
   if (!force && current.holderId !== id) return;
   await persistLock(null);
+}
+
+export type ConnectionTestResult = {
+  ok: boolean;
+  instanceId: string;
+  slug: string;
+  provider: string;
+  apiReachable: boolean;
+  connected: boolean;
+  connectedPhone: string | null;
+  expectedPhone: string;
+  phoneMatchesOfficial: boolean;
+  message: string;
+  checkedAt: string;
+};
+
+export async function testInstanceConnection(instanceId: string): Promise<
+  { status: 200 | 502; body: ConnectionTestResult } | { status: 400 | 404 | 503; error: string }
+> {
+  const row = await getInstance(instanceId);
+  if (!row) return { status: 404, error: "Instância não encontrada" };
+  if (!instanceConfigured(row)) return { status: 503, error: "Instância incompleta ou desativada" };
+  if (row.provider !== "zapi") return { status: 400, error: "Provider não suportado neste handler leve" };
+
+  const creds = credsFromRow(row);
+  if (!creds) return { status: 503, error: "Credenciais Z-API incompletas" };
+
+  const expected = officialPhoneParts(row).full;
+  const checkedAt = new Date().toISOString();
+  let apiReachable = false;
+  let connected = false;
+  let statusError: string | undefined;
+  let statusRaw: Record<string, unknown> | null = null;
+  let connectedPhone: string | null = null;
+
+  try {
+    const statusRes = await zapiFetch(creds, "status", { method: "GET" });
+    apiReachable = statusRes.ok || !!statusRes.data;
+    statusRaw = statusRes.data;
+    connected = statusRes.data?.connected === true && statusRes.data?.smartphoneConnected !== false;
+    if (statusRes.data?.error) statusError = String(statusRes.data.error);
+    if (connected) {
+      const dev = await zapiFetch(creds, "device", { method: "GET" });
+      if (dev.ok && dev.data) {
+        connectedPhone = String(dev.data.phone || dev.data?.device || dev.data?.wid || "").replace(/\D/g, "") || null;
+      }
+    }
+  } catch (e: unknown) {
+    statusError = e instanceof Error ? e.message : "Erro de rede";
+  }
+
+  const phoneMatchesOfficial = connectedPhone === expected;
+  const ok = apiReachable && connected && phoneMatchesOfficial;
+
+  let message = "";
+  if (!apiReachable) {
+    message = "Z-API não respondeu — confira Instance ID, Token e Client-Token na Vercel.";
+  } else if (!connected) {
+    const err = sanitizeWhatsappError(statusError) || statusError;
+    message = err ? `Desconectado: ${err}` : "Desconectado — gere código de vinculação no eSIM.";
+  } else if (!phoneMatchesOfficial) {
+    message = `Conectado em ${connectedPhone}, esperado ${expected}.`;
+  } else {
+    message = `Conectado no número oficial (${expected}).`;
+  }
+
+  const client = sb();
+  const now = checkedAt;
+  await client.from("whatsapp_instances").update({
+    last_checked_at: now,
+    last_heartbeat_at: now,
+    last_connected: connected,
+    last_connected_phone: connectedPhone,
+    phone_matches_official: phoneMatchesOfficial,
+    last_error: ok ? null : message,
+    last_status_raw: statusRaw,
+    ...(connected ? { last_connected_at: now } : {}),
+    updated_at: now,
+    ...(looksLikeZapiSecret(row.label) ? { label: safeWhatsappInstanceLabel(row.label) } : {}),
+  }).eq("id", row.id);
+
+  return {
+    status: ok ? 200 : 502,
+    body: {
+      ok,
+      instanceId: row.id,
+      slug: row.slug,
+      provider: row.provider,
+      apiReachable,
+      connected,
+      connectedPhone,
+      expectedPhone: expected,
+      phoneMatchesOfficial,
+      message,
+      checkedAt,
+    },
+  };
 }
 
 function normalizeModalDismiss(raw: unknown): ModalDismissRecord | null {

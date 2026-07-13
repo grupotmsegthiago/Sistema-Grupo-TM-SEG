@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Loader2, Phone, QrCode, RefreshCw, Save, Smartphone, Wifi, WifiOff, XCircle } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
+import { safeWhatsappInstanceLabel } from '../lib/whatsappDisplayUtils';
 
 type InstancePublic = {
   id: string;
@@ -150,7 +151,7 @@ const WhatsAppConnectionPanel: React.FC = () => {
     try {
       const body: Record<string, unknown> = {
         slug: form.slug,
-        label: form.label,
+        label: safeWhatsappInstanceLabel(form.label),
         provider: form.provider,
         instance_type: form.instance_type,
         zapi_instance_id: form.zapi_instance_id,
@@ -164,9 +165,8 @@ const WhatsAppConnectionPanel: React.FC = () => {
       };
       if (form.zapi_token) body.zapi_token = form.zapi_token;
       if (form.meta_access_token) body.meta_access_token = form.meta_access_token;
-      const r = await fetch(`/api/whatsapp/instances/${selected.id}`, {
+      const r = await authFetch(`/api/whatsapp/instances/${selected.id}`, {
         method: 'PUT',
-        headers: authHeaders(),
         body: JSON.stringify(body),
       });
       const data = await r.json();
@@ -186,12 +186,12 @@ const WhatsAppConnectionPanel: React.FC = () => {
     setMessage(null);
     setTestResult(null);
     try {
-      const r = await fetch(`/api/whatsapp/instances/${selected.id}/test-connection`, {
+      const r = await authFetch(`/api/whatsapp/instances/${selected.id}/test-connection`, {
         method: 'POST',
-        headers: authHeaders(),
       });
-      const data: TestResult = await r.json();
-      setTestResult(data);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || data.message || 'Falha no teste');
+      setTestResult(data as TestResult);
       setMessage(data.message);
       await loadInstances();
       await refreshStatus(selected.id);
