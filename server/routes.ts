@@ -522,19 +522,31 @@ export async function registerRoutes(
       const sb = createSupabaseAdminClient();
       if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
 
+      const body = (req.body && typeof req.body === 'object') ? req.body as Record<string, unknown> : {};
+      const scope = String(body.scope || 'all').toLowerCase() === 'open' ? 'open' : 'all';
+      // Soft deadline: evita FUNCTION_INVOCATION_TIMEOUT (504) na Vercel / Safari "Load failed!".
+      const budgetMs = Math.min(Math.max(Number(body.budgetMs) || (scope === 'open' ? 45_000 : 90_000), 10_000), 240_000);
+      const deadline = Date.now() + budgetMs;
+
+      const OPEN_STATUSES = ['Pendente', 'Solicitada', 'Documentação', 'Agendada', 'Origem', 'Em Viagem'];
+
       let allMissions: any[] = [];
       let from = 0;
       while (true) {
-        const { data } = await sb.from('missions')
+        let q = sb.from('missions')
           .select('*')
           .eq('billing_approved', false)
           .gt('revenue_value', 0)
-          .not('status', 'in', '("Cancelada","Recusada")')
-          .range(from, from + 999);
+          .not('status', 'in', '("Cancelada","Recusada")');
+        if (scope === 'open') {
+          q = q.in('status', OPEN_STATUSES);
+        }
+        const { data } = await q.range(from, from + 999);
         if (!data || data.length === 0) break;
         allMissions = allMissions.concat(data);
         if (data.length < 1000) break;
         from += 1000;
+        if (Date.now() > deadline) break;
       }
 
       const { data: clientTablesRaw } = await sb.from('client_price_tables').select('*');
@@ -561,9 +573,14 @@ export async function registerRoutes(
 
       const r2 = (v: number) => Math.round(v * 100) / 100;
       let updated = 0, skipped = 0, errors = 0;
+      let partial = false;
       const details: any[] = [];
 
       for (const m of allMissions) {
+        if (Date.now() > deadline) {
+          partial = true;
+          break;
+        }
         try {
           if (m.revenue_edit_reason || m.cost_edit_reason || m.snapshot_approved_by || m.billing_verified_by) {
             skipped++;
@@ -608,11 +625,29 @@ export async function registerRoutes(
         user_name: (req as any).userName || 'Sistema',
         action_type: 'BULK_RECALCULATE',
         entity: 'Mission',
-        entity_id: 'ALL',
-        details: JSON.stringify({ total: allMissions.length, updated, skipped, errors, timestamp: new Date().toISOString() })
+        entity_id: scope === 'open' ? 'OPEN' : 'ALL',
+        details: JSON.stringify({
+          scope,
+          total: allMissions.length,
+          updated,
+          skipped,
+          errors,
+          partial,
+          budgetMs,
+          timestamp: new Date().toISOString(),
+        })
       }]);
 
-      res.json({ success: true, total: allMissions.length, updated, skipped, errors, details: details.slice(0, 50) });
+      res.json({
+        success: true,
+        scope,
+        total: allMissions.length,
+        updated,
+        skipped,
+        errors,
+        partial,
+        details: details.slice(0, 50),
+      });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
