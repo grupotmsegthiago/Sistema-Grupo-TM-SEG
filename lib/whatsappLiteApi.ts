@@ -511,13 +511,19 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
   const zapiError = [zapiErrorCode, zapiErrorMsg].filter(Boolean).join(": ");
   const success = req.data?.success === true;
   if (!req.ok || req.data?.success === false || zapiError || !success) {
+    // Doc Z-API: blocked sem appealToken = bloqueio do WhatsApp sem desbanimento possível via API
+    const phoneLinkCode = await fetchPhoneLinkCode(row);
     let friendly: string;
     if (req.data?.blocked === true) {
-      friendly = `WhatsApp bloqueou o envio (${useMethod}) para ${parts.display}. Aguarde ou tente outro método / painel Z-API.`;
+      friendly = phoneLinkCode
+        ? `WhatsApp bloqueou pop-up/SMS/ligação para ${parts.display} (sem appealToken — a Z-API não consegue desbanir). Use o código de vinculação ${phoneLinkCode} no Business: Aparelhos conectados → Vincular com número. Ou escaneie o QR.`
+        : `WhatsApp bloqueou o envio (${useMethod}) para ${parts.display}, sem appealToken para desbanimento. Use QR no painel ou app.z-api.io.`;
     } else if (useMethod === "sms" && Number(req.data?.smsWaitSeconds) === -1) {
-      friendly = `SMS bloqueado pela Z-API/WhatsApp para ${parts.display} (smsWaitSeconds=-1). Tente ligação (voice) ou pop-up (wa_old) se elegível.`;
+      friendly = phoneLinkCode
+        ? `SMS bloqueado (smsWaitSeconds=-1). Código de vinculação disponível: ${phoneLinkCode}`
+        : `SMS bloqueado pela Z-API/WhatsApp para ${parts.display}. Tente ligação ou QR.`;
     } else if (useMethod === "wa_old" && avail.data?.waOldEligible === false) {
-      friendly = `Pop-up wa_old não elegível agora para ${parts.display}. Tente ligação (voice) ou aguarde liberação do SMS.`;
+      friendly = `Pop-up wa_old não elegível agora para ${parts.display}. Tente ligação ou código/QR.`;
     } else if (/unable to find matching target resource method/i.test(zapiError)) {
       friendly = `Rota Z-API inválida no request-registration-code — confira Client-Token e tipo MOBILE no painel.`;
     } else {
@@ -534,6 +540,10 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
       registration: avail.data,
       phoneUsed: payload,
       phoneDisplay: parts.display,
+      phoneLinkCode,
+      message: phoneLinkCode
+        ? `Fallback phone-code: ${phoneLinkCode} — no eSIM: Aparelhos conectados → Vincular com número.`
+        : undefined,
     };
   }
 
@@ -546,6 +556,7 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
     registration: avail.data,
     phoneUsed: payload,
     phoneDisplay: parts.display,
+    phoneLinkCode: null as string | null,
     message: useMethod === "wa_old"
       ? `Pop-up enviado para ${parts.display}. Deixe o WhatsApp Business aberto no eSIM e confirme o aviso na tela (não digite código de 8 letras).`
       : `Código enviado via ${useMethod} para ${parts.display}. Informe o código recebido para confirmar.`,
