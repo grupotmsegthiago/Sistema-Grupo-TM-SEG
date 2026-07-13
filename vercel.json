@@ -431,6 +431,14 @@
       "destination": "/api/whatsapp-connection-qr-code"
     },
     {
+      "source": "/api/whatsapp/connection/request-code",
+      "destination": "/api/whatsapp-connection-request-code"
+    },
+    {
+      "source": "/api/whatsapp/connection/confirm-code",
+      "destination": "/api/whatsapp-connection-confirm-code"
+    },
+    {
       "source": "/api/admin/system-settings/daily-reports",
       "destination": "/api/admin/system-settings-daily-reports"
     },

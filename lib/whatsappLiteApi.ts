@@ -457,8 +457,7 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
     };
   }
 
-  const preferWaOld = avail.data?.waOldEligible === true || method === "wa_old";
-  const useMethod = preferWaOld ? "wa_old" : method;
+  const useMethod = method;
   const req = await zapiFetch(creds, "mobile/request-code", {
     method: "POST",
     body: JSON.stringify({ ddi, phone: phoneLocal, method: useMethod }),
@@ -488,6 +487,44 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
       ? "Confirme o pop-up no WhatsApp Business do eSIM e, se pedir, informe o código aqui."
       : `Código enviado via ${useMethod}. Informe o código recebido para confirmar.`,
   };
+}
+
+export async function confirmMobilePairingCode(code: string) {
+  const row = await getInstance();
+  if (!row || !instanceConfigured(row)) return { ok: false, error: "Instância não configurada", data: null as Record<string, unknown> | null };
+  const creds = credsFromRow(row);
+  if (!creds) return { ok: false, error: "Credenciais incompletas", data: null as Record<string, unknown> | null };
+  const { ok, data, text } = await zapiFetch(creds, "mobile/confirm-code", {
+    method: "POST",
+    body: JSON.stringify({ code: String(code).trim() }),
+  });
+  if (!ok || data?.success === false) {
+    return {
+      ok: false,
+      error: sanitizeWhatsappError(String(data?.error || data?.message || text || "Falha ao confirmar código")),
+      data,
+    };
+  }
+  return { ok: true, error: null as string | null, data };
+}
+
+export async function confirmMobileSecurityPin(pin: string) {
+  const row = await getInstance();
+  if (!row || !instanceConfigured(row)) return { ok: false, error: "Instância não configurada", data: null as Record<string, unknown> | null };
+  const creds = credsFromRow(row);
+  if (!creds) return { ok: false, error: "Credenciais incompletas", data: null as Record<string, unknown> | null };
+  const { ok, data, text } = await zapiFetch(creds, "mobile/confirm-security-code", {
+    method: "POST",
+    body: JSON.stringify({ code: String(pin).trim() }),
+  });
+  if (!ok || data?.success === false) {
+    return {
+      ok: false,
+      error: sanitizeWhatsappError(String(data?.error || data?.message || text || "Falha ao confirmar PIN")),
+      data,
+    };
+  }
+  return { ok: true, error: null as string | null, data };
 }
 
 export async function getQrAndPhoneCode(instanceId?: string | null) {
