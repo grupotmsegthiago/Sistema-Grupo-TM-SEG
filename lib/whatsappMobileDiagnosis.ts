@@ -133,6 +133,74 @@ export function buildMobileConnectionDiagnosis(input: {
   };
 }
 
+/** Interpreta erros comuns de desconexão / conflito de sessão. */
+export function explainMobileDisconnect(errorText: string | null | undefined): {
+  kind: "session_conflict" | "not_connected" | "phone_offline" | "blocked" | "other";
+  titlePt: string;
+  stepsPt: string[];
+} | null {
+  const raw = String(errorText || "").trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+
+  if (/outra inst[aâ]ncia|another instance|efetuou login|restaurou|logged in on another/i.test(raw)) {
+    return {
+      kind: "session_conflict",
+      titlePt: "Conflito de sessão: outra conexão tomou este número.",
+      stepsPt: [
+        "Feche WhatsApp Web / Desktop e qualquer outra instância Z-API no mesmo número.",
+        "No painel Z-API, confirme que só existe UMA instância MOBILE ativa para +55 (11) 92683-9456.",
+        "No eSIM: abra o WhatsApp Business e deixe em primeiro plano.",
+        "Aqui no sistema: peça UMA vez Pop-up (wa_old) ou Ligação — não use código de 8 letras nem QR de “Aparelhos conectados”.",
+        "Se chegar código por SMS/voz, digite em Confirmar código. Pop-up → confirme na tela do celular.",
+      ],
+    };
+  }
+
+  if (/smartphone|celular offline|phone.?offline/i.test(lower)) {
+    return {
+      kind: "phone_offline",
+      titlePt: "Celular/eSIM offline para a Z-API.",
+      stepsPt: [
+        "Ligue o aparelho do eSIM, conecte à internet e abra o WhatsApp Business.",
+        "Depois peça Pop-up (wa_old) ou Ligação UMA vez.",
+      ],
+    };
+  }
+
+  if (/blocked|bloqueou/i.test(lower)) {
+    return {
+      kind: "blocked",
+      titlePt: "WhatsApp bloqueou o envio de código agora.",
+      stepsPt: [
+        "Pare de repetir cliques (piora o blocked).",
+        "Aguarde o cooldown e tente Pop-up ou Ligação UMA vez com o Business aberto.",
+      ],
+    };
+  }
+
+  if (/not connected|desconectado|you are not connected/i.test(lower)) {
+    return {
+      kind: "not_connected",
+      titlePt: "Bot desconectado — reconecte no fluxo MOBILE.",
+      stepsPt: [
+        "Abra o WhatsApp Business no eSIM.",
+        "Peça Pop-up (wa_old) ou Ligação (SMS só se estiver liberado).",
+        "Confirme o aviso no celular ou digite o código em Confirmar código.",
+      ],
+    };
+  }
+
+  return {
+    kind: "other",
+    titlePt: raw.slice(0, 160),
+    stepsPt: [
+      "Use Pop-up (wa_old) ou Ligação com o WhatsApp Business aberto.",
+      "Não use código de 8 letras enquanto a instância for MOBILE.",
+    ],
+  };
+}
+
 /** Escolhe o melhor método mobile conforme waits da registration-available. */
 export function pickMobileRegistrationMethod(
   registration: Record<string, unknown> | null | undefined,
