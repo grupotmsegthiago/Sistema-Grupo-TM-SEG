@@ -42,10 +42,13 @@ function friendlyRecalcError(raw: string, httpStatus?: number): string {
 
 async function recalculateOpenMissionsBilling(): Promise<DashboardDiretoriaData['lastRecalc']> {
   try {
-    // Query string garante scope=open mesmo se o body JSON não for parseado no serverless.
-    const r = await authFetch('/api/recalculate-all?scope=open', {
+    // Rota dedicada: nunca processa as ~1000 OS não faturadas (só abertas ~dezenas).
+    const r = await authFetch('/api/recalculate-open', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-TMSEG-Recalc-Scope': 'open',
+      },
       body: JSON.stringify({ scope: 'open', budgetMs: 40_000 }),
     });
     const data = await r.json().catch(() => ({} as Record<string, unknown>));
@@ -63,6 +66,16 @@ async function recalculateOpenMissionsBilling(): Promise<DashboardDiretoriaData[
     const total = Number((data as any)?.total || 0);
     const errors = Number((data as any)?.errors || 0);
     const partial = (data as any)?.partial === true;
+    const usedScope = String((data as any)?.scope || 'open');
+    if (usedScope !== 'open') {
+      return {
+        updated,
+        skipped,
+        total,
+        errors: Math.max(errors, 1),
+        message: 'Recálculo usou escopo amplo demais — tente Atualizar de novo (rota open).',
+      };
+    }
     let message: string;
     if (updated > 0) {
       message = partial

@@ -180,7 +180,7 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     const src = await import('node:fs/promises').then((fs) =>
       fs.readFile('lib/dashboardDiretoria/useDashboardDiretoriaData.ts', 'utf8'),
     );
-    assert.match(src, /authFetch\('\/api\/recalculate-all\?scope=open'/);
+    assert.match(src, /authFetch\('\/api\/recalculate-open'/);
     assert.match(src, /scope:\s*'open'/);
     assert.match(src, /recalculateOpenMissionsBilling/);
     assert.match(src, /friendlyRecalcError/);
