@@ -643,7 +643,9 @@ export async function testInstanceConnection(instanceId: string): Promise<
 
   let message = "";
   if (!apiReachable) {
-    message = "Z-API não respondeu — confira Instance ID, Token e Client-Token na Vercel.";
+    const err = sanitizeWhatsappError(statusError) || statusError;
+    message = err
+      || "Z-API não respondeu — confira Instance ID, Token e Client-Token na Vercel.";
   } else if (!connected) {
     const err = sanitizeWhatsappError(statusError) || statusError;
     message = err ? `Desconectado: ${err}` : "Desconectado — gere código de vinculação no eSIM.";
@@ -651,6 +653,11 @@ export async function testInstanceConnection(instanceId: string): Promise<
     message = `Conectado em ${connectedPhone}, esperado ${expected}.`;
   } else {
     message = `Conectado no número oficial (${expected}).`;
+  }
+
+  // Z-API com Client-Token inválido: apiReachable pode ser true (respondeu JSON de erro).
+  if (statusError && /client-token/i.test(statusError)) {
+    message = sanitizeWhatsappError(statusError) || message;
   }
 
   const client = sb();
