@@ -5226,6 +5226,132 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/investment/accounts", async (req: Request, res: Response) => {
+    try {
+      const name = String(req.body?.name || '').trim();
+      const bank_name = String(req.body?.bank_name || '').trim();
+      const initial_balance = Number(req.body?.initial_balance);
+      if (!name) {
+        res.status(400).json({ error: 'Nome da conta é obrigatório' });
+        return;
+      }
+      if (!Number.isFinite(initial_balance)) {
+        res.status(400).json({ error: 'Saldo inicial inválido' });
+        return;
+      }
+      const { data, error } = await supabase
+        .from('financial_accounts')
+        .insert([{ name, initial_balance, bank_name, status: 'Ativo' }])
+        .select('*')
+        .single();
+      if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+      }
+      res.status(200).json(data);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || 'Falha ao criar conta' });
+    }
+  });
+
+  app.patch("/api/investment/accounts/:id", async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id || '').trim();
+      const name = String(req.body?.name || '').trim();
+      const bank_name = String(req.body?.bank_name || '').trim();
+      const initial_balance = Number(req.body?.initial_balance);
+      if (!id) {
+        res.status(400).json({ error: 'ID da conta é obrigatório' });
+        return;
+      }
+      if (!name) {
+        res.status(400).json({ error: 'Nome da conta é obrigatório' });
+        return;
+      }
+      if (!Number.isFinite(initial_balance)) {
+        res.status(400).json({ error: 'Saldo inicial inválido' });
+        return;
+      }
+      const { data, error } = await supabase
+        .from('financial_accounts')
+        .update({ name, initial_balance, bank_name })
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+      }
+      if (!data) {
+        res.status(404).json({ error: 'Conta não encontrada' });
+        return;
+      }
+      res.status(200).json(data);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || 'Falha ao atualizar conta' });
+    }
+  });
+
+  app.delete("/api/investment/accounts/:id", async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) {
+        res.status(400).json({ error: 'ID da conta é obrigatório' });
+        return;
+      }
+
+      const { count, error: txErr } = await supabase
+        .from('financial_transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', id);
+      if (txErr) {
+        res.status(500).json({ error: txErr.message });
+        return;
+      }
+
+      const hasTransactions = (count || 0) > 0;
+      if (hasTransactions) {
+        const { data, error } = await supabase
+          .from('financial_accounts')
+          .update({ status: 'Inativo' })
+          .eq('id', id)
+          .select('*')
+          .single();
+        if (error) {
+          res.status(500).json({ error: error.message });
+          return;
+        }
+        try {
+          await pgPool.query('DELETE FROM account_balance_snapshots WHERE account_id = $1', [id]);
+        } catch {
+          // histórico opcional — não bloqueia desativação
+        }
+        res.status(200).json({
+          ok: true,
+          mode: 'deactivated',
+          account: data,
+          message: 'Conta desativada (possui lançamentos financeiros vinculados).',
+        });
+        return;
+      }
+
+      try {
+        await pgPool.query('DELETE FROM account_balance_snapshots WHERE account_id = $1', [id]);
+      } catch {
+        // ignora se tabela/histórico ausente
+      }
+
+      const { error } = await supabase.from('financial_accounts').delete().eq('id', id);
+      if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+      }
+      res.status(200).json({ ok: true, mode: 'deleted' });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || 'Falha ao excluir conta' });
+    }
+  });
+
   app.get("/api/client-mission-notes/bulk/:clientId", async (req: Request, res: Response) => {
     try {
       const { data } = await supabaseAdmin.from('client_mission_notes').select('*').eq('client_id', req.params.clientId);

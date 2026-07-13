@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
 import { logAction } from '../lib/logger';
@@ -77,6 +77,24 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
     const [asaasLoading, setAsaasLoading] = useState(false);
 
     const [dbReady, setDbReady] = useState(false);
+    const accountFormRef = useRef<HTMLFormElement>(null);
+
+    const scrollToAccountForm = useCallback(() => {
+        requestAnimationFrame(() => {
+            accountFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    }, []);
+
+    const startEditAccount = useCallback((acc: EnrichedAccount) => {
+        setEditingId(acc.id);
+        setFormData({
+            name: acc.name,
+            initial_balance: Number(acc.initial_balance).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            bank_name: acc.bank_name || '',
+        });
+        setShowForm(true);
+        scrollToAccountForm();
+    }, [scrollToAccountForm]);
 
     useEffect(() => {
         const init = async () => {
@@ -140,7 +158,7 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
         try {
             const days = periodFilter === 'all' ? 3650 : parseInt(periodFilter);
             const [accRes, catRes, snapshots] = await Promise.all([
-                supabase.from('financial_accounts').select('*').order('name'),
+                supabase.from('financial_accounts').select('*').eq('status', 'Ativo').order('name'),
                 supabase.from('financial_categories').select('*'),
                 fetchSnapshotsSafe(days),
             ]);
@@ -296,19 +314,48 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
 
     const handleSubmitAccount = async (e: React.FormEvent) => {
         e.preventDefault();
+        const val = parseAmountBR(formData.initial_balance);
+        if (!Number.isFinite(val)) {
+            showNotification('Valor inválido', 'Informe um saldo inicial válido. Ex.: 15000,50', 'error');
+            return;
+        }
+        if (!formData.name.trim()) {
+            showNotification('Campo obrigatório', 'Informe o nome da conta.', 'error');
+            return;
+        }
+
         setIsSaving(true);
+        const wasEditing = Boolean(editingId);
         try {
-            const val = parseFloat(formData.initial_balance);
-            if (editingId) {
-                const { error } = await supabase.from('financial_accounts').update({ name: formData.name, initial_balance: val, bank_name: formData.bank_name }).eq('id', editingId);
-                if (error) { showNotification('Erro', 'Erro ao salvar conta: ' + error.message, 'error'); setIsSaving(false); return; }
-            } else {
-                const { error } = await supabase.from('financial_accounts').insert([{ name: formData.name, initial_balance: val, bank_name: formData.bank_name, status: 'Ativo' }]);
-                if (error) { showNotification('Erro', 'Erro ao criar conta: ' + error.message, 'error'); setIsSaving(false); return; }
+            const payload = {
+                name: formData.name.trim(),
+                initial_balance: val,
+                bank_name: formData.bank_name.trim(),
+            };
+
+            const res = await authFetch(
+                editingId ? `/api/investment/accounts/${editingId}` : '/api/investment/accounts',
+                {
+                    method: editingId ? 'PATCH' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                },
+            );
+            const data = await parseJsonResponse(res);
+            if (!res.ok) {
+                throw new Error(data?.error || `Erro ao ${wasEditing ? 'salvar' : 'criar'} conta (${res.status})`);
             }
+
             setEditingId(null);
             setShowForm(false);
             setFormData({ name: '', initial_balance: '', bank_name: '' });
+            showNotification(
+                wasEditing ? 'Conta atualizada' : 'Conta cadastrada',
+                wasEditing
+                    ? 'As alterações da conta foram salvas com sucesso.'
+                    : 'A nova conta de investimento foi cadastrada.',
+                'success',
+            );
             fetchData();
         } catch (e) {
             const msg = e instanceof Error ? e.message : 'Erro desconhecido';
@@ -317,12 +364,28 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
     };
 
     const handleDeleteAccount = async (id: string) => {
-        if (!confirm('Excluir conta bancária e todo histórico?')) return;
         const acc = accounts.find(a => a.id === id);
-        const delRes = await supabase.from('financial_accounts').delete().eq('id', id);
-        if (delRes.error) { showNotification('Erro', 'Erro ao excluir conta: ' + delRes.error.message, 'error'); return; }
-        await logAction('DELETE', 'FinancialAccount', id, `Conta bancária excluída: ${acc?.name || 'N/A'} — Banco: ${acc?.bank_name || 'N/A'}`);
-        fetchData();
+        if (!confirm(`Desativar/excluir a conta "${acc?.name || 'selecionada'}"?\n\nSe houver lançamentos financeiros vinculados, a conta será apenas desativada.`)) return;
+
+        try {
+            const res = await authFetch(`/api/investment/accounts/${id}`, { method: 'DELETE' });
+            const payload = await parseJsonResponse(res);
+            if (!res.ok) {
+                throw new Error(payload?.error || `Erro ao excluir conta (${res.status})`);
+            }
+
+            await logAction('DELETE', 'FinancialAccount', id, `Conta bancária removida/desativada: ${acc?.name || 'N/A'} — Banco: ${acc?.bank_name || 'N/A'}`);
+
+            if (payload?.mode === 'deactivated') {
+                showNotification('Conta desativada', payload?.message || 'Conta desativada por possuir lançamentos vinculados.', 'success');
+            } else {
+                showNotification('Conta excluída', 'A conta e o histórico de saldos foram removidos.', 'success');
+            }
+            fetchData();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+            showNotification('Erro', msg, 'error');
+        }
     };
 
     const runAIAnalysis = async () => {
@@ -693,10 +756,17 @@ Responda de forma concisa e profissional, em português, formatado com markdown.
             </div>
 
             {showForm && (
-                <form onSubmit={handleSubmitAccount} className={`p-4 rounded-xl border grid grid-cols-1 md:grid-cols-4 gap-4 items-end transition-colors animate-in slide-in-from-top-2 ${editingId ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
+                <form ref={accountFormRef} onSubmit={handleSubmitAccount} className={`p-4 rounded-xl border grid grid-cols-1 md:grid-cols-4 gap-4 items-end transition-colors animate-in slide-in-from-top-2 ${editingId ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
+                    {editingId && (
+                        <div className="md:col-span-4 -mb-2">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 flex items-center gap-1.5">
+                                <Pencil size={12}/> Editando conta — saldo exibido na tabela vem dos registros de saldo, não do saldo inicial
+                            </p>
+                        </div>
+                    )}
                     <div><label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Identificação</label><input type="text" required className="w-full p-2.5 border rounded-lg text-sm bg-white" placeholder="Ex: Itaú Investimento" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
                     <div><label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Banco / Corretora</label><input type="text" className="w-full p-2.5 border rounded-lg text-sm bg-white" placeholder="Ex: BTG Pactual" value={formData.bank_name} onChange={e => setFormData({...formData, bank_name: e.target.value})} /></div>
-                    <div><label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Saldo Inicial</label><input type="number" step="0.01" required className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold text-blue-700 bg-white" placeholder="0.00" value={formData.initial_balance} onChange={e => setFormData({...formData, initial_balance: e.target.value})} /></div>
+                    <div><label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Saldo Inicial</label><input type="text" inputMode="decimal" required className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold text-blue-700 bg-white" placeholder="0,00" value={formData.initial_balance} onChange={e => setFormData({...formData, initial_balance: e.target.value})} /></div>
                     <div className="flex gap-2">
                         <button type="submit" disabled={isSaving} className={`flex-1 text-white p-2.5 rounded-lg hover:opacity-90 font-bold text-sm flex items-center justify-center gap-2 ${editingId ? 'bg-amber-600' : 'bg-blue-600'}`}>
                             {isSaving ? <Loader2 size={16} className="animate-spin"/> : (editingId ? <Save size={16}/> : <Plus size={16}/>)} 
@@ -883,7 +953,7 @@ Responda de forma concisa e profissional, em português, formatado com markdown.
                                         <button onClick={() => { setSelectedAccountId(acc.id); setViewMode('account-detail'); }} className="bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 px-2.5 py-1 rounded-lg text-[10px] font-black flex items-center gap-1 shadow-sm">
                                             <Eye size={12}/> Detalhe
                                         </button>
-                                        <button onClick={() => { setEditingId(acc.id); setFormData({ name: acc.name, initial_balance: acc.initial_balance.toString(), bank_name: acc.bank_name || '' }); setShowForm(true); }} className="text-gray-300 hover:text-blue-600 p-1 transition-colors">
+                                        <button onClick={() => startEditAccount(acc)} className="text-gray-300 hover:text-blue-600 p-1 transition-colors" title="Editar conta">
                                             <Pencil size={14}/>
                                         </button>
                                         <button onClick={() => handleDeleteAccount(acc.id)} className="text-gray-300 hover:text-red-500 p-1 transition-colors">
