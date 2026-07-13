@@ -5,6 +5,7 @@ import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { formatDateBR } from '../lib/dateUtils';
 import { FinancialCategory, FinancialTransaction } from '../types';
 import { Calendar, FileText, Download, Loader2, Printer, TrendingUp, DollarSign, RefreshCw } from 'lucide-react';
+import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
 
 const getTodayBR = (): string => {
     const now = new Date();
@@ -95,7 +96,8 @@ const FinancialDRE: React.FC = () => {
             const { data: categoriesData } = await supabase.from('financial_categories').select('*');
             const categories = (categoriesData || []) as FinancialCategory[];
 
-            const sumByCategory = (catId: string) => transactions.filter(t => t.category_id === catId).reduce((acc, t) => acc + t.amount, 0);
+            const dreTransactions = transactions.filter(t => !isInternalGroupTransfer(t));
+            const sumByCategory = (catId: string) => dreTransactions.filter(t => t.category_id === catId).reduce((acc, t) => acc + t.amount, 0);
             const sumByGroup = (group: string) => categories.filter(c => c.group === group).reduce((acc, cat) => acc + sumByCategory(cat.id), 0);
 
             const missionRevenue = missions.reduce((acc: number, m: any) => acc + (m.revenue_value || 0), 0);

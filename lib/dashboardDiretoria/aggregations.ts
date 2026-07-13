@@ -6,6 +6,7 @@ import {
   sumCanonical,
   type CanonicalRefs,
 } from '../missionFinancialsCanonical';
+import { isInternalGroupTransfer } from '../financialInternalTransfer';
 import { getPeriodRange, getCashMovementDate } from './periodUtils';
 import type { CriticalAlert, DashboardPeriod, PendingApprovalItem } from './types';
 import { DEFAULT_MONTHLY_REVENUE_GOAL, MARGIN_GOAL_PCT } from './types';
@@ -103,12 +104,15 @@ export function computeCashKpis(
   const investmentIds = new Set(categories.filter(c => c.group === 'INVESTIMENTOS').map(c => c.id));
   const today = new Date().toISOString().slice(0, 10);
 
+  // Transferências entre TM SEG / TM Security / TM Gestão não são receita/despesa real.
   const incomePaid = round2(
-    inPeriod.filter(t => t.type === 'INCOME' && t.status === 'PAID').reduce((s, t) => s + Number(t.amount || 0), 0),
+    inPeriod
+      .filter(t => t.type === 'INCOME' && t.status === 'PAID' && !isInternalGroupTransfer(t))
+      .reduce((s, t) => s + Number(t.amount || 0), 0),
   );
   const expensePaid = round2(
     inPeriod
-      .filter(t => t.type === 'EXPENSE' && t.status === 'PAID' && !isInvestmentExpense(t, investmentIds, categories))
+      .filter(t => t.type === 'EXPENSE' && t.status === 'PAID' && !isInvestmentExpense(t, investmentIds, categories) && !isInternalGroupTransfer(t))
       .reduce((s, t) => s + Number(t.amount || 0), 0),
   );
 
@@ -116,17 +120,17 @@ export function computeCashKpis(
 
   const pendingReceivable = round2(
     pendingInPeriod
-      .filter(t => t.type === 'INCOME')
+      .filter(t => t.type === 'INCOME' && !isInternalGroupTransfer(t))
       .reduce((s, t) => s + Number(t.amount || 0), 0),
   );
   const pendingPayable = round2(
     pendingInPeriod
-      .filter(t => t.type === 'EXPENSE')
+      .filter(t => t.type === 'EXPENSE' && !isInternalGroupTransfer(t))
       .reduce((s, t) => s + Number(t.amount || 0), 0),
   );
   const overduePayable = round2(
     allTransactions
-      .filter(t => t.type === 'EXPENSE' && ['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status) && String(t.due_date || '').slice(0, 10) < today)
+      .filter(t => t.type === 'EXPENSE' && ['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status) && String(t.due_date || '').slice(0, 10) < today && !isInternalGroupTransfer(t))
       .reduce((s, t) => s + Number(t.amount || 0), 0),
   );
 
@@ -174,6 +178,7 @@ export function computeFinancialKpis(
   for (const t of transactions) {
     if (t.type !== 'EXPENSE' || t.status !== 'PAID') continue;
     if (investmentIds.has(t.category_id)) continue;
+    if (isInternalGroupTransfer(t)) continue;
     const amt = Number(t.amount) || 0;
     if (taxIds.has(t.category_id)) taxes += amt;
     else expenses += amt;
@@ -197,6 +202,7 @@ export function buildDailyCashFlow(
   const paidInPeriod = filterPaidTransactionsInPeriod(transactions, period, now);
   const map = new Map<string, { inflow: number; outflow: number }>();
   for (const t of paidInPeriod) {
+    if (isInternalGroupTransfer(t)) continue;
     const day = getCashMovementDate(t);
     if (!day) continue;
     const row = map.get(day) || { inflow: 0, outflow: 0 };
@@ -331,6 +337,7 @@ export function buildArApByMonth(
   const map = new Map<string, { receber: number; pagar: number }>();
   for (const t of allTransactions) {
     if (!['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status)) continue;
+    if (isInternalGroupTransfer(t)) continue;
     const month = String(t.due_date || '').slice(0, 7);
     if (!month) continue;
     const row = map.get(month) || { receber: 0, pagar: 0 };

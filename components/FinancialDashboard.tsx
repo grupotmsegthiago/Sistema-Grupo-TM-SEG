@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { FinancialTransaction, FinancialAccount, FinancialCategory } from '../types';
 import { useQuery } from '@tanstack/react-query';
+import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -64,15 +65,15 @@ const FinancialDashboard: React.FC = () => {
         return d.getFullYear() === now.getFullYear();
     });
 
-    const incomeConfirmed = periodTrans.filter(t => t.type === 'INCOME' && t.status === 'PAID').reduce((acc, t) => acc + t.amount, 0);
-    const expenseConfirmed = periodTrans.filter(t => t.type === 'EXPENSE' && t.status === 'PAID').reduce((acc, t) => acc + t.amount, 0);
+    const incomeConfirmed = periodTrans.filter(t => t.type === 'INCOME' && t.status === 'PAID' && !isInternalGroupTransfer(t)).reduce((acc, t) => acc + t.amount, 0);
+    const expenseConfirmed = periodTrans.filter(t => t.type === 'EXPENSE' && t.status === 'PAID' && !isInternalGroupTransfer(t)).reduce((acc, t) => acc + t.amount, 0);
     
-    const pendingIncome = transactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING').reduce((acc, t) => acc + t.amount, 0);
-    const pendingExpense = transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING').reduce((acc, t) => acc + t.amount, 0);
-    const overdueExpense = transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && t.due_date < todayStr).reduce((acc, t) => acc + t.amount, 0);
+    const pendingIncome = transactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && !isInternalGroupTransfer(t)).reduce((acc, t) => acc + t.amount, 0);
+    const pendingExpense = transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && !isInternalGroupTransfer(t)).reduce((acc, t) => acc + t.amount, 0);
+    const overdueExpense = transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && t.due_date < todayStr && !isInternalGroupTransfer(t)).reduce((acc, t) => acc + t.amount, 0);
 
     const expenseByCat: Record<string, number> = {};
-    periodTrans.filter(t => t.type === 'EXPENSE').forEach(t => {
+    periodTrans.filter(t => t.type === 'EXPENSE' && !isInternalGroupTransfer(t)).forEach(t => {
         const catName = t.category_name || 'Outros';
         expenseByCat[catName] = (expenseByCat[catName] || 0) + t.amount;
     });
