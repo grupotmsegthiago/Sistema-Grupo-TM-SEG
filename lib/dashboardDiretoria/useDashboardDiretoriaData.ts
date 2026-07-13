@@ -21,15 +21,18 @@ async function fetchAllPages<T>(buildQuery: (from: number, size: number) => Prom
 }
 
 /**
- * Recalcula receita/custo (inclui hora extra em andamento) nas OS abertas —
- * mesmo motor do Painel de OS (`/api/recalculate-all`), com scope=open para
- * evitar timeout 504 / "Load failed!" no Safari.
+ * Recalcula receita/custo (inclui hora extra em andamento) nas OS abertas.
+ * Sem AbortController no client — o abort gerava "Fetch is aborted" no Safari.
+ * O servidor limita com scope=open + budgetMs.
  */
 function friendlyRecalcError(raw: string, httpStatus?: number): string {
   const msg = String(raw || '').trim();
-  if (/load failed|failed to fetch|networkerror|aborterror|the operation was aborted/i.test(msg)
-    || httpStatus === 504 || httpStatus === 408) {
-    return 'Recálculo demorou demais ou a rede caiu. Os KPIs foram atualizados; tente Atualizar de novo em instantes.';
+  if (
+    /load failed|failed to fetch|networkerror|aborterror|fetch is aborted|the operation was aborted|aborted/i.test(msg)
+    || httpStatus === 504
+    || httpStatus === 408
+  ) {
+    return 'Recálculo demorou demais ou a rede caiu. Os KPIs já foram atualizados — toque Atualizar de novo em instantes.';
   }
   if (httpStatus && httpStatus >= 400) {
     return msg || `Falha ao recalcular OS (HTTP ${httpStatus}).`;
@@ -38,14 +41,12 @@ function friendlyRecalcError(raw: string, httpStatus?: number): string {
 }
 
 async function recalculateOpenMissionsBilling(): Promise<DashboardDiretoriaData['lastRecalc']> {
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), 55_000) : null;
   try {
-    const r = await authFetch('/api/recalculate-all', {
+    // Query string garante scope=open mesmo se o body JSON não for parseado no serverless.
+    const r = await authFetch('/api/recalculate-all?scope=open', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope: 'open', budgetMs: 45_000 }),
-      signal: controller?.signal,
+      body: JSON.stringify({ scope: 'open', budgetMs: 40_000 }),
     });
     const data = await r.json().catch(() => ({} as Record<string, unknown>));
     if (!r.ok) {
@@ -80,8 +81,6 @@ async function recalculateOpenMissionsBilling(): Promise<DashboardDiretoriaData[
       errors: 1,
       message: friendlyRecalcError(raw),
     };
-  } finally {
-    if (timer) clearTimeout(timer);
   }
 }
 
@@ -202,13 +201,35 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
     }
   }, [period.mode, period.year, period.month]);
 
-  /** Atualizar = recalcular hora extra/valores nas OS abertas + recarregar KPIs. */
+  /**
+   * Atualizar: 1) recarrega KPIs na hora; 2) recalcula hora extra nas OS abertas;
+   * 3) se gravou mudanças, recarrega KPIs de novo. Sem AbortController no client.
+   */
   const refresh = useCallback(async () => {
-    setLoading(true);
     setError(null);
+    setLastRecalc({
+      updated: 0,
+      skipped: 0,
+      total: 0,
+      errors: 0,
+      message: 'Atualizando painel… em seguida recalcula hora extra das OS abertas.',
+    });
+    setLoading(true);
+    await load();
+
+    setLastRecalc({
+      updated: 0,
+      skipped: 0,
+      total: 0,
+      errors: 0,
+      message: 'Recalculando hora extra nas OS abertas…',
+    });
     const recalc = await recalculateOpenMissionsBilling();
     setLastRecalc(recalc);
-    await load();
+    if (recalc.updated > 0) {
+      setLoading(true);
+      await load();
+    }
   }, [load]);
 
   useEffect(() => { void load(); }, [load]);

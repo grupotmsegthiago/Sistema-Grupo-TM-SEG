@@ -523,9 +523,10 @@ export async function registerRoutes(
       if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
 
       const body = (req.body && typeof req.body === 'object') ? req.body as Record<string, unknown> : {};
-      const scope = String(body.scope || 'all').toLowerCase() === 'open' ? 'open' : 'all';
+      const scopeRaw = String(body.scope || req.query?.scope || 'all').toLowerCase();
+      const scope = scopeRaw === 'open' ? 'open' : 'all';
       // Soft deadline: evita FUNCTION_INVOCATION_TIMEOUT (504) na Vercel / Safari "Load failed!".
-      const budgetMs = Math.min(Math.max(Number(body.budgetMs) || (scope === 'open' ? 45_000 : 90_000), 10_000), 240_000);
+      const budgetMs = Math.min(Math.max(Number(body.budgetMs) || (scope === 'open' ? 40_000 : 90_000), 10_000), 240_000);
       const deadline = Date.now() + budgetMs;
 
       const OPEN_STATUSES = ['Pendente', 'Solicitada', 'Documentação', 'Agendada', 'Origem', 'Em Viagem'];
