@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, RefreshCw, Smartphone, WifiOff } from 'lucide-react';
+import { Check, Copy, Loader2, RefreshCw, Smartphone, WifiOff, X } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { supabase, WHATSAPP_BOT_BROADCAST_CHANNEL } from '../lib/supabase';
@@ -49,10 +49,28 @@ function broadcastBotStatus(payload: Partial<BotStatus>) {
 const ESIM_PHONE = '(11) 92683-9456';
 const CODE_URGENT_MSG = 'Mande URGENTE esse código para o Thiago — só ele consegue vincular no eSIM agora.';
 
+function buildCopyText(code: string, label?: string | null): string {
+  return [
+    '🚨 URGENTE — Reconexão Bot WhatsApp TM SEG',
+    '',
+    `Bot: ${label || 'Monitoramento 24h'}`,
+    `Código de vinculação: ${code}`,
+    '',
+    CODE_URGENT_MSG,
+    '',
+    `No WhatsApp Business do eSIM ${ESIM_PHONE}:`,
+    'Aparelhos conectados → Conectar → Vincular com número de telefone',
+    '',
+    '⚠️ O código expira em poucos minutos. Gere outro se passar muito tempo.',
+  ].join('\n');
+}
+
 const WhatsAppOfflineModal: React.FC = () => {
   const [status, setStatus] = useState<BotStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const [copied, setCopied] = useState(false);
   const user = useMemo(() => readUser(), []);
   const userId = String(user?.id || '');
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -63,7 +81,11 @@ const WhatsAppOfflineModal: React.FC = () => {
       if (!res.ok) return;
       const data: BotStatus = await res.json();
       setStatus(data);
-      if (data.online) setMessage(null);
+      if (data.online) {
+        setMessage(null);
+        setDismissed(false);
+        setCopied(false);
+      }
     } catch {
       /* silencioso */
     }
@@ -91,7 +113,37 @@ const WhatsAppOfflineModal: React.FC = () => {
 
   const lock = status?.lock || null;
   const isHolder = !!lock && lock.holderId === userId;
-  const showModal = !!status?.configured && !status.online;
+  const showModal = !!status?.configured && !status.online && !dismissed;
+
+  const copyCodeToClipboard = async (code: string) => {
+    const text = buildCopyText(code, status?.label);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setMessage('Texto copiado! Cole no WhatsApp do Thiago e clique em Fechar.');
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setCopied(true);
+        setMessage('Texto copiado! Cole no WhatsApp do Thiago e clique em Fechar.');
+      } catch {
+        setMessage('Não foi possível copiar automaticamente — selecione o código manualmente.');
+      }
+    }
+  };
+
+  const closeModal = () => {
+    setDismissed(true);
+    setCopied(false);
+    setMessage(null);
+  };
 
   useEffect(() => {
     if (!showModal || !isHolder) {
@@ -112,6 +164,7 @@ const WhatsAppOfflineModal: React.FC = () => {
   const claimAndGenerate = async () => {
     setBusy(true);
     setMessage(null);
+    setCopied(false);
     try {
       const claimRes = await authFetch('/api/whatsapp/bot-status/claim', { method: 'POST' });
       const claimData = await claimRes.json();
@@ -149,6 +202,7 @@ const WhatsAppOfflineModal: React.FC = () => {
   const generateCode = async () => {
     setBusy(true);
     setMessage(null);
+    setCopied(false);
     try {
       const res = await authFetch('/api/whatsapp/bot-status/generate-code', { method: 'POST' });
       const data = await res.json();
@@ -216,10 +270,19 @@ const WhatsAppOfflineModal: React.FC = () => {
                 Desde {new Date(lock.acquiredAt).toLocaleTimeString('pt-BR')} — aguarde a confirmação no celular.
               </p>
               {lock.phase === 'code_ready' && lock.phoneLinkCode && (
-                <p className="mt-2 text-xs">
-                  Código em uso: <span className="font-mono font-bold">{lock.phoneLinkCode}</span>
-                  <span className="block mt-1 font-bold text-amber-900">{CODE_URGENT_MSG}</span>
-                </p>
+                <div className="mt-2 space-y-2">
+                  <p className="text-xs">
+                    Código em uso: <span className="font-mono font-bold">{lock.phoneLinkCode}</span>
+                  </p>
+                  <span className="block text-xs font-bold text-amber-900">{CODE_URGENT_MSG}</span>
+                  <button
+                    type="button"
+                    onClick={() => void copyCodeToClipboard(lock.phoneLinkCode!)}
+                    className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded-lg"
+                  >
+                    <Copy size={14} /> Copiar código e instruções
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -238,6 +301,27 @@ const WhatsAppOfflineModal: React.FC = () => {
                     No WhatsApp Business do eSIM {ESIM_PHONE}:<br />
                     <strong>Aparelhos conectados → Conectar → Vincular com número de telefone</strong>
                   </p>
+                  <div className="mt-4 flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void copyCodeToClipboard(phoneCode)}
+                      className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl"
+                      data-testid="button-copy-whatsapp-code"
+                    >
+                      {copied ? <Check size={18} /> : <Copy size={18} />}
+                      {copied ? 'Copiado — cole no WhatsApp do Thiago' : 'Copiar código e instruções'}
+                    </button>
+                    {copied && (
+                      <button
+                        type="button"
+                        onClick={closeModal}
+                        className="w-full flex items-center justify-center gap-2 bg-gray-200 hover:bg-gray-300 text-gray-900 font-bold py-3 px-4 rounded-xl"
+                        data-testid="button-close-whatsapp-modal"
+                      >
+                        <X size={18} /> Fechar
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <button
