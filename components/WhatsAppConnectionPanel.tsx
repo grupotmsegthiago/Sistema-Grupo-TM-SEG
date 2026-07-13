@@ -303,7 +303,7 @@ const WhatsAppConnectionPanel: React.FC = () => {
     }
   };
 
-  const requestSms = async (method: 'sms' | 'wa_old') => {
+  const requestSms = async (method: 'sms' | 'wa_old' | 'voice') => {
     setBusy(true);
     setMessage(null);
     setPhoneLinkCode(null);
@@ -315,17 +315,19 @@ const WhatsAppConnectionPanel: React.FC = () => {
       });
       const data = await r.json();
       const req = data.requestCode || {};
+      const phoneLabel = data.phoneDisplay || '+55 (11) 92683-9456';
+      const raw = req.data ? ` | Z-API: ${JSON.stringify(req.data)}` : '';
       if (req.ok) {
-        const phoneLabel = data.phoneDisplay || '+55 (11) 92683-9456';
         setMessage(
           method === 'wa_old'
-            ? `✅ Pop-up enviado para ${phoneLabel}. Olhe a TELA do eSIM agora e confirme o aviso. NÃO abra “Aparelhos conectados” nem digite código de 8 letras.`
-            : (req.message || `Código solicitado via ${method} para ${phoneLabel}. Digite abaixo e confirme.`),
+            ? `✅ Pedido wa_old aceito para ${phoneLabel}. Se NÃO aparecer pop-up: o WhatsApp Business desse número precisa estar aberto no eSIM (conta já logada). SMS está bloqueado na Z-API; tente Ligação.${raw}`
+            : method === 'voice'
+              ? `✅ Ligação solicitada para ${phoneLabel}. Atenda a chamada no eSIM e anote o código.${raw}`
+              : (req.message || `Código solicitado via ${method} para ${phoneLabel}. Digite abaixo e confirme.${raw}`),
         );
       } else {
         const detail = req.error || data.error || `Falha ao solicitar código (${method})`;
-        const phoneHint = data.phoneDisplay ? ` (número usado: ${data.phoneDisplay})` : '';
-        setMessage(`${detail}${phoneHint}`);
+        setMessage(`${detail} (número: ${phoneLabel})${raw}`);
       }
     } catch (e: any) {
       setMessage(e?.message || 'Erro ao solicitar código');
@@ -673,6 +675,14 @@ const WhatsAppConnectionPanel: React.FC = () => {
                       className="w-full flex items-center justify-center gap-2 border-2 border-red-300 text-red-900 font-bold py-2.5 px-3 rounded-xl disabled:opacity-50 text-xs"
                     >
                       <Phone size={14} /> Alternativa: pedir código SMS (se o pop-up não aparecer)
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void requestSms('voice')}
+                      className="w-full flex items-center justify-center gap-2 border-2 border-amber-400 text-amber-950 font-bold py-2.5 px-3 rounded-xl disabled:opacity-50 text-xs"
+                    >
+                      <Phone size={14} /> Alternativa: ligação (voice) — atenda no eSIM
                     </button>
                   </div>
                 )}
