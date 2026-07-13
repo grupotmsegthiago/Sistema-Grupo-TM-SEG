@@ -1,6 +1,7 @@
-/** GET /api/zapi/health — leve: testa Z-API sem expor tokens */
+/** GET /api/zapi-health — alias leve (sem martelar request-registration-code). */
 import { credsFromRow, getInstance, instanceConfigured, zapiFetch } from "../lib/whatsappLiteApi.js";
 import { sanitizeWhatsappError } from "../lib/whatsappDisplayUtils.js";
+import { buildMobileConnectionDiagnosis } from "../lib/whatsappMobileDiagnosis.js";
 
 export default async function handler(req: { method?: string }, res: {
   status: (n: number) => { json: (b: unknown) => void };
@@ -39,63 +40,22 @@ export default async function handler(req: { method?: string }, res: {
 
     const phoneCodeRes = await zapiFetch(creds, `phone-code/${full}`, { method: "GET" });
     const phoneCodeValue = String(phoneCodeRes.data?.code || phoneCodeRes.data?.value || "").trim() || null;
-    const phoneCodeError = phoneCodeValue
-      ? null
-      : sanitizeWhatsappError(String(
-        phoneCodeRes.data?.error || phoneCodeRes.data?.message || phoneCodeRes.text || `HTTP ${phoneCodeRes.status}`,
-      ));
 
     let registration: Record<string, unknown> | null = null;
-    let registrationError: string | null = null;
-    let waOldProbe: Record<string, unknown> | null = null;
-    let voiceProbe: Record<string, unknown> | null = null;
     if (!connected) {
       const reg = await zapiFetch(creds, "mobile/registration-available", {
         method: "POST",
         body: JSON.stringify({ ddi, phone: phoneLocal }),
       });
       registration = reg.data;
-      if (!reg.ok && !reg.data) {
-        registrationError = sanitizeWhatsappError(reg.text) || `HTTP ${reg.status}`;
-      }
-
-      // Path oficial: mobile/request-registration-code (não mobile/request-code)
-      const wa = await zapiFetch(creds, "mobile/request-registration-code", {
-        method: "POST",
-        body: JSON.stringify({ ddi, phone: phoneLocal, method: "wa_old" }),
-      });
-      waOldProbe = {
-        path: "mobile/request-registration-code",
-        httpStatus: wa.status,
-        ok: wa.ok,
-        success: wa.data?.success ?? null,
-        blocked: wa.data?.blocked ?? null,
-        hasCaptcha: typeof wa.data?.captcha === "string",
-        method: wa.data?.method ?? null,
-        error: wa.data?.error || wa.data?.message || (!wa.ok ? wa.text : null),
-        retryAfter: wa.data?.retryAfter ?? null,
-        smsWaitSeconds: wa.data?.smsWaitSeconds ?? null,
-        voiceWaitSeconds: wa.data?.voiceWaitSeconds ?? null,
-        waOldWaitSeconds: wa.data?.waOldWaitSeconds ?? null,
-        phoneSent: { ddi, phone: phoneLocal },
-      };
-
-      const voice = await zapiFetch(creds, "mobile/request-registration-code", {
-        method: "POST",
-        body: JSON.stringify({ ddi, phone: phoneLocal, method: "voice" }),
-      });
-      voiceProbe = {
-        path: "mobile/request-registration-code",
-        httpStatus: voice.status,
-        ok: voice.ok,
-        success: voice.data?.success ?? null,
-        blocked: voice.data?.blocked ?? null,
-        hasCaptcha: typeof voice.data?.captcha === "string",
-        method: voice.data?.method ?? null,
-        error: voice.data?.error || voice.data?.message || (!voice.ok ? voice.text : null),
-        retryAfter: voice.data?.retryAfter ?? null,
-      };
     }
+
+    const diagnosis = buildMobileConnectionDiagnosis({
+      instanceType: creds.type,
+      connected: !!connected,
+      registrationAvailable: registration,
+      phoneLinkCode: phoneCodeValue,
+    });
 
     res.status(connected ? 200 : 502).json({
       ok: !!connected,
@@ -108,21 +68,18 @@ export default async function handler(req: { method?: string }, res: {
       instanceType: creds.type,
       label: row.label,
       hasClientToken: !!creds.clientToken,
-      clientTokenLooksLikeInstanceToken: !!(creds.clientToken && creds.token && creds.clientToken === creds.token),
       error: connected ? null : error,
+      diagnosis,
       phone: { ddi, phoneLocal, full, display: phoneDisplay },
       phoneCode: {
         ok: !!phoneCodeValue,
         hasCode: !!phoneCodeValue,
         codePreview: phoneCodeValue ? `${phoneCodeValue.slice(0, 2)}****${phoneCodeValue.slice(-2)}` : null,
-        error: phoneCodeError,
         httpStatus: phoneCodeRes.status,
         phoneTried: full,
       },
       registrationAvailable: registration,
-      registrationError,
-      waOldProbe,
-      voiceProbe,
+      note: "Alias sem probe request-code (evita blocked). Use /api/zapi/health?deep=1 com cuidado.",
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);

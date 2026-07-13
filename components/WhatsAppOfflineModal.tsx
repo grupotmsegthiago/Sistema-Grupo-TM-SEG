@@ -71,7 +71,7 @@ function isReconnectAdmin(user: LocalUser | null): boolean {
 const ESIM_PHONE = '+55 (11) 92683-9456';
 const CODE_URGENT_MSG = 'Mande URGENTE para o Thiago — só ele reconecta no eSIM agora.';
 const MOBILE_HINT =
-  'Causa raiz: instância MOBILE com registro blocked (sem appealToken). Código de 8 letras NÃO conecta MOBILE — ele é só para WEB. No painel Z-API, converta para WEB e use QR/código em Aparelhos conectados.';
+  'Modo MOBILE: peça Pop-up/SMS/Ligação UMA vez com o Business aberto. Código SMS → Confirmar código no painel. Não use código de 8 letras (isso é WEB). Se blocked, aguarde — não fique clicando.';
 
 function buildCopyText(code: string, label?: string | null): string {
   return [
@@ -84,8 +84,8 @@ function buildCopyText(code: string, label?: string | null): string {
     '',
     MOBILE_HINT,
     '',
-    `Preferencial: painel Z-API → instância WEB + QR/código em Aparelhos conectados (${ESIM_PHONE}).`,
-    'Não use código de 8 letras enquanto a instância estiver como MOBILE bloqueada.',
+    `Preferencial: Pop-up wa_old ou SMS no eSIM ${ESIM_PHONE}, depois Confirmar código no sistema.`,
+    'Não use código de 8 letras (Aparelhos conectados) enquanto a instância for MOBILE.',
     '',
     '⚠️ Códigos expiram em poucos minutos.',
   ].join('\n');
@@ -314,7 +314,7 @@ const WhatsAppOfflineModal: React.FC = () => {
 
           {reconnectAdmin && (
             <p className="text-xs bg-blue-50 border border-blue-200 text-blue-900 p-3 rounded-lg">
-              <strong>Diretoria:</strong> WhatsApp bloqueou o registro mobile. Priorize <strong>Gerar código de vinculação</strong> ou QR em Configurações → WhatsApp (eSIM {ESIM_PHONE}).
+              <strong>Diretoria:</strong> mantenha a instância <strong>MOBILE</strong>. Em Configurações → WhatsApp use <strong>Pedir Pop-up / SMS / Ligação</strong> (eSIM {ESIM_PHONE}). Código SMS → Confirmar código. Não use código de 8 letras nem QR (isso é WEB).
             </p>
           )}
 
@@ -370,8 +370,9 @@ const WhatsAppOfflineModal: React.FC = () => {
                     {CODE_URGENT_MSG}
                   </p>
                   <p className="text-xs text-gray-600 mt-3 leading-relaxed">
-                    No WhatsApp Business do eSIM {ESIM_PHONE}:<br />
-                    <strong>Aparelhos conectados → Conectar → Vincular com número de telefone</strong>
+                    Instância <strong>MOBILE</strong> (eSIM {ESIM_PHONE}): se este código veio por SMS/voz, digite em{' '}
+                    <strong>Configurações → WhatsApp → Confirmar código</strong>. Pop-up no app → confirme na tela.
+                    Não use “Aparelhos conectados” (fluxo WEB).
                   </p>
                   <div className="mt-4 flex flex-col gap-2">
                     <button

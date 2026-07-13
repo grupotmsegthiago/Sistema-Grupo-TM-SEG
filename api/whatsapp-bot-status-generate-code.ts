@@ -1,4 +1,4 @@
-/** POST /api/whatsapp/bot-status/generate-code — leve */
+/** POST /api/whatsapp/bot-status/generate-code — prioriza MOBILE (auto wa_old/SMS/voz). */
 import { assertAuthenticatedAccess, readBearer, resolveLitePrincipal } from "../lib/tmsegAuth.js";
 import {
   attemptReconnect,
@@ -51,21 +51,10 @@ export default async function handler(req: { method?: string; headers?: Record<s
     }
 
     const isMobile = row.instance_type === "mobile";
-    let reconnect: Awaited<ReturnType<typeof attemptReconnect>> | null = null;
-    let mobilePairing: Awaited<ReturnType<typeof requestMobilePairingCode>> | null = null;
-    let phoneLinkCode: string | null = null;
-    let lastError: string | null = null;
 
-    // MOBILE: tentar registro real primeiro (não enganar com phone-code).
     if (isMobile) {
-      mobilePairing = await requestMobilePairingCode(row, "wa_old");
-      if (!mobilePairing.ok) {
-        mobilePairing = await requestMobilePairingCode(row, "voice");
-      }
-      if (!mobilePairing.ok && Number((mobilePairing as any).registration?.smsWaitSeconds) !== -1) {
-        mobilePairing = await requestMobilePairingCode(row, "sms");
-      }
-
+      // Uma única tentativa inteligente (respeita waits) — não martela 3 métodos.
+      const mobilePairing = await requestMobilePairingCode(row, "auto");
       const diagnosis = buildMobileConnectionDiagnosis({
         instanceType: "mobile",
         connected: false,
@@ -74,11 +63,11 @@ export default async function handler(req: { method?: string; headers?: Record<s
         phoneLinkCode: null,
       });
 
-      if (mobilePairing?.ok) {
+      if (mobilePairing.ok) {
         const lock = await updateReconnectLock(principal.id, {
           phase: "generating",
           phoneLinkCode: null,
-          reconnectMessage: mobilePairing.message || "Confirme no WhatsApp Business do eSIM.",
+          reconnectMessage: mobilePairing.message || "Confirme no WhatsApp Business / digite o código SMS no painel.",
         });
         await clearModalDismiss();
         return res.status(200).json({
@@ -94,40 +83,43 @@ export default async function handler(req: { method?: string; headers?: Record<s
           },
           diagnosis,
           message: mobilePairing.message,
+          steps: [
+            mobilePairing.method === "wa_old"
+              ? "Confirme o pop-up no WhatsApp Business do eSIM."
+              : "Quando o código chegar por SMS/ligação, digite em Confirmar código no painel.",
+          ],
           lock,
         });
       }
 
-      // blocked / falha: NÃO devolver phone-code como se fosse solução MOBILE
       const lock = await updateReconnectLock(principal.id, {
         phase: "claimed",
         phoneLinkCode: null,
-        reconnectMessage: diagnosis.summaryPt,
+        reconnectMessage: mobilePairing.error || diagnosis.summaryPt,
       });
       return res.status(502).json({
         ok: false,
         connected: false,
         phoneLinkCode: null,
-        mobilePairing: mobilePairing
-          ? {
-            ok: false,
-            method: mobilePairing.method,
-            phase: mobilePairing.phase,
-            message: mobilePairing.message,
-            error: mobilePairing.error,
-          }
-          : null,
+        mobilePairing: {
+          ok: false,
+          method: mobilePairing.method,
+          phase: mobilePairing.phase,
+          message: mobilePairing.message,
+          error: mobilePairing.error,
+        },
         diagnosis,
-        message: diagnosis.summaryPt,
+        message: mobilePairing.error || diagnosis.summaryPt,
         steps: diagnosis.stepsPt,
         lock,
       });
     }
 
-    // WEB: phone-code / reconnect
+    // WEB
     const phoneDetailed = await fetchPhoneLinkCodeDetailed(row);
-    phoneLinkCode = phoneDetailed.code;
-    lastError = phoneDetailed.error;
+    let phoneLinkCode = phoneDetailed.code;
+    let lastError = phoneDetailed.error;
+    let reconnect: Awaited<ReturnType<typeof attemptReconnect>> | null = null;
 
     if (!phoneLinkCode) {
       reconnect = await attemptReconnect(true);
@@ -171,7 +163,6 @@ export default async function handler(req: { method?: string; headers?: Record<s
       phoneLinkCode,
       reconnectMessage,
     });
-
     if (phoneLinkCode) await clearModalDismiss();
 
     res.status(phoneLinkCode ? 200 : 502).json({

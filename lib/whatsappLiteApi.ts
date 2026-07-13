@@ -9,7 +9,7 @@ import {
   WHATSAPP_BOT_DISPLAY_NAME,
 } from "./zapiMobileEnv.js";
 import { looksLikeZapiSecret, safeWhatsappInstanceLabel, sanitizeWhatsappError } from "./whatsappDisplayUtils.js";
-import { buildMobileConnectionDiagnosis } from "./whatsappMobileDiagnosis.js";
+import { buildMobileConnectionDiagnosis, pickMobileRegistrationMethod } from "./whatsappMobileDiagnosis.js";
 
 function sb() {
   const client = createSupabaseAdminClient();
@@ -461,18 +461,21 @@ export async function fetchPhoneLinkCodeDetailed(row: InstanceRow): Promise<{
 /**
  * Fluxo mobile (docs Z-API):
  * registration-available → request-registration-code → (respond-captcha) → confirm-registration-code → confirm-pin-code
- * Paths reais (não os slugs da URL do Mintlify): ver curl em developer.z-api.io/mobile/request-code
+ * Paths reais: /mobile/request-registration-code (não /mobile/request-code)
  */
-export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old" | "sms" | "voice" = "wa_old") {
+export async function requestMobilePairingCode(
+  row: InstanceRow,
+  method: "wa_old" | "sms" | "voice" | "auto" = "auto",
+) {
   const creds = credsFromRow(row);
   if (!creds) return { ok: false, error: "Credenciais incompletas", data: null as Record<string, unknown> | null };
   const parts = officialPhoneParts(row);
   // Z-API mobile docs: { ddi: "55", phone: "11999999999" } — SEM o 55 no phone
-  const payload = { ddi: parts.ddi || "55", phone: parts.phoneLocal, method };
+  const basePhone = { ddi: parts.ddi || "55", phone: parts.phoneLocal };
 
   const avail = await zapiFetch(creds, "mobile/registration-available", {
     method: "POST",
-    body: JSON.stringify({ ddi: payload.ddi, phone: payload.phone }),
+    body: JSON.stringify(basePhone),
   });
   if (avail.data?.available === false || avail.data?.blocked === true) {
     return {
@@ -480,13 +483,47 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
       error: sanitizeWhatsappError(String(avail.data?.error || avail.data?.message || avail.text || "Número indisponível/bloqueado")),
       data: avail.data,
       phase: "registration_available",
-      phoneUsed: payload,
+      phoneUsed: basePhone,
       phoneDisplay: parts.display,
+      registration: avail.data,
     };
   }
 
-  const useMethod = method;
-  // Path oficial: /mobile/request-registration-code (NÃO /mobile/request-code)
+  const preferred = method === "auto" ? "wa_old" : method;
+  const pick = pickMobileRegistrationMethod(avail.data, preferred);
+
+  if (method === "auto" && pick.deferredSeconds > 0) {
+    return {
+      ok: false,
+      error: `WhatsApp pede espera de ~${Math.ceil(pick.deferredSeconds / 60)} min antes de novo pedido (${pick.method}). ${pick.reason}.`,
+      data: avail.data,
+      phase: "wait",
+      method: pick.method,
+      registration: avail.data,
+      phoneUsed: basePhone,
+      phoneDisplay: parts.display,
+      phoneLinkCode: null as string | null,
+      deferredSeconds: pick.deferredSeconds,
+    };
+  }
+
+  if (method === "sms" && Number(avail.data?.smsWaitSeconds) === -1) {
+    return {
+      ok: false,
+      error: `SMS bloqueado agora (smsWaitSeconds=-1) para ${parts.display}. Tente Pop-up (wa_old) ou Ligação — ou aguarde e tente SMS depois.`,
+      data: avail.data,
+      phase: "wait",
+      method: "sms" as const,
+      registration: avail.data,
+      phoneUsed: basePhone,
+      phoneDisplay: parts.display,
+      phoneLinkCode: null as string | null,
+    };
+  }
+
+  const useMethod = method === "auto" ? pick.method : method;
+  const payload = { ...basePhone, method: useMethod };
+
   const req = await zapiFetch(creds, "mobile/request-registration-code", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -512,15 +549,13 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
   const zapiError = [zapiErrorCode, zapiErrorMsg].filter(Boolean).join(": ");
   const success = req.data?.success === true;
   if (!req.ok || req.data?.success === false || zapiError || !success) {
-    // Doc Z-API: blocked sem appealToken = bloqueio do WhatsApp sem desbanimento possível via API
-    const phoneLinkCode = await fetchPhoneLinkCode(row);
     let friendly: string;
     if (req.data?.blocked === true) {
-      friendly = `WhatsApp bloqueou pop-up/SMS/ligação para ${parts.display} (blocked sem appealToken — a Z-API não desbloqueia). Instância MOBILE NÃO conecta com código de 8 letras. No painel Z-API, converta para WEB e use QR/código em Aparelhos conectados — ou abra chamado na Z-API.`;
+      friendly = `WhatsApp bloqueou o envio (${useMethod}) para ${parts.display} agora (blocked sem appealToken). Continue no MOBILE: pare de repetir pedidos, deixe o Business aberto no eSIM, aguarde e tente UMA vez (Pop-up/SMS/Ligação). Quando o código chegar por SMS/voz, confirme no painel.`;
     } else if (useMethod === "sms" && Number(req.data?.smsWaitSeconds) === -1) {
-      friendly = `SMS bloqueado (smsWaitSeconds=-1) para ${parts.display}. Em MOBILE, tente ligação/pop-up; se também blocked, converta a instância para WEB.`;
+      friendly = `SMS bloqueado (smsWaitSeconds=-1) para ${parts.display}. Tente Pop-up ou Ligação.`;
     } else if (useMethod === "wa_old" && avail.data?.waOldEligible === false) {
-      friendly = `Pop-up wa_old não elegível agora para ${parts.display}. Tente ligação ou converta para WEB.`;
+      friendly = `Pop-up wa_old não elegível agora para ${parts.display}. Tente Ligação ou SMS.`;
     } else if (/unable to find matching target resource method/i.test(zapiError)) {
       friendly = `Rota Z-API inválida no request-registration-code — confira Client-Token e tipo MOBILE no painel.`;
     } else {
@@ -537,12 +572,10 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
       registration: avail.data,
       phoneUsed: payload,
       phoneDisplay: parts.display,
-      phoneLinkCode: req.data?.blocked === true ? null : phoneLinkCode,
+      phoneLinkCode: null as string | null,
       message: req.data?.blocked === true
-        ? "Registro MOBILE bloqueado pelo WhatsApp. Código de vinculação (8 letras) não resolve neste modo."
-        : (phoneLinkCode
-          ? `Fallback phone-code só é válido se a instância for WEB: ${phoneLinkCode}`
-          : undefined),
+        ? "Registro MOBILE temporariamente bloqueado pelo WhatsApp. Não use código de 8 letras — aguarde e tente pop-up/SMS de novo."
+        : undefined,
     };
   }
 
@@ -557,8 +590,8 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
     phoneDisplay: parts.display,
     phoneLinkCode: null as string | null,
     message: useMethod === "wa_old"
-      ? `Pop-up enviado para ${parts.display}. Deixe o WhatsApp Business aberto no eSIM e confirme o aviso na tela (não digite código de 8 letras).`
-      : `Código enviado via ${useMethod} para ${parts.display}. Informe o código recebido para confirmar.`,
+      ? `Pop-up enviado para ${parts.display}. Deixe o WhatsApp Business aberto e confirme o aviso na tela (não use código de 8 letras).`
+      : `Código pedido via ${useMethod} para ${parts.display}. Quando chegar, digite em “Confirmar código” no painel.`,
   };
 }
 
@@ -578,7 +611,15 @@ export async function confirmMobilePairingCode(code: string) {
       data,
     };
   }
-  return { ok: true, error: null as string | null, data };
+  // Após confirmar o código, a Z-API pode exigir device-transfer (virar aparelho principal).
+  let transfer: Record<string, unknown> | null = null;
+  try {
+    const tr = await zapiFetch(creds, "mobile/device-transfer-confirmed", { method: "GET" });
+    transfer = tr.data;
+  } catch {
+    /* opcional — nem sempre a API exige neste passo */
+  }
+  return { ok: true, error: null as string | null, data, transfer };
 }
 
 export async function confirmMobileSecurityPin(pin: string) {
@@ -705,7 +746,7 @@ export async function attemptReconnect(force = false): Promise<ReconnectResult> 
       requestCodeResult: pairing.data,
       phoneLinkCode,
     });
-    if (blocked || diagnosis.recommendedPath === "convert_to_web") {
+    if (blocked || diagnosis.recommendedPath === "wait_retry_mobile" || diagnosis.recommendedPath === "mobile_unban") {
       return {
         attempted: true,
         ok: false,
@@ -715,11 +756,8 @@ export async function attemptReconnect(force = false): Promise<ReconnectResult> 
         details: {
           pairing,
           diagnosis,
-          phoneLinkCode: phoneLinkCode || null,
           force,
-          note: phoneLinkCode
-            ? "phone-code gerado, mas NÃO conecta instância MOBILE — só serve se converter para WEB."
-            : undefined,
+          note: "Mantendo fluxo MOBILE (pop-up/SMS/voz). Não usar phone-code de 8 letras.",
         },
       };
     }
