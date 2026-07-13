@@ -47,6 +47,8 @@ export default async function handler(req: { method?: string }, res: {
 
     let registration: Record<string, unknown> | null = null;
     let registrationError: string | null = null;
+    let waOldProbe: Record<string, unknown> | null = null;
+    let voiceProbe: Record<string, unknown> | null = null;
     if (!connected) {
       const reg = await zapiFetch(creds, "mobile/registration-available", {
         method: "POST",
@@ -56,6 +58,41 @@ export default async function handler(req: { method?: string }, res: {
       if (!reg.ok && !reg.data) {
         registrationError = sanitizeWhatsappError(reg.text) || `HTTP ${reg.status}`;
       }
+
+      // Diagnóstico: o que a Z-API devolve de verdade no request-code
+      const wa = await zapiFetch(creds, "mobile/request-code", {
+        method: "POST",
+        body: JSON.stringify({ ddi, phone: phoneLocal, method: "wa_old" }),
+      });
+      waOldProbe = {
+        httpStatus: wa.status,
+        ok: wa.ok,
+        success: wa.data?.success ?? null,
+        blocked: wa.data?.blocked ?? null,
+        hasCaptcha: typeof wa.data?.captcha === "string",
+        method: wa.data?.method ?? null,
+        error: wa.data?.error || wa.data?.message || (!wa.ok ? wa.text : null),
+        retryAfter: wa.data?.retryAfter ?? null,
+        smsWaitSeconds: wa.data?.smsWaitSeconds ?? null,
+        voiceWaitSeconds: wa.data?.voiceWaitSeconds ?? null,
+        waOldWaitSeconds: wa.data?.waOldWaitSeconds ?? null,
+        phoneSent: { ddi, phone: phoneLocal },
+      };
+
+      const voice = await zapiFetch(creds, "mobile/request-code", {
+        method: "POST",
+        body: JSON.stringify({ ddi, phone: phoneLocal, method: "voice" }),
+      });
+      voiceProbe = {
+        httpStatus: voice.status,
+        ok: voice.ok,
+        success: voice.data?.success ?? null,
+        blocked: voice.data?.blocked ?? null,
+        hasCaptcha: typeof voice.data?.captcha === "string",
+        method: voice.data?.method ?? null,
+        error: voice.data?.error || voice.data?.message || (!voice.ok ? voice.text : null),
+        retryAfter: voice.data?.retryAfter ?? null,
+      };
     }
 
     res.status(connected ? 200 : 502).json({
@@ -82,6 +119,8 @@ export default async function handler(req: { method?: string }, res: {
       },
       registrationAvailable: registration,
       registrationError,
+      waOldProbe,
+      voiceProbe,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
