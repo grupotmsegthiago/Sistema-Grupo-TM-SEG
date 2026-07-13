@@ -34,9 +34,6 @@
     "api/dhl/intake/by-mission.ts": {
       "maxDuration": 60
     },
-    "api/dhl/intake/by-mission/[missionId].ts": {
-      "maxDuration": 60
-    },
     "api/gemini/health.ts": {
       "maxDuration": 60
     },
@@ -49,15 +46,6 @@
     "api/dhl-intake-lookup-placa.ts": {
       "maxDuration": 60
     },
-    "api/dhl/intake/public/[token].ts": {
-      "maxDuration": 60
-    },
-    "api/dhl/intake/public/[token]/progress.ts": {
-      "maxDuration": 300
-    },
-    "api/dhl/intake/public/[token]/submit.ts": {
-      "maxDuration": 300
-    },
     "api/dhl-intake-public-get.ts": {
       "maxDuration": 60
     },
@@ -66,6 +54,9 @@
     },
     "api/dhl-intake-public-submit.ts": {
       "maxDuration": 300
+    },
+    "api/recalculate-open.ts": {
+      "maxDuration": 60
     },
     "api/vendor-verification.ts": {
       "maxDuration": 60
@@ -357,6 +348,10 @@
     {
       "source": "/api/version",
       "destination": "/api/version"
+    },
+    {
+      "source": "/api/recalculate-open",
+      "destination": "/api/recalculate-open"
     },
     {
       "source": "/api/asaas/balances",
