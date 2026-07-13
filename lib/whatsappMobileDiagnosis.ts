@@ -1,11 +1,9 @@
 /**
- * Diagnóstico de conexão Z-API — mobile vs web.
+ * Diagnóstico de conexão Z-API — prioriza fluxo MOBILE (wa_old / SMS / voz).
  *
- * Instância MOBILE = aparelho PRINCIPAL (Z-API no lugar do celular).
- * Conecta só via registro: SMS / voz / wa_old → confirm-registration-code.
- *
- * phone-code (8 letras) + QR = fluxo WEB (aparelho SECUNDÁRIO / “Aparelhos conectados”).
- * Gerar phone-code em instância MOBILE bloqueada engana o operador: o código “não conecta”.
+ * Instância MOBILE = aparelho PRINCIPAL. Conecta via:
+ * registration-available → request-registration-code (wa_old|sms|voice)
+ * → confirm-registration-code → (confirm-pin-code) → device-transfer-confirmed
  */
 
 export type MobileConnectionDiagnosis = {
@@ -15,8 +13,13 @@ export type MobileConnectionDiagnosis = {
   hasAppealToken: boolean;
   smsBlocked: boolean;
   phoneCodeAvailable: boolean;
-  /** Caminho que realmente pode conectar neste momento */
-  recommendedPath: "already_connected" | "mobile_registration" | "web_phone_code_or_qr" | "convert_to_web" | "zapi_support";
+  /** Caminho recomendado mantendo a preferência do cliente (mobile). */
+  recommendedPath:
+    | "already_connected"
+    | "mobile_registration"
+    | "wait_retry_mobile"
+    | "mobile_unban"
+    | "web_phone_code_or_qr";
   summaryPt: string;
   stepsPt: string[];
 };
@@ -60,36 +63,15 @@ export function buildMobileConnectionDiagnosis(input: {
       smsBlocked,
       phoneCodeAvailable,
       recommendedPath: "web_phone_code_or_qr",
-      summaryPt: "Instância WEB: use QR ou código de 8 letras em Aparelhos conectados (celular continua como principal).",
+      summaryPt: "Instância WEB: use QR ou código de 8 letras em Aparelhos conectados.",
       stepsPt: [
         "Gere o código/QR no sistema.",
-        "No WhatsApp Business do eSIM: Aparelhos conectados → Conectar → Vincular com número (ou escanear QR).",
-        "Cole o código de 8 letras antes de expirar.",
+        "No WhatsApp Business: Aparelhos conectados → Conectar → Vincular com número (ou QR).",
       ],
     };
   }
 
   // MOBILE
-  if (registrationBlocked && !hasAppealToken) {
-    return {
-      instanceType,
-      connected: false,
-      registrationBlocked: true,
-      hasAppealToken: false,
-      smsBlocked,
-      phoneCodeAvailable,
-      recommendedPath: "convert_to_web",
-      summaryPt:
-        "WhatsApp bloqueou o registro MOBILE (blocked sem appealToken). O código de 8 letras NÃO conecta instância MOBILE — ele é só para WEB. Por isso o bot não conecta.",
-      stepsPt: [
-        "No painel Z-API: troque esta instância para WEB (ou crie uma WEB) e atualize ZAPI_INSTANCE_TYPE=web / instance_type no sistema.",
-        "Depois use QR ou código de vinculação (Aparelhos conectados) — o celular permanece como principal.",
-        "Alternativa frágil: deslogar o WhatsApp do eSIM e tentar SMS/ligação de novo (pode continuar blocked).",
-        "Se precisar manter MOBILE: abra chamado na Z-API — sem appealToken a API não desbloqueia.",
-      ],
-    };
-  }
-
   if (registrationBlocked && hasAppealToken) {
     return {
       instanceType,
@@ -98,11 +80,36 @@ export function buildMobileConnectionDiagnosis(input: {
       hasAppealToken: true,
       smsBlocked,
       phoneCodeAvailable,
-      recommendedPath: "zapi_support",
-      summaryPt: "Número bloqueado com appealToken — dá para pedir desbanimento via Z-API (request-unbanning).",
+      recommendedPath: "mobile_unban",
+      summaryPt: "Número bloqueado com appealToken — dá para pedir desbanimento via Z-API e depois repetir SMS/pop-up.",
       stepsPt: [
-        "Use o endpoint/painel Z-API de desbanimento com o appealToken.",
-        "Após liberar, rode registration-available → request-registration-code (SMS/voz/wa_old).",
+        "Peça desbanimento no painel/API Z-API (request-unbanning) com o appealToken.",
+        "Com o número liberado: deixe o WhatsApp Business aberto no eSIM.",
+        "Solicite UMA vez: pop-up (wa_old) ou SMS/ligação.",
+        "Se chegar código por SMS/voz, digite em “Confirmar código” no painel.",
+      ],
+    };
+  }
+
+  if (registrationBlocked) {
+    return {
+      instanceType,
+      connected: false,
+      registrationBlocked: true,
+      hasAppealToken: false,
+      smsBlocked,
+      phoneCodeAvailable,
+      recommendedPath: "wait_retry_mobile",
+      summaryPt:
+        "WhatsApp bloqueou o envio do código MOBILE agora (blocked sem appealToken). Continuamos no modo MOBILE — não use código de 8 letras. Pare de repetir pedidos; aguarde e tente de novo com o app aberto.",
+      stepsPt: [
+        "Pare de clicar várias vezes em Pop-up/SMS/health — pedidos em sequência pioram o blocked.",
+        "No eSIM: abra o WhatsApp Business e deixe em primeiro plano.",
+        "Aguarde 1–6 h (ou até smsWaitSeconds/voiceWaitSeconds voltarem ≥ 0).",
+        "Depois peça UMA vez: Pop-up (wa_old) OU SMS OU Ligação.",
+        "Se o código chegar por SMS/voz, cole em “Confirmar código” no painel (não em Aparelhos conectados).",
+        "Se o pop-up aparecer no app, toque em Conectar/Confirmar na tela.",
+        "Se continuar blocked por dias: chamado na Z-API com o número +55 (11) 92683-9456.",
       ],
     };
   }
@@ -115,12 +122,58 @@ export function buildMobileConnectionDiagnosis(input: {
     smsBlocked,
     phoneCodeAvailable,
     recommendedPath: "mobile_registration",
-    summaryPt: "Instância MOBILE: o bot vira o aparelho PRINCIPAL. Use pop-up/SMS/ligação — não use código de 8 letras de ‘Aparelhos conectados’.",
+    summaryPt: "Instância MOBILE pronta: peça pop-up, SMS ou ligação e confirme o código no painel.",
     stepsPt: [
       "Deixe o WhatsApp Business aberto no eSIM.",
-      "Peça pop-up (wa_old) ou SMS/ligação no sistema.",
-      "Confirme no celular; se pedir PIN de 2 etapas, informe no painel.",
-      "Atenção: ao conectar MOBILE, o WhatsApp sai do aparelho físico.",
+      "Clique em Pop-up (wa_old) — confirma o aviso na tela do celular.",
+      "Ou SMS/Ligação — quando o código chegar, digite em “Confirmar código”.",
+      "Se pedir PIN de 2 etapas, informe no campo PIN.",
+      "Atenção: ao concluir, a Z-API vira o aparelho principal (o WhatsApp sai do aparelho físico).",
     ],
+  };
+}
+
+/** Escolhe o melhor método mobile conforme waits da registration-available. */
+export function pickMobileRegistrationMethod(
+  registration: Record<string, unknown> | null | undefined,
+  preferred: "wa_old" | "sms" | "voice" = "wa_old",
+): { method: "wa_old" | "sms" | "voice"; reason: string; deferredSeconds: number } {
+  const reg = registration || {};
+  const smsWait = Number(reg.smsWaitSeconds ?? 0);
+  const voiceWait = Number(reg.voiceWaitSeconds ?? 0);
+  const waOldWait = Number(reg.waOldWaitSeconds ?? 0);
+  const waOldEligible = reg.waOldEligible !== false;
+
+  const candidates: Array<{ method: "wa_old" | "sms" | "voice"; wait: number; ok: boolean }> = [
+    { method: "wa_old", wait: waOldWait, ok: waOldEligible && waOldWait >= 0 },
+    { method: "voice", wait: voiceWait, ok: voiceWait >= 0 },
+    { method: "sms", wait: smsWait, ok: smsWait >= 0 },
+  ];
+
+  const preferredOk = candidates.find((c) => c.method === preferred && c.ok && c.wait === 0);
+  if (preferredOk) {
+    return { method: preferredOk.method, reason: `preferido ${preferred} disponível agora`, deferredSeconds: 0 };
+  }
+
+  const immediate = candidates.find((c) => c.ok && c.wait === 0);
+  if (immediate) {
+    return { method: immediate.method, reason: `${immediate.method} disponível agora`, deferredSeconds: 0 };
+  }
+
+  const soonest = candidates
+    .filter((c) => c.ok && c.wait > 0)
+    .sort((a, b) => a.wait - b.wait)[0];
+  if (soonest) {
+    return {
+      method: soonest.method,
+      reason: `aguardar ${soonest.wait}s para ${soonest.method}`,
+      deferredSeconds: soonest.wait,
+    };
+  }
+
+  return {
+    method: preferred,
+    reason: "nenhum canal liberado (smsWaitSeconds=-1 / blocked) — aguarde e tente depois",
+    deferredSeconds: Math.max(smsWait < 0 ? 0 : smsWait, voiceWait, waOldWait, 3600),
   };
 }

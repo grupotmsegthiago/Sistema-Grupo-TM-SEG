@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMobileConnectionDiagnosis } from '../lib/whatsappMobileDiagnosis';
+import { buildMobileConnectionDiagnosis, pickMobileRegistrationMethod } from '../lib/whatsappMobileDiagnosis';
 
 describe('whatsappMobileDiagnosis', () => {
-  it('MOBILE + blocked sem appealToken → recomenda converter para WEB', () => {
+  it('MOBILE + blocked sem appealToken → wait_retry_mobile (não WEB)', () => {
     const d = buildMobileConnectionDiagnosis({
       instanceType: 'mobile',
       connected: false,
@@ -11,9 +11,10 @@ describe('whatsappMobileDiagnosis', () => {
       requestCodeResult: { success: false, blocked: true },
       phoneLinkCode: 'ABCDEFGH',
     });
-    assert.equal(d.recommendedPath, 'convert_to_web');
+    assert.equal(d.recommendedPath, 'wait_retry_mobile');
     assert.equal(d.registrationBlocked, true);
-    assert.match(d.summaryPt, /NÃO conecta/i);
+    assert.match(d.summaryPt, /MOBILE/i);
+    assert.doesNotMatch(d.summaryPt, /converta para WEB/i);
   });
 
   it('WEB desconectado → phone-code/QR', () => {
@@ -29,9 +30,30 @@ describe('whatsappMobileDiagnosis', () => {
     const d = buildMobileConnectionDiagnosis({
       instanceType: 'mobile',
       connected: false,
-      registrationAvailable: { available: true, waOldEligible: true },
-      requestCodeResult: { success: true },
+      registrationAvailable: { available: true, waOldEligible: true, smsWaitSeconds: 0, voiceWaitSeconds: 0, waOldWaitSeconds: 0 },
     });
     assert.equal(d.recommendedPath, 'mobile_registration');
+  });
+
+  it('pickMobileRegistrationMethod prefere wa_old imediato', () => {
+    const p = pickMobileRegistrationMethod({
+      waOldEligible: true,
+      waOldWaitSeconds: 0,
+      voiceWaitSeconds: 0,
+      smsWaitSeconds: -1,
+    }, 'wa_old');
+    assert.equal(p.method, 'wa_old');
+    assert.equal(p.deferredSeconds, 0);
+  });
+
+  it('pickMobileRegistrationMethod evita SMS com wait -1', () => {
+    const p = pickMobileRegistrationMethod({
+      waOldEligible: false,
+      waOldWaitSeconds: 0,
+      voiceWaitSeconds: 10,
+      smsWaitSeconds: -1,
+    }, 'sms');
+    assert.equal(p.method, 'voice');
+    assert.equal(p.deferredSeconds, 10);
   });
 });

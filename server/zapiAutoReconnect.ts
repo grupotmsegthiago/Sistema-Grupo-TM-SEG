@@ -153,41 +153,29 @@ async function attemptMobileWaOldReconnect(
     || String(req.data?.message || "").includes("Unable to find matching target resource method");
 
   if (requestCodeUnavailable) {
-    const full = `${ddi}${phone}`;
-    const link = await zapiFetchWith(creds, `phone-code/${full}`, { method: "GET" });
-    const linkCode = String(link.data?.code || link.data?.value || "").trim() || null;
-    if (linkCode) {
-      return {
-        attempted: true,
-        ok: false,
-        phase: "wa_old",
-        message: `request-registration-code indisponível — use no WhatsApp Business: Aparelhos conectados → Vincular com número → código ${linkCode}.`,
-        connectedAfter: false,
-        details: { requestCode: req.data, phoneLinkCode: linkCode, fallback: "phone-code" },
-      };
-    }
     return {
       attempted: true,
       ok: false,
       phase: "wa_old",
-      message: "Endpoint mobile/request-registration-code indisponível — confira tipo MOBILE no painel Z-API ou use QR em Configurações → WhatsApp.",
-      details: { requestCode: req.data },
+      message:
+        "Endpoint mobile/request-registration-code indisponível — confira tipo MOBILE e Client-Token no painel Z-API. Não use código de 8 letras (WEB) nesta instância.",
+      details: { requestCode: req.data, fallback: "wait_retry_mobile" },
     };
   }
 
   if (!req.ok || req.data?.success === false) {
     const captcha = req.data?.captcha;
-    const full = `${ddi}${phone}`;
-    const link = await zapiFetchWith(creds, `phone-code/${full}`, { method: "GET" });
-    const linkCode = String(link.data?.code || link.data?.value || "").trim() || null;
     if (req.data?.blocked === true || Number(req.data?.smsWaitSeconds) === -1) {
+      // Cooldown longo: martelar wa_old/SMS piora o blocked do WhatsApp. Não gerar phone-code (WEB).
+      await saveLastAttemptMs();
       return {
         attempted: true,
         ok: false,
         phase: "wa_old",
-        message: "WhatsApp bloqueou registro MOBILE (blocked sem appealToken). Código de 8 letras NÃO conecta MOBILE — converta a instância para WEB no painel Z-API e use QR/código, ou abra chamado na Z-API.",
+        message:
+          "WhatsApp bloqueou registro MOBILE agora (blocked). Pare de repetir: deixe o Business aberto, aguarde e tente UMA vez Pop-up/SMS/Ligação. Quando o código chegar, confirme no painel.",
         connectedAfter: false,
-        details: { requestCode: req.data, phoneLinkCode: linkCode, fallback: "convert_to_web", blocked: true },
+        details: { requestCode: req.data, fallback: "wait_retry_mobile", blocked: true },
       };
     }
     const msg = captcha
@@ -197,8 +185,8 @@ async function attemptMobileWaOldReconnect(
       attempted: true,
       ok: false,
       phase: "wa_old",
-      message: linkCode ? `${msg} Fallback código: ${linkCode}` : msg,
-      details: { requestCode: req.data, captcha: !!captcha, phoneLinkCode: linkCode },
+      message: String(msg),
+      details: { requestCode: req.data, captcha: !!captcha, fallback: "wait_retry_mobile" },
     };
   }
 

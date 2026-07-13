@@ -1,9 +1,12 @@
-/** GET /api/zapi/health — leve: testa Z-API sem expor tokens */
+/** GET /api/zapi/health — leve: testa Z-API sem expor tokens.
+ * NÃO martela request-registration-code (isso piora blocked no WhatsApp).
+ * Use ?deep=1 para um único probe wa_old opcional.
+ */
 import { credsFromRow, getInstance, instanceConfigured, zapiFetch } from "../../lib/whatsappLiteApi.js";
 import { sanitizeWhatsappError } from "../../lib/whatsappDisplayUtils.js";
 import { buildMobileConnectionDiagnosis } from "../../lib/whatsappMobileDiagnosis.js";
 
-export default async function handler(req: { method?: string }, res: {
+export default async function handler(req: { method?: string; url?: string }, res: {
   status: (n: number) => { json: (b: unknown) => void };
   setHeader: (k: string, v: string) => void;
 }) {
@@ -14,6 +17,7 @@ export default async function handler(req: { method?: string }, res: {
   res.setHeader("Cache-Control", "no-store");
 
   try {
+    const deep = typeof req.url === "string" && req.url.includes("deep=1");
     const row = await getInstance();
     if (!row || !instanceConfigured(row)) {
       res.status(503).json({ ok: false, configured: false, error: "Instância WhatsApp não configurada" });
@@ -38,6 +42,7 @@ export default async function handler(req: { method?: string }, res: {
       ? `+${ddi} (${phoneLocal.slice(0, 2)}) ${phoneLocal.slice(2, 7)}-${phoneLocal.slice(7)}`
       : `+${ddi}${phoneLocal}`;
 
+    // phone-code só para diagnóstico WEB — não é solução MOBILE
     const phoneCodeRes = await zapiFetch(creds, `phone-code/${full}`, { method: "GET" });
     const phoneCodeValue = String(phoneCodeRes.data?.code || phoneCodeRes.data?.value || "").trim() || null;
     const phoneCodeError = phoneCodeValue
@@ -49,7 +54,6 @@ export default async function handler(req: { method?: string }, res: {
     let registration: Record<string, unknown> | null = null;
     let registrationError: string | null = null;
     let waOldProbe: Record<string, unknown> | null = null;
-    let voiceProbe: Record<string, unknown> | null = null;
 
     if (!connected) {
       const reg = await zapiFetch(creds, "mobile/registration-available", {
@@ -61,28 +65,14 @@ export default async function handler(req: { method?: string }, res: {
         registrationError = sanitizeWhatsappError(reg.text) || `HTTP ${reg.status}`;
       }
 
-      // Path oficial: mobile/request-registration-code
-      const phoneVariants: Array<{ label: string; ddi: string; phone: string }> = [
-        { label: "ddi+local", ddi, phone: phoneLocal },
-        {
-          label: "local-sem-9",
-          ddi,
-          phone: phoneLocal.length === 11 ? `${phoneLocal.slice(0, 2)}${phoneLocal.slice(3)}` : phoneLocal,
-        },
-        { label: "full-no-ddi-field", ddi: "", phone: full },
-        { label: "full-with-ddi", ddi, phone: full },
-      ];
-      const variantProbes: Record<string, unknown>[] = [];
-      for (const v of phoneVariants) {
-        const body: Record<string, string> = { phone: v.phone, method: "wa_old" };
-        if (v.ddi) body.ddi = v.ddi;
+      // Probe profundo OPCIONAL — uma única chamada (sem variantes).
+      if (deep) {
         const wa = await zapiFetch(creds, "mobile/request-registration-code", {
           method: "POST",
-          body: JSON.stringify(body),
+          body: JSON.stringify({ ddi, phone: phoneLocal, method: "wa_old" }),
         });
-        variantProbes.push({
-          variant: v.label,
-          sent: body,
+        waOldProbe = {
+          path: "mobile/request-registration-code",
           httpStatus: wa.status,
           success: wa.data?.success ?? null,
           blocked: wa.data?.blocked ?? null,
@@ -91,41 +81,16 @@ export default async function handler(req: { method?: string }, res: {
           voiceWaitSeconds: wa.data?.voiceWaitSeconds ?? null,
           hasCaptcha: typeof wa.data?.captcha === "string",
           keys: wa.data ? Object.keys(wa.data) : [],
-        });
+          note: "Probe único (?deep=1). Não use health em loop — piora blocked.",
+        };
       }
-
-      const primary = variantProbes[0] || null;
-      waOldProbe = primary
-        ? {
-            ...primary,
-            path: "mobile/request-registration-code",
-            variants: variantProbes,
-            anySuccess: variantProbes.some((p) => p.success === true),
-          }
-        : null;
-
-      const voice = await zapiFetch(creds, "mobile/request-registration-code", {
-        method: "POST",
-        body: JSON.stringify({ ddi, phone: phoneLocal, method: "voice" }),
-      });
-      voiceProbe = {
-        path: "mobile/request-registration-code",
-        httpStatus: voice.status,
-        ok: voice.ok,
-        success: voice.data?.success ?? null,
-        blocked: voice.data?.blocked ?? null,
-        hasCaptcha: typeof voice.data?.captcha === "string",
-        method: voice.data?.method ?? null,
-        error: voice.data?.error || voice.data?.message || (!voice.ok ? voice.text : null),
-        retryAfter: voice.data?.retryAfter ?? null,
-      };
     }
 
     const diagnosis = buildMobileConnectionDiagnosis({
       instanceType: creds.type,
       connected: !!connected,
       registrationAvailable: registration,
-      requestCodeResult: (waOldProbe as Record<string, unknown> | null) || (voiceProbe as Record<string, unknown> | null),
+      requestCodeResult: waOldProbe,
       phoneLinkCode: phoneCodeValue,
     });
 
@@ -152,13 +117,13 @@ export default async function handler(req: { method?: string }, res: {
         httpStatus: phoneCodeRes.status,
         phoneTried: full,
         note: creds.type === "mobile"
-          ? "phone-code é fluxo WEB; não conecta instância MOBILE se o registro estiver blocked."
+          ? "phone-code é fluxo WEB; no MOBILE use pop-up/SMS/voz + Confirmar código."
           : null,
       },
       registrationAvailable: registration,
       registrationError,
       waOldProbe,
-      voiceProbe,
+      note: "Health não dispara request-registration-code por padrão (evita blocked). Use ?deep=1 com cuidado.",
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
