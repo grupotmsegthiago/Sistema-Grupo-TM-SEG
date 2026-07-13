@@ -83,12 +83,26 @@ export function computeOperationalKpis(
   };
 }
 
-function isInvestmentExpense(t: FinancialTransaction, investmentIds: Set<string>, categories: FinancialCategory[]): boolean {
+/** Ajustes/rendimentos de investimento — não são recebimento de cliente nem despesa operacional. */
+function isInvestmentCashMovement(t: FinancialTransaction, investmentIds: Set<string>, categories: FinancialCategory[]): boolean {
   if (investmentIds.has(t.category_id)) return true;
   const catName = (t.category_name || '').toLowerCase();
   if (catName.includes('investimento') || catName.includes('aplicaç') || catName.includes('resgate') || catName.includes('ajuste de saldo')) return true;
+  const desc = (t.description || '').toLowerCase();
+  if (
+    desc.includes('rendimento de investimento')
+    || desc.includes('desvalorização de investimento')
+    || desc.includes('desvalorizacao de investimento')
+    || desc.includes('atualização de saldo de investimento')
+    || desc.includes('atualizacao de saldo de investimento')
+  ) return true;
   const cat = categories.find(c => c.id === t.category_id);
   return cat?.group === 'INVESTIMENTOS';
+}
+
+/** @deprecated use isInvestmentCashMovement */
+function isInvestmentExpense(t: FinancialTransaction, investmentIds: Set<string>, categories: FinancialCategory[]): boolean {
+  return isInvestmentCashMovement(t, investmentIds, categories);
 }
 
 export function computeCashKpis(
@@ -104,15 +118,15 @@ export function computeCashKpis(
   const investmentIds = new Set(categories.filter(c => c.group === 'INVESTIMENTOS').map(c => c.id));
   const today = new Date().toISOString().slice(0, 10);
 
-  // Transferências entre TM SEG / TM Security / TM Gestão não são receita/despesa real.
+  // Transferências internas e ajustes de investimento não são receita/despesa de caixa operacional.
   const incomePaid = round2(
     inPeriod
-      .filter(t => t.type === 'INCOME' && t.status === 'PAID' && !isInternalGroupTransfer(t))
+      .filter(t => t.type === 'INCOME' && t.status === 'PAID' && !isInternalGroupTransfer(t) && !isInvestmentCashMovement(t, investmentIds, categories))
       .reduce((s, t) => s + Number(t.amount || 0), 0),
   );
   const expensePaid = round2(
     inPeriod
-      .filter(t => t.type === 'EXPENSE' && t.status === 'PAID' && !isInvestmentExpense(t, investmentIds, categories) && !isInternalGroupTransfer(t))
+      .filter(t => t.type === 'EXPENSE' && t.status === 'PAID' && !isInvestmentCashMovement(t, investmentIds, categories) && !isInternalGroupTransfer(t))
       .reduce((s, t) => s + Number(t.amount || 0), 0),
   );
 
@@ -120,17 +134,17 @@ export function computeCashKpis(
 
   const pendingReceivable = round2(
     pendingInPeriod
-      .filter(t => t.type === 'INCOME' && !isInternalGroupTransfer(t))
+      .filter(t => t.type === 'INCOME' && !isInternalGroupTransfer(t) && !isInvestmentCashMovement(t, investmentIds, categories))
       .reduce((s, t) => s + Number(t.amount || 0), 0),
   );
   const pendingPayable = round2(
     pendingInPeriod
-      .filter(t => t.type === 'EXPENSE' && !isInternalGroupTransfer(t))
+      .filter(t => t.type === 'EXPENSE' && !isInternalGroupTransfer(t) && !isInvestmentCashMovement(t, investmentIds, categories))
       .reduce((s, t) => s + Number(t.amount || 0), 0),
   );
   const overduePayable = round2(
     allTransactions
-      .filter(t => t.type === 'EXPENSE' && ['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status) && String(t.due_date || '').slice(0, 10) < today && !isInternalGroupTransfer(t))
+      .filter(t => t.type === 'EXPENSE' && ['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status) && String(t.due_date || '').slice(0, 10) < today && !isInternalGroupTransfer(t) && !isInvestmentCashMovement(t, investmentIds, categories))
       .reduce((s, t) => s + Number(t.amount || 0), 0),
   );
 
@@ -203,6 +217,13 @@ export function buildDailyCashFlow(
   const map = new Map<string, { inflow: number; outflow: number }>();
   for (const t of paidInPeriod) {
     if (isInternalGroupTransfer(t)) continue;
+    // Fluxo diário do cockpit = caixa operacional (sem rendimento/ajuste de investimento)
+    const catName = (t.category_name || '').toLowerCase();
+    const desc = (t.description || '').toLowerCase();
+    if (
+      catName.includes('investimento') || catName.includes('aplicaç') || catName.includes('resgate') || catName.includes('ajuste de saldo')
+      || desc.includes('rendimento de investimento') || desc.includes('desvalorização de investimento') || desc.includes('desvalorizacao de investimento')
+    ) continue;
     const day = getCashMovementDate(t);
     if (!day) continue;
     const row = map.get(day) || { inflow: 0, outflow: 0 };
