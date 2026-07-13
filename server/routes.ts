@@ -517,14 +517,20 @@ export async function registerRoutes(
     }
   }
 
-  app.post('/api/recalculate-all', requireAuth, requireRole('diretoria', 'administrador', 'ceo', 'financeiro'), async (req: Request, res: Response) => {
+  app.post(['/api/recalculate-all', '/api/recalculate-open'], requireAuth, requireRole('diretoria', 'administrador', 'ceo', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const sb = createSupabaseAdminClient();
       if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
 
       const body = (req.body && typeof req.body === 'object') ? req.body as Record<string, unknown> : {};
-      const scopeRaw = String(body.scope || req.query?.scope || 'all').toLowerCase();
-      const scope = scopeRaw === 'open' ? 'open' : 'all';
+      const urlHint = `${req.originalUrl || ''} ${req.url || ''} ${req.path || ''} ${req.headers['x-invoke-path'] || ''} ${req.headers['x-forwarded-uri'] || ''} ${req.headers['x-tmseg-recalc-scope'] || ''}`;
+      // /api/recalculate-open SEMPRE força só OS abertas (evita processar ~1000 OS e tomar 504).
+      const forceOpen = /recalculate-open/i.test(urlHint)
+        || String(req.headers['x-tmseg-recalc-scope'] || '').toLowerCase() === 'open';
+      const scopeFromQuery = typeof req.query?.scope === 'string' ? req.query.scope : Array.isArray(req.query?.scope) ? String(req.query.scope[0] || '') : '';
+      const scopeRaw = String(body.scope || scopeFromQuery || (forceOpen ? 'open' : 'all')).toLowerCase();
+      const scope = forceOpen || scopeRaw === 'open' ? 'open' : 'all';
+      console.log('[recalculate]', { path: req.path, url: req.url, scope, forceOpen, budgetMs: Number(body.budgetMs) || null });
       // Soft deadline: evita FUNCTION_INVOCATION_TIMEOUT (504) na Vercel / Safari "Load failed!".
       const budgetMs = Math.min(Math.max(Number(body.budgetMs) || (scope === 'open' ? 40_000 : 90_000), 10_000), 240_000);
       const deadline = Date.now() + budgetMs;
