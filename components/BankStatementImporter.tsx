@@ -4,6 +4,7 @@ import { X, FileText, UploadCloud, CheckCircle2, AlertOctagon, Loader2, Plus, Ar
 import { FinancialAccount, FinancialCategory, TransactionType } from '../types';
 import { useNotification } from '../lib/NotificationContext';
 import { generateContent } from '../lib/gemini';
+import { INTERNAL_TRANSFER_NOTE_TAG, isInternalGroupTransfer } from '../lib/financialInternalTransfer';
 
 interface Props {
   onClose: () => void;
@@ -90,6 +91,9 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
           const mimeType = file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
 
           const prompt = `Analise este extrato bancário. Extraia TODAS as transações individuais (entradas e saídas). Ignore saldos e taxas de manutenção se possível.
+          IMPORTANTE — empresas do mesmo grupo (TM SEG / TM SEGURANÇA / TM SECURITY / TM GESTÃO / TM MANAGEMENT):
+          se o histórico indicar transferência/repasse ENTRE essas empresas, ainda use type INCOME ou EXPENSE conforme o sinal no extrato,
+          mas prefixe a description com "TRANSFERÊNCIA INTERNA — " (não é receita de cliente externo).
           Retorne APENAS um JSON Array puro no formato:
           [
             {
@@ -98,7 +102,8 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
               "amount": 0.00,
               "type": "INCOME" ou "EXPENSE"
             }
-          ]`;
+          ]
+          Não use markdown.`;
 
           setProgressLabel('IA lendo o documento...');
 
@@ -188,6 +193,15 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
       const category = categories.find(c => c.id === item.category_id);
 
       try {
+          const internal = isInternalGroupTransfer({
+              description: item.description,
+              category_name: category?.name,
+              entity_name: item.description,
+          });
+          const notes = internal
+              ? `${INTERNAL_TRANSFER_NOTE_TAG} Importado via Conciliação IA (Gemini 3)`
+              : 'Importado via Conciliação IA (Gemini 3)';
+
           const { data, error: insErr } = await supabase.from('financial_transactions').insert([{
               description: item.description.toUpperCase() + " (CONCILIADO)",
               amount: item.amount,
@@ -200,7 +214,9 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
               category_id: item.category_id,
               category_name: category?.name,
               status_conciliacao: 'CONCILIADO',
-              notes: 'Importado via Conciliação IA (Gemini 3)',
+              entity_type: 'Other',
+              entity_name: internal ? item.description : null,
+              notes,
               created_by: JSON.parse(localStorage.getItem('userData') || '{}').name
           }]).select().single();
 

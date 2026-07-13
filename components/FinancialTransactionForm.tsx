@@ -1,10 +1,10 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { X, Save, Loader2, DollarSign, Calendar, Tag, User, AlignLeft, Landmark, Wallet, Repeat, Layers, Clock, Plus } from 'lucide-react';
+import { X, Save, Loader2, DollarSign, Calendar, Tag, Wallet, Layers, Plus, ArrowRightLeft } from 'lucide-react';
 import { FinancialCategory, TransactionType, FinancialAccount } from '../types';
 import QuickCategoryModal from './QuickCategoryModal';
 import FinancialAccountManager from './FinancialAccountManager';
+import { INTERNAL_TRANSFER_NOTE_TAG, isInternalGroupTransfer } from '../lib/financialInternalTransfer';
 
 interface Props {
   onClose: () => void;
@@ -19,13 +19,18 @@ const getTodayBR = (): string => {
     return `${brDate.getFullYear()}-${String(brDate.getMonth() + 1).padStart(2, '0')}-${String(brDate.getDate()).padStart(2, '0')}`;
 };
 
+type EntryKind = TransactionType | 'TRANSFER';
+
 const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) => {
+  const [entryKind, setEntryKind] = useState<EntryKind>('EXPENSE');
   const [type, setType] = useState<TransactionType>('EXPENSE');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState(getTodayBR());
   const [categoryId, setCategoryId] = useState('');
-  const [accountId, setAccountId] = useState(''); 
+  const [accountId, setAccountId] = useState('');
+  const [fromAccountId, setFromAccountId] = useState('');
+  const [toAccountId, setToAccountId] = useState('');
   const [status, setStatus] = useState<'PENDING' | 'PAID'>('PENDING');
   const [entityType, setEntityType] = useState<'Client' | 'Provider' | 'Other' | 'Personal'>('Other');
   const [entityId, setEntityId] = useState('');
@@ -44,6 +49,7 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
   const [showAccountManager, setShowAccountManager] = useState(false);
 
   const installmentOptions = Array.from({ length: 47 }, (_, i) => i + 2);
+  const isTransfer = entryKind === 'TRANSFER';
 
   useEffect(() => {
     fetchAuxData();
@@ -78,6 +84,7 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
       const { data } = await supabase.from('financial_transactions').select('*').eq('id', id).single();
       if (data) {
           setType(data.type);
+          setEntryKind(isInternalGroupTransfer(data) ? 'TRANSFER' : data.type);
           setDescription(data.description);
           setAmount(data.amount.toString());
           setDueDate(data.due_date.split('T')[0]);
@@ -111,21 +118,113 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
       return parseFloat(cleaned);
   };
 
+  const findTransferCategory = (txType: TransactionType): FinancialCategory | undefined =>
+      categories.find(c => c.type === txType && /transfer|repasse/i.test(c.name || ''))
+      || categories.find(c => c.type === txType && c.group === 'NAO_OPERACIONAL')
+      || categories.find(c => c.type === txType);
+
+  const tryWithPaymentMethod = async (payload: any) => {
+      const { error } = await supabase.from('financial_transactions').insert(payload);
+      if (error && error.message?.includes('payment_method')) {
+          const cleaned = (Array.isArray(payload) ? payload : [payload]).map(({ payment_method, ...rest }: any) => rest);
+          const { error: err2 } = await supabase.from('financial_transactions').insert(cleaned);
+          if (err2) throw new Error(err2.message);
+      } else if (error) {
+          throw new Error(error.message);
+      }
+  };
+
+  const tryUpdateWithPaymentMethod = async (payload: any, recordId: string) => {
+      const { error } = await supabase.from('financial_transactions').update(payload).eq('id', recordId);
+      if (error && error.message?.includes('payment_method')) {
+          const { payment_method, ...rest } = payload;
+          const { error: err2 } = await supabase.from('financial_transactions').update(rest).eq('id', recordId);
+          if (err2) throw new Error(err2.message);
+      } else if (error) {
+          throw new Error(error.message);
+      }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       
       const parsedAmount = parseAmountBR(amount);
       if (isNaN(parsedAmount) || parsedAmount <= 0) {
-          alert("Por favor, insira um valor válido.");
+          alert('Por favor, insira um valor válido.');
           return;
       }
 
       setIsSaving(true);
       try {
+          const currentUser = JSON.parse(localStorage.getItem('userData') || '{}').name;
+
+          // Nova transferência entre contas do grupo: cria saída + entrada (não conta como receita).
+          if (isTransfer && !id) {
+              if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
+                  alert('Selecione contas de origem e destino diferentes (empresas do grupo).');
+                  setIsSaving(false);
+                  return;
+              }
+              const fromAcc = accounts.find(a => a.id === fromAccountId);
+              const toAcc = accounts.find(a => a.id === toAccountId);
+              if (!fromAcc || !toAcc) {
+                  alert('Contas inválidas.');
+                  setIsSaving(false);
+                  return;
+              }
+              const outCat = findTransferCategory('EXPENSE');
+              const inCat = findTransferCategory('INCOME');
+              const baseDesc = (description || '').trim() || `Transferência interna ${fromAcc.name} → ${toAcc.name}`;
+              const transferNotes = `${INTERNAL_TRANSFER_NOTE_TAG} ${notes || ''}`.trim();
+              const paymentDate = status === 'PAID' ? dueDate : null;
+              const payloads = [
+                  {
+                      type: 'EXPENSE' as const,
+                      description: baseDesc.toUpperCase(),
+                      amount: parsedAmount,
+                      due_date: dueDate,
+                      payment_date: paymentDate,
+                      status,
+                      category_id: outCat?.id || null,
+                      category_name: outCat?.name || 'TRANSFERÊNCIA INTERNA',
+                      account_id: fromAcc.id,
+                      account_name: fromAcc.name,
+                      entity_type: 'Other',
+                      entity_id: null,
+                      entity_name: toAcc.name,
+                      notes: transferNotes,
+                      created_by: currentUser,
+                      updated_by: currentUser,
+                      payment_method: paymentMethod || 'TRANSFERENCIA',
+                  },
+                  {
+                      type: 'INCOME' as const,
+                      description: baseDesc.toUpperCase(),
+                      amount: parsedAmount,
+                      due_date: dueDate,
+                      payment_date: paymentDate,
+                      status,
+                      category_id: inCat?.id || null,
+                      category_name: inCat?.name || 'TRANSFERÊNCIA INTERNA',
+                      account_id: toAcc.id,
+                      account_name: toAcc.name,
+                      entity_type: 'Other',
+                      entity_id: null,
+                      entity_name: fromAcc.name,
+                      notes: transferNotes,
+                      created_by: currentUser,
+                      updated_by: currentUser,
+                      payment_method: paymentMethod || 'TRANSFERENCIA',
+                  },
+              ];
+              await tryWithPaymentMethod(payloads);
+              onSuccess();
+              return;
+          }
+
           const category = categories.find(c => c.id === categoryId);
           const account = accounts.find(a => a.id === accountId);
           const entity = entities.find(en => en.id === entityId);
-          const currentUser = JSON.parse(localStorage.getItem('userData') || '{}').name;
 
           let finalEntityName = null;
           if (entityType === 'Client' || entityType === 'Provider') {
@@ -136,8 +235,20 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
               finalEntityName = 'Outros';
           }
 
-          // Ajuste de data: se o status for PAID, o payment_date deve ser IGUAL ao due_date para não haver discrepância
-          // a menos que o usuário utilize a conciliação bancária depois.
+          const looksInternal =
+              isTransfer
+              || isInternalGroupTransfer({
+                  description,
+                  entity_name: finalEntityName,
+                  category_name: category?.name,
+                  notes,
+                  account_name: account?.name,
+              });
+
+          const finalNotes = looksInternal && !String(notes || '').includes(INTERNAL_TRANSFER_NOTE_TAG)
+              ? `${INTERNAL_TRANSFER_NOTE_TAG} ${notes || ''}`.trim()
+              : notes;
+
           const basePayload: Record<string, any> = {
               type,
               category_id: categoryId,
@@ -147,35 +258,13 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
               entity_type: entityType,
               entity_id: entityId || null,
               entity_name: finalEntityName,
-              notes,
+              notes: finalNotes,
               updated_by: currentUser,
               status
           };
           if (paymentMethod) {
               basePayload.payment_method = paymentMethod;
           }
-
-          const tryWithPaymentMethod = async (payload: any) => {
-              const { error } = await supabase.from('financial_transactions').insert(payload);
-              if (error && error.message?.includes('payment_method')) {
-                  const cleaned = (Array.isArray(payload) ? payload : [payload]).map(({ payment_method, ...rest }: any) => rest);
-                  const { error: err2 } = await supabase.from('financial_transactions').insert(cleaned);
-                  if (err2) throw new Error(err2.message);
-              } else if (error) {
-                  throw new Error(error.message);
-              }
-          };
-
-          const tryUpdateWithPaymentMethod = async (payload: any, recordId: string) => {
-              const { error } = await supabase.from('financial_transactions').update(payload).eq('id', recordId);
-              if (error && error.message?.includes('payment_method')) {
-                  const { payment_method, ...rest } = payload;
-                  const { error: err2 } = await supabase.from('financial_transactions').update(rest).eq('id', recordId);
-                  if (err2) throw new Error(err2.message);
-              } else if (error) {
-                  throw new Error(error.message);
-              }
-          };
 
           if (id) {
               await tryUpdateWithPaymentMethod({
@@ -228,6 +317,18 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
       setCategoryId(newCat.id);
   };
 
+  const selectEntryKind = (kind: EntryKind) => {
+      setEntryKind(kind);
+      if (kind === 'TRANSFER') {
+          setType('EXPENSE');
+          setStatus('PAID');
+          setPaymentMethod('TRANSFERENCIA');
+          setRecurrence('SINGLE');
+      } else {
+          setType(kind);
+      }
+  };
+
   const filteredCategories = categories.filter(c => c.type === type);
 
   return (
@@ -251,13 +352,23 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
             <button onClick={onClose}><X size={20} className="text-gray-400 hover:text-gray-600"/></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-            <div className="flex bg-gray-100 p-1 rounded-lg">
-                <button type="button" onClick={() => setType('INCOME')} className={`flex-1 py-2 text-xs font-bold uppercase rounded-md transition-all ${type === 'INCOME' ? 'bg-green-500 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Receita</button>
-                <button type="button" onClick={() => setType('EXPENSE')} className={`flex-1 py-2 text-xs font-bold uppercase rounded-md transition-all ${type === 'EXPENSE' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Despesa</button>
+            <div className="flex bg-gray-100 p-1 rounded-lg gap-0.5">
+                <button type="button" onClick={() => selectEntryKind('INCOME')} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-md transition-all ${entryKind === 'INCOME' ? 'bg-green-500 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Receita</button>
+                <button type="button" onClick={() => selectEntryKind('EXPENSE')} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-md transition-all ${entryKind === 'EXPENSE' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Despesa</button>
+                {!id && (
+                    <button type="button" onClick={() => selectEntryKind('TRANSFER')} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-md transition-all ${entryKind === 'TRANSFER' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`} data-testid="btn-entry-transfer">
+                        Transferência
+                    </button>
+                )}
             </div>
+            {isTransfer && !id && (
+                <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 text-[11px] text-indigo-800 font-medium leading-relaxed">
+                    Movimento entre contas do grupo (TM SEG / TM Security / TM Gestão). Não entra em “Entrou” nem em “Saiu” consolidado — só muda o saldo das contas.
+                </div>
+            )}
             <div>
                 <label className="text-[10px] font-black text-gray-400 uppercase mb-1 flex items-center gap-1"><Tag size={12}/> Descrição</label>
-                <input required type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase" placeholder="Ex: Pagamento Fornecedor" value={description} onChange={e => setDescription(e.target.value)} />
+                <input required={!isTransfer} type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase" placeholder={isTransfer ? 'Opcional — ex: Repasse caixa' : 'Ex: Pagamento Fornecedor'} value={description} onChange={e => setDescription(e.target.value)} />
             </div>
             <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -269,51 +380,72 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
                     <input required type="date" className="w-full p-2.5 border rounded-lg text-sm font-bold" value={dueDate} onChange={e => setDueDate(e.target.value)} />
                 </div>
             </div>
-            {!id && (
-                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                    <div className="flex flex-wrap items-center gap-4 mb-2">
-                        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-700 uppercase">
-                            <input type="radio" name="recurrence" checked={recurrence === 'SINGLE'} onChange={() => setRecurrence('SINGLE')} className="text-blue-600" />
-                            Único
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-blue-700 uppercase">
-                            <input type="radio" name="recurrence" checked={recurrence === 'INSTALLMENT'} onChange={() => setRecurrence('INSTALLMENT')} className="text-blue-600" />
-                            Parcelado
-                        </label>
-                    </div>
-                    {recurrence !== 'SINGLE' && (
-                        <div className="flex items-center gap-2 animate-in slide-in-from-top-2">
-                            <Layers size={16} className="text-blue-500" />
-                            <span className="text-xs font-bold text-gray-600">Parcelas:</span>
-                            <select className="p-1 border border-blue-300 rounded text-sm bg-white font-bold" value={recurrenceCount} onChange={(e) => setRecurrenceCount(parseInt(e.target.value))}>
-                                {installmentOptions.map(n => <option key={n} value={n}>{n}x</option>)}
-                            </select>
-                        </div>
-                    )}
-                </div>
-            )}
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Categoria</label>
-                    <div className="flex gap-2">
-                        <select required className="w-full p-2.5 border rounded-lg text-xs bg-white uppercase font-bold" value={categoryId} onChange={e => setCategoryId(e.target.value)}>
+            {isTransfer && !id ? (
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Conta origem (sai)</label>
+                        <select required className="w-full p-2.5 border rounded-lg text-xs bg-white uppercase font-bold" value={fromAccountId} onChange={e => setFromAccountId(e.target.value)} data-testid="select-transfer-from">
                             <option value="">Selecione...</option>
-                            {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                        <button type="button" onClick={() => setShowQuickCategory(true)} className="p-2 bg-gray-100 text-gray-600 rounded-lg"><Plus size={16} /></button>
-                    </div>
-                </div>
-                <div>
-                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Conta Bancária</label>
-                    <div className="flex gap-2">
-                        <select className="w-full p-2.5 border rounded-lg text-xs bg-white uppercase font-bold" value={accountId} onChange={e => setAccountId(e.target.value)}>
-                            <option value="">Opcional</option>
                             {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
                         </select>
-                        <button type="button" onClick={() => setShowAccountManager(true)} className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Plus size={16} /></button>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase mb-1 flex items-center gap-1"><ArrowRightLeft size={12}/> Conta destino (entra)</label>
+                        <select required className="w-full p-2.5 border rounded-lg text-xs bg-white uppercase font-bold" value={toAccountId} onChange={e => setToAccountId(e.target.value)} data-testid="select-transfer-to">
+                            <option value="">Selecione...</option>
+                            {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
+                        </select>
                     </div>
                 </div>
-            </div>
+            ) : (
+                <>
+                    {!id && (
+                        <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                            <div className="flex flex-wrap items-center gap-4 mb-2">
+                                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-700 uppercase">
+                                    <input type="radio" name="recurrence" checked={recurrence === 'SINGLE'} onChange={() => setRecurrence('SINGLE')} className="text-blue-600" />
+                                    Único
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-blue-700 uppercase">
+                                    <input type="radio" name="recurrence" checked={recurrence === 'INSTALLMENT'} onChange={() => setRecurrence('INSTALLMENT')} className="text-blue-600" />
+                                    Parcelado
+                                </label>
+                            </div>
+                            {recurrence !== 'SINGLE' && (
+                                <div className="flex items-center gap-2 animate-in slide-in-from-top-2">
+                                    <Layers size={16} className="text-blue-500" />
+                                    <span className="text-xs font-bold text-gray-600">Parcelas:</span>
+                                    <select className="p-1 border border-blue-300 rounded text-sm bg-white font-bold" value={recurrenceCount} onChange={(e) => setRecurrenceCount(parseInt(e.target.value))}>
+                                        {installmentOptions.map(n => <option key={n} value={n}>{n}x</option>)}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Categoria</label>
+                            <div className="flex gap-2">
+                                <select required className="w-full p-2.5 border rounded-lg text-xs bg-white uppercase font-bold" value={categoryId} onChange={e => setCategoryId(e.target.value)}>
+                                    <option value="">Selecione...</option>
+                                    {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                                <button type="button" onClick={() => setShowQuickCategory(true)} className="p-2 bg-gray-100 text-gray-600 rounded-lg"><Plus size={16} /></button>
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Conta Bancária</label>
+                            <div className="flex gap-2">
+                                <select className="w-full p-2.5 border rounded-lg text-xs bg-white uppercase font-bold" value={accountId} onChange={e => setAccountId(e.target.value)}>
+                                    <option value="">Opcional</option>
+                                    {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
+                                </select>
+                                <button type="button" onClick={() => setShowAccountManager(true)} className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Plus size={16} /></button>
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
             <div className="grid grid-cols-2 gap-4">
                 <div>
                     <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Status de Liquidação</label>
@@ -334,7 +466,7 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
             </div>
             <button disabled={isSaving} type="submit" className="w-full bg-gray-900 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors shadow-lg active:scale-95">
                 {isSaving ? <Loader2 size={18} className="animate-spin"/> : <Save size={18}/>}
-                {id ? 'Salvar Alteração' : 'Confirmar Lançamento'}
+                {id ? 'Salvar Alteração' : isTransfer ? 'Confirmar Transferência' : 'Confirmar Lançamento'}
             </button>
         </form>
     </div>

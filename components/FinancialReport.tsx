@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { FinancialTransaction, FinancialCategory } from '../types';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { formatIsoDateBR, formatDateBR } from '../lib/dateUtils';
+import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
 import { 
     FileText, Calendar, DollarSign, Download, Printer, Filter, 
     ArrowUpCircle, ArrowDownCircle, ShieldAlert, Loader2, Search, TrendingUp, User,
@@ -112,6 +113,7 @@ const FinancialReport: React.FC = () => {
 
     const nonInvestTx = useMemo(() => {
         return transactions.filter(t => {
+            if (isInternalGroupTransfer(t)) return false;
             if (investmentCategoryIds.has(t.category_id)) return false;
             const catName = (t.category_name || '').toLowerCase();
             if (catName.includes('investimento') || catName.includes('investimentos') || catName.includes('aplicaç') || catName.includes('resgate') || catName.includes('ajuste de saldo') || catName.includes('ajustes de saldo')) return false;
