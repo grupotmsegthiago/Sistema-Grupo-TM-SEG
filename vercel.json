@@ -411,6 +411,10 @@
       "destination": "/api/whatsapp-instances-test-connection?instanceId=:id"
     },
     {
+      "source": "/api/whatsapp/instances/:id",
+      "destination": "/api/whatsapp-instances-update?instanceId=:id"
+    },
+    {
       "source": "/api/whatsapp/connection/status",
       "destination": "/api/whatsapp-connection-status"
     },

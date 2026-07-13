@@ -206,6 +206,15 @@ export async function ensureWhatsappInstancesFromEnv(): Promise<void> {
     .maybeSingle();
 
   if (def?.id) {
+    // Não sobrescrever Client-Token / Token já salvos no banco com env (pode estar errado na Vercel).
+    const { data: current } = await client
+      .from("whatsapp_instances")
+      .select("zapi_client_token,zapi_token,label")
+      .eq("id", def.id)
+      .maybeSingle();
+    if (current?.zapi_client_token) delete payload.zapi_client_token;
+    if (current?.zapi_token) delete payload.zapi_token;
+    if (current?.label && !looksLikeZapiSecret(String(current.label))) delete payload.label;
     await client.from("whatsapp_instances").update(payload).eq("id", def.id);
     return;
   }
@@ -218,7 +227,16 @@ export async function ensureWhatsappInstancesFromEnv(): Promise<void> {
     .maybeSingle();
 
   if (first?.id) {
-    await client.from("whatsapp_instances").update({ ...payload, is_default: true }).eq("id", first.id);
+    const { data: current } = await client
+      .from("whatsapp_instances")
+      .select("zapi_client_token,zapi_token,label")
+      .eq("id", first.id)
+      .maybeSingle();
+    const syncPayload = { ...payload, is_default: true };
+    if (current?.zapi_client_token) delete syncPayload.zapi_client_token;
+    if (current?.zapi_token) delete syncPayload.zapi_token;
+    if (current?.label && !looksLikeZapiSecret(String(current.label))) delete syncPayload.label;
+    await client.from("whatsapp_instances").update(syncPayload).eq("id", first.id);
     await client.from("whatsapp_instances").update({ is_default: false }).neq("id", first.id);
   }
 }
@@ -264,6 +282,73 @@ export async function getInstance(instanceId?: string | null): Promise<InstanceR
   }
   const { data } = await client.from("whatsapp_instances").select("*").eq("is_default", true).maybeSingle();
   return (data as InstanceRow) || null;
+}
+
+export type UpdateInstanceInput = {
+  slug?: string;
+  label?: string;
+  provider?: "zapi" | "meta" | "mock";
+  instance_type?: "web" | "mobile" | null;
+  zapi_instance_id?: string | null;
+  zapi_token?: string;
+  zapi_client_token?: string | null;
+  meta_phone_number_id?: string | null;
+  meta_access_token?: string;
+  meta_api_version?: string | null;
+  official_ddi?: string;
+  official_phone?: string;
+  is_default?: boolean;
+  enabled?: boolean;
+};
+
+export async function updateInstance(instanceId: string, input: UpdateInstanceInput): Promise<InstanceRow> {
+  const id = String(instanceId || "").trim();
+  if (!id) throw new Error("instanceId obrigatório");
+
+  const client = sb();
+  const existing = await getInstance(id);
+  if (!existing) throw new Error("Instância não encontrada");
+
+  const payload: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (input.slug != null) payload.slug = String(input.slug).trim().toLowerCase();
+  if (input.label != null) payload.label = safeWhatsappInstanceLabel(input.label);
+  if (input.provider != null) payload.provider = input.provider;
+  if (input.instance_type !== undefined) payload.instance_type = input.instance_type;
+  if (input.zapi_instance_id !== undefined) payload.zapi_instance_id = input.zapi_instance_id;
+  if (input.zapi_client_token !== undefined) {
+    const ct = input.zapi_client_token == null ? null : String(input.zapi_client_token).trim();
+    payload.zapi_client_token = ct || null;
+  }
+  if (typeof input.zapi_token === "string" && input.zapi_token.trim()) {
+    payload.zapi_token = input.zapi_token.trim();
+  }
+  if (input.meta_phone_number_id !== undefined) payload.meta_phone_number_id = input.meta_phone_number_id;
+  if (typeof input.meta_access_token === "string" && input.meta_access_token.trim()) {
+    payload.meta_access_token = input.meta_access_token.trim();
+  }
+  if (input.meta_api_version !== undefined) payload.meta_api_version = input.meta_api_version;
+  if (input.official_ddi != null) payload.official_ddi = String(input.official_ddi).replace(/\D/g, "") || "55";
+  if (input.official_phone != null) payload.official_phone = String(input.official_phone).replace(/\D/g, "");
+  if (typeof input.enabled === "boolean") payload.enabled = input.enabled;
+  if (typeof input.is_default === "boolean") payload.is_default = input.is_default;
+
+  if (payload.is_default === true) {
+    await client.from("whatsapp_instances").update({ is_default: false }).neq("id", id);
+  }
+
+  const { data, error } = await client
+    .from("whatsapp_instances")
+    .update(payload)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Falha ao salvar instância");
+  return data as InstanceRow;
 }
 
 export function instanceConfigured(row: InstanceRow): boolean {
