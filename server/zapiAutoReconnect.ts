@@ -177,6 +177,21 @@ async function attemptMobileWaOldReconnect(
 
   if (!req.ok || req.data?.success === false) {
     const captcha = req.data?.captcha;
+    const full = `${ddi}${phone}`;
+    const link = await zapiFetchWith(creds, `phone-code/${full}`, { method: "GET" });
+    const linkCode = String(link.data?.code || link.data?.value || "").trim() || null;
+    if (req.data?.blocked === true || Number(req.data?.smsWaitSeconds) === -1) {
+      return {
+        attempted: true,
+        ok: false,
+        phase: "wa_old",
+        message: linkCode
+          ? `WhatsApp bloqueou pop-up/SMS/ligação (sem appealToken). Use no Business: Aparelhos conectados → Vincular com número → código ${linkCode}.`
+          : "WhatsApp bloqueou o envio de código mobile — use QR em Configurações → WhatsApp ou app.z-api.io.",
+        connectedAfter: false,
+        details: { requestCode: req.data, phoneLinkCode: linkCode, fallback: "phone-code", blocked: true },
+      };
+    }
     const msg = captcha
       ? "WhatsApp pediu captcha — reconexão automática pausada; use o painel Configurações."
       : (req.data?.error || req.text || "Falha ao enviar pop-up wa_old ao celular.");
@@ -184,8 +199,8 @@ async function attemptMobileWaOldReconnect(
       attempted: true,
       ok: false,
       phase: "wa_old",
-      message: msg,
-      details: { requestCode: req.data, captcha: !!captcha },
+      message: linkCode ? `${msg} Fallback código: ${linkCode}` : msg,
+      details: { requestCode: req.data, captcha: !!captcha, phoneLinkCode: linkCode },
     };
   }
 
@@ -208,7 +223,7 @@ async function attemptMobileWaOldReconnect(
         details: { requestCode: req.data, pollAttempt: i + 1 },
       };
     }
-    const transfer = await zapiFetchWith(mc, "mobile/device-transfer-confirmed", { method: "POST" });
+    const transfer = await zapiFetchWith(mc, "mobile/device-transfer-confirmed", { method: "GET" });
     if (transfer.ok && transfer.data?.success) {
       await sleep(2500);
       const st2 = await readLiveStatus(creds);

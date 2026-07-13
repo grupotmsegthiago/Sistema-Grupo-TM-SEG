@@ -40,6 +40,7 @@ export default async function handler(req: { method?: string; body?: unknown; he
       registration: result.registration || null,
       phoneDisplay: result.phoneDisplay || null,
       phoneUsed: result.phoneUsed || null,
+      phoneLinkCode: result.phoneLinkCode || null,
       requestCode: {
         ok: result.ok,
         method: result.method || method,
@@ -48,6 +49,7 @@ export default async function handler(req: { method?: string; body?: unknown; he
         message: result.message,
         captcha: result.captcha || null,
         phase: result.phase,
+        phoneLinkCode: result.phoneLinkCode || null,
       },
     });
   } catch (e: unknown) {

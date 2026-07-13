@@ -71,7 +71,7 @@ function isReconnectAdmin(user: LocalUser | null): boolean {
 const ESIM_PHONE = '+55 (11) 92683-9456';
 const CODE_URGENT_MSG = 'Mande URGENTE para o Thiago — só ele reconecta no eSIM agora.';
 const MOBILE_HINT =
-  'Instância MOBILE: Configurações → WhatsApp → Pop-up / Ligação (request-registration-code). Código 8 letras é WEB e costuma falhar no Business.';
+  'WhatsApp bloqueou pop-up/SMS/ligação (blocked sem appealToken). Use Configurações → WhatsApp → Gerar código de vinculação ou QR no eSIM.';
 
 function buildCopyText(code: string, label?: string | null): string {
   return [
@@ -314,7 +314,7 @@ const WhatsAppOfflineModal: React.FC = () => {
 
           {reconnectAdmin && (
             <p className="text-xs bg-blue-50 border border-blue-200 text-blue-900 p-3 rounded-lg">
-              <strong>Diretoria:</strong> priorize <strong>Configurações → WhatsApp → Enviar pop-up / Ligação</strong> com o Business aberto no eSIM {ESIM_PHONE}. QR ou app.z-api.io como fallback.
+              <strong>Diretoria:</strong> WhatsApp bloqueou o registro mobile. Priorize <strong>Gerar código de vinculação</strong> ou QR em Configurações → WhatsApp (eSIM {ESIM_PHONE}).
             </p>
           )}
 

@@ -306,7 +306,6 @@ const WhatsAppConnectionPanel: React.FC = () => {
   const requestSms = async (method: 'sms' | 'wa_old' | 'voice') => {
     setBusy(true);
     setMessage(null);
-    setPhoneLinkCode(null);
     setCodeCopied(false);
     try {
       const r = await authFetch(`/api/whatsapp/connection/request-code${instanceQuery}`, {
@@ -316,21 +315,22 @@ const WhatsAppConnectionPanel: React.FC = () => {
       const data = await r.json();
       const req = data.requestCode || {};
       const phoneLabel = data.phoneDisplay || '+55 (11) 92683-9456';
+      const fallbackCode = data.phoneLinkCode || req.phoneLinkCode || null;
+      if (fallbackCode) {
+        setPhoneLinkCode(fallbackCode);
+      }
       const raw = req.data ? ` | Z-API: ${JSON.stringify(req.data)}` : '';
       if (req.ok && req.data?.success === true) {
         setMessage(
           method === 'wa_old'
-            ? `✅ Pop-up aceito pela Z-API para ${phoneLabel}. Deixe o WhatsApp Business aberto no eSIM e confirme o aviso na tela (não digite código de 8 letras).${raw}`
+            ? `✅ Pop-up aceito pela Z-API para ${phoneLabel}. Deixe o WhatsApp Business aberto no eSIM e confirme o aviso na tela.${raw}`
             : method === 'voice'
               ? `✅ Ligação solicitada para ${phoneLabel}. Atenda a chamada no eSIM e anote o código.${raw}`
               : (req.message || `Código solicitado via ${method} para ${phoneLabel}. Digite abaixo e confirme.${raw}`),
         );
       } else {
         const detail = req.error || data.error || `Falha ao solicitar código (${method})`;
-        const notFoundHint = /not_found/i.test(String(detail) + JSON.stringify(req.data || {}))
-          ? ' Nada foi enviado ao celular — a Z-API não encontrou o registro (NOT_FOUND).'
-          : '';
-        setMessage(`❌ ${detail}${notFoundHint} (número: ${phoneLabel})${raw}`);
+        setMessage(`❌ ${detail}${raw}`);
       }
     } catch (e: any) {
       setMessage(e?.message || 'Erro ao solicitar código');
@@ -598,12 +598,11 @@ const WhatsAppConnectionPanel: React.FC = () => {
 
                 {!connected && isZapi && (
                   <div className="p-4 rounded-lg border border-red-200 bg-red-50 text-red-950 text-xs space-y-2">
-                    <p className="font-black uppercase text-[10px] tracking-wide">Reconexão mobile (doc Z-API)</p>
+                    <p className="font-black uppercase text-[10px] tracking-wide">Doc Z-API mobile — o que está acontecendo</p>
                     <ol className="list-decimal list-inside space-y-1 leading-relaxed">
-                      <li>Fluxo: <code className="bg-red-100 px-1 rounded">registration-available</code> → <code className="bg-red-100 px-1 rounded">request-registration-code</code> → confirmar código/PIN.</li>
-                      <li>eSIM ligado, WhatsApp Business no +55 (11) 92683-9456.</li>
-                      <li>Se <strong>wa_old</strong> elegível: pop-up no app. Senão: ligação (voice) ou SMS quando liberar.</li>
-                      <li>Alternativa: QR / painel <strong>app.z-api.io</strong>.</li>
+                      <li>Fluxo oficial: registration-available → <strong>request-registration-code</strong> → confirm-registration-code → confirm-pin-code.</li>
+                      <li>Paths já corrigidos. Agora a Z-API/WhatsApp responde <strong>blocked: true</strong> sem <code className="bg-red-100 px-1 rounded">appealToken</code> — a própria doc diz que nesse caso não há desbanimento via API.</li>
+                      <li>Caminho operacional: <strong>código phone-code</strong> ou QR (ambos respondendo na API agora).</li>
                     </ol>
                   </div>
                 )}
@@ -642,40 +641,40 @@ const WhatsAppConnectionPanel: React.FC = () => {
                 {isZapi && !connected && (
                   <div className="p-4 rounded-xl border-2 border-red-300 bg-red-50 text-red-950 space-y-3">
                     <p className="font-black uppercase text-xs tracking-wide flex items-center gap-2">
-                      <WifiOff size={16} /> Bot offline — reconectar MOBILE
+                      <WifiOff size={16} /> Bot offline — reconectar
                     </p>
                     <div className="text-xs leading-relaxed space-y-2 bg-white/80 border border-red-200 rounded-lg p-3">
-                      <p className="font-bold text-red-800">Não use a tela “Insira o código” / 8 letras no WhatsApp (pareamento WEB).</p>
+                      <p className="font-bold text-red-800">Situação (doc Z-API mobile):</p>
                       <ol className="list-decimal list-inside space-y-1">
-                        <li>Abra o WhatsApp Business no eSIM <strong>+55 (11) 92683-9456</strong>.</li>
-                        <li>Tente <strong>Pop-up</strong> (wa_old), senão <strong>Ligação</strong>. SMS pode estar bloqueado.</li>
-                        <li>Se pedir código, confirme no campo abaixo. Se pedir PIN 2FA, use o campo PIN.</li>
-                        <li>Fallback: <strong>Atualizar QR</strong> ou painel app.z-api.io.</li>
+                        <li>Paths corretos: <code className="bg-red-100 px-1 rounded">request-registration-code</code>.</li>
+                        <li>WhatsApp está respondendo <strong>blocked</strong> no pop-up/SMS/ligação (sem appealToken = sem desbanimento via API).</li>
+                        <li><strong>Agora:</strong> use o código de vinculação ou QR abaixo no Business do eSIM.</li>
                       </ol>
                     </div>
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => void requestSms('wa_old')}
+                      onClick={() => void generatePhoneLinkCode()}
                       className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white font-bold py-3 px-4 rounded-xl disabled:opacity-50"
-                      data-testid="button-request-wa-old"
+                      data-testid="button-generate-phone-link-offline"
                     >
                       {busy ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
-                      {busy ? 'Enviando pop-up…' : 'Enviar pop-up no WhatsApp Business (eSIM)'}
+                      {busy ? 'Gerando…' : 'Gerar código de vinculação (fallback)'}
                     </button>
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" disabled={busy} onClick={() => void requestSms('voice')}
-                        className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl border-2 border-amber-400 text-amber-950 disabled:opacity-50">
-                        <Phone size={14} /> Ligação
-                      </button>
-                      <button type="button" disabled={busy} onClick={() => void requestSms('sms')}
-                        className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl border-2 border-red-300 text-red-900 disabled:opacity-50">
-                        SMS
-                      </button>
                       <button type="button" disabled={busy} onClick={() => void refreshQr()}
                         className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl border-2 border-gray-300 text-gray-800 disabled:opacity-50"
                         data-testid="button-refresh-qr-offline">
                         <QrCode size={14} /> QR
+                      </button>
+                      <button type="button" disabled={busy} onClick={() => void requestSms('wa_old')}
+                        className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl border-2 border-red-300 text-red-900 disabled:opacity-50"
+                        data-testid="button-request-wa-old">
+                        <Smartphone size={14} /> Pop-up
+                      </button>
+                      <button type="button" disabled={busy} onClick={() => void requestSms('voice')}
+                        className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl border-2 border-amber-400 text-amber-950 disabled:opacity-50">
+                        <Phone size={14} /> Ligação
                       </button>
                     </div>
                     {qrBase64 && (
@@ -703,6 +702,12 @@ const WhatsAppConnectionPanel: React.FC = () => {
                       className="text-xs font-bold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
                       {busy ? 'Aguarde…' : 'Iniciar conexão automática'}
                     </button>
+                    {isMobile && (
+                      <button type="button" disabled={busy} onClick={() => void generatePhoneLinkCode()}
+                        className="text-xs font-bold px-4 py-2 rounded-lg bg-green-700 text-white hover:bg-green-800 disabled:opacity-50 flex items-center gap-1">
+                        <Smartphone size={14} /> Gerar código vinculação
+                      </button>
+                    )}
                     {!isMobile && (
                       <>
                         <button type="button" disabled={busy} onClick={() => void generatePhoneLinkCode()}
@@ -734,18 +739,23 @@ const WhatsAppConnectionPanel: React.FC = () => {
                   </div>
                 )}
 
-                {qrBase64 && !isMobile && (
+                {qrBase64 && (
                   <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-200">
                     <p className="text-xs font-bold text-gray-600 mb-2">Escaneie no WhatsApp → Aparelhos conectados</p>
-                    <img src={qrBase64} alt="QR Code" className="mx-auto max-w-[220px] rounded-lg" />
+                    <img src={qrBase64.startsWith('data:') ? qrBase64 : `data:image/png;base64,${qrBase64}`} alt="QR" className="mx-auto w-56 h-56" />
                   </div>
                 )}
 
-                {phoneLinkCode && !isMobile && connected === false && (
-                  <div className="text-center bg-gray-100 border border-gray-200 rounded-xl p-4 space-y-3">
-                    <p className="text-3xl font-mono font-black tracking-widest text-gray-900">{phoneLinkCode}</p>
+                {phoneLinkCode && connected === false && (
+                  <div className="text-center p-4 bg-amber-50 rounded-lg border-2 border-amber-300 space-y-2">
+                    <p className="text-[10px] font-bold uppercase text-amber-800">Código de vinculação (fallback — phone-code)</p>
+                    <p className="text-3xl font-mono font-black tracking-widest text-gray-900" data-testid="text-phone-link-code">{phoneLinkCode}</p>
+                    <p className="text-xs text-amber-950 leading-relaxed">
+                      No WhatsApp Business do eSIM +55 (11) 92683-9456:<br />
+                      <strong>Aparelhos conectados → Conectar → Vincular com número de telefone</strong>
+                    </p>
                     <button type="button" onClick={() => void copyPhoneCode()}
-                      className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl">
+                      className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">
                       {codeCopied ? <Check size={16} /> : <Copy size={16} />}
                       {codeCopied ? 'Copiado!' : 'Copiar código e instruções'}
                     </button>
