@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Loader2, Phone, QrCode, RefreshCw, Save, Smartphone, Wifi, WifiOff, XCircle } from 'lucide-react';
+import { Check, CheckCircle2, Copy, Loader2, Phone, QrCode, RefreshCw, Save, Smartphone, Wifi, WifiOff, XCircle } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { safeWhatsappInstanceLabel } from '../lib/whatsappDisplayUtils';
 
@@ -87,6 +87,7 @@ const WhatsAppConnectionPanel: React.FC = () => {
   const [extensionExpiresAt, setExtensionExpiresAt] = useState<number | null>(null);
   const [smsCode, setSmsCode] = useState('');
   const [pinCode, setPinCode] = useState('');
+  const [codeCopied, setCodeCopied] = useState(false);
 
   const selected = instances.find(i => i.id === selectedId) || instances[0] || null;
   const instanceQuery = selected ? `?instanceId=${encodeURIComponent(selected.id)}` : '';
@@ -211,6 +212,11 @@ const WhatsAppConnectionPanel: React.FC = () => {
         body: JSON.stringify({ force }),
       });
       const data = await r.json();
+      const code = data.details?.phoneLinkCode || data.phoneLinkCode || null;
+      if (code) {
+        setPhoneLinkCode(String(code));
+        setCodeCopied(false);
+      }
       setMessage(data.message || JSON.stringify(data));
       await refreshStatus(selected?.id);
       await loadInstances();
@@ -218,6 +224,50 @@ const WhatsAppConnectionPanel: React.FC = () => {
       setMessage(e?.message || 'Erro ao reconectar');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const generatePhoneLinkCode = async () => {
+    setBusy(true);
+    setMessage(null);
+    setCodeCopied(false);
+    try {
+      const r = await authFetch(`/api/whatsapp/connection/qr-code${instanceQuery}`);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Falha ao gerar código');
+      const code = data.phoneLinkCode || null;
+      setQrBase64(data.qrBase64 || null);
+      setPhoneLinkCode(code);
+      if (code) {
+        setMessage('Código gerado! No eSIM: Aparelhos conectados → Vincular com número de telefone → cole o código.');
+      } else {
+        setMessage(data.phoneLinkError || data.error || 'Z-API não retornou código de vinculação.');
+      }
+    } catch (e: any) {
+      setMessage(e?.message || 'Erro ao gerar código');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyPhoneCode = async () => {
+    if (!phoneLinkCode) return;
+    const text = [
+      '🚨 URGENTE — Código Bot WhatsApp TM SEG',
+      '',
+      `Código: ${phoneLinkCode}`,
+      '',
+      'No WhatsApp Business do eSIM (11) 92683-9456:',
+      'Aparelhos conectados → Conectar → Vincular com número de telefone',
+      '',
+      'Cole o código acima. Expira em poucos minutos.',
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCodeCopied(true);
+      setMessage('Código copiado! Cole no WhatsApp do Thiago / use no eSIM agora.');
+    } catch {
+      setMessage('Não foi possível copiar — selecione o código manualmente.');
     }
   };
 
@@ -562,22 +612,62 @@ const WhatsAppConnectionPanel: React.FC = () => {
                   </div>
                 )}
 
+                {isZapi && !connected && (
+                  <div className="p-4 rounded-xl border-2 border-red-300 bg-red-50 text-red-950 space-y-3">
+                    <p className="font-black uppercase text-xs tracking-wide flex items-center gap-2">
+                      <WifiOff size={16} /> Bot offline — gerar código de vinculação
+                    </p>
+                    <p className="text-xs leading-relaxed">
+                      A Z-API responde, mas a sessão WhatsApp está caída. Gere o código e vincule no eSIM
+                      {' '}<strong>(11) 92683-9456</strong>: WhatsApp Business → Aparelhos conectados → Vincular com número.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void generatePhoneLinkCode()}
+                      className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white font-bold py-3 px-4 rounded-xl disabled:opacity-50"
+                      data-testid="button-generate-phone-code"
+                    >
+                      {busy ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
+                      {busy ? 'Gerando código…' : 'Gerar código de vinculação'}
+                    </button>
+                    {phoneLinkCode && (
+                      <div className="text-center bg-white border-2 border-dashed border-red-200 rounded-xl p-4 space-y-3">
+                        <p className="text-[10px] font-bold uppercase text-gray-500">Código (expire em poucos minutos)</p>
+                        <p className="text-3xl font-mono font-black tracking-widest text-gray-900" data-testid="text-phone-link-code">
+                          {phoneLinkCode}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => void copyPhoneCode()}
+                          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl"
+                        >
+                          {codeCopied ? <Check size={16} /> : <Copy size={16} />}
+                          {codeCopied ? 'Copiado!' : 'Copiar código e instruções'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {isZapi && (
                   <div className="flex flex-wrap gap-2">
                     <button type="button" disabled={busy} onClick={() => void runApiReconnect(false)}
                       className="text-xs font-bold px-4 py-2 rounded-lg bg-red-700 text-white hover:bg-red-800 disabled:opacity-50 flex items-center gap-1">
                       <RefreshCw size={14} /> Reconectar via API
                     </button>
+                    <button type="button" disabled={busy} onClick={() => void generatePhoneLinkCode()}
+                      className="text-xs font-bold px-4 py-2 rounded-lg bg-green-700 text-white hover:bg-green-800 disabled:opacity-50 flex items-center gap-1">
+                      <Smartphone size={14} /> Gerar código
+                    </button>
                     <button type="button" disabled={busy} onClick={() => void runBootstrap()}
                       className="text-xs font-bold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
                       {busy ? 'Aguarde…' : 'Iniciar conexão automática'}
                     </button>
-                    {!isMobile && (
-                      <button type="button" disabled={busy} onClick={() => void refreshQr()}
-                        className="text-xs font-bold px-4 py-2 rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200 disabled:opacity-50 flex items-center gap-1">
-                        <QrCode size={14} /> Atualizar QR
-                      </button>
-                    )}
+                    <button type="button" disabled={busy} onClick={() => void refreshQr()}
+                      className="text-xs font-bold px-4 py-2 rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200 disabled:opacity-50 flex items-center gap-1">
+                      <QrCode size={14} /> Atualizar QR / código
+                    </button>
                     <button type="button" disabled={busy} onClick={() => void fetchExtensionToken()}
                       className="text-xs font-bold px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
                       Código extensão
@@ -604,7 +694,7 @@ const WhatsAppConnectionPanel: React.FC = () => {
                   </div>
                 )}
 
-                {phoneLinkCode && (
+                {phoneLinkCode && connected === false && (
                   <p className="text-sm text-center font-mono font-bold bg-gray-100 p-3 rounded-lg">
                     Código de pareamento: {phoneLinkCode}
                   </p>
