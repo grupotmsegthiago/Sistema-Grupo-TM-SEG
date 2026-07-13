@@ -19,6 +19,8 @@ import {
   formatCursorMembership,
   getCursorSessionToken,
   isCursorSessionConfigured,
+  isIncludedPlanUsageEvent,
+  defaultPlanMonthlyUsd,
 } from './cursorUsageApi.js';
 
 export type { BillingSource, BillingUsageRow, BillingMonthSummary, TokenEfficiencyReport };
@@ -55,9 +57,10 @@ export function getBillingIofPct(): number {
   return Number.isFinite(v) && v >= 0 ? v : 4.38;
 }
 
-export function getPlanMonthlyUsd(): number {
-  const v = Number(process.env.CURSOR_PLAN_MONTHLY_USD || process.env.BILLING_PLAN_MONTHLY_USD || 20);
-  return Number.isFinite(v) && v > 0 ? v : 20;
+export function getPlanMonthlyUsd(membershipType?: string): number {
+  const fromEnv = Number(process.env.CURSOR_PLAN_MONTHLY_USD || process.env.BILLING_PLAN_MONTHLY_USD || '');
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+  return defaultPlanMonthlyUsd(membershipType);
 }
 
 export function getPlanName(): string {
@@ -154,7 +157,17 @@ export async function recordBillingUsage(input: BillingUsageInput): Promise<Bill
         .eq('source', input.source)
         .eq('external_id', input.external_id)
         .maybeSingle();
-      if (existing?.id) return null;
+      if (existing?.id) {
+        // Atualiza espelho Cursor (summary/eventos) em vez de ignorar — senão % do plano fica stale.
+        const { data: updated, error: updErr } = await client
+          .from('billing_usage')
+          .update(payload)
+          .eq('id', existing.id)
+          .select('*')
+          .single();
+        if (updErr) throw updErr;
+        return updated as BillingUsageRow;
+      }
     }
 
     const { data, error } = await client.from('billing_usage').insert([payload]).select('*').single();
@@ -251,6 +264,7 @@ export async function getBillingMonthSummary(month = referenceMonthFromDate()): 
     billingCycleEnd?: string;
     membershipType?: string;
     onDemandUsedCents?: number;
+    onDemandLimitCents?: number | null;
     subscriptionUsd?: number;
     planIncludedPercentUsed?: number;
     syncedAt?: string;
@@ -266,9 +280,20 @@ export async function getBillingMonthSummary(month = referenceMonthFromDate()): 
   let onDemandSpentUsd = 0;
   let planIncludedPercentUsed: number | null = null;
 
-  const cursorSpentBrl = await sumMonthSpentBrl(month, 'cursor_dashboard');
+  const allCursorRows = filterBillingLogRows(await getBillingUsageLog(500, month))
+    .filter((r) => r.source === 'cursor_dashboard');
+  const onDemandEventUsd = round4(
+    allCursorRows.reduce((s, r) => {
+      const included = Boolean((r.metadata as { includedInPlan?: boolean } | null)?.includedInPlan);
+      if (included) return s;
+      // Eventos antigos sem flag: kind INCLUDED_* no metadata
+      const kind = String((r.metadata as { kind?: string } | null)?.kind || '');
+      if (/INCLUDED/i.test(kind)) return s;
+      return s + Number(r.amount_usd || 0);
+    }, 0),
+  );
   const stripeSpentBrl = await sumMonthSpentBrl(month, 'cursor_stripe');
-  let spentBrl = round2(cursorSpentBrl + stripeSpentBrl);
+  let spentBrl = 0;
   const hasCursorMirror = Boolean(cursorSummary && cursorMeta?.billingCycleStart);
 
   if (hasCursorMirror) {
@@ -278,16 +303,16 @@ export async function getBillingMonthSummary(month = referenceMonthFromDate()): 
     billingCycleEnd = cursorMeta?.billingCycleEnd || null;
     lastSyncedAt = cursorMeta?.syncedAt || cursorSummary?.recorded_at || null;
     onDemandSpentUsd = round4(Number(cursorMeta?.onDemandUsedCents || 0) / 100);
+    if (onDemandSpentUsd <= 0 && onDemandEventUsd > 0) onDemandSpentUsd = onDemandEventUsd;
     planIncludedPercentUsed =
       cursorMeta?.planIncludedPercentUsed != null ? Number(cursorMeta.planIncludedPercentUsed) : null;
 
-    const subscriptionUsd = getPlanMonthlyUsd();
+    const subscriptionUsd = getPlanMonthlyUsd(cursorMeta?.membershipType);
     planLimitUsd = subscriptionUsd;
     planLimitBrl = usdToBrl(subscriptionUsd);
 
-    if (spentBrl <= 0 && onDemandSpentUsd > 0) {
-      spentBrl = usdToBrl(onDemandSpentUsd);
-    }
+    // Gasto cobrado além do incluído = on-demand (não soma USAGE_EVENT_KIND_INCLUDED_*)
+    spentBrl = round2(usdToBrl(onDemandSpentUsd) + stripeSpentBrl);
   } else if (stripeSpentBrl > 0) {
     dataSource = 'stripe';
     spentBrl = stripeSpentBrl;
@@ -296,16 +321,27 @@ export async function getBillingMonthSummary(month = referenceMonthFromDate()): 
   }
 
   const spentUsd = brlToUsd(spentBrl, exchangeRate, iofPct);
-  const extraBrl = round2(Math.max(0, spentBrl - planLimitBrl));
-  const usagePct = planLimitBrl > 0 ? round2((spentBrl / planLimitBrl) * 100) : 0;
-  const planBalanceBrl = round2(Math.max(0, planLimitBrl - spentBrl));
+  const extraBrl = round2(Math.max(0, spentBrl - (hasCursorMirror ? 0 : planLimitBrl)));
+  // Termômetro espelha o % do plano incluído do Cursor (não o $ dos eventos incluídos).
+  let usagePct = 0;
+  if (hasCursorMirror && planIncludedPercentUsed != null && Number.isFinite(planIncludedPercentUsed)) {
+    usagePct = round2(planIncludedPercentUsed);
+  } else if (planLimitBrl > 0) {
+    usagePct = round2((spentBrl / planLimitBrl) * 100);
+  }
+  const planBalanceBrl = hasCursorMirror
+    ? round2(usdToBrl(planLimitUsd * Math.max(0, (100 - usagePct) / 100)))
+    : round2(Math.max(0, planLimitBrl - spentBrl));
   const entries = filterBillingLogRows(await getBillingUsageLog(500, month));
   const isPlaceholder = !hasCursorMirror && spentBrl <= 0 && entries.length === 0;
 
   let thermometer: BillingMonthSummary['thermometer'] = 'ok';
   if (!isPlaceholder) {
-    if (usagePct >= 100) thermometer = 'critical';
-    else if (usagePct >= 75) thermometer = 'warning';
+    if (usagePct >= 100 || (hasCursorMirror && onDemandSpentUsd > 0 && spentBrl > planLimitBrl)) {
+      thermometer = 'critical';
+    } else if (usagePct >= 75) {
+      thermometer = 'warning';
+    }
   }
 
   return {
@@ -315,7 +351,7 @@ export async function getBillingMonthSummary(month = referenceMonthFromDate()): 
     planLimitUsd,
     spentBrl,
     spentUsd,
-    extraBrl,
+    extraBrl: hasCursorMirror ? round2(usdToBrl(onDemandSpentUsd)) : extraBrl,
     usagePct: isPlaceholder ? 0 : usagePct,
     planBalanceBrl: isPlaceholder ? planLimitBrl : planBalanceBrl,
     operationalSavingsBrl: getOperationalSavingsBrl(),
@@ -416,7 +452,7 @@ export async function syncCursorBilling(): Promise<SyncBillingResult> {
     const membershipType = summary.membershipType || 'unknown';
     const onDemandUsed = Number(summary.individualUsage?.onDemand?.used || 0);
     const planIncludedPercent = summary.individualUsage?.plan?.totalPercentUsed ?? null;
-    const subscriptionUsd = getPlanMonthlyUsd();
+    const subscriptionUsd = getPlanMonthlyUsd(membershipType);
 
     const summaryRow = await recordBillingUsage({
       source: 'cursor_dashboard',
@@ -431,10 +467,12 @@ export async function syncCursorBilling(): Promise<SyncBillingResult> {
         billingCycleEnd: summary.billingCycleEnd,
         membershipType,
         onDemandUsedCents: onDemandUsed,
+        onDemandLimitCents: Number(summary.individualUsage?.onDemand?.limit || 0) || null,
         subscriptionUsd,
         planIncludedPercentUsed: planIncludedPercent,
         planUsed: summary.individualUsage?.plan?.used,
         planLimit: summary.individualUsage?.plan?.limit,
+        planRemaining: summary.individualUsage?.plan?.remaining,
         syncedAt: new Date().toISOString(),
       },
     });
@@ -442,6 +480,8 @@ export async function syncCursorBilling(): Promise<SyncBillingResult> {
 
     for (const evt of events) {
       const amountUsd = eventAmountUsd(evt);
+      const included = isIncludedPlanUsageEvent(evt);
+      // Lista espelha todos os eventos com valor; cobrança extra = não incluído no plano
       const isChargeable = evt.isChargeable !== false && amountUsd > 0;
       if (!isChargeable) {
         skipped += 1;
@@ -452,7 +492,7 @@ export async function syncCursorBilling(): Promise<SyncBillingResult> {
       const row = await recordBillingUsage({
         source: 'cursor_dashboard',
         external_id: extId.slice(0, 180),
-        summary: `${evt.model || 'modelo'} · ${evt.isHeadless ? 'agent' : 'IDE'} · ${evt.usageBasedCosts || `$${amountUsd.toFixed(2)}`}`,
+        summary: `${evt.model || 'modelo'} · ${evt.isHeadless ? 'agent' : 'IDE'} · ${included ? 'incluído no plano' : (evt.usageBasedCosts || `$${amountUsd.toFixed(2)}`)}`,
         amount_usd: amountUsd,
         recorded_at: new Date(Number(evt.timestamp)).toISOString(),
         token_id: evt.model || null,
@@ -460,6 +500,7 @@ export async function syncCursorBilling(): Promise<SyncBillingResult> {
           type: 'cursor_usage_event',
           model: evt.model,
           kind: evt.kind,
+          includedInPlan: included,
           chargedCents: evt.chargedCents,
           usageBasedCosts: evt.usageBasedCosts,
           tokenUsage: evt.tokenUsage,

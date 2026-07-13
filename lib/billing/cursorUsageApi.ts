@@ -93,6 +93,22 @@ export function eventAmountUsd(evt: CursorUsageEvent): number {
   return parseUsdFromUsageCost(evt.usageBasedCosts);
 }
 
+/** Uso coberto pela assinatura (Ultra/Pro) — não é cobrança on-demand extra. */
+export function isIncludedPlanUsageEvent(evt: Pick<CursorUsageEvent, "kind">): boolean {
+  const kind = String(evt.kind || "").toUpperCase();
+  return kind.includes("INCLUDED");
+}
+
+/** Preço mensal típico da assinatura Cursor quando a Vercel não define CURSOR_PLAN_MONTHLY_USD. */
+export function defaultPlanMonthlyUsd(membershipType: string | undefined): number {
+  const key = String(membershipType || "").trim().toLowerCase();
+  if (key === "ultra") return 200;
+  if (key === "pro_plus" || key === "pro+") return 60;
+  if (key === "business" || key === "team" || key === "enterprise") return 40;
+  if (key === "pro") return 20;
+  return 20;
+}
+
 function sessionHeaders(sessionToken: string): Record<string, string> {
   return { Cookie: `WorkosCursorSessionToken=${sessionToken.trim()}` };
 }

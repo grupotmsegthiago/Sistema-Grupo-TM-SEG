@@ -177,7 +177,7 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
           <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
             <Cpu size={20} className="text-red-700" /> Plano &amp; custos de IA
           </h2>
-          <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-xs text-gray-500 mt-0.5">
             {summary
               ? summary.isPlaceholder
                 ? 'Aguardando espelho do dashboard Cursor'
@@ -188,6 +188,9 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
             <p className="text-[10px] text-gray-400 mt-0.5">
               Última sync: {new Date(summary.lastSyncedAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
               {summary.dataSource === 'cursor' ? ' · fonte: dashboard Cursor' : ''}
+              {summary.planIncludedPercentUsed != null
+                ? ` · uso incluído no plano: ${fmtPct(summary.planIncludedPercentUsed)}`
+                : ''}
             </p>
           )}
         </div>
@@ -249,17 +252,22 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
               )}
             </div>
             <div className="flex flex-wrap justify-between text-[10px] text-gray-600 mt-2 font-mono">
-              <span>Gasto: {fmtBRL(summary.spentBrl)}</span>
-              <span>Limite: {fmtBRL(summary.planLimitBrl)}</span>
-              {summary.extraBrl > 0 && <span className="text-red-600 font-bold">Extra: {fmtBRL(summary.extraBrl)}</span>}
-              <span>Saldo: {fmtBRL(summary.planBalanceBrl)}</span>
+              <span>
+                {summary.planIncludedPercentUsed != null
+                  ? `Uso incluído: ${fmtPct(summary.planIncludedPercentUsed)}`
+                  : `Gasto: ${fmtBRL(summary.spentBrl)}`}
+              </span>
+              <span>Assinatura: {fmtBRL(summary.planLimitBrl)}</span>
+              <span>On-demand: {fmtBRL(summary.extraBrl)}</span>
+              <span>Saldo plano: {fmtBRL(summary.planBalanceBrl)}</span>
             </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-              <p className="text-[10px] uppercase text-gray-400 font-black">Gasto no mês</p>
+              <p className="text-[10px] uppercase text-gray-400 font-black">On-demand no mês</p>
               <p className="text-lg font-black font-mono text-gray-900">{fmtBRL(summary.spentBrl)}</p>
+              <p className="text-[10px] text-gray-500">Além do uso incluído no plano</p>
             </div>
             <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
               <p className="text-[10px] uppercase text-gray-400 font-black">Saldo assinatura</p>
@@ -275,7 +283,7 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
               <p className="text-[10px] text-gray-500">Planilha Situação Geral Faturamento</p>
             </div>
             <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-              <p className="text-[10px] uppercase text-gray-400 font-black">Lançamentos</p>
+              <p className="text-[10px] uppercase text-gray-400 font-black">Eventos no ciclo</p>
               <p className="text-lg font-black font-mono text-gray-900">{summary.entryCount}</p>
             </div>
           </div>

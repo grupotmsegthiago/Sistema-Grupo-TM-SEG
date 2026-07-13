@@ -4,6 +4,8 @@ import {
   formatCursorMembership,
   parseUsdFromUsageCost,
   eventAmountUsd,
+  isIncludedPlanUsageEvent,
+  defaultPlanMonthlyUsd,
   type CursorUsageEvent,
 } from '../lib/billing/cursorUsageApi.ts';
 import { filterBillingLogRows } from '../lib/billing/billingService.js';
@@ -28,6 +30,16 @@ test('eventAmountUsd prioriza chargedCents', () => {
     usageBasedCosts: '$1.21',
   };
   assert.equal(eventAmountUsd(evt), 1.25);
+});
+
+test('isIncludedPlanUsageEvent detecta uso incluso no Ultra/Pro', () => {
+  assert.equal(isIncludedPlanUsageEvent({ kind: 'USAGE_EVENT_KIND_INCLUDED_IN_ULTRA' }), true);
+  assert.equal(isIncludedPlanUsageEvent({ kind: 'USAGE_EVENT_KIND_USAGE_BASED' }), false);
+});
+
+test('defaultPlanMonthlyUsd mapeia Ultra/Pro', () => {
+  assert.equal(defaultPlanMonthlyUsd('ultra'), 200);
+  assert.equal(defaultPlanMonthlyUsd('pro'), 20);
 });
 
 test('filterBillingLogRows remove resumo interno e sync', () => {
