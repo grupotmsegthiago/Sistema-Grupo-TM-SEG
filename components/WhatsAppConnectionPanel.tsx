@@ -306,6 +306,8 @@ const WhatsAppConnectionPanel: React.FC = () => {
   const requestSms = async (method: 'sms' | 'wa_old') => {
     setBusy(true);
     setMessage(null);
+    setPhoneLinkCode(null);
+    setCodeCopied(false);
     try {
       const r = await authFetch(`/api/whatsapp/connection/request-code${instanceQuery}`, {
         method: 'POST',
@@ -316,7 +318,7 @@ const WhatsAppConnectionPanel: React.FC = () => {
       if (req.ok) {
         setMessage(
           method === 'wa_old'
-            ? 'Pop-up enviado! Abra o WhatsApp Business do eSIM e confirme a solicitação na tela.'
+            ? '✅ Pop-up enviado. Olhe a TELA do eSIM agora e confirme o aviso. NÃO abra “Aparelhos conectados” nem digite código de 8 letras.'
             : (req.message || `Código solicitado via ${method}. Digite abaixo e confirme.`),
         );
       } else {
@@ -624,17 +626,21 @@ const WhatsAppConnectionPanel: React.FC = () => {
                 {isZapi && !connected && (
                   <div className="p-4 rounded-xl border-2 border-red-300 bg-red-50 text-red-950 space-y-3">
                     <p className="font-black uppercase text-xs tracking-wide flex items-center gap-2">
-                      <WifiOff size={16} /> Bot offline — reconectar instância MOBILE
+                      <WifiOff size={16} /> Bot offline — reconectar MOBILE
                     </p>
-                    <p className="text-xs leading-relaxed">
-                      Esta instância é <strong>mobile</strong> (aparelho principal). O código de 8 letras
-                      (<code className="bg-white px-1 rounded">phone-code</code>) é para WhatsApp Web e
-                      <strong> costuma dar erro</strong> no WhatsApp Business.
-                    </p>
-                    <p className="text-xs leading-relaxed">
-                      Use o <strong>pop-up no app</strong> do eSIM <strong>(11) 92683-9456</strong>:
-                      deixe o WhatsApp Business aberto e confirme a solicitação na tela.
-                    </p>
+                    <div className="text-xs leading-relaxed space-y-2 bg-white/80 border border-red-200 rounded-lg p-3">
+                      <p className="font-bold text-red-800">Não use a tela “Insira o código” / 8 letras no WhatsApp.</p>
+                      <p>
+                        Isso é pareamento de <strong>WhatsApp Web</strong> e sempre dá
+                        “Não foi possível conectar o dispositivo” nesta instância <strong>mobile</strong>.
+                      </p>
+                      <ol className="list-decimal list-inside space-y-1">
+                        <li>Abra o <strong>WhatsApp Business</strong> no eSIM <strong>(11) 92683-9456</strong> e deixe na tela inicial.</li>
+                        <li>Clique no botão vermelho abaixo (envia pop-up <code className="bg-red-100 px-1 rounded">wa_old</code>).</li>
+                        <li>No celular, confirme o aviso/pop-up que aparecer (não vá em Aparelhos conectados).</li>
+                        <li>Se pedir PIN 2FA, use o campo PIN mais abaixo.</li>
+                      </ol>
+                    </div>
                     <button
                       type="button"
                       disabled={busy}
@@ -645,43 +651,14 @@ const WhatsAppConnectionPanel: React.FC = () => {
                       {busy ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
                       {busy ? 'Enviando pop-up…' : 'Enviar pop-up no WhatsApp Business (eSIM)'}
                     </button>
-                    <div className="grid sm:grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void requestSms('sms')}
-                        className="flex items-center justify-center gap-2 border-2 border-red-300 text-red-900 font-bold py-2.5 px-3 rounded-xl disabled:opacity-50 text-xs"
-                      >
-                        <Phone size={14} /> Pedir código SMS
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void generatePhoneLinkCode()}
-                        className="flex items-center justify-center gap-2 border-2 border-gray-300 text-gray-700 font-bold py-2.5 px-3 rounded-xl disabled:opacity-50 text-xs"
-                        title="Pode falhar em instância mobile"
-                      >
-                        <Smartphone size={14} /> Código web (pode falhar)
-                      </button>
-                    </div>
-                    {phoneLinkCode && (
-                      <div className="text-center bg-white border-2 border-dashed border-red-200 rounded-xl p-4 space-y-3">
-                        <p className="text-[10px] font-bold uppercase text-amber-800">
-                          Código web gerado — se o WhatsApp rejeitar, ignore e use o pop-up acima
-                        </p>
-                        <p className="text-3xl font-mono font-black tracking-widest text-gray-900" data-testid="text-phone-link-code">
-                          {phoneLinkCode}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => void copyPhoneCode()}
-                          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl"
-                        >
-                          {codeCopied ? <Check size={16} /> : <Copy size={16} />}
-                          {codeCopied ? 'Copiado!' : 'Copiar código e instruções'}
-                        </button>
-                      </div>
-                    )}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void requestSms('sms')}
+                      className="w-full flex items-center justify-center gap-2 border-2 border-red-300 text-red-900 font-bold py-2.5 px-3 rounded-xl disabled:opacity-50 text-xs"
+                    >
+                      <Phone size={14} /> Alternativa: pedir código SMS (se o pop-up não aparecer)
+                    </button>
                   </div>
                 )}
 
@@ -701,10 +678,18 @@ const WhatsAppConnectionPanel: React.FC = () => {
                       className="text-xs font-bold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
                       {busy ? 'Aguarde…' : 'Iniciar conexão automática'}
                     </button>
-                    <button type="button" disabled={busy} onClick={() => void refreshQr()}
-                      className="text-xs font-bold px-4 py-2 rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200 disabled:opacity-50 flex items-center gap-1">
-                      <QrCode size={14} /> Atualizar QR / código
-                    </button>
+                    {!isMobile && (
+                      <>
+                        <button type="button" disabled={busy} onClick={() => void generatePhoneLinkCode()}
+                          className="text-xs font-bold px-4 py-2 rounded-lg bg-green-700 text-white hover:bg-green-800 disabled:opacity-50 flex items-center gap-1">
+                          <Smartphone size={14} /> Gerar código web
+                        </button>
+                        <button type="button" disabled={busy} onClick={() => void refreshQr()}
+                          className="text-xs font-bold px-4 py-2 rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200 disabled:opacity-50 flex items-center gap-1">
+                          <QrCode size={14} /> Atualizar QR / código
+                        </button>
+                      </>
+                    )}
                     <button type="button" disabled={busy} onClick={() => void fetchExtensionToken()}
                       className="text-xs font-bold px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
                       Código extensão
@@ -718,17 +703,22 @@ const WhatsAppConnectionPanel: React.FC = () => {
                   </div>
                 )}
 
-                {qrBase64 && (
+                {qrBase64 && !isMobile && (
                   <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-200">
                     <p className="text-xs font-bold text-gray-600 mb-2">Escaneie no WhatsApp → Aparelhos conectados</p>
                     <img src={qrBase64} alt="QR Code" className="mx-auto max-w-[220px] rounded-lg" />
                   </div>
                 )}
 
-                {phoneLinkCode && connected === false && (
-                  <p className="text-sm text-center font-mono font-bold bg-gray-100 p-3 rounded-lg">
-                    Código web (pode falhar no mobile): {phoneLinkCode}
-                  </p>
+                {phoneLinkCode && !isMobile && connected === false && (
+                  <div className="text-center bg-gray-100 border border-gray-200 rounded-xl p-4 space-y-3">
+                    <p className="text-3xl font-mono font-black tracking-widest text-gray-900">{phoneLinkCode}</p>
+                    <button type="button" onClick={() => void copyPhoneCode()}
+                      className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl">
+                      {codeCopied ? <Check size={16} /> : <Copy size={16} />}
+                      {codeCopied ? 'Copiado!' : 'Copiar código e instruções'}
+                    </button>
+                  </div>
                 )}
 
                 {extensionToken && (
