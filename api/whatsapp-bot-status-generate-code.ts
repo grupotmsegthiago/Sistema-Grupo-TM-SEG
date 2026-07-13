@@ -2,6 +2,7 @@
 import { assertAuthenticatedAccess, readBearer, resolveLitePrincipal } from "../lib/tmsegAuth.js";
 import {
   attemptReconnect,
+  clearModalDismiss,
   fetchPhoneLinkCode,
   getInstance,
   instanceConfigured,
@@ -61,6 +62,10 @@ export default async function handler(req: { method?: string; headers?: Record<s
       phoneLinkCode,
       reconnectMessage: reconnect?.message || (phoneLinkCode ? "Novo código gerado — use no eSIM em até 2 min." : null),
     });
+
+    if (phoneLinkCode) {
+      await clearModalDismiss();
+    }
 
     res.status(200).json({
       ok: !!phoneLinkCode || reconnect?.connectedAfter === true,

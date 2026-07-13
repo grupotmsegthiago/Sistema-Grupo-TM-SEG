@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, Loader2, RefreshCw, Smartphone, WifiOff, X } from 'lucide-react';
+import { Check, Copy, Loader2, RefreshCw, Smartphone, WifiOff } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { sanitizeWhatsappError } from '../lib/whatsappDisplayUtils';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
@@ -24,6 +24,8 @@ type BotStatus = {
   lastError: string | null;
   incidentOpen: boolean;
   lock: ReconnectLock | null;
+  modalDismissed?: boolean;
+  modalDismissedBy?: string | null;
 };
 
 type LocalUser = { id?: string; name?: string; role?: string };
@@ -44,6 +46,16 @@ function broadcastBotStatus(payload: Partial<BotStatus>) {
     type: 'broadcast',
     event: 'bot_status',
     payload,
+  });
+}
+
+function broadcastModalDismissed() {
+  void supabase.channel(WHATSAPP_BOT_BROADCAST_CHANNEL, {
+    config: { broadcast: { self: true } },
+  }).send({
+    type: 'broadcast',
+    event: 'modal_dismissed',
+    payload: { modalDismissed: true },
   });
 }
 
@@ -79,7 +91,6 @@ const WhatsAppOfflineModal: React.FC = () => {
   const [status, setStatus] = useState<BotStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [dismissed, setDismissed] = useState(false);
   const [copied, setCopied] = useState(false);
   const user = useMemo(() => readUser(), []);
   const userId = String(user?.id || '');
@@ -94,7 +105,6 @@ const WhatsAppOfflineModal: React.FC = () => {
       setStatus(data);
       if (data.online) {
         setMessage(null);
-        setDismissed(false);
         setCopied(false);
       }
     } catch {
@@ -112,7 +122,10 @@ const WhatsAppOfflineModal: React.FC = () => {
       .channel(WHATSAPP_BOT_BROADCAST_CHANNEL)
       .on('broadcast', { event: 'bot_status' }, ({ payload }) => {
         if (!payload || typeof payload !== 'object') return;
-        setStatus((prev) => ({ ...(prev || { configured: true, online: false, label: null, lastError: null, incidentOpen: true, lock: null }), ...payload as BotStatus }));
+        setStatus((prev) => ({ ...(prev || { configured: true, online: false, label: null, lastError: null, incidentOpen: true, lock: null, modalDismissed: false }), ...payload as BotStatus }));
+      })
+      .on('broadcast', { event: 'modal_dismissed' }, () => {
+        setStatus((prev) => (prev ? { ...prev, modalDismissed: true } : prev));
       })
       .subscribe();
 
@@ -124,21 +137,20 @@ const WhatsAppOfflineModal: React.FC = () => {
 
   const lock = status?.lock || null;
   const isHolder = !!lock && lock.holderId === userId;
-  const showModal = !!status?.configured && !status.online && !dismissed;
+  const showModal = !!status?.configured && !status.online && !status.modalDismissed;
 
-  // Diretoria/Admin (ex.: Thiago): popup volta sozinho enquanto bot offline.
-  useEffect(() => {
-    if (!status?.configured || status.online || !reconnectAdmin || !dismissed) return;
-    const t = setTimeout(() => setDismissed(false), 90_000);
-    return () => clearTimeout(t);
-  }, [status?.configured, status?.online, reconnectAdmin, dismissed]);
+  const dismissModalGlobally = useCallback(() => {
+    setStatus((prev) => (prev ? { ...prev, modalDismissed: true } : prev));
+    broadcastModalDismissed();
+    void authFetch('/api/whatsapp/bot-status/dismiss-modal', { method: 'POST' });
+  }, []);
 
   const copyCodeToClipboard = async (code: string) => {
     const text = buildCopyText(code, status?.label);
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      setMessage('Texto copiado! Cole no WhatsApp do Thiago e clique em Fechar.');
+      dismissModalGlobally();
     } catch {
       try {
         const ta = document.createElement('textarea');
@@ -150,17 +162,11 @@ const WhatsAppOfflineModal: React.FC = () => {
         document.execCommand('copy');
         document.body.removeChild(ta);
         setCopied(true);
-        setMessage('Texto copiado! Cole no WhatsApp do Thiago e clique em Fechar.');
+        dismissModalGlobally();
       } catch {
         setMessage('Não foi possível copiar automaticamente — selecione o código manualmente.');
       }
     }
-  };
-
-  const closeModal = () => {
-    setDismissed(true);
-    setCopied(false);
-    setMessage(null);
   };
 
   useEffect(() => {
@@ -183,7 +189,6 @@ const WhatsAppOfflineModal: React.FC = () => {
     setBusy(true);
     setMessage(null);
     setCopied(false);
-    setDismissed(false);
     try {
       const claimRes = await authFetch('/api/whatsapp/bot-status/claim', {
         method: 'POST',
@@ -202,8 +207,17 @@ const WhatsAppOfflineModal: React.FC = () => {
       const genRes = await authFetch('/api/whatsapp/bot-status/generate-code', { method: 'POST' });
       const genData = await genRes.json();
       if (genData.lock) {
-        setStatus((s) => (s ? { ...s, lock: genData.lock, online: genData.connected === true } : s));
-        broadcastBotStatus({ lock: genData.lock, online: genData.connected === true });
+        setStatus((s) => (s ? {
+          ...s,
+          lock: genData.lock,
+          online: genData.connected === true,
+          modalDismissed: genData.phoneLinkCode ? false : s.modalDismissed,
+        } : s));
+        broadcastBotStatus({
+          lock: genData.lock,
+          online: genData.connected === true,
+          ...(genData.phoneLinkCode ? { modalDismissed: false } : {}),
+        });
       }
       if (genData.connected) {
         setMessage('Bot reconectado com sucesso!');
@@ -229,8 +243,17 @@ const WhatsAppOfflineModal: React.FC = () => {
       const res = await authFetch('/api/whatsapp/bot-status/generate-code', { method: 'POST' });
       const data = await res.json();
       if (data.lock) {
-        setStatus((s) => (s ? { ...s, lock: data.lock, online: data.connected === true } : s));
-        broadcastBotStatus({ lock: data.lock, online: data.connected === true });
+        setStatus((s) => (s ? {
+          ...s,
+          lock: data.lock,
+          online: data.connected === true,
+          modalDismissed: data.phoneLinkCode ? false : s.modalDismissed,
+        } : s));
+        broadcastBotStatus({
+          lock: data.lock,
+          online: data.connected === true,
+          ...(data.phoneLinkCode ? { modalDismissed: false } : {}),
+        });
       }
       if (data.connected) {
         setMessage('Bot reconectado com sucesso!');
@@ -350,18 +373,8 @@ const WhatsAppOfflineModal: React.FC = () => {
                       data-testid="button-copy-whatsapp-code"
                     >
                       {copied ? <Check size={18} /> : <Copy size={18} />}
-                      {copied ? 'Copiado — cole no WhatsApp do Thiago' : 'Copiar código e instruções'}
+                      {copied ? 'Copiado!' : 'Copiar código e instruções'}
                     </button>
-                    {copied && (
-                      <button
-                        type="button"
-                        onClick={closeModal}
-                        className="w-full flex items-center justify-center gap-2 bg-gray-200 hover:bg-gray-300 text-gray-900 font-bold py-3 px-4 rounded-xl"
-                        data-testid="button-close-whatsapp-modal"
-                      >
-                        <X size={18} /> Fechar (volta em ~1 min se ainda offline)
-                      </button>
-                    )}
                     <button
                       type="button"
                       disabled={busy}
