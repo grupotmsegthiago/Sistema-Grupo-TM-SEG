@@ -1,5 +1,5 @@
 /** POST /api/whatsapp/bot-status/release — leve */
-import { hasRole, readBearer, resolveLitePrincipal } from "../lib/tmsegAuth.js";
+import { assertAuthenticatedAccess, hasRole, readBearer, resolveLitePrincipal } from "../lib/tmsegAuth.js";
 import { loadReconnectLock, releaseReconnectLock } from "../lib/whatsappLiteApi.js";
 
 function parseBody(body: unknown): Record<string, unknown> {
@@ -20,8 +20,12 @@ export default async function handler(req: { method?: string; body?: unknown }, 
   res.setHeader("Cache-Control", "no-store");
 
   const token = readBearer(req);
-  if (!token) return res.status(401).json({ error: "Não autorizado" });
-  const principal = await resolveLitePrincipal(token);
+  const denied = await assertAuthenticatedAccess(token, req);
+  if (denied) {
+    res.status(denied === "Não autorizado" ? 401 : 403).json({ error: denied });
+    return;
+  }
+  const principal = await resolveLitePrincipal(token, req);
   if (!principal) return res.status(403).json({ error: "Usuário não encontrado" });
 
   try {

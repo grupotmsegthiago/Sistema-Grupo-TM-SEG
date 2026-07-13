@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Loader2, Phone, QrCode, RefreshCw, Save, Smartphone, Wifi, WifiOff, XCircle } from 'lucide-react';
+import { authFetch } from '../lib/authFetch';
 
 type InstancePublic = {
   id: string;
@@ -90,7 +91,7 @@ const WhatsAppConnectionPanel: React.FC = () => {
   const instanceQuery = selected ? `?instanceId=${encodeURIComponent(selected.id)}` : '';
 
   const loadInstances = useCallback(async () => {
-    const r = await fetch('/api/whatsapp/instances', { headers: authHeaders() });
+    const r = await authFetch('/api/whatsapp/instances');
     const data = await r.json();
     if (!r.ok) {
       const msg = typeof data?.error === 'string' ? data.error : 'Falha ao carregar instâncias WhatsApp';
@@ -109,7 +110,7 @@ const WhatsAppConnectionPanel: React.FC = () => {
 
   const refreshStatus = useCallback(async (id?: string) => {
     const q = id ? `?instanceId=${encodeURIComponent(id)}` : instanceQuery;
-    const r = await fetch(`/api/whatsapp/connection/status${q}`, { headers: authHeaders() });
+    const r = await authFetch(`/api/whatsapp/connection/status${q}`);
     setInfo(await r.json());
   }, [instanceQuery]);
 
@@ -205,9 +206,8 @@ const WhatsAppConnectionPanel: React.FC = () => {
     setBusy(true);
     setMessage(null);
     try {
-      const r = await fetch('/api/whatsapp/connection/reconnect', {
+      const r = await authFetch('/api/whatsapp/connection/reconnect', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify({ force }),
       });
       const data = await r.json();
@@ -226,7 +226,7 @@ const WhatsAppConnectionPanel: React.FC = () => {
     setMessage(null);
     setQrBase64(null);
     try {
-      const r = await fetch(`/api/whatsapp/connection/bootstrap${instanceQuery}`, { method: 'POST', headers: authHeaders() });
+      const r = await authFetch(`/api/whatsapp/connection/bootstrap${instanceQuery}`, { method: 'POST' });
       const data = await r.json();
       setMessage(data.message || JSON.stringify(data));
       if (data.qrBase64) setQrBase64(data.qrBase64);
@@ -243,7 +243,7 @@ const WhatsAppConnectionPanel: React.FC = () => {
   const refreshQr = async () => {
     setBusy(true);
     try {
-      const r = await fetch(`/api/whatsapp/connection/qr-code${instanceQuery}`, { headers: authHeaders() });
+      const r = await authFetch(`/api/whatsapp/connection/qr-code${instanceQuery}`);
       const data = await r.json();
       setQrBase64(data.qrBase64 || null);
       setPhoneLinkCode(data.phoneLinkCode || null);
@@ -336,9 +336,15 @@ const WhatsAppConnectionPanel: React.FC = () => {
         </div>
 
         {instances.length === 0 ? (
-          <p className="text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
-            Nenhuma instância cadastrada. Na primeira subida com ZAPI_* no .env, o sistema cria &quot;Monitoramento 24h&quot; automaticamente.
-          </p>
+          <div className="space-y-2">
+            {message && (
+              <p className="text-sm text-red-800 bg-red-50 border border-red-200 p-3 rounded-lg">{message}</p>
+            )}
+            <p className="text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
+              Nenhuma instância cadastrada no banco. O sistema tenta sincronizar automaticamente a partir das variáveis ZAPI_MOBILE_* na Vercel.
+              Se continuar vazio, confira se <code className="bg-amber-100 px-1 rounded">ZAPI_MOBILE_TOKEN</code> e <code className="bg-amber-100 px-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code> estão na Vercel.
+            </p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

@@ -1,8 +1,8 @@
 /** GET /api/whatsapp/instances — leve */
-import { isWhatsappAdmin, readBearer, resolveLitePrincipal } from "../lib/tmsegAuth.js";
+import { assertWhatsappAdminAccess, readBearer } from "../lib/tmsegAuth.js";
 import { listInstances, toPublicInstance } from "../lib/whatsappLiteApi.js";
 
-export default async function handler(req: { method?: string }, res: {
+export default async function handler(req: { method?: string; headers?: Record<string, unknown> }, res: {
   status: (n: number) => { json: (b: unknown) => void };
   setHeader: (k: string, v: string) => void;
 }) {
@@ -13,10 +13,10 @@ export default async function handler(req: { method?: string }, res: {
   res.setHeader("Cache-Control", "no-store");
 
   const token = readBearer(req);
-  if (!token) return res.status(401).json({ error: "Não autorizado" });
-  const principal = await resolveLitePrincipal(token);
-  if (!principal || !isWhatsappAdmin(principal)) {
-    return res.status(403).json({ error: "Sem permissão" });
+  const denied = await assertWhatsappAdminAccess(token, req);
+  if (denied) {
+    res.status(denied === "Não autorizado" ? 401 : 403).json({ error: denied });
+    return;
   }
 
   try {

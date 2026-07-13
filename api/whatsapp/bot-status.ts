@@ -1,10 +1,10 @@
 /**
  * GET /api/whatsapp/bot-status — leve (sem Express/Z-API live).
  */
-import { readBearer, resolveLitePrincipal } from "../../lib/tmsegAuth.js";
+import { assertAuthenticatedAccess, readBearer, resolveLitePrincipal } from "../../lib/tmsegAuth.js";
 import { getBotStatusSnapshot } from "../../lib/whatsappLiteApi.js";
 
-export default async function handler(req: { method?: string }, res: {
+export default async function handler(req: { method?: string; headers?: Record<string, unknown> }, res: {
   status: (n: number) => { json: (b: unknown) => void };
   setHeader: (k: string, v: string) => void;
 }) {
@@ -16,12 +16,12 @@ export default async function handler(req: { method?: string }, res: {
   res.setHeader("Cache-Control", "no-store");
 
   const token = readBearer(req);
-  if (!token) {
-    res.status(401).json({ error: "Não autorizado" });
+  const denied = await assertAuthenticatedAccess(token, req);
+  if (denied) {
+    res.status(denied === "Não autorizado" ? 401 : 403).json({ error: denied });
     return;
   }
-  const principal = await resolveLitePrincipal(token);
-  if (!principal) {
+  if (!await resolveLitePrincipal(token, req)) {
     res.status(403).json({ error: "Sessão inválida" });
     return;
   }

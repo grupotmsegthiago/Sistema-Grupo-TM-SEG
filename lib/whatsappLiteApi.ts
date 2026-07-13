@@ -211,10 +211,21 @@ export async function ensureWhatsappInstancesFromEnv(): Promise<void> {
 }
 
 export async function listInstances(): Promise<InstanceRow[]> {
-  await ensureWhatsappInstancesFromEnv();
-  const { data, error } = await sb().from("whatsapp_instances").select("*").order("label");
+  const client = sb();
+  const { data, error } = await client.from("whatsapp_instances").select("*").order("label");
   if (error) throw new Error(error.message);
-  return (data || []) as InstanceRow[];
+
+  const rows = (data || []) as InstanceRow[];
+  if (rows.length === 0) {
+    await ensureWhatsappInstancesFromEnv();
+    const retry = await client.from("whatsapp_instances").select("*").order("label");
+    if (retry.error) throw new Error(retry.error.message);
+    return (retry.data || []) as InstanceRow[];
+  }
+
+  // Mantém credenciais Z-API da Vercel alinhadas quando configuradas.
+  await ensureWhatsappInstancesFromEnv().catch(() => { /* não bloqueia listagem */ });
+  return rows;
 }
 
 export async function getInstance(instanceId?: string | null): Promise<InstanceRow | null> {
