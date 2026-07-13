@@ -3,10 +3,11 @@ import { assertAuthenticatedAccess, readBearer, resolveLitePrincipal } from "../
 import {
   attemptReconnect,
   clearModalDismiss,
-  fetchPhoneLinkCode,
+  fetchPhoneLinkCodeDetailed,
   getInstance,
   instanceConfigured,
   loadReconnectLock,
+  requestMobilePairingCode,
   updateReconnectLock,
 } from "../lib/whatsappLiteApi.js";
 
@@ -44,41 +45,96 @@ export default async function handler(req: { method?: string; headers?: Record<s
     await updateReconnectLock(principal.id, { phase: "generating", phoneLinkCode: null, reconnectMessage: null });
 
     const row = await getInstance();
-    let phoneLinkCode = row && instanceConfigured(row) ? await fetchPhoneLinkCode(row) : null;
+    if (!row || !instanceConfigured(row)) {
+      return res.status(503).json({ ok: false, error: "Instância WhatsApp não configurada", lock: current });
+    }
+
+    const phoneDetailed = await fetchPhoneLinkCodeDetailed(row);
+    let phoneLinkCode = phoneDetailed.code;
     let reconnect: Awaited<ReturnType<typeof attemptReconnect>> | null = null;
+    let mobilePairing: Awaited<ReturnType<typeof requestMobilePairingCode>> | null = null;
+    let lastError = phoneDetailed.error;
 
     if (!phoneLinkCode) {
       reconnect = await attemptReconnect(true);
       phoneLinkCode = typeof reconnect.details?.phoneLinkCode === "string"
         ? reconnect.details.phoneLinkCode
         : null;
-      if (!phoneLinkCode && !reconnect.connectedAfter && row && instanceConfigured(row)) {
-        phoneLinkCode = await fetchPhoneLinkCode(row);
+      if (reconnect.connectedAfter) {
+        const lock = await updateReconnectLock(principal.id, {
+          phase: "done",
+          phoneLinkCode: null,
+          reconnectMessage: "Bot reconectado.",
+        });
+        return res.status(200).json({
+          ok: true,
+          connected: true,
+          phoneLinkCode: null,
+          message: "Bot reconectado com sucesso!",
+          lock,
+          reconnect,
+        });
+      }
+      if (!phoneLinkCode) {
+        const again = await fetchPhoneLinkCodeDetailed(row);
+        phoneLinkCode = again.code;
+        lastError = again.error || lastError;
       }
     }
 
+    // Mobile desconectado: phone-code costuma falhar — tenta request-code (wa_old → sms).
+    if (!phoneLinkCode && (row.instance_type === "mobile" || true)) {
+      mobilePairing = await requestMobilePairingCode(row, "wa_old");
+      if (!mobilePairing.ok) {
+        mobilePairing = await requestMobilePairingCode(row, "sms");
+      }
+      if (!mobilePairing.ok) {
+        lastError = mobilePairing.error || lastError;
+      }
+    }
+
+    const reconnectMessage = phoneLinkCode
+      ? "Novo código gerado — use no eSIM em até 2 min."
+      : mobilePairing?.ok
+        ? (mobilePairing.message || "Código mobile solicitado — confirme no eSIM.")
+        : (lastError || reconnect?.message || "Não foi possível gerar código.");
+
     const lock = await updateReconnectLock(principal.id, {
-      phase: phoneLinkCode ? "code_ready" : "claimed",
+      phase: phoneLinkCode ? "code_ready" : (mobilePairing?.ok ? "generating" : "claimed"),
       phoneLinkCode,
-      reconnectMessage: reconnect?.message || (phoneLinkCode ? "Novo código gerado — use no eSIM em até 2 min." : null),
+      reconnectMessage,
     });
 
-    if (phoneLinkCode) {
+    if (phoneLinkCode || mobilePairing?.ok) {
       await clearModalDismiss();
     }
 
-    res.status(200).json({
-      ok: !!phoneLinkCode || reconnect?.connectedAfter === true,
-      connected: reconnect?.connectedAfter === true,
+    const ok = !!phoneLinkCode || mobilePairing?.ok === true;
+    res.status(ok ? 200 : 502).json({
+      ok,
+      connected: false,
       phoneLinkCode,
+      mobilePairing: mobilePairing
+        ? {
+          ok: mobilePairing.ok,
+          method: mobilePairing.method,
+          phase: mobilePairing.phase,
+          message: mobilePairing.message,
+          error: mobilePairing.error,
+        }
+        : null,
+      phoneCodeError: phoneDetailed.error,
       message: phoneLinkCode
-        ? `Novo código: ${phoneLinkCode} — vincule no eSIM ${row?.official_phone ? `(11) ${row.official_phone}` : ""} agora.`
-        : (reconnect?.message || "Não foi possível gerar código — tente de novo."),
+        ? `Novo código: ${phoneLinkCode} — no eSIM, Aparelhos conectados → Vincular com número.`
+        : mobilePairing?.ok
+          ? (mobilePairing.message || reconnectMessage)
+          : (lastError || "Não foi possível gerar código — confira o número no painel Z-API e tente de novo."),
       lock,
       reconnect,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
+    console.error("[generate-code]", message);
     res.status(500).json({ error: message });
   }
 }

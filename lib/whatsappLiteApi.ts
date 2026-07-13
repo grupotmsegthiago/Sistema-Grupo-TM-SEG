@@ -413,12 +413,81 @@ export async function getConnectionStatus(instanceId?: string | null) {
 }
 
 export async function fetchPhoneLinkCode(row: InstanceRow): Promise<string | null> {
+  const result = await fetchPhoneLinkCodeDetailed(row);
+  return result.code;
+}
+
+export async function fetchPhoneLinkCodeDetailed(row: InstanceRow): Promise<{
+  code: string | null;
+  error: string | null;
+  httpStatus: number;
+  raw: Record<string, unknown> | null;
+}> {
   const creds = credsFromRow(row);
-  if (!creds) return null;
+  if (!creds) {
+    return { code: null, error: "Credenciais Z-API incompletas", httpStatus: 0, raw: null };
+  }
   const { full } = officialPhoneParts(row);
-  const { ok, data } = await zapiFetch(creds, `phone-code/${full}`, { method: "GET" });
-  if (!ok || !data) return null;
-  return String(data.code || data.value || "").trim() || null;
+  const { ok, status, data, text } = await zapiFetch(creds, `phone-code/${full}`, { method: "GET" });
+  const code = String(data?.code || data?.value || "").trim() || null;
+  if (code) return { code, error: null, httpStatus: status, raw: data };
+  const err = sanitizeWhatsappError(
+    String(data?.error || data?.message || text || (!ok ? `HTTP ${status}` : "phone-code vazio")),
+  );
+  return { code: null, error: err, httpStatus: status, raw: data };
+}
+
+/** Fluxo mobile: registration-available → request-code (wa_old/sms). */
+export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old" | "sms" | "voice" = "wa_old") {
+  const creds = credsFromRow(row);
+  if (!creds) return { ok: false, error: "Credenciais incompletas", data: null as Record<string, unknown> | null };
+  const { ddi, phone } = officialPhoneParts(row);
+  const phoneLocal = phone.startsWith(ddi) ? phone.slice(ddi.length) : phone;
+
+  const avail = await zapiFetch(creds, "mobile/registration-available", {
+    method: "POST",
+    body: JSON.stringify({ ddi, phone: phoneLocal }),
+  });
+  if (!avail.ok && avail.data?.available === false) {
+    return {
+      ok: false,
+      error: sanitizeWhatsappError(String(avail.data?.error || avail.data?.message || avail.text || "Número indisponível")),
+      data: avail.data,
+      phase: "registration_available",
+    };
+  }
+
+  const preferWaOld = avail.data?.waOldEligible === true || method === "wa_old";
+  const useMethod = preferWaOld ? "wa_old" : method;
+  const req = await zapiFetch(creds, "mobile/request-code", {
+    method: "POST",
+    body: JSON.stringify({ ddi, phone: phoneLocal, method: useMethod }),
+  });
+
+  if (!req.ok || req.data?.success === false) {
+    return {
+      ok: false,
+      error: sanitizeWhatsappError(String(
+        req.data?.error || req.data?.message || req.text || `Falha request-code (${useMethod})`,
+      )),
+      data: req.data,
+      phase: "request_code",
+      method: useMethod,
+      registration: avail.data,
+    };
+  }
+
+  return {
+    ok: true,
+    error: null as string | null,
+    data: req.data,
+    phase: "request_code",
+    method: useMethod,
+    registration: avail.data,
+    message: useMethod === "wa_old"
+      ? "Confirme o pop-up no WhatsApp Business do eSIM e, se pedir, informe o código aqui."
+      : `Código enviado via ${useMethod}. Informe o código recebido para confirmar.`,
+  };
 }
 
 export async function getQrAndPhoneCode(instanceId?: string | null) {

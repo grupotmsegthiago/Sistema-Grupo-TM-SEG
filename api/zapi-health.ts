@@ -29,8 +29,33 @@ export default async function handler(req: { method?: string }, res: {
     const rawError = data?.error || data?.message || (!ok ? `HTTP ${status}` : null);
     const error = rawError != null ? sanitizeWhatsappError(String(rawError)) || String(rawError) : null;
 
-    res.status(ok && !error?.includes("Client-Token") ? (connected ? 200 : 502) : 502).json({
-      ok: ok && connected,
+    const ddi = String(row.official_ddi || "55").replace(/\D/g, "");
+    const phoneLocal = String(row.official_phone || "").replace(/\D/g, "").replace(new RegExp(`^${ddi}`), "");
+    const full = `${ddi}${phoneLocal}`;
+
+    const phoneCodeRes = await zapiFetch(creds, `phone-code/${full}`, { method: "GET" });
+    const phoneCodeValue = String(phoneCodeRes.data?.code || phoneCodeRes.data?.value || "").trim() || null;
+    const phoneCodeError = phoneCodeValue
+      ? null
+      : sanitizeWhatsappError(String(
+        phoneCodeRes.data?.error || phoneCodeRes.data?.message || phoneCodeRes.text || `HTTP ${phoneCodeRes.status}`,
+      ));
+
+    let registration: Record<string, unknown> | null = null;
+    let registrationError: string | null = null;
+    if (!connected) {
+      const reg = await zapiFetch(creds, "mobile/registration-available", {
+        method: "POST",
+        body: JSON.stringify({ ddi, phone: phoneLocal }),
+      });
+      registration = reg.data;
+      if (!reg.ok && !reg.data) {
+        registrationError = sanitizeWhatsappError(reg.text) || `HTTP ${reg.status}`;
+      }
+    }
+
+    res.status(connected ? 200 : 502).json({
+      ok: !!connected,
       configured: true,
       apiReachable: status > 0 || !!data,
       httpStatus: status,
@@ -42,6 +67,16 @@ export default async function handler(req: { method?: string }, res: {
       hasClientToken: !!creds.clientToken,
       clientTokenLooksLikeInstanceToken: !!(creds.clientToken && creds.token && creds.clientToken === creds.token),
       error: connected ? null : error,
+      phoneCode: {
+        ok: !!phoneCodeValue,
+        hasCode: !!phoneCodeValue,
+        codePreview: phoneCodeValue ? `${phoneCodeValue.slice(0, 2)}****${phoneCodeValue.slice(-2)}` : null,
+        error: phoneCodeError,
+        httpStatus: phoneCodeRes.status,
+        phoneTried: full,
+      },
+      registrationAvailable: registration,
+      registrationError,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
