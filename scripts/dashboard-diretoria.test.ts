@@ -181,7 +181,9 @@ describe('Cockpit Atualizar → recalcula OS', () => {
       fs.readFile('lib/dashboardDiretoria/useDashboardDiretoriaData.ts', 'utf8'),
     );
     assert.match(src, /authFetch\('\/api\/recalculate-all'/);
+    assert.match(src, /scope:\s*'open'/);
     assert.match(src, /recalculateOpenMissionsBilling/);
+    assert.match(src, /friendlyRecalcError/);
     assert.match(src, /const refresh = useCallback\(async \(\) =>/);
     assert.match(src, /await recalculateOpenMissionsBilling\(\)/);
     assert.match(src, /await load\(\)/);

@@ -21,15 +21,31 @@ async function fetchAllPages<T>(buildQuery: (from: number, size: number) => Prom
 }
 
 /**
- * Recalcula receita/custo (inclui hora extra em andamento) nas OS ainda não
- * faturadas — mesmo endpoint usado pelo Painel de OS a cada 5 min.
- * Não altera OS com edição manual / snapshot / billing aprovado (regra do servidor).
+ * Recalcula receita/custo (inclui hora extra em andamento) nas OS abertas —
+ * mesmo motor do Painel de OS (`/api/recalculate-all`), com scope=open para
+ * evitar timeout 504 / "Load failed!" no Safari.
  */
+function friendlyRecalcError(raw: string, httpStatus?: number): string {
+  const msg = String(raw || '').trim();
+  if (/load failed|failed to fetch|networkerror|aborterror|the operation was aborted/i.test(msg)
+    || httpStatus === 504 || httpStatus === 408) {
+    return 'Recálculo demorou demais ou a rede caiu. Os KPIs foram atualizados; tente Atualizar de novo em instantes.';
+  }
+  if (httpStatus && httpStatus >= 400) {
+    return msg || `Falha ao recalcular OS (HTTP ${httpStatus}).`;
+  }
+  return msg || 'Erro ao recalcular OS em aberto.';
+}
+
 async function recalculateOpenMissionsBilling(): Promise<DashboardDiretoriaData['lastRecalc']> {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 55_000) : null;
   try {
     const r = await authFetch('/api/recalculate-all', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope: 'open', budgetMs: 45_000 }),
+      signal: controller?.signal,
     });
     const data = await r.json().catch(() => ({} as Record<string, unknown>));
     if (!r.ok) {
@@ -38,30 +54,34 @@ async function recalculateOpenMissionsBilling(): Promise<DashboardDiretoriaData[
         skipped: 0,
         total: 0,
         errors: 1,
-        message: String((data as any)?.error || `Falha ao recalcular OS (HTTP ${r.status})`),
+        message: friendlyRecalcError(String((data as any)?.error || ''), r.status),
       };
     }
     const updated = Number((data as any)?.updated || 0);
     const skipped = Number((data as any)?.skipped || 0);
     const total = Number((data as any)?.total || 0);
     const errors = Number((data as any)?.errors || 0);
-    return {
-      updated,
-      skipped,
-      total,
-      errors,
-      message: updated > 0
-        ? `${updated} OS atualizada(s) com valores/hora extra recalculados (${skipped} sem mudança).`
-        : `Nenhuma OS precisou gravar mudança de hora extra/valores (${total} analisadas).`,
-    };
+    const partial = (data as any)?.partial === true;
+    let message: string;
+    if (updated > 0) {
+      message = partial
+        ? `${updated} OS aberta(s) atualizada(s) com hora extra (parcial — clique Atualizar de novo para continuar).`
+        : `${updated} OS aberta(s) atualizada(s) com valores/hora extra (${skipped} sem mudança).`;
+    } else {
+      message = `Nenhuma OS aberta precisou gravar mudança de hora extra (${total} analisadas).`;
+    }
+    return { updated, skipped, total, errors, message };
   } catch (e: unknown) {
+    const raw = e instanceof Error ? e.message : String(e || '');
     return {
       updated: 0,
       skipped: 0,
       total: 0,
       errors: 1,
-      message: e instanceof Error ? e.message : 'Erro ao recalcular OS em aberto.',
+      message: friendlyRecalcError(raw),
     };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
