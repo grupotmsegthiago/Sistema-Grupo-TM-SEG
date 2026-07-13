@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../supabase';
+import { authFetch } from '../authFetch';
 import { useRealtimeRefresh } from '../RealtimeProvider';
 import type { Client, ClientPriceTable, FinancialCategory, FinancialTransaction, Mission, ProviderCostTable } from '../../types';
 import { formatPeriodLabel, getCashMovementDate, getPeriodRange, getRhReferenceMonth, type DashboardPeriod } from './periodUtils';
@@ -19,9 +20,55 @@ async function fetchAllPages<T>(buildQuery: (from: number, size: number) => Prom
   return all;
 }
 
+/**
+ * Recalcula receita/custo (inclui hora extra em andamento) nas OS ainda não
+ * faturadas — mesmo endpoint usado pelo Painel de OS a cada 5 min.
+ * Não altera OS com edição manual / snapshot / billing aprovado (regra do servidor).
+ */
+async function recalculateOpenMissionsBilling(): Promise<DashboardDiretoriaData['lastRecalc']> {
+  try {
+    const r = await authFetch('/api/recalculate-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await r.json().catch(() => ({} as Record<string, unknown>));
+    if (!r.ok) {
+      return {
+        updated: 0,
+        skipped: 0,
+        total: 0,
+        errors: 1,
+        message: String((data as any)?.error || `Falha ao recalcular OS (HTTP ${r.status})`),
+      };
+    }
+    const updated = Number((data as any)?.updated || 0);
+    const skipped = Number((data as any)?.skipped || 0);
+    const total = Number((data as any)?.total || 0);
+    const errors = Number((data as any)?.errors || 0);
+    return {
+      updated,
+      skipped,
+      total,
+      errors,
+      message: updated > 0
+        ? `${updated} OS atualizada(s) com valores/hora extra recalculados (${skipped} sem mudança).`
+        : `Nenhuma OS precisou gravar mudança de hora extra/valores (${total} analisadas).`,
+    };
+  } catch (e: unknown) {
+    return {
+      updated: 0,
+      skipped: 0,
+      total: 0,
+      errors: 1,
+      message: e instanceof Error ? e.message : 'Erro ao recalcular OS em aberto.',
+    };
+  }
+}
+
 export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDiretoriaData {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastRecalc, setLastRecalc] = useState<DashboardDiretoriaData['lastRecalc']>(null);
   const [missions, setMissions] = useState<Mission[]>([]);
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
   const [allTransactions, setAllTransactions] = useState<FinancialTransaction[]>([]);
@@ -135,6 +182,15 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
     }
   }, [period.mode, period.year, period.month]);
 
+  /** Atualizar = recalcular hora extra/valores nas OS abertas + recarregar KPIs. */
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const recalc = await recalculateOpenMissionsBilling();
+    setLastRecalc(recalc);
+    await load();
+  }, [load]);
+
   useEffect(() => { void load(); }, [load]);
 
   useRealtimeRefresh(
@@ -156,6 +212,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
     accounts,
     accountBalance,
     rhSnapshot,
-    refresh: load,
+    lastRecalc,
+    refresh,
   };
 }

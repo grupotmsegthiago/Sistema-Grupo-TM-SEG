@@ -174,3 +174,25 @@ describe('DiretoriaSistemaTab auth', () => {
     assert.doesNotMatch(src, /from '\.\.\/\.\.\/lib\/supabase'/);
   });
 });
+
+describe('Cockpit Atualizar → recalcula OS', () => {
+  it('hook chama /api/recalculate-all antes de recarregar KPIs', async () => {
+    const src = await import('node:fs/promises').then((fs) =>
+      fs.readFile('lib/dashboardDiretoria/useDashboardDiretoriaData.ts', 'utf8'),
+    );
+    assert.match(src, /authFetch\('\/api\/recalculate-all'/);
+    assert.match(src, /recalculateOpenMissionsBilling/);
+    assert.match(src, /const refresh = useCallback\(async \(\) =>/);
+    assert.match(src, /await recalculateOpenMissionsBilling\(\)/);
+    assert.match(src, /await load\(\)/);
+  });
+
+  it('botão Atualizar do cockpit dispara data.refresh com feedback', async () => {
+    const src = await import('node:fs/promises').then((fs) =>
+      fs.readFile('components/dashboard/DashboardDiretoria.tsx', 'utf8'),
+    );
+    assert.match(src, /data\.refresh/);
+    assert.match(src, /lastRecalc/);
+    assert.match(src, /hora extra/);
+  });
+});
