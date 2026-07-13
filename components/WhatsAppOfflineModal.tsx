@@ -46,6 +46,9 @@ function broadcastBotStatus(payload: Partial<BotStatus>) {
   });
 }
 
+const ESIM_PHONE = '(11) 92683-9456';
+const CODE_URGENT_MSG = 'Mande URGENTE esse código para o Thiago — só ele consegue vincular no eSIM agora.';
+
 const WhatsAppOfflineModal: React.FC = () => {
   const [status, setStatus] = useState<BotStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -132,7 +135,7 @@ const WhatsAppOfflineModal: React.FC = () => {
         return;
       }
       if (genData.phoneLinkCode) {
-        setMessage('Código gerado — informe no WhatsApp Business do eSIM.');
+        setMessage(`Código gerado. ${CODE_URGENT_MSG}`);
         return;
       }
       setMessage(genData.message || genData.error || 'Não foi possível gerar o código.');
@@ -158,7 +161,7 @@ const WhatsAppOfflineModal: React.FC = () => {
         return;
       }
       if (data.phoneLinkCode) {
-        setMessage('Código gerado — informe no WhatsApp Business do eSIM.');
+        setMessage(`Código gerado. ${CODE_URGENT_MSG}`);
         return;
       }
       setMessage(data.message || data.error || 'Não foi possível gerar o código.');
@@ -215,6 +218,7 @@ const WhatsAppOfflineModal: React.FC = () => {
               {lock.phase === 'code_ready' && lock.phoneLinkCode && (
                 <p className="mt-2 text-xs">
                   Código em uso: <span className="font-mono font-bold">{lock.phoneLinkCode}</span>
+                  <span className="block mt-1 font-bold text-amber-900">{CODE_URGENT_MSG}</span>
                 </p>
               )}
             </div>
@@ -227,8 +231,11 @@ const WhatsAppOfflineModal: React.FC = () => {
                 <div className="text-center bg-gray-100 border-2 border-dashed border-gray-300 rounded-xl p-4">
                   <p className="text-[10px] font-bold uppercase text-gray-500 mb-2">Código de vinculação</p>
                   <p className="text-3xl font-mono font-black tracking-widest text-gray-900">{phoneCode}</p>
+                  <p className="mt-3 text-sm font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                    {CODE_URGENT_MSG}
+                  </p>
                   <p className="text-xs text-gray-600 mt-3 leading-relaxed">
-                    No WhatsApp Business do eSIM (11 92683-9456):<br />
+                    No WhatsApp Business do eSIM {ESIM_PHONE}:<br />
                     <strong>Aparelhos conectados → Conectar → Vincular com número de telefone</strong>
                   </p>
                 </div>
