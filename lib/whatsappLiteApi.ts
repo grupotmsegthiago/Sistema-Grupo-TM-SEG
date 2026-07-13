@@ -104,11 +104,24 @@ export function credsFromRow(row: InstanceRow): ZapiCreds | null {
   };
 }
 
+/** Normaliza telefone BR para Z-API mobile: ddi=55, phone=DDD+número (sem 55). */
 export function officialPhoneParts(row: Pick<InstanceRow, "official_ddi" | "official_phone">) {
-  const ddi = String(row.official_ddi || "55").replace(/\D/g, "");
-  const phone = String(row.official_phone || "").replace(/\D/g, "");
-  const full = phone.startsWith(ddi) ? phone : `${ddi}${phone}`;
-  return { ddi, phone, full };
+  let ddi = String(row.official_ddi || "55").replace(/\D/g, "") || "55";
+  if (ddi === "055") ddi = "55";
+  let digits = String(row.official_phone || "").replace(/\D/g, "");
+  // Remove zeros à esquerda e DDI duplicado
+  while (digits.startsWith("0")) digits = digits.slice(1);
+  if (digits.startsWith(ddi) && digits.length > 11) {
+    digits = digits.slice(ddi.length);
+  }
+  // BR móvel: 10 ou 11 dígitos (DDD + número). Se veio só com DDI, mantém.
+  const phoneLocal = digits;
+  const full = phoneLocal.startsWith(ddi) ? phoneLocal : `${ddi}${phoneLocal}`;
+  const display =
+    phoneLocal.length >= 10
+      ? `+${ddi} (${phoneLocal.slice(0, 2)}) ${phoneLocal.slice(2, 7)}-${phoneLocal.slice(7)}`
+      : `+${ddi}${phoneLocal}`;
+  return { ddi, phone: phoneLocal, phoneLocal, full, display };
 }
 
 function zapiBase(creds: Pick<ZapiCreds, "instance" | "token">): string {
@@ -331,7 +344,14 @@ export async function updateInstance(instanceId: string, input: UpdateInstanceIn
   }
   if (input.meta_api_version !== undefined) payload.meta_api_version = input.meta_api_version;
   if (input.official_ddi != null) payload.official_ddi = String(input.official_ddi).replace(/\D/g, "") || "55";
-  if (input.official_phone != null) payload.official_phone = String(input.official_phone).replace(/\D/g, "");
+  if (input.official_phone != null) {
+    const parts = officialPhoneParts({
+      official_ddi: String(payload.official_ddi || input.official_ddi || "55"),
+      official_phone: String(input.official_phone),
+    });
+    payload.official_ddi = parts.ddi;
+    payload.official_phone = parts.phoneLocal;
+  }
   if (typeof input.enabled === "boolean") payload.enabled = input.enabled;
   if (typeof input.is_default === "boolean") payload.is_default = input.is_default;
 
@@ -441,27 +461,45 @@ export async function fetchPhoneLinkCodeDetailed(row: InstanceRow): Promise<{
 export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old" | "sms" | "voice" = "wa_old") {
   const creds = credsFromRow(row);
   if (!creds) return { ok: false, error: "Credenciais incompletas", data: null as Record<string, unknown> | null };
-  const { ddi, phone } = officialPhoneParts(row);
-  const phoneLocal = phone.startsWith(ddi) ? phone.slice(ddi.length) : phone;
+  const parts = officialPhoneParts(row);
+  // Z-API mobile docs: { ddi: "55", phone: "11999999999" } — SEM o 55 no phone
+  const payload = { ddi: parts.ddi || "55", phone: parts.phoneLocal, method };
 
   const avail = await zapiFetch(creds, "mobile/registration-available", {
     method: "POST",
-    body: JSON.stringify({ ddi, phone: phoneLocal }),
+    body: JSON.stringify({ ddi: payload.ddi, phone: payload.phone }),
   });
-  if (!avail.ok && avail.data?.available === false) {
+  if (avail.data?.available === false || avail.data?.blocked === true) {
     return {
       ok: false,
-      error: sanitizeWhatsappError(String(avail.data?.error || avail.data?.message || avail.text || "Número indisponível")),
+      error: sanitizeWhatsappError(String(avail.data?.error || avail.data?.message || avail.text || "Número indisponível/bloqueado")),
       data: avail.data,
       phase: "registration_available",
+      phoneUsed: payload,
+      phoneDisplay: parts.display,
     };
   }
 
   const useMethod = method;
   const req = await zapiFetch(creds, "mobile/request-code", {
     method: "POST",
-    body: JSON.stringify({ ddi, phone: phoneLocal, method: useMethod }),
+    body: JSON.stringify(payload),
   });
+
+  const captcha = typeof req.data?.captcha === "string" ? req.data.captcha : null;
+  if (captcha) {
+    return {
+      ok: false,
+      error: "Z-API pediu captcha — resolva no painel Z-API ou tente novamente em instantes.",
+      data: req.data,
+      phase: "captcha",
+      method: useMethod,
+      registration: avail.data,
+      captcha,
+      phoneUsed: payload,
+      phoneDisplay: parts.display,
+    };
+  }
 
   if (!req.ok || req.data?.success === false) {
     return {
@@ -473,6 +511,8 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
       phase: "request_code",
       method: useMethod,
       registration: avail.data,
+      phoneUsed: payload,
+      phoneDisplay: parts.display,
     };
   }
 
@@ -483,9 +523,11 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
     phase: "request_code",
     method: useMethod,
     registration: avail.data,
+    phoneUsed: payload,
+    phoneDisplay: parts.display,
     message: useMethod === "wa_old"
-      ? "Confirme o pop-up no WhatsApp Business do eSIM e, se pedir, informe o código aqui."
-      : `Código enviado via ${useMethod}. Informe o código recebido para confirmar.`,
+      ? `Pop-up enviado para ${parts.display}. Deixe o WhatsApp Business aberto no eSIM e confirme o aviso na tela (não digite código de 8 letras).`
+      : `Código enviado via ${useMethod} para ${parts.display}. Informe o código recebido para confirmar.`,
   };
 }
 

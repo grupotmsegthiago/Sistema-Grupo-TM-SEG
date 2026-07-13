@@ -316,13 +316,16 @@ const WhatsAppConnectionPanel: React.FC = () => {
       const data = await r.json();
       const req = data.requestCode || {};
       if (req.ok) {
+        const phoneLabel = data.phoneDisplay || '+55 (11) 92683-9456';
         setMessage(
           method === 'wa_old'
-            ? '✅ Pop-up enviado. Olhe a TELA do eSIM agora e confirme o aviso. NÃO abra “Aparelhos conectados” nem digite código de 8 letras.'
-            : (req.message || `Código solicitado via ${method}. Digite abaixo e confirme.`),
+            ? `✅ Pop-up enviado para ${phoneLabel}. Olhe a TELA do eSIM agora e confirme o aviso. NÃO abra “Aparelhos conectados” nem digite código de 8 letras.`
+            : (req.message || `Código solicitado via ${method} para ${phoneLabel}. Digite abaixo e confirme.`),
         );
       } else {
-        setMessage(req.error || data.error || `Falha ao solicitar código (${method})`);
+        const detail = req.error || data.error || `Falha ao solicitar código (${method})`;
+        const phoneHint = data.phoneDisplay ? ` (número usado: ${data.phoneDisplay})` : '';
+        setMessage(`${detail}${phoneHint}`);
       }
     } catch (e: any) {
       setMessage(e?.message || 'Erro ao solicitar código');
@@ -509,9 +512,21 @@ const WhatsAppConnectionPanel: React.FC = () => {
                 </>
               )}
               <div>
-                <label className="text-[10px] font-black uppercase text-gray-500">Número oficial (sem DDI)</label>
-                <input value={form.official_phone || ''} onChange={e => setForm(f => ({ ...f, official_phone: e.target.value }))}
-                  className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
+                <label className="text-[10px] font-black uppercase text-gray-500">
+                  Número oficial (Brasil) — DDI +55 automático
+                </label>
+                <div className="mt-1 flex gap-2 items-center">
+                  <span className="text-sm font-bold text-gray-700 bg-gray-100 border rounded-lg px-3 py-2">+55</span>
+                  <input
+                    value={form.official_phone || ''}
+                    onChange={e => setForm(f => ({ ...f, official_phone: e.target.value, official_ddi: '55' }))}
+                    placeholder="11926839456"
+                    className="flex-1 p-2 border rounded-lg text-sm font-mono"
+                  />
+                </div>
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Digite DDD + número (ex.: 11926839456). O sistema envia à Z-API como DDI <strong>55</strong> + telefone local.
+                </p>
               </div>
               <div className="flex items-end gap-4">
                 <label className="flex items-center gap-2 text-sm">
@@ -635,7 +650,7 @@ const WhatsAppConnectionPanel: React.FC = () => {
                         “Não foi possível conectar o dispositivo” nesta instância <strong>mobile</strong>.
                       </p>
                       <ol className="list-decimal list-inside space-y-1">
-                        <li>Abra o <strong>WhatsApp Business</strong> no eSIM <strong>(11) 92683-9456</strong> e deixe na tela inicial.</li>
+                        <li>Abra o <strong>WhatsApp Business</strong> no eSIM <strong>+55 (11) 92683-9456</strong> e deixe na tela inicial.</li>
                         <li>Clique no botão vermelho abaixo (envia pop-up <code className="bg-red-100 px-1 rounded">wa_old</code>).</li>
                         <li>No celular, confirme o aviso/pop-up que aparecer (não vá em Aparelhos conectados).</li>
                         <li>Se pedir PIN 2FA, use o campo PIN mais abaixo.</li>

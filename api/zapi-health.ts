@@ -29,9 +29,13 @@ export default async function handler(req: { method?: string }, res: {
     const rawError = data?.error || data?.message || (!ok ? `HTTP ${status}` : null);
     const error = rawError != null ? sanitizeWhatsappError(String(rawError)) || String(rawError) : null;
 
-    const ddi = String(row.official_ddi || "55").replace(/\D/g, "");
-    const phoneLocal = String(row.official_phone || "").replace(/\D/g, "").replace(new RegExp(`^${ddi}`), "");
+    const ddi = "55";
+    const rawPhone = String(row.official_phone || "").replace(/\D/g, "");
+    const phoneLocal = rawPhone.startsWith("55") && rawPhone.length > 11 ? rawPhone.slice(2) : rawPhone.replace(/^0+/, "");
     const full = `${ddi}${phoneLocal}`;
+    const phoneDisplay = phoneLocal.length >= 10
+      ? `+${ddi} (${phoneLocal.slice(0, 2)}) ${phoneLocal.slice(2, 7)}-${phoneLocal.slice(7)}`
+      : `+${ddi}${phoneLocal}`;
 
     const phoneCodeRes = await zapiFetch(creds, `phone-code/${full}`, { method: "GET" });
     const phoneCodeValue = String(phoneCodeRes.data?.code || phoneCodeRes.data?.value || "").trim() || null;
@@ -67,6 +71,7 @@ export default async function handler(req: { method?: string }, res: {
       hasClientToken: !!creds.clientToken,
       clientTokenLooksLikeInstanceToken: !!(creds.clientToken && creds.token && creds.clientToken === creds.token),
       error: connected ? null : error,
+      phone: { ddi, phoneLocal, full, display: phoneDisplay },
       phoneCode: {
         ok: !!phoneCodeValue,
         hasCode: !!phoneCodeValue,

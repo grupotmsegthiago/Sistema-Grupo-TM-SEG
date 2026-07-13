@@ -38,12 +38,16 @@ export default async function handler(req: { method?: string; body?: unknown; he
     const result = await requestMobilePairingCode(row, method);
     res.status(result.ok ? 200 : 502).json({
       registration: result.registration || null,
+      phoneDisplay: result.phoneDisplay || null,
+      phoneUsed: result.phoneUsed || null,
       requestCode: {
         ok: result.ok,
         method: result.method || method,
         data: result.data,
         error: result.error,
         message: result.message,
+        captcha: result.captcha || null,
+        phase: result.phase,
       },
     });
   } catch (e: unknown) {

@@ -58,7 +58,14 @@ export function credsFromInstance(row: {
 }
 
 export function officialPhoneParts(row: { official_ddi: string; official_phone: string }) {
-  const ddi = String(row.official_ddi || "55").replace(/\D/g, "");
-  const local = String(row.official_phone || "").replace(/\D/g, "");
-  return { ddi, phone: local, full: local.startsWith(ddi) ? local : `${ddi}${local}` };
+  let ddi = String(row.official_ddi || "55").replace(/\D/g, "") || "55";
+  if (ddi === "055") ddi = "55";
+  let digits = String(row.official_phone || "").replace(/\D/g, "");
+  while (digits.startsWith("0")) digits = digits.slice(1);
+  if (digits.startsWith(ddi) && digits.length > 11) {
+    digits = digits.slice(ddi.length);
+  }
+  const phone = digits;
+  const full = phone.startsWith(ddi) ? phone : `${ddi}${phone}`;
+  return { ddi, phone, full };
 }
