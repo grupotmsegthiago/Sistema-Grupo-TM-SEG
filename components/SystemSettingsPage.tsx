@@ -557,7 +557,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
         <p className="text-xs font-black uppercase tracking-wide text-green-800 mb-1">Reconectar bot WhatsApp (mobile)</p>
         <p className="text-sm text-gray-600 mb-4">
           Se o bot caiu: clique <strong>Reconectar via API</strong> ou <strong>Gerar código</strong> abaixo.
-          No celular eSIM (11 92683-9456): WhatsApp Business → Aparelhos conectados → Vincular com número.
+          Quando aparecer o código, <strong className="text-red-700">mande URGENTE para o Thiago</strong> — ele vincula no eSIM (11) 92683-9456.
         </p>
         <WhatsAppConnectionPanel />
       </div>
