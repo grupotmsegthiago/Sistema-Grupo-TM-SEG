@@ -81,7 +81,15 @@ export interface DashboardDiretoriaData {
     commissionsPending: number;
     bonuses: number;
   };
-  refresh: () => void;
+  /** Resultado do último recalculo (hora extra / faturamento) ao clicar Atualizar */
+  lastRecalc: {
+    updated: number;
+    skipped: number;
+    total: number;
+    errors: number;
+    message: string;
+  } | null;
+  refresh: () => Promise<void>;
 }
 
 /** Meta de margem operacional (OS) — alinhada ao termômetro / diretoria */

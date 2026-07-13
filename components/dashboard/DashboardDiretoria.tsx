@@ -163,7 +163,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
     return (
       <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-red-800" data-testid="dashboard-diretoria-error">
         <p className="font-bold flex items-center gap-2"><AlertTriangle size={18} /> {data.error}</p>
-        <button type="button" onClick={data.refresh} className="mt-3 text-sm font-bold text-red-700 underline">Tentar novamente</button>
+        <button type="button" onClick={() => { void data.refresh(); }} className="mt-3 text-sm font-bold text-red-700 underline">Tentar novamente</button>
       </div>
     );
   }
@@ -624,14 +624,24 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
             )}
             <button
               type="button"
-              onClick={data.refresh}
+              onClick={() => { void data.refresh(); }}
               disabled={data.loading}
+              title="Recalcula hora extra/valores nas OS em aberto (não faturadas) e atualiza os KPIs"
               className="inline-flex items-center gap-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-sm"
+              data-testid="button-diretoria-refresh"
             >
               {data.loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
               Atualizar
             </button>
           </div>
+          {data.lastRecalc && (
+            <p
+              className={`mt-2 text-xs font-medium ${data.lastRecalc.errors > 0 ? 'text-amber-700' : 'text-emerald-700'}`}
+              data-testid="text-diretoria-recalc-result"
+            >
+              {data.lastRecalc.message}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2 mt-4 border-t border-gray-100 pt-4">
