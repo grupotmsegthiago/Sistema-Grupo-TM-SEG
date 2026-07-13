@@ -9,7 +9,11 @@ import {
   WHATSAPP_BOT_DISPLAY_NAME,
 } from "./zapiMobileEnv.js";
 import { looksLikeZapiSecret, safeWhatsappInstanceLabel, sanitizeWhatsappError } from "./whatsappDisplayUtils.js";
-import { buildMobileConnectionDiagnosis, pickMobileRegistrationMethod } from "./whatsappMobileDiagnosis.js";
+import {
+  buildMobileConnectionDiagnosis,
+  explainMobileDisconnect,
+  pickMobileRegistrationMethod,
+} from "./whatsappMobileDiagnosis.js";
 
 function sb() {
   const client = createSupabaseAdminClient();
@@ -412,7 +416,28 @@ export async function getConnectionStatus(instanceId?: string | null) {
     }
   }
 
-  const official = officialPhoneParts(row).full;
+  const officialParts = officialPhoneParts(row);
+  const official = officialParts.full;
+
+  // MOBILE: só consulta availability (não dispara request-code).
+  let registrationAvailable: Record<string, unknown> | null = null;
+  if ((row.instance_type || "web") === "mobile" && !status.connected) {
+    const reg = await zapiFetch(creds, "mobile/registration-available", {
+      method: "POST",
+      body: JSON.stringify({ ddi: officialParts.ddi || "55", phone: officialParts.phoneLocal }),
+    });
+    if (reg.data && typeof reg.data === "object") registrationAvailable = reg.data;
+  }
+
+  const disconnectHint = explainMobileDisconnect(status.error || row.last_error);
+  const diagnosis = buildMobileConnectionDiagnosis({
+    instanceType: row.instance_type || "web",
+    connected: !!status.connected,
+    registrationAvailable,
+    requestCodeResult: null,
+    phoneLinkCode: null,
+  });
+
   return {
     status: 200 as const,
     body: {
@@ -429,6 +454,9 @@ export async function getConnectionStatus(instanceId?: string | null) {
       lastCheckedAt: row.last_checked_at,
       lastError: row.last_error,
       lastConnected: row.last_connected,
+      registrationAvailable,
+      disconnectHint,
+      diagnosis,
     },
   };
 }
@@ -723,17 +751,15 @@ export async function attemptReconnect(force = false): Promise<ReconnectResult> 
     };
   }
 
-  const phoneLinkCode = await fetchPhoneLinkCode(row);
-
-  // MOBILE: tentar registro real antes de oferecer phone-code (que é fluxo WEB).
+  // MOBILE: registro real (wa_old) — não gerar phone-code WEB (conflita sessão).
   if (creds.type === "mobile") {
-    const pairing = await requestMobilePairingCode(row, "wa_old");
+    const pairing = await requestMobilePairingCode(row, "auto");
     if (pairing.ok) {
       return {
         attempted: true,
         ok: false,
         phase: "wa_old",
-        message: pairing.message || "Pop-up enviado — confirme no WhatsApp Business do eSIM.",
+        message: pairing.message || "Pop-up/SMS/voz pedido — confirme no WhatsApp Business do eSIM.",
         connectedAfter: false,
         details: { pairing, force },
       };
@@ -744,7 +770,7 @@ export async function attemptReconnect(force = false): Promise<ReconnectResult> 
       connected: false,
       registrationAvailable: (pairing as any).registration || null,
       requestCodeResult: pairing.data,
-      phoneLinkCode,
+      phoneLinkCode: null,
     });
     if (blocked || diagnosis.recommendedPath === "wait_retry_mobile" || diagnosis.recommendedPath === "mobile_unban") {
       return {
@@ -767,9 +793,11 @@ export async function attemptReconnect(force = false): Promise<ReconnectResult> 
       phase: "wa_old",
       message: pairing.error || "Falha no registro mobile.",
       connectedAfter: false,
-      details: { pairing, diagnosis, phoneLinkCode, force },
+      details: { pairing, diagnosis, force },
     };
   }
+
+  const phoneLinkCode = await fetchPhoneLinkCode(row);
 
   if (phoneLinkCode) {
     return {

@@ -9,7 +9,12 @@ function parseBody(body: unknown): Record<string, unknown> {
   return (body && typeof body === "object") ? body as Record<string, unknown> : {};
 }
 
-export default async function handler(req: { method?: string; body?: unknown; headers?: Record<string, unknown> }, res: {
+export default async function handler(req: {
+  method?: string;
+  body?: unknown;
+  query?: Record<string, string>;
+  headers?: Record<string, unknown>;
+}, res: {
   status: (n: number) => { json: (b: unknown) => void };
   setHeader: (k: string, v: string) => void;
 }) {
@@ -26,21 +31,30 @@ export default async function handler(req: { method?: string; body?: unknown; he
     return;
   }
 
-  const methodRaw = String(parseBody(req.body).method || "wa_old").toLowerCase();
+  const body = parseBody(req.body);
+  const methodRaw = String(body.method || "wa_old").toLowerCase();
   const method = (["sms", "voice", "wa_old"].includes(methodRaw) ? methodRaw : "wa_old") as "sms" | "voice" | "wa_old";
+  const instanceId = req.query?.instanceId || (body.instanceId != null ? String(body.instanceId) : null);
 
   try {
-    const row = await getInstance();
+    const row = await getInstance(instanceId);
     if (!row || !instanceConfigured(row)) {
       res.status(503).json({ error: "WhatsApp não configurado" });
       return;
     }
+    if (row.instance_type !== "mobile") {
+      res.status(400).json({
+        error: "request-code (pop-up/SMS/voz) é só para instância MOBILE. Esta está como WEB — use QR ou código de 8 letras.",
+      });
+      return;
+    }
     const result = await requestMobilePairingCode(row, method);
+    // Nunca devolver phone-code WEB neste endpoint mobile.
     res.status(result.ok ? 200 : 502).json({
       registration: result.registration || null,
       phoneDisplay: result.phoneDisplay || null,
       phoneUsed: result.phoneUsed || null,
-      phoneLinkCode: result.phoneLinkCode || null,
+      phoneLinkCode: null,
       requestCode: {
         ok: result.ok,
         method: result.method || method,
@@ -49,7 +63,7 @@ export default async function handler(req: { method?: string; body?: unknown; he
         message: result.message,
         captcha: result.captcha || null,
         phase: result.phase,
-        phoneLinkCode: result.phoneLinkCode || null,
+        phoneLinkCode: null,
       },
     });
   } catch (e: unknown) {

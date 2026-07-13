@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMobileConnectionDiagnosis, pickMobileRegistrationMethod } from '../lib/whatsappMobileDiagnosis';
+import { buildMobileConnectionDiagnosis, explainMobileDisconnect, pickMobileRegistrationMethod } from '../lib/whatsappMobileDiagnosis';
 
 describe('whatsappMobileDiagnosis', () => {
   it('MOBILE + blocked sem appealToken → wait_retry_mobile (não WEB)', () => {
@@ -55,5 +55,12 @@ describe('whatsappMobileDiagnosis', () => {
     }, 'sms');
     assert.equal(p.method, 'voice');
     assert.equal(p.deferredSeconds, 10);
+  });
+
+  it('explainMobileDisconnect detecta conflito de outra instância', () => {
+    const h = explainMobileDisconnect('Outra instância efetuou login neste número celular e restaurou. Desconectou.');
+    assert.equal(h?.kind, 'session_conflict');
+    assert.match(h!.titlePt, /Conflito/i);
+    assert.ok(h!.stepsPt.length >= 3);
   });
 });
