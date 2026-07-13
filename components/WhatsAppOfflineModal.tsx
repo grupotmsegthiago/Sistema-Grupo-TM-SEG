@@ -71,7 +71,7 @@ function isReconnectAdmin(user: LocalUser | null): boolean {
 const ESIM_PHONE = '+55 (11) 92683-9456';
 const CODE_URGENT_MSG = 'Mande URGENTE para o Thiago — só ele reconecta no eSIM agora.';
 const MOBILE_HINT =
-  'WhatsApp bloqueou pop-up/SMS/ligação (blocked sem appealToken). Use Configurações → WhatsApp → Gerar código de vinculação ou QR no eSIM.';
+  'Causa raiz: instância MOBILE com registro blocked (sem appealToken). Código de 8 letras NÃO conecta MOBILE — ele é só para WEB. No painel Z-API, converta para WEB e use QR/código em Aparelhos conectados.';
 
 function buildCopyText(code: string, label?: string | null): string {
   return [
@@ -84,8 +84,8 @@ function buildCopyText(code: string, label?: string | null): string {
     '',
     MOBILE_HINT,
     '',
-    `Preferencial: no sistema, Configurações → WhatsApp → pop-up wa_old no eSIM ${ESIM_PHONE}.`,
-    'Alternativa (web): no WhatsApp Business → Aparelhos conectados → Vincular com número.',
+    `Preferencial: painel Z-API → instância WEB + QR/código em Aparelhos conectados (${ESIM_PHONE}).`,
+    'Não use código de 8 letras enquanto a instância estiver como MOBILE bloqueada.',
     '',
     '⚠️ Códigos expiram em poucos minutos.',
   ].join('\n');

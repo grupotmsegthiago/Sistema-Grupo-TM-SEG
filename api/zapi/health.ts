@@ -1,6 +1,7 @@
 /** GET /api/zapi/health — leve: testa Z-API sem expor tokens */
 import { credsFromRow, getInstance, instanceConfigured, zapiFetch } from "../../lib/whatsappLiteApi.js";
 import { sanitizeWhatsappError } from "../../lib/whatsappDisplayUtils.js";
+import { buildMobileConnectionDiagnosis } from "../../lib/whatsappMobileDiagnosis.js";
 
 export default async function handler(req: { method?: string }, res: {
   status: (n: number) => { json: (b: unknown) => void };
@@ -120,6 +121,14 @@ export default async function handler(req: { method?: string }, res: {
       };
     }
 
+    const diagnosis = buildMobileConnectionDiagnosis({
+      instanceType: creds.type,
+      connected: !!connected,
+      registrationAvailable: registration,
+      requestCodeResult: (waOldProbe as Record<string, unknown> | null) || (voiceProbe as Record<string, unknown> | null),
+      phoneLinkCode: phoneCodeValue,
+    });
+
     res.status(connected ? 200 : 502).json({
       ok: !!connected,
       configured: true,
@@ -133,6 +142,7 @@ export default async function handler(req: { method?: string }, res: {
       hasClientToken: !!creds.clientToken,
       clientTokenLooksLikeInstanceToken: !!(creds.clientToken && creds.token && creds.clientToken === creds.token),
       error: connected ? null : error,
+      diagnosis,
       phone: { ddi, phoneLocal, full, display: phoneDisplay },
       phoneCode: {
         ok: !!phoneCodeValue,
@@ -141,6 +151,9 @@ export default async function handler(req: { method?: string }, res: {
         error: phoneCodeError,
         httpStatus: phoneCodeRes.status,
         phoneTried: full,
+        note: creds.type === "mobile"
+          ? "phone-code é fluxo WEB; não conecta instância MOBILE se o registro estiver blocked."
+          : null,
       },
       registrationAvailable: registration,
       registrationError,

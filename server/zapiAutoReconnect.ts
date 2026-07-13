@@ -185,11 +185,9 @@ async function attemptMobileWaOldReconnect(
         attempted: true,
         ok: false,
         phase: "wa_old",
-        message: linkCode
-          ? `WhatsApp bloqueou pop-up/SMS/ligação (sem appealToken). Use no Business: Aparelhos conectados → Vincular com número → código ${linkCode}.`
-          : "WhatsApp bloqueou o envio de código mobile — use QR em Configurações → WhatsApp ou app.z-api.io.",
+        message: "WhatsApp bloqueou registro MOBILE (blocked sem appealToken). Código de 8 letras NÃO conecta MOBILE — converta a instância para WEB no painel Z-API e use QR/código, ou abra chamado na Z-API.",
         connectedAfter: false,
-        details: { requestCode: req.data, phoneLinkCode: linkCode, fallback: "phone-code", blocked: true },
+        details: { requestCode: req.data, phoneLinkCode: linkCode, fallback: "convert_to_web", blocked: true },
       };
     }
     const msg = captcha

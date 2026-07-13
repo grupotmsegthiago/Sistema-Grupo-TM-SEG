@@ -598,11 +598,12 @@ const WhatsAppConnectionPanel: React.FC = () => {
 
                 {!connected && isZapi && (
                   <div className="p-4 rounded-lg border border-red-200 bg-red-50 text-red-950 text-xs space-y-2">
-                    <p className="font-black uppercase text-[10px] tracking-wide">Doc Z-API mobile — o que está acontecendo</p>
+                    <p className="font-black uppercase text-[10px] tracking-wide">Diagnóstico sênior — por que o código não conecta</p>
                     <ol className="list-decimal list-inside space-y-1 leading-relaxed">
-                      <li>Fluxo oficial: registration-available → <strong>request-registration-code</strong> → confirm-registration-code → confirm-pin-code.</li>
-                      <li>Paths já corrigidos. Agora a Z-API/WhatsApp responde <strong>blocked: true</strong> sem <code className="bg-red-100 px-1 rounded">appealToken</code> — a própria doc diz que nesse caso não há desbanimento via API.</li>
-                      <li>Caminho operacional: <strong>código phone-code</strong> ou QR (ambos respondendo na API agora).</li>
+                      <li>Instância atual é <strong>MOBILE</strong> (quer ser o aparelho PRINCIPAL no lugar do celular).</li>
+                      <li>WhatsApp responde <code className="bg-red-100 px-1 rounded">blocked: true</code> sem <code className="bg-red-100 px-1 rounded">appealToken</code> no registro (SMS/voz/pop-up) — a Z-API <strong>não consegue desbanir</strong>.</li>
+                      <li>O código de <strong>8 letras</strong> (phone-code) é fluxo <strong>WEB</strong> (“Aparelhos conectados”). Em MOBILE bloqueada ele <strong>não conecta o bot</strong> — por isso parece que “o código não funciona”.</li>
+                      <li><strong>Solução prática:</strong> no painel Z-API, converter/criar instância <strong>WEB</strong>, atualizar <code className="bg-red-100 px-1 rounded">ZAPI_INSTANCE_TYPE=web</code> e conectar com QR/código. O eSIM continua como principal.</li>
                     </ol>
                   </div>
                 )}
@@ -644,23 +645,36 @@ const WhatsAppConnectionPanel: React.FC = () => {
                       <WifiOff size={16} /> Bot offline — reconectar
                     </p>
                     <div className="text-xs leading-relaxed space-y-2 bg-white/80 border border-red-200 rounded-lg p-3">
-                      <p className="font-bold text-red-800">Situação (doc Z-API mobile):</p>
+                      <p className="font-bold text-red-800">Situação real:</p>
                       <ol className="list-decimal list-inside space-y-1">
-                        <li>Paths corretos: <code className="bg-red-100 px-1 rounded">request-registration-code</code>.</li>
-                        <li>WhatsApp está respondendo <strong>blocked</strong> no pop-up/SMS/ligação (sem appealToken = sem desbanimento via API).</li>
-                        <li><strong>Agora:</strong> use o código de vinculação ou QR abaixo no Business do eSIM.</li>
+                        <li>Registro MOBILE bloqueado pelo WhatsApp (sem appealToken).</li>
+                        <li>Gerar código de 8 letras <strong>não resolve</strong> neste modo — é caminho WEB.</li>
+                        <li>Converta a instância para <strong>WEB</strong> no painel Z-API e use QR/código abaixo, ou tente Pop-up/Ligação (pode continuar blocked).</li>
                       </ol>
                     </div>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void generatePhoneLinkCode()}
-                      className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white font-bold py-3 px-4 rounded-xl disabled:opacity-50"
-                      data-testid="button-generate-phone-link-offline"
-                    >
-                      {busy ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
-                      {busy ? 'Gerando…' : 'Gerar código de vinculação (fallback)'}
-                    </button>
+                    {isMobile ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void requestSms('wa_old')}
+                        className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white font-bold py-3 px-4 rounded-xl disabled:opacity-50"
+                        data-testid="button-request-wa-old-primary"
+                      >
+                        {busy ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
+                        {busy ? 'Solicitando…' : 'Tentar pop-up MOBILE (wa_old)'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void generatePhoneLinkCode()}
+                        className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white font-bold py-3 px-4 rounded-xl disabled:opacity-50"
+                        data-testid="button-generate-phone-link-offline"
+                      >
+                        {busy ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
+                        {busy ? 'Gerando…' : 'Gerar código de vinculação (WEB)'}
+                      </button>
+                    )}
                     <div className="flex flex-wrap gap-2">
                       <button type="button" disabled={busy} onClick={() => void refreshQr()}
                         className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl border-2 border-gray-300 text-gray-800 disabled:opacity-50"
@@ -748,12 +762,22 @@ const WhatsAppConnectionPanel: React.FC = () => {
 
                 {phoneLinkCode && connected === false && (
                   <div className="text-center p-4 bg-amber-50 rounded-lg border-2 border-amber-300 space-y-2">
-                    <p className="text-[10px] font-bold uppercase text-amber-800">Código de vinculação (fallback — phone-code)</p>
-                    <p className="text-3xl font-mono font-black tracking-widest text-gray-900" data-testid="text-phone-link-code">{phoneLinkCode}</p>
-                    <p className="text-xs text-amber-950 leading-relaxed">
-                      No WhatsApp Business do eSIM +55 (11) 92683-9456:<br />
-                      <strong>Aparelhos conectados → Conectar → Vincular com número de telefone</strong>
+                    <p className="text-[10px] font-bold uppercase text-amber-800">
+                      {isMobile
+                        ? 'Código phone-code (só funciona se a instância for WEB)'
+                        : 'Código de vinculação WEB (phone-code)'}
                     </p>
+                    <p className="text-3xl font-mono font-black tracking-widest text-gray-900" data-testid="text-phone-link-code">{phoneLinkCode}</p>
+                    {isMobile ? (
+                      <p className="text-xs text-red-800 leading-relaxed font-medium">
+                        Em instância MOBILE bloqueada este código costuma <strong>não conectar</strong>. Converta para WEB no painel Z-API antes de usar.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-amber-950 leading-relaxed">
+                        No WhatsApp Business do eSIM +55 (11) 92683-9456:<br />
+                        <strong>Aparelhos conectados → Conectar → Vincular com número de telefone</strong>
+                      </p>
+                    )}
                     <button type="button" onClick={() => void copyPhoneCode()}
                       className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">
                       {codeCopied ? <Check size={16} /> : <Copy size={16} />}
