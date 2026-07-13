@@ -504,14 +504,14 @@ export async function getQrAndPhoneCode(instanceId?: string | null) {
       qrBase64 = value.startsWith("data:") ? value : `data:image/png;base64,${value}`;
     }
   }
-  const phoneLinkCode = await fetchPhoneLinkCode(row);
+  const phoneDetailed = await fetchPhoneLinkCodeDetailed(row);
   return {
     status: 200 as const,
     body: {
       qrBase64,
       error: qrBase64 ? null : (qrRes.data?.error ? String(qrRes.data.error) : qrRes.text || "QR indisponível"),
-      phoneLinkCode,
-      phoneLinkError: phoneLinkCode ? null : "Código phone-code indisponível",
+      phoneLinkCode: phoneDetailed.code,
+      phoneLinkError: phoneDetailed.code ? null : (phoneDetailed.error || "Código phone-code indisponível"),
     },
   };
 }
