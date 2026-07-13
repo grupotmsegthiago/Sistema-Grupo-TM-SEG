@@ -115,7 +115,39 @@ describe('computeCashKpis exclui transferências internas do Entrou/Saiu', () =>
 
     assert.equal(cash.incomePaid, 1000);
     assert.equal(cash.expensePaid, 0);
-    // Transferência: −5000 numa conta e +5000 na outra → consolidado neutro (só o saldo inicial)
     assert.equal(cash.totalCash, 10000);
+  });
+
+  it('exclui rendimento de investimento do Entrou', () => {
+    const period = { mode: 'month' as const, year: 2026, month: 6 };
+    const now = new Date(2026, 6, 20, 12, 0, 0);
+    const categories = [{ id: 'inv', name: 'Investimentos', type: 'INCOME', group: 'INVESTIMENTOS' }] as any[];
+    const transactions = [
+      {
+        id: 'client',
+        type: 'INCOME',
+        status: 'PAID',
+        amount: 1000,
+        due_date: '2026-07-10',
+        payment_date: '2026-07-10',
+        category_id: 'c0',
+        entity_name: 'Cliente Externo',
+        description: 'NF cliente',
+      },
+      {
+        id: 'yield',
+        type: 'INCOME',
+        status: 'PAID',
+        amount: 1074544.45,
+        due_date: '2026-07-12',
+        payment_date: '2026-07-12',
+        category_id: 'inv',
+        category_name: 'AJUSTE DE SALDO',
+        description: 'Rendimento de Investimento',
+        account_id: 'a-inv',
+      },
+    ] as any[];
+    const cash = computeCashKpis(transactions, transactions, categories, [{ id: 'a-inv', initial_balance: 0 }], period, now);
+    assert.equal(cash.incomePaid, 1000);
   });
 });

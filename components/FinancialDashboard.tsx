@@ -12,6 +12,14 @@ import { FinancialTransaction, FinancialAccount, FinancialCategory } from '../ty
 import { useQuery } from '@tanstack/react-query';
 import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
 
+const isInvestmentMovement = (t: FinancialTransaction, categories: FinancialCategory[]) => {
+    if (categories.some(c => c.id === t.category_id && c.group === 'INVESTIMENTOS')) return true;
+    const catName = (t.category_name || '').toLowerCase();
+    if (catName.includes('investimento') || catName.includes('aplicaç') || catName.includes('resgate') || catName.includes('ajuste de saldo')) return true;
+    const desc = (t.description || '').toLowerCase();
+    return desc.includes('rendimento de investimento') || desc.includes('desvalorização de investimento') || desc.includes('desvalorizacao de investimento');
+};
+
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -65,15 +73,15 @@ const FinancialDashboard: React.FC = () => {
         return d.getFullYear() === now.getFullYear();
     });
 
-    const incomeConfirmed = periodTrans.filter(t => t.type === 'INCOME' && t.status === 'PAID' && !isInternalGroupTransfer(t)).reduce((acc, t) => acc + t.amount, 0);
-    const expenseConfirmed = periodTrans.filter(t => t.type === 'EXPENSE' && t.status === 'PAID' && !isInternalGroupTransfer(t)).reduce((acc, t) => acc + t.amount, 0);
+    const incomeConfirmed = periodTrans.filter(t => t.type === 'INCOME' && t.status === 'PAID' && !isInternalGroupTransfer(t) && !isInvestmentMovement(t, categories)).reduce((acc, t) => acc + t.amount, 0);
+    const expenseConfirmed = periodTrans.filter(t => t.type === 'EXPENSE' && t.status === 'PAID' && !isInternalGroupTransfer(t) && !isInvestmentMovement(t, categories)).reduce((acc, t) => acc + t.amount, 0);
     
-    const pendingIncome = transactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && !isInternalGroupTransfer(t)).reduce((acc, t) => acc + t.amount, 0);
-    const pendingExpense = transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && !isInternalGroupTransfer(t)).reduce((acc, t) => acc + t.amount, 0);
-    const overdueExpense = transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && t.due_date < todayStr && !isInternalGroupTransfer(t)).reduce((acc, t) => acc + t.amount, 0);
+    const pendingIncome = transactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && !isInternalGroupTransfer(t) && !isInvestmentMovement(t, categories)).reduce((acc, t) => acc + t.amount, 0);
+    const pendingExpense = transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && !isInternalGroupTransfer(t) && !isInvestmentMovement(t, categories)).reduce((acc, t) => acc + t.amount, 0);
+    const overdueExpense = transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && t.due_date < todayStr && !isInternalGroupTransfer(t) && !isInvestmentMovement(t, categories)).reduce((acc, t) => acc + t.amount, 0);
 
     const expenseByCat: Record<string, number> = {};
-    periodTrans.filter(t => t.type === 'EXPENSE' && !isInternalGroupTransfer(t)).forEach(t => {
+    periodTrans.filter(t => t.type === 'EXPENSE' && !isInternalGroupTransfer(t) && !isInvestmentMovement(t, categories)).forEach(t => {
         const catName = t.category_name || 'Outros';
         expenseByCat[catName] = (expenseByCat[catName] || 0) + t.amount;
     });
