@@ -598,17 +598,20 @@ const WhatsAppConnectionPanel: React.FC = () => {
 
                 {!connected && isZapi && (
                   <div className="p-4 rounded-lg border border-red-200 bg-red-50 text-red-950 text-xs space-y-2">
-                    <p className="font-black uppercase text-[10px] tracking-wide">Reconexão automática (mobile wa_old)</p>
+                    <p className="font-black uppercase text-[10px] tracking-wide">Reconexão — situação atual</p>
                     <ol className="list-decimal list-inside space-y-1 leading-relaxed">
-                      <li>eSIM do bot ligado, <strong>WhatsApp Business</strong> aberto, Wi‑Fi estável.</li>
-                      <li>O vigia envia <strong>pop-up no app</strong> a cada ~5 min após queda — confirme no celular (1 toque).</li>
-                      <li>Ou clique <strong>Reconectar via API</strong> (restore + restart + wa_old).</li>
-                      <li>Se pedir código/PIN: use os campos abaixo ou botão <strong>Pop-up no app</strong>.</li>
-                      <li>Instância web (legado): <strong>Código extensão</strong> no Chrome — evite se já usa mobile.</li>
+                      <li>
+                        A API <code className="bg-red-100 px-1 rounded">mobile/request-code</code> da Z-API está
+                        respondendo <strong>NOT_FOUND / Unable to find matching target resource method</strong>
+                        — pop-up, SMS e ligação <strong>não saem pelo nosso sistema</strong> até a Z-API corrigir.
+                      </li>
+                      <li>
+                        Caminho que funciona agora: abra <strong>app.z-api.io</strong> → instância Monitoramento 24h →
+                        conectar (QR / fluxo do painel), <strong>ou</strong> use o QR abaixo neste painel.
+                      </li>
+                      <li>eSIM ligado, WhatsApp Business no +55 (11) 92683-9456.</li>
+                      <li>SMS está bloqueado na Z-API; phone-code (8 letras) está em rate limit.</li>
                     </ol>
-                    <p className="text-[10px] opacity-80 font-bold text-amber-900">
-                      No painel Z-API a instância deve ser tipo <strong>MOBILE</strong> (não Web). Depois disso o vigia envia pop-up wa_old no WhatsApp Business do eSIM.
-                    </p>
                   </div>
                 )}
 
@@ -646,47 +649,61 @@ const WhatsAppConnectionPanel: React.FC = () => {
                 {isZapi && !connected && (
                   <div className="p-4 rounded-xl border-2 border-red-300 bg-red-50 text-red-950 space-y-3">
                     <p className="font-black uppercase text-xs tracking-wide flex items-center gap-2">
-                      <WifiOff size={16} /> Bot offline — reconectar MOBILE
+                      <WifiOff size={16} /> Bot offline — reconectar
                     </p>
                     <div className="text-xs leading-relaxed space-y-2 bg-white/80 border border-red-200 rounded-lg p-3">
-                      <p className="font-bold text-red-800">Não use a tela “Insira o código” / 8 letras no WhatsApp.</p>
-                      <p>
-                        Isso é pareamento de <strong>WhatsApp Web</strong> e sempre dá
-                        “Não foi possível conectar o dispositivo” nesta instância <strong>mobile</strong>.
-                      </p>
+                      <p className="font-bold text-red-800">1º passo agora: QR ou painel Z-API</p>
                       <ol className="list-decimal list-inside space-y-1">
-                        <li>Abra o <strong>WhatsApp Business</strong> no eSIM <strong>+55 (11) 92683-9456</strong> e deixe na tela inicial.</li>
-                        <li>Clique no botão vermelho abaixo (envia pop-up <code className="bg-red-100 px-1 rounded">wa_old</code>).</li>
-                        <li>No celular, confirme o aviso/pop-up que aparecer (não vá em Aparelhos conectados).</li>
-                        <li>Se pedir PIN 2FA, use o campo PIN mais abaixo.</li>
+                        <li>Clique em <strong>Atualizar QR</strong> abaixo e escaneie com o WhatsApp Business do eSIM.</li>
+                        <li>Ou abra <strong>app.z-api.io</strong> → Monitoramento 24h → conectar.</li>
+                        <li>Pop-up/SMS/ligação via API estão quebrados na Z-API (erro de rota NOT_FOUND).</li>
                       </ol>
                     </div>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void requestSms('wa_old')}
-                      className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white font-bold py-3 px-4 rounded-xl disabled:opacity-50"
-                      data-testid="button-request-wa-old"
-                    >
-                      {busy ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
-                      {busy ? 'Enviando pop-up…' : 'Enviar pop-up no WhatsApp Business (eSIM)'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void requestSms('sms')}
-                      className="w-full flex items-center justify-center gap-2 border-2 border-red-300 text-red-900 font-bold py-2.5 px-3 rounded-xl disabled:opacity-50 text-xs"
-                    >
-                      <Phone size={14} /> Alternativa: pedir código SMS (se o pop-up não aparecer)
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void requestSms('voice')}
-                      className="w-full flex items-center justify-center gap-2 border-2 border-amber-400 text-amber-950 font-bold py-2.5 px-3 rounded-xl disabled:opacity-50 text-xs"
-                    >
-                      <Phone size={14} /> Alternativa: ligação (voice) — atenda no eSIM
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void refreshQr()}
+                        className="flex-1 min-w-[140px] flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white font-bold py-3 px-4 rounded-xl disabled:opacity-50"
+                        data-testid="button-refresh-qr-offline"
+                      >
+                        {busy ? <Loader2 size={18} className="animate-spin" /> : <QrCode size={18} />}
+                        Atualizar QR
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void runBootstrap()}
+                        className="flex-1 min-w-[140px] flex items-center justify-center gap-2 border-2 border-red-300 text-red-900 font-bold py-3 px-4 rounded-xl disabled:opacity-50"
+                      >
+                        {busy ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}
+                        Reconectar via API
+                      </button>
+                    </div>
+                    {qrBase64 && (
+                      <div className="flex flex-col items-center gap-2 bg-white rounded-xl border border-red-200 p-4">
+                        <p className="text-[10px] font-bold uppercase text-gray-500">Escaneie no WhatsApp Business do eSIM</p>
+                        <img src={qrBase64.startsWith('data:') ? qrBase64 : `data:image/png;base64,${qrBase64}`} alt="QR WhatsApp" className="w-56 h-56" />
+                      </div>
+                    )}
+                    <p className="text-[10px] font-bold text-amber-900">
+                      Botões pop-up/SMS/ligação abaixo só voltam a funcionar quando a Z-API corrigir o endpoint request-code.
+                    </p>
+                    <div className="flex flex-wrap gap-2 pt-1 border-t border-red-200">
+                      <button type="button" disabled={busy} onClick={() => void requestSms('wa_old')}
+                        className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-2 rounded-lg border border-red-200 text-red-800 disabled:opacity-50"
+                        data-testid="button-request-wa-old">
+                        <Smartphone size={14} /> Pop-up no app
+                      </button>
+                      <button type="button" disabled={busy} onClick={() => void requestSms('voice')}
+                        className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-2 rounded-lg border border-red-200 text-red-800 disabled:opacity-50">
+                        <Phone size={14} /> Ligação
+                      </button>
+                      <button type="button" disabled={busy} onClick={() => void requestSms('sms')}
+                        className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-2 rounded-lg border border-red-200 text-red-800 disabled:opacity-50">
+                        SMS
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -717,6 +734,12 @@ const WhatsAppConnectionPanel: React.FC = () => {
                           <QrCode size={14} /> Atualizar QR / código
                         </button>
                       </>
+                    )}
+                    {isMobile && (
+                      <button type="button" disabled={busy} onClick={() => void refreshQr()}
+                        className="text-xs font-bold px-4 py-2 rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200 disabled:opacity-50 flex items-center gap-1">
+                        <QrCode size={14} /> Atualizar QR
+                      </button>
                     )}
                     <button type="button" disabled={busy} onClick={() => void fetchExtensionToken()}
                       className="text-xs font-bold px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">

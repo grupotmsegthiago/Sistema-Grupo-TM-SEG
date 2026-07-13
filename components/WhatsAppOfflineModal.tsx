@@ -71,7 +71,7 @@ function isReconnectAdmin(user: LocalUser | null): boolean {
 const ESIM_PHONE = '+55 (11) 92683-9456';
 const CODE_URGENT_MSG = 'Mande URGENTE para o Thiago — só ele reconecta no eSIM agora.';
 const MOBILE_HINT =
-  'Instância MOBILE: o caminho certo é Configurações → WhatsApp → Enviar pop-up no WhatsApp Business (eSIM). Código de 8 letras é pareamento WEB e costuma falhar no Business.';
+  'Agora: abra Configurações → WhatsApp → Atualizar QR (ou app.z-api.io). A Z-API está com bug no mobile/request-code (NOT_FOUND) — pop-up/SMS/ligação não saem pela API.';
 
 function buildCopyText(code: string, label?: string | null): string {
   return [
@@ -314,7 +314,7 @@ const WhatsAppOfflineModal: React.FC = () => {
 
           {reconnectAdmin && (
             <p className="text-xs bg-blue-50 border border-blue-200 text-blue-900 p-3 rounded-lg">
-              <strong>Diretoria:</strong> priorize <strong>Configurações → WhatsApp → Enviar pop-up</strong> com o Business aberto no eSIM {ESIM_PHONE}. Só use código de 8 letras se o painel Z-API/API liberar de novo (hoje costuma estar em rate limit ou NOT_FOUND).
+              <strong>Diretoria:</strong> priorize <strong>Configurações → WhatsApp → Atualizar QR</strong> ou o painel <strong>app.z-api.io</strong>. Pop-up via API está quebrado na Z-API neste momento.
             </p>
           )}
 

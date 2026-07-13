@@ -501,14 +501,19 @@ export async function requestMobilePairingCode(row: InstanceRow, method: "wa_old
     };
   }
 
-  const zapiError = String(req.data?.error || req.data?.message || "").trim();
+  const zapiErrorCode = String(req.data?.error || "").trim();
+  const zapiErrorMsg = String(req.data?.message || "").trim();
+  const zapiError = [zapiErrorCode, zapiErrorMsg].filter(Boolean).join(": ") || String(req.data?.error || req.data?.message || "").trim();
   const success = req.data?.success === true;
   // Z-API às vezes devolve HTTP 200 com { error: "NOT_FOUND" } sem success=true
   if (!req.ok || req.data?.success === false || zapiError || !success) {
     const errLabel = zapiError || req.text || `Falha request-code (${useMethod})`;
-    const friendly = /not_found/i.test(errLabel)
-      ? `Z-API respondeu NOT_FOUND no ${useMethod} para ${parts.display} (não enviou pop-up/SMS/ligação). Confirme no celular: WhatsApp Business aberto e logado nesse número no eSIM. Se já estiver, o registro via API está bloqueado nesta conta — reconecte pelo painel developer.z-api.io desta instância ou fale com o suporte Z-API. SMS está bloqueado; phone-code web está em rate limit.`
-      : sanitizeWhatsappError(errLabel) || errLabel;
+    const routingBroken = /unable to find matching target resource method/i.test(errLabel);
+    const friendly = routingBroken
+      ? `Bug/rota da Z-API: mobile/request-code (${useMethod}) responde "Unable to find matching target resource method" — o pop-up/SMS/ligação NÃO sai da API. Abra o painel app.z-api.io desta instância e reconecte por lá, ou escaneie o QR no sistema. SMS bloqueado; phone-code em rate limit. Abra chamado no suporte Z-API citando esse erro.`
+      : /not_found/i.test(errLabel)
+        ? `Z-API respondeu NOT_FOUND no ${useMethod} para ${parts.display} (nada enviado ao celular). WhatsApp Business precisa estar aberto/logado no eSIM; se já estiver, use o painel Z-API. SMS bloqueado; phone-code em rate limit.`
+        : sanitizeWhatsappError(errLabel) || errLabel;
     return {
       ok: false,
       error: friendly,
