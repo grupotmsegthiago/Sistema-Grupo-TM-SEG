@@ -40,16 +40,18 @@ export default async function handler(req: { method?: string; headers?: Record<s
       });
     }
 
-    await updateReconnectLock(principal.id, { phase: "generating" });
+    await updateReconnectLock(principal.id, { phase: "generating", phoneLinkCode: null, reconnectMessage: null });
 
-    const reconnect = await attemptReconnect(true);
-    let phoneLinkCode = typeof reconnect.details?.phoneLinkCode === "string"
-      ? reconnect.details.phoneLinkCode
-      : null;
+    const row = await getInstance();
+    let phoneLinkCode = row && instanceConfigured(row) ? await fetchPhoneLinkCode(row) : null;
+    let reconnect: Awaited<ReturnType<typeof attemptReconnect>> | null = null;
 
-    if (!phoneLinkCode && !reconnect.connectedAfter) {
-      const row = await getInstance();
-      if (row && instanceConfigured(row)) {
+    if (!phoneLinkCode) {
+      reconnect = await attemptReconnect(true);
+      phoneLinkCode = typeof reconnect.details?.phoneLinkCode === "string"
+        ? reconnect.details.phoneLinkCode
+        : null;
+      if (!phoneLinkCode && !reconnect.connectedAfter && row && instanceConfigured(row)) {
         phoneLinkCode = await fetchPhoneLinkCode(row);
       }
     }
@@ -57,14 +59,16 @@ export default async function handler(req: { method?: string; headers?: Record<s
     const lock = await updateReconnectLock(principal.id, {
       phase: phoneLinkCode ? "code_ready" : "claimed",
       phoneLinkCode,
-      reconnectMessage: reconnect.message,
+      reconnectMessage: reconnect?.message || (phoneLinkCode ? "Novo código gerado — use no eSIM em até 2 min." : null),
     });
 
     res.status(200).json({
-      ok: !!phoneLinkCode || reconnect.connectedAfter === true,
-      connected: reconnect.connectedAfter === true,
+      ok: !!phoneLinkCode || reconnect?.connectedAfter === true,
+      connected: reconnect?.connectedAfter === true,
       phoneLinkCode,
-      message: reconnect.message,
+      message: phoneLinkCode
+        ? `Novo código: ${phoneLinkCode} — vincule no eSIM ${row?.official_phone ? `(11) ${row.official_phone}` : ""} agora.`
+        : (reconnect?.message || "Não foi possível gerar código — tente de novo."),
       lock,
       reconnect,
     });
