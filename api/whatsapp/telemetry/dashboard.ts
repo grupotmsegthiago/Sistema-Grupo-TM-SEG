@@ -79,8 +79,32 @@ export default async function handler(req: any, res: any) {
       sb.from("whatsapp_session_events").select("*").gte("created_at", startIso).order("created_at", { ascending: false }).limit(1000),
     ]);
 
-    if (outbound.error) throw outbound.error;
-    if (sessions.error) throw sessions.error;
+    if (outbound.error) {
+      const msg = String(outbound.error.message || outbound.error);
+      if (msg.includes("whatsapp_outbound_log") || msg.includes("schema cache")) {
+        res.status(200).json({
+          ok: false,
+          needsMigration: true,
+          error: "Tabelas de telemetria WhatsApp ainda não criadas no Supabase.",
+          observationNote: "Rode migrations/2026_07_05_whatsapp_telemetry.sql no SQL Editor do Supabase (não bloqueia reconexão do bot).",
+        });
+        return;
+      }
+      throw outbound.error;
+    }
+    if (sessions.error) {
+      const msg = String(sessions.error.message || sessions.error);
+      if (msg.includes("whatsapp_session_events") || msg.includes("schema cache")) {
+        res.status(200).json({
+          ok: false,
+          needsMigration: true,
+          error: "Tabelas de telemetria WhatsApp ainda não criadas no Supabase.",
+          observationNote: "Rode migrations/2026_07_05_whatsapp_telemetry.sql no SQL Editor do Supabase.",
+        });
+        return;
+      }
+      throw sessions.error;
+    }
 
     const sentRows = outbound.data || [];
     const sessionRows = sessions.data || [];

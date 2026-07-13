@@ -92,6 +92,12 @@ const WhatsAppConnectionPanel: React.FC = () => {
   const loadInstances = useCallback(async () => {
     const r = await fetch('/api/whatsapp/instances', { headers: authHeaders() });
     const data = await r.json();
+    if (!r.ok) {
+      const msg = typeof data?.error === 'string' ? data.error : 'Falha ao carregar instâncias WhatsApp';
+      setMessage(msg);
+      setInstances([]);
+      return [];
+    }
     const list: InstancePublic[] = Array.isArray(data) ? data : [];
     setInstances(list);
     if (!selectedId && list.length > 0) {

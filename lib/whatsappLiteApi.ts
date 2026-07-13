@@ -1,7 +1,19 @@
 /**
  * Operações WhatsApp/Z-API para handlers serverless leves (sem Express).
  */
-import { supabaseLite } from "./tmsegAuth.js";
+import { createSupabaseAdminClient } from "./supabaseAdmin.js";
+import {
+  getZapiMobileEnvCreds,
+  hasExplicitZapiMobileEnv,
+  OFFICIAL_BOT_PHONE_LOCAL,
+  WHATSAPP_BOT_DISPLAY_NAME,
+} from "./zapiMobileEnv.js";
+
+function sb() {
+  const client = createSupabaseAdminClient();
+  if (!client) throw new Error("Supabase indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel.");
+  return client;
+}
 
 export type InstanceRow = {
   id: string;
@@ -117,20 +129,102 @@ export async function zapiFetch(
   }
 }
 
+export async function ensureWhatsappInstancesFromEnv(): Promise<void> {
+  const envCreds = getZapiMobileEnvCreds();
+  if (!envCreds) return;
+
+  const client = sb();
+  const phone = (process.env.ZAPI_OFFICIAL_PHONE || process.env.META_WHATSAPP_DISPLAY_PHONE || OFFICIAL_BOT_PHONE_LOCAL)
+    .replace(/\D/g, "")
+    .replace(/^55/, "");
+
+  const type = hasExplicitZapiMobileEnv() || (process.env.ZAPI_INSTANCE_TYPE || "mobile").toLowerCase() !== "web"
+    ? "mobile" as const
+    : "web" as const;
+
+  const payload: Record<string, unknown> = {
+    provider: "zapi",
+    instance_type: type,
+    zapi_instance_id: envCreds.instanceId,
+    zapi_token: envCreds.token,
+    label: envCreds.label || WHATSAPP_BOT_DISPLAY_NAME,
+    official_ddi: process.env.ZAPI_OFFICIAL_DDI || "55",
+    official_phone: phone,
+    enabled: true,
+    updated_at: new Date().toISOString(),
+  };
+  if (envCreds.clientToken) payload.zapi_client_token = envCreds.clientToken;
+
+  const { count, error: countErr } = await client
+    .from("whatsapp_instances")
+    .select("id", { count: "exact", head: true });
+
+  if (countErr) {
+    if (String(countErr.message || "").includes("whatsapp_instances")) {
+      throw new Error(
+        "Tabela whatsapp_instances não existe no Supabase. Rode migrations/2026_07_07_whatsapp_instances.sql no SQL Editor.",
+      );
+    }
+    throw countErr;
+  }
+
+  if (!count || count === 0) {
+    const { error } = await client.from("whatsapp_instances").insert([{
+      slug: "central",
+      label: payload.label,
+      provider: "zapi",
+      instance_type: type,
+      zapi_instance_id: envCreds.instanceId,
+      zapi_token: envCreds.token,
+      zapi_client_token: envCreds.clientToken || null,
+      official_ddi: payload.official_ddi,
+      official_phone: phone,
+      is_default: true,
+      enabled: true,
+    }]);
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const { data: def } = await client
+    .from("whatsapp_instances")
+    .select("id")
+    .eq("is_default", true)
+    .maybeSingle();
+
+  if (def?.id) {
+    await client.from("whatsapp_instances").update(payload).eq("id", def.id);
+    return;
+  }
+
+  const { data: first } = await client
+    .from("whatsapp_instances")
+    .select("id")
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+
+  if (first?.id) {
+    await client.from("whatsapp_instances").update({ ...payload, is_default: true }).eq("id", first.id);
+    await client.from("whatsapp_instances").update({ is_default: false }).neq("id", first.id);
+  }
+}
+
 export async function listInstances(): Promise<InstanceRow[]> {
-  const sb = supabaseLite();
-  const { data, error } = await sb.from("whatsapp_instances").select("*").order("label");
+  await ensureWhatsappInstancesFromEnv();
+  const { data, error } = await sb().from("whatsapp_instances").select("*").order("label");
   if (error) throw new Error(error.message);
   return (data || []) as InstanceRow[];
 }
 
 export async function getInstance(instanceId?: string | null): Promise<InstanceRow | null> {
-  const sb = supabaseLite();
+  await ensureWhatsappInstancesFromEnv();
+  const client = sb();
   if (instanceId) {
-    const { data } = await sb.from("whatsapp_instances").select("*").eq("id", instanceId).maybeSingle();
+    const { data } = await client.from("whatsapp_instances").select("*").eq("id", instanceId).maybeSingle();
     return (data as InstanceRow) || null;
   }
-  const { data } = await sb.from("whatsapp_instances").select("*").eq("is_default", true).maybeSingle();
+  const { data } = await client.from("whatsapp_instances").select("*").eq("is_default", true).maybeSingle();
   return (data as InstanceRow) || null;
 }
 
@@ -369,24 +463,24 @@ function normalizeLock(raw: unknown): ReconnectLock | null {
 }
 
 export async function loadReconnectLock(): Promise<ReconnectLock | null> {
-  const sb = supabaseLite();
-  const { data } = await sb.from("system_settings").select("value").eq("key", LOCK_KEY).maybeSingle();
+  const client = sb();
+  const { data } = await client.from("system_settings").select("value").eq("key", LOCK_KEY).maybeSingle();
   const lock = normalizeLock(data?.value);
   if (lock && Date.parse(lock.expiresAt) <= Date.now()) {
-    await sb.from("system_settings").delete().eq("key", LOCK_KEY);
+    await client.from("system_settings").delete().eq("key", LOCK_KEY);
     return null;
   }
   return lock;
 }
 
 async function persistLock(lock: ReconnectLock | null): Promise<void> {
-  const sb = supabaseLite();
+  const client = sb();
   const now = new Date().toISOString();
   if (!lock) {
-    await sb.from("system_settings").delete().eq("key", LOCK_KEY);
+    await client.from("system_settings").delete().eq("key", LOCK_KEY);
     return;
   }
-  await sb.from("system_settings").upsert([{
+  await client.from("system_settings").upsert([{
     key: LOCK_KEY,
     value: lock,
     updated_by: "Z-API Reconnect Lock",
@@ -454,11 +548,12 @@ export async function releaseReconnectLock(holderId: string, force = false): Pro
 }
 
 export async function getBotStatusSnapshot() {
-  const sb = supabaseLite();
+  await ensureWhatsappInstancesFromEnv().catch(() => { /* tabela pode não existir ainda */ });
+  const client = sb();
   const [{ data: inst }, { data: lockRow }, { data: watchRow }] = await Promise.all([
-    sb.from("whatsapp_instances").select("label,last_connected,last_error,enabled,is_default").eq("is_default", true).maybeSingle(),
-    sb.from("system_settings").select("value").eq("key", LOCK_KEY).maybeSingle(),
-    sb.from("system_settings").select("value").eq("key", "zapi_watchdog_state").maybeSingle(),
+    client.from("whatsapp_instances").select("label,last_connected,last_error,enabled,is_default").eq("is_default", true).maybeSingle(),
+    client.from("system_settings").select("value").eq("key", LOCK_KEY).maybeSingle(),
+    client.from("system_settings").select("value").eq("key", "zapi_watchdog_state").maybeSingle(),
   ]);
 
   const online = inst?.enabled !== false && inst?.last_connected === true;
