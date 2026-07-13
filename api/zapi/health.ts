@@ -49,6 +49,7 @@ export default async function handler(req: { method?: string }, res: {
     let registrationError: string | null = null;
     let waOldProbe: Record<string, unknown> | null = null;
     let voiceProbe: Record<string, unknown> | null = null;
+
     if (!connected) {
       const reg = await zapiFetch(creds, "mobile/registration-available", {
         method: "POST",
@@ -59,25 +60,44 @@ export default async function handler(req: { method?: string }, res: {
         registrationError = sanitizeWhatsappError(reg.text) || `HTTP ${reg.status}`;
       }
 
-      // Diagnóstico: o que a Z-API devolve de verdade no request-code
-      const wa = await zapiFetch(creds, "mobile/request-code", {
-        method: "POST",
-        body: JSON.stringify({ ddi, phone: phoneLocal, method: "wa_old" }),
-      });
-      waOldProbe = {
-        httpStatus: wa.status,
-        ok: wa.ok,
-        success: wa.data?.success ?? null,
-        blocked: wa.data?.blocked ?? null,
-        hasCaptcha: typeof wa.data?.captcha === "string",
-        method: wa.data?.method ?? null,
-        error: wa.data?.error || wa.data?.message || (!wa.ok ? wa.text : null),
-        retryAfter: wa.data?.retryAfter ?? null,
-        smsWaitSeconds: wa.data?.smsWaitSeconds ?? null,
-        voiceWaitSeconds: wa.data?.voiceWaitSeconds ?? null,
-        waOldWaitSeconds: wa.data?.waOldWaitSeconds ?? null,
-        phoneSent: { ddi, phone: phoneLocal },
-      };
+      // Testa formatos de telefone — Z-API devolve NOT_FOUND com payload errado ou registro indisponível.
+      const phoneVariants: Array<{ label: string; ddi: string; phone: string }> = [
+        { label: "ddi+local", ddi, phone: phoneLocal },
+        {
+          label: "local-sem-9",
+          ddi,
+          phone: phoneLocal.length === 11 ? `${phoneLocal.slice(0, 2)}${phoneLocal.slice(3)}` : phoneLocal,
+        },
+        { label: "full-no-ddi-field", ddi: "", phone: full },
+        { label: "full-with-ddi", ddi, phone: full },
+      ];
+      const variantProbes: Record<string, unknown>[] = [];
+      for (const v of phoneVariants) {
+        const body: Record<string, string> = { phone: v.phone, method: "wa_old" };
+        if (v.ddi) body.ddi = v.ddi;
+        const wa = await zapiFetch(creds, "mobile/request-code", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        variantProbes.push({
+          variant: v.label,
+          sent: body,
+          httpStatus: wa.status,
+          success: wa.data?.success ?? null,
+          error: wa.data?.error || wa.data?.message || (!wa.ok ? wa.text : null),
+          hasCaptcha: typeof wa.data?.captcha === "string",
+          keys: wa.data ? Object.keys(wa.data) : [],
+        });
+      }
+
+      const primary = variantProbes[0] || null;
+      waOldProbe = primary
+        ? {
+            ...primary,
+            variants: variantProbes,
+            anySuccess: variantProbes.some((p) => p.success === true),
+          }
+        : null;
 
       const voice = await zapiFetch(creds, "mobile/request-code", {
         method: "POST",

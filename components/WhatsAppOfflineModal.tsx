@@ -68,22 +68,26 @@ function isReconnectAdmin(user: LocalUser | null): boolean {
   return ['diretoria', 'administrador', 'ceo', 'admin'].includes(role);
 }
 
-const ESIM_PHONE = '(11) 92683-9456';
-const CODE_URGENT_MSG = 'Mande URGENTE esse código para o Thiago — só ele consegue vincular no eSIM agora.';
+const ESIM_PHONE = '+55 (11) 92683-9456';
+const CODE_URGENT_MSG = 'Mande URGENTE para o Thiago — só ele reconecta no eSIM agora.';
+const MOBILE_HINT =
+  'Instância MOBILE: o caminho certo é Configurações → WhatsApp → Enviar pop-up no WhatsApp Business (eSIM). Código de 8 letras é pareamento WEB e costuma falhar no Business.';
 
 function buildCopyText(code: string, label?: string | null): string {
   return [
     '🚨 URGENTE — Reconexão Bot WhatsApp TM SEG',
     '',
     `Bot: ${label || 'Monitoramento 24h'}`,
-    `Código de vinculação: ${code}`,
+    `Código (só se o painel tiver gerado): ${code}`,
     '',
     CODE_URGENT_MSG,
     '',
-    `No WhatsApp Business do eSIM ${ESIM_PHONE}:`,
-    'Aparelhos conectados → Conectar → Vincular com número de telefone',
+    MOBILE_HINT,
     '',
-    '⚠️ O código expira em poucos minutos. Gere outro se passar muito tempo.',
+    `Preferencial: no sistema, Configurações → WhatsApp → pop-up wa_old no eSIM ${ESIM_PHONE}.`,
+    'Alternativa (web): no WhatsApp Business → Aparelhos conectados → Vincular com número.',
+    '',
+    '⚠️ Códigos expiram em poucos minutos.',
   ].join('\n');
 }
 
@@ -300,13 +304,17 @@ const WhatsAppOfflineModal: React.FC = () => {
 
         <div className="p-6 space-y-4 text-sm text-gray-800">
           <p className="leading-relaxed">
-            O robô de WhatsApp caiu. <strong>Apenas um usuário</strong> deve gerar o código de vinculação.
+            O robô de WhatsApp caiu. <strong>Apenas um usuário</strong> deve assumir a reconexão.
             Assim que alguém assumir, os demais ficam em modo leitura até reconectar.
+          </p>
+
+          <p className="text-xs bg-amber-50 border border-amber-200 text-amber-950 p-3 rounded-lg leading-relaxed">
+            {MOBILE_HINT}
           </p>
 
           {reconnectAdmin && (
             <p className="text-xs bg-blue-50 border border-blue-200 text-blue-900 p-3 rounded-lg">
-              <strong>Diretoria:</strong> você pode assumir a reconexão e gerar <strong>novo código</strong> a qualquer momento (ex.: se o anterior expirou no eSIM).
+              <strong>Diretoria:</strong> priorize <strong>Configurações → WhatsApp → Enviar pop-up</strong> com o Business aberto no eSIM {ESIM_PHONE}. Só use código de 8 letras se o painel Z-API/API liberar de novo (hoje costuma estar em rate limit ou NOT_FOUND).
             </p>
           )}
 
