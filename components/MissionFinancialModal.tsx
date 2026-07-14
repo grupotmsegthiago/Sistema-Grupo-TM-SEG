@@ -646,9 +646,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     const prevToll = parseNumber(tollInput);
     const prevTollProv = parseNumber(tollProviderInput);
     const isSameOs = mission?.is_same_os === true;
-    // Valor do pedágio do fornecedor: espelha o cliente quando ainda não havia
-    // pedágio de fornecedor distinto; caso contrário preserva o valor existente.
-    const newTollProv = (prevTollProv <= 0 || prevTollProv === prevToll) ? v : prevTollProv;
+    // Sempre espelha no fornecedor o valor confirmado (exceto MESMA OS).
+    const newTollProv = isSameOs ? 0 : v;
 
     // Persiste o pedágio direto na OS para que a confirmação fique salva
     // mesmo sem passar pelo fluxo de "Salvar Ajustes". toll_value e
@@ -674,7 +673,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     }
 
     setTollInput(formatted);
-    if (!isSameOs && (prevTollProv <= 0 || prevTollProv === prevToll)) {
+    if (!isSameOs) {
         setTollProviderInput(formatted);
         const currentCost = parseNumber(costInput);
         const updatedCost = currentCost - prevTollProv + v;
@@ -1942,7 +1941,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const updatedRev = currentRev - oldToll + newToll;
           setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
       }
-      if (!mission?.is_same_os && parseNumber(tollProviderInput) === 0 && newToll > 0) {
+      if (!mission?.is_same_os) {
           const oldTollProv = parseNumber(tollProviderInput);
           setTollProviderInput(val);
           const currentCost = parseNumber(costInput);

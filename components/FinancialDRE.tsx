@@ -6,6 +6,7 @@ import { formatDateBR } from '../lib/dateUtils';
 import { FinancialCategory, FinancialTransaction } from '../types';
 import { Calendar, FileText, Download, Loader2, Printer, TrendingUp, DollarSign, RefreshCw } from 'lucide-react';
 import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
+import { billableClientToll } from '../lib/toll/clientTollBilling';
 
 const getTodayBR = (): string => {
     const now = new Date();
@@ -101,7 +102,7 @@ const FinancialDRE: React.FC = () => {
             const sumByGroup = (group: string) => categories.filter(c => c.group === group).reduce((acc, cat) => acc + sumByCategory(cat.id), 0);
 
             const missionRevenue = missions.reduce((acc: number, m: any) => acc + (m.revenue_value || 0), 0);
-            const missionTollClient = missions.reduce((acc: number, m: any) => acc + (m.toll_value || 0), 0);
+            const missionTollClient = missions.reduce((acc: number, m: any) => acc + billableClientToll(m.toll_value || 0), 0);
             const missionDisplacementClient = missions.reduce((acc: number, m: any) => acc + (m.displacement_value || 0), 0);
             const missionCost = missions.filter((m: any) => m.is_same_os !== true).reduce((acc: number, m: any) => acc + (m.cost_value || 0), 0);
             const missionTollProvider = missions.reduce((acc: number, m: any) => acc + (m.toll_value_provider || m.toll_value || 0), 0);

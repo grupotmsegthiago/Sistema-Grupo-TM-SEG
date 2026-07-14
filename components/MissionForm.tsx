@@ -19,6 +19,8 @@ import ClientVehicleForm from './ClientVehicleForm';
 import { formatProviderName } from '../lib/utils';
 import { extractUF, UF_TO_REGION, clientFuzzyFilter } from '../lib/financialUtils';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
+import { tollPersistencePair } from '../lib/toll/clientTollBilling';
+import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
 
 const INPUT_CLASS = "w-full bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-red-500/10 focus:border-red-500 text-sm h-11 transition-all text-gray-700 pl-12 pr-4";
 const LABEL_CLASS = "text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest";
@@ -207,6 +209,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
   const [tollDetails, setTollDetails] = useState<{ count: number; tolls: any[]; observacoes?: string; confianca?: string; provider?: string } | null>(null);
   const [tollFetchDone, setTollFetchDone] = useState(false);
+  /** Confirmação explícita quando o pedágio informado é R$ 0,00. */
+  const [tollZeroConfirmed, setTollZeroConfirmed] = useState(false);
   const lastTollRouteRef = useRef('');
   const tollCalcGenRef = useRef(0);
   const TOLL_PROVIDER_TIMEOUT_MS = 20_000;
@@ -244,7 +248,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       isSyntheticTollDest(formData.destination || '') ||
       isCevaJundiaiToll(formData.origin || '', formData.destination || '', formData.client || '')
   );
-  const step5Done = !!(formData.origin && formData.destination && selectedRouteId && formData.estimatedTime && manualRevenueTableId && tollLoaded && operatorConfirmedCalc);
+  const tollAmountNow = parseFloat(formData.tollValue || '0') || 0;
+  const tollOkForStep = tollLoaded && (
+      tollAmountNow > 0
+      || tollZeroConfirmed
+      || isSyntheticTollDest(formData.destination || '')
+  );
+  const step5Done = !!(formData.origin && formData.destination && selectedRouteId && formData.estimatedTime && manualRevenueTableId && tollOkForStep && operatorConfirmedCalc);
   const isScheduledInPast = scheduleMode === 'scheduled' && formData.scheduledDate && formData.scheduledTime && new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`).getTime() < Date.now();
   const step6Done = step5Done && (scheduleMode === 'immediate' || (scheduleMode === 'scheduled' && !!formData.scheduledDate && !!formData.scheduledTime && !isScheduledInPast));
 
@@ -1453,6 +1463,25 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         if (tollFromApi !== null) resolvedTollValue = tollFromApi;
     }
 
+    // Pedágio obrigatório: campo não pode ficar em branco sem valor explícito.
+    // R$ 0,00 só com confirmação do operador.
+    if (!Number.isFinite(resolvedTollValue) || resolvedTollValue < 0) {
+        setIsSaving(false);
+        showNotification('Pedágio obrigatório', 'Informe o valor do pedágio (use a rota mais cara no Rotas Brasil).', 'error');
+        return;
+    }
+    if (resolvedTollValue === 0 && !tollZeroConfirmed && !isSyntheticTollDest(destForToll)) {
+        setIsSaving(false);
+        showNotification(
+          'Confirmar pedágio R$ 0,00',
+          'Marque a confirmação de que o pedágio desta rota é de fato R$ 0,00 antes de salvar a SM.',
+          'warning',
+        );
+        return;
+    }
+
+    const tollPair = tollPersistencePair(resolvedTollValue, !!formData.isSameOs);
+
     try {
         let attempts = 0, saved = false, finalId = '';
         const nowIso = new Date().toISOString();
@@ -1473,7 +1502,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 start_time: scheduledIso,
                 mission_type: formData.missionType || 'Caracterizada', 
                 revenue_value: parseFloat(formData.revenueValue) || 0, cost_value: formData.isSameOs ? 0 : (parseFloat(formData.costValue) || 0),
-                toll_value: resolvedTollValue,
+                toll_value: tollPair.toll_value,
+                toll_value_provider: tollPair.toll_value_provider,
                 valor_zero_motivo: valorZeroMotivo,
                 ...(formData.isSameOs ? { is_same_os: true, parent_mission_id: formData.parentMissionId || null } : {}), current_location: 'Solicitação Criada',
                 client_vehicle: vehicleId ? parseInt(vehicleId) : null,
@@ -2846,7 +2876,31 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   )}
 
                   {selectedRouteId && !isCalculatingToll && (tollFetchDone || manualOverrides.toll) && (
-                      <div className={`p-4 border-2 rounded-xl space-y-3 ${manualOverrides.toll ? 'bg-amber-50 border-amber-300' : parseFloat(formData.tollValue || '0') > 0 ? 'bg-green-50 border-green-300' : 'bg-blue-50 border-blue-300'}`}>
+                      <div className={`p-4 border-2 rounded-xl space-y-3 ${manualOverrides.toll ? 'bg-amber-50 border-amber-300' : parseFloat(formData.tollValue || '0') > 0 ? 'bg-green-50 border-green-300' : 'bg-blue-50 border-blue-300'}`} data-testid="toll-mandatory-panel">
+                          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-950 space-y-2" data-testid="toll-rotas-brasil-instructions">
+                              <p className="text-[10px] font-black uppercase tracking-wide text-red-800">Pedágio obrigatório — Rotas Brasil</p>
+                              <ol className="list-decimal list-inside space-y-1 text-[11px] leading-relaxed font-semibold">
+                                  {ROTAS_BRASIL_STEPS_PT.map((step, idx) => (
+                                      <li key={step}>
+                                          {idx === 0 ? (
+                                              <>
+                                                  Abra o site{' '}
+                                                  <a
+                                                      href={buildRotasBrasilUrl(formData.origin, formData.destination)}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="underline text-red-700 hover:text-red-900 font-black"
+                                                      data-testid="link-rotas-brasil"
+                                                  >
+                                                      www.rotasbrasil.com.br
+                                                  </a>
+                                                  {' '}(já tenta abrir com origem/destino da OS).
+                                              </>
+                                          ) : step}
+                                      </li>
+                                  ))}
+                              </ol>
+                          </div>
                           <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-2">
                                   {manualOverrides.toll ? <AlertTriangle size={16} className="text-amber-600" /> : <CheckCircle2 size={16} className={parseFloat(formData.tollValue || '0') > 0 ? 'text-green-600' : 'text-blue-600'} />}
@@ -2869,9 +2923,36 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           )}
                           <div className="flex items-center gap-2 pt-1 border-t border-gray-200/60">
                               <span className="text-sm font-black text-gray-600">R$</span>
-                              <input type="number" step="0.01" className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-lg text-sm font-black text-gray-900 bg-white focus:border-amber-500 outline-none" placeholder="0.00" value={formData.tollValue === '0' && !manualOverrides.toll ? '' : formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value || '0' })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-manual" />
-                              <span className="text-[8px] font-bold text-gray-400 uppercase">Editar</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                required
+                                className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-lg text-sm font-black text-gray-900 bg-white focus:border-amber-500 outline-none"
+                                placeholder="Informe o valor (rota mais cara)"
+                                value={formData.tollValue === '0' && !manualOverrides.toll && !tollZeroConfirmed ? '' : formData.tollValue}
+                                onChange={e => {
+                                  const next = e.target.value === '' ? '' : e.target.value;
+                                  const num = next === '' ? 0 : parseFloat(next);
+                                  setFormData(prev => ({ ...prev, tollValue: next === '' ? '0' : next }));
+                                  setManualOverrides(prev => ({ ...prev, toll: true }));
+                                  if (num > 0) setTollZeroConfirmed(false);
+                                }}
+                                data-testid="input-toll-manual"
+                              />
+                              <span className="text-[8px] font-bold text-gray-400 uppercase">Obrigatório</span>
                           </div>
+                          {(parseFloat(formData.tollValue || '0') === 0) && !isSyntheticTollDest(formData.destination || '') && (
+                              <label className="flex items-start gap-2 text-[11px] font-bold text-amber-900 bg-amber-100 border border-amber-300 rounded-lg p-2 cursor-pointer" data-testid="toll-zero-confirm">
+                                  <input
+                                    type="checkbox"
+                                    className="mt-0.5"
+                                    checked={tollZeroConfirmed}
+                                    onChange={e => setTollZeroConfirmed(e.target.checked)}
+                                  />
+                                  <span>Confirmo que o pedágio desta rota é de fato R$ 0,00 (sem praças / rota sem pedágio).</span>
+                              </label>
+                          )}
                       </div>
                   )}
 

@@ -12,6 +12,7 @@
 
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { calculateMissionFinancials } from './financialUtils';
+import { billableClientToll } from './toll/clientTollBilling';
 
 export type CanonicalPeriod = 'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM' | 'ALL';
 
@@ -66,7 +67,7 @@ export function computeCanonicalRevenueCost(
   const isVerified = !!(m.billing_approved || m.billing_verified_by);
   const hasSavedValues = isVerified && (hasStoredRev || hasStoredCost || m.revenue_value === 0 || m.cost_value === 0);
 
-  const tollRev = Math.max(0, num(m.toll_value));
+  const tollRev = billableClientToll(Math.max(0, num(m.toll_value)));
   const tollCost = Math.max(0, m.toll_value_provider != null ? num(m.toll_value_provider) : num(m.toll_value));
   const dispRev = Math.max(0, num(m.displacement_value));
   const dispCost = Math.max(0, num(m.displacement_value_provider));

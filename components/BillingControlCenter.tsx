@@ -9,6 +9,7 @@ import {
     Wrench, ThumbsUp, Layers, ArrowUpRight, ArrowDownRight, Calendar, AlertCircle, BrainCircuit, Zap, TrendingUp, CheckCircle2
 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
+import { billableClientToll } from '../lib/toll/clientTollBilling';
 import MissionFinancialModal from './MissionFinancialModal';
 
 const formatCurrency = (val: number | null | undefined) => {
@@ -91,7 +92,7 @@ const BillingControlCenter: React.FC = () => {
             if (diffMs > 0) durationHours = diffMs / (1000 * 60 * 60);
         }
 
-        const toll = Math.max(0, m.toll_value || 0);
+        const toll = billableClientToll(m.toll_value || 0);
         const cTables = priceTables.filter(t => t.client === m.client);
         cTables.sort((a, b) => a.franchise_km - b.franchise_km);
         let cTable = cTables.find(t => t.franchise_km >= traveledKm) || cTables[cTables.length - 1];
@@ -271,7 +272,7 @@ const BillingControlCenter: React.FC = () => {
                             ) : (
                                 filteredMissions.map(m => {
                                     const billing = calculateBilling(m);
-                                    const revInDb = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
+                                    const revInDb = (m.revenue_value || 0) + billableClientToll(m.toll_value || 0);
                                     const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
                                     const costInDb = (m.cost_value || 0) + tollProv;
                                     const hasDiff = Math.abs(billing.totalRevenue - revInDb) > 1 || billing.totalRevenue <= 0;

@@ -8,6 +8,7 @@ import {
     type ProviderAutoCalcBreakdown,
 } from './providerAutoPricing';
 import { findDhlAutoClient, selectDhlClientTable } from './dhlAutoTableSelector';
+import { billableClientToll } from './toll/clientTollBilling';
 
 const STOP_WORDS = ['LTDA','LTDA.','S.A.','S.A','SA','S/A','S/A.','DO','DE','DA','E','DAS','DOS'];
 // PostgREST trata ( ) , . : como reservados dentro de .or(); envolvemos
@@ -1470,7 +1471,8 @@ export const calculateMissionFinancials = (
     }
 
     const clientServiceTotal = round2(serviceSubtotal + iblFee);
-    const totalRevenue = round2(clientServiceTotal + tollValue);
+    const clientTollBillable = billableClientToll(tollValue);
+    const totalRevenue = round2(clientServiceTotal + clientTollBillable);
     const providerServiceTotal = round2(pBase + pExtraKmVal + pExtraHrVal);
     const totalCost = round2(providerServiceTotal + tollValue);
 
@@ -1566,7 +1568,7 @@ export const auditMissionFinancials = (
     const dispProvVal = safeNumber(m.displacement_value_provider);
     const hasManualOverride = !!(m.revenue_edit_reason) || !!(m.cost_edit_reason) || !!(m.snapshot_approved_by);
     if (hasManualOverride) {
-        const storedRev = safeNumber(mission.revenue_value) + safeNumber(mission.toll_value) + dispVal;
+        const storedRev = safeNumber(mission.revenue_value) + billableClientToll(mission.toll_value) + dispVal;
         const storedCst = safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value) + dispProvVal;
         return {
             missionId: mission.id || '',
@@ -1585,7 +1587,7 @@ export const auditMissionFinancials = (
     const fin = calculateMissionFinancials(mission, clientTables, providerTables, clientData, new Date(), undefined, providers);
     const isSameOs = !!(mission as any).is_same_os;
     
-    const storedRevenue = safeNumber(mission.revenue_value) + safeNumber(mission.toll_value) + dispVal;
+    const storedRevenue = safeNumber(mission.revenue_value) + billableClientToll(mission.toll_value) + dispVal;
     const storedCost = isSameOs
         ? 0
         : safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value) + dispProvVal;
