@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import RhPageHeader from './shared/RhPageHeader';
 import RhStatCard from './shared/RhStatCard';
 import RhAdminSettings from './RhAdminSettings';
+import RhPresenceJourneyBoard from './RhPresenceJourneyBoard';
 import { fetchRhEmployees } from '../../lib/rh/fetchRhEmployees';
 import { supabase } from '../../lib/supabase';
 import { RH_SELECT_CLASS, RH_LABEL_CLASS } from '../../lib/rh/constants';
@@ -151,6 +152,9 @@ const RhDashboard: React.FC = () => {
           <RhStatCard title="Advertências" value={stats.warnings} icon={AlertCircle} color="bg-red-50 text-red-600" />
         )}
       </div>
+
+      {/* Presença ao vivo + jornada do dia — sync a cada 5 min */}
+      <RhPresenceJourneyBoard />
 
       {!stats?.filtered && deptData.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
