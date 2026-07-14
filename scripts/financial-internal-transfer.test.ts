@@ -52,6 +52,54 @@ describe('financialInternalTransfer', () => {
     );
   });
 
+  it('marca categoria TRANSFERÊNCIA ENTRE CONTAS mesmo sem tag nas notes', () => {
+    assert.equal(
+      isInternalGroupTransfer({
+        description: 'banco xp',
+        category_name: 'TRANSFERÊNCIA ENTRE CONTAS',
+      }),
+      true,
+    );
+    assert.equal(
+      isInternalGroupTransfer({
+        description: 'saldo asaas',
+        category_id: 'cat-transfer',
+      }, [{ id: 'cat-transfer', name: 'TRANSFERENCIA ENTRE CONTAS' }]),
+      true,
+    );
+  });
+
+  it('marca TRANSFERÊNCIA genérica só quando cita empresa do grupo', () => {
+    assert.equal(
+      isInternalGroupTransfer({
+        description: 'TM GESTÃO - ASAAS',
+        category_name: 'TRANSFERÊNCIA',
+      }),
+      true,
+    );
+    assert.equal(
+      isInternalGroupTransfer({
+        description: 'TM SECURITY - ASAAS',
+        category_name: 'TRANSFERÊNCIA',
+      }),
+      true,
+    );
+    assert.equal(
+      isInternalGroupTransfer({
+        description: 'exame admissional simone',
+        category_name: 'TRANSFERÊNCIA',
+      }),
+      false,
+    );
+    assert.equal(
+      isInternalGroupTransfer({
+        description: 'ACERTO VALORES - CRISTIANE AURORA DA SILVA',
+        category_name: 'TRANSFERÊNCIA',
+      }),
+      false,
+    );
+  });
+
   it('não trata recebimento de cliente externo como transferência', () => {
     assert.equal(
       isInternalGroupTransfer({

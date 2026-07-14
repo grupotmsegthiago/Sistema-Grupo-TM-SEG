@@ -182,14 +182,14 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
     [data.allTransactions, data.categories, period],
   );
 
-  const cashFlow = useMemo(() => buildDailyCashFlow(data.allTransactions, period), [data.allTransactions, period]);
+  const cashFlow = useMemo(() => buildDailyCashFlow(data.allTransactions, period, undefined, data.categories), [data.allTransactions, data.categories, period]);
   const marginSeries = useMemo(() => buildMarginVsGoalSeries(data.missions, data.refs, period), [data.missions, data.refs, period]);
   const topPayers = useMemo(() => buildTopClientsByRevenue(data.missions, data.refs, period), [data.missions, data.refs, period]);
   const clientBars = useMemo(() => buildClientRevenueCostBars(data.missions, data.refs, period), [data.missions, data.refs, period]);
   const funnel = useMemo(() => buildQuotesFunnel(data.quotes), [data.quotes]);
   const statusCounts = useMemo(() => buildMissionStatusCounts(data.missions), [data.missions]);
   const parentSummary = useMemo(() => buildParentMissionsSummary(data.missions), [data.missions]);
-  const arAp = useMemo(() => buildArApByMonth(data.allTransactions), [data.allTransactions]);
+  const arAp = useMemo(() => buildArApByMonth(data.allTransactions, data.categories), [data.allTransactions, data.categories]);
   const expenseDonut = useMemo(() => buildExpenseDonut(data.transactions, data.categories), [data.transactions, data.categories]);
   const pendingApprovals = useMemo(() => buildPendingApprovals(data.missions, data.refs), [data.missions, data.refs]);
   const openQuotes = useMemo(() => data.quotes.filter(q => q.status !== 'Aprovada').length, [data.quotes]);
@@ -248,6 +248,10 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
           <span className="font-bold">Realizado</span> = dinheiro que já entrou/saiu (data do pagamento).{' '}
           <span className="font-bold">Pendente</span> = títulos ainda em aberto com vencimento no período.{' '}
           Os totais somam os dois. A <span className="font-bold">previsão</span> olha só o pendente.
+        </p>
+        <p className="mt-1.5">
+          <span className="font-bold">Transferência entre contas da empresa</span> (TM SEG ↔ TM Security ↔ TM Gestão / XP / Asaas interno){' '}
+          <span className="font-bold">não conta</span> como entrada nem como saída — só mudou de conta.
         </p>
       </div>
 
