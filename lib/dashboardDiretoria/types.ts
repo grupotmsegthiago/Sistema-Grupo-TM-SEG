@@ -99,6 +99,31 @@ export interface CashTitleBreakdown {
   pendingPayableCount: number;
 }
 
+/** Cliente com maior volume a receber (títulos em aberto, sem teto de prazo). */
+export interface OpenReceivableByEntity {
+  entity: string;
+  amount: number;
+  count: number;
+}
+
+/**
+ * Caixa em aberto — visão de futuro (não corta em 30 dias).
+ * Inclui vencidos + a vencer (60/90 dias etc.), fora do filtro de mês do cockpit.
+ */
+export interface OpenCashOutlook {
+  receivableTotal: number;
+  payableTotal: number;
+  /** A receber − a pagar em aberto */
+  netOutlook: number;
+  overdueReceivable: number;
+  overduePayable: number;
+  receivableCount: number;
+  payableCount: number;
+  topReceivable: CashTitleRow[];
+  topPayable: CashTitleRow[];
+  byClientReceivable: OpenReceivableByEntity[];
+}
+
 export interface DashboardDiretoriaData {
   loading: boolean;
   error: string | null;

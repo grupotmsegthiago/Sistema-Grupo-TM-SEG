@@ -16,6 +16,8 @@ import type {
   CriticalAlert,
   DashboardPeriod,
   DiretoriaAccountBalance,
+  OpenCashOutlook,
+  OpenReceivableByEntity,
   OperationalKpis,
   PendingApprovalItem,
 } from './types';
@@ -293,6 +295,74 @@ export function buildCashTitleBreakdown(
     paidExpenseCount: paidExpenseAll.length,
     pendingReceivableCount: pendingRecvAll.length,
     pendingPayableCount: pendingPayAll.length,
+  };
+}
+
+/**
+ * Títulos em aberto no caixa operacional — sem teto de prazo (inclui 60/90 dias).
+ * Independente do mês selecionado no cockpit (visão de futuro / liquidez).
+ */
+export function buildOpenCashOutlook(
+  allTransactions: FinancialTransaction[],
+  categories: FinancialCategory[],
+  now = new Date(),
+  limit = 12,
+): OpenCashOutlook {
+  const investmentIds = new Set(categories.filter(c => c.group === 'INVESTIMENTOS').map(c => c.id));
+  const today = now.toISOString().slice(0, 10);
+
+  const open = allTransactions.filter(t => {
+    if (!['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status)) return false;
+    if (isInternalGroupTransfer(t, categories)) return false;
+    if (isInvestmentCashMovement(t, investmentIds, categories)) return false;
+    return true;
+  });
+
+  const recv = open.filter(t => t.type === 'INCOME');
+  const pay = open.filter(t => t.type === 'EXPENSE');
+
+  const recvRows = recv.map(t => toCashTitleRow(t, 'pending'));
+  const payRows = pay.map(t => toCashTitleRow(t, 'pending'));
+
+  const receivableTotal = round2(recv.reduce((s, t) => s + Number(t.amount || 0), 0));
+  const payableTotal = round2(pay.reduce((s, t) => s + Number(t.amount || 0), 0));
+  const overdueReceivable = round2(
+    recv.filter(t => getDueDateIso(t) < today).reduce((s, t) => s + Number(t.amount || 0), 0),
+  );
+  const overduePayable = round2(
+    pay.filter(t => getDueDateIso(t) < today).reduce((s, t) => s + Number(t.amount || 0), 0),
+  );
+
+  const byEntity = new Map<string, OpenReceivableByEntity>();
+  for (const row of recvRows) {
+    const entity = row.entity || '(sem cliente)';
+    const prev = byEntity.get(entity) || { entity, amount: 0, count: 0 };
+    prev.amount = round2(prev.amount + row.amount);
+    prev.count += 1;
+    byEntity.set(entity, prev);
+  }
+  const byClientReceivable = [...byEntity.values()].sort((a, b) => b.amount - a.amount).slice(0, limit);
+
+  // Próximos vencimentos primeiro (futuro legível); empate = maior valor.
+  const sortByDueThenAmount = (rows: CashTitleRow[]) =>
+    [...rows].sort((a, b) => {
+      const da = a.date || '9999-99-99';
+      const db = b.date || '9999-99-99';
+      if (da !== db) return da.localeCompare(db);
+      return b.amount - a.amount;
+    });
+
+  return {
+    receivableTotal,
+    payableTotal,
+    netOutlook: round2(receivableTotal - payableTotal),
+    overdueReceivable,
+    overduePayable,
+    receivableCount: recv.length,
+    payableCount: pay.length,
+    topReceivable: sortByDueThenAmount(recvRows).slice(0, limit),
+    topPayable: sortByDueThenAmount(payRows).slice(0, limit),
+    byClientReceivable,
   };
 }
 

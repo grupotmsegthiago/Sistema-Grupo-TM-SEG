@@ -10,6 +10,7 @@ import {
   buildCriticalAlerts,
   buildDailyCashFlow,
   buildCashTitleBreakdown,
+  buildOpenCashOutlook,
 } from '../lib/dashboardDiretoria/aggregations';
 import { getPeriodRange, getCashMovementDate, formatPeriodRangeHint } from '../lib/dashboardDiretoria/periodUtils';
 import { MissionStatus } from '../types';
@@ -72,6 +73,34 @@ describe('dashboardDiretoria aggregations', () => {
       openQuotes: 0,
     });
     assert.ok(alerts.some(a => a.id === 'low-margin'));
+  });
+
+  it('buildOpenCashOutlook soma a receber em aberto sem teto de prazo (60/90 dias)', () => {
+    const now = new Date(2026, 6, 14, 12, 0, 0);
+    const transactions = [
+      { id: 'r1', type: 'INCOME', status: 'PENDING', amount: 1000, due_date: '2026-07-10', entity_name: 'Cliente A', category_id: 'c0' },
+      { id: 'r2', type: 'INCOME', status: 'SCHEDULED', amount: 5000, due_date: '2026-09-15', entity_name: 'Cliente B', category_id: 'c0' },
+      { id: 'r3', type: 'INCOME', status: 'PENDING', amount: 2000, due_date: '2026-10-01', entity_name: 'Cliente A', category_id: 'c0' },
+      { id: 'p1', type: 'EXPENSE', status: 'PENDING', amount: 1500, due_date: '2026-08-20', entity_name: 'Fornecedor X', category_id: 'c1', category_name: 'Fornecedor' },
+      { id: 'paid', type: 'INCOME', status: 'PAID', amount: 9999, due_date: '2026-07-01', payment_date: '2026-07-01', entity_name: 'Ignorar', category_id: 'c0' },
+      { id: 'inv', type: 'INCOME', status: 'PENDING', amount: 8888, due_date: '2026-12-01', entity_name: 'Aplicação', category_id: 'cinv', category_name: 'Investimento' },
+    ] as any[];
+    const categories = [
+      { id: 'c1', name: 'Fornecedor', type: 'EXPENSE', group: 'DESPESAS_VARIAVEIS' },
+      { id: 'cinv', name: 'Investimento', type: 'INCOME', group: 'INVESTIMENTOS' },
+    ] as any[];
+    const outlook = buildOpenCashOutlook(transactions, categories, now, 10);
+    assert.equal(outlook.receivableTotal, 8000);
+    assert.equal(outlook.payableTotal, 1500);
+    assert.equal(outlook.netOutlook, 6500);
+    assert.equal(outlook.overdueReceivable, 1000);
+    assert.equal(outlook.receivableCount, 3);
+    assert.equal(outlook.byClientReceivable[0].entity, 'Cliente B');
+    assert.equal(outlook.byClientReceivable[0].amount, 5000);
+    assert.equal(outlook.byClientReceivable[1].entity, 'Cliente A');
+    assert.equal(outlook.byClientReceivable[1].amount, 3000);
+    assert.equal(outlook.topReceivable[0].id, 'r1');
+    assert.ok(!outlook.topReceivable.some((r) => r.id === 'inv'));
   });
 
   it('computeAccountBalanceOverview soma total de todas as contas e investimentos', () => {
@@ -277,6 +306,17 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(hook, /listBalanceSnapshotsDirect/);
     assert.match(hook, /latestAccountBalances/);
     assert.match(hook, /name, bank_name, initial_balance/);
+  });
+
+  it('cockpit exibe caixa em aberto (a receber sem teto de prazo)', async () => {
+    const fs = await import('node:fs/promises');
+    const ui = await fs.readFile('components/dashboard/DashboardDiretoria.tsx', 'utf8');
+    assert.match(ui, /buildOpenCashOutlook/);
+    assert.match(ui, /Caixa em aberto \(futuro\)/);
+    assert.match(ui, /A receber em aberto/);
+    assert.match(ui, /open-cash-outlook-diretoria/);
+    assert.match(ui, /60\/90 dias/);
+    assert.match(ui, /from 'react'/);
   });
 
   it('handler serverless usa bundle CJS do motor financeiro (não import ESM de financialUtils)', async () => {

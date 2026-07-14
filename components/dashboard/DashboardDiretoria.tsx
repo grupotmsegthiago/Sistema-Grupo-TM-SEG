@@ -19,6 +19,7 @@ import {
   buildExpenseDonut,
   buildMarginVsGoalSeries,
   buildMissionStatusCounts,
+  buildOpenCashOutlook,
   buildParentMissionsSummary,
   buildPendingApprovals,
   buildQuotesFunnel,
@@ -186,6 +187,12 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const cashTitles = useMemo(
     () => buildCashTitleBreakdown(data.allTransactions, data.categories, period),
     [data.allTransactions, data.categories, period],
+  );
+
+  /** A receber/pagar em aberto — sem teto de prazo (60/90 dias etc.). */
+  const openCash = useMemo(
+    () => buildOpenCashOutlook(data.allTransactions, data.categories),
+    [data.allTransactions, data.categories],
   );
 
   const cashFlow = useMemo(() => buildDailyCashFlow(data.allTransactions, period, undefined, data.categories), [data.allTransactions, data.categories, period]);
@@ -366,6 +373,89 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
     </div>
   );
 
+  /** Futuro do caixa: tudo em aberto (vencido + a vencer), sem limite de 30/60/90 dias. */
+  const openCashOutlookSection = (
+    <div className="space-y-3" data-testid="open-cash-outlook-diretoria">
+      <p className="text-[11px] text-gray-500">
+        Títulos ainda não pagos — inclui clientes com prazo de 60/90 dias. Não depende do mês selecionado acima.
+      </p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KpiTile
+          label="A receber em aberto"
+          value={fmtBRL(openCash.receivableTotal)}
+          sub={`${openCash.receivableCount} título(s)${openCash.overdueReceivable > 0 ? ` · vencido ${fmtBRL(openCash.overdueReceivable)}` : ''}`}
+          accent="text-green-700"
+          icon={<ArrowUpCircle size={16} className="text-green-500" />}
+        />
+        <KpiTile
+          label="A pagar em aberto"
+          value={fmtBRL(openCash.payableTotal)}
+          sub={`${openCash.payableCount} título(s)${openCash.overduePayable > 0 ? ` · vencido ${fmtBRL(openCash.overduePayable)}` : ''}`}
+          accent="text-red-700"
+          icon={<ArrowDownCircle size={16} className="text-red-500" />}
+        />
+        <KpiTile
+          label="Saldo futuro (líquido)"
+          value={fmtBRL(openCash.netOutlook)}
+          sub="A receber − a pagar em aberto"
+          accent={openCash.netOutlook >= 0 ? 'text-green-700' : 'text-red-700'}
+        />
+        <KpiTile
+          label="Vencido a receber"
+          value={fmtBRL(openCash.overdueReceivable)}
+          sub="Já passou do vencimento"
+          accent={openCash.overdueReceivable > 0 ? 'text-amber-700' : 'text-gray-700'}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm" data-testid="open-receivable-by-client">
+          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">A receber por cliente</p>
+          <p className="text-[11px] text-gray-500 mt-0.5 mb-2">Quem concentra o que ainda vai entrar</p>
+          {openCash.byClientReceivable.length === 0 ? (
+            <p className="text-xs text-gray-400 py-2">Nenhum título a receber em aberto.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+              {openCash.byClientReceivable.map((row) => (
+                <li key={row.entity} className="py-2 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-gray-900 truncate">{row.entity}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">{row.count} título{row.count === 1 ? '' : 's'}</p>
+                  </div>
+                  <p className="text-xs font-black font-mono shrink-0 text-green-700">{fmtBRL(row.amount)}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <CashTitleList
+          title="Próximos a receber"
+          subtitle="Ordenados pelo vencimento (sem teto de prazo)"
+          rows={openCash.topReceivable}
+          totalCount={openCash.receivableCount}
+          tone="green"
+          dateLabel="Venc."
+        />
+        <CashTitleList
+          title="Próximos a pagar"
+          subtitle="Ordenados pelo vencimento (sem teto de prazo)"
+          rows={openCash.topPayable}
+          totalCount={openCash.payableCount}
+          tone="red"
+          dateLabel="Venc."
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={() => goTo('fin-transactions')}
+        className="text-[11px] text-red-700 hover:text-red-800 font-bold flex items-center gap-1"
+      >
+        Abrir Contas a Pagar / Receber <ChevronRight size={12} />
+      </button>
+    </div>
+  );
+
   const alertsWidget = (
     <Card title="Alertas Críticos" subtitle="Mesmos gatilhos dos e-mails operacionais" testId="widget-alertas-criticos">
       {alerts.length === 0 ? (
@@ -420,6 +510,8 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
         {operationalKpiRow}
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Saldos das Contas</p>
         {accountBalancesSection}
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Caixa em aberto (futuro)</p>
+        {openCashOutlookSection}
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Caixa (Contas a Pagar/Receber)</p>
         {cashKpiRow}
       </div>
@@ -516,6 +608,10 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
       <div className="lg:col-span-12 space-y-3">
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Saldos das Contas</p>
         {accountBalancesSection}
+      </div>
+      <div className="lg:col-span-12 space-y-3">
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Caixa em aberto (futuro)</p>
+        {openCashOutlookSection}
       </div>
       <div className="lg:col-span-12">{cashKpiRow}</div>
       <div className="lg:col-span-8">
