@@ -16,6 +16,7 @@ export default async function handler(req: any, res: any) {
     res.status(200).json(rows);
   } catch (e: any) {
     console.error('[investment/snapshots-all]', e?.message);
+    // Não engolir como [] sem sinal — o client tem fallback, mas logamos o motivo.
     res.status(200).json([]);
   }
 }

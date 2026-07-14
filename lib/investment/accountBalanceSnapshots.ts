@@ -42,11 +42,12 @@ function getSupabaseConfig(): { url: string; key: string; isServiceRole: boolean
   const serviceKey = String(
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '',
   ).trim();
-  const anonKey = String(
-    process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY,
+  const rawAnon = String(
+    process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '',
   ).trim();
+  const anonKey = decodeRef(rawAnon) === TMSEG_REF ? rawAnon : DEFAULT_SUPABASE_ANON_KEY;
   const key = serviceKey && decodeRef(serviceKey) === TMSEG_REF ? serviceKey : anonKey;
-  return { url, key, isServiceRole: key === serviceKey };
+  return { url, key, isServiceRole: key === serviceKey && decodeRef(serviceKey) === TMSEG_REF };
 }
 
 function restHeaders(key: string, extra?: Record<string, string>): Record<string, string> {
@@ -156,11 +157,11 @@ async function restSelect(filters: {
   since?: string;
 }): Promise<BalanceSnapshotRow[]> {
   const { url, key } = getSupabaseConfig();
-  const params = new URLSearchParams({ select: '*', order: 'recorded_at.asc' });
-  if (filters.accountId) params.set('account_id', `eq.${filters.accountId}`);
-  if (filters.since) params.set('recorded_at', `gte.${filters.since}`);
+  const parts = ['select=*', 'order=recorded_at.asc'];
+  if (filters.accountId) parts.push(`account_id=eq.${encodeURIComponent(filters.accountId)}`);
+  if (filters.since) parts.push(`recorded_at=gte.${encodeURIComponent(filters.since)}`);
 
-  const res = await fetch(`${url}/rest/v1/account_balance_snapshots?${params}`, {
+  const res = await fetch(`${url}/rest/v1/account_balance_snapshots?${parts.join('&')}`, {
     method: 'GET',
     headers: restHeaders(key),
   });
@@ -192,7 +193,8 @@ export async function listAllSnapshots(days: number): Promise<BalanceSnapshotRow
     await ensureSnapshotsTable();
     return await restSelect({ since: sinceIso(days) });
   } catch (err) {
-    console.warn('[account_balance_snapshots] listAll falhou:', err);
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn('[account_balance_snapshots] listAll falhou:', message);
     return [];
   }
 }
