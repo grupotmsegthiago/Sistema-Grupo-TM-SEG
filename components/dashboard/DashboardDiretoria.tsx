@@ -12,6 +12,7 @@ import DiretoriaSistemaTab from './DiretoriaSistemaTab';
 import { useDashboardDiretoriaData } from '../../lib/dashboardDiretoria/useDashboardDiretoriaData';
 import {
   buildArApByMonth,
+  buildCashTitleBreakdown,
   buildClientRevenueCostBars,
   buildCriticalAlerts,
   buildDailyCashFlow,
@@ -28,7 +29,7 @@ import {
   fmtShort,
 } from '../../lib/dashboardDiretoria/aggregations';
 import { buildYearOptions, createDefaultPeriod, formatPeriodRangeHint } from '../../lib/dashboardDiretoria/periodUtils';
-import type { DashboardPeriod, DashboardPeriodMode, DiretoriaTab } from '../../lib/dashboardDiretoria/types';
+import type { CashTitleRow, DashboardPeriod, DashboardPeriodMode, DiretoriaTab } from '../../lib/dashboardDiretoria/types';
 import { MARGIN_GOAL_PCT } from '../../lib/dashboardDiretoria/types';
 
 const CHART_COLORS = ['#dc2626', '#16a34a', '#2563eb', '#d97706', '#7c3aed', '#0891b2'];
@@ -85,6 +86,59 @@ const KpiTile: React.FC<{ label: string; value: string; sub?: string; accent?: s
   </div>
 );
 
+function formatCashDate(iso: string): string {
+  const d = String(iso || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return d || '—';
+  return `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+}
+
+const CashTitleList: React.FC<{
+  title: string;
+  subtitle: string;
+  rows: CashTitleRow[];
+  totalCount: number;
+  tone: 'green' | 'red';
+  dateLabel: string;
+}> = ({ title, subtitle, rows, totalCount, tone, dateLabel }) => {
+  const amountClass = tone === 'green' ? 'text-green-700' : 'text-red-700';
+  const badgeClass = tone === 'green' ? 'bg-green-50 text-green-800 border-green-100' : 'bg-red-50 text-red-800 border-red-100';
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm" data-testid={`cash-titles-${tone}-${dateLabel}`}>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">{title}</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">{subtitle}</p>
+        </div>
+        <span className={`text-[10px] font-bold border rounded-md px-2 py-0.5 shrink-0 ${badgeClass}`}>
+          {totalCount} título{totalCount === 1 ? '' : 's'}
+        </span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-xs text-gray-400 py-2">Nenhum título neste grupo.</p>
+      ) : (
+        <ul className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+          {rows.map((row) => (
+            <li key={row.id} className="py-2 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-gray-900 truncate">{row.description}</p>
+                <p className="text-[10px] text-gray-500 mt-0.5 truncate">
+                  {dateLabel} {formatCashDate(row.date)}
+                  {row.entity ? ` · ${row.entity}` : ''}
+                  {row.category ? ` · ${row.category}` : ''}
+                </p>
+              </div>
+              <p className={`text-xs font-black font-mono shrink-0 ${amountClass}`}>{fmtBRL(row.amount)}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+      {totalCount > rows.length && (
+        <p className="text-[10px] text-gray-400 mt-2">Mostrando os {rows.length} maiores de {totalCount}.</p>
+      )}
+    </div>
+  );
+};
+
 interface Props {
   onNavigate?: (screenId: string) => void;
 }
@@ -121,6 +175,11 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const totalExpenseInPeriod = useMemo(
     () => Math.round((cash.expensePaid + cash.pendingPayable) * 100) / 100,
     [cash.expensePaid, cash.pendingPayable],
+  );
+
+  const cashTitles = useMemo(
+    () => buildCashTitleBreakdown(data.allTransactions, data.categories, period),
+    [data.allTransactions, data.categories, period],
   );
 
   const cashFlow = useMemo(() => buildDailyCashFlow(data.allTransactions, period), [data.allTransactions, period]);
@@ -182,33 +241,104 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
       {periodRangeHint && (
         <p className="text-[10px] text-gray-500 font-medium">{periodRangeHint}</p>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        <KpiTile label="Entrou" value={fmtBRL(cash.incomePaid)} sub="Já recebido (data do pagamento)" accent="text-green-600" icon={<ArrowUpCircle size={16} className="text-green-500" />} compact />
-        <KpiTile label="Saiu" value={fmtBRL(cash.expensePaid)} sub="Já pago (data do pagamento)" accent="text-red-600" icon={<ArrowDownCircle size={16} className="text-red-500" />} compact />
-        <KpiTile label="Falta entrar" value={fmtBRL(cash.pendingReceivable)} sub="Ainda em aberto (venc. no período)" accent="text-green-600" compact />
-        <KpiTile label="Falta pagar" value={fmtBRL(cash.pendingPayable)} sub="Ainda em aberto (venc. no período)" accent="text-red-600" compact />
+
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-700 leading-relaxed">
+        <p className="font-black uppercase tracking-wide text-slate-500 text-[10px] mb-1">Como ler o caixa</p>
+        <p>
+          <span className="font-bold">Realizado</span> = dinheiro que já entrou/saiu (data do pagamento).{' '}
+          <span className="font-bold">Pendente</span> = títulos ainda em aberto com vencimento no período.{' '}
+          Os totais somam os dois. A <span className="font-bold">previsão</span> olha só o pendente.
+        </p>
       </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <KpiTile label="Já entrou" value={fmtBRL(cash.incomePaid)} sub="Pago no período" accent="text-green-600" icon={<ArrowUpCircle size={16} className="text-green-500" />} compact />
+        <KpiTile label="Já saiu" value={fmtBRL(cash.expensePaid)} sub="Pago no período" accent="text-red-600" icon={<ArrowDownCircle size={16} className="text-red-500" />} compact />
+        <KpiTile label="Falta entrar" value={fmtBRL(cash.pendingReceivable)} sub="A receber (venc. no período)" accent="text-green-600" compact />
+        <KpiTile label="Falta pagar" value={fmtBRL(cash.pendingPayable)} sub="A pagar (venc. no período)" accent="text-red-600" compact />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">Resultado realizado</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">Já entrou − já saiu</p>
+          <p className={`text-xl font-black font-mono mt-1 ${cash.cashResult >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {fmtBRL(cash.cashResult)}
+          </p>
+          <p className="text-[10px] text-gray-400 mt-1 font-mono">
+            {fmtBRL(cash.incomePaid)} − {fmtBRL(cash.expensePaid)}
+          </p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">Previsão do pendente</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">Falta entrar − falta pagar</p>
+          <p className={`text-xl font-black font-mono mt-1 ${cash.cashForecast >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {fmtBRL(cash.cashForecast)}
+          </p>
+          <p className="text-[10px] text-gray-400 mt-1 font-mono">
+            {fmtBRL(cash.pendingReceivable)} − {fmtBRL(cash.pendingPayable)}
+          </p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="bg-green-50 border border-green-100 rounded-xl p-3">
           <p className="text-[10px] uppercase tracking-wider text-green-700 font-black">Total entradas no período</p>
           <p className="text-sm font-black font-mono text-green-800 mt-1">{fmtBRL(totalIncomeInPeriod)}</p>
-          <p className="text-[10px] text-green-700 mt-0.5">Pagas + a receber (vencimento no período)</p>
+          <p className="text-[10px] text-green-700 mt-0.5">Já entrou + falta entrar</p>
         </div>
         <div className="bg-red-50 border border-red-100 rounded-xl p-3">
           <p className="text-[10px] uppercase tracking-wider text-red-700 font-black">Total saídas no período</p>
           <p className="text-sm font-black font-mono text-red-800 mt-1">{fmtBRL(totalExpenseInPeriod)}</p>
-          <p className="text-[10px] text-red-700 mt-0.5">Pagas + a pagar (vencimento no período)</p>
+          <p className="text-[10px] text-red-700 mt-0.5">Já saiu + falta pagar</p>
         </div>
       </div>
-      <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-        <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">Previsão do caixa</p>
-        <p className="text-[11px] text-gray-500 mt-0.5">Saldo pendente: a receber − a pagar (vencimento no período)</p>
-        <p className={`text-2xl font-black font-mono mt-2 ${cash.cashForecast >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-          {fmtBRL(cash.cashForecast)}
-        </p>
-        <p className="text-[10px] text-gray-400 mt-1 font-mono">
-          {fmtBRL(cash.pendingReceivable)} − {fmtBRL(cash.pendingPayable)}
-        </p>
+
+      <div className="space-y-2" data-testid="cash-title-breakdown">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Maiores títulos do período</p>
+          <button
+            type="button"
+            onClick={() => goTo('fin-transactions')}
+            className="text-[11px] text-red-700 hover:text-red-800 font-bold flex items-center gap-1"
+          >
+            Abrir lançamentos <ChevronRight size={12} />
+          </button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <CashTitleList
+            title="Maiores entradas já recebidas"
+            subtitle="Pagamentos confirmados no período"
+            rows={cashTitles.paidIncome}
+            totalCount={cashTitles.paidIncomeCount}
+            tone="green"
+            dateLabel="Pago"
+          />
+          <CashTitleList
+            title="Maiores saídas já pagas"
+            subtitle="Pagamentos confirmados no período"
+            rows={cashTitles.paidExpense}
+            totalCount={cashTitles.paidExpenseCount}
+            tone="red"
+            dateLabel="Pago"
+          />
+          <CashTitleList
+            title="Maiores a receber"
+            subtitle="Em aberto com vencimento no período"
+            rows={cashTitles.pendingReceivable}
+            totalCount={cashTitles.pendingReceivableCount}
+            tone="green"
+            dateLabel="Venc."
+          />
+          <CashTitleList
+            title="Maiores a pagar"
+            subtitle="Em aberto com vencimento no período"
+            rows={cashTitles.pendingPayable}
+            totalCount={cashTitles.pendingPayableCount}
+            tone="red"
+            dateLabel="Venc."
+          />
+        </div>
       </div>
     </div>
   );

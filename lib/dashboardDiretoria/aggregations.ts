@@ -8,7 +8,7 @@ import {
 } from '../missionFinancialsCanonical';
 import { isInternalGroupTransfer } from '../financialInternalTransfer';
 import { getPeriodRange, getCashMovementDate } from './periodUtils';
-import type { CriticalAlert, DashboardPeriod, PendingApprovalItem } from './types';
+import type { CashKpis, CashTitleBreakdown, CashTitleRow, CriticalAlert, DashboardPeriod, OperationalKpis, PendingApprovalItem } from './types';
 import { DEFAULT_MONTHLY_REVENUE_GOAL, MARGIN_GOAL_PCT } from './types';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -172,6 +172,64 @@ export function computeCashKpis(
     cashMarginPct,
     totalCash,
     cashForecast,
+  };
+}
+
+function toCashTitleRow(
+  t: FinancialTransaction,
+  bucket: 'paid' | 'pending',
+): CashTitleRow {
+  const date = bucket === 'paid' ? getCashMovementDate(t) : getDueDateIso(t);
+  const desc = String(t.description || '').trim() || '(sem descrição)';
+  const entity = String(t.entity_name || '').trim();
+  return {
+    id: String(t.id),
+    description: desc,
+    amount: round2(Number(t.amount) || 0),
+    date,
+    category: String(t.category_name || 'Sem categoria'),
+    entity,
+    status: String(t.status || ''),
+    type: t.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
+    bucket,
+  };
+}
+
+function sortByAmountDesc(rows: CashTitleRow[]): CashTitleRow[] {
+  return [...rows].sort((a, b) => b.amount - a.amount);
+}
+
+/**
+ * Ranking dos títulos que compõem o caixa do período — mesma regra de computeCashKpis
+ * (exclui transferência interna e movimento de investimento).
+ */
+export function buildCashTitleBreakdown(
+  allTransactions: FinancialTransaction[],
+  categories: FinancialCategory[],
+  period: DashboardPeriod,
+  now = new Date(),
+  limit = 12,
+): CashTitleBreakdown {
+  const investmentIds = new Set(categories.filter(c => c.group === 'INVESTIMENTOS').map(c => c.id));
+  const paid = filterPaidTransactionsInPeriod(allTransactions, period, now)
+    .filter(t => !isInternalGroupTransfer(t) && !isInvestmentCashMovement(t, investmentIds, categories));
+  const pending = filterPendingTransactionsInPeriod(allTransactions, period, now)
+    .filter(t => !isInternalGroupTransfer(t) && !isInvestmentCashMovement(t, investmentIds, categories));
+
+  const paidIncomeAll = paid.filter(t => t.type === 'INCOME').map(t => toCashTitleRow(t, 'paid'));
+  const paidExpenseAll = paid.filter(t => t.type === 'EXPENSE').map(t => toCashTitleRow(t, 'paid'));
+  const pendingRecvAll = pending.filter(t => t.type === 'INCOME').map(t => toCashTitleRow(t, 'pending'));
+  const pendingPayAll = pending.filter(t => t.type === 'EXPENSE').map(t => toCashTitleRow(t, 'pending'));
+
+  return {
+    paidIncome: sortByAmountDesc(paidIncomeAll).slice(0, limit),
+    paidExpense: sortByAmountDesc(paidExpenseAll).slice(0, limit),
+    pendingReceivable: sortByAmountDesc(pendingRecvAll).slice(0, limit),
+    pendingPayable: sortByAmountDesc(pendingPayAll).slice(0, limit),
+    paidIncomeCount: paidIncomeAll.length,
+    paidExpenseCount: paidExpenseAll.length,
+    pendingReceivableCount: pendingRecvAll.length,
+    pendingPayableCount: pendingPayAll.length,
   };
 }
 
