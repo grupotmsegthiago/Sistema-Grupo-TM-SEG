@@ -2950,12 +2950,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         // dialog (mantém aberto). Em sucesso, re-dispara o submit que
         // estava suspenso (toll_value já gravado, status agora pode ir
         // junto). Task #45.
-        const { error } = await supabase.from('missions').update({ toll_value: v }).eq('id', mission.id);
+        // Cliente = valor real × 1,2 (se > R$ 10); fornecedor = valor real.
+        const pair = tollPersistencePair(v, !!mission.is_same_os);
+        const { error } = await supabase.from('missions').update({
+            toll_value: pair.toll_value,
+            toll_value_provider: pair.toll_value_provider,
+        }).eq('id', mission.id);
         if (error) {
             console.error('[TollConfirm] persistência falhou', error);
             throw new Error('Não foi possível salvar o pedágio confirmado. Tente novamente.');
         }
-        mission.toll_value = v;
+        mission.toll_value = pair.toll_value;
+        (mission as any).toll_value_provider = pair.toll_value_provider;
         const resume = resumeSubmitRef.current;
         resumeSubmitRef.current = null;
         setPendingTollConfirm(null);
