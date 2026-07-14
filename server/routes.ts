@@ -5,7 +5,7 @@ import { createClient, type RealtimeChannel, type SupabaseClient } from "@supaba
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseServerKey, getSupabaseServiceRoleKey, getSupabaseUrl } from "./supabaseConfig";
 import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
-import { computeRouteDistanceKm, normalizeRouteAddress } from "../lib/routeDistance";
+import { computeRouteDistanceKm, computeRouteProgressKm, normalizeRouteAddress } from "../lib/routeDistance";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
@@ -7369,7 +7369,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  /** Progresso A→B / A→C via Google Distance Matrix (origem, posição atual, destino). */
+  /** Progresso A→atual→B via Directions API (origem, posição atual, destino). */
   app.get('/api/route-progress', requireAuth, async (req: Request, res: Response) => {
     try {
       const origin = (req.query.origin as string || '').trim();
@@ -7378,46 +7378,13 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       if (!origin || !destination || !current) {
         return res.status(400).json({ success: false, error: 'origin, destination e current são obrigatórios' });
       }
-      const key = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || '';
-      if (!key) {
-        return res.status(500).json({ success: false, error: 'GOOGLE_MAPS_API_KEY não configurada' });
+
+      const result = await computeRouteProgressKm({ origin, destination, current });
+      if (!result.success) {
+        return res.json({ success: false, error: result.error || 'ROTA_TOTAL_INDISPONIVEL' });
       }
 
-      const matrixUrl = (origins: string, destinations: string) =>
-        `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origins)}&destinations=${encodeURIComponent(destinations)}&mode=driving&units=metric&language=pt-BR&region=br&departure_time=now&key=${key}`;
-
-      const [legAC, legBC] = await Promise.all([
-        fetch(matrixUrl(origin, `${current}|${destination}`)).then(r => r.json()),
-        fetch(matrixUrl(current, destination)).then(r => r.json()),
-      ]);
-
-      const elAB = legAC?.rows?.[0]?.elements?.[0];
-      const elAC = legAC?.rows?.[0]?.elements?.[1];
-      const elBC = legBC?.rows?.[0]?.elements?.[0];
-
-      if (elAC?.status !== 'OK' || !elAC.distance?.value) {
-        return res.json({ success: false, error: elAC?.status || legAC?.status || 'ROTA_TOTAL_INDISPONIVEL' });
-      }
-
-      const totalKm = Math.round((elAC.distance.value / 1000) * 10) / 10;
-      let traveledKm = 0;
-      let remainingKm = totalKm;
-      let etaMinutes: number | null = null;
-
-      if (elAB?.status === 'OK' && elAB.distance?.value != null) {
-        traveledKm = Math.round((elAB.distance.value / 1000) * 10) / 10;
-      }
-      if (elBC?.status === 'OK' && elBC.distance?.value != null) {
-        remainingKm = Math.round((elBC.distance.value / 1000) * 10) / 10;
-        const durSec = elBC.duration_in_traffic?.value ?? elBC.duration?.value;
-        if (durSec) etaMinutes = Math.max(1, Math.round(durSec / 60));
-      } else if (totalKm > traveledKm) {
-        remainingKm = Math.round((totalKm - traveledKm) * 10) / 10;
-      }
-
-      traveledKm = Math.min(traveledKm, totalKm);
-      const progressPct = totalKm > 0 ? Math.min(100, Math.max(0, Math.round((traveledKm / totalKm) * 100))) : 0;
-
+      const etaMinutes = result.etaMinutes;
       const etaLabel = etaMinutes
         ? (() => {
             const h = Math.floor(etaMinutes / 60);
@@ -7428,13 +7395,13 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
       return res.json({
         success: true,
-        progressPct,
-        traveledKm,
-        totalKm,
-        remainingKm,
+        progressPct: result.progressPct,
+        traveledKm: result.traveledKm,
+        totalKm: result.totalKm,
+        remainingKm: result.remainingKm,
         etaMinutes,
         etaLabel,
-        source: 'google',
+        source: result.source || 'directions',
       });
     } catch (e: any) {
       return res.status(500).json({ success: false, error: e?.message || 'erro' });

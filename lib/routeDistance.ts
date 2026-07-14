@@ -8,6 +8,11 @@ export type RouteDistanceResult = {
 
 const PUBLIC_GOOGLE_MAPS_KEY = 'AIzaSyBIs-lrtAP6hoA1z_VA4Gbx1ujA-AlJe2k';
 
+/** Detecta "lat,lng" (ex.: -23.55,-46.63) — não anexar ", Brasil". */
+export function looksLikeLatLngPair(value: string): boolean {
+  return /^-?\d{1,3}(?:\.\d+)?\s*,\s*-?\d{1,3}(?:\.\d+)?$/.test(String(value || '').trim());
+}
+
 export function googleMapsKeys(): string[] {
   return Array.from(new Set([
     process.env.GOOGLE_MAPS_API_KEY,
@@ -19,6 +24,7 @@ export function googleMapsKeys(): string[] {
 function normalizeRouteAddress(address: string): string {
   const trimmed = String(address || '').trim();
   if (!trimmed) return '';
+  if (looksLikeLatLngPair(trimmed)) return trimmed.replace(/\s+/g, '');
   return /,\s*brasil\s*$/i.test(trimmed) ? trimmed : `${trimmed}, Brasil`;
 }
 
@@ -59,7 +65,7 @@ async function tryDirectionsApi(origin: string, destination: string, key: string
   };
 }
 
-/** Calcula KM rodoviário origem→destino. Tenta Distance Matrix legado e, se falhar, Directions API REST. */
+/** Calcula KM rodoviário origem→destino. Prefere Directions (Distance Matrix legado costuma estar desligado). */
 export async function computeRouteDistanceKm(originRaw: string, destinationRaw: string): Promise<RouteDistanceResult> {
   const origin = normalizeRouteAddress(originRaw);
   const destination = normalizeRouteAddress(destinationRaw);
@@ -69,19 +75,99 @@ export async function computeRouteDistanceKm(originRaw: string, destinationRaw: 
 
   let lastError = 'NO_RESULT';
   for (const key of googleMapsKeys()) {
-    try {
-      const matrix = await tryDistanceMatrix(origin, destination, key);
-      if (matrix?.success) return matrix;
-    } catch (e: any) {
-      lastError = e?.message || lastError;
-    }
+    // Directions primeiro: Distance Matrix legado retorna LegacyApiNotActivatedMapError no projeto atual.
     try {
       const directions = await tryDirectionsApi(origin, destination, key);
       if (directions?.success) return directions;
     } catch (e: any) {
       lastError = e?.message || lastError;
     }
+    try {
+      const matrix = await tryDistanceMatrix(origin, destination, key);
+      if (matrix?.success) return matrix;
+    } catch (e: any) {
+      lastError = e?.message || lastError;
+    }
   }
 
   return { success: false, error: lastError };
+}
+
+/** Progresso da missão: total = origem→destino, restante = atual→destino. */
+export function progressFromRouteLegs(totalKm: number, remainingKm: number): {
+  progressPct: number;
+  traveledKm: number;
+  totalKm: number;
+  remainingKm: number;
+} {
+  const total = Math.max(0, Number(totalKm) || 0);
+  const remaining = Math.max(0, Number(remainingKm) || 0);
+  const traveled = total > 0 ? Math.min(total, Math.max(0, Math.round((total - remaining) * 10) / 10)) : 0;
+  const progressPct = total > 0 ? Math.min(100, Math.max(0, Math.round((traveled / total) * 100))) : 0;
+  return {
+    progressPct,
+    traveledKm: traveled,
+    totalKm: Math.round(total * 10) / 10,
+    remainingKm: Math.round(Math.min(remaining, total || remaining) * 10) / 10,
+  };
+}
+
+/** Calcula progresso A→atual→B via Directions API (origem, posição atual, destino). */
+export async function computeRouteProgressKm(params: {
+  origin: string;
+  destination: string;
+  current: string;
+}): Promise<{
+  success: boolean;
+  progressPct: number;
+  traveledKm: number;
+  totalKm: number;
+  remainingKm: number;
+  etaMinutes: number | null;
+  source?: string;
+  error?: string;
+}> {
+  const origin = String(params.origin || '').trim();
+  const destination = String(params.destination || '').trim();
+  const current = String(params.current || '').trim();
+  if (!origin || !destination || !current) {
+    return {
+      success: false,
+      progressPct: 0,
+      traveledKm: 0,
+      totalKm: 0,
+      remainingKm: 0,
+      etaMinutes: null,
+      error: 'origin, destination e current são obrigatórios',
+    };
+  }
+
+  const [totalRes, remainRes] = await Promise.all([
+    computeRouteDistanceKm(origin, destination),
+    computeRouteDistanceKm(current, destination),
+  ]);
+
+  if (!totalRes.success || !(totalRes.distanceKm! > 0)) {
+    return {
+      success: false,
+      progressPct: 0,
+      traveledKm: 0,
+      totalKm: 0,
+      remainingKm: 0,
+      etaMinutes: null,
+      error: totalRes.error || 'ROTA_TOTAL_INDISPONIVEL',
+    };
+  }
+
+  const remainingKm = remainRes.success && remainRes.distanceKm != null
+    ? remainRes.distanceKm
+    : totalRes.distanceKm!;
+  const legs = progressFromRouteLegs(totalRes.distanceKm!, remainingKm);
+
+  return {
+    success: true,
+    ...legs,
+    etaMinutes: remainRes.durationMin ?? null,
+    source: remainRes.source || totalRes.source || 'directions',
+  };
 }

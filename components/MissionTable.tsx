@@ -21,6 +21,7 @@ import {
   formatAgentShortName,
   parseMonitoringLocation,
 } from '../lib/monitoringWhatsAppReport';
+import { resolveRouteProgressPct } from '../lib/routeProgress';
 import MissionStatusModal from './MissionStatusModal';
 import UpdateMissionModal from './UpdateMissionModal';
 import MissionCard from './MissionCard';
@@ -1686,6 +1687,18 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 }
             } catch {}
         }
+        let progressPct = mission.progress || 0;
+        if (!isDHL && progressPct <= 0 && mission.mapLink && mission.origin && mission.destination) {
+            try {
+                const live = await resolveRouteProgressPct({
+                    origin: mission.origin,
+                    destination: mission.destination,
+                    mapLink: mission.mapLink,
+                    client: mission.client,
+                });
+                if (live && live.progressPct > 0) progressPct = live.progressPct;
+            } catch { /* mantém progress salvo */ }
+        }
         const text = isDHL ? `*ESCOLTA ARMADA*⚡️
 
 🗒️ *SE:* ${(mission.dhl_se_number || '').toString().trim().toUpperCase()}
@@ -1722,7 +1735,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             escortVehicle: mission.vehicleId,
             agent1: mission.agent1,
             agent2: mission.agent2,
-            progress: mission.progress || 0,
+            progress: progressPct,
             occurrence: locationOccurrence,
             locationCity: cityField,
             mapLink: mission.mapLink,

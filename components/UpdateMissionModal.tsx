@@ -2309,15 +2309,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     applyCeva200km: editData.applyCeva200km,
                     client: mission?.client,
                 });
-                if (routeProgress) {
-                    progressValue = routeProgress.progressPct;
-                } else if (kmRodado > 0 && plannedDist > 0) {
-                    progressValue = Math.min(100, Math.round((kmRodado / plannedDist) * 100));
-                } else if (editData.manualProgress > 0) {
-                    progressValue = editData.manualProgress;
-                } else {
-                    progressValue = 0;
-                }
+                const odometerPct = (kmRodado > 0 && plannedDist > 0)
+                    ? Math.min(100, Math.round((kmRodado / plannedDist) * 100))
+                    : 0;
+                // Usa o melhor sinal disponível; não zera progresso já calculado na UI.
+                const candidates = [
+                    routeProgress?.progressPct ?? -1,
+                    odometerPct,
+                    editData.manualProgress || 0,
+                    mission?.progress || 0,
+                ].filter((n) => Number.isFinite(n) && n >= 0);
+                progressValue = candidates.length ? Math.min(100, Math.max(...candidates)) : 0;
             }
 
             if (editData.provider && editData.provider.trim() !== '' && 
