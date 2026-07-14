@@ -11,6 +11,7 @@ import {
   buildDailyCashFlow,
   buildCashTitleBreakdown,
   buildOpenCashOutlook,
+  resolveOpenCashEntityName,
 } from '../lib/dashboardDiretoria/aggregations';
 import { getPeriodRange, getCashMovementDate, formatPeriodRangeHint } from '../lib/dashboardDiretoria/periodUtils';
 import { MissionStatus } from '../types';
@@ -101,6 +102,28 @@ describe('dashboardDiretoria aggregations', () => {
     assert.equal(outlook.byClientReceivable[1].amount, 3000);
     assert.equal(outlook.topReceivable[0].id, 'r1');
     assert.ok(!outlook.topReceivable.some((r) => r.id === 'inv'));
+  });
+
+  it('resolveOpenCashEntityName troca "Outros" pelo cliente lido na descrição', () => {
+    assert.equal(resolveOpenCashEntityName({ entity_name: 'Outros', description: 'DHL JUNHO' }), 'DHL');
+    assert.equal(resolveOpenCashEntityName({ entity_name: 'Outros', description: 'ceva mensal junho 2026' }), 'CEVA');
+    assert.equal(resolveOpenCashEntityName({ entity_name: 'CESLOG LTDA', description: 'x' }), 'CESLOG LTDA');
+    assert.equal(
+      resolveOpenCashEntityName({ entity_name: 'Outros', description: 'titulo generico' }),
+      'Cliente não informado no título',
+    );
+  });
+
+  it('buildOpenCashOutlook NÃO agrupa receita como "Outros" quando descrição tem cliente', () => {
+    const now = new Date(2026, 6, 14, 12, 0, 0);
+    const transactions = [
+      { id: 'd1', type: 'INCOME', status: 'PENDING', amount: 800_000, due_date: '2026-08-13', entity_name: 'Outros', description: 'DHL JUNHO', category_id: 'c0' },
+      { id: 'c1', type: 'INCOME', status: 'PENDING', amount: 275_000, due_date: '2026-09-10', entity_name: 'Outros', description: 'ceva mensal junho 2026', category_id: 'c0' },
+    ] as any[];
+    const outlook = buildOpenCashOutlook(transactions, [], now, 10);
+    assert.equal(outlook.byClientReceivable.find((r) => r.entity === 'DHL')?.amount, 800_000);
+    assert.equal(outlook.byClientReceivable.find((r) => r.entity === 'CEVA')?.amount, 275_000);
+    assert.ok(!outlook.byClientReceivable.some((r) => /^outros?$/i.test(r.entity)));
   });
 
   it('computeAccountBalanceOverview soma total de todas as contas e investimentos', () => {
@@ -304,7 +327,15 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(ui, /operationalTotal/);
     assert.match(ui, /liquidez-resumo-diretoria/);
     assert.match(ui, /open-cash-outlook-diretoria/);
+    assert.match(ui, /Dívidas · Contas · Receita/);
+    assert.match(ui, /Caixa do período \(liquidez\)/);
+    assert.match(ui, /resolveOpenCashEntityName|Outros/);
     assert.doesNotMatch(ui, /Saldo total de todas as contas/);
+    // Cards ficam acima da Operação (OS) e do caixa do período
+    const idxCards = ui.indexOf("Dívidas · Contas · Receita");
+    const idxOp = ui.indexOf('Operação (OS)');
+    const idxCaixa = ui.indexOf('Caixa do período (liquidez)');
+    assert.ok(idxCards > 0 && idxOp > idxCards && idxCaixa > idxOp);
     assert.match(ui, /from 'react'/);
     assert.match(hook, /listBalanceSnapshotsDirect/);
     assert.match(hook, /latestAccountBalances/);

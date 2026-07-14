@@ -299,6 +299,27 @@ export function buildCashTitleBreakdown(
 }
 
 /**
+ * "Outros" no cadastro = cliente não preenchido no título.
+ * Tenta recuperar DHL/CEVA/etc. pela descrição para o ranking ficar legível.
+ */
+export function resolveOpenCashEntityName(t: {
+  entity_name?: string | null;
+  description?: string | null;
+}): string {
+  const entity = String(t.entity_name || '').trim();
+  if (entity && !/^outros?$/i.test(entity)) return entity;
+
+  const desc = String(t.description || '').toUpperCase();
+  if (/\bDHL\b/.test(desc)) return 'DHL';
+  if (/\bCEVA\b/.test(desc)) return 'CEVA';
+  if (/\bCESARI\b|\bCESLOG\b/.test(desc)) return 'CESLOG / Cesari';
+  if (/\bPRESTEX\b/.test(desc)) return 'PRESTEX';
+  if (/\bUNIDOCKS\b/.test(desc)) return 'DHL UniDocks';
+
+  return 'Cliente não informado no título';
+}
+
+/**
  * Títulos em aberto no caixa operacional — sem teto de prazo (inclui 60/90 dias).
  * Independente do mês selecionado no cockpit (visão de futuro / liquidez).
  */
@@ -321,8 +342,18 @@ export function buildOpenCashOutlook(
   const recv = open.filter(t => t.type === 'INCOME');
   const pay = open.filter(t => t.type === 'EXPENSE');
 
-  const recvRows = recv.map(t => toCashTitleRow(t, 'pending'));
-  const payRows = pay.map(t => toCashTitleRow(t, 'pending'));
+  const recvRows = recv.map(t => {
+    const row = toCashTitleRow(t, 'pending');
+    return { ...row, entity: resolveOpenCashEntityName(t) };
+  });
+  const payRows = pay.map(t => {
+    const row = toCashTitleRow(t, 'pending');
+    const entity = resolveOpenCashEntityName(t);
+    return {
+      ...row,
+      entity: entity === 'Cliente não informado no título' ? (row.entity || entity) : entity,
+    };
+  });
 
   const receivableTotal = round2(recv.reduce((s, t) => s + Number(t.amount || 0), 0));
   const payableTotal = round2(pay.reduce((s, t) => s + Number(t.amount || 0), 0));
@@ -335,7 +366,7 @@ export function buildOpenCashOutlook(
 
   const byEntity = new Map<string, OpenReceivableByEntity>();
   for (const row of recvRows) {
-    const entity = row.entity || '(sem cliente)';
+    const entity = row.entity || 'Cliente não informado no título';
     const prev = byEntity.get(entity) || { entity, amount: 0, count: 0 };
     prev.amount = round2(prev.amount + row.amount);
     prev.count += 1;

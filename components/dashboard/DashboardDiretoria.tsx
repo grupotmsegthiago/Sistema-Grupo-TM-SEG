@@ -401,7 +401,9 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm" data-testid="open-receivable-by-client">
           <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">Receita em aberto por cliente</p>
-          <p className="text-[11px] text-gray-500 mt-0.5 mb-2">Quem concentra o que ainda vai entrar</p>
+          <p className="text-[11px] text-gray-500 mt-0.5 mb-2">
+            Quem concentra o que ainda vai entrar. Se o título veio como &quot;Outros&quot;, o sistema tenta ler o cliente na descrição (ex.: DHL, CEVA).
+          </p>
           {openCash.byClientReceivable.length === 0 ? (
             <p className="text-xs text-gray-400 py-2">Nenhum título a receber em aberto.</p>
           ) : (
@@ -496,13 +498,13 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const renderGeral = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
       <div className="lg:col-span-12 space-y-3">
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Operação (OS)</p>
-        {operationalKpiRow}
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Liquidez</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Dívidas · Contas · Receita</p>
         {liquidezResumoSection}
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Operação (OS)</p>
+        {operationalKpiRow}
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Detalhe do em aberto</p>
         {openCashOutlookSection}
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Caixa do período</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Caixa do período (liquidez)</p>
         {cashKpiRow}
       </div>
 
@@ -596,14 +598,17 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const renderFinanceiro = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
       <div className="lg:col-span-12 space-y-3">
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Liquidez</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Dívidas · Contas · Receita</p>
         {liquidezResumoSection}
       </div>
       <div className="lg:col-span-12 space-y-3">
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Detalhe do em aberto</p>
         {openCashOutlookSection}
       </div>
-      <div className="lg:col-span-12">{cashKpiRow}</div>
+      <div className="lg:col-span-12 space-y-3">
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Caixa do período (liquidez)</p>
+        {cashKpiRow}
+      </div>
       <div className="lg:col-span-8">
         <Card title="Fluxo de Caixa Diário" subtitle="Transações pagas">
           <div className="h-64">
