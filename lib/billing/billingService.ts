@@ -102,6 +102,38 @@ export function getPlanLimitBrl(): number {
   return usdToBrl(getPlanMonthlyUsd());
 }
 
+/** Converte valor on-demand da API Cursor (centavos ou dólares) para USD. */
+export function cursorOnDemandToUsd(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  // Valores >= 100 costumam ser centavos (ex.: 8064 → US$ 80,64).
+  if (n >= 100) return round4(n / 100);
+  return round4(n);
+}
+
+/** Dias até o fim do ciclo e % de tempo decorrido (0–100). */
+export function computeCycleClock(
+  billingCycleStart: string | null | undefined,
+  billingCycleEnd: string | null | undefined,
+  now = new Date(),
+): { daysUntilCycleReset: number | null; cycleTimeElapsedPct: number | null } {
+  if (!billingCycleStart || !billingCycleEnd) {
+    return { daysUntilCycleReset: null, cycleTimeElapsedPct: null };
+  }
+  const start = new Date(billingCycleStart).getTime();
+  const end = new Date(billingCycleEnd).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return { daysUntilCycleReset: null, cycleTimeElapsedPct: null };
+  }
+  const t = now.getTime();
+  const daysLeft = Math.max(0, Math.ceil((end - t) / 86400000));
+  const elapsed = Math.min(100, Math.max(0, ((t - start) / (end - start)) * 100));
+  return {
+    daysUntilCycleReset: daysLeft,
+    cycleTimeElapsedPct: round2(elapsed),
+  };
+}
+
 function resolveAmountBrl(input: BillingUsageInput): { amountUsd: number; amountBrl: number } {
   const exchangeRate = getBillingExchangeRate();
   const iofPct = getBillingIofPct();
@@ -334,6 +366,7 @@ export async function getBillingMonthSummary(month = referenceMonthFromDate()): 
     : round2(Math.max(0, planLimitBrl - spentBrl));
   const entries = filterBillingLogRows(await getBillingUsageLog(500, month));
   const isPlaceholder = !hasCursorMirror && spentBrl <= 0 && entries.length === 0;
+  const cycleClock = computeCycleClock(billingCycleStart, billingCycleEnd);
 
   let thermometer: BillingMonthSummary['thermometer'] = 'ok';
   if (!isPlaceholder) {
@@ -366,6 +399,8 @@ export async function getBillingMonthSummary(month = referenceMonthFromDate()): 
     lastSyncedAt,
     onDemandSpentUsd,
     planIncludedPercentUsed,
+    daysUntilCycleReset: cycleClock.daysUntilCycleReset,
+    cycleTimeElapsedPct: cycleClock.cycleTimeElapsedPct,
   };
 }
 
@@ -450,7 +485,10 @@ export async function syncCursorBilling(): Promise<SyncBillingResult> {
     });
 
     const membershipType = summary.membershipType || 'unknown';
-    const onDemandUsed = Number(summary.individualUsage?.onDemand?.used || 0);
+    const individualOd = Number(summary.individualUsage?.onDemand?.used || 0);
+    const teamOd = Number(summary.teamUsage?.onDemand?.used || 0);
+    const onDemandUsedRaw = Math.max(individualOd, teamOd);
+    const onDemandUsedUsd = cursorOnDemandToUsd(onDemandUsedRaw);
     const planIncludedPercent = summary.individualUsage?.plan?.totalPercentUsed ?? null;
     const subscriptionUsd = getPlanMonthlyUsd(membershipType);
 
@@ -466,8 +504,17 @@ export async function syncCursorBilling(): Promise<SyncBillingResult> {
         billingCycleStart: summary.billingCycleStart,
         billingCycleEnd: summary.billingCycleEnd,
         membershipType,
-        onDemandUsedCents: onDemandUsed,
-        onDemandLimitCents: Number(summary.individualUsage?.onDemand?.limit || 0) || null,
+        // Guarda em centavos canônicos para leitura estável no summary.
+        onDemandUsedCents: Math.round(onDemandUsedUsd * 100),
+        onDemandLimitCents: (() => {
+          const lim = Number(
+            summary.individualUsage?.onDemand?.limit ??
+              summary.teamUsage?.onDemand?.limit ??
+              0,
+          );
+          if (!Number.isFinite(lim) || lim <= 0) return null;
+          return lim >= 100 ? Math.round(lim) : Math.round(lim * 100);
+        })(),
         subscriptionUsd,
         planIncludedPercentUsed: planIncludedPercent,
         planUsed: summary.individualUsage?.plan?.used,
