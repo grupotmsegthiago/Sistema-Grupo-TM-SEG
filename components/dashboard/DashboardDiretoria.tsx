@@ -249,16 +249,38 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
     </div>
   );
 
-  /** Só o total consolidado — sem lista detalhada por conta. */
-  const accountBalancesSection = (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="account-balances-diretoria">
-      <KpiTile
-        label="Saldo total de todas as contas"
-        value={fmtBRL(accountBalances.accountsTotal)}
-        sub={`${accountBalances.accounts.length} conta(s) ativa(s)`}
-        accent="text-blue-700"
-        icon={<Wallet size={16} className="text-blue-500" />}
-      />
+  /**
+   * Três cards de liquidez:
+   * 1) o que ainda deve · 2) quanto tem nas contas operacionais (sem XP/investimento) · 3) o que ainda vai entrar.
+   */
+  const liquidezResumoSection = (
+    <div className="space-y-2" data-testid="liquidez-resumo-diretoria">
+      <p className="text-[11px] text-gray-500">
+        Dívidas e receita em aberto sem teto de prazo (inclui 60/90 dias). Total nas contas = só operacionais (exclui XP / investimentos).
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3" data-testid="account-balances-diretoria">
+        <KpiTile
+          label="Dívidas em Aberto"
+          value={fmtBRL(openCash.payableTotal)}
+          sub={`${openCash.payableCount} título(s)${openCash.overduePayable > 0 ? ` · vencido ${fmtBRL(openCash.overduePayable)}` : ''}`}
+          accent="text-red-700"
+          icon={<ArrowDownCircle size={16} className="text-red-500" />}
+        />
+        <KpiTile
+          label="Total nas contas"
+          value={fmtBRL(accountBalances.operationalTotal)}
+          sub={`${accountBalances.operationalCount} conta(s) · sem XP / investimentos`}
+          accent="text-blue-700"
+          icon={<Wallet size={16} className="text-blue-500" />}
+        />
+        <KpiTile
+          label="Receita em Aberto"
+          value={fmtBRL(openCash.receivableTotal)}
+          sub={`${openCash.receivableCount} título(s)${openCash.overdueReceivable > 0 ? ` · vencido ${fmtBRL(openCash.overdueReceivable)}` : ''}`}
+          accent="text-green-700"
+          icon={<ArrowUpCircle size={16} className="text-green-500" />}
+        />
+      </div>
     </div>
   );
 
@@ -373,44 +395,12 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
     </div>
   );
 
-  /** Futuro do caixa: tudo em aberto (vencido + a vencer), sem limite de 30/60/90 dias. */
+  /** Detalhe do que ainda vai entrar/sair (complementa os 3 cards de liquidez). */
   const openCashOutlookSection = (
     <div className="space-y-3" data-testid="open-cash-outlook-diretoria">
-      <p className="text-[11px] text-gray-500">
-        Títulos ainda não pagos — inclui clientes com prazo de 60/90 dias. Não depende do mês selecionado acima.
-      </p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiTile
-          label="A receber em aberto"
-          value={fmtBRL(openCash.receivableTotal)}
-          sub={`${openCash.receivableCount} título(s)${openCash.overdueReceivable > 0 ? ` · vencido ${fmtBRL(openCash.overdueReceivable)}` : ''}`}
-          accent="text-green-700"
-          icon={<ArrowUpCircle size={16} className="text-green-500" />}
-        />
-        <KpiTile
-          label="A pagar em aberto"
-          value={fmtBRL(openCash.payableTotal)}
-          sub={`${openCash.payableCount} título(s)${openCash.overduePayable > 0 ? ` · vencido ${fmtBRL(openCash.overduePayable)}` : ''}`}
-          accent="text-red-700"
-          icon={<ArrowDownCircle size={16} className="text-red-500" />}
-        />
-        <KpiTile
-          label="Saldo futuro (líquido)"
-          value={fmtBRL(openCash.netOutlook)}
-          sub="A receber − a pagar em aberto"
-          accent={openCash.netOutlook >= 0 ? 'text-green-700' : 'text-red-700'}
-        />
-        <KpiTile
-          label="Vencido a receber"
-          value={fmtBRL(openCash.overdueReceivable)}
-          sub="Já passou do vencimento"
-          accent={openCash.overdueReceivable > 0 ? 'text-amber-700' : 'text-gray-700'}
-        />
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm" data-testid="open-receivable-by-client">
-          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">A receber por cliente</p>
+          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">Receita em aberto por cliente</p>
           <p className="text-[11px] text-gray-500 mt-0.5 mb-2">Quem concentra o que ainda vai entrar</p>
           {openCash.byClientReceivable.length === 0 ? (
             <p className="text-xs text-gray-400 py-2">Nenhum título a receber em aberto.</p>
@@ -429,19 +419,19 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
           )}
         </div>
         <CashTitleList
-          title="Próximos a receber"
-          subtitle="Ordenados pelo vencimento (sem teto de prazo)"
-          rows={openCash.topReceivable}
-          totalCount={openCash.receivableCount}
-          tone="green"
-          dateLabel="Venc."
-        />
-        <CashTitleList
-          title="Próximos a pagar"
-          subtitle="Ordenados pelo vencimento (sem teto de prazo)"
+          title="Próximas dívidas"
+          subtitle="A pagar — ordenadas pelo vencimento"
           rows={openCash.topPayable}
           totalCount={openCash.payableCount}
           tone="red"
+          dateLabel="Venc."
+        />
+        <CashTitleList
+          title="Próximas receitas"
+          subtitle="A receber — ordenadas pelo vencimento"
+          rows={openCash.topReceivable}
+          totalCount={openCash.receivableCount}
+          tone="green"
           dateLabel="Venc."
         />
       </div>
@@ -508,11 +498,11 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
       <div className="lg:col-span-12 space-y-3">
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Operação (OS)</p>
         {operationalKpiRow}
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Saldos das Contas</p>
-        {accountBalancesSection}
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Caixa em aberto (futuro)</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Liquidez</p>
+        {liquidezResumoSection}
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Detalhe do em aberto</p>
         {openCashOutlookSection}
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Caixa (Contas a Pagar/Receber)</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Caixa do período</p>
         {cashKpiRow}
       </div>
 
@@ -606,11 +596,11 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const renderFinanceiro = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
       <div className="lg:col-span-12 space-y-3">
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Saldos das Contas</p>
-        {accountBalancesSection}
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Liquidez</p>
+        {liquidezResumoSection}
       </div>
       <div className="lg:col-span-12 space-y-3">
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Caixa em aberto (futuro)</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Detalhe do em aberto</p>
         {openCashOutlookSection}
       </div>
       <div className="lg:col-span-12">{cashKpiRow}</div>

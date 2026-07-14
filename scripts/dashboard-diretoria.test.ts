@@ -291,32 +291,24 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(src, /from 'react'/);
   });
 
-  it('cockpit exibe só o saldo total de todas as contas (sem lista detalhada)', async () => {
+  it('cockpit exibe 3 cards de liquidez: dívidas, contas sem XP e receita em aberto', async () => {
     const fs = await import('node:fs/promises');
     const ui = await fs.readFile('components/dashboard/DashboardDiretoria.tsx', 'utf8');
     const hook = await fs.readFile('lib/dashboardDiretoria/useDashboardDiretoriaData.ts', 'utf8');
     assert.match(ui, /computeAccountBalanceOverview/);
-    assert.match(ui, /Saldo total de todas as contas/);
-    assert.match(ui, /Saldos das Contas/);
-    assert.match(ui, /account-balances-diretoria/);
-    assert.match(ui, /accountsTotal/);
-    assert.doesNotMatch(ui, /investment-accounts-list/);
-    assert.doesNotMatch(ui, /Investimentos — por conta/);
+    assert.match(ui, /buildOpenCashOutlook/);
+    assert.match(ui, /Dívidas em Aberto/);
+    assert.match(ui, /Total nas contas/);
+    assert.match(ui, /Receita em Aberto/);
+    assert.match(ui, /sem XP \/ investimentos/);
+    assert.match(ui, /operationalTotal/);
+    assert.match(ui, /liquidez-resumo-diretoria/);
+    assert.match(ui, /open-cash-outlook-diretoria/);
+    assert.doesNotMatch(ui, /Saldo total de todas as contas/);
     assert.match(ui, /from 'react'/);
     assert.match(hook, /listBalanceSnapshotsDirect/);
     assert.match(hook, /latestAccountBalances/);
     assert.match(hook, /name, bank_name, initial_balance/);
-  });
-
-  it('cockpit exibe caixa em aberto (a receber sem teto de prazo)', async () => {
-    const fs = await import('node:fs/promises');
-    const ui = await fs.readFile('components/dashboard/DashboardDiretoria.tsx', 'utf8');
-    assert.match(ui, /buildOpenCashOutlook/);
-    assert.match(ui, /Caixa em aberto \(futuro\)/);
-    assert.match(ui, /A receber em aberto/);
-    assert.match(ui, /open-cash-outlook-diretoria/);
-    assert.match(ui, /60\/90 dias/);
-    assert.match(ui, /from 'react'/);
   });
 
   it('handler serverless usa bundle CJS do motor financeiro (não import ESM de financialUtils)', async () => {
