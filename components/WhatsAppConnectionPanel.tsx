@@ -44,6 +44,7 @@ type ConnStatus = {
   status?: { connected: boolean; error?: string; smartphoneConnected?: boolean | null };
   registrationAvailable?: {
     available?: boolean;
+    retryAfter?: number;
     smsWaitSeconds?: number;
     voiceWaitSeconds?: number;
     waOldWaitSeconds?: number;
@@ -132,7 +133,9 @@ const WhatsAppConnectionPanel: React.FC = () => {
   const refreshStatus = useCallback(async (id?: string) => {
     const q = id ? `?instanceId=${encodeURIComponent(id)}` : instanceQuery;
     const r = await authFetch(`/api/whatsapp/connection/status${q}`);
-    setInfo(await r.json());
+    const data = await r.json();
+    setInfo(data);
+    return data as ConnStatus | null;
   }, [instanceQuery]);
 
   const refreshAll = useCallback(async () => {
@@ -252,6 +255,35 @@ const WhatsAppConnectionPanel: React.FC = () => {
     setBusy(true);
     setMessage(null);
     try {
+      const fresh = await refreshStatus(selected.id);
+      const regFresh = fresh?.registrationAvailable || null;
+      const instanceIsMobile = (form.instance_type || fresh?.instanceType || info?.instanceType) === 'mobile';
+      const smsW = Number(regFresh?.smsWaitSeconds ?? 0);
+      const voiceW = Number(regFresh?.voiceWaitSeconds ?? 0);
+      const retryW = Number(regFresh?.retryAfter ?? 0);
+      let waW = Number(regFresh?.waOldWaitSeconds ?? 0);
+      const hasExplicitWa = regFresh != null && (
+        Object.prototype.hasOwnProperty.call(regFresh, 'waOldWaitSeconds')
+        || Object.prototype.hasOwnProperty.call(regFresh, 'waOldEligible')
+      );
+      if (!hasExplicitWa) {
+        const signals = [retryW, smsW > 0 ? smsW : 0, voiceW > 0 ? voiceW : 0].filter((n: number) => n > 0);
+        if (signals.length > 0) waW = Math.max(...signals);
+      }
+      const waEligible = regFresh?.waOldEligible !== false;
+      const waReadyNow = waEligible && waW === 0;
+      const voiceReadyNow = voiceW !== -1 && voiceW === 0;
+      const smsReadyNow = smsW !== -1 && smsW === 0;
+      const anyReady = waReadyNow || voiceReadyNow || smsReadyNow;
+      const waitMax = Math.max(waW > 0 ? waW : 0, voiceW > 0 ? voiceW : 0, smsW > 0 ? smsW : 0, retryW);
+      const fmtW = (s: number) => (s <= 0 ? 'agora' : s < 60 ? `${s}s` : `~${Math.ceil(s / 60)} min`);
+      if (instanceIsMobile && regFresh && !anyReady && waitMax > 0) {
+        setMessage(
+          `Cooldown ativo (~${fmtW(waitMax)}). Deixe o WhatsApp Business aberto no eSIM e aguarde o contador zerar. Não abra o conector agora — pedir código gera blocked.`,
+        );
+        return;
+      }
+
       const r = await authFetch(`/api/whatsapp/connection/sdk-token${instanceQuery}`);
       const data = await r.json();
       if (!r.ok || !data.token) {
@@ -264,7 +296,9 @@ const WhatsAppConnectionPanel: React.FC = () => {
       if (connectedOk) {
         setMessage('Conectado pelo SDK Connector Z-API.');
       } else {
-        setMessage('Modal fechado sem conexão. Tente de novo com o WhatsApp Business aberto no eSIM.');
+        setMessage(
+          'Modal fechado sem conexão. Mantenha o WhatsApp Business aberto no eSIM. Se SMS/Ligação tinham cronômetro, aguarde zerar e tente UMA vez (WhatsApp cinza = pop-up indisponível no momento).',
+        );
       }
       await refreshStatus(selected.id);
       await loadInstances();
@@ -676,14 +710,25 @@ const WhatsAppConnectionPanel: React.FC = () => {
                     </p>
                     <button
                       type="button"
-                      disabled={busy}
+                      disabled={busy || inCooldown}
                       onClick={() => void openOfficialSdk()}
                       className="w-full flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-3 px-4 rounded-xl disabled:opacity-50"
+                      title={inCooldown ? `Aguarde ${formatWait(cooldownSeconds)} com WhatsApp Business aberto no eSIM` : 'Abrir conector oficial Z-API'}
                       data-testid="button-zapi-sdk-connector"
                     >
                       {busy ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
-                      {busy ? 'Abrindo conector…' : 'Conectar com SDK Z-API'}
+                      {busy
+                        ? 'Abrindo conector…'
+                        : inCooldown
+                          ? `Aguarde ${formatWait(cooldownSeconds)} (Business no eSIM)`
+                          : 'Conectar com SDK Z-API'}
                     </button>
+                    {inCooldown && (
+                      <p className="text-[11px] text-amber-900 font-semibold leading-relaxed" data-testid="text-sdk-cooldown-hint">
+                        Cooldown da Meta/Z-API (~{formatWait(cooldownSeconds)}). O modal “Como quer receber o código?” com WhatsApp cinza e SMS/Ligação em contagem é normal —
+                        não fique clicando. Deixe o <strong>WhatsApp Business</strong> aberto no eSIM e aguarde liberar.
+                      </p>
+                    )}
                   </div>
                 )}
 

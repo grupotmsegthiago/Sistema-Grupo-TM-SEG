@@ -1,6 +1,10 @@
 /**
  * Helpers do SDK de conexão Z-API (modal oficial).
  * Doc: https://developer.z-api.io/partner/sdk-connector
+ *
+ * MOBILE + WhatsApp Business no eSIM: o modal oficial mostra SMS / Ligação / WhatsApp.
+ * Se "WhatsApp" estiver cinza e SMS/Ligação com countdown, é cooldown da Meta/Z-API —
+ * aguardar wait=0 (não ficar clicando).
  */
 
 export type ZapiSdkConnector = {
@@ -27,6 +31,22 @@ declare global {
 
 const SDK_SRC = "https://app.z-api.io/sdk.js";
 let loadPromise: Promise<ZapiSdkConnector> | null = null;
+
+/** Textos PT para o modal — orientam WhatsApp Business no eSIM e cooldown. */
+export const ZAPI_SDK_MESSAGES_PT: Record<string, string> = {
+  title: "Conecte seu WhatsApp",
+  mMethodHint:
+    "Como quer receber o código? Use o WhatsApp Business do eSIM. Se WhatsApp estiver cinza, aguarde o cronômetro de SMS/Ligação zerar e clique UMA vez.",
+  mSms: "SMS",
+  mCall: "Ligação",
+  mWhatsapp: "WhatsApp (pop-up no Business)",
+  mWaOldHint:
+    "Deixe o WhatsApp Business aberto no eSIM e confirme o aviso na tela do celular.",
+  mRateLimit:
+    "Aguarde o contador zerar. Pedir código antes do tempo gera bloqueio (blocked).",
+  mBlocked:
+    "Registro temporariamente bloqueado pela Meta/Z-API. Aguarde 1–6 h com o Business aberto no eSIM.",
+};
 
 /** Carrega https://app.z-api.io/sdk.js uma vez e devolve window.ZAPIConnector. */
 export function loadZapiSdkConnector(): Promise<ZapiSdkConnector> {
@@ -67,7 +87,7 @@ export function loadZapiSdkConnector(): Promise<ZapiSdkConnector> {
 
 /**
  * Abre o modal oficial. Para MOBILE, prioriza fluxo por número
- * (SMS / ligação / WhatsApp pop-up) — o SDK escolhe a tela pelo token.
+ * (SMS / ligação / WhatsApp pop-up no Business) — o SDK escolhe a tela pelo token.
  */
 export async function openZapiSdkConnector(options: {
   token: string;
@@ -80,6 +100,7 @@ export async function openZapiSdkConnector(options: {
     locale: "pt",
     theme: "light",
     showQueue: true,
+    messages: ZAPI_SDK_MESSAGES_PT,
     // MOBILE: esconde QR/migração WEB; o SDK mostra o fluxo mSms/mCall/mWhatsapp.
     methods: isMobile
       ? { qr: false, phone: true, migrate: false }
