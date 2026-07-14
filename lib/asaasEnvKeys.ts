@@ -43,9 +43,11 @@ export function getAsaasApiKeyTmSeguranca(): string {
   );
 }
 
-/** Asaas — TM Security (Gestão Corporativa — CNPJ distinto). */
+/** Asaas — TM Security (Gestão Corporativa). Preferir `TMSECURITY` / `ASAAS_TMSECURITY_API`. */
 export function getAsaasApiKeyTmSecurity(): string {
   return readFirstEnv(
+    'TMSECURITY',
+    'ASAAS_TMSECURITY_API',
     'ASAAS_API_KEY_TMSECURITY_60',
     'ASAAS_API_KEY_TM_SECURITY',
   );
@@ -74,6 +76,13 @@ const TM_SEGURANCA_ENV_NAMES = [
   'TMSEGURANÇA',
   'ASAAS_API_KEY_TMSECURITY',
   'ASAAS_API_KEY_TM_SEGURANCA',
+] as const;
+
+const TM_SECURITY_ENV_NAMES = [
+  'TMSECURITY',
+  'ASAAS_TMSECURITY_API',
+  'ASAAS_API_KEY_TMSECURITY_60',
+  'ASAAS_API_KEY_TM_SECURITY',
 ] as const;
 
 /** Metadados da chave (sem expor o valor) — útil para comparar Vercel vs Replit. */
@@ -140,10 +149,7 @@ export async function summarizeAsaasTransferEnv(probeBalance = false): Promise<{
   return {
     tmGestao: await summarizeAsaasKeyEnv(TM_GESTAO_ENV_NAMES, probeBalance),
     tmSeguranca: await summarizeAsaasKeyEnv(TM_SEGURANCA_ENV_NAMES, probeBalance),
-    tmSecurity: await summarizeAsaasKeyEnv(
-      ['ASAAS_API_KEY_TMSECURITY_60', 'ASAAS_API_KEY_TM_SECURITY'],
-      probeBalance,
-    ),
+    tmSecurity: await summarizeAsaasKeyEnv(TM_SECURITY_ENV_NAMES, probeBalance),
     financeiroWalletId:
       sanitizeAsaasEnvValue(process.env.ASAAS_FINANCEIRO_WALLET_ID) ||
       '6641fec4-8476-48e3-90a8-3db6b14f538c',

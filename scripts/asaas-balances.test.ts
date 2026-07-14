@@ -28,7 +28,8 @@ test('getAllBalancesCore consulta empresas em paralelo', async () => {
     process.env.ASAAS_TMGESTAO_API = 'key-gestao';
     process.env.ASAAS_API_KEY = 'key-gestao-legado';
     process.env.ASAAS_API_KEY_TMSECURITY = 'key-seg';
-    process.env.ASAAS_API_KEY_TMSECURITY_60 = 'key-security';
+    process.env.ASAAS_TMSECURITY_API = 'key-security';
+    process.env.ASAAS_API_KEY_TMSECURITY_60 = 'key-security-legado';
 
     const { getAllBalancesCore, invalidateAsaasBalancesCoreCache } = await import('../lib/asaasBalancesCore.ts');
     invalidateAsaasBalancesCoreCache();
@@ -48,6 +49,8 @@ test('getAllBalancesCore retorna erro por empresa sem derrubar as demais', async
     TMSEGURANCA: process.env.TMSEGURANCA,
     ASAAS_TMSEGURANCA_API: process.env.ASAAS_TMSEGURANCA_API,
     ASAAS_API_KEY_TMSECURITY: process.env.ASAAS_API_KEY_TMSECURITY,
+    TMSECURITY: process.env.TMSECURITY,
+    ASAAS_TMSECURITY_API: process.env.ASAAS_TMSECURITY_API,
     ASAAS_API_KEY_TMSECURITY_60: process.env.ASAAS_API_KEY_TMSECURITY_60,
     ASAAS_API_KEY_TM_SECURITY: process.env.ASAAS_API_KEY_TM_SECURITY,
   };
@@ -63,6 +66,8 @@ test('getAllBalancesCore retorna erro por empresa sem derrubar as demais', async
     delete process.env.TMSEGURANCA;
     delete process.env.ASAAS_TMSEGURANCA_API;
     delete process.env.ASAAS_API_KEY_TMSECURITY;
+    delete process.env.TMSECURITY;
+    delete process.env.ASAAS_TMSECURITY_API;
     delete process.env.ASAAS_API_KEY_TMSECURITY_60;
     delete process.env.ASAAS_API_KEY_TM_SECURITY;
 

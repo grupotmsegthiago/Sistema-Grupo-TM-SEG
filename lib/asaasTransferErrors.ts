@@ -40,7 +40,7 @@ function withdrawalDeniedMessage(): string {
   return (
     'A chave API desta conta na Vercel não consegue transferir (o saldo até aparece, mas o saque via API é recusado). ' +
     'Copie para a Vercel as mesmas chaves de produção do Replit/Asaas e faça redeploy: ' +
-    'ASAAS_TMGESTAO_API (ou TMGESTAO), ASAAS_TMSEGURANCA_API (ou TMSEGURANCA), ASAAS_API_KEY_TMSECURITY_60, ' +
+    'ASAAS_TMGESTAO_API (ou TMGESTAO), ASAAS_TMSEGURANCA_API (ou TMSEGURANCA), ASAAS_TMSECURITY_API (ou TMSECURITY), ' +
     'ASAAS_FINANCEIRO_WALLET_ID e ASAAS_TRANSFER_WEBHOOK_TOKEN. ' +
     'No painel Asaas de cada conta, a chave precisa ter permissão de saque/transferência via API. ' +
     'Chaves vazias, antigas ou sem permissão de saque causam exatamente esse erro.'

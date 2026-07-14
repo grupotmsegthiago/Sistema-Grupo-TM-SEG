@@ -9,6 +9,7 @@ test('formatAsaasTransferError orienta copiar chaves do Replit quando saque via 
   );
   assert.match(msg, /ASAAS_TMGESTAO_API|TMGESTAO/i);
   assert.match(msg, /ASAAS_TMSEGURANCA_API|TMSEGURANCA/i);
+  assert.match(msg, /ASAAS_TMSECURITY_API|TMSECURITY/i);
   assert.match(msg, /saque/i);
 });
 

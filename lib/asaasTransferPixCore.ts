@@ -1,7 +1,6 @@
 /**
  * Transferência Asaas — módulo leve para rotas serverless Vercel.
- * TM GESTÃO / TM SEGURANCA: Pix primeiro (repasse interno costuma falhar).
- * TM SECURITY: tenta wallet interno antes do Pix, salvo override por env.
+ * TM GESTÃO / TM SEGURANCA / TM SECURITY: Pix primeiro (repasse interno costuma falhar).
  */
 
 import {
@@ -19,7 +18,13 @@ import { invalidateAsaasBalancesCoreCache } from './asaasBalancesCore.js';
 function asaasBaseUrl(): string {
   const custom = readFirstEnv('ASAAS_API_BASE_URL', 'ASAAS_BASE_URL');
   if (custom) return custom.replace(/\/$/, '');
-  const keySample = readFirstEnv('ASAAS_TMGESTAO_API', 'ASAAS_API_KEY', 'TMSEGURANCA', 'ASAAS_TMSEGURANCA_API');
+  const keySample = readFirstEnv(
+    'ASAAS_TMGESTAO_API',
+    'ASAAS_API_KEY',
+    'TMSEGURANCA',
+    'ASAAS_TMSEGURANCA_API',
+    'ASAAS_TMSECURITY_API',
+  );
   if (keySample.includes('_hmlg_') || keySample.includes('_sandbox_')) {
     return 'https://sandbox.asaas.com/api/v3';
   }
@@ -75,7 +80,7 @@ const ASAAS_TRANSFER_COMPANIES: AsaasCompanyDef[] = [
   {
     key: 'TM SECURITY',
     aliases: ['TM SECURITY', 'TMSECURITY', 'SECURITY', 'TM SECURITY GESTAO', 'TM SECURITY GESTÃO'],
-    envHint: 'ASAAS_API_KEY_TMSECURITY_60',
+    envHint: 'ASAAS_TMSECURITY_API (ou TMSECURITY / ASAAS_API_KEY_TMSECURITY_60)',
     getApiKey: getAsaasApiKeyTmSecurity,
   },
 ];
@@ -98,14 +103,18 @@ export function isKnownAsaasCompany(company: string): boolean {
 }
 
 /**
- * Pix primeiro para Gestão (contas sem vínculo) e Segurança (wallet financeiro = própria conta).
+ * Pix primeiro nas três contas operacionais (repasse interno costuma falhar sem vínculo).
  * Override: ASAAS_TRANSFER_PIX_FIRST=true|false.
  */
 export function shouldPreferPixTransfer(companyKey: string): boolean {
   const explicit = readEnv('ASAAS_TRANSFER_PIX_FIRST');
   if (explicit === 'true') return true;
   if (explicit === 'false') return false;
-  return companyKey === 'TM GESTÃO' || companyKey === 'TM SEGURANCA';
+  return (
+    companyKey === 'TM GESTÃO' ||
+    companyKey === 'TM SEGURANCA' ||
+    companyKey === 'TM SECURITY'
+  );
 }
 
 async function asaasRequest(

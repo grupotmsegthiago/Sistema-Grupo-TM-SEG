@@ -54,3 +54,25 @@ test('getAsaasApiKeyTmGestao prioriza TMGESTAO e depois ASAAS_TMGESTAO_API', asy
     else process.env.ASAAS_API_KEY = prevB;
   }
 });
+
+test('getAsaasApiKeyTmSecurity prioriza ASAAS_TMSECURITY_API', async () => {
+  const { getAsaasApiKeyTmSecurity } = await import('../lib/asaasEnvKeys.ts');
+  const prevTm = process.env.TMSECURITY;
+  const prevA = process.env.ASAAS_TMSECURITY_API;
+  const prevB = process.env.ASAAS_API_KEY_TMSECURITY_60;
+  delete process.env.TMSECURITY;
+  process.env.ASAAS_TMSECURITY_API = '$aact_prod_security_nova';
+  process.env.ASAAS_API_KEY_TMSECURITY_60 = '$aact_prod_security_legado';
+  try {
+    assert.equal(getAsaasApiKeyTmSecurity(), '$aact_prod_security_nova');
+    process.env.TMSECURITY = '$aact_prod_security_tmsecurity';
+    assert.equal(getAsaasApiKeyTmSecurity(), '$aact_prod_security_tmsecurity');
+  } finally {
+    if (prevTm === undefined) delete process.env.TMSECURITY;
+    else process.env.TMSECURITY = prevTm;
+    if (prevA === undefined) delete process.env.ASAAS_TMSECURITY_API;
+    else process.env.ASAAS_TMSECURITY_API = prevA;
+    if (prevB === undefined) delete process.env.ASAAS_API_KEY_TMSECURITY_60;
+    else process.env.ASAAS_API_KEY_TMSECURITY_60 = prevB;
+  }
+});

@@ -8,7 +8,13 @@ import { getAsaasApiKeyTmGestao, getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecu
 function asaasBaseUrl(): string {
   const custom = readFirstEnv('ASAAS_API_BASE_URL', 'ASAAS_BASE_URL');
   if (custom) return custom.replace(/\/$/, '');
-  const keySample = readFirstEnv('ASAAS_TMGESTAO_API', 'ASAAS_API_KEY', 'TMSEGURANCA', 'ASAAS_TMSEGURANCA_API');
+  const keySample = readFirstEnv(
+    'ASAAS_TMGESTAO_API',
+    'ASAAS_API_KEY',
+    'TMSEGURANCA',
+    'ASAAS_TMSEGURANCA_API',
+    'ASAAS_TMSECURITY_API',
+  );
   if (keySample.includes('_hmlg_') || keySample.includes('_sandbox_')) {
     return 'https://sandbox.asaas.com/api/v3';
   }
@@ -132,7 +138,7 @@ export async function getAllBalancesCore(): Promise<AsaasBalanceRow[]> {
           name: cfg.name,
           balance: 0,
           pendingBalance: 0,
-          error: 'Chave API não configurada na Vercel (ASAAS_TMGESTAO_API / ASAAS_TMSEGURANCA_API / ASAAS_API_KEY_TMSECURITY_60)',
+          error: 'Chave API não configurada na Vercel (ASAAS_TMGESTAO_API / ASAAS_TMSEGURANCA_API / ASAAS_TMSECURITY_API)',
         };
       }
       try {
