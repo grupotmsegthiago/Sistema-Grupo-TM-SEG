@@ -48,3 +48,25 @@ export async function deleteBalanceSnapshotDirect(id: number): Promise<void> {
   const { error } = await supabase.from('account_balance_snapshots').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
+
+/** Lista snapshots direto no Supabase (fallback se a API Vercel vier vazia). */
+export async function listBalanceSnapshotsDirect(days: number): Promise<BalanceSnapshotRow[]> {
+  const since = new Date(Date.now() - Math.max(1, days) * 86400000).toISOString();
+  const { data, error } = await supabase
+    .from('account_balance_snapshots')
+    .select('*')
+    .gte('recorded_at', since)
+    .order('recorded_at', { ascending: true });
+  if (error) {
+    if (/relation.*does not exist|42P01|PGRST205/i.test(error.message)) return [];
+    throw new Error(error.message);
+  }
+  return (data || []).map((s: any) => ({
+    id: Number(s.id),
+    account_id: String(s.account_id || ''),
+    balance: Number(s.balance),
+    notes: String(s.notes || ''),
+    created_by: String(s.created_by || ''),
+    recorded_at: String(s.recorded_at || ''),
+  }));
+}

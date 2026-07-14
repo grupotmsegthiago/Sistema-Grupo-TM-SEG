@@ -18,3 +18,20 @@ test('insertSnapshot propaga erro detalhado do Supabase', () => {
   assert.match(src, /throw new Error\(`insert \$\{res\.status\}/);
   assert.match(apiSrc, /e\?\.message \|\| 'Falha ao gravar snapshot de saldo'/);
 });
+
+test('força URL do projeto TM SEG (evita env de outro projeto na Vercel)', () => {
+  assert.match(src, /isTmSegUrl/);
+  assert.match(src, /DEFAULT_SUPABASE_URL/);
+  assert.match(src, /ajhmmjuewdsukecaimik/);
+});
+
+const managerSrc = fs.readFileSync('components/FinancialAccountManager.tsx', 'utf8');
+const clientSrc = fs.readFileSync('lib/investment/snapshotClient.ts', 'utf8');
+
+test('Painel recarrega snapshots com fallback Supabase e atualiza lista na hora', () => {
+  assert.match(managerSrc, /listBalanceSnapshotsDirect/);
+  assert.match(managerSrc, /current_calculated_balance: newBal/);
+  assert.match(managerSrc, /Ajuste via edição de conta/);
+  assert.match(managerSrc, /from 'react'/);
+  assert.match(clientSrc, /export async function listBalanceSnapshotsDirect/);
+});

@@ -26,8 +26,19 @@ function decodeRef(key: string): string | null {
   }
 }
 
+function isTmSegUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host.includes(`${TMSEG_REF}.supabase.co`);
+  } catch {
+    return false;
+  }
+}
+
 function getSupabaseConfig(): { url: string; key: string; isServiceRole: boolean } {
-  const url = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).replace(/\/$/, '');
+  const rawUrl = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).replace(/\/$/, '');
+  // Env de outro projeto na Vercel quebrava list/insert (API respondia [] / 500).
+  const url = isTmSegUrl(rawUrl) ? rawUrl : DEFAULT_SUPABASE_URL;
   const serviceKey = String(
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '',
   ).trim();
