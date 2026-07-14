@@ -6,7 +6,7 @@ import {
   isKnownAsaasCompany as isKnownAsaasCompanyCore,
   transferPixFromCompanyCore,
 } from '../lib/asaasTransferPixCore';
-import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity } from '../lib/asaasEnvKeys';
+import { getAsaasApiKeyTmGestao, getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity } from '../lib/asaasEnvKeys';
 
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
 
@@ -33,7 +33,7 @@ interface CompanyConfig {
 
 const ASAAS_COMPANIES: Record<string, CompanyConfig> = {
   'TM GESTÃO': {
-    apiKey: process.env.ASAAS_API_KEY || '',
+    apiKey: getAsaasApiKeyTmGestao(),
     cnpj: '60485843000157',
     name: 'TM GESTÃO',
     aliases: ['TM GESTAO', 'TM GESTÃO', 'GESTAO', 'GESTÃO'],

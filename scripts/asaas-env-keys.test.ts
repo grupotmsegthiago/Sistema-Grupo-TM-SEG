@@ -32,3 +32,19 @@ test('summarizeAsaasKeyEnv não expõe valor da chave', async () => {
     else process.env.TMSEGURANCA = prev;
   }
 });
+
+test('getAsaasApiKeyTmGestao prioriza ASAAS_TMGESTAO_API', async () => {
+  const { getAsaasApiKeyTmGestao } = await import('../lib/asaasEnvKeys.ts');
+  const prevA = process.env.ASAAS_TMGESTAO_API;
+  const prevB = process.env.ASAAS_API_KEY;
+  process.env.ASAAS_TMGESTAO_API = '$aact_prod_gestao_nova';
+  process.env.ASAAS_API_KEY = '$aact_prod_gestao_legado';
+  try {
+    assert.equal(getAsaasApiKeyTmGestao(), '$aact_prod_gestao_nova');
+  } finally {
+    if (prevA === undefined) delete process.env.ASAAS_TMGESTAO_API;
+    else process.env.ASAAS_TMGESTAO_API = prevA;
+    if (prevB === undefined) delete process.env.ASAAS_API_KEY;
+    else process.env.ASAAS_API_KEY = prevB;
+  }
+});

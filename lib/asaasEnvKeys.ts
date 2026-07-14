@@ -22,6 +22,16 @@ export function fingerprintAsaasKey(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 12);
 }
 
+/** Asaas — TM Gestão. Preferir `ASAAS_TMGESTAO_API` na Vercel (legado: ASAAS_API_KEY). */
+export function getAsaasApiKeyTmGestao(): string {
+  return readFirstEnv(
+    'ASAAS_TMGESTAO_API',
+    'ASAAS_API_KEY',
+    'TMGESTAO',
+    'ASAAS_API_KEY_TMGESTAO',
+  );
+}
+
 /** Asaas — TM Segurança (Consultoria). Preferir `TMSEGURANCA` na Vercel. */
 export function getAsaasApiKeyTmSeguranca(): string {
   return readFirstEnv(
@@ -50,6 +60,13 @@ export type AsaasKeyEnvSummary = {
   fingerprint: string;
   balanceProbe?: { ok: boolean; balance?: number; error?: string };
 };
+
+const TM_GESTAO_ENV_NAMES = [
+  'ASAAS_TMGESTAO_API',
+  'ASAAS_API_KEY',
+  'TMGESTAO',
+  'ASAAS_API_KEY_TMGESTAO',
+] as const;
 
 const TM_SEGURANCA_ENV_NAMES = [
   'TMSEGURANCA',
@@ -121,7 +138,7 @@ export async function summarizeAsaasTransferEnv(probeBalance = false): Promise<{
   skipInternalTransfer: boolean;
 }> {
   return {
-    tmGestao: await summarizeAsaasKeyEnv(['ASAAS_API_KEY'], probeBalance),
+    tmGestao: await summarizeAsaasKeyEnv(TM_GESTAO_ENV_NAMES, probeBalance),
     tmSeguranca: await summarizeAsaasKeyEnv(TM_SEGURANCA_ENV_NAMES, probeBalance),
     tmSecurity: await summarizeAsaasKeyEnv(
       ['ASAAS_API_KEY_TMSECURITY_60', 'ASAAS_API_KEY_TM_SECURITY'],

@@ -3,12 +3,12 @@
  * Evita importar o asaasService completo (~NF, clientes, etc.).
  */
 
-import { getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity, readFirstEnv } from './asaasEnvKeys.js';
+import { getAsaasApiKeyTmGestao, getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity, readFirstEnv } from './asaasEnvKeys.js';
 
 function asaasBaseUrl(): string {
   const custom = readFirstEnv('ASAAS_API_BASE_URL', 'ASAAS_BASE_URL');
   if (custom) return custom.replace(/\/$/, '');
-  const keySample = readFirstEnv('ASAAS_API_KEY', 'TMSEGURANCA');
+  const keySample = readFirstEnv('ASAAS_TMGESTAO_API', 'ASAAS_API_KEY', 'TMSEGURANCA', 'ASAAS_TMSEGURANCA_API');
   if (keySample.includes('_hmlg_') || keySample.includes('_sandbox_')) {
     return 'https://sandbox.asaas.com/api/v3';
   }
@@ -48,7 +48,7 @@ function readEnv(...names: string[]): string {
 function companyConfigs(): Record<string, { apiKey: string; name: string }> {
   return {
     'TM GESTÃO': {
-      apiKey: readEnv('ASAAS_API_KEY'),
+      apiKey: getAsaasApiKeyTmGestao(),
       name: 'TM GESTÃO',
     },
     'TM SEGURANCA': {
@@ -132,7 +132,7 @@ export async function getAllBalancesCore(): Promise<AsaasBalanceRow[]> {
           name: cfg.name,
           balance: 0,
           pendingBalance: 0,
-          error: 'Chave API não configurada na Vercel (ASAAS_API_KEY / TMSEGURANCA / ASAAS_API_KEY_TMSECURITY_60)',
+          error: 'Chave API não configurada na Vercel (ASAAS_TMGESTAO_API / ASAAS_TMSEGURANCA_API / ASAAS_API_KEY_TMSECURITY_60)',
         };
       }
       try {
