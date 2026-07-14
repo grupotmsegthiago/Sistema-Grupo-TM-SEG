@@ -27,7 +27,7 @@ type CombinedTransferErrors = {
 };
 
 function splitCombinedTransferErrors(msg: string): CombinedTransferErrors {
-  const marker = '. Pix:';
+  const marker = '. Pix: ';
   const idx = msg.indexOf(marker);
   if (!msg.startsWith('Repasse interno:') || idx < 0) return {};
   return {
@@ -39,20 +39,17 @@ function splitCombinedTransferErrors(msg: string): CombinedTransferErrors {
 function withdrawalDeniedMessage(): string {
   return (
     'A chave API desta conta na Vercel não consegue transferir (o saldo até aparece, mas o saque via API é recusado). ' +
-    'Copie para a Vercel as mesmas chaves de produção do Replit/Asaas e faça redeploy: ' +
-    'Asaas_TMSEGESTÃO_API / ASAAS_TMGESTAO_API, ASAAS_TMSEGURANCA_API, ASAAS_TMSECURITY_API, ' +
-    'ASAAS_FINANCEIRO_WALLET_ID e tokens de webhook por conta ' +
-    '(ASAAS_WEBHOOK_TMGESTAO_API / ASAAS_WEBHOOK_TMSEGURANCA_API / ASAAS_WEBHOOK_TMSECURITY_API). ' +
-    'No painel Asaas de cada conta, a chave precisa ter permissão de saque/transferência via API. ' +
-    'Chaves vazias, antigas ou sem permissão de saque causam exatamente esse erro.'
+    'Confira na Vercel (Production) se estas variáveis estão preenchidas e faça redeploy: ' +
+    'Asaas_TMSEGESTÃO_API (ou ASAAS_TMGESTAO_API), ASAAS_TMSEGURANCA_API, ASAAS_TMSECURITY_API, ' +
+    'ASAAS_WEBHOOK_TMGESTAO_API, ASAAS_WEBHOOK_TMSEGURANCA_API e ASAAS_WEBHOOK_TMSECURITY_API. ' +
+    'No painel Asaas de cada conta, a chave precisa ter permissão de saque/transferência via API.'
   );
 }
 
 function accountsNotLinkedMessage(): string {
   return (
     'Repasse interno entre contas Asaas falhou: as subcontas ainda não estão vinculadas (wallet financeiro). ' +
-    'No Replit isso costuma funcionar com o mesmo ASAAS_FINANCEIRO_WALLET_ID — confira se esse ID na Vercel é igual ao do Replit. ' +
-    'O sistema tentará Pix em seguida; se a chave Pix de destino não estiver cadastrada no painel, cadastre ' +
+    'O sistema tenta Pix em seguida; se a chave Pix de destino não estiver cadastrada no painel, cadastre ' +
     `${ASAAS_PIX_FINANCEIRO_EMAIL} em Transferências → Cadastrar nova conta.`
   );
 }
@@ -110,7 +107,8 @@ export function formatAsaasTransferError(raw: string): string {
     return (
       'A transferência foi criada no Asaas, mas o webhook de aprovação recusou ou não respondeu a tempo. ' +
       'Verifique em Integrações → Webhooks se a fila está ativa e a URL está correta. ' +
-      'URL: https://sistema.grupotmseg.com.br/api/asaas/transfer-approval'
+      'URL (igual nas 3 contas): https://sistema.grupotmseg.com.br/api/asaas/transfer-approval. ' +
+      'Tokens na Vercel: ASAAS_WEBHOOK_TMGESTAO_API, ASAAS_WEBHOOK_TMSEGURANCA_API, ASAAS_WEBHOOK_TMSECURITY_API.'
     );
   }
 
