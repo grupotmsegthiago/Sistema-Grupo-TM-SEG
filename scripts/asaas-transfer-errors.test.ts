@@ -7,16 +7,16 @@ test('formatAsaasTransferError orienta copiar chaves do Replit quando saque via 
   const msg = formatAsaasTransferError(
     'Asaas: A chave de API fornecida não possui permissão para realizar operações de saque via API.',
   );
-  assert.match(msg, /Replit/i);
-  assert.match(msg, /TMSEGURANCA/i);
-  assert.match(msg, /mesmas/i);
+  assert.match(msg, /ASAAS_TMGESTAO_API|TMGESTAO/i);
+  assert.match(msg, /ASAAS_TMSEGURANCA_API|TMSEGURANCA/i);
+  assert.match(msg, /saque/i);
 });
 
 test('formatAsaasTransferError prioriza permissão de saque sobre webhook no erro combinado', () => {
   const msg = formatAsaasTransferError(
     'Repasse interno: Asaas: webhook recusou. Pix: A chave de API não possui permissão para saque via API.',
   );
-  assert.match(msg, /Replit/i);
+  assert.match(msg, /ASAAS_TMGESTAO_API|TMGESTAO|saque/i);
   assert.doesNotMatch(msg, /webhook de aprovação recusou/i);
 });
 
@@ -25,7 +25,7 @@ test('formatAsaasTransferError explica repasse interno sem vínculo + Pix sem pe
     'Repasse interno: Asaas: Contas sem vínculo. Pix: A chave de API não possui permissão para saque via API.',
   );
   assert.match(msg, /vinculadas|vínculo/i);
-  assert.match(msg, /Replit/i);
+  assert.match(msg, /ASAAS_TMGESTAO_API|TMGESTAO|saque/i);
 });
 
 test('formatAsaasTransferError orienta cadastro da chave Pix de destino', () => {

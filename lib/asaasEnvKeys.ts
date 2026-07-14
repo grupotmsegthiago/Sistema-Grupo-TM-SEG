@@ -22,12 +22,12 @@ export function fingerprintAsaasKey(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 12);
 }
 
-/** Asaas — TM Gestão. Preferir `ASAAS_TMGESTAO_API` na Vercel (legado: ASAAS_API_KEY). */
+/** Asaas — TM Gestão. Preferir `TMGESTAO` / `ASAAS_TMGESTAO_API` (espelho de TMSEGURANCA). */
 export function getAsaasApiKeyTmGestao(): string {
   return readFirstEnv(
+    'TMGESTAO',
     'ASAAS_TMGESTAO_API',
     'ASAAS_API_KEY',
-    'TMGESTAO',
     'ASAAS_API_KEY_TMGESTAO',
   );
 }
@@ -62,9 +62,9 @@ export type AsaasKeyEnvSummary = {
 };
 
 const TM_GESTAO_ENV_NAMES = [
+  'TMGESTAO',
   'ASAAS_TMGESTAO_API',
   'ASAAS_API_KEY',
-  'TMGESTAO',
   'ASAAS_API_KEY_TMGESTAO',
 ] as const;
 

@@ -1,6 +1,7 @@
 /**
  * Transferência Asaas — módulo leve para rotas serverless Vercel.
- * Tenta repasse interno (walletId) antes de Pix externo.
+ * TM GESTÃO / TM SEGURANCA: Pix primeiro (repasse interno costuma falhar).
+ * TM SECURITY: tenta wallet interno antes do Pix, salvo override por env.
  */
 
 import {
@@ -34,16 +35,77 @@ function financeiroWalletId(): string {
   return readEnv('ASAAS_FINANCEIRO_WALLET_ID') || DEFAULT_FINANCEIRO_WALLET_ID;
 }
 
-function companyApiKeys(): Record<string, string> {
-  return {
-    'TM GESTÃO': getAsaasApiKeyTmGestao(),
-    'TM SEGURANCA': getAsaasApiKeyTmSeguranca(),
-    'TM SECURITY': getAsaasApiKeyTmSecurity(),
-  };
+function normalizeCompanyToken(value: string): string {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+type AsaasCompanyDef = {
+  key: string;
+  aliases: string[];
+  envHint: string;
+  getApiKey: () => string;
+};
+
+/** Mesmas empresas dos cards de saldo — aliases espelham asaasService. */
+const ASAAS_TRANSFER_COMPANIES: AsaasCompanyDef[] = [
+  {
+    key: 'TM GESTÃO',
+    aliases: ['TM GESTÃO', 'TM GESTAO', 'GESTAO', 'GESTÃO', 'TMGESTAO'],
+    envHint: 'ASAAS_TMGESTAO_API (ou TMGESTAO / ASAAS_API_KEY)',
+    getApiKey: getAsaasApiKeyTmGestao,
+  },
+  {
+    key: 'TM SEGURANCA',
+    aliases: [
+      'TM SEGURANCA',
+      'TM SEGURANÇA',
+      'TMSEGURANCA',
+      'TMSEGURANÇA',
+      'SEGURANCA',
+      'SEGURANÇA',
+      'TM SEGURANCA CONSULTORIA',
+    ],
+    envHint: 'TMSEGURANCA ou ASAAS_TMSEGURANCA_API',
+    getApiKey: getAsaasApiKeyTmSeguranca,
+  },
+  {
+    key: 'TM SECURITY',
+    aliases: ['TM SECURITY', 'TMSECURITY', 'SECURITY', 'TM SECURITY GESTAO', 'TM SECURITY GESTÃO'],
+    envHint: 'ASAAS_API_KEY_TMSECURITY_60',
+    getApiKey: getAsaasApiKeyTmSecurity,
+  },
+];
+
+export function resolveAsaasTransferCompany(company: string): AsaasCompanyDef | null {
+  const raw = String(company || '').trim();
+  if (!raw) return null;
+  const normalized = normalizeCompanyToken(raw);
+
+  for (const def of ASAAS_TRANSFER_COMPANIES) {
+    if (def.key === raw) return def;
+    const aliasHit = def.aliases.some((alias) => normalizeCompanyToken(alias) === normalized);
+    if (aliasHit) return def;
+  }
+  return null;
 }
 
 export function isKnownAsaasCompany(company: string): boolean {
-  return Object.prototype.hasOwnProperty.call(companyApiKeys(), String(company || '').trim());
+  return resolveAsaasTransferCompany(company) !== null;
+}
+
+/**
+ * Pix primeiro para Gestão (contas sem vínculo) e Segurança (wallet financeiro = própria conta).
+ * Override: ASAAS_TRANSFER_PIX_FIRST=true|false.
+ */
+export function shouldPreferPixTransfer(companyKey: string): boolean {
+  const explicit = readEnv('ASAAS_TRANSFER_PIX_FIRST');
+  if (explicit === 'true') return true;
+  if (explicit === 'false') return false;
+  return companyKey === 'TM GESTÃO' || companyKey === 'TM SEGURANCA';
 }
 
 async function asaasRequest(
@@ -159,10 +221,18 @@ export async function transferPixFromCompanyCore(params: {
   value: number;
   description?: string;
 }): Promise<any> {
-  const company = String(params.company || '').trim();
-  const apiKey = companyApiKeys()[company];
-  if (!apiKey) {
+  const resolved = resolveAsaasTransferCompany(params.company);
+  if (!resolved) {
     throw new Error('Empresa Asaas inválida ou API Key não configurada no servidor.');
+  }
+
+  const company = resolved.key;
+  const apiKey = resolved.getApiKey();
+  if (!apiKey) {
+    throw new Error(
+      `API Key Asaas não configurada para ${company}. Na Vercel, preencha ${resolved.envHint} ` +
+        '(mesma chave de produção do painel Asaas, com permissão de saque via API) e faça redeploy.',
+    );
   }
 
   const balance = await getBalance(apiKey);
@@ -173,7 +243,7 @@ export async function transferPixFromCompanyCore(params: {
   const description = params.description || `Repasse TM SEG — ${company}`;
   const externalReference = buildAsaasTransferExternalReference(company);
   const walletId = financeiroWalletId();
-  const pixFirst = readEnv('ASAAS_TRANSFER_PIX_FIRST') === 'true';
+  const pixFirst = shouldPreferPixTransfer(company);
   const skipInternal = readEnv('ASAAS_SKIP_INTERNAL_TRANSFER') === 'true';
 
   let pixError: string | null = null;

@@ -39,10 +39,11 @@ function splitCombinedTransferErrors(msg: string): CombinedTransferErrors {
 function withdrawalDeniedMessage(): string {
   return (
     'A chave API desta conta na Vercel não consegue transferir (o saldo até aparece, mas o saque via API é recusado). ' +
-    'Se no Replit/Torres a mesma conta já transfere sem pedir liberação ao Asaas, copie para a Vercel **as mesmas** variáveis do Replit: ' +
-    'TMSEGURANCA, ASAAS_API_KEY, ASAAS_API_KEY_TMSECURITY_60, ASAAS_FINANCEIRO_WALLET_ID e ASAAS_TRANSFER_WEBHOOK_TOKEN. ' +
-    'Chaves diferentes (ou criadas antes da configuração no Asaas) causam exatamente esse erro. ' +
-    'Só depois de confirmar que as chaves são idênticas, revise Integrações → Mecanismos de segurança no painel Asaas.'
+    'Copie para a Vercel as mesmas chaves de produção do Replit/Asaas e faça redeploy: ' +
+    'ASAAS_TMGESTAO_API (ou TMGESTAO), ASAAS_TMSEGURANCA_API (ou TMSEGURANCA), ASAAS_API_KEY_TMSECURITY_60, ' +
+    'ASAAS_FINANCEIRO_WALLET_ID e ASAAS_TRANSFER_WEBHOOK_TOKEN. ' +
+    'No painel Asaas de cada conta, a chave precisa ter permissão de saque/transferência via API. ' +
+    'Chaves vazias, antigas ou sem permissão de saque causam exatamente esse erro.'
   );
 }
 

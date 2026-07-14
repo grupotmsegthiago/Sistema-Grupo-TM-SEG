@@ -75,7 +75,7 @@ async function handleAdminDiagnosticGet(req: any, res: any): Promise<boolean> {
     externalReferencePrefix: 'tmseg-repasse-',
     asaasEnv: await summarizeAsaasTransferEnv(true),
     hint:
-      'Compare fingerprint e balanceProbe por conta. Mesmo length com fingerprint diferente = valor colado errado na Vercel (aspas, espaço ou chave antiga). Após corrigir TMSEGURANCA, faça redeploy.',
+      'Compare fingerprint e balanceProbe por conta. Mesmo length com fingerprint diferente = valor colado errado na Vercel (aspas, espaço ou chave antiga). Após corrigir ASAAS_TMGESTAO_API / ASAAS_TMSEGURANCA_API, faça redeploy.',
   });
   return true;
 }
