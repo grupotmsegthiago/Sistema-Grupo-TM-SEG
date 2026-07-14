@@ -7,6 +7,7 @@ import { getDefaultWhatsappInstance, instanceConfigured } from "./whatsapp/insta
 import { credsFromInstance, zapiFetchWith } from "./whatsapp/zapiHttp";
 import { notifyZapiDisconnected, notifyZapiReconnected } from "./zapiDisconnectNotify";
 import { attemptZapiAutoReconnect } from "./zapiAutoReconnect";
+import { isZapiSessionConnected } from "../lib/whatsappMobileDiagnosis.js";
 import {
   closeZapiIncident,
   incrementDownStreak,
@@ -20,13 +21,13 @@ const CHECK_INTERVAL_MS = 60 * 1000;
 const CONFIRM_CHECKS = 2;
 const ALERT_RECIPIENTS = ['thiago@grupotmseg.com.br', 'operacional@grupotmseg.com.br'];
 
-async function zapiGet(path: string): Promise<any | null> {
+async function zapiGet(path: string): Promise<{ data: any; type: string } | null> {
   const row = await getDefaultWhatsappInstance();
   if (!row || !instanceConfigured(row)) return null;
   const creds = credsFromInstance(row);
   if (!creds) return null;
   const { data } = await zapiFetchWith(creds, path, { method: 'GET' });
-  return data;
+  return { data, type: creds.type };
 }
 
 export async function runZapiWatchdogTick(): Promise<void> {
@@ -34,15 +35,18 @@ export async function runZapiWatchdogTick(): Promise<void> {
   if (!row || row.provider !== 'zapi' || !instanceConfigured(row)) return;
 
   let status: any = null;
+  let instanceType = row.instance_type || 'mobile';
   try {
-    status = await zapiGet('status');
+    const got = await zapiGet('status');
+    status = got?.data ?? null;
+    if (got?.type) instanceType = got.type;
   } catch (e: any) {
     console.warn(`[Z-API Vigia] Falha ao consultar status: ${e?.message || e}`);
     return;
   }
   if (!status || typeof status.connected !== 'boolean') return;
 
-  const connected = status.connected === true && status.smartphoneConnected !== false;
+  const connected = isZapiSessionConnected(status, instanceType);
   const expected = await getExpectedOfficialPhone();
   const persisted = await loadZapiWatchdogState();
 

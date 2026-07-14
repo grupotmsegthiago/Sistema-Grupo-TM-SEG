@@ -4,7 +4,7 @@
  */
 import { credsFromRow, getInstance, instanceConfigured, zapiFetch } from "../../lib/whatsappLiteApi.js";
 import { sanitizeWhatsappError } from "../../lib/whatsappDisplayUtils.js";
-import { buildMobileConnectionDiagnosis } from "../../lib/whatsappMobileDiagnosis.js";
+import { buildMobileConnectionDiagnosis, isZapiSessionConnected } from "../../lib/whatsappMobileDiagnosis.js";
 
 export default async function handler(req: { method?: string; url?: string }, res: {
   status: (n: number) => { json: (b: unknown) => void };
@@ -30,7 +30,7 @@ export default async function handler(req: { method?: string; url?: string }, re
     }
 
     const { ok, status, data } = await zapiFetch(creds, "status", { method: "GET" });
-    const connected = data?.connected === true && data?.smartphoneConnected !== false;
+    const connected = isZapiSessionConnected(data, creds.type);
     const rawError = data?.error || data?.message || (!ok ? `HTTP ${status}` : null);
     const error = rawError != null ? sanitizeWhatsappError(String(rawError)) || String(rawError) : null;
 
@@ -42,20 +42,26 @@ export default async function handler(req: { method?: string; url?: string }, re
       ? `+${ddi} (${phoneLocal.slice(0, 2)}) ${phoneLocal.slice(2, 7)}-${phoneLocal.slice(7)}`
       : `+${ddi}${phoneLocal}`;
 
-    // phone-code só para diagnóstico WEB — não é solução MOBILE
-    const phoneCodeRes = await zapiFetch(creds, `phone-code/${full}`, { method: "GET" });
-    const phoneCodeValue = String(phoneCodeRes.data?.code || phoneCodeRes.data?.value || "").trim() || null;
-    const phoneCodeError = phoneCodeValue
-      ? null
-      : sanitizeWhatsappError(String(
-        phoneCodeRes.data?.error || phoneCodeRes.data?.message || phoneCodeRes.text || `HTTP ${phoneCodeRes.status}`,
-      ));
+    // phone-code é fluxo WEB — só consulta em instância WEB (evita confusão no MOBILE)
+    let phoneCodeValue: string | null = null;
+    let phoneCodeError: string | null = null;
+    let phoneCodeHttp = 0;
+    if (creds.type === "web") {
+      const phoneCodeRes = await zapiFetch(creds, `phone-code/${full}`, { method: "GET" });
+      phoneCodeHttp = phoneCodeRes.status;
+      phoneCodeValue = String(phoneCodeRes.data?.code || phoneCodeRes.data?.value || "").trim() || null;
+      phoneCodeError = phoneCodeValue
+        ? null
+        : sanitizeWhatsappError(String(
+          phoneCodeRes.data?.error || phoneCodeRes.data?.message || phoneCodeRes.text || `HTTP ${phoneCodeRes.status}`,
+        ));
+    }
 
     let registration: Record<string, unknown> | null = null;
     let registrationError: string | null = null;
     let waOldProbe: Record<string, unknown> | null = null;
 
-    if (!connected) {
+    if (!connected && creds.type === "mobile") {
       const reg = await zapiFetch(creds, "mobile/registration-available", {
         method: "POST",
         body: JSON.stringify({ ddi, phone: phoneLocal }),
@@ -79,6 +85,7 @@ export default async function handler(req: { method?: string; url?: string }, re
           error: wa.data?.error || wa.data?.message || (!wa.ok ? wa.text : null),
           smsWaitSeconds: wa.data?.smsWaitSeconds ?? null,
           voiceWaitSeconds: wa.data?.voiceWaitSeconds ?? null,
+          waOldWaitSeconds: wa.data?.waOldWaitSeconds ?? null,
           hasCaptcha: typeof wa.data?.captcha === "string",
           keys: wa.data ? Object.keys(wa.data) : [],
           note: "Probe único (?deep=1). Não use health em loop — piora blocked.",
@@ -109,17 +116,24 @@ export default async function handler(req: { method?: string; url?: string }, re
       error: connected ? null : error,
       diagnosis,
       phone: { ddi, phoneLocal, full, display: phoneDisplay },
-      phoneCode: {
-        ok: !!phoneCodeValue,
-        hasCode: !!phoneCodeValue,
-        codePreview: phoneCodeValue ? `${phoneCodeValue.slice(0, 2)}****${phoneCodeValue.slice(-2)}` : null,
-        error: phoneCodeError,
-        httpStatus: phoneCodeRes.status,
-        phoneTried: full,
-        note: creds.type === "mobile"
-          ? "phone-code é fluxo WEB; no MOBILE use pop-up/SMS/voz + Confirmar código."
-          : null,
-      },
+      phoneCode: creds.type === "web"
+        ? {
+          ok: !!phoneCodeValue,
+          hasCode: !!phoneCodeValue,
+          codePreview: phoneCodeValue ? `${phoneCodeValue.slice(0, 2)}****${phoneCodeValue.slice(-2)}` : null,
+          error: phoneCodeError,
+          httpStatus: phoneCodeHttp,
+          phoneTried: full,
+        }
+        : {
+          ok: false,
+          hasCode: false,
+          codePreview: null,
+          error: null,
+          httpStatus: 0,
+          phoneTried: full,
+          note: "phone-code é fluxo WEB; no MOBILE use pop-up/SMS/voz + Confirmar código.",
+        },
       registrationAvailable: registration,
       registrationError,
       waOldProbe,
