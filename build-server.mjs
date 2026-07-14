@@ -68,6 +68,14 @@ execSync(
 );
 console.log('DHL occurrence report bundles: api/dhl/_occurrence-report-{html,pdf,adjust}.cjs');
 
+// Bundle do motor financeiro para api/recalculate-open.ts (evita ERR_MODULE_NOT_FOUND
+// no runtime Vercel ao importar lib/financialUtils.ts com deps circulares/extensionless).
+execSync(
+  'npx esbuild lib/financialUtils.ts --bundle --platform=node --format=cjs --outfile=api/_recalculate-open-core.cjs --packages=external',
+  { stdio: 'inherit' },
+);
+console.log('Recalculate-open core bundle: api/_recalculate-open-core.cjs');
+
 const dhlBundlesDir = path.join(distDir, 'dhl-bundles');
 fs.mkdirSync(dhlBundlesDir, { recursive: true });
 for (const name of [
