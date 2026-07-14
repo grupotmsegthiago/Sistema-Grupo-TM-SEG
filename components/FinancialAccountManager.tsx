@@ -6,7 +6,7 @@ import { logAction } from '../lib/logger';
 import { parseAmountBR } from '../lib/utils';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
-import { insertBalanceSnapshotDirect } from '../lib/investment/snapshotClient';
+import { insertBalanceSnapshotDirect, listBalanceSnapshotsDirect } from '../lib/investment/snapshotClient';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
@@ -89,7 +89,8 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
         setEditingId(acc.id);
         setFormData({
             name: acc.name,
-            initial_balance: Number(acc.initial_balance).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            // Prefill com o saldo que a lista mostra (snapshot), não só o initial_balance antigo.
+            initial_balance: Number(acc.current_calculated_balance).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
             bank_name: acc.bank_name || '',
         });
         setShowForm(true);
@@ -138,17 +139,24 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
     const fetchSnapshotsSafe = async (days: number): Promise<BalanceSnapshot[]> => {
         try {
             const res = await authFetch(`/api/investment/snapshots-all?days=${days}&_t=${Date.now()}`);
-            if (!res.ok) return [];
-            const contentType = res.headers.get('content-type') || '';
-            if (!contentType.includes('application/json')) {
-                console.warn('[Investment] snapshots-all retornou conteúdo não-JSON — histórico ignorado');
-                return [];
+            if (res.ok) {
+                const contentType = res.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    const data = await res.json();
+                    if (Array.isArray(data) && data.length > 0) {
+                        return data.map((s: any) => ({ ...s, balance: parseFloat(s.balance) }));
+                    }
+                }
             }
-            const data = await res.json();
-            if (!Array.isArray(data)) return [];
-            return data.map((s: any) => ({ ...s, balance: parseFloat(s.balance) }));
         } catch (e) {
-            console.warn('[Investment] Falha ao carregar snapshots — histórico ignorado:', e);
+            console.warn('[Investment] API snapshots-all falhou — usando fallback Supabase:', e);
+        }
+
+        try {
+            const rows = await listBalanceSnapshotsDirect(days);
+            return rows.map((s) => ({ ...s, balance: Number(s.balance) }));
+        } catch (e) {
+            console.warn('[Investment] Fallback Supabase de snapshots falhou:', e);
             return [];
         }
     };
@@ -288,8 +296,30 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
 
             setUpdateAccountId(null);
             setNewBalanceInput('');
+            // Atualiza a lista na hora (não depende só do reload da API).
+            const accountIdUpdated = updateAccountId;
+            setAccounts((prev) => prev.map((acc) => {
+                if (acc.id !== accountIdUpdated) return acc;
+                const nowIso = new Date().toISOString();
+                const snap: BalanceSnapshot = {
+                    id: Date.now(),
+                    account_id: acc.id,
+                    balance: newBal,
+                    notes: '',
+                    created_by: userName,
+                    recorded_at: nowIso,
+                };
+                return {
+                    ...acc,
+                    current_calculated_balance: newBal,
+                    latestSnapshot: snap,
+                    previousSnapshot: acc.latestSnapshot,
+                    snapshots: [...acc.snapshots, snap],
+                    changeValue: acc.latestSnapshot ? newBal - acc.latestSnapshot.balance : 0,
+                };
+            }));
             showNotification('Saldo atualizado', 'O saldo do investimento foi registrado com sucesso.', 'success');
-            fetchData();
+            await fetchData();
         } catch (e) {
             const msg = e instanceof Error ? e.message : 'Erro desconhecido';
             showNotification('Erro', msg, 'error');
@@ -346,17 +376,74 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
                 throw new Error(data?.error || `Erro ao ${wasEditing ? 'salvar' : 'criar'} conta (${res.status})`);
             }
 
+            const savedId = String((data as any)?.id || editingId || '');
+            const previous = accounts.find(a => a.id === savedId);
+            const previousBalance = previous?.current_calculated_balance;
+            // Saldo exibido na tabela = último snapshot (ou saldo inicial). Ao editar o valor,
+            // grava também um snapshot para a lista refletir na hora.
+            if (savedId && (previousBalance == null || Math.abs(previousBalance - val) >= 0.01)) {
+                const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || '';
+                try {
+                    const snapRes = await authFetch('/api/investment/snapshots', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            account_id: savedId,
+                            balance: val,
+                            notes: wasEditing ? 'Ajuste via edição de conta' : 'Saldo inicial',
+                            created_by: userName,
+                        }),
+                    });
+                    if (!snapRes.ok) {
+                        await insertBalanceSnapshotDirect({
+                            account_id: savedId,
+                            balance: val,
+                            notes: wasEditing ? 'Ajuste via edição de conta' : 'Saldo inicial',
+                            created_by: userName,
+                        });
+                    }
+                } catch {
+                    try {
+                        await insertBalanceSnapshotDirect({
+                            account_id: savedId,
+                            balance: val,
+                            notes: wasEditing ? 'Ajuste via edição de conta' : 'Saldo inicial',
+                            created_by: userName,
+                        });
+                    } catch (snapErr) {
+                        console.warn('[Investment] Conta salva, mas snapshot não gravou:', snapErr);
+                    }
+                }
+            }
+
             setEditingId(null);
             setShowForm(false);
             setFormData({ name: '', initial_balance: '', bank_name: '' });
+            if (savedId) {
+                setAccounts((prev) => {
+                    const exists = prev.some(a => a.id === savedId);
+                    if (exists) {
+                        return prev.map((acc) => acc.id === savedId
+                            ? {
+                                ...acc,
+                                name: payload.name,
+                                bank_name: payload.bank_name,
+                                initial_balance: val,
+                                current_calculated_balance: val,
+                            }
+                            : acc);
+                    }
+                    return prev;
+                });
+            }
             showNotification(
                 wasEditing ? 'Conta atualizada' : 'Conta cadastrada',
                 wasEditing
-                    ? 'As alterações da conta foram salvas com sucesso.'
+                    ? 'As alterações da conta foram salvas e o saldo da lista foi atualizado.'
                     : 'A nova conta de investimento foi cadastrada.',
                 'success',
             );
-            fetchData();
+            await fetchData();
         } catch (e) {
             const msg = e instanceof Error ? e.message : 'Erro desconhecido';
             const friendly = /load failed|failed to fetch|networkerror|504|408|aborted/i.test(msg)
@@ -772,7 +859,7 @@ Responda de forma concisa e profissional, em português, formatado com markdown.
                     )}
                     <div><label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Identificação</label><input type="text" required className="w-full p-2.5 border rounded-lg text-sm bg-white" placeholder="Ex: Itaú Investimento" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
                     <div><label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Banco / Corretora</label><input type="text" className="w-full p-2.5 border rounded-lg text-sm bg-white" placeholder="Ex: BTG Pactual" value={formData.bank_name} onChange={e => setFormData({...formData, bank_name: e.target.value})} /></div>
-                    <div><label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Saldo Inicial</label><input type="text" inputMode="decimal" required className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold text-blue-700 bg-white" placeholder="0,00" value={formData.initial_balance} onChange={e => setFormData({...formData, initial_balance: e.target.value})} /></div>
+                    <div><label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">{editingId ? 'Saldo Atual (atualiza a lista)' : 'Saldo Inicial'}</label><input type="text" inputMode="decimal" required className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold text-blue-700 bg-white" placeholder="0,00" value={formData.initial_balance} onChange={e => setFormData({...formData, initial_balance: e.target.value})} /></div>
                     <div className="flex gap-2">
                         <button type="submit" disabled={isSaving} className={`flex-1 text-white p-2.5 rounded-lg hover:opacity-90 font-bold text-sm flex items-center justify-center gap-2 ${editingId ? 'bg-amber-600' : 'bg-blue-600'}`}>
                             {isSaving ? <Loader2 size={16} className="animate-spin"/> : (editingId ? <Save size={16}/> : <Plus size={16}/>)} 
