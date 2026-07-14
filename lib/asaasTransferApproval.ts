@@ -58,6 +58,75 @@ export function normalizeAsaasWebhookToken(raw: unknown): string {
     .trim();
 }
 
+/**
+ * Tokens de autenticação do webhook de aprovação — um por conta Asaas (ou compartilhado).
+ * A URL do webhook é a mesma; cada painel Asaas pode ter authToken diferente.
+ *
+ * Nomes aceitos (prioridade só para listagem; a validação aceita qualquer um preenchido):
+ * - ASAAS_TRANSFER_WEBHOOK_TOKEN (opcional, se as 3 contas usarem o mesmo)
+ * - ASAAS_WEBHOOK_TMGESTAO / ASAAS_WEBHOOK_TMGESTAO_API
+ * - ASAAS_WEBHOOK_TMSEGURANCA / ASAAS_WEBHOOK_TMSEGURANCA_API
+ * - ASAAS_WEBHOOK_TMSECURITY / ASAAS_WEBHOOK_TMSECURITY_API
+ */
+export const ASAAS_TRANSFER_WEBHOOK_TOKEN_ENV_NAMES = [
+  'ASAAS_TRANSFER_WEBHOOK_TOKEN',
+  'ASAAS_WEBHOOK_TMGESTAO',
+  'ASAAS_WEBHOOK_TMGESTAO_API',
+  'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMGESTAO',
+  'ASAAS_WEBHOOK_TMSEGURANCA',
+  'ASAAS_WEBHOOK_TMSEGURANCA_API',
+  'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMSEGURANCA',
+  'ASAAS_WEBHOOK_TMSECURITY',
+  'ASAAS_WEBHOOK_TMSECURITY_API',
+  'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMSECURITY',
+] as const;
+
+export type AsaasWebhookTokenEntry = {
+  envName: string;
+  token: string;
+};
+
+export function listConfiguredAsaasTransferWebhookTokens(): AsaasWebhookTokenEntry[] {
+  const seen = new Set<string>();
+  const out: AsaasWebhookTokenEntry[] = [];
+  for (const envName of ASAAS_TRANSFER_WEBHOOK_TOKEN_ENV_NAMES) {
+    const token = normalizeAsaasWebhookToken(process.env[envName]);
+    if (!token || seen.has(token)) continue;
+    seen.add(token);
+    out.push({ envName, token });
+  }
+  return out;
+}
+
+export function matchAsaasTransferWebhookToken(receivedRaw: unknown): {
+  ok: boolean;
+  received: string;
+  matchedEnv: string | null;
+  configuredCount: number;
+  /** true se nenhuma env de token está preenchida (aceita qualquer chamada). */
+  openMode: boolean;
+} {
+  const received = normalizeAsaasWebhookToken(receivedRaw);
+  const configured = listConfiguredAsaasTransferWebhookTokens();
+  if (configured.length === 0) {
+    return {
+      ok: true,
+      received,
+      matchedEnv: null,
+      configuredCount: 0,
+      openMode: true,
+    };
+  }
+  const hit = configured.find((c) => c.token === received);
+  return {
+    ok: Boolean(hit),
+    received,
+    matchedEnv: hit?.envName || null,
+    configuredCount: configured.length,
+    openMode: false,
+  };
+}
+
 export function readAsaasWebhookAccessToken(req: {
   headers?: Record<string, string | string[] | undefined>;
 }): string {

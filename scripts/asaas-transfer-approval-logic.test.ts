@@ -4,6 +4,8 @@ import {
   buildAsaasTransferExternalReference,
   extractAsaasTransferWebhookPayload,
   isTmSegRepasseExternalReference,
+  listConfiguredAsaasTransferWebhookTokens,
+  matchAsaasTransferWebhookToken,
   normalizeAsaasWebhookToken,
   shouldApproveAsaasTransferWebhook,
 } from '../lib/asaasTransferApproval.ts';
@@ -13,6 +15,73 @@ const FINANCEIRO_WALLET = '6641fec4-8476-48e3-90a8-3db6b14f538c';
 test('normalizeAsaasWebhookToken remove Bearer', () => {
   assert.equal(normalizeAsaasWebhookToken('Bearer abc'), 'abc');
   assert.equal(normalizeAsaasWebhookToken('  token  '), 'token');
+});
+
+test('matchAsaasTransferWebhookToken aceita token por empresa', () => {
+  const prev = {
+    ASAAS_TRANSFER_WEBHOOK_TOKEN: process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN,
+    ASAAS_WEBHOOK_TMGESTAO_API: process.env.ASAAS_WEBHOOK_TMGESTAO_API,
+    ASAAS_WEBHOOK_TMSEGURANCA_API: process.env.ASAAS_WEBHOOK_TMSEGURANCA_API,
+    ASAAS_WEBHOOK_TMSECURITY_API: process.env.ASAAS_WEBHOOK_TMSECURITY_API,
+  };
+  try {
+    delete process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN;
+    process.env.ASAAS_WEBHOOK_TMGESTAO_API = 'tok-gestao';
+    process.env.ASAAS_WEBHOOK_TMSEGURANCA_API = 'tok-seg';
+    process.env.ASAAS_WEBHOOK_TMSECURITY_API = 'tok-security';
+
+    const list = listConfiguredAsaasTransferWebhookTokens();
+    assert.equal(list.length, 3);
+
+    const g = matchAsaasTransferWebhookToken('tok-gestao');
+    assert.equal(g.ok, true);
+    assert.equal(g.matchedEnv, 'ASAAS_WEBHOOK_TMGESTAO_API');
+    assert.equal(g.openMode, false);
+
+    const s = matchAsaasTransferWebhookToken('tok-security');
+    assert.equal(s.ok, true);
+    assert.equal(s.matchedEnv, 'ASAAS_WEBHOOK_TMSECURITY_API');
+
+    const bad = matchAsaasTransferWebhookToken('outro');
+    assert.equal(bad.ok, false);
+    assert.equal(bad.configuredCount, 3);
+  } finally {
+    for (const [k, v] of Object.entries(prev)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
+test('matchAsaasTransferWebhookToken em modo aberto sem env preenchida', () => {
+  const names = [
+    'ASAAS_TRANSFER_WEBHOOK_TOKEN',
+    'ASAAS_WEBHOOK_TMGESTAO',
+    'ASAAS_WEBHOOK_TMGESTAO_API',
+    'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMGESTAO',
+    'ASAAS_WEBHOOK_TMSEGURANCA',
+    'ASAAS_WEBHOOK_TMSEGURANCA_API',
+    'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMSEGURANCA',
+    'ASAAS_WEBHOOK_TMSECURITY',
+    'ASAAS_WEBHOOK_TMSECURITY_API',
+    'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMSECURITY',
+  ];
+  const prev: Record<string, string | undefined> = {};
+  for (const n of names) {
+    prev[n] = process.env[n];
+    delete process.env[n];
+  }
+  try {
+    const m = matchAsaasTransferWebhookToken('');
+    assert.equal(m.ok, true);
+    assert.equal(m.openMode, true);
+    assert.equal(m.configuredCount, 0);
+  } finally {
+    for (const [k, v] of Object.entries(prev)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
 });
 
 test('extractAsaasTransferWebhookPayload lê formato event+data', () => {

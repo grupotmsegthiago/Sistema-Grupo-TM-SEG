@@ -3,12 +3,14 @@ import {
   buildAsaasTransferWebhookPublicUrl,
   extractAsaasTransferWebhookPayload,
   financeiroWalletIdFromEnv,
-  normalizeAsaasWebhookToken,
+  listConfiguredAsaasTransferWebhookTokens,
+  matchAsaasTransferWebhookToken,
   parseAsaasWebhookBody,
   readAsaasWebhookAccessToken,
   shouldApproveAsaasTransferWebhook,
 } from '../lib/asaasTransferApproval.js';
 import { isPendingTransferInMemory } from '../lib/asaasPendingTransferMemory.js';
+import { fingerprintAsaasKey } from '../lib/asaasEnvKeys.js';
 
 /** Asaas só considera entrega OK com HTTP 200 (docs/fila-pausada). */
 function respond(res: any, body: Record<string, unknown>) {
@@ -16,10 +18,19 @@ function respond(res: any, body: Record<string, unknown>) {
 }
 
 function webhookTokenDiagnostics(req: { headers?: Record<string, string | string[] | undefined> }) {
-  const expectedToken = normalizeAsaasWebhookToken(process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN || '');
   const receivedToken = readAsaasWebhookAccessToken(req);
-  const tokenOk = !expectedToken || receivedToken === expectedToken;
-  return { expectedToken, receivedToken, tokenOk };
+  const match = matchAsaasTransferWebhookToken(receivedToken);
+  const configured = listConfiguredAsaasTransferWebhookTokens();
+  return {
+    receivedToken,
+    tokenOk: match.ok,
+    matchedEnv: match.matchedEnv,
+    configuredCount: match.configuredCount,
+    openMode: match.openMode,
+    configuredEnvs: configured.map((c) => c.envName),
+    /** Compat: primeiro token configurado (diagnóstico legado). */
+    expectedToken: configured[0]?.token || '',
+  };
 }
 
 function logWebhookPost(
@@ -27,7 +38,7 @@ function logWebhookPost(
   body: Record<string, any>,
   payload: ReturnType<typeof extractAsaasTransferWebhookPayload>,
 ) {
-  const { expectedToken, receivedToken } = webhookTokenDiagnostics(req);
+  const diag = webhookTokenDiagnostics(req);
   console.log('[asaas-transfer-approval] POST', {
     event: payload.event,
     type: payload.type,
@@ -40,8 +51,10 @@ function logWebhookPost(
       'asaas-access-token': Boolean(req.headers?.['asaas-access-token']),
       'Asaas-Access-Token': Boolean(req.headers?.['Asaas-Access-Token']),
     },
-    receivedTokenLen: receivedToken.length,
-    expectedTokenLen: expectedToken.length,
+    receivedTokenLen: diag.receivedToken.length,
+    webhookTokensConfigured: diag.configuredCount,
+    webhookTokenMatchedEnv: diag.matchedEnv,
+    webhookOpenMode: diag.openMode,
     isNotificationOnly: payload.isNotificationOnly,
     isAuthorizationRequest: payload.isAuthorizationRequest,
   });
@@ -62,20 +75,26 @@ async function handleAdminDiagnosticGet(req: any, res: any): Promise<boolean> {
     return true;
   }
 
-  const { expectedToken } = webhookTokenDiagnostics(req);
+  const diag = webhookTokenDiagnostics(req);
+  const configured = listConfiguredAsaasTransferWebhookTokens();
   const { summarizeAsaasTransferEnv } = await import('../lib/asaasEnvKeys.js');
   res.status(200).json({
     ok: true,
     endpoint: 'asaas-transfer-approval',
     mode: 'admin-diagnostic',
     webhookUrl: buildAsaasTransferWebhookPublicUrl(req),
-    tokenConfigured: Boolean(expectedToken),
+    tokenConfigured: diag.configuredCount > 0,
+    webhookTokens: configured.map((c) => ({
+      envName: c.envName,
+      length: c.token.length,
+      fingerprint: fingerprintAsaasKey(c.token),
+    })),
     authorizedPixKey: ASAAS_PIX_FINANCEIRO_EMAIL,
     financeiroWalletId: financeiroWalletIdFromEnv(),
     externalReferencePrefix: 'tmseg-repasse-',
     asaasEnv: await summarizeAsaasTransferEnv(true),
     hint:
-      'Compare fingerprint e balanceProbe por conta. Mesmo length com fingerprint diferente = valor colado errado na Vercel (aspas, espaço ou chave antiga). Após corrigir ASAAS_TMGESTAO_API / ASAAS_TMSEGURANCA_API / ASAAS_TMSECURITY_API, faça redeploy.',
+      'Uma URL de webhook para as 3 contas. Tokens separados na Vercel: ASAAS_WEBHOOK_TMGESTAO_API, ASAAS_WEBHOOK_TMSEGURANCA_API, ASAAS_WEBHOOK_TMSECURITY_API (ou ASAAS_TRANSFER_WEBHOOK_TOKEN se for o mesmo). Após corrigir chaves API, faça redeploy.',
   });
   return true;
 }
@@ -83,6 +102,7 @@ async function handleAdminDiagnosticGet(req: any, res: any): Promise<boolean> {
 /**
  * Webhook de aprovação de saques/transferências Asaas.
  * Rota pública — sem auth de sessão/JWT no POST. Módulo leve, sem Supabase no POST.
+ * Aceita authToken distinto por conta (Gestão / Segurança / Security).
  */
 export default async function handler(req: any, res: any) {
   try {
@@ -147,13 +167,13 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const { tokenOk } = webhookTokenDiagnostics(req);
+    const diag = webhookTokenDiagnostics(req);
 
-    if (!tokenOk) {
-      const { expectedToken, receivedToken } = webhookTokenDiagnostics(req);
+    if (!diag.tokenOk) {
       console.warn('[asaas-transfer-approval] token inválido ou ausente', {
-        receivedTokenLen: receivedToken.length,
-        expectedTokenLen: expectedToken.length,
+        receivedTokenLen: diag.receivedToken.length,
+        configuredCount: diag.configuredCount,
+        configuredEnvs: diag.configuredEnvs,
       });
       respond(res, { status: 'REFUSED', refuseReason: 'token_invalido' });
       return;
