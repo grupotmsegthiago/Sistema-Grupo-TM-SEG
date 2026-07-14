@@ -585,13 +585,22 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
       subtitle={`Comparativo dia a dia: ${revenueMonthCompare.previousLabel} × ${revenueMonthCompare.currentLabel} (receita canônica). Linhas tracejadas = acumulado no mês.`}
       testId="revenue-month-compare-diretoria"
     >
-      <div className="flex flex-wrap items-center gap-3 mb-3 text-[11px]">
-        <span className="font-mono font-bold text-gray-700">
-          Acumulado {revenueMonthCompare.currentLabel}: {fmtBRL(revenueMonthCompare.currentCumTotal)}
+      {/* Legenda de cores + acumulados — acima do gráfico */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 text-[11px]">
+        <span className="inline-flex items-center gap-1.5 font-black text-red-700">
+          <span className="inline-block w-3 h-0.5 rounded-full bg-red-600" aria-hidden />
+          Mês passado ({revenueMonthCompare.previousLabel})
+        </span>
+        <span className="inline-flex items-center gap-1.5 font-black text-green-700">
+          <span className="inline-block w-3 h-0.5 rounded-full bg-green-600" aria-hidden />
+          Mês atual ({revenueMonthCompare.currentLabel})
         </span>
         <span className="text-gray-300">|</span>
-        <span className="font-mono font-bold text-gray-500">
-          Acumulado {revenueMonthCompare.previousLabel} (mesmo recorte): {fmtBRL(revenueMonthCompare.previousCumTotal)}
+        <span className="font-mono font-bold text-green-700">
+          Acumulado {revenueMonthCompare.currentLabel}: {fmtBRL(revenueMonthCompare.currentCumTotal)}
+        </span>
+        <span className="font-mono font-bold text-red-700">
+          Acumulado {revenueMonthCompare.previousLabel}: {fmtBRL(revenueMonthCompare.previousCumTotal)}
         </span>
         {revenueMonthCompare.deltaCumPct != null && (
           <span
@@ -618,7 +627,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
               type="monotone"
               dataKey="previous"
               name={`Diário ${revenueMonthCompare.previousLabel}`}
-              stroke="#94a3b8"
+              stroke="#dc2626"
               strokeWidth={2}
               dot={false}
               connectNulls={false}
@@ -636,7 +645,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
               type="monotone"
               dataKey="previousCum"
               name={`Acumulado ${revenueMonthCompare.previousLabel}`}
-              stroke="#64748b"
+              stroke="#b91c1c"
               strokeWidth={2}
               strokeDasharray="6 4"
               dot={false}

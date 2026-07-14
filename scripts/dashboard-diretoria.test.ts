@@ -442,6 +442,11 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(ui, /buildDailyRevenueMonthComparison/);
     assert.match(ui, /revenue-month-compare-diretoria/);
     assert.match(ui, /Faturamento diário \(OS\)/);
+    // Mês passado = vermelho · mês atual = verde
+    assert.match(ui, /stroke="#dc2626"/);
+    assert.match(ui, /stroke="#16a34a"/);
+    assert.match(ui, /Mês passado/);
+    assert.match(ui, /Mês atual/);
     assert.match(ui, /resolveOpenCashEntityName|Outros/);
     assert.match(hook, /getPreviousMonthPeriod/);
     assert.doesNotMatch(ui, /Saldo total de todas as contas/);
