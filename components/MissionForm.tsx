@@ -19,7 +19,7 @@ import ClientVehicleForm from './ClientVehicleForm';
 import { formatProviderName } from '../lib/utils';
 import { extractUF, UF_TO_REGION, clientFuzzyFilter } from '../lib/financialUtils';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
-import { tollPersistencePair } from '../lib/toll/clientTollBilling';
+import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
 
 const INPUT_CLASS = "w-full bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-red-500/10 focus:border-red-500 text-sm h-11 transition-all text-gray-700 pl-12 pr-4";
@@ -2907,13 +2907,29 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               <div className="flex items-center gap-2">
                                   {manualOverrides.toll ? <AlertTriangle size={16} className="text-amber-600" /> : <CheckCircle2 size={16} className={parseFloat(formData.tollValue || '0') > 0 ? 'text-green-600' : 'text-blue-600'} />}
                                   <p className="text-[11px] font-black uppercase text-gray-800">
-                                      Pedágio: R$ {parseFloat(formData.tollValue || '0').toFixed(2)}
+                                      Pedágio (valor real): R$ {parseFloat(formData.tollValue || '0').toFixed(2)}
                                   </p>
                               </div>
                               {tollDetails?.provider === 'qualp' && !manualOverrides.toll && <span className="text-[8px] font-black text-blue-600 uppercase">QualP</span>}
                               {tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && <span className="text-[8px] font-black text-purple-600 uppercase">Estimativa IA</span>}
                               {tollDetails?.provider === 'fixed' && !manualOverrides.toll && <span className="text-[8px] font-black text-orange-600 uppercase">Regra fixa</span>}
                           </div>
+                          {(() => {
+                              const realToll = normalizeTollAmount(formData.tollValue);
+                              const pair = tollPersistencePair(realToll, !!formData.isSameOs);
+                              return (
+                                  <div className="grid grid-cols-2 gap-2" data-testid="toll-client-provider-detail">
+                                      <div className="rounded-lg border border-green-200 bg-green-50 px-2.5 py-2">
+                                          <p className="text-[8px] font-black uppercase text-green-700 tracking-wide">Cliente</p>
+                                          <p className="text-sm font-black text-green-900">R$ {pair.toll_value.toFixed(2)}</p>
+                                      </div>
+                                      <div className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-2">
+                                          <p className="text-[8px] font-black uppercase text-blue-700 tracking-wide">Fornecedor</p>
+                                          <p className="text-sm font-black text-blue-900">R$ {pair.toll_value_provider.toFixed(2)}</p>
+                                      </div>
+                                  </div>
+                              );
+                          })()}
                           {tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && (
                               <p className="text-[9px] text-purple-700 font-bold">Estimativa por IA — confirme o valor manualmente se necessário.</p>
                           )}

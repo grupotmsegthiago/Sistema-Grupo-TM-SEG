@@ -8,7 +8,7 @@ import {
     type ProviderAutoCalcBreakdown,
 } from './providerAutoPricing';
 import { findDhlAutoClient, selectDhlClientTable } from './dhlAutoTableSelector';
-import { billableClientToll } from './toll/clientTollBilling';
+import { resolveStoredClientToll, resolveStoredProviderToll } from './toll/clientTollBilling';
 
 const STOP_WORDS = ['LTDA','LTDA.','S.A.','S.A','SA','S/A','S/A.','DO','DE','DA','E','DAS','DOS'];
 // PostgREST trata ( ) , . : como reservados dentro de .or(); envolvemos
@@ -625,6 +625,9 @@ export const calculateMissionFinancials = (
     }
 
     let tollValue = isZeroValueMission ? 0 : Math.max(0, safeNumber(mission.toll_value));
+    let providerTollValue = isZeroValueMission
+      ? 0
+      : resolveStoredProviderToll(mission.toll_value, (mission as any).toll_value_provider, !!(mission as any).is_same_os);
     
     const validAgents = [mission.agent1, mission.agent2]
         .map(a => a ? String(a).trim() : '')
@@ -1461,6 +1464,7 @@ export const calculateMissionFinancials = (
     const isLogitechTable = appliedTableName.includes('LOGITECH');
     if (isLogitechTable && !isZeroValueMission) {
         tollValue = 35;
+        providerTollValue = 35;
     }
 
     const serviceSubtotal = round2(cBase + cExtraKmVal + cExtraHrVal);
@@ -1471,10 +1475,16 @@ export const calculateMissionFinancials = (
     }
 
     const clientServiceTotal = round2(serviceSubtotal + iblFee);
-    const clientTollBillable = billableClientToll(tollValue);
+    const clientTollBillable = isZeroValueMission
+      ? 0
+      : (isLogitechTable
+          ? resolveStoredClientToll(tollValue, providerTollValue)
+          : resolveStoredClientToll(mission.toll_value, (mission as any).toll_value_provider));
     const totalRevenue = round2(clientServiceTotal + clientTollBillable);
     const providerServiceTotal = round2(pBase + pExtraKmVal + pExtraHrVal);
-    const totalCost = round2(providerServiceTotal + tollValue);
+    const totalCost = round2(providerServiceTotal + providerTollValue);
+    // tollValue exposto ao UI = valor real da rota (base / fornecedor)
+    tollValue = providerTollValue;
 
     return {
         autoEngine: autoBreakdown ? {
@@ -1568,8 +1578,8 @@ export const auditMissionFinancials = (
     const dispProvVal = safeNumber(m.displacement_value_provider);
     const hasManualOverride = !!(m.revenue_edit_reason) || !!(m.cost_edit_reason) || !!(m.snapshot_approved_by);
     if (hasManualOverride) {
-        const storedRev = safeNumber(mission.revenue_value) + billableClientToll(mission.toll_value) + dispVal;
-        const storedCst = safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value) + dispProvVal;
+        const storedRev = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, (mission as any).toll_value_provider) + dispVal;
+        const storedCst = safeNumber(mission.cost_value) + resolveStoredProviderToll(mission.toll_value, (mission as any).toll_value_provider, !!(mission as any).is_same_os) + dispProvVal;
         return {
             missionId: mission.id || '',
             client: mission.client || '',
@@ -1587,10 +1597,10 @@ export const auditMissionFinancials = (
     const fin = calculateMissionFinancials(mission, clientTables, providerTables, clientData, new Date(), undefined, providers);
     const isSameOs = !!(mission as any).is_same_os;
     
-    const storedRevenue = safeNumber(mission.revenue_value) + billableClientToll(mission.toll_value) + dispVal;
+    const storedRevenue = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, (mission as any).toll_value_provider) + dispVal;
     const storedCost = isSameOs
         ? 0
-        : safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value) + dispProvVal;
+        : safeNumber(mission.cost_value) + resolveStoredProviderToll(mission.toll_value, (mission as any).toll_value_provider, isSameOs) + dispProvVal;
     const calculatedRevenue = fin.client.total + dispVal;
     const calculatedCost = isSameOs ? 0 : fin.provider.total + dispProvVal;
     

@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, resolveCancelledWindow } from '../lib/financialUtils';
-import { billableClientToll } from '../lib/toll/clientTollBilling';
+import { resolveStoredClientToll } from '../lib/toll/clientTollBilling';
 import { computeDhlBand, findDhlAutoClient, selectDhlClientTable, DHL_CLIENT_NAME } from '../lib/dhlAutoTableSelector';
 import MissionFinancialModal from './MissionFinancialModal';
 
@@ -560,7 +560,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
             const dispVal = Math.max(0, m.displacement_value || 0);
             const dispProv = Math.max(0, m.displacement_value_provider || 0);
-            revenue = (m.revenue_value || 0) + billableClientToll(m.toll_value || 0) + dispVal;
+            revenue = (m.revenue_value || 0) + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider) + dispVal;
             const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
             cost = (m.cost_value || 0) + tollProv + dispProv;
             const mLucro = revenue - cost;
@@ -999,10 +999,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const useBase = snap.activationFee ?? 0;
                 const useKmEx = snap.kmExtraTotal ?? 0;
                 const useHrEx = snap.hrExtraTotal ?? 0;
-                const useToll = billableClientToll(m.toll_value ?? snap.tollVal ?? 0);
+                const useToll = resolveStoredClientToll(m.toll_value ?? snap.tollVal ?? 0, m.toll_value_provider);
                 const useDisp = Math.max(0, m.displacement_value ?? snap.displacementVal ?? 0);
                 const dbRevenue = m.revenue_value ?? 0;
-                const dbTotal = dbRevenue + billableClientToll(m.toll_value || 0) + useDisp;
+                const dbTotal = dbRevenue + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider) + useDisp;
                 const wasManuallyEdited = !!(m.billing_verified_by || m.revenue_edit_reason);
                 const snapTotal = snap.totalGeral ?? 0;
                 const useTotal = wasManuallyEdited ? dbTotal : (snapTotal > 0 ? snapTotal : (useBase + useKmEx + useHrEx + useToll + useDisp));
@@ -1108,7 +1108,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 };
             }
 
-            const tollVal = billableClientToll(m.toll_value || 0);
+            const tollVal = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
             const dispValN = Math.max(0, m.displacement_value || 0);
             const savedRevenue = m.revenue_value || 0;
             const hasSavedRevenue = savedRevenue > 0;
@@ -1254,7 +1254,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 return s + cost + tollP + dispP;
             }
             const rev = m.revenue_value ?? 0;
-            const toll = billableClientToll(m.toll_value || 0);
+            const toll = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
             const disp = Math.max(0, m.displacement_value || 0);
             return s + rev + toll + disp;
         }, 0);
@@ -1376,7 +1376,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         missions.forEach((m: any) => {
             const numId = (m.id || '').replace(/\D/g, '');
             const rev = m.revenue_value ?? 0;
-            const toll = billableClientToll(m.toll_value || 0);
+            const toll = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
             const disp = Math.max(0, m.displacement_value || 0);
             const isVerified = !!(m.billing_verified_by || m.billing_approved);
             const hasDbValue = rev > 0 || (rev === 0 && isVerified);
@@ -2228,7 +2228,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         vlrHoraExcedenteTab: unitHr || 0,
                         vlrKmExcedenteTab: dhlUnitKmExcedente,
                         franquiaTabela: minTabela,
-                        pedagio: isCancelledRow ? 0 : billableClientToll(m.toll_value || 0),
+                        pedagio: isCancelledRow ? 0 : resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider),
                         tabelaAplicada: usedTable?.operation_type || '',
                     });
                 }
@@ -4350,7 +4350,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                         try {
                                             const userData = JSON.parse(localStorage.getItem('userData') || '{}');
                                             const userName = userData.name || 'Usuário';
-                                            const tollVal = billableClientToll(m.toll_value || 0);
+                                            const tollVal = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
                                             const dispVal = Math.max(0, m.displacement_value || 0);
                                             const newRevenue = Math.max(0, Math.round((newTotal - tollVal - dispVal) * 100) / 100);
                                             const reasonStamp = `[${userName} - ${formatNowDateTimeBR()}] Ajustado pela conferência da planilha do cliente (Total ${fmtBRL(newTotal)})`;
