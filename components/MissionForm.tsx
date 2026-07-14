@@ -211,6 +211,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [tollFetchDone, setTollFetchDone] = useState(false);
   /** Confirmação explícita quando o pedágio informado é R$ 0,00. */
   const [tollZeroConfirmed, setTollZeroConfirmed] = useState(false);
+  /** Ao focar o campo, a próxima digitação substitui o valor antigo (não concatena). */
+  const tollReplaceOnTypeRef = useRef(false);
   const lastTollRouteRef = useRef('');
   const tollCalcGenRef = useRef(0);
   const TOLL_PROVIDER_TIMEOUT_MS = 20_000;
@@ -2931,7 +2933,35 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                 className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-lg text-sm font-black text-gray-900 bg-white focus:border-amber-500 outline-none"
                                 placeholder="Informe o valor (rota mais cara)"
                                 value={formData.tollValue === '0' && !manualOverrides.toll && !tollZeroConfirmed ? '' : formData.tollValue}
+                                onFocus={e => {
+                                  tollReplaceOnTypeRef.current = true;
+                                  e.currentTarget.select();
+                                }}
+                                onBlur={() => { tollReplaceOnTypeRef.current = false; }}
+                                onKeyDown={e => {
+                                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End' || e.key === 'Tab') {
+                                    tollReplaceOnTypeRef.current = false;
+                                    return;
+                                  }
+                                  if (!tollReplaceOnTypeRef.current) return;
+                                  if (e.key === 'Backspace' || e.key === 'Delete') {
+                                    e.preventDefault();
+                                    tollReplaceOnTypeRef.current = false;
+                                    setFormData(prev => ({ ...prev, tollValue: '0' }));
+                                    setManualOverrides(prev => ({ ...prev, toll: true }));
+                                    return;
+                                  }
+                                  if (e.key.length === 1 && /[0-9.,]/.test(e.key)) {
+                                    e.preventDefault();
+                                    tollReplaceOnTypeRef.current = false;
+                                    const digit = e.key === ',' ? '.' : e.key;
+                                    setFormData(prev => ({ ...prev, tollValue: digit }));
+                                    setManualOverrides(prev => ({ ...prev, toll: true }));
+                                    if (parseFloat(digit) > 0) setTollZeroConfirmed(false);
+                                  }
+                                }}
                                 onChange={e => {
+                                  tollReplaceOnTypeRef.current = false;
                                   const next = e.target.value === '' ? '' : e.target.value;
                                   const num = next === '' ? 0 : parseFloat(next);
                                   setFormData(prev => ({ ...prev, tollValue: next === '' ? '0' : next }));
@@ -3215,7 +3245,44 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Pedágio {manualOverrides.toll && <span className="text-amber-600">(Manual)</span>}</p>
                                       <div className="flex items-center gap-1">
                                           <span className="text-[10px] font-black text-gray-400">R$</span>
-                                          <input type="number" step="0.01" className="bg-transparent outline-none text-sm font-black text-gray-800 w-20" value={formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-summary" />
+                                          <input
+                                            type="number"
+                                            step="0.01"
+                                            className="bg-transparent outline-none text-sm font-black text-gray-800 w-20"
+                                            value={formData.tollValue}
+                                            onFocus={e => {
+                                              tollReplaceOnTypeRef.current = true;
+                                              e.currentTarget.select();
+                                            }}
+                                            onBlur={() => { tollReplaceOnTypeRef.current = false; }}
+                                            onKeyDown={e => {
+                                              if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End' || e.key === 'Tab') {
+                                                tollReplaceOnTypeRef.current = false;
+                                                return;
+                                              }
+                                              if (!tollReplaceOnTypeRef.current) return;
+                                              if (e.key === 'Backspace' || e.key === 'Delete') {
+                                                e.preventDefault();
+                                                tollReplaceOnTypeRef.current = false;
+                                                setFormData(prev => ({ ...prev, tollValue: '0' }));
+                                                setManualOverrides(prev => ({ ...prev, toll: true }));
+                                                return;
+                                              }
+                                              if (e.key.length === 1 && /[0-9.,]/.test(e.key)) {
+                                                e.preventDefault();
+                                                tollReplaceOnTypeRef.current = false;
+                                                const digit = e.key === ',' ? '.' : e.key;
+                                                setFormData(prev => ({ ...prev, tollValue: digit }));
+                                                setManualOverrides(prev => ({ ...prev, toll: true }));
+                                              }
+                                            }}
+                                            onChange={e => {
+                                              tollReplaceOnTypeRef.current = false;
+                                              setFormData(prev => ({ ...prev, tollValue: e.target.value }));
+                                              setManualOverrides(prev => ({ ...prev, toll: true }));
+                                            }}
+                                            data-testid="input-toll-summary"
+                                          />
                                       </div>
                                       <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? (tollDetails.provider === 'gemini-ai' ? (tollDetails.count === 0 ? 'Sem pedágio · Estimativa IA' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · Estimativa IA`) : tollDetails.provider === 'fixed' ? 'Regra fixa CEVA' : (tollDetails.count === 0 ? 'Sem pedágio · QualP' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · QualP`)) : isCalculatingToll ? 'Calculando...' : tollFetchDone ? 'Calculado nesta tela' : 'Aguardando cálculo'}</p>
                                       {tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && (
