@@ -11,6 +11,7 @@ import { fetchZapiExtensionToken } from "./whatsapp/zapiExtensionToken";
 import { logWhatsappSessionEvent } from "./whatsappTelemetry";
 import { loadZapiWatchdogState } from "./zapiWatchdogState";
 import type { ZapiCredentials } from "./whatsapp/zapiHttp";
+import { isZapiSessionConnected, resolveMobileChannelWaits } from "../lib/whatsappMobileDiagnosis.js";
 
 const COOLDOWN_MS = 30 * 60 * 1000;
 const INCIDENT_RETRY_MS = 5 * 60 * 1000;
@@ -96,7 +97,7 @@ async function saveLastAttemptMs(): Promise<void> {
 
 async function readLiveStatus(creds: ZapiCredentials) {
   const { ok, data } = await zapiFetchWith(creds, "status", { method: "GET" });
-  const connected = data?.connected === true && data?.smartphoneConnected !== false;
+  const connected = isZapiSessionConnected(data, creds.type);
   return {
     apiOk: ok || !!data,
     connected,
@@ -141,6 +142,28 @@ async function attemptMobileWaOldReconnect(
       phase: "wa_old",
       message: msg,
       details: { registration: reg.data },
+    };
+  }
+
+  // Respeitar cooldown da doc Z-API — pedir durante wait gera blocked
+  const waits = resolveMobileChannelWaits(reg.data);
+  if (!waits.waOldEligible || waits.waOld === -1) {
+    return {
+      attempted: false,
+      ok: false,
+      phase: "skipped",
+      message: "Pop-up wa_old indisponível agora — aguarde ou use Ligação/SMS no painel.",
+      details: { registration: reg.data, waits },
+    };
+  }
+  if (waits.waOld > 0) {
+    await saveLastAttemptMs();
+    return {
+      attempted: false,
+      ok: false,
+      phase: "skipped",
+      message: `Cooldown WhatsApp (~${Math.ceil(waits.waOld / 60)} min) — auto-reconnect não pede pop-up agora para evitar blocked.`,
+      details: { registration: reg.data, waits, deferredSeconds: waits.waOld },
     };
   }
 

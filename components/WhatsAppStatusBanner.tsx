@@ -26,7 +26,7 @@ const WhatsAppStatusBanner: React.FC = () => {
       const res = await authFetch('/api/whatsapp/connection/status');
       if (!res.ok) return;
       const data: ConnPayload = await res.json();
-      const ok = data.status?.connected === true && data.status?.smartphoneConnected !== false;
+      const ok = data.status?.connected === true;
       setConnected(ok);
       setVisible(!ok);
       if (!ok) {

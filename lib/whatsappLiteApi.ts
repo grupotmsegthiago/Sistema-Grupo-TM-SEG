@@ -12,7 +12,9 @@ import { looksLikeZapiSecret, safeWhatsappInstanceLabel, sanitizeWhatsappError }
 import {
   buildMobileConnectionDiagnosis,
   explainMobileDisconnect,
+  isZapiSessionConnected,
   pickMobileRegistrationMethod,
+  resolveMobileChannelWaits,
 } from "./whatsappMobileDiagnosis.js";
 
 function sb() {
@@ -384,7 +386,7 @@ export function instanceConfigured(row: InstanceRow): boolean {
 
 async function readLiveStatus(creds: ZapiCreds) {
   const { ok, data } = await zapiFetch(creds, "status", { method: "GET" });
-  const connected = data?.connected === true && data?.smartphoneConnected !== false;
+  const connected = isZapiSessionConnected(data, creds.type);
   return { apiOk: ok || !!data, connected, data };
 }
 
@@ -401,7 +403,7 @@ export async function getConnectionStatus(instanceId?: string | null) {
 
   const { ok, data } = await zapiFetch(creds, "status", { method: "GET" });
   const status = {
-    connected: data?.connected === true && data?.smartphoneConnected !== false,
+    connected: isZapiSessionConnected(data, creds.type),
     smartphoneConnected: data?.smartphoneConnected,
     session: data?.session,
     error: data?.error ? String(data.error) : undefined,
@@ -519,6 +521,7 @@ export async function requestMobilePairingCode(
 
   const preferred = method === "auto" ? "wa_old" : method;
   const pick = pickMobileRegistrationMethod(avail.data, preferred);
+  const waits = resolveMobileChannelWaits(avail.data);
 
   if (method === "auto" && pick.deferredSeconds > 0) {
     return {
@@ -535,13 +538,33 @@ export async function requestMobilePairingCode(
     };
   }
 
-  if (method === "sms" && Number(avail.data?.smsWaitSeconds) === -1) {
+  const useMethod = method === "auto" ? pick.method : method;
+  const channelWait =
+    useMethod === "sms" ? waits.sms : useMethod === "voice" ? waits.voice : waits.waOld;
+  const channelEligible = useMethod !== "wa_old" || waits.waOldEligible;
+
+  if (!channelEligible) {
     return {
       ok: false,
-      error: `SMS bloqueado agora (smsWaitSeconds=-1) para ${parts.display}. Tente Pop-up (wa_old) ou Ligação — ou aguarde e tente SMS depois.`,
+      error: `Pop-up wa_old não elegível agora para ${parts.display}. Aguarde ou tente Ligação/SMS.`,
       data: avail.data,
       phase: "wait",
-      method: "sms" as const,
+      method: useMethod,
+      registration: avail.data,
+      phoneUsed: basePhone,
+      phoneDisplay: parts.display,
+      phoneLinkCode: null as string | null,
+      deferredSeconds: Math.max(waits.voice, waits.sms > 0 ? waits.sms : 0, waits.retryAfter, 60),
+    };
+  }
+
+  if (channelWait === -1) {
+    return {
+      ok: false,
+      error: `${useMethod === "sms" ? "SMS" : useMethod === "voice" ? "Ligação" : "Pop-up"} bloqueado agora (wait=-1) para ${parts.display}. Tente outro canal ou aguarde.`,
+      data: avail.data,
+      phase: "wait",
+      method: useMethod,
       registration: avail.data,
       phoneUsed: basePhone,
       phoneDisplay: parts.display,
@@ -549,7 +572,22 @@ export async function requestMobilePairingCode(
     };
   }
 
-  const useMethod = method === "auto" ? pick.method : method;
+  // Cooldown: NÃO chamar request-registration-code (doc Z-API — gera blocked)
+  if (channelWait > 0) {
+    return {
+      ok: false,
+      error: `Cooldown WhatsApp: aguarde ~${Math.ceil(channelWait / 60)} min antes de pedir ${useMethod} de novo para ${parts.display} (wait=${channelWait}s). Pedir agora costuma retornar blocked.`,
+      data: avail.data,
+      phase: "wait",
+      method: useMethod,
+      registration: avail.data,
+      phoneUsed: basePhone,
+      phoneDisplay: parts.display,
+      phoneLinkCode: null as string | null,
+      deferredSeconds: channelWait,
+    };
+  }
+
   const payload = { ...basePhone, method: useMethod };
 
   const req = await zapiFetch(creds, "mobile/request-registration-code", {
@@ -1006,7 +1044,7 @@ export async function testInstanceConnection(instanceId: string): Promise<
     const statusRes = await zapiFetch(creds, "status", { method: "GET" });
     apiReachable = statusRes.ok || !!statusRes.data;
     statusRaw = statusRes.data;
-    connected = statusRes.data?.connected === true && statusRes.data?.smartphoneConnected !== false;
+    connected = isZapiSessionConnected(statusRes.data, creds.type);
     if (statusRes.data?.error) statusError = String(statusRes.data.error);
     if (connected) {
       const dev = await zapiFetch(creds, "device", { method: "GET" });

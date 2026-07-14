@@ -405,10 +405,28 @@ const WhatsAppConnectionPanel: React.FC = () => {
   const isMobile = (form.instance_type || info?.instanceType) === 'mobile';
   const isZapi = form.provider === 'zapi';
   const reg = info?.registrationAvailable || null;
-  const smsBlocked = isMobile && (Number(reg?.smsWaitSeconds) === -1 || info?.diagnosis?.smsBlocked === true);
-  const waOldReady = isMobile && reg?.waOldEligible !== false && Number(reg?.waOldWaitSeconds ?? 0) >= 0;
-  const voiceReady = isMobile && Number(reg?.voiceWaitSeconds ?? 0) >= 0;
+  const smsWait = Number(reg?.smsWaitSeconds ?? 0);
+  const voiceWait = Number(reg?.voiceWaitSeconds ?? 0);
+  const hasExplicitWaOld =
+    reg != null && (Object.prototype.hasOwnProperty.call(reg, 'waOldWaitSeconds')
+      || Object.prototype.hasOwnProperty.call(reg, 'waOldEligible'));
+  const retryAfter = Math.max(0, Number(reg?.retryAfter ?? 0) || 0);
+  let waOldWait = Number(reg?.waOldWaitSeconds ?? 0);
+  if (!hasExplicitWaOld && reg != null) {
+    const signals = [retryAfter, smsWait > 0 ? smsWait : 0, voiceWait > 0 ? voiceWait : 0].filter((n) => n > 0);
+    if (signals.length > 0) waOldWait = Math.max(...signals);
+  }
+  const waOldEligible = reg?.waOldEligible !== false;
+  const smsBlocked = isMobile && smsWait === -1;
+  const waOldReady = isMobile && waOldEligible && waOldWait === 0;
+  const voiceReady = isMobile && voiceWait === 0;
+  const smsReady = isMobile && smsWait === 0;
+  const cooldownSeconds = isMobile && reg
+    ? Math.max(waOldReady ? 0 : Math.max(waOldWait, 0), voiceReady ? 0 : Math.max(voiceWait, 0), smsReady ? 0 : (smsWait > 0 ? smsWait : 0), retryAfter)
+    : 0;
+  const inCooldown = isMobile && !connected && cooldownSeconds > 0 && !waOldReady && !voiceReady && !smsReady;
   const disconnectHint = info?.disconnectHint || null;
+  const formatWait = (s: number) => (s <= 0 ? 'agora' : s < 60 ? `${s}s` : `~${Math.ceil(s / 60)} min`);
 
   return (
     <div className="space-y-6" data-testid="panel-whatsapp-connection">
@@ -649,16 +667,30 @@ const WhatsAppConnectionPanel: React.FC = () => {
                 {isMobile && isZapi && !connected && reg && (
                   <div className="p-3 rounded-lg border border-gray-200 bg-gray-50 text-xs text-gray-800 space-y-1">
                     <p className="font-bold uppercase text-[10px] text-gray-500">Disponível agora (Z-API)</p>
-                    <p>Pop-up wa_old: {waOldReady ? '✅ liberado' : '⏳ aguarde'}</p>
-                    <p>Ligação: {voiceReady ? '✅ liberada' : '⏳ aguarde'}</p>
-                    <p>SMS: {smsBlocked ? '🚫 bloqueado agora — use Pop-up ou Ligação' : '✅ liberado'}</p>
+                    <p>Pop-up wa_old: {waOldReady ? '✅ liberado' : waOldWait === -1 ? '🚫 bloqueado' : `⏳ aguarde ${formatWait(waOldWait)}`}</p>
+                    <p>Ligação: {voiceReady ? '✅ liberada' : voiceWait === -1 ? '🚫 bloqueada' : `⏳ aguarde ${formatWait(voiceWait)}`}</p>
+                    <p>SMS: {smsBlocked ? '🚫 bloqueado agora — use Pop-up ou Ligação' : smsReady ? '✅ liberado' : `⏳ aguarde ${formatWait(smsWait)}`}</p>
+                    {inCooldown && (
+                      <p className="text-amber-800 font-semibold pt-1">
+                        Cooldown ativo ({formatWait(cooldownSeconds)}). Pedir código agora gera blocked no WhatsApp.
+                      </p>
+                    )}
                   </div>
                 )}
 
                 <div className="p-4 rounded-lg border border-blue-100 bg-blue-50/80 text-blue-950 text-xs space-y-2">
                   <p className="font-black uppercase text-[10px] tracking-wide">Z-API hoje vs Meta Cloud API (oficial)</p>
                   <p className="leading-relaxed">
-                    <strong>Z-API (atual):</strong> depende do celular ligado e da sessão WhatsApp — pode cair com Web/Business no mesmo número.
+                    {isMobile ? (
+                      <>
+                        <strong>Z-API MOBILE (atual):</strong> a instância vira o aparelho principal após o registro (pop-up/SMS/voz).
+                        Não use “Aparelhos conectados” / código de 8 letras.
+                      </>
+                    ) : (
+                      <>
+                        <strong>Z-API WEB (atual):</strong> depende do celular ligado e da sessão WhatsApp — pode cair com Web/Business no mesmo número.
+                      </>
+                    )}
                     <strong className="block mt-1">Meta oficial:</strong> envios pela API Graph sem celular 24h; muito mais estável para automação, porém custo por conversa, templates aprovados e migração de código (provider Meta ainda em desenvolvimento no sistema).
                   </p>
                 </div>
@@ -691,27 +723,38 @@ const WhatsAppConnectionPanel: React.FC = () => {
                     <p className="font-black uppercase text-xs tracking-wide flex items-center gap-2">
                       <WifiOff size={16} /> Bot offline — reconectar MOBILE
                     </p>
+                    {inCooldown && (
+                      <p className="text-xs bg-amber-100 border border-amber-300 rounded-lg p-2 text-amber-950">
+                        Aguarde {formatWait(cooldownSeconds)} com o WhatsApp Business aberto. Os botões ficam bloqueados para não gerar blocked.
+                      </p>
+                    )}
                     <button
                       type="button"
-                      disabled={busy}
+                      disabled={busy || (reg != null && !waOldReady)}
                       onClick={() => void requestSms('wa_old')}
+                      title={!waOldReady ? `Aguarde ${formatWait(waOldWait)}` : 'Pedir pop-up no WhatsApp'}
                       className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white font-bold py-3 px-4 rounded-xl disabled:opacity-50"
                       data-testid="button-request-wa-old-primary"
                     >
                       {busy ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
-                      {busy ? 'Solicitando…' : '1) Pedir pop-up no WhatsApp (wa_old)'}
+                      {busy
+                        ? 'Solicitando…'
+                        : waOldReady
+                          ? '1) Pedir pop-up no WhatsApp (wa_old)'
+                          : `1) Pop-up — aguarde ${formatWait(waOldWait)}`}
                     </button>
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" disabled={busy || (!voiceReady && reg != null && Number(reg.voiceWaitSeconds) < 0)}
+                      <button type="button" disabled={busy || (reg != null && !voiceReady)}
                         onClick={() => void requestSms('voice')}
+                        title={!voiceReady ? `Aguarde ${formatWait(voiceWait)}` : 'Pedir ligação'}
                         className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl border-2 border-amber-400 text-amber-950 disabled:opacity-50">
-                        <Phone size={14} /> 2) Ligação
+                        <Phone size={14} /> 2) Ligação{!voiceReady && reg != null ? ` (${formatWait(voiceWait)})` : ''}
                       </button>
-                      <button type="button" disabled={busy || smsBlocked}
+                      <button type="button" disabled={busy || smsBlocked || (reg != null && !smsReady)}
                         onClick={() => void requestSms('sms')}
-                        title={smsBlocked ? 'SMS bloqueado agora pela WhatsApp' : 'Pedir código por SMS'}
+                        title={smsBlocked ? 'SMS bloqueado agora pela WhatsApp' : !smsReady ? `Aguarde ${formatWait(smsWait)}` : 'Pedir código por SMS'}
                         className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl border-2 border-gray-300 text-gray-800 disabled:opacity-50">
-                        <Phone size={14} /> 3) SMS{smsBlocked ? ' (bloqueado)' : ''}
+                        <Phone size={14} /> 3) SMS{smsBlocked ? ' (bloqueado)' : !smsReady && reg != null ? ` (${formatWait(smsWait)})` : ''}
                       </button>
                     </div>
                     <button type="button" disabled={busy} onClick={() => void runApiReconnect(false)}

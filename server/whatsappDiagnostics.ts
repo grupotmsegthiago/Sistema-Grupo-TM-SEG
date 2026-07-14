@@ -8,6 +8,7 @@ import {
   type TelemetryRange,
 } from "./whatsappTelemetry";
 import { OFFICIAL_BOT_PHONE_DISPLAY } from "./zapiGuard";
+import { isZapiSessionConnected } from "../lib/whatsappMobileDiagnosis.js";
 
 export type DisconnectCause =
   | "extension_reauth"
@@ -249,7 +250,7 @@ export async function buildWhatsappDiagnosticsReport(
       const { ok, data } = await zapiFetchWith(creds, "status", { method: "GET" });
       live.apiReachable = ok || !!data;
       live.statusRaw = data;
-      live.connected = data?.connected === true && data?.smartphoneConnected !== false;
+      live.connected = isZapiSessionConnected(data, creds.type);
       live.smartphoneConnected = typeof data?.smartphoneConnected === "boolean" ? data.smartphoneConnected : null;
 
       if (live.connected) {

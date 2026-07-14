@@ -1,7 +1,7 @@
 /** GET /api/zapi-health — alias leve (sem martelar request-registration-code). */
 import { credsFromRow, getInstance, instanceConfigured, zapiFetch } from "../lib/whatsappLiteApi.js";
 import { sanitizeWhatsappError } from "../lib/whatsappDisplayUtils.js";
-import { buildMobileConnectionDiagnosis } from "../lib/whatsappMobileDiagnosis.js";
+import { buildMobileConnectionDiagnosis, isZapiSessionConnected } from "../lib/whatsappMobileDiagnosis.js";
 
 export default async function handler(req: { method?: string }, res: {
   status: (n: number) => { json: (b: unknown) => void };
@@ -26,7 +26,7 @@ export default async function handler(req: { method?: string }, res: {
     }
 
     const { ok, status, data } = await zapiFetch(creds, "status", { method: "GET" });
-    const connected = data?.connected === true && data?.smartphoneConnected !== false;
+    const connected = isZapiSessionConnected(data, creds.type);
     const rawError = data?.error || data?.message || (!ok ? `HTTP ${status}` : null);
     const error = rawError != null ? sanitizeWhatsappError(String(rawError)) || String(rawError) : null;
 
@@ -38,11 +38,8 @@ export default async function handler(req: { method?: string }, res: {
       ? `+${ddi} (${phoneLocal.slice(0, 2)}) ${phoneLocal.slice(2, 7)}-${phoneLocal.slice(7)}`
       : `+${ddi}${phoneLocal}`;
 
-    const phoneCodeRes = await zapiFetch(creds, `phone-code/${full}`, { method: "GET" });
-    const phoneCodeValue = String(phoneCodeRes.data?.code || phoneCodeRes.data?.value || "").trim() || null;
-
     let registration: Record<string, unknown> | null = null;
-    if (!connected) {
+    if (!connected && creds.type === "mobile") {
       const reg = await zapiFetch(creds, "mobile/registration-available", {
         method: "POST",
         body: JSON.stringify({ ddi, phone: phoneLocal }),
@@ -54,7 +51,7 @@ export default async function handler(req: { method?: string }, res: {
       instanceType: creds.type,
       connected: !!connected,
       registrationAvailable: registration,
-      phoneLinkCode: phoneCodeValue,
+      phoneLinkCode: null,
     });
 
     res.status(connected ? 200 : 502).json({
@@ -72,14 +69,17 @@ export default async function handler(req: { method?: string }, res: {
       diagnosis,
       phone: { ddi, phoneLocal, full, display: phoneDisplay },
       phoneCode: {
-        ok: !!phoneCodeValue,
-        hasCode: !!phoneCodeValue,
-        codePreview: phoneCodeValue ? `${phoneCodeValue.slice(0, 2)}****${phoneCodeValue.slice(-2)}` : null,
-        httpStatus: phoneCodeRes.status,
+        ok: false,
+        hasCode: false,
+        codePreview: null,
+        httpStatus: 0,
         phoneTried: full,
+        note: creds.type === "mobile"
+          ? "phone-code é fluxo WEB; no MOBILE use pop-up/SMS/voz + Confirmar código."
+          : null,
       },
       registrationAvailable: registration,
-      note: "Alias sem probe request-code (evita blocked). Use /api/zapi/health?deep=1 com cuidado.",
+      note: "Alias de /api/zapi/health — sem probe request-registration-code.",
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
@@ -87,4 +87,4 @@ export default async function handler(req: { method?: string }, res: {
   }
 }
 
-export const config = { maxDuration: 30 };
+export const config = { maxDuration: 25 };

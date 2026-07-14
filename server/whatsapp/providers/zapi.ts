@@ -21,6 +21,7 @@ import type {
   WhatsappProvider,
 } from "../types";
 import { expectedOfficialPhone, fullOfficialPhone } from "../types";
+import { isZapiSessionConnected } from "../../../lib/whatsappMobileDiagnosis.js";
 
 export class ZapiWhatsappProvider implements WhatsappProvider {
   readonly providerId = "zapi" as const;
@@ -40,7 +41,7 @@ export class ZapiWhatsappProvider implements WhatsappProvider {
     const { ok, data } = await zapiFetchWith(this.creds(), "status", { method: "GET" });
     if (!ok && !data) return { connected: false, error: "Falha ao consultar status" };
     return {
-      connected: data?.connected === true && data?.smartphoneConnected !== false,
+      connected: isZapiSessionConnected(data, this.creds().type),
       smartphoneConnected: data?.smartphoneConnected,
       session: data?.session,
       error: data?.error,

@@ -3,6 +3,7 @@ import { getDefaultWhatsappInstance, instanceConfigured } from "./whatsapp/insta
 import { credsFromInstance, officialPhoneParts, zapiFetchWith } from "./whatsapp/zapiHttp";
 import { loadZapiWatchdogState } from "./zapiWatchdogState";
 import { isLockActive, loadZapiReconnectLock, type ZapiReconnectLock } from "./zapiReconnectLock";
+import { isZapiSessionConnected } from "../lib/whatsappMobileDiagnosis.js";
 
 export type WhatsappBotStatusSnapshot = {
   configured: boolean;
@@ -39,7 +40,7 @@ export async function getWhatsappBotStatusSnapshot(options: { live?: boolean } =
       try {
         const { ok, data } = await zapiFetchWith(creds, "status", { method: "GET" });
         if (ok && data) {
-          online = data.connected === true && data.smartphoneConnected !== false;
+          online = isZapiSessionConnected(data, creds.type);
           if (!online && data.error) lastError = String(data.error);
         }
       } catch {
