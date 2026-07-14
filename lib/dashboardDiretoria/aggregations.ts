@@ -20,6 +20,7 @@ import type {
   OpenReceivableByEntity,
   OperationalKpis,
   PendingApprovalItem,
+  ProvisionHorizon,
 } from './types';
 import { DEFAULT_MONTHLY_REVENUE_GOAL, MARGIN_GOAL_PCT } from './types';
 
@@ -394,6 +395,69 @@ export function buildOpenCashOutlook(
     topReceivable: sortByDueThenAmount(recvRows).slice(0, limit),
     topPayable: sortByDueThenAmount(payRows).slice(0, limit),
     byClientReceivable,
+  };
+}
+
+/**
+ * Ex.: receita em aberto ~2M com última parcela em 20/10 →
+ * pega todas as dívidas a pagar com vencimento até 20/10 e confronta no mesmo horizonte.
+ */
+export function buildProvisionHorizon(
+  allTransactions: FinancialTransaction[],
+  categories: FinancialCategory[],
+  now = new Date(),
+): ProvisionHorizon {
+  const empty: ProvisionHorizon = {
+    lastReceivableDate: null,
+    receivableTotal: 0,
+    receivableCount: 0,
+    payableInHorizon: 0,
+    payableInHorizonCount: 0,
+    payableBeyondHorizon: 0,
+    payableBeyondCount: 0,
+    netInHorizon: 0,
+  };
+
+  const investmentIds = new Set(categories.filter(c => c.group === 'INVESTIMENTOS').map(c => c.id));
+  const open = allTransactions.filter(t => {
+    if (!['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status)) return false;
+    if (isInternalGroupTransfer(t, categories)) return false;
+    if (isInvestmentCashMovement(t, investmentIds, categories)) return false;
+    return true;
+  });
+  const recv = open.filter(t => t.type === 'INCOME');
+  const pay = open.filter(t => t.type === 'EXPENSE');
+
+  if (recv.length === 0) return empty;
+
+  let lastReceivableDate = '';
+  for (const t of recv) {
+    const d = getDueDateIso(t);
+    if (d && (!lastReceivableDate || d > lastReceivableDate)) lastReceivableDate = d;
+  }
+  if (!lastReceivableDate) return empty;
+
+  const receivableTotal = round2(recv.reduce((s, t) => s + Number(t.amount || 0), 0));
+  const payIn = pay.filter(t => {
+    const d = getDueDateIso(t);
+    return d && d <= lastReceivableDate;
+  });
+  const payBeyond = pay.filter(t => {
+    const d = getDueDateIso(t);
+    return d && d > lastReceivableDate;
+  });
+  const payableInHorizon = round2(payIn.reduce((s, t) => s + Number(t.amount || 0), 0));
+  const payableBeyondHorizon = round2(payBeyond.reduce((s, t) => s + Number(t.amount || 0), 0));
+
+  return {
+    lastReceivableDate,
+    receivableTotal,
+    receivableCount: recv.length,
+    payableInHorizon,
+    payableInHorizonCount: payIn.length,
+    payableBeyondHorizon,
+    payableBeyondCount: payBeyond.length,
+    netInHorizon: round2(receivableTotal - payableInHorizon),
   };
 }
 

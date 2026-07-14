@@ -124,6 +124,25 @@ export interface OpenCashOutlook {
   byClientReceivable: OpenReceivableByEntity[];
 }
 
+/**
+ * Horizonte do provisionamento: usa a última data da receita em aberto
+ * e soma as dívidas a pagar até essa mesma data (entrada + saída no período).
+ */
+export interface ProvisionHorizon {
+  /** Última data de vencimento entre títulos a receber em aberto (ISO yyyy-mm-dd) */
+  lastReceivableDate: string | null;
+  receivableTotal: number;
+  receivableCount: number;
+  /** A pagar com vencimento até lastReceivableDate (inclui vencidos) */
+  payableInHorizon: number;
+  payableInHorizonCount: number;
+  /** Dívidas com vencimento depois do horizonte (fora do recorte) */
+  payableBeyondHorizon: number;
+  payableBeyondCount: number;
+  /** Receita provisionada − dívidas no horizonte */
+  netInHorizon: number;
+}
+
 export interface DashboardDiretoriaData {
   loading: boolean;
   error: string | null;

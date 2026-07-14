@@ -11,6 +11,7 @@ import {
   buildDailyCashFlow,
   buildCashTitleBreakdown,
   buildOpenCashOutlook,
+  buildProvisionHorizon,
   resolveOpenCashEntityName,
 } from '../lib/dashboardDiretoria/aggregations';
 import { getPeriodRange, getCashMovementDate, formatPeriodRangeHint } from '../lib/dashboardDiretoria/periodUtils';
@@ -124,6 +125,26 @@ describe('dashboardDiretoria aggregations', () => {
     assert.equal(outlook.byClientReceivable.find((r) => r.entity === 'DHL')?.amount, 800_000);
     assert.equal(outlook.byClientReceivable.find((r) => r.entity === 'CEVA')?.amount, 275_000);
     assert.ok(!outlook.byClientReceivable.some((r) => /^outros?$/i.test(r.entity)));
+  });
+
+  it('buildProvisionHorizon alinha dívidas até a última data da receita em aberto', () => {
+    const now = new Date(2026, 6, 14, 12, 0, 0);
+    const transactions = [
+      { id: 'r1', type: 'INCOME', status: 'PENDING', amount: 1_500_000, due_date: '2026-08-13', entity_name: 'DHL', category_id: 'c0' },
+      { id: 'r2', type: 'INCOME', status: 'PENDING', amount: 500_000, due_date: '2026-10-20', entity_name: 'CEVA', category_id: 'c0' },
+      { id: 'p1', type: 'EXPENSE', status: 'PENDING', amount: 200_000, due_date: '2026-07-20', entity_name: 'Forn A', category_id: 'c1', category_name: 'Fornecedor' },
+      { id: 'p2', type: 'EXPENSE', status: 'PENDING', amount: 300_000, due_date: '2026-09-15', entity_name: 'Forn B', category_id: 'c1', category_name: 'Fornecedor' },
+      { id: 'p3', type: 'EXPENSE', status: 'PENDING', amount: 900_000, due_date: '2026-11-01', entity_name: 'Forn C', category_id: 'c1', category_name: 'Fornecedor' },
+    ] as any[];
+    const categories = [{ id: 'c1', name: 'Fornecedor', type: 'EXPENSE', group: 'DESPESAS_VARIAVEIS' }] as any[];
+    const h = buildProvisionHorizon(transactions, categories, now);
+    assert.equal(h.lastReceivableDate, '2026-10-20');
+    assert.equal(h.receivableTotal, 2_000_000);
+    assert.equal(h.payableInHorizon, 500_000); // p1+p2 até 20/10; p3 fica fora
+    assert.equal(h.payableInHorizonCount, 2);
+    assert.equal(h.payableBeyondHorizon, 900_000);
+    assert.equal(h.payableBeyondCount, 1);
+    assert.equal(h.netInHorizon, 1_500_000);
   });
 
   it('computeAccountBalanceOverview soma total de todas as contas e investimentos', () => {
@@ -327,6 +348,9 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(ui, /operationalTotal/);
     assert.match(ui, /liquidez-resumo-diretoria/);
     assert.match(ui, /open-cash-outlook-diretoria/);
+    assert.match(ui, /provision-horizon-diretoria/);
+    assert.match(ui, /buildProvisionHorizon/);
+    assert.match(ui, /Provisionamento alinhado/);
     assert.match(ui, /Dívidas · Contas · Receita/);
     assert.match(ui, /Caixa do período \(liquidez\)/);
     assert.match(ui, /resolveOpenCashEntityName|Outros/);
