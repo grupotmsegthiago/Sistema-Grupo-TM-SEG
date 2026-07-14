@@ -38,11 +38,14 @@ function splitCombinedTransferErrors(msg: string): CombinedTransferErrors {
 
 function withdrawalDeniedMessage(): string {
   return (
-    'A chave API desta conta na Vercel não consegue transferir (o saldo até aparece, mas o saque via API é recusado). ' +
-    'Confira na Vercel (Production) se estas variáveis estão preenchidas e faça redeploy: ' +
-    'Asaas_TMSEGESTÃO_API (ou ASAAS_TMGESTAO_API), ASAAS_TMSEGURANCA_API, ASAAS_TMSECURITY_API, ' +
-    'ASAAS_WEBHOOK_TMGESTAO_API, ASAAS_WEBHOOK_TMSEGURANCA_API e ASAAS_WEBHOOK_TMSECURITY_API. ' +
-    'No painel Asaas de cada conta, a chave precisa ter permissão de saque/transferência via API.'
+    'O Asaas recusou o saque via API nesta conta (o saldo aparece, mas a transferência é bloqueada). ' +
+    'Na conta Asaas de origem (TM Gestão / TM Segurança / TM Security): ' +
+    '1) Integrações → Mecanismos de segurança → ative o webhook de aprovação de transferências com a URL ' +
+    'https://sistema.grupotmseg.com.br/api/asaas/transfer-approval e um authToken; ' +
+    '2) grave esse authToken na Vercel (ASAAS_WEBHOOK_TMGESTAO_API, ASAAS_WEBHOOK_TMSEGURANCA_API ou ASAAS_WEBHOOK_TMSECURITY_API); ' +
+    '3) se a chave API foi criada antes dessa liberação, gere uma nova chave no Asaas, cole em ' +
+    'Asaas_TMSEGESTÃO_API / ASAAS_TMGESTAO_API, ASAAS_TMSEGURANCA_API ou ASAAS_TMSECURITY_API e faça redeploy. ' +
+    'Sem o mecanismo de saque liberado, o Asaas sempre devolve “sem permissão para saque via API”.'
   );
 }
 
