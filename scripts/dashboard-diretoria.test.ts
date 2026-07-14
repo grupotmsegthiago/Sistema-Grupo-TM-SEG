@@ -233,6 +233,7 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(src, /Resultado realizado/);
     assert.match(src, /Previsão do pendente/);
     assert.match(src, /Maiores a pagar/);
+    assert.match(src, /Transferência entre contas da empresa/);
     assert.match(src, /cash-title-breakdown/);
     assert.match(src, /from 'react'/);
   });
