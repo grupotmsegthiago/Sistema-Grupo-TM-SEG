@@ -359,7 +359,10 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
             fetchData();
         } catch (e) {
             const msg = e instanceof Error ? e.message : 'Erro desconhecido';
-            showNotification('Erro', msg, 'error');
+            const friendly = /load failed|failed to fetch|networkerror|504|408|aborted/i.test(msg)
+              ? 'A requisição falhou ou a rede caiu. Tente salvar de novo em instantes.'
+              : msg;
+            showNotification('Erro', friendly, 'error');
         } finally { setIsSaving(false); }
     };
 
@@ -384,7 +387,10 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
             fetchData();
         } catch (e) {
             const msg = e instanceof Error ? e.message : 'Erro desconhecido';
-            showNotification('Erro', msg, 'error');
+            const friendly = /load failed|failed to fetch|networkerror|504|408|aborted/i.test(msg)
+              ? 'A exclusão falhou ou a rede caiu. Tente de novo em instantes.'
+              : msg;
+            showNotification('Erro', friendly, 'error');
         }
     };
 

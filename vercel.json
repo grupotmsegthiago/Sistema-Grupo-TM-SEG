@@ -73,6 +73,12 @@
     "api/investment-snapshot-delete.ts": {
       "maxDuration": 60
     },
+    "api/investment-accounts.ts": {
+      "maxDuration": 30
+    },
+    "api/investment-accounts-item.ts": {
+      "maxDuration": 30
+    },
     "api/email-mission-scheduled.ts": {
       "maxDuration": 120
     },
@@ -248,6 +254,14 @@
     {
       "source": "/api/investment/snapshots/:id",
       "destination": "/api/investment-snapshot-delete?id=:id"
+    },
+    {
+      "source": "/api/investment/accounts",
+      "destination": "/api/investment-accounts"
+    },
+    {
+      "source": "/api/investment/accounts/:id",
+      "destination": "/api/investment-accounts-item?id=:id"
     },
     {
       "source": "/api/email/mission-scheduled",

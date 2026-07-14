@@ -246,3 +246,22 @@ export async function deleteSnapshot(id: number): Promise<boolean> {
   }
   return true;
 }
+
+/** Remove todo o histórico de saldo de uma conta (antes de excluir/desativar). */
+export async function deleteSnapshotsForAccount(accountId: string): Promise<boolean> {
+  const id = String(accountId || '').trim();
+  if (!id) return false;
+  const { url, key } = getSupabaseConfig();
+  const res = await fetch(
+    `${url}/rest/v1/account_balance_snapshots?account_id=eq.${encodeURIComponent(id)}`,
+    {
+      method: 'DELETE',
+      headers: restHeaders(key),
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`delete by account ${res.status}: ${text.slice(0, 300)}`);
+  }
+  return true;
+}
