@@ -108,3 +108,11 @@ export function buildYearOptions(back = 3): number[] {
 export function createDefaultPeriod(now = new Date()): DashboardPeriod {
   return { mode: 'month', year: now.getFullYear(), month: now.getMonth() };
 }
+
+/** Mês calendário imediatamente anterior ao período (para comparação MoM). */
+export function getPreviousMonthPeriod(period: DashboardPeriod): DashboardPeriod {
+  if (period.month <= 0) {
+    return { mode: 'month', year: period.year - 1, month: 11 };
+  }
+  return { mode: 'month', year: period.year, month: period.month - 1 };
+}

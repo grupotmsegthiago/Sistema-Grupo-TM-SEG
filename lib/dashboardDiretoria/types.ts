@@ -184,6 +184,37 @@ export interface DashboardDiretoriaData {
   refresh: () => Promise<void>;
 }
 
+/**
+ * Ponto do gráfico: faturamento OS do dia D do mês atual × dia D do mês anterior.
+ * Acumulados permitem ver se a evolução está acima/abaixo do mês passado.
+ */
+export interface DailyRevenueMonthComparePoint {
+  /** Dia do mês (1–31) */
+  day: number;
+  /** Rótulo curto do eixo (01, 02, …) */
+  label: string;
+  /** Tooltip: "01/06 × 01/07" */
+  labelCompare: string;
+  /** Receita canônica no dia (mês atual); null = dia futuro ainda não chegou */
+  current: number | null;
+  /** Receita canônica no mesmo dia do mês anterior; null se o mês anterior não tem esse dia */
+  previous: number | null;
+  currentCum: number | null;
+  previousCum: number | null;
+}
+
+export interface DailyRevenueMonthComparison {
+  points: DailyRevenueMonthComparePoint[];
+  currentLabel: string;
+  previousLabel: string;
+  /** Acumulado atual até o último dia com dados */
+  currentCumTotal: number;
+  /** Acumulado do mês anterior no mesmo dia de referência */
+  previousCumTotal: number;
+  /** (atual − anterior) / anterior · 100; null se anterior = 0 */
+  deltaCumPct: number | null;
+}
+
 /** Meta de margem operacional (OS) — alinhada ao termômetro / diretoria */
 export const MARGIN_GOAL_PCT = 40;
 export const DEFAULT_MONTHLY_REVENUE_GOAL = 700_000;

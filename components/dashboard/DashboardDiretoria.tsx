@@ -16,6 +16,7 @@ import {
   buildClientRevenueCostBars,
   buildCriticalAlerts,
   buildDailyCashFlow,
+  buildDailyRevenueMonthComparison,
   buildExpenseDonut,
   buildMarginVsGoalSeries,
   buildMissionStatusCounts,
@@ -31,7 +32,7 @@ import {
   fmtBRL,
   fmtShort,
 } from '../../lib/dashboardDiretoria/aggregations';
-import { buildYearOptions, createDefaultPeriod, formatPeriodRangeHint } from '../../lib/dashboardDiretoria/periodUtils';
+import { buildYearOptions, createDefaultPeriod, formatPeriodRangeHint, getPeriodRange } from '../../lib/dashboardDiretoria/periodUtils';
 import type { CashTitleRow, DashboardPeriod, DashboardPeriodMode, DiretoriaTab } from '../../lib/dashboardDiretoria/types';
 import { MARGIN_GOAL_PCT } from '../../lib/dashboardDiretoria/types';
 
@@ -54,12 +55,18 @@ const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', '
 
 const FinTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
+  const compareLabel = payload[0]?.payload?.labelCompare;
   return (
     <div className="bg-white border border-gray-200 text-gray-800 px-3 py-2 rounded-lg shadow-lg text-xs">
-      <p className="font-bold mb-1 text-gray-500">{label}</p>
-      {payload.map((p: any, i: number) => (
-        <p key={i} style={{ color: p.color }} className="font-mono font-bold">{p.name}: {typeof p.value === 'number' && Math.abs(p.value) > 50 ? fmtBRL(p.value) : p.value}</p>
-      ))}
+      <p className="font-bold mb-1 text-gray-500">{compareLabel || label}</p>
+      {payload.map((p: any, i: number) => {
+        if (p.value == null || Number.isNaN(p.value)) return null;
+        return (
+          <p key={i} style={{ color: p.color }} className="font-mono font-bold">
+            {p.name}: {typeof p.value === 'number' && Math.abs(p.value) > 50 ? fmtBRL(p.value) : p.value}
+          </p>
+        );
+      })}
     </div>
   );
 };
@@ -209,11 +216,28 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
   const cashFlow = useMemo(() => buildDailyCashFlow(data.allTransactions, period, undefined, data.categories), [data.allTransactions, data.categories, period]);
   const marginSeries = useMemo(() => buildMarginVsGoalSeries(data.missions, data.refs, period), [data.missions, data.refs, period]);
+  const revenueMonthCompare = useMemo(
+    () => buildDailyRevenueMonthComparison(data.missions, data.refs, period),
+    [data.missions, data.refs, period],
+  );
   const topPayers = useMemo(() => buildTopClientsByRevenue(data.missions, data.refs, period), [data.missions, data.refs, period]);
   const clientBars = useMemo(() => buildClientRevenueCostBars(data.missions, data.refs, period), [data.missions, data.refs, period]);
   const funnel = useMemo(() => buildQuotesFunnel(data.quotes), [data.quotes]);
-  const statusCounts = useMemo(() => buildMissionStatusCounts(data.missions), [data.missions]);
-  const parentSummary = useMemo(() => buildParentMissionsSummary(data.missions), [data.missions]);
+  /** Escopo Operação: período selecionado + OS abertas (exclui mês anterior só usado no comparativo). */
+  const missionsForOperacao = useMemo(() => {
+    const { startIso, endIso } = getPeriodRange(period);
+    const openStatuses = new Set(['Pendente', 'Solicitada', 'Documentação', 'Agendada', 'Origem', 'Em Viagem']);
+    return data.missions.filter((m: any) => {
+      const ref = String(m.start_time || m.startTime || m.created_at || m.createdAt || '').slice(0, 10);
+      if (ref >= startIso && ref <= endIso) return true;
+      const st = String(m.status || '');
+      if (openStatuses.has(st)) return true;
+      if (st === 'Concluída' && !m.billing_approved) return true;
+      return false;
+    });
+  }, [data.missions, period]);
+  const statusCounts = useMemo(() => buildMissionStatusCounts(missionsForOperacao), [missionsForOperacao]);
+  const parentSummary = useMemo(() => buildParentMissionsSummary(missionsForOperacao), [missionsForOperacao]);
   const arAp = useMemo(() => buildArApByMonth(data.allTransactions, data.categories), [data.allTransactions, data.categories]);
   const expenseDonut = useMemo(() => buildExpenseDonut(data.transactions, data.categories), [data.transactions, data.categories]);
   const pendingApprovals = useMemo(() => buildPendingApprovals(data.missions, data.refs), [data.missions, data.refs]);
@@ -571,6 +595,85 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
         {openCashOutlookSection}
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Caixa do período (liquidez)</p>
         {cashKpiRow}
+      </div>
+
+      <div className="lg:col-span-12">
+        <Card
+          title="Faturamento diário (OS)"
+          subtitle={`Comparativo dia a dia: ${revenueMonthCompare.previousLabel} × ${revenueMonthCompare.currentLabel} (receita canônica). Linhas tracejadas = acumulado no mês.`}
+          testId="revenue-month-compare-diretoria"
+        >
+          <div className="flex flex-wrap items-center gap-3 mb-3 text-[11px]">
+            <span className="font-mono font-bold text-gray-700">
+              Acumulado {revenueMonthCompare.currentLabel}: {fmtBRL(revenueMonthCompare.currentCumTotal)}
+            </span>
+            <span className="text-gray-300">|</span>
+            <span className="font-mono font-bold text-gray-500">
+              Acumulado {revenueMonthCompare.previousLabel} (mesmo recorte): {fmtBRL(revenueMonthCompare.previousCumTotal)}
+            </span>
+            {revenueMonthCompare.deltaCumPct != null && (
+              <span
+                className={`font-black px-2 py-0.5 rounded-md ${
+                  revenueMonthCompare.deltaCumPct >= 0
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-rose-50 text-rose-700'
+                }`}
+              >
+                {revenueMonthCompare.deltaCumPct >= 0 ? '▲' : '▼'}{' '}
+                {Math.abs(revenueMonthCompare.deltaCumPct).toFixed(1)}% vs mês anterior
+              </span>
+            )}
+          </div>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={revenueMonthCompare.points} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                <XAxis dataKey="label" tick={AXIS_TICK} interval={1} />
+                <YAxis tick={AXIS_TICK} tickFormatter={(v) => fmtShort(v)} width={48} />
+                <Tooltip content={<FinTooltip />} />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="previous"
+                  name={`Diário ${revenueMonthCompare.previousLabel}`}
+                  stroke="#94a3b8"
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="current"
+                  name={`Diário ${revenueMonthCompare.currentLabel}`}
+                  stroke="#16a34a"
+                  strokeWidth={2.5}
+                  dot={false}
+                  connectNulls={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="previousCum"
+                  name={`Acumulado ${revenueMonthCompare.previousLabel}`}
+                  stroke="#64748b"
+                  strokeWidth={2}
+                  strokeDasharray="6 4"
+                  dot={false}
+                  connectNulls={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="currentCum"
+                  name={`Acumulado ${revenueMonthCompare.currentLabel}`}
+                  stroke="#15803d"
+                  strokeWidth={2.5}
+                  strokeDasharray="6 4"
+                  dot={false}
+                  connectNulls={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
       </div>
 
       <div className="lg:col-span-6">

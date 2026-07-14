@@ -9,12 +9,18 @@ import {
   buildQuotesFunnel,
   buildCriticalAlerts,
   buildDailyCashFlow,
+  buildDailyRevenueMonthComparison,
   buildCashTitleBreakdown,
   buildOpenCashOutlook,
   buildProvisionHorizon,
   resolveOpenCashEntityName,
 } from '../lib/dashboardDiretoria/aggregations';
-import { getPeriodRange, getCashMovementDate, formatPeriodRangeHint } from '../lib/dashboardDiretoria/periodUtils';
+import {
+  getPeriodRange,
+  getCashMovementDate,
+  formatPeriodRangeHint,
+  getPreviousMonthPeriod,
+} from '../lib/dashboardDiretoria/periodUtils';
 import { MissionStatus } from '../types';
 
 describe('dashboardDiretoria aggregations', () => {
@@ -125,6 +131,86 @@ describe('dashboardDiretoria aggregations', () => {
     assert.equal(outlook.byClientReceivable.find((r) => r.entity === 'DHL')?.amount, 800_000);
     assert.equal(outlook.byClientReceivable.find((r) => r.entity === 'CEVA')?.amount, 275_000);
     assert.ok(!outlook.byClientReceivable.some((r) => /^outros?$/i.test(r.entity)));
+  });
+
+  it('getPreviousMonthPeriod volta um mês (inclui virada de ano)', () => {
+    assert.deepEqual(getPreviousMonthPeriod({ mode: 'month', year: 2026, month: 6 }), {
+      mode: 'month',
+      year: 2026,
+      month: 5,
+    });
+    assert.deepEqual(getPreviousMonthPeriod({ mode: 'month', year: 2026, month: 0 }), {
+      mode: 'month',
+      year: 2025,
+      month: 11,
+    });
+  });
+
+  it('buildDailyRevenueMonthComparison alinha dia D do mês atual × mês anterior e acumula', () => {
+    const now = new Date(2026, 6, 14, 12, 0, 0); // 14/07/2026
+    const refs = { clientTables: [], providerTables: [], clientsData: [] };
+    const missions = [
+      {
+        id: 'j1',
+        status: MissionStatus.COMPLETED,
+        start_time: '2026-06-01T10:00:00',
+        revenue_value: 1000,
+        cost_value: 400,
+        billing_approved: true,
+      },
+      {
+        id: 'j2',
+        status: MissionStatus.COMPLETED,
+        start_time: '2026-06-01T15:00:00',
+        revenue_value: 500,
+        cost_value: 200,
+        billing_approved: true,
+      },
+      {
+        id: 'l1',
+        status: MissionStatus.COMPLETED,
+        start_time: '2026-07-01T10:00:00',
+        revenue_value: 2000,
+        cost_value: 800,
+        billing_approved: true,
+      },
+      {
+        id: 'l2',
+        status: MissionStatus.COMPLETED,
+        start_time: '2026-07-02T10:00:00',
+        revenue_value: 300,
+        cost_value: 100,
+        billing_approved: true,
+      },
+      {
+        // depois de "hoje" — não deve entrar no acumulado do mês corrente
+        id: 'l-future',
+        status: MissionStatus.COMPLETED,
+        start_time: '2026-07-20T10:00:00',
+        revenue_value: 9999,
+        cost_value: 1,
+        billing_approved: true,
+      },
+    ];
+    const cmp = buildDailyRevenueMonthComparison(
+      missions,
+      refs,
+      { mode: 'month', year: 2026, month: 6 },
+      now,
+    );
+    assert.equal(cmp.previousLabel, 'Jun/2026');
+    assert.equal(cmp.currentLabel, 'Jul/2026');
+    const d1 = cmp.points.find((p) => p.day === 1);
+    assert.ok(d1);
+    assert.equal(d1!.previous, 1500);
+    assert.equal(d1!.current, 2000);
+    assert.equal(d1!.labelCompare, '01/06 × 01/07');
+    const d2 = cmp.points.find((p) => p.day === 2);
+    assert.equal(d2!.currentCum, 2300);
+    assert.equal(d2!.previousCum, 1500); // jun sem fatura no dia 2
+    const d20 = cmp.points.find((p) => p.day === 20);
+    assert.equal(d20!.current, null);
+    assert.ok((cmp.deltaCumPct ?? 0) > 0);
   });
 
   it('buildProvisionHorizon alinha dívidas até a última data da receita em aberto', () => {
@@ -353,7 +439,11 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(ui, /Provisionamento alinhado/);
     assert.match(ui, /Dívidas · Contas · Receita/);
     assert.match(ui, /Caixa do período \(liquidez\)/);
+    assert.match(ui, /buildDailyRevenueMonthComparison/);
+    assert.match(ui, /revenue-month-compare-diretoria/);
+    assert.match(ui, /Faturamento diário \(OS\)/);
     assert.match(ui, /resolveOpenCashEntityName|Outros/);
+    assert.match(hook, /getPreviousMonthPeriod/);
     assert.doesNotMatch(ui, /Saldo total de todas as contas/);
     // Ordem Visão Geral: Cards → Operação (OS) → Provisionamento → Detalhe → Caixa
     const geralStart = ui.indexOf('const renderGeral');

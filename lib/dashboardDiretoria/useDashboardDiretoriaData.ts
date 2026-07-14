@@ -4,8 +4,14 @@ import { authFetch } from '../authFetch';
 import { useRealtimeRefresh } from '../RealtimeProvider';
 import { listBalanceSnapshotsDirect } from '../investment/snapshotClient';
 import type { Client, ClientPriceTable, FinancialCategory, FinancialTransaction, Mission, ProviderCostTable } from '../../types';
-import { formatPeriodLabel, getCashMovementDate, getPeriodRange, getRhReferenceMonth, type DashboardPeriod } from './periodUtils';
-import type { DashboardDiretoriaData, DashboardRefs } from './types';
+import {
+  formatPeriodLabel,
+  getCashMovementDate,
+  getPeriodRange,
+  getPreviousMonthPeriod,
+  getRhReferenceMonth,
+} from './periodUtils';
+import type { DashboardDiretoriaData, DashboardPeriod, DashboardRefs } from './types';
 
 /** Extrai o saldo mais recente por conta a partir da lista de snapshots. */
 function latestBalanceByAccount(
@@ -151,7 +157,12 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
     setError(null);
     try {
       const { startIso, endIso } = getPeriodRange(period);
-      const rangeStart = `${startIso}T00:00:00`;
+      // Inclui o mês calendário anterior (comparativo de faturamento diário MoM no cockpit).
+      // KPIs de período continuam filtrando via getPeriodRange / filterMissionsByPeriod.
+      const prevMonth = getPreviousMonthPeriod({ mode: 'month', year: period.year, month: period.month });
+      const prevRange = getPeriodRange(prevMonth);
+      const fetchStartIso = prevRange.startIso < startIso ? prevRange.startIso : startIso;
+      const rangeStart = `${fetchStartIso}T00:00:00`;
       const rangeEnd = `${endIso}T23:59:59`;
       const rangeOr = `and(start_time.gte.${rangeStart},start_time.lte.${rangeEnd}),and(start_time.is.null,created_at.gte.${rangeStart},created_at.lte.${rangeEnd})`;
       const openOr = 'status.in.("Pendente","Solicitada","Documentação","Agendada","Origem","Em Viagem"),and(status.eq."Concluída",billing_approved.not.is.true)';

@@ -7,13 +7,14 @@ import {
   type CanonicalRefs,
 } from '../missionFinancialsCanonical';
 import { isInternalGroupTransfer, normalizeFinancialText } from '../financialInternalTransfer';
-import { getPeriodRange, getCashMovementDate } from './periodUtils';
+import { getPeriodRange, getCashMovementDate, getPreviousMonthPeriod } from './periodUtils';
 import type {
   AccountBalanceOverview,
   CashKpis,
   CashTitleBreakdown,
   CashTitleRow,
   CriticalAlert,
+  DailyRevenueMonthComparison,
   DashboardPeriod,
   DiretoriaAccountBalance,
   OpenCashOutlook,
@@ -23,6 +24,8 @@ import type {
   ProvisionHorizon,
 } from './types';
 import { DEFAULT_MONTHLY_REVENUE_GOAL, MARGIN_GOAL_PCT } from './types';
+
+const MONTH_SHORT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 /**
  * Contas operacionais do grupo — mesma regra do painel de Investimentos
@@ -522,6 +525,104 @@ export function buildDailyCashFlow(
   return Array.from(map.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([day, v]) => ({ day: day.slice(8, 10) + '/' + day.slice(5, 7), inflow: round2(v.inflow), outflow: round2(v.outflow) }));
+}
+
+/**
+ * Faturamento diário OS (receita canônica) — dia D do mês atual vs dia D do mês anterior.
+ * Inclui linhas acumuladas para acompanhar a evolução (bem/mal vs mês passado).
+ * No mês corrente, dias futuros ficam null (não puxam a linha a zero).
+ */
+export function buildDailyRevenueMonthComparison(
+  missions: any[],
+  refs: CanonicalRefs,
+  period: DashboardPeriod,
+  now = new Date(),
+): DailyRevenueMonthComparison {
+  const currentPeriod: DashboardPeriod = {
+    mode: 'month',
+    year: period.year,
+    month: period.month,
+  };
+  const previousPeriod = getPreviousMonthPeriod(currentPeriod);
+  const currentRange = getPeriodRange(currentPeriod, now);
+  const previousRange = getPeriodRange(previousPeriod, now);
+
+  const sumByDayOfMonth = (start: Date, end: Date): Map<number, number> => {
+    const inPeriod = filterMissionsByPeriod(missions, start, end);
+    const byDay = new Map<number, number>();
+    for (const m of inPeriod) {
+      if (m.status === MissionStatus.REFUSED) continue;
+      const ref = m.start_time || m.startTime || m.created_at || m.createdAt;
+      if (!ref) continue;
+      const d = new Date(ref);
+      const day = d.getDate();
+      const c = computeCanonicalRevenueCost(m, refs, now);
+      byDay.set(day, round2((byDay.get(day) || 0) + c.rev));
+    }
+    return byDay;
+  };
+
+  const currentByDay = sumByDayOfMonth(currentRange.start, currentRange.end);
+  const previousByDay = sumByDayOfMonth(previousRange.start, previousRange.end);
+
+  const daysInCurrent = currentRange.end.getDate();
+  const daysInPrevious = previousRange.end.getDate();
+  const axisDays = Math.max(daysInCurrent, daysInPrevious);
+
+  const isViewingCurrentCalendarMonth =
+    now.getFullYear() === currentPeriod.year && now.getMonth() === currentPeriod.month;
+  const lastComparableDay = isViewingCurrentCalendarMonth
+    ? Math.min(now.getDate(), daysInCurrent)
+    : daysInCurrent;
+
+  const prevMm = String(previousPeriod.month + 1).padStart(2, '0');
+  const curMm = String(currentPeriod.month + 1).padStart(2, '0');
+
+  let currentCum = 0;
+  let previousCum = 0;
+  const points: DailyRevenueMonthComparison['points'] = [];
+
+  for (let day = 1; day <= axisDays; day++) {
+    const dd = String(day).padStart(2, '0');
+    const hasPrevDay = day <= daysInPrevious;
+    const hasCurDay = day <= daysInCurrent;
+    const currentReached = hasCurDay && day <= lastComparableDay;
+
+    const currentVal = currentReached ? (currentByDay.get(day) || 0) : null;
+    const previousVal = hasPrevDay && day <= lastComparableDay ? (previousByDay.get(day) || 0) : null;
+
+    if (currentVal != null) currentCum = round2(currentCum + currentVal);
+    if (previousVal != null) previousCum = round2(previousCum + previousVal);
+
+    points.push({
+      day,
+      label: dd,
+      labelCompare: `${dd}/${prevMm} × ${dd}/${curMm}`,
+      current: currentVal,
+      previous: previousVal,
+      currentCum: currentVal != null ? currentCum : null,
+      previousCum: previousVal != null ? previousCum : null,
+    });
+  }
+
+  const lastWithData = [...points].reverse().find((p) => p.currentCum != null || p.previousCum != null);
+  const currentCumTotal = lastWithData?.currentCum ?? 0;
+  const previousCumTotal = lastWithData?.previousCum ?? 0;
+  const deltaCumPct =
+    previousCumTotal > 0
+      ? round2(((currentCumTotal - previousCumTotal) / previousCumTotal) * 100)
+      : currentCumTotal > 0
+        ? 100
+        : null;
+
+  return {
+    points,
+    currentLabel: `${MONTH_SHORT[currentPeriod.month]}/${currentPeriod.year}`,
+    previousLabel: `${MONTH_SHORT[previousPeriod.month]}/${previousPeriod.year}`,
+    currentCumTotal,
+    previousCumTotal,
+    deltaCumPct,
+  };
 }
 
 export function buildMarginVsGoalSeries(
