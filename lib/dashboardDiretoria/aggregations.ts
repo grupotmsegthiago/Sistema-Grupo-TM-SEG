@@ -6,10 +6,69 @@ import {
   sumCanonical,
   type CanonicalRefs,
 } from '../missionFinancialsCanonical';
-import { isInternalGroupTransfer } from '../financialInternalTransfer';
+import { isInternalGroupTransfer, normalizeFinancialText } from '../financialInternalTransfer';
 import { getPeriodRange, getCashMovementDate } from './periodUtils';
-import type { CashKpis, CashTitleBreakdown, CashTitleRow, CriticalAlert, DashboardPeriod, OperationalKpis, PendingApprovalItem } from './types';
+import type {
+  AccountBalanceOverview,
+  CashKpis,
+  CashTitleBreakdown,
+  CashTitleRow,
+  CriticalAlert,
+  DashboardPeriod,
+  DiretoriaAccountBalance,
+  OperationalKpis,
+  PendingApprovalItem,
+} from './types';
 import { DEFAULT_MONTHLY_REVENUE_GOAL, MARGIN_GOAL_PCT } from './types';
+
+/**
+ * Contas operacionais do grupo — mesma regra do painel de Investimentos
+ * (`FinancialAccountManager`): tudo que não for estas é investimento.
+ */
+const OPERATIONAL_ACCOUNT_NAMES = new Set(
+  ['TM GESTÃO', 'TM GESTAO', 'TM SECURITY', 'TM SEGURANÇA', 'TM SEGURANCA'].map(normalizeFinancialText),
+);
+
+export function isOperationalGroupAccountName(name: string): boolean {
+  return OPERATIONAL_ACCOUNT_NAMES.has(normalizeFinancialText(name));
+}
+
+/**
+ * Monta saldos por conta + total de investimentos (último snapshot ou initial_balance).
+ * Espelha o cálculo de `totalInvestmentBalance` do painel de contas.
+ */
+export function computeAccountBalanceOverview(
+  accounts: Array<{ id: string; name?: string; bank_name?: string; initial_balance: number }>,
+  latestBalances: Record<string, number> = {},
+): AccountBalanceOverview {
+  const rows: DiretoriaAccountBalance[] = accounts.map((acc) => {
+    const name = String(acc.name || '').trim() || 'Conta sem nome';
+    const snap = latestBalances[acc.id];
+    const balance = round2(
+      Number.isFinite(snap) ? Number(snap) : Number(acc.initial_balance || 0),
+    );
+    return {
+      id: acc.id,
+      name,
+      bankName: String(acc.bank_name || '').trim(),
+      balance,
+      kind: isOperationalGroupAccountName(name) ? 'operational' : 'investment',
+    };
+  });
+
+  rows.sort((a, b) => b.balance - a.balance);
+
+  const investments = rows.filter((r) => r.kind === 'investment');
+  const operational = rows.filter((r) => r.kind === 'operational');
+
+  return {
+    investmentsTotal: round2(investments.reduce((s, r) => s + r.balance, 0)),
+    operationalTotal: round2(operational.reduce((s, r) => s + r.balance, 0)),
+    investmentCount: investments.length,
+    operationalCount: operational.length,
+    accounts: rows,
+  };
+}
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 

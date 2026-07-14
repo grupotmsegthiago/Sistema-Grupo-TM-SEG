@@ -4,6 +4,8 @@ import {
   computeFinancialKpis,
   computeOperationalKpis,
   computeCashKpis,
+  computeAccountBalanceOverview,
+  isOperationalGroupAccountName,
   buildQuotesFunnel,
   buildCriticalAlerts,
   buildDailyCashFlow,
@@ -70,6 +72,27 @@ describe('dashboardDiretoria aggregations', () => {
       openQuotes: 0,
     });
     assert.ok(alerts.some(a => a.id === 'low-margin'));
+  });
+
+  it('computeAccountBalanceOverview soma investimentos e lista cada conta', () => {
+    assert.equal(isOperationalGroupAccountName('TM Gestão'), true);
+    assert.equal(isOperationalGroupAccountName('BTG Renda Fixa'), false);
+    const overview = computeAccountBalanceOverview(
+      [
+        { id: 'op1', name: 'TM Gestão', bank_name: 'Asaas', initial_balance: 10_000 },
+        { id: 'inv1', name: 'BTG Renda Fixa', bank_name: 'BTG', initial_balance: 100_000 },
+        { id: 'inv2', name: 'XP CDB', bank_name: 'XP', initial_balance: 200_000 },
+      ],
+      { inv1: 500_000, inv2: 900_000 },
+    );
+    assert.equal(overview.investmentsTotal, 1_400_000);
+    assert.equal(overview.investmentCount, 2);
+    assert.equal(overview.operationalTotal, 10_000);
+    assert.equal(overview.accounts.length, 3);
+    assert.equal(overview.accounts[0].name, 'XP CDB');
+    assert.equal(overview.accounts[0].balance, 900_000);
+    assert.equal(overview.accounts.find((a) => a.id === 'inv1')?.kind, 'investment');
+    assert.equal(overview.accounts.find((a) => a.id === 'op1')?.kind, 'operational');
   });
 
   it('computeOperationalKpis e computeCashKpis não misturam caixa com OS', () => {
@@ -236,6 +259,21 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(src, /Transferência entre contas da empresa/);
     assert.match(src, /cash-title-breakdown/);
     assert.match(src, /from 'react'/);
+  });
+
+  it('cockpit exibe saldos por conta e total de investimentos (não um único card)', async () => {
+    const fs = await import('node:fs/promises');
+    const ui = await fs.readFile('components/dashboard/DashboardDiretoria.tsx', 'utf8');
+    const hook = await fs.readFile('lib/dashboardDiretoria/useDashboardDiretoriaData.ts', 'utf8');
+    assert.match(ui, /computeAccountBalanceOverview/);
+    assert.match(ui, /Saldo de todos os investimentos/);
+    assert.match(ui, /Saldos das Contas/);
+    assert.match(ui, /account-balances-diretoria/);
+    assert.match(ui, /investment-accounts-list/);
+    assert.match(ui, /from 'react'/);
+    assert.match(hook, /listBalanceSnapshotsDirect/);
+    assert.match(hook, /latestAccountBalances/);
+    assert.match(hook, /name, bank_name, initial_balance/);
   });
 
   it('handler serverless usa bundle CJS do motor financeiro (não import ESM de financialUtils)', async () => {

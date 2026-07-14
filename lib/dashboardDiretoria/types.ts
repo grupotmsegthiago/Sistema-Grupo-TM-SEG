@@ -53,6 +53,25 @@ export interface CashKpis {
   cashForecast: number;
 }
 
+/** Conta financeira com saldo atual (snapshot de investimento ou saldo inicial). */
+export interface DiretoriaAccountBalance {
+  id: string;
+  name: string;
+  bankName: string;
+  balance: number;
+  /** Contas operacionais do grupo (TM Gestão / Security / Segurança); demais = investimento. */
+  kind: 'investment' | 'operational';
+}
+
+/** Visão de saldos para o cockpit — total de investimentos + lista por conta (não um único card). */
+export interface AccountBalanceOverview {
+  investmentsTotal: number;
+  operationalTotal: number;
+  investmentCount: number;
+  operationalCount: number;
+  accounts: DiretoriaAccountBalance[];
+}
+
 /** Linha do ranking de títulos do caixa (para o diretoria conferir). */
 export interface CashTitleRow {
   id: string;
@@ -97,7 +116,9 @@ export interface DashboardDiretoriaData {
     created_at: string;
   }>;
   refs: DashboardRefs;
-  accounts: Array<{ id: string; initial_balance: number }>;
+  accounts: Array<{ id: string; initial_balance: number; name?: string; bank_name?: string }>;
+  /** Último saldo registrado por conta (account_balance_snapshots); vazio se sem histórico. */
+  latestAccountBalances: Record<string, number>;
   accountBalance: number;
   rhSnapshot: {
     totalEmployees: number;

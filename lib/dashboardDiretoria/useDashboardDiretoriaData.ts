@@ -2,9 +2,30 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { authFetch } from '../authFetch';
 import { useRealtimeRefresh } from '../RealtimeProvider';
+import { listBalanceSnapshotsDirect } from '../investment/snapshotClient';
 import type { Client, ClientPriceTable, FinancialCategory, FinancialTransaction, Mission, ProviderCostTable } from '../../types';
 import { formatPeriodLabel, getCashMovementDate, getPeriodRange, getRhReferenceMonth, type DashboardPeriod } from './periodUtils';
 import type { DashboardDiretoriaData, DashboardRefs } from './types';
+
+/** Extrai o saldo mais recente por conta a partir da lista de snapshots. */
+function latestBalanceByAccount(
+  snapshots: Array<{ account_id: string; balance: number; recorded_at: string }>,
+): Record<string, number> {
+  const latest: Record<string, { balance: number; at: number }> = {};
+  for (const s of snapshots) {
+    const id = String(s.account_id || '');
+    if (!id) continue;
+    const at = new Date(s.recorded_at).getTime();
+    if (!Number.isFinite(at)) continue;
+    const prev = latest[id];
+    if (!prev || at >= prev.at) {
+      latest[id] = { balance: Number(s.balance) || 0, at };
+    }
+  }
+  const out: Record<string, number> = {};
+  for (const [id, v] of Object.entries(latest)) out[id] = v.balance;
+  return out;
+}
 
 async function fetchAllPages<T>(buildQuery: (from: number, size: number) => Promise<{ data: T[] | null; error: any }>, pageSize = 1000): Promise<T[]> {
   const all: T[] = [];
@@ -107,7 +128,8 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
   const [missions, setMissions] = useState<Mission[]>([]);
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
   const [allTransactions, setAllTransactions] = useState<FinancialTransaction[]>([]);
-  const [accounts, setAccounts] = useState<Array<{ id: string; initial_balance: number }>>([]);
+  const [accounts, setAccounts] = useState<DashboardDiretoriaData['accounts']>([]);
+  const [latestAccountBalances, setLatestAccountBalances] = useState<Record<string, number>>({});
   const [categories, setCategories] = useState<FinancialCategory[]>([]);
   const [quotes, setQuotes] = useState<DashboardDiretoriaData['quotes']>([]);
   const [accountBalance, setAccountBalance] = useState(0);
@@ -146,6 +168,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
         catRes,
         quotesRes,
         accountsRes,
+        snapshotsRes,
         empsRes,
         salRes,
         commRes,
@@ -165,7 +188,11 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
         ),
         supabase.from('financial_categories').select('*'),
         supabase.from('quotes').select('id, client_name, status, total_value, created_at').order('created_at', { ascending: false }).limit(500),
-        supabase.from('financial_accounts').select('id, initial_balance, status').eq('status', 'Ativo'),
+        supabase.from('financial_accounts').select('id, name, bank_name, initial_balance, status').eq('status', 'Ativo'),
+        listBalanceSnapshotsDirect(3650).catch((e) => {
+          console.warn('[DashboardDiretoria] snapshots de saldo indisponíveis:', e);
+          return [] as Awaited<ReturnType<typeof listBalanceSnapshotsDirect>>;
+        }),
         supabase.from('rh_employees').select('status').is('deleted_at', null),
         supabase.from('rh_salary_configs').select('base_salary').is('deleted_at', null),
         supabase.from('rh_commissions').select('commission_amount, paid_at').eq('reference_month', monthRef).is('deleted_at', null),
@@ -186,8 +213,14 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
       }));
       setCategories((catRes.data || []) as FinancialCategory[]);
       setQuotes((quotesRes.data || []) as DashboardDiretoriaData['quotes']);
-      const accs = (accountsRes.data || []).map((a: any) => ({ id: a.id, initial_balance: Number(a.initial_balance || 0) }));
+      const accs = (accountsRes.data || []).map((a: any) => ({
+        id: String(a.id),
+        name: String(a.name || ''),
+        bank_name: String(a.bank_name || ''),
+        initial_balance: Number(a.initial_balance || 0),
+      }));
       setAccounts(accs);
+      setLatestAccountBalances(latestBalanceByAccount(snapshotsRes || []));
       setRefs({
         clientTables: (clientTablesRes.data || []) as ClientPriceTable[],
         providerTables: (providerTablesRes.data || []) as ProviderCostTable[],
@@ -251,7 +284,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
   useEffect(() => { void load(); }, [load]);
 
   useRealtimeRefresh(
-    ['missions', 'financial_transactions', 'financial_categories', 'quotes', 'rh_employees', 'rh_commissions', 'rh_salary_configs'],
+    ['missions', 'financial_transactions', 'financial_categories', 'quotes', 'rh_employees', 'rh_commissions', 'rh_salary_configs', 'financial_accounts'],
     () => { void load(); },
   );
 
@@ -267,6 +300,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
     quotes,
     refs,
     accounts,
+    latestAccountBalances,
     accountBalance,
     rhSnapshot,
     lastRecalc,
