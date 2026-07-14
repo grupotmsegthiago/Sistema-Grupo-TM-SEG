@@ -7,6 +7,7 @@ import {
   buildQuotesFunnel,
   buildCriticalAlerts,
   buildDailyCashFlow,
+  buildCashTitleBreakdown,
 } from '../lib/dashboardDiretoria/aggregations';
 import { getPeriodRange, getCashMovementDate, formatPeriodRangeHint } from '../lib/dashboardDiretoria/periodUtils';
 import { MissionStatus } from '../types';
@@ -161,6 +162,28 @@ describe('dashboardDiretoria aggregations', () => {
     assert.deepEqual(flow[0], { day: '10/07', inflow: 100, outflow: 0 });
     assert.deepEqual(flow[1], { day: '11/07', inflow: 0, outflow: 50 });
   });
+
+  it('buildCashTitleBreakdown lista maiores títulos com a mesma regra do KPI', () => {
+    const transactions = [
+      { id: 'p1', type: 'EXPENSE', status: 'PAID', amount: 900, due_date: '2026-07-01', payment_date: '2026-07-03', category_id: 'c1', category_name: 'FORNECEDOR', description: 'Torres maio', entity_name: 'Torres' },
+      { id: 'p2', type: 'EXPENSE', status: 'PAID', amount: 100, due_date: '2026-07-01', payment_date: '2026-07-04', category_id: 'c1', category_name: 'FORNECEDOR', description: 'Pequeno' },
+      { id: 'r1', type: 'INCOME', status: 'PENDING', amount: 5000, due_date: '2026-07-20', category_id: 'c0', category_name: 'CLIENTE', description: 'DHL NF' },
+      { id: 'r2', type: 'INCOME', status: 'PENDING', amount: 50, due_date: '2026-07-21', category_id: 'c0', category_name: 'CLIENTE', description: 'Outro' },
+      { id: 'x1', type: 'EXPENSE', status: 'PENDING', amount: 7000, due_date: '2026-07-15', category_id: 'c1', category_name: 'FORNECEDOR', description: 'Torres junho' },
+      { id: 'skip', type: 'EXPENSE', status: 'PENDING', amount: 9999, due_date: '2026-08-01', category_id: 'c1', description: 'fora do mês' },
+    ] as any[];
+    const categories = [{ id: 'c1', name: 'FORNECEDOR', type: 'EXPENSE', group: 'DESPESAS_VARIAVEIS' }] as any[];
+    const period = { mode: 'month' as const, year: 2026, month: 6 };
+    const now = new Date(2026, 6, 14, 12, 0, 0);
+    const list = buildCashTitleBreakdown(transactions, categories, period, now, 1);
+    assert.equal(list.paidExpenseCount, 2);
+    assert.equal(list.paidExpense[0].id, 'p1');
+    assert.equal(list.paidExpense[0].amount, 900);
+    assert.equal(list.pendingReceivableCount, 2);
+    assert.equal(list.pendingReceivable[0].id, 'r1');
+    assert.equal(list.pendingPayable[0].id, 'x1');
+    assert.equal(list.pendingPayableCount, 1);
+  });
 });
 
 describe('DiretoriaSistemaTab auth', () => {
@@ -199,6 +222,19 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(src, /data\.refresh/);
     assert.match(src, /lastRecalc/);
     assert.match(src, /hora extra/);
+  });
+
+  it('cockpit mostra detalhamento de caixa com ranking de títulos', async () => {
+    const src = await import('node:fs/promises').then((fs) =>
+      fs.readFile('components/dashboard/DashboardDiretoria.tsx', 'utf8'),
+    );
+    assert.match(src, /buildCashTitleBreakdown/);
+    assert.match(src, /Como ler o caixa/);
+    assert.match(src, /Resultado realizado/);
+    assert.match(src, /Previsão do pendente/);
+    assert.match(src, /Maiores a pagar/);
+    assert.match(src, /cash-title-breakdown/);
+    assert.match(src, /from 'react'/);
   });
 
   it('handler serverless usa bundle CJS do motor financeiro (não import ESM de financialUtils)', async () => {
