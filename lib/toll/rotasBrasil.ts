@@ -1,10 +1,11 @@
 /**
  * Link e instruções do Rotas Brasil para cálculo de pedágio na OS.
- * Abrimos só a home do site (sem query de origem/destino): URLs com ?pontos=
- * têm gerado ERR_CERT_COMMON_NAME_INVALID em alguns navegadores.
+ *
+ * Usar o apex (sem www): o certificado de www.rotasbrasil.com.br expirou
+ * (NET::ERR_CERT_* no Chrome). O domínio sem www está com cert válido.
  */
 
-const ROTAS_BRASIL_BASE = 'https://www.rotasbrasil.com.br/';
+const ROTAS_BRASIL_BASE = 'https://rotasbrasil.com.br/';
 
 /**
  * Retorna a URL do Rotas Brasil.

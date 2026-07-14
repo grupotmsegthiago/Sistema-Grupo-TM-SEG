@@ -57,12 +57,13 @@ describe('clientTollBilling', () => {
 describe('rotasBrasil', () => {
   it('buildRotasBrasilUrl é sempre a home (sem origem/destino na query)', () => {
     const url = buildRotasBrasilUrl('Campinas, SP', 'Barueri, SP');
-    assert.equal(url, 'https://www.rotasbrasil.com.br/');
+    assert.equal(url, 'https://rotasbrasil.com.br/');
     assert.doesNotMatch(url, /pontos=/);
+    assert.doesNotMatch(url, /www\./);
   });
 
   it('buildRotasBrasilUrl sem destino também é a home', () => {
-    assert.equal(buildRotasBrasilUrl('Campinas', 'RAIO 200 KM — DESTINO A DEFINIR'), 'https://www.rotasbrasil.com.br/');
+    assert.equal(buildRotasBrasilUrl('Campinas', 'RAIO 200 KM — DESTINO A DEFINIR'), 'https://rotasbrasil.com.br/');
   });
 
   it('há 5 passos obrigatórios', () => {

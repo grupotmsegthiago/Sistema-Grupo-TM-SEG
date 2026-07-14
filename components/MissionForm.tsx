@@ -2894,7 +2894,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                                       className="underline text-red-700 hover:text-red-900 font-black"
                                                       data-testid="link-rotas-brasil"
                                                   >
-                                                      www.rotasbrasil.com.br
+                                                      rotasbrasil.com.br
                                                   </a>
                                                   .
                                               </>
