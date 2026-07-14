@@ -7,6 +7,7 @@ import {
 import { NAV_ITEMS, APP_VERSION } from '../constants';
 import { NavItem } from '../constants'; // Explicit import to avoid TS error if NAV_ITEMS interface isn't exported correctly
 import { logAction } from '../lib/logger';
+import { canAccessDiretoriaMenu, DIRETORIA_MENU_SCREEN_IDS } from '../lib/diretoriaAccess';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -16,7 +17,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onLogout }) => {
-  const [expandedMenus, setExpandedMenus] = useState<string[]>(['monitoring-group', 'finance-group', 'commercial-group', 'clients-group', 'providers-group', 'settings-group']);
+  const [expandedMenus, setExpandedMenus] = useState<string[]>(['diretoria-group', 'monitoring-group', 'finance-group', 'commercial-group', 'clients-group', 'providers-group', 'settings-group']);
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -176,11 +177,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         if (itemId === 'finance-group' || itemId === 'fin-report') return true;
     }
 
-    // Cockpit Diretoria — somente Diretoria e Administrador
-    const diretoriaScreens = new Set(['diretoria-group', 'diretoria-cockpit']);
-    if (diretoriaScreens.has(itemId) && (role === 'diretoria' || role === 'administrador')) {
-      return true;
+    // Menu Diretoria / Cockpit — SOMENTE Thiago Moreira ou Thiago Santos
+    // (perfil "Diretoria"/Administrador sozinho NÃO libera).
+    if (DIRETORIA_MENU_SCREEN_IDS.has(itemId)) {
+      return canAccessDiretoriaMenu(currentUser);
     }
+    if (itemId === 'fin-report' && canAccessDiretoriaMenu(currentUser)) return true;
     if (itemId === 'fin-report' && role === 'diretoria') return true;
 
     if (role === 'comercial') {
