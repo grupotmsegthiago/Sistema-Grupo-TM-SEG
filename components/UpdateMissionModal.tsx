@@ -46,6 +46,7 @@ import { extractCoordinates } from '../lib/utils';
 import { fetchRouteProgress, normalizeProgressDestination, resolveRouteProgressPct } from '../lib/routeProgress';
 import DhlIntakeTimeline from './DhlIntakeTimeline';
 import TollConfirmationDialog from './TollConfirmationDialog';
+import { tollPersistencePair } from '../lib/toll/clientTollBilling';
 
 // Importação dos formulários para modo modal/cadastro rápido
 import ProviderForm from './ProviderForm';
@@ -2994,23 +2995,24 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 const j = await r.json().catch(() => ({} as any));
                 if (j?.success && typeof j.tollValue === 'number') {
                     const v = Number(j.tollValue.toFixed(2));
-                    const provToll = mission.is_same_os ? 0 : v;
+                    const pair = tollPersistencePair(v, !!mission.is_same_os);
                     // Guarda no banco: nunca sobrescreve pedágio de OS aprovada
                     // (fecha a janela de aprovação concorrente — o snapshot
                     // financeiro congelado jamais é tocado).
                     const { error: tollErr } = await supabase.from('missions')
-                        .update({ toll_value: v, toll_value_provider: provToll })
+                        .update({ toll_value: pair.toll_value, toll_value_provider: pair.toll_value_provider })
                         .eq('id', mission.id)
                         .eq('billing_approved', false);
                     if (!tollErr) {
-                        mission.toll_value = v;
+                        mission.toll_value = pair.toll_value;
+                        (mission as any).toll_value_provider = pair.toll_value_provider;
                         tollConfirmedRef.current = true;
                         const confLabel = j.confianca === 'alta' ? 'alta' : j.confianca === 'media' ? 'média' : 'baixa';
                         showNotification(
                             'Pedágio (Estimativa IA)',
                             v === 0
                                 ? 'IA não identificou pedágio nesta rota. Confirme manualmente se houver.'
-                                : `R$ ${v.toFixed(2)} (${j.tollCount || 0} praça${(j.tollCount || 0) > 1 ? 's' : ''}) — estimativa IA ao concluir. Confirme manualmente. Confiança: ${confLabel}.`,
+                                : `Real R$ ${v.toFixed(2)} · Cliente R$ ${pair.toll_value.toFixed(2)} (${j.tollCount || 0} praça${(j.tollCount || 0) > 1 ? 's' : ''}) — estimativa IA ao concluir. Confirme manualmente. Confiança: ${confLabel}.`,
                             'info'
                         );
                         console.log(`[FIM MISSÃO] Pedágio (IA) recalculado e salvo: R$ ${v} (fornecedor R$ ${provToll})`);

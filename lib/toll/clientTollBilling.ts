@@ -1,12 +1,13 @@
 /**
  * Pedágio cobrado do cliente vs pago ao fornecedor.
- * Regra interna de faturamento — não exibir percentual/markup na UI.
+ * Regra interna: se base > R$ 10, cliente = base × 1,2; fornecedor = base (valor real).
+ * Não exibir o percentual na UI — só os valores detalhados (cliente / fornecedor).
  */
 
 const TOLL_MARKUP_THRESHOLD_BRL = 10;
 const TOLL_MARKUP_FACTOR = 1.2;
 
-/** Valor digitado/confirmado pelo operador (base). */
+/** Valor digitado/confirmado pelo operador (base / valor real da rota). */
 export function normalizeTollAmount(value: unknown): number {
   const n = typeof value === 'number' ? value : parseFloat(String(value ?? '').replace(',', '.'));
   if (!Number.isFinite(n) || n < 0) return 0;
@@ -14,34 +15,69 @@ export function normalizeTollAmount(value: unknown): number {
 }
 
 /**
- * Pedágio a cobrar do cliente na fatura/relatório.
- * Se base > R$ 10,00, aplica fator interno (sem exibir na interface).
+ * Aplica a regra de faturamento do cliente sobre o valor real (base).
+ * Se base > R$ 10,00, multiplica pelo fator interno.
  */
-export function billableClientToll(storedOrEntered: unknown): number {
-  const base = normalizeTollAmount(storedOrEntered);
+export function billableClientToll(baseOrEntered: unknown): number {
+  const base = normalizeTollAmount(baseOrEntered);
   if (base > TOLL_MARKUP_THRESHOLD_BRL) {
     return Math.round(base * TOLL_MARKUP_FACTOR * 100) / 100;
   }
   return base;
 }
 
-/** Pedágio a pagar ao fornecedor = valor base (sem markup). */
+/** Pedágio a pagar ao fornecedor = valor real (sem markup). */
 export function billableProviderToll(storedOrEntered: unknown, isSameOs = false): number {
   if (isSameOs) return 0;
   return normalizeTollAmount(storedOrEntered);
 }
 
 /**
- * Persistência: grava o valor digitado nos dois campos.
- * O markup do cliente entra só na hora de faturar (billableClientToll).
+ * Persistência ao salvar a SM / confirmação:
+ * - toll_value (cliente) = valor com regra
+ * - toll_value_provider (fornecedor) = valor real
  */
-export function tollPersistencePair(entered: unknown, isSameOs = false): {
+export function tollPersistencePair(enteredReal: unknown, isSameOs = false): {
   toll_value: number;
   toll_value_provider: number;
 } {
-  const base = normalizeTollAmount(entered);
+  const base = normalizeTollAmount(enteredReal);
   return {
-    toll_value: base,
+    toll_value: billableClientToll(base),
     toll_value_provider: billableProviderToll(base, isSameOs),
   };
+}
+
+/**
+ * Lê o pedágio do cliente a partir do que está no banco.
+ * - Formato novo: toll_value ≠ toll_value_provider → toll_value já tem a regra.
+ * - Legado: mesmos valores (ambos base) → aplica a regra na leitura.
+ * - toll_value_provider null/undefined → trata toll_value como base.
+ */
+export function resolveStoredClientToll(
+  tollValue: unknown,
+  tollValueProvider?: unknown | null,
+): number {
+  const client = normalizeTollAmount(tollValue);
+  if (tollValueProvider === undefined || tollValueProvider === null) {
+    return billableClientToll(client);
+  }
+  const provider = normalizeTollAmount(tollValueProvider);
+  if (Math.abs(client - provider) < 0.009) {
+    return billableClientToll(client);
+  }
+  return client;
+}
+
+/** Valor real do fornecedor a partir dos campos salvos. */
+export function resolveStoredProviderToll(
+  tollValue: unknown,
+  tollValueProvider?: unknown | null,
+  isSameOs = false,
+): number {
+  if (isSameOs) return 0;
+  if (tollValueProvider !== undefined && tollValueProvider !== null) {
+    return normalizeTollAmount(tollValueProvider);
+  }
+  return normalizeTollAmount(tollValue);
 }

@@ -21,6 +21,7 @@ import { suggestPriceTable } from '../lib/gemini';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
+import { billableClientToll, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import { formatProviderName } from '../lib/utils';
 import { copyTextAsync } from '../lib/clipboard';
 import { buildAuditSummaryData, type AuditSummaryData } from '../lib/auditSummaryBuilder';
@@ -642,22 +643,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const applyTollConfirmation = async (result: { hasToll: boolean; value: number }) => {
     const v = result.hasToll ? result.value : 0;
-    const formatted = v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const isSameOs = mission?.is_same_os === true;
+    const pair = tollPersistencePair(v, isSameOs);
+    const fmt = (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const clientFormatted = fmt(pair.toll_value);
+    const providerFormatted = fmt(pair.toll_value_provider);
     const prevToll = parseNumber(tollInput);
     const prevTollProv = parseNumber(tollProviderInput);
-    const isSameOs = mission?.is_same_os === true;
-    // Sempre espelha no fornecedor o valor confirmado (exceto MESMA OS).
-    const newTollProv = isSameOs ? 0 : v;
 
-    // Persiste o pedágio direto na OS para que a confirmação fique salva
-    // mesmo sem passar pelo fluxo de "Salvar Ajustes". toll_value e
-    // toll_value_provider são aditivos (revenue_value/cost_value seguem
-    // sendo apenas o serviço), então não tocamos receita/custo aqui.
+    // Persiste o pedágio direto na OS: cliente com regra, fornecedor valor real.
     if (mission?.id) {
         const r2 = (n: number) => Math.round(n * 100) / 100;
         const payload: any = {
-            toll_value: r2(v),
-            toll_value_provider: isSameOs ? 0 : r2(newTollProv),
+            toll_value: r2(pair.toll_value),
+            toll_value_provider: r2(pair.toll_value_provider),
             last_update: new Date().toISOString(),
         };
         let { error } = await supabase.from('missions').update(payload).eq('id', mission.id);
@@ -672,21 +671,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         try { window.dispatchEvent(new Event('refreshMissions')); } catch {}
     }
 
-    setTollInput(formatted);
+    setTollInput(clientFormatted);
     if (!isSameOs) {
-        setTollProviderInput(formatted);
+        setTollProviderInput(providerFormatted);
         const currentCost = parseNumber(costInput);
-        const updatedCost = currentCost - prevTollProv + v;
+        const updatedCost = currentCost - prevTollProv + pair.toll_value_provider;
         setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-    } else if (isSameOs) {
+    } else {
         setTollProviderInput('0,00');
         setCostInput('0,00');
     }
     const currentRev = parseNumber(revenueInput);
-    const updatedRev = currentRev - prevToll + v;
+    const updatedRev = currentRev - prevToll + pair.toll_value;
     setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     setTollConfirmed(true);
-    setTollSource(result.hasToll ? `CONFIRMADO (R$ ${formatted})` : 'CONFIRMADO SEM PEDÁGIO');
+    setTollSource(result.hasToll ? `CONFIRMADO (real R$ ${fmt(v)} · cliente R$ ${clientFormatted})` : 'CONFIRMADO SEM PEDÁGIO');
     setShowTollConfirmDialog(false);
   };
 
@@ -1825,9 +1824,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
               const calcToll = financialData.tollValue || 0;
               const currentToll = parseNumber(tollInput);
-              if (calcToll > 0 && Math.abs(currentToll - calcToll) > 0.5) {
-                  setTollInput(fmt(calcToll));
-                  setTollProviderInput(fmt(calcToll));
+              if (calcToll > 0 && Math.abs(currentToll - calcToll) > 0.5 && Math.abs(currentToll - billableClientToll(calcToll)) > 0.5) {
+                  const pair = tollPersistencePair(calcToll, !!mission.is_same_os);
+                  setTollInput(fmt(pair.toll_value));
+                  setTollProviderInput(fmt(pair.toll_value_provider));
               }
               const calcCostTotal = financialData.provider.total + parseNumber(displacementProviderInput);
               const currentCostInput = parseNumber(costInput);
@@ -1941,13 +1941,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const updatedRev = currentRev - oldToll + newToll;
           setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
       }
-      if (!mission?.is_same_os) {
-          const oldTollProv = parseNumber(tollProviderInput);
-          setTollProviderInput(val);
-          const currentCost = parseNumber(costInput);
-          const updatedCost = currentCost - oldTollProv + newToll;
-          setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-      }
+      // Não espelha no fornecedor: pedágio cliente (com regra) ≠ valor real do fornecedor.
       setUseSavedValues(true);
   };
 

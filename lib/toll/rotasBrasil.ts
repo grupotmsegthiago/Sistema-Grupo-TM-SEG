@@ -20,5 +20,5 @@ export const ROTAS_BRASIL_STEPS_PT = [
   'Informe a origem da viagem.',
   'Informe o destino da viagem.',
   'Escolha a rota mais cara (maior valor de pedágio).',
-  'Inclua o valor do pedágio na SM (mesmo valor no cliente e no fornecedor).',
+  'Inclua o valor real do pedágio na SM (o sistema detalha cliente e fornecedor).',
 ] as const;

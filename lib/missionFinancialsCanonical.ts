@@ -12,7 +12,7 @@
 
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { calculateMissionFinancials } from './financialUtils';
-import { billableClientToll } from './toll/clientTollBilling';
+import { resolveStoredClientToll, resolveStoredProviderToll } from './toll/clientTollBilling';
 
 export type CanonicalPeriod = 'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM' | 'ALL';
 
@@ -52,7 +52,8 @@ const ZERO_RESULT: CanonicalResult = {
  *  - Tem revenue_value E cost_value salvos → usa salvos.
  *  - Tem só um salvo → usa salvo nesse e ESTIMA o outro via tabelas.
  *  - Não tem nenhum salvo → estima ambos.
- *  - Pedágio recebido = toll_value; pedágio pago = toll_value_provider (fallback toll_value).
+ *  - Pedágio recebido = toll_value (com regra; legado aplica na leitura).
+ *  - Pedágio pago = toll_value_provider (valor real; fallback toll_value).
  *  - CANCELLED é tratada como COMPLETED só pra estimativa não dar zero por causa do status.
  */
 export function computeCanonicalRevenueCost(
@@ -67,8 +68,10 @@ export function computeCanonicalRevenueCost(
   const isVerified = !!(m.billing_approved || m.billing_verified_by);
   const hasSavedValues = isVerified && (hasStoredRev || hasStoredCost || m.revenue_value === 0 || m.cost_value === 0);
 
-  const tollRev = billableClientToll(Math.max(0, num(m.toll_value)));
-  const tollCost = Math.max(0, m.toll_value_provider != null ? num(m.toll_value_provider) : num(m.toll_value));
+  // Pedágio recebido = toll_value (com regra; legado aplica na leitura);
+  // pedágio pago = toll_value_provider (valor real; fallback toll_value).
+  const tollRev = resolveStoredClientToll(m.toll_value, m.toll_value_provider);
+  const tollCost = resolveStoredProviderToll(m.toll_value, m.toll_value_provider, !!m.is_same_os);
   const dispRev = Math.max(0, num(m.displacement_value));
   const dispCost = Math.max(0, num(m.displacement_value_provider));
 

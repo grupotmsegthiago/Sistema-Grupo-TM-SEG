@@ -4,6 +4,8 @@ import {
   billableClientToll,
   billableProviderToll,
   normalizeTollAmount,
+  resolveStoredClientToll,
+  resolveStoredProviderToll,
   tollPersistencePair,
 } from '../lib/toll/clientTollBilling';
 import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
@@ -26,11 +28,29 @@ describe('clientTollBilling', () => {
     assert.equal(billableClientToll(100), 120);
   });
 
-  it('provider e persistência usam valor base', () => {
+  it('provider usa valor real; persistência grava cliente com regra', () => {
     assert.equal(billableProviderToll(50), 50);
     assert.equal(billableProviderToll(50, true), 0);
-    assert.deepEqual(tollPersistencePair(50, false), { toll_value: 50, toll_value_provider: 50 });
-    assert.deepEqual(tollPersistencePair(50, true), { toll_value: 50, toll_value_provider: 0 });
+    assert.deepEqual(tollPersistencePair(50, false), { toll_value: 60, toll_value_provider: 50 });
+    assert.deepEqual(tollPersistencePair(100, false), { toll_value: 120, toll_value_provider: 100 });
+    assert.deepEqual(tollPersistencePair(8, false), { toll_value: 8, toll_value_provider: 8 });
+    assert.deepEqual(tollPersistencePair(50, true), { toll_value: 60, toll_value_provider: 0 });
+  });
+
+  it('resolveStoredClientToll: legado (iguais) aplica regra; novo não dobra', () => {
+    assert.equal(resolveStoredClientToll(50, 50), 60);
+    assert.equal(resolveStoredClientToll(100, 100), 120);
+    assert.equal(resolveStoredClientToll(120, 100), 120);
+    assert.equal(resolveStoredClientToll(8, 8), 8);
+    assert.equal(resolveStoredClientToll(50, null), 60);
+    assert.equal(resolveStoredClientToll(50), 60);
+  });
+
+  it('resolveStoredProviderToll devolve o valor real', () => {
+    assert.equal(resolveStoredProviderToll(120, 100), 100);
+    assert.equal(resolveStoredProviderToll(50, 50), 50);
+    assert.equal(resolveStoredProviderToll(50, null), 50);
+    assert.equal(resolveStoredProviderToll(60, 0, true), 0);
   });
 });
 
