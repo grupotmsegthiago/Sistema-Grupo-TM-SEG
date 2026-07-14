@@ -45,6 +45,7 @@ import ClientMissionRequest from './ClientMissionRequest';
 import ClientCommitteePresentation from './ClientCommitteePresentation';
 import MissionOperationalReport from './MissionOperationalReport';
 import MissionTeamPresenceBoard from './MissionTeamPresenceBoard';
+import { hasFullMissionListAccess, isMissionClientScopeRestricted } from '../lib/missionAccess';
 const cevaLogoPath = '/logo_ceva.png';
 
 
@@ -257,6 +258,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     return roleLower === 'administrador' || currentUser.permissions?.includes('*');
   }, [currentUser]);
 
+  /** Admin / Bárbara: vê todas as OS (necessário para liberar faturamento). */
+  const hasFullMissionListAccessFlag = useMemo(
+    () => hasFullMissionListAccess(currentUser),
+    [currentUser],
+  );
+
   const isDanielPinto = useMemo(() => {
     return currentUser?.name?.toUpperCase() === 'DANIEL PINTO';
   }, [currentUser]);
@@ -410,14 +417,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           || currentUser.permissions?.includes('*');
   }, [currentUser]);
 
-  const isRestrictedClientView = useMemo(() => {
-      if (!currentUser) return false;
-      if (currentUser.clientId) return true;
-      if (currentUser.permissions && Array.isArray(currentUser.permissions)) {
-          return currentUser.permissions.some(p => p.startsWith('client_view:'));
-      }
-      return false;
-  }, [currentUser]);
+  const isRestrictedClientView = useMemo(
+      () => isMissionClientScopeRestricted(currentUser),
+      [currentUser],
+  );
 
   const isCevaClient = useMemo(() => {
       return isRestrictedClientView && resolvedClientName.toUpperCase().includes('CEVA');
@@ -646,19 +649,26 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   isCommercialRef.current = isCommercial;
   const isRestrictedClientViewRef = useRef(isRestrictedClientView);
   isRestrictedClientViewRef.current = isRestrictedClientView;
+  const hasFullMissionListAccessRef = useRef(hasFullMissionListAccessFlag);
+  hasFullMissionListAccessRef.current = hasFullMissionListAccessFlag;
 
   const fetchMissions = useCallback(async (silent = false): Promise<boolean> => {
     const user = currentUserRef.current;
     const commercial = isCommercialRef.current;
     const restrictedClientView = isRestrictedClientViewRef.current;
+    const fullListAccess = hasFullMissionListAccess(user) || hasFullMissionListAccessRef.current;
 
     if (!silent) setIsLoading(true);
     setDbStatus(null);
     try {
       // 1) Resolve o escopo de cliente (visão restrita por cliente / comercial).
+      //    Administrador / Bárbara / '*' → sempre todas as OS (liberação de faturamento).
       //    Guardamos o escopo num ref para reaproveitar na busca server-side.
       let scope: { type: 'all' | 'eq' | 'in' | 'empty'; value?: string; values?: string[] } = { type: 'all' };
-      if (user?.clientId) {
+      if (fullListAccess) {
+          scope = { type: 'all' };
+          setResolvedClientName('');
+      } else if (user?.clientId) {
           const { data: clientData } = await supabase.from('clients').select('name').eq('id', user.clientId).single();
           if (clientData) { scope = { type: 'eq', value: clientData.name }; setResolvedClientName(clientData.name); }
           else { setAllMissions([]); allMissionsRef.current = []; if (!silent) setIsLoading(false); setLastMissionsFetchAt(new Date()); return true; }
@@ -1306,12 +1316,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 const cName = ((mission as any).originalClientName || mission.client || '').toUpperCase();
                 const isDhl = cName.includes('DHL');
                 if (showDhlOnly && !isDhl) return false;
-                if (!showDhlOnly && isDhl) return false;
+                // Admin / Bárbara: com DHL off vê DHL + demais (lista completa para faturamento).
+                if (!showDhlOnly && isDhl && !hasFullMissionListAccessFlag) return false;
             }
 
             return true;
         });
-    }, [allMissions, periodMissions, searchMatches, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showTollNotConfirmedOnly, tollConfirmMap, showDhlOnly, parentMissionIds, negativeLinkedIds]);
+    }, [allMissions, periodMissions, searchMatches, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showTollNotConfirmedOnly, tollConfirmMap, showDhlOnly, parentMissionIds, negativeLinkedIds, hasFullMissionListAccessFlag]);
 
     // Status Counts based on the FILTERED set (to sync counters with visible criteria)
     const statusCounts = useMemo(() => {
@@ -1473,7 +1484,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             if (filterStatus !== 'ALL') {
                 return mission.status === filterStatus;
             } else {
-                if (!isSearching && !hasActiveSpecialFilters) {
+                // Admin precisa ver Concluída/Pendente (liberação de faturamento).
+                if (!isSearching && !hasActiveSpecialFilters && !hasFullMissionListAccessFlag) {
                      const hiddenStatuses = [
                          MissionStatus.COMPLETED,
                          MissionStatus.PENDING
@@ -1483,7 +1495,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             }
             return true;
         });
-    }, [filteredBySpecialCriteria, filterStatus, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showTollNotConfirmedOnly, showDhlOnly, myApprovalMissions]);
+    }, [filteredBySpecialCriteria, filterStatus, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showTollNotConfirmedOnly, showDhlOnly, myApprovalMissions, hasFullMissionListAccessFlag]);
   
     const activeMapMissions = useMemo(() => {
         return allMissions.filter(m => {
