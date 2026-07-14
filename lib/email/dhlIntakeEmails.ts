@@ -86,25 +86,77 @@ export async function sendDhlSupplierIntakeEmail(opts: {
   });
 }
 
-export async function sendDhlIntakeSubmittedEmail(opts: {
-  to: string; providerName: string; osNumber: string; seNumber: string;
+export type DhlIntakeSubmittedEmailOpts = {
+  providerName: string; osNumber: string; seNumber: string;
   origin: string; destination: string; scheduledAt: string;
   agent1: any; agent2: any; vehicle: any;
   mirrorProofUrl?: string | null; mirrorProofFilename?: string | null; isDhl?: boolean;
-}): Promise<void> {
+};
+
+/** HTML completo do e-mail de dados recebidos (escoltistas + veículo + espelhamento). */
+export function buildDhlIntakeSubmittedEmailHtml(opts: DhlIntakeSubmittedEmailOpts): string {
   const isDhl = opts.isDhl !== false;
   const accent = isDhl ? '#FFCC00' : '#D40511';
-  const fmt = (v: any) => (v ? String(v) : '—');
+  const fmt = (v: any) => {
+    if (v === null || v === undefined) return '—';
+    const s = String(v).trim();
+    return s ? s : '—';
+  };
+  const pick = (obj: any, ...keys: string[]) => {
+    const e = obj || {};
+    for (const k of keys) {
+      if (e[k] !== null && e[k] !== undefined && String(e[k]).trim() !== '') return e[k];
+    }
+    return '';
+  };
   const escoltistaHtml = (label: string, x: any) => {
     const e = x || {};
+    const rows: Array<[string, any]> = [
+      ['Nome', pick(e, 'nome', 'name')],
+      ['CPF', pick(e, 'cpf')],
+      ['RG', pick(e, 'rg')],
+      ['Órgão emissor / UF', pick(e, 'orgao_emissor', 'orgaoEmissor')],
+      ['CNH', pick(e, 'cnh')],
+      ['Categoria CNH', pick(e, 'cnh_categoria', 'cnhCategoria')],
+      ['Vencimento CNH', pick(e, 'cnh_vencimento', 'cnhVencimento', 'cnh_validity')],
+      ['CNV Número', pick(e, 'cnv_numero', 'cnvNumero', 'cnv')],
+      ['Validade CNV', pick(e, 'cnv_validade', 'cnvValidade', 'cnv_validity')],
+      ['Rua', pick(e, 'rua')],
+      ['Número', pick(e, 'numero')],
+      ['Complemento', pick(e, 'complemento')],
+      ['Bairro', pick(e, 'bairro')],
+      ['Cidade', pick(e, 'cidade')],
+      ['UF', pick(e, 'uf')],
+      ['CEP', pick(e, 'cep')],
+      ['Celular', pick(e, 'celular', 'phone')],
+      ['Admissão', pick(e, 'admissao')],
+    ];
+    const trs = rows.map(([k, v]) => `<tr><td>${k}</td><td>${fmt(v)}</td></tr>`).join('');
     return `<h3 style="color:#1a1a1a; font-size:15px; margin-top:20px; border-bottom:2px solid ${accent}; padding-bottom:6px;">${label}</h3>
-      <table class="info-table"><tr><td>Nome</td><td>${fmt(e.nome)}</td></tr><tr><td>CPF</td><td>${fmt(e.cpf)}</td></tr><tr><td>Placa/CNH</td><td>${fmt(e.cnh)}</td></tr><tr><td>Celular</td><td>${fmt(e.celular)}</td></tr></table>`;
+      <table class="info-table">${trs}</table>`;
   };
   const v = opts.vehicle || {};
+  const veicRows: Array<[string, any]> = [
+    ['Placa', pick(v, 'placa', 'plate')],
+    ['Renavam', pick(v, 'renavam')],
+    ['Marca', pick(v, 'marca', 'brand')],
+    ['Modelo', pick(v, 'modelo', 'model')],
+    ['Ano', pick(v, 'ano', 'year')],
+    ['Cor', pick(v, 'cor', 'color')],
+    ['Tecnologia', pick(v, 'tecnologia', 'tracker_type')],
+    ['ID Rastreador', pick(v, 'id_rastreador', 'idRastreador', 'tracker_id')],
+    ['Comunicação', pick(v, 'comunicacao')],
+  ];
+  const veicTrs = veicRows
+    .map(([k, val], i) => {
+      const strong = i === 0 || k === 'Tecnologia';
+      return `<tr><td>${k}</td><td>${strong ? `<strong>${fmt(val)}</strong>` : fmt(val)}</td></tr>`;
+    })
+    .join('');
   const seRow = isDhl ? `<tr><td>Nº S.E. DHL</td><td><strong>${opts.seNumber}</strong></td></tr>` : '';
-  const html = dhlTemplate(`
+  return dhlTemplate(`
     <h2>OS — Dados Preenchidos pelo Fornecedor</h2>
-    <p>O fornecedor <strong>${opts.providerName}</strong> concluiu o preenchimento:</p>
+    <p>O fornecedor <strong>${opts.providerName}</strong> concluiu o preenchimento dos dados da escolta:</p>
     <table class="info-table">
       <tr><td>OS</td><td>${opts.osNumber}</td></tr>${seRow}
       <tr><td>Trajeto</td><td>${opts.origin} → ${opts.destination}</td></tr>
@@ -113,9 +165,26 @@ export async function sendDhlIntakeSubmittedEmail(opts: {
     ${escoltistaHtml('Escoltista 1', opts.agent1)}
     ${escoltistaHtml('Escoltista 2', opts.agent2)}
     <h3 style="color:#1a1a1a; font-size:15px; margin-top:20px; border-bottom:2px solid ${accent}; padding-bottom:6px;">Veículo</h3>
-    <table class="info-table"><tr><td>Placa</td><td><strong>${fmt(v.placa)}</strong></td></tr><tr><td>Tecnologia</td><td>${fmt(v.tecnologia)}</td></tr></table>
-    ${opts.mirrorProofUrl ? `<p><a href="${opts.mirrorProofUrl}" target="_blank" class="cta">Abrir comprovante de espelhamento</a></p>` : '<div class="highlight"><strong>Atenção:</strong> sem comprovante de espelhamento anexado.</div>'}
+    <table class="info-table">${veicTrs}</table>
+    ${opts.mirrorProofUrl
+      ? `<h3 style="color:#1a1a1a; font-size:15px; margin-top:20px; border-bottom:2px solid ${accent}; padding-bottom:6px;">Comprovante de Espelhamento</h3>
+         <p style="margin:8px 0;">O fornecedor anexou o print confirmando que o espelhamento foi realizado.</p>
+         <p><a href="${opts.mirrorProofUrl}" target="_blank" class="cta">Abrir comprovante${opts.mirrorProofFilename ? ' — ' + opts.mirrorProofFilename : ''}</a></p>`
+      : '<div class="highlight"><strong>Atenção:</strong> o fornecedor não anexou comprovante do espelhamento.</div>'}
+    <div class="highlight" style="margin-top:20px;">
+      <strong>Próximo passo:</strong> conferir os dados acima e o comprovante de espelhamento.
+    </div>
   `, isDhl);
+}
+
+export async function sendDhlIntakeSubmittedEmail(opts: {
+  to: string; providerName: string; osNumber: string; seNumber: string;
+  origin: string; destination: string; scheduledAt: string;
+  agent1: any; agent2: any; vehicle: any;
+  mirrorProofUrl?: string | null; mirrorProofFilename?: string | null; isDhl?: boolean;
+}): Promise<void> {
+  const isDhl = opts.isDhl !== false;
+  const html = buildDhlIntakeSubmittedEmailHtml(opts);
   await sendMail({
     from: SMTP_FROM, to: opts.to,
     subject: isDhl ? `[DHL] Dados recebidos — OS ${opts.osNumber} — S.E. ${opts.seNumber} — ${opts.providerName}` : `[TM SEG] Dados recebidos — OS ${opts.osNumber} — ${opts.providerName}`,
