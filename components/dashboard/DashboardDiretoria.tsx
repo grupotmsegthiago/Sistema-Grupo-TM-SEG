@@ -578,6 +578,86 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
     </Card>
   );
 
+  /** Faturamento diário — abaixo do Provisionamento alinhado e acima do Detalhe do em aberto. */
+  const revenueMonthCompareSection = (
+    <Card
+      title="Faturamento diário (OS)"
+      subtitle={`Comparativo dia a dia: ${revenueMonthCompare.previousLabel} × ${revenueMonthCompare.currentLabel} (receita canônica). Linhas tracejadas = acumulado no mês.`}
+      testId="revenue-month-compare-diretoria"
+    >
+      <div className="flex flex-wrap items-center gap-3 mb-3 text-[11px]">
+        <span className="font-mono font-bold text-gray-700">
+          Acumulado {revenueMonthCompare.currentLabel}: {fmtBRL(revenueMonthCompare.currentCumTotal)}
+        </span>
+        <span className="text-gray-300">|</span>
+        <span className="font-mono font-bold text-gray-500">
+          Acumulado {revenueMonthCompare.previousLabel} (mesmo recorte): {fmtBRL(revenueMonthCompare.previousCumTotal)}
+        </span>
+        {revenueMonthCompare.deltaCumPct != null && (
+          <span
+            className={`font-black px-2 py-0.5 rounded-md ${
+              revenueMonthCompare.deltaCumPct >= 0
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'bg-rose-50 text-rose-700'
+            }`}
+          >
+            {revenueMonthCompare.deltaCumPct >= 0 ? '▲' : '▼'}{' '}
+            {Math.abs(revenueMonthCompare.deltaCumPct).toFixed(1)}% vs mês anterior
+          </span>
+        )}
+      </div>
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={revenueMonthCompare.points} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+            <XAxis dataKey="label" tick={AXIS_TICK} interval={1} />
+            <YAxis tick={AXIS_TICK} tickFormatter={(v) => fmtShort(v)} width={48} />
+            <Tooltip content={<FinTooltip />} />
+            <Legend />
+            <Line
+              type="monotone"
+              dataKey="previous"
+              name={`Diário ${revenueMonthCompare.previousLabel}`}
+              stroke="#94a3b8"
+              strokeWidth={2}
+              dot={false}
+              connectNulls={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="current"
+              name={`Diário ${revenueMonthCompare.currentLabel}`}
+              stroke="#16a34a"
+              strokeWidth={2.5}
+              dot={false}
+              connectNulls={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="previousCum"
+              name={`Acumulado ${revenueMonthCompare.previousLabel}`}
+              stroke="#64748b"
+              strokeWidth={2}
+              strokeDasharray="6 4"
+              dot={false}
+              connectNulls={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="currentCum"
+              name={`Acumulado ${revenueMonthCompare.currentLabel}`}
+              stroke="#15803d"
+              strokeWidth={2.5}
+              strokeDasharray="6 4"
+              dot={false}
+              connectNulls={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </Card>
+  );
+
   const renderGeral = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
       <div className="lg:col-span-12 space-y-3">
@@ -591,89 +671,12 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
             {provisionHorizonSection}
           </>
         )}
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Faturamento diário (OS)</p>
+        {revenueMonthCompareSection}
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Detalhe do em aberto</p>
         {openCashOutlookSection}
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Caixa do período (liquidez)</p>
         {cashKpiRow}
-      </div>
-
-      <div className="lg:col-span-12">
-        <Card
-          title="Faturamento diário (OS)"
-          subtitle={`Comparativo dia a dia: ${revenueMonthCompare.previousLabel} × ${revenueMonthCompare.currentLabel} (receita canônica). Linhas tracejadas = acumulado no mês.`}
-          testId="revenue-month-compare-diretoria"
-        >
-          <div className="flex flex-wrap items-center gap-3 mb-3 text-[11px]">
-            <span className="font-mono font-bold text-gray-700">
-              Acumulado {revenueMonthCompare.currentLabel}: {fmtBRL(revenueMonthCompare.currentCumTotal)}
-            </span>
-            <span className="text-gray-300">|</span>
-            <span className="font-mono font-bold text-gray-500">
-              Acumulado {revenueMonthCompare.previousLabel} (mesmo recorte): {fmtBRL(revenueMonthCompare.previousCumTotal)}
-            </span>
-            {revenueMonthCompare.deltaCumPct != null && (
-              <span
-                className={`font-black px-2 py-0.5 rounded-md ${
-                  revenueMonthCompare.deltaCumPct >= 0
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'bg-rose-50 text-rose-700'
-                }`}
-              >
-                {revenueMonthCompare.deltaCumPct >= 0 ? '▲' : '▼'}{' '}
-                {Math.abs(revenueMonthCompare.deltaCumPct).toFixed(1)}% vs mês anterior
-              </span>
-            )}
-          </div>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={revenueMonthCompare.points} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
-                <XAxis dataKey="label" tick={AXIS_TICK} interval={1} />
-                <YAxis tick={AXIS_TICK} tickFormatter={(v) => fmtShort(v)} width={48} />
-                <Tooltip content={<FinTooltip />} />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="previous"
-                  name={`Diário ${revenueMonthCompare.previousLabel}`}
-                  stroke="#94a3b8"
-                  strokeWidth={2}
-                  dot={false}
-                  connectNulls={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="current"
-                  name={`Diário ${revenueMonthCompare.currentLabel}`}
-                  stroke="#16a34a"
-                  strokeWidth={2.5}
-                  dot={false}
-                  connectNulls={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="previousCum"
-                  name={`Acumulado ${revenueMonthCompare.previousLabel}`}
-                  stroke="#64748b"
-                  strokeWidth={2}
-                  strokeDasharray="6 4"
-                  dot={false}
-                  connectNulls={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="currentCum"
-                  name={`Acumulado ${revenueMonthCompare.currentLabel}`}
-                  stroke="#15803d"
-                  strokeWidth={2.5}
-                  strokeDasharray="6 4"
-                  dot={false}
-                  connectNulls={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
       </div>
 
       <div className="lg:col-span-6">

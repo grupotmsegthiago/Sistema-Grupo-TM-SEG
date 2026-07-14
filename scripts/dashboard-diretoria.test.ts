@@ -445,7 +445,7 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(ui, /resolveOpenCashEntityName|Outros/);
     assert.match(hook, /getPreviousMonthPeriod/);
     assert.doesNotMatch(ui, /Saldo total de todas as contas/);
-    // Ordem Visão Geral: Cards → Operação (OS) → Provisionamento → Detalhe → Caixa
+    // Ordem Visão Geral: Cards → OS → Provisionamento → Faturamento diário → Detalhe → Caixa
     const geralStart = ui.indexOf('const renderGeral');
     const geralEnd = ui.indexOf('const renderFinanceiro');
     assert.ok(geralStart > 0 && geralEnd > geralStart);
@@ -453,15 +453,17 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     const idxCards = geral.indexOf('Dívidas · Contas · Receita');
     const idxOp = geral.indexOf('Operação (OS)');
     const idxProv = geral.indexOf('Provisionamento alinhado');
+    const idxFat = geral.indexOf('Faturamento diário (OS)');
     const idxDetalhe = geral.indexOf('Detalhe do em aberto');
     const idxCaixa = geral.indexOf('Caixa do período (liquidez)');
     assert.ok(
       idxCards >= 0 &&
         idxOp > idxCards &&
         idxProv > idxOp &&
-        idxDetalhe > idxProv &&
+        idxFat > idxProv &&
+        idxDetalhe > idxFat &&
         idxCaixa > idxDetalhe,
-      `ordem inválida em renderGeral: cards=${idxCards} op=${idxOp} prov=${idxProv} detalhe=${idxDetalhe} caixa=${idxCaixa}`,
+      `ordem inválida em renderGeral: cards=${idxCards} op=${idxOp} prov=${idxProv} fat=${idxFat} detalhe=${idxDetalhe} caixa=${idxCaixa}`,
     );
     assert.match(ui, /from 'react'/);
     assert.match(hook, /listBalanceSnapshotsDirect/);
