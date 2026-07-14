@@ -1580,6 +1580,20 @@ export async function registerRoutes(
     }
   });
 
+  app.get('/api/whatsapp/connection/sdk-token', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const { getSdkConnectorToken } = await import('../lib/whatsappLiteApi');
+      const instanceId = typeof req.query.instanceId === 'string' ? req.query.instanceId : null;
+      const result = await getSdkConnectorToken(instanceId);
+      if ('error' in result && result.error) {
+        return res.status(result.status).json({ error: result.error });
+      }
+      return res.status(200).json('body' in result ? result.body : result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get('/api/whatsapp/connection/qr-code', requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
     try {
       const provider = await resolveWhatsappProvider(req);

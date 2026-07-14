@@ -707,6 +707,45 @@ export async function confirmMobileSecurityPin(pin: string) {
   return { ok: true, error: null as string | null, data };
 }
 
+/** Token de sessão descartável para o SDK Connector (modal oficial Z-API). */
+export async function getSdkConnectorToken(instanceId?: string | null) {
+  const row = await getInstance(instanceId);
+  if (!row || !instanceConfigured(row)) {
+    return { status: 503 as const, error: "WhatsApp não configurado" };
+  }
+  if (row.provider !== "zapi") {
+    return { status: 400 as const, error: "SDK Connector só está disponível para provider Z-API" };
+  }
+  const creds = credsFromRow(row);
+  if (!creds) return { status: 503 as const, error: "Credenciais Z-API incompletas" };
+  if (!creds.clientToken) {
+    return { status: 503 as const, error: "Client-Token Z-API obrigatório para gerar o token do SDK" };
+  }
+
+  const { ok, status, data, text } = await zapiFetch(creds, "sdk-connector-token", { method: "GET" });
+  const token = String(data?.token || data?.value || "").trim();
+  if (!ok || !token) {
+    return {
+      status: (status >= 400 ? status : 502) as number,
+      error: sanitizeWhatsappError(String(data?.error || data?.message || text || "Falha ao gerar sdk-connector-token")),
+      httpStatus: status,
+      data,
+    };
+  }
+
+  return {
+    status: 200 as const,
+    body: {
+      ok: true,
+      token,
+      instanceId: row.id,
+      instanceType: creds.type,
+      label: row.label,
+      phoneDisplay: officialPhoneParts(row).display,
+    },
+  };
+}
+
 export async function getQrAndPhoneCode(instanceId?: string | null) {
   const row = await getInstance(instanceId);
   if (!row || !instanceConfigured(row)) return { error: "WhatsApp não configurado", status: 503 as const };

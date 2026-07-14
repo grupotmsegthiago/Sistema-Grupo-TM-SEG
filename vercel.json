@@ -448,6 +448,10 @@
       "destination": "/api/whatsapp-connection-confirm-code"
     },
     {
+      "source": "/api/whatsapp/connection/sdk-token",
+      "destination": "/api/whatsapp-connection-sdk-token"
+    },
+    {
       "source": "/api/admin/system-settings/daily-reports",
       "destination": "/api/admin/system-settings-daily-reports"
     },

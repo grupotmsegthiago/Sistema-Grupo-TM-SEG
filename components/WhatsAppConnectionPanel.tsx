@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Check, CheckCircle2, Copy, Loader2, Phone, QrCode, RefreshCw, Save, Smartphone, Wifi, WifiOff, XCircle } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { safeWhatsappInstanceLabel } from '../lib/whatsappDisplayUtils';
+import { openZapiSdkConnector } from '../lib/zapiSdkConnector';
 
 type InstancePublic = {
   id: string;
@@ -240,6 +241,36 @@ const WhatsAppConnectionPanel: React.FC = () => {
       await loadInstances();
     } catch (e: any) {
       setMessage(e?.message || 'Erro ao reconectar');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Modal oficial Z-API (SDK Connector) — doc partner/sdk-connector. */
+  const openOfficialSdk = async () => {
+    if (!selected) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const r = await authFetch(`/api/whatsapp/connection/sdk-token${instanceQuery}`);
+      const data = await r.json();
+      if (!r.ok || !data.token) {
+        throw new Error(data.error || 'Falha ao gerar token do SDK Connector');
+      }
+      const connectedOk = await openZapiSdkConnector({
+        token: data.token,
+        instanceType: data.instanceType || form.instance_type || 'mobile',
+      });
+      if (connectedOk) {
+        setMessage('Conectado pelo SDK Connector Z-API.');
+      } else {
+        setMessage('Modal fechado sem conexão. Tente de novo com o WhatsApp Business aberto no eSIM.');
+      }
+      await refreshStatus(selected.id);
+      await loadInstances();
+      await testConnection();
+    } catch (e: any) {
+      setMessage(e?.message || 'Erro ao abrir SDK Connector');
     } finally {
       setBusy(false);
     }
@@ -635,20 +666,41 @@ const WhatsAppConnectionPanel: React.FC = () => {
                 </div>
 
                 {!connected && isZapi && (
+                  <div className="p-4 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-950 text-xs space-y-2">
+                    <p className="font-black uppercase text-[10px] tracking-wide">
+                      SDK Connector Z-API (recomendado)
+                    </p>
+                    <p className="leading-relaxed">
+                      Modal oficial da Z-API: gera token no backend, abre o conector e cobre QR / número / SMS / ligação / pop-up (MOBILE),
+                      captcha, PIN e desbloqueio — conforme a documentação do parceiro.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void openOfficialSdk()}
+                      className="w-full flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-3 px-4 rounded-xl disabled:opacity-50"
+                      data-testid="button-zapi-sdk-connector"
+                    >
+                      {busy ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
+                      {busy ? 'Abrindo conector…' : 'Conectar com SDK Z-API'}
+                    </button>
+                  </div>
+                )}
+
+                {!connected && isZapi && (
                   <div className="p-4 rounded-lg border border-amber-200 bg-amber-50 text-amber-950 text-xs space-y-2">
                     <p className="font-black uppercase text-[10px] tracking-wide">
-                      {isMobile ? 'Fluxo MOBILE (obrigatório)' : 'Fluxo WEB'}
+                      {isMobile ? 'Fallback manual MOBILE' : 'Fluxo WEB manual'}
                     </p>
                     {isMobile ? (
                       <ol className="list-decimal list-inside space-y-1 leading-relaxed">
+                        <li>Prefira o botão <strong>Conectar com SDK Z-API</strong> acima.</li>
+                        <li>Só use Pop-up/SMS/Ligação abaixo se o SDK falhar.</li>
                         <li>Deixe o <strong>WhatsApp Business aberto</strong> no eSIM (11) 92683-9456.</li>
-                        <li>Feche WhatsApp Web/Desktop e qualquer <strong>outra instância Z-API</strong> no mesmo número (isso causa “outra instância efetuou login”).</li>
-                        <li>Peça <strong>UMA vez</strong>: Pop-up (wa_old) ou Ligação — SMS só se estiver liberado.</li>
-                        <li>Código SMS/voz → <strong>Confirmar código</strong> abaixo. Pop-up → toque Conectar no celular.</li>
-                        <li>Não use código de 8 letras / “Aparelhos conectados” (isso é WEB e derruba a sessão MOBILE).</li>
+                        <li>Não use código de 8 letras / “Aparelhos conectados” (fluxo WEB).</li>
                       </ol>
                     ) : (
-                      <p>Use QR ou código de 8 letras em Aparelhos conectados.</p>
+                      <p>Use o SDK acima ou QR / código de 8 letras em Aparelhos conectados.</p>
                     )}
                   </div>
                 )}
@@ -721,7 +773,7 @@ const WhatsAppConnectionPanel: React.FC = () => {
                 {isZapi && !connected && isMobile && (
                   <div className="p-4 rounded-xl border-2 border-red-300 bg-red-50 text-red-950 space-y-3">
                     <p className="font-black uppercase text-xs tracking-wide flex items-center gap-2">
-                      <WifiOff size={16} /> Bot offline — reconectar MOBILE
+                      <WifiOff size={16} /> Fallback manual MOBILE (se o SDK falhar)
                     </p>
                     {inCooldown && (
                       <p className="text-xs bg-amber-100 border border-amber-300 rounded-lg p-2 text-amber-950">
