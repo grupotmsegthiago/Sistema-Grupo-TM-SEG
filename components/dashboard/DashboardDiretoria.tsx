@@ -320,7 +320,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
     </div>
   );
 
-  /** Horizonte alinhado — fica abaixo de Operação (OS). */
+  /** Horizonte alinhado — abaixo de Operação (OS) e acima do Faturamento diário. */
   const provisionHorizonSection = provisionHorizon.lastReceivableDate ? (
     <div
       className="bg-slate-900 text-white rounded-xl p-4 shadow-sm border border-slate-700"
@@ -478,6 +478,59 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
     </div>
   );
 
+  /** Detalhe do que ainda vai entrar/sair — abaixo do Caixa do período. */
+  const openCashOutlookSection = (
+    <div className="space-y-3" data-testid="open-cash-outlook-diretoria">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm" data-testid="open-receivable-by-client">
+          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">Receita em aberto por cliente</p>
+          <p className="text-[11px] text-gray-500 mt-0.5 mb-2">
+            Quem concentra o que ainda vai entrar. Se o título veio como &quot;Outros&quot;, o sistema tenta ler o cliente na descrição (ex.: DHL, CEVA).
+          </p>
+          {openCash.byClientReceivable.length === 0 ? (
+            <p className="text-xs text-gray-400 py-2">Nenhum título a receber em aberto.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+              {openCash.byClientReceivable.map((row) => (
+                <li key={row.entity} className="py-2 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-gray-900 truncate">{row.entity}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">{row.count} título{row.count === 1 ? '' : 's'}</p>
+                  </div>
+                  <p className="text-xs font-black font-mono shrink-0 text-green-700">{fmtBRL(row.amount)}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <CashTitleList
+          title="Próximas dívidas"
+          subtitle="A pagar — ordenadas pelo vencimento"
+          rows={openCash.topPayable}
+          totalCount={openCash.payableCount}
+          tone="red"
+          dateLabel="Venc."
+        />
+        <CashTitleList
+          title="Próximas receitas"
+          subtitle="A receber — ordenadas pelo vencimento"
+          rows={openCash.topReceivable}
+          totalCount={openCash.receivableCount}
+          tone="green"
+          dateLabel="Venc."
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={() => goTo('fin-transactions')}
+        className="text-[11px] text-red-700 hover:text-red-800 font-bold flex items-center gap-1"
+      >
+        Abrir Contas a Pagar / Receber <ChevronRight size={12} />
+      </button>
+    </div>
+  );
+
   const alertsWidget = (
     <Card title="Alertas Críticos" subtitle="Mesmos gatilhos dos e-mails operacionais" testId="widget-alertas-criticos">
       {alerts.length === 0 ? (
@@ -525,7 +578,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
     </Card>
   );
 
-  /** Faturamento diário — abaixo do Provisionamento alinhado. */
+  /** Faturamento diário — abaixo do Provisionamento e acima do Caixa do período. */
   const revenueMonthCompareSection = (
     <Card
       title="Faturamento diário (OS)"
@@ -631,6 +684,8 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
         {revenueMonthCompareSection}
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Caixa do período (liquidez)</p>
         {cashKpiRow}
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Detalhe do em aberto</p>
+        {openCashOutlookSection}
       </div>
 
       <div className="lg:col-span-6">
@@ -735,6 +790,10 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
       <div className="lg:col-span-12 space-y-3">
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Caixa do período (liquidez)</p>
         {cashKpiRow}
+      </div>
+      <div className="lg:col-span-12 space-y-3">
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Detalhe do em aberto</p>
+        {openCashOutlookSection}
       </div>
       <div className="lg:col-span-8">
         <Card title="Fluxo de Caixa Diário" subtitle="Transações pagas">
