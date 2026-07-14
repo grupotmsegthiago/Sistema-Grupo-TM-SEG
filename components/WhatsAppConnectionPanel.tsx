@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Check, CheckCircle2, Copy, Loader2, Phone, QrCode, RefreshCw, Save, Smartphone, Wifi, WifiOff, XCircle } from 'lucide-react';
+import { Check, CheckCircle2, Copy, Loader2, QrCode, RefreshCw, Save, Smartphone, Wifi, WifiOff } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { safeWhatsappInstanceLabel } from '../lib/whatsappDisplayUtils';
 import { openZapiSdkConnector } from '../lib/zapiSdkConnector';
@@ -108,6 +108,8 @@ const WhatsAppConnectionPanel: React.FC = () => {
   const [smsCode, setSmsCode] = useState('');
   const [pinCode, setPinCode] = useState('');
   const [codeCopied, setCodeCopied] = useState(false);
+  /** Contagem regressiva local do cooldown (UX limpa). */
+  const [cooldownLeft, setCooldownLeft] = useState(0);
 
   const selected = instances.find(i => i.id === selectedId) || instances[0] || null;
   const instanceQuery = selected ? `?instanceId=${encodeURIComponent(selected.id)}` : '';
@@ -491,138 +493,241 @@ const WhatsAppConnectionPanel: React.FC = () => {
     : 0;
   const inCooldown = isMobile && !connected && cooldownSeconds > 0 && !waOldReady && !voiceReady && !smsReady;
   const disconnectHint = info?.disconnectHint || null;
-  const formatWait = (s: number) => (s <= 0 ? 'agora' : s < 60 ? `${s}s` : `~${Math.ceil(s / 60)} min`);
+  const formatWait = (s: number) => {
+    if (s <= 0) return 'agora';
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return sec > 0 ? `${m}m ${sec.toString().padStart(2, '0')}s` : `${m} min`;
+  };
+
+  useEffect(() => {
+    setCooldownLeft(inCooldown ? cooldownSeconds : 0);
+  }, [inCooldown, cooldownSeconds, selected?.id]);
+
+  useEffect(() => {
+    if (cooldownLeft <= 0) return;
+    const t = window.setInterval(() => {
+      setCooldownLeft((s) => {
+        if (s <= 1) {
+          window.clearInterval(t);
+          void refreshStatus(selected?.id);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [cooldownLeft > 0, selected?.id, refreshStatus]);
+
+  const waiting = inCooldown || cooldownLeft > 0;
+  const waitDisplay = cooldownLeft > 0 ? cooldownLeft : cooldownSeconds;
 
   return (
-    <div className="space-y-6" data-testid="panel-whatsapp-connection">
-      {/* Tabela de instâncias */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-        <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
-          <div>
-            <h3 className="text-lg font-bold text-gray-800">Instâncias WhatsApp</h3>
-            <p className="text-sm text-gray-500">Credenciais no banco — sem editar .env</p>
-          </div>
-          <button type="button" onClick={() => void refreshAll()} className="text-xs text-gray-500 flex items-center gap-1">
+    <div className="space-y-4" data-testid="panel-whatsapp-connection">
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h3 className="text-base font-bold text-gray-800">WhatsApp</h3>
+          <button type="button" onClick={() => void refreshAll()} className="text-xs text-gray-500 flex items-center gap-1" data-testid="button-whatsapp-refresh-all">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Atualizar
           </button>
         </div>
-
         {instances.length === 0 ? (
-          <div className="space-y-2">
-            {message && (
-              <p className="text-sm text-red-800 bg-red-50 border border-red-200 p-3 rounded-lg">{message}</p>
-            )}
-            <p className="text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
-              Nenhuma instância cadastrada no banco. O sistema tenta sincronizar automaticamente a partir das variáveis ZAPI_MOBILE_* na Vercel.
-              Se continuar vazio, confira se <code className="bg-amber-100 px-1 rounded">ZAPI_MOBILE_TOKEN</code> e <code className="bg-amber-100 px-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code> estão na Vercel.
-            </p>
-          </div>
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 p-3 rounded-lg">
+            {message || 'Nenhuma instância no banco. Confira ZAPI_MOBILE_* na Vercel.'}
+          </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-[10px] font-black uppercase text-gray-400 border-b">
-                  <th className="py-2 pr-3">Empresa</th>
-                  <th className="py-2 pr-3">Provider</th>
-                  <th className="py-2 pr-3">Tipo</th>
-                  <th className="py-2 pr-3">Status</th>
-                  <th className="py-2">Última verificação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {instances.map(row => (
-                  <tr
-                    key={row.id}
-                    onClick={() => setSelectedId(row.id)}
-                    className={`border-b cursor-pointer hover:bg-gray-50 ${selectedId === row.id ? 'bg-blue-50' : ''}`}
-                  >
-                    <td className="py-2 pr-3 font-medium">{row.label}{row.is_default ? ' ★' : ''}</td>
-                    <td className="py-2 pr-3 uppercase text-xs">{row.provider}</td>
-                    <td className="py-2 pr-3 text-xs">{row.instance_type || '—'}</td>
-                    <td className="py-2 pr-3">{statusDot(row)} {row.last_connected ? 'Conectado' : row.last_error ? 'Erro' : '—'}</td>
-                    <td className="py-2 text-xs text-gray-400">{row.last_checked_at ? new Date(row.last_checked_at).toLocaleString('pt-BR') : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="flex flex-wrap gap-2">
+            {instances.map((row) => (
+              <button
+                key={row.id}
+                type="button"
+                onClick={() => setSelectedId(row.id)}
+                className={`text-left px-3 py-2 rounded-lg border text-sm ${selectedId === row.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
+              >
+                <span className="font-semibold">{statusDot(row)} {row.label}</span>
+                {row.is_default ? <span className="text-[10px] text-gray-500 ml-1">padrão</span> : null}
+              </button>
+            ))}
           </div>
         )}
       </div>
 
       {selected && (
         <>
-          {/* Credenciais */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-            <h4 className="font-bold text-gray-800 mb-4">Credenciais — {selected.label}</h4>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] font-black uppercase text-gray-500">Slug</label>
-                <input value={form.slug || ''} onChange={e => setForm(f => ({ ...f, slug: e.target.value }))}
-                  className="w-full mt-1 p-2 border rounded-lg text-sm" />
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-4" data-testid="panel-whatsapp-connect-main">
+            <div className="flex items-start gap-3">
+              {connected ? <Wifi className="text-green-600 mt-0.5 shrink-0" /> : <WifiOff className="text-red-500 mt-0.5 shrink-0" />}
+              <div className="min-w-0">
+                <h3 className="text-lg font-bold text-gray-900">{selected.label}</h3>
+                <p className="text-sm text-gray-500">
+                  {fmtPhone(info?.officialPhone || `55${form.official_phone || ''}`)}
+                  {isMobile ? ' · Business no eSIM' : ' · WEB'}
+                </p>
               </div>
+            </div>
+
+            {loading && !info ? (
+              <div className="flex items-center gap-2 text-gray-400 py-4"><Loader2 className="animate-spin" size={18} /> Consultando…</div>
+            ) : (
+              <>
+                <div
+                  className={`p-3 rounded-lg text-sm font-semibold ${connected ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}
+                  data-testid="text-whatsapp-status"
+                >
+                  {connected
+                    ? `Conectado${info?.connectedPhone ? ` — ${fmtPhone(info.connectedPhone)}` : ''}`
+                    : waiting
+                      ? `Aguardando liberação — ${formatWait(waitDisplay)}`
+                      : `Desconectado${info?.status?.error ? ` — ${info.status.error}` : ''}`}
+                </div>
+
+                {message && (
+                  <p className="text-sm bg-slate-50 border border-slate-200 text-slate-800 p-3 rounded-lg" data-testid="text-whatsapp-message">{message}</p>
+                )}
+
+                {isZapi && !connected && isMobile && (
+                  <div className="space-y-3">
+                    <p className="text-sm text-gray-700">
+                      Deixe o <strong>WhatsApp Business</strong> aberto no eSIM e use o botão abaixo.
+                    </p>
+
+                    <button
+                      type="button"
+                      disabled={busy || waiting}
+                      onClick={() => void openOfficialSdk()}
+                      className="w-full flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-3.5 px-4 rounded-xl disabled:opacity-50 text-base"
+                      title={waiting ? `Aguarde ${formatWait(waitDisplay)}` : 'Abrir conector Z-API'}
+                      data-testid="button-zapi-sdk-connector"
+                    >
+                      {busy ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
+                      {busy ? 'Abrindo…' : waiting ? `Aguarde ${formatWait(waitDisplay)}` : 'Conectar'}
+                    </button>
+
+                    {!waiting && (
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          disabled={busy || (reg != null && !waOldReady)}
+                          onClick={() => void requestSms('wa_old')}
+                          className="text-xs font-bold py-2.5 rounded-lg border border-gray-300 disabled:opacity-40"
+                          data-testid="button-request-wa-old-primary"
+                        >
+                          Pop-up
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy || (reg != null && !voiceReady)}
+                          onClick={() => void requestSms('voice')}
+                          className="text-xs font-bold py-2.5 rounded-lg border border-gray-300 disabled:opacity-40"
+                        >
+                          Ligação
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy || smsBlocked || (reg != null && !smsReady)}
+                          onClick={() => void requestSms('sms')}
+                          className="text-xs font-bold py-2.5 rounded-lg border border-gray-300 disabled:opacity-40"
+                        >
+                          SMS
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="grid sm:grid-cols-[1fr_auto] gap-2 items-end">
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-gray-500">Código</label>
+                        <input
+                          value={smsCode}
+                          onChange={(e) => setSmsCode(e.target.value)}
+                          placeholder="Código SMS / ligação"
+                          className="w-full mt-1 p-2.5 border rounded-lg text-sm font-mono"
+                          data-testid="input-whatsapp-sms-code"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        disabled={busy || !smsCode}
+                        onClick={() => void confirmCode()}
+                        className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-sm disabled:opacity-50"
+                        data-testid="button-whatsapp-confirm-code"
+                      >
+                        Confirmar
+                      </button>
+                    </div>
+
+                    <details className="text-xs text-gray-500">
+                      <summary className="cursor-pointer select-none">PIN de 2 etapas (só se pedir)</summary>
+                      <input
+                        value={pinCode}
+                        onChange={(e) => setPinCode(e.target.value)}
+                        placeholder="PIN"
+                        className="w-full mt-2 p-2 border rounded-lg text-sm font-mono"
+                      />
+                    </details>
+                  </div>
+                )}
+
+                {isZapi && !connected && !isMobile && (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" disabled={busy} onClick={() => void generatePhoneLinkCode()}
+                        className="flex-1 min-w-[140px] text-sm font-bold px-3 py-2.5 rounded-xl bg-green-700 text-white disabled:opacity-50">
+                        Gerar código
+                      </button>
+                      <button type="button" disabled={busy} onClick={() => void refreshQr()}
+                        className="flex-1 min-w-[140px] text-sm font-bold px-3 py-2.5 rounded-xl border border-gray-300 disabled:opacity-50 flex items-center justify-center gap-1">
+                        <QrCode size={14} /> QR
+                      </button>
+                      <button type="button" disabled={busy} onClick={() => void runApiReconnect(false)}
+                        className="w-full text-sm font-bold px-4 py-2.5 rounded-xl bg-red-700 text-white disabled:opacity-50 flex items-center justify-center gap-1">
+                        <RefreshCw size={14} /> Reconectar
+                      </button>
+                    </div>
+                    {qrBase64 && (
+                      <div className="text-center p-3 bg-gray-50 rounded-lg border">
+                        <img src={qrBase64.startsWith('data:') ? qrBase64 : `data:image/png;base64,${qrBase64}`} alt="QR" className="mx-auto w-48 h-48" />
+                      </div>
+                    )}
+                    {phoneLinkCode && (
+                      <div className="text-center p-3 bg-amber-50 rounded-lg border border-amber-200 space-y-2">
+                        <p className="text-2xl font-mono font-black tracking-widest" data-testid="text-phone-link-code">{phoneLinkCode}</p>
+                        <button type="button" onClick={() => void copyPhoneCode()}
+                          className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white font-bold py-2 rounded-xl text-sm">
+                          {codeCopied ? <Check size={16} /> : <Copy size={16} />}
+                          {codeCopied ? 'Copiado' : 'Copiar'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isZapi && connected && (
+                  <button type="button" disabled={busy} onClick={() => void refreshStatus(selected?.id)}
+                    className="text-sm font-bold px-4 py-2 rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200 disabled:opacity-50 flex items-center gap-1">
+                    <RefreshCw size={14} /> Atualizar status
+                  </button>
+                )}
+
+                {testResult && (
+                  <div className={`p-3 rounded-lg text-sm ${testResult.ok ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                    {testResult.message}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <details className="bg-white rounded-xl shadow-sm border border-gray-200 p-4" data-testid="details-whatsapp-advanced">
+            <summary className="cursor-pointer font-bold text-sm text-gray-700 select-none">Avançado — credenciais</summary>
+            <div className="mt-4 grid sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-black uppercase text-gray-500">Nome exibido</label>
+                <label className="text-[10px] font-black uppercase text-gray-500">Nome</label>
                 <input value={form.label || ''} onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
                   className="w-full mt-1 p-2 border rounded-lg text-sm" />
               </div>
               <div>
-                <label className="text-[10px] font-black uppercase text-gray-500">Provider</label>
-                <select value={form.provider || 'zapi'} onChange={e => setForm(f => ({ ...f, provider: e.target.value as InstancePublic['provider'] }))}
-                  className="w-full mt-1 p-2 border rounded-lg text-sm">
-                  <option value="zapi">Z-API</option>
-                  <option value="meta">Meta Cloud API</option>
-                  <option value="mock">Mock (dev)</option>
-                </select>
-              </div>
-              {isZapi && (
-                <>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-gray-500">Tipo instância</label>
-                    <select value={form.instance_type || 'mobile'} onChange={e => setForm(f => ({ ...f, instance_type: e.target.value as 'web' | 'mobile' }))}
-                      className="w-full mt-1 p-2 border rounded-lg text-sm">
-                      <option value="mobile">Mobile</option>
-                      <option value="web">Web</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-gray-500">Instance ID</label>
-                    <input value={form.zapi_instance_id || ''} onChange={e => setForm(f => ({ ...f, zapi_instance_id: e.target.value }))}
-                      className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-gray-500">
-                      Token {selected.has_zapi_token && `(atual: ${selected.zapi_token_masked})`}
-                    </label>
-                    <input type="password" value={form.zapi_token || ''} onChange={e => setForm(f => ({ ...f, zapi_token: e.target.value }))}
-                      placeholder={selected.has_zapi_token ? 'Deixe vazio para manter' : 'Obrigatório'}
-                      className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-gray-500">Client-Token</label>
-                    <input type="password" value={form.zapi_client_token || ''} onChange={e => setForm(f => ({ ...f, zapi_client_token: e.target.value }))}
-                      className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
-                  </div>
-                </>
-              )}
-              {form.provider === 'meta' && (
-                <>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-gray-500">Phone Number ID</label>
-                    <input value={form.meta_phone_number_id || ''} onChange={e => setForm(f => ({ ...f, meta_phone_number_id: e.target.value }))}
-                      className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-gray-500">Access Token</label>
-                    <input type="password" value={form.meta_access_token || ''} onChange={e => setForm(f => ({ ...f, meta_access_token: e.target.value }))}
-                      placeholder={selected.has_meta_token ? 'Deixe vazio para manter' : 'Obrigatório'}
-                      className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
-                  </div>
-                </>
-              )}
-              <div>
-                <label className="text-[10px] font-black uppercase text-gray-500">
-                  Número oficial (Brasil) — DDI +55 automático
-                </label>
+                <label className="text-[10px] font-black uppercase text-gray-500">Número (DDD+número)</label>
                 <div className="mt-1 flex gap-2 items-center">
                   <span className="text-sm font-bold text-gray-700 bg-gray-100 border rounded-lg px-3 py-2">+55</span>
                   <input
@@ -632,14 +737,41 @@ const WhatsAppConnectionPanel: React.FC = () => {
                     className="flex-1 p-2 border rounded-lg text-sm font-mono"
                   />
                 </div>
-                <p className="text-[10px] text-gray-500 mt-1">
-                  Digite DDD + número (ex.: 11926839456). O sistema envia à Z-API como DDI <strong>55</strong> + telefone local.
-                </p>
               </div>
-              <div className="flex items-end gap-4">
+              {isZapi && (
+                <>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-gray-500">Instance ID</label>
+                    <input value={form.zapi_instance_id || ''} onChange={e => setForm(f => ({ ...f, zapi_instance_id: e.target.value }))}
+                      className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-gray-500">
+                      Token {selected.has_zapi_token && `(${selected.zapi_token_masked})`}
+                    </label>
+                    <input type="password" value={form.zapi_token || ''} onChange={e => setForm(f => ({ ...f, zapi_token: e.target.value }))}
+                      placeholder={selected.has_zapi_token ? 'Vazio = manter' : 'Obrigatório'}
+                      className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-gray-500">Client-Token</label>
+                    <input type="password" value={form.zapi_client_token || ''} onChange={e => setForm(f => ({ ...f, zapi_client_token: e.target.value }))}
+                      className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-gray-500">Tipo</label>
+                    <select value={form.instance_type || 'mobile'} onChange={e => setForm(f => ({ ...f, instance_type: e.target.value as 'web' | 'mobile' }))}
+                      className="w-full mt-1 p-2 border rounded-lg text-sm">
+                      <option value="mobile">Mobile</option>
+                      <option value="web">Web</option>
+                    </select>
+                  </div>
+                </>
+              )}
+              <div className="flex items-end gap-4 sm:col-span-2">
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={!!form.is_default} onChange={e => setForm(f => ({ ...f, is_default: e.target.checked }))} />
-                  Instância padrão
+                  Padrão
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={form.enabled !== false} onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))} />
@@ -647,320 +779,27 @@ const WhatsAppConnectionPanel: React.FC = () => {
                 </label>
               </div>
             </div>
-
             <div className="flex flex-wrap gap-2 mt-4">
               <button type="button" disabled={busy} onClick={() => void saveInstance()}
-                className="text-xs font-bold px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1">
-                <Save size={14} /> Salvar no banco
+                className="text-xs font-bold px-4 py-2 rounded-lg bg-blue-600 text-white disabled:opacity-50 flex items-center gap-1">
+                <Save size={14} /> Salvar
               </button>
               <button type="button" disabled={busy} onClick={() => void testConnection()}
-                className="text-xs font-bold px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1">
+                className="text-xs font-bold px-4 py-2 rounded-lg bg-emerald-600 text-white disabled:opacity-50 flex items-center gap-1">
                 {busy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                Testar conexão
+                Testar
               </button>
+              {isZapi && !connected && (
+                <button type="button" disabled={busy} onClick={() => void runApiReconnect(false)}
+                  className="text-xs font-bold px-4 py-2 rounded-lg border border-gray-300 disabled:opacity-50 flex items-center gap-1">
+                  <RefreshCw size={14} /> Restaurar sessão
+                </button>
+              )}
             </div>
-
-            {testResult && (
-              <div className={`mt-4 p-3 rounded-lg text-sm flex items-start gap-2 ${testResult.ok ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
-                {testResult.ok ? <CheckCircle2 size={18} className="shrink-0 mt-0.5" /> : <XCircle size={18} className="shrink-0 mt-0.5" />}
-                <div>
-                  <p className="font-bold">{testResult.message}</p>
-                  <p className="text-xs mt-1 opacity-80">
-                    Esperado: {fmtPhone(testResult.expectedPhone)}
-                    {testResult.connectedPhone ? ` · Conectado: ${fmtPhone(testResult.connectedPhone)}` : ''}
-                    · {new Date(testResult.checkedAt).toLocaleString('pt-BR')}
-                  </p>
-                </div>
-              </div>
+            {disconnectHint && !connected && (
+              <p className="mt-3 text-xs text-gray-600">{disconnectHint.titlePt}</p>
             )}
-          </div>
-
-          {/* Conexão */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-            <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
-              <div className="flex items-start gap-3">
-                {connected ? <Wifi className="text-green-600 mt-1" /> : <WifiOff className="text-red-500 mt-1" />}
-                <div>
-                  <h3 className="text-lg font-bold text-gray-800">Conexão — {selected.label}</h3>
-                  <p className="text-sm text-gray-500">
-                    {form.provider?.toUpperCase()} · {isMobile ? 'mobile' : 'web'} · Oficial {fmtPhone(info?.officialPhone || `55${form.official_phone}`)}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {loading && !info ? (
-              <div className="flex items-center gap-2 text-gray-400 py-6"><Loader2 className="animate-spin" size={18} /> Consultando…</div>
-            ) : (
-              <div className="space-y-4">
-                <div className={`p-3 rounded-lg text-sm ${connected ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
-                  {connected
-                    ? `Conectado${info?.connectedPhone ? ` — ${fmtPhone(info.connectedPhone)}` : ''}${info?.phoneMatchesOfficial ? ' ✓ número oficial' : ' ⚠ número diferente do oficial'}`
-                    : `Desconectado${info?.status?.error ? `: ${info.status.error}` : info?.lastError ? `: ${info.lastError}` : ''}`}
-                </div>
-
-                {!connected && isZapi && (
-                  <div className="p-4 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-950 text-xs space-y-2">
-                    <p className="font-black uppercase text-[10px] tracking-wide">
-                      SDK Connector Z-API (recomendado)
-                    </p>
-                    <p className="leading-relaxed">
-                      Modal oficial da Z-API: gera token no backend, abre o conector e cobre QR / número / SMS / ligação / pop-up (MOBILE),
-                      captcha, PIN e desbloqueio — conforme a documentação do parceiro.
-                    </p>
-                    <button
-                      type="button"
-                      disabled={busy || inCooldown}
-                      onClick={() => void openOfficialSdk()}
-                      className="w-full flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-3 px-4 rounded-xl disabled:opacity-50"
-                      title={inCooldown ? `Aguarde ${formatWait(cooldownSeconds)} com WhatsApp Business aberto no eSIM` : 'Abrir conector oficial Z-API'}
-                      data-testid="button-zapi-sdk-connector"
-                    >
-                      {busy ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
-                      {busy
-                        ? 'Abrindo conector…'
-                        : inCooldown
-                          ? `Aguarde ${formatWait(cooldownSeconds)} (Business no eSIM)`
-                          : 'Conectar com SDK Z-API'}
-                    </button>
-                    {inCooldown && (
-                      <p className="text-[11px] text-amber-900 font-semibold leading-relaxed" data-testid="text-sdk-cooldown-hint">
-                        Cooldown da Meta/Z-API (~{formatWait(cooldownSeconds)}). O modal “Como quer receber o código?” com WhatsApp cinza e SMS/Ligação em contagem é normal —
-                        não fique clicando. Deixe o <strong>WhatsApp Business</strong> aberto no eSIM e aguarde liberar.
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {!connected && isZapi && (
-                  <div className="p-4 rounded-lg border border-amber-200 bg-amber-50 text-amber-950 text-xs space-y-2">
-                    <p className="font-black uppercase text-[10px] tracking-wide">
-                      {isMobile ? 'Fallback manual MOBILE' : 'Fluxo WEB manual'}
-                    </p>
-                    {isMobile ? (
-                      <ol className="list-decimal list-inside space-y-1 leading-relaxed">
-                        <li>Prefira o botão <strong>Conectar com SDK Z-API</strong> acima.</li>
-                        <li>Só use Pop-up/SMS/Ligação abaixo se o SDK falhar.</li>
-                        <li>Deixe o <strong>WhatsApp Business aberto</strong> no eSIM (11) 92683-9456.</li>
-                        <li>Não use código de 8 letras / “Aparelhos conectados” (fluxo WEB).</li>
-                      </ol>
-                    ) : (
-                      <p>Use o SDK acima ou QR / código de 8 letras em Aparelhos conectados.</p>
-                    )}
-                  </div>
-                )}
-
-                {disconnectHint && !connected && (
-                  <div className="p-4 rounded-lg border border-red-300 bg-red-50 text-red-950 text-xs space-y-2">
-                    <p className="font-bold">{disconnectHint.titlePt}</p>
-                    <ol className="list-decimal list-inside space-y-1 leading-relaxed">
-                      {disconnectHint.stepsPt.map((s) => (
-                        <li key={s}>{s}</li>
-                      ))}
-                    </ol>
-                  </div>
-                )}
-
-                {isMobile && isZapi && !connected && reg && (
-                  <div className="p-3 rounded-lg border border-gray-200 bg-gray-50 text-xs text-gray-800 space-y-1">
-                    <p className="font-bold uppercase text-[10px] text-gray-500">Disponível agora (Z-API)</p>
-                    <p>Pop-up wa_old: {waOldReady ? '✅ liberado' : waOldWait === -1 ? '🚫 bloqueado' : `⏳ aguarde ${formatWait(waOldWait)}`}</p>
-                    <p>Ligação: {voiceReady ? '✅ liberada' : voiceWait === -1 ? '🚫 bloqueada' : `⏳ aguarde ${formatWait(voiceWait)}`}</p>
-                    <p>SMS: {smsBlocked ? '🚫 bloqueado agora — use Pop-up ou Ligação' : smsReady ? '✅ liberado' : `⏳ aguarde ${formatWait(smsWait)}`}</p>
-                    {inCooldown && (
-                      <p className="text-amber-800 font-semibold pt-1">
-                        Cooldown ativo ({formatWait(cooldownSeconds)}). Pedir código agora gera blocked no WhatsApp.
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                <div className="p-4 rounded-lg border border-blue-100 bg-blue-50/80 text-blue-950 text-xs space-y-2">
-                  <p className="font-black uppercase text-[10px] tracking-wide">Z-API hoje vs Meta Cloud API (oficial)</p>
-                  <p className="leading-relaxed">
-                    {isMobile ? (
-                      <>
-                        <strong>Z-API MOBILE (atual):</strong> a instância vira o aparelho principal após o registro (pop-up/SMS/voz).
-                        Não use “Aparelhos conectados” / código de 8 letras.
-                      </>
-                    ) : (
-                      <>
-                        <strong>Z-API WEB (atual):</strong> depende do celular ligado e da sessão WhatsApp — pode cair com Web/Business no mesmo número.
-                      </>
-                    )}
-                    <strong className="block mt-1">Meta oficial:</strong> envios pela API Graph sem celular 24h; muito mais estável para automação, porém custo por conversa, templates aprovados e migração de código (provider Meta ainda em desenvolvimento no sistema).
-                  </p>
-                </div>
-
-                {message && (
-                  <p className="text-sm bg-blue-50 border border-blue-100 text-blue-900 p-3 rounded-lg">{message}</p>
-                )}
-
-                {isZapi && (
-                  <div className="p-4 rounded-lg border border-amber-200 bg-amber-50 text-amber-950 text-xs space-y-2">
-                    <p className="font-black uppercase text-[10px] tracking-wide">Webhooks Z-API (anti-queda — configure no painel Z-API)</p>
-                    <p className="leading-relaxed">
-                      Cole estas URLs nos callbacks da instância. Use o mesmo segredo configurado em <code className="bg-white px-1 rounded">ZAPI_WEBHOOK_SECRET</code> na Vercel.
-                    </p>
-                    <div className="font-mono text-[10px] bg-white p-2 rounded border break-all">
-                      Desconexão: {typeof window !== 'undefined' ? `${window.location.origin}/api/zapi/webhook/connection` : '/api/zapi/webhook/connection'}
-                    </div>
-                    <div className="font-mono text-[10px] bg-white p-2 rounded border break-all">
-                      Mensagens: {typeof window !== 'undefined' ? `${window.location.origin}/api/whatsapp/webhook/inbound` : '/api/whatsapp/webhook/inbound'}
-                    </div>
-                    <div className="font-mono text-[10px] bg-white p-2 rounded border break-all">
-                      Status entrega: {typeof window !== 'undefined' ? `${window.location.origin}/api/zapi/webhook/message-status` : '/api/zapi/webhook/message-status'}
-                    </div>
-                    <p className="text-[10px] opacity-80">Vigia: 1 min. Auto-reconnect ativo por padrão (restore-session + restart). Desative com WHATSAPP_AUTO_RECONNECT=false na Vercel.</p>
-                  </div>
-                )}
-
-                {isZapi && !connected && isMobile && (
-                  <div className="p-4 rounded-xl border-2 border-red-300 bg-red-50 text-red-950 space-y-3">
-                    <p className="font-black uppercase text-xs tracking-wide flex items-center gap-2">
-                      <WifiOff size={16} /> Fallback manual MOBILE (se o SDK falhar)
-                    </p>
-                    {inCooldown && (
-                      <p className="text-xs bg-amber-100 border border-amber-300 rounded-lg p-2 text-amber-950">
-                        Aguarde {formatWait(cooldownSeconds)} com o WhatsApp Business aberto. Os botões ficam bloqueados para não gerar blocked.
-                      </p>
-                    )}
-                    <button
-                      type="button"
-                      disabled={busy || (reg != null && !waOldReady)}
-                      onClick={() => void requestSms('wa_old')}
-                      title={!waOldReady ? `Aguarde ${formatWait(waOldWait)}` : 'Pedir pop-up no WhatsApp'}
-                      className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white font-bold py-3 px-4 rounded-xl disabled:opacity-50"
-                      data-testid="button-request-wa-old-primary"
-                    >
-                      {busy ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
-                      {busy
-                        ? 'Solicitando…'
-                        : waOldReady
-                          ? '1) Pedir pop-up no WhatsApp (wa_old)'
-                          : `1) Pop-up — aguarde ${formatWait(waOldWait)}`}
-                    </button>
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" disabled={busy || (reg != null && !voiceReady)}
-                        onClick={() => void requestSms('voice')}
-                        title={!voiceReady ? `Aguarde ${formatWait(voiceWait)}` : 'Pedir ligação'}
-                        className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl border-2 border-amber-400 text-amber-950 disabled:opacity-50">
-                        <Phone size={14} /> 2) Ligação{!voiceReady && reg != null ? ` (${formatWait(voiceWait)})` : ''}
-                      </button>
-                      <button type="button" disabled={busy || smsBlocked || (reg != null && !smsReady)}
-                        onClick={() => void requestSms('sms')}
-                        title={smsBlocked ? 'SMS bloqueado agora pela WhatsApp' : !smsReady ? `Aguarde ${formatWait(smsWait)}` : 'Pedir código por SMS'}
-                        className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl border-2 border-gray-300 text-gray-800 disabled:opacity-50">
-                        <Phone size={14} /> 3) SMS{smsBlocked ? ' (bloqueado)' : !smsReady && reg != null ? ` (${formatWait(smsWait)})` : ''}
-                      </button>
-                    </div>
-                    <button type="button" disabled={busy} onClick={() => void runApiReconnect(false)}
-                      className="w-full text-xs font-bold px-4 py-2.5 rounded-xl bg-white border border-red-200 text-red-900 disabled:opacity-50 flex items-center justify-center gap-1">
-                      <RefreshCw size={14} /> Restaurar sessão (API) — só se já esteve conectado
-                    </button>
-                  </div>
-                )}
-
-                {isZapi && !connected && !isMobile && (
-                  <div className="p-4 rounded-xl border-2 border-red-300 bg-red-50 text-red-950 space-y-3">
-                    <p className="font-black uppercase text-xs tracking-wide flex items-center gap-2">
-                      <WifiOff size={16} /> Bot offline — reconectar WEB
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" disabled={busy} onClick={() => void generatePhoneLinkCode()}
-                        className="flex-1 min-w-[140px] text-xs font-bold px-3 py-2.5 rounded-xl bg-green-700 text-white disabled:opacity-50">
-                        Gerar código web
-                      </button>
-                      <button type="button" disabled={busy} onClick={() => void refreshQr()}
-                        className="flex-1 min-w-[140px] text-xs font-bold px-3 py-2.5 rounded-xl bg-white border border-gray-300 disabled:opacity-50 flex items-center justify-center gap-1">
-                        <QrCode size={14} /> Atualizar QR
-                      </button>
-                      <button type="button" disabled={busy} onClick={() => void runApiReconnect(false)}
-                        className="w-full text-xs font-bold px-4 py-2.5 rounded-xl bg-red-700 text-white disabled:opacity-50 flex items-center justify-center gap-1">
-                        <RefreshCw size={14} /> Reconectar via API
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {isZapi && connected && (
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" disabled={busy} onClick={() => void refreshStatus(selected?.id)}
-                      className="text-xs font-bold px-4 py-2 rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200 disabled:opacity-50 flex items-center gap-1">
-                      <RefreshCw size={14} /> Atualizar status
-                    </button>
-                  </div>
-                )}
-
-                {qrBase64 && !isMobile && (
-                  <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-xs font-bold text-gray-600 mb-2">Escaneie no WhatsApp → Aparelhos conectados</p>
-                    <img src={qrBase64.startsWith('data:') ? qrBase64 : `data:image/png;base64,${qrBase64}`} alt="QR" className="mx-auto w-56 h-56" />
-                  </div>
-                )}
-
-                {phoneLinkCode && connected === false && !isMobile && (
-                  <div className="text-center p-4 bg-amber-50 rounded-lg border-2 border-amber-300 space-y-2">
-                    <p className="text-[10px] font-bold uppercase text-amber-800">
-                      Código de vinculação WEB (phone-code)
-                    </p>
-                    <p className="text-3xl font-mono font-black tracking-widest text-gray-900" data-testid="text-phone-link-code">{phoneLinkCode}</p>
-                    <p className="text-xs text-amber-950 leading-relaxed">
-                      No WhatsApp Business do eSIM +55 (11) 92683-9456:<br />
-                      <strong>Aparelhos conectados → Conectar → Vincular com número de telefone</strong>
-                    </p>
-                    <button type="button" onClick={() => void copyPhoneCode()}
-                      className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">
-                      {codeCopied ? <Check size={16} /> : <Copy size={16} />}
-                      {codeCopied ? 'Copiado!' : 'Copiar código e instruções'}
-                    </button>
-                  </div>
-                )}
-
-                {extensionToken && !isMobile && (
-                  <div className="text-center p-4 bg-indigo-50 rounded-lg border border-indigo-200">
-                    <p className="text-[10px] font-black uppercase text-indigo-700 mb-2">Extensão Z-API Conector</p>
-                    <p className="text-2xl font-black font-mono tracking-widest text-indigo-900">{extensionToken}</p>
-                    {extensionExpiresAt && (
-                      <p className="text-[10px] text-indigo-600 mt-2">
-                        Expira em ~{Math.max(0, Math.round((extensionExpiresAt - Date.now()) / 60_000))} min
-                      </p>
-                    )}
-                    <p className="text-[11px] text-gray-600 mt-3 leading-relaxed">
-                      Chrome → web.whatsapp.com (número oficial) → extensão Z-API Conector → digite o código
-                    </p>
-                  </div>
-                )}
-
-                {isMobile && isZapi && (
-                  <div className="grid sm:grid-cols-2 gap-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-gray-500">Código SMS / confirmação</label>
-                      <input value={smsCode} onChange={e => setSmsCode(e.target.value)} placeholder="123456"
-                        className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-gray-500">PIN (se for pedido)</label>
-                      <input value={pinCode} onChange={e => setPinCode(e.target.value)} placeholder="PIN 2 etapas"
-                        className="w-full mt-1 p-2 border rounded-lg text-sm font-mono" />
-                    </div>
-                    <button type="button" disabled={busy || (!smsCode && !pinCode)} onClick={() => void confirmCode()}
-                      className="sm:col-span-2 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm disabled:opacity-50">
-                      Confirmar código
-                    </button>
-                    <p className="sm:col-span-2 text-[10px] text-gray-500">
-                      Após o código: a Z-API vira o aparelho principal (o WhatsApp Business no celular pode sair). Isso é normal no modo MOBILE.
-                    </p>
-                  </div>
-                )}
-
-                <p className="text-[11px] text-gray-400 leading-relaxed">
-                  O botão <strong>Testar conexão</strong> consulta a API, valida o número conectado e persiste o status no banco.
-                  Todo envio do sistema usa a instância padrão (★) via <code className="bg-gray-100 px-1 rounded">whatsappProvider.sendText()</code>.
-                </p>
-              </div>
-            )}
-          </div>
+          </details>
         </>
       )}
     </div>
