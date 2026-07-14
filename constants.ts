@@ -84,6 +84,15 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { name: 'Página Inicial', icon: 'LayoutDashboard', id: 'dashboard' },
+  {
+    name: 'Diretoria',
+    icon: 'Crown',
+    id: 'diretoria-group',
+    children: [
+      { name: 'Cockpit Executivo', id: 'diretoria-cockpit' },
+      { name: 'Relatório Geral', id: 'fin-report' },
+    ],
+  },
   { 
     name: 'Monitoramento', 
     icon: 'MapPin', 
@@ -152,15 +161,6 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   { name: 'Relatórios', icon: 'FileBarChart', id: 'reports' },
-  {
-    name: 'Diretoria',
-    icon: 'Crown',
-    id: 'diretoria-group',
-    children: [
-      { name: 'Cockpit Executivo', id: 'diretoria-cockpit' },
-      { name: 'Relatório Geral', id: 'fin-report' },
-    ],
-  },
   { 
     name: 'Configurações', 
     icon: 'Settings', 

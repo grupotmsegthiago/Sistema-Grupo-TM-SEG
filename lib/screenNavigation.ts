@@ -1,8 +1,10 @@
 /** Mantém a tela atual na URL e no sessionStorage para sobreviver a reloads/auto-update. */
 
+import { canAccessDiretoriaMenu } from './diretoriaAccess';
+
 export const SCREEN_STORAGE_KEY = 'tmseg_current_screen';
 
-/** Tela padrão do perfil Diretoria ao abrir o sistema */
+/** Tela padrão ao abrir o sistema (somente Thiago Moreira / Thiago Santos) */
 export const DIRECTORIA_COCKPIT_SCREEN = 'diretoria-cockpit';
 
 const PAGE_PARAM = 'page';
@@ -27,13 +29,13 @@ export function getStoredScreen(): string | null {
   return null;
 }
 
-/** Retorna a tela inicial preferida pelo perfil (ex.: Diretoria → cockpit). */
+/** Cockpit só é home padrão para quem tem menu Diretoria (nome), não pelo perfil. */
 export function getRoleDefaultScreen(): string | null {
   try {
     const raw = localStorage.getItem('userData');
     if (!raw) return null;
-    const role = String(JSON.parse(raw)?.role || '').toLowerCase();
-    if (role === 'diretoria') return DIRECTORIA_COCKPIT_SCREEN;
+    const user = JSON.parse(raw);
+    if (canAccessDiretoriaMenu(user)) return DIRECTORIA_COCKPIT_SCREEN;
   } catch {
     /* ignore */
   }

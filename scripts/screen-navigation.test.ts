@@ -52,11 +52,11 @@ test('getScreenFromUrl retorna null sem param', () => {
   }
 });
 
-test('Diretoria abre no cockpit executivo por padrão', () => {
+test('Thiago Moreira abre no cockpit executivo por padrão (não basta perfil Diretoria)', () => {
   const prev = globalThis.window;
   const prevStorage = globalThis.localStorage;
   const store: Record<string, string> = {
-    userData: JSON.stringify({ role: 'Diretoria' }),
+    userData: JSON.stringify({ name: 'Thiago Moreira', role: 'Diretoria' }),
   };
   (globalThis as any).window = {
     location: { search: '', href: 'https://sistema.test/' },
@@ -81,6 +81,34 @@ test('Diretoria abre no cockpit executivo por padrão', () => {
   }
 });
 
+test('perfil Diretoria sem ser Thiago NÃO abre no cockpit', () => {
+  const prev = globalThis.window;
+  const prevStorage = globalThis.localStorage;
+  const prevSession = globalThis.sessionStorage;
+  (globalThis as any).window = {
+    location: { search: '', href: 'https://sistema.test/' },
+    history: { replaceState: () => {} },
+  };
+  (globalThis as any).localStorage = {
+    getItem: () => JSON.stringify({ name: 'Outro Diretor', role: 'Diretoria' }),
+    setItem: () => {},
+    removeItem: () => {},
+  };
+  (globalThis as any).sessionStorage = {
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
+  };
+  try {
+    assert.equal(getRoleDefaultScreen(), null);
+    assert.equal(resolveInitialScreen('dashboard'), 'dashboard');
+  } finally {
+    (globalThis as any).window = prev;
+    (globalThis as any).localStorage = prevStorage;
+    (globalThis as any).sessionStorage = prevSession;
+  }
+});
+
 test('?page= na URL tem prioridade sobre padrão da Diretoria', () => {
   const prev = globalThis.window;
   const prevStorage = globalThis.localStorage;
@@ -89,7 +117,7 @@ test('?page= na URL tem prioridade sobre padrão da Diretoria', () => {
     history: { replaceState: () => {} },
   };
   (globalThis as any).localStorage = {
-    getItem: () => JSON.stringify({ role: 'diretoria' }),
+    getItem: () => JSON.stringify({ name: 'Thiago Santos', role: 'diretoria' }),
     setItem: () => {},
     removeItem: () => {},
   };

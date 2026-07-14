@@ -94,6 +94,7 @@ import AppErrorBoundary from './components/AppErrorBoundary';
 import { wireUserActivityTracker, touchUserActivity } from './lib/userActivityTracker';
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
+import { canAccessDiretoriaMenu } from './lib/diretoriaAccess';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
 import { persistScreen, resolveInitialScreen, getRoleDefaultScreen, getScreenFromUrl } from './lib/screenNavigation';
 
@@ -386,7 +387,12 @@ const App: React.FC = () => {
       case 'fin-accounts': return <FinancialAccountManager />;
       case 'fin-categories': return <FinancialCategoryManager />;
       case 'fin-report': return <FinancialReport />;
-      case 'diretoria-cockpit': return <DashboardDiretoria onNavigate={navigateTo} />;
+      case 'diretoria-cockpit': {
+        const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+        return canAccessDiretoriaMenu(u)
+          ? <DashboardDiretoria onNavigate={navigateTo} />
+          : <Dashboard onOpenMission={handleOpenBillingMission} />;
+      }
       case 'fin-billing': return <ClientBillingReport onNavigate={navigateTo} onOpenMission={handleOpenBillingMission} />;
       case 'fin-daily-movement': return <DailyCashMovement />;
       case 'fin-vendor-verification': return <VendorVerificationControl onNavigate={navigateTo} onOpenMission={handleOpenBillingMission} />;
