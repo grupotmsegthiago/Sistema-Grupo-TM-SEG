@@ -34,6 +34,9 @@ function friendlyRecalcError(raw: string, httpStatus?: number): string {
   ) {
     return 'Recálculo demorou demais ou a rede caiu. Os KPIs já foram atualizados — toque Atualizar de novo em instantes.';
   }
+  if (httpStatus === 500 || /FUNCTION_INVOCATION_FAILED|server error has occurred/i.test(msg)) {
+    return 'Falha no servidor ao recalcular OS abertas. Tente Atualizar de novo; se persistir, avise o suporte.';
+  }
   if (httpStatus && httpStatus >= 400) {
     return msg || `Falha ao recalcular OS (HTTP ${httpStatus}).`;
   }

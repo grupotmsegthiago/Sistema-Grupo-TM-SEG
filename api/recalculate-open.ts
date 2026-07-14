@@ -1,13 +1,40 @@
 /**
  * POST /api/recalculate-open — serverless leve (não passa pelo Express/api/index).
  * Recalcula só OS abertas (~dezenas), com o mesmo motor calculateMissionFinancials.
+ *
+ * O motor financeiro vem de um bundle CJS gerado no build (build-server.mjs).
+ * Import ESM direto de lib/financialUtils.ts quebrava na Vercel com
+ * FUNCTION_INVOCATION_FAILED / ERR_MODULE_NOT_FOUND.
  */
+import { createRequire } from "node:module";
 import { createSupabaseAdminClient } from "../lib/supabaseAdmin.js";
-import { calculateMissionFinancials } from "../lib/financialUtils.js";
 import { readBearer, resolveLitePrincipal } from "../lib/tmsegAuth.js";
+
+const require = createRequire(import.meta.url);
+
+// Require ESTÁTICO — o file tracer da Vercel precisa ver o caminho literal.
+const financialCore = require("./_recalculate-open-core.cjs") as {
+  calculateMissionFinancials: (
+    mission: unknown,
+    clientTables: unknown[],
+    providerTables: unknown[],
+    clientMatch?: unknown,
+  ) => {
+    client: { serviceTotal: number };
+    provider: { serviceTotal: number };
+    tollValue?: number;
+  } | null;
+};
+const { calculateMissionFinancials } = financialCore;
 
 const OPEN_STATUSES = ["Pendente", "Solicitada", "Documentação", "Agendada", "Origem", "Em Viagem"];
 const ALLOWED_ROLES = new Set(["diretoria", "administrador", "ceo", "financeiro", "admin"]);
+
+type LiteReq = {
+  method?: string;
+  body?: unknown;
+  headers?: Record<string, string | string[] | undefined>;
+};
 
 function r2(v: number) {
   return Math.round(v * 100) / 100;
@@ -22,7 +49,7 @@ function normalizeRole(role: string): string {
 }
 
 export default async function handler(
-  req: { method?: string; body?: unknown; headers?: Record<string, unknown> },
+  req: LiteReq,
   res: { status: (n: number) => { json: (b: unknown) => void }; setHeader: (k: string, v: string) => void },
 ) {
   if (req.method !== "POST") {

@@ -176,7 +176,7 @@ describe('DiretoriaSistemaTab auth', () => {
 });
 
 describe('Cockpit Atualizar → recalcula OS', () => {
-  it('hook chama /api/recalculate-all antes de recarregar KPIs', async () => {
+  it('hook chama /api/recalculate-open antes de recarregar KPIs', async () => {
     const src = await import('node:fs/promises').then((fs) =>
       fs.readFile('lib/dashboardDiretoria/useDashboardDiretoriaData.ts', 'utf8'),
     );
@@ -185,6 +185,7 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(src, /recalculateOpenMissionsBilling/);
     assert.match(src, /friendlyRecalcError/);
     assert.match(src, /Fetch is aborted|fetch is aborted/i);
+    assert.match(src, /FUNCTION_INVOCATION_FAILED/);
     assert.doesNotMatch(src, /new AbortController/);
     assert.match(src, /const refresh = useCallback\(async \(\) =>/);
     assert.match(src, /await recalculateOpenMissionsBilling\(\)/);
@@ -198,5 +199,17 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(src, /data\.refresh/);
     assert.match(src, /lastRecalc/);
     assert.match(src, /hora extra/);
+  });
+
+  it('handler serverless usa bundle CJS do motor financeiro (não import ESM de financialUtils)', async () => {
+    const fs = await import('node:fs/promises');
+    const src = await fs.readFile('api/recalculate-open.ts', 'utf8');
+    assert.match(src, /require\(["']\.\/_recalculate-open-core\.cjs["']\)/);
+    assert.match(src, /createRequire/);
+    assert.doesNotMatch(src, /from ['"]\.\.\/lib\/financialUtils/);
+    const buildSrc = await fs.readFile('build-server.mjs', 'utf8');
+    assert.match(buildSrc, /_recalculate-open-core\.cjs/);
+    const core = await fs.readFile('api/_recalculate-open-core.cjs', 'utf8');
+    assert.match(core, /calculateMissionFinancials/);
   });
 });
