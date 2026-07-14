@@ -60,7 +60,7 @@ const ASAAS_TRANSFER_COMPANIES: AsaasCompanyDef[] = [
   {
     key: 'TM GESTÃO',
     aliases: ['TM GESTÃO', 'TM GESTAO', 'GESTAO', 'GESTÃO', 'TMGESTAO'],
-    envHint: 'ASAAS_TMGESTAO_API (ou TMGESTAO / ASAAS_API_KEY)',
+    envHint: 'Asaas_TMSEGESTÃO_API (ou ASAAS_TMGESTAO_API / TMGESTAO)',
     getApiKey: getAsaasApiKeyTmGestao,
   },
   {
@@ -80,7 +80,7 @@ const ASAAS_TRANSFER_COMPANIES: AsaasCompanyDef[] = [
   {
     key: 'TM SECURITY',
     aliases: ['TM SECURITY', 'TMSECURITY', 'SECURITY', 'TM SECURITY GESTAO', 'TM SECURITY GESTÃO'],
-    envHint: 'ASAAS_TMSECURITY_API (ou TMSECURITY / ASAAS_API_KEY_TMSECURITY_60)',
+    envHint: 'ASAAS_TMSECURITY_API (ou TMSECURITY)',
     getApiKey: getAsaasApiKeyTmSecurity,
   },
 ];

@@ -33,25 +33,32 @@ test('summarizeAsaasKeyEnv não expõe valor da chave', async () => {
   }
 });
 
-test('getAsaasApiKeyTmGestao prioriza TMGESTAO e depois ASAAS_TMGESTAO_API', async () => {
+test('getAsaasApiKeyTmGestao prioriza Asaas_TMSEGESTÃO_API', async () => {
   const { getAsaasApiKeyTmGestao } = await import('../lib/asaasEnvKeys.ts');
-  const prevTm = process.env.TMGESTAO;
-  const prevA = process.env.ASAAS_TMGESTAO_API;
-  const prevB = process.env.ASAAS_API_KEY;
-  delete process.env.TMGESTAO;
-  process.env.ASAAS_TMGESTAO_API = '$aact_prod_gestao_nova';
-  process.env.ASAAS_API_KEY = '$aact_prod_gestao_legado';
+  const keys = [
+    'Asaas_TMSEGESTÃO_API',
+    'ASAAS_TMSEGESTÃO_API',
+    'Asaas_TMSEGESTAO_API',
+    'ASAAS_TMSEGESTAO_API',
+    'ASAAS_TMGESTAO_API',
+    'TMGESTAO',
+    'ASAAS_API_KEY',
+  ];
+  const prev: Record<string, string | undefined> = {};
+  for (const k of keys) {
+    prev[k] = process.env[k];
+    delete process.env[k];
+  }
   try {
-    assert.equal(getAsaasApiKeyTmGestao(), '$aact_prod_gestao_nova');
-    process.env.TMGESTAO = '$aact_prod_gestao_tmgestao';
-    assert.equal(getAsaasApiKeyTmGestao(), '$aact_prod_gestao_tmgestao');
+    process.env.ASAAS_TMGESTAO_API = '$aact_prod_gestao_legado';
+    assert.equal(getAsaasApiKeyTmGestao(), '$aact_prod_gestao_legado');
+    process.env['Asaas_TMSEGESTÃO_API'] = '$aact_prod_gestao_oficial';
+    assert.equal(getAsaasApiKeyTmGestao(), '$aact_prod_gestao_oficial');
   } finally {
-    if (prevTm === undefined) delete process.env.TMGESTAO;
-    else process.env.TMGESTAO = prevTm;
-    if (prevA === undefined) delete process.env.ASAAS_TMGESTAO_API;
-    else process.env.ASAAS_TMGESTAO_API = prevA;
-    if (prevB === undefined) delete process.env.ASAAS_API_KEY;
-    else process.env.ASAAS_API_KEY = prevB;
+    for (const [k, v] of Object.entries(prev)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
   }
 });
 
@@ -65,8 +72,6 @@ test('getAsaasApiKeyTmSecurity prioriza ASAAS_TMSECURITY_API', async () => {
   process.env.ASAAS_API_KEY_TMSECURITY_60 = '$aact_prod_security_legado';
   try {
     assert.equal(getAsaasApiKeyTmSecurity(), '$aact_prod_security_nova');
-    process.env.TMSECURITY = '$aact_prod_security_tmsecurity';
-    assert.equal(getAsaasApiKeyTmSecurity(), '$aact_prod_security_tmsecurity');
   } finally {
     if (prevTm === undefined) delete process.env.TMSECURITY;
     else process.env.TMSECURITY = prevTm;

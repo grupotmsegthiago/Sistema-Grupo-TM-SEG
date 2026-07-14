@@ -22,17 +22,21 @@ export function fingerprintAsaasKey(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 12);
 }
 
-/** Asaas — TM Gestão. Preferir `TMGESTAO` / `ASAAS_TMGESTAO_API` (espelho de TMSEGURANCA). */
+/** Asaas — TM Gestão. Preferir o nome usado na Vercel: `Asaas_TMSEGESTÃO_API`. */
 export function getAsaasApiKeyTmGestao(): string {
   return readFirstEnv(
-    'TMGESTAO',
+    'Asaas_TMSEGESTÃO_API',
+    'ASAAS_TMSEGESTÃO_API',
+    'Asaas_TMSEGESTAO_API',
+    'ASAAS_TMSEGESTAO_API',
     'ASAAS_TMGESTAO_API',
+    'TMGESTAO',
     'ASAAS_API_KEY',
     'ASAAS_API_KEY_TMGESTAO',
   );
 }
 
-/** Asaas — TM Segurança (Consultoria). Preferir `TMSEGURANCA` na Vercel. */
+/** Asaas — TM Segurança (Consultoria). Preferir `TMSEGURANCA` / `ASAAS_TMSEGURANCA_API`. */
 export function getAsaasApiKeyTmSeguranca(): string {
   return readFirstEnv(
     'TMSEGURANCA',
@@ -43,11 +47,11 @@ export function getAsaasApiKeyTmSeguranca(): string {
   );
 }
 
-/** Asaas — TM Security (Gestão Corporativa). Preferir `TMSECURITY` / `ASAAS_TMSECURITY_API`. */
+/** Asaas — TM Security (Gestão Corporativa). Preferir `ASAAS_TMSECURITY_API`. */
 export function getAsaasApiKeyTmSecurity(): string {
   return readFirstEnv(
-    'TMSECURITY',
     'ASAAS_TMSECURITY_API',
+    'TMSECURITY',
     'ASAAS_API_KEY_TMSECURITY_60',
     'ASAAS_API_KEY_TM_SECURITY',
   );
@@ -64,8 +68,12 @@ export type AsaasKeyEnvSummary = {
 };
 
 const TM_GESTAO_ENV_NAMES = [
-  'TMGESTAO',
+  'Asaas_TMSEGESTÃO_API',
+  'ASAAS_TMSEGESTÃO_API',
+  'Asaas_TMSEGESTAO_API',
+  'ASAAS_TMSEGESTAO_API',
   'ASAAS_TMGESTAO_API',
+  'TMGESTAO',
   'ASAAS_API_KEY',
   'ASAAS_API_KEY_TMGESTAO',
 ] as const;
@@ -79,8 +87,8 @@ const TM_SEGURANCA_ENV_NAMES = [
 ] as const;
 
 const TM_SECURITY_ENV_NAMES = [
-  'TMSECURITY',
   'ASAAS_TMSECURITY_API',
+  'TMSECURITY',
   'ASAAS_API_KEY_TMSECURITY_60',
   'ASAAS_API_KEY_TM_SECURITY',
 ] as const;

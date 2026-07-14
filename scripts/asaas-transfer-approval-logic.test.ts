@@ -55,16 +55,17 @@ test('matchAsaasTransferWebhookToken aceita token por empresa', () => {
 
 test('matchAsaasTransferWebhookToken em modo aberto sem env preenchida', () => {
   const names = [
-    'ASAAS_TRANSFER_WEBHOOK_TOKEN',
-    'ASAAS_WEBHOOK_TMGESTAO',
     'ASAAS_WEBHOOK_TMGESTAO_API',
-    'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMGESTAO',
-    'ASAAS_WEBHOOK_TMSEGURANCA',
     'ASAAS_WEBHOOK_TMSEGURANCA_API',
-    'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMSEGURANCA',
-    'ASAAS_WEBHOOK_TMSECURITY',
     'ASAAS_WEBHOOK_TMSECURITY_API',
+    'ASAAS_WEBHOOK_TMGESTAO',
+    'ASAAS_WEBHOOK_TMSEGURANCA',
+    'ASAAS_WEBHOOK_TMSECURITY',
+    'ASAAS_TRANSFER_WEBHOOK_TOKEN',
+    'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMGESTAO',
+    'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMSEGURANCA',
     'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMSECURITY',
+    'ZAPI_WEBHOOK_TMSECURITY_API',
   ];
   const prev: Record<string, string | undefined> = {};
   for (const n of names) {

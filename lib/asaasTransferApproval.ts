@@ -62,23 +62,25 @@ export function normalizeAsaasWebhookToken(raw: unknown): string {
  * Tokens de autenticação do webhook de aprovação — um por conta Asaas (ou compartilhado).
  * A URL do webhook é a mesma; cada painel Asaas pode ter authToken diferente.
  *
- * Nomes aceitos (prioridade só para listagem; a validação aceita qualquer um preenchido):
- * - ASAAS_TRANSFER_WEBHOOK_TOKEN (opcional, se as 3 contas usarem o mesmo)
- * - ASAAS_WEBHOOK_TMGESTAO / ASAAS_WEBHOOK_TMGESTAO_API
- * - ASAAS_WEBHOOK_TMSEGURANCA / ASAAS_WEBHOOK_TMSEGURANCA_API
- * - ASAAS_WEBHOOK_TMSECURITY / ASAAS_WEBHOOK_TMSECURITY_API
+ * Nomes oficiais (Vercel):
+ * - ASAAS_WEBHOOK_TMGESTAO_API
+ * - ASAAS_WEBHOOK_TMSEGURANCA_API
+ * - ASAAS_WEBHOOK_TMSECURITY_API
+ * Opcional compartilhado: ASAAS_TRANSFER_WEBHOOK_TOKEN
  */
 export const ASAAS_TRANSFER_WEBHOOK_TOKEN_ENV_NAMES = [
-  'ASAAS_TRANSFER_WEBHOOK_TOKEN',
-  'ASAAS_WEBHOOK_TMGESTAO',
   'ASAAS_WEBHOOK_TMGESTAO_API',
-  'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMGESTAO',
-  'ASAAS_WEBHOOK_TMSEGURANCA',
   'ASAAS_WEBHOOK_TMSEGURANCA_API',
-  'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMSEGURANCA',
-  'ASAAS_WEBHOOK_TMSECURITY',
   'ASAAS_WEBHOOK_TMSECURITY_API',
+  'ASAAS_WEBHOOK_TMGESTAO',
+  'ASAAS_WEBHOOK_TMSEGURANCA',
+  'ASAAS_WEBHOOK_TMSECURITY',
+  'ASAAS_TRANSFER_WEBHOOK_TOKEN',
+  'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMGESTAO',
+  'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMSEGURANCA',
   'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMSECURITY',
+  // alias se o token da Security foi salvo com prefixo ZAPI por engano
+  'ZAPI_WEBHOOK_TMSECURITY_API',
 ] as const;
 
 export type AsaasWebhookTokenEntry = {

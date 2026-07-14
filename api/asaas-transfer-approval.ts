@@ -94,7 +94,7 @@ async function handleAdminDiagnosticGet(req: any, res: any): Promise<boolean> {
     externalReferencePrefix: 'tmseg-repasse-',
     asaasEnv: await summarizeAsaasTransferEnv(true),
     hint:
-      'Uma URL de webhook para as 3 contas. Tokens separados na Vercel: ASAAS_WEBHOOK_TMGESTAO_API, ASAAS_WEBHOOK_TMSEGURANCA_API, ASAAS_WEBHOOK_TMSECURITY_API (ou ASAAS_TRANSFER_WEBHOOK_TOKEN se for o mesmo). Após corrigir chaves API, faça redeploy.',
+      'Uma URL de webhook para as 3 contas. Tokens: ASAAS_WEBHOOK_TMGESTAO_API, ASAAS_WEBHOOK_TMSEGURANCA_API, ASAAS_WEBHOOK_TMSECURITY_API. Chaves API: Asaas_TMSEGESTÃO_API, ASAAS_TMSEGURANCA_API, ASAAS_TMSECURITY_API. Após salvar, faça redeploy.',
   });
   return true;
 }

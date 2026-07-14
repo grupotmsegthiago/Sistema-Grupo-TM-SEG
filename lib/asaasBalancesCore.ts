@@ -138,7 +138,7 @@ export async function getAllBalancesCore(): Promise<AsaasBalanceRow[]> {
           name: cfg.name,
           balance: 0,
           pendingBalance: 0,
-          error: 'Chave API não configurada na Vercel (ASAAS_TMGESTAO_API / ASAAS_TMSEGURANCA_API / ASAAS_TMSECURITY_API)',
+          error: 'Chave API não configurada na Vercel (Asaas_TMSEGESTÃO_API / ASAAS_TMSEGURANCA_API / ASAAS_TMSECURITY_API)',
         };
       }
       try {

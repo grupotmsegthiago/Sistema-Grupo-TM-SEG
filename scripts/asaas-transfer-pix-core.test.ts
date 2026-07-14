@@ -193,24 +193,31 @@ test('transferPixFromCompanyCore erro claro se chave Security vazia', async () =
 });
 
 test('transferPixFromCompanyCore erro claro se chave Gestão vazia', async () => {
-  const prev = process.env.ASAAS_TMGESTAO_API;
-  const prevTm = process.env.TMGESTAO;
-  const prevApi = process.env.ASAAS_API_KEY;
-  delete process.env.ASAAS_TMGESTAO_API;
-  delete process.env.TMGESTAO;
-  delete process.env.ASAAS_API_KEY;
+  const keys = [
+    'Asaas_TMSEGESTÃO_API',
+    'ASAAS_TMSEGESTÃO_API',
+    'Asaas_TMSEGESTAO_API',
+    'ASAAS_TMSEGESTAO_API',
+    'ASAAS_TMGESTAO_API',
+    'TMGESTAO',
+    'ASAAS_API_KEY',
+    'ASAAS_API_KEY_TMGESTAO',
+  ];
+  const prev: Record<string, string | undefined> = {};
+  for (const k of keys) {
+    prev[k] = process.env[k];
+    delete process.env[k];
+  }
   try {
     const { transferPixFromCompanyCore } = await import('../lib/asaasTransferPixCore.ts');
     await assert.rejects(
       () => transferPixFromCompanyCore({ company: 'TM GESTÃO', value: 50 }),
-      /ASAAS_TMGESTAO_API|TMGESTAO/,
+      /Asaas_TMSEGESTÃO_API|ASAAS_TMGESTAO_API|TMGESTAO/,
     );
   } finally {
-    if (prev === undefined) delete process.env.ASAAS_TMGESTAO_API;
-    else process.env.ASAAS_TMGESTAO_API = prev;
-    if (prevTm === undefined) delete process.env.TMGESTAO;
-    else process.env.TMGESTAO = prevTm;
-    if (prevApi === undefined) delete process.env.ASAAS_API_KEY;
-    else process.env.ASAAS_API_KEY = prevApi;
+    for (const [k, v] of Object.entries(prev)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
   }
 });
