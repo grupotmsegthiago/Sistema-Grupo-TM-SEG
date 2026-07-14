@@ -266,7 +266,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
    * 1) o que ainda deve · 2) quanto tem nas contas operacionais (sem XP/investimento) · 3) o que ainda vai entrar.
    */
   const liquidezResumoSection = (
-    <div className="space-y-3" data-testid="liquidez-resumo-diretoria">
+    <div className="space-y-2" data-testid="liquidez-resumo-diretoria">
       <p className="text-[11px] text-gray-500">
         Dívidas e receita em aberto sem teto de prazo (inclui 60/90 dias). Total nas contas = só operacionais (exclui XP / investimentos).
       </p>
@@ -293,55 +293,55 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
           icon={<ArrowUpCircle size={16} className="text-green-500" />}
         />
       </div>
-
-      {/* Horizonte alinhado: última data da receita × dívidas até essa data */}
-      {provisionHorizon.lastReceivableDate && (
-        <div
-          className="bg-slate-900 text-white rounded-xl p-4 shadow-sm border border-slate-700"
-          data-testid="provision-horizon-diretoria"
-        >
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-            Provisionamento alinhado
-          </p>
-          <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
-            Última receita em aberto vence em{' '}
-            <span className="font-bold text-white">{formatHorizonDate(provisionHorizon.lastReceivableDate)}</span>
-            . Até essa data, o sistema confronta o que ainda entra com o que ainda sai (contas a pagar).
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-            <div className="rounded-lg bg-white/5 border border-white/10 p-3">
-              <p className="text-[10px] uppercase tracking-wider text-emerald-300/80 font-black">Receita provisionada</p>
-              <p className="text-lg font-black font-mono text-emerald-300 mt-1">{fmtBRL(provisionHorizon.receivableTotal)}</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">
-                {provisionHorizon.receivableCount} título(s) até {formatHorizonDate(provisionHorizon.lastReceivableDate)}
-              </p>
-            </div>
-            <div className="rounded-lg bg-white/5 border border-white/10 p-3">
-              <p className="text-[10px] uppercase tracking-wider text-rose-300/80 font-black">Dívidas no mesmo horizonte</p>
-              <p className="text-lg font-black font-mono text-rose-300 mt-1">{fmtBRL(provisionHorizon.payableInHorizon)}</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">
-                {provisionHorizon.payableInHorizonCount} a pagar com venc. até {formatHorizonDate(provisionHorizon.lastReceivableDate)}
-              </p>
-            </div>
-            <div className="rounded-lg bg-white/5 border border-white/10 p-3">
-              <p className="text-[10px] uppercase tracking-wider text-sky-300/80 font-black">Saldo do provisionamento</p>
-              <p className={`text-lg font-black font-mono mt-1 ${provisionHorizon.netInHorizon >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                {fmtBRL(provisionHorizon.netInHorizon)}
-              </p>
-              <p className="text-[10px] text-slate-400 mt-0.5">Receita provisionada − dívidas no horizonte</p>
-            </div>
-          </div>
-          {provisionHorizon.payableBeyondCount > 0 && (
-            <p className="text-[10px] text-slate-400 mt-3">
-              Fora deste horizonte ainda há {provisionHorizon.payableBeyondCount} dívida(s) a pagar (
-              {fmtBRL(provisionHorizon.payableBeyondHorizon)}) com vencimento depois de{' '}
-              {formatHorizonDate(provisionHorizon.lastReceivableDate)}.
-            </p>
-          )}
-        </div>
-      )}
     </div>
   );
+
+  /** Horizonte alinhado — fica abaixo de Operação (OS) e acima do Detalhe do em aberto. */
+  const provisionHorizonSection = provisionHorizon.lastReceivableDate ? (
+    <div
+      className="bg-slate-900 text-white rounded-xl p-4 shadow-sm border border-slate-700"
+      data-testid="provision-horizon-diretoria"
+    >
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+        Provisionamento alinhado
+      </p>
+      <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+        Última receita em aberto vence em{' '}
+        <span className="font-bold text-white">{formatHorizonDate(provisionHorizon.lastReceivableDate)}</span>
+        . Até essa data, o sistema confronta o que ainda entra com o que ainda sai (contas a pagar).
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+        <div className="rounded-lg bg-white/5 border border-white/10 p-3">
+          <p className="text-[10px] uppercase tracking-wider text-emerald-300/80 font-black">Receita provisionada</p>
+          <p className="text-lg font-black font-mono text-emerald-300 mt-1">{fmtBRL(provisionHorizon.receivableTotal)}</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            {provisionHorizon.receivableCount} título(s) até {formatHorizonDate(provisionHorizon.lastReceivableDate)}
+          </p>
+        </div>
+        <div className="rounded-lg bg-white/5 border border-white/10 p-3">
+          <p className="text-[10px] uppercase tracking-wider text-rose-300/80 font-black">Dívidas no mesmo horizonte</p>
+          <p className="text-lg font-black font-mono text-rose-300 mt-1">{fmtBRL(provisionHorizon.payableInHorizon)}</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            {provisionHorizon.payableInHorizonCount} a pagar com venc. até {formatHorizonDate(provisionHorizon.lastReceivableDate)}
+          </p>
+        </div>
+        <div className="rounded-lg bg-white/5 border border-white/10 p-3">
+          <p className="text-[10px] uppercase tracking-wider text-sky-300/80 font-black">Saldo do provisionamento</p>
+          <p className={`text-lg font-black font-mono mt-1 ${provisionHorizon.netInHorizon >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+            {fmtBRL(provisionHorizon.netInHorizon)}
+          </p>
+          <p className="text-[10px] text-slate-400 mt-0.5">Receita provisionada − dívidas no horizonte</p>
+        </div>
+      </div>
+      {provisionHorizon.payableBeyondCount > 0 && (
+        <p className="text-[10px] text-slate-400 mt-3">
+          Fora deste horizonte ainda há {provisionHorizon.payableBeyondCount} dívida(s) a pagar (
+          {fmtBRL(provisionHorizon.payableBeyondHorizon)}) com vencimento depois de{' '}
+          {formatHorizonDate(provisionHorizon.lastReceivableDate)}.
+        </p>
+      )}
+    </div>
+  ) : null;
 
   const cashKpiRow = (
     <div className="space-y-3" data-testid="cash-summary-diretoria">
@@ -561,6 +561,12 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
         {liquidezResumoSection}
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Operação (OS)</p>
         {operationalKpiRow}
+        {provisionHorizonSection && (
+          <>
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Provisionamento alinhado</p>
+            {provisionHorizonSection}
+          </>
+        )}
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Detalhe do em aberto</p>
         {openCashOutlookSection}
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Caixa do período (liquidez)</p>
@@ -659,6 +665,12 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
       <div className="lg:col-span-12 space-y-3">
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Dívidas · Contas · Receita</p>
         {liquidezResumoSection}
+        {provisionHorizonSection && (
+          <>
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-1">Provisionamento alinhado</p>
+            {provisionHorizonSection}
+          </>
+        )}
       </div>
       <div className="lg:col-span-12 space-y-3">
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Detalhe do em aberto</p>
