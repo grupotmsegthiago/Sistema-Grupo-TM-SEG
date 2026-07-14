@@ -242,84 +242,16 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
     </div>
   );
 
-  const investmentAccounts = accountBalances.accounts.filter((a) => a.kind === 'investment');
-  const operationalAccounts = accountBalances.accounts.filter((a) => a.kind === 'operational');
-
-  /** Saldos por conta — total de investimentos + lista (não um único card de patrimônio). */
+  /** Só o total consolidado — sem lista detalhada por conta. */
   const accountBalancesSection = (
-    <div className="space-y-3" data-testid="account-balances-diretoria">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <KpiTile
-          label="Saldo de todos os investimentos"
-          value={fmtBRL(accountBalances.investmentsTotal)}
-          sub={`${accountBalances.investmentCount} conta(s) de investimento`}
-          accent="text-blue-700"
-          icon={<Wallet size={16} className="text-blue-500" />}
-        />
-        {accountBalances.operationalCount > 0 && (
-          <KpiTile
-            label="Contas operacionais (grupo)"
-            value={fmtBRL(accountBalances.operationalTotal)}
-            sub={`${accountBalances.operationalCount} conta(s) TM`}
-            accent="text-emerald-700"
-            icon={<Building2 size={16} className="text-emerald-500" />}
-          />
-        )}
-      </div>
-
-      {investmentAccounts.length > 0 && (
-        <div>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Investimentos — por conta</p>
-          <ul className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 shadow-sm" data-testid="investment-accounts-list">
-            {investmentAccounts.map((acc) => (
-              <li key={acc.id} className="px-3 py-2.5 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-gray-900 truncate">{acc.name}</p>
-                  {acc.bankName ? (
-                    <p className="text-[10px] text-gray-500 truncate">{acc.bankName}</p>
-                  ) : null}
-                </div>
-                <p className={`text-xs font-black font-mono shrink-0 ${acc.balance >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
-                  {fmtBRL(acc.balance)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {operationalAccounts.length > 0 && (
-        <div>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Operacionais — por conta</p>
-          <ul className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 shadow-sm" data-testid="operational-accounts-list">
-            {operationalAccounts.map((acc) => (
-              <li key={acc.id} className="px-3 py-2.5 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-gray-900 truncate">{acc.name}</p>
-                  {acc.bankName ? (
-                    <p className="text-[10px] text-gray-500 truncate">{acc.bankName}</p>
-                  ) : null}
-                </div>
-                <p className={`text-xs font-black font-mono shrink-0 ${acc.balance >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                  {fmtBRL(acc.balance)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {accountBalances.accounts.length === 0 && (
-        <p className="text-xs text-gray-400">Nenhuma conta financeira ativa cadastrada.</p>
-      )}
-
-      <button
-        type="button"
-        onClick={() => goTo('fin-accounts')}
-        className="text-[11px] text-red-700 hover:text-red-800 font-bold flex items-center gap-1"
-      >
-        Abrir Contas / Investimentos <ChevronRight size={12} />
-      </button>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="account-balances-diretoria">
+      <KpiTile
+        label="Saldo total de todas as contas"
+        value={fmtBRL(accountBalances.accountsTotal)}
+        sub={`${accountBalances.accounts.length} conta(s) ativa(s)`}
+        accent="text-blue-700"
+        icon={<Wallet size={16} className="text-blue-500" />}
+      />
     </div>
   );
 

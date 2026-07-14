@@ -74,7 +74,7 @@ describe('dashboardDiretoria aggregations', () => {
     assert.ok(alerts.some(a => a.id === 'low-margin'));
   });
 
-  it('computeAccountBalanceOverview soma investimentos e lista cada conta', () => {
+  it('computeAccountBalanceOverview soma total de todas as contas e investimentos', () => {
     assert.equal(isOperationalGroupAccountName('TM Gestão'), true);
     assert.equal(isOperationalGroupAccountName('BTG Renda Fixa'), false);
     const overview = computeAccountBalanceOverview(
@@ -86,6 +86,7 @@ describe('dashboardDiretoria aggregations', () => {
       { inv1: 500_000, inv2: 900_000 },
     );
     assert.equal(overview.investmentsTotal, 1_400_000);
+    assert.equal(overview.accountsTotal, 1_410_000);
     assert.equal(overview.investmentCount, 2);
     assert.equal(overview.operationalTotal, 10_000);
     assert.equal(overview.accounts.length, 3);
@@ -261,15 +262,17 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(src, /from 'react'/);
   });
 
-  it('cockpit exibe saldos por conta e total de investimentos (não um único card)', async () => {
+  it('cockpit exibe só o saldo total de todas as contas (sem lista detalhada)', async () => {
     const fs = await import('node:fs/promises');
     const ui = await fs.readFile('components/dashboard/DashboardDiretoria.tsx', 'utf8');
     const hook = await fs.readFile('lib/dashboardDiretoria/useDashboardDiretoriaData.ts', 'utf8');
     assert.match(ui, /computeAccountBalanceOverview/);
-    assert.match(ui, /Saldo de todos os investimentos/);
+    assert.match(ui, /Saldo total de todas as contas/);
     assert.match(ui, /Saldos das Contas/);
     assert.match(ui, /account-balances-diretoria/);
-    assert.match(ui, /investment-accounts-list/);
+    assert.match(ui, /accountsTotal/);
+    assert.doesNotMatch(ui, /investment-accounts-list/);
+    assert.doesNotMatch(ui, /Investimentos — por conta/);
     assert.match(ui, /from 'react'/);
     assert.match(hook, /listBalanceSnapshotsDirect/);
     assert.match(hook, /latestAccountBalances/);

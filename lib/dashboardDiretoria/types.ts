@@ -63,8 +63,10 @@ export interface DiretoriaAccountBalance {
   kind: 'investment' | 'operational';
 }
 
-/** Visão de saldos para o cockpit — total de investimentos + lista por conta (não um único card). */
+/** Visão de saldos para o cockpit — totais (lista detalhada só se precisar no cálculo). */
 export interface AccountBalanceOverview {
+  /** Soma de todas as contas ativas (investimentos + operacionais). */
+  accountsTotal: number;
   investmentsTotal: number;
   operationalTotal: number;
   investmentCount: number;

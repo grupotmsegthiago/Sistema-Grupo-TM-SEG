@@ -61,9 +61,13 @@ export function computeAccountBalanceOverview(
   const investments = rows.filter((r) => r.kind === 'investment');
   const operational = rows.filter((r) => r.kind === 'operational');
 
+  const investmentsTotal = round2(investments.reduce((s, r) => s + r.balance, 0));
+  const operationalTotal = round2(operational.reduce((s, r) => s + r.balance, 0));
+
   return {
-    investmentsTotal: round2(investments.reduce((s, r) => s + r.balance, 0)),
-    operationalTotal: round2(operational.reduce((s, r) => s + r.balance, 0)),
+    accountsTotal: round2(investmentsTotal + operationalTotal),
+    investmentsTotal,
+    operationalTotal,
     investmentCount: investments.length,
     operationalCount: operational.length,
     accounts: rows,
