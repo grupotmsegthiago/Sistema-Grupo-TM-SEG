@@ -2886,7 +2886,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                               <>
                                                   Abra o site{' '}
                                                   <a
-                                                      href={buildRotasBrasilUrl(formData.origin, formData.destination)}
+                                                      href={buildRotasBrasilUrl()}
                                                       target="_blank"
                                                       rel="noopener noreferrer"
                                                       className="underline text-red-700 hover:text-red-900 font-black"
@@ -2894,7 +2894,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                                   >
                                                       www.rotasbrasil.com.br
                                                   </a>
-                                                  {' '}(já tenta abrir com origem/destino da OS).
+                                                  .
                                               </>
                                           ) : step}
                                       </li>
