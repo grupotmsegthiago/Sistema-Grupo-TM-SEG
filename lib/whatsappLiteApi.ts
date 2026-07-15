@@ -3,8 +3,10 @@
  */
 import { createSupabaseAdminClient } from "./supabaseAdmin.js";
 import {
+  getZapiEnvInstanceType,
   getZapiMobileEnvCreds,
   hasExplicitZapiMobileEnv,
+  hasExplicitZapiWebEnv,
   OFFICIAL_BOT_PHONE_LOCAL,
   WHATSAPP_BOT_DISPLAY_NAME,
 } from "./zapiMobileEnv.js";
@@ -164,15 +166,14 @@ export async function ensureWhatsappInstancesFromEnv(): Promise<void> {
   const envCreds = getZapiMobileEnvCreds();
   if (!envCreds) return;
 
+  const explicitSync = hasExplicitZapiMobileEnv() || hasExplicitZapiWebEnv();
+
   const client = sb();
   const phone = (process.env.ZAPI_OFFICIAL_PHONE || process.env.META_WHATSAPP_DISPLAY_PHONE || OFFICIAL_BOT_PHONE_LOCAL)
     .replace(/\D/g, "")
     .replace(/^55/, "");
 
-  const type = hasExplicitZapiMobileEnv() || (process.env.ZAPI_INSTANCE_TYPE || "mobile").toLowerCase() !== "web"
-    ? "mobile" as const
-    : "web" as const;
-
+  const type = getZapiEnvInstanceType();
   const safeLabel = safeWhatsappInstanceLabel(envCreds.label);
 
   const payload: Record<string, unknown> = {
@@ -226,15 +227,18 @@ export async function ensureWhatsappInstancesFromEnv(): Promise<void> {
     .maybeSingle();
 
   if (def?.id) {
-    // Não sobrescrever Client-Token / Token já salvos no banco com env (pode estar errado na Vercel).
-    const { data: current } = await client
-      .from("whatsapp_instances")
-      .select("zapi_client_token,zapi_token,label")
-      .eq("id", def.id)
-      .maybeSingle();
-    if (current?.zapi_client_token) delete payload.zapi_client_token;
-    if (current?.zapi_token) delete payload.zapi_token;
-    if (current?.label && !looksLikeZapiSecret(String(current.label))) delete payload.label;
+    if (!explicitSync) {
+      // Legado sem env explícito: preserva tokens do banco quando o ID não mudou.
+      const { data: current } = await client
+        .from("whatsapp_instances")
+        .select("zapi_instance_id,zapi_client_token,zapi_token,label")
+        .eq("id", def.id)
+        .maybeSingle();
+      const sameInstanceId = String(current?.zapi_instance_id || "") === envCreds.instanceId;
+      if (current?.zapi_client_token && !envCreds.clientToken) delete payload.zapi_client_token;
+      if (current?.zapi_token && sameInstanceId) delete payload.zapi_token;
+      if (current?.label && !looksLikeZapiSecret(String(current.label))) delete payload.label;
+    }
     await client.from("whatsapp_instances").update(payload).eq("id", def.id);
     return;
   }
@@ -247,15 +251,18 @@ export async function ensureWhatsappInstancesFromEnv(): Promise<void> {
     .maybeSingle();
 
   if (first?.id) {
-    const { data: current } = await client
-      .from("whatsapp_instances")
-      .select("zapi_client_token,zapi_token,label")
-      .eq("id", first.id)
-      .maybeSingle();
     const syncPayload = { ...payload, is_default: true };
-    if (current?.zapi_client_token) delete syncPayload.zapi_client_token;
-    if (current?.zapi_token) delete syncPayload.zapi_token;
-    if (current?.label && !looksLikeZapiSecret(String(current.label))) delete syncPayload.label;
+    if (!explicitSync) {
+      const { data: current } = await client
+        .from("whatsapp_instances")
+        .select("zapi_instance_id,zapi_client_token,zapi_token,label")
+        .eq("id", first.id)
+        .maybeSingle();
+      const sameInstanceId = String(current?.zapi_instance_id || "") === envCreds.instanceId;
+      if (current?.zapi_client_token && !envCreds.clientToken) delete syncPayload.zapi_client_token;
+      if (current?.zapi_token && sameInstanceId) delete syncPayload.zapi_token;
+      if (current?.label && !looksLikeZapiSecret(String(current.label))) delete syncPayload.label;
+    }
     await client.from("whatsapp_instances").update(syncPayload).eq("id", first.id);
     await client.from("whatsapp_instances").update({ is_default: false }).neq("id", first.id);
   }
