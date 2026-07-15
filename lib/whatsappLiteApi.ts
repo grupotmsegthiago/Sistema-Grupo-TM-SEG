@@ -108,7 +108,7 @@ export function credsFromRow(row: InstanceRow): ZapiCreds | null {
   return {
     instance: row.zapi_instance_id,
     token: row.zapi_token,
-    clientToken: dbClient || envClient,
+    clientToken: envClient || dbClient,
     type: row.instance_type === "mobile" ? "mobile" : "web",
   };
 }
@@ -188,6 +188,7 @@ export async function ensureWhatsappInstancesFromEnv(): Promise<void> {
     updated_at: new Date().toISOString(),
   };
   if (envCreds.clientToken) payload.zapi_client_token = envCreds.clientToken;
+  else if (explicitSync) payload.zapi_client_token = null;
 
   const { count, error: countErr } = await client
     .from("whatsapp_instances")
