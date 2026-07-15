@@ -102,13 +102,34 @@ export function toPublicInstance(row: InstanceRow) {
 }
 
 export function credsFromRow(row: InstanceRow): ZapiCreds | null {
-  if (!row.zapi_instance_id || !row.zapi_token) return null;
+  const envCreds = getZapiMobileEnvCreds();
+  const explicitEnv = hasExplicitZapiMobileEnv() || hasExplicitZapiWebEnv();
   const dbClient = String(row.zapi_client_token || "").trim();
-  const envClient = String(process.env.ZAPI_CLIENT_TOKEN || "").trim();
+
+  // Env explícito (Vercel) vence sobre Supabase — evita ID/token mobile antigos no banco.
+  if (explicitEnv && envCreds) {
+    return {
+      instance: envCreds.instanceId,
+      token: envCreds.token,
+      clientToken: envCreds.clientToken || dbClient,
+      type: getZapiEnvInstanceType(),
+    };
+  }
+
+  if (!row.zapi_instance_id || !row.zapi_token) {
+    if (!envCreds) return null;
+    return {
+      instance: envCreds.instanceId,
+      token: envCreds.token,
+      clientToken: envCreds.clientToken || dbClient,
+      type: getZapiEnvInstanceType(),
+    };
+  }
+
   return {
     instance: row.zapi_instance_id,
     token: row.zapi_token,
-    clientToken: envClient || dbClient,
+    clientToken: envCreds?.clientToken || dbClient,
     type: row.instance_type === "mobile" ? "mobile" : "web",
   };
 }
@@ -188,7 +209,6 @@ export async function ensureWhatsappInstancesFromEnv(): Promise<void> {
     updated_at: new Date().toISOString(),
   };
   if (envCreds.clientToken) payload.zapi_client_token = envCreds.clientToken;
-  else if (explicitSync) payload.zapi_client_token = null;
 
   const { count, error: countErr } = await client
     .from("whatsapp_instances")

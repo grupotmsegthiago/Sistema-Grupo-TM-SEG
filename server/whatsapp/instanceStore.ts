@@ -318,9 +318,7 @@ function envFallbackInstance(): WhatsappInstanceRecord | null {
   if (!envCreds) return null;
   const now = new Date().toISOString();
   const phone = (process.env.ZAPI_OFFICIAL_PHONE || OFFICIAL_BOT_PHONE_LOCAL).replace(/\D/g, "").replace(/^55/, "");
-  const type: ZapiInstanceType = envCreds.explicitMobileEnv || (process.env.ZAPI_INSTANCE_TYPE || "mobile").toLowerCase() !== "web"
-    ? "mobile"
-    : "web";
+  const type: ZapiInstanceType = getZapiEnvInstanceType();
   return {
     id: "env-fallback",
     slug: "central",

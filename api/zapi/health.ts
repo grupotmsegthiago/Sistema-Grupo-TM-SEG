@@ -2,6 +2,7 @@
  * Nunca solicita código de registro: reconexão MOBILE é apenas manual e autenticada.
  */
 import { credsFromRow, getInstance, instanceConfigured, zapiFetch } from "../../lib/whatsappLiteApi.js";
+import { hasExplicitZapiWebEnv } from "../../lib/zapiMobileEnv.js";
 import { sanitizeWhatsappError } from "../../lib/whatsappDisplayUtils.js";
 import { buildMobileConnectionDiagnosis, isZapiSessionConnected } from "../../lib/whatsappMobileDiagnosis.js";
 
@@ -26,6 +27,8 @@ export default async function handler(req: { method?: string; url?: string }, re
       res.status(503).json({ ok: false, configured: false, error: "Credenciais Z-API incompletas" });
       return;
     }
+
+    const explicitEnv = hasExplicitZapiWebEnv() || !!process.env.ZAPI_MOBILE_ID;
 
     const { ok, status, data } = await zapiFetch(creds, "status", { method: "GET" });
     const connected = isZapiSessionConnected(data, creds.type);
@@ -85,6 +88,8 @@ export default async function handler(req: { method?: string; url?: string }, re
       session: data?.session ?? null,
       instanceType: creds.type,
       label: row.label,
+      credentialsSource: explicitEnv ? "env" : "db",
+      instanceIdSuffix: creds.instance.slice(-4),
       hasClientToken: !!creds.clientToken,
       clientTokenLooksLikeInstanceToken: !!(creds.clientToken && creds.token && creds.clientToken === creds.token),
       error: connected ? null : error,

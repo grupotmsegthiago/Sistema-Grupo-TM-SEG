@@ -1,4 +1,10 @@
 import type { ZapiInstanceType } from "./types";
+import {
+  getZapiEnvInstanceType,
+  getZapiMobileEnvCreds,
+  hasExplicitZapiMobileEnv,
+  hasExplicitZapiWebEnv,
+} from "./zapiMobileEnv";
 
 export type ZapiCredentials = {
   instance: string;
@@ -46,13 +52,33 @@ export function credsFromInstance(row: {
   zapi_client_token: string | null;
   instance_type: ZapiInstanceType | null;
 }): ZapiCredentials | null {
-  if (!row.zapi_instance_id || !row.zapi_token) return null;
+  const envCreds = getZapiMobileEnvCreds();
+  const explicitEnv = hasExplicitZapiMobileEnv() || hasExplicitZapiWebEnv();
   const dbClient = String(row.zapi_client_token || "").trim();
-  const envClient = String(process.env.ZAPI_CLIENT_TOKEN || "").trim();
+
+  if (explicitEnv && envCreds) {
+    return {
+      instance: envCreds.instanceId,
+      token: envCreds.token,
+      clientToken: envCreds.clientToken || dbClient,
+      type: getZapiEnvInstanceType(),
+    };
+  }
+
+  if (!row.zapi_instance_id || !row.zapi_token) {
+    if (!envCreds) return null;
+    return {
+      instance: envCreds.instanceId,
+      token: envCreds.token,
+      clientToken: envCreds.clientToken || dbClient,
+      type: getZapiEnvInstanceType(),
+    };
+  }
+
   return {
     instance: row.zapi_instance_id,
     token: row.zapi_token,
-    clientToken: dbClient || envClient,
+    clientToken: envCreds?.clientToken || dbClient,
     type: row.instance_type === "mobile" ? "mobile" : "web",
   };
 }
