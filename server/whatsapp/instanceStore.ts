@@ -6,7 +6,15 @@ import {
   type WhatsappProviderId,
   type ZapiInstanceType,
 } from "./types";
-import { getZapiMobileEnvCreds, hasExplicitZapiMobileEnv, OFFICIAL_BOT_PHONE_LOCAL, LEGACY_BOT_DISPLAY_NAME, WHATSAPP_BOT_DISPLAY_NAME } from "./zapiMobileEnv";
+import {
+  getZapiEnvInstanceType,
+  getZapiMobileEnvCreds,
+  hasExplicitZapiMobileEnv,
+  hasExplicitZapiWebEnv,
+  OFFICIAL_BOT_PHONE_LOCAL,
+  LEGACY_BOT_DISPLAY_NAME,
+  WHATSAPP_BOT_DISPLAY_NAME,
+} from "./zapiMobileEnv";
 
 const CACHE_TTL_MS = 30_000;
 let cachedDefault: WhatsappInstanceRecord | null = null;
@@ -127,9 +135,7 @@ export async function seedDefaultFromEnvIfEmpty(): Promise<void> {
     return;
   }
 
-  const type: ZapiInstanceType = hasExplicitZapiMobileEnv() || (process.env.ZAPI_INSTANCE_TYPE || "mobile").toLowerCase() !== "web"
-    ? "mobile"
-    : "web";
+  const type: ZapiInstanceType = getZapiEnvInstanceType();
   const phone = (process.env.ZAPI_OFFICIAL_PHONE || process.env.META_WHATSAPP_DISPLAY_PHONE || OFFICIAL_BOT_PHONE_LOCAL)
     .replace(/\D/g, "")
     .replace(/^55/, "");
@@ -155,11 +161,11 @@ export async function seedDefaultFromEnvIfEmpty(): Promise<void> {
 }
 
 /**
- * Atualiza a instância padrão no banco quando ZAPI_MOBILE_ID + ZAPI_MOBILE_TOKEN estão no ambiente.
- * Garante que produção use a instância mobile (Monitoramento 24h) sem editar manualmente no painel.
+ * Atualiza a instância padrão pelo ambiente quando há uma configuração explícita.
+ * MOBILE usa ZAPI_MOBILE_*; WEB usa ZAPI_INSTANCE_ID/ZAPI_TOKEN + ZAPI_INSTANCE_TYPE=web.
  */
 export async function syncMobileInstanceFromEnv(): Promise<void> {
-  if (!hasExplicitZapiMobileEnv()) return;
+  if (!hasExplicitZapiMobileEnv() && !hasExplicitZapiWebEnv()) return;
   const envCreds = getZapiMobileEnvCreds();
   if (!envCreds) return;
 
@@ -172,7 +178,7 @@ export async function syncMobileInstanceFromEnv(): Promise<void> {
 
   const payload: Record<string, unknown> = {
     provider: "zapi" as const,
-    instance_type: "mobile" as const,
+    instance_type: getZapiEnvInstanceType(),
     zapi_instance_id: envCreds.instanceId,
     zapi_token: envCreds.token,
     label: envCreds.label,
@@ -192,7 +198,7 @@ export async function syncMobileInstanceFromEnv(): Promise<void> {
   if (def?.id) {
     await client.from("whatsapp_instances").update(payload).eq("id", def.id);
     invalidateDefaultCache();
-    console.log(`[WhatsApp Instâncias] Instância padrão atualizada via ZAPI_MOBILE_* (${envCreds.label}).`);
+    console.log(`[WhatsApp Instâncias] Instância padrão atualizada via ambiente (${payload.instance_type}: ${envCreds.label}).`);
     return;
   }
 
@@ -208,7 +214,7 @@ export async function syncMobileInstanceFromEnv(): Promise<void> {
       await client.from("whatsapp_instances").update({ ...payload, is_default: true }).eq("id", first.id);
       await client.from("whatsapp_instances").update({ is_default: false }).neq("id", first.id);
       invalidateDefaultCache();
-      console.log(`[WhatsApp Instâncias] Primeira instância promovida e atualizada via ZAPI_MOBILE_* (${envCreds.label}).`);
+      console.log(`[WhatsApp Instâncias] Primeira instância promovida e atualizada via ambiente (${payload.instance_type}: ${envCreds.label}).`);
     }
     return;
   }

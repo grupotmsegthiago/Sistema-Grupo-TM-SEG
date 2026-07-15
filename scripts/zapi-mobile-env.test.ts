@@ -1,8 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  getZapiEnvInstanceType,
   getZapiMobileEnvCreds,
   hasExplicitZapiMobileEnv,
+  hasExplicitZapiWebEnv,
 } from "../server/whatsapp/zapiMobileEnv";
 
 describe("zapiMobileEnv", () => {
@@ -12,6 +14,8 @@ describe("zapiMobileEnv", () => {
     "ZAPI_MOBILE_INSTANCIA",
     "ZAPI_INSTANCE_ID",
     "ZAPI_TOKEN",
+    "ZAPI_INSTANCE_TYPE",
+    "ZAPI_INSTANCE_LABEL",
     "ZAPI_CLIENT_TOKEN",
   ] as const;
 
@@ -78,6 +82,30 @@ describe("zapiMobileEnv", () => {
     assert.ok(c);
     assert.equal(c!.instanceId, "LEG-ID");
     assert.equal(c!.explicitMobileEnv, false);
+    restore();
+  });
+
+  it("WEB explícito sincroniza a instância padrão como web", () => {
+    delete process.env.ZAPI_MOBILE_ID;
+    delete process.env.ZAPI_MOBILE_TOKEN;
+    process.env.ZAPI_INSTANCE_ID = "WEB-ID";
+    process.env.ZAPI_TOKEN = "WEB-TOK";
+    process.env.ZAPI_INSTANCE_TYPE = "web";
+    process.env.ZAPI_INSTANCE_LABEL = "Central QR";
+    assert.equal(hasExplicitZapiWebEnv(), true);
+    assert.equal(getZapiEnvInstanceType(), "web");
+    assert.equal(getZapiMobileEnvCreds()?.label, "Central QR");
+    restore();
+  });
+
+  it("credenciais MOBILE vencem sobre WEB concorrente", () => {
+    process.env.ZAPI_MOBILE_ID = "MOBILE-ID";
+    process.env.ZAPI_MOBILE_TOKEN = "MOBILE-TOK";
+    process.env.ZAPI_INSTANCE_ID = "WEB-ID";
+    process.env.ZAPI_TOKEN = "WEB-TOK";
+    process.env.ZAPI_INSTANCE_TYPE = "web";
+    assert.equal(hasExplicitZapiWebEnv(), false);
+    assert.equal(getZapiEnvInstanceType(), "mobile");
     restore();
   });
 });
