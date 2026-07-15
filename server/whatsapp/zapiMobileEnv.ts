@@ -59,9 +59,11 @@ export function getZapiMobileEnvCreds(): ZapiMobileEnvCreds | null {
   const label = String(
     process.env.ZAPI_MOBILE_INSTANCIA || process.env.ZAPI_INSTANCE_LABEL || "",
   ).trim() || WHATSAPP_BOT_DISPLAY_NAME;
-  const clientToken = String(
-    process.env.ZAPI_CLIENT_TOKEN || process.env.VITE_ZAPI_CLIENT_TOKEN || "",
-  ).trim();
+  const clientToken = [
+    process.env.ZAPI_CLIENT_TOKEN,
+    process.env.VITE_ZAPI_CLIENT_TOKEN,
+    process.env.ZAPI_SECURITY_TOKEN,
+  ].map((v) => String(v || "").trim()).find(Boolean) || "";
 
   return { instanceId, token, label, clientToken, explicitMobileEnv: explicitMobile };
 }

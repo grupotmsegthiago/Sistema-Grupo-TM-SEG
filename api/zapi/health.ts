@@ -93,6 +93,7 @@ export default async function handler(req: { method?: string; url?: string }, re
       hasClientToken: !!creds.clientToken,
       clientTokenLooksLikeInstanceToken: !!(creds.clientToken && creds.token && creds.clientToken === creds.token),
       error: connected ? null : error,
+      zapiErrorCode: data?.error ?? null,
       diagnosis,
       phone: { ddi, phoneLocal, full, display: phoneDisplay },
       phoneCode: creds.type === "web"
