@@ -113,6 +113,26 @@ export function resolveMobileChannelWaits(
   };
 }
 
+/**
+ * Cooldown efetivo para o canal solicitado.
+ * `resolveMobileChannelWaits` já preserva o cooldown quando a Z-API omite
+ * waOldWaitSeconds durante retryAfter/SMS/voz, evitando disparo prematuro.
+ */
+export function getActiveMobileCooldownSeconds(
+  registration: Record<string, unknown> | null | undefined,
+  method: "sms" | "voice" | "wa_old",
+): number {
+  const waits = resolveMobileChannelWaits(registration);
+  const channelWait = method === "sms"
+    ? waits.sms
+    : method === "voice"
+      ? waits.voice
+      : waits.waOld;
+
+  if (channelWait < 0) return Number.POSITIVE_INFINITY;
+  return Math.max(waits.retryAfter, channelWait, 0);
+}
+
 function formatWaitPt(seconds: number): string {
   if (seconds <= 0) return "agora";
   if (seconds < 60) return `${seconds}s`;

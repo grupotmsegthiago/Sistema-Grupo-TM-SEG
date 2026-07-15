@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildMobileConnectionDiagnosis,
   explainMobileDisconnect,
+  getActiveMobileCooldownSeconds,
   isZapiSessionConnected,
   pickMobileRegistrationMethod,
   resolveMobileChannelWaits,
@@ -68,6 +69,25 @@ describe('whatsappMobileDiagnosis', () => {
     });
     assert.equal(w.waOld, 300);
     assert.equal(w.soonestReady, 300);
+  });
+
+  it('getActiveMobileCooldownSeconds bloqueia o canal e herda cooldown do pop-up omitido', () => {
+    const registration = {
+      available: true,
+      retryAfter: 300,
+      smsWaitSeconds: 120,
+      voiceWaitSeconds: 60,
+    };
+    assert.equal(getActiveMobileCooldownSeconds(registration, 'sms'), 300);
+    assert.equal(getActiveMobileCooldownSeconds(registration, 'voice'), 300);
+    assert.equal(getActiveMobileCooldownSeconds(registration, 'wa_old'), 300);
+  });
+
+  it('getActiveMobileCooldownSeconds bloqueia canal com wait -1', () => {
+    assert.equal(
+      getActiveMobileCooldownSeconds({ smsWaitSeconds: -1 }, 'sms'),
+      Number.POSITIVE_INFINITY,
+    );
   });
 
   it('isZapiSessionConnected MOBILE ignora smartphoneConnected', () => {
