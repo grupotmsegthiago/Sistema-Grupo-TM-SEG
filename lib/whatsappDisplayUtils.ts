@@ -20,6 +20,9 @@ export function sanitizeWhatsappError(raw: string | null | undefined): string | 
   const s = String(raw || "").trim();
   if (!s) return null;
   if (/client-token.*not allowed/i.test(s) || /Client-Token \[.+\] not allowed/i.test(s)) {
+    if (/client-token\s+null\s+not allowed/i.test(s)) {
+      return "Client-Token não configurado — cadastre ZAPI_CLIENT_TOKEN na Vercel (Token de Segurança da conta Z-API) ou salve em Configurações → WhatsApp.";
+    }
     return "Client-Token inválido na Vercel — no painel Z-API copie o Token de Segurança da conta (não o Token da instância) e atualize ZAPI_CLIENT_TOKEN.";
   }
   if (/client-token is not configured/i.test(s)) {
