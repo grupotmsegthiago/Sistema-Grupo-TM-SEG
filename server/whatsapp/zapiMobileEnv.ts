@@ -61,6 +61,7 @@ export function getZapiMobileEnvCreds(): ZapiMobileEnvCreds | null {
   ).trim() || WHATSAPP_BOT_DISPLAY_NAME;
   const clientToken = [
     process.env.ZAPI_CLIENT_TOKEN,
+    process.env.ZAPI_CLIENTE_TOKEN,
     process.env.VITE_ZAPI_CLIENT_TOKEN,
     process.env.ZAPI_SECURITY_TOKEN,
   ].map((v) => String(v || "").trim()).find(Boolean) || "";
