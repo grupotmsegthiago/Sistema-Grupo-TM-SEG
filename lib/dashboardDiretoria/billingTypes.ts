@@ -41,6 +41,10 @@ export interface BillingMonthSummary {
   lastSyncedAt?: string | null;
   onDemandSpentUsd?: number;
   planIncludedPercentUsed?: number | null;
+  /** Dias restantes até a virada do plano (barra volta a 0%). */
+  daysUntilCycleReset?: number | null;
+  /** Fração do tempo decorrido no ciclo (0–100), só calendário. */
+  cycleTimeElapsedPct?: number | null;
 }
 
 export interface BillingDashboardMeta {

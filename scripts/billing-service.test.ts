@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import {
   usdToBrl,
   brlToUsd,
-  getPlanLimitBrl,
   buildTokenEfficiencyReport,
   referenceMonthFromDate,
+  cursorOnDemandToUsd,
+  computeCycleClock,
 } from '../lib/billing/billingService.js';
 
 describe('billingService', () => {
@@ -24,6 +25,25 @@ describe('billingService', () => {
   it('referenceMonthFromDate retorna YYYY-MM', () => {
     const m = referenceMonthFromDate(new Date(2026, 6, 12));
     assert.equal(m, '2026-07');
+  });
+
+  it('cursorOnDemandToUsd trata centavos e dólares', () => {
+    assert.equal(cursorOnDemandToUsd(8064), 80.64);
+    assert.equal(cursorOnDemandToUsd(0), 0);
+    assert.equal(cursorOnDemandToUsd(12.5), 12.5);
+  });
+
+  it('computeCycleClock zera lógica na virada (dias/elapsed)', () => {
+    const start = '2026-07-12T00:00:00.000Z';
+    const end = '2026-08-12T00:00:00.000Z';
+    const mid = new Date('2026-07-14T21:00:00.000Z');
+    const clock = computeCycleClock(start, end, mid);
+    assert.ok(clock.daysUntilCycleReset != null && clock.daysUntilCycleReset > 20);
+    assert.ok(clock.cycleTimeElapsedPct != null && clock.cycleTimeElapsedPct > 0 && clock.cycleTimeElapsedPct < 20);
+
+    const atEnd = computeCycleClock(start, end, new Date('2026-08-12T00:00:00.000Z'));
+    assert.equal(atEnd.daysUntilCycleReset, 0);
+    assert.ok((atEnd.cycleTimeElapsedPct || 0) >= 99.9);
   });
 
   it('buildTokenEfficiencyReport sugere consolidação em tarefas repetidas', () => {

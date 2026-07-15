@@ -218,7 +218,7 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
 
       {summary && (
         <>
-          <div className={`rounded-xl border p-4 ${therm.bg}`}>
+          <div className={`rounded-xl border p-4 ${therm.bg}`} data-testid="billing-plan-cycle-bar">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
               <div className="flex items-center gap-2">
                 <Thermometer size={18} className={therm.text} />
@@ -233,25 +233,41 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
                 </span>
               </div>
               <span className="text-xs font-mono text-gray-600">
-                {summary.isPlaceholder ? '—' : fmtPct(summary.usagePct)} do mensal
+                {summary.isPlaceholder ? '—' : `${fmtPct(summary.usagePct)} do ciclo`}
               </span>
             </div>
 
-            <div className="h-4 w-full rounded-full bg-white/80 border border-gray-200 overflow-hidden flex">
-              <div
-                className="h-full bg-sky-300 transition-all"
-                style={{ width: `${Math.min(100, progress.withinPct)}%` }}
-                title="Consumido no plano"
-              />
-              {progress.extraPct > 0 && (
+            {/* Barra de uso incluído — enche no ciclo e volta a 0% na virada do plano */}
+            <div className="relative">
+              <div className="h-5 w-full rounded-full bg-white/80 border border-gray-200 overflow-hidden flex">
                 <div
-                  className="h-full bg-red-500 transition-all"
-                  style={{ width: `${progress.extraPct}%` }}
-                  title="Extra acima do plano"
-                />
-              )}
+                  className="h-full bg-sky-400 transition-all duration-500 ease-out flex items-center justify-end pr-2"
+                  style={{ width: `${Math.min(100, Math.max(0, progress.withinPct))}%` }}
+                  title="Uso incluído no plano (zera quando o ciclo virar)"
+                  data-testid="billing-plan-usage-fill"
+                >
+                  {progress.withinPct >= 12 && (
+                    <span className="text-[9px] font-black text-white drop-shadow-sm whitespace-nowrap">
+                      {fmtPct(summary.usagePct)}
+                    </span>
+                  )}
+                </div>
+                {progress.extraPct > 0 && (
+                  <div
+                    className="h-full bg-red-500 transition-all"
+                    style={{ width: `${progress.extraPct}%` }}
+                    title="On-demand (além do incluído)"
+                  />
+                )}
+              </div>
+              <div className="flex justify-between text-[9px] font-mono text-gray-400 mt-1 px-0.5">
+                <span>0%</span>
+                <span>50%</span>
+                <span>100%</span>
+              </div>
             </div>
-            <div className="flex flex-wrap justify-between text-[10px] text-gray-600 mt-2 font-mono">
+
+            <div className="flex flex-wrap justify-between gap-2 text-[10px] text-gray-600 mt-2 font-mono">
               <span>
                 {summary.planIncludedPercentUsed != null
                   ? `Uso incluído: ${fmtPct(summary.planIncludedPercentUsed)}`
@@ -261,13 +277,44 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
               <span>On-demand: {fmtBRL(summary.extraBrl)}</span>
               <span>Saldo plano: {fmtBRL(summary.planBalanceBrl)}</span>
             </div>
+
+            {!summary.isPlaceholder && summary.billingCycleStart && summary.billingCycleEnd && (
+              <div
+                className="mt-3 pt-3 border-t border-black/5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-700"
+                data-testid="billing-cycle-reset-hint"
+              >
+                <span>
+                  Ciclo{' '}
+                  <strong>
+                    {new Date(summary.billingCycleStart).toLocaleDateString('pt-BR')}
+                  </strong>
+                  {' → '}
+                  <strong>
+                    {new Date(summary.billingCycleEnd).toLocaleDateString('pt-BR')}
+                  </strong>
+                  {summary.daysUntilCycleReset != null && (
+                    <>
+                      {' · '}
+                      {summary.daysUntilCycleReset === 0
+                        ? 'vira hoje'
+                        : summary.daysUntilCycleReset === 1
+                          ? 'vira amanhã'
+                          : `${summary.daysUntilCycleReset} dias para virar`}
+                    </>
+                  )}
+                </span>
+                <span className="font-bold text-emerald-800 bg-white/70 border border-emerald-200 rounded-full px-2 py-0.5">
+                  Na virada do plano a barra volta a 0%
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-              <p className="text-[10px] uppercase text-gray-400 font-black">On-demand no mês</p>
-              <p className="text-lg font-black font-mono text-gray-900">{fmtBRL(summary.spentBrl)}</p>
-              <p className="text-[10px] text-gray-500">Além do uso incluído no plano</p>
+              <p className="text-[10px] uppercase text-gray-400 font-black">On-demand no ciclo</p>
+              <p className="text-lg font-black font-mono text-gray-900">{fmtBRL(summary.extraBrl)}</p>
+              <p className="text-[10px] text-gray-500">Além do uso incluído (espelho Cursor)</p>
             </div>
             <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
               <p className="text-[10px] uppercase text-gray-400 font-black">Saldo assinatura</p>
@@ -287,6 +334,17 @@ const DiretoriaSistemaTab: React.FC<Props> = ({ onNavigate }) => {
               <p className="text-lg font-black font-mono text-gray-900">{summary.entryCount}</p>
             </div>
           </div>
+
+          {!summary.isPlaceholder && (
+            <p className="text-[10px] text-gray-500 leading-relaxed" data-testid="billing-cursor-compare-note">
+              O gráfico de US$ no dashboard Cursor (filtro semanal) pode incluir dias do ciclo anterior.
+              Aqui o % e o on-demand seguem o <strong>ciclo oficial</strong> do plano
+              ({summary.billingCycleStart ? new Date(summary.billingCycleStart).toLocaleDateString('pt-BR') : '—'}
+              {' → '}
+              {summary.billingCycleEnd ? new Date(summary.billingCycleEnd).toLocaleDateString('pt-BR') : '—'}
+              ). Ao virar o ciclo, o uso incluído reinicia em 0%.
+            </p>
+          )}
         </>
       )}
 

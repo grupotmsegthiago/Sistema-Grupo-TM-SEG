@@ -40,6 +40,7 @@ import {
 import { expectedOfficialPhone, toPublicInstance, type WhatsappProvider } from "./whatsapp/types";
 import { zapiBasePath, zapiFetch, zapiHeaders, isZapiConfigured, getZapiInstanceTypeAsync } from "./zapiClient";
 import { assertOfficialBotNumber } from "./zapiGuard";
+import { getActiveMobileCooldownSeconds } from "../lib/whatsappMobileDiagnosis";
 import {
   getWhatsappTelemetryDashboard,
   logWhatsappOutbound,
@@ -1610,10 +1611,28 @@ export async function registerRoutes(
     try {
       const provider = await resolveWhatsappProvider(req);
       if (!provider?.mobileRequestCode) return res.status(400).json({ error: 'Provider não suporta registro mobile' });
-      const method = (req.body?.method || 'wa_old') as 'sms' | 'voice' | 'wa_old';
+      if (provider.instance.instance_type !== 'mobile') {
+        return res.status(400).json({ error: 'A instância selecionada não é MOBILE.' });
+      }
+      const method = String(req.body?.method || 'wa_old').toLowerCase();
+      if (method !== 'sms' && method !== 'voice' && method !== 'wa_old') {
+        return res.status(400).json({ error: 'Método de registro inválido. Use wa_old, sms ou voice.' });
+      }
       const registration = (provider as any).mobileRegistrationAvailable
         ? await (provider as any).mobileRegistrationAvailable()
         : null;
+      const retryAfter = getActiveMobileCooldownSeconds(registration, method);
+      if (retryAfter > 0) {
+        const isIndefinitelyBlocked = !Number.isFinite(retryAfter);
+        return res.status(429).json({
+          ok: false,
+          error: isIndefinitelyBlocked
+            ? `Canal ${method} bloqueado pela Z-API. Não solicite novo código agora.`
+            : `Ação bloqueada por segurança. Aguarde ${retryAfter} segundos antes de solicitar ${method} para evitar bloqueio da linha.`,
+          retryAfter: isIndefinitelyBlocked ? null : retryAfter,
+          registration,
+        });
+      }
       res.json({
         registration,
         requestCode: await provider.mobileRequestCode(method),
