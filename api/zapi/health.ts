@@ -1,6 +1,5 @@
 /** GET /api/zapi/health — leve: testa Z-API sem expor tokens.
- * NÃO martela request-registration-code (isso piora blocked no WhatsApp).
- * Use ?deep=1 para um único probe wa_old opcional.
+ * Nunca solicita código de registro: reconexão MOBILE é apenas manual e autenticada.
  */
 import { credsFromRow, getInstance, instanceConfigured, zapiFetch } from "../../lib/whatsappLiteApi.js";
 import { sanitizeWhatsappError } from "../../lib/whatsappDisplayUtils.js";
@@ -17,7 +16,6 @@ export default async function handler(req: { method?: string; url?: string }, re
   res.setHeader("Cache-Control", "no-store");
 
   try {
-    const deep = typeof req.url === "string" && req.url.includes("deep=1");
     const row = await getInstance();
     if (!row || !instanceConfigured(row)) {
       res.status(503).json({ ok: false, configured: false, error: "Instância WhatsApp não configurada" });
@@ -59,8 +57,6 @@ export default async function handler(req: { method?: string; url?: string }, re
 
     let registration: Record<string, unknown> | null = null;
     let registrationError: string | null = null;
-    let waOldProbe: Record<string, unknown> | null = null;
-
     if (!connected && creds.type === "mobile") {
       const reg = await zapiFetch(creds, "mobile/registration-available", {
         method: "POST",
@@ -70,34 +66,12 @@ export default async function handler(req: { method?: string; url?: string }, re
       if (!reg.ok && !reg.data) {
         registrationError = sanitizeWhatsappError(reg.text) || `HTTP ${reg.status}`;
       }
-
-      // Probe profundo OPCIONAL — uma única chamada (sem variantes).
-      if (deep) {
-        const wa = await zapiFetch(creds, "mobile/request-registration-code", {
-          method: "POST",
-          body: JSON.stringify({ ddi, phone: phoneLocal, method: "wa_old" }),
-        });
-        waOldProbe = {
-          path: "mobile/request-registration-code",
-          httpStatus: wa.status,
-          success: wa.data?.success ?? null,
-          blocked: wa.data?.blocked ?? null,
-          error: wa.data?.error || wa.data?.message || (!wa.ok ? wa.text : null),
-          smsWaitSeconds: wa.data?.smsWaitSeconds ?? null,
-          voiceWaitSeconds: wa.data?.voiceWaitSeconds ?? null,
-          waOldWaitSeconds: wa.data?.waOldWaitSeconds ?? null,
-          hasCaptcha: typeof wa.data?.captcha === "string",
-          keys: wa.data ? Object.keys(wa.data) : [],
-          note: "Probe único (?deep=1). Não use health em loop — piora blocked.",
-        };
-      }
     }
 
     const diagnosis = buildMobileConnectionDiagnosis({
       instanceType: creds.type,
       connected: !!connected,
       registrationAvailable: registration,
-      requestCodeResult: waOldProbe,
       phoneLinkCode: phoneCodeValue,
     });
 
@@ -136,8 +110,7 @@ export default async function handler(req: { method?: string; url?: string }, re
         },
       registrationAvailable: registration,
       registrationError,
-      waOldProbe,
-      note: "Health não dispara request-registration-code por padrão (evita blocked). Use ?deep=1 com cuidado.",
+      note: "Health não solicita request-registration-code; reconexão MOBILE exige ação manual autenticada.",
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
