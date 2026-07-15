@@ -98,32 +98,33 @@ function zapiHeaders(creds: ZapiCreds): Record<string, string> {
 }
 
 async function getDefaultZapiCreds(sb: any): Promise<ZapiCreds | null> {
+  const envMod = await import("../server/whatsapp/zapiMobileEnv.js");
+  const envCreds = envMod.getZapiMobileEnvCreds();
+  const explicitEnv = envMod.hasExplicitZapiWebEnv() || envMod.hasExplicitZapiMobileEnv();
+
   const { data } = await sb
     .from("whatsapp_instances")
-    .select("zapi_instance_id,zapi_token,zapi_client_token,official_ddi,official_phone,provider,is_default,enabled")
+    .select("zapi_instance_id,zapi_token,zapi_client_token,official_ddi,official_phone,provider,is_default,enabled,instance_type")
     .eq("is_default", true)
     .eq("enabled", true)
     .maybeSingle();
 
-  if (data?.zapi_instance_id && data?.zapi_token) {
-    const ddi = digitsOnly(data.official_ddi || "55") || "55";
-    const local = digitsOnly(data.official_phone || "");
-    return {
-      instance: String(data.zapi_instance_id),
-      token: String(data.zapi_token),
-      clientToken: String(data.zapi_client_token || ""),
-      officialPhone: local.startsWith(ddi) ? local : `${ddi}${local}`,
-    };
-  }
+  const instanceId = explicitEnv && envCreds
+    ? envCreds.instanceId
+    : String(data?.zapi_instance_id || envCreds?.instanceId || "");
+  const token = explicitEnv && envCreds
+    ? envCreds.token
+    : String(data?.zapi_token || envCreds?.token || "");
+  if (!instanceId || !token) return null;
 
-  const envCreds = (await import("../server/whatsapp/zapiMobileEnv")).getZapiMobileEnvCreds();
-  if (!envCreds) return null;
-  const ddi = digitsOnly(process.env.ZAPI_OFFICIAL_DDI || "55") || "55";
-  const local = digitsOnly(process.env.ZAPI_OFFICIAL_PHONE || process.env.META_WHATSAPP_DISPLAY_PHONE || "11926839456");
+  const ddi = digitsOnly(data?.official_ddi || process.env.ZAPI_OFFICIAL_DDI || "55") || "55";
+  const local = digitsOnly(data?.official_phone || process.env.ZAPI_OFFICIAL_PHONE || process.env.META_WHATSAPP_DISPLAY_PHONE || "11926839456");
+  const clientToken = String(envCreds?.clientToken || data?.zapi_client_token || "");
+
   return {
-    instance: envCreds.instanceId,
-    token: envCreds.token,
-    clientToken: envCreds.clientToken,
+    instance: instanceId,
+    token,
+    clientToken,
     officialPhone: local.startsWith(ddi) ? local : `${ddi}${local}`,
   };
 }
