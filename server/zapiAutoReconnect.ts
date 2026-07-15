@@ -56,6 +56,18 @@ export function shouldUseMobileWaOld(row: WhatsappInstanceRecord): boolean {
   return row.instance_type === "mobile" || envMobile;
 }
 
+/**
+ * Uma instância MOBILE pode transferir a conta principal do WhatsApp.
+ * Por segurança, cron e webhook apenas registram/alertam a desconexão:
+ * qualquer reconexão MOBILE precisa partir de uma ação administrativa explícita.
+ */
+export function requiresManualMobileReconnect(
+  row: Pick<WhatsappInstanceRecord, "instance_type">,
+  source: AutoReconnectSource,
+): boolean {
+  return row.instance_type === "mobile" && source !== "api";
+}
+
 export function getAutoReconnectPolicyMessage(): string {
   if (!isWhatsappAutoReconnectEnabled()) {
     return "Reconexão automática desativada (WHATSAPP_AUTO_RECONNECT=false). Use Reconectar via API.";
@@ -287,6 +299,15 @@ export async function attemptZapiAutoReconnect(
   const creds = credsFromInstance(row);
   if (!creds) {
     return { attempted: false, ok: false, phase: "skipped", message: "Credenciais Z-API incompletas." };
+  }
+
+  if (requiresManualMobileReconnect(row, source)) {
+    return {
+      attempted: false,
+      ok: false,
+      phase: "skipped",
+      message: "Instância MOBILE: cron e webhook não solicitam reconexão. Use uma ação manual autenticada no painel.",
+    };
   }
 
   const useWaOld = shouldUseMobileWaOld(row);

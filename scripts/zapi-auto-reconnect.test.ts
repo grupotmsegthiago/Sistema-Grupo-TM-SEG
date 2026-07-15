@@ -4,6 +4,7 @@ import {
   getAutoReconnectPolicyMessage,
   isWaOldReconnectEnabled,
   isWhatsappAutoReconnectEnabled,
+  requiresManualMobileReconnect,
   shouldUseMobileWaOld,
 } from '../server/zapiAutoReconnect';
 
@@ -42,5 +43,20 @@ describe('zapiAutoReconnect policy', () => {
 
   it('política menciona wa_old quando ativo', () => {
     assert.match(getAutoReconnectPolicyMessage(), /wa_old/i);
+  });
+
+  it('MOBILE só permite reconexão por ação manual autenticada', () => {
+    const mobile = { instance_type: 'mobile' } as any;
+    assert.equal(requiresManualMobileReconnect(mobile, 'watchdog'), true);
+    assert.equal(requiresManualMobileReconnect(mobile, 'webhook'), true);
+    assert.equal(requiresManualMobileReconnect(mobile, 'cron'), true);
+    assert.equal(requiresManualMobileReconnect(mobile, 'api'), false);
+  });
+
+  it('WEB mantém reconexão automática disponível', () => {
+    assert.equal(
+      requiresManualMobileReconnect({ instance_type: 'web' } as any, 'watchdog'),
+      false,
+    );
   });
 });
