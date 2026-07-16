@@ -10,7 +10,7 @@ describe('Patrimônio — API leve e carga rápida', () => {
     const src = readFileSync(join(root, 'api/patrimonio/equipments.ts'), 'utf8');
     assert.match(src, /loadPatrimonioLite|patrimonioLiteApi/);
     assert.match(src, /savePatrimonioLite/);
-    assert.doesNotMatch(src, /server\/patrimonioStore|migrateLegacyPatrimonioIfNeeded|runFullEquipmentScan/);
+    assert.doesNotMatch(src, /from ['"].*patrimonioStore|migrateLegacyPatrimonioIfNeeded|runFullEquipmentScan/);
     assert.match(src, /maxDuration:\s*30/);
     const lite = readFileSync(join(root, 'lib/patrimonioLiteApi.ts'), 'utf8');
     assert.match(lite, /patrimonio_equipments/);

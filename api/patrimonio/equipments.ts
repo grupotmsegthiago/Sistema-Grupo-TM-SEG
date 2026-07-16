@@ -1,5 +1,5 @@
 /**
- * GET|PUT /api/patrimonio/equipments — leve (sem Express / sem server/patrimonioStore).
+ * GET|PUT /api/patrimonio/equipments — leve (sem Express).
  * Evita FUNCTION_INVOCATION_TIMEOUT e ERR_MODULE_NOT_FOUND da tela de Patrimônio.
  */
 import { assertAuthenticatedAccess, readBearer, resolveLitePrincipal } from '../../lib/tmsegAuth.js';
