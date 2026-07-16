@@ -1,10 +1,11 @@
 // ── Webhook Z-API: eventos de conexão (DisconnectedCallback / ConnectedCallback) ─
 import { logWhatsappSessionEvent } from "./whatsappTelemetry";
 import { markSessionDisconnected, markSessionReconnected } from "./zapiConnectionState";
-import { getDefaultWhatsappInstance } from "./whatsapp/instanceStore";
+import { getDefaultWhatsappInstance, saveConnectionHealth } from "./whatsapp/instanceStore";
 import { notifyZapiDisconnected, notifyZapiReconnected } from "./zapiDisconnectNotify";
 import { attemptZapiAutoReconnect } from "./zapiAutoReconnect";
 import { closeZapiIncident, loadZapiWatchdogState } from "./zapiWatchdogState";
+import { getExpectedOfficialPhone, OFFICIAL_BOT_PHONE } from "./zapiGuard";
 
 const nowSP = () => new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
@@ -38,6 +39,17 @@ export async function handleZapiConnectionWebhook(body: any): Promise<{ handled:
       handled = "disconnected";
       const row = await getDefaultWhatsappInstance();
       const gen = await markSessionDisconnected();
+      if (row) {
+        await saveConnectionHealth(row.id, {
+          connected: false,
+          connectedPhone: null,
+          phoneMatchesOfficial: false,
+          error: "Desconectado (webhook Z-API).",
+          statusRaw: ev,
+        }).catch((e) => {
+          console.warn(`[Z-API Webhook] Falha ao persistir last_connected: ${e?.message || e}`);
+        });
+      }
       logWhatsappSessionEvent({
         eventType: "disconnected",
         connected: false,
@@ -64,6 +76,22 @@ export async function handleZapiConnectionWebhook(body: any): Promise<{ handled:
       const since = prev.incidentStartedAt;
       await closeZapiIncident();
       const newGen = await markSessionReconnected();
+      const row = await getDefaultWhatsappInstance();
+      if (row) {
+        const expected = await getExpectedOfficialPhone().catch(() => OFFICIAL_BOT_PHONE);
+        const phoneRaw = ev.phone ?? ev.connectedPhone ?? ev.wid ?? null;
+        const phone = phoneRaw != null ? String(phoneRaw).replace(/\D/g, "") || null : null;
+        const phoneMatchesOfficial = !!phone && (phone === expected || phone === OFFICIAL_BOT_PHONE);
+        await saveConnectionHealth(row.id, {
+          connected: true,
+          connectedPhone: phone,
+          phoneMatchesOfficial: phone ? phoneMatchesOfficial : true,
+          error: null,
+          statusRaw: ev,
+        }).catch((e) => {
+          console.warn(`[Z-API Webhook] Falha ao persistir last_connected: ${e?.message || e}`);
+        });
+      }
       logWhatsappSessionEvent({
         eventType: "reconnected",
         connected: true,
