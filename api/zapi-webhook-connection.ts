@@ -1,6 +1,4 @@
 /** POST /api/zapi/webhook/connection — leve (Connected/DisconnectedCallback). */
-import { handleZapiConnectionWebhook } from "../server/zapiConnectionWebhook.js";
-
 function parseBody(body: unknown): unknown {
   if (typeof body !== "string") return body || {};
   if (!body.trim()) return {};
@@ -41,6 +39,9 @@ export default async function handler(req: {
       return;
     }
 
+    // Import dinâmico (igual inbound) — evita FUNCTION_INVOCATION_FAILED no boot
+    // por árvore pesada (e-mail / auto-reconnect) no bundle estático da Vercel.
+    const { handleZapiConnectionWebhook } = await import("../server/zapiConnectionWebhook.js");
     const result = await handleZapiConnectionWebhook(parseBody(req.body));
     res.status(200).json({ ok: true, ...result });
   } catch (e: unknown) {
@@ -50,5 +51,3 @@ export default async function handler(req: {
     res.status(200).json({ ok: false, error: message || "erro interno" });
   }
 }
-
-export const config = { maxDuration: 30 };
