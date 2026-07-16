@@ -7,8 +7,8 @@ export const SHIFT_ENTRY_START: Record<ShiftType, { hour: number; minute: number
   noturno: { hour: 19, minute: 30 },
 };
 
-/** Plantão noturno segue até 08:00 do dia seguinte (entrada permitida nessa janela). */
-export const SHIFT_NOTURNO_PLANTAO_END = { hour: 8, minute: 0 };
+/** Plantão noturno segue até 09:30 do dia seguinte (entrada permitida nessa janela). */
+export const SHIFT_NOTURNO_PLANTAO_END = { hour: 9, minute: 30 };
 
 export const ACTIVITY_IDLE_MS = 10 * 60 * 1000;
 
@@ -50,8 +50,8 @@ function formatHm(h: number, m: number): string {
 }
 
 function isNoturnoEntryWindowAllowed(nowMin: number, startMin: number, endMin: number): boolean {
-  // Plantão 20:00→08:00: entrada após 19:30 OU entre 00:00 e 08:00 (cauda do plantão).
-  return nowMin >= startMin || nowMin < endMin;
+  // Plantão 19:30→09:30: entrada após 19:30 OU entre 00:00 e 09:30 (cauda do plantão).
+  return nowMin >= startMin || nowMin <= endMin;
 }
 
 /** Verifica se o operador pode bater a entrada (IN) agora. */

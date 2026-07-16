@@ -31,15 +31,21 @@ test('noturno bloqueia antes das 19:30', () => {
   assert.equal(r.allowed, false);
 });
 
-test('noturno libera durante plantão após meia-noite (até 08:00 BRT)', () => {
+test('noturno libera durante plantão após meia-noite (até 09:30 BRT)', () => {
   // 2026-07-09T05:00:00Z = 02:00 BRT
   const madrugada = new Date('2026-07-09T05:00:00.000Z');
   assert.equal(canPunchEntryNow('noturno', madrugada).allowed, true);
+  // 2026-07-09T12:00:00Z = 09:00 BRT
+  const fimPlantao = new Date('2026-07-09T12:00:00.000Z');
+  assert.equal(canPunchEntryNow('noturno', fimPlantao).allowed, true);
+  // 2026-07-09T12:30:00Z = 09:30 BRT
+  const limite = new Date('2026-07-09T12:30:00.000Z');
+  assert.equal(canPunchEntryNow('noturno', limite).allowed, true);
 });
 
-test('noturno bloqueia entre 08:00 e 19:30 BRT', () => {
-  // 2026-07-09T14:00:00Z = 11:00 BRT
-  const manha = new Date('2026-07-09T14:00:00.000Z');
+test('noturno bloqueia entre 09:30 e 19:30 BRT', () => {
+  // 2026-07-09T13:00:00Z = 10:00 BRT
+  const manha = new Date('2026-07-09T13:00:00.000Z');
   const r = canPunchEntryNow('noturno', manha);
   assert.equal(r.allowed, false);
   assert.match(r.message || '', /19:30/);

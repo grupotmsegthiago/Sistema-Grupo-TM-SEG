@@ -3,17 +3,14 @@ import { getNextTimeClockStage } from './stages';
 import { normalizeShiftType } from './shiftRules';
 import type { TimeClockEntry } from './types';
 
-/** Plantão noturno encerra às 08:00 (BRT) do dia seguinte. */
-export const SHIFT_NOTURNO_PLANTAO_END = { hour: 8, minute: 0 };
-
-/** Jornada iniciada (IN) e ainda sem saída final (OUT). */
+/** Une batidas de dias consecutivos (plantão noturno 19:30 → 09:30). */
 export function hasOpenShiftJourney(entries: Pick<TimeClockEntry, 'type'>[]): boolean {
   if (entries.length === 0) return false;
   const next = getNextTimeClockStage(entries);
   return next !== 'DONE' && next !== 'IN';
 }
 
-/** Une batidas de dias consecutivos (plantão noturno 20:00 → 08:00). */
+/** Une batidas de dias consecutivos (plantão noturno 19:30 → 09:30). */
 export function mergeShiftEntries(
   earlier: TimeClockEntry[],
   later: TimeClockEntry[],
