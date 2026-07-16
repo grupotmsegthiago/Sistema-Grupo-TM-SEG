@@ -542,8 +542,6 @@ export const calculateMissionFinancials = (
     // hodômetro válido com rodagem real (end_km > start_km) — o KM rodado conta
     // normalmente e o excedente acima da franquia É cobrado. A pessoa foi
     // contratada, rodou mais que o combinado, então tem que receber por isso.
-    // (As horas extras de cancelada seguem a regra própria via cancelStatusAt:
-    //  cobra-se a hora excedente quando o cancelamento ocorre após a franquia.)
     if (isCancelled) {
         distanceForCalculation = (hasValidKms && realTraveledKm > 0) ? realTraveledKm : 0;
     }
@@ -555,6 +553,11 @@ export const calculateMissionFinancials = (
         }
         return Math.max(totalDistance, distanceForCalculation);
     };
+
+    // Cancelada COM execução real (KM + início/fim): usa a janela operacional.
+    // Evita inflar hora extra quando o status "Cancelada" é lançado horas/dias
+    // depois (ex.: GTM-6043 — 44min reais viraram 18h35 via cancelStatusAt).
+    const cancelledExecuted = isCancelled && hasValidKms && realTraveledKm > 0;
     
     const scheduledDate = parseSafeDate(mission.startTime || (mission as any).start_time); 
     const creationDate = parseSafeDate(mission.createdAt); 
@@ -564,6 +567,11 @@ export const calculateMissionFinancials = (
     let endDateObj = currentTime;
     
     const dbEndTime = parseSafeDate(mission.endTime || (mission as any).end_time);
+    const hasOperationalWindow = !!(
+        scheduledDate
+        && dbEndTime
+        && dbEndTime.getTime() > scheduledDate.getTime()
+    );
     if (dbEndTime) {
         endDateObj = dbEndTime;
     } else if (isTerminalStatus) {
@@ -576,15 +584,19 @@ export const calculateMissionFinancials = (
         endDateObj = currentTime;
     }
 
-    // REGRA DE CANCELADA (todas as OS): o "fim" para cobrança é o momento do
-    // CANCELAMENTO registrado em mission_history (_cancelStatusAt), NÃO o
-    // end_time administrativo — que pode ser gravado dias depois e inflar as
-    // horas (ex.: OS agendada 19/05 com end_time 27/05 -> ~200h falsas).
-    // Cancelada ANTES do agendamento (cancelAt <= agendamento) cobra só o
-    // mínimo (fim = início, 0h). Cancelada DEPOIS soma as horas extras do
-    // AGENDAMENTO até o cancelamento.
+    // REGRA DE CANCELADA SEM execução comprovada: o "fim" para cobrança é o
+    // momento do CANCELAMENTO (mission_history / _cancelStatusAt), NÃO um
+    // end_time administrativo solto que pode ser gravado dias depois.
+    // Cancelada ANTES do agendamento → 0h. Cancelada DEPOIS sem hodômetro →
+    // horas do agendamento até o cancelamento.
+    // REGRA DE CANCELADA COM execução (KM real + início/fim): prioriza a
+    // janela operacional start_time→end_time (igual ao card "Duração").
     const cancelStatusAt = parseSafeDate((mission as any).cancelStatusAt || (mission as any)._cancelStatusAt);
-    if (isCancelled) {
+    if (isCancelled && cancelledExecuted && hasOperationalWindow) {
+        effectiveStartDate = scheduledDate!;
+        endDateObj = dbEndTime!;
+        startLabel = "Execução";
+    } else if (isCancelled) {
         endDateObj = (cancelStatusAt && cancelStatusAt.getTime() > effectiveStartDate.getTime())
             ? cancelStatusAt
             : effectiveStartDate;
@@ -605,7 +617,10 @@ export const calculateMissionFinancials = (
     // EXECUTADA quando tem hora de fim real POSTERIOR ao início (end > start),
     // independente da duração truncada ao minuto. Assim o motor e o boletim
     // classificam igual mesmo em durações < 1 min.
-    const cancelledWithHours = isCancelled && !!cancelStatusAt && cancelStatusAt.getTime() > effectiveStartDate.getTime();
+    const cancelledWithHours = isCancelled && (
+        (cancelledExecuted && hasOperationalWindow)
+        || (!!cancelStatusAt && cancelStatusAt.getTime() > effectiveStartDate.getTime())
+    );
     // OS que foi EXECUTADA e cancelada depois (possui hora de fim real) deve
     // cobrar tempo/distância reais como uma OS normal. Apenas o cancelamento
     // ANTES da execução (sem hora de fim real) cobra somente o acionamento base.
@@ -1442,10 +1457,8 @@ export const calculateMissionFinancials = (
     // EXCEÇÃO (regra confirmada pela diretoria): se a OS foi de fato EXECUTADA —
     // hodômetro com rodagem real (end_km > start_km) — o KM excedente real é
     // mantido e cobrado normalmente; a pessoa rodou mais que o combinado e tem
-    // que receber. As horas extras permanecem regidas por cancelStatusAt
-    // (cancelledWithHours), evitando inflar tempo por end_time administrativo
-    // gravado dias depois — por isso seguem zeradas neste ramo "antes".
-    const cancelledExecuted = isCancelled && hasValidKms && realTraveledKm > 0;
+    // que receber. As horas extras de cancelada SEM janela operacional seguem
+    // zeradas neste ramo "antes" (cancelledBeforeExecution).
     if (cancelledBeforeExecution) {
         cExcessHr = 0;
         pExcessHr = 0;

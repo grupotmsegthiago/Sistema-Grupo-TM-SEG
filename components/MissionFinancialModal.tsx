@@ -1752,11 +1752,33 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   };
                   if (needRev) {
                       payload.revenue_value = r2(revServiceOnly);
-                      payload.revenue_edit_reason = '';
+                      payload.revenue_edit_reason = '[Sistema] Recalculado pelo sistema — alinhado ao motor';
                   }
                   if (needCost) {
                       payload.cost_value = r2(costServiceOnly);
-                      payload.cost_edit_reason = '';
+                      payload.cost_edit_reason = '[Sistema] Recalculado pelo sistema — alinhado ao motor';
+                  }
+                  // Snapshot aprovado também precisa acompanhar (ex.: hora extra fantasma
+                  // em Cancelada executada). Sem isso a auditoria reabre com valores velhos.
+                  const existingSnap = (mission.snapshot_data && typeof mission.snapshot_data === 'object')
+                      ? (mission.snapshot_data as Record<string, unknown>)
+                      : null;
+                  if (existingSnap && (needRev || needCost)) {
+                      payload.snapshot_data = {
+                          ...existingSnap,
+                          durationHours: financialData.durationHours,
+                          hrExtraQtd: financialData.client.excessHours,
+                          hrExtraTotal: r2(financialData.client.extraHrVal),
+                          kmExtraQtd: financialData.client.excessKm,
+                          kmExtraTotal: r2(financialData.client.extraKmVal),
+                          revenueServiceOnly: r2(revServiceOnly),
+                          costServiceOnly: r2(costServiceOnly),
+                          totalGeral: r2(revServiceOnly + toll),
+                          systemCalculatedRevenue: r2(revServiceOnly + toll),
+                          systemCalculatedCost: r2(costServiceOnly + tollProv),
+                          snapshot_resynced_at: new Date().toISOString(),
+                          snapshot_resynced_by: 'AUTO_RESYNC_BILLING',
+                      };
                   }
                   if (!mission.billing_verified_by && (needRev || needCost)) {
                       payload.billing_verified_by = null;
@@ -1767,8 +1789,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           if (error) throw error;
                           setMission((prev) => prev ? {
                               ...prev,
-                              ...(needRev ? { revenue_value: payload.revenue_value as number, revenue_edit_reason: '' } : {}),
-                              ...(needCost ? { cost_value: payload.cost_value as number, cost_edit_reason: '' } : {}),
+                              ...(needRev ? { revenue_value: payload.revenue_value as number, revenue_edit_reason: String(payload.revenue_edit_reason || '') } : {}),
+                              ...(needCost ? { cost_value: payload.cost_value as number, cost_edit_reason: String(payload.cost_edit_reason || '') } : {}),
+                              ...(payload.snapshot_data ? { snapshot_data: payload.snapshot_data as any } : {}),
                           } : prev);
                           await supabase.from('system_logs').insert([{
                               user_name: 'Sistema',
@@ -1782,6 +1805,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                   tollProvider: r2(tollProv),
                                   clientExcessKm: financialData.client.excessKm,
                                   clientExtraKmVal: r2(financialData.client.extraKmVal),
+                                  clientExcessHours: financialData.client.excessHours,
+                                  durationHours: financialData.durationHours,
+                                  snapshotUpdated: !!payload.snapshot_data,
                               }),
                           }]);
                           showNotification(
