@@ -3,7 +3,7 @@ import { sendSystemAlertEmail } from "./emailService";
 import { getConnectedBotPhone, invalidateBotPhoneCache, OFFICIAL_BOT_PHONE, OFFICIAL_BOT_PHONE_DISPLAY, getExpectedOfficialPhone } from "./zapiGuard";
 import { logWhatsappSessionEvent } from "./whatsappTelemetry";
 import { markSessionDisconnected, markSessionReconnected } from "./zapiConnectionState";
-import { getDefaultWhatsappInstance, instanceConfigured } from "./whatsapp/instanceStore";
+import { getDefaultWhatsappInstance, instanceConfigured, saveConnectionHealth } from "./whatsapp/instanceStore";
 import { credsFromInstance, zapiFetchWith } from "./whatsapp/zapiHttp";
 import { notifyZapiDisconnected, notifyZapiReconnected } from "./zapiDisconnectNotify";
 import { attemptZapiAutoReconnect } from "./zapiAutoReconnect";
@@ -55,6 +55,21 @@ export async function runZapiWatchdogTick(): Promise<void> {
     invalidateBotPhoneCache();
 
     const phone = await getConnectedBotPhone(true).catch(() => null);
+    const phoneMatchesOfficial = !!phone && (phone === expected || phone === OFFICIAL_BOT_PHONE);
+    // Popup/UI leem whatsapp_instances.last_connected — sem isso o bot fica
+    // "offline" no sistema mesmo com Z-API connected=true.
+    await saveConnectionHealth(row.id, {
+      connected: true,
+      connectedPhone: phone,
+      phoneMatchesOfficial,
+      error: phoneMatchesOfficial || !phone
+        ? null
+        : `Conectado em ${phone}, esperado ${expected}.`,
+      statusRaw: status,
+    }).catch((e) => {
+      console.warn(`[Z-API Vigia] Falha ao persistir last_connected: ${e?.message || e}`);
+    });
+
     const wrongAlerted = await isWrongNumberAlerted();
     if (phone && phone !== expected && phone !== OFFICIAL_BOT_PHONE) {
       if (!wrongAlerted) {
@@ -90,6 +105,18 @@ export async function runZapiWatchdogTick(): Promise<void> {
   if (!afterStreak.incidentOpen || afterStreak.downStreak === CONFIRM_CHECKS) {
     const gen = await markSessionDisconnected();
     const incidentStartedAt = afterStreak.incidentStartedAt || new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    const disconnectError = status.error
+      ? `Desconectado: ${String(status.error)}`
+      : 'Desconectado — gere código de vinculação no eSIM.';
+    await saveConnectionHealth(row.id, {
+      connected: false,
+      connectedPhone: null,
+      phoneMatchesOfficial: false,
+      error: disconnectError,
+      statusRaw: status,
+    }).catch((e) => {
+      console.warn(`[Z-API Vigia] Falha ao persistir desconexão: ${e?.message || e}`);
+    });
     logWhatsappSessionEvent({
       eventType: 'disconnected',
       connected: false,
