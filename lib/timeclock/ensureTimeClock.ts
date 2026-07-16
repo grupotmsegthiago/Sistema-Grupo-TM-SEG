@@ -118,6 +118,24 @@ WHERE e.deleted_at IS NULL
   );
 `;
 
+const NIGHT_SHIFT_OPERATORS_SQL = `
+UPDATE rh_employees
+SET
+  shift_type = 'noturno',
+  requires_timeclock = true,
+  updated_at = now()
+WHERE deleted_at IS NULL
+  AND COALESCE(status, 'Ativo') IN ('Ativo', 'Experiência')
+  AND full_name NOT ILIKE '%michelle%'
+  AND (
+    full_name ILIKE '%moacir%'
+    OR full_name ILIKE '%cristiane aurora%'
+    OR full_name ILIKE '%aurora da silva%'
+    OR full_name ~* '^cris[\\s\\.]'
+    OR full_name ~* '\\scris[\\s\\.]'
+  );
+`;
+
 async function runViaExecSql(sql: string): Promise<void> {
   const sb = adminSupabase();
   const { error } = await sb.rpc('exec_sql', { sql });
@@ -192,6 +210,7 @@ export async function ensureTimeClockAndLinkCltUsers(): Promise<EnsureTimeClockR
       await p.query(schemaSql);
       const emailRes = await p.query(LINK_BY_EMAIL_SQL);
       const nameRes = await p.query(LINK_BY_NAME_SQL);
+      await p.query(NIGHT_SHIFT_OPERATORS_SQL);
       const { rows } = await p.query<CltLinkRow>(`
         SELECT e.matricula, e.full_name, e.status, e.user_id, u.name AS login_name, u.email AS login_email
         FROM rh_employees e
@@ -212,6 +231,7 @@ export async function ensureTimeClockAndLinkCltUsers(): Promise<EnsureTimeClockR
     await runViaExecSql(schemaSql);
     await runViaExecSql(LINK_BY_EMAIL_SQL);
     await runViaExecSql(LINK_BY_NAME_SQL);
+    await runViaExecSql(NIGHT_SHIFT_OPERATORS_SQL);
 
     const after = await fetchCltConference(sb);
     const unlinkedAfter = after.filter((r) => !r.user_id).length;

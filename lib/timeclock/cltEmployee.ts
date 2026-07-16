@@ -1,6 +1,7 @@
 import { supabase } from '../supabase';
 import type { CltEmployeeInfo, TimeClockUserContext } from './types';
 import { employeeRequiresTimeclock, isTimeclockExemptUser } from './eligibility';
+import { ensureNightShiftOperatorRecord } from './nightShiftOperators';
 import { normalizeShiftType } from './shiftRules';
 import { namesLikelyMatch } from './nameMatch';
 
@@ -153,6 +154,17 @@ export async function enrichUserWithCltData(
     };
   }
 
+  let shiftType = normalizeShiftType(employee.shift_type);
+  try {
+    shiftType = await ensureNightShiftOperatorRecord(supabase, {
+      id: employee.id,
+      full_name: employee.full_name,
+      shift_type: employee.shift_type,
+    });
+  } catch (e) {
+    console.warn('[cltEmployee] ensureNightShiftOperatorRecord:', e);
+  }
+
   const contractType = String(employee.contract_type || '').trim().toUpperCase();
   const isClt = isCltContractType(contractType) && isEmployeeEligibleForTimeClock(employee.status);
   let requiresTimeclock = employeeRequiresTimeclock(employee);
@@ -168,7 +180,7 @@ export async function enrichUserWithCltData(
     contractType,
     isClt,
     requiresTimeclock,
-    shiftType: normalizeShiftType(employee.shift_type),
+    shiftType,
     digitalSignatureUrl: employee.digital_signature_url || null,
     facePhotoUrl: employee.face_photo_url || null,
     faceRegisteredAt: employee.face_registered_at || null,

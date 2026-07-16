@@ -5,6 +5,7 @@ import {
   resolveUserRoleFromToken,
 } from '../lib/rh/apiEmployeesAuth';
 import { isDiretoriaRole, employeeRequiresTimeclock } from '../lib/timeclock/eligibility';
+import { ensureNightShiftOperatorRecord } from '../lib/timeclock/nightShiftOperators';
 import { canPunchEntryNow } from '../lib/timeclock/shiftRules';
 import { fetchActiveShiftEntries } from '../lib/timeclock/shiftEntries';
 import { getNextTimeClockStage } from '../lib/timeclock/stages';
@@ -132,13 +133,24 @@ export async function handleTimeclockPunch(req: Request, res: Response): Promise
     return;
   }
 
-  const employee = await loadEmployeeForUser(userId);
-  if (!requiresPunch(employee)) {
+  const employeeRaw = await loadEmployeeForUser(userId);
+  if (!requiresPunch(employeeRaw)) {
     res.status(403).json({ ok: false, error: 'Seu perfil não exige registro de ponto.' });
     return;
   }
 
-  const history = await fetchActivePunchHistory(userId, employee?.shift_type);
+  const client = sb();
+  let shiftType = employeeRaw?.shift_type || 'diurno';
+  if (employeeRaw?.id) {
+    shiftType = await ensureNightShiftOperatorRecord(client, {
+      id: employeeRaw.id,
+      full_name: employeeRaw.full_name,
+      shift_type: employeeRaw.shift_type,
+    });
+  }
+  const employee = employeeRaw ? { ...employeeRaw, shift_type: shiftType } : employeeRaw;
+
+  const history = await fetchActivePunchHistory(userId, shiftType);
   const expected = getNextTimeClockStage(history || []);
   if (expected === 'DONE') {
     res.status(400).json({ ok: false, error: 'Jornada de hoje já foi concluída.' });
@@ -150,7 +162,7 @@ export async function handleTimeclockPunch(req: Request, res: Response): Promise
   }
 
   if (stage === 'IN') {
-    const window = canPunchEntryNow(employee?.shift_type);
+    const window = canPunchEntryNow(shiftType);
     if (!window.allowed) {
       res.status(403).json({ ok: false, error: window.message || 'Horário de entrada bloqueado.' });
       return;
@@ -183,7 +195,7 @@ export async function handleTimeclockPunch(req: Request, res: Response): Promise
     metadata: {
       stage,
       source: 'api-punch',
-      shift_type: employee?.shift_type || 'diurno',
+      shift_type: shiftType,
     },
   };
 

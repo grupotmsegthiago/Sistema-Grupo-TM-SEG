@@ -10,6 +10,7 @@ const RH_MIGRATION_FILES = [
   // facial. Sem esta migration, enrichUserWithCltData falha ao ler colunas
   // inexistentes e a obrigação de bater ponto deixa de funcionar.
   '2026_07_08_timeclock_shifts_faces.sql',
+  '2026_07_16_night_shift_moacir_cris.sql',
 ];
 
 export async function runRhMigrations(): Promise<void> {
