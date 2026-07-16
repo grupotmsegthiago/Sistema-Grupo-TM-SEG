@@ -89,4 +89,43 @@ describe('Cancelada executada — duração operacional', () => {
     // Sem execução: pode zerar ou usar cancel window — não deve inventar 16h com KM
     assert.equal(fin.realTraveledKm, 0);
   });
+
+  it('GTM-6001: com 0 KM mas start→end 3h30, prefere duração operacional a cancelStatusAt 4h10', () => {
+    const mission = {
+      id: 'GTM-6001',
+      client: 'CEVA LOGISTICS LTDA',
+      provider: 'TORRES VIGILANCIA PATRIMONIAL LTDA',
+      status: 'Cancelada',
+      origin: 'GUARUJA, SP',
+      destination: 'GUARUJA, SP',
+      start_km: 28138,
+      end_km: 28138,
+      start_time: '2026-06-26T04:00:00+00:00',
+      end_time: '2026-06-26T07:30:46+00:00',
+      mission_type: 'Caracterizada',
+      _cancelStatusAt: '2026-06-26T08:10:24.320006+00:00',
+    } as any;
+    const client6001 = [{
+      id: 't2',
+      client: 'CEVA LOGISTICS LTDA',
+      operation_type: 'AUDITOR - ESTADO SP RFI',
+      region: 'SUDESTE',
+      activation_fee: 660,
+      franchise_km: 100,
+      franchise_hours: 3,
+      price_per_extra_km: 6.6,
+      price_per_extra_hour: 160,
+    }];
+    const fin = calculateMissionFinancials(
+      mission,
+      client6001 as any,
+      providerTables as any,
+      { full_extra_hour_after_16_min: true } as any,
+    );
+    assert.equal(Math.round(fin.durationHours * 60), 210); // 3h30
+    assert.ok(fin.durationHours < 4, `não deve usar 4.17h do cancel, veio ${fin.durationHours}`);
+    // 0.5h real → regra CEVA >15min arredonda para 1h
+    assert.equal(fin.client.excessHours, 1);
+    assert.equal(fin.client.extraHrVal, 160);
+  });
 });

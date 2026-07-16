@@ -554,9 +554,7 @@ export const calculateMissionFinancials = (
         return Math.max(totalDistance, distanceForCalculation);
     };
 
-    // Cancelada COM execução real (KM + início/fim): usa a janela operacional.
-    // Evita inflar hora extra quando o status "Cancelada" é lançado horas/dias
-    // depois (ex.: GTM-6043 — 44min reais viraram 18h35 via cancelStatusAt).
+    // Cancelada com evidência de operação (KM > 0): marca execução real.
     const cancelledExecuted = isCancelled && hasValidKms && realTraveledKm > 0;
     
     const scheduledDate = parseSafeDate(mission.startTime || (mission as any).start_time); 
@@ -584,22 +582,34 @@ export const calculateMissionFinancials = (
         endDateObj = currentTime;
     }
 
-    // REGRA DE CANCELADA SEM execução comprovada: o "fim" para cobrança é o
-    // momento do CANCELAMENTO (mission_history / _cancelStatusAt), NÃO um
-    // end_time administrativo solto que pode ser gravado dias depois.
-    // Cancelada ANTES do agendamento → 0h. Cancelada DEPOIS sem hodômetro →
-    // horas do agendamento até o cancelamento.
-    // REGRA DE CANCELADA COM execução (KM real + início/fim): prioriza a
-    // janela operacional start_time→end_time (igual ao card "Duração").
+    // REGRA DE CANCELADA — escolha da janela de tempo:
+    // 1) Com início/fim operacionais E cancelStatusAt: usa a janela MAIS CURTA.
+    //    - GTM-6001: start→end 3h30 < start→cancel 4h10 → cobra 3h30
+    //    - GTM-6043: start→end 44min < start→cancel 18h → cobra 44min
+    //    - end_time administrativo dias após o cancel: start→cancel é menor →
+    //      mantém a proteção original contra end_time inflado
+    // 2) Só cancelStatusAt: agendamento → cancelamento
+    // 3) Só janela operacional: start→end
     const cancelStatusAt = parseSafeDate((mission as any).cancelStatusAt || (mission as any)._cancelStatusAt);
-    if (isCancelled && cancelledExecuted && hasOperationalWindow) {
-        effectiveStartDate = scheduledDate!;
-        endDateObj = dbEndTime!;
-        startLabel = "Execução";
-    } else if (isCancelled) {
-        endDateObj = (cancelStatusAt && cancelStatusAt.getTime() > effectiveStartDate.getTime())
+    let usedOperationalWindow = false;
+    if (isCancelled) {
+        const cancelEnd = (cancelStatusAt && cancelStatusAt.getTime() > effectiveStartDate.getTime())
             ? cancelStatusAt
             : effectiveStartDate;
+        if (hasOperationalWindow) {
+            const opMs = dbEndTime!.getTime() - scheduledDate!.getTime();
+            const cancelMs = cancelEnd.getTime() - effectiveStartDate.getTime();
+            if (opMs > 0 && (cancelMs <= 0 || opMs <= cancelMs)) {
+                effectiveStartDate = scheduledDate!;
+                endDateObj = dbEndTime!;
+                startLabel = "Execução";
+                usedOperationalWindow = true;
+            } else {
+                endDateObj = cancelEnd;
+            }
+        } else {
+            endDateObj = cancelEnd;
+        }
     }
 
     const diffMs = endDateObj.getTime() - effectiveStartDate.getTime();
@@ -618,7 +628,8 @@ export const calculateMissionFinancials = (
     // independente da duração truncada ao minuto. Assim o motor e o boletim
     // classificam igual mesmo em durações < 1 min.
     const cancelledWithHours = isCancelled && (
-        (cancelledExecuted && hasOperationalWindow)
+        usedOperationalWindow
+        || (cancelledExecuted && hasOperationalWindow)
         || (!!cancelStatusAt && cancelStatusAt.getTime() > effectiveStartDate.getTime())
     );
     // OS que foi EXECUTADA e cancelada depois (possui hora de fim real) deve
