@@ -168,6 +168,10 @@
       "destination": "/api/whatsapp/send-group"
     },
     {
+      "source": "/api/whatsapp/groups",
+      "destination": "/api/whatsapp/groups"
+    },
+    {
       "source": "/api/whatsapp/telemetry/dashboard",
       "destination": "/api/whatsapp/telemetry/dashboard"
     },

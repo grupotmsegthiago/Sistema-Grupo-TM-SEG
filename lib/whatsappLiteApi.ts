@@ -332,6 +332,85 @@ export async function getInstance(instanceId?: string | null): Promise<InstanceR
   return (data as InstanceRow) || null;
 }
 
+export type WhatsappGroupItem = {
+  id: string;
+  phone: string;
+  name: string;
+  isGroup: boolean;
+  archived?: string | boolean;
+};
+
+/**
+ * Lista grupos da instância padrão (Z-API), com paginação e timeout curto.
+ * Usado pelo seletor do cadastro de cliente — não passa pelo Express (evita 504).
+ */
+export async function listWhatsappGroups(): Promise<WhatsappGroupItem[]> {
+  const row = await getInstance();
+  if (!row) throw new Error("WhatsApp não configurado no banco");
+  const creds = credsFromRow(row);
+  if (!creds) throw new Error("Z-API não configurada");
+
+  const PAGE_SIZE = 100;
+  const MAX_PAGES = 20;
+  const all: WhatsappGroupItem[] = [];
+  const seen = new Set<string>();
+
+  const collect = (payload: unknown): number => {
+    const raw = Array.isArray(payload)
+      ? payload
+      : (payload && typeof payload === "object" && Array.isArray((payload as { groups?: unknown[] }).groups)
+        ? (payload as { groups: unknown[] }).groups
+        : []);
+    let pageLen = 0;
+    for (const item of raw) {
+      pageLen++;
+      const g = item as Record<string, unknown>;
+      const id = String(g.id || g.phone || "").trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      all.push({
+        id,
+        phone: String(g.phone || id),
+        name: String(g.name || g.subject || "Grupo sem nome"),
+        isGroup: g.isGroup !== false,
+        archived: g.archived as string | boolean | undefined,
+      });
+    }
+    return pageLen;
+  };
+
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    let result = await zapiFetch(creds, `groups?page=${page}&pageSize=${PAGE_SIZE}`);
+    if (!result.ok && page === 1 && result.status >= 400 && result.status < 500) {
+      const errMsg = String((result.data as { error?: string } | null)?.error || "");
+      if (!/connected/i.test(errMsg)) {
+        result = await zapiFetch(creds, "groups");
+        if (result.ok) {
+          collect(result.data);
+          break;
+        }
+      }
+    }
+    if (!result.ok) {
+      if (page === 1) {
+        const zapiMsg = String((result.data as { error?: string } | null)?.error || result.text || "");
+        if (/connected/i.test(zapiMsg)) {
+          throw new Error(
+            "WhatsApp da Central está DESCONECTADO — reconecte a instância e tente novamente",
+          );
+        }
+        throw new Error(`Falha Z-API ao listar grupos (HTTP ${result.status || 502})`);
+      }
+      break;
+    }
+    const pageLen = collect(result.data);
+    if (pageLen <= 0 || pageLen < PAGE_SIZE) break;
+  }
+
+  all.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  return all;
+}
+
 export type UpdateInstanceInput = {
   slug?: string;
   label?: string;
