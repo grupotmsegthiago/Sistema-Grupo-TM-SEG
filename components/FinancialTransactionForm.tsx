@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { X, Save, Loader2, DollarSign, Calendar, Tag, Wallet, Layers, Plus, ArrowRightLeft } from 'lucide-react';
-import { FinancialCategory, TransactionType, FinancialAccount } from '../types';
+import { FinancialCategory, TransactionType, FinancialAccount, TransactionStatus } from '../types';
 import QuickCategoryModal from './QuickCategoryModal';
 import FinancialAccountManager from './FinancialAccountManager';
 import { INTERNAL_TRANSFER_NOTE_TAG, isInternalGroupTransfer } from '../lib/financialInternalTransfer';
@@ -31,7 +31,7 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
   const [accountId, setAccountId] = useState('');
   const [fromAccountId, setFromAccountId] = useState('');
   const [toAccountId, setToAccountId] = useState('');
-  const [status, setStatus] = useState<'PENDING' | 'PAID'>('PENDING');
+  const [status, setStatus] = useState<TransactionStatus>('PENDING');
   const [entityType, setEntityType] = useState<'Client' | 'Provider' | 'Other' | 'Personal'>('Other');
   const [entityId, setEntityId] = useState('');
   const [notes, setNotes] = useState('');
@@ -449,9 +449,15 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
             <div className="grid grid-cols-2 gap-4">
                 <div>
                     <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Status de Liquidação</label>
-                    <select className="w-full p-2.5 border rounded-lg text-sm bg-white uppercase font-bold" value={status} onChange={e => setStatus(e.target.value as any)}>
-                        <option value="PENDING">Aguardando (Agendado)</option>
-                        <option value="PAID">Liquidado (Pago/Recebido)</option>
+                    <select
+                        className="w-full p-2.5 border rounded-lg text-sm bg-white uppercase font-bold"
+                        value={status}
+                        onChange={e => setStatus(e.target.value as TransactionStatus)}
+                        data-testid="select-transaction-status"
+                    >
+                        <option value="PENDING">Pendente</option>
+                        <option value="SCHEDULED">Agendado</option>
+                        <option value="PAID">Pago / Recebido</option>
                     </select>
                 </div>
                 <div>

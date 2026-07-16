@@ -25,6 +25,7 @@ import BankStatementImporter from './BankStatementImporter';
 import FinancialDocConferencia from './FinancialDocConferencia';
 import AsaasPixTransferModal from './AsaasPixTransferModal';
 import { calcMaxPixTransfer } from '../lib/asaasPixTransfer';
+import { matchesFinancialStatusFilter, type FinancialStatusFilter } from '../lib/financialStatusFilter';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -41,7 +42,7 @@ const getTodayBR = (): string => {
 };
 
 type Step = 'PAGAR' | 'RECEBER' | 'CONFERENCIA' | 'RELATORIO' | 'FECHAMENTO';
-type StatusFilter = 'ALL' | 'PENDING' | 'PAID' | 'OVERDUE' | 'SCHEDULED';
+type StatusFilter = FinancialStatusFilter;
 
 const STEPS: { id: Step; label: string; icon: React.ReactNode; description: string; number: number }[] = [
     { id: 'PAGAR', label: 'Contas a Pagar', icon: <ArrowDownCircle size={18}/>, description: 'Despesas e pagamentos a fornecedores', number: 1 },
@@ -274,10 +275,9 @@ const FinancialTransactionList: React.FC = () => {
             });
         }
 
-        if (statusFilter === 'PENDING') list = list.filter(t => t.status === 'PENDING');
-        else if (statusFilter === 'PAID') list = list.filter(t => t.status === 'PAID');
-        else if (statusFilter === 'OVERDUE') list = list.filter(t => t.status === 'OVERDUE' || (t.status === 'PENDING' && t.due_date.split('T')[0] < todayStr));
-        else if (statusFilter === 'SCHEDULED') list = list.filter(t => t.status === 'SCHEDULED');
+        if (statusFilter !== 'ALL') {
+            list = list.filter(t => matchesFinancialStatusFilter(t.status, t.due_date, statusFilter, todayStr));
+        }
 
         if (paymentMethodFilter !== 'ALL') list = list.filter(t => t.payment_method === paymentMethodFilter);
 
@@ -717,12 +717,36 @@ const FinancialTransactionList: React.FC = () => {
 
     const summaryPagar = useMemo(() => {
         const expenses = periodFilteredTransactions.filter(t => t.type === 'EXPENSE' && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
-        return { total: expenses.reduce((a, t) => a + t.amount, 0), paid: expenses.filter(t => t.status === 'PAID').reduce((a, t) => a + t.amount, 0), pending: expenses.filter(t => t.status === 'PENDING').reduce((a, t) => a + t.amount, 0), count: expenses.length, paidCount: expenses.filter(t => t.status === 'PAID').length };
+        const pendingList = expenses.filter(t => t.status === 'PENDING');
+        const scheduledList = expenses.filter(t => t.status === 'SCHEDULED');
+        const paidList = expenses.filter(t => t.status === 'PAID');
+        return {
+            total: expenses.reduce((a, t) => a + t.amount, 0),
+            paid: paidList.reduce((a, t) => a + t.amount, 0),
+            pending: pendingList.reduce((a, t) => a + t.amount, 0),
+            scheduled: scheduledList.reduce((a, t) => a + t.amount, 0),
+            count: expenses.length,
+            paidCount: paidList.length,
+            pendingCount: pendingList.length,
+            scheduledCount: scheduledList.length,
+        };
     }, [periodFilteredTransactions, investmentCategoryIds]);
 
     const summaryReceber = useMemo(() => {
         const incomes = periodFilteredTransactions.filter(t => t.type === 'INCOME' && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
-        return { total: incomes.reduce((a, t) => a + t.amount, 0), paid: incomes.filter(t => t.status === 'PAID').reduce((a, t) => a + t.amount, 0), pending: incomes.filter(t => t.status === 'PENDING').reduce((a, t) => a + t.amount, 0), count: incomes.length, paidCount: incomes.filter(t => t.status === 'PAID').length };
+        const pendingList = incomes.filter(t => t.status === 'PENDING');
+        const scheduledList = incomes.filter(t => t.status === 'SCHEDULED');
+        const paidList = incomes.filter(t => t.status === 'PAID');
+        return {
+            total: incomes.reduce((a, t) => a + t.amount, 0),
+            paid: paidList.reduce((a, t) => a + t.amount, 0),
+            pending: pendingList.reduce((a, t) => a + t.amount, 0),
+            scheduled: scheduledList.reduce((a, t) => a + t.amount, 0),
+            count: incomes.length,
+            paidCount: paidList.length,
+            pendingCount: pendingList.length,
+            scheduledCount: scheduledList.length,
+        };
     }, [periodFilteredTransactions, investmentCategoryIds]);
 
     const overduePagar = useMemo(() => {
@@ -966,7 +990,7 @@ const FinancialTransactionList: React.FC = () => {
                 return (
                     <>
                         <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Visão Geral ({viewPeriod === 'DAY' ? 'Hoje' : viewPeriod === 'WEEK' ? 'Semana Atual' : viewPeriod === 'MONTH' ? 'Mês Atual' : viewPeriod === 'CUSTOM' ? 'Período Personalizado' : 'Todos os Registros'})</p>
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
                                 <div className={`p-2.5 rounded-full ${isPagar ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
                                     {isPagar ? <ArrowDownCircle size={18}/> : <ArrowUpCircle size={18}/>}
@@ -976,22 +1000,51 @@ const FinancialTransactionList: React.FC = () => {
                                     <p className={`text-lg font-black font-mono ${isPagar ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(summary.total)}</p>
                                 </div>
                             </div>
-                            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
+                            <button
+                                type="button"
+                                data-testid="card-pago-filter"
+                                onClick={() => setStatusFilter(statusFilter === 'PAID' ? 'ALL' : 'PAID')}
+                                className={`text-left p-4 rounded-xl border shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${
+                                    statusFilter === 'PAID' ? 'bg-green-100 border-green-400 ring-2 ring-green-400' : 'bg-white border-gray-200'
+                                }`}
+                            >
                                 <div className="p-2.5 bg-green-50 text-green-600 rounded-full"><CheckCircle2 size={18}/></div>
                                 <div>
                                     <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{isPagar ? 'Pago' : 'Recebido'}</p>
                                     <p className="text-lg font-black font-mono text-green-600">{formatCurrency(summary.paid)}</p>
                                     <p className="text-[9px] text-gray-400 font-bold">{summary.paidCount} título(s)</p>
                                 </div>
-                            </div>
-                            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
+                            </button>
+                            <button
+                                type="button"
+                                data-testid="card-pendente-filter"
+                                onClick={() => setStatusFilter(statusFilter === 'PENDING' ? 'ALL' : 'PENDING')}
+                                className={`text-left p-4 rounded-xl border shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${
+                                    statusFilter === 'PENDING' ? 'bg-amber-100 border-amber-400 ring-2 ring-amber-400' : 'bg-white border-gray-200'
+                                }`}
+                            >
                                 <div className="p-2.5 bg-amber-50 text-amber-600 rounded-full"><Clock size={18}/></div>
                                 <div>
                                     <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Pendente</p>
                                     <p className="text-lg font-black font-mono text-amber-600">{formatCurrency(summary.pending)}</p>
-                                    <p className="text-[9px] text-gray-400 font-bold">{summary.count - summary.paidCount} título(s)</p>
+                                    <p className="text-[9px] text-gray-400 font-bold">{summary.pendingCount} título(s)</p>
                                 </div>
-                            </div>
+                            </button>
+                            <button
+                                type="button"
+                                data-testid="card-agendado-filter"
+                                onClick={() => setStatusFilter(statusFilter === 'SCHEDULED' ? 'ALL' : 'SCHEDULED')}
+                                className={`text-left p-4 rounded-xl border shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${
+                                    statusFilter === 'SCHEDULED' ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-400' : 'bg-white border-gray-200'
+                                }`}
+                            >
+                                <div className="p-2.5 bg-blue-50 text-blue-600 rounded-full"><Calendar size={18}/></div>
+                                <div>
+                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Agendado</p>
+                                    <p className="text-lg font-black font-mono text-blue-600">{formatCurrency(summary.scheduled)}</p>
+                                    <p className="text-[9px] text-gray-400 font-bold">{summary.scheduledCount} título(s)</p>
+                                </div>
+                            </button>
                             {(() => {
                                 const overdueList = isPagar ? overduePagarAll : overdueReceberAll;
                                 const hasOverdue = overdueList.length > 0;
