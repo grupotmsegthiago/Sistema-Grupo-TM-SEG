@@ -26,6 +26,8 @@ import FinancialDocConferencia from './FinancialDocConferencia';
 import AsaasPixTransferModal from './AsaasPixTransferModal';
 import { calcMaxPixTransfer } from '../lib/asaasPixTransfer';
 import { matchesFinancialStatusFilter, type FinancialStatusFilter } from '../lib/financialStatusFilter';
+import { computeAccountBalanceOverview } from '../lib/dashboardDiretoria/aggregations';
+import { listBalanceSnapshotsDirect } from '../lib/investment/snapshotClient';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -79,6 +81,9 @@ const FinancialTransactionList: React.FC = () => {
     const [asaasBalances, setAsaasBalances] = useState<Array<{ company: string; name: string; balance: number; pendingBalance: number; error?: string }>>([]);
     const [loadingBalances, setLoadingBalances] = useState(false);
     const [balancesLoadedOnce, setBalancesLoadedOnce] = useState(false);
+    /** Último snapshot de saldo por conta (mesmo critério do Cockpit Diretoria). */
+    const [latestAccountBalances, setLatestAccountBalances] = useState<Record<string, number>>({});
+    const [loadingAccountBalances, setLoadingAccountBalances] = useState(false);
     const [pixTransferCard, setPixTransferCard] = useState<{
         company: string;
         label: string;
@@ -164,9 +169,44 @@ const FinancialTransactionList: React.FC = () => {
     };
 
     const fetchAccounts = async () => {
-        const { data } = await supabase.from('financial_accounts').select('*');
-        if (data) setAccounts(data as any);
+        setLoadingAccountBalances(true);
+        try {
+            const [accRes, snapshots] = await Promise.all([
+                supabase.from('financial_accounts').select('id, name, bank_name, initial_balance, status').eq('status', 'Ativo'),
+                listBalanceSnapshotsDirect(3650).catch((e) => {
+                    console.warn('[Contas a Pagar] snapshots de saldo indisponíveis:', e);
+                    return [] as Awaited<ReturnType<typeof listBalanceSnapshotsDirect>>;
+                }),
+            ]);
+            if (accRes.data) setAccounts(accRes.data as any);
+            const latest: Record<string, { balance: number; at: number }> = {};
+            for (const s of snapshots || []) {
+                const id = String(s.account_id || '');
+                if (!id) continue;
+                const at = new Date(s.recorded_at).getTime();
+                if (!Number.isFinite(at)) continue;
+                const prev = latest[id];
+                if (!prev || at >= prev.at) latest[id] = { balance: Number(s.balance) || 0, at };
+            }
+            const map: Record<string, number> = {};
+            for (const [id, v] of Object.entries(latest)) map[id] = v.balance;
+            setLatestAccountBalances(map);
+        } finally {
+            setLoadingAccountBalances(false);
+        }
     };
+
+    const operationalAccountBalances = useMemo(() => {
+        const rows = (accounts || [])
+            .filter((a: any) => !a.status || a.status === 'Ativo')
+            .map((a: any) => ({
+                id: String(a.id),
+                name: String(a.name || ''),
+                bank_name: String(a.bank_name || ''),
+                initial_balance: Number(a.initial_balance || 0),
+            }));
+        return computeAccountBalanceOverview(rows, latestAccountBalances);
+    }, [accounts, latestAccountBalances]);
 
     const fetchCategories = async () => {
         const { data } = await supabase.from('financial_categories').select('*');
@@ -1342,8 +1382,47 @@ const FinancialTransactionList: React.FC = () => {
                 </div>
             </div>
 
-            {/* Saldos Asaas — TM Gestão, TM Seg, TM Security */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 no-print" data-testid="cards-asaas-balances">
+            {/* Saldo operacional (sem XP/investimentos) + Saldos Asaas */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 no-print" data-testid="cards-asaas-balances">
+                <div
+                    className="bg-white rounded-xl shadow-sm border border-blue-200 overflow-hidden"
+                    data-testid="card-total-contas-operacionais"
+                >
+                    <div className="h-1.5 bg-gradient-to-r from-blue-600 to-indigo-700"></div>
+                    <div className="p-4">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                                <Wallet size={14} className="text-blue-600" />
+                                <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Total nas contas</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => { void fetchAccounts(); }}
+                                className="text-gray-400 hover:text-gray-700 transition-colors"
+                                title="Atualizar saldos das contas"
+                                data-testid="btn-refresh-operational-balances"
+                            >
+                                <RefreshCw size={12} className={loadingAccountBalances ? 'animate-spin' : ''} />
+                            </button>
+                        </div>
+                        <p className="text-sm font-black uppercase tracking-tight text-blue-700 mb-1">Sem XP / investimentos</p>
+                        {loadingAccountBalances && operationalAccountBalances.operationalCount === 0 ? (
+                            <div className="flex items-center gap-2 text-gray-400">
+                                <Loader2 size={14} className="animate-spin" />
+                                <span className="text-xs">Carregando...</span>
+                            </div>
+                        ) : (
+                            <>
+                                <p className="text-2xl font-black text-gray-900 tracking-tight" data-testid="text-operational-accounts-total">
+                                    {operationalAccountBalances.operationalTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                </p>
+                                <p className="text-[11px] text-gray-500 mt-1">
+                                    {operationalAccountBalances.operationalCount} conta(s) operacionais · igual ao Cockpit
+                                </p>
+                            </>
+                        )}
+                    </div>
+                </div>
                 {[
                     { key: 'TM GESTÃO', label: 'TM GESTÃO', color: 'from-red-700 to-red-900', accent: 'text-red-700', dot: 'bg-red-700' },
                     { key: 'TM SEGURANCA', label: 'TM SEG', color: 'from-blue-700 to-blue-900', accent: 'text-blue-700', dot: 'bg-blue-700' },
