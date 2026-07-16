@@ -900,8 +900,23 @@ const FinancialTransactionList: React.FC = () => {
         setTransactions(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
     };
 
+    const handleToggleBankPosted = async (t: FinancialTransaction) => {
+        const next = !Boolean(t.bank_posted);
+        const previous = t.bank_posted;
+        setTransactions(prev => prev.map(item => item.id === t.id ? { ...item, bank_posted: next } : item));
+        const { error } = await supabase.from('financial_transactions').update({ bank_posted: next }).eq('id', t.id);
+        if (error) {
+            setTransactions(prev => prev.map(item => item.id === t.id ? { ...item, bank_posted: previous } : item));
+            if (error.code === '42703') {
+                showNotification('Erro', 'Coluna bank_posted não existe. Execute scripts/financial-bank-posted.sql no Supabase.', 'error');
+            } else {
+                showNotification('Erro', 'Falha ao marcar lançado no banco: ' + error.message, 'error');
+            }
+        }
+    };
+
     const renderTransactionTable = (list: FinancialTransaction[], typeLabel: string, showConferencia = false) => {
-        const colCount = showConferencia ? 9 : 8;
+        const colCount = showConferencia ? 10 : 8;
         return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
@@ -915,6 +930,11 @@ const FinancialTransactionList: React.FC = () => {
                             <th className="px-4 py-3 text-center">Forma Pgto</th>
                             <th className="px-4 py-3 text-center">Status</th>
                             {showConferencia && <th className="px-4 py-3 text-center">Conferência</th>}
+                            {showConferencia && (
+                                <th className="px-3 py-3 text-center" title="Já lançado no extrato do banco">
+                                    Banco
+                                </th>
+                            )}
                             <th className="px-4 py-3 text-right">Valor</th>
                             <th className="px-4 py-3 text-right no-print">Ações</th>
                         </tr>
@@ -996,6 +1016,25 @@ const FinancialTransactionList: React.FC = () => {
                                     {showConferencia && (
                                         <td className="px-2 py-3 text-center">
                                             <FinancialDocConferencia transaction={t} onUpdate={handleTransactionDocUpdate} />
+                                        </td>
+                                    )}
+                                    {showConferencia && (
+                                        <td className="px-2 py-3 text-center no-print">
+                                            <button
+                                                type="button"
+                                                onClick={() => { void handleToggleBankPosted(t); }}
+                                                title={t.bank_posted ? 'Lançado no banco — clique para desmarcar' : 'Marcar como lançado no banco'}
+                                                className={`inline-flex flex-col items-center justify-center min-w-[52px] px-1.5 py-1 rounded border text-[8px] font-black uppercase leading-tight transition-all ${
+                                                    t.bank_posted
+                                                        ? 'bg-emerald-100 text-emerald-800 border-emerald-400 hover:bg-emerald-200'
+                                                        : 'bg-gray-100 text-gray-500 border-gray-300 hover:bg-gray-200'
+                                                }`}
+                                                data-testid={`btn-bank-posted-${t.id}`}
+                                                aria-pressed={Boolean(t.bank_posted)}
+                                            >
+                                                <span className="block">Banco</span>
+                                                <span className="block text-[10px]">{t.bank_posted ? '✓' : '—'}</span>
+                                            </button>
                                         </td>
                                     )}
                                     <td className={`px-4 py-3 text-right font-black font-mono text-sm ${t.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>

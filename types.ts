@@ -376,6 +376,8 @@ export interface FinancialTransaction {
   doc_nf_status?: FinancialDocStatus | null;
   doc_comprovante_url?: string | null;
   doc_comprovante_status?: FinancialDocStatus | null;
+  /** true = já lançado/registrado no extrato do banco (controle visual Contas a Pagar) */
+  bank_posted?: boolean | null;
 }
 
 export interface BrandIdentity {
