@@ -206,6 +206,8 @@ export interface ProviderData {
   state?: string;
   alvaraValidity?: string; 
   alvaraUrl?: string;
+  /** Grupo WhatsApp vinculado (mesmo padrão de clients.whatsapp_group_id). */
+  whatsapp_group_id?: string;
   dhl_channel_preference?: 'email' | 'whatsapp' | 'both' | null;
   dhl_solicitation_email?: string | null;
 }

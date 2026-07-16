@@ -147,7 +147,14 @@ export async function handleInboundWhatsappMessage(payload: ZapiInboundPayload):
 }> {
   if (payload.fromMe) return { handled: false, action: "ignored_from_me" };
 
-  const text = extractInboundText(payload);
+  // Vínculo de grupo por menção (@monitoramento cadastra este grupo no cliente X)
+  const { isGroupLinkCommand, handleGroupLinkCommand } = await import("./groupLinkCommand");
+  const inboundText = extractInboundText(payload);
+  if (isGroupLinkCommand(inboundText)) {
+    return handleGroupLinkCommand(payload as any);
+  }
+
+  const text = inboundText;
   const isSummary = isFleetSummaryCommand(text);
   const isOperationalReply = isOperationalPrivateReplyCommand(text);
   if (!isSummary && !isOperationalReply) return { handled: false, action: "not_a_command" };

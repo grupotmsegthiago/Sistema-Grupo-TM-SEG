@@ -55,8 +55,19 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const payload = parseBody(req.body);
-    if (!hasPrivateReplyPhone(payload as any)) {
+    const payload = parseBody(req.body) as any;
+
+    // Comando de vínculo de grupo responde no próprio grupo — não exige participantPhone.
+    let isGroupLinkIntent = false;
+    try {
+      const { extractInboundText } = await import("../../../server/whatsapp/inboundBot");
+      const { isGroupLinkCommand } = await import("../../../server/whatsapp/groupLinkCommand");
+      isGroupLinkIntent = isGroupLinkCommand(extractInboundText(payload || {}));
+    } catch {
+      isGroupLinkIntent = false;
+    }
+
+    if (!isGroupLinkIntent && !hasPrivateReplyPhone(payload)) {
       res.status(200).json({
         ok: true,
         handled: true,

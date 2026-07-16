@@ -954,7 +954,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         {whatsappGroupsError ? (
                             <p className="text-[10px] text-amber-400 font-bold" data-testid="text-whatsapp-groups-error">{whatsappGroupsError} — verifique a conexão do WhatsApp da Central.</p>
                         ) : (
-                            <p className="text-[10px] text-gray-500">O bot precisa estar dentro do grupo. Toda atualização de OS deste cliente será enviada automaticamente para o grupo selecionado.</p>
+                            <p className="text-[10px] text-gray-500">
+                              O bot precisa estar no grupo. Envio automático = print + tabela juntos.
+                              {' '}Também dá para vincular pelo WhatsApp: mencione @monitoramento e digite
+                              {' '}<span className="text-gray-400">cadastra este grupo no cliente NOME</span>.
+                            </p>
                         )}
                     </div>
                     <div className="space-y-1.5">
