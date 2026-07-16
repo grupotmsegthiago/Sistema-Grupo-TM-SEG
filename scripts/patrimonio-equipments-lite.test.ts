@@ -6,12 +6,15 @@ import { join } from 'node:path';
 const root = join(import.meta.dirname, '..');
 
 describe('Patrimônio — API leve e carga rápida', () => {
-  it('handler serverless existe e só lê tabelas no GET', () => {
+  it('handler serverless usa lib leve (sem server/patrimonioStore)', () => {
     const src = readFileSync(join(root, 'api/patrimonio/equipments.ts'), 'utf8');
-    assert.match(src, /loadPatrimonioFromTables/);
-    assert.match(src, /savePatrimonioToTables/);
-    assert.doesNotMatch(src, /migrateLegacyPatrimonioIfNeeded|runFullEquipmentScan/);
+    assert.match(src, /loadPatrimonioLite|patrimonioLiteApi/);
+    assert.match(src, /savePatrimonioLite/);
+    assert.doesNotMatch(src, /server\/patrimonioStore|migrateLegacyPatrimonioIfNeeded|runFullEquipmentScan/);
     assert.match(src, /maxDuration:\s*30/);
+    const lite = readFileSync(join(root, 'lib/patrimonioLiteApi.ts'), 'utf8');
+    assert.match(lite, /patrimonio_equipments/);
+    assert.doesNotMatch(lite, /equipmentBackupService|forensic/);
   });
 
   it('vercel.json roteia /api/patrimonio/equipments para handler leve', () => {

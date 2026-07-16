@@ -1,11 +1,11 @@
 /**
- * GET|PUT /api/patrimonio/equipments — leve (sem Express).
- * Evita FUNCTION_INVOCATION_TIMEOUT da tela Patrimônio & Equipamentos.
- * GET só lê as tabelas dedicadas (sem varredura/migração automática).
+ * GET|PUT /api/patrimonio/equipments — leve (sem Express / sem server/patrimonioStore).
+ * Evita FUNCTION_INVOCATION_TIMEOUT e ERR_MODULE_NOT_FOUND da tela de Patrimônio.
  */
 import { assertAuthenticatedAccess, readBearer, resolveLitePrincipal } from '../../lib/tmsegAuth.js';
 import { createSupabaseAdminClient } from '../../lib/supabaseAdmin.js';
-import { loadPatrimonioFromTables, savePatrimonioToTables } from '../../server/patrimonioStore.js';
+import { loadPatrimonioLite, savePatrimonioLite } from '../../lib/patrimonioLiteApi.js';
+import type { EquipmentRecord } from '../../lib/equipmentRecovery.js';
 
 type LiteReq = {
   method?: string;
@@ -14,7 +14,7 @@ type LiteReq = {
 };
 
 type LiteRes = {
-  status: (n: number) => { json: (b: unknown) => void; end?: () => void };
+  status: (n: number) => { json: (b: unknown) => void };
   setHeader: (k: string, v: string) => void;
 };
 
@@ -59,19 +59,22 @@ export default async function handler(req: LiteReq, res: LiteRes) {
 
   try {
     if (method === 'GET') {
-      const data = await loadPatrimonioFromTables(sb);
+      const data = await loadPatrimonioLite(sb);
       res.status(200).json({ ok: true, ...data });
       return;
     }
 
     const body = parseBody(req.body);
-    const equipments = Array.isArray(body.equipments) ? body.equipments : [];
-    const customTypes = Array.isArray(body.customTypes) ? body.customTypes : [];
-    await savePatrimonioToTables(sb, equipments as any, customTypes as any, 'app');
+    const equipments = (Array.isArray(body.equipments) ? body.equipments : []) as EquipmentRecord[];
+    const customTypes = (Array.isArray(body.customTypes) ? body.customTypes : []) as {
+      value: string;
+      label: string;
+    }[];
+    await savePatrimonioLite(sb, equipments, customTypes, 'app');
     res.status(200).json({ ok: true, count: equipments.length });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
-    const missingTable = /does not exist|não existem/i.test(message);
+    const missingTable = /does not exist|não existem|Could not find the table/i.test(message);
     res.status(missingTable ? 503 : 500).json({
       ok: false,
       error: missingTable
