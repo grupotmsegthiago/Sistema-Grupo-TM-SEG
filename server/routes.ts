@@ -3265,6 +3265,7 @@ export async function registerRoutes(
         res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
         return;
       }
+      // Leitura rápida — sem varredura/migração (evita timeout na Vercel).
       const data = await loadPatrimonio(supabaseAdmin);
       res.json({ ok: true, ...data });
     } catch (e: any) {

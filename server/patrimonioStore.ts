@@ -130,14 +130,15 @@ export async function savePatrimonioToTables(
   console.log(`[patrimonio] ${equipments.length} item(ns) salvos (${source})`);
 }
 
+/**
+ * Leitura rápida para a tela (sem varredura/migração).
+ * Migração legada fica só em migrateLegacyPatrimonioIfNeeded / Varredura completa.
+ */
 export async function loadPatrimonio(sb: SupabaseClient): Promise<PatrimonioLoadResult> {
   if (!(await tablesExist(sb))) {
-    const legacy = await loadEquipmentWithRecovery(sb);
-    return { equipments: legacy.equipments, customTypes: legacy.customTypes, source: 'empty' };
+    return { equipments: [], customTypes: [], source: 'empty' };
   }
-  const current = await loadPatrimonioFromTables(sb);
-  if (current.equipments.length > 0) return current;
-  return migrateLegacyPatrimonioIfNeeded(sb);
+  return loadPatrimonioFromTables(sb);
 }
 
 export interface PatrimonioBackupRow {

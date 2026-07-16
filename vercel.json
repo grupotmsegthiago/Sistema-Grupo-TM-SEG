@@ -172,6 +172,10 @@
       "destination": "/api/whatsapp/groups"
     },
     {
+      "source": "/api/patrimonio/equipments",
+      "destination": "/api/patrimonio/equipments"
+    },
+    {
       "source": "/api/whatsapp/telemetry/dashboard",
       "destination": "/api/whatsapp/telemetry/dashboard"
     },

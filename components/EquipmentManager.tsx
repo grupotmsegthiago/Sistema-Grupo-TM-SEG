@@ -48,13 +48,23 @@ const EquipmentManager: React.FC = () => {
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 20000);
     try {
       const [patRes, usersRes] = await Promise.all([
-        authFetch('/api/patrimonio/equipments'),
+        authFetch('/api/patrimonio/equipments', { signal: controller.signal }),
         supabase.from('system_users').select('id, name').eq('user_type', 'internal').eq('status', 'Ativo').order('name'),
       ]);
-      const patJson = await patRes.json();
-      if (patRes.ok && patJson.equipments) {
+      let patJson: { equipments?: EquipmentRecord[]; customTypes?: { value: string; label: string }[]; source?: string; error?: string } = {};
+      try {
+        patJson = await patRes.json();
+      } catch {
+        throw new Error('Resposta inválida da API de patrimônio (timeout ou HTML de erro).');
+      }
+      if (!patRes.ok) {
+        throw new Error(patJson.error || `Falha ao carregar patrimônio (HTTP ${patRes.status})`);
+      }
+      if (Array.isArray(patJson.equipments)) {
         setEquipments(patJson.equipments);
         setCustomTypes(patJson.customTypes || []);
         if (patJson.source === 'legacy_migrated') {
@@ -67,26 +77,24 @@ const EquipmentManager: React.FC = () => {
       }
     } catch (e) {
       console.error('Erro ao carregar equipamentos:', e);
+      const aborted = e instanceof DOMException && e.name === 'AbortError';
+      showNotification(
+        'Erro',
+        aborted
+          ? 'Tempo esgotado ao carregar patrimônio. Tente novamente ou use Varredura completa.'
+          : e instanceof Error
+            ? e.message
+            : 'Falha ao carregar equipamentos',
+        'error',
+      );
     } finally {
+      window.clearTimeout(timeoutId);
       setIsLoading(false);
     }
-  }, []);
+  }, [showNotification]);
 
   useEffect(() => {
-    loadData();
-    (async () => {
-      try {
-        const patRes = await authFetch('/api/patrimonio/equipments');
-        const patJson = await patRes.json();
-        if (patJson.equipments?.length > 0) return;
-        const resp = await authFetch('/api/equipment/recovery/full-scan');
-        if (!resp.ok) return;
-        const scan = await resp.json();
-        if (scan?.hints?.length) setRecoveryHints(scan.hints);
-      } catch {
-        /* diagnóstico opcional */
-      }
-    })();
+    void loadData();
   }, [loadData]);
 
   useRealtimeRefresh('patrimonio_equipments', () => loadData());
