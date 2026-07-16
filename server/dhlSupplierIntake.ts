@@ -1099,9 +1099,6 @@ export function registerDhlIntakeRoutes(
   // ──────────────────────────────────────────────────────────────
   app.post('/api/zapi/webhook/message-status', async (req: Request, res: Response) => {
     try {
-      // Verificação opcional de autenticidade. Configure ZAPI_WEBHOOK_SECRET e
-      // adicione o mesmo valor no painel Z-API (header customizado ou ?token=).
-      // Se a env não estiver setada, o webhook segue aberto (compatibilidade).
       const expectedSecret = (process.env.ZAPI_WEBHOOK_SECRET || '').trim();
       if (expectedSecret) {
         const provided =
@@ -1112,58 +1109,13 @@ export function registerDhlIntakeRoutes(
           return res.status(401).json({ ok: false, error: 'invalid webhook secret' });
         }
       }
-      const body: any = req.body || {};
-      // Aceita lote (algumas instâncias enviam array no topo) ou objeto único.
-      const events: any[] = Array.isArray(body) ? body : [body];
-      const sb = getSb();
-      let updated = 0;
-
-      for (const ev of events) {
-        if (!ev || typeof ev !== 'object') continue;
-        const status = String(ev.status || ev.messageStatus || ev.type || '').toUpperCase();
-        const ids: string[] = [];
-        if (Array.isArray(ev.ids)) ids.push(...ev.ids.map((x: any) => String(x)));
-        if (ev.messageId) ids.push(String(ev.messageId));
-        if (ev.id) ids.push(String(ev.id));
-        if (ev.zaapId) ids.push(String(ev.zaapId));
-        const uniqIds = Array.from(new Set(ids.filter(Boolean)));
-        if (uniqIds.length === 0) continue;
-
-        const momentMs = typeof ev.momment === 'number' ? ev.momment
-                       : typeof ev.moment === 'number' ? ev.moment
-                       : typeof ev.timestamp === 'number' ? ev.timestamp
-                       : Date.now();
-        const whenIso = new Date(momentMs > 1e12 ? momentMs : momentMs * 1000).toISOString();
-
-        // IMPORTANTE: NÃO sobrescrevemos whatsapp_status — esse campo guarda
-        // o resultado do ENVIO ('success'|'failure'|'skipped') e é consumido
-        // pela UI. Entrega/leitura ficam em colunas dedicadas.
-        const patch: any = {};
-        if (status.includes('READ') || status === 'PLAYED') {
-          patch.whatsapp_read_at = whenIso;
-          patch.whatsapp_delivered_at = whenIso;
-        } else if (status.includes('RECEIVED') || status.includes('DELIVERED') || status === 'SENT' || status.includes('DELIVERY')) {
-          patch.whatsapp_delivered_at = whenIso;
-        } else {
-          continue;
-        }
-
-        const { data: rows, error } = await sb.from('dhl_supplier_intake_resends')
-          .update(patch)
-          .in('whatsapp_message_id', uniqIds)
-          .select('id');
-        if (error) {
-          console.error('[Z-API Webhook] update error:', error.message);
-          continue;
-        }
-        updated += Array.isArray(rows) ? rows.length : 0;
-      }
-
-      return res.json({ ok: true, updated });
+      const { handleZapiMessageStatusWebhook } = await import('../lib/zapiMessageStatusWebhook');
+      const result = await handleZapiMessageStatusWebhook(req.body || {});
+      // Sempre responde 200 para evitar reenvios em loop pela Z-API.
+      return res.json(result);
     } catch (e: any) {
       console.error('[Z-API Webhook] exception:', e?.message);
-      // Sempre responde 200 para evitar reenvios em loop pela Z-API.
-      return res.json({ ok: false, error: e?.message || 'erro interno' });
+      return res.json({ ok: false, updated: 0, error: e?.message || 'erro interno' });
     }
   });
 
