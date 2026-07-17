@@ -1,8 +1,9 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from './supabaseDefaults.js';
+import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL, TMSEG_SUPABASE_PROJECT_REF } from './supabaseDefaults.js';
 import {
   cleanEnv,
   decodeJwtProjectRef,
+  extractSupabaseProjectRef,
   isTmSegSupabaseAnonKey,
   isTmSegSupabaseUrl,
   isValidHttpUrl,
@@ -63,6 +64,24 @@ function decodeJwtRole(key: string): string | null {
   }
 }
 
+/**
+ * Valida se a JWT é service_role do projeto esperado.
+ * Importante: o ref do JWT deve ser comparado com o ref da URL
+ * (`extractSupabaseProjectRef`), NUNCA com `decodeJwtProjectRef(url)` —
+ * URL não é JWT e retorna null, descartando a chave correta.
+ */
+export function isTmSegServiceRoleKey(
+  key: string,
+  expectedRef: string = TMSEG_SUPABASE_PROJECT_REF,
+): { ok: boolean; reason?: 'empty' | 'foreign_project' | 'anon_role' } {
+  const cleaned = cleanEnv(key);
+  if (!cleaned) return { ok: false, reason: 'empty' };
+  const ref = decodeJwtProjectRef(cleaned);
+  if (ref && ref !== expectedRef) return { ok: false, reason: 'foreign_project' };
+  if (decodeJwtRole(cleaned) === 'anon') return { ok: false, reason: 'anon_role' };
+  return { ok: true };
+}
+
 /** URL do projeto Supabase TM SEG (servidor). */
 export function getSupabaseUrl(): string {
   return pickServerUrl();
@@ -84,16 +103,18 @@ export function getSupabaseServiceRoleKey(): string {
     process.env.TMSEG_SUPABASE_SERVICE_ROLE_KEY,
   ];
 
+  // Aceita só service_role do projeto TM SEG. Bug anterior: comparar ref do JWT
+  // com decodeJwtProjectRef(url) descartava a chave correta → fallback ANON →
+  // RLS bloqueava leitura de clients.whatsapp_group_id no envio aos grupos.
+  const expectedRef = extractSupabaseProjectRef(getSupabaseUrl()) || TMSEG_SUPABASE_PROJECT_REF;
+
   for (const candidate of candidates) {
     const key = cleanEnv(candidate);
     if (!key) continue;
-    const ref = decodeJwtProjectRef(key);
-    if (ref && ref !== decodeJwtProjectRef(getSupabaseUrl())) {
-      warnForeignProjectOnce();
-      continue;
-    }
-    if (decodeJwtRole(key) === 'anon') {
-      if (!warnedAnonKeyAsService) {
+    const check = isTmSegServiceRoleKey(key, expectedRef);
+    if (!check.ok) {
+      if (check.reason === 'foreign_project') warnForeignProjectOnce();
+      if (check.reason === 'anon_role' && !warnedAnonKeyAsService) {
         warnedAnonKeyAsService = true;
         console.error(
           '[Supabase] SUPABASE_SERVICE_KEY contém a chave ANON, não service_role. ' +

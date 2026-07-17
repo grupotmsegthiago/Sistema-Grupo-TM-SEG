@@ -24,3 +24,4 @@ client/public/build-meta.json
 *.sw?
 .vercel
 .env.vercel.production
+.env*
