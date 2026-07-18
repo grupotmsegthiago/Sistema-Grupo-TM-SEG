@@ -1,8 +1,11 @@
-// ── Bot inbound: comandos do grupo → resposta no PV (nunca no grupo) ─────────
+// ── Bot inbound: comandos do grupo Torres → resposta no PV ───────────────────
+// Regra (jul/2026): o bot SÓ responde no grupo Torres (resumo/reinício/status).
+// Nos demais grupos NÃO há resposta conversacional — apenas atualizações de OS
+// pelo sistema quando o operador cola o print (formulário + foto via send-group).
 
 import { assertOfficialBotNumber } from "../zapiGuard";
 import { whatsappProviderSendText } from "./providerRegistry";
-import { buildFleetOperationalSummary } from "./fleetSummary";
+import { isTorresOperationalGroup } from "./torresGroupGate";
 
 export function isWhatsappResumoEnabled(): boolean {
   return (process.env.WHATSAPP_RESUMO_ENABLED || "").trim().toLowerCase() === "true";
@@ -159,6 +162,16 @@ export async function handleInboundWhatsappMessage(payload: ZapiInboundPayload):
   const isOperationalReply = isOperationalPrivateReplyCommand(text);
   if (!isSummary && !isOperationalReply) return { handled: false, action: "not_a_command" };
 
+  // Só o grupo Torres pode disparar resposta conversacional do bot.
+  const torresGate = await isTorresOperationalGroup(payload);
+  if (!torresGate.allowed) {
+    return {
+      handled: true,
+      action: torresGate.groupId ? "ignored_non_torres_group" : "ignored_non_torres_chat",
+      error: torresGate.reason,
+    };
+  }
+
   if (!isWhatsappResumoEnabled()) {
     return { handled: true, action: "inbound_bot_disabled", error: "WHATSAPP_RESUMO_ENABLED não está ativo" };
   }
@@ -174,9 +187,13 @@ export async function handleInboundWhatsappMessage(payload: ZapiInboundPayload):
   }
 
   try {
-    const message = isSummary
-      ? (await buildFleetOperationalSummary()).text
-      : buildOperationalPrivateReply(payload);
+    let message: string;
+    if (isSummary) {
+      const { buildFleetOperationalSummary } = await import("./fleetSummary");
+      message = (await buildFleetOperationalSummary()).text;
+    } else {
+      message = buildOperationalPrivateReply(payload);
+    }
     const result = await whatsappProviderSendText(
       replyPhone,
       message,

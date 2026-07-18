@@ -1,7 +1,9 @@
 // ── Filtro global: envio ao grupo WhatsApp do cliente ─────────────────────
-// O bot só posta no grupo quando o funcionário cola/anexa o print da
-// atualização E houve mudança de status (marcos DHL seguem filtro adicional).
+// Política: nos grupos de cliente o bot NÃO conversa — só envia atualização
+// de OS (formulário/tabela + foto) quando o funcionário cola/anexa o print
+// E houve mudança de status (marcos DHL seguem filtro adicional).
 // Alterações rotineiras (agentes, viatura, etc.) sem print NÃO disparam envio.
+// Respostas conversacionais ficam restritas ao grupo Torres (torresGroupGate).
 
 import { shouldSendDhlGroupUpdate } from './dhlGroupUpdateFilter';
 

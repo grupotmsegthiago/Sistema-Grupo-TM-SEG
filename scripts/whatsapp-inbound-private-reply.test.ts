@@ -9,6 +9,7 @@ import {
   resolveInboundChatKind,
   resolveReplyPhone,
 } from '../server/whatsapp/inboundBot';
+import { isTorresOperationalGroupSync } from '../server/whatsapp/torresGroupGate';
 
 test('comando resumo em grupo Z-API responde no telefone do participantPhone', () => {
   const payload = {
@@ -126,4 +127,40 @@ test('pedido operacional em grupo sem remetente privado não responde no grupo',
   assert.equal(isOperationalPrivateReplyCommand(extractInboundText(payload)), true);
   assert.equal(resolveInboundChatKind(payload), 'group');
   assert.equal(resolveReplyPhone(payload), null);
+});
+
+test('comando resumo em grupo de cliente (não Torres) é bloqueado pelo gate', () => {
+  assert.equal(
+    isTorresOperationalGroupSync({
+      isGroup: true,
+      groupId: '120363019502650977-group',
+      chatName: 'Cliente Intermodal',
+      envGroupIds: ['999999999999999999-group'],
+    }),
+    false,
+  );
+});
+
+test('comando resumo no grupo Torres (chatName) passa no gate', () => {
+  assert.equal(
+    isTorresOperationalGroupSync({
+      isGroup: true,
+      groupId: '120363019502650977-group',
+      chatName: 'Torres Vigilância Patrimonial',
+      envGroupIds: [],
+    }),
+    true,
+  );
+});
+
+test('mensagem privada com resumo não passa no gate Torres', () => {
+  assert.equal(
+    isTorresOperationalGroupSync({
+      isGroup: false,
+      groupId: null,
+      chatName: null,
+      envGroupIds: ['120363019502650977-group'],
+    }),
+    false,
+  );
 });
