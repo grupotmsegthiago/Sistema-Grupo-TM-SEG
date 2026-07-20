@@ -17,7 +17,7 @@ import {
   ArrowRight, AlertCircle, ClipboardCheck, Receipt, 
   FileCheck, BarChart3, Lock, ChevronRight, Eye,
   Building2, Truck, CircleDollarSign, Clock, Filter,
-  Upload, Send
+  Upload, Send, Wallet
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import FinancialTransactionForm from './FinancialTransactionForm';
@@ -28,6 +28,11 @@ import { calcMaxPixTransfer } from '../lib/asaasPixTransfer';
 import { matchesFinancialStatusFilter, type FinancialStatusFilter } from '../lib/financialStatusFilter';
 import { computeAccountBalanceOverview } from '../lib/dashboardDiretoria/aggregations';
 import { listBalanceSnapshotsDirect } from '../lib/investment/snapshotClient';
+import {
+  getTransactionOpenAmount,
+  getTransactionPaidAmount,
+} from '../lib/financial/partialPayments';
+import ReceivablePaymentsModal from './ReceivablePaymentsModal';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -89,6 +94,7 @@ const FinancialTransactionList: React.FC = () => {
         label: string;
         balance: number;
     } | null>(null);
+    const [paymentsTx, setPaymentsTx] = useState<FinancialTransaction | null>(null);
 
     const ASAAS_CARD_KEYS = ['TM GESTÃO', 'TM SEGURANCA', 'TM SECURITY'] as const;
 
@@ -153,6 +159,8 @@ const FinancialTransactionList: React.FC = () => {
         checkAccess();
         fetchClients();
         fetchInvoices();
+        // Best-effort: cria tabela de pagamentos parciais se service role + exec_sql existirem
+        void authFetch('/api/financial-payments-init', { method: 'POST' }).catch(() => {});
     }, []);
 
     useRealtimeRefresh(['financial_transactions', 'financial_accounts', 'financial_invoices'], () => { fetchTransactions(); fetchAccounts(); });
@@ -336,8 +344,21 @@ const FinancialTransactionList: React.FC = () => {
     const handleStatusChange = async (t: FinancialTransaction, newStatus: TransactionStatus) => {
         if (newStatus === t.status) return;
         const updates: any = { status: newStatus };
-        if (newStatus === 'PAID') updates.payment_date = t.due_date;
-        else if (t.status === 'PAID') updates.payment_date = null;
+        if (newStatus === 'PAID') {
+            updates.payment_date = t.due_date;
+            updates.amount_paid = t.amount_paid != null && Number(t.amount_paid) > 0 ? t.amount_paid : t.amount;
+            updates.amount_open = 0;
+        } else if (newStatus === 'PARTIALLY_PAID') {
+            const paid = getTransactionPaidAmount(t);
+            updates.amount_paid = paid;
+            updates.amount_open = Math.max(0, Number(t.amount || 0) - paid);
+            if (!updates.payment_date && t.payment_date) updates.payment_date = t.payment_date;
+        } else if (t.status === 'PAID' || t.status === 'PARTIALLY_PAID') {
+            if (newStatus === 'PENDING' || newStatus === 'SCHEDULED' || newStatus === 'OVERDUE') {
+                updates.payment_date = null;
+                updates.amount_open = t.amount;
+            }
+        }
         const original = transactions.find(item => item.id === t.id);
         setTransactions(prev => prev.map(item => item.id === t.id ? { ...item, ...updates } : item));
         const { error } = await supabase.from('financial_transactions').update(updates).eq('id', t.id);
@@ -774,18 +795,29 @@ const FinancialTransactionList: React.FC = () => {
 
     const summaryReceber = useMemo(() => {
         const incomes = periodFilteredTransactions.filter(t => t.type === 'INCOME' && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
-        const pendingList = incomes.filter(t => t.status === 'PENDING');
+        const pendingList = incomes.filter(t => t.status === 'PENDING' || t.status === 'PARTIALLY_PAID');
         const scheduledList = incomes.filter(t => t.status === 'SCHEDULED');
         const paidList = incomes.filter(t => t.status === 'PAID');
+        const partialList = incomes.filter(t => t.status === 'PARTIALLY_PAID');
+        // Recebido = títulos quitados + valores já recebidos nos parciais
+        const paidAmount =
+            paidList.reduce((a, t) => a + Number(t.amount || 0), 0) +
+            partialList.reduce((a, t) => a + getTransactionPaidAmount(t), 0);
+        // Pendente / em aberto = saldo residual (parcial) + títulos ainda não pagos
+        const pendingAmount = pendingList.reduce((a, t) => a + getTransactionOpenAmount(t), 0);
         return {
             total: incomes.reduce((a, t) => a + t.amount, 0),
-            paid: paidList.reduce((a, t) => a + t.amount, 0),
-            pending: pendingList.reduce((a, t) => a + t.amount, 0),
+            paid: paidAmount,
+            pending: pendingAmount,
             scheduled: scheduledList.reduce((a, t) => a + t.amount, 0),
             count: incomes.length,
             paidCount: paidList.length,
             pendingCount: pendingList.length,
             scheduledCount: scheduledList.length,
+            partialCount: partialList.length,
+            openRadar: incomes
+                .filter(t => t.status !== 'PAID' && t.status !== 'CANCELLED')
+                .reduce((a, t) => a + getTransactionOpenAmount(t), 0),
         };
     }, [periodFilteredTransactions, investmentCategoryIds]);
 
@@ -858,13 +890,14 @@ const FinancialTransactionList: React.FC = () => {
                 <div>
                     <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block tracking-widest">Status</label>
                     <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-                        {([['ALL', 'Tudo'], ['PENDING', 'Pendente'], ['PAID', 'Pago'], ['SCHEDULED', 'Agendado'], ['OVERDUE', 'Vencido']] as [StatusFilter, string][]).map(([id, label]) => (
+                        {([['ALL', 'Tudo'], ['PENDING', 'Pendente'], ['PARTIALLY_PAID', 'Parcial'], ['PAID', 'Pago'], ['SCHEDULED', 'Agendado'], ['OVERDUE', 'Vencido']] as [StatusFilter, string][]).map(([id, label]) => (
                             <button key={id} onClick={() => setStatusFilter(id)}
                                 className={`flex-1 py-1.5 text-[10px] font-black uppercase rounded transition-all ${
                                     statusFilter === id 
                                         ? id === 'PAID' ? 'bg-green-500 text-white shadow-sm' 
                                         : id === 'OVERDUE' ? 'bg-red-500 text-white shadow-sm' 
                                         : id === 'PENDING' ? 'bg-amber-500 text-white shadow-sm'
+                                        : id === 'PARTIALLY_PAID' ? 'bg-orange-500 text-white shadow-sm'
                                         : id === 'SCHEDULED' ? 'bg-blue-500 text-white shadow-sm'
                                         : 'bg-white text-gray-900 shadow-sm'
                                         : 'text-gray-500'
@@ -901,7 +934,8 @@ const FinancialTransactionList: React.FC = () => {
     };
 
     const renderTransactionTable = (list: FinancialTransaction[], typeLabel: string, showConferencia = false) => {
-        const colCount = showConferencia ? 9 : 8;
+        const isReceber = typeLabel === 'Receita' || typeLabel === 'RECEBER' || activeStep === 'RECEBER';
+        const colCount = (showConferencia ? 9 : 8) + (isReceber ? 1 : 0);
         return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
@@ -916,6 +950,7 @@ const FinancialTransactionList: React.FC = () => {
                             <th className="px-4 py-3 text-center">Status</th>
                             {showConferencia && <th className="px-4 py-3 text-center">Conferência</th>}
                             <th className="px-4 py-3 text-right">Valor</th>
+                            {isReceber && <th className="px-4 py-3 text-right">Em aberto</th>}
                             <th className="px-4 py-3 text-right no-print">Ações</th>
                         </tr>
                     </thead>
@@ -925,17 +960,22 @@ const FinancialTransactionList: React.FC = () => {
                         ) : list.length === 0 ? (
                             <tr><td colSpan={colCount} className="p-12 text-center text-gray-400 font-bold uppercase italic text-sm">Nenhum lançamento encontrado.</td></tr>
                         ) : list.map(t => {
-                            const isOverdue = t.status === 'PENDING' && t.due_date.split('T')[0] < getTodayBR();
+                            const isOverdueRow = (t.status === 'PENDING' || t.status === 'PARTIALLY_PAID' || t.status === 'OVERDUE') && t.due_date.split('T')[0] < getTodayBR();
+                            const openAmt = getTransactionOpenAmount(t);
+                            const paidAmt = getTransactionPaidAmount(t);
                             return (
-                                <tr key={t.id} className={`hover:bg-gray-50 transition-colors ${isOverdue ? 'bg-red-50/50' : ''}`}>
+                                <tr key={t.id} className={`hover:bg-gray-50 transition-colors ${isOverdueRow ? 'bg-red-50/50' : t.status === 'PARTIALLY_PAID' ? 'bg-orange-50/40' : ''}`}>
                                     <td className="px-4 py-3">
-                                        <span className={`text-xs font-mono font-bold ${isOverdue ? 'text-red-600' : 'text-gray-500'}`}>
+                                        <span className={`text-xs font-mono font-bold ${isOverdueRow ? 'text-red-600' : 'text-gray-500'}`}>
                                             {formatDateBR(t.due_date + 'T12:00:00')}
                                         </span>
-                                        {isOverdue && <span className="block text-[8px] font-black text-red-500 uppercase">Vencido</span>}
+                                        {isOverdueRow && <span className="block text-[8px] font-black text-red-500 uppercase">Vencido</span>}
                                     </td>
                                     <td className="px-4 py-3">
                                         <div className="font-bold text-gray-800 text-sm uppercase">{t.description}</div>
+                                        {isReceber && paidAmt > 0 && t.status !== 'PAID' && (
+                                            <span className="block text-[9px] font-bold text-green-700 mt-0.5">Recebido: {formatCurrency(paidAmt)}</span>
+                                        )}
                                     </td>
                                     <td className="px-4 py-3">
                                         <span className="text-xs font-bold text-gray-600 uppercase">{t.entity_name || 'Geral'}</span>
@@ -979,7 +1019,8 @@ const FinancialTransactionList: React.FC = () => {
                                             onChange={(e) => handleStatusChange(t, e.target.value as TransactionStatus)}
                                             className={`px-2 py-1 rounded-full text-[10px] font-black uppercase border transition-all cursor-pointer outline-none ${
                                                 t.status === 'PAID' ? 'bg-green-100 text-green-800 border-green-200' :
-                                                t.status === 'OVERDUE' || isOverdue ? 'bg-red-100 text-red-700 border-red-200' :
+                                                t.status === 'PARTIALLY_PAID' ? 'bg-orange-100 text-orange-800 border-orange-200' :
+                                                t.status === 'OVERDUE' || isOverdueRow ? 'bg-red-100 text-red-700 border-red-200' :
                                                 t.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-700 border-blue-200' :
                                                 t.status === 'CANCELLED' ? 'bg-gray-100 text-gray-500 border-gray-200' :
                                                 'bg-amber-50 text-amber-700 border-amber-200'
@@ -987,6 +1028,7 @@ const FinancialTransactionList: React.FC = () => {
                                             data-testid={`select-status-${t.id}`}
                                         >
                                             <option value="PENDING">Pendente</option>
+                                            <option value="PARTIALLY_PAID">Parcialmente Pago</option>
                                             <option value="PAID">Pago</option>
                                             <option value="SCHEDULED">Agendado</option>
                                             <option value="OVERDUE">Atrasado</option>
@@ -1001,8 +1043,29 @@ const FinancialTransactionList: React.FC = () => {
                                     <td className={`px-4 py-3 text-right font-black font-mono text-sm ${t.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
                                         {formatCurrency(t.amount)}
                                     </td>
+                                    {isReceber && (
+                                        <td className="px-4 py-3 text-right">
+                                            {openAmt > 0.009 ? (
+                                                <span className="text-sm font-black font-mono text-amber-600" data-testid={`open-amount-${t.id}`}>
+                                                    {formatCurrency(openAmt)}
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs font-bold text-gray-300">—</span>
+                                            )}
+                                        </td>
+                                    )}
                                     <td className="px-4 py-3 text-right no-print">
                                         <div className="flex justify-end gap-1">
+                                            {isReceber && (
+                                                <button
+                                                    onClick={() => setPaymentsTx(t)}
+                                                    className="p-1.5 text-orange-600 hover:bg-orange-50 rounded"
+                                                    title="Pagamentos recebidos"
+                                                    data-testid={`btn-payments-${t.id}`}
+                                                >
+                                                    <Wallet size={14}/>
+                                                </button>
+                                            )}
                                             <button onClick={() => { setEditingId(t.id); setIsFormOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" data-testid={`btn-edit-${t.id}`}><Edit size={14}/></button>
                                             <button onClick={() => handleDeleteTransaction(t.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" data-testid={`btn-delete-${t.id}`}><Trash2 size={14}/></button>
                                         </div>
@@ -1015,7 +1078,14 @@ const FinancialTransactionList: React.FC = () => {
             </div>
             <div className="p-3 bg-gray-50 border-t border-gray-200 flex justify-between items-center text-xs font-bold text-gray-500 uppercase">
                 <span>{list.length} registro(s)</span>
-                <span className="font-mono font-black text-gray-900">Total: {formatCurrency(list.reduce((a, t) => a + t.amount, 0))}</span>
+                <span className="font-mono font-black text-gray-900">
+                    Total: {formatCurrency(list.reduce((a, t) => a + t.amount, 0))}
+                    {isReceber && (
+                        <span className="ml-3 text-amber-600">
+                            Em aberto: {formatCurrency(list.reduce((a, t) => a + getTransactionOpenAmount(t), 0))}
+                        </span>
+                    )}
+                </span>
             </div>
         </div>
         );
@@ -1116,7 +1186,7 @@ const FinancialTransactionList: React.FC = () => {
                                                 {isActive && <span className="text-[8px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded uppercase">Filtrando</span>}
                                             </div>
                                             <p className={`text-lg font-black font-mono ${hasOverdue ? 'text-red-600' : 'text-gray-400'}`}>{overdueList.length}</p>
-                                            <p className="text-[9px] text-red-500 font-bold">{formatCurrency(overdueList.reduce((a, t) => a + t.amount, 0))}</p>
+                                            <p className="text-[9px] text-red-500 font-bold">{formatCurrency(overdueList.reduce((a, t) => a + (isPagar ? t.amount : getTransactionOpenAmount(t)), 0))}</p>
                                             <p className="text-[9px] text-gray-400 font-bold mt-0.5">
                                                 {isActive ? 'clique para limpar filtro' : hasOverdue ? 'clique para filtrar' : 'tudo em dia'}
                                             </p>
@@ -1351,6 +1421,16 @@ const FinancialTransactionList: React.FC = () => {
                             'success',
                         );
                         void fetchAsaasBalances();
+                    }}
+                />
+            )}
+            {paymentsTx && (
+                <ReceivablePaymentsModal
+                    transaction={paymentsTx}
+                    onClose={() => setPaymentsTx(null)}
+                    onUpdated={(patch) => {
+                        setTransactions(prev => prev.map(item => item.id === paymentsTx.id ? { ...item, ...patch } : item));
+                        setPaymentsTx(prev => (prev ? { ...prev, ...patch } : prev));
                     }}
                 />
             )}

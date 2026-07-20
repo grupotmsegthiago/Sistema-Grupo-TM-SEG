@@ -107,10 +107,20 @@ function filterPendingTransactionsInPeriod(
 ): FinancialTransaction[] {
   const { startIso, endIso } = getPeriodRange(period, now);
   return transactions.filter(t => {
-    if (!['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status)) return false;
+    if (!['PENDING', 'SCHEDULED', 'OVERDUE', 'PARTIALLY_PAID'].includes(t.status)) return false;
     const d = getDueDateIso(t);
     return d >= startIso && d <= endIso;
   });
+}
+
+function openAmountOfTransaction(t: FinancialTransaction): number {
+  if (t.amount_open != null && Number.isFinite(Number(t.amount_open))) {
+    return round2(Math.max(0, Number(t.amount_open)));
+  }
+  if (t.status === 'PARTIALLY_PAID' && t.amount_paid != null) {
+    return round2(Math.max(0, Number(t.amount || 0) - Number(t.amount_paid || 0)));
+  }
+  return round2(Number(t.amount || 0));
 }
 
 export const fmtBRL = (v: number) =>
@@ -204,17 +214,17 @@ export function computeCashKpis(
   const pendingReceivable = round2(
     pendingInPeriod
       .filter(t => t.type === 'INCOME' && !isInternalGroupTransfer(t, categories) && !isInvestmentCashMovement(t, investmentIds, categories))
-      .reduce((s, t) => s + Number(t.amount || 0), 0),
+      .reduce((s, t) => s + openAmountOfTransaction(t), 0),
   );
   const pendingPayable = round2(
     pendingInPeriod
       .filter(t => t.type === 'EXPENSE' && !isInternalGroupTransfer(t, categories) && !isInvestmentCashMovement(t, investmentIds, categories))
-      .reduce((s, t) => s + Number(t.amount || 0), 0),
+      .reduce((s, t) => s + openAmountOfTransaction(t), 0),
   );
   const overduePayable = round2(
     allTransactions
-      .filter(t => t.type === 'EXPENSE' && ['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status) && String(t.due_date || '').slice(0, 10) < today && !isInternalGroupTransfer(t, categories) && !isInvestmentCashMovement(t, investmentIds, categories))
-      .reduce((s, t) => s + Number(t.amount || 0), 0),
+      .filter(t => t.type === 'EXPENSE' && ['PENDING', 'SCHEDULED', 'OVERDUE', 'PARTIALLY_PAID'].includes(t.status) && String(t.due_date || '').slice(0, 10) < today && !isInternalGroupTransfer(t, categories) && !isInvestmentCashMovement(t, investmentIds, categories))
+      .reduce((s, t) => s + openAmountOfTransaction(t), 0),
   );
 
   const cashResult = round2(incomePaid - expensePaid);
@@ -344,7 +354,7 @@ export function buildOpenCashOutlook(
   const today = now.toISOString().slice(0, 10);
 
   const open = allTransactions.filter(t => {
-    if (!['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status)) return false;
+    if (!['PENDING', 'SCHEDULED', 'OVERDUE', 'PARTIALLY_PAID'].includes(t.status)) return false;
     if (isInternalGroupTransfer(t, categories)) return false;
     if (isInvestmentCashMovement(t, investmentIds, categories)) return false;
     return true;
@@ -355,24 +365,25 @@ export function buildOpenCashOutlook(
 
   const recvRows = recv.map(t => {
     const row = toCashTitleRow(t, 'pending');
-    return { ...row, entity: resolveOpenCashEntityName(t) };
+    return { ...row, amount: openAmountOfTransaction(t), entity: resolveOpenCashEntityName(t) };
   });
   const payRows = pay.map(t => {
     const row = toCashTitleRow(t, 'pending');
     const entity = resolveOpenCashEntityName(t);
     return {
       ...row,
+      amount: openAmountOfTransaction(t),
       entity: entity === 'Cliente não informado no título' ? (row.entity || entity) : entity,
     };
   });
 
-  const receivableTotal = round2(recv.reduce((s, t) => s + Number(t.amount || 0), 0));
-  const payableTotal = round2(pay.reduce((s, t) => s + Number(t.amount || 0), 0));
+  const receivableTotal = round2(recv.reduce((s, t) => s + openAmountOfTransaction(t), 0));
+  const payableTotal = round2(pay.reduce((s, t) => s + openAmountOfTransaction(t), 0));
   const overdueReceivable = round2(
-    recv.filter(t => getDueDateIso(t) < today).reduce((s, t) => s + Number(t.amount || 0), 0),
+    recv.filter(t => getDueDateIso(t) < today).reduce((s, t) => s + openAmountOfTransaction(t), 0),
   );
   const overduePayable = round2(
-    pay.filter(t => getDueDateIso(t) < today).reduce((s, t) => s + Number(t.amount || 0), 0),
+    pay.filter(t => getDueDateIso(t) < today).reduce((s, t) => s + openAmountOfTransaction(t), 0),
   );
 
   const byEntity = new Map<string, OpenReceivableByEntity>();
@@ -430,7 +441,7 @@ export function buildProvisionHorizon(
 
   const investmentIds = new Set(categories.filter(c => c.group === 'INVESTIMENTOS').map(c => c.id));
   const open = allTransactions.filter(t => {
-    if (!['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status)) return false;
+    if (!['PENDING', 'SCHEDULED', 'OVERDUE', 'PARTIALLY_PAID'].includes(t.status)) return false;
     if (isInternalGroupTransfer(t, categories)) return false;
     if (isInvestmentCashMovement(t, investmentIds, categories)) return false;
     return true;
@@ -753,12 +764,12 @@ export function buildArApByMonth(
 ): Array<{ month: string; receber: number; pagar: number }> {
   const map = new Map<string, { receber: number; pagar: number }>();
   for (const t of allTransactions) {
-    if (!['PENDING', 'SCHEDULED', 'OVERDUE'].includes(t.status)) continue;
+    if (!['PENDING', 'SCHEDULED', 'OVERDUE', 'PARTIALLY_PAID'].includes(t.status)) continue;
     if (isInternalGroupTransfer(t, categories)) continue;
     const month = String(t.due_date || '').slice(0, 7);
     if (!month) continue;
     const row = map.get(month) || { receber: 0, pagar: 0 };
-    const amt = Number(t.amount) || 0;
+    const amt = openAmountOfTransaction(t);
     if (t.type === 'INCOME') row.receber += amt;
     else row.pagar += amt;
     map.set(month, row);

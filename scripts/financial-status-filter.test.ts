@@ -11,9 +11,15 @@ describe("filtro de status Contas a Pagar / Receber", () => {
     assert.equal(matchesFinancialStatusFilter("PAID", "2026-07-17", "SCHEDULED", today), false);
   });
 
-  it("Pendente só retorna PENDING", () => {
+  it("Pendente retorna PENDING e PARTIALLY_PAID", () => {
     assert.equal(matchesFinancialStatusFilter("PENDING", "2026-07-17", "PENDING", today), true);
+    assert.equal(matchesFinancialStatusFilter("PARTIALLY_PAID", "2026-07-17", "PENDING", today), true);
     assert.equal(matchesFinancialStatusFilter("SCHEDULED", "2026-07-17", "PENDING", today), false);
+  });
+
+  it("Parcialmente pago filtra só PARTIALLY_PAID", () => {
+    assert.equal(matchesFinancialStatusFilter("PARTIALLY_PAID", "2026-07-17", "PARTIALLY_PAID", today), true);
+    assert.equal(matchesFinancialStatusFilter("PENDING", "2026-07-17", "PARTIALLY_PAID", today), false);
   });
 
   it("Pago só retorna PAID", () => {

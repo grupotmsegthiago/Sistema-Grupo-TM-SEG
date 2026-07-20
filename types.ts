@@ -325,7 +325,7 @@ export interface SystemLog {
 }
 
 export type TransactionType = 'INCOME' | 'EXPENSE';
-export type TransactionStatus = 'PENDING' | 'PAID' | 'CANCELLED' | 'SCHEDULED' | 'OVERDUE';
+export type TransactionStatus = 'PENDING' | 'PAID' | 'CANCELLED' | 'SCHEDULED' | 'OVERDUE' | 'PARTIALLY_PAID';
 
 export interface FinancialAccount {
   id: string;
@@ -370,6 +370,10 @@ export interface FinancialTransaction {
   notes?: string;
   status_conciliacao?: 'PENDENTE' | 'CONCILIADO' | 'DIVERGENTE';
   payment_method?: 'PIX' | 'BOLETO' | 'TRANSFERENCIA' | null;
+  /** Soma dos pagamentos recebidos (Contas a Receber). */
+  amount_paid?: number | null;
+  /** Saldo em aberto (amount - amount_paid). */
+  amount_open?: number | null;
   doc_boleto_url?: string | null;
   doc_boleto_status?: FinancialDocStatus | null;
   doc_nf_url?: string | null;
