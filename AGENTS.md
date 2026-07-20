@@ -4,6 +4,13 @@
 
 Monorepo React/Vite (frontend) + Express serverless na Vercel (API). Supabase hardcoded em build para o projeto TM SEG. Produção: `https://sistema.grupotmseg.com.br`.
 
+### Projeto Vercel oficial (obrigatório)
+
+- **Único projeto de produção:** `sistema-grupo-tm-seg` (`prj_vFuq5oPg20uHhSg59h9z2UCiRtkZ`).
+- Domínio `sistema.grupotmseg.com.br` e deploys da `main` **sempre** neste projeto.
+- **Proibido** apontar domínio, alias, redeploy ou publicação para o projeto temporário `workspace` (`prj_MAEXVUhoUK722kgAer3vzDT9I215`) — ele não tem Asaas/env completos e já causou regressão em produção.
+- Se o deploy em `sistema-grupo-tm-seg` falhar (ex.: provisioning / store Supabase suspensa), **diagnosticar e corrigir esse projeto** — nunca contornar com `workspace`.
+
 ## Comandos principais
 
 | Ação | Comando |
@@ -64,8 +71,9 @@ Checklist mínimo:
 
 - **Reutilizar** branch/PR existente no mesmo escopo — evitar branches duplicadas.
 - Cloud Agent: branch `cursor/<nome>-3b22`; commit + push + PR antes de considerar entregue.
-- **Publicar** (`publicar`, `deploy`, `colocar no ar`): commit na `dev` → `.\publicar.ps1` (merge `dev`→`main`, push) → confirmar deploy Vercel — **sem pedir confirmação**.
+- **Publicar** (`publicar`, `deploy`, `colocar no ar`): commit na `dev` → `.\publicar.ps1` (merge `dev`→`main`, push) → confirmar deploy Vercel no projeto **`sistema-grupo-tm-seg`** — **sem pedir confirmação**.
 - Nunca commitar `.env`, segredos nem `package-lock.json` gerado só por `npm install` em ambiente diferente do CI.
+- **Nunca** usar o projeto Vercel `workspace` como produção ou fallback.
 
 #### Custo de tokens (Cursor / Gemini)
 
@@ -79,6 +87,8 @@ Checklist mínimo:
 - `AI_INTEGRATIONS_GEMINI_API_KEY` na Vercel vence `GEMINI_API_KEY` — atualizar precedência + redeploy.
 - `vercel.json` > 50 entradas em `functions` → deploy ERROR 0ms.
 - Z-API: faltam **três** vars (`ZAPI_MOBILE_ID`, `ZAPI_MOBILE_TOKEN`, `ZAPI_CLIENT_TOKEN`); Client-Token errado = 403; `mobile/request-code` pode retornar NOT_FOUND → fallback `phone-code` / QR.
+- Alias do domínio para o projeto `workspace` (jul/2026): Asaas e outras envs sumiram na UI — produção oficial é só `sistema-grupo-tm-seg`.
+- Store marketplace Supabase `supabase-beige-lamp` (`store_teoW10cAffHHOcme`) **suspended** com `deployments.required: true` bloqueava todos os deploys em `sistema-grupo-tm-seg`. Não religar com deploy obrigatório; preferir env vars manuais (incl. `SUPABASE_SERVICE_ROLE_KEY` do projeto `ajhmmjuewdsukecaimik`).
 
 ### Node
 
@@ -134,11 +144,12 @@ Legado: `ZAPI_INSTANCE_ID` / `ZAPI_TOKEN` continuam como fallback.
 
 ### Deploy Vercel — troubleshooting
 
-1. **Deployments** → último da `main`: status Ready vs Error.
-2. Deploy **ERROR 0ms / builds=[]**: quase sempre `vercel.json` inválido — limite de **50 entradas** em `functions` ou JSON inválido.
-3. **Runtime** `Cannot find module .../_occurrence-report-html.cjs`: bundles não empacotados — corrigir requires estáticos no handler.
-4. **Vercel Agent** (painel → Agent): pode listar deploys e inspecionar falhas.
-5. `VERCEL_TOKEN` no ambiente cloud: token válido de [vercel.com/account/tokens](https://vercel.com/account/tokens).
+1. Confirmar que o deploy e o domínio estão no projeto **`sistema-grupo-tm-seg`** (nunca `workspace`).
+2. **Deployments** → último da `main`: status Ready vs Error.
+3. Deploy **ERROR 0ms / builds=[]**: quase sempre `vercel.json` inválido — limite de **50 entradas** em `functions` ou JSON inválido; ou integração marketplace com `deployments.required` e store suspended.
+4. **Runtime** `Cannot find module .../_occurrence-report-html.cjs`: bundles não empacotados — corrigir requires estáticos no handler.
+5. **Vercel Agent** (painel → Agent): pode listar deploys e inspecionar falhas.
+6. `VERCEL_TOKEN` no ambiente cloud: token válido de [vercel.com/account/tokens](https://vercel.com/account/tokens).
 
 ### Custos de IA (Cursor / Stripe / Gemini)
 

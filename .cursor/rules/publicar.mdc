@@ -21,11 +21,14 @@ Quando o usuario pedir para **publicar**, **publicar o site**, **publicar o sist
    - Merge `dev` -> `main` OK
    - Push `main` e `dev` OK
    - Voltou para `dev`
-5. Informe o usuario em portugues: publicacao concluida e que a Vercel fara o deploy da `main`.
+5. Confirme que o deploy ficou no projeto Vercel **`sistema-grupo-tm-seg`** (dominio `sistema.grupotmseg.com.br` / `/api/version`).
+6. Informe o usuario em portugues: publicacao concluida e que a Vercel fara o deploy da `main` no projeto padrao.
 
 ## Regras
 
 - **Nunca** commitar `.env`, chaves ou credenciais.
 - **Nunca** usar `git push --force` em `main`.
+- **Nunca** publicar, aliasar dominio ou usar como fallback o projeto Vercel `workspace` — producao oficial e **somente** `sistema-grupo-tm-seg` (`prj_vFuq5oPg20uHhSg59h9z2UCiRtkZ`).
+- Se o deploy em `sistema-grupo-tm-seg` falhar, corrigir esse projeto; nao contornar com `workspace`.
 - Se `publicar.ps1` falhar (auth, conflito, etc.), mostre o erro e oriente o proximo passo.
 - Nao pergunte "quer que eu publique?" — se o pedido foi de publicacao, execute o fluxo.
