@@ -2,6 +2,9 @@ import { authFetch } from '../authFetch';
 import { supabase } from '../supabase';
 import { sumCostBreakdowns } from './employeeCostSummary';
 import type { RhEmployeeCostBreakdown } from './employeeCostSummary';
+// Import estático: evita chunk dinâmico (loadEmployeeCostSummary-XXXX.js) que 404
+// após redeploy quando a aba/cache ainda aponta para o hash antigo.
+import { loadEmployeeCostSummary } from './loadEmployeeCostSummary';
 
 export interface RhEmployeeCostSummaryResponse {
   ok: boolean;
@@ -17,26 +20,38 @@ export async function fetchEmployeeCostSummary(referenceMonth?: string): Promise
 
   try {
     const res = await authFetch(`/api/rh/employees/cost-summary?${qs}`);
-    const json = await res.json().catch(() => ({}));
+    const json = await res.json().catch(() => ({} as Record<string, unknown>));
     if (res.ok && json?.ok !== false && Array.isArray(json?.items)) {
       const items = json.items as RhEmployeeCostBreakdown[];
       return {
         ok: true,
-        referenceMonth: json.referenceMonth || month,
+        referenceMonth: String(json.referenceMonth || month),
         items,
-        totals: json.totals || sumCostBreakdowns(items),
+        totals: (json.totals as ReturnType<typeof sumCostBreakdowns>) || sumCostBreakdowns(items),
       };
     }
-  } catch {
-    /* fallback direto no Supabase */
+    // API respondeu erro — tenta fallback local antes de falhar
+    console.warn('[rh-costs] API falhou, fallback Supabase:', res.status, (json as any)?.error);
+  } catch (e) {
+    console.warn('[rh-costs] API indisponível, fallback Supabase:', e);
   }
 
-  const { loadEmployeeCostSummary } = await import('./loadEmployeeCostSummary');
-  const result = await loadEmployeeCostSummary(supabase, month);
-  return {
-    ok: true,
-    referenceMonth: result.referenceMonth,
-    items: result.items,
-    totals: result.totals,
-  };
+  try {
+    const result = await loadEmployeeCostSummary(supabase, month);
+    return {
+      ok: true,
+      referenceMonth: result.referenceMonth,
+      items: result.items,
+      totals: result.totals,
+    };
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Falha ao carregar custos';
+    return {
+      ok: false,
+      referenceMonth: month,
+      items: [],
+      totals: sumCostBreakdowns([]),
+      error: message,
+    };
+  }
 }

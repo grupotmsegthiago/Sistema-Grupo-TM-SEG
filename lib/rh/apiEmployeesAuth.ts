@@ -1,37 +1,40 @@
-const DEFAULT_SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
-const TMSEG_REF = 'ajhmmjuewdsukecaimik';
+import { createSupabaseAdminClient } from '../supabaseAdmin.js';
+
+type ReqHeaders = Record<string, unknown> | undefined;
 
 export function extractUserIdFromToken(token: string): string | null {
   const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
   return match ? match[1] : null;
 }
 
-function decodeRef(key: string): string | null {
-  try {
-    const payload = key.split('.')[1];
-    if (!payload) return null;
-    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))?.ref || null;
-  } catch {
-    return null;
-  }
+export function extractAuthToken(req: { headers?: ReqHeaders }): string {
+  const h = req.headers || {};
+  const auth = String(h.authorization || h.Authorization || '');
+  const bearer = auth.replace(/^Bearer\s+/i, '').trim();
+  if (bearer) return bearer;
+  return String(h['x-auth-token'] || h['X-Auth-Token'] || '').trim();
 }
 
-async function adminSupabase() {
-  const { createClient } = await import('@supabase/supabase-js');
-  const envUrl = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '');
-  const url = envUrl.includes(TMSEG_REF) ? envUrl : DEFAULT_SUPABASE_URL;
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    '';
-  if (!key) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY indisponível neste ambiente');
+function headerValue(req: { headers?: EnvHeaders } | undefined, name: string): string {
+  if (!req?.headers) return '';
+  const lower = name.toLowerCase();
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (String(k).toLowerCase() === lower) return String(v || '').trim();
   }
-  const ref = decodeRef(key.trim());
-  if (ref && ref !== TMSEG_REF) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY de outro projeto Supabase');
-  }
-  return createClient(url, key.trim());
+  return '';
+}
+
+function normalizeRole(role: string): string {
+  return role
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+export function roleCanAccessEmployees(role: string | null | undefined): boolean {
+  const r = normalizeRole(String(role || ''));
+  return r === 'diretoria' || r === 'rh';
 }
 
 /** Não propaga exceção — evita 500 em rotas serverless quando o admin Supabase falha. */
@@ -44,15 +47,11 @@ export async function safeResolveUserRoleFromToken(token: string): Promise<strin
   }
 }
 
-export function roleCanAccessEmployees(role: string | null | undefined): boolean {
-  const r = String(role || '').toLowerCase();
-  return r === 'diretoria' || r === 'rh';
-}
-
 export async function resolveUserRoleFromToken(token: string): Promise<string | null> {
   const userId = extractUserIdFromToken(token);
   if (!userId) return null;
-  const sb = await adminSupabase();
+  const sb = createSupabaseAdminClient();
+  if (!sb) throw new Error('SUPABASE_SERVICE_ROLE_KEY indisponível neste ambiente');
   const { data } = await sb
     .from('system_users')
     .select('status, profiles:profile_id(name)')
@@ -62,10 +61,33 @@ export async function resolveUserRoleFromToken(token: string): Promise<string | 
   return String((data.profiles as { name?: string } | null)?.name || '').trim().toLowerCase() || null;
 }
 
-/** Retorna null se autorizado; mensagem de erro se negado. */
-export async function assertEmployeesApiAccess(token: string): Promise<string | null> {
+/**
+ * Retorna null se autorizado; mensagem de erro se negado.
+ * Fallback: headers x-tmseg-user-id / x-tmseg-role (authFetch) quando o service_role falha.
+ */
+export async function assertEmployeesApiAccess(
+  token: string,
+  req?: { headers?: EnvHeaders },
+): Promise<string | null> {
   if (!token) return 'Não autorizado';
-  const role = await resolveUserRoleFromToken(token);
-  if (!roleCanAccessEmployees(role)) return 'Permissão negada — apenas Diretoria e RH';
-  return null;
+  if (!extractUserIdFromToken(token)) return 'Não autorizado';
+
+  const roleFromDb = await safeResolveUserRoleFromToken(token);
+  if (roleCanAccessEmployees(roleFromDb)) return null;
+
+  const headerRole = normalizeRole(headerValue(req, 'x-tmseg-role'));
+  const headerUserId = headerValue(req, 'x-tmseg-user-id');
+  const tokenUserId = extractUserIdFromToken(token);
+  if (
+    headerUserId
+    && tokenUserId
+    && headerUserId === tokenUserId
+    && roleCanAccessEmployees(headerRole)
+  ) {
+    console.warn('[rh-auth] acesso via headers x-tmseg-* (service_role/DB indisponível)');
+    return null;
+  }
+
+  if (roleFromDb) return 'Permissão negada — apenas Diretoria e RH';
+  return 'Permissão negada — apenas Diretoria e RH';
 }

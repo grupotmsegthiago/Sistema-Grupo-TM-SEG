@@ -61,10 +61,19 @@ const RhEmployeeList: React.FC<Props> = ({ onAdd, onOpen }) => {
     setCostError(null);
     try {
       const data = await fetchEmployeeCostSummary(month);
+      if (!data.ok && data.error) {
+        setCostByEmployee({});
+        setCostTotals(null);
+        setCostError(data.error);
+        return;
+      }
       const map: Record<string, RhEmployeeCostBreakdown> = {};
       for (const item of data.items) map[item.employeeId] = item;
       setCostByEmployee(map);
       setCostTotals(data.totals);
+      if (data.items.length === 0) {
+        setCostError(null);
+      }
     } catch (e: any) {
       setCostByEmployee({});
       setCostTotals(null);
