@@ -2589,51 +2589,69 @@ export async function registerRoutes(
   const SUPABASE_ANON_KEY = getSupabaseAnonKey();
   const supabaseAdmin = supabase;
 
-  try {
-    const { error: colCheck } = await supabaseAdmin.from('missions').select('billing_release').limit(1);
-    if (colCheck && colCheck.message.includes('does not exist')) {
-    console.log('[Migration] ⚠️  Coluna billing_release NÃO existe na tabela missions.');
-    console.log('[Migration] Execute no Supabase SQL Editor:');
-    console.log("[Migration] ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT '';");
-    console.log("[Migration] ALTER TABLE missions ADD COLUMN IF NOT EXISTS reference_number TEXT DEFAULT '';");
-    console.log("[Migration] ALTER TABLE missions ADD COLUMN IF NOT EXISTS billing_release TEXT DEFAULT '';");
-    console.log("[Migration] NOTIFY pgrst, 'reload schema';");
-
-    app.post('/api/migration/add-mission-columns', async (_req: Request, res: Response) => {
-      res.json({
-        message: 'Execute o seguinte SQL no Supabase SQL Editor:',
-        sql: [
-          "ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT '';",
-          "ALTER TABLE missions ADD COLUMN IF NOT EXISTS reference_number TEXT DEFAULT '';",
-          "ALTER TABLE missions ADD COLUMN IF NOT EXISTS billing_release TEXT DEFAULT '';",
-          "NOTIFY pgrst, 'reload schema';"
-        ]
-      });
-    });
-  } else {
-    console.log('[Migration] Colunas valor_zero_motivo, reference_number, billing_release verificadas/OK.');
-  }
-  } catch (e: any) {
-    console.log('[Migration] billing_release check:', e?.message || 'unknown');
-  }
-
-  // ── Migration: controles manuais do Boletim de Medição ──
-  // Verifica se as colunas já existem; se não, instrui o usuário a rodar o SQL.
-  // Não usa exec_sql porque essa função pode não existir no Supabase do cliente.
-  try {
-    const { error: chkErr } = await supabaseAdmin.from('missions').select('billing_period_override').limit(1);
-    if (chkErr && chkErr.message?.includes('does not exist')) {
-      console.log('[Migration] ⚠️  Colunas billing_period_override / exclude_from_billing NÃO existem.');
-      console.log('[Migration] ⚠️  Execute no Supabase SQL Editor:');
-      console.log('[Migration] ⚠️    ALTER TABLE missions ADD COLUMN IF NOT EXISTS billing_period_override TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS exclude_from_billing BOOLEAN DEFAULT false;');
-      console.log("[Migration] ⚠️    NOTIFY pgrst, 'reload schema';");
-    } else {
-      console.log('[Migration] Colunas billing_period_override e exclude_from_billing OK.');
+  // Checks de coluna — também em background (não bloquear boot).
+  void (async () => {
+    try {
+      const { error: colCheck } = await Promise.race([
+        supabaseAdmin.from('missions').select('billing_release').limit(1),
+        new Promise<{ error: any }>((resolve) =>
+          setTimeout(() => resolve({ error: { message: 'timeout' } }), 5_000),
+        ),
+      ]) as any;
+      if (colCheck && String(colCheck.message || '').includes('does not exist')) {
+        console.log('[Migration] ⚠️  Coluna billing_release NÃO existe na tabela missions.');
+        console.log('[Migration] Execute no Supabase SQL Editor:');
+        console.log("[Migration] ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT '';");
+        console.log("[Migration] ALTER TABLE missions ADD COLUMN IF NOT EXISTS reference_number TEXT DEFAULT '';");
+        console.log("[Migration] ALTER TABLE missions ADD COLUMN IF NOT EXISTS billing_release TEXT DEFAULT '';");
+        console.log("[Migration] NOTIFY pgrst, 'reload schema';");
+      } else if (!colCheck || !String(colCheck.message || '').includes('timeout')) {
+        console.log('[Migration] Colunas valor_zero_motivo, reference_number, billing_release verificadas/OK.');
+      }
+    } catch (e: any) {
+      console.log('[Migration] billing_release check:', e?.message || 'unknown');
     }
-  } catch (e: any) {
-    console.log('[Migration] billing_period_override/exclude_from_billing check error:', e.message || 'unknown');
-  }
+    try {
+      const { error: chkErr } = await Promise.race([
+        supabaseAdmin.from('missions').select('billing_period_override').limit(1),
+        new Promise<{ error: any }>((resolve) =>
+          setTimeout(() => resolve({ error: { message: 'timeout' } }), 5_000),
+        ),
+      ]) as any;
+      if (chkErr && String(chkErr.message || '').includes('does not exist')) {
+        console.log('[Migration] ⚠️  Colunas billing_period_override / exclude_from_billing NÃO existem.');
+        console.log('[Migration] ⚠️  Execute no Supabase SQL Editor:');
+        console.log('[Migration] ⚠️    ALTER TABLE missions ADD COLUMN IF NOT EXISTS billing_period_override TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS exclude_from_billing BOOLEAN DEFAULT false;');
+        console.log("[Migration] ⚠️    NOTIFY pgrst, 'reload schema';");
+      } else if (!chkErr || !String(chkErr.message || '').includes('timeout')) {
+        console.log('[Migration] Colunas billing_period_override e exclude_from_billing OK.');
+      }
+    } catch (e: any) {
+      console.log('[Migration] billing_period_override/exclude_from_billing check error:', e.message || 'unknown');
+    }
+  })();
 
+  app.post('/api/migration/add-mission-columns', async (_req: Request, res: Response) => {
+    res.json({
+      message: 'Execute o seguinte SQL no Supabase SQL Editor:',
+      sql: [
+        "ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT '';",
+        "ALTER TABLE missions ADD COLUMN IF NOT EXISTS reference_number TEXT DEFAULT '';",
+        "ALTER TABLE missions ADD COLUMN IF NOT EXISTS billing_release TEXT DEFAULT '';",
+        "NOTIFY pgrst, 'reload schema';"
+      ]
+    });
+  });
+
+  // CRÍTICO (Vercel): estas migrations NÃO podem bloquear registerRoutes/getApp.
+  // Se exec_sql ou migrations auxiliares travarem (service_role ausente, RPC lenta),
+  // o Promise de getApp nunca resolve e TODAS as rotas Express (/api/supabase/*,
+  // /api/nf/*, etc.) ficam em timeout — sintoma: "Carregando faturas..." infinito.
+  void (async () => {
+    const startupMigTimeoutMs = 20_000;
+    try {
+      await Promise.race([
+        (async () => {
   try {
     await supabaseAdmin.rpc('exec_sql', { sql: `
       CREATE TABLE IF NOT EXISTS monitored_processes (
@@ -2824,6 +2842,20 @@ export async function registerRoutes(
   } catch (e: any) {
     console.warn('[Migration] Billing usage:', e?.message || 'falhou');
   }
+        })(),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`startup migrations timeout ${startupMigTimeoutMs}ms`)),
+            startupMigTimeoutMs,
+          ),
+        ),
+      ]);
+      console.log('[Migration] Batch de startup concluído (background).');
+    } catch (e: any) {
+      console.warn('[Migration] Batch de startup abortado/não bloqueante:', e?.message || e);
+    }
+  })();
+
   registerDhlIntakeRoutes(app, requireAuth, requireRole, resolveUserRole, resolvePrincipal);
   registerRhRoutes(app, requireAuth, requireRole);
 
@@ -3088,8 +3120,28 @@ export async function registerRoutes(
   });
 
   app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
+    // Resposta rápida: a tela de faturas não deve depender deste endpoint.
+    // Checagens de schema com timeout curto — tabela já existe em produção.
+    const soft = async <T>(work: PromiseLike<T>, ms = 4_000): Promise<T | null> => {
+      try {
+        return await Promise.race([
+          Promise.resolve(work),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+        ]);
+      } catch {
+        return null;
+      }
+    };
+
     try {
-      const { data, error } = await supabaseAdmin.from('financial_invoices').select('id', { count: 'exact', head: true });
+      const probe = await soft(
+        supabaseAdmin.from('financial_invoices').select('id', { count: 'exact', head: true }),
+      );
+      if (!probe) {
+        res.json({ ok: true, note: 'probe_timeout_or_skip' });
+        return;
+      }
+      const { error } = probe as { error: any };
 
       const newCols = ['nf_image_url', 'boleto_image_url', 'provider', 'issuer_company', 'boleto_due_date', 'asaas_payment_id', 'asaas_status', 'asaas_invoice_url', 'asaas_bankslip_url', 'asaas_pix_payload', 'asaas_barcode', 'nf_status', 'nf_number'];
 
@@ -3114,26 +3166,18 @@ export async function registerRoutes(
           ALTER TABLE public.financial_invoices ENABLE ROW LEVEL SECURITY;
           CREATE POLICY IF NOT EXISTS "Allow all for financial_invoices" ON public.financial_invoices FOR ALL USING (true) WITH CHECK (true);
         `;
-        const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-          body: JSON.stringify({ query: createSql })
-        });
-        if (!resp.ok) {
-          res.json({ ok: false, note: 'Table does not exist. Please create it via Supabase SQL editor.', sql: createSql });
-          return;
-        }
-      } else {
-        let needsMigration = false;
-        try {
-          const { error: checkErr } = await supabaseAdmin.from('financial_invoices').select('nf_image_url').limit(1);
-          if (checkErr && checkErr.code === '42703') needsMigration = true;
-        } catch { needsMigration = true; }
+        res.json({ ok: false, note: 'Table does not exist. Please create it via Supabase SQL editor.', sql: createSql });
+        return;
+      }
 
-        if (needsMigration) {
-          const migSql = newCols.map(c => `ALTER TABLE public.financial_invoices ADD COLUMN IF NOT EXISTS ${c} TEXT;`).join('\n');
-          res.json({ ok: true, migration_needed: true, sql: migSql, hint: 'Execute this SQL in Supabase SQL Editor to add the new columns' });
-          return;
-        }
+      const check = await soft(
+        supabaseAdmin.from('financial_invoices').select('nf_image_url').limit(1),
+      );
+      const checkErr = (check as any)?.error;
+      if (checkErr && checkErr.code === '42703') {
+        const migSql = newCols.map(c => `ALTER TABLE public.financial_invoices ADD COLUMN IF NOT EXISTS ${c} TEXT;`).join('\n');
+        res.json({ ok: true, migration_needed: true, sql: migSql, hint: 'Execute this SQL in Supabase SQL Editor to add the new columns' });
+        return;
       }
       res.json({ ok: true });
     } catch (e: any) {

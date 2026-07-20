@@ -224,7 +224,9 @@ const FinancialInvoiceControl: React.FC = () => {
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
     try {
-      await authFetch('/api/supabase/init-invoices', { method: 'POST' });
+      // Fonte da verdade: Supabase direto (anon/RLS). NÃO bloquear a lista no
+      // endpoint de init de schema — se o Express estiver em cold-start/migration
+      // travada, esse await nunca resolve e a tela fica em "Carregando..." para sempre.
       const { data, error } = await supabase
         .from('financial_invoices')
         .select('*')
@@ -240,11 +242,23 @@ const FinancialInvoiceControl: React.FC = () => {
           return inv;
         });
         setInvoices(updated);
+      } else {
+        setInvoices([]);
       }
     } catch (e: any) {
       console.error('[InvoiceControl] Fetch error:', e.message);
+      setInvoices([]);
     } finally {
       setLoading(false);
+    }
+    // Schema/init em background (best-effort, com timeout) — espelha Contas a Pagar.
+    try {
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 8_000);
+      await authFetch('/api/supabase/init-invoices', { method: 'POST', signal: ctrl.signal });
+      window.clearTimeout(timer);
+    } catch {
+      /* init opcional — lista já carregou */
     }
   }, []);
 
