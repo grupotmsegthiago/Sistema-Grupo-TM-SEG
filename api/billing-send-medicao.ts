@@ -1,11 +1,12 @@
 /**
  * Envia Boletim de Medição (Excel + PDF) ao e-mail do cliente.
- * Handler leve — não depende do catch-all Express.
+ * Handler leve — não importa emailService/pdfReportService.
  */
 import { authToken, parseJsonBody } from '../lib/email/missionEmailHelpers.js';
-import { sendMedicaoEmail } from '../server/emailService.js';
+import { sendMedicaoEmailLite } from '../lib/billing/sendMedicaoEmailServer.js';
 
 export default async function handler(req: any, res: any) {
+  res.setHeader?.('Cache-Control', 'no-store');
   if (req.method !== 'POST') {
     res.status(405).json({ ok: false, error: 'method_not_allowed' });
     return;
@@ -40,7 +41,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const result = await sendMedicaoEmail({
+    const result = await sendMedicaoEmailLite({
       clientName,
       clientEmail,
       periodLabel: periodLabel || dueDate,
@@ -62,7 +63,7 @@ export default async function handler(req: any, res: any) {
     }
     res.status(200).json({ ok: true, messageId: result.messageId });
   } catch (e: any) {
-    console.error('[billing-send-medicao]', e?.message);
+    console.error('[billing-send-medicao]', e?.message || e);
     res.status(500).json({ ok: false, error: e?.message || 'Erro ao enviar medição' });
   }
 }
