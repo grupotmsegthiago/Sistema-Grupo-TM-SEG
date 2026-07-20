@@ -763,9 +763,9 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
         <Card title="RH — Resumo" subtitle={data.periodLabel}>
           <div className="grid grid-cols-2 gap-3">
             <KpiTile label="Colaboradores" value={String(data.rhSnapshot.activeEmployees)} sub={`${data.rhSnapshot.totalEmployees} cadastrados`} />
-            <KpiTile label="Folha (base)" value={fmtShort(data.rhSnapshot.payrollPreview)} accent="text-violet-400" />
-            <KpiTile label="Comissões pendentes" value={fmtShort(data.rhSnapshot.commissionsPending)} accent="text-amber-400" />
-            <KpiTile label="Bonificações" value={fmtShort(data.rhSnapshot.bonuses)} accent="text-pink-400" />
+            <KpiTile label="Custo equipe" value={fmtShort(data.rhSnapshot.payrollPreview)} accent="text-violet-400" />
+            <KpiTile label="Comissões" value={fmtShort(data.rhSnapshot.commissionsPending)} accent="text-amber-400" />
+            <KpiTile label="Premiações / bônus" value={fmtShort(data.rhSnapshot.bonuses)} accent="text-pink-400" />
           </div>
           <button type="button" onClick={() => goTo('rh-dashboard')} className="mt-3 text-[11px] text-red-700 hover:text-red-800 font-bold flex items-center gap-1">
             Abrir Dashboard RH <ChevronRight size={12} />
@@ -947,19 +947,19 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const renderRh = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
       <div className="lg:col-span-12 grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiTile label="Colaboradores ativos" value={String(data.rhSnapshot.activeEmployees)} sub={`${data.rhSnapshot.totalEmployees} total`} accent="text-blue-400" />
-        <KpiTile label="Folha (salário base)" value={fmtShort(data.rhSnapshot.payrollPreview)} accent="text-violet-400" />
-        <KpiTile label="Comissões pendentes" value={fmtShort(data.rhSnapshot.commissionsPending)} accent="text-amber-400" />
-        <KpiTile label="Bonificações do mês" value={fmtShort(data.rhSnapshot.bonuses)} accent="text-pink-400" />
+        <KpiTile label="Na folha de custo" value={String(data.rhSnapshot.activeEmployees)} sub={`${data.rhSnapshot.totalEmployees} cadastrados`} accent="text-blue-400" />
+        <KpiTile label="Custo equipe" value={fmtShort(data.rhSnapshot.payrollPreview)} accent="text-violet-400" />
+        <KpiTile label="Comissões" value={fmtShort(data.rhSnapshot.commissionsPending)} accent="text-amber-400" />
+        <KpiTile label="Premiações / bônus" value={fmtShort(data.rhSnapshot.bonuses)} accent="text-pink-400" />
       </div>
       <div className="lg:col-span-6">
-        <Card title="Composição da Folha" subtitle="Estimativa mensal">
+        <Card title="Composição do custo" subtitle="Igual à lista RH → Funcionários">
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={[
-                { name: 'Salários', value: data.rhSnapshot.payrollPreview },
+                { name: 'Custo equipe', value: data.rhSnapshot.payrollPreview },
                 { name: 'Comissões', value: data.rhSnapshot.commissionsPending },
-                { name: 'Bonificações', value: data.rhSnapshot.bonuses },
+                { name: 'Prêmios/bônus', value: data.rhSnapshot.bonuses },
               ]}>
                 <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
                 <XAxis dataKey="name" tick={AXIS_TICK} />

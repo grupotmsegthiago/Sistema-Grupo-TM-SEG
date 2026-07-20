@@ -168,9 +168,12 @@ export interface DashboardDiretoriaData {
   accountBalance: number;
   rhSnapshot: {
     totalEmployees: number;
+    /** Colaboradores na mesma base do custo em RH → Funcionários (exclui Desligado). */
     activeEmployees: number;
+    /** Custo total da equipe (= companyCost da lista de Funcionários). */
     payrollPreview: number;
     commissionsPending: number;
+    /** Bonificações + premiações do mês (mesma base da lista). */
     bonuses: number;
   };
   /** Resultado do último recalculo (hora extra / faturamento) ao clicar Atualizar */

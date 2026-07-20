@@ -3,6 +3,7 @@ import { supabase } from '../supabase';
 import { authFetch } from '../authFetch';
 import { useRealtimeRefresh } from '../RealtimeProvider';
 import { listBalanceSnapshotsDirect } from '../investment/snapshotClient';
+import { fetchEmployeeCostSummary } from '../rh/fetchEmployeeCostSummary';
 import type { Client, ClientPriceTable, FinancialCategory, FinancialTransaction, Mission, ProviderCostTable } from '../../types';
 import {
   formatPeriodLabel,
@@ -181,9 +182,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
         accountsRes,
         snapshotsRes,
         empsRes,
-        salRes,
-        commRes,
-        bonRes,
+        costSummaryRes,
       ] = await Promise.all([
         fetchAllPages((from, size) =>
           supabase.from('missions').select('*').or(rangeOr).order('created_at', { ascending: false }).range(from, from + size - 1)
@@ -205,9 +204,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
           return [] as Awaited<ReturnType<typeof listBalanceSnapshotsDirect>>;
         }),
         supabase.from('rh_employees').select('status').is('deleted_at', null),
-        supabase.from('rh_salary_configs').select('base_salary').is('deleted_at', null),
-        supabase.from('rh_commissions').select('commission_amount, paid_at').eq('reference_month', monthRef).is('deleted_at', null),
-        supabase.from('rh_bonuses').select('amount').eq('reference_month', monthRef).is('deleted_at', null),
+        fetchEmployeeCostSummary(monthRef),
       ]);
 
       const byId = new Map<string, Mission>();
@@ -239,18 +236,14 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
       });
 
       const emps = empsRes.data || [];
-      const activeEmployees = emps.filter((e: any) => e.status === 'Ativo').length;
-      const payrollPreview = (salRes.data || []).reduce((s: number, r: any) => s + Number(r.base_salary || 0), 0);
-      const commissionsPending = (commRes.data || [])
-        .filter((r: any) => !r.paid_at)
-        .reduce((s: number, r: any) => s + Number(r.commission_amount || 0), 0);
-      const bonuses = (bonRes.data || []).reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
+      // Mesma fonte de RH → Funcionários (custo total da equipe / variáveis do mês).
+      const cost = costSummaryRes;
       setRhSnapshot({
         totalEmployees: emps.length,
-        activeEmployees,
-        payrollPreview,
-        commissionsPending,
-        bonuses,
+        activeEmployees: cost.items.length,
+        payrollPreview: Number(cost.totals?.companyCost || 0),
+        commissionsPending: Number(cost.totals?.commissions || 0),
+        bonuses: Number(cost.totals?.bonuses || 0) + Number(cost.totals?.awards || 0),
       });
       setAccountBalance(0);
     } catch (e: any) {
@@ -295,7 +288,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
   useEffect(() => { void load(); }, [load]);
 
   useRealtimeRefresh(
-    ['missions', 'financial_transactions', 'financial_categories', 'quotes', 'rh_employees', 'rh_commissions', 'rh_salary_configs', 'financial_accounts'],
+    ['missions', 'financial_transactions', 'financial_categories', 'quotes', 'rh_employees', 'rh_commissions', 'rh_salary_configs', 'rh_awards', 'rh_bonuses', 'financial_accounts'],
     () => { void load(); },
   );
 
