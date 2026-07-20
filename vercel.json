@@ -379,6 +379,10 @@
       "destination": "/api/recalculate-open"
     },
     {
+      "source": "/api/itau/status",
+      "destination": "/api/itau-status"
+    },
+    {
       "source": "/api/asaas/balances",
       "destination": "/api/asaas-balances"
     },
