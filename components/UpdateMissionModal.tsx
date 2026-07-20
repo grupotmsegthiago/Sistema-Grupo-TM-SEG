@@ -91,7 +91,7 @@ async function sendUpdateToClientGroup(
     requirePhoto = false,
 ): Promise<{ sent: boolean; skipped?: boolean; error?: string }> {
     try {
-        if (!clientName || !message) return { sent: false, skipped: true };
+        if (!clientName || !message) return { sent: false, skipped: true, error: 'cliente ou mensagem ausente' };
         if (requirePhoto && !photo) {
             return { sent: false, error: 'foto obrigatória ausente para envio ao grupo' };
         }
@@ -111,8 +111,14 @@ async function sendUpdateToClientGroup(
         });
         const data = await resp.json().catch(() => null);
         if (resp.ok && data?.sent) return { sent: true };
-        if (data?.skipped) return { sent: false, skipped: true };
-        return { sent: false, error: data?.error || `HTTP ${resp.status}` };
+        if (data?.skipped) {
+            return {
+                sent: false,
+                skipped: true,
+                error: data?.reason || 'cliente sem grupo WhatsApp configurado',
+            };
+        }
+        return { sent: false, error: data?.error || data?.detail?.message || `HTTP ${resp.status}` };
     } catch (e: any) {
         return { sent: false, error: e?.message || 'falha de rede' };
     }
@@ -2594,8 +2600,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             let combinedCopied = false;
             // Na conclusão de OS a cópia é feita mais abaixo (texto de fim de
             // missão + foto), então este bloco só roda para atualizações normais.
-            // Envio automático ao grupo de WhatsApp do cliente (se configurado
-            // no cadastro). Fire-and-forget: não bloqueia o fluxo de cópia.
+            // Envio automático ao grupo de WhatsApp do cliente (formulário + foto).
+            // Aguarda o POST antes de fechar o modal — evita perda do envio e mostra toast.
             if (!isNowCompleted) {
                 const hasPrint = hasExplicitUpdatePrint(updatePrintBlobRef.current, updatePrintPreview);
                 const shouldSendGroup = shouldSendClientGroupWhatsApp({
@@ -2608,15 +2614,22 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     previousOccurrence: mission.currentLocation || '',
                 });
                 if (shouldSendGroup) {
-                    const groupPhoto = await resolveExplicitUpdatePrintPhoto();
-                    void sendUpdateToClientGroup(mission.client || '', report, groupPhoto, mission.id, true).then(r => {
+                    const statusLabel = `${finalStatus.toUpperCase()}${finalDescription ? ' — ' + finalDescription.toUpperCase() : ''}`;
+                    // Print colado tem prioridade; sem print (só mudança de status) usa foto TM SEG.
+                    const groupPhoto = await resolveGroupWhatsAppPhoto(statusLabel);
+                    if (!groupPhoto) {
+                        showNotification('WhatsApp', 'Não foi possível gerar a foto da atualização — grupo do cliente não recebeu a OS.', 'warning');
+                    } else {
+                        const r = await sendUpdateToClientGroup(mission.client || '', report, groupPhoto, mission.id, true);
                         if (r.sent) {
-                            showNotification('WhatsApp', 'Atualização enviada automaticamente ao grupo do cliente.', 'success');
+                            showNotification('WhatsApp', 'Atualização (formulário + foto) enviada ao grupo do cliente.', 'success');
+                        } else if (r.skipped) {
+                            showNotification('WhatsApp', `Grupo do cliente não configurado: ${r.error || 'cadastre o WhatsApp do cliente'}.`, 'warning');
                         } else if (r.error) {
                             showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
                         }
-                    }).catch(() => {});
-                } else if (isDHL && hasPrint && !shouldSendGroup && finalStatus !== originalStatus) {
+                    }
+                } else if (isDHL && hasPrint && !shouldSendGroup) {
                     showNotification('WhatsApp', 'Atualização registrada no sistema — NÃO enviada ao grupo DHL (cliente só recebe marcos operacionais com print).', 'info');
                 }
             }
@@ -2741,13 +2754,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         occurrence: finalDescription,
                         previousOccurrence: mission.currentLocation || '',
                     }) && completionPhotoForGroup) {
-                        void sendUpdateToClientGroup(mission.client || '', finalizeShareText, completionPhotoForGroup, mission.id, true).then(r => {
-                            if (r.sent) {
-                                showNotification('WhatsApp', 'Fim de missão enviado automaticamente ao grupo do cliente.', 'success');
-                            } else if (r.error) {
-                                showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
-                            }
-                        }).catch(() => {});
+                        const r = await sendUpdateToClientGroup(mission.client || '', finalizeShareText, completionPhotoForGroup, mission.id, true);
+                        if (r.sent) {
+                            showNotification('WhatsApp', 'Fim de missão (formulário + foto) enviado ao grupo do cliente.', 'success');
+                        } else if (r.skipped) {
+                            showNotification('WhatsApp', `Grupo do cliente não configurado: ${r.error || 'cadastre o WhatsApp do cliente'}.`, 'warning');
+                        } else if (r.error) {
+                            showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
+                        }
                     }
 
                     if (photoBlob && showWhatsappCopyPopup(photoBlob, finalizeShareText)) {

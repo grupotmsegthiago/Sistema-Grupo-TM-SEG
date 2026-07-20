@@ -189,6 +189,27 @@ async function findClientGroup(sb: any, clientName: string): Promise<{ name: str
   };
 }
 
+async function logOutbound(sb: any, row: Record<string, unknown>): Promise<void> {
+  try {
+    await sb.from("whatsapp_outbound_log").insert([{
+      queue_label: row.queue_label || "send-group api",
+      endpoint: row.endpoint || null,
+      destination_type: "group",
+      client_name: row.client_name || null,
+      group_id: row.group_id || null,
+      mission_id: row.mission_id || null,
+      http_status: row.http_status ?? null,
+      success: !!row.success,
+      skipped: !!row.skipped,
+      skip_reason: row.skip_reason || null,
+      error_message: row.error_message || null,
+      zapi_response: row.zapi_response || null,
+    }]);
+  } catch (e: any) {
+    console.warn("[WhatsApp send-group] Falha ao gravar outbound_log:", e?.message || e);
+  }
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "method_not_allowed" });
@@ -220,14 +241,40 @@ export default async function handler(req: any, res: any) {
     const sb = await supabase();
     const client = await findClientGroup(sb, clientName);
     if (!client) {
+      await logOutbound(sb, {
+        endpoint: imagePayload ? "send-image" : "send-text",
+        client_name: clientName,
+        mission_id: missionId,
+        success: false,
+        skipped: true,
+        skip_reason: "cliente não encontrado",
+      });
       res.status(200).json({ skipped: true, reason: "cliente não encontrado no cadastro" });
       return;
     }
     if (!client.groupId) {
+      await logOutbound(sb, {
+        endpoint: imagePayload ? "send-image" : "send-text",
+        client_name: client.name,
+        mission_id: missionId,
+        success: false,
+        skipped: true,
+        skip_reason: "sem grupo configurado",
+      });
       res.status(200).json({ skipped: true, reason: "cliente sem grupo de WhatsApp configurado", clientName: client.name, matchScore: client.matchScore });
       return;
     }
     if (!/-group$|@g\.us$/i.test(client.groupId)) {
+      await logOutbound(sb, {
+        endpoint: imagePayload ? "send-image" : "send-text",
+        client_name: client.name,
+        group_id: client.groupId,
+        mission_id: missionId,
+        success: false,
+        skipped: true,
+        skip_reason: "ID de grupo inválido",
+        error_message: "Destino não é grupo válido",
+      });
       res.status(400).json({ error: "O destino configurado no cadastro do cliente não é um grupo de WhatsApp válido." });
       return;
     }
@@ -238,12 +285,31 @@ export default async function handler(req: any, res: any) {
 
     const creds = await getDefaultZapiCreds(sb);
     if (!creds) {
+      await logOutbound(sb, {
+        endpoint: imagePayload ? "send-image" : "send-text",
+        client_name: client.name,
+        group_id: client.groupId,
+        mission_id: missionId,
+        success: false,
+        skipped: true,
+        skip_reason: "WhatsApp não configurado",
+      });
       res.status(503).json({ error: "WhatsApp não configurado no banco" });
       return;
     }
 
     const guard = await assertOfficialBot(creds);
     if (!guard.ok) {
+      await logOutbound(sb, {
+        endpoint: imagePayload ? "send-image" : "send-text",
+        client_name: client.name,
+        group_id: client.groupId,
+        mission_id: missionId,
+        success: false,
+        skipped: true,
+        skip_reason: "número não oficial",
+        error_message: guard.error || "Número oficial não confirmado",
+      });
       res.status(503).json({ error: guard.error || "Número oficial não confirmado" });
       return;
     }
@@ -261,10 +327,29 @@ export default async function handler(req: any, res: any) {
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
 
     if (!sendResp.ok) {
+      await logOutbound(sb, {
+        endpoint,
+        client_name: client.name,
+        group_id: client.groupId,
+        mission_id: missionId,
+        http_status: sendResp.status || 502,
+        success: false,
+        error_message: typeof data === "object" ? (data?.message || data?.error || text.slice(0, 300)) : String(text).slice(0, 300),
+        zapi_response: data,
+      });
       res.status(sendResp.status || 502).json({ error: "Falha WhatsApp", detail: data });
       return;
     }
 
+    await logOutbound(sb, {
+      endpoint,
+      client_name: client.name,
+      group_id: client.groupId,
+      mission_id: missionId,
+      http_status: sendResp.status,
+      success: true,
+      zapi_response: data,
+    });
     res.status(200).json({ sent: true, endpoint, missionId, ...((data && typeof data === "object") ? data : {}) });
   } catch (e: any) {
     res.status(500).json({ error: e?.message || "Erro interno" });
