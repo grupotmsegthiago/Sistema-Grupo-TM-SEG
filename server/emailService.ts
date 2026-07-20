@@ -927,6 +927,68 @@ function formatDueDate(dateStr: string): string {
   } catch { return dateStr; }
 }
 
+export type MedicaoEmailAttachment = {
+  filename: string;
+  contentBase64: string;
+  contentType: string;
+};
+
+export type MedicaoEmailData = {
+  clientName: string;
+  clientEmail: string;
+  periodLabel: string;
+  amount: number;
+  dueDate: string;
+  dueDays: number;
+  osCount: number;
+  senderName?: string;
+  attachments: MedicaoEmailAttachment[];
+};
+
+/** Envia Boletim de Medição ao cliente com anexos Excel + PDF. */
+export async function sendMedicaoEmail(data: MedicaoEmailData): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const html = baseTemplate(`
+    <h2>📊 Boletim de Medição — ${data.clientName}</h2>
+    <p>Prezado(a) Cliente,</p>
+    <p>Segue em anexo o <strong>Boletim de Medição</strong> referente ao período abaixo, nos formatos Excel e PDF:</p>
+    <table class="info-table">
+      <tr><td>Cliente</td><td><strong>${data.clientName}</strong></td></tr>
+      <tr><td>Período</td><td>${data.periodLabel}</td></tr>
+      <tr><td>Qtd. OS</td><td>${data.osCount}</td></tr>
+      <tr><td>Valor total</td><td style="font-size:18px; font-weight:900; color:#c0392b;">${formatCurrency(data.amount)}</td></tr>
+      <tr><td>Vencimento (Contas a Receber)</td><td><strong>${formatDueDate(data.dueDate)}</strong> (${data.dueDays} dias)</td></tr>
+    </table>
+    <div class="highlight-box">
+      <p><strong>Anexos:</strong> planilha Excel e PDF do boletim. Em caso de dúvidas, responda este e-mail ou fale com <a href="mailto:financeiro@grupotmseg.com.br">financeiro@grupotmseg.com.br</a>.</p>
+    </div>
+    <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
+  `, data.senderName);
+
+  try {
+    const mailOptions: any = {
+      from: SMTP_FROM,
+      to: data.clientEmail,
+      cc: ['financeiro@grupotmseg.com.br'],
+      bcc: BCC_RECIPIENTS,
+      replyTo: 'financeiro@grupotmseg.com.br',
+      subject: `Boletim de Medição — ${data.clientName} — ${data.periodLabel} — ${formatCurrency(data.amount)}`,
+      html,
+      attachments: (data.attachments || []).map((a) => ({
+        filename: a.filename,
+        content: Buffer.from(a.contentBase64, 'base64'),
+        contentType: a.contentType,
+      })),
+    };
+    const info = await transporter.sendMail(mailOptions);
+    const messageId = info.messageId || '';
+    console.log(`[Email] Medição → ${data.clientEmail} | ${data.clientName} | anexos=${mailOptions.attachments.length} | Message-ID: ${messageId}`);
+    return { success: true, messageId };
+  } catch (err: any) {
+    console.error(`[Email] Erro ao enviar medição para ${data.clientEmail}:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function sendBillingEmail(data: BillingEmailData): Promise<{ success: boolean; messageId?: string }> {
   const boletoBlock = data.boletoUrl ? `
     <div style="background:#f0fdf4; border:2px solid #16a34a; border-radius:8px; padding:16px; margin:16px 0; text-align:center;">

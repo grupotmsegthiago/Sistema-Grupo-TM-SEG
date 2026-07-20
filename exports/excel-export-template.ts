@@ -24,6 +24,8 @@ export interface ExcelExportConfig {
    * amarelo claro. Use 'other' (ou omita) para manter o zebrado padrão.
    */
   rowStatus?: Array<'approved' | 'cancelled' | 'pending' | 'other' | undefined>;
+  /** Se false, só retorna o Blob (não dispara download no browser). Default true. */
+  autoDownload?: boolean;
 }
 
 const COLORS = {
@@ -412,13 +414,15 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = fileName.endsWith('.xlsx') ? fileName : `${fileName}.xlsx`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(link.href);
+  if (config.autoDownload !== false) {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = fileName.endsWith('.xlsx') ? fileName : `${fileName}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  }
 
   return blob;
 }

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw, Send } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, resolveCancelledWindow } from '../lib/financialUtils';
 import { resolveStoredClientToll } from '../lib/toll/clientTollBilling';
 import { computeDhlBand, findDhlAutoClient, selectDhlClientTable, DHL_CLIENT_NAME } from '../lib/dhlAutoTableSelector';
@@ -68,6 +68,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [boletimFilter, setBoletimFilter] = useState<'todas' | 'aprovadas' | 'pendentes'>('todas');
     const [includeOsInput, setIncludeOsInput] = useState('');
     const [actionBusy, setActionBusy] = useState<string | null>(null);
+    const [sendMedicaoLoading, setSendMedicaoLoading] = useState(false);
     const [isRecalculating, setIsRecalculating] = useState(false);
     const [recalcResult, setRecalcResult] = useState<{ total: number; updated: number; skipped: number; errors: number } | null>(null);
 
@@ -1449,8 +1450,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const fmtBRLExcel = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-    const handleExportExcel = useCallback(async () => {
-        if (rowsData.length === 0) return;
+    const buildMedicaoExcelBlob = useCallback(async (autoDownload = true): Promise<Blob | null> => {
+        if (rowsData.length === 0) return null;
 
         const { exportFormattedExcel } = await import('../exports/excel-export-template');
 
@@ -1538,7 +1539,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             return 'pending';
         });
 
-        await exportFormattedExcel({
+        return await exportFormattedExcel({
             title: `BOLETIM DE MEDIÇÃO`,
             subtitle: `${getPeriodLabel()} — REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS`,
             headerGroups: [
@@ -1562,8 +1563,181 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             companyCnpj: '28.804.378/0001-67',
             footerLeft: 'DOCUMENTO GERADO ELETRONICAMENTE PELO GRUPO TM SEG',
             footerRight: reportMode === 'fornecedor' ? 'ASSINATURA / CARIMBO FORNECEDOR' : 'ASSINATURA / CARIMBO CLIENTE',
+            autoDownload,
         });
     }, [rowsData, grandTotal, displayName, reportMode, startDate, endDate, isCeslogBilling, isCevaBilling, isDhlBilling, isIntermodalBilling]);
+
+    const handleExportExcel = useCallback(async () => {
+        await buildMedicaoExcelBlob(true);
+    }, [buildMedicaoExcelBlob]);
+
+    /**
+     * Envia boletim (Excel + PDF) ao e-mail de medição do cliente e cria
+     * Contas a Receber com vencimento 30 dias (70 se CEVA).
+     */
+    const handleSendMedicaoToClient = useCallback(async () => {
+        if (reportMode !== 'cliente') {
+            alert('Envio de medição disponível apenas no boletim de Cliente.');
+            return;
+        }
+        if (!selectedClient || rowsData.length === 0 || !reportGenerated) {
+            alert('Gere o boletim de um cliente antes de enviar.');
+            return;
+        }
+        const pendCount = rowsData.filter(r => !r.isApproved).length;
+        if (pendCount > 0) {
+            alert(`Há ${pendCount} OS sem aprovação. Aprove todas antes de enviar a medição.`);
+            return;
+        }
+
+        const clientObj = clients.find(c => c.id.toString() === selectedClient) as any;
+        const clientName = clientObj?.trading_name || clientObj?.name || displayName || 'Cliente';
+        let email = String(clientObj?.medicao_email || clientObj?.email || clientObj?.operational_email || '').trim();
+        if (!email.includes('@')) {
+            const typed = window.prompt(
+                `Informe o e-mail de medição para ${clientName}:`,
+                email || '',
+            );
+            if (!typed || !typed.includes('@')) {
+                alert('E-mail de medição inválido. Cadastre o e-mail no cliente ou informe um válido.');
+                return;
+            }
+            email = typed.trim();
+            await saveMedicaoEmailToClient(selectedClient, email);
+        }
+
+        const { computeMedicaoDueDate } = await import('../lib/billing/medicaoDueDate');
+        const { dueDate, days } = computeMedicaoDueDate({
+            clientName,
+            fromDateIso: new Date().toISOString().slice(0, 10),
+        });
+
+        const ok = window.confirm(
+            `Enviar medição para ${clientName}?\n\n` +
+            `E-mail: ${email}\n` +
+            `Anexos: Excel + PDF\n` +
+            `Contas a Receber: R$ ${grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} · venc. ${dueDate.split('-').reverse().join('/')} (${days} dias${days === 70 ? ' — CEVA' : ''})`,
+        );
+        if (!ok) return;
+
+        setSendMedicaoLoading(true);
+        setAiStatus('Gerando Excel e PDF da medição...');
+        try {
+            const excelBlob = await buildMedicaoExcelBlob(false);
+            if (!excelBlob) throw new Error('Falha ao gerar Excel da medição');
+
+            const { generateMedicaoPdfBlob, blobToBase64 } = await import('../lib/billing/medicaoPdfExport');
+            setAiStatus('Gerando PDF da medição...');
+            const pdfBlob = await generateMedicaoPdfBlob('print-area');
+
+            const periodShort = startDate && endDate
+                ? `${startDate.replace(/-/g, '')}_${endDate.replace(/-/g, '')}`
+                : 'PERIODO';
+            const safeClient = clientName.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 24);
+            const excelName = `Boletim_${safeClient}_${periodShort}.xlsx`;
+            const pdfName = `Boletim_${safeClient}_${periodShort}.pdf`;
+            const periodLabel = getPeriodLabel();
+            const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
+            const refNumber = `MED-${periodShort}-${selectedClient}`;
+
+            setAiStatus('Criando Contas a Receber...');
+            const txNotes = `Boletim de Medição enviado ao cliente | Vencimento ${days} dias | Ref ${refNumber} | ${periodLabel}`;
+            const { error: txErr } = await supabase.from('financial_transactions').insert({
+                description: `Medição ${periodLabel} — ${clientName}`,
+                amount: grandTotal,
+                type: 'INCOME',
+                status: 'PENDING',
+                due_date: dueDate,
+                entity_type: 'Client',
+                entity_id: selectedClient,
+                entity_name: clientName,
+                notes: txNotes,
+                created_by: userName,
+                amount_paid: 0,
+                amount_open: grandTotal,
+            });
+            if (txErr && txErr.code === '42703') {
+                const retry = await supabase.from('financial_transactions').insert({
+                    description: `Medição ${periodLabel} — ${clientName}`,
+                    amount: grandTotal,
+                    type: 'INCOME',
+                    status: 'PENDING',
+                    due_date: dueDate,
+                    entity_type: 'Client',
+                    entity_id: selectedClient,
+                    entity_name: clientName,
+                    notes: txNotes,
+                    created_by: userName,
+                });
+                if (retry.error) throw retry.error;
+            } else if (txErr) {
+                throw txErr;
+            }
+
+            // Espelho em Controle de Faturas (sem cobrança Asaas — só título/medição)
+            try {
+                const invPayload: any = {
+                    client: clientName,
+                    number: refNumber,
+                    amount: grandTotal,
+                    date: new Date().toISOString().slice(0, 10),
+                    status: 'EMITIDA',
+                    notes: `Medição enviada por e-mail com Excel/PDF | Contas a Receber venc. ${dueDate} (${days}d)`,
+                    created_by: userName,
+                    boleto_due_date: dueDate,
+                };
+                await supabase.from('financial_invoices').insert(invPayload);
+            } catch (e) {
+                console.warn('[Medição] Fatura local não criada (não bloqueia envio):', e);
+            }
+
+            setAiStatus('Enviando e-mail com anexos...');
+            const excelB64 = await blobToBase64(excelBlob);
+            const pdfB64 = await blobToBase64(pdfBlob);
+            const res = await authFetch('/api/billing-send-medicao', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    clientName,
+                    clientEmail: email,
+                    periodLabel,
+                    amount: grandTotal,
+                    dueDate,
+                    dueDays: days,
+                    osCount: rowsData.length,
+                    senderName: userName,
+                    attachments: [
+                        {
+                            filename: excelName,
+                            contentBase64: excelB64,
+                            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        },
+                        {
+                            filename: pdfName,
+                            contentBase64: pdfB64,
+                            contentType: 'application/pdf',
+                        },
+                    ],
+                }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok || !json?.ok) {
+                throw new Error(json?.error || `Falha no envio do e-mail (HTTP ${res.status})`);
+            }
+
+            setAiStatus(`Medição enviada para ${email}. Contas a Receber criado (venc. ${dueDate.split('-').reverse().join('/')} · ${days} dias).`);
+            alert(`Medição enviada com sucesso!\n\nE-mail: ${email}\nContas a Receber: R$ ${grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\nVencimento: ${dueDate.split('-').reverse().join('/')} (${days} dias)`);
+        } catch (e: any) {
+            console.error('[Enviar Medição]', e);
+            setAiStatus('');
+            alert('Erro ao enviar medição: ' + (e?.message || e));
+        } finally {
+            setSendMedicaoLoading(false);
+        }
+    }, [
+        reportMode, selectedClient, rowsData, reportGenerated, clients, displayName,
+        grandTotal, startDate, endDate, buildMedicaoExcelBlob,
+    ]);
 
     const handleExportDhlFaturamento = useCallback(async () => {
         if (rowsData.length === 0) return;
@@ -3486,6 +3660,18 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                         <ScanLine size={18} /> Colar Planilha
                                     </button>
                                     </>
+                                    )}
+                                    {reportMode === 'cliente' && (
+                                    <button
+                                        onClick={() => void handleSendMedicaoToClient()}
+                                        disabled={sendMedicaoLoading || blocked}
+                                        title={blocked ? `Há ${pendCount} OS sem aprovação` : 'Envia Excel + PDF ao cliente e cria Contas a Receber (30 dias / 70 CEVA)'}
+                                        className={`px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2 text-white ${sendMedicaoLoading || blocked ? 'bg-orange-300 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700'}`}
+                                        data-testid="btn-send-medicao-cliente"
+                                    >
+                                        {sendMedicaoLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                                        Enviar Medição P/ Cliente
+                                    </button>
                                     )}
                                     <button onClick={handleExportExcel} className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
                                         <FileSpreadsheet size={18} /> Excel
