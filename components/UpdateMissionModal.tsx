@@ -31,6 +31,7 @@ import type { PrintPipelineTimings } from '../lib/printPipelineTypes';
 import DhlOccurrenceReportModal from './DhlOccurrenceReportModal';
 import { useNotification } from '../lib/NotificationContext';
 import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
+import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
   Layers, Navigation, History, 
@@ -897,12 +898,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         return allowedFirstNames.includes(firstName) || allowedFirstNames.some(n => name.includes(n));
     }, [currentUser]);
 
-    // Financeiro (Bárbara): pode editar OS concluída/aprovada — inclusive KM final
-    // de missões veladas TM SEG/ATIVA enviadas depois da conclusão.
+    // Supervisão financeira (Bárbara / Giovanna): pode editar OS concluída/aprovada —
+    // inclusive KM final de missões veladas TM SEG/ATIVA enviadas depois da conclusão.
     const isBarbaraFinance = useMemo(() => {
         if (!currentUser) return false;
-        const name = (currentUser.name || currentUser.username || '').toLowerCase();
-        return name.includes('barbara') || name.includes('bárbara');
+        return isFinanceSupervisorName(currentUser.name || currentUser.username);
     }, [currentUser]);
 
     const hasPrivilegedOsEdit = useMemo(() => {

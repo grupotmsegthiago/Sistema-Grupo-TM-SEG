@@ -34,6 +34,7 @@ import {
   getMissionOpsMissingFields,
   isMissionOpsIncomplete,
 } from '../lib/missionOpsIncomplete';
+import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import html2canvas from 'html2canvas';
 import FilterableSelect, { type FilterableSelectOption } from './FilterableSelect';
 
@@ -526,10 +527,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     [mission],
   );
   const opsDataSectionRef = useRef<HTMLDivElement>(null);
-  // Financeiro (Bárbara): liberação permanente para editar e aprovar faturamento,
-  // inclusive OS verificadas pelo Controller ou já salvas/aprovadas.
+  // Supervisão financeira (Bárbara / Giovanna): liberação permanente para editar e aprovar
+  // faturamento, inclusive OS verificadas pelo Controller ou já salvas/aprovadas.
   const isBarbaraFinance = useMemo(() => {
-    return userNameLower.includes('barbara') || userNameLower.includes('bárbara');
+    return isFinanceSupervisorName(userNameLower);
   }, [userNameLower]);
   const canGenerateDhlOccurrenceReport = useMemo(() => userRoleLower === 'diretoria', [userRoleLower]);
   const dhlSeNumber = String((mission as any)?.dhl_se_number || '').trim();
@@ -547,7 +548,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // O acionamento é registrado em system_logs (MissionEditHistory).
   const canActivateFullEdit = useMemo(() => {
     return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
-      || userNameLower.includes('barbara') || userNameLower.includes('bárbara') || userNameLower.includes('thiago')
+      || isFinanceSupervisorName(userNameLower) || userNameLower.includes('thiago')
       || userNameLower.includes('simone')
       || userNameLower.includes('plinio') || userNameLower.includes('plínio');
   }, [userRoleLower, userNameLower]);
@@ -559,7 +560,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // pegar o comercial Thiago Arruda.
   const canOverrideAutoProvider = useMemo(() => {
     return userRoleLower === 'administrador' || userRoleLower === 'diretoria' || userRoleLower === 'controller'
-      || userNameLower.includes('barbara') || userNameLower.includes('bárbara')
+      || isFinanceSupervisorName(userNameLower)
       || userNameLower.includes('thiago moreira')
       || userNameLower.includes('simone');
   }, [userRoleLower, userNameLower]);
@@ -1488,7 +1489,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const u = JSON.parse(localStorage.getItem('userData') || '{}');
           const uRole = (u.role || '').toLowerCase();
           const uName = (u.name || '').toLowerCase();
-          const isPrivileged = uRole === 'administrador' || uRole === 'diretoria' || uName.includes('barbara') || uName.includes('bárbara') || uName.includes('thiago');
+          const isPrivileged = uRole === 'administrador' || uRole === 'diretoria' || isFinanceSupervisorName(u.name) || uName.includes('thiago');
           if (!isPrivileged) {
               showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}`, 'error');
               return;
@@ -1553,7 +1554,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const u = JSON.parse(localStorage.getItem('userData') || '{}');
           const uRole = (u.role || '').toLowerCase();
           const uName = (u.name || '').toLowerCase();
-          const isPrivileged = uRole === 'administrador' || uRole === 'diretoria' || uRole === 'controller' || uName.includes('barbara') || uName.includes('bárbara') || uName.includes('thiago');
+          const isPrivileged = uRole === 'administrador' || uRole === 'diretoria' || uRole === 'controller' || isFinanceSupervisorName(u.name) || uName.includes('thiago');
           if (!isPrivileged) {
               showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro ou Diretoria podem editar.`, 'error');
               return;
@@ -2233,7 +2234,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const nameLower = (userName || '').toLowerCase();
       const roleLower = (userRole || '').toLowerCase();
       if (nameLower.includes('daniel') || nameLower.includes('michelle')) return { stage: 'auditor', label: 'Aprovado pelo Auditor' };
-      if (roleLower === 'administrador' || nameLower.includes('barbara') || nameLower.includes('bárbara')) return { stage: 'financeiro', label: 'Aprovado pelo Financeiro' };
+      if (roleLower === 'administrador' || isFinanceSupervisorName(userName)) return { stage: 'financeiro', label: 'Aprovado pelo Financeiro' };
       if (roleLower === 'diretoria' || nameLower.includes('thiago')) return { stage: 'diretoria', label: 'Aprovado pela Diretoria' };
       if (roleLower === 'controller') return { stage: 'controller', label: 'Aprovado pelo Controller' };
       return { stage: 'operacional', label: `Aprovado por ${userName}` };
@@ -2253,7 +2254,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (!hasDiretoria) {
           if (!hasFinanceiro) {
               if (!hasAuditor) missing.push('Daniel');
-              missing.push('Barbara');
+              missing.push('Financeiro');
           }
           missing.push('Diretoria');
       }
@@ -2277,11 +2278,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const uRole = (u.role || '').toLowerCase();
           // Usuários com poder permanente de editar e re-aprovar a qualquer momento.
           isPrivilegedReapprover = uName.includes('daniel') || uName.includes('michelle')
-              || uName.includes('barbara') || uName.includes('bárbara')
+              || isFinanceSupervisorName(u.name)
               || uName.includes('thiago') || uName.includes('plinio') || uName.includes('plínio');
           if (uName.includes('plinio') || uName.includes('plínio')) currentUserStage = 'diretoria';
           else if (uName.includes('daniel') || uName.includes('michelle')) currentUserStage = 'auditor';
-          else if (uRole === 'administrador' || uName.includes('barbara') || uName.includes('bárbara')) currentUserStage = 'financeiro';
+          else if (uRole === 'administrador' || isFinanceSupervisorName(u.name)) currentUserStage = 'financeiro';
           else if (uRole === 'diretoria' || uName.includes('thiago')) currentUserStage = 'diretoria';
           else if (uRole === 'controller') currentUserStage = 'controller';
       } catch {}
@@ -2501,7 +2502,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               // atualiza o carimbo do estágio com o nome e a data mais recente.
               const uNameLow = (userName || '').toLowerCase();
               const allowReapprove = uNameLow.includes('plinio') || uNameLow.includes('plínio')
-                  || uNameLow.includes('barbara') || uNameLow.includes('bárbara')
+                  || isFinanceSupervisorName(userName)
                   || uNameLow.includes('daniel') || uNameLow.includes('michelle')
                   || uNameLow.includes('thiago');
               const existingIdx = newLog.findIndex(l => l.stage === stage);

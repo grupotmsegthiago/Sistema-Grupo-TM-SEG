@@ -509,7 +509,7 @@ Qualquer dúvida, estamos a disposição.
         const missing: string[] = [];
         if (!hasDiretoria) {
             if (!hasAuditor) missing.push('Daniel');
-            if (!hasFinanceiro) missing.push('Barbara');
+            if (!hasFinanceiro) missing.push('Financeiro');
             missing.push('Diretoria');
         }
         let waitingDays = 0;

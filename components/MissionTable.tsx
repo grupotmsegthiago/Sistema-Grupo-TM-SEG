@@ -47,6 +47,7 @@ import ClientCommitteePresentation from './ClientCommitteePresentation';
 import MissionOperationalReport from './MissionOperationalReport';
 import MissionTeamPresenceBoard from './MissionTeamPresenceBoard';
 import { hasFullMissionListAccess, isMissionClientScopeRestricted } from '../lib/missionAccess';
+import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 const cevaLogoPath = '/logo_ceva.png';
 
 
@@ -274,7 +275,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const nameLower = (currentUser.name || '').toLowerCase();
     const roleLower = (currentUser.role || '').toLowerCase();
     if (roleLower === 'comercial') return false;
-    return nameLower.includes('daniel') || nameLower.includes('michelle') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago moreira') || roleLower === 'controller';
+    return nameLower.includes('daniel') || nameLower.includes('michelle') || isFinanceSupervisorName(currentUser.name) || nameLower.includes('thiago moreira') || roleLower === 'controller';
   }, [currentUser]);
 
   const isDiretoriaRole = useMemo(() => {
@@ -297,7 +298,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const nameLower = (currentUser.name || '').toLowerCase();
     const roleLower = (currentUser.role || '').toLowerCase();
     const isAdminOrAdvanced = ['administrador', 'avançado', 'avancado'].includes(roleLower) || currentUser.permissions?.includes('*');
-    return isAdminOrAdvanced || nameLower.includes('thiago moreira') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('simone');
+    return isAdminOrAdvanced || nameLower.includes('thiago moreira') || isFinanceSupervisorName(currentUser.name) || nameLower.includes('simone');
   }, [currentUser]);
 
   // ADMINISTRADOR e AVANÇADO são OBRIGADOS a selecionar a tabela: o alerta abre
@@ -411,9 +412,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const canEditMission = useMemo(() => {
       if (!currentUser) return false;
       const roleLower = (currentUser.role || '').toLowerCase();
-      const nameLower = (currentUser.name || currentUser.username || '').toLowerCase();
-      const isBarbara = nameLower.includes('barbara') || nameLower.includes('bárbara');
-      return isBarbara
+      return isFinanceSupervisorName(currentUser.name || currentUser.username)
           || ['diretoria', 'administrador', 'avançado', 'avancado', 'operador', 'comercial', 'financeiro'].includes(roleLower)
           || currentUser.permissions?.includes('*');
   }, [currentUser]);
@@ -1415,7 +1414,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         const nameLower = (currentUser.name || '').toLowerCase();
         const roleLower = (currentUser.role || '').toLowerCase();
         if (nameLower.includes('daniel') || nameLower.includes('michelle')) return 'auditor';
-        if (nameLower.includes('barbara') || nameLower.includes('bárbara') || roleLower === 'administrador') return 'financeiro';
+        if (isFinanceSupervisorName(currentUser.name) || roleLower === 'administrador') return 'financeiro';
         if (nameLower.includes('thiago moreira') || roleLower === 'diretoria') return 'diretoria';
         return null;
     }, [currentUser]);

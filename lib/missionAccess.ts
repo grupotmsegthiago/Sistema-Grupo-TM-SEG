@@ -3,6 +3,8 @@
  * Isolamento por cliente é client-side — admin/liberação financeira devem ver tudo.
  */
 
+import { isFinanceSupervisorName } from './financeSupervisorAccess';
+
 export type MissionAccessUser = {
   role?: string | null;
   name?: string | null;
@@ -10,15 +12,14 @@ export type MissionAccessUser = {
   clientId?: string | null;
 };
 
-/** Administrador (ou acesso total / Bárbara) — libera OS para faturamento e vê todas. */
+/** Administrador (ou acesso total / supervisão financeira) — libera OS para faturamento e vê todas. */
 export function hasFullMissionListAccess(user: MissionAccessUser | null | undefined): boolean {
   if (!user) return false;
   if (Array.isArray(user.permissions) && user.permissions.includes('*')) return true;
   const roleLower = String(user.role || '').toLowerCase().trim();
   if (roleLower === 'administrador') return true;
-  const nameLower = String(user.name || '').toLowerCase();
-  // Bárbara (financeiro) — independente do rótulo exato do perfil no banco.
-  if (nameLower.includes('barbara') || nameLower.includes('bárbara')) return true;
+  // Bárbara / Giovanna — independente do rótulo exato do perfil no banco.
+  if (isFinanceSupervisorName(user.name)) return true;
   return false;
 }
 

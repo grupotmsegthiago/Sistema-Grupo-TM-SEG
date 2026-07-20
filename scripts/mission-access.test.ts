@@ -14,9 +14,11 @@ describe('missionAccess — lista completa para administrador / Bárbara', () =>
     assert.equal(isMissionClientScopeRestricted(user), false);
   });
 
-  it('Bárbara tem acesso total (libera faturamento)', () => {
+  it('Bárbara e Giovanna têm acesso total (libera faturamento)', () => {
     assert.equal(hasFullMissionListAccess({ role: 'Financeiro', name: 'Bárbara Silva' }), true);
     assert.equal(isMissionClientScopeRestricted({ role: 'Financeiro', name: 'Barbara Costa', permissions: ['client_view:1'] }), false);
+    assert.equal(hasFullMissionListAccess({ role: 'Financeiro', name: 'Giovanna Marsili' }), true);
+    assert.equal(isMissionClientScopeRestricted({ role: 'Financeiro', name: 'Giovanna Marsili', permissions: ['client_view:1'] }), false);
   });
 
   it('wildcard * tem acesso total', () => {

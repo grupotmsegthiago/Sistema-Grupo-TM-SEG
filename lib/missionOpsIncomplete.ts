@@ -1,16 +1,14 @@
 import { MissionStatus } from '../types';
+import { isFinanceSupervisorName, normalizePersonName } from './financeSupervisorAccess';
 
 export type OpsAlertUser = { name?: string | null; role?: string | null };
 
-/** Michelle, Bárbara e Daniel — veem alertas de dados operacionais pendentes. */
+/** Michelle, supervisão financeira (Bárbara/Giovanna) e Daniel — veem alertas de dados operacionais pendentes. */
 export function isOpsAlertRecipient(user: OpsAlertUser | null | undefined): boolean {
-  const name = String(user?.name || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+  const name = normalizePersonName(user?.name);
   return (
     name.includes('michelle') ||
-    name.includes('barbara') ||
+    isFinanceSupervisorName(user?.name) ||
     name.includes('daniel')
   );
 }

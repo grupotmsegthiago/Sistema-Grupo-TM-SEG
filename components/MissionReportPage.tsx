@@ -29,6 +29,7 @@ import {
   filterMissionsByPeriod,
   type CanonicalResult,
 } from '../lib/missionFinancialsCanonical';
+import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 
 const AUDIT_SORT_PRIORITY: Record<AuditStatusLevel, number> = {
   erro: 0,
@@ -114,7 +115,7 @@ const MissionReportPage: React.FC = () => {
     if (!currentUser) return false;
     const nameLower = (currentUser.name || '').toLowerCase();
     const roleLower = (currentUser.role || '').toLowerCase();
-    return nameLower.includes('daniel') || nameLower.includes('michelle') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago') || roleLower === 'controller';
+    return nameLower.includes('daniel') || nameLower.includes('michelle') || isFinanceSupervisorName(currentUser.name) || nameLower.includes('thiago') || roleLower === 'controller';
   }, [currentUser]);
 
   const fetchMissions = useCallback(async (silent = false) => {

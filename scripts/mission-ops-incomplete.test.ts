@@ -7,9 +7,10 @@ import {
   isOpsAlertRecipient,
 } from '../lib/missionOpsIncomplete.ts';
 
-test('isOpsAlertRecipient reconhece Michelle, Barbara e Daniel', () => {
+test('isOpsAlertRecipient reconhece Michelle, Barbara, Giovanna e Daniel', () => {
   assert.equal(isOpsAlertRecipient({ name: 'Michelle Silva' }), true);
   assert.equal(isOpsAlertRecipient({ name: 'Bárbara Costa' }), true);
+  assert.equal(isOpsAlertRecipient({ name: 'Giovanna Marsili' }), true);
   assert.equal(isOpsAlertRecipient({ name: 'Daniel' }), true);
   assert.equal(isOpsAlertRecipient({ name: 'Thiago' }), false);
 });
