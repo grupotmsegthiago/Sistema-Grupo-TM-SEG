@@ -974,7 +974,12 @@ const FinancialTransactionList: React.FC = () => {
                                     <td className="px-4 py-3">
                                         <div className="font-bold text-gray-800 text-sm uppercase">{t.description}</div>
                                         {isReceber && paidAmt > 0 && t.status !== 'PAID' && (
-                                            <span className="block text-[9px] font-bold text-green-700 mt-0.5">Recebido: {formatCurrency(paidAmt)}</span>
+                                            <span className="block text-[9px] font-bold text-green-700 mt-0.5">
+                                              Recebido: {formatCurrency(paidAmt)}
+                                              {openAmt > 0.009 && t.status !== 'PARTIALLY_PAID' && (
+                                                <span className="ml-1 text-orange-700">· Parcial</span>
+                                              )}
+                                            </span>
                                         )}
                                     </td>
                                     <td className="px-4 py-3">

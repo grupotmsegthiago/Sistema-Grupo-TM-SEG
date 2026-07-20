@@ -75,12 +75,28 @@ export function computePaymentSettlement(
   return { paid, open, hasPartialNote, suggestedStatus };
 }
 
+/** Extrai pagamentos embutidos em notes (fallback sem tabela). */
+function paidFromNotesFallback(notes: string | null | undefined): number {
+  const marker = '<!--TMSEG_PAYMENTS-->';
+  const raw = String(notes || '');
+  const idx = raw.indexOf(marker);
+  if (idx < 0) return 0;
+  try {
+    const parsed = JSON.parse(raw.slice(idx + marker.length).trim());
+    if (!Array.isArray(parsed)) return 0;
+    return roundMoney(parsed.reduce((s: number, p: any) => s + (Number(p?.amount) || 0), 0));
+  } catch {
+    return 0;
+  }
+}
+
 /** Valor ainda em aberto no título (para cards / radar). */
 export function getTransactionOpenAmount(t: {
   amount?: number | null;
   status?: string | null;
   amount_open?: number | null;
   amount_paid?: number | null;
+  notes?: string | null;
 }): number {
   const status = String(t.status || '').toUpperCase();
   if (status === 'PAID' || status === 'CANCELLED' || status === 'CANCELED') return 0;
@@ -88,7 +104,8 @@ export function getTransactionOpenAmount(t: {
     return roundMoney(Math.max(0, Number(t.amount_open)));
   }
   const amount = roundMoney(t.amount);
-  const paid = t.amount_paid != null ? roundMoney(t.amount_paid) : 0;
+  let paid = t.amount_paid != null ? roundMoney(t.amount_paid) : 0;
+  if (paid <= 0) paid = paidFromNotesFallback(t.notes);
   if (status === 'PARTIALLY_PAID' || paid > 0) {
     return roundMoney(Math.max(0, amount - paid));
   }
@@ -100,11 +117,14 @@ export function getTransactionPaidAmount(t: {
   amount?: number | null;
   status?: string | null;
   amount_paid?: number | null;
+  notes?: string | null;
 }): number {
   const status = String(t.status || '').toUpperCase();
-  if (t.amount_paid != null && Number.isFinite(Number(t.amount_paid))) {
+  if (t.amount_paid != null && Number.isFinite(Number(t.amount_paid)) && Number(t.amount_paid) > 0) {
     return roundMoney(Math.max(0, Number(t.amount_paid)));
   }
+  const fromNotes = paidFromNotesFallback(t.notes);
+  if (fromNotes > 0) return fromNotes;
   if (status === 'PAID') return roundMoney(t.amount);
   return 0;
 }

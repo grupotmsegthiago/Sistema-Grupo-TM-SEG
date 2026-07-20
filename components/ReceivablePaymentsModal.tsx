@@ -56,17 +56,11 @@ const ReceivablePaymentsModal: React.FC<Props> = ({ transaction, onClose, onUpda
   const load = async () => {
     setLoading(true);
     try {
-      const rows = await listPaymentsForTransaction(transaction.id);
+      const rows = await listPaymentsForTransaction(transaction.id, transaction.notes);
       setPayments(rows);
     } catch (e: any) {
       console.error(e);
-      showNotification(
-        'Erro',
-        e?.message?.includes('financial_transaction_payments') || e?.code === '42P01'
-          ? 'Tabela de pagamentos ainda não existe. Execute a migration no Supabase (2026_07_20_financial_transaction_payments.sql).'
-          : 'Erro ao carregar pagamentos: ' + (e?.message || e),
-        'error',
-      );
+      showNotification('Erro', 'Erro ao carregar pagamentos: ' + (e?.message || e), 'error');
     } finally {
       setLoading(false);
     }
@@ -100,13 +94,15 @@ const ReceivablePaymentsModal: React.FC<Props> = ({ transaction, onClose, onUpda
         amount_paid: result.paid,
         amount_open: result.open,
         payment_date: paymentDate,
+        ...(result.notes !== undefined ? { notes: result.notes } : {}),
       });
       setAmount('');
       setNotes('');
       await load();
+      const isPartial = result.status === 'PARTIALLY_PAID' || result.open > 0.009;
       showNotification(
         'Sucesso',
-        result.status === 'PARTIALLY_PAID'
+        isPartial && result.status !== 'PAID'
           ? `Pagamento anexado. Em aberto: ${formatCurrency(result.open)}`
           : result.status === 'PAID'
             ? 'Pagamento anexado. Título quitado.'
@@ -136,6 +132,7 @@ const ReceivablePaymentsModal: React.FC<Props> = ({ transaction, onClose, onUpda
         status: result.status as FinancialTransaction['status'],
         amount_paid: result.paid,
         amount_open: result.open,
+        ...(result.notes !== undefined ? { notes: result.notes } : {}),
       });
       await load();
     } catch (e: any) {
