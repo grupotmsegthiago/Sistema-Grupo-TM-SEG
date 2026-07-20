@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, TrendingDown, Download, ExternalLink, AlertTriangle, Search, Layers, Link2 } from 'lucide-react';
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import {
@@ -7,6 +7,12 @@ import {
   filterMissionsByPeriod,
   type CanonicalPeriod,
 } from '../lib/missionFinancialsCanonical';
+import {
+  buildChildrenByParentId,
+  collectLinkedFamilyIds,
+  isLinkedChildMission,
+} from '../lib/missionLinkage';
+import { supabase } from '../lib/supabase';
 
 interface Props {
   isOpen: boolean;
@@ -34,7 +40,12 @@ type Row = {
   cost: number;
   loss: number;       // cost - rev
   marginPct: number;  // (rev - cost) / rev * 100  (negativo no prejuízo)
+  /** Entrou na lista só por vínculo (mãe/filha), não por prejuízo próprio. */
+  linkedOnly: boolean;
 };
+
+const LINKED_SELECT =
+  'id,client,provider,status,origin,destination,is_same_os,parent_mission_id,revenue_value,cost_value,start_time,created_at,billing_approved,total_distance_km'
 
 const LossesDialog: React.FC<Props> = ({
   isOpen, onClose, missions, clientTables, providerTables, clientsData,
@@ -44,26 +55,125 @@ const LossesDialog: React.FC<Props> = ({
   const [search, setSearch] = useState('');
   // Popover de OS Mãe (hover no desktop + clique para mobile/touch).
   const [hoverParent, setHoverParent] = useState<{ id: string; top: number; left: number } | null>(null);
+  /** OS vinculadas buscadas no Supabase sem filtro de cliente (completam o pool local). */
+  const [extraLinked, setExtraLinked] = useState<any[]>([]);
 
   const refs = useMemo(
     () => ({ clientTables, providerTables, clientsData }),
-    [clientTables, providerTables, clientsData]
+    [clientTables, providerTables, clientsData],
   );
 
-  // Mapa OS Mãe -> filhas (qualquer missão com parent_mission_id apontando para ela).
-  // parent_mission_id referencia o id da OS mãe (ex.: GTM-XXXX).
-  const childrenByParent = useMemo(() => {
-    const map = new Map<string, any[]>();
-    for (const m of (missions || [])) {
-      const pid = m?.parent_mission_id;
-      if (pid && m?.is_same_os === true) {
-        const arr = map.get(pid) || [];
-        arr.push(m);
-        map.set(pid, arr);
-      }
+  // Pool completo: missões da tela + vínculos trazidos do banco (qualquer cliente).
+  const missionPool = useMemo(() => {
+    const byId = new Map<string, any>();
+    for (const m of missions || []) {
+      if (m?.id) byId.set(String(m.id), m);
     }
-    return map;
-  }, [missions]);
+    for (const m of extraLinked) {
+      if (m?.id && !byId.has(String(m.id))) byId.set(String(m.id), m);
+    }
+    return Array.from(byId.values());
+  }, [missions, extraLinked]);
+
+  // Mapa OS Mãe -> filhas (qualquer cliente).
+  const childrenByParent = useMemo(
+    () => buildChildrenByParentId(missionPool),
+    [missionPool],
+  );
+
+  // Ao abrir: para cada OS com prejuízo no período, busca mãe/filhas no banco
+  // SEM filtrar por cliente — garante que vínculo de outro cliente apareça.
+  useEffect(() => {
+    if (!isOpen) {
+      setExtraLinked([]);
+      return;
+    }
+    let cancelled = false;
+
+    const run = async () => {
+      const allowed: CanonicalPeriod[] = ['TODAY', 'YESTERDAY', 'WEEK', 'MONTH', 'YEAR', 'CUSTOM', 'ALL'];
+      const period = (allowed.includes(viewPeriod as CanonicalPeriod) ? viewPeriod : 'TODAY') as CanonicalPeriod;
+      const [start, end] = getCanonicalDateRange(period, customStartDate, customEndDate);
+      const inPeriod = filterMissionsByPeriod(missions || [], start, end);
+      const localRefs = { clientTables, providerTables, clientsData };
+      const anchorIds: string[] = [];
+      for (const m of inPeriod) {
+        if (m.status === MissionStatus.REFUSED) continue;
+        const r = computeCanonicalRevenueCost(m, localRefs);
+        if (r.rev <= 0 && r.cost <= 0) continue;
+        const loss = r.cost - r.rev;
+        const marginPct = r.rev > 0 ? ((r.rev - r.cost) / r.rev) * 100 : -100;
+        if (loss > 0 || (includeLowMargin && marginPct < 10)) {
+          anchorIds.push(String(m.id));
+          if (isLinkedChildMission(m) && m.parent_mission_id) {
+            anchorIds.push(String(m.parent_mission_id));
+          }
+        }
+      }
+      // Também âncoras que já são mães no pool local
+      for (const m of missions || []) {
+        if (m?.is_same_os && m?.parent_mission_id) {
+          anchorIds.push(String(m.parent_mission_id));
+        }
+      }
+      const uniqueAnchors = [...new Set(anchorIds.filter(Boolean))];
+      if (uniqueAnchors.length === 0) {
+        if (!cancelled) setExtraLinked([]);
+        return;
+      }
+
+      const fetched: any[] = [];
+      const seen = new Set<string>();
+
+      // Mães por id
+      for (let i = 0; i < uniqueAnchors.length; i += 40) {
+        const chunk = uniqueAnchors.slice(i, i + 40);
+        const { data, error } = await supabase
+          .from('missions')
+          .select(LINKED_SELECT)
+          .in('id', chunk);
+        if (error) {
+          console.warn('[LossesDialog] falha ao buscar OS mães vinculadas:', error.message);
+          continue;
+        }
+        for (const row of data || []) {
+          if (row?.id && !seen.has(row.id)) {
+            seen.add(row.id);
+            fetched.push(row);
+          }
+        }
+      }
+
+      // Filhas de cada âncora (e das mães encontradas) — sem filtro de cliente
+      const parentIds = [...new Set([
+        ...uniqueAnchors,
+        ...fetched.map((r) => String(r.id)),
+        ...fetched.filter((r) => r.parent_mission_id).map((r) => String(r.parent_mission_id)),
+      ])];
+      for (let i = 0; i < parentIds.length; i += 40) {
+        const chunk = parentIds.slice(i, i + 40);
+        const { data, error } = await supabase
+          .from('missions')
+          .select(LINKED_SELECT)
+          .in('parent_mission_id', chunk);
+        if (error) {
+          console.warn('[LossesDialog] falha ao buscar OS filhas vinculadas:', error.message);
+          continue;
+        }
+        for (const row of data || []) {
+          if (row?.id && !seen.has(row.id)) {
+            seen.add(row.id);
+            fetched.push(row);
+          }
+        }
+      }
+
+      if (!cancelled) setExtraLinked(fetched);
+    };
+
+    void run();
+    return () => { cancelled = true; };
+  }, [isOpen, missions, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate, includeLowMargin]);
 
   // Pequeno atraso ao fechar para permitir mover o mouse do selo até o popover.
   const closeTimer = useRef<number | null>(null);
@@ -85,43 +195,67 @@ const LossesDialog: React.FC<Props> = ({
   const rows: Row[] = useMemo(() => {
     if (!isOpen) return [];
     const allowed: CanonicalPeriod[] = ['TODAY', 'YESTERDAY', 'WEEK', 'MONTH', 'YEAR', 'CUSTOM', 'ALL'];
-    // Mesmo fallback dos cards de meta (DailyGoalThermometer): se o período não
-    // for canônico (ex.: 'HISTORY'), cai para TODAY. Mantém a janela alinhada.
     const period = (allowed.includes(viewPeriod as CanonicalPeriod) ? viewPeriod : 'TODAY') as CanonicalPeriod;
     const [start, end] = getCanonicalDateRange(period, customStartDate, customEndDate);
     const inPeriod = filterMissionsByPeriod(missions || [], start, end);
-    const refs = { clientTables, providerTables, clientsData };
     const out: Row[] = [];
+    const lossIds = new Set<string>();
+
     for (const m of inPeriod) {
       if (m.status === MissionStatus.REFUSED) continue;
       const r = computeCanonicalRevenueCost(m, refs);
       if (r.rev <= 0 && r.cost <= 0) continue;
       const loss = r.cost - r.rev;
       const marginPct = r.rev > 0 ? ((r.rev - r.cost) / r.rev) * 100 : -100;
-      // Prejuízo direto: custo > receita
-      // OU margem muito baixa (< 10%) se o usuário quiser incluir
       if (loss > 0 || (includeLowMargin && marginPct < 10)) {
-        out.push({ m, rev: r.rev, cost: r.cost, loss, marginPct });
+        out.push({ m, rev: r.rev, cost: r.cost, loss, marginPct, linkedOnly: false });
+        lossIds.add(String(m.id));
       }
     }
-    out.sort((a, b) => b.loss - a.loss);
+
+    // Inclui mãe/filhas vinculadas (qualquer cliente), mesmo sem prejuízo próprio.
+    const familyIds = collectLinkedFamilyIds(lossIds, missionPool);
+    const already = new Set(out.map((r) => String(r.m.id)));
+    for (const id of familyIds) {
+      if (already.has(id)) continue;
+      const m = missionPool.find((x) => String(x.id) === id);
+      if (!m || m.status === MissionStatus.REFUSED) continue;
+      const r = computeCanonicalRevenueCost(m, refs);
+      const cost = m.is_same_os ? 0 : r.cost;
+      const loss = cost - r.rev;
+      const marginPct = r.rev > 0 ? ((r.rev - cost) / r.rev) * 100 : (cost > 0 ? -100 : 0);
+      out.push({ m, rev: r.rev, cost, loss, marginPct, linkedOnly: true });
+      already.add(id);
+    }
+
+    out.sort((a, b) => {
+      // Prejuízo próprio primeiro; vínculos depois. Dentro de cada grupo, maior prejuízo.
+      if (a.linkedOnly !== b.linkedOnly) return a.linkedOnly ? 1 : -1;
+      return b.loss - a.loss;
+    });
     return out;
-  }, [isOpen, missions, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate, includeLowMargin]);
+  }, [isOpen, missions, missionPool, refs, viewPeriod, customStartDate, customEndDate, includeLowMargin]);
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toUpperCase();
     if (!q) return rows;
-    return rows.filter(r => {
+    // Busca casa uma OS — e mantém a família vinculada junto (independente do cliente).
+    const matchedIds = new Set<string>();
+    for (const r of rows) {
       const id = String(r.m.id || '').toUpperCase();
       const cli = String(r.m.client || '').toUpperCase();
       const prov = String(r.m.provider || '').toUpperCase();
-      return id.includes(q) || cli.includes(q) || prov.includes(q);
-    });
-  }, [rows, search]);
+      if (id.includes(q) || cli.includes(q) || prov.includes(q)) matchedIds.add(String(r.m.id));
+    }
+    const withFamily = collectLinkedFamilyIds(matchedIds, missionPool);
+    return rows.filter((r) => withFamily.has(String(r.m.id)));
+  }, [rows, search, missionPool]);
 
   const totals = useMemo(() => {
-    const t = { count: filteredRows.length, rev: 0, cost: 0, loss: 0 };
-    for (const r of filteredRows) { t.rev += r.rev; t.cost += r.cost; t.loss += r.loss; }
+    // Totais financeiros só das OS com prejuízo/margem baixa próprios (não inflar com só-vinculadas).
+    const lossRows = filteredRows.filter((r) => !r.linkedOnly);
+    const t = { count: lossRows.length, linkedCount: filteredRows.filter((r) => r.linkedOnly).length, rev: 0, cost: 0, loss: 0 };
+    for (const r of lossRows) { t.rev += r.rev; t.cost += r.cost; t.loss += Math.max(0, r.loss); }
     return t;
   }, [filteredRows]);
 
@@ -130,36 +264,45 @@ const LossesDialog: React.FC<Props> = ({
     if (!hoverParent) return null;
     const kids = childrenByParent.get(hoverParent.id) || [];
     const children = kids.map((k) => {
-      const cr = computeCanonicalRevenueCost(k, refs);
+      const cr = computeCanonicalRevenueCost(k as any, refs);
       const cost = k.is_same_os ? 0 : cr.cost;
-      return { id: k.id, status: k.status, rev: cr.rev, cost, margin: cr.rev - cost };
+      return {
+        id: String(k.id),
+        status: String(k.status || '—'),
+        client: String(k.client || ''),
+        rev: cr.rev,
+        cost,
+        margin: cr.rev - cost,
+      };
     });
-    // Mãe vem do dataset base (não da lista filtrada por prejuízo/período),
-    // garantindo consolidado consistente mesmo com o popover aberto sob filtros.
-    const motherMission = (missions || []).find((m) => m?.id === hoverParent.id);
+    const motherMission = missionPool.find((m) => m?.id === hoverParent.id);
     const motherCr = motherMission ? computeCanonicalRevenueCost(motherMission, refs) : { rev: 0, cost: 0 };
     const motherRev = motherCr.rev;
     const motherCost = motherCr.cost;
     const groupRev = motherRev + children.reduce((s, c) => s + c.rev, 0);
     const groupCost = motherCost + children.reduce((s, c) => s + c.cost, 0);
     return { children, motherRev, motherCost, groupRev, groupCost, groupMargin: groupRev - groupCost };
-  }, [hoverParent, childrenByParent, refs, missions]);
+  }, [hoverParent, childrenByParent, refs, missionPool]);
 
   const exportCsv = () => {
-    const header = ['OS', 'Cliente', 'Fornecedor', 'Status', 'Origem', 'Destino', 'KM', 'Receita', 'Custo', 'Prejuizo', 'Margem%'];
+    const header = ['OS', 'Cliente', 'Fornecedor', 'Status', 'Vinculo', 'Origem', 'Destino', 'KM', 'Receita', 'Custo', 'Prejuizo', 'Margem%'];
     const lines = [header.join(';')];
     for (const r of filteredRows) {
+      const vinculo = r.linkedOnly
+        ? (isLinkedChildMission(r.m) ? 'FILHA' : 'VINCULADA')
+        : ((childrenByParent.get(String(r.m.id)) || []).length > 0 ? 'MAE' : '');
       lines.push([
         r.m.id || '',
         (r.m.client || '').replace(/;/g, ','),
         (r.m.provider || '').replace(/;/g, ','),
         r.m.status || '',
+        vinculo,
         (r.m.origin || '').replace(/;/g, ',').slice(0, 80),
         (r.m.destination || '').replace(/;/g, ',').slice(0, 80),
         String(r.m.total_distance || r.m.totalDistance || ''),
         r.rev.toFixed(2).replace('.', ','),
         r.cost.toFixed(2).replace('.', ','),
-        r.loss.toFixed(2).replace('.', ','),
+        r.linkedOnly ? '' : r.loss.toFixed(2).replace('.', ','),
         r.marginPct.toFixed(1).replace('.', ','),
       ].join(';'));
     }
@@ -175,8 +318,6 @@ const LossesDialog: React.FC<Props> = ({
 
   if (!isOpen) return null;
 
-  // Usa o mesmo período efetivo do cálculo (com fallback para TODAY), evitando
-  // mostrar "HISTORY" enquanto a janela real é "Hoje".
   const allowedLbl: CanonicalPeriod[] = ['TODAY', 'YESTERDAY', 'WEEK', 'MONTH', 'YEAR', 'CUSTOM', 'ALL'];
   const effectivePeriod = (allowedLbl.includes(viewPeriod as CanonicalPeriod) ? viewPeriod : 'TODAY');
   const periodLabel = PERIOD_LABEL[effectivePeriod] || effectivePeriod;
@@ -191,7 +332,10 @@ const LossesDialog: React.FC<Props> = ({
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900">OS com Prejuízo</h2>
-              <p className="text-xs text-gray-600">Período: <span className="font-semibold">{periodLabel}</span> — custo do fornecedor maior que a receita do cliente</p>
+              <p className="text-xs text-gray-600">
+                Período: <span className="font-semibold">{periodLabel}</span> — custo do fornecedor maior que a receita do cliente.
+                OS vinculadas aparecem mesmo com cliente diferente.
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/60 text-gray-500 hover:text-gray-800 transition" data-testid="button-close-losses">
@@ -231,10 +375,15 @@ const LossesDialog: React.FC<Props> = ({
         </div>
 
         <div className="flex items-center justify-between gap-3 px-5 py-2.5 bg-red-50/50 border-b border-red-100">
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-sm flex-wrap">
             <AlertTriangle size={14} className="text-red-600" />
             <span className="font-bold text-red-700">{totals.count}</span>
-            <span className="text-gray-700">{totals.count === 1 ? 'OS' : 'OSs'} listada{totals.count === 1 ? '' : 's'}</span>
+            <span className="text-gray-700">{totals.count === 1 ? 'OS' : 'OSs'} com prejuízo</span>
+            {totals.linkedCount > 0 && (
+              <span className="text-amber-800 text-xs font-semibold" data-testid="text-linked-count">
+                + {totals.linkedCount} vinculada{totals.linkedCount === 1 ? '' : 's'}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-4 text-xs">
             <span className="text-gray-600">Receita: <span className="font-bold text-gray-900">{fmt(totals.rev)}</span></span>
@@ -267,13 +416,19 @@ const LossesDialog: React.FC<Props> = ({
               </thead>
               <tbody>
                 {filteredRows.map(r => {
-                  const isLoss = r.loss > 0;
+                  const isLoss = !r.linkedOnly && r.loss > 0;
                   const childCount = (childrenByParent.get(r.m.id) || []).length;
                   const isMother = childCount > 0;
+                  const isChild = isLinkedChildMission(r.m);
                   return (
-                    <tr key={r.m.id} className="border-b border-gray-100 hover:bg-red-50/40 transition" data-testid={`row-loss-${r.m.id}`}>
+                    <tr
+                      key={r.m.id}
+                      className={`border-b border-gray-100 transition ${r.linkedOnly ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-red-50/40'}`}
+                      data-testid={`row-loss-${r.m.id}`}
+                      data-linked-only={r.linkedOnly ? 'true' : 'false'}
+                    >
                       <td className="px-4 py-2 font-mono font-bold text-gray-900 text-xs">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span>{r.m.id}</span>
                           {isMother && (
                             <span
@@ -287,6 +442,20 @@ const LossesDialog: React.FC<Props> = ({
                               <span className="bg-amber-600 text-white rounded-full px-1 leading-none">{childCount}</span>
                             </span>
                           )}
+                          {isChild && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-800 border border-blue-300 text-[9px] font-black uppercase tracking-wide"
+                              title={`Vinculada à OS mãe ${r.m.parent_mission_id}`}
+                              data-testid={`badge-child-${r.m.id}`}
+                            >
+                              <Link2 size={9} /> FILHA
+                            </span>
+                          )}
+                          {r.linkedOnly && !isChild && !isMother && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-300 text-[9px] font-black uppercase">
+                              VINCULADA
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-3 py-2 text-gray-700 max-w-[200px] truncate" title={r.m.client || ''}>{r.m.client || '—'}</td>
@@ -296,7 +465,7 @@ const LossesDialog: React.FC<Props> = ({
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(r.rev)}</td>
                       <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(r.cost)}</td>
-                      <td className={`px-3 py-2 text-right font-mono font-bold ${isLoss ? 'text-red-700' : 'text-amber-600'}`} data-testid={`text-loss-${r.m.id}`}>
+                      <td className={`px-3 py-2 text-right font-mono font-bold ${isLoss ? 'text-red-700' : 'text-gray-400'}`} data-testid={`text-loss-${r.m.id}`}>
                         {isLoss ? fmt(r.loss) : '—'}
                       </td>
                       <td className={`px-3 py-2 text-right font-mono font-bold ${r.marginPct < 0 ? 'text-red-700' : r.marginPct < 10 ? 'text-amber-600' : 'text-emerald-700'}`}>
@@ -323,8 +492,8 @@ const LossesDialog: React.FC<Props> = ({
 
       {hoverParent && openParentDetail && (
         <div
-          className="fixed z-[110] w-[340px] max-w-[92vw] bg-white rounded-xl shadow-2xl border-2 border-amber-300 overflow-hidden"
-          style={{ top: hoverParent.top, left: Math.min(hoverParent.left, (typeof window !== 'undefined' ? window.innerWidth : 1024) - 350) }}
+          className="fixed z-[110] w-[360px] max-w-[92vw] bg-white rounded-xl shadow-2xl border-2 border-amber-300 overflow-hidden"
+          style={{ top: hoverParent.top, left: Math.min(hoverParent.left, (typeof window !== 'undefined' ? window.innerWidth : 1024) - 370) }}
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
           data-testid={`popover-mother-${hoverParent.id}`}
@@ -336,7 +505,7 @@ const LossesDialog: React.FC<Props> = ({
               {openParentDetail.children.length} filha{openParentDetail.children.length !== 1 ? 's' : ''}
             </span>
           </div>
-          <div className="max-h-[260px] overflow-y-auto p-2 space-y-1.5">
+          <div className="max-h-[280px] overflow-y-auto p-2 space-y-1.5">
             <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
               <span className="font-mono font-black text-[11px] text-amber-800">{hoverParent.id} <span className="text-[8px] font-bold text-amber-600">(MÃE)</span></span>
               <div className="flex items-center gap-3 text-[10px] font-mono">
@@ -345,16 +514,24 @@ const LossesDialog: React.FC<Props> = ({
               </div>
             </div>
             {openParentDetail.children.map((c) => (
-              <div key={c.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-blue-50 border border-blue-200" data-testid={`popover-child-${c.id}`}>
-                <span className="font-mono font-bold text-[11px] text-blue-800 flex items-center gap-1">
-                  <Link2 size={9} /> {c.id}
-                </span>
-                <div className="flex items-center gap-3 text-[10px] font-mono">
-                  <span className="text-green-700">{fmt(c.rev)}</span>
-                  <span className={c.cost > 0 ? 'text-red-600' : 'text-gray-400'}>{fmt(c.cost)}</span>
+              <div key={c.id} className="flex flex-col gap-0.5 p-2 rounded-lg bg-blue-50 border border-blue-200" data-testid={`popover-child-${c.id}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono font-bold text-[11px] text-blue-800 flex items-center gap-1">
+                    <Link2 size={9} /> {c.id}
+                  </span>
+                  <div className="flex items-center gap-3 text-[10px] font-mono">
+                    <span className="text-green-700">{fmt(c.rev)}</span>
+                    <span className={c.cost > 0 ? 'text-red-600' : 'text-gray-400'}>{fmt(c.cost)}</span>
+                  </div>
                 </div>
+                {c.client && (
+                  <span className="text-[9px] text-blue-700/80 truncate" title={c.client}>Cliente: {c.client}</span>
+                )}
               </div>
             ))}
+            {openParentDetail.children.length === 0 && (
+              <p className="text-[11px] text-gray-500 px-1 py-2">Nenhuma OS filha vinculada encontrada.</p>
+            )}
           </div>
           <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
             <div className="bg-green-100 rounded-lg p-1.5 text-center">

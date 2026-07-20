@@ -48,6 +48,7 @@ import MissionOperationalReport from './MissionOperationalReport';
 import MissionTeamPresenceBoard from './MissionTeamPresenceBoard';
 import { hasFullMissionListAccess, isMissionClientScopeRestricted } from '../lib/missionAccess';
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { collectLinkedFamilyIds } from '../lib/missionLinkage';
 const cevaLogoPath = '/logo_ceva.png';
 
 
@@ -1213,34 +1214,18 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         return ids;
     }, [allMissions, periodMissions]);
 
+    // OS vinculadas a um prejuízo entram no filtro mesmo com cliente diferente da mãe/filha.
     const negativeLinkedIds = useMemo(() => {
-        const linkedIds = new Set<string>();
         const allSource = allMissions.length > 0 ? allMissions : periodMissions;
-        const negativeMissions = allSource.filter(m => {
-            const rev = m.revenue_value || 0;
-            const cost = m.is_same_os ? 0 : (m.cost_value || 0);
-            return (rev - cost) < 0;
-        });
-        const negativeIds = new Set(negativeMissions.map(m => m.id));
-        for (const m of allSource) {
-            if (m.is_same_os && m.parent_mission_id) {
-                if (negativeIds.has(m.parent_mission_id)) {
-                    linkedIds.add(m.id);
-                }
-                if (negativeIds.has(m.id)) {
-                    linkedIds.add(m.parent_mission_id);
-                }
-            }
-            if (parentMissionIds.has(m.id) && negativeIds.has(m.id)) {
-                for (const child of allSource) {
-                    if (child.parent_mission_id === m.id) {
-                        linkedIds.add(child.id);
-                    }
-                }
-            }
-        }
-        return linkedIds;
-    }, [allMissions, periodMissions, parentMissionIds]);
+        const negativeIds = allSource
+            .filter((m) => {
+                const rev = m.revenue_value || 0;
+                const cost = m.is_same_os ? 0 : (m.cost_value || 0);
+                return (rev - cost) < 0;
+            })
+            .map((m) => m.id);
+        return collectLinkedFamilyIds(negativeIds, allSource);
+    }, [allMissions, periodMissions]);
 
     const filteredBySpecialCriteria = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
