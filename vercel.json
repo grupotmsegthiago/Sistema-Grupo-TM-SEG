@@ -149,6 +149,9 @@
     "api/asaas-transfer-approval.ts": {
       "maxDuration": 30
     },
+    "api/nf-control.ts": {
+      "maxDuration": 60
+    },
     "api/relatorios-dhl-se-183013.ts": {
       "maxDuration": 30,
       "includeFiles": "public/docs/**"
@@ -386,6 +389,14 @@
     {
       "source": "/api/asaas/transfer-approval",
       "destination": "/api/asaas-transfer-approval"
+    },
+    {
+      "source": "/api/nf/summary",
+      "destination": "/api/nf-control?op=summary"
+    },
+    {
+      "source": "/api/nf/provider-preferences",
+      "destination": "/api/nf-control?op=preferences"
     },
     {
       "source": "/relatorios/dhl-se-183013",

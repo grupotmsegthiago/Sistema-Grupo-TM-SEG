@@ -7,6 +7,7 @@ const DEFAULT_SUPABASE_ANON_KEY =
 const TMSEG_REF = "ajhmmjuewdsukecaimik";
 
 const WHATSAPP_ADMIN_ROLES = new Set(["diretoria", "administrador", "ceo", "admin"]);
+const FINANCE_NF_ROLES = new Set(["diretoria", "administrador", "financeiro", "admin"]);
 
 export type LitePrincipal = {
   id: string;
@@ -60,6 +61,13 @@ function canAccessWhatsapp(role: string, permissions: string[]): boolean {
   return false;
 }
 
+function canAccessFinanceNf(role: string, permissions: string[]): boolean {
+  const normalized = normalizeRole(role);
+  if (FINANCE_NF_ROLES.has(normalized)) return true;
+  if (permissions.includes("*")) return true;
+  return false;
+}
+
 function pickServiceRoleKey(): string {
   for (const candidate of [
     process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -98,6 +106,7 @@ async function resolveFromDatabase(userId: string): Promise<{
   found: boolean;
   active: boolean;
   adminOk: boolean;
+  financeOk: boolean;
   principal: LitePrincipal | null;
 }> {
   const service = pickServiceRoleKey();
@@ -114,9 +123,9 @@ async function resolveFromDatabase(userId: string): Promise<{
 
   if (error) {
     console.warn("[tmsegAuth] system_users:", error.message);
-    return { found: false, active: false, adminOk: false, principal: null };
+    return { found: false, active: false, adminOk: false, financeOk: false, principal: null };
   }
-  if (!data) return { found: false, active: false, adminOk: false, principal: null };
+  if (!data) return { found: false, active: false, adminOk: false, financeOk: false, principal: null };
 
   const profile = readProfile(data as { profiles?: ProfileRow | ProfileRow[] | null });
   const role = normalizeRole(profile?.name || "");
@@ -138,14 +147,15 @@ async function resolveFromDatabase(userId: string): Promise<{
     found: true,
     active,
     adminOk: active && canAccessWhatsapp(role, permissions),
+    financeOk: active && canAccessFinanceNf(role, permissions),
     principal: active ? principal : null,
   };
 }
 
 function resolveFromHeaders(
   token: string,
-  req?: { headers?: ReqHeaders },
-  options: { adminOnly?: boolean } = {},
+  req?: { headers?: EnvHeaders },
+  options: { adminOnly?: boolean; financeOnly?: boolean } = {},
 ): { ok: boolean; principal: LitePrincipal | null } | null {
   if (!req?.headers) return null;
   const userId = extractUserIdFromToken(token);
@@ -154,7 +164,9 @@ function resolveFromHeaders(
 
   const role = normalizeRole(headerValue(req, "x-tmseg-role"));
   const permissions = parsePermissions(headerValue(req, "x-tmseg-permissions"));
-  const ok = options.adminOnly ? canAccessWhatsapp(role, permissions) : !!userId;
+  let ok = !!userId;
+  if (options.adminOnly) ok = canAccessWhatsapp(role, permissions);
+  if (options.financeOnly) ok = canAccessFinanceNf(role, permissions);
   return {
     ok,
     principal: {
@@ -215,6 +227,27 @@ export async function assertAuthenticatedAccess(
   if (fromHeaders?.ok) return null;
 
   return "Sessão inválida";
+}
+
+/** Controle de Faturas / NF — espelha requireRole(administrador, diretoria, financeiro). */
+export async function assertFinanceNfAccess(
+  token: string,
+  req?: { headers?: EnvHeaders },
+): Promise<string | null> {
+  if (!token) return "Não autorizado";
+  const userId = extractUserIdFromToken(token);
+  if (!userId) return "Não autorizado";
+
+  const fromDb = await resolveFromDatabase(userId);
+  if (fromDb.financeOk && fromDb.principal) return null;
+  if (fromDb.found && fromDb.active && !fromDb.financeOk) {
+    return "Sem permissão — apenas Diretoria, Administrador ou Financeiro.";
+  }
+
+  const fromHeaders = resolveFromHeaders(token, req, { financeOnly: true });
+  if (fromHeaders?.ok) return null;
+
+  return "Sem permissão — apenas Diretoria, Administrador ou Financeiro.";
 }
 
 export function hasRole(principal: LitePrincipal, ...roles: string[]): boolean {

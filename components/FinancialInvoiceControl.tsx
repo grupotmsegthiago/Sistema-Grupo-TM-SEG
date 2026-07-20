@@ -221,20 +221,27 @@ const FinancialInvoiceControl: React.FC = () => {
     }
   };
 
-  const fetchInvoices = useCallback(async () => {
-    setLoading(true);
+  const fetchInvoices = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent;
+    if (!silent) setLoading(true);
     try {
-      // Fonte da verdade: Supabase direto (anon/RLS). NÃO bloquear a lista no
-      // endpoint de init de schema — se o Express estiver em cold-start/migration
-      // travada, esse await nunca resolve e a tela fica em "Carregando..." para sempre.
-      const { data, error } = await supabase
+      // Fonte da verdade: Supabase direto (anon/RLS). Timeout evita spinner eterno
+      // se a rede/PostgREST travar. NÃO depender do Express (api/index) para listar.
+      const query = supabase
         .from('financial_invoices')
         .select('*')
         .order('created_at', { ascending: false });
+      const result = await Promise.race([
+        query,
+        new Promise<{ data: null; error: { message: string } }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: { message: 'timeout_financial_invoices' } }), 12_000),
+        ),
+      ]);
+      const { data, error } = result as { data: Invoice[] | null; error: { message: string } | null };
       if (error) throw error;
       if (data) {
         const now = new Date();
-        const updated: Invoice[] = (data as Invoice[]).map(inv => {
+        const updated: Invoice[] = data.map(inv => {
           if (inv.status === 'EMITIDA' && inv.boleto_due_date) {
             const due = new Date(inv.boleto_due_date + 'T23:59:59');
             if (now > due) return { ...inv, status: 'VENCIDA' };
@@ -247,24 +254,18 @@ const FinancialInvoiceControl: React.FC = () => {
       }
     } catch (e: any) {
       console.error('[InvoiceControl] Fetch error:', e.message);
-      setInvoices([]);
+      if (!silent) setInvoices([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-    // Schema/init em background (best-effort, com timeout) — espelha Contas a Pagar.
-    try {
-      const ctrl = new AbortController();
-      const timer = window.setTimeout(() => ctrl.abort(), 8_000);
-      await authFetch('/api/supabase/init-invoices', { method: 'POST', signal: ctrl.signal });
-      window.clearTimeout(timer);
-    } catch {
-      /* init opcional — lista já carregou */
-    }
+    // Schema/init opcional — fire-and-forget (Express catch-all pode estar lento).
+    void authFetch('/api/supabase/init-invoices', { method: 'POST' }).catch(() => {});
   }, []);
 
   useEffect(() => { fetchInvoices(); fetchIssuerSummary(); fetchProviderPreferences(); }, [fetchInvoices, fetchIssuerSummary, fetchProviderPreferences]);
 
-  useRealtimeRefresh('financial_invoices', () => { fetchInvoices(); fetchIssuerSummary(); });
+  // Realtime: refresh silencioso — não recoloca "Carregando faturas..." na tela.
+  useRealtimeRefresh('financial_invoices', () => { fetchInvoices({ silent: true }); fetchIssuerSummary(); });
 
   const handleSyncStatus = async (inv: Invoice) => {
     if (!inv.asaas_payment_id) return;

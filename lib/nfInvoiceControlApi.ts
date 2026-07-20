@@ -1,0 +1,202 @@
+/**
+ * Lógica compartilhada do Controle de Faturas / NF — para handler Vercel leve
+ * (sem cold-start do Express em api/index).
+ */
+import { createSupabaseAdminClient } from './supabaseAdmin.js';
+
+export type NfProvider = 'ASAAS' | 'PLUGNOTAS';
+export const VALID_NF_PROVIDERS: NfProvider[] = ['ASAAS', 'PLUGNOTAS'];
+
+const PREF_ENTITY = 'NfProviderPreference';
+const PREF_ENTITY_ID = 'master';
+
+type ProviderBucket = {
+  total: number;
+  authorized: number;
+  error: number;
+  stuck: number;
+  processing: number;
+};
+
+function normalizeCompanyKey(company?: string | null): string {
+  const u = (company || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+  if (!u) return 'TM GESTAO';
+  if (u.includes('SECURITY')) return 'TM SECURITY';
+  if (u.includes('SEGURANCA') || u.includes('SEGURANÇA')) return 'TM SEGURANCA';
+  if (u.includes('GESTAO') || u.includes('GESTÃO') || u.includes('GESTAO LTDA')) return 'TM GESTAO';
+  return u;
+}
+
+export async function buildNfIssuerSummary(): Promise<{
+  success: true;
+  summary: unknown[];
+  stuck: unknown[];
+  byProvider: Record<string, ProviderBucket>;
+}> {
+  const sb = createSupabaseAdminClient();
+  if (!sb) {
+    return {
+      success: true,
+      summary: [],
+      stuck: [],
+      byProvider: {
+        ASAAS: { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 },
+        PLUGNOTAS: { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 },
+      },
+    };
+  }
+
+  const { data, error } = await sb
+    .from('financial_invoices')
+    .select(
+      'id, client, number, amount, issuer_company, nf_status, nf_retry_at, created_at, asaas_payment_id, nf_provider, plugnotas_invoice_id',
+    );
+  if (error) throw new Error(error.message);
+
+  const byCompany: Record<string, any> = {};
+  const byProvider: Record<string, ProviderBucket> = {
+    ASAAS: { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 },
+    PLUGNOTAS: { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 },
+  };
+  const stuck: any[] = [];
+  const now = Date.now();
+
+  for (const r of data || []) {
+    if (!r.asaas_payment_id && !r.plugnotas_invoice_id) continue;
+    const c = r.issuer_company || '(sem emissora)';
+    const provider = (
+      r.nf_provider || (r.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS')
+    ).toUpperCase();
+    if (!byCompany[c]) {
+      byCompany[c] = {
+        company: c,
+        total: 0,
+        authorized: 0,
+        synchronized: 0,
+        scheduled: 0,
+        error: 0,
+        stuck: 0,
+        canceled: 0,
+        other: 0,
+        asaas: 0,
+        plugnotas: 0,
+      };
+    }
+    byCompany[c].total++;
+    if (provider === 'PLUGNOTAS') byCompany[c].plugnotas++;
+    else byCompany[c].asaas++;
+    const bp =
+      byProvider[provider] ||
+      (byProvider[provider] = { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 });
+    bp.total++;
+    const s = String(r.nf_status || '').toUpperCase();
+    if (s === 'AUTHORIZED') {
+      byCompany[c].authorized++;
+      bp.authorized++;
+    } else if (s === 'SYNCHRONIZED') {
+      byCompany[c].synchronized++;
+      const ref = r.nf_retry_at || r.created_at;
+      const ageH = ref ? (now - new Date(ref).getTime()) / 3_600_000 : 0;
+      if (ageH >= 24) {
+        byCompany[c].stuck++;
+        bp.stuck++;
+        stuck.push({ ...r, hours_stuck: Math.floor(ageH) });
+      } else {
+        bp.processing++;
+      }
+    } else if (s === 'SCHEDULED' || s === 'PROCESSING') {
+      byCompany[c].scheduled++;
+      bp.processing++;
+    } else if (s === 'ERROR' || s === 'FAILED') {
+      byCompany[c].error++;
+      bp.error++;
+    } else if (s === 'STUCK') {
+      byCompany[c].stuck++;
+      bp.stuck++;
+      const ref = r.nf_retry_at || r.created_at;
+      const ageH = ref ? (now - new Date(ref).getTime()) / 3_600_000 : 0;
+      stuck.push({ ...r, hours_stuck: Math.floor(ageH) });
+    } else if (s === 'CANCELED') {
+      byCompany[c].canceled++;
+    } else {
+      byCompany[c].other++;
+    }
+  }
+
+  return { success: true, summary: Object.values(byCompany), stuck, byProvider };
+}
+
+export async function loadNfProviderPreferences(): Promise<Record<string, NfProvider>> {
+  const sb = createSupabaseAdminClient();
+  if (!sb) return {};
+  try {
+    const { data } = await sb
+      .from('system_logs')
+      .select('details')
+      .eq('entity', PREF_ENTITY)
+      .eq('entity_id', PREF_ENTITY_ID)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const raw = (data as { details?: unknown } | null)?.details;
+    let parsed: any = raw;
+    if (typeof raw === 'string') {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = {};
+      }
+    }
+    const map: Record<string, NfProvider> = {};
+    if (parsed && typeof parsed === 'object') {
+      for (const [k, v] of Object.entries(parsed)) {
+        const provider = String(v).toUpperCase() as NfProvider;
+        if (VALID_NF_PROVIDERS.includes(provider)) map[normalizeCompanyKey(k)] = provider;
+      }
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+export async function saveNfProviderPreferences(
+  prefs: Record<string, unknown>,
+  actor: string,
+): Promise<Record<string, NfProvider>> {
+  const sb = createSupabaseAdminClient();
+  if (!sb) throw new Error('Supabase indisponível');
+  const clean: Record<string, NfProvider> = {};
+  for (const [k, v] of Object.entries(prefs || {})) {
+    const provider = String(v).toUpperCase() as NfProvider;
+    if (VALID_NF_PROVIDERS.includes(provider)) clean[normalizeCompanyKey(k)] = provider;
+  }
+  const { error } = await sb.from('system_logs').insert({
+    entity: PREF_ENTITY,
+    entity_id: PREF_ENTITY_ID,
+    action_type: 'nf_provider_pref_update',
+    user_name: actor || 'system',
+    details: JSON.stringify(clean),
+  });
+  if (error) throw new Error(error.message);
+  return clean;
+}
+
+/** Empresas PlugNotas (espelho leve — sem importar server/plugnotasService). */
+export function listPlugNotasCompaniesLite(): { key: string; name: string; cnpj: string }[] {
+  return [
+    { key: 'TM GESTAO', name: 'TM GESTÃO', cnpj: '60485843000157' },
+    { key: 'TM SEGURANCA', name: 'Tm Seguranca Consultoria & Tecnologia Integrada Ltda', cnpj: '28804378000167' },
+    { key: 'TM SECURITY', name: 'TM Security Gestão Corporativa Ltda', cnpj: '60508931000127' },
+  ];
+}
+
+export function isPlugNotasConfiguredLite(): boolean {
+  const env = (process.env.PLUGNOTAS_ENV || 'sandbox').toLowerCase();
+  if (env === 'production') return !!process.env.PLUGNOTAS_API_TOKEN;
+  return !!(process.env.PLUGNOTAS_API_TOKEN_SANDBOX || process.env.PLUGNOTAS_API_TOKEN);
+}
