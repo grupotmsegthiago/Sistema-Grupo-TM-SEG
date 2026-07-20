@@ -107,17 +107,25 @@ const CashTitleList: React.FC<{
   subtitle: string;
   rows: CashTitleRow[];
   totalCount: number;
+  /** Soma de todos os títulos do grupo (não só os exibidos na lista). */
+  totalAmount?: number;
   tone: 'green' | 'red';
   dateLabel: string;
-}> = ({ title, subtitle, rows, totalCount, tone, dateLabel }) => {
+}> = ({ title, subtitle, rows, totalCount, totalAmount, tone, dateLabel }) => {
   const amountClass = tone === 'green' ? 'text-green-700' : 'text-red-700';
   const badgeClass = tone === 'green' ? 'bg-green-50 text-green-800 border-green-100' : 'bg-red-50 text-red-800 border-red-100';
+  const showTotal = typeof totalAmount === 'number' && Number.isFinite(totalAmount);
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm" data-testid={`cash-titles-${tone}-${dateLabel}`}>
       <div className="flex items-start justify-between gap-2 mb-2">
-        <div>
+        <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-wider text-gray-400 font-black">{title}</p>
           <p className="text-[11px] text-gray-500 mt-0.5">{subtitle}</p>
+          {showTotal && (
+            <p className={`text-sm font-black font-mono mt-1.5 ${amountClass}`} data-testid="cash-titles-total">
+              {fmtBRL(totalAmount)}
+            </p>
+          )}
         </div>
         <span className={`text-[10px] font-bold border rounded-md px-2 py-0.5 shrink-0 ${badgeClass}`}>
           {totalCount} título{totalCount === 1 ? '' : 's'}
@@ -446,6 +454,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
             subtitle="Pagamentos confirmados no período"
             rows={cashTitles.paidIncome}
             totalCount={cashTitles.paidIncomeCount}
+            totalAmount={cashTitles.paidIncomeTotal}
             tone="green"
             dateLabel="Pago"
           />
@@ -454,6 +463,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
             subtitle="Pagamentos confirmados no período"
             rows={cashTitles.paidExpense}
             totalCount={cashTitles.paidExpenseCount}
+            totalAmount={cashTitles.paidExpenseTotal}
             tone="red"
             dateLabel="Pago"
           />
@@ -462,6 +472,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
             subtitle="Em aberto com vencimento no período"
             rows={cashTitles.pendingReceivable}
             totalCount={cashTitles.pendingReceivableCount}
+            totalAmount={cashTitles.pendingReceivableTotal}
             tone="green"
             dateLabel="Venc."
           />
@@ -470,6 +481,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
             subtitle="Em aberto com vencimento no período"
             rows={cashTitles.pendingPayable}
             totalCount={cashTitles.pendingPayableCount}
+            totalAmount={cashTitles.pendingPayableTotal}
             tone="red"
             dateLabel="Venc."
           />

@@ -290,6 +290,9 @@ export function buildCashTitleBreakdown(
   const pendingRecvAll = pending.filter(t => t.type === 'INCOME').map(t => toCashTitleRow(t, 'pending'));
   const pendingPayAll = pending.filter(t => t.type === 'EXPENSE').map(t => toCashTitleRow(t, 'pending'));
 
+  const sumAmount = (rows: CashTitleRow[]) =>
+    round2(rows.reduce((s, r) => s + Number(r.amount || 0), 0));
+
   return {
     paidIncome: sortByAmountDesc(paidIncomeAll).slice(0, limit),
     paidExpense: sortByAmountDesc(paidExpenseAll).slice(0, limit),
@@ -299,6 +302,10 @@ export function buildCashTitleBreakdown(
     paidExpenseCount: paidExpenseAll.length,
     pendingReceivableCount: pendingRecvAll.length,
     pendingPayableCount: pendingPayAll.length,
+    paidIncomeTotal: sumAmount(paidIncomeAll),
+    paidExpenseTotal: sumAmount(paidExpenseAll),
+    pendingReceivableTotal: sumAmount(pendingRecvAll),
+    pendingPayableTotal: sumAmount(pendingPayAll),
   };
 }
 

@@ -362,10 +362,13 @@ describe('dashboardDiretoria aggregations', () => {
     assert.equal(list.paidExpenseCount, 2);
     assert.equal(list.paidExpense[0].id, 'p1');
     assert.equal(list.paidExpense[0].amount, 900);
+    assert.equal(list.paidExpenseTotal, 1000);
     assert.equal(list.pendingReceivableCount, 2);
     assert.equal(list.pendingReceivable[0].id, 'r1');
+    assert.equal(list.pendingReceivableTotal, 5050);
     assert.equal(list.pendingPayable[0].id, 'x1');
     assert.equal(list.pendingPayableCount, 1);
+    assert.equal(list.pendingPayableTotal, 7000);
   });
 });
 
@@ -416,6 +419,11 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(src, /Resultado realizado/);
     assert.match(src, /Previsão do pendente/);
     assert.match(src, /Maiores a pagar/);
+    assert.match(src, /totalAmount=\{cashTitles\.paidIncomeTotal\}/);
+    assert.match(src, /totalAmount=\{cashTitles\.paidExpenseTotal\}/);
+    assert.match(src, /totalAmount=\{cashTitles\.pendingReceivableTotal\}/);
+    assert.match(src, /totalAmount=\{cashTitles\.pendingPayableTotal\}/);
+    assert.match(src, /cash-titles-total/);
     assert.match(src, /Transferência entre contas da empresa/);
     assert.match(src, /cash-title-breakdown/);
     assert.match(src, /from 'react'/);

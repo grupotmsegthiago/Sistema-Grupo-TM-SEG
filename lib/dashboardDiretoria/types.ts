@@ -97,6 +97,11 @@ export interface CashTitleBreakdown {
   paidExpenseCount: number;
   pendingReceivableCount: number;
   pendingPayableCount: number;
+  /** Soma de TODOS os títulos do grupo (não só os N maiores da lista). */
+  paidIncomeTotal: number;
+  paidExpenseTotal: number;
+  pendingReceivableTotal: number;
+  pendingPayableTotal: number;
 }
 
 /** Cliente com maior volume a receber (títulos em aberto, sem teto de prazo). */
