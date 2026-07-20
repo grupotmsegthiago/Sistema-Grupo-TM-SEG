@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { isFinanceSupervisorName, normalizePersonName } from '../lib/financeSupervisorAccess';
+import {
+  canSeeOsComPrejuizo,
+  isFinanceSupervisorName,
+  normalizePersonName,
+} from '../lib/financeSupervisorAccess';
 
 describe('financeSupervisorAccess', () => {
   it('reconhece Bárbara com e sem acento', () => {
@@ -23,5 +27,24 @@ describe('financeSupervisorAccess', () => {
 
   it('normalizePersonName remove acentos', () => {
     assert.equal(normalizePersonName('Bárbara'), 'barbara');
+  });
+});
+
+describe('canSeeOsComPrejuizo', () => {
+  it('libera Barbara, Daniel e Giovanna pelo nome', () => {
+    assert.equal(canSeeOsComPrejuizo({ name: 'Barbara Sgarlata', role: 'financeiro' }), true);
+    assert.equal(canSeeOsComPrejuizo({ name: 'DANIEL LIMA', role: 'operacional' }), true);
+    assert.equal(canSeeOsComPrejuizo({ name: 'Giovanna Marsili', role: 'financeiro' }), true);
+  });
+
+  it('libera perfil administrador mesmo sem nome especial', () => {
+    assert.equal(canSeeOsComPrejuizo({ name: 'Usuario X', role: 'administrador' }), true);
+    assert.equal(canSeeOsComPrejuizo({ name: 'Usuario X', role: 'Administrador' }), true);
+  });
+
+  it('bloqueia comercial e usuário sem perfil financeiro', () => {
+    assert.equal(canSeeOsComPrejuizo({ name: 'Vendedor', role: 'comercial' }), false);
+    assert.equal(canSeeOsComPrejuizo({ name: 'Operacional', role: 'operacional' }), false);
+    assert.equal(canSeeOsComPrejuizo(null), false);
   });
 });

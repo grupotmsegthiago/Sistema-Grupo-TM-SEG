@@ -47,7 +47,7 @@ import ClientCommitteePresentation from './ClientCommitteePresentation';
 import MissionOperationalReport from './MissionOperationalReport';
 import MissionTeamPresenceBoard from './MissionTeamPresenceBoard';
 import { hasFullMissionListAccess, isMissionClientScopeRestricted } from '../lib/missionAccess';
-import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { canSeeOsComPrejuizo, isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import { collectLinkedFamilyIds } from '../lib/missionLinkage';
 const cevaLogoPath = '/logo_ceva.png';
 
@@ -271,13 +271,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     return currentUser?.name?.toUpperCase() === 'DANIEL PINTO';
   }, [currentUser]);
 
-  const canSeeFinancials = useMemo(() => {
-    if (!currentUser) return false;
-    const nameLower = (currentUser.name || '').toLowerCase();
-    const roleLower = (currentUser.role || '').toLowerCase();
-    if (roleLower === 'comercial') return false;
-    return nameLower.includes('daniel') || nameLower.includes('michelle') || isFinanceSupervisorName(currentUser.name) || nameLower.includes('thiago moreira') || roleLower === 'controller';
-  }, [currentUser]);
+  /** Card "OS com Prejuízo" — Bárbara, Daniel, Giovanna (+ admin/diretoria/controller). */
+  const canSeeFinancials = useMemo(
+    () => canSeeOsComPrejuizo(currentUser),
+    [currentUser],
+  );
 
   const isDiretoriaRole = useMemo(() => {
     return (currentUser?.role || '').toLowerCase() === 'diretoria';
@@ -311,8 +309,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   }, [currentUser]);
 
   // Conta quantas OS estão com prejuízo direto (custo > receita) no período
-  // canônico selecionado. Usado para esconder o botão "OS com Prejuízo"
-  // quando não há nenhuma OS com prejuízo no período.
+  // canônico selecionado. O card permanece visível mesmo com 0 OS.
   // Filtragem por período para a contagem de prejuízo (segue o período da tela).
   // A detecção de "OS sem tabela" NÃO usa esta lista — ela tem piso fixo em maio/2026.
   const missionsInCanonicalPeriod = useMemo(() => {
@@ -1930,7 +1927,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
              </div>
              </>
              )}
-             {canSeeFinancials && lossesCount > 0 && (
+             {canSeeFinancials && (
              <div className="w-full sm:w-auto sm:shrink-0 flex items-stretch">
                 <button
                    onClick={() => setIsLossesOpen(true)}
