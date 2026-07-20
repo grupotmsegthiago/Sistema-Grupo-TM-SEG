@@ -3,6 +3,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseUrl } from './supabaseConfig';
+import { findAgentByName, sanitizeAgentField } from '../lib/agents/agentNameMatch';
+import { fetchAgentsByNames } from '../lib/agents/fetchAgentsByNames';
 
 let supabaseClient: SupabaseClient | null = null;
 
@@ -47,8 +49,7 @@ export async function generateMissionReportPDF(missionId: string): Promise<Buffe
     const agentNames = [mission.agent1, mission.agent2].filter(Boolean);
     let agents: any[] = [];
     if (agentNames.length > 0) {
-      const { data: agentsData } = await supabase.from('agents').select('*').in('name', agentNames);
-      if (agentsData) agents = agentsData;
+      agents = await fetchAgentsByNames(supabase, agentNames);
     }
 
     let vehicle: any = null;
@@ -162,7 +163,7 @@ export async function generateMissionReportPDF(missionId: string): Promise<Buffe
 
     const renderAgent = (agentName: string | undefined, label: string, badge: string) => {
       if (!agentName) return;
-      const agent = agents.find((a: any) => a.name === agentName);
+      const agent = findAgentByName(agents, agentName);
       y = drawHeaderBar(`IDENTIFICAÇÃO DO AGENTE : ${label}`, y);
       const agentH = 5;
       const labelW = 22;
@@ -174,24 +175,24 @@ export async function generateMissionReportPDF(missionId: string): Promise<Buffe
       drawCell(margin + labelW, y, contentW - labelW, agentH, agentName, { bold: true });
       y += agentH;
       drawCell(margin, y, labelW, agentH, 'CPF:', { bold: true, bg: GRAY_BG });
-      drawCell(margin + labelW, y, contentW - labelW, agentH, agent?.cpf || '-', {});
+      drawCell(margin + labelW, y, contentW - labelW, agentH, sanitizeAgentField(agent?.cpf) || '-', {});
       y += agentH;
 
       const halfW = contentW / 2;
       drawCell(margin, y, labelW, agentH, 'RG:', { bold: true, bg: GRAY_BG });
-      drawCell(margin + labelW, y, halfW - labelW, agentH, agent?.rg || '-', {});
+      drawCell(margin + labelW, y, halfW - labelW, agentH, sanitizeAgentField(agent?.rg) || '-', {});
       drawCell(margin + halfW, y, labelW2, agentH, 'CONTATO:', { bold: true, bg: GRAY_BG });
-      drawCell(margin + halfW + labelW2, y, halfW - labelW2, agentH, agent?.phone || '-', {});
+      drawCell(margin + halfW + labelW2, y, halfW - labelW2, agentH, sanitizeAgentField(agent?.phone) || '-', {});
       y += agentH;
 
       drawCell(margin, y, labelW, agentH, 'CNH:', { bold: true, bg: GRAY_BG });
-      drawCell(margin + labelW, y, halfW - labelW, agentH, agent?.cnh || '-', {});
+      drawCell(margin + labelW, y, halfW - labelW, agentH, sanitizeAgentField(agent?.cnh) || '-', {});
       drawCell(margin + halfW, y, labelW2, agentH, 'VAL CNH:', { bold: true, bg: GRAY_BG });
       drawCell(margin + halfW + labelW2, y, halfW - labelW2, agentH, formatDateBR(agent?.cnh_validity), {});
       y += agentH;
 
       drawCell(margin, y, labelW, agentH, 'CNV:', { bold: true, bg: GRAY_BG });
-      drawCell(margin + labelW, y, halfW - labelW, agentH, agent?.cnv || '-', {});
+      drawCell(margin + labelW, y, halfW - labelW, agentH, sanitizeAgentField(agent?.cnv) || '-', {});
       drawCell(margin + halfW, y, labelW2, agentH, 'VAL CNV:', { bold: true, bg: GRAY_BG });
       drawCell(margin + halfW + labelW2, y, halfW - labelW2, agentH, formatDateBR(agent?.cnv_validity), {});
       y += agentH;

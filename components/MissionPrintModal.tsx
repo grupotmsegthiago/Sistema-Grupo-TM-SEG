@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { X, Printer, Loader2, ShieldCheck, Download } from 'lucide-react';
 import { Mission, Agent, Vehicle } from '../types';
 import { supabase } from '../lib/supabase';
+import { findAgentByName, sanitizeAgentField } from '../lib/agents/agentNameMatch';
+import { fetchAgentsByNames } from '../lib/agents/fetchAgentsByNames';
 
 interface Props {
   mission: Mission;
@@ -22,11 +24,8 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
       try {
         const agentNames = [mission.agent1, mission.agent2].filter(Boolean);
         if (agentNames.length > 0) {
-          const { data: agentsData } = await supabase
-            .from('agents')
-            .select('*')
-            .in('name', agentNames);
-          if (agentsData) setAgentsDetails(agentsData as Agent[]);
+          const agentsData = await fetchAgentsByNames(supabase, agentNames);
+          setAgentsDetails(agentsData as Agent[]);
         }
 
         if (mission.vehicleId) {
@@ -69,7 +68,7 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
 
   const formatTime = (isoString?: string) => isoString ? formatTimeBR(isoString, '') : '';
 
-  const getAgent = (name?: string) => agentsDetails.find(a => a.name === name);
+  const getAgent = (name?: string) => findAgentByName(agentsDetails, name);
 
   const clientVehicleLabel = (() => {
     if (clientVehicleInfo?.plate) {
@@ -102,16 +101,16 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
                     </div>
                     <div className="agent-row">
                         <span className="agent-label">CPF:</span>
-                        <span className="agent-value">{agent?.cpf || '-'}</span>
+                        <span className="agent-value">{sanitizeAgentField(agent?.cpf) || '-'}</span>
                     </div>
                     <div className="agent-two-col">
                         <div className="agent-col-left">
-                            <div className="agent-row"><span className="agent-label">RG:</span><span className="agent-value">{agent?.rg || '-'}</span></div>
-                            <div className="agent-row"><span className="agent-label">CNH:</span><span className="agent-value">{agent?.cnh || '-'}</span></div>
-                            <div className="agent-row last"><span className="agent-label">CNV:</span><span className="agent-value">{agent?.cnv || 'ISENTO'}</span></div>
+                            <div className="agent-row"><span className="agent-label">RG:</span><span className="agent-value">{sanitizeAgentField(agent?.rg) || '-'}</span></div>
+                            <div className="agent-row"><span className="agent-label">CNH:</span><span className="agent-value">{sanitizeAgentField(agent?.cnh) || '-'}</span></div>
+                            <div className="agent-row last"><span className="agent-label">CNV:</span><span className="agent-value">{sanitizeAgentField(agent?.cnv) || 'ISENTO'}</span></div>
                         </div>
                         <div className="agent-col-right">
-                            <div className="agent-row"><span className="agent-label-r">CONTATO:</span><span className="agent-value">{agent?.phone || '-'}</span></div>
+                            <div className="agent-row"><span className="agent-label-r">CONTATO:</span><span className="agent-value">{sanitizeAgentField(agent?.phone) || '-'}</span></div>
                             <div className="agent-row"><span className="agent-label-r">VAL CNH:</span><span className="agent-value">{formatDate(agent?.cnh_validity) || '-'}</span></div>
                             <div className="agent-row last"><span className="agent-label-r">VAL CNV:</span><span className="agent-value">{formatDate(agent?.cnv_validity) || '-'}</span></div>
                         </div>

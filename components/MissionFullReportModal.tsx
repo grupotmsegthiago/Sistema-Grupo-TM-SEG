@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase';
 import { X, ExternalLink, Loader2, FileText } from 'lucide-react';
 import { googleMapsApiKey } from '../lib/maps';
 import { formatDateTimeBR, formatNowDateTimeBR } from '../lib/dateUtils';
+import { findAgentByName, sanitizeAgentField } from '../lib/agents/agentNameMatch';
+import { fetchAgentsByNames } from '../lib/agents/fetchAgentsByNames';
 
 interface Client {
     id: number;
@@ -50,10 +52,10 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
     const fetchAllData = async () => {
         setIsLoading(true);
         try {
-            const [logsRes, historyRes, agentsRes, vehicleRes, evidenceRes] = await Promise.all([
+            const [logsRes, historyRes, agentsData, vehicleRes, evidenceRes] = await Promise.all([
                 supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: true }),
                 supabase.from('mission_history').select('*').eq('mission_id', mission.id).order('changed_at', { ascending: true }),
-                supabase.from('agents').select('*').in('name', [mission.agent1, mission.agent2].filter(Boolean)),
+                fetchAgentsByNames(supabase, [mission.agent1, mission.agent2]),
                 mission.vehicleId
                     ? (!isNaN(Number(mission.vehicleId))
                         ? supabase.from('vehicles').select('*').eq('id', mission.vehicleId).maybeSingle()
@@ -78,7 +80,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
 
             if (logsRes.data) setLogs(logsRes.data);
             if (historyRes.data) setHistory(historyRes.data);
-            if (agentsRes.data) setAgents(agentsRes.data as Agent[]);
+            if (agentsData?.length) setAgents(agentsData as Agent[]);
             if (vehicleRes.data) setVehicle(vehicleRes.data as Vehicle);
             setClients(clientsData);
             if (evidenceRes.data) {
@@ -182,8 +184,8 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
                 }
             }
 
-            const agent1Data = agents.find(a => a.name === mission.agent1);
-            const agent2Data = agents.find(a => a.name === mission.agent2);
+            const agent1Data = findAgentByName(agents, mission.agent1);
+            const agent2Data = findAgentByName(agents, mission.agent2);
 
             // Filter logs: only those STRICTLY at or after the 'Em Viagem' change time
             // PLUS ensure we don't include technical setup logs like "Início de Missão"
@@ -644,15 +646,15 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
                         </div>
                         <div>
                             <div class="field-label">CPF</div>
-                            <div class="field-value">${agent1Data?.cpf || '—'}</div>
+                            <div class="field-value">${sanitizeAgentField(agent1Data?.cpf) || '—'}</div>
                         </div>
                         <div>
                             <div class="field-label">RG</div>
-                            <div class="field-value">${agent1Data?.rg || '—'}</div>
+                            <div class="field-value">${sanitizeAgentField(agent1Data?.rg) || '—'}</div>
                         </div>
                         <div>
                             <div class="field-label">CNV</div>
-                            <div class="field-value">${agent1Data?.cnv || '—'}</div>
+                            <div class="field-value">${sanitizeAgentField(agent1Data?.cnv) || '—'}</div>
                         </div>
                     </div>
                 ` : ''}
@@ -665,15 +667,15 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
                         </div>
                         <div>
                             <div class="field-label">CPF</div>
-                            <div class="field-value">${agent2Data?.cpf || '—'}</div>
+                            <div class="field-value">${sanitizeAgentField(agent2Data?.cpf) || '—'}</div>
                         </div>
                         <div>
                             <div class="field-label">RG</div>
-                            <div class="field-value">${agent2Data?.rg || '—'}</div>
+                            <div class="field-value">${sanitizeAgentField(agent2Data?.rg) || '—'}</div>
                         </div>
                         <div>
                             <div class="field-label">CNV</div>
-                            <div class="field-value">${agent2Data?.cnv || '—'}</div>
+                            <div class="field-value">${sanitizeAgentField(agent2Data?.cnv) || '—'}</div>
                         </div>
                     </div>
                 ` : ''}
