@@ -66,6 +66,15 @@ const MissionReportPage: React.FC = () => {
   const [refDataReady, setRefDataReady] = useState(false);
   const [auditByMission, setAuditByMission] = useState<Map<string, MissionBillingAuditResult>>(new Map());
   const [auditBusy, setAuditBusy] = useState(false);
+  /** Liga/desliga o batch de auditoria (ST AUD). Desligado = tela bem mais rápida. */
+  const [auditEnabled, setAuditEnabled] = useState(() => {
+    try {
+      const stored = localStorage.getItem('missionReport.auditEnabled');
+      if (stored === '0') return false;
+      if (stored === '1') return true;
+    } catch { /* ignore */ }
+    return true;
+  });
   const realtimeDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const auditRunRef = React.useRef(0);
   const [auditForModal, setAuditForModal] = useState<{ mission: Mission; audit: MissionBillingAuditResult } | null>(null);
@@ -76,9 +85,16 @@ const MissionReportPage: React.FC = () => {
   const [clientFilter, setClientFilter] = useState('');
   const [providerFilter, setProviderFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [auditStatusFilter, setAuditStatusFilter] = useState<AuditStatusLevel | ''>('');
+  /** Padrão: só OS com erro de auditoria (evita abrir 400+ linhas de uma vez). */
+  const [auditStatusFilter, setAuditStatusFilter] = useState<AuditStatusLevel | ''>('erro');
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(true);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('missionReport.auditEnabled', auditEnabled ? '1' : '0');
+    } catch { /* ignore */ }
+  }, [auditEnabled]);
 
   const [missionForFinancials, setMissionForFinancials] = useState<any>(null);
   const [isFinancialModalOpen, setIsFinancialModalOpen] = useState(false);
@@ -270,6 +286,19 @@ const MissionReportPage: React.FC = () => {
 
   const displayMissions = useMemo(() => {
     let list = filteredMissions;
+
+    // Sem auditoria: lista rápida (só filtros de período/cliente/etc.).
+    if (!auditEnabled) {
+      return [...list].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
+    }
+
+    // Enquanto calcula, não materializa 400 linhas “pendente” no filtro ERRO.
+    if (auditBusy && auditStatusFilter === 'erro') {
+      return [];
+    }
+
     if (auditStatusFilter) {
       list = list.filter(
         (m) => resolveMissionAuditLevel(m, auditByMission) === auditStatusFilter,
@@ -281,10 +310,26 @@ const MissionReportPage: React.FC = () => {
       if (priorityA !== priorityB) return priorityA - priorityB;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [filteredMissions, auditStatusFilter, auditByMission]);
+  }, [filteredMissions, auditStatusFilter, auditByMission, auditEnabled, auditBusy]);
 
   const toggleAuditStatusFilter = useCallback((level: AuditStatusLevel) => {
     setAuditStatusFilter((prev) => (prev === level ? '' : level));
+  }, []);
+
+  const toggleAuditEnabled = useCallback(() => {
+    setAuditEnabled((prev) => {
+      const next = !prev;
+      if (next) {
+        // Ao religar, volta ao recorte útil (só erros).
+        setAuditStatusFilter('erro');
+      } else {
+        setAuditByMission(new Map());
+        setAuditBusy(false);
+        auditRunRef.current += 1;
+        setAuditStatusFilter('');
+      }
+      return next;
+    });
   }, []);
 
   const uniqueClients = useMemo(() => [...new Set(allMissions.map(m => m.client).filter(Boolean))].sort(), [allMissions]);
@@ -314,10 +359,10 @@ const MissionReportPage: React.FC = () => {
     return map;
   }, [filteredMissions]);
 
+  // Só linhas visíveis — evita calculateMissionFinancials em 400+ OS no MÊS.
   const tableInfoMap = useMemo(() => {
-    if (clientPriceTables.length === 0 && providerCostTables.length === 0) return new Map<string, { clientTable: string; providerTable: string }>();
     const map = new Map<string, { clientTable: string; providerTable: string }>();
-    for (const m of filteredMissions) {
+    for (const m of displayMissions) {
       const adj = m.id ? billingAdjustmentsMap.get(m.id) : undefined;
       if (adj?.clientTableName || adj?.providerTableName) {
         map.set(m.id, {
@@ -326,6 +371,9 @@ const MissionReportPage: React.FC = () => {
         });
         continue;
       }
+      // Com auditoria desligada, não recalcula tabela por linha (principal causa de freeze).
+      if (!auditEnabled) continue;
+      if (clientPriceTables.length === 0 && providerCostTables.length === 0) continue;
       try {
         const mObj = { ...m, startKm: m.startKm || m.start_km, endKm: m.endKm || m.end_km, startTime: m.startTime || m.start_time, endTime: m.endTime || m.end_time };
         const clientMatch = clientsData.find((c: any) => c.name === (m as any).originalClientName || c.name === m.client);
@@ -336,7 +384,7 @@ const MissionReportPage: React.FC = () => {
       } catch { /* skip */ }
     }
     return map;
-  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData, billingAdjustmentsMap]);
+  }, [displayMissions, auditEnabled, clientPriceTables, providerCostTables, clientsData, billingAdjustmentsMap]);
 
   const handleRecalcRow = async (missionId: string) => {
     setRecalcRowId(missionId);
@@ -372,9 +420,12 @@ const MissionReportPage: React.FC = () => {
 
   // Auditoria em background — só OS finalizadas (concluída / recusada / cancelada).
   useEffect(() => {
-    if (!refDataReady || !canSeeFinancials || filteredMissions.length === 0) {
+    if (!auditEnabled) {
       setAuditByMission(new Map());
       setAuditBusy(false);
+      return;
+    }
+    if (!refDataReady || !canSeeFinancials || filteredMissions.length === 0) {
       return;
     }
 
@@ -414,6 +465,7 @@ const MissionReportPage: React.FC = () => {
       signal.cancelled = true;
     };
   }, [
+    auditEnabled,
     filteredMissions,
     clientPriceTables,
     providerCostTables,
@@ -469,15 +521,33 @@ const MissionReportPage: React.FC = () => {
     return { validado, atencao, erro, pendente, emViagem };
   }, [auditByMission, filteredMissions]);
 
+  // Totais e células alinhados às linhas visíveis (filtro ERRO / auditoria off).
   const canonicalByMission = useMemo(() => {
     const refs = { clientTables: clientPriceTables, providerTables: providerCostTables, clientsData };
     const now = new Date();
     const map = new Map<string, CanonicalResult>();
-    for (const m of filteredMissions) {
-      map.set(m.id, computeCanonicalRevenueCost(m, refs, now));
+    const asNum = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+    for (const m of displayMissions) {
+      if (!auditEnabled) {
+        // Modo rápido: só valores salvos (sem reestimar tabelas linha a linha).
+        const revBase = asNum((m as any).revenue_value);
+        const costBase = asNum((m as any).cost_value);
+        const tollRev = asNum((m as any).toll_value);
+        const tollCost = asNum((m as any).toll_value_provider) || tollRev;
+        const dispRev = Math.max(0, asNum((m as any).displacement_value));
+        const dispCost = Math.max(0, asNum((m as any).displacement_value_provider));
+        const rev = revBase + tollRev + dispRev;
+        const cost = costBase + tollCost + dispCost;
+        map.set(m.id, {
+          revBase, tollRev, dispRev, rev, costBase, tollCost, dispCost, cost,
+          profit: rev - cost, source: 'saved',
+        });
+      } else {
+        map.set(m.id, computeCanonicalRevenueCost(m, refs, now));
+      }
     }
     return map;
-  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData]);
+  }, [displayMissions, auditEnabled, clientPriceTables, providerCostTables, clientsData]);
 
   const totals = useMemo(() => {
     let revBase = 0, tollRev = 0, dispRev = 0, costBase = 0, tollCost = 0, dispCost = 0, profit = 0;
@@ -595,7 +665,7 @@ const MissionReportPage: React.FC = () => {
             <FileBarChart size={22} className="text-red-600" />
             <h1 className="text-lg font-black text-gray-900 uppercase tracking-tight">Relatório de OS</h1>
             <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded" data-testid="report-mission-count">
-              {auditStatusFilter
+              {auditEnabled && auditStatusFilter
                 ? `${displayMissions.length} de ${filteredMissions.length} missões`
                 : `${displayMissions.length} missões`}
             </span>
@@ -603,77 +673,96 @@ const MissionReportPage: React.FC = () => {
               <div className="flex items-center gap-1.5 text-[10px] font-black">
                 <button
                   type="button"
-                  data-testid="filter-audit-validado"
-                  onClick={() => toggleAuditStatusFilter('validado')}
-                  title="Filtrar VALIDADO"
+                  data-testid="toggle-audit-enabled"
+                  onClick={toggleAuditEnabled}
+                  title={auditEnabled
+                    ? 'Desligar auditoria (lista rápida, sem ST AUD)'
+                    : 'Ligar auditoria e filtrar OS com erro'}
                   className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
-                    auditStatusFilter === 'validado'
-                      ? 'bg-emerald-600 text-white border-emerald-700 ring-2 ring-emerald-300'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                    auditEnabled
+                      ? 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-300'
+                      : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
                   }`}
                 >
-                  🟢 {auditSummary.validado}
+                  {auditEnabled ? 'Auditoria ON' : 'Auditoria OFF'}
                 </button>
-                <button
-                  type="button"
-                  data-testid="filter-audit-atencao"
-                  onClick={() => toggleAuditStatusFilter('atencao')}
-                  title="Filtrar ATENÇÃO"
-                  className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
-                    auditStatusFilter === 'atencao'
-                      ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
-                      : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                  }`}
-                >
-                  🟡 {auditSummary.atencao}
-                </button>
-                <button
-                  type="button"
-                  data-testid="filter-audit-erro"
-                  onClick={() => toggleAuditStatusFilter('erro')}
-                  title="Filtrar ERRO"
-                  className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
-                    auditStatusFilter === 'erro'
-                      ? 'bg-red-600 text-white border-red-700 ring-2 ring-red-300'
-                      : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
-                  }`}
-                >
-                  🔴 {auditSummary.erro}
-                </button>
-                {(auditSummary.pendente > 0 || auditStatusFilter === 'pendente') && (
-                  <button
-                    type="button"
-                    data-testid="filter-audit-pendente"
-                    onClick={() => toggleAuditStatusFilter('pendente')}
-                    title="Filtrar PENDENTE"
-                    className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
-                      auditStatusFilter === 'pendente'
-                        ? 'bg-gray-600 text-white border-gray-700 ring-2 ring-gray-300'
-                        : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
-                    }`}
-                  >
-                    ⚪ {auditSummary.pendente}
-                  </button>
-                )}
-                {(auditSummary.emViagem > 0 || auditStatusFilter === 'em_viagem') && (
-                  <button
-                    type="button"
-                    data-testid="filter-audit-em-viagem"
-                    onClick={() => toggleAuditStatusFilter('em_viagem')}
-                    title="Filtrar EM VIAGEM"
-                    className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
-                      auditStatusFilter === 'em_viagem'
-                        ? 'bg-sky-600 text-white border-sky-700 ring-2 ring-sky-300'
-                        : 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100'
-                    }`}
-                  >
-                    🛣️ {auditSummary.emViagem}
-                  </button>
-                )}
-                {auditBusy && (
-                  <span className="text-gray-400 font-bold px-1 flex items-center gap-1">
-                    <Loader2 size={10} className="animate-spin" /> auditoria…
-                  </span>
+                {auditEnabled && (
+                  <>
+                    <button
+                      type="button"
+                      data-testid="filter-audit-validado"
+                      onClick={() => toggleAuditStatusFilter('validado')}
+                      title="Filtrar VALIDADO"
+                      className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
+                        auditStatusFilter === 'validado'
+                          ? 'bg-emerald-600 text-white border-emerald-700 ring-2 ring-emerald-300'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                      }`}
+                    >
+                      🟢 {auditSummary.validado}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="filter-audit-atencao"
+                      onClick={() => toggleAuditStatusFilter('atencao')}
+                      title="Filtrar ATENÇÃO"
+                      className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
+                        auditStatusFilter === 'atencao'
+                          ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
+                          : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                      }`}
+                    >
+                      🟡 {auditSummary.atencao}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="filter-audit-erro"
+                      onClick={() => toggleAuditStatusFilter('erro')}
+                      title="Filtrar ERRO"
+                      className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
+                        auditStatusFilter === 'erro'
+                          ? 'bg-red-600 text-white border-red-700 ring-2 ring-red-300'
+                          : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                      }`}
+                    >
+                      🔴 {auditSummary.erro}
+                    </button>
+                    {(auditSummary.pendente > 0 || auditStatusFilter === 'pendente') && (
+                      <button
+                        type="button"
+                        data-testid="filter-audit-pendente"
+                        onClick={() => toggleAuditStatusFilter('pendente')}
+                        title="Filtrar PENDENTE"
+                        className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
+                          auditStatusFilter === 'pendente'
+                            ? 'bg-gray-600 text-white border-gray-700 ring-2 ring-gray-300'
+                            : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                        }`}
+                      >
+                        ⚪ {auditSummary.pendente}
+                      </button>
+                    )}
+                    {(auditSummary.emViagem > 0 || auditStatusFilter === 'em_viagem') && (
+                      <button
+                        type="button"
+                        data-testid="filter-audit-em-viagem"
+                        onClick={() => toggleAuditStatusFilter('em_viagem')}
+                        title="Filtrar EM VIAGEM"
+                        className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
+                          auditStatusFilter === 'em_viagem'
+                            ? 'bg-sky-600 text-white border-sky-700 ring-2 ring-sky-300'
+                            : 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100'
+                        }`}
+                      >
+                        🛣️ {auditSummary.emViagem}
+                      </button>
+                    )}
+                    {auditBusy && (
+                      <span className="text-gray-400 font-bold px-1 flex items-center gap-1">
+                        <Loader2 size={10} className="animate-spin" /> auditoria…
+                      </span>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -862,8 +951,27 @@ const MissionReportPage: React.FC = () => {
           </div>
         ) : displayMissions.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-            <List size={40} className="mx-auto mb-3 opacity-30" />
-            <p className="font-bold">Nenhuma OS encontrada para os filtros selecionados</p>
+            {auditEnabled && auditBusy && auditStatusFilter === 'erro' ? (
+              <>
+                <Loader2 size={32} className="mx-auto mb-3 animate-spin text-red-600" />
+                <p className="font-bold text-gray-600">Calculando auditoria…</p>
+                <p className="text-xs mt-1">Em seguida serão listadas só as OS com erro</p>
+              </>
+            ) : (
+              <>
+                <List size={40} className="mx-auto mb-3 opacity-30" />
+                <p className="font-bold">
+                  {auditEnabled && auditStatusFilter === 'erro'
+                    ? 'Nenhuma OS com erro de auditoria neste período'
+                    : 'Nenhuma OS encontrada para os filtros selecionados'}
+                </p>
+                {auditEnabled && auditStatusFilter === 'erro' && (
+                  <p className="text-xs mt-2 max-w-sm text-center">
+                    Clique em outro chip (🟢/🟡) ou em <span className="font-black">Auditoria OFF</span> para ver todas as OS sem o cálculo pesado.
+                  </p>
+                )}
+              </>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -1028,6 +1136,11 @@ const MissionReportPage: React.FC = () => {
                         </>
                       )}
                       {canSeeFinancials && (() => {
+                        if (!auditEnabled) {
+                          return (
+                            <td className="px-3 py-2 border-r border-gray-100 text-center text-[10px] text-gray-400" title="Auditoria desligada">OFF</td>
+                          );
+                        }
                         if (!refDataReady || auditBusy) {
                           return (
                             <td className="px-3 py-2 border-r border-gray-100 text-center text-[10px] text-gray-300" title={auditBusy ? 'Calculando auditoria…' : undefined}>…</td>
