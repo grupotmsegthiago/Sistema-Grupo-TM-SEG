@@ -12,6 +12,11 @@ import MissionFinancialModal from './MissionFinancialModal';
 
 import { generateContent } from '../lib/gemini';
 import {
+    isBankTransferBillingClient,
+    transferBillingDueDays,
+} from '../lib/billing/transferBillingClients';
+import { addCalendarDaysIso } from '../lib/billing/medicaoDueDate';
+import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
 } from 'recharts';
 
@@ -879,6 +884,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const isCeslogBilling = (clientData?.name || '').toUpperCase().includes('CESLOG') || (clientData?.name || '').toUpperCase().includes('CESARI') || (clientData?.trading_name || '').toUpperCase().includes('CESLOG') || (clientData?.trading_name || '').toUpperCase().includes('CESARI');
     const isCevaBilling = (clientData?.name || '').toUpperCase().includes('CEVA') || (clientData?.trading_name || '').toUpperCase().includes('CEVA');
     const isDhlBilling = (clientData?.name || '').toUpperCase().includes('DHL') || (clientData?.trading_name || '').toUpperCase().includes('DHL');
+    /** Cliente do modal de fatura (pode diferir se o formulário mudar). */
+    const invoiceClientObj = clients.find(c => c.id.toString() === invoiceForm.client);
+    const isTransferBillingClient = isBankTransferBillingClient(
+        invoiceClientObj?.name || clientData?.name,
+        invoiceClientObj?.trading_name || clientData?.trading_name,
+    );
     const isIntermodalBilling = (clientData?.name || '').toUpperCase().includes('INTERMODAL') || (clientData?.trading_name || '').toUpperCase().includes('INTERMODAL');
     const providerObj = providers.find(p => p.id.toString() === selectedProvider);
     const selectedProviderName = providerObj ? (providerObj.trading_name || providerObj.name) : '';
@@ -2748,6 +2759,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     }
 
                     try {
+                        const transferPay = isBankTransferBillingClient(chClientName, clientName);
                         await supabase.from('financial_transactions').insert({
                             description: `NF ${chNfNumber} — ${quinzenaDesc} — ${chClientName}`,
                             amount: chValue,
@@ -2759,6 +2771,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             entity_name: chClientName,
                             notes: `Fatura NF ${chNfNumber} | CNPJ: ${ch.customer?.cpfCnpj || '-'} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
                             created_by: userName,
+                            ...(transferPay ? { payment_method: 'TRANSFERENCIA' } : {}),
                         });
                     } catch (e) {
                         console.error(`[Auto Contas a Receber ${i + 1}]`, e);
@@ -2834,6 +2847,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             }
 
             try {
+                const transferPay = isBankTransferBillingClient(clientName);
                 await supabase.from('financial_transactions').insert({
                     description: `NF ${nfNumber} — ${quinzenaDesc}`,
                     amount: parsedAmt,
@@ -2845,6 +2859,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     entity_name: clientName,
                     notes: `Fatura NF ${nfNumber} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
                     created_by: userName,
+                    ...(transferPay ? { payment_method: 'TRANSFERENCIA' } : {}),
                 });
             } catch (e) {
                 console.error('[Auto Contas a Receber]', e);
@@ -2863,7 +2878,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
     const handleGenerateAsaasCharge = async () => {
         if (!invoiceForm.amount || !invoiceForm.boleto_due_date) {
-            alert('Preencha o Valor e o Vencimento do Boleto antes de gerar a cobrança.');
+            alert('Preencha o Valor e o Vencimento antes de gerar a cobrança.');
             return;
         }
 
@@ -2881,15 +2896,19 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         }
 
         if (asaasSplitMode && asaasSplitCharges.length > 0) {
-            const validCharges = asaasSplitCharges.filter(c => c.cpfCnpj && parseFloat(c.value) > 0);
+            const validCharges = asaasSplitCharges.filter(c => {
+                const digits = String(c.cpfCnpj || '').replace(/\D/g, '');
+                return (digits.length === 11 || digits.length === 14) && parseFloat(c.value) > 0;
+            });
             if (validCharges.length === 0) {
-                alert('Adicione pelo menos uma subconta com CNPJ e valor.');
+                alert('Adicione pelo menos uma subconta com CNPJ/CPF válido (11 ou 14 dígitos) e valor.');
                 return;
             }
             if (Math.abs(asaasSplitDiff) > 0.01) {
                 alert(`A soma das subcontas (R$ ${asaasSplitTotal.toFixed(2)}) não confere com o total da fatura (R$ ${parseFloat(invoiceForm.amount).toFixed(2)}). Diferença: R$ ${asaasSplitDiff.toFixed(2)}`);
                 return;
             }
+            const skipBoleto = isBankTransferBillingClient(clientObj?.name, clientObj?.trading_name);
             setAsaasLoading(true);
             try {
                 const res = await authFetch('/api/asaas/create-charge', {
@@ -2899,9 +2918,16 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         clientEmail: invoiceMedicaoEmail,
                         dueDate: invoiceForm.boleto_due_date,
                         description: asaasDescription,
+                        observations: invoiceForm.notes || '',
                         invoiceNumber: invoiceForm.number,
                         issuerCompany: invoiceForm.issuer_company,
-                        charges: validCharges.map(c => ({ name: c.name || clientObj?.trading_name || clientObj?.name || 'Cliente', cpfCnpj: c.cpfCnpj.replace(/\D/g, ''), email: c.email || invoiceMedicaoEmail, value: parseFloat(c.value) })),
+                        skipBoleto,
+                        charges: validCharges.map(c => ({
+                            name: c.name || clientObj?.trading_name || clientObj?.name || 'Cliente',
+                            cpfCnpj: c.cpfCnpj.replace(/\D/g, ''),
+                            email: (c.email || invoiceMedicaoEmail || '').trim(),
+                            value: parseFloat(c.value),
+                        })),
                     }),
                 });
                 const data = await res.json();
@@ -2937,6 +2963,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             return;
         }
 
+        const skipBoleto = isBankTransferBillingClient(clientObj.name, clientObj.trading_name);
         setAsaasLoading(true);
         try {
             const res = await authFetch('/api/asaas/create-charge', {
@@ -2948,8 +2975,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     value: parseFloat(invoiceForm.amount),
                     dueDate: invoiceForm.boleto_due_date,
                     description: asaasDescription,
+                    observations: invoiceForm.notes || '',
                     invoiceNumber: invoiceForm.number || `TMSEG-${Date.now()}`,
                     issuerCompany: invoiceForm.issuer_company,
+                    skipBoleto,
                 }),
             });
             const data = await res.json();
@@ -2966,7 +2995,9 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 setAiStatus(`⚠️ Cobrança Asaas gerada, mas NF PlugNotas falhou: ${data.nfError.message}. Persistindo localmente.`);
                 alert(`Atenção: cobrança Asaas foi criada com sucesso, mas a NF PlugNotas falhou:\n\n${data.nfError.message}\n\nA cobrança será salva localmente. Use "Reemitir via PlugNotas" na tela de Faturamento depois de corrigir a configuração.`);
             } else {
-                setAiStatus('Cobrança Asaas gerada! Salvando fatura e contas a receber...');
+                setAiStatus(skipBoleto
+                    ? 'NF/fatura gerada (sem boleto — transferência). Salvando Contas a Receber...'
+                    : 'Cobrança Asaas gerada! Salvando fatura e contas a receber...');
             }
 
             await autoSaveInvoiceAfterAsaas(data, nfNum);
@@ -3018,6 +3049,11 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         setInvoiceMedicaoEmail(emailList.length > 0 ? emailList[0] : '');
         setShowMedicaoEmailInput(emailList.length === 0);
 
+        const transferClient = isBankTransferBillingClient(clientObj?.name, clientObj?.trading_name);
+        const dueDays = transferBillingDueDays(clientObj?.name, clientObj?.trading_name);
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const defaultDue = addCalendarDaysIso(todayIso, dueDays);
+
         setInvoiceForm(prev => ({
             ...prev,
             client: selectedClient,
@@ -3026,10 +3062,14 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             issuer_company: issuer,
             notes: notesText,
             number: '',
+            boleto_due_date: prev.boleto_due_date || defaultDue,
         }));
         setAsaasPeriod(periodRef);
         setAsaasSplitMode(false);
         setAsaasSplitCharges([]);
+        if (transferClient) {
+            setAiStatus(`Cliente paga por transferência bancária — boleto Asaas não será gerado/enviado (venc. padrão ${dueDays} dias).`);
+        }
         setShowInvoiceModal(true);
     };
 
@@ -3180,7 +3220,9 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     )}
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-black text-orange-500 uppercase mb-1 block flex items-center gap-1"><Calendar size={10}/> Vencimento do Boleto *</label>
+                                    <label className="text-[10px] font-black text-orange-500 uppercase mb-1 block flex items-center gap-1">
+                                        <Calendar size={10}/> {isTransferBillingClient ? 'Vencimento (Transferência) *' : 'Vencimento do Boleto *'}
+                                    </label>
                                     <input type="date" className="w-full p-2.5 border-2 border-orange-300 rounded-lg text-sm font-bold bg-orange-50 focus:ring-2 focus:ring-orange-400" value={invoiceForm.boleto_due_date} onChange={e => setInvoiceForm({...invoiceForm, boleto_due_date: e.target.value})} data-testid="input-billing-invoice-boleto-date" />
                                 </div>
                                 <div className="flex items-end">
@@ -3191,6 +3233,15 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             </div>
                         </div>
 
+                        {isTransferBillingClient && (
+                            <div className="p-3 rounded-xl border-2 border-amber-400 bg-amber-50" data-testid="banner-transfer-no-boleto">
+                                <p className="text-[10px] font-black text-amber-800 uppercase tracking-wide">Pagamento por transferência bancária</p>
+                                <p className="text-[11px] text-amber-700 font-semibold mt-1">
+                                    Cliente CEVA/DHL — o sistema <strong>não gera nem envia boleto</strong>. Será emitida a NF e o Contas a Receber com forma Transferência.
+                                </p>
+                            </div>
+                        )}
+
                         {isCevaBilling && (
                             <div className="p-3 rounded-xl border-2 border-teal-400 bg-teal-50">
                                 <label className="text-[10px] font-black text-teal-700 uppercase mb-1 block flex items-center gap-1.5"><FileText size={10} /> Liberação de Faturamento (CEVA)</label>
@@ -3200,19 +3251,28 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     const newNotes = libVal ? `LIB. FATUR.: ${libVal} | ${currentNotes}`.trim() : currentNotes;
                                     setInvoiceForm({...invoiceForm, notes: newNotes});
                                 }} data-testid="input-billing-release-nf" />
-                                <p className="text-[8px] text-teal-600 font-bold mt-1">Este código aparecerá na referência da NF e no boletim de medição</p>
+                                <p className="text-[8px] text-teal-600 font-bold mt-1">Este código entra na descrição da cobrança e na observação da NF</p>
                             </div>
                         )}
 
                         <div>
-                            <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Observações (Auto-preenchida)</label>
-                            <textarea className="w-full p-2.5 border rounded-lg text-sm bg-gray-50" rows={2} value={invoiceForm.notes} onChange={e => setInvoiceForm({...invoiceForm, notes: e.target.value})} data-testid="input-billing-invoice-notes" />
+                            <label className="text-[10px] font-black text-indigo-600 uppercase mb-1 block">Observação na NF *</label>
+                            <textarea
+                                className="w-full p-2.5 border-2 border-indigo-200 rounded-lg text-sm bg-indigo-50/40 focus:ring-2 focus:ring-indigo-300"
+                                rows={3}
+                                value={invoiceForm.notes}
+                                onChange={e => setInvoiceForm({...invoiceForm, notes: e.target.value})}
+                                placeholder="Texto que aparece nas observações da Nota Fiscal"
+                                data-testid="input-billing-invoice-notes"
+                            />
+                            <p className="text-[9px] text-indigo-500 font-bold mt-1">Enviado ao Asaas no campo <em>observations</em> da NF (e na discriminação PlugNotas).</p>
                         </div>
 
                         {asaasConfigured && (
                             <div className="border-t border-gray-100 pt-4">
                                 <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                                    <DollarSign size={10} className="text-green-500"/> Cobrança Asaas (Boleto + PIX)
+                                    <DollarSign size={10} className="text-green-500"/>
+                                    {isTransferBillingClient ? 'Cobrança Asaas (NF + Transferência — sem boleto)' : 'Cobrança Asaas (Boleto + PIX)'}
                                 </p>
                                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 mb-3 space-y-2">
                                     <div className="flex items-center gap-1.5 mb-1">
@@ -3247,7 +3307,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 </div>
 
                                 <div className="mb-3">
-                                    <button type="button" onClick={() => { setAsaasSplitMode(!asaasSplitMode); if (!asaasSplitMode && asaasSplitCharges.length === 0) { const clientObj = clients.find(c => c.id.toString() === invoiceForm.client); setAsaasSplitCharges([{ name: clientObj?.trading_name || clientObj?.name || '', cpfCnpj: clientObj?.cnpj || '', email: '', value: invoiceForm.amount || '' }]); } }}
+                                    <button type="button" onClick={() => { setAsaasSplitMode(!asaasSplitMode); if (!asaasSplitMode && asaasSplitCharges.length === 0) { const clientObj = clients.find(c => c.id.toString() === invoiceForm.client); setAsaasSplitCharges([{ name: clientObj?.trading_name || clientObj?.name || '', cpfCnpj: clientObj?.cnpj || '', email: invoiceMedicaoEmail || '', value: invoiceForm.amount || '' }]); } }}
                                         className={`w-full text-[9px] font-black uppercase tracking-wider py-2 rounded-lg border flex items-center justify-center gap-1.5 transition-colors ${asaasSplitMode ? 'bg-purple-50 border-purple-300 text-purple-700' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
                                         data-testid="btn-asaas-split-toggle">
                                         <GitBranch size={12}/> {asaasSplitMode ? 'Dividir por CNPJ (ativo)' : 'Dividir por CNPJ (subcontas)'}
@@ -3299,7 +3359,13 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                         data-testid="btn-asaas-generate-charge"
                                     >
                                         {asaasLoading ? <Loader2 size={16} className="animate-spin"/> : <Receipt size={16}/>}
-                                        {asaasLoading ? 'Gerando cobrança...' : asaasSplitMode ? `Gerar ${asaasSplitCharges.length} Cobranças (Asaas)` : 'Gerar Boleto + PIX (Asaas)'}
+                                        {asaasLoading
+                                            ? 'Gerando cobrança...'
+                                            : asaasSplitMode
+                                                ? `Gerar ${asaasSplitCharges.length} Cobranças (Asaas)`
+                                                : isTransferBillingClient
+                                                    ? 'Gerar NF + Contas a Receber (sem boleto)'
+                                                    : 'Gerar Boleto + PIX (Asaas)'}
                                     </button>
                                 ) : asaasResult.split ? (
                                     <div className="space-y-3">
@@ -3360,6 +3426,11 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             </div>
                                             <span className="text-[9px] font-black text-green-600 bg-green-100 px-2 py-0.5 rounded-full border border-green-300">{asaasResult.payment.statusBr}</span>
                                         </div>
+                                        {(asaasResult.skipBoleto || asaasResult.payment?.skipBoleto) && (
+                                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-2 text-[10px] font-bold text-amber-800" data-testid="banner-result-no-boleto">
+                                                Boleto não gerado/enviado — cliente paga por transferência bancária.
+                                            </div>
+                                        )}
 
                                         <div className="grid grid-cols-2 gap-3">
                                             {asaasResult.bankSlip && (

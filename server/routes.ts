@@ -6582,9 +6582,13 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       clientName?: string;
       clientEmail?: string;
       amount: number;
+      /** Texto livre que vai para o campo observations da NF (Asaas) / discriminação (PlugNotas). */
+      observations?: string;
     }): Promise<{ provider: 'ASAAS' | 'PLUGNOTAS'; invoice: any }> => {
       const router = await import('./nfProviderRouter');
       const provider = await router.resolveProvider({ company: params.issuerCompany });
+      const nfObservations = String(params.observations || '').trim()
+        || `${params.descText} | Ref. ${params.externalRef}`;
       if (provider === 'PLUGNOTAS') {
         // IMPORTANTE: Quando a empresa está configurada para PLUGNOTAS, NUNCA caímos
         // silenciosamente para Asaas. Risco fiscal: se o PlugNotas aceitou a NF mas a
@@ -6603,6 +6607,10 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         }
         let issued: any;
         try {
+          // PlugNotas: observação complementar entra na discriminação do serviço
+          const descWithObs = params.observations
+            ? `${params.descText}\n${String(params.observations).trim()}`.slice(0, 2000)
+            : params.descText;
           issued = await issueNfse({
             invoiceId: params.externalRef,
             amount: params.amount,
@@ -6610,7 +6618,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             clientCnpj: params.clientCnpj,
             clientName: params.clientName || 'Cliente',
             clientEmail: params.clientEmail,
-            serviceDescription: params.descText,
+            serviceDescription: descWithObs,
             externalReference: params.externalRef,
           });
         } catch (plugErr: any) {
@@ -6641,7 +6649,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const invoiceData = await scheduleInvoice({
         paymentId: params.paymentId,
         serviceDescription: params.descText,
-        observations: `${params.descText} | Ref. ${params.externalRef}`,
+        observations: nfObservations.slice(0, 500),
         externalReference: params.externalRef,
         company: params.issuerCompany,
         clientCnpj: params.clientCnpj,
@@ -6654,7 +6662,12 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     };
 
     try {
-      const { clientName, clientCpfCnpj, clientEmail, value, dueDate, description, invoiceNumber, issuerCompany, charges } = req.body;
+      const {
+        clientName, clientCpfCnpj, clientEmail, value, dueDate, description,
+        invoiceNumber, issuerCompany, charges, skipBoleto, observations,
+      } = req.body;
+      const noBoleto = skipBoleto === true || String(skipBoleto || '').toLowerCase() === 'true';
+      const nfObservations = String(observations || '').trim();
 
       const lookupCnpj = clientCpfCnpj || (charges?.[0]?.cpfCnpj) || '';
       const cleanLookup = String(lookupCnpj).replace(/\D/g, '');
@@ -6726,7 +6739,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             customerId: customer.id,
             value: parseFloat(charge.value),
             dueDate,
-            description: descText,
+            description: noBoleto
+              ? `${descText} | Pagamento via transferência bancária (sem boleto)`
+              : descText,
             externalReference: externalRef,
             billingType: 'UNDEFINED',
             company: issuerCompany,
@@ -6736,7 +6751,10 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           let bankSlipData = null;
           let invoiceData = null;
           try { pixData = await getPaymentPixQrCode(payment.id, issuerCompany); } catch (_) {}
-          try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (_) {}
+          // CEVA/DHL: não busca/expõe boleto — cliente paga por transferência
+          if (!noBoleto) {
+            try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (_) {}
+          }
           try {
             const routed = await issueNfWithRouter({
               paymentId: payment.id,
@@ -6747,6 +6765,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
               clientName: charge.name || clientName,
               clientEmail: charge.email || clientEmail || undefined,
               amount: parseFloat(charge.value),
+              observations: nfObservations || undefined,
             });
             invoiceData = routed.invoice;
             console.log(`[NF] NF emitida via ${routed.provider} para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
@@ -6808,11 +6827,13 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             payment: {
               id: payment.id, status: payment.status, statusBr: mapAsaasStatus(payment.status),
               value: payment.value, dueDate: payment.dueDate,
-              invoiceUrl: payment.invoiceUrl || null, bankSlipUrl: payment.bankSlipUrl || null,
+              invoiceUrl: payment.invoiceUrl || null,
+              bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
               externalReference: externalRef,
+              skipBoleto: noBoleto,
             },
             pix: pixData ? { qrCodeBase64: pixData.encodedImage, copyPaste: pixData.payload } : null,
-            bankSlip: bankSlipData ? { barCode: bankSlipData.barCode, digitableLine: bankSlipData.identificationField, nossoNumero: bankSlipData.nossoNumero } : null,
+            bankSlip: noBoleto ? null : (bankSlipData ? { barCode: bankSlipData.barCode, digitableLine: bankSlipData.identificationField, nossoNumero: bankSlipData.nossoNumero } : null),
             customer: { id: customer.id, name: customer.name, cpfCnpj: cleanCnpj },
             invoice: invoiceData ? {
               id: invoiceData.id,
@@ -6827,9 +6848,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           results.push(chargeResult);
 
           const recipientEmail = charge.email || clientEmail;
-          const splitHasBoleto = !!(payment.bankSlipUrl || bankSlipData);
-          const splitHasNf = !!(invoiceData?.pdfUrl);
-          if (recipientEmail && splitHasBoleto && splitHasNf) {
+          const splitHasBoleto = !noBoleto && !!(payment.bankSlipUrl || bankSlipData);
+          const splitHasNf = !!(invoiceData?.pdfUrl || invoiceData?.id);
+          // Transferência (CEVA/DHL): e-mail com NF mesmo sem boleto
+          const canEmailSplit = recipientEmail && splitHasNf && (noBoleto || splitHasBoleto);
+          if (canEmailSplit) {
             try {
               await sendBillingEmail({
                 clientName: charge.name || clientName || 'Cliente',
@@ -6839,13 +6862,15 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
                 issuerCompany: issuerCompany || 'Grupo TM SEG',
                 value: parseFloat(charge.value),
                 dueDate,
-                description: descText,
+                description: noBoleto
+                  ? `${descText} | Pagamento por transferência bancária (sem boleto)`
+                  : descText,
                 paymentId: payment.id,
-                boletoUrl: payment.bankSlipUrl || undefined,
+                boletoUrl: noBoleto ? undefined : (payment.bankSlipUrl || undefined),
                 pixPayload: pixData?.payload || undefined,
                 pixQrCodeBase64: pixData?.encodedImage || undefined,
-                boletoBarcode: bankSlipData?.barCode || undefined,
-                boletoDigitableLine: bankSlipData?.identificationField || undefined,
+                boletoBarcode: noBoleto ? undefined : (bankSlipData?.barCode || undefined),
+                boletoDigitableLine: noBoleto ? undefined : (bankSlipData?.identificationField || undefined),
                 nfPdfUrl: invoiceData?.pdfUrl || undefined,
                 nfNumber: invoiceData?.number || undefined,
               });
@@ -6857,11 +6882,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             }
           } else {
             chargeResult.emailSent = false;
-            chargeResult.emailPendingReason = !splitHasBoleto ? 'Boleto não disponível' : 'NF não disponível';
-            console.log(`[Asaas] Email split NÃO enviado para ${recipientEmail || 'N/A'} — boleto=${splitHasBoleto}, NF=${splitHasNf}`);
+            chargeResult.emailPendingReason = !splitHasNf ? 'NF não disponível' : (!splitHasBoleto && !noBoleto ? 'Boleto não disponível' : 'E-mail ausente');
+            console.log(`[Asaas] Email split NÃO enviado para ${recipientEmail || 'N/A'} — boleto=${splitHasBoleto}, NF=${splitHasNf}, skipBoleto=${noBoleto}`);
           }
         }
-        return res.json({ success: true, split: true, charges: results, totalValue: results.reduce((s, r) => s + r.payment.value, 0) });
+        return res.json({ success: true, split: true, skipBoleto: noBoleto, charges: results, totalValue: results.reduce((s, r) => s + r.payment.value, 0) });
       }
 
       if (!clientCpfCnpj || !value || !dueDate) {
@@ -6883,7 +6908,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         customerId: customer.id,
         value: parseFloat(value),
         dueDate,
-        description: descText,
+        description: noBoleto
+          ? `${descText} | Pagamento via transferência bancária (sem boleto)`
+          : descText,
         externalReference: externalRef,
         billingType: 'UNDEFINED',
         company: issuerCompany,
@@ -6894,7 +6921,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       let invoiceData = null;
       let nfErrorPayload: { provider: string; code: string; message: string } | null = null;
       try { pixData = await getPaymentPixQrCode(payment.id, issuerCompany); } catch (e) { console.log('[Asaas] PIX QR não disponível para esta cobrança'); }
-      try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (e) { console.log('[Asaas] Boleto não disponível para esta cobrança'); }
+      if (!noBoleto) {
+        try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (e) { console.log('[Asaas] Boleto não disponível para esta cobrança'); }
+      } else {
+        console.log(`[Asaas] skipBoleto=true — boleto não será gerado/enviado para ${clientName}`);
+      }
       try {
         const routed = await issueNfWithRouter({
           paymentId: payment.id,
@@ -6905,6 +6936,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           clientName: clientName,
           clientEmail: clientEmail || undefined,
           amount: parseFloat(value),
+          observations: nfObservations || undefined,
         });
         invoiceData = routed.invoice;
         console.log(`[NF] NF emitida via ${routed.provider} para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
@@ -6939,12 +6971,13 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         }
       }
 
-      console.log(`[Asaas] Cobrança criada: ${payment.id} | ${clientName} | R$ ${value} | Venc: ${dueDate}`);
+      console.log(`[Asaas] Cobrança criada: ${payment.id} | ${clientName} | R$ ${value} | Venc: ${dueDate} | skipBoleto=${noBoleto}`);
 
-      const hasBoleto = !!(payment.bankSlipUrl || bankSlipData);
-      const hasNf = !!(invoiceData?.pdfUrl);
+      const hasBoleto = !noBoleto && !!(payment.bankSlipUrl || bankSlipData);
+      const hasNf = !!(invoiceData?.pdfUrl || invoiceData?.id);
       let emailSent = false;
-      if (clientEmail && hasBoleto && hasNf) {
+      const canEmail = clientEmail && hasNf && (noBoleto || hasBoleto);
+      if (canEmail) {
         try {
           await sendBillingEmail({
             clientName: clientName || 'Cliente',
@@ -6954,13 +6987,15 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             issuerCompany: issuerCompany || 'Grupo TM SEG',
             value: parseFloat(value),
             dueDate,
-            description: descText,
+            description: noBoleto
+              ? `${descText} | Pagamento por transferência bancária (sem boleto)`
+              : descText,
             paymentId: payment.id,
-            boletoUrl: payment.bankSlipUrl || undefined,
+            boletoUrl: noBoleto ? undefined : (payment.bankSlipUrl || undefined),
             pixPayload: pixData?.payload || undefined,
             pixQrCodeBase64: pixData?.encodedImage || undefined,
-            boletoBarcode: bankSlipData?.barCode || undefined,
-            boletoDigitableLine: bankSlipData?.identificationField || undefined,
+            boletoBarcode: noBoleto ? undefined : (bankSlipData?.barCode || undefined),
+            boletoDigitableLine: noBoleto ? undefined : (bankSlipData?.identificationField || undefined),
             nfPdfUrl: invoiceData?.pdfUrl || undefined,
             nfNumber: invoiceData?.number || undefined,
           });
@@ -6969,7 +7004,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           console.log(`[Asaas] AVISO: Email de cobrança não enviado para ${clientEmail}: ${emailErr.message}`);
         }
       } else if (clientEmail) {
-        console.log(`[Asaas] Email NÃO enviado — aguardando: boleto=${hasBoleto}, NF=${hasNf}. Envio manual necessário após sincronização.`);
+        console.log(`[Asaas] Email NÃO enviado — aguardando: boleto=${hasBoleto}, NF=${hasNf}, skipBoleto=${noBoleto}.`);
       }
 
       res.status(nfErrorPayload ? 207 : 200).json({
@@ -6977,7 +7012,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         nfPending: !!nfErrorPayload,
         nfError: nfErrorPayload || undefined,
         emailSent,
-        emailPendingReason: !emailSent && clientEmail ? (!hasBoleto ? 'Boleto não disponível ainda' : !hasNf ? 'NF não disponível ainda' : '') : undefined,
+        skipBoleto: noBoleto,
+        emailPendingReason: !emailSent && clientEmail ? (!hasNf ? 'NF não disponível ainda' : (!hasBoleto && !noBoleto ? 'Boleto não disponível ainda' : '')) : undefined,
         payment: {
           id: payment.id,
           status: payment.status,
@@ -6985,19 +7021,20 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           value: payment.value,
           dueDate: payment.dueDate,
           invoiceUrl: payment.invoiceUrl || null,
-          bankSlipUrl: payment.bankSlipUrl || null,
+          bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
           externalReference: externalRef,
+          skipBoleto: noBoleto,
         },
         pix: pixData ? {
           qrCodeBase64: pixData.encodedImage,
           copyPaste: pixData.payload,
           expirationDate: pixData.expirationDate,
         } : null,
-        bankSlip: bankSlipData ? {
+        bankSlip: noBoleto ? null : (bankSlipData ? {
           barCode: bankSlipData.barCode,
           digitableLine: bankSlipData.identificationField,
           nossoNumero: bankSlipData.nossoNumero,
-        } : null,
+        } : null),
         customer: { id: customer.id, name: customer.name },
         invoice: invoiceData ? {
           id: invoiceData.id,
