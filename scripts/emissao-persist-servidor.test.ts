@@ -4,13 +4,14 @@ import fs from 'node:fs';
 
 describe('Emissão Asaas — persistência server-side + Abort', () => {
   it('create-charge persiste e responde early (sem esperar PIX/NF)', () => {
+    const core = fs.readFileSync('lib/asaasCreateChargeCore.ts', 'utf8');
+    assert.match(core, /persistAsaasChargeInvoice/);
+    assert.match(core, /findRecentDuplicateOpenCharge/);
+    assert.match(core, /earlyReturn:\s*true/);
+    assert.match(core, /NF isolada/);
+    assert.match(core, /nfIsolated:\s*true/);
     const routes = fs.readFileSync('server/routes.ts', 'utf8');
-    assert.match(routes, /persistAsaasChargeInvoice/);
     assert.match(routes, /patchAsaasChargeInvoiceMirrors/);
-    assert.match(routes, /findRecentDuplicateOpenCharge/);
-    assert.match(routes, /earlyReturn:\s*true/);
-    assert.match(routes, /Database-first|NF isolada/);
-    assert.match(routes, /nfIsolated:\s*true/);
     const lib = fs.readFileSync('lib/persistAsaasChargeInvoice.ts', 'utf8');
     assert.match(lib, /asaas_payment_id/);
     assert.match(lib, /nf_status/);

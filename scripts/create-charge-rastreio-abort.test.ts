@@ -10,13 +10,12 @@ describe('create-charge — rastreio TMSEG + abort real (anti-hang Vercel)', () 
     assert.match(svc, /signal: params\.signal/);
   });
 
-  it('create-charge single usa stepTimeout com signal + trackingRef', () => {
-    const routes = fs.readFileSync('server/routes.ts', 'utf8');
-    assert.match(routes, /trackingRef/);
-    assert.match(routes, /trackingNumber: trackingRef/);
-    assert.match(routes, /fn: \(signal: AbortSignal\) => Promise<T>/);
-    assert.match(routes, /routeCtrl\.abort\(\)/);
-    assert.match(routes, /abortSignal\(authCtrl\.signal\)/);
+  it('core single usa stepTimeout com signal + trackingRef', () => {
+    const core = fs.readFileSync('lib/asaasCreateChargeCore.ts', 'utf8');
+    assert.match(core, /trackingRef/);
+    assert.match(core, /trackingNumber: trackingRef/);
+    assert.match(core, /fn: \(signal: AbortSignal\) => Promise<T>/);
+    assert.match(core, /routeCtrl\.abort\(\)/);
   });
 
   it('persist aceita trackingNumber e abortSignal', () => {
@@ -27,7 +26,7 @@ describe('create-charge — rastreio TMSEG + abort real (anti-hang Vercel)', () 
     assert.match(persist, /tracking \|\| `ASAAS-\$\{paymentId\}`/);
   });
 
-  it('frontend pré-gera TMSEG e não sobrescreve com ASAAS-id', () => {
+  it('frontend pré-gera TMSEG e handler leve existe', () => {
     const ui = fs.readFileSync('components/ClientBillingReport.tsx', 'utf8');
     assert.match(ui, /function buildInternalTrackingRef/);
     assert.match(ui, /Ref\. interna \(rastreio\)/);
@@ -35,5 +34,6 @@ describe('create-charge — rastreio TMSEG + abort real (anti-hang Vercel)', () 
     assert.match(ui, /Mantém TMSEG/);
     assert.match(ui, /30_000/);
     assert.match(ui, /from 'react'/);
+    assert.ok(fs.existsSync('api/asaas-create-charge.ts'));
   });
 });

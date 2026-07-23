@@ -137,8 +137,8 @@
     "api/rh-team-presence-board.ts": {
       "maxDuration": 60
     },
-    "api/version.ts": {
-      "maxDuration": 10
+    "api/asaas-create-charge.ts": {
+      "maxDuration": 60
     },
     "api/asaas-balances.ts": {
       "maxDuration": 60
@@ -381,6 +381,10 @@
     {
       "source": "/api/asaas/status",
       "destination": "/api/asaas-status"
+    },
+    {
+      "source": "/api/asaas/create-charge",
+      "destination": "/api/asaas-create-charge"
     },
     {
       "source": "/api/asaas/balances",

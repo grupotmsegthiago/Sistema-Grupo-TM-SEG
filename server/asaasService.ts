@@ -8,8 +8,6 @@ import {
 } from '../lib/asaasTransferPixCore';
 import { getAsaasApiKeyTmGestao, getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity } from '../lib/asaasEnvKeys';
 
-const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
-
 export const GRUPO_TMSEG_WALLET_ID = '6641fec4-8476-48e3-90a8-3db6b14f538c';
 
 interface CompanyConfig {
@@ -91,6 +89,19 @@ function resolveApiKey(company?: string): string {
   return resolveCompanyEntry(company).apiKey;
 }
 
+/** Produção por padrão; sandbox se a chave (ou ASAAS_API_BASE_URL) indicar HML. */
+function resolveAsaasBaseUrl(company?: string): string {
+  const custom = String(process.env.ASAAS_API_BASE_URL || process.env.ASAAS_BASE_URL || '')
+    .trim()
+    .replace(/\/$/, '');
+  if (custom) return custom;
+  const keySample = resolveApiKey(company) || '';
+  if (keySample.includes('_hmlg_') || keySample.includes('_sandbox_')) {
+    return 'https://sandbox.asaas.com/api/v3';
+  }
+  return 'https://api.asaas.com/v3';
+}
+
 const headers = (company?: string) => ({
   'Content-Type': 'application/json',
   'access_token': resolveApiKey(company),
@@ -159,7 +170,7 @@ async function asaasFetch(endpoint: string, options: RequestInit = {}, company?:
   if (options.method && options.method !== 'GET') {
     console.log(`[Asaas] ${options.method} ${endpoint} | Empresa: ${entry.name} | CNPJ: ${entry.cnpj} | Key: ${keyPrefix}`);
   }
-  const url = `${ASAAS_BASE_URL}${endpoint}`;
+  const url = `${resolveAsaasBaseUrl(company)}${endpoint}`;
   const { signal, cleanup } = buildAsaasAbortSignal(options.signal || null);
   const started = Date.now();
   try {

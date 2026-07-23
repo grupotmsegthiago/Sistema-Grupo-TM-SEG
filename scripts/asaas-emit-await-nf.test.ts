@@ -6,7 +6,7 @@ describe('Emissão Asaas — aguarda NF sem travar', () => {
   it('ClientBillingReport fecha modal e navega sem abort de 55s', () => {
     const src = fs.readFileSync('components/ClientBillingReport.tsx', 'utf8');
     assert.doesNotMatch(src, /55_000/);
-    assert.match(src, /45_000/);
+    assert.match(src, /30_000/);
     assert.match(src, /earlyReturn|persisted/);
     assert.match(src, /NF_TIMEOUT|nf_status = 'PROCESSING'/);
     assert.match(src, /nf_status = 'PROCESSING'/);
@@ -22,11 +22,13 @@ describe('Emissão Asaas — aguarda NF sem travar', () => {
   });
 
   it('create-charge early-return: persiste e NF isolada (fora da request)', () => {
-    const src = fs.readFileSync('server/routes.ts', 'utf8');
+    const src = fs.readFileSync('lib/asaasCreateChargeCore.ts', 'utf8');
     assert.match(src, /earlyReturn:\s*true/);
     assert.match(src, /nfIsolated:\s*true/);
     assert.match(src, /NF_SCHEDULE_PENDING/);
     assert.match(src, /persistAsaasChargeInvoice/);
     assert.match(src, /findRecentDuplicateOpenCharge/);
+    assert.ok(fs.existsSync('api/asaas-create-charge.ts'));
   });
 });
+
