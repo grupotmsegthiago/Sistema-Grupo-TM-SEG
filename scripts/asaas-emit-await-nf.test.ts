@@ -21,13 +21,12 @@ describe('Emissão Asaas — aguarda NF sem travar', () => {
     );
   });
 
-  it('create-charge early-return: persiste e NF em background', () => {
+  it('create-charge early-return: persiste e NF isolada (fora da request)', () => {
     const src = fs.readFileSync('server/routes.ts', 'utf8');
     assert.match(src, /earlyReturn:\s*true/);
+    assert.match(src, /nfIsolated:\s*true/);
     assert.match(src, /NF_SCHEDULE_PENDING/);
     assert.match(src, /persistAsaasChargeInvoice/);
     assert.match(src, /findRecentDuplicateOpenCharge/);
-    assert.match(src, /enrich background/);
-    assert.match(src, /Database-first/);
   });
 });

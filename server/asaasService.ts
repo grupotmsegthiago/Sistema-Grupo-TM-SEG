@@ -461,7 +461,11 @@ export async function scheduleInvoice(params: {
 }): Promise<any> {
   const companyEntry = resolveCompanyEntry(params.company);
   const nfConfig = companyEntry.nf;
-  const clientDefaults = await lookupClientNfDefaults(params.clientCnpj, params.clientName);
+  const overrideCode = String(params.municipalServiceCode || '').replace(/\D/g, '');
+  // Com código do modal, pula lookup no banco (mais rápido / menos falha).
+  const clientDefaults = overrideCode
+    ? null
+    : await lookupClientNfDefaults(params.clientCnpj, params.clientName);
   const taxes = {
     retainIss: params.taxes?.retainIss ?? nfConfig.retainIss,
     iss: params.taxes?.iss ?? nfConfig.issRate,
@@ -480,13 +484,14 @@ export async function scheduleInvoice(params: {
     console.log(`[Asaas NF] Descrição mal formatada detectada ("${rawDesc.substring(0, 60)}..."). Substituindo por padrão da empresa para evitar NFe003.`);
     rawDesc = nfConfig.serviceDescription;
   }
+  // Payload V3 Asaas: payment + serviceDescription + taxes + serviço municipal.
+  // effectiveDatePeriod ON_PAYMENT_CONFIRMATION/ON_PAYMENT_CREATION evita effectiveDate manual.
   const body: any = {
     payment: params.paymentId,
     serviceDescription: rawDesc.length > 250 ? rawDesc.substring(0, 247) + '...' : rawDesc,
     taxes,
     effectiveDatePeriod: 'ON_PAYMENT_CREATION',
   };
-  const overrideCode = String(params.municipalServiceCode || '').replace(/\D/g, '');
   const overrideName = String(params.municipalServiceName || '').trim();
   const clientCode = String(clientDefaults?.municipalServiceCode || '').replace(/\D/g, '');
   const clientNameSvc = String(clientDefaults?.municipalServiceName || '').trim();
@@ -502,16 +507,45 @@ export async function scheduleInvoice(params: {
     body.municipalServiceCode = nfConfig.municipalServiceCode;
     if (nfConfig.municipalServiceName) body.municipalServiceName = nfConfig.municipalServiceName;
   } else {
-    const municipalService = await resolveMunicipalService(params.company);
-    if (municipalService) {
-      body.municipalServiceId = municipalService.id;
-      body.municipalServiceCode = municipalService.code;
-      body.municipalServiceName = municipalService.name;
+    // Fallback lento (lista serviços) com teto — se falhar, erro claro de configuração.
+    try {
+      const municipalService = await Promise.race([
+        resolveMunicipalService(params.company),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
+      ]);
+      if (municipalService) {
+        body.municipalServiceId = municipalService.id;
+        body.municipalServiceCode = municipalService.code;
+        body.municipalServiceName = municipalService.name;
+      }
+    } catch {
+      /* below */
+    }
+    if (!body.municipalServiceCode && !body.municipalServiceId) {
+      throw new Error(
+        `Serviço municipal ausente para ${companyEntry.name}. ` +
+          'No painel Asaas: Configurações → Nota Fiscal (Inscrição Municipal + CNAE/código). ' +
+          'Ou informe o código de serviço no modal de emissão.',
+      );
     }
   }
   if (params.observations) body.observations = params.observations;
   if (params.externalReference) body.externalReference = params.externalReference;
-  return asaasFetch('/invoices', { method: 'POST', body: JSON.stringify(body) }, params.company);
+  console.log(
+    `[Asaas NF] POST /invoices payment=${params.paymentId} company=${companyEntry.name} ` +
+      `code=${body.municipalServiceCode || body.municipalServiceId || '-'}`,
+  );
+  try {
+    return await asaasFetch('/invoices', { method: 'POST', body: JSON.stringify(body) }, params.company);
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    // Propaga descrição Asaas (400/422) para nf_last_error no Controle.
+    throw new Error(
+      msg.includes('Asaas API Error')
+        ? msg
+        : `Falha ao agendar NF no Asaas: ${msg}. Verifique Inscrição Municipal / certificado / código de serviço no painel Asaas.`,
+    );
+  }
 }
 
 export async function getInvoice(invoiceId: string, company?: string): Promise<any> {

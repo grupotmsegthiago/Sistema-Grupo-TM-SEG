@@ -6798,13 +6798,17 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             amount: parseFloat(charge.value),
             dueDate,
             issuerCompany,
-            notes: nfObservations || descText,
+            notes: [
+              nfObservations || descText,
+              nfMunicipalCode ? `CNAE/Serviço municipal: ${nfMunicipalCode}` : '',
+            ].filter(Boolean).join('\n'),
             createdBy: createdBySplit,
             asaasStatus: payment.status,
             invoiceUrl: payment.invoiceUrl || null,
             bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
             nfStatus: 'PROCESSING',
             nfProvider: 'ASAAS',
+            nfLastError: 'NF isolada — será agendada pelo Controle/worker (não bloqueia a emissão).',
           });
           if (!persistSplit.ok) {
             console.warn(`[Asaas] Persistência local falhou (split ${payment.id}): ${persistSplit.error}`);
@@ -6838,94 +6842,23 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
               created: persistSplit.created,
               error: persistSplit.error,
             },
-            _enrich: {
-              cleanCnpj,
-              chargeName: charge.name || clientName,
-              chargeEmail: charge.email || clientEmail,
-              chargeValue: parseFloat(charge.value),
-              externalRef,
-              descText,
-            },
           };
           results.push(chargeResult);
         }
 
-        res.status(200).json({
+        // CRÍTICO: NÃO rodar PIX/NF nesta request após res.json —
+        // na Vercel a promise pendente segura a resposta e o browser Aborta.
+        // Controle (sync-open-payments + retry-now) agenda NF e espelhos.
+        return res.status(200).json({
           success: true,
           split: true,
           earlyReturn: true,
+          nfIsolated: true,
           skipBoleto: noBoleto,
           nfPending: true,
-          charges: results.map(({ _enrich, ...rest }) => rest),
+          charges: results,
           totalValue: results.reduce((s, r) => s + (r.payment?.value || 0), 0),
         });
-
-        // Enrichment background por cobrança (worker/Controle cobrem se cortar).
-        void (async () => {
-          for (const r of results) {
-            const paymentId = r.payment?.id;
-            const en = r._enrich;
-            if (!paymentId || !en) continue;
-            try {
-              const [pixSettled, slipSettled] = await Promise.allSettled([
-                getPaymentPixQrCode(paymentId, issuerCompany),
-                noBoleto ? Promise.resolve(null) : getPaymentBankSlip(paymentId, issuerCompany),
-              ]);
-              const pixData = pixSettled.status === 'fulfilled' ? pixSettled.value : null;
-              const bankSlipData = (!noBoleto && slipSettled.status === 'fulfilled') ? slipSettled.value : null;
-              let invoiceData: any = null;
-              let nfProvider = 'ASAAS';
-              let nfErrMsg: string | null = null;
-              try {
-                const routed = await Promise.race([
-                  issueNfWithRouter({
-                    paymentId,
-                    issuerCompany,
-                    descText: en.descText,
-                    externalRef: en.externalRef,
-                    clientCnpj: en.cleanCnpj,
-                    clientName: en.chargeName,
-                    clientEmail: en.chargeEmail || undefined,
-                    amount: en.chargeValue,
-                    observations: nfObservations || undefined,
-                    municipalServiceCode: nfMunicipalCode,
-                    municipalServiceName: nfMunicipalName,
-                  }),
-                  new Promise<never>((_, reject) => {
-                    setTimeout(() => {
-                      const err: any = new Error('Timeout NF background 12s');
-                      err.code = 'NF_TIMEOUT';
-                      reject(err);
-                    }, 12_000);
-                  }),
-                ]);
-                invoiceData = routed.invoice;
-                nfProvider = routed.provider || 'ASAAS';
-              } catch (nfErr: any) {
-                nfErrMsg = nfErr?.message || 'NF pendente';
-                nfProvider = nfErr?.provider || 'ASAAS';
-              }
-              await patchAsaasChargeInvoiceMirrors({
-                paymentId,
-                bankSlipUrl: noBoleto ? null : (r.payment?.bankSlipUrl || null),
-                invoiceUrl: r.payment?.invoiceUrl || null,
-                pixPayload: pixData?.payload || null,
-                barcode: bankSlipData?.identificationField || bankSlipData?.barCode || null,
-                nfStatus: invoiceData?.status || 'PROCESSING',
-                nfNumber: invoiceData?.number || null,
-                nfPdfUrl: invoiceData?.pdfUrl || null,
-                nfProvider,
-                nfLastError: invoiceData ? null : nfErrMsg,
-                plugnotasInvoiceId: invoiceData?.plugnotasInvoiceId || null,
-                plugnotasProtocol: invoiceData?.plugnotasProtocol || null,
-                asaasStatus: r.payment?.status,
-              });
-            } catch (e: any) {
-              console.warn(`[Asaas] enrich split background falhou (${paymentId}):`, e?.message || e);
-            }
-          }
-        })();
-        return;
       }
 
       if (!clientCpfCnpj || !value || !dueDate) {
@@ -7016,39 +6949,44 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         company: issuerCompany,
       });
 
-      // Database-first: grava Processando ANTES de PIX/boleto/NF e ANTES da resposta.
+      // Database-first: grava Processando. NF/PIX NÃO rodam nesta request.
       const persistEarly = await persistAsaasChargeInvoice({
         paymentId: payment.id,
         clientName: clientName || 'Cliente',
         amount: amountNum,
         dueDate,
         issuerCompany,
-        notes: nfObservations || descText,
+        notes: [
+          nfObservations || descText,
+          nfMunicipalCode ? `CNAE/Serviço municipal: ${nfMunicipalCode}${nfMunicipalName ? ` — ${nfMunicipalName}` : ''}` : '',
+        ].filter(Boolean).join('\n'),
         createdBy,
         asaasStatus: payment.status,
         invoiceUrl: payment.invoiceUrl || null,
         bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
         nfStatus: 'PROCESSING',
         nfProvider: 'ASAAS',
+        nfLastError: 'NF isolada — será agendada pelo Controle/worker (não bloqueia a emissão).',
       });
       if (!persistEarly.ok) {
         console.warn(`[Asaas] Persistência local falhou (${payment.id}): ${persistEarly.error}`);
       }
 
-      console.log(`[Asaas] Cobrança criada+persistida (early return): ${payment.id} | ${clientName} | R$ ${value} | Venc: ${dueDate}`);
+      console.log(`[Asaas] Cobrança criada+persistida (NF isolada): ${payment.id} | ${clientName} | R$ ${value} | Venc: ${dueDate}`);
 
-      // Resposta IMEDIATA ao browser — não espera PIX/boleto/NF (causa do Abort 75s).
-      res.status(persistEarly.ok ? 200 : 207).json({
+      // Resposta FINAL — zero trabalho após isto (senão a Vercel segura o Abort do browser).
+      return res.status(persistEarly.ok ? 200 : 207).json({
         success: persistEarly.ok,
         nfPending: true,
         earlyReturn: true,
+        nfIsolated: true,
         skipBoleto: noBoleto,
         emailSent: false,
-        emailPendingReason: 'NF/boleto ainda processando — acompanhamento no Controle',
+        emailPendingReason: 'NF/boleto sincronizam no Controle (sync + retry)',
         nfError: {
           provider: 'ASAAS',
           code: 'NF_SCHEDULE_PENDING',
-          message: 'Cobrança salva no Controle como Processando. NF/PIX/boleto seguem em segundo plano.',
+          message: 'Cobrança salva no Controle como Processando. NF agendada em seguida pelo sistema (isolada desta requisição).',
         },
         persisted: {
           ok: persistEarly.ok,
@@ -7071,71 +7009,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         bankSlip: null,
         customer: { id: customer.id, name: customer.name },
         invoice: null,
+        municipalServiceCode: nfMunicipalCode || null,
+        municipalServiceName: nfMunicipalName || null,
       });
-
-      // Enrichment best-effort APÓS a resposta (Controle/worker cobrem se a lambda cortar).
-      void (async () => {
-        try {
-          const [pixSettled, slipSettled] = await Promise.allSettled([
-            getPaymentPixQrCode(payment.id, issuerCompany),
-            noBoleto ? Promise.resolve(null) : getPaymentBankSlip(payment.id, issuerCompany),
-          ]);
-          const pixData = pixSettled.status === 'fulfilled' ? pixSettled.value : null;
-          const bankSlipData = (!noBoleto && slipSettled.status === 'fulfilled') ? slipSettled.value : null;
-          let invoiceData: any = null;
-          let nfErrMsg: string | null = null;
-          let nfProvider = 'ASAAS';
-          try {
-            const routed = await Promise.race([
-              issueNfWithRouter({
-                paymentId: payment.id,
-                issuerCompany,
-                descText,
-                externalRef,
-                clientCnpj: clientCpfCnpj,
-                clientName: clientName,
-                clientEmail: clientEmail || undefined,
-                amount: amountNum,
-                observations: nfObservations || undefined,
-                municipalServiceCode: nfMunicipalCode,
-                municipalServiceName: nfMunicipalName,
-              }),
-              new Promise<never>((_, reject) => {
-                setTimeout(() => {
-                  const err: any = new Error('Timeout NF background 12s');
-                  err.code = 'NF_TIMEOUT';
-                  reject(err);
-                }, 12_000);
-              }),
-            ]);
-            invoiceData = routed.invoice;
-            nfProvider = routed.provider || 'ASAAS';
-            console.log(`[NF] background ${nfProvider} para ${payment.id}: ${invoiceData?.id || 'OK'}`);
-          } catch (nfErr: any) {
-            nfErrMsg = nfErr?.message || 'NF pendente';
-            nfProvider = nfErr?.provider || 'ASAAS';
-            console.log(`[Asaas] NF background pendente ${payment.id}: ${nfErrMsg}`);
-          }
-          await patchAsaasChargeInvoiceMirrors({
-            paymentId: payment.id,
-            bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
-            invoiceUrl: payment.invoiceUrl || null,
-            pixPayload: pixData?.payload || null,
-            barcode: bankSlipData?.identificationField || bankSlipData?.barCode || null,
-            nfStatus: invoiceData?.status || 'PROCESSING',
-            nfNumber: invoiceData?.number || null,
-            nfPdfUrl: invoiceData?.pdfUrl || null,
-            nfProvider,
-            nfLastError: invoiceData ? null : nfErrMsg,
-            plugnotasInvoiceId: invoiceData?.plugnotasInvoiceId || null,
-            plugnotasProtocol: invoiceData?.plugnotasProtocol || null,
-            asaasStatus: payment.status,
-          });
-        } catch (e: any) {
-          console.warn(`[Asaas] enrich background falhou (${payment.id}):`, e?.message || e);
-        }
-      })();
-      return;
     } catch (err: any) {
       console.error('[Asaas] Erro ao criar cobrança:', err.message);
       res.status(500).json({ error: err.message });

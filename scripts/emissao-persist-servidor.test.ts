@@ -9,8 +9,8 @@ describe('Emissão Asaas — persistência server-side + Abort', () => {
     assert.match(routes, /patchAsaasChargeInvoiceMirrors/);
     assert.match(routes, /findRecentDuplicateOpenCharge/);
     assert.match(routes, /earlyReturn:\s*true/);
-    assert.match(routes, /Database-first/);
-    assert.match(routes, /enrich background/);
+    assert.match(routes, /Database-first|NF isolada/);
+    assert.match(routes, /nfIsolated:\s*true/);
     const lib = fs.readFileSync('lib/persistAsaasChargeInvoice.ts', 'utf8');
     assert.match(lib, /asaas_payment_id/);
     assert.match(lib, /nf_status/);

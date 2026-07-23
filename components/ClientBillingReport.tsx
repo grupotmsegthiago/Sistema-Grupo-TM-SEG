@@ -3332,8 +3332,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             setShowInvoiceModal(false);
             resetInvoiceForm();
             setAiStatus(
-                data?.earlyReturn || data?.nfPending
-                    ? 'Salvo no Controle como Processando — acompanhando NF...'
+                data?.nfIsolated || data?.earlyReturn || data?.nfPending
+                    ? 'Cobrança salva. Abrindo Controle — NF em Processando (isolada)...'
                     : 'Cobrança OK — abrindo Controle...',
             );
             if (onNavigate) onNavigate('fin-invoices');
