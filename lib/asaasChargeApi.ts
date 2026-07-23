@@ -179,6 +179,36 @@ export function mapAsaasStatus(status: string): string {
   return map[status] || status;
 }
 
+export async function updateCustomerAddress(
+  customerId: string,
+  params: {
+    postalCode?: string;
+    address?: string;
+    addressNumber?: string;
+    complement?: string;
+    province?: string;
+    city?: string;
+    state?: string;
+    company?: string;
+    signal?: AbortSignal;
+  },
+): Promise<unknown> {
+  const body: Record<string, string> = {};
+  if (params.postalCode) body.postalCode = params.postalCode.replace(/\D/g, '');
+  if (params.address) body.address = params.address;
+  if (params.addressNumber) body.addressNumber = params.addressNumber;
+  if (params.complement) body.complement = params.complement;
+  if (params.province) body.province = params.province;
+  if (params.city) body.city = params.city;
+  if (params.state) body.state = params.state;
+  if (Object.keys(body).length === 0) return null;
+  return asaasFetch(
+    `/customers/${customerId}`,
+    { method: 'PUT', body: JSON.stringify(body), signal: params.signal },
+    params.company,
+  );
+}
+
 export async function findOrCreateCustomer(params: {
   name: string;
   cpfCnpj: string;
@@ -196,7 +226,16 @@ export async function findOrCreateCustomer(params: {
   const clean = params.cpfCnpj.replace(/\D/g, '');
   const found = await asaasFetch(`/customers?cpfCnpj=${clean}`, { signal: params.signal }, params.company);
   if (found.data?.length > 0) {
-    return found.data[0];
+    const existing = found.data[0] as AsaasCustomer & { postalCode?: string };
+    // Sem CEP no Asaas a NF falha (endereço incompleto). Atualiza quando temos dados locais.
+    if (params.postalCode && !String(existing.postalCode || '').replace(/\D/g, '')) {
+      try {
+        await updateCustomerAddress(existing.id, params);
+      } catch (e: any) {
+        console.log('[Asaas] Aviso ao atualizar endereço do cliente:', e?.message || e);
+      }
+    }
+    return existing;
   }
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const validEmail = params.email && emailRegex.test(params.email.trim()) ? params.email.trim() : undefined;

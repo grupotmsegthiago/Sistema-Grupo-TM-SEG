@@ -1,0 +1,18 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+describe('Asaas create-charge — CEP no cliente (anti NF 400)', () => {
+  it('não omite postalCode ao criar/buscar cliente', () => {
+    const src = fs.readFileSync('lib/asaasCreateChargeCore.ts', 'utf8');
+    assert.doesNotMatch(src, /postalCode:\s*_omit/);
+    assert.match(src, /lookupCnpjAddressBrasilApi/);
+    assert.match(src, /CEP é obrigatório para NF/);
+  });
+
+  it('findOrCreateCustomer atualiza endereço quando CEP falta no Asaas', () => {
+    const api = fs.readFileSync('lib/asaasChargeApi.ts', 'utf8');
+    assert.match(api, /updateCustomerAddress/);
+    assert.match(api, /params\.postalCode && !String\(existing\.postalCode/);
+  });
+});

@@ -24,32 +24,73 @@ export type CreateChargeInput = {
   createdBy?: string | null;
 };
 
+/** Fallback Receita (BrasilAPI) quando o cadastro local não tem CEP — evita NF 400. */
+async function lookupCnpjAddressBrasilApi(
+  cleanCnpj: string,
+  signal?: AbortSignal,
+): Promise<Record<string, string | undefined>> {
+  if (!cleanCnpj || cleanCnpj.length !== 14) return {};
+  try {
+    const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCnpj}`, { signal });
+    if (!res.ok) return {};
+    const j = await res.json();
+    const cep = String(j?.cep || '').replace(/\D/g, '');
+    if (cep.length !== 8) return {};
+    return {
+      postalCode: cep,
+      address: j.logradouro || undefined,
+      addressNumber: j.numero || undefined,
+      complement: j.complemento || undefined,
+      province: j.bairro || undefined,
+      city: j.municipio || undefined,
+      state: j.uf || undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 async function lookupClientAddress(cleanCnpj: string): Promise<Record<string, string | undefined>> {
   if (!cleanCnpj) return {};
   const sb = createSupabaseAdminClient();
-  if (!sb) return {};
   const addrCtrl = new AbortController();
-  const addrTimer = setTimeout(() => addrCtrl.abort(), 1_500);
+  const addrTimer = setTimeout(() => addrCtrl.abort(), 2_500);
   try {
-    const { data: clientData } = await sb
-      .from('clients')
-      .select('zip_code, street, number, complement, neighborhood, city, state, phone')
-      .or(`cnpj.ilike.%${cleanCnpj}%`)
-      .limit(1)
-      .abortSignal(addrCtrl.signal)
-      .maybeSingle();
-    if (!clientData) return {};
-    if (!clientData.zip_code) {
-      console.log(`[CREATE-CHARGE] AVISO: Cliente CNPJ ${cleanCnpj} sem CEP`);
+    let local: Record<string, string | undefined> = {};
+    if (sb) {
+      const { data: clientData } = await sb
+        .from('clients')
+        .select('zip_code, street, number, complement, neighborhood, city, state, phone')
+        .or(`cnpj.ilike.%${cleanCnpj}%`)
+        .limit(1)
+        .abortSignal(addrCtrl.signal)
+        .maybeSingle();
+      if (clientData) {
+        local = {
+          postalCode: clientData.zip_code || undefined,
+          address: clientData.street || undefined,
+          addressNumber: clientData.number || undefined,
+          complement: clientData.complement || undefined,
+          province: clientData.neighborhood || undefined,
+          city: clientData.city || undefined,
+          state: clientData.state || undefined,
+        };
+      }
     }
+    const localCep = String(local.postalCode || '').replace(/\D/g, '');
+    if (localCep.length === 8) return local;
+
+    console.log(
+      `[CREATE-CHARGE] Cliente CNPJ ${cleanCnpj} sem CEP local — consultando Receita/BrasilAPI`,
+    );
+    const fromReceita = await lookupCnpjAddressBrasilApi(cleanCnpj, addrCtrl.signal);
+    // Preferir rua/número do cadastro TM SEG quando existirem; CEP/cidade da Receita.
     return {
-      postalCode: clientData.zip_code || undefined,
-      address: clientData.street || undefined,
-      addressNumber: clientData.number || undefined,
-      complement: clientData.complement || undefined,
-      province: clientData.neighborhood || undefined,
-      city: clientData.city || undefined,
-      state: clientData.state || undefined,
+      ...fromReceita,
+      address: local.address || fromReceita.address,
+      addressNumber: local.addressNumber || fromReceita.addressNumber,
+      complement: local.complement || fromReceita.complement,
+      province: local.province || fromReceita.province,
     };
   } catch (e: any) {
     if (addrCtrl.signal.aborted || e?.name === 'AbortError') {
@@ -130,13 +171,14 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
             chargeAddress = await lookupClientAddress(cleanCnpj);
           }
 
-          const { postalCode: _omit, ...addressNoCep } = chargeAddress || {};
+          // CEP é obrigatório para NF — não omitir (antes omitia e a NF quebrava com
+          // "Endereço do cliente incompleto / CEP inválido" no Controle).
           const customer = await findOrCreateCustomer({
             name: charge.name || clientName || 'Cliente',
             cpfCnpj: cleanCnpj,
             email: charge.email || clientEmail || undefined,
             company: issuerCompany,
-            ...addressNoCep,
+            ...(chargeAddress || {}),
             signal: splitCtrl.signal,
           });
 
@@ -351,14 +393,13 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
       console.log('[ASAAS-EMISSAO] 2. Buscando/Criando cliente...');
       let customer: any;
       try {
-        const { postalCode: _omitCep, ...addressNoCep } = clientAddress || {};
         customer = await stepTimeout('asaas_cliente', 8_000, (signal) =>
           findOrCreateCustomer({
             name: clientName || 'Cliente',
             cpfCnpj: clientCpfCnpj,
             email: clientEmail || undefined,
             company: issuerCompany,
-            ...addressNoCep,
+            ...(clientAddress || {}),
             signal,
           }),
         );
