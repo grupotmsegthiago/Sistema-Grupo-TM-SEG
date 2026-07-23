@@ -1,6 +1,6 @@
 import { formatNowDateTimeBR } from '../lib/dateUtils';
 // BUILD v048 - 2026-04-07 17:40 BRT
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
@@ -62,6 +62,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const [asaasLoading, setAsaasLoading] = useState(false);
     const [asaasResult, setAsaasResult] = useState<any>(null);
+    /** NF ainda processando — acompanhamento silencioso (não trava o modal). */
+    const [nfAwaiting, setNfAwaiting] = useState(false);
+    const nfFollowUpGen = useRef(0);
     /** Optimistic: botão Enviar não depende do status (rota Express antiga falhava e escondia o botão). */
     const [asaasConfigured, setAsaasConfigured] = useState(true);
     const [asaasStatusChecked, setAsaasStatusChecked] = useState(false);
@@ -114,9 +117,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         };
     }, []);
 
+    // Limpa comprovante só se mudar valor/vencimento/cliente — NÃO ao preencher
+    // o número ASAAS-* após emitir (senão apaga o comprovante na hora).
     useEffect(() => {
         if (asaasResult) setAsaasResult(null);
-    }, [invoiceForm.amount, invoiceForm.boleto_due_date, invoiceForm.client, invoiceForm.number]);
+        nfFollowUpGen.current += 1;
+        setNfAwaiting(false);
+    }, [invoiceForm.amount, invoiceForm.boleto_due_date, invoiceForm.client]);
 
     useEffect(() => {
         if (showInvoiceModal) {
@@ -2685,6 +2692,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
     };
 
     const resetInvoiceForm = () => {
+        nfFollowUpGen.current += 1; // cancela follow-up silencioso em andamento
+        setNfAwaiting(false);
         setInvoiceForm({ client: '', number: '', amount: '', date: new Date().toISOString().split('T')[0], notes: '', provider: '', issuer_company: '', boleto_due_date: '' });
         setNfFile(null);
         setBoletoFile(null);
@@ -2698,6 +2707,87 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         setInvoiceMunicipalOptionId('escolta');
         setShowCnaePicker(false);
     };
+
+    /**
+     * Após a cobrança Asaas existir: sincroniza/retenta a NF em silêncio até
+     * AUTHORIZED/PDF, sem travar o botão do modal. Não cria cobrança nova —
+     * só consulta/reagenda a NF do payment já gravado (anti-duplicata no worker).
+     */
+    const startSilentNfFollowUp = useCallback((opts: {
+        paymentId: string;
+        invoiceId?: string | null;
+        company?: string;
+    }) => {
+        const { paymentId, invoiceId, company } = opts;
+        if (!paymentId) return;
+        const gen = ++nfFollowUpGen.current;
+        setNfAwaiting(true);
+        setAiStatus('Cobrança OK. Aguardando NF — tentando automaticamente em segundo plano...');
+
+        const MAX_ATTEMPTS = 40; // ~10 min (15s * 40)
+        const INTERVAL_MS = 15_000;
+
+        const tick = async (attempt: number) => {
+            if (nfFollowUpGen.current !== gen) return;
+            try {
+                const syncRes = await authFetch('/api/asaas/sync-payment-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        paymentId,
+                        invoiceId: invoiceId || undefined,
+                        company: company || '',
+                    }),
+                });
+                const sync = await syncRes.json().catch(() => ({}));
+                if (nfFollowUpGen.current !== gen) return;
+
+                const authorized = sync?.nfStatus === 'AUTHORIZED' || !!sync?.nfPdfUrl;
+                if (authorized) {
+                    setAsaasResult((prev: any) => prev ? {
+                        ...prev,
+                        nfPending: false,
+                        nfError: undefined,
+                        invoice: {
+                            ...(prev.invoice || {}),
+                            id: prev.invoice?.id || sync.nfNumber || paymentId,
+                            status: sync.nfStatus || 'AUTHORIZED',
+                            number: sync.nfNumber || prev.invoice?.number || null,
+                            pdfUrl: sync.nfPdfUrl || prev.invoice?.pdfUrl || null,
+                        },
+                    } : prev);
+                    setNfAwaiting(false);
+                    setAiStatus(
+                        sync.nfNumber
+                            ? `NF autorizada (Nº ${sync.nfNumber}). Comprovante atualizado.`
+                            : 'NF autorizada. Comprovante atualizado.',
+                    );
+                    return;
+                }
+
+                // A cada 2 ciclos, pede retry do worker (cancela antes de reemitir).
+                if (invoiceId && attempt % 2 === 1) {
+                    try {
+                        await authFetch(`/api/nf/retry/${invoiceId}`, { method: 'POST' });
+                    } catch { /* silencioso */ }
+                }
+            } catch (e) {
+                console.warn('[NF FollowUp] tentativa', attempt, e);
+            }
+
+            if (nfFollowUpGen.current !== gen) return;
+            if (attempt >= MAX_ATTEMPTS) {
+                setNfAwaiting(false);
+                setAiStatus('NF ainda processando. O Faturamento continua tentando automaticamente — use Sincronizar se quiser forçar agora.');
+                return;
+            }
+            setAiStatus(`Aguardando NF (tentativa ${attempt + 1}/${MAX_ATTEMPTS}) — sem travar a tela...`);
+            setTimeout(() => { void tick(attempt + 1); }, INTERVAL_MS);
+        };
+
+        // Primeira tentativa após 3s (dá tempo do Asaas registrar a NF agendada).
+        setTimeout(() => { void tick(1); }, 3_000);
+    }, []);
 
     const saveMedicaoEmailToClient = async (clientId: string, email: string) => {
         try {
@@ -2770,8 +2860,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     ).toUpperCase();
                     invoicePayload.nf_provider = chProvider;
                     if (!ch.invoice && ch.nfError) {
-                        invoicePayload.nf_status = 'ERROR';
+                        const soft = ['NF_TIMEOUT', 'NF_SCHEDULE_PENDING'].includes(String(ch.nfError.code || ''));
+                        invoicePayload.nf_status = soft ? 'PENDING' : 'ERROR';
                         invoicePayload.nf_last_error = ch.nfError.message || 'NF pendente — reemissão necessária';
+                        if (soft) invoicePayload.nf_retry_paused = false;
                     }
                     if (chProvider === 'PLUGNOTAS') {
                         if (ch.invoice?.plugnotasInvoiceId) invoicePayload.plugnotas_invoice_id = ch.invoice.plugnotasInvoiceId;
@@ -2821,7 +2913,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 setAiStatus(
                     `${chargesList.length} cobrança(s) Asaas + ${savedCount} fatura(s) salva(s) + ${receivableSaved} Contas a Receber. Confira o comprovante abaixo.`,
                 );
-                return;
+                return { invoiceId: null as string | null, needsNfFollowUp: false, split: true as const };
             }
 
             const parsedAmt = parseFloat(invoiceForm.amount);
@@ -2862,25 +2954,40 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 || 'ASAAS'
             ).toUpperCase();
             invoicePayload.nf_provider = nfProvider;
+            // Soft pending (timeout / ainda processando): NÃO marcar ERROR —
+            // o worker e o follow-up silencioso continuam até autorizar.
+            const softNfCodes = ['NF_TIMEOUT', 'NF_SCHEDULE_PENDING'];
+            const nfErrCode = String(asaasData?.nfError?.code || '');
             if (!asaasData?.invoice && asaasData?.nfError) {
-                invoicePayload.nf_status = 'ERROR';
-                invoicePayload.nf_last_error = asaasData.nfError.message || 'NF pendente — reemissão necessária';
+                if (softNfCodes.includes(nfErrCode)) {
+                    invoicePayload.nf_status = 'PENDING';
+                    invoicePayload.nf_last_error = asaasData.nfError.message || null;
+                    invoicePayload.nf_retry_paused = false;
+                } else {
+                    invoicePayload.nf_status = 'ERROR';
+                    invoicePayload.nf_last_error = asaasData.nfError.message || 'NF pendente — reemissão necessária';
+                }
+            } else if (asaasData?.invoice && !asaasData.invoice.pdfUrl && asaasData.invoice.status !== 'AUTHORIZED') {
+                invoicePayload.nf_status = asaasData.invoice.status || 'SCHEDULED';
             }
             if (nfProvider === 'PLUGNOTAS') {
                 if (asaasData?.invoice?.plugnotasInvoiceId) invoicePayload.plugnotas_invoice_id = asaasData.invoice.plugnotasInvoiceId;
                 if (asaasData?.invoice?.plugnotasProtocol) invoicePayload.plugnotas_protocol = asaasData.invoice.plugnotasProtocol;
             }
 
-            let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
+            let savedInvoiceId: string | null = null;
+            let { data: insertedRows, error } = await supabase.from('financial_invoices').insert(invoicePayload).select('id');
+            if (!error && insertedRows?.[0]?.id) savedInvoiceId = String(insertedRows[0].id);
             if (error && error.code === '42703') {
-                const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, nf_status, nf_number: _nfn, nf_provider, plugnotas_invoice_id, plugnotas_protocol, ...basicPayload } = invoicePayload;
-                const retry = await supabase.from('financial_invoices').insert(basicPayload).select();
+                const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, nf_status, nf_number: _nfn, nf_provider, plugnotas_invoice_id, plugnotas_protocol, nf_last_error, nf_retry_paused, ...basicPayload } = invoicePayload;
+                const retry = await supabase.from('financial_invoices').insert(basicPayload).select('id');
                 error = retry.error;
+                if (!error && retry.data?.[0]?.id) savedInvoiceId = String(retry.data[0].id);
             }
             if (error) {
                 console.error('[AutoSave Invoice]', error);
                 setAiStatus('Cobrança Asaas gerada, mas erro ao salvar fatura: ' + error.message);
-                return;
+                return { invoiceId: null as string | null };
             }
 
             let receivableOk = false;
@@ -2910,14 +3017,22 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 console.error('[Auto Contas a Receber]', e);
             }
 
+            const nfReady = !!(asaasData?.invoice?.pdfUrl || asaasData?.invoice?.status === 'AUTHORIZED');
+            const needsNfFollowUp = !nfReady && !!payment?.id;
             setAiStatus(
-                receivableOk
-                    ? 'Comprovante: cobrança Asaas + fatura + Contas a Receber OK. Confira os links abaixo.'
-                    : 'Cobrança Asaas + fatura salvas. Contas a Receber precisa de verificação.',
+                needsNfFollowUp
+                    ? (receivableOk
+                        ? 'Cobrança + Contas a Receber OK. Aguardando NF — tentando automaticamente...'
+                        : 'Cobrança salva. Aguardando NF — tentando automaticamente...')
+                    : (receivableOk
+                        ? 'Comprovante: cobrança Asaas + fatura + Contas a Receber OK. Confira os links abaixo.'
+                        : 'Cobrança Asaas + fatura salvas. Contas a Receber precisa de verificação.'),
             );
+            return { invoiceId: savedInvoiceId, needsNfFollowUp, paymentId: payment?.id as string | undefined };
         } catch (e: any) {
             console.error('[AutoSave]', e);
             setAiStatus('Cobrança gerada no Asaas, mas erro ao salvar fatura localmente: ' + e.message);
+            return { invoiceId: null as string | null };
         }
     };
 
@@ -2960,8 +3075,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
             setAsaasLoading(true);
             setAiStatus('Emitindo cobranças no Asaas...');
+            // Sem abort de 55s: Asaas pode demorar. Só rede de segurança longa (3 min).
             const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-            const hangTimer = setTimeout(() => ctrl?.abort(), 55_000);
+            const hangTimer = setTimeout(() => ctrl?.abort(), 180_000);
+            const progressTimer = setInterval(() => {
+                setAiStatus('Ainda processando no Asaas — aguarde, não feche o modal...');
+            }, 20_000);
             try {
                 const res = await authFetch('/api/asaas/create-charge', {
                     method: 'POST',
@@ -2998,20 +3117,33 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 if (data.partialFailure) {
                     const failedCharge = data.charges?.[data.failedAtIndex];
                     const errMsg = failedCharge?.nfError?.message || data.error || 'NF PlugNotas falhou';
-                    setAiStatus(`⚠️ ${data.charges?.length - 1 || 0} cobrança(s) OK + 1 SEM NF (PlugNotas falhou). Persistindo localmente — use "Reemitir via PlugNotas" depois. Erro: ${errMsg}`);
-                    alert(`Atenção: cobranças Asaas foram criadas, mas a NF da cobrança ${data.failedAtIndex + 1} falhou no PlugNotas:\n\n${errMsg}\n\nAs cobranças serão salvas localmente. Use "Reemitir via PlugNotas" na tela de Faturamento depois de corrigir a configuração.`);
+                    setAiStatus(`⚠️ ${data.charges?.length - 1 || 0} cobrança(s) OK + 1 SEM NF (PlugNotas falhou). Persistindo localmente — acompanhamento automático / Reemitir via PlugNotas. Erro: ${errMsg}`);
                 } else {
                     setAiStatus(`${data.charges?.length || 0} cobranças Asaas geradas! Salvando fatura...`);
                 }
                 await autoSaveInvoiceAfterAsaas(data, firstNf);
+                // Follow-up silencioso na 1ª cobrança sem NF autorizada
+                const pendingCh = (data.charges || []).find((ch: any) =>
+                    ch?.payment?.id && !(ch.invoice?.pdfUrl || ch.invoice?.status === 'AUTHORIZED')
+                );
+                if (pendingCh?.payment?.id) {
+                    startSilentNfFollowUp({
+                        paymentId: pendingCh.payment.id,
+                        company: invoiceForm.issuer_company,
+                    });
+                }
             } catch (err: any) {
-                const msg = err?.name === 'AbortError'
-                  ? 'Tempo esgotado (55s). Confira em Faturamento se a cobrança foi criada.'
-                  : (err.message || 'Erro ao criar cobranças');
-                alert('Erro ao gerar cobranças no Asaas: ' + msg);
-                setAiStatus('Erro: ' + msg);
+                if (err?.name === 'AbortError') {
+                    setAiStatus('Asaas demorou demais na resposta. Se a cobrança foi criada, abra Faturamento — o sistema continua tentando a NF automaticamente.');
+                    // Não alerta bloqueante — evita sensação de “travou e morreu”.
+                } else {
+                    const msg = err.message || 'Erro ao criar cobranças';
+                    alert('Erro ao gerar cobranças no Asaas: ' + msg);
+                    setAiStatus('Erro: ' + msg);
+                }
             } finally {
                 clearTimeout(hangTimer);
+                clearInterval(progressTimer);
                 setAsaasLoading(false);
             }
             return;
@@ -3026,8 +3158,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
         setAsaasLoading(true);
         setAiStatus('Emitindo cobrança no Asaas (boleto/PIX + NF)...');
+        // Sem abort de 55s: deixa o Asaas terminar. Rede de segurança só em 3 min.
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const hangTimer = setTimeout(() => ctrl?.abort(), 55_000);
+        const hangTimer = setTimeout(() => ctrl?.abort(), 180_000);
+        const progressTimer = setInterval(() => {
+            setAiStatus('Ainda processando no Asaas — aguarde, a tela não trava; NF segue em segundo plano se necessário...');
+        }, 20_000);
         try {
             const res = await authFetch('/api/asaas/create-charge', {
                 method: 'POST',
@@ -3048,7 +3184,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 }),
             });
             const data = await res.json();
-            // 207 = NF falhou/timeout MAS a cobrança Asaas foi criada. Persistimos
+            // 207 = NF falhou hard MAS a cobrança Asaas foi criada. Persistimos
             // a cobrança localmente para evitar pagamento órfão.
             if (!res.ok && res.status !== 207) throw new Error(data.error || 'Erro ao criar cobrança');
             setAsaasResult(data);
@@ -3056,31 +3192,35 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             if (nfNum) {
                 setInvoiceForm(prev => ({ ...prev, number: nfNum }));
             }
-            if (data.nfPending && data.nfError) {
-                const soft = data.nfError.code === 'NF_TIMEOUT';
-                setAiStatus(
-                  soft
-                    ? 'Cobrança Asaas OK. NF ainda processando — salve e sincronize no Faturamento.'
-                    : `⚠️ Cobrança Asaas gerada, mas NF falhou: ${data.nfError.message}. Persistindo localmente.`,
-                );
-                if (!soft) {
-                  alert(`Atenção: cobrança Asaas foi criada com sucesso, mas a NF falhou:\n\n${data.nfError.message}\n\nA cobrança será salva localmente. Use "Reemitir via PlugNotas" / Sincronizar na tela de Faturamento.`);
-                }
-            } else {
+            const softNf = data.nfPending && data.nfError && ['NF_TIMEOUT', 'NF_SCHEDULE_PENDING'].includes(String(data.nfError.code || ''));
+            if (data.nfPending && data.nfError && !softNf) {
+                setAiStatus(`⚠️ Cobrança Asaas gerada, mas NF falhou: ${data.nfError.message}. Persistindo e retentando automaticamente...`);
+            } else if (!softNf && !data.nfPending) {
                 setAiStatus(skipBoleto
                     ? 'NF/fatura gerada (sem boleto — transferência). Salvando Contas a Receber...'
                     : 'Cobrança Asaas gerada! Salvando fatura e contas a receber...');
             }
 
-            await autoSaveInvoiceAfterAsaas(data, nfNum);
+            const saved = await autoSaveInvoiceAfterAsaas(data, nfNum);
+            const nfReady = !!(data.invoice?.pdfUrl || data.invoice?.status === 'AUTHORIZED');
+            if (data.payment?.id && (!nfReady || saved?.needsNfFollowUp || softNf || data.nfPending)) {
+                startSilentNfFollowUp({
+                    paymentId: data.payment.id,
+                    invoiceId: saved?.invoiceId,
+                    company: invoiceForm.issuer_company,
+                });
+            }
         } catch (err: any) {
-            const msg = err?.name === 'AbortError'
-              ? 'Tempo esgotado (55s). Se a cobrança foi criada no Asaas, confira em Faturamento → Sincronizar.'
-              : (err.message || 'Erro ao criar cobrança');
-            alert('Erro ao gerar cobrança no Asaas: ' + msg);
-            setAiStatus('Erro: ' + msg);
+            if (err?.name === 'AbortError') {
+                setAiStatus('Asaas demorou demais na resposta. Se a cobrança foi criada, abra Faturamento — o sistema continua tentando a NF automaticamente.');
+            } else {
+                const msg = err.message || 'Erro ao criar cobrança';
+                alert('Erro ao gerar cobrança no Asaas: ' + msg);
+                setAiStatus('Erro: ' + msg);
+            }
         } finally {
             clearTimeout(hangTimer);
+            clearInterval(progressTimer);
             setAsaasLoading(false);
         }
     };
@@ -3258,8 +3398,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     </div>
                     <div className="p-6 space-y-5 overflow-y-auto flex-1 min-h-0">
                         {aiStatus && (
-                            <div className={`text-xs font-bold px-3 py-2 rounded-lg flex items-center gap-2 ${aiStatus.includes('Erro') || aiStatus.includes('falhou') ? 'bg-red-50 text-red-600' : aiStatus.includes('Comprovante') || aiStatus.includes('OK') ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-                                {asaasLoading ? <Loader2 size={12} className="animate-spin"/> : aiStatus.includes('Erro') || aiStatus.includes('falhou') ? <AlertCircle size={12}/> : <CheckCircle2 size={12}/>}
+                            <div className={`text-xs font-bold px-3 py-2 rounded-lg flex items-center gap-2 ${aiStatus.includes('Erro') && !aiStatus.includes('falhou:') ? 'bg-red-50 text-red-600' : aiStatus.includes('Comprovante') || (aiStatus.includes('OK') && !nfAwaiting) ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                                {asaasLoading || nfAwaiting ? <Loader2 size={12} className="animate-spin"/> : aiStatus.includes('Erro') ? <AlertCircle size={12}/> : <CheckCircle2 size={12}/>}
                                 {aiStatus}
                             </div>
                         )}
@@ -3610,16 +3750,18 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                         : 'Pendente — sincronize'}
                                                 </p>
                                             </div>
-                                            <div className={`rounded-xl border-2 p-2.5 ${asaasResult.invoice?.id || asaasResult.invoice?.pdfUrl ? 'bg-emerald-50 border-emerald-300' : 'bg-amber-50 border-amber-300'}`}>
+                                            <div className={`rounded-xl border-2 p-2.5 ${asaasResult.invoice?.pdfUrl || asaasResult.invoice?.status === 'AUTHORIZED' ? 'bg-emerald-50 border-emerald-300' : 'bg-amber-50 border-amber-300'}`}>
                                                 <p className="text-[9px] font-black uppercase text-emerald-800">Nota Fiscal</p>
-                                                <p className="text-[11px] font-bold text-emerald-900 mt-0.5">
-                                                    {asaasResult.invoice?.pdfUrl
-                                                      ? `PDF OK${asaasResult.invoice?.number ? ` · NF ${asaasResult.invoice.number}` : ''}`
-                                                      : asaasResult.invoice?.id
-                                                        ? `Agendada (${asaasResult.invoice.status || 'PROCESSANDO'})`
-                                                        : asaasResult.nfPending
-                                                          ? 'Pendente — sincronize / reemitir'
-                                                          : 'Pendente'}
+                                                <p className="text-[11px] font-bold text-emerald-900 mt-0.5 flex items-center gap-1.5">
+                                                    {asaasResult.invoice?.pdfUrl || asaasResult.invoice?.status === 'AUTHORIZED'
+                                                      ? `Emitida${asaasResult.invoice?.number ? ` · NF ${asaasResult.invoice.number}` : ''}`
+                                                      : nfAwaiting
+                                                        ? (<><Loader2 size={12} className="animate-spin shrink-0" /> Aguardando — tentando automaticamente...</>)
+                                                        : asaasResult.invoice?.id
+                                                          ? `Aguardando (${asaasResult.invoice.status || 'PROCESSANDO'})`
+                                                          : asaasResult.nfPending
+                                                            ? 'Aguardando — acompanhamento automático'
+                                                            : 'Aguardando'}
                                                 </p>
                                             </div>
                                         </div>
@@ -3672,7 +3814,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 className="w-full bg-gray-900 text-white font-black uppercase text-xs tracking-widest py-3.5 rounded-xl hover:bg-black transition-all"
                                 data-testid="btn-close-invoice-after-success"
                             >
-                                Fechar (emissão concluída)
+                                {nfAwaiting ? 'Fechar (NF continua em segundo plano)' : 'Fechar (emissão concluída)'}
                             </button>
                         )}
                         {!asaasResult && !canSubmitInvoice && (

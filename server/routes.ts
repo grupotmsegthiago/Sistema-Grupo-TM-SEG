@@ -6957,10 +6957,40 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           console.error(`[NF Router] Falha PLUGNOTAS na cobrança ${payment.id}: ${nfErr.message}`);
           nfErrorPayload = { provider: 'PLUGNOTAS', code: nfErr.code || 'PLUGNOTAS_ISSUE_FAILED', message: nfErr.message };
         } else if (nfErr?.code === 'NF_TIMEOUT') {
-          console.log(`[Asaas] AVISO: Timeout NF para ${payment.id} — retornando cobrança sem esperar PDF`);
-          nfErrorPayload = { provider: 'ASAAS', code: 'NF_TIMEOUT', message: nfErr.message };
+          // Promise.race não cancela scheduleInvoice — a NF pode ter sido criada
+          // logo após o timeout. Consulta rápida evita marcar nfPending à toa.
+          console.log(`[Asaas] AVISO: Timeout NF para ${payment.id} — consultando se já existe no Asaas`);
+          try {
+            const list = await getInvoiceByPayment(payment.id, issuerCompany);
+            const items = list?.data || (Array.isArray(list) ? list : []);
+            const found = items.find((n: any) => n.status === 'AUTHORIZED' || n.pdfUrl)
+              || items.find((n: any) => ['SCHEDULED', 'SYNCHRONIZED', 'PENDING'].includes(n.status))
+              || items[0];
+            if (found) {
+              invoiceData = { ...found, provider: 'ASAAS' };
+              console.log(`[Asaas] NF encontrada pós-timeout para ${payment.id}: ${found.id} (${found.status})`);
+            } else {
+              nfErrorPayload = {
+                provider: 'ASAAS',
+                code: 'NF_TIMEOUT',
+                message: 'NF ainda processando no Asaas — acompanhamento automático no Faturamento.',
+              };
+            }
+          } catch {
+            nfErrorPayload = {
+              provider: 'ASAAS',
+              code: 'NF_TIMEOUT',
+              message: 'NF ainda processando no Asaas — acompanhamento automático no Faturamento.',
+            };
+          }
         } else {
           console.log(`[Asaas] AVISO: Não foi possível agendar NF para ${payment.id}: ${nfErr.message}`);
+          // Soft: cobrança existe; frontend/worker seguem tentando emitir a NF.
+          nfErrorPayload = {
+            provider: 'ASAAS',
+            code: 'NF_SCHEDULE_PENDING',
+            message: nfErr?.message || 'NF pendente — será retentada automaticamente.',
+          };
         }
       }
 
@@ -7006,13 +7036,16 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         console.log(`[Asaas] Email NÃO enviado — aguardando: boleto=${hasBoleto}, NF_PDF=${hasNfPdf}, skipBoleto=${noBoleto}.`);
       }
 
-      res.status(nfErrorPayload ? 207 : 200).json({
-        success: !nfErrorPayload,
-        nfPending: !!nfErrorPayload,
+      // NF_TIMEOUT / pending são soft: cobrança OK; NF segue em background.
+      const softNfPending = !!nfErrorPayload && ['NF_TIMEOUT', 'NF_SCHEDULE_PENDING'].includes(nfErrorPayload.code);
+      const hardNfFail = !!nfErrorPayload && !softNfPending;
+      res.status(hardNfFail ? 207 : 200).json({
+        success: !hardNfFail,
+        nfPending: !!nfErrorPayload || (!!invoiceData && !invoiceData.pdfUrl && invoiceData.status !== 'AUTHORIZED'),
         nfError: nfErrorPayload || undefined,
         emailSent,
         skipBoleto: noBoleto,
-        emailPendingReason: !emailSent && clientEmail ? (!hasNf ? 'NF não disponível ainda' : (!hasBoleto && !noBoleto ? 'Boleto não disponível ainda' : '')) : undefined,
+        emailPendingReason: !emailSent && clientEmail ? (!hasNfPdf && !invoiceData?.id ? 'NF não disponível ainda' : (!hasBoleto && !noBoleto ? 'Boleto não disponível ainda' : '')) : undefined,
         payment: {
           id: payment.id,
           status: payment.status,
