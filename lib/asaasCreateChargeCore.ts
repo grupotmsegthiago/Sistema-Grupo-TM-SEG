@@ -157,15 +157,17 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
             signal: splitCtrl.signal,
           });
 
+          const nfServiceText = nfObservations || descText;
           const persistSplit = await persistAsaasChargeInvoice({
             paymentId: payment.id,
             clientName: charge.name || clientName || 'Cliente',
             amount: parseFloat(charge.value),
             dueDate,
             trackingNumber: externalRef,
+            serviceDescription: nfServiceText,
             issuerCompany,
             notes: [
-              nfObservations || descText,
+              nfServiceText,
               `Ref. rastreio: ${externalRef}`,
               nfMunicipalCode ? `CNAE/Serviço municipal: ${nfMunicipalCode}` : '',
             ]
@@ -408,6 +410,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
       console.log('[ASAAS-EMISSAO] 4. Persistindo no Supabase (financial_invoices)...');
       let persistEarly: Awaited<ReturnType<typeof persistAsaasChargeInvoice>>;
       try {
+        const nfServiceText = nfObservations || descText;
         persistEarly = await stepTimeout('supabase_persist', 5_000, (signal) =>
           persistAsaasChargeInvoice({
             paymentId: payment.id,
@@ -415,9 +418,10 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
             amount: amountNum,
             dueDate,
             trackingNumber: trackingRef,
+            serviceDescription: nfServiceText,
             issuerCompany,
             notes: [
-              nfObservations || descText,
+              nfServiceText,
               `Ref. rastreio: ${trackingRef}`,
               nfMunicipalCode
                 ? `CNAE/Serviço municipal: ${nfMunicipalCode}${nfMunicipalName ? ` — ${nfMunicipalName}` : ''}`

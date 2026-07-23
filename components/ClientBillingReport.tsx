@@ -2923,8 +2923,11 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     let receivableOk = false;
                     try {
                         const transferPay = isBankTransferBillingClient(chClientName, clientName);
+                        // Descrição = texto da NF (observação/discriminação), não "NF TMSEG — cliente".
+                        const nfDescSplit = String(invoiceForm.notes || asaasDescription || quinzenaDesc || '').trim()
+                          || `NF ${chNfNumber} — ${chClientName}`;
                         const { error: rxError } = await supabase.from('financial_transactions').insert({
-                            description: `NF ${chNfNumber} — ${quinzenaDesc} — ${chClientName}`,
+                            description: nfDescSplit.slice(0, 500),
                             amount: chValue,
                             type: 'INCOME',
                             status: 'PENDING',
@@ -2932,7 +2935,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             entity_type: 'Client',
                             entity_id: invoiceForm.client,
                             entity_name: chClientName,
-                            notes: `Fatura NF ${chNfNumber} | Asaas: ${chPayment?.id || '-'} | CNPJ: ${ch.customer?.cpfCnpj || '-'} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
+                            notes: `Fatura ${chNfNumber} | Asaas: ${chPayment?.id || '-'} | CNPJ: ${ch.customer?.cpfCnpj || '-'} | Emissora: ${invoiceForm.issuer_company || '-'} | ${nfDescSplit}`.trim(),
                             created_by: userName,
                             payment_method: transferPay ? 'TRANSFERENCIA' : 'BOLETO',
                         });
@@ -3068,8 +3071,11 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             let receivableOk = false;
             try {
                 const transferPay = isBankTransferBillingClient(clientName);
+                // Descrição = texto da NF (observação/discriminação), igual ao modal.
+                const nfDesc = String(invoiceForm.notes || asaasDescription || quinzenaDesc || '').trim()
+                  || `NF ${nfNumber} — ${clientName}`;
                 const { error: rxError } = await supabase.from('financial_transactions').insert({
-                    description: `NF ${nfNumber} — ${quinzenaDesc}`,
+                    description: nfDesc.slice(0, 500),
                     amount: parsedAmt,
                     type: 'INCOME',
                     status: 'PENDING',
@@ -3077,7 +3083,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     entity_type: 'Client',
                     entity_id: invoiceForm.client,
                     entity_name: clientName,
-                    notes: `Fatura NF ${nfNumber} | Asaas: ${payment?.id || '-'} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
+                    notes: `Fatura ${nfNumber} | Asaas: ${payment?.id || '-'} | Emissora: ${invoiceForm.issuer_company || '-'} | ${nfDesc}`.trim(),
                     created_by: userName,
                     payment_method: transferPay ? 'TRANSFERENCIA' : 'BOLETO',
                 });
@@ -3523,8 +3529,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             const dueDate = invoiceForm.boleto_due_date || invoiceForm.date;
             const quinzenaDesc = getQuinzenaRef(invoiceForm.date, clientName);
             try {
+                const nfDescSave = String(invoiceForm.notes || asaasDescription || quinzenaDesc || '').trim()
+                  || `NF ${nfNumber} — ${clientName}`;
                 await supabase.from('financial_transactions').insert({
-                    description: `NF ${nfNumber} — ${quinzenaDesc}`,
+                    description: nfDescSave.slice(0, 500),
                     amount: parsedAmt,
                     type: 'INCOME',
                     status: 'PENDING',
@@ -3532,7 +3540,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     entity_type: 'Client',
                     entity_id: invoiceForm.client,
                     entity_name: clientName,
-                    notes: `Fatura NF ${nfNumber} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
+                    notes: `Fatura ${nfNumber} | Emissora: ${invoiceForm.issuer_company || '-'} | ${nfDescSave}`.trim(),
                     created_by: userName,
                 });
             } catch (e) {

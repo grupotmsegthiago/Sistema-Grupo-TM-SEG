@@ -14,6 +14,11 @@ export type PersistAsaasChargeInput = {
   date?: string;
   /** Ref. interna de rastreio (ex. TMSEG-…). Preferida em `number` se informada. */
   trackingNumber?: string | null;
+  /**
+   * Texto da discriminação da NF (igual ao que vai no Asaas/PlugNotas).
+   * Usado como `description` do Contas a Receber.
+   */
+  serviceDescription?: string | null;
   issuerCompany?: string | null;
   notes?: string | null;
   createdBy?: string | null;
@@ -45,6 +50,28 @@ export type PersistAsaasChargeResult = {
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** Extrai o texto da NF (discriminação) a partir de notes/serviceDescription. */
+export function resolveNfServiceDescription(input: {
+  serviceDescription?: string | null;
+  notes?: string | null;
+  clientName?: string | null;
+  trackingNumber?: string | null;
+  paymentId?: string | null;
+}): string {
+  const explicit = String(input.serviceDescription || '').trim();
+  if (explicit) return explicit.slice(0, 500);
+  const lines = String(input.notes || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const main = lines.find(
+    (l) => !/^Ref\.\s*rastreio:/i.test(l) && !/^CNAE\//i.test(l) && !/^Asaas:/i.test(l),
+  );
+  if (main) return main.slice(0, 500);
+  const number = String(input.trackingNumber || '').trim() || (input.paymentId ? `ASAAS-${input.paymentId}` : '');
+  return number ? `NF ${number} — ${input.clientName || 'Cliente'}` : String(input.clientName || 'Cliente');
 }
 
 export async function persistAsaasChargeInvoice(
@@ -166,11 +193,18 @@ export async function persistAsaasChargeInvoice(
 
     let receivableCreated = false;
     if (!input.skipReceivable && invoiceId) {
-      const desc = `NF ${number} — ${input.clientName || 'Cliente'}`;
+      // Mesmo texto da discriminação da NF (não "NF TMSEG — Cliente").
+      const desc = resolveNfServiceDescription({
+        serviceDescription: input.serviceDescription,
+        notes: input.notes,
+        clientName: input.clientName,
+        trackingNumber: number,
+        paymentId,
+      });
       let rxQuery = sb
         .from('financial_transactions')
         .select('id')
-        .ilike('description', `%${number}%`)
+        .or(`description.ilike.%${number}%,notes.ilike.%${number}%,notes.ilike.%${paymentId}%`)
         .eq('status', 'PENDING')
         .limit(1);
       if (signal) rxQuery = rxQuery.abortSignal(signal);
@@ -185,7 +219,7 @@ export async function persistAsaasChargeInvoice(
           entity_type: 'Client',
           entity_id: input.entityId ?? null,
           entity_name: input.clientName || 'Cliente',
-          notes: `Fatura ${number} | Asaas: ${paymentId} | Emissora: ${input.issuerCompany || '-'}`,
+          notes: `Fatura ${number} | Asaas: ${paymentId} | Emissora: ${input.issuerCompany || '-'} | ${desc}`,
           created_by: input.createdBy || 'Sistema',
           payment_method: 'BOLETO',
         });

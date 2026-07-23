@@ -88,6 +88,30 @@ interface PendingInvoice {
   nf_provider?: string | null;
   plugnotas_invoice_id?: string | null;
   plugnotas_protocol?: string | null;
+  notes?: string | null;
+  description?: string | null;
+}
+
+/** Extrai discriminação NF + CNAE das notes da fatura (gravadas no create-charge). */
+function parseInvoiceNfMeta(inv: PendingInvoice): {
+  serviceDescription?: string;
+  observations?: string;
+  municipalServiceCode?: string;
+  municipalServiceName?: string;
+} {
+  const notes = String(inv.notes || inv.description || '').trim();
+  if (!notes) return {};
+  const lines = notes.split('\n').map((l) => l.trim()).filter(Boolean);
+  const main = lines.find((l) => !/^Ref\.\s*rastreio:/i.test(l) && !/^CNAE\//i.test(l));
+  const cnaeLine = lines.find((l) => /^CNAE\//i.test(l)) || '';
+  const codeMatch = cnaeLine.match(/(\d{4,6})/);
+  const nameMatch = cnaeLine.match(/—\s*(.+)$/);
+  return {
+    serviceDescription: main || undefined,
+    observations: notes.slice(0, 500),
+    municipalServiceCode: codeMatch?.[1],
+    municipalServiceName: nameMatch?.[1]?.trim(),
+  };
 }
 
 // PROCESSING é o estado inicial de NFs PlugNotas (a Prefeitura ainda não devolveu
@@ -105,7 +129,7 @@ export async function listPendingNfs(): Promise<PendingInvoice[]> {
     // Só pega faturas com algum identificador de NF/provider — evita varrer milhares
     // de faturas legacy sem cobrança Asaas nem NF PlugNotas e saturar o ciclo.
     const { data, error } = await sb.from('financial_invoices')
-      .select('id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_retry_at, created_at, nf_provider, plugnotas_invoice_id, plugnotas_protocol')
+      .select('id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_retry_at, created_at, nf_provider, plugnotas_invoice_id, plugnotas_protocol, notes, description')
       .or('asaas_payment_id.not.is.null,plugnotas_invoice_id.not.is.null')
       .or(`nf_status.is.null,nf_status.in.(${PENDING_NF_STATUSES.join(',')})`)
       .or('nf_retry_paused.is.null,nf_retry_paused.eq.false')
@@ -401,6 +425,36 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
   }
   const company = inv.issuer_company || undefined;
   const paymentId = inv.asaas_payment_id!;
+  // Notes/descrição da fatura → discriminação da NF (igual ao modal de emissão).
+  if (!inv.notes) {
+    try {
+      const sb = getSupabase();
+      if (sb) {
+        const { data: full } = await sb
+          .from('financial_invoices')
+          .select('notes, description')
+          .eq('id', inv.id)
+          .maybeSingle();
+        if (full) {
+          inv.notes = (full as any).notes || null;
+          inv.description = (full as any).description || inv.description || null;
+        }
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+  const nfMeta = parseInvoiceNfMeta(inv);
+  const scheduleOpts = {
+    paymentId,
+    company,
+    clientCnpj: opts?.clientCnpj,
+    clientName: inv.client,
+    serviceDescription: opts?.serviceDescription || nfMeta.serviceDescription,
+    observations: nfMeta.observations,
+    municipalServiceCode: nfMeta.municipalServiceCode,
+    municipalServiceName: nfMeta.municipalServiceName,
+  };
   // IMPORTANTE: nf_retry_count conta APENAS tentativas reais de reemissão
   // (scheduleInvoice ou cancel+reschedule). Polling passivo (SYNCHRONIZED em
   // janela normal, SCHEDULED, PROCESSING_CANCELLATION) NÃO incrementa o
@@ -482,13 +536,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
         return { ok: false, status: 'SYNCHRONIZED', action: 'cancel-blocked' };
       }
       try {
-        const newInv = await scheduleInvoice({
-          paymentId,
-          company,
-          clientCnpj: opts?.clientCnpj,
-          clientName: inv.client,
-          serviceDescription: opts?.serviceDescription,
-        });
+        const newInv = await scheduleInvoice(scheduleOpts);
         // Tentativa REAL de reemissão concluída — incrementa contador.
         await markInvoice(inv.id, {
           nf_status: newInv?.status || 'SCHEDULED',
@@ -583,13 +631,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
     }
     if (cancelled) {
       try {
-        const newInv = await scheduleInvoice({
-          paymentId,
-          company,
-          clientCnpj: opts?.clientCnpj,
-          clientName: inv.client,
-          serviceDescription: opts?.serviceDescription,
-        });
+        const newInv = await scheduleInvoice(scheduleOpts);
         await markInvoice(inv.id, {
           nf_status: newInv?.status || 'SCHEDULED',
           asaas_invoice_id: newInv?.id || null,
@@ -626,14 +668,10 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
   }
 
   // 6) Erro transitório / sem NF ainda — re-agenda
+  // Saldo Asaas (GET /finance/balance) ≠ NF (POST /invoices): chave OK não garante
+  // Inscrição Municipal / CNAE / certificado — erros fiscais aparecem só aqui.
   try {
-    const newInv = await scheduleInvoice({
-      paymentId,
-      company,
-      clientCnpj: opts?.clientCnpj,
-      clientName: inv.client,
-      serviceDescription: opts?.serviceDescription,
-    });
+    const newInv = await scheduleInvoice(scheduleOpts);
     await markInvoice(inv.id, {
       nf_status: newInv?.status || 'SCHEDULED',
       asaas_invoice_id: newInv?.id || inv.asaas_invoice_id,
