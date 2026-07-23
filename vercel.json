@@ -403,6 +403,10 @@
       "destination": "/api/nf-control?op=preferences"
     },
     {
+      "source": "/api/nf/ensure-clean-slate",
+      "destination": "/api/nf-control?op=clean-slate"
+    },
+    {
       "source": "/relatorios/dhl-se-183013",
       "destination": "/api/relatorios-dhl-se-183013"
     },

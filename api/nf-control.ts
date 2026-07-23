@@ -18,6 +18,7 @@ import {
   listPlugNotasCompaniesLite,
   loadNfProviderPreferences,
   saveNfProviderPreferences,
+  wipeOpenInvoicesCleanSlate,
 } from '../lib/nfInvoiceControlApi.js';
 
 type LiteReq = {
@@ -94,6 +95,13 @@ export default async function handler(req: LiteReq, res: LiteRes) {
         String(actor),
       );
       res.status(200).json({ success: true, preferences: saved });
+      return;
+    }
+
+    // Limpeza da fila antiga — handler LEVE (não Express). Sempre arquiva Em Aberto/Vencidas.
+    if (method === 'POST' && (op === 'clean-slate' || op === 'ensure-clean-slate')) {
+      const result = await wipeOpenInvoicesCleanSlate();
+      res.status(200).json(result);
       return;
     }
 

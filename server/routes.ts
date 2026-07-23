@@ -6131,99 +6131,22 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  /**
-   * Zera a fila Em Aberto/Vencidas em LOTE (rápido) para tela limpa.
-   * 1) UPDATE em massa no Supabase (não fica 1-a-1)
-   * 2) Contas a Receber PENDING → CANCELLED
-   * 3) Cancel Asaas em background (não bloqueia a resposta)
-   * Idempotente via system_settings.invoice_clean_slate_v1
-   */
-  async function wipeOpenInvoicesForCleanSlate(opts?: { force?: boolean }) {
-    const FLAG_KEY = 'invoice_clean_slate_v1';
-    if (!opts?.force) {
-      try {
-        const { data: flag } = await supabase.from('system_settings').select('value').eq('key', FLAG_KEY).maybeSingle();
-        if (flag && String((flag as any).value || '') === 'done') {
-          return { alreadyDone: true, cancelled: 0, asaasQueued: 0, receivablesCancelled: 0 };
-        }
-      } catch { /* segue sem flag */ }
-    }
-
-    const { data: openInvs, error } = await supabase
-      .from('financial_invoices')
-      .select('id, number, asaas_payment_id, issuer_company')
-      .in('status', ['EMITIDA', 'VENCIDA'])
-      .limit(500);
-    if (error) throw new Error(error.message);
-
-    const rows = openInvs || [];
-    const ids = rows.map(r => r.id);
-    let cancelled = 0;
-    let receivablesCancelled = 0;
-
-    if (ids.length > 0) {
-      const { error: upErr } = await supabase.from('financial_invoices').update({
-        status: 'CANCELADA',
-        nf_retry_paused: true,
-        nf_status: 'CANCELED',
-        nf_last_error: 'Arquivada — limpeza para recomeçar Controle de Faturas (2026-07-23).',
-      }).in('id', ids);
-      if (upErr) throw new Error(upErr.message);
-      cancelled = ids.length;
-
-      const numbers = rows.map(r => r.number).filter(Boolean) as string[];
-      for (const num of numbers) {
-        const { data: txs } = await supabase.from('financial_transactions')
-          .update({ status: 'CANCELLED' })
-          .ilike('description', `%${num}%`)
-          .eq('status', 'PENDING')
-          .select('id');
-        receivablesCancelled += (txs || []).length;
-      }
-    }
-
-    // Asaas: não bloqueia — cancela em background para não timeout o request.
-    const asaasJobs = rows.filter(r => r.asaas_payment_id);
-    void (async () => {
-      for (const inv of asaasJobs) {
-        try {
-          await deletePayment(inv.asaas_payment_id!, inv.issuer_company || undefined);
-        } catch (e: any) {
-          console.log(`[CleanSlate] Asaas cancel falhou ${inv.asaas_payment_id}: ${e.message}`);
-        }
-        await new Promise(r => setTimeout(r, 80));
-      }
-    })();
-
+  // Fallback Express (preferir rewrite → api/nf-control?op=clean-slate).
+  app.post("/api/nf/clear-open", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
     try {
-      await supabase.from('system_settings').upsert([{
-        key: FLAG_KEY,
-        value: 'done',
-        updated_by: 'Sistema',
-        updated_at: new Date().toISOString(),
-      }], { onConflict: 'key' });
-    } catch (e: any) {
-      console.log('[CleanSlate] flag system_settings:', e?.message || e);
-    }
-
-    return { alreadyDone: false, cancelled, asaasQueued: asaasJobs.length, receivablesCancelled };
-  }
-
-  app.post("/api/nf/clear-open", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
-    try {
-      const force = req.body?.confirm === 'LIMPAR_TODAS_EM_ABERTO' || req.body?.force === true;
-      const result = await wipeOpenInvoicesForCleanSlate({ force: !!force });
-      res.json({ success: true, ...result });
+      const { wipeOpenInvoicesCleanSlate } = await import('../lib/nfInvoiceControlApi');
+      const result = await wipeOpenInvoicesCleanSlate();
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  // Disparado automaticamente ao abrir o Controle — uma vez — para deixar a tela limpa.
   app.post("/api/nf/ensure-clean-slate", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
     try {
-      const result = await wipeOpenInvoicesForCleanSlate({ force: false });
-      res.json({ success: true, ...result });
+      const { wipeOpenInvoicesCleanSlate } = await import('../lib/nfInvoiceControlApi');
+      const result = await wipeOpenInvoicesCleanSlate();
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

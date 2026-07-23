@@ -3,6 +3,7 @@
  * (sem cold-start do Express em api/index).
  */
 import { createSupabaseAdminClient } from './supabaseAdmin.js';
+import { INVOICE_CONTROL_EPOCH, isAfterInvoiceControlEpoch } from './invoiceCleanSlate.js';
 
 export type NfProvider = 'ASAAS' | 'PLUGNOTAS';
 export const VALID_NF_PROVIDERS: NfProvider[] = ['ASAAS', 'PLUGNOTAS'];
@@ -53,7 +54,7 @@ export async function buildNfIssuerSummary(): Promise<{
   const { data, error } = await sb
     .from('financial_invoices')
     .select(
-      'id, client, number, amount, issuer_company, nf_status, nf_retry_at, created_at, asaas_payment_id, nf_provider, plugnotas_invoice_id, status',
+      'id, client, number, amount, issuer_company, nf_status, nf_retry_at, created_at, asaas_payment_id, nf_provider, plugnotas_invoice_id, status, date',
     );
   if (error) throw new Error(error.message);
 
@@ -66,9 +67,10 @@ export async function buildNfIssuerSummary(): Promise<{
   const now = Date.now();
 
   for (const r of data || []) {
-    // Saúde da fila = só faturas ativas (não canceladas / não pagas)
+    // Saúde da fila = só faturas ativas (não canceladas / não pagas) e pós-marco limpo
     const invStatus = String((r as any).status || '').toUpperCase();
     if (invStatus === 'CANCELADA' || invStatus === 'PAGA') continue;
+    if (!isAfterInvoiceControlEpoch((r as any).created_at, (r as any).date)) continue;
     if (!r.asaas_payment_id && !r.plugnotas_invoice_id) continue;
     const c = r.issuer_company || '(sem emissora)';
     const provider = (
@@ -202,4 +204,103 @@ export function isPlugNotasConfiguredLite(): boolean {
   const env = (process.env.PLUGNOTAS_ENV || 'sandbox').toLowerCase();
   if (env === 'production') return !!process.env.PLUGNOTAS_API_TOKEN;
   return !!(process.env.PLUGNOTAS_API_TOKEN_SANDBOX || process.env.PLUGNOTAS_API_TOKEN);
+}
+
+/**
+ * Arquiva (CANCELADA) faturas Em Aberto/Vencidas criadas ANTES do marco de recomeço.
+ * Faturas novas (created_at >= epoch) não são tocadas — a tela só mostra o que vier de agora em diante.
+ * Usado pelo handler leve — não passa pelo Express (evita timeout/cold-start).
+ */
+export async function wipeOpenInvoicesCleanSlate(): Promise<{
+  success: true;
+  cancelled: number;
+  receivablesCancelled: number;
+  openRemaining: number;
+  epoch: string;
+  admin: boolean;
+}> {
+  const sb = createSupabaseAdminClient();
+  if (!sb) {
+    throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel.');
+  }
+
+  // Só a fila antiga (antes do marco). Novas emissões ficam intactas.
+  const { data: openInvs, error } = await sb
+    .from('financial_invoices')
+    .select('id, number, asaas_payment_id, issuer_company, status, created_at, date')
+    .in('status', ['EMITIDA', 'VENCIDA'])
+    .lt('created_at', INVOICE_CONTROL_EPOCH)
+    .limit(1000);
+  if (error) throw new Error(error.message);
+
+  const rows = openInvs || [];
+  const ids = rows.map((r) => r.id);
+  let cancelled = 0;
+  let receivablesCancelled = 0;
+
+  if (ids.length > 0) {
+    // UPDATE em massa — não 1-a-1 (era o que fazia o Limpar “não funcionar”).
+    const { error: upErr } = await sb
+      .from('financial_invoices')
+      .update({
+        status: 'CANCELADA',
+        nf_retry_paused: true,
+        nf_status: 'CANCELED',
+        nf_last_error: `Arquivada — limpeza Controle de Faturas (${INVOICE_CONTROL_EPOCH}).`,
+      })
+      .in('id', ids);
+    if (upErr) throw new Error(upErr.message);
+    cancelled = ids.length;
+
+    const numbers = [...new Set(rows.map((r) => r.number).filter(Boolean))] as string[];
+    for (const num of numbers) {
+      const { data: txs } = await sb
+        .from('financial_transactions')
+        .update({ status: 'CANCELLED' })
+        .ilike('description', `%${num}%`)
+        .eq('status', 'PENDING')
+        .select('id');
+      receivablesCancelled += (txs || []).length;
+    }
+  }
+
+  // Restantes em aberto/vencidas DEPOIS do marco (as que a tela deve mostrar).
+  const { data: remainingRows } = await sb
+    .from('financial_invoices')
+    .select('id, created_at, date')
+    .in('status', ['EMITIDA', 'VENCIDA'])
+    .limit(1000);
+  const openRemaining = (remainingRows || []).filter((r) =>
+    isAfterInvoiceControlEpoch((r as any).created_at, (r as any).date),
+  ).length;
+
+  try {
+    await sb.from('system_settings').upsert(
+      [
+        {
+          key: 'invoice_clean_slate_v2',
+          value: JSON.stringify({
+            done: true,
+            at: new Date().toISOString(),
+            epoch: INVOICE_CONTROL_EPOCH,
+            cancelled,
+          }),
+          updated_by: 'Sistema',
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      { onConflict: 'key' },
+    );
+  } catch {
+    /* flag opcional */
+  }
+
+  return {
+    success: true,
+    cancelled,
+    receivablesCancelled,
+    openRemaining,
+    epoch: INVOICE_CONTROL_EPOCH,
+    admin: true,
+  };
 }

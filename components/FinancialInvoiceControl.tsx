@@ -10,6 +10,7 @@ import {
   nfBucketLabel,
   nfBucketDetail,
 } from '../lib/invoiceDisplay';
+import { isAfterInvoiceControlEpoch } from '../lib/invoiceCleanSlate';
 import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
   AlertCircle, Clock, XCircle, DollarSign, Receipt, Eye, Loader2,
@@ -27,7 +28,7 @@ interface Invoice {
   status: string;
   notes: string;
   created_by: string;
-  created_at: string;
+  created_at?: string;
   nf_image_url?: string;
   boleto_image_url?: string;
   provider?: string;
@@ -259,13 +260,16 @@ const FinancialInvoiceControl: React.FC = () => {
       if (error) throw error;
       if (data) {
         const now = new Date();
-        const updated: Invoice[] = data.map(inv => {
-          if (inv.status === 'EMITIDA' && inv.boleto_due_date) {
-            const due = new Date(inv.boleto_due_date + 'T23:59:59');
-            if (now > due) return { ...inv, status: 'VENCIDA' };
-          }
-          return inv;
-        });
+        // Esconde fila antiga: só faturas criadas a partir do marco "tela limpa".
+        const updated: Invoice[] = data
+          .filter((inv) => isAfterInvoiceControlEpoch(inv.created_at, inv.date))
+          .map((inv) => {
+            if (inv.status === 'EMITIDA' && inv.boleto_due_date) {
+              const due = new Date(inv.boleto_due_date + 'T23:59:59');
+              if (now > due) return { ...inv, status: 'VENCIDA' };
+            }
+            return inv;
+          });
         setInvoices(updated);
       } else {
         setInvoices([]);
@@ -298,7 +302,8 @@ const FinancialInvoiceControl: React.FC = () => {
       return { ctrl, clear: () => clearTimeout(t) };
     };
     const heal = async () => {
-      const wipeT = withTimeout(45_000);
+      // Handler LEVE (api/nf-control) — arquiva Em Aberto/Vencidas antigas no banco.
+      const wipeT = withTimeout(55_000);
       try {
         const wipeRes = await authFetch('/api/nf/ensure-clean-slate', {
           method: 'POST',
@@ -307,6 +312,8 @@ const FinancialInvoiceControl: React.FC = () => {
         const wipe = await wipeRes.json().catch(() => ({}));
         if (wipe?.cancelled > 0) {
           console.info(`[InvoiceControl] Fila antiga arquivada: ${wipe.cancelled} fatura(s).`);
+        } else if (wipe?.error) {
+          console.warn('[InvoiceControl] clean-slate:', wipe.error);
         }
       } catch (e) {
         console.warn('[InvoiceControl] ensure-clean-slate falhou/timeout', e);
@@ -314,6 +321,7 @@ const FinancialInvoiceControl: React.FC = () => {
         wipeT.clear();
       }
       if (cancelled) return;
+      // Lista já filtra por epoch — tela fica vazia mesmo se alguma linha antiga restar no banco.
       await fetchInvoices({ silent: true });
       await fetchIssuerSummary();
       if (cancelled) return;
