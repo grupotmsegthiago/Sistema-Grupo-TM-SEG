@@ -207,14 +207,20 @@ const FinancialInvoiceControl: React.FC = () => {
   };
 
   const handleBulkRetryNfs = async () => {
-    if (!confirm('Reemitir TODAS as NFs pendentes agora?\n\nIsso vai:\n• Tentar autorizar NFs em ERRO\n• Cancelar e reagendar NFs travadas em SYNCHRONIZED há > 6h\n• Marcar como TRAVADA e pausar as que estão em SYNCHRONIZED há > 24h')) return;
+    if (!confirm('Reemitir NFs pendentes agora?\n\nIsso vai:\n• Reabrir pausadas soft\n• Tentar autorizar até 20 NFs\n• Cancelar e reagendar só quando seguro (anti-duplicata)')) return;
     setBulkRetrying(true);
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const hang = setTimeout(() => ctrl?.abort(), 90_000);
     try {
-      const res = await authFetch('/api/nf/retry-now', { method: 'POST' });
+      const res = await authFetch('/api/nf/retry-now?limit=20&reopen=1', {
+        method: 'POST',
+        ...(ctrl ? { signal: ctrl.signal } : {}),
+      });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Falha ao executar ciclo.');
       const parts = [
-        `${data.processed || 0} fatura(s) processada(s)`,
+        `${data.reopened || 0} reaberta(s)`,
+        `${data.processed || 0} processada(s)`,
         `✓ ${data.ok || 0} OK`,
         `⏸ ${data.paused || 0} pausada(s)`,
         `🚨 ${data.stuck || 0} travada(s)`,
@@ -222,9 +228,14 @@ const FinancialInvoiceControl: React.FC = () => {
       ];
       alert('Ciclo de reemissão concluído!\n\n' + parts.join('\n'));
       await fetchInvoices();
+      await fetchIssuerSummary();
     } catch (e: any) {
-      alert('Erro: ' + e.message);
+      const msg = e?.name === 'AbortError'
+        ? 'Tempo esgotado no ciclo (90s). Parte pode ter sido processada — atualize a lista.'
+        : (e.message || 'Erro');
+      alert('Erro: ' + msg);
     } finally {
+      clearTimeout(hang);
       setBulkRetrying(false);
     }
   };
@@ -253,11 +264,14 @@ const FinancialInvoiceControl: React.FC = () => {
       return;
     }
     setClearingOpen(true);
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const hang = setTimeout(() => ctrl?.abort(), 120_000);
     try {
       const res = await authFetch('/api/nf/clear-open', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirm: 'LIMPAR_TODAS_EM_ABERTO' }),
+        ...(ctrl ? { signal: ctrl.signal } : {}),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Falha ao limpar');
@@ -272,8 +286,12 @@ const FinancialInvoiceControl: React.FC = () => {
       await fetchInvoices();
       await fetchIssuerSummary();
     } catch (e: any) {
-      alert('Erro ao limpar: ' + e.message);
+      const msg = e?.name === 'AbortError'
+        ? 'Limpeza demorou demais (120s). Atualize a lista — parte pode ter sido cancelada.'
+        : (e.message || 'Erro ao limpar');
+      alert(msg);
     } finally {
+      clearTimeout(hang);
       setClearingOpen(false);
     }
   };
@@ -324,26 +342,43 @@ const FinancialInvoiceControl: React.FC = () => {
   // Realtime: refresh silencioso — não recoloca "Carregando faturas..." na tela.
   useRealtimeRefresh('financial_invoices', () => { fetchInvoices({ silent: true }); fetchIssuerSummary(); });
 
-  // Auto-cura ao abrir a tela:
-  // 1) Sincroniza pagamentos Asaas → marca PAGA (sem emitir NF)
-  // 2) Dispara ciclo de retry NF (cancela antes de reemitir — anti-duplicata)
-  // 3) Polling de pagamentos enquanto a tela estiver aberta
+  // Auto-cura LEVE ao abrir (não trava a lista):
+  // 1) sync pagamentos/espelhos (limite 15, timeout 25s)
+  // 2) retry NF limitado (5) + reopen pausadas soft
+  // 3) polling leve a cada 60s
   const autoHealStarted = useRef(false);
   useEffect(() => {
     if (autoHealStarted.current) return;
     autoHealStarted.current = true;
     let cancelled = false;
+    const withTimeout = (ms: number) => {
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const t = setTimeout(() => ctrl?.abort(), ms);
+      return { ctrl, clear: () => clearTimeout(t) };
+    };
     const heal = async () => {
+      const syncT = withTimeout(25_000);
       try {
-        await authFetch('/api/asaas/sync-open-payments', { method: 'POST' });
+        await authFetch('/api/asaas/sync-open-payments?limit=15', {
+          method: 'POST',
+          ...(syncT.ctrl ? { signal: syncT.ctrl.signal } : {}),
+        });
       } catch (e) {
-        console.warn('[InvoiceControl] sync-open-payments falhou', e);
+        console.warn('[InvoiceControl] sync-open-payments falhou/timeout', e);
+      } finally {
+        syncT.clear();
       }
       if (cancelled) return;
+      const retryT = withTimeout(40_000);
       try {
-        await authFetch('/api/nf/retry-now', { method: 'POST' });
+        await authFetch('/api/nf/retry-now?limit=5&reopen=1', {
+          method: 'POST',
+          ...(retryT.ctrl ? { signal: retryT.ctrl.signal } : {}),
+        });
       } catch (e) {
-        console.warn('[InvoiceControl] nf/retry-now falhou', e);
+        console.warn('[InvoiceControl] nf/retry-now leve falhou/timeout', e);
+      } finally {
+        retryT.clear();
       }
       if (cancelled) return;
       await fetchInvoices({ silent: true });
@@ -351,10 +386,15 @@ const FinancialInvoiceControl: React.FC = () => {
     };
     void heal();
     const poll = setInterval(() => {
-      void authFetch('/api/asaas/sync-open-payments', { method: 'POST' })
+      const t = withTimeout(25_000);
+      void authFetch('/api/asaas/sync-open-payments?limit=15', {
+        method: 'POST',
+        ...(t.ctrl ? { signal: t.ctrl.signal } : {}),
+      })
         .then(() => fetchInvoices({ silent: true }))
-        .catch(() => {});
-    }, 90_000);
+        .catch(() => {})
+        .finally(() => t.clear());
+    }, 60_000);
     return () => {
       cancelled = true;
       clearInterval(poll);

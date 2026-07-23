@@ -2844,12 +2844,17 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         invoicePayload.asaas_status = chPayment.status;
                         invoicePayload.asaas_invoice_url = chPayment.invoiceUrl || '';
                         invoicePayload.asaas_bankslip_url = chPayment.bankSlipUrl || '';
+                        if (chPayment.bankSlipUrl) invoicePayload.boleto_image_url = chPayment.bankSlipUrl;
                     }
                     if (ch.pix?.copyPaste) invoicePayload.asaas_pix_payload = ch.pix.copyPaste;
                     if (ch.bankSlip?.digitableLine) invoicePayload.asaas_barcode = ch.bankSlip.digitableLine;
                     if (ch.invoice?.pdfUrl) invoicePayload.nf_image_url = ch.invoice.pdfUrl;
                     if (ch.invoice?.status) invoicePayload.nf_status = ch.invoice.status;
+                    else if (chPayment?.id) invoicePayload.nf_status = 'PROCESSING';
                     if (ch.invoice?.number) invoicePayload.nf_number = String(ch.invoice.number);
+                    if (ch.invoice?.status && ch.invoice.status !== 'AUTHORIZED' && !ch.invoice?.pdfUrl) {
+                        invoicePayload.nf_retry_paused = false;
+                    }
                     // Provider attribution: prefer explícito (ch.invoice.provider). Quando
                     // a NF falhou (invoice null + nfError), inferir do nfError.provider para
                     // não classificar erroneamente como ASAAS uma fatura PLUGNOTAS pendente.
@@ -2937,6 +2942,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 invoicePayload.asaas_status = payment.status;
                 invoicePayload.asaas_invoice_url = payment.invoiceUrl || '';
                 invoicePayload.asaas_bankslip_url = payment.bankSlipUrl || '';
+                if (payment.bankSlipUrl) invoicePayload.boleto_image_url = payment.bankSlipUrl;
             }
             if (asaasData?.pix?.copyPaste) invoicePayload.asaas_pix_payload = asaasData.pix.copyPaste;
             if (asaasData?.bankSlip?.digitableLine) invoicePayload.asaas_barcode = asaasData.bankSlip.digitableLine;
@@ -2944,7 +2950,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             const nfPdf = asaasData?.invoice?.pdfUrl;
             if (nfPdf) invoicePayload.nf_image_url = nfPdf;
             if (asaasData?.invoice?.status) invoicePayload.nf_status = asaasData.invoice.status;
+            else if (payment?.id) invoicePayload.nf_status = 'PROCESSING';
             if (asaasData?.invoice?.number) invoicePayload.nf_number = String(asaasData.invoice.number);
+            if (asaasData?.invoice?.status && asaasData.invoice.status !== 'AUTHORIZED' && !nfPdf) {
+                invoicePayload.nf_status = asaasData.invoice.status || 'PROCESSING';
+                invoicePayload.nf_retry_paused = false;
+            }
             // Provider attribution: prefer explícito (asaasData.invoice.provider). Quando
             // a NF falhou (invoice null + nfError), inferir do nfError.provider para evitar
             // classificar erroneamente como ASAAS uma fatura PLUGNOTAS pendente.
@@ -3075,12 +3086,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
             setAsaasLoading(true);
             setAiStatus('Emitindo cobranças no Asaas...');
-            // Sem abort de 55s: Asaas pode demorar. Só rede de segurança longa (3 min).
+            // Rede de segurança 75s — se passar, libera UI e manda ao Controle.
             const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-            const hangTimer = setTimeout(() => ctrl?.abort(), 180_000);
+            const hangTimer = setTimeout(() => ctrl?.abort(), 75_000);
             const progressTimer = setInterval(() => {
-                setAiStatus('Ainda processando no Asaas — aguarde, não feche o modal...');
-            }, 20_000);
+                setAiStatus('Ainda processando no Asaas — em seguida abre o Controle como Processando...');
+            }, 12_000);
             try {
                 const res = await authFetch('/api/asaas/create-charge', {
                     method: 'POST',
@@ -3133,8 +3144,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 return;
             } catch (err: any) {
                 if (err?.name === 'AbortError') {
-                    setAiStatus('Asaas demorou demais na resposta. Se a cobrança foi criada, abra Faturamento — o sistema continua tentando a NF automaticamente.');
-                    // Não alerta bloqueante — evita sensação de “travou e morreu”.
+                    setAsaasLoading(false);
+                    setShowInvoiceModal(false);
+                    resetInvoiceForm();
+                    if (onNavigate) onNavigate('fin-invoices');
+                    alert('A emissão demorou. Abra o Controle de Faturas — se a cobrança existir, fica Processando até a NF.');
+                    return;
                 } else {
                     const msg = err.message || 'Erro ao criar cobranças';
                     alert('Erro ao gerar cobranças no Asaas: ' + msg);
@@ -3157,12 +3172,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
         setAsaasLoading(true);
         setAiStatus('Emitindo cobrança no Asaas (boleto/PIX + NF)...');
-        // Sem abort de 55s: deixa o Asaas terminar. Rede de segurança só em 3 min.
+        // Rede de segurança 75s — libera UI e acompanha no Controle.
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const hangTimer = setTimeout(() => ctrl?.abort(), 180_000);
+        const hangTimer = setTimeout(() => ctrl?.abort(), 75_000);
         const progressTimer = setInterval(() => {
-            setAiStatus('Ainda processando no Asaas — aguarde, a tela não trava; NF segue em segundo plano se necessário...');
-        }, 20_000);
+            setAiStatus('Ainda processando no Asaas — em seguida abre o Controle como Processando...');
+        }, 12_000);
         try {
             const res = await authFetch('/api/asaas/create-charge', {
                 method: 'POST',
@@ -3212,7 +3227,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             return;
         } catch (err: any) {
             if (err?.name === 'AbortError') {
-                setAiStatus('Asaas demorou demais na resposta. Se a cobrança foi criada, abra Faturamento — o sistema continua tentando a NF automaticamente.');
+                setAsaasLoading(false);
+                setShowInvoiceModal(false);
+                resetInvoiceForm();
+                if (onNavigate) onNavigate('fin-invoices');
+                alert('A emissão demorou. Abra o Controle de Faturas — se a cobrança existir, fica Processando até a NF.');
+                return;
             } else {
                 const msg = err.message || 'Erro ao criar cobrança';
                 alert('Erro ao gerar cobrança no Asaas: ' + msg);

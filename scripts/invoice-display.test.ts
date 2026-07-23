@@ -48,8 +48,8 @@ describe('FinancialInvoiceControl — auto sync e labels', () => {
     const src = fs.readFileSync('components/FinancialInvoiceControl.tsx', 'utf8');
     assert.match(src, /from 'react'/);
     assert.match(src, /import React,/);
-    assert.match(src, /\/api\/asaas\/sync-open-payments/);
-    assert.match(src, /\/api\/nf\/retry-now/);
+    assert.match(src, /\/api\/asaas\/sync-open-payments\?limit=15/);
+    assert.match(src, /\/api\/nf\/retry-now\?limit=5&reopen=1/);
     assert.match(src, /paymentStatusLabel/);
     assert.match(src, /nfStatusBucket/);
     assert.match(src, /VENCIDO/);

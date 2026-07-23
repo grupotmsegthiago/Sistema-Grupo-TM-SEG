@@ -656,21 +656,53 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
   }
 }
 
-export async function runRetryCycle(): Promise<{ processed: number; ok: number; paused: number; errors: number; stuck: number }> {
+export async function runRetryCycle(opts?: { limit?: number }): Promise<{ processed: number; ok: number; paused: number; errors: number; stuck: number }> {
   const pending = await listPendingNfs();
+  const limit = Math.max(1, Math.min(Number(opts?.limit) || pending.length || 1, 100));
+  const batch = pending.slice(0, limit);
   let ok = 0, paused = 0, errors = 0, stuck = 0;
-  for (const inv of pending) {
+  for (const inv of batch) {
     const res = await retryOne(inv);
     if (res.ok) ok++;
     else if (res.action === 'stuck-alert') stuck++;
     else if (res.paused) paused++;
     else errors++;
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 400));
   }
-  if (pending.length > 0) {
-    console.log(`[NF Retry] ciclo concluído — ${pending.length} processadas | ${ok} ok | ${paused} pausadas | ${stuck} STUCK | ${errors} erros`);
+  if (batch.length > 0) {
+    console.log(`[NF Retry] ciclo concluído — ${batch.length}/${pending.length} processadas | ${ok} ok | ${paused} pausadas | ${stuck} STUCK | ${errors} erros`);
   }
-  return { processed: pending.length, ok, paused, errors, stuck };
+  return { processed: batch.length, ok, paused, errors, stuck };
+}
+
+/** Reabre acompanhamento: despause STUCK/ERROR (não permanente) e marca Processando. */
+export async function reopenPausedNfs(limit = 50): Promise<{ reopened: number }> {
+  const sb = getSupabase();
+  if (!sb) return { reopened: 0 };
+  try {
+    const { data, error } = await sb.from('financial_invoices')
+      .select('id, nf_status, nf_last_error, nf_retry_paused, status')
+      .eq('nf_retry_paused', true)
+      .in('status', ['EMITIDA', 'VENCIDA'])
+      .in('nf_status', ['STUCK', 'ERROR', 'FAILED', 'SYNCHRONIZED', 'PENDING', 'PROCESSING'])
+      .limit(Math.max(1, Math.min(limit, 100)));
+    if (error || !data?.length) return { reopened: 0 };
+    let reopened = 0;
+    for (const row of data) {
+      const err = String((row as any).nf_last_error || '');
+      if (isNonRetryable(err)) continue;
+      await markInvoice(row.id, {
+        nf_retry_paused: false,
+        nf_status: 'PROCESSING',
+        nf_retry_at: new Date().toISOString(),
+        nf_last_error: null,
+      }, { action: 'reopen-processing', status: 'PROCESSING', message: 'Reaberto para acompanhamento automático.' });
+      reopened++;
+    }
+    return { reopened };
+  } catch {
+    return { reopened: 0 };
+  }
 }
 
 let workerStarted = false;

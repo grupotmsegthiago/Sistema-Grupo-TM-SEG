@@ -6113,11 +6113,19 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.post("/api/nf/retry-now", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+  app.post("/api/nf/retry-now", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
-      const { runRetryCycle } = await import('./nfRetryWorker');
-      const result = await runRetryCycle();
-      res.json({ success: true, ...result });
+      const { runRetryCycle, reopenPausedNfs } = await import('./nfRetryWorker');
+      const limitRaw = Number(req.query.limit ?? req.body?.limit);
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : undefined;
+      const reopen = req.query.reopen === '1' || req.body?.reopen === true;
+      let reopened = 0;
+      if (reopen) {
+        const r = await reopenPausedNfs(limit || 40);
+        reopened = r.reopened;
+      }
+      const result = await runRetryCycle(limit ? { limit } : undefined);
+      res.json({ success: true, reopened, ...result });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -6136,7 +6144,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const { data: openInvs, error } = await supabase
         .from('financial_invoices')
         .select('id, number, client, amount, asaas_payment_id, issuer_company, status')
-        .in('status', ['EMITIDA', 'VENCIDA']);
+        .in('status', ['EMITIDA', 'VENCIDA'])
+        .limit(200);
       if (error) return res.status(500).json({ error: error.message });
 
       let cancelled = 0;
@@ -6824,28 +6833,38 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           let pixData = null;
           let bankSlipData = null;
           let invoiceData = null;
+          let softNfError: { provider: string; code: string; message: string } | null = null;
           try { pixData = await getPaymentPixQrCode(payment.id, issuerCompany); } catch (_) {}
           // CEVA/DHL: não busca/expõe boleto — cliente paga por transferência
           if (!noBoleto) {
             try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (_) {}
           }
           try {
-            const routed = await issueNfWithRouter({
-              paymentId: payment.id,
-              issuerCompany,
-              descText,
-              externalRef,
-              clientCnpj: cleanCnpj,
-              clientName: charge.name || clientName,
-              clientEmail: charge.email || clientEmail || undefined,
-              amount: parseFloat(charge.value),
-              observations: nfObservations || undefined,
-              municipalServiceCode: nfMunicipalCode,
-              municipalServiceName: nfMunicipalName,
-            });
+            const nfTimeoutMs = 6_000;
+            const routed = await Promise.race([
+              issueNfWithRouter({
+                paymentId: payment.id,
+                issuerCompany,
+                descText,
+                externalRef,
+                clientCnpj: cleanCnpj,
+                clientName: charge.name || clientName,
+                clientEmail: charge.email || clientEmail || undefined,
+                amount: parseFloat(charge.value),
+                observations: nfObservations || undefined,
+                municipalServiceCode: nfMunicipalCode,
+                municipalServiceName: nfMunicipalName,
+              }),
+              new Promise<never>((_, reject) => {
+                setTimeout(() => {
+                  const err: any = new Error(`Timeout ao emitir NF (${nfTimeoutMs / 1000}s) — cobrança Asaas já foi criada`);
+                  err.code = 'NF_TIMEOUT';
+                  reject(err);
+                }, nfTimeoutMs);
+              }),
+            ]);
             invoiceData = routed.invoice;
             console.log(`[NF] NF emitida via ${routed.provider} para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
-            // Sem polling de PDF (5×3s) — evita travar o modal; sincronize depois no Faturamento.
           } catch (nfErr: any) {
             // PlugNotas é fail-fast: se a empresa está configurada para PLUGNOTAS e a
             // emissão falhou, anexamos o erro ao chargeResult e ABORTAMOS o loop —
@@ -6877,7 +6896,13 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
                 failedAtIndex: i,
               });
             }
-            console.log(`[Asaas] AVISO: Não foi possível agendar NF para ${payment.id}: ${nfErr.message}`);
+            // Soft timeout / schedule: devolve cobrança e deixa Controle acompanhar.
+            console.log(`[Asaas] AVISO: NF pendente no split ${payment.id}: ${nfErr.message}`);
+            softNfError = {
+              provider: 'ASAAS',
+              code: nfErr?.code || 'NF_SCHEDULE_PENDING',
+              message: nfErr.message,
+            };
           }
 
           console.log(`[Asaas] Cobrança split criada: ${payment.id} | ${charge.name || clientName} | CNPJ: ${cleanCnpj} | R$ ${charge.value} | Venc: ${dueDate}`);
@@ -6903,6 +6928,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
               plugnotasInvoiceId: invoiceData.plugnotasInvoiceId || null,
               plugnotasProtocol: invoiceData.plugnotasProtocol || null,
             } : null,
+            nfPending: !!softNfError,
+            nfError: softNfError || undefined,
           };
           results.push(chargeResult);
 
@@ -6988,7 +7015,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       try {
         // Sem polling de PDF (antes: 5×3s) — travava o modal "Emitindo no Asaas...".
         // PDF/status sincronizam depois em Faturamento → Sincronizar.
-        const nfTimeoutMs = 10_000;
+        // NF: no máximo 6s no request do usuário — cobrança já existe; o Controle
+        // acompanha Processando → Emitida via sync/retry (anti-travamento do modal).
+        const nfTimeoutMs = 6_000;
         const routed = await Promise.race([
           issueNfWithRouter({
             paymentId: payment.id,
@@ -7417,22 +7446,24 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  // Sincroniza cobranças em aberto com o Asaas e marca PAGA quando pagas.
-  // Usado pela tela Controle de Faturas (abertura + polling) — não emite NF.
-  app.post("/api/asaas/sync-open-payments", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+  // Sincroniza cobranças em aberto com o Asaas: PAGO + espelhos boleto/NF (sem emitir).
+  app.post("/api/asaas/sync-open-payments", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
+      const limitRaw = Number(req.query.limit ?? req.body?.limit);
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 40) : 15;
       const { data: openInvs, error } = await supabase
         .from('financial_invoices')
-        .select('id, number, client, asaas_payment_id, issuer_company, status')
+        .select('id, number, client, asaas_payment_id, issuer_company, status, nf_status, nf_provider, plugnotas_invoice_id, nf_image_url, asaas_bankslip_url')
         .in('status', ['EMITIDA', 'VENCIDA'])
         .not('asaas_payment_id', 'is', null)
         .order('boleto_due_date', { ascending: true, nullsFirst: false })
-        .limit(40);
+        .limit(limit);
       if (error) return res.status(500).json({ error: error.message });
 
       let checked = 0;
       let markedPaid = 0;
       let markedOverdue = 0;
+      let nfUpdated = 0;
       let errors = 0;
       const paidIds: string[] = [];
 
@@ -7442,39 +7473,62 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         try {
           const payment = await getPayment(inv.asaas_payment_id, inv.issuer_company || undefined);
           const isPaid = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(payment.status);
+          const patch: Record<string, any> = { asaas_status: payment.status };
+          if (payment.invoiceUrl) patch.asaas_invoice_url = payment.invoiceUrl;
+          if (payment.bankSlipUrl) {
+            patch.asaas_bankslip_url = payment.bankSlipUrl;
+            patch.boleto_image_url = payment.bankSlipUrl;
+          }
+
           if (isPaid) {
-            await supabase.from('financial_invoices').update({
-              status: 'PAGA',
-              asaas_status: payment.status,
-            }).eq('id', inv.id);
+            patch.status = 'PAGA';
+            markedPaid++;
+            paidIds.push(inv.id);
             if (inv.number) {
               await supabase.from('financial_transactions')
                 .update({ status: 'PAID', paid_date: new Date().toISOString().split('T')[0] })
                 .ilike('description', `%${inv.number}%`)
                 .eq('status', 'PENDING');
             }
-            markedPaid++;
-            paidIds.push(inv.id);
           } else if (payment.status === 'OVERDUE' && inv.status !== 'VENCIDA') {
-            await supabase.from('financial_invoices').update({
-              status: 'VENCIDA',
-              asaas_status: payment.status,
-            }).eq('id', inv.id);
+            patch.status = 'VENCIDA';
             markedOverdue++;
-          } else if (payment.status && payment.status !== inv.status) {
-            await supabase.from('financial_invoices').update({
-              asaas_status: payment.status,
-            }).eq('id', inv.id);
           }
+
+          // Espelho NF: só consulta Asaas se ainda não autorizada e não for PlugNotas.
+          const prov = String(inv.nf_provider || '').toUpperCase();
+          const isPlug = prov === 'PLUGNOTAS' || (!!inv.plugnotas_invoice_id && !prov);
+          if (!isPlug && inv.nf_status !== 'AUTHORIZED') {
+            try {
+              const invoicesResp = await getInvoiceByPayment(inv.asaas_payment_id, inv.issuer_company || undefined);
+              const list = invoicesResp?.data || (Array.isArray(invoicesResp) ? invoicesResp : []);
+              const nfData = list.find((i: any) => i.status === 'AUTHORIZED' || i.pdfUrl)
+                || list.find((i: any) => i.status === 'SCHEDULED' || i.status === 'SYNCHRONIZED')
+                || list[0];
+              if (nfData) {
+                if (nfData.status) patch.nf_status = nfData.status;
+                if (nfData.number) patch.nf_number = String(nfData.number);
+                if (nfData.pdfUrl) {
+                  patch.nf_image_url = nfData.pdfUrl;
+                  patch.nf_retry_paused = false;
+                }
+                if (nfData.id) patch.asaas_invoice_id = nfData.id;
+                if (nfData.status === 'AUTHORIZED' || nfData.pdfUrl) nfUpdated++;
+              } else if (!inv.nf_status) {
+                patch.nf_status = 'PROCESSING';
+              }
+            } catch { /* NF sync best-effort */ }
+          }
+
+          await supabase.from('financial_invoices').update(patch).eq('id', inv.id);
         } catch (e: any) {
           errors++;
           console.log(`[Asaas Sync Open] falha fatura ${inv.id}: ${e.message}`);
         }
-        // Evita saturar rate-limit Asaas
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 150));
       }
 
-      res.json({ success: true, checked, markedPaid, markedOverdue, errors, paidIds });
+      res.json({ success: true, checked, markedPaid, markedOverdue, nfUpdated, errors, paidIds });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
