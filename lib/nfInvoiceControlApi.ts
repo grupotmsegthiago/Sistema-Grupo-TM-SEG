@@ -53,7 +53,7 @@ export async function buildNfIssuerSummary(): Promise<{
   const { data, error } = await sb
     .from('financial_invoices')
     .select(
-      'id, client, number, amount, issuer_company, nf_status, nf_retry_at, created_at, asaas_payment_id, nf_provider, plugnotas_invoice_id',
+      'id, client, number, amount, issuer_company, nf_status, nf_retry_at, created_at, asaas_payment_id, nf_provider, plugnotas_invoice_id, status',
     );
   if (error) throw new Error(error.message);
 
@@ -66,6 +66,9 @@ export async function buildNfIssuerSummary(): Promise<{
   const now = Date.now();
 
   for (const r of data || []) {
+    // Saúde da fila = só faturas ativas (não canceladas / não pagas)
+    const invStatus = String((r as any).status || '').toUpperCase();
+    if (invStatus === 'CANCELADA' || invStatus === 'PAGA') continue;
     if (!r.asaas_payment_id && !r.plugnotas_invoice_id) continue;
     const c = r.issuer_company || '(sem emissora)';
     const provider = (

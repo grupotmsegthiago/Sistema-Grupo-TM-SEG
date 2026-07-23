@@ -114,7 +114,6 @@ const FinancialInvoiceControl: React.FC = () => {
   const [retroForm, setRetroForm] = useState({ client: '', number: '', amount: '', date: '', dueDate: '', notes: '', issuer_company: 'TM GESTÃO' });
   const [savingRetro, setSavingRetro] = useState(false);
   const [bulkRetrying, setBulkRetrying] = useState(false);
-  const [clearingOpen, setClearingOpen] = useState(false);
   const [issuerSummary, setIssuerSummary] = useState<Array<{ company: string; total: number; authorized: number; synchronized: number; scheduled: number; error: number; stuck: number; canceled: number; other: number; asaas?: number; plugnotas?: number }>>([]);
   const [issuerFilter, setIssuerFilter] = useState<string | null>(null);
   const [issuerStateFilter, setIssuerStateFilter] = useState<'total' | 'authorized' | 'scheduled' | 'stuck' | null>(null);
@@ -240,62 +239,6 @@ const FinancialInvoiceControl: React.FC = () => {
     }
   };
 
-  /** Cancela todas Em Aberto/Vencidas para recomeçar o acompanhamento do zero. */
-  const handleClearAllOpen = async () => {
-    const openCount = invoices.filter(i => i.status === 'EMITIDA' || i.status === 'VENCIDA').length;
-    const openTotal = invoices
-      .filter(i => i.status === 'EMITIDA' || i.status === 'VENCIDA')
-      .reduce((s, i) => s + (Number(i.amount) || 0), 0);
-    if (openCount === 0) {
-      alert('Não há faturas em aberto/vencidas para limpar.');
-      return;
-    }
-    if (!confirm(
-      `LIMPAR TODAS as faturas em aberto/vencidas?\n\n` +
-      `• ${openCount} fatura(s)\n` +
-      `• Total ~ ${fmtBRL(openTotal)}\n\n` +
-      `Isso CANCELA as faturas locais, os títulos no Contas a Receber e tenta cancelar as cobranças no Asaas.\n` +
-      `Faturas PAGO não são alteradas.\n\n` +
-      `Use para recomeçar o acompanhamento do zero.`,
-    )) return;
-    const typed = prompt('Digite LIMPAR para confirmar o cancelamento em massa:');
-    if (typed !== 'LIMPAR') {
-      alert('Confirmação cancelada.');
-      return;
-    }
-    setClearingOpen(true);
-    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const hang = setTimeout(() => ctrl?.abort(), 120_000);
-    try {
-      const res = await authFetch('/api/nf/clear-open', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirm: 'LIMPAR_TODAS_EM_ABERTO' }),
-        ...(ctrl ? { signal: ctrl.signal } : {}),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Falha ao limpar');
-      alert(
-        `Fila limpa!\n\n` +
-        `• ${data.cancelled || 0} fatura(s) cancelada(s)\n` +
-        `• ${data.asaasCancelled || 0} cobrança(s) Asaas cancelada(s)\n` +
-        `• ${data.receivablesCancelled || 0} Contas a Receber cancelada(s)\n` +
-        (data.errors?.length ? `\nAvisos: ${data.errors.slice(0, 5).join('; ')}` : '') +
-        `\n\nAgora emita novas faturas — elas aparecem como Processando até a NF sair.`,
-      );
-      await fetchInvoices();
-      await fetchIssuerSummary();
-    } catch (e: any) {
-      const msg = e?.name === 'AbortError'
-        ? 'Limpeza demorou demais (120s). Atualize a lista — parte pode ter sido cancelada.'
-        : (e.message || 'Erro ao limpar');
-      alert(msg);
-    } finally {
-      clearTimeout(hang);
-      setClearingOpen(false);
-    }
-  };
-
   const fetchInvoices = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = !!opts?.silent;
     if (!silent) setLoading(true);
@@ -342,10 +285,8 @@ const FinancialInvoiceControl: React.FC = () => {
   // Realtime: refresh silencioso — não recoloca "Carregando faturas..." na tela.
   useRealtimeRefresh('financial_invoices', () => { fetchInvoices({ silent: true }); fetchIssuerSummary(); });
 
-  // Auto-cura LEVE ao abrir (não trava a lista):
-  // 1) sync pagamentos/espelhos (limite 15, timeout 25s)
-  // 2) retry NF limitado (5) + reopen pausadas soft
-  // 3) polling leve a cada 60s
+  // Ao abrir: 1) limpeza one-shot da fila antiga (tela limpa)
+  // 2) sync leve de pagamentos/espelhos  3) retry NF limitado
   const autoHealStarted = useRef(false);
   useEffect(() => {
     if (autoHealStarted.current) return;
@@ -357,6 +298,26 @@ const FinancialInvoiceControl: React.FC = () => {
       return { ctrl, clear: () => clearTimeout(t) };
     };
     const heal = async () => {
+      const wipeT = withTimeout(45_000);
+      try {
+        const wipeRes = await authFetch('/api/nf/ensure-clean-slate', {
+          method: 'POST',
+          ...(wipeT.ctrl ? { signal: wipeT.ctrl.signal } : {}),
+        });
+        const wipe = await wipeRes.json().catch(() => ({}));
+        if (wipe?.cancelled > 0) {
+          console.info(`[InvoiceControl] Fila antiga arquivada: ${wipe.cancelled} fatura(s).`);
+        }
+      } catch (e) {
+        console.warn('[InvoiceControl] ensure-clean-slate falhou/timeout', e);
+      } finally {
+        wipeT.clear();
+      }
+      if (cancelled) return;
+      await fetchInvoices({ silent: true });
+      await fetchIssuerSummary();
+      if (cancelled) return;
+
       const syncT = withTimeout(25_000);
       try {
         await authFetch('/api/asaas/sync-open-payments?limit=15', {
@@ -542,7 +503,9 @@ const FinancialInvoiceControl: React.FC = () => {
 
   const filtered = useMemo(() => {
     let list = [...invoices];
-    if (statusFilter !== 'ALL') list = list.filter(i => i.status === statusFilter);
+    // "Todas" = fila ativa (não mostra CANCELADA). Canceladas só no filtro específico.
+    if (statusFilter === 'ALL') list = list.filter(i => i.status !== 'CANCELADA');
+    else list = list.filter(i => i.status === statusFilter);
     if (issuerFilter) {
       list = list.filter(i => (i.issuer_company || '(sem emissora)') === issuerFilter);
     }
@@ -660,15 +623,6 @@ const FinancialInvoiceControl: React.FC = () => {
           <p className="text-xs text-gray-400 font-semibold mt-1">Notas Fiscais, Boletos, Cobranças Asaas — Integrado ao Contas a Receber</p>
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
-          <button
-            onClick={handleClearAllOpen}
-            disabled={clearingOpen}
-            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm disabled:opacity-60"
-            data-testid="btn-clear-all-open"
-            title="Cancela todas Em Aberto/Vencidas para recomeçar o acompanhamento do zero"
-          >
-            {clearingOpen ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Limpar todas em aberto
-          </button>
           <button onClick={handleBulkRetryNfs} disabled={bulkRetrying} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm disabled:opacity-60" data-testid="btn-bulk-retry-nfs" title="Executa o ciclo do worker imediatamente — cancela e reagenda NFs travadas">
             {bulkRetrying ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Reemitir TODAS NFs pendentes
           </button>
