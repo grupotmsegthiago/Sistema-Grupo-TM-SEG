@@ -26,18 +26,19 @@ describe('invoiceDisplay — status cobrança e NF', () => {
     assert.equal(paymentStatusLabel('CANCELADA', null, now), 'Cancelada');
   });
 
-  it('nfStatusBucket agrupa Emitida / Aguardando / Falha', () => {
+  it('nfStatusBucket agrupa Emitida / Processando / Falha', () => {
     assert.equal(nfStatusBucket('AUTHORIZED'), 'emitida');
     assert.equal(nfStatusBucket('SCHEDULED'), 'aguardando');
     assert.equal(nfStatusBucket('SYNCHRONIZED'), 'aguardando');
     assert.equal(nfStatusBucket('PROCESSING'), 'aguardando');
-    assert.equal(nfStatusBucket('ERROR'), 'falha');
-    assert.equal(nfStatusBucket('STUCK'), 'falha');
-    assert.equal(nfStatusBucket('SYNCHRONIZED', { stuckByAge: true }), 'falha');
+    // ERROR/STUCK só viram Falha quando pausados; senão continuam Processando
+    assert.equal(nfStatusBucket('ERROR'), 'aguardando');
+    assert.equal(nfStatusBucket('STUCK', { paused: true }), 'falha');
+    assert.equal(nfStatusBucket('SYNCHRONIZED', { stuckByAge: true, paused: true }), 'falha');
     assert.equal(nfBucketLabel('emitida'), 'Emitida');
-    assert.equal(nfBucketLabel('aguardando'), 'Aguardando');
+    assert.equal(nfBucketLabel('aguardando'), 'Processando');
     assert.equal(nfBucketLabel('falha'), 'Falha');
-    assert.match(nfBucketDetail('STUCK', { provider: 'ASAAS', ageHours: 465 }) || '', /TRAVADA/);
+    assert.match(nfBucketDetail('STUCK', { provider: 'ASAAS', ageHours: 465, paused: true }) || '', /TRAVADA/);
   });
 });
 

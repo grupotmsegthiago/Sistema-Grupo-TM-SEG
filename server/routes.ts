@@ -6123,6 +6123,71 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  // Limpa TODAS as faturas Em Aberto/Vencidas: cancela local + Contas a Receber + Asaas.
+  // Usado para recomeçar o acompanhamento no Controle de Faturas / NF.
+  // Exige confirm === 'LIMPAR_TODAS_EM_ABERTO' (não toca em PAGA).
+  app.post("/api/nf/clear-open", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      if (req.body?.confirm !== 'LIMPAR_TODAS_EM_ABERTO') {
+        return res.status(400).json({
+          error: 'Confirmação inválida. Envie confirm: "LIMPAR_TODAS_EM_ABERTO".',
+        });
+      }
+      const { data: openInvs, error } = await supabase
+        .from('financial_invoices')
+        .select('id, number, client, amount, asaas_payment_id, issuer_company, status')
+        .in('status', ['EMITIDA', 'VENCIDA']);
+      if (error) return res.status(500).json({ error: error.message });
+
+      let cancelled = 0;
+      let asaasCancelled = 0;
+      let receivablesCancelled = 0;
+      const errors: string[] = [];
+
+      for (const inv of openInvs || []) {
+        try {
+          await supabase.from('financial_invoices').update({
+            status: 'CANCELADA',
+            nf_retry_paused: true,
+            nf_last_error: 'Cancelada para recomeçar acompanhamento (limpar fila).',
+          }).eq('id', inv.id);
+
+          if (inv.number) {
+            const { data: txs } = await supabase.from('financial_transactions')
+              .update({ status: 'CANCELLED' })
+              .ilike('description', `%${inv.number}%`)
+              .eq('status', 'PENDING')
+              .select('id');
+            receivablesCancelled += (txs || []).length;
+          }
+
+          if (inv.asaas_payment_id) {
+            try {
+              await deletePayment(inv.asaas_payment_id, inv.issuer_company || undefined);
+              asaasCancelled++;
+            } catch (e: any) {
+              errors.push(`${inv.number || inv.id}: Asaas ${e.message}`);
+            }
+          }
+          cancelled++;
+        } catch (e: any) {
+          errors.push(`${inv.id}: ${e.message}`);
+        }
+        await new Promise(r => setTimeout(r, 120));
+      }
+
+      res.json({
+        success: true,
+        cancelled,
+        asaasCancelled,
+        receivablesCancelled,
+        errors: errors.slice(0, 20),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/nf/retry/:invoiceId", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const { invoiceId } = req.params;

@@ -1,7 +1,7 @@
 /**
  * Helpers de exibição da tela Controle de Faturas / NF.
  * Status de cobrança (Em Aberto / VENCIDO N dias / PAGO) e status da NF
- * (Emitida / Aguardando / Falha) — sem alterar regras fiscais.
+ * (Emitida / Processando / Falha) — sem alterar regras fiscais.
  */
 
 /** Dias de calendário vencidos (fuso America/Sao_Paulo), independente do UTC do servidor. */
@@ -47,24 +47,27 @@ export type NfBucket = 'emitida' | 'aguardando' | 'falha' | 'cancelada' | 'nenhu
 
 export function nfStatusBucket(
   nfStatus?: string | null,
-  opts?: { stuckByAge?: boolean },
+  opts?: { stuckByAge?: boolean; paused?: boolean },
 ): NfBucket {
   const ns = (nfStatus || '').toUpperCase();
-  if (opts?.stuckByAge || ns === 'STUCK' || ns === 'ERROR' || ns === 'FAILED') return 'falha';
+  // Falha só quando pausado de verdade (erro permanente). Enquanto o worker
+  // ainda tenta, STUCK/ERROR aparecem como Processando.
+  const hardFail = opts?.paused && (opts?.stuckByAge || ns === 'STUCK' || ns === 'ERROR' || ns === 'FAILED');
+  if (hardFail) return 'falha';
   if (ns === 'AUTHORIZED') return 'emitida';
   if (ns === 'CANCELED' || ns === 'CANCELLED') return 'cancelada';
   if (!ns) return 'nenhuma';
-  // SCHEDULED, SYNCHRONIZED, PROCESSING, PENDING, RETRY, WAITING_*, etc.
+  // SCHEDULED, SYNCHRONIZED, PROCESSING, PENDING, RETRY, ERROR em retry, etc.
   return 'aguardando';
 }
 
-/** Rótulo curto do status da NF (Emitida / Aguardando / Falha). */
+/** Rótulo curto do status da NF (Emitida / Processando / Falha). */
 export function nfBucketLabel(bucket: NfBucket): string {
   switch (bucket) {
     case 'emitida':
       return 'Emitida';
     case 'aguardando':
-      return 'Aguardando';
+      return 'Processando';
     case 'falha':
       return 'Falha';
     case 'cancelada':
@@ -77,20 +80,21 @@ export function nfBucketLabel(bucket: NfBucket): string {
 /** Detalhe opcional sob o rótulo curto (ex.: "Em fila Prefeitura", "TRAVADA — Asaas"). */
 export function nfBucketDetail(
   nfStatus?: string | null,
-  opts?: { stuckByAge?: boolean; provider?: string | null; ageHours?: number | null },
+  opts?: { stuckByAge?: boolean; provider?: string | null; ageHours?: number | null; paused?: boolean },
 ): string | null {
   const ns = (nfStatus || '').toUpperCase();
   const provider = String(opts?.provider || '').toUpperCase() === 'PLUGNOTAS' ? 'PlugNotas' : 'Asaas';
-  if (opts?.stuckByAge || ns === 'STUCK') {
+  if (opts?.paused && (opts?.stuckByAge || ns === 'STUCK')) {
     const age = opts?.ageHours != null && opts.ageHours >= 1 ? ` há ${opts.ageHours}h` : '';
     return `TRAVADA — verificar ${provider}${age}`;
   }
-  if (ns === 'ERROR' || ns === 'FAILED') return 'Erro na emissão';
+  if (opts?.paused && (ns === 'ERROR' || ns === 'FAILED')) return 'Erro na emissão';
   if (ns === 'AUTHORIZED') return null;
   if (ns === 'SYNCHRONIZED') return 'Em fila Prefeitura';
-  if (ns === 'SCHEDULED') return 'Agendada';
-  if (ns === 'PROCESSING') return 'Processando';
+  if (ns === 'SCHEDULED') return 'Agendada no Asaas';
+  if (ns === 'PROCESSING' || ns === 'PENDING' || ns === 'RETRY' || ns === 'STUCK' || ns === 'ERROR' || ns === 'FAILED') {
+    return 'Aguardando autorização';
+  }
   if (ns === 'WAITING_CUSTOMER_ACCEPTANCE') return 'Aguardando aceite';
-  if (ns === 'PENDING' || ns === 'RETRY') return 'Pendente';
   return ns || null;
 }

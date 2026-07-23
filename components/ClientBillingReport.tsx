@@ -2861,7 +2861,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     invoicePayload.nf_provider = chProvider;
                     if (!ch.invoice && ch.nfError) {
                         const soft = ['NF_TIMEOUT', 'NF_SCHEDULE_PENDING'].includes(String(ch.nfError.code || ''));
-                        invoicePayload.nf_status = soft ? 'PENDING' : 'ERROR';
+                        invoicePayload.nf_status = soft ? 'PROCESSING' : 'ERROR';
                         invoicePayload.nf_last_error = ch.nfError.message || 'NF pendente — reemissão necessária';
                         if (soft) invoicePayload.nf_retry_paused = false;
                     }
@@ -2960,7 +2960,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             const nfErrCode = String(asaasData?.nfError?.code || '');
             if (!asaasData?.invoice && asaasData?.nfError) {
                 if (softNfCodes.includes(nfErrCode)) {
-                    invoicePayload.nf_status = 'PENDING';
+                    invoicePayload.nf_status = 'PROCESSING';
                     invoicePayload.nf_last_error = asaasData.nfError.message || null;
                     invoicePayload.nf_retry_paused = false;
                 } else {
@@ -3122,16 +3122,15 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     setAiStatus(`${data.charges?.length || 0} cobranças Asaas geradas! Salvando fatura...`);
                 }
                 await autoSaveInvoiceAfterAsaas(data, firstNf);
-                // Follow-up silencioso na 1ª cobrança sem NF autorizada
-                const pendingCh = (data.charges || []).find((ch: any) =>
-                    ch?.payment?.id && !(ch.invoice?.pdfUrl || ch.invoice?.status === 'AUTHORIZED')
-                );
-                if (pendingCh?.payment?.id) {
-                    startSilentNfFollowUp({
-                        paymentId: pendingCh.payment.id,
-                        company: invoiceForm.issuer_company,
-                    });
-                }
+                // Fecha e manda para Controle de Faturas — status Processando até Emitida.
+                clearTimeout(hangTimer);
+                clearInterval(progressTimer);
+                setAsaasLoading(false);
+                setShowInvoiceModal(false);
+                resetInvoiceForm();
+                if (onNavigate) onNavigate('fin-invoices');
+                else alert('Cobrança criada. Abra Controle de Faturas / NF — fica Processando até a NF sair.');
+                return;
             } catch (err: any) {
                 if (err?.name === 'AbortError') {
                     setAiStatus('Asaas demorou demais na resposta. Se a cobrança foi criada, abra Faturamento — o sistema continua tentando a NF automaticamente.');
@@ -3201,15 +3200,16 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     : 'Cobrança Asaas gerada! Salvando fatura e contas a receber...');
             }
 
-            const saved = await autoSaveInvoiceAfterAsaas(data, nfNum);
-            const nfReady = !!(data.invoice?.pdfUrl || data.invoice?.status === 'AUTHORIZED');
-            if (data.payment?.id && (!nfReady || saved?.needsNfFollowUp || softNf || data.nfPending)) {
-                startSilentNfFollowUp({
-                    paymentId: data.payment.id,
-                    invoiceId: saved?.invoiceId,
-                    company: invoiceForm.issuer_company,
-                });
-            }
+            await autoSaveInvoiceAfterAsaas(data, nfNum);
+            // Fecha automático e acompanha no Controle de Faturas / NF (Processando → Emitida).
+            clearTimeout(hangTimer);
+            clearInterval(progressTimer);
+            setAsaasLoading(false);
+            setShowInvoiceModal(false);
+            resetInvoiceForm();
+            if (onNavigate) onNavigate('fin-invoices');
+            else alert('Cobrança criada. Abra Controle de Faturas / NF — fica Processando até a NF sair.');
+            return;
         } catch (err: any) {
             if (err?.name === 'AbortError') {
                 setAiStatus('Asaas demorou demais na resposta. Se a cobrança foi criada, abra Faturamento — o sistema continua tentando a NF automaticamente.');

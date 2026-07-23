@@ -11,7 +11,10 @@ describe('Emissão Asaas — aguarda NF sem travar (55s)', () => {
     assert.match(src, /\/api\/asaas\/sync-payment-status/);
     assert.match(src, /\/api\/nf\/retry\//);
     assert.match(src, /NF_TIMEOUT/);
-    assert.match(src, /nf_status = 'PENDING'/);
+    assert.match(src, /nf_status = 'PROCESSING'/);
+    assert.match(src, /onNavigate\('fin-invoices'\)/);
+    assert.match(src, /setShowInvoiceModal\(false\)/);
+
     assert.match(src, /from 'react'/);
     assert.match(src, /import React,/);
     assert.match(src, /nfAwaiting/);

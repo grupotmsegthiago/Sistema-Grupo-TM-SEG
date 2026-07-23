@@ -114,6 +114,7 @@ const FinancialInvoiceControl: React.FC = () => {
   const [retroForm, setRetroForm] = useState({ client: '', number: '', amount: '', date: '', dueDate: '', notes: '', issuer_company: 'TM GESTÃO' });
   const [savingRetro, setSavingRetro] = useState(false);
   const [bulkRetrying, setBulkRetrying] = useState(false);
+  const [clearingOpen, setClearingOpen] = useState(false);
   const [issuerSummary, setIssuerSummary] = useState<Array<{ company: string; total: number; authorized: number; synchronized: number; scheduled: number; error: number; stuck: number; canceled: number; other: number; asaas?: number; plugnotas?: number }>>([]);
   const [issuerFilter, setIssuerFilter] = useState<string | null>(null);
   const [issuerStateFilter, setIssuerStateFilter] = useState<'total' | 'authorized' | 'scheduled' | 'stuck' | null>(null);
@@ -225,6 +226,55 @@ const FinancialInvoiceControl: React.FC = () => {
       alert('Erro: ' + e.message);
     } finally {
       setBulkRetrying(false);
+    }
+  };
+
+  /** Cancela todas Em Aberto/Vencidas para recomeçar o acompanhamento do zero. */
+  const handleClearAllOpen = async () => {
+    const openCount = invoices.filter(i => i.status === 'EMITIDA' || i.status === 'VENCIDA').length;
+    const openTotal = invoices
+      .filter(i => i.status === 'EMITIDA' || i.status === 'VENCIDA')
+      .reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    if (openCount === 0) {
+      alert('Não há faturas em aberto/vencidas para limpar.');
+      return;
+    }
+    if (!confirm(
+      `LIMPAR TODAS as faturas em aberto/vencidas?\n\n` +
+      `• ${openCount} fatura(s)\n` +
+      `• Total ~ ${fmtBRL(openTotal)}\n\n` +
+      `Isso CANCELA as faturas locais, os títulos no Contas a Receber e tenta cancelar as cobranças no Asaas.\n` +
+      `Faturas PAGO não são alteradas.\n\n` +
+      `Use para recomeçar o acompanhamento do zero.`,
+    )) return;
+    const typed = prompt('Digite LIMPAR para confirmar o cancelamento em massa:');
+    if (typed !== 'LIMPAR') {
+      alert('Confirmação cancelada.');
+      return;
+    }
+    setClearingOpen(true);
+    try {
+      const res = await authFetch('/api/nf/clear-open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'LIMPAR_TODAS_EM_ABERTO' }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Falha ao limpar');
+      alert(
+        `Fila limpa!\n\n` +
+        `• ${data.cancelled || 0} fatura(s) cancelada(s)\n` +
+        `• ${data.asaasCancelled || 0} cobrança(s) Asaas cancelada(s)\n` +
+        `• ${data.receivablesCancelled || 0} Contas a Receber cancelada(s)\n` +
+        (data.errors?.length ? `\nAvisos: ${data.errors.slice(0, 5).join('; ')}` : '') +
+        `\n\nAgora emita novas faturas — elas aparecem como Processando até a NF sair.`,
+      );
+      await fetchInvoices();
+      await fetchIssuerSummary();
+    } catch (e: any) {
+      alert('Erro ao limpar: ' + e.message);
+    } finally {
+      setClearingOpen(false);
     }
   };
 
@@ -569,7 +619,16 @@ const FinancialInvoiceControl: React.FC = () => {
           </h1>
           <p className="text-xs text-gray-400 font-semibold mt-1">Notas Fiscais, Boletos, Cobranças Asaas — Integrado ao Contas a Receber</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap justify-end">
+          <button
+            onClick={handleClearAllOpen}
+            disabled={clearingOpen}
+            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm disabled:opacity-60"
+            data-testid="btn-clear-all-open"
+            title="Cancela todas Em Aberto/Vencidas para recomeçar o acompanhamento do zero"
+          >
+            {clearingOpen ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Limpar todas em aberto
+          </button>
           <button onClick={handleBulkRetryNfs} disabled={bulkRetrying} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm disabled:opacity-60" data-testid="btn-bulk-retry-nfs" title="Executa o ciclo do worker imediatamente — cancela e reagenda NFs travadas">
             {bulkRetrying ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Reemitir TODAS NFs pendentes
           </button>
@@ -841,9 +900,10 @@ const FinancialInvoiceControl: React.FC = () => {
                           const ageH = ref ? Math.floor((Date.now() - new Date(ref).getTime()) / 3600_000) : null;
                           const isStuckSync = ns === 'SYNCHRONIZED' && ageH !== null && ageH >= 24;
                           const invProvider = String(inv.nf_provider || '').toUpperCase() === 'PLUGNOTAS' || inv.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS';
-                          const bucket = nfStatusBucket(ns, { stuckByAge: isStuckSync });
+                          const paused = !!inv.nf_retry_paused;
+                          const bucket = nfStatusBucket(ns, { stuckByAge: isStuckSync, paused });
                           const shortLabel = nfBucketLabel(bucket);
-                          const detail = nfBucketDetail(ns, { stuckByAge: isStuckSync, provider: invProvider, ageHours: ageH });
+                          const detail = nfBucketDetail(ns, { stuckByAge: isStuckSync, provider: invProvider, ageHours: ageH, paused });
                           const nfColor = bucket === 'emitida' ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
                             : bucket === 'aguardando' ? 'text-blue-700 bg-blue-50 border-blue-200'
                             : bucket === 'falha' ? 'text-white bg-red-600 border-red-700 animate-pulse'
@@ -856,7 +916,7 @@ const FinancialInvoiceControl: React.FC = () => {
                           return (
                             <div className="flex flex-col items-center gap-0.5" data-testid={`nf-status-${inv.id}`}>
                               <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full border ${nfColor}`} title={inv.nf_last_error || detail || ''}>
-                                <NfIcon size={9} /> {shortLabel}
+                                {bucket === 'aguardando' ? <Loader2 size={9} className="animate-spin" /> : <NfIcon size={9} />} {shortLabel}
                               </span>
                               {detail && bucket !== 'emitida' && (
                                 <span className={`text-[8px] font-bold max-w-[140px] leading-tight ${bucket === 'falha' ? 'text-red-600' : 'text-gray-500'}`}>{detail}</span>
@@ -868,13 +928,33 @@ const FinancialInvoiceControl: React.FC = () => {
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          {inv.nf_image_url && (
-                            <button onClick={() => setShowImageModal(inv.nf_image_url!)} className="text-blue-500 hover:text-blue-700" title="Ver NF"><ImageIcon size={14} /></button>
+                          {(inv.nf_image_url || (inv.nf_status === 'AUTHORIZED' && inv.asaas_invoice_url)) && (
+                            <a
+                              href={inv.nf_image_url || inv.asaas_invoice_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-emerald-600 hover:text-emerald-800"
+                              title="Espelho NF"
+                              data-testid={`doc-nf-${inv.id}`}
+                            >
+                              <ImageIcon size={14} />
+                            </a>
                           )}
-                          {inv.boleto_image_url && (
-                            <button onClick={() => setShowImageModal(inv.boleto_image_url!)} className="text-orange-500 hover:text-orange-700" title="Ver Boleto"><Receipt size={14} /></button>
+                          {(inv.boleto_image_url || inv.asaas_bankslip_url) && (
+                            <a
+                              href={inv.boleto_image_url || inv.asaas_bankslip_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-orange-500 hover:text-orange-700"
+                              title="Espelho Boleto"
+                              data-testid={`doc-boleto-${inv.id}`}
+                            >
+                              <Receipt size={14} />
+                            </a>
                           )}
-                          {!inv.nf_image_url && !inv.boleto_image_url && <span className="text-gray-300 text-[10px]">—</span>}
+                          {!inv.nf_image_url && !inv.boleto_image_url && !inv.asaas_bankslip_url && !(inv.nf_status === 'AUTHORIZED' && inv.asaas_invoice_url) && (
+                            <span className="text-gray-300 text-[10px]">—</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-center">
@@ -957,12 +1037,14 @@ const FinancialInvoiceControl: React.FC = () => {
                   ? Math.floor((Date.now() - new Date((inv.nf_retry_at || inv.created_at)!).getTime()) / 3600_000)
                   : null;
                 const stuckByAge = ns === 'SYNCHRONIZED' && ageH !== null && ageH >= 24;
-                const nfBucket = nfStatusBucket(ns, { stuckByAge });
+                const paused = !!inv.nf_retry_paused;
+                const nfBucket = nfStatusBucket(ns, { stuckByAge, paused });
                 const nfShort = nfBucketLabel(nfBucket);
                 const nfDetail = nfBucketDetail(ns, {
                   stuckByAge,
                   provider: inv.nf_provider || (inv.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS'),
                   ageHours: ageH,
+                  paused,
                 });
                 return (
                   <>
