@@ -26,6 +26,7 @@ import {
   saveNfProviderPreferences,
   wipeOpenInvoicesCleanSlate,
 } from '../lib/nfInvoiceControlApi.js';
+import { syncPendingAsaasNfStatuses } from '../lib/asaasNfStatusSync.js';
 
 const require = createRequire(import.meta.url);
 
@@ -138,13 +139,39 @@ export default async function handler(req: LiteReq, res: LiteRes) {
         body.reopen === 1 ||
         body.reopen === '1';
 
+      // 1) Espelho leve Asaas→Supabase (limpa 401 stale quando a NF já existe).
+      const synced = await syncPendingAsaasNfStatuses({ limit });
+
       let reopened = 0;
       if (reopen) {
         const r = await nfRetryCore.reopenPausedNfs(limit);
         reopened = r.reopened;
       }
       const result = await nfRetryCore.runRetryCycle({ limit });
-      res.status(200).json({ success: true, reopened, ...result, liteHandler: true });
+      // 2) Sync de novo após o ciclo (pega NFs acabadas de agendar).
+      const syncedAfter = await syncPendingAsaasNfStatuses({ limit });
+      res.status(200).json({
+        success: true,
+        reopened,
+        ...result,
+        synced: {
+          before: { updated: synced.updated, clearedErrors: synced.clearedErrors },
+          after: { updated: syncedAfter.updated, clearedErrors: syncedAfter.clearedErrors },
+        },
+        liteHandler: true,
+      });
+      return;
+    }
+
+    // Só espelha status NF (sem reemitir) — útil no botão Atualizar.
+    if (method === 'POST' && (op === 'sync-nf' || op === 'sync')) {
+      const qLimit = Number(req.query?.limit);
+      const body = parseBody(req.body);
+      const limitRaw = Number.isFinite(qLimit) && qLimit > 0 ? qLimit : Number(body.limit);
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 40) : 20;
+      const paymentId = String(body.paymentId || req.query?.paymentId || '').trim() || undefined;
+      const synced = await syncPendingAsaasNfStatuses({ limit, paymentId });
+      res.status(200).json({ success: true, ...synced, liteHandler: true });
       return;
     }
 

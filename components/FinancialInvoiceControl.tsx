@@ -691,7 +691,22 @@ const FinancialInvoiceControl: React.FC = () => {
           <button onClick={() => setShowRetroModal(true)} className="flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-retro-invoice">
             <Calendar size={14} /> Lançar Retroativo
           </button>
-          <button onClick={() => { fetchInvoices(); fetchIssuerSummary(); }} disabled={loading} className="flex items-center gap-2 bg-red-700 hover:bg-red-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-refresh-invoices">
+          <button
+            onClick={async () => {
+              setLoading(true);
+              try {
+                // Espelho leve Asaas→Supabase (limpa 401 stale / puxa SYNCHRONIZED).
+                await authFetch('/api/nf/sync-status?limit=20', { method: 'POST' }).catch(() => null);
+                await fetchInvoices({ silent: true });
+                await fetchIssuerSummary();
+              } finally {
+                setLoading(false);
+              }
+            }}
+            disabled={loading}
+            className="flex items-center gap-2 bg-red-700 hover:bg-red-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm"
+            data-testid="btn-refresh-invoices"
+          >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Atualizar
           </button>
         </div>

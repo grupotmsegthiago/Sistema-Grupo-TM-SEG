@@ -563,10 +563,13 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
 
     // 3c) SYNCHRONIZED ainda dentro da janela normal — só registra estado.
     // NÃO incrementa contador: é polling passivo, e bloquearia a escalação para STUCK em 24h.
+    // Limpa nf_last_error stale (ex.: 401 antigo) — a NF já existe no Asaas.
     await markInvoice(inv.id, {
       nf_status: 'SYNCHRONIZED',
       asaas_invoice_id: currentInvoice.id,
       nf_retry_at: inv.nf_retry_at || new Date().toISOString(),
+      nf_last_error: null,
+      nf_retry_paused: false,
     });
     return { ok: false, status: 'SYNCHRONIZED', action: 'wait' };
   }
@@ -578,6 +581,8 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
       nf_status: currentInvoice.status,
       asaas_invoice_id: currentInvoice.id,
       nf_retry_at: new Date().toISOString(),
+      nf_last_error: null,
+      nf_retry_paused: false,
     });
     return { ok: false, status: currentInvoice.status, action: 'wait' };
   }

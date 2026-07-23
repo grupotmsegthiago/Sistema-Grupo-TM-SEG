@@ -255,6 +255,22 @@ export async function findOrCreateCustomer(params: {
   return asaasFetch('/customers', { method: 'POST', body: JSON.stringify(body), signal: params.signal }, params.company);
 }
 
+/** Lista NFs Asaas de uma cobrança (handler leve — sem server/asaasService). */
+export async function getInvoicesByPayment(
+  paymentId: string,
+  company?: string,
+  signal?: AbortSignal,
+): Promise<any[]> {
+  const data = await asaasFetch(
+    `/invoices?payment=${encodeURIComponent(paymentId)}&limit=20`,
+    { signal },
+    company,
+  );
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data)) return data;
+  return [];
+}
+
 export async function createPayment(params: {
   customerId: string;
   value: number;

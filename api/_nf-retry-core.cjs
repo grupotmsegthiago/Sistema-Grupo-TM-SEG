@@ -1310,7 +1310,9 @@ async function retryOne(inv, opts) {
     await markInvoice(inv.id, {
       nf_status: "SYNCHRONIZED",
       asaas_invoice_id: currentInvoice.id,
-      nf_retry_at: inv.nf_retry_at || (/* @__PURE__ */ new Date()).toISOString()
+      nf_retry_at: inv.nf_retry_at || (/* @__PURE__ */ new Date()).toISOString(),
+      nf_last_error: null,
+      nf_retry_paused: false
     });
     return { ok: false, status: "SYNCHRONIZED", action: "wait" };
   }
@@ -1318,7 +1320,9 @@ async function retryOne(inv, opts) {
     await markInvoice(inv.id, {
       nf_status: currentInvoice.status,
       asaas_invoice_id: currentInvoice.id,
-      nf_retry_at: (/* @__PURE__ */ new Date()).toISOString()
+      nf_retry_at: (/* @__PURE__ */ new Date()).toISOString(),
+      nf_last_error: null,
+      nf_retry_paused: false
     });
     return { ok: false, status: currentInvoice.status, action: "wait" };
   }

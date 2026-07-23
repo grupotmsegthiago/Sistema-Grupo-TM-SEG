@@ -415,6 +415,10 @@
       "destination": "/api/nf-control?op=retry-now"
     },
     {
+      "source": "/api/nf/sync-status",
+      "destination": "/api/nf-control?op=sync-nf"
+    },
+    {
       "source": "/relatorios/dhl-se-183013",
       "destination": "/api/relatorios-dhl-se-183013"
     },
