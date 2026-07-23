@@ -7,7 +7,7 @@ import {
   createPayment,
   findOrCreateCustomer,
   mapAsaasStatus,
-} from '../server/asaasService.js';
+} from './asaasChargeApi.js';
 import { createSupabaseAdminClient } from './supabaseAdmin.js';
 import {
   findRecentDuplicateOpenCharge,
