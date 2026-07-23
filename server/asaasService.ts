@@ -130,6 +130,27 @@ export interface AsaasBankSlip {
   barCode: string;
 }
 
+/** Timeout rígido de toda chamada Asaas — nunca hang indeterminado. */
+const ASAAS_FETCH_TIMEOUT_MS = 8_000;
+
+function buildAsaasAbortSignal(external?: AbortSignal | null): { signal: AbortSignal; cleanup?: () => void } {
+  let timeoutSignal: AbortSignal;
+  let cleanup: (() => void) | undefined;
+  const anyFactory = (AbortSignal as any).timeout as undefined | ((ms: number) => AbortSignal);
+  if (typeof anyFactory === 'function') {
+    timeoutSignal = anyFactory(ASAAS_FETCH_TIMEOUT_MS);
+  } else {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ASAAS_FETCH_TIMEOUT_MS);
+    timeoutSignal = controller.signal;
+    cleanup = () => clearTimeout(timer);
+  }
+  if (external && typeof (AbortSignal as any).any === 'function') {
+    return { signal: (AbortSignal as any).any([external, timeoutSignal]), cleanup };
+  }
+  return { signal: timeoutSignal, cleanup };
+}
+
 async function asaasFetch(endpoint: string, options: RequestInit = {}, company?: string): Promise<any> {
   const entry = resolveCompanyEntry(company);
   const apiKey = entry.apiKey;
@@ -139,12 +160,12 @@ async function asaasFetch(endpoint: string, options: RequestInit = {}, company?:
     console.log(`[Asaas] ${options.method} ${endpoint} | Empresa: ${entry.name} | CNPJ: ${entry.cnpj} | Key: ${keyPrefix}`);
   }
   const url = `${ASAAS_BASE_URL}${endpoint}`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12_000);
+  const { signal, cleanup } = buildAsaasAbortSignal(options.signal || null);
+  const started = Date.now();
   try {
     const res = await fetch(url, {
       ...options,
-      signal: controller.signal,
+      signal,
       headers: { ...headers(company), ...(options.headers || {}) },
     });
     const text = await res.text();
@@ -162,12 +183,15 @@ async function asaasFetch(endpoint: string, options: RequestInit = {}, company?:
     }
     return data;
   } catch (err: any) {
-    if (err?.name === 'AbortError') {
-      throw new Error('Timeout ao consultar Asaas (12s)');
+    const name = String(err?.name || '');
+    if (name === 'AbortError' || name === 'TimeoutError' || /aborted|timeout/i.test(String(err?.message || ''))) {
+      throw new Error(
+        `Timeout ao comunicar com Asaas (${ASAAS_FETCH_TIMEOUT_MS / 1000}s) — ${endpoint} [${Date.now() - started}ms]`,
+      );
     }
     throw err;
   } finally {
-    clearTimeout(timer);
+    cleanup?.();
   }
 }
 

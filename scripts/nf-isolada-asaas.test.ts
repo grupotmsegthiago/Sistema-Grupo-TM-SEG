@@ -6,10 +6,10 @@ describe('NF isolada do create-charge (sem Abort na Vercel)', () => {
   it('create-charge responde e NÃO agenda NF/PIX na mesma request', () => {
     const routes = fs.readFileSync('server/routes.ts', 'utf8');
     assert.match(routes, /nfIsolated:\s*true/);
-    assert.match(routes, /\[CREATE-CHARGE\]/);
-    assert.match(routes, /Resposta enviada ao frontend/);
+    assert.match(routes, /\[ASAAS-EMISSAO\]/);
+    assert.match(routes, /Sucesso! Enviando resposta HTTP 200/);
 
-    const marker = routes.indexOf('Criando/buscando cliente Asaas');
+    const marker = routes.indexOf('Buscando/Criando cliente');
     assert.ok(marker > 0);
     const nextRoute = routes.indexOf('app.post("/api/asaas/send-billing-email"', marker);
     assert.ok(nextRoute > marker);

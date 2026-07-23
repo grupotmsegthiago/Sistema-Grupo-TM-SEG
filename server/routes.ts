@@ -6901,12 +6901,12 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           ]);
         } catch (e: any) {
           const msg = e?.message || String(e);
-          console.error(`[CREATE-CHARGE] FALHA passo=${step} after=${Date.now() - t0}ms: ${msg}`);
+          console.error(`[ASAAS-EMISSAO-ERRO] passo=${step} after=${Date.now() - t0}ms: ${msg}`);
           throw Object.assign(new Error(msg), { step });
         }
       };
 
-      console.log(`[CREATE-CHARGE] Início | client=${clientName || '-'} | valor=${amountNum} | venc=${dueDate} | empresa=${issuerCompany || '-'}`);
+      console.log(`[ASAAS-EMISSAO] 1. Iniciando processamento... client=${clientName || '-'} valor=${amountNum} venc=${dueDate} empresa=${issuerCompany || '-'}`);
 
       // PASSO 0 — idempotência rápida (máx 2s). Sem getPayment Asaas (evita travar).
       try {
@@ -6920,8 +6920,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           }),
         );
         if (dup?.asaas_payment_id) {
-          console.log(`[CREATE-CHARGE] Idempotência: reutilizando ${dup.asaas_payment_id} / fatura ${dup.id}`);
-          console.log(`[CREATE-CHARGE] Resposta enviada ao frontend (${Date.now() - t0}ms) reused=true`);
+          console.log(`[ASAAS-EMISSAO] Idempotência: reutilizando ${dup.asaas_payment_id} / fatura ${dup.id}`);
+          console.log(`[ASAAS-EMISSAO] 5. Sucesso! Enviando resposta HTTP 200 (reused) (${Date.now() - t0}ms)`);
           return res.status(200).json({
             success: true,
             message: 'Cobrança já existia — reutilizada',
@@ -6956,34 +6956,37 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         }
       } catch (e: any) {
         // Idempotência é best-effort — não bloqueia emissão nova.
-        console.warn(`[CREATE-CHARGE] Idempotência ignorada: ${e?.message || e}`);
+        console.warn(`[ASAAS-EMISSAO] Idempotência ignorada: ${e?.message || e}`);
       }
 
-      // PASSO 1 — Cliente Asaas (teto 5s)
-      console.log('[CREATE-CHARGE] Criando/buscando cliente Asaas...');
+      // PASSO 1 — Cliente Asaas (AbortSignal 8s em asaasFetch + teto do passo)
+      console.log('[ASAAS-EMISSAO] 2. Buscando/Criando cliente...');
       let customer: any;
       try {
-        customer = await stepTimeout('asaas_cliente', 5_000, () =>
+        // Sem postalCode: findOrCreateCustomer só faz PUT de endereço se houver CEP —
+        // omitir evita 2ª chamada Asaas (updateCustomerAddress) que dobrava o tempo.
+        const { postalCode: _omitCep, ...addressNoCep } = clientAddress || {};
+        customer = await stepTimeout('asaas_cliente', 8_000, () =>
           findOrCreateCustomer({
             name: clientName || 'Cliente',
             cpfCnpj: clientCpfCnpj,
             email: clientEmail || undefined,
             company: issuerCompany,
-            ...clientAddress,
+            ...addressNoCep,
           }),
         );
       } catch (e: any) {
-        return res.status(500).json({
+        return res.status(504).json({
           success: false,
           step: e?.step || 'asaas_cliente',
           error: `Erro no passo 1 (cliente Asaas): ${e?.message || e}`,
         });
       }
-      console.log(`[CREATE-CHARGE] Cliente Asaas OK: ${customer?.id} (${Date.now() - t0}ms)`);
+      console.log(`[ASAAS-EMISSAO] 2. Cliente OK: ${customer?.id} (${Date.now() - t0}ms)`);
 
-      // PASSO 2 — Cobrança Asaas (teto 8s — só payments, sem NF)
+      // PASSO 2 — Cobrança (POST /v3/payments) — sem NF
       const externalRef = invoiceNumber ? `NF-${invoiceNumber}` : `TMSEG-${Date.now()}`;
-      console.log('[CREATE-CHARGE] Criando cobrança Asaas (POST /v3/payments)...');
+      console.log('[ASAAS-EMISSAO] 3. Gerando cobrança no Asaas...');
       let payment: any;
       try {
         payment = await stepTimeout('asaas_cobranca', 8_000, () =>
@@ -7000,19 +7003,19 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           }),
         );
       } catch (e: any) {
-        return res.status(500).json({
+        return res.status(504).json({
           success: false,
           step: e?.step || 'asaas_cobranca',
           error: `Erro no passo 2 (cobrança Asaas): ${e?.message || e}`,
         });
       }
-      console.log(`[CREATE-CHARGE] Cobrança criada no Asaas: ID ${payment.id} (${Date.now() - t0}ms)`);
+      console.log(`[ASAAS-EMISSAO] 3. Cobrança criada no Asaas: ID ${payment.id} (${Date.now() - t0}ms)`);
 
-      // PASSO 3 — Supabase imediato (teto 4s)
-      console.log('[CREATE-CHARGE] Gravando financial_invoices (PROCESSING)...');
+      // PASSO 3 — Supabase (service role) — teto 5s
+      console.log('[ASAAS-EMISSAO] 4. Persistindo no Supabase (financial_invoices)...');
       let persistEarly: Awaited<ReturnType<typeof persistAsaasChargeInvoice>>;
       try {
-        persistEarly = await stepTimeout('supabase_persist', 4_000, () =>
+        persistEarly = await stepTimeout('supabase_persist', 5_000, () =>
           persistAsaasChargeInvoice({
             paymentId: payment.id,
             clientName: clientName || 'Cliente',
@@ -7037,8 +7040,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           }),
         );
       } catch (e: any) {
-        // Cobrança Asaas já existe — devolve 207 com paymentId para o operador não reemitir às cegas.
-        return res.status(207).json({
+        return res.status(504).json({
           success: false,
           step: e?.step || 'supabase_persist',
           error: `Erro no passo 3 (Supabase): ${e?.message || e}. Cobrança Asaas ${payment.id} pode ter sido criada — confira antes de emitir de novo.`,
@@ -7057,8 +7059,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         });
       }
       if (!persistEarly.ok) {
-        console.error(`[CREATE-CHARGE] Persistência falhou: ${persistEarly.error}`);
-        return res.status(207).json({
+        console.error(`[ASAAS-EMISSAO-ERRO] Persistência falhou: ${persistEarly.error}`);
+        return res.status(500).json({
           success: false,
           step: 'supabase_persist',
           error: `Erro no passo 3 (Supabase): ${persistEarly.error || 'falha ao salvar'}. Cobrança Asaas ${payment.id} criada — confira antes de emitir de novo.`,
@@ -7077,14 +7079,16 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           },
         });
       }
-      console.log(`[CREATE-CHARGE] Fatura salva no Supabase: ID ${persistEarly.invoiceId} (${Date.now() - t0}ms)`);
+      console.log(`[ASAAS-EMISSAO] 4. Fatura salva no Supabase: ID ${persistEarly.invoiceId} (${Date.now() - t0}ms)`);
 
-      // PASSO 4 — Resposta HTTP IMEDIATA. ZERO await depois disso (inclui NF).
-      console.log(`[CREATE-CHARGE] Resposta enviada ao frontend (${Date.now() - t0}ms)`);
+      // PASSO 4 — HTTP 200 imediato. NF NÃO roda aqui (setImmediate após res.json
+      // na Vercel segura a conexão e causa Abort no browser — NF fica no Controle/worker).
+      console.log(`[ASAAS-EMISSAO] 5. Sucesso! Enviando resposta HTTP 200 (${Date.now() - t0}ms)`);
       return res.status(200).json({
         success: true,
         message: 'Cobrança gerada com sucesso',
         paymentId: payment.id,
+        invoiceId: persistEarly.invoiceId,
         nfPending: true,
         earlyReturn: true,
         nfIsolated: true,
@@ -7121,11 +7125,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         elapsedMs: Date.now() - t0,
       });
     } catch (err: any) {
-      console.error(`[CREATE-CHARGE] Erro não tratado step=${err?.step || 'unknown'}:`, err?.message || err);
+      console.error(`[ASAAS-EMISSAO-ERRO] Falha capturada na rota step=${err?.step || 'unknown'}:`, err?.message || err);
       return res.status(500).json({
         success: false,
         step: err?.step || 'unknown',
-        error: err?.message || 'Erro ao criar cobrança',
+        error: err?.message || 'Falha ao processar cobrança no servidor.',
       });
     }
   });
