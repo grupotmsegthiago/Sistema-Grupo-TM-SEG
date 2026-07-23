@@ -379,6 +379,10 @@
       "destination": "/api/recalculate-open"
     },
     {
+      "source": "/api/asaas/status",
+      "destination": "/api/asaas-status"
+    },
+    {
       "source": "/api/asaas/balances",
       "destination": "/api/asaas-balances"
     },

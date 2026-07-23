@@ -57,7 +57,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const [asaasLoading, setAsaasLoading] = useState(false);
     const [asaasResult, setAsaasResult] = useState<any>(null);
-    const [asaasConfigured, setAsaasConfigured] = useState(false);
+    /** Optimistic: botão Enviar não depende do status (rota Express antiga falhava e escondia o botão). */
+    const [asaasConfigured, setAsaasConfigured] = useState(true);
+    const [asaasStatusChecked, setAsaasStatusChecked] = useState(false);
+    const [invoiceReceivableOk, setInvoiceReceivableOk] = useState(false);
     const [asaasDescription, setAsaasDescription] = useState('');
     const [asaasPeriod, setAsaasPeriod] = useState('');
     const [asaasSplitMode, setAsaasSplitMode] = useState(false);
@@ -78,7 +81,29 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [recalcResult, setRecalcResult] = useState<{ total: number; updated: number; skipped: number; errors: number } | null>(null);
 
     useEffect(() => {
-        authFetch('/api/asaas/status').then(r => r.json()).then(d => setAsaasConfigured(d.configured)).catch(() => {});
+        let cancelled = false;
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = setTimeout(() => ctrl?.abort(), 8000);
+        authFetch('/api/asaas/status', ctrl ? { signal: ctrl.signal } as any : undefined)
+            .then(r => r.json())
+            .then(d => {
+                if (cancelled) return;
+                setAsaasConfigured(d?.configured !== false);
+                setAsaasStatusChecked(true);
+            })
+            .catch(() => {
+                // Mantém optimistic true — create-charge valida de verdade.
+                if (!cancelled) {
+                    setAsaasConfigured(true);
+                    setAsaasStatusChecked(true);
+                }
+            })
+            .finally(() => clearTimeout(timer));
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+            ctrl?.abort();
+        };
     }, []);
 
     useEffect(() => {
@@ -2667,6 +2692,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         setAsaasSplitCharges([]);
         setAiStatus('');
         setAsaasResult(null);
+        setInvoiceReceivableOk(false);
     };
 
     const saveMedicaoEmailToClient = async (clientId: string, email: string) => {
@@ -2699,6 +2725,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             const chargesList = asaasData?.charges;
             if (chargesList && Array.isArray(chargesList) && chargesList.length > 0) {
                 let savedCount = 0;
+                let receivableSaved = 0;
                 for (let i = 0; i < chargesList.length; i++) {
                     const ch = chargesList[i];
                     const chPayment = ch.payment;
@@ -2758,9 +2785,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         continue;
                     }
 
+                    let receivableOk = false;
                     try {
                         const transferPay = isBankTransferBillingClient(chClientName, clientName);
-                        await supabase.from('financial_transactions').insert({
+                        const { error: rxError } = await supabase.from('financial_transactions').insert({
                             description: `NF ${chNfNumber} — ${quinzenaDesc} — ${chClientName}`,
                             amount: chValue,
                             type: 'INCOME',
@@ -2769,21 +2797,26 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             entity_type: 'Client',
                             entity_id: invoiceForm.client,
                             entity_name: chClientName,
-                            notes: `Fatura NF ${chNfNumber} | CNPJ: ${ch.customer?.cpfCnpj || '-'} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
+                            notes: `Fatura NF ${chNfNumber} | Asaas: ${chPayment?.id || '-'} | CNPJ: ${ch.customer?.cpfCnpj || '-'} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
                             created_by: userName,
-                            ...(transferPay ? { payment_method: 'TRANSFERENCIA' } : {}),
+                            payment_method: transferPay ? 'TRANSFERENCIA' : 'BOLETO',
                         });
+                        if (rxError) {
+                            console.error(`[Auto Contas a Receber ${i + 1}]`, rxError);
+                        } else {
+                            receivableOk = true;
+                            receivableSaved++;
+                        }
                     } catch (e) {
                         console.error(`[Auto Contas a Receber ${i + 1}]`, e);
                     }
+                    if (receivableOk) setInvoiceReceivableOk(true);
                     savedCount++;
                 }
 
-                setAiStatus(`${chargesList.length} cobranças Asaas geradas + ${savedCount} faturas salvas + ${savedCount} contas a receber!`);
-                setTimeout(() => {
-                    setShowInvoiceModal(false);
-                    resetInvoiceForm();
-                }, 3000);
+                setAiStatus(
+                    `${chargesList.length} cobrança(s) Asaas + ${savedCount} fatura(s) salva(s) + ${receivableSaved} Contas a Receber. Confira o comprovante abaixo.`,
+                );
                 return;
             }
 
@@ -2846,9 +2879,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 return;
             }
 
+            let receivableOk = false;
             try {
                 const transferPay = isBankTransferBillingClient(clientName);
-                await supabase.from('financial_transactions').insert({
+                const { error: rxError } = await supabase.from('financial_transactions').insert({
                     description: `NF ${nfNumber} — ${quinzenaDesc}`,
                     amount: parsedAmt,
                     type: 'INCOME',
@@ -2857,19 +2891,26 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     entity_type: 'Client',
                     entity_id: invoiceForm.client,
                     entity_name: clientName,
-                    notes: `Fatura NF ${nfNumber} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
+                    notes: `Fatura NF ${nfNumber} | Asaas: ${payment?.id || '-'} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
                     created_by: userName,
-                    ...(transferPay ? { payment_method: 'TRANSFERENCIA' } : {}),
+                    payment_method: transferPay ? 'TRANSFERENCIA' : 'BOLETO',
                 });
+                if (rxError) {
+                    console.error('[Auto Contas a Receber]', rxError);
+                    setAiStatus(`Cobrança Asaas e fatura salvas, mas Contas a Receber falhou: ${rxError.message}`);
+                } else {
+                    receivableOk = true;
+                    setInvoiceReceivableOk(true);
+                }
             } catch (e) {
                 console.error('[Auto Contas a Receber]', e);
             }
 
-            setAiStatus('Cobrança Asaas gerada + Fatura salva + Contas a Receber criado!');
-            setTimeout(() => {
-                setShowInvoiceModal(false);
-                resetInvoiceForm();
-            }, 3000);
+            setAiStatus(
+                receivableOk
+                    ? 'Comprovante: cobrança Asaas + fatura + Contas a Receber OK. Confira os links abaixo.'
+                    : 'Cobrança Asaas + fatura salvas. Contas a Receber precisa de verificação.',
+            );
         } catch (e: any) {
             console.error('[AutoSave]', e);
             setAiStatus('Cobrança gerada no Asaas, mas erro ao salvar fatura localmente: ' + e.message);
@@ -3161,21 +3202,31 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
     const renderInvoiceModal = () => {
         if (!showInvoiceModal) return null;
+        const canSubmitInvoice =
+            Boolean(invoiceForm.amount) &&
+            Boolean(invoiceForm.boleto_due_date) &&
+            Boolean(invoiceForm.notes?.trim()) &&
+            !(asaasSplitMode && Math.abs(asaasSplitDiff) >= 0.01);
         return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-                <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in fade-in my-4">
-                    <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-gray-900 to-gray-800">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in fade-in my-4 flex flex-col max-h-[92vh]">
+                    <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-gray-900 to-gray-800 shrink-0">
                         <div className="flex items-center gap-2">
                             <ScanLine size={18} className="text-red-400"/>
                             <h3 className="font-black text-white uppercase text-xs tracking-widest">Gerar Fatura — Boletim de Medição</h3>
                         </div>
                         <button onClick={() => { setShowInvoiceModal(false); resetInvoiceForm(); }} data-testid="btn-close-invoice-modal"><X size={20} className="text-gray-400 hover:text-white"/></button>
                     </div>
-                    <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+                    <div className="p-6 space-y-5 overflow-y-auto flex-1 min-h-0">
                         {aiStatus && (
-                            <div className={`text-xs font-bold px-3 py-2 rounded-lg flex items-center gap-2 ${aiStatus.includes('Erro') ? 'bg-red-50 text-red-600' : aiStatus.includes('sucesso') ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-                                {asaasLoading ? <Loader2 size={12} className="animate-spin"/> : aiStatus.includes('Erro') ? <AlertCircle size={12}/> : <CheckCircle2 size={12}/>}
+                            <div className={`text-xs font-bold px-3 py-2 rounded-lg flex items-center gap-2 ${aiStatus.includes('Erro') || aiStatus.includes('falhou') ? 'bg-red-50 text-red-600' : aiStatus.includes('Comprovante') || aiStatus.includes('OK') ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                                {asaasLoading ? <Loader2 size={12} className="animate-spin"/> : aiStatus.includes('Erro') || aiStatus.includes('falhou') ? <AlertCircle size={12}/> : <CheckCircle2 size={12}/>}
                                 {aiStatus}
+                            </div>
+                        )}
+                        {asaasStatusChecked && !asaasConfigured && (
+                            <div className="text-[11px] font-bold px-3 py-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
+                                Status Asaas não confirmou chave configurada. O botão Enviar continua disponível — se falhar, verifique as variáveis Asaas na Vercel.
                             </div>
                         )}
 
@@ -3268,8 +3319,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             <p className="text-[9px] text-indigo-500 font-bold mt-1">Enviado ao Asaas no campo <em>observations</em> da NF (e na discriminação PlugNotas).</p>
                         </div>
 
-                        {asaasConfigured && (
-                            <div className="border-t border-gray-100 pt-4">
+                        <div className="border-t border-gray-100 pt-4" data-testid="section-asaas-charge">
                                 <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
                                     <DollarSign size={10} className="text-green-500"/>
                                     {isTransferBillingClient ? 'Cobrança Asaas (NF + Transferência — sem boleto)' : 'Cobrança Asaas (Boleto + PIX)'}
@@ -3351,24 +3401,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     )}
                                 </div>
 
-                                {!asaasResult ? (
-                                    <button
-                                        onClick={handleGenerateAsaasCharge}
-                                        disabled={asaasLoading || !invoiceForm.amount || !invoiceForm.boleto_due_date || (asaasSplitMode && Math.abs(asaasSplitDiff) >= 0.01)}
-                                        className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg disabled:opacity-50"
-                                        data-testid="btn-asaas-generate-charge"
-                                    >
-                                        {asaasLoading ? <Loader2 size={16} className="animate-spin"/> : <Receipt size={16}/>}
-                                        {asaasLoading
-                                            ? 'Gerando cobrança...'
-                                            : asaasSplitMode
-                                                ? `Gerar ${asaasSplitCharges.length} Cobranças (Asaas)`
-                                                : isTransferBillingClient
-                                                    ? 'Gerar NF + Contas a Receber (sem boleto)'
-                                                    : 'Gerar Boleto + PIX (Asaas)'}
-                                    </button>
-                                ) : asaasResult.split ? (
-                                    <div className="space-y-3">
+                                {asaasResult?.split ? (
+                                    <div className="space-y-3" data-testid="asaas-result-split">
                                         <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
                                             <CheckCircle2 size={16} className="text-green-600 shrink-0"/>
                                             <div className="flex-1 min-w-0">
@@ -3416,15 +3450,15 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             </div>
                                         ))}
                                     </div>
-                                ) : (
-                                    <div className="space-y-3">
+                                ) : asaasResult ? (
+                                    <div className="space-y-3" data-testid="asaas-result-single">
                                         <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
                                             <CheckCircle2 size={16} className="text-green-600 shrink-0"/>
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-[10px] font-black text-green-700 uppercase">Cobrança Gerada</p>
-                                                <p className="text-[9px] text-green-600 font-mono truncate">ID: {asaasResult.payment.id}</p>
+                                                <p className="text-[10px] font-black text-green-700 uppercase">Cobrança Gerada no Asaas</p>
+                                                <p className="text-[9px] text-green-600 font-mono truncate">ID: {asaasResult.payment?.id}</p>
                                             </div>
-                                            <span className="text-[9px] font-black text-green-600 bg-green-100 px-2 py-0.5 rounded-full border border-green-300">{asaasResult.payment.statusBr}</span>
+                                            <span className="text-[9px] font-black text-green-600 bg-green-100 px-2 py-0.5 rounded-full border border-green-300">{asaasResult.payment?.statusBr}</span>
                                         </div>
                                         {(asaasResult.skipBoleto || asaasResult.payment?.skipBoleto) && (
                                             <div className="bg-amber-50 border border-amber-200 rounded-xl p-2 text-[10px] font-bold text-amber-800" data-testid="banner-result-no-boleto">
@@ -3458,40 +3492,95 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
                                                 <FileText size={14} className="text-emerald-600 shrink-0"/>
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="text-[9px] font-black text-emerald-700 uppercase">Nota Fiscal Agendada</p>
-                                                    <p className="text-[8px] text-emerald-600 font-mono">{asaasResult.invoice.id} — {asaasResult.invoice.status}</p>
+                                                    <p className="text-[9px] font-black text-emerald-700 uppercase">Nota Fiscal</p>
+                                                    <p className="text-[8px] text-emerald-600 font-mono">{asaasResult.invoice.id} — {asaasResult.invoice.status}{asaasResult.invoice.number ? ` — NF ${asaasResult.invoice.number}` : ''}</p>
                                                 </div>
                                             </div>
                                         )}
 
-                                        <div className="flex gap-2">
-                                            {asaasResult.payment.bankSlipUrl && (
+                                        <div className="flex gap-2 flex-wrap">
+                                            {asaasResult.payment?.bankSlipUrl && (
                                                 <a href={asaasResult.payment.bankSlipUrl} target="_blank" rel="noopener noreferrer"
-                                                    className="flex-1 text-center bg-orange-100 text-orange-700 font-black text-[9px] uppercase py-2 rounded-lg hover:bg-orange-200 transition-colors border border-orange-200"
+                                                    className="flex-1 min-w-[120px] text-center bg-orange-100 text-orange-700 font-black text-[9px] uppercase py-2 rounded-lg hover:bg-orange-200 transition-colors border border-orange-200"
                                                     data-testid="link-asaas-boleto-pdf">
                                                     Abrir Boleto PDF
                                                 </a>
                                             )}
-                                            {asaasResult.payment.invoiceUrl && (
+                                            {asaasResult.payment?.invoiceUrl && (
                                                 <a href={asaasResult.payment.invoiceUrl} target="_blank" rel="noopener noreferrer"
-                                                    className="flex-1 text-center bg-blue-100 text-blue-700 font-black text-[9px] uppercase py-2 rounded-lg hover:bg-blue-200 transition-colors border border-blue-200"
+                                                    className="flex-1 min-w-[120px] text-center bg-blue-100 text-blue-700 font-black text-[9px] uppercase py-2 rounded-lg hover:bg-blue-200 transition-colors border border-blue-200"
                                                     data-testid="link-asaas-invoice">
                                                     Fatura Online
                                                 </a>
                                             )}
                                             {asaasResult.invoice?.pdfUrl && (
                                                 <a href={asaasResult.invoice.pdfUrl} target="_blank" rel="noopener noreferrer"
-                                                    className="flex-1 text-center bg-emerald-100 text-emerald-700 font-black text-[9px] uppercase py-2 rounded-lg hover:bg-emerald-200 transition-colors border border-emerald-200"
+                                                    className="flex-1 min-w-[120px] text-center bg-emerald-100 text-emerald-700 font-black text-[9px] uppercase py-2 rounded-lg hover:bg-emerald-200 transition-colors border border-emerald-200"
                                                     data-testid="link-asaas-nf-pdf">
                                                     NF PDF
                                                 </a>
                                             )}
                                         </div>
                                     </div>
-                                )}
-                            </div>
-                        )}
+                                ) : null}
 
+                                {asaasResult && (
+                                    <div
+                                        className={`mt-3 rounded-xl border-2 p-3 ${invoiceReceivableOk ? 'bg-sky-50 border-sky-300' : 'bg-amber-50 border-amber-300'}`}
+                                        data-testid="invoice-proof-receivable"
+                                    >
+                                        <p className="text-[10px] font-black uppercase tracking-wide text-sky-900">
+                                            {invoiceReceivableOk ? 'Contas a Receber: lançamento criado' : 'Contas a Receber: confira manualmente'}
+                                        </p>
+                                        <p className="text-[11px] font-semibold text-sky-800 mt-1">
+                                            Vencimento {invoiceForm.boleto_due_date
+                                                ? new Date(invoiceForm.boleto_due_date + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+                                                : '—'}
+                                            {' · '}Valor R$ {Number(invoiceForm.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                            {asaasResult.payment?.id ? ` · Asaas ${asaasResult.payment.id}` : ''}
+                                        </p>
+                                        <p className="text-[10px] text-sky-700 mt-1 font-bold">
+                                            Abra Financeiro → Contas a Receber para conferir o título PENDING.
+                                        </p>
+                                    </div>
+                                )}
+                        </div>
+
+                    </div>
+
+                    <div className="shrink-0 border-t border-gray-200 bg-white p-4 space-y-2">
+                        {!asaasResult ? (
+                            <button
+                                type="button"
+                                onClick={handleGenerateAsaasCharge}
+                                disabled={asaasLoading || !canSubmitInvoice}
+                                className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white font-black uppercase text-xs tracking-widest py-3.5 rounded-xl flex items-center justify-center gap-2 hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg disabled:opacity-50"
+                                data-testid="btn-asaas-generate-charge"
+                            >
+                                {asaasLoading ? <Loader2 size={16} className="animate-spin"/> : <Receipt size={16}/>}
+                                {asaasLoading
+                                    ? 'Emitindo no Asaas...'
+                                    : asaasSplitMode
+                                        ? `Enviar — Gerar ${asaasSplitCharges.length} Cobranças`
+                                        : isTransferBillingClient
+                                            ? 'Enviar — NF + Contas a Receber (sem boleto)'
+                                            : 'Enviar — Gerar Boleto + NF (Asaas)'}
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => { setShowInvoiceModal(false); resetInvoiceForm(); }}
+                                className="w-full bg-gray-900 text-white font-black uppercase text-xs tracking-widest py-3.5 rounded-xl hover:bg-black transition-all"
+                                data-testid="btn-close-invoice-after-success"
+                            >
+                                Fechar (emissão concluída)
+                            </button>
+                        )}
+                        {!asaasResult && !canSubmitInvoice && (
+                            <p className="text-[10px] text-center text-gray-500 font-bold">
+                                Preencha valor, vencimento e observação na NF para habilitar o Enviar.
+                            </p>
+                        )}
                     </div>
                 </div>
             </div>
