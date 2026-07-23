@@ -29,52 +29,60 @@ interface CompanyConfig {
   };
 }
 
-const ASAAS_COMPANIES: Record<string, CompanyConfig> = {
-  'TM GESTÃO': {
-    apiKey: getAsaasApiKeyTmGestao(),
-    cnpj: '60485843000157',
-    name: 'TM GESTÃO',
-    aliases: ['TM GESTAO', 'TM GESTÃO', 'GESTAO', 'GESTÃO'],
-    nf: {
-      serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
-      issRate: 5,
-      retainIss: false,
-      municipalServiceCode: '07930',
-      municipalServiceName: '07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
+/**
+ * IMPORTANTE: chaves lidas a CADA chamada (não no load do módulo).
+ * Congelar apiKey no import do vercelApp.cjs causava 401 "chave inválida" na NF
+ * enquanto o handler leve de saldo/create-charge (leitura runtime) funcionava.
+ */
+function asaasCompanies(): Record<string, CompanyConfig> {
+  return {
+    'TM GESTÃO': {
+      apiKey: getAsaasApiKeyTmGestao(),
+      cnpj: '60485843000157',
+      name: 'TM GESTÃO',
+      aliases: ['TM GESTAO', 'TM GESTÃO', 'GESTAO', 'GESTÃO'],
+      nf: {
+        serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
+        issRate: 5,
+        retainIss: false,
+        municipalServiceCode: '07930',
+        municipalServiceName: '07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
+      },
     },
-  },
-  'TM SEGURANCA': {
-    apiKey: getAsaasApiKeyTmSeguranca(),
-    cnpj: '28804378000167',
-    name: 'Tm Seguranca Consultoria & Tecnologia Integrada Ltda',
-    aliases: ['TM SEGURANÇA', 'TM SEGURANCA', 'TMSEGURANCA', 'TMSEGURANÇA', 'SEGURANÇA', 'SEGURANCA', 'TM SEGURANCA CONSULTORIA'],
-    nf: {
-      serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
-      issRate: 5,
-      retainIss: false,
-      municipalServiceCode: '07930',
-      municipalServiceName: '07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
+    'TM SEGURANCA': {
+      apiKey: getAsaasApiKeyTmSeguranca(),
+      cnpj: '28804378000167',
+      name: 'Tm Seguranca Consultoria & Tecnologia Integrada Ltda',
+      aliases: ['TM SEGURANÇA', 'TM SEGURANCA', 'TMSEGURANCA', 'TMSEGURANÇA', 'SEGURANÇA', 'SEGURANCA', 'TM SEGURANCA CONSULTORIA'],
+      nf: {
+        serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
+        issRate: 5,
+        retainIss: false,
+        municipalServiceCode: '07930',
+        municipalServiceName: '07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
+      },
     },
-  },
-  'TM SECURITY': {
-    apiKey: getAsaasApiKeyTmSecurity(),
-    cnpj: '60508931000127',
-    name: 'TM Security Gestão Corporativa Ltda',
-    aliases: ['TM SECURITY', 'TMSECURITY', 'SECURITY', 'TM SECURITY GESTAO', 'TM SECURITY GESTÃO'],
-    nf: {
-      serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
-      issRate: 5,
-      retainIss: false,
-      municipalServiceCode: '07930',
-      municipalServiceName: '07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
+    'TM SECURITY': {
+      apiKey: getAsaasApiKeyTmSecurity(),
+      cnpj: '60508931000127',
+      name: 'TM Security Gestão Corporativa Ltda',
+      aliases: ['TM SECURITY', 'TMSECURITY', 'SECURITY', 'TM SECURITY GESTAO', 'TM SECURITY GESTÃO'],
+      nf: {
+        serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
+        issRate: 5,
+        retainIss: false,
+        municipalServiceCode: '07930',
+        municipalServiceName: '07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
+      },
     },
-  },
-};
+  };
+}
 
 function resolveCompanyEntry(company?: string) {
+  const companies = asaasCompanies();
   if (company) {
     const upper = company.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    for (const [, val] of Object.entries(ASAAS_COMPANIES)) {
+    for (const [, val] of Object.entries(companies)) {
       const normalizedAliases = val.aliases.map(a => a.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
       if (normalizedAliases.some(alias => upper.includes(alias) || alias.includes(upper))) return val;
       if (upper.includes(val.cnpj)) return val;
@@ -82,7 +90,7 @@ function resolveCompanyEntry(company?: string) {
       if (normalizedName.includes(upper) || upper.includes(normalizedName)) return val;
     }
   }
-  return ASAAS_COMPANIES['TM GESTÃO'];
+  return companies['TM GESTÃO'];
 }
 
 function resolveApiKey(company?: string): string {
@@ -190,6 +198,13 @@ async function asaasFetch(endpoint: string, options: RequestInit = {}, company?:
     }
     if (!res.ok) {
       const errMsg = data.errors?.map((e: any) => e.description).join('; ') || data.message || JSON.stringify(data);
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(
+          `Asaas API Error (${res.status}): ${errMsg} — empresa ${entry.name}. ` +
+            `Confira na Vercel a chave de produção ($aact_prod_...) desta empresa ` +
+            `(TM GESTÃO: Asaas_TMSEGESTÃO_API). Saldo e NF usam a mesma chave em runtime.`,
+        );
+      }
       throw new Error(`Asaas API Error (${res.status}): ${errMsg}`);
     }
     return data;
@@ -621,7 +636,7 @@ export function invalidateAsaasBalanceCache(): void {
 }
 
 export function isKnownAsaasCompany(company: string): boolean {
-  return isKnownAsaasCompanyCore(company) || Object.prototype.hasOwnProperty.call(ASAAS_COMPANIES, company);
+  return isKnownAsaasCompanyCore(company) || Object.prototype.hasOwnProperty.call(asaasCompanies(), company);
 }
 
 /** Transfere Pix para financeiro@grupotmseg.com.br mantendo reserva mínima na conta. */
@@ -634,11 +649,11 @@ export async function transferPixFromCompany(params: {
 }
 
 export function isAsaasConfigured(): boolean {
-  return Object.values(ASAAS_COMPANIES).some((c) => !!String(c.apiKey || '').trim());
+  return Object.values(asaasCompanies()).some((c) => !!String(c.apiKey || '').trim());
 }
 
 export function getAsaasCompanies(): { key: string; name: string; cnpj: string; configured: boolean; apiKey: string }[] {
-  return Object.entries(ASAAS_COMPANIES).map(([key, val]) => ({
+  return Object.entries(asaasCompanies()).map(([key, val]) => ({
     key,
     name: val.name,
     cnpj: val.cnpj,
