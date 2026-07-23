@@ -13,7 +13,26 @@ import {
 
 export const config = { maxDuration: 30 };
 
-function keyShapeHint(summary: AsaasKeyEnvSummary): string | null {
+async function probeInvoicesApi(apiKey: string, sandbox: boolean): Promise<{ ok: boolean; error?: string }> {
+  if (!apiKey) return { ok: false, error: 'sem chave' };
+  const base = sandbox ? 'https://sandbox.asaas.com/api/v3' : 'https://api.asaas.com/v3';
+  try {
+    const res = await fetch(`${base}/invoices?limit=1`, {
+      headers: { access_token: apiKey, 'Content-Type': 'application/json' },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) return { ok: true };
+    const err =
+      data?.errors?.map((e: { description?: string }) => e.description).join('; ') ||
+      data?.message ||
+      `HTTP ${res.status}`;
+    return { ok: false, error: err };
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+function keyShapeHint(summary: AsaasKeyEnvSummary, invoicesOk?: boolean): string | null {
   if (!summary.configured) return 'ausente na Vercel';
   if (summary.length < 40) {
     return `valor curto demais (len=${summary.length}) — chave Asaas costuma ter 100+ chars ($aact_prod_...)`;
@@ -22,7 +41,10 @@ function keyShapeHint(summary: AsaasKeyEnvSummary): string | null {
     return 'não parece $aact_prod_ / sandbox — confira se colou a chave completa (cuidado com $ no início)';
   }
   if (summary.balanceProbe && !summary.balanceProbe.ok) {
-    return 'Asaas rejeitou a chave (401/erro) — regenere no painel Asaas e atualize na Vercel';
+    return 'Asaas rejeitou a chave no saldo (401/erro) — regenere no painel Asaas e atualize na Vercel';
+  }
+  if (invoicesOk === false) {
+    return 'Saldo OK, mas GET /invoices falhou — permissão/NF da conta Asaas ou chave sem escopo fiscal';
   }
   return null;
 }
@@ -56,25 +78,37 @@ export default async function handler(req: any, res: any) {
   }
 
   const env = await summarizeAsaasTransferEnv(true);
+  const [invGestao, invSeg, invSec] = await Promise.all([
+    probeInvoicesApi(getAsaasApiKeyTmGestao(), env.tmGestao.sandbox),
+    probeInvoicesApi(getAsaasApiKeyTmSeguranca(), env.tmSeguranca.sandbox),
+    probeInvoicesApi(getAsaasApiKeyTmSecurity(), env.tmSecurity.sandbox),
+  ]);
+
   const report = {
     tmGestao: {
       ...env.tmGestao,
-      hint: keyShapeHint(env.tmGestao),
+      invoicesProbe: invGestao,
+      hint: keyShapeHint(env.tmGestao, invGestao.ok),
     },
     tmSeguranca: {
       ...env.tmSeguranca,
-      hint: keyShapeHint(env.tmSeguranca),
+      invoicesProbe: invSeg,
+      hint: keyShapeHint(env.tmSeguranca, invSeg.ok),
     },
     tmSecurity: {
       ...env.tmSecurity,
-      hint: keyShapeHint(env.tmSecurity),
+      invoicesProbe: invSec,
+      hint: keyShapeHint(env.tmSecurity, invSec.ok),
     },
   };
 
   const allOk =
     !!report.tmGestao.balanceProbe?.ok &&
     !!report.tmSeguranca.balanceProbe?.ok &&
-    !!report.tmSecurity.balanceProbe?.ok;
+    !!report.tmSecurity.balanceProbe?.ok &&
+    invGestao.ok &&
+    invSeg.ok &&
+    invSec.ok;
 
   res.status(200).json({
     ok: allOk,
