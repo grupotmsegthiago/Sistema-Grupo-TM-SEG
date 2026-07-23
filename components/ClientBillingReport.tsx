@@ -17,6 +17,11 @@ import {
 } from '../lib/billing/transferBillingClients';
 import { addCalendarDaysIso } from '../lib/billing/medicaoDueDate';
 import {
+    defaultMunicipalServiceForClient,
+    findMunicipalServiceOption,
+    MUNICIPAL_SERVICE_OPTIONS,
+} from '../lib/billing/municipalServiceOptions';
+import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
 } from 'recharts';
 
@@ -65,6 +70,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [asaasPeriod, setAsaasPeriod] = useState('');
     const [asaasSplitMode, setAsaasSplitMode] = useState(false);
     const [asaasSplitCharges, setAsaasSplitCharges] = useState<{name: string; cpfCnpj: string; email: string; value: string}[]>([]);
+    /** Serviço municipal / “CNAE” da NF — editável no modal. */
+    const [invoiceMunicipalOptionId, setInvoiceMunicipalOptionId] = useState('escolta');
+    const [showCnaePicker, setShowCnaePicker] = useState(false);
 
     const [showPasteModal, setShowPasteModal] = useState(false);
     const [pasteText, setPasteText] = useState('');
@@ -144,21 +152,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     useEffect(() => {
         const selectedClient = clients.find(c => c.id.toString() === invoiceForm.client);
         const clientNameUpper = `${selectedClient?.name || ''} ${selectedClient?.trading_name || ''}`.toUpperCase();
-        let base: string;
-        if (clientNameUpper.includes('CEVA')) {
-            base = 'Ref. aos Serviços de Intermediação de Agenciamento de Contrato';
-        } else if (clientNameUpper.includes('AMAZON')) {
-            base = 'Ref. aos Serviços de Rastreamento e Monitoramento de Carga';
-        } else {
-            base = 'Ref. aos Serviços de Intermediação de Escolta Armada';
-        }
+        const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
+        const base = municipalOpt.descriptionBase;
         let desc = asaasPeriod ? `${base} - ${asaasPeriod}` : base;
         const libMatch = invoiceForm.notes.match(/LIB\. FATUR\.: ([A-Z0-9]+)/);
         if (libMatch && clientNameUpper.includes('CEVA')) {
             desc += ` — Lib. Fatur.: ${libMatch[1]}`;
         }
         setAsaasDescription(desc);
-    }, [asaasPeriod, showInvoiceModal, invoiceForm.client, invoiceForm.notes, clients]);
+    }, [asaasPeriod, showInvoiceModal, invoiceForm.client, invoiceForm.notes, clients, invoiceMunicipalOptionId]);
 
     const asaasSplitTotal = useMemo(() => {
         return asaasSplitCharges.reduce((sum, c) => sum + (parseFloat(c.value) || 0), 0);
@@ -2693,6 +2695,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         setAiStatus('');
         setAsaasResult(null);
         setInvoiceReceivableOk(false);
+        setInvoiceMunicipalOptionId('escolta');
+        setShowCnaePicker(false);
     };
 
     const saveMedicaoEmailToClient = async (clientId: string, email: string) => {
@@ -2950,6 +2954,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 return;
             }
             const skipBoleto = isBankTransferBillingClient(clientObj?.name, clientObj?.trading_name);
+            const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
             setAsaasLoading(true);
             try {
                 const res = await authFetch('/api/asaas/create-charge', {
@@ -2963,6 +2968,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         invoiceNumber: invoiceForm.number,
                         issuerCompany: invoiceForm.issuer_company,
                         skipBoleto,
+                        municipalServiceCode: municipalOpt.code,
+                        municipalServiceName: municipalOpt.name,
                         charges: validCharges.map(c => ({
                             name: c.name || clientObj?.trading_name || clientObj?.name || 'Cliente',
                             cpfCnpj: c.cpfCnpj.replace(/\D/g, ''),
@@ -3005,6 +3012,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         }
 
         const skipBoleto = isBankTransferBillingClient(clientObj.name, clientObj.trading_name);
+        const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
         setAsaasLoading(true);
         try {
             const res = await authFetch('/api/asaas/create-charge', {
@@ -3020,6 +3028,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     invoiceNumber: invoiceForm.number || `TMSEG-${Date.now()}`,
                     issuerCompany: invoiceForm.issuer_company,
                     skipBoleto,
+                    municipalServiceCode: municipalOpt.code,
+                    municipalServiceName: municipalOpt.name,
                 }),
             });
             const data = await res.json();
@@ -3083,7 +3093,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         const tomador = razaoSocial;
         const issuer = (clientObj as any)?.issuer_company || '';
         const periodRef = buildPeriodRef();
-        const notesText = `Referente aos serviços de Intermediação de Escolta Armada - Referente ao ${periodRef}`;
+        const municipalDefault = defaultMunicipalServiceForClient(clientObj?.name, clientObj?.trading_name);
+        const notesText = `${municipalDefault.descriptionBase.replace(/^Ref\.\s*aos\s*/i, 'Referente aos ')} - Referente ao ${periodRef}`;
 
         const existingMedicaoEmail = (clientObj as any)?.medicao_email || '';
         const emailList = existingMedicaoEmail ? existingMedicaoEmail.split(',').map((e: string) => e.trim()).filter(Boolean) : [];
@@ -3108,6 +3119,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         setAsaasPeriod(periodRef);
         setAsaasSplitMode(false);
         setAsaasSplitCharges([]);
+        setInvoiceMunicipalOptionId(municipalDefault.id);
+        setShowCnaePicker(false);
         if (transferClient) {
             setAiStatus(`Cliente paga por transferência bancária — boleto Asaas não será gerado/enviado (venc. padrão ${dueDays} dias).`);
         }
@@ -3329,16 +3342,40 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                         <p className="text-[8px] font-black text-gray-500 uppercase">Juros: 1% a.m. | Multa: 2%</p>
                                     </div>
                                     {(() => {
-                                        const cl = clients.find(c => c.id.toString() === invoiceForm.client);
-                                        const nm = `${cl?.name || ''} ${cl?.trading_name || ''}`.toUpperCase();
-                                        let cnaeCode = '07930';
-                                        let cnaeName = 'Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes';
-                                        if (nm.includes('CEVA')) { cnaeCode = '07930'; cnaeName = 'Intermediação / Agenciamento de Contrato'; }
-                                        else if (nm.includes('AMAZON')) { cnaeCode = '06298'; cnaeName = 'Rastreamento e Monitoramento de Carga'; }
+                                        const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
                                         return (
-                                            <div className="bg-green-50 border border-green-200 rounded-lg px-2.5 py-2">
-                                                <p className="text-[8px] font-black text-green-700 uppercase mb-0.5">CNAE Fixado Automaticamente</p>
-                                                <p className="text-[11px] font-bold text-green-800">CNAE {cnaeCode} — {cnaeName}</p>
+                                            <div className="bg-green-50 border border-green-200 rounded-lg px-2.5 py-2 space-y-2" data-testid="section-invoice-cnae">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="min-w-0">
+                                                        <p className="text-[8px] font-black text-green-700 uppercase mb-0.5">Serviço municipal / CNAE da NF</p>
+                                                        <p className="text-[11px] font-bold text-green-800">CNAE {municipalOpt.code} — {municipalOpt.label.replace(/^\d+\s*—\s*/, '')}</p>
+                                                    </div>
+                                                    {!asaasResult && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setShowCnaePicker(v => !v)}
+                                                            className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-green-300 bg-white text-[9px] font-black uppercase text-green-800 hover:bg-green-100"
+                                                            data-testid="btn-change-invoice-cnae"
+                                                        >
+                                                            <Pencil size={10} /> {showCnaePicker ? 'Fechar' : 'Alterar CNAE'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                {showCnaePicker && !asaasResult && (
+                                                    <div className="space-y-1.5 pt-1 border-t border-green-200">
+                                                        <p className="text-[9px] text-green-700 font-semibold">Escolha o serviço municipal que vai na NF (ex.: Amazon usa 06298).</p>
+                                                        <select
+                                                            className="w-full border border-green-300 rounded-lg px-2 py-2 text-[11px] font-bold bg-white focus:ring-2 focus:ring-green-300"
+                                                            value={invoiceMunicipalOptionId}
+                                                            onChange={e => setInvoiceMunicipalOptionId(e.target.value)}
+                                                            data-testid="select-invoice-cnae"
+                                                        >
+                                                            {MUNICIPAL_SERVICE_OPTIONS.map(opt => (
+                                                                <option key={opt.id} value={opt.id}>{opt.label}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })()}

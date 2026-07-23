@@ -444,6 +444,9 @@ export async function scheduleInvoice(params: {
   externalReference?: string;
   company?: string;
   municipalServiceId?: string;
+  /** Override do código de serviço municipal (ex.: 06298 Amazon). */
+  municipalServiceCode?: string;
+  municipalServiceName?: string;
   clientCnpj?: string;
   clientName?: string;
   taxes?: {
@@ -483,8 +486,18 @@ export async function scheduleInvoice(params: {
     taxes,
     effectiveDatePeriod: 'ON_PAYMENT_CREATION',
   };
+  const overrideCode = String(params.municipalServiceCode || '').replace(/\D/g, '');
+  const overrideName = String(params.municipalServiceName || '').trim();
+  const clientCode = String(clientDefaults?.municipalServiceCode || '').replace(/\D/g, '');
+  const clientNameSvc = String(clientDefaults?.municipalServiceName || '').trim();
   if (params.municipalServiceId) {
     body.municipalServiceId = params.municipalServiceId;
+  } else if (overrideCode) {
+    body.municipalServiceCode = overrideCode;
+    if (overrideName) body.municipalServiceName = overrideName;
+  } else if (clientCode) {
+    body.municipalServiceCode = clientCode;
+    if (clientNameSvc) body.municipalServiceName = clientNameSvc;
   } else if (nfConfig.municipalServiceCode) {
     body.municipalServiceCode = nfConfig.municipalServiceCode;
     if (nfConfig.municipalServiceName) body.municipalServiceName = nfConfig.municipalServiceName;

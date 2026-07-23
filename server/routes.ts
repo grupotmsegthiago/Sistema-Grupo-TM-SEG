@@ -6584,6 +6584,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       amount: number;
       /** Texto livre que vai para o campo observations da NF (Asaas) / discriminação (PlugNotas). */
       observations?: string;
+      municipalServiceCode?: string;
+      municipalServiceName?: string;
     }): Promise<{ provider: 'ASAAS' | 'PLUGNOTAS'; invoice: any }> => {
       const router = await import('./nfProviderRouter');
       const provider = await router.resolveProvider({ company: params.issuerCompany });
@@ -6620,6 +6622,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             clientEmail: params.clientEmail,
             serviceDescription: descWithObs,
             externalReference: params.externalRef,
+            municipalServiceCode: params.municipalServiceCode,
+            municipalServiceName: params.municipalServiceName,
           });
         } catch (plugErr: any) {
           const err: any = new Error(
@@ -6654,6 +6658,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         company: params.issuerCompany,
         clientCnpj: params.clientCnpj,
         clientName: params.clientName,
+        municipalServiceCode: params.municipalServiceCode,
+        municipalServiceName: params.municipalServiceName,
       });
       return {
         provider: 'ASAAS',
@@ -6665,9 +6671,12 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const {
         clientName, clientCpfCnpj, clientEmail, value, dueDate, description,
         invoiceNumber, issuerCompany, charges, skipBoleto, observations,
+        municipalServiceCode, municipalServiceName,
       } = req.body;
       const noBoleto = skipBoleto === true || String(skipBoleto || '').toLowerCase() === 'true';
       const nfObservations = String(observations || '').trim();
+      const nfMunicipalCode = String(municipalServiceCode || '').replace(/\D/g, '') || undefined;
+      const nfMunicipalName = String(municipalServiceName || '').trim() || undefined;
 
       const lookupCnpj = clientCpfCnpj || (charges?.[0]?.cpfCnpj) || '';
       const cleanLookup = String(lookupCnpj).replace(/\D/g, '');
@@ -6766,6 +6775,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
               clientEmail: charge.email || clientEmail || undefined,
               amount: parseFloat(charge.value),
               observations: nfObservations || undefined,
+              municipalServiceCode: nfMunicipalCode,
+              municipalServiceName: nfMunicipalName,
             });
             invoiceData = routed.invoice;
             console.log(`[NF] NF emitida via ${routed.provider} para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
@@ -6937,6 +6948,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           clientEmail: clientEmail || undefined,
           amount: parseFloat(value),
           observations: nfObservations || undefined,
+          municipalServiceCode: nfMunicipalCode,
+          municipalServiceName: nfMunicipalName,
         });
         invoiceData = routed.invoice;
         console.log(`[NF] NF emitida via ${routed.provider} para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);

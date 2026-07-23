@@ -233,6 +233,9 @@ export interface IssueNfParams {
   clientEmail?: string;
   serviceDescription?: string;
   externalReference?: string;
+  /** Override do código de tributação municipal (lista de serviços). */
+  municipalServiceCode?: string;
+  municipalServiceName?: string;
 }
 
 export interface IssueNfResult {
@@ -286,7 +289,8 @@ export async function issueNfse(params: IssueNfParams): Promise<IssueNfResult> {
         iss: valorIss,
       },
       discriminacao,
-      codigoTributacaoMunicipio: cfg.municipalServiceCode,
+      codigoTributacaoMunicipio:
+        String(params.municipalServiceCode || '').replace(/\D/g, '') || cfg.municipalServiceCode,
       codigoCnae: cfg.cnae,
       iss: {
         aliquota: cfg.issRate,
