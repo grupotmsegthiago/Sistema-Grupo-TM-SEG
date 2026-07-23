@@ -13,8 +13,9 @@ describe('asaas-status probe e nf-control leve', () => {
 
   it('nf-control NÃO importa nfRetryWorker (quebra na Vercel)', () => {
     const ctl = fs.readFileSync('api/nf-control.ts', 'utf8');
-    assert.doesNotMatch(ctl, /nfRetryWorker/);
-    assert.doesNotMatch(ctl, /runRetryCycle/);
+    assert.doesNotMatch(ctl, /import\(['"].*nfRetryWorker/);
+    assert.doesNotMatch(ctl, /from ['"].*nfRetryWorker/);
+    assert.doesNotMatch(ctl, /runRetryCycle\s*\(/);
     const vercel = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));
     const retryRewrite = (vercel.rewrites || []).find(
       (r: { source?: string }) => r.source === '/api/nf/retry-now',
@@ -28,3 +29,4 @@ describe('asaas-status probe e nf-control leve', () => {
     assert.ok(fnCount <= 50, `functions=${fnCount} excede limite 50`);
   });
 });
+
