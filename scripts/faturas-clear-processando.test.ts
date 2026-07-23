@@ -12,7 +12,7 @@ describe('Controle de Faturas — limpar fila + Processando + espelhos', () => {
     const ui = fs.readFileSync('components/FinancialInvoiceControl.tsx', 'utf8');
     assert.doesNotMatch(ui, /btn-clear-all-open/);
     assert.match(ui, /retry-now\?limit=5&reopen=1/);
-    assert.match(ui, /sync-open-payments\?limit=15/);
+    assert.match(ui, /sync-open-payments/);
     assert.match(ui, /doc-nf-/);
     assert.match(ui, /doc-boleto-/);
     assert.match(ui, /asaas_bankslip_url/);

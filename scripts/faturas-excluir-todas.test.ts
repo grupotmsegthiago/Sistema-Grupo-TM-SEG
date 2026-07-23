@@ -7,7 +7,8 @@ describe('Controle de Faturas — excluir fila antiga / epoch', () => {
   it('epoch esconde faturas antigas e aceita novas', () => {
     assert.equal(isAfterInvoiceControlEpoch('2026-07-01T12:00:00.000Z'), false);
     assert.equal(isAfterInvoiceControlEpoch('2026-07-23T20:00:00.000Z'), true);
-    assert.equal(isAfterInvoiceControlEpoch(null, '2026-06-01'), false);
+    // Sem created_at: fail-open (não usar date de competência para esconder)
+    assert.equal(isAfterInvoiceControlEpoch(null, '2026-06-01'), true);
     assert.ok(INVOICE_CONTROL_EPOCH.startsWith('2026-07-23'));
   });
 

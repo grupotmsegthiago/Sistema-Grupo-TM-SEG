@@ -218,10 +218,36 @@ export async function wipeOpenInvoicesCleanSlate(): Promise<{
   openRemaining: number;
   epoch: string;
   admin: boolean;
+  skipped?: boolean;
 }> {
   const sb = createSupabaseAdminClient();
   if (!sb) {
     throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel.');
+  }
+
+  // Já rodou para este marco? Não bloqueia a tela em limpeza repetida.
+  try {
+    const { data: flag } = await sb
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'invoice_clean_slate_v2')
+      .maybeSingle();
+    if (flag?.value) {
+      const parsed = typeof flag.value === 'string' ? JSON.parse(flag.value) : flag.value;
+      if (parsed?.done && parsed?.epoch === INVOICE_CONTROL_EPOCH) {
+        return {
+          success: true,
+          cancelled: 0,
+          receivablesCancelled: 0,
+          openRemaining: 0,
+          epoch: INVOICE_CONTROL_EPOCH,
+          admin: true,
+          skipped: true,
+        };
+      }
+    }
+  } catch {
+    /* segue com wipe */
   }
 
   // Só a fila antiga (antes do marco). Novas emissões ficam intactas.

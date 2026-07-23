@@ -10,7 +10,11 @@ import {
   nfBucketLabel,
   nfBucketDetail,
 } from '../lib/invoiceDisplay';
-import { isAfterInvoiceControlEpoch } from '../lib/invoiceCleanSlate';
+import {
+  clearInvoiceWatch,
+  isAfterInvoiceControlEpoch,
+  readInvoiceWatch,
+} from '../lib/invoiceCleanSlate';
 import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
   AlertCircle, Clock, XCircle, DollarSign, Receipt, Eye, Loader2,
@@ -98,6 +102,8 @@ const fmtDate = (d: string) => {
 
 const FinancialInvoiceControl: React.FC = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const invoicesRef = useRef<Invoice[]>([]);
+  invoicesRef.current = invoices;
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -262,7 +268,8 @@ const FinancialInvoiceControl: React.FC = () => {
         const now = new Date();
         // Esconde fila antiga: só faturas criadas a partir do marco "tela limpa".
         const updated: Invoice[] = data
-          .filter((inv) => isAfterInvoiceControlEpoch(inv.created_at, inv.date))
+          // Só created_at (não date de competência) — emissão nova com período antigo aparece.
+          .filter((inv) => isAfterInvoiceControlEpoch(inv.created_at))
           .map((inv) => {
             if (inv.status === 'EMITIDA' && inv.boleto_due_date) {
               const due = new Date(inv.boleto_due_date + 'T23:59:59');
@@ -289,8 +296,8 @@ const FinancialInvoiceControl: React.FC = () => {
   // Realtime: refresh silencioso — não recoloca "Carregando faturas..." na tela.
   useRealtimeRefresh('financial_invoices', () => { fetchInvoices({ silent: true }); fetchIssuerSummary(); });
 
-  // Ao abrir: 1) limpeza one-shot da fila antiga (tela limpa)
-  // 2) sync leve de pagamentos/espelhos  3) retry NF limitado
+  // Ao abrir: lista NA HORA → sync/retry NF → limpeza antiga em background.
+  // Após emitir (Amazon etc.): acompanha Processando→Emitida com poll curto.
   const autoHealStarted = useRef(false);
   useEffect(() => {
     if (autoHealStarted.current) return;
@@ -301,34 +308,10 @@ const FinancialInvoiceControl: React.FC = () => {
       const t = setTimeout(() => ctrl?.abort(), ms);
       return { ctrl, clear: () => clearTimeout(t) };
     };
-    const heal = async () => {
-      // Handler LEVE (api/nf-control) — arquiva Em Aberto/Vencidas antigas no banco.
-      const wipeT = withTimeout(55_000);
-      try {
-        const wipeRes = await authFetch('/api/nf/ensure-clean-slate', {
-          method: 'POST',
-          ...(wipeT.ctrl ? { signal: wipeT.ctrl.signal } : {}),
-        });
-        const wipe = await wipeRes.json().catch(() => ({}));
-        if (wipe?.cancelled > 0) {
-          console.info(`[InvoiceControl] Fila antiga arquivada: ${wipe.cancelled} fatura(s).`);
-        } else if (wipe?.error) {
-          console.warn('[InvoiceControl] clean-slate:', wipe.error);
-        }
-      } catch (e) {
-        console.warn('[InvoiceControl] ensure-clean-slate falhou/timeout', e);
-      } finally {
-        wipeT.clear();
-      }
-      if (cancelled) return;
-      // Lista já filtra por epoch — tela fica vazia mesmo se alguma linha antiga restar no banco.
-      await fetchInvoices({ silent: true });
-      await fetchIssuerSummary();
-      if (cancelled) return;
-
+    const syncOpen = async (limit = 15) => {
       const syncT = withTimeout(25_000);
       try {
-        await authFetch('/api/asaas/sync-open-payments?limit=15', {
+        await authFetch(`/api/asaas/sync-open-payments?limit=${limit}`, {
           method: 'POST',
           ...(syncT.ctrl ? { signal: syncT.ctrl.signal } : {}),
         });
@@ -337,6 +320,15 @@ const FinancialInvoiceControl: React.FC = () => {
       } finally {
         syncT.clear();
       }
+    };
+    const heal = async () => {
+      // 1) Mostra faturas novas imediatamente (não espera wipe).
+      await fetchInvoices({ silent: true });
+      await fetchIssuerSummary();
+      if (cancelled) return;
+
+      // 2) Sync + retry — o que o usuário espera ver como Processando→Emitida.
+      await syncOpen(20);
       if (cancelled) return;
       const retryT = withTimeout(40_000);
       try {
@@ -352,21 +344,72 @@ const FinancialInvoiceControl: React.FC = () => {
       if (cancelled) return;
       await fetchInvoices({ silent: true });
       await fetchIssuerSummary();
+
+      // 3) Wipe da fila antiga em background (já pode estar skipped no servidor).
+      const wipeT = withTimeout(55_000);
+      try {
+        const wipeRes = await authFetch('/api/nf/ensure-clean-slate', {
+          method: 'POST',
+          ...(wipeT.ctrl ? { signal: wipeT.ctrl.signal } : {}),
+        });
+        const wipe = await wipeRes.json().catch(() => ({}));
+        if (wipe?.cancelled > 0) {
+          console.info(`[InvoiceControl] Fila antiga arquivada: ${wipe.cancelled} fatura(s).`);
+          await fetchInvoices({ silent: true });
+          await fetchIssuerSummary();
+        } else if (wipe?.error) {
+          console.warn('[InvoiceControl] clean-slate:', wipe.error);
+        }
+      } catch (e) {
+        console.warn('[InvoiceControl] ensure-clean-slate falhou/timeout', e);
+      } finally {
+        wipeT.clear();
+      }
     };
     void heal();
-    const poll = setInterval(() => {
-      const t = withTimeout(25_000);
-      void authFetch('/api/asaas/sync-open-payments?limit=15', {
-        method: 'POST',
-        ...(t.ctrl ? { signal: t.ctrl.signal } : {}),
-      })
-        .then(() => fetchInvoices({ silent: true }))
-        .catch(() => {})
-        .finally(() => t.clear());
-    }, 60_000);
+
+    // Poll a cada 15s: sync pesado só se há NF Processando ou veio de emissão recente.
+    let ticks = 0;
+    const pollTick = async () => {
+      if (cancelled) return;
+      ticks += 1;
+      const watch = readInvoiceWatch();
+      const hasProcessing = invoicesRef.current.some((i) => {
+        if (i.status === 'CANCELADA' || i.status === 'PAGA') return false;
+        return nfStatusBucket(i.nf_status, { paused: !!i.nf_retry_paused }) === 'aguardando';
+      });
+      const activeWatch = !!watch || hasProcessing;
+      // Idle: refresh leve a cada 60s (4 ticks).
+      if (!activeWatch && ticks % 4 !== 0) return;
+      await syncOpen(activeWatch ? 25 : 10);
+      if (cancelled) return;
+      await fetchInvoices({ silent: true });
+      if (watch?.paymentIds?.length) {
+        try {
+          const { data: rows } = await supabase
+            .from('financial_invoices')
+            .select('id, nf_status, asaas_payment_id, nf_retry_paused')
+            .in('asaas_payment_id', watch.paymentIds);
+          const pending = (rows || []).some((r) =>
+            nfStatusBucket(r.nf_status, { paused: !!(r as any).nf_retry_paused }) === 'aguardando'
+            || nfStatusBucket(r.nf_status, { paused: !!(r as any).nf_retry_paused }) === 'nenhuma',
+          );
+          if (!pending && (rows || []).length > 0) clearInvoiceWatch();
+        } catch {
+          /* ignore */
+        }
+      }
+      if (ticks >= 48) clearInvoiceWatch();
+    };
+    const poll = setInterval(() => { void pollTick(); }, 15_000);
+    let quick: ReturnType<typeof setTimeout> | undefined;
+    if (readInvoiceWatch()) {
+      quick = setTimeout(() => { void pollTick(); }, 3_000);
+    }
     return () => {
       cancelled = true;
       clearInterval(poll);
+      if (quick) clearTimeout(quick);
     };
   }, [fetchInvoices, fetchIssuerSummary]);
 

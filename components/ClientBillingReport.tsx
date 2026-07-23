@@ -21,6 +21,7 @@ import {
     findMunicipalServiceOption,
     MUNICIPAL_SERVICE_OPTIONS,
 } from '../lib/billing/municipalServiceOptions';
+import { stashInvoiceWatch } from '../lib/invoiceCleanSlate';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
 } from 'recharts';
@@ -2820,6 +2821,9 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             if (chargesList && Array.isArray(chargesList) && chargesList.length > 0) {
                 let savedCount = 0;
                 let receivableSaved = 0;
+                const savedInvoiceIds: string[] = [];
+                const savedPaymentIds: string[] = [];
+                let anyNeedsNfFollowUp = false;
                 for (let i = 0; i < chargesList.length; i++) {
                     const ch = chargesList[i];
                     const chPayment = ch.payment;
@@ -2835,6 +2839,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         status: 'EMITIDA',
                         notes: `${invoiceForm.notes || ''} | CNPJ: ${ch.customer?.cpfCnpj || '-'}`.trim(),
                         created_by: userName,
+                        created_at: new Date().toISOString(),
                     };
                     if (invoiceForm.provider) invoicePayload.provider = invoiceForm.provider;
                     if (invoiceForm.issuer_company) invoicePayload.issuer_company = invoiceForm.issuer_company;
@@ -2875,11 +2880,14 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         if (ch.invoice?.plugnotasProtocol) invoicePayload.plugnotas_protocol = ch.invoice.plugnotasProtocol;
                     }
 
-                    let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
+                    let savedId: string | null = null;
+                    let { data: splitInserted, error } = await supabase.from('financial_invoices').insert(invoicePayload).select('id');
+                    if (!error && splitInserted?.[0]?.id) savedId = String(splitInserted[0].id);
                     if (error && error.code === '42703') {
-                        const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, nf_status, nf_number, nf_provider, plugnotas_invoice_id, plugnotas_protocol, ...basicPayload } = invoicePayload;
-                        const retry = await supabase.from('financial_invoices').insert(basicPayload).select();
+                        const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, nf_status, nf_number, nf_provider, plugnotas_invoice_id, plugnotas_protocol, created_at, ...basicPayload } = invoicePayload;
+                        const retry = await supabase.from('financial_invoices').insert(basicPayload).select('id');
                         error = retry.error;
+                        if (!error && retry.data?.[0]?.id) savedId = String(retry.data[0].id);
                     }
                     if (error) {
                         console.error(`[AutoSave Invoice ${i + 1}]`, error);
@@ -2913,12 +2921,24 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     }
                     if (receivableOk) setInvoiceReceivableOk(true);
                     savedCount++;
+                    if (savedId) savedInvoiceIds.push(savedId);
+                    if (chPayment?.id) savedPaymentIds.push(String(chPayment.id));
+                    const chNfReady = !!(ch.invoice?.pdfUrl || ch.invoice?.status === 'AUTHORIZED');
+                    if (!chNfReady && chPayment?.id) anyNeedsNfFollowUp = true;
                 }
 
                 setAiStatus(
                     `${chargesList.length} cobrança(s) Asaas + ${savedCount} fatura(s) salva(s) + ${receivableSaved} Contas a Receber. Confira o comprovante abaixo.`,
                 );
-                return { invoiceId: null as string | null, needsNfFollowUp: false, split: true as const };
+                return {
+                    ok: savedCount > 0,
+                    savedCount,
+                    invoiceId: savedInvoiceIds[0] || null,
+                    invoiceIds: savedInvoiceIds,
+                    paymentIds: savedPaymentIds,
+                    needsNfFollowUp: anyNeedsNfFollowUp,
+                    split: true as const,
+                };
             }
 
             const parsedAmt = parseFloat(invoiceForm.amount);
@@ -2930,6 +2950,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 status: 'EMITIDA',
                 notes: invoiceForm.notes || '',
                 created_by: userName,
+                created_at: new Date().toISOString(),
             };
 
             if (invoiceForm.provider) invoicePayload.provider = invoiceForm.provider;
@@ -2998,7 +3019,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             if (error) {
                 console.error('[AutoSave Invoice]', error);
                 setAiStatus('Cobrança Asaas gerada, mas erro ao salvar fatura: ' + error.message);
-                return { invoiceId: null as string | null };
+                return { ok: false, savedCount: 0, invoiceId: null as string | null, invoiceIds: [] as string[], paymentIds: [] as string[] };
             }
 
             let receivableOk = false;
@@ -3039,11 +3060,19 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         ? 'Comprovante: cobrança Asaas + fatura + Contas a Receber OK. Confira os links abaixo.'
                         : 'Cobrança Asaas + fatura salvas. Contas a Receber precisa de verificação.'),
             );
-            return { invoiceId: savedInvoiceId, needsNfFollowUp, paymentId: payment?.id as string | undefined };
+            return {
+                ok: true,
+                savedCount: 1,
+                invoiceId: savedInvoiceId,
+                invoiceIds: savedInvoiceId ? [savedInvoiceId] : [],
+                paymentIds: payment?.id ? [String(payment.id)] : [],
+                needsNfFollowUp,
+                paymentId: payment?.id as string | undefined,
+            };
         } catch (e: any) {
             console.error('[AutoSave]', e);
             setAiStatus('Cobrança gerada no Asaas, mas erro ao salvar fatura localmente: ' + e.message);
-            return { invoiceId: null as string | null };
+            return { ok: false, savedCount: 0, invoiceId: null as string | null, invoiceIds: [] as string[], paymentIds: [] as string[] };
         }
     };
 
@@ -3132,11 +3161,20 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 } else {
                     setAiStatus(`${data.charges?.length || 0} cobranças Asaas geradas! Salvando fatura...`);
                 }
-                await autoSaveInvoiceAfterAsaas(data, firstNf);
-                // Fecha e manda para Controle de Faturas — status Processando até Emitida.
+                const saved = await autoSaveInvoiceAfterAsaas(data, firstNf);
                 clearTimeout(hangTimer);
                 clearInterval(progressTimer);
                 setAsaasLoading(false);
+                if (!saved?.ok || !(saved.savedCount > 0)) {
+                    alert('Cobrança criada no Asaas, mas a fatura NÃO foi salva no Controle. Tente Atualizar ou emita de novo — não feche sem conferir.');
+                    setAiStatus('Cobrança Asaas OK, mas falha ao salvar no Controle de Faturas.');
+                    return;
+                }
+                stashInvoiceWatch({
+                    paymentIds: saved.paymentIds || [],
+                    invoiceIds: saved.invoiceIds || [],
+                });
+                // Fecha e manda para Controle — Processando até Emitida (poll automático).
                 setShowInvoiceModal(false);
                 resetInvoiceForm();
                 if (onNavigate) onNavigate('fin-invoices');
@@ -3145,10 +3183,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             } catch (err: any) {
                 if (err?.name === 'AbortError') {
                     setAsaasLoading(false);
-                    setShowInvoiceModal(false);
-                    resetInvoiceForm();
-                    if (onNavigate) onNavigate('fin-invoices');
-                    alert('A emissão demorou. Abra o Controle de Faturas — se a cobrança existir, fica Processando até a NF.');
+                    alert('A emissão demorou e pode não ter sido salva no Controle. Confira no Asaas e use Atualizar no Controle de Faturas.');
+                    setAiStatus('Timeout na emissão — confira Asaas / Controle antes de emitir de novo.');
                     return;
                 } else {
                     const msg = err.message || 'Erro ao criar cobranças';
@@ -3215,11 +3251,20 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     : 'Cobrança Asaas gerada! Salvando fatura e contas a receber...');
             }
 
-            await autoSaveInvoiceAfterAsaas(data, nfNum);
-            // Fecha automático e acompanha no Controle de Faturas / NF (Processando → Emitida).
+            const saved = await autoSaveInvoiceAfterAsaas(data, nfNum);
             clearTimeout(hangTimer);
             clearInterval(progressTimer);
             setAsaasLoading(false);
+            if (!saved?.ok || !(saved.savedCount > 0)) {
+                alert('Cobrança criada no Asaas, mas a fatura NÃO foi salva no Controle. Tente Atualizar ou emita de novo — não feche sem conferir.');
+                setAiStatus('Cobrança Asaas OK, mas falha ao salvar no Controle de Faturas.');
+                return;
+            }
+            stashInvoiceWatch({
+                paymentIds: saved.paymentIds || (saved.paymentId ? [saved.paymentId] : []),
+                invoiceIds: saved.invoiceIds || (saved.invoiceId ? [saved.invoiceId] : []),
+            });
+            // Fecha e acompanha no Controle (Processando → Emitida com poll).
             setShowInvoiceModal(false);
             resetInvoiceForm();
             if (onNavigate) onNavigate('fin-invoices');
@@ -3228,10 +3273,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         } catch (err: any) {
             if (err?.name === 'AbortError') {
                 setAsaasLoading(false);
-                setShowInvoiceModal(false);
-                resetInvoiceForm();
-                if (onNavigate) onNavigate('fin-invoices');
-                alert('A emissão demorou. Abra o Controle de Faturas — se a cobrança existir, fica Processando até a NF.');
+                alert('A emissão demorou e pode não ter sido salva no Controle. Confira no Asaas e use Atualizar no Controle de Faturas.');
+                setAiStatus('Timeout na emissão — confira Asaas / Controle antes de emitir de novo.');
                 return;
             } else {
                 const msg = err.message || 'Erro ao criar cobrança';
