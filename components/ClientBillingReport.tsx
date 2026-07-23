@@ -2881,13 +2881,29 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     }
 
                     let savedId: string | null = null;
-                    let { data: splitInserted, error } = await supabase.from('financial_invoices').insert(invoicePayload).select('id');
-                    if (!error && splitInserted?.[0]?.id) savedId = String(splitInserted[0].id);
-                    if (error && error.code === '42703') {
-                        const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, nf_status, nf_number, nf_provider, plugnotas_invoice_id, plugnotas_protocol, created_at, ...basicPayload } = invoicePayload;
-                        const retry = await supabase.from('financial_invoices').insert(basicPayload).select('id');
-                        error = retry.error;
-                        if (!error && retry.data?.[0]?.id) savedId = String(retry.data[0].id);
+                    // Idempotente: servidor pode ter persistido no create-charge.
+                    if (chPayment?.id) {
+                        const { data: existingSplit } = await supabase
+                            .from('financial_invoices')
+                            .select('id')
+                            .eq('asaas_payment_id', chPayment.id)
+                            .maybeSingle();
+                        if (existingSplit?.id) {
+                            savedId = String(existingSplit.id);
+                            await supabase.from('financial_invoices').update(invoicePayload).eq('id', savedId);
+                        }
+                    }
+                    let error: any = null;
+                    if (!savedId) {
+                        const ins = await supabase.from('financial_invoices').insert(invoicePayload).select('id');
+                        error = ins.error;
+                        if (!error && ins.data?.[0]?.id) savedId = String(ins.data[0].id);
+                        if (error && error.code === '42703') {
+                            const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, nf_status, nf_number, nf_provider, plugnotas_invoice_id, plugnotas_protocol, created_at, ...basicPayload } = invoicePayload;
+                            const retry = await supabase.from('financial_invoices').insert(basicPayload).select('id');
+                            error = retry.error;
+                            if (!error && retry.data?.[0]?.id) savedId = String(retry.data[0].id);
+                        }
                     }
                     if (error) {
                         console.error(`[AutoSave Invoice ${i + 1}]`, error);
@@ -3008,13 +3024,30 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             }
 
             let savedInvoiceId: string | null = null;
-            let { data: insertedRows, error } = await supabase.from('financial_invoices').insert(invoicePayload).select('id');
-            if (!error && insertedRows?.[0]?.id) savedInvoiceId = String(insertedRows[0].id);
-            if (error && error.code === '42703') {
-                const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, nf_status, nf_number: _nfn, nf_provider, plugnotas_invoice_id, plugnotas_protocol, nf_last_error, nf_retry_paused, ...basicPayload } = invoicePayload;
-                const retry = await supabase.from('financial_invoices').insert(basicPayload).select('id');
-                error = retry.error;
-                if (!error && retry.data?.[0]?.id) savedInvoiceId = String(retry.data[0].id);
+            // Idempotente: se o servidor já gravou no create-charge, só atualiza.
+            if (payment?.id) {
+                const { data: existing } = await supabase
+                    .from('financial_invoices')
+                    .select('id')
+                    .eq('asaas_payment_id', payment.id)
+                    .maybeSingle();
+                if (existing?.id) {
+                    savedInvoiceId = String(existing.id);
+                    const { error: upErr } = await supabase.from('financial_invoices').update(invoicePayload).eq('id', savedInvoiceId);
+                    if (upErr) console.warn('[AutoSave Invoice] update espelho:', upErr.message);
+                }
+            }
+            let error: any = null;
+            if (!savedInvoiceId) {
+                const ins = await supabase.from('financial_invoices').insert(invoicePayload).select('id');
+                error = ins.error;
+                if (!error && ins.data?.[0]?.id) savedInvoiceId = String(ins.data[0].id);
+                if (error && error.code === '42703') {
+                    const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, nf_status, nf_number: _nfn, nf_provider, plugnotas_invoice_id, plugnotas_protocol, nf_last_error, nf_retry_paused, created_at, ...basicPayload } = invoicePayload;
+                    const retry = await supabase.from('financial_invoices').insert(basicPayload).select('id');
+                    error = retry.error;
+                    if (!error && retry.data?.[0]?.id) savedInvoiceId = String(retry.data[0].id);
+                }
             }
             if (error) {
                 console.error('[AutoSave Invoice]', error);
@@ -3161,18 +3194,29 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 } else {
                     setAiStatus(`${data.charges?.length || 0} cobranças Asaas geradas! Salvando fatura...`);
                 }
-                const saved = await autoSaveInvoiceAfterAsaas(data, firstNf);
+                // Servidor já persiste no create-charge; autoSave só se o servidor falhou.
+                const serverPersistedIds = (data.charges || [])
+                    .map((c: any) => c?.persisted?.invoiceId)
+                    .filter(Boolean) as string[];
+                const serverPaymentIds = (data.charges || [])
+                    .map((c: any) => c?.payment?.id)
+                    .filter(Boolean) as string[];
+                const serverOk = (data.charges || []).some((c: any) => c?.persisted?.ok && c?.persisted?.invoiceId);
+                const saved = serverOk
+                    ? { ok: true, savedCount: serverPersistedIds.length || 1, invoiceIds: serverPersistedIds, paymentIds: serverPaymentIds }
+                    : await autoSaveInvoiceAfterAsaas(data, firstNf);
                 clearTimeout(hangTimer);
                 clearInterval(progressTimer);
                 setAsaasLoading(false);
                 if (!saved?.ok || !(saved.savedCount > 0)) {
-                    alert('Cobrança criada no Asaas, mas a fatura NÃO foi salva no Controle. Tente Atualizar ou emita de novo — não feche sem conferir.');
+                    alert('Cobrança criada no Asaas, mas a fatura NÃO foi salva no Controle. Abra o Controle e clique Atualizar — se não aparecer, confira no Asaas antes de emitir de novo.');
                     setAiStatus('Cobrança Asaas OK, mas falha ao salvar no Controle de Faturas.');
+                    if (onNavigate) onNavigate('fin-invoices');
                     return;
                 }
                 stashInvoiceWatch({
-                    paymentIds: saved.paymentIds || [],
-                    invoiceIds: saved.invoiceIds || [],
+                    paymentIds: saved.paymentIds || serverPaymentIds,
+                    invoiceIds: saved.invoiceIds || serverPersistedIds,
                 });
                 // Fecha e manda para Controle — Processando até Emitida (poll automático).
                 setShowInvoiceModal(false);
@@ -3183,8 +3227,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             } catch (err: any) {
                 if (err?.name === 'AbortError') {
                     setAsaasLoading(false);
-                    alert('A emissão demorou e pode não ter sido salva no Controle. Confira no Asaas e use Atualizar no Controle de Faturas.');
-                    setAiStatus('Timeout na emissão — confira Asaas / Controle antes de emitir de novo.');
+                    setShowInvoiceModal(false);
+                    resetInvoiceForm();
+                    // Servidor persiste antes do fim do request — a linha pode já estar no Controle.
+                    alert('A emissão demorou no navegador. Abra o Controle de Faturas e clique Atualizar — se a cobrança foi criada, deve aparecer como Processando.');
+                    setAiStatus('Timeout no navegador — confira o Controle (Atualizar). Evite emitir de novo sem checar o Asaas.');
+                    if (onNavigate) onNavigate('fin-invoices');
                     return;
                 } else {
                     const msg = err.message || 'Erro ao criar cobranças';
@@ -3251,13 +3299,25 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     : 'Cobrança Asaas gerada! Salvando fatura e contas a receber...');
             }
 
-            const saved = await autoSaveInvoiceAfterAsaas(data, nfNum);
+            // Servidor persiste no create-charge; autoSave só se o servidor falhou.
+            const serverOk = !!(data?.persisted?.ok && data?.persisted?.invoiceId);
+            const saved = serverOk
+                ? {
+                    ok: true,
+                    savedCount: 1,
+                    invoiceId: String(data.persisted.invoiceId),
+                    invoiceIds: [String(data.persisted.invoiceId)],
+                    paymentIds: data.payment?.id ? [String(data.payment.id)] : [],
+                    paymentId: data.payment?.id as string | undefined,
+                }
+                : await autoSaveInvoiceAfterAsaas(data, nfNum);
             clearTimeout(hangTimer);
             clearInterval(progressTimer);
             setAsaasLoading(false);
             if (!saved?.ok || !(saved.savedCount > 0)) {
-                alert('Cobrança criada no Asaas, mas a fatura NÃO foi salva no Controle. Tente Atualizar ou emita de novo — não feche sem conferir.');
+                alert('Cobrança criada no Asaas, mas a fatura NÃO foi salva no Controle. Abra o Controle e clique Atualizar — se não aparecer, confira no Asaas antes de emitir de novo.');
                 setAiStatus('Cobrança Asaas OK, mas falha ao salvar no Controle de Faturas.');
+                if (onNavigate) onNavigate('fin-invoices');
                 return;
             }
             stashInvoiceWatch({
@@ -3273,8 +3333,11 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         } catch (err: any) {
             if (err?.name === 'AbortError') {
                 setAsaasLoading(false);
-                alert('A emissão demorou e pode não ter sido salva no Controle. Confira no Asaas e use Atualizar no Controle de Faturas.');
-                setAiStatus('Timeout na emissão — confira Asaas / Controle antes de emitir de novo.');
+                setShowInvoiceModal(false);
+                resetInvoiceForm();
+                alert('A emissão demorou no navegador. Abra o Controle de Faturas e clique Atualizar — se a cobrança foi criada, deve aparecer como Processando.');
+                setAiStatus('Timeout no navegador — confira o Controle (Atualizar). Evite emitir de novo sem checar o Asaas.');
+                if (onNavigate) onNavigate('fin-invoices');
                 return;
             } else {
                 const msg = err.message || 'Erro ao criar cobrança';

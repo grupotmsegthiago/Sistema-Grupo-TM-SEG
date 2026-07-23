@@ -15,6 +15,7 @@ import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIn
 import { registerRhRoutes } from "./rhRoutes";
 import { runRhMigrations } from "./rhMigrations";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances, transferPixFromCompany } from "./asaasService";
+import { patchAsaasChargeInvoiceMirrors, persistAsaasChargeInvoice } from "../lib/persistAsaasChargeInvoice";
 import {
   getWhatsappProvider,
   isMetaWhatsAppConfigured,
@@ -6785,15 +6786,38 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             company: issuerCompany,
           });
 
+          // Persiste NO SERVIDOR antes de PIX/boleto/NF — Controle mostra Processando
+          // mesmo se o browser abortar o fetch (75s).
+          const createdBySplit = ((req as any).user?.name) || 'Sistema';
+          const persistSplit = await persistAsaasChargeInvoice({
+            paymentId: payment.id,
+            clientName: charge.name || clientName || 'Cliente',
+            amount: parseFloat(charge.value),
+            dueDate,
+            issuerCompany,
+            notes: nfObservations || descText,
+            createdBy: createdBySplit,
+            asaasStatus: payment.status,
+            invoiceUrl: payment.invoiceUrl || null,
+            bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
+            nfStatus: 'PROCESSING',
+            nfProvider: 'ASAAS',
+          });
+          if (!persistSplit.ok) {
+            console.warn(`[Asaas] Persistência local falhou (split ${payment.id}): ${persistSplit.error}`);
+          }
+
           let pixData = null;
           let bankSlipData = null;
           let invoiceData = null;
           let softNfError: { provider: string; code: string; message: string } | null = null;
-          try { pixData = await getPaymentPixQrCode(payment.id, issuerCompany); } catch (_) {}
-          // CEVA/DHL: não busca/expõe boleto — cliente paga por transferência
-          if (!noBoleto) {
-            try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (_) {}
-          }
+          // PIX + boleto em paralelo (cada um já tem timeout 12s no asaasFetch).
+          const [pixSettled, slipSettled] = await Promise.allSettled([
+            getPaymentPixQrCode(payment.id, issuerCompany),
+            noBoleto ? Promise.resolve(null) : getPaymentBankSlip(payment.id, issuerCompany),
+          ]);
+          if (pixSettled.status === 'fulfilled') pixData = pixSettled.value;
+          if (!noBoleto && slipSettled.status === 'fulfilled') bankSlipData = slipSettled.value;
           try {
             const nfTimeoutMs = 6_000;
             const routed = await Promise.race([
@@ -6862,6 +6886,26 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
           console.log(`[Asaas] Cobrança split criada: ${payment.id} | ${charge.name || clientName} | CNPJ: ${cleanCnpj} | R$ ${charge.value} | Venc: ${dueDate}`);
 
+          try {
+            await patchAsaasChargeInvoiceMirrors({
+              paymentId: payment.id,
+              bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
+              invoiceUrl: payment.invoiceUrl || null,
+              pixPayload: pixData?.payload || null,
+              barcode: bankSlipData?.identificationField || bankSlipData?.barCode || null,
+              nfStatus: invoiceData?.status || (softNfError ? 'PROCESSING' : null),
+              nfNumber: invoiceData?.number || null,
+              nfPdfUrl: invoiceData?.pdfUrl || null,
+              nfProvider: invoiceData?.provider || softNfError?.provider || 'ASAAS',
+              nfLastError: softNfError?.message || null,
+              plugnotasInvoiceId: invoiceData?.plugnotasInvoiceId || null,
+              plugnotasProtocol: invoiceData?.plugnotasProtocol || null,
+              asaasStatus: payment.status,
+            });
+          } catch (e) {
+            console.warn(`[Asaas] patch mirrors split falhou (${payment.id})`, (e as any)?.message);
+          }
+
           const chargeResult: any = {
             payment: {
               id: payment.id, status: payment.status, statusBr: mapAsaasStatus(payment.status),
@@ -6883,8 +6927,14 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
               plugnotasInvoiceId: invoiceData.plugnotasInvoiceId || null,
               plugnotasProtocol: invoiceData.plugnotasProtocol || null,
             } : null,
-            nfPending: !!softNfError,
+            nfPending: !!softNfError || (!invoiceData || (invoiceData.status !== 'AUTHORIZED' && !invoiceData.pdfUrl)),
             nfError: softNfError || undefined,
+            persisted: {
+              ok: persistSplit.ok,
+              invoiceId: persistSplit.invoiceId,
+              created: persistSplit.created,
+              error: persistSplit.error,
+            },
           };
           results.push(chargeResult);
 
@@ -6957,13 +7007,40 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         company: issuerCompany,
       });
 
+      // Persiste NO SERVIDOR imediatamente — fonte da verdade para o Controle.
+      // Se o browser abortar (75s), a fatura já existe como Processando.
+      const createdBy = ((req as any).user?.name) || 'Sistema';
+      const persistEarly = await persistAsaasChargeInvoice({
+        paymentId: payment.id,
+        clientName: clientName || 'Cliente',
+        amount: parseFloat(value),
+        dueDate,
+        issuerCompany,
+        notes: nfObservations || descText,
+        createdBy,
+        asaasStatus: payment.status,
+        invoiceUrl: payment.invoiceUrl || null,
+        bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
+        nfStatus: 'PROCESSING',
+        nfProvider: 'ASAAS',
+      });
+      if (!persistEarly.ok) {
+        console.warn(`[Asaas] Persistência local falhou (${payment.id}): ${persistEarly.error}`);
+      }
+
       let pixData = null;
       let bankSlipData = null;
       let invoiceData = null;
       let nfErrorPayload: { provider: string; code: string; message: string } | null = null;
-      try { pixData = await getPaymentPixQrCode(payment.id, issuerCompany); } catch (e) { console.log('[Asaas] PIX QR não disponível para esta cobrança'); }
+      const [pixSettled, slipSettled] = await Promise.allSettled([
+        getPaymentPixQrCode(payment.id, issuerCompany),
+        noBoleto ? Promise.resolve(null) : getPaymentBankSlip(payment.id, issuerCompany),
+      ]);
+      if (pixSettled.status === 'fulfilled') pixData = pixSettled.value;
+      else console.log('[Asaas] PIX QR não disponível para esta cobrança');
       if (!noBoleto) {
-        try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (e) { console.log('[Asaas] Boleto não disponível para esta cobrança'); }
+        if (slipSettled.status === 'fulfilled') bankSlipData = slipSettled.value;
+        else console.log('[Asaas] Boleto não disponível para esta cobrança');
       } else {
         console.log(`[Asaas] skipBoleto=true — boleto não será gerado/enviado para ${clientName}`);
       }
@@ -7006,11 +7083,13 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           console.error(`[NF Router] Falha PLUGNOTAS na cobrança ${payment.id}: ${nfErr.message}`);
           nfErrorPayload = { provider: 'PLUGNOTAS', code: nfErr.code || 'PLUGNOTAS_ISSUE_FAILED', message: nfErr.message };
         } else if (nfErr?.code === 'NF_TIMEOUT') {
-          // Promise.race não cancela scheduleInvoice — a NF pode ter sido criada
-          // logo após o timeout. Consulta rápida evita marcar nfPending à toa.
-          console.log(`[Asaas] AVISO: Timeout NF para ${payment.id} — consultando se já existe no Asaas`);
+          // Consulta pós-timeout limitada a 3s — não pode empurrar o request além do Abort do browser.
+          console.log(`[Asaas] AVISO: Timeout NF para ${payment.id} — consultando se já existe no Asaas (máx 3s)`);
           try {
-            const list = await getInvoiceByPayment(payment.id, issuerCompany);
+            const list = await Promise.race([
+              getInvoiceByPayment(payment.id, issuerCompany),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 3_000)),
+            ]);
             const items = list?.data || (Array.isArray(list) ? list : []);
             const found = items.find((n: any) => n.status === 'AUTHORIZED' || n.pdfUrl)
               || items.find((n: any) => ['SCHEDULED', 'SYNCHRONIZED', 'PENDING'].includes(n.status))
@@ -7088,13 +7167,38 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       // NF_TIMEOUT / pending são soft: cobrança OK; NF segue em background.
       const softNfPending = !!nfErrorPayload && ['NF_TIMEOUT', 'NF_SCHEDULE_PENDING'].includes(nfErrorPayload.code);
       const hardNfFail = !!nfErrorPayload && !softNfPending;
+      try {
+        await patchAsaasChargeInvoiceMirrors({
+          paymentId: payment.id,
+          bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
+          invoiceUrl: payment.invoiceUrl || null,
+          pixPayload: pixData?.payload || null,
+          barcode: bankSlipData?.identificationField || bankSlipData?.barCode || null,
+          nfStatus: invoiceData?.status || (nfErrorPayload ? 'PROCESSING' : 'PROCESSING'),
+          nfNumber: invoiceData?.number || null,
+          nfPdfUrl: invoiceData?.pdfUrl || null,
+          nfProvider: invoiceData?.provider || nfErrorPayload?.provider || 'ASAAS',
+          nfLastError: nfErrorPayload?.message || null,
+          plugnotasInvoiceId: invoiceData?.plugnotasInvoiceId || null,
+          plugnotasProtocol: invoiceData?.plugnotasProtocol || null,
+          asaasStatus: payment.status,
+        });
+      } catch (e) {
+        console.warn(`[Asaas] patch mirrors falhou (${payment.id})`, (e as any)?.message);
+      }
       res.status(hardNfFail ? 207 : 200).json({
         success: !hardNfFail,
-        nfPending: !!nfErrorPayload || (!!invoiceData && !invoiceData.pdfUrl && invoiceData.status !== 'AUTHORIZED'),
+        nfPending: !!nfErrorPayload || (!!invoiceData && !invoiceData.pdfUrl && invoiceData.status !== 'AUTHORIZED') || !invoiceData,
         nfError: nfErrorPayload || undefined,
         emailSent,
         skipBoleto: noBoleto,
         emailPendingReason: !emailSent && clientEmail ? (!hasNfPdf && !invoiceData?.id ? 'NF não disponível ainda' : (!hasBoleto && !noBoleto ? 'Boleto não disponível ainda' : '')) : undefined,
+        persisted: {
+          ok: persistEarly.ok,
+          invoiceId: persistEarly.invoiceId,
+          created: persistEarly.created,
+          error: persistEarly.error,
+        },
         payment: {
           id: payment.id,
           status: payment.status,
