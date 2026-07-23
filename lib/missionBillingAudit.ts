@@ -1225,6 +1225,7 @@ export async function auditMissionsBatchAsync(
   billingAdjustments?: Map<string, BillingAdjustmentRecord>,
   chunkSize = 40,
   signal?: { cancelled: boolean },
+  onProgress?: (map: Map<string, MissionBillingAuditResult>) => void,
 ): Promise<Map<string, MissionBillingAuditResult>> {
   const tablesHash = computePricingTablesHash(clientTables, providerTables);
   const clientByName = new Map(clientsData.map((c) => [c.name, c]));
@@ -1251,6 +1252,7 @@ export async function auditMissionsBatchAsync(
         ),
       );
     }
+    onProgress?.(new Map(map));
     if (i + chunkSize < missions.length) await yieldToMain();
   }
 

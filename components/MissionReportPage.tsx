@@ -295,11 +295,6 @@ const MissionReportPage: React.FC = () => {
       );
     }
 
-    // Enquanto calcula, não materializa 400 linhas “pendente” no filtro ERRO.
-    if (auditBusy && auditStatusFilter === 'erro') {
-      return [];
-    }
-
     if (auditStatusFilter) {
       list = list.filter(
         (m) => resolveMissionAuditLevel(m, auditByMission) === auditStatusFilter,
@@ -451,6 +446,10 @@ const MissionReportPage: React.FC = () => {
       billingAdjustmentsMap,
       40,
       signal,
+      (partial) => {
+        if (auditRunRef.current !== runId) return;
+        setAuditByMission(partial);
+      },
     )
       .then((map) => {
         if (auditRunRef.current !== runId) return;
