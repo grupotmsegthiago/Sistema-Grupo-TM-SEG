@@ -3148,12 +3148,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
             setAsaasLoading(true);
             setAiStatus('Emitindo cobranças no Asaas...');
-            // Rede de segurança 75s — se passar, libera UI e manda ao Controle.
+            // Rede de segurança 45s — create-charge responde após persistir (early return).
             const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-            const hangTimer = setTimeout(() => ctrl?.abort(), 75_000);
+            const hangTimer = setTimeout(() => ctrl?.abort(), 45_000);
             const progressTimer = setInterval(() => {
-                setAiStatus('Ainda processando no Asaas — em seguida abre o Controle como Processando...');
-            }, 12_000);
+                setAiStatus('Criando cobrança e salvando no Controle (Processando)...');
+            }, 4_000);
             try {
                 const res = await authFetch('/api/asaas/create-charge', {
                     method: 'POST',
@@ -3229,10 +3229,11 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     setAsaasLoading(false);
                     setShowInvoiceModal(false);
                     resetInvoiceForm();
-                    // Servidor persiste antes do fim do request — a linha pode já estar no Controle.
-                    alert('A emissão demorou no navegador. Abra o Controle de Faturas e clique Atualizar — se a cobrança foi criada, deve aparecer como Processando.');
-                    setAiStatus('Timeout no navegador — confira o Controle (Atualizar). Evite emitir de novo sem checar o Asaas.');
+                    setAiStatus('Timeout — abrindo Controle para conferir se já salvou como Processando.');
                     if (onNavigate) onNavigate('fin-invoices');
+                    setTimeout(() => {
+                        alert('A emissão demorou no navegador. No Controle de Faturas clique Atualizar — se a cobrança foi criada, aparece como Processando. Não emita de novo sem conferir o Asaas.');
+                    }, 200);
                     return;
                 } else {
                     const msg = err.message || 'Erro ao criar cobranças';
@@ -3256,12 +3257,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
         setAsaasLoading(true);
         setAiStatus('Emitindo cobrança no Asaas (boleto/PIX + NF)...');
-        // Rede de segurança 75s — libera UI e acompanha no Controle.
+        // Rede de segurança 45s — create-charge responde após persistir (early return).
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const hangTimer = setTimeout(() => ctrl?.abort(), 75_000);
+        const hangTimer = setTimeout(() => ctrl?.abort(), 45_000);
         const progressTimer = setInterval(() => {
-            setAiStatus('Ainda processando no Asaas — em seguida abre o Controle como Processando...');
-        }, 12_000);
+            setAiStatus('Criando cobrança e salvando no Controle (Processando)...');
+        }, 4_000);
         try {
             const res = await authFetch('/api/asaas/create-charge', {
                 method: 'POST',
@@ -3299,7 +3300,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     : 'Cobrança Asaas gerada! Salvando fatura e contas a receber...');
             }
 
-            // Servidor persiste no create-charge; autoSave só se o servidor falhou.
+            // earlyReturn: servidor já gravou Processando — fecha modal sem esperar NF.
             const serverOk = !!(data?.persisted?.ok && data?.persisted?.invoiceId);
             const saved = serverOk
                 ? {
@@ -3315,18 +3316,26 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             clearInterval(progressTimer);
             setAsaasLoading(false);
             if (!saved?.ok || !(saved.savedCount > 0)) {
-                alert('Cobrança criada no Asaas, mas a fatura NÃO foi salva no Controle. Abra o Controle e clique Atualizar — se não aparecer, confira no Asaas antes de emitir de novo.');
-                setAiStatus('Cobrança Asaas OK, mas falha ao salvar no Controle de Faturas.');
+                setShowInvoiceModal(false);
+                resetInvoiceForm();
+                setAiStatus('Cobrança Asaas pode ter sido criada — conferindo Controle.');
                 if (onNavigate) onNavigate('fin-invoices');
+                setTimeout(() => {
+                    alert('Cobrança pode ter sido criada no Asaas. No Controle clique Atualizar. Não emita de novo sem conferir.');
+                }, 200);
                 return;
             }
             stashInvoiceWatch({
                 paymentIds: saved.paymentIds || (saved.paymentId ? [saved.paymentId] : []),
                 invoiceIds: saved.invoiceIds || (saved.invoiceId ? [saved.invoiceId] : []),
             });
-            // Fecha e acompanha no Controle (Processando → Emitida com poll).
             setShowInvoiceModal(false);
             resetInvoiceForm();
+            setAiStatus(
+                data?.earlyReturn || data?.nfPending
+                    ? 'Salvo no Controle como Processando — acompanhando NF...'
+                    : 'Cobrança OK — abrindo Controle...',
+            );
             if (onNavigate) onNavigate('fin-invoices');
             else alert('Cobrança criada. Abra Controle de Faturas / NF — fica Processando até a NF sair.');
             return;
@@ -3335,9 +3344,11 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 setAsaasLoading(false);
                 setShowInvoiceModal(false);
                 resetInvoiceForm();
-                alert('A emissão demorou no navegador. Abra o Controle de Faturas e clique Atualizar — se a cobrança foi criada, deve aparecer como Processando.');
-                setAiStatus('Timeout no navegador — confira o Controle (Atualizar). Evite emitir de novo sem checar o Asaas.');
+                setAiStatus('Timeout — abrindo Controle para conferir se já salvou como Processando.');
                 if (onNavigate) onNavigate('fin-invoices');
+                setTimeout(() => {
+                    alert('A emissão demorou no navegador. No Controle de Faturas clique Atualizar — se a cobrança foi criada, aparece como Processando. Não emita de novo sem conferir o Asaas.');
+                }, 200);
                 return;
             } else {
                 const msg = err.message || 'Erro ao criar cobrança';

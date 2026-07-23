@@ -194,6 +194,58 @@ export async function persistAsaasChargeInvoice(
   }
 }
 
+/**
+ * Idempotência: fatura Em Aberto recente com mesmo cliente/valor/vencimento
+ * (evita segundo boleto se o usuário reemitir após Abort).
+ */
+export async function findRecentDuplicateOpenCharge(args: {
+  clientName: string;
+  amount: number;
+  dueDate: string;
+  issuerCompany?: string | null;
+  withinHours?: number;
+}): Promise<{ id: string; asaas_payment_id: string; nf_status: string | null } | null> {
+  const sb = createSupabaseAdminClient();
+  if (!sb) return null;
+  const hours = args.withinHours ?? 2;
+  const since = new Date(Date.now() - hours * 3_600_000).toISOString();
+  const amount = Number(args.amount) || 0;
+  const clientNeedle = String(args.clientName || '')
+    .trim()
+    .toUpperCase()
+    .slice(0, 24);
+  try {
+    let q = sb
+      .from('financial_invoices')
+      .select('id, asaas_payment_id, nf_status, client, amount, boleto_due_date, issuer_company, status')
+      .in('status', ['EMITIDA', 'VENCIDA'])
+      .eq('boleto_due_date', args.dueDate)
+      .gte('created_at', since)
+      .not('asaas_payment_id', 'is', null)
+      .limit(40);
+    if (args.issuerCompany) {
+      q = q.ilike('issuer_company', `%${String(args.issuerCompany).slice(0, 20)}%`);
+    }
+    const { data, error } = await q;
+    if (error || !data?.length) return null;
+    const hit = data.find((r) => {
+      const sameAmount = Math.abs(Number(r.amount) - amount) < 0.02;
+      const sameClient = String(r.client || '')
+        .toUpperCase()
+        .includes(clientNeedle || '___');
+      return sameAmount && sameClient && r.asaas_payment_id;
+    });
+    if (!hit?.asaas_payment_id) return null;
+    return {
+      id: String(hit.id),
+      asaas_payment_id: String(hit.asaas_payment_id),
+      nf_status: hit.nf_status || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Atualiza espelhos NF/boleto/PIX após enrichment (sem recriar linha). */
 export async function patchAsaasChargeInvoiceMirrors(args: {
   paymentId: string;
