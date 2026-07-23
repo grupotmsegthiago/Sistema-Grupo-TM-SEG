@@ -179,7 +179,10 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
             bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
             nfStatus: 'PROCESSING',
             nfProvider: 'ASAAS',
-            nfLastError: 'NF isolada — será agendada pelo Controle/worker (não bloqueia a emissão).',
+              nfLastError:
+                'NF isolada — será agendada pelo Controle/worker. ' +
+                'Obs.: saldo Asaas (GET /finance/balance) ≠ emissão de NF (POST /invoices); ' +
+                'erro de NF costuma ser Inscrição Municipal / CNAE / certificado no painel Asaas.',
             signal: splitCtrl.signal,
           });
           if (!persistSplit.ok) {
@@ -435,7 +438,9 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
             bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
             nfStatus: 'PROCESSING',
             nfProvider: 'ASAAS',
-            nfLastError: 'NF isolada — agendada pelo Controle/worker (fora desta request).',
+            nfLastError:
+              'NF isolada — agendada pelo Controle/worker. ' +
+              'Obs.: saldo Asaas OK não garante NF — POST /invoices exige Inscrição Municipal / CNAE / certificado no painel da empresa emissora.',
             signal,
           }),
         );
