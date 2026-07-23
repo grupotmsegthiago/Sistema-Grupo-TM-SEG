@@ -118,18 +118,33 @@ async function plugFetch(path: string, init: RequestInit = {}): Promise<any> {
   const token = getPlugNotasToken();
   if (!token) throw new Error('PlugNotas não configurado — defina PLUGNOTAS_API_TOKEN_SANDBOX ou PLUGNOTAS_API_TOKEN.');
   const url = `${getPlugNotasBaseUrl()}${path}`;
-  const resp = await fetch(url, { ...init, headers: { ...headers(), ...(init.headers || {}) } });
-  const text = await resp.text();
-  let data: any = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-  if (!resp.ok) {
-    const msg = extractPlugNotasError(data) || `HTTP ${resp.status}`;
-    const err: any = new Error(`PlugNotas: ${msg}`);
-    err.status = resp.status;
-    err.data = data;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12_000);
+  try {
+    const resp = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+      headers: { ...headers(), ...(init.headers || {}) },
+    });
+    const text = await resp.text();
+    let data: any = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    if (!resp.ok) {
+      const msg = extractPlugNotasError(data) || `HTTP ${resp.status}`;
+      const err: any = new Error(`PlugNotas: ${msg}`);
+      err.status = resp.status;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new Error('Timeout ao consultar PlugNotas (12s)');
+    }
     throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return data;
 }
 
 export function extractPlugNotasError(data: any): string {

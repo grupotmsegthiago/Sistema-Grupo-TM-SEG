@@ -6780,24 +6780,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             });
             invoiceData = routed.invoice;
             console.log(`[NF] NF emitida via ${routed.provider} para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
-
-            if (routed.provider === 'ASAAS' && invoiceData?.id && !invoiceData?.pdfUrl) {
-              for (let attempt = 0; attempt < 5; attempt++) {
-                await new Promise(r => setTimeout(r, 3000));
-                try {
-                  const nfCheck = await getInvoiceByPayment(payment.id, issuerCompany);
-                  const nfList = nfCheck?.data || (Array.isArray(nfCheck) ? nfCheck : []);
-                  const authorized = nfList.find((n: any) => n.status === 'AUTHORIZED') || nfList.find((n: any) => n.pdfUrl) || nfList[0];
-                  if (authorized?.pdfUrl) {
-                    invoiceData.pdfUrl = authorized.pdfUrl;
-                    invoiceData.status = authorized.status;
-                    invoiceData.number = authorized.number || invoiceData.number;
-                    console.log(`[Asaas] NF PDF disponível após ${attempt + 1} tentativa(s): ${authorized.pdfUrl}`);
-                    break;
-                  }
-                } catch {}
-              }
-            }
+            // Sem polling de PDF (5×3s) — evita travar o modal; sincronize depois no Faturamento.
           } catch (nfErr: any) {
             // PlugNotas é fail-fast: se a empresa está configurada para PLUGNOTAS e a
             // emissão falhou, anexamos o erro ao chargeResult e ABORTAMOS o loop —
@@ -6938,39 +6921,33 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         console.log(`[Asaas] skipBoleto=true — boleto não será gerado/enviado para ${clientName}`);
       }
       try {
-        const routed = await issueNfWithRouter({
-          paymentId: payment.id,
-          issuerCompany,
-          descText,
-          externalRef,
-          clientCnpj: clientCpfCnpj,
-          clientName: clientName,
-          clientEmail: clientEmail || undefined,
-          amount: parseFloat(value),
-          observations: nfObservations || undefined,
-          municipalServiceCode: nfMunicipalCode,
-          municipalServiceName: nfMunicipalName,
-        });
+        // Sem polling de PDF (antes: 5×3s) — travava o modal "Emitindo no Asaas...".
+        // PDF/status sincronizam depois em Faturamento → Sincronizar.
+        const nfTimeoutMs = 10_000;
+        const routed = await Promise.race([
+          issueNfWithRouter({
+            paymentId: payment.id,
+            issuerCompany,
+            descText,
+            externalRef,
+            clientCnpj: clientCpfCnpj,
+            clientName: clientName,
+            clientEmail: clientEmail || undefined,
+            amount: parseFloat(value),
+            observations: nfObservations || undefined,
+            municipalServiceCode: nfMunicipalCode,
+            municipalServiceName: nfMunicipalName,
+          }),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => {
+              const err: any = new Error(`Timeout ao emitir NF (${nfTimeoutMs / 1000}s) — cobrança Asaas já foi criada`);
+              err.code = 'NF_TIMEOUT';
+              reject(err);
+            }, nfTimeoutMs);
+          }),
+        ]);
         invoiceData = routed.invoice;
         console.log(`[NF] NF emitida via ${routed.provider} para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
-
-        if (routed.provider === 'ASAAS' && invoiceData?.id && !invoiceData?.pdfUrl) {
-          for (let attempt = 0; attempt < 5; attempt++) {
-            await new Promise(r => setTimeout(r, 3000));
-            try {
-              const nfCheck = await getInvoiceByPayment(payment.id, issuerCompany);
-              const nfList = nfCheck?.data || (Array.isArray(nfCheck) ? nfCheck : []);
-              const authorized = nfList.find((n: any) => n.status === 'AUTHORIZED') || nfList.find((n: any) => n.pdfUrl) || nfList[0];
-              if (authorized?.pdfUrl) {
-                invoiceData.pdfUrl = authorized.pdfUrl;
-                invoiceData.status = authorized.status;
-                invoiceData.number = authorized.number || invoiceData.number;
-                console.log(`[Asaas] NF PDF disponível após ${attempt + 1} tentativa(s): ${authorized.pdfUrl}`);
-                break;
-              }
-            } catch {}
-          }
-        }
       } catch (nfErr: any) {
         // PlugNotas é fail-fast (sem fallback Asaas), MAS a cobrança Asaas já foi
         // criada antes deste passo. Para NÃO gerar cobrança órfã, devolvemos o
@@ -6979,6 +6956,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         if (nfErr?.provider === 'PLUGNOTAS') {
           console.error(`[NF Router] Falha PLUGNOTAS na cobrança ${payment.id}: ${nfErr.message}`);
           nfErrorPayload = { provider: 'PLUGNOTAS', code: nfErr.code || 'PLUGNOTAS_ISSUE_FAILED', message: nfErr.message };
+        } else if (nfErr?.code === 'NF_TIMEOUT') {
+          console.log(`[Asaas] AVISO: Timeout NF para ${payment.id} — retornando cobrança sem esperar PDF`);
+          nfErrorPayload = { provider: 'ASAAS', code: 'NF_TIMEOUT', message: nfErr.message };
         } else {
           console.log(`[Asaas] AVISO: Não foi possível agendar NF para ${payment.id}: ${nfErr.message}`);
         }
@@ -6987,37 +6967,43 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       console.log(`[Asaas] Cobrança criada: ${payment.id} | ${clientName} | R$ ${value} | Venc: ${dueDate} | skipBoleto=${noBoleto}`);
 
       const hasBoleto = !noBoleto && !!(payment.bankSlipUrl || bankSlipData);
-      const hasNf = !!(invoiceData?.pdfUrl || invoiceData?.id);
+      const hasNfPdf = !!invoiceData?.pdfUrl;
       let emailSent = false;
-      const canEmail = clientEmail && hasNf && (noBoleto || hasBoleto);
+      // Só e-mail automático se já houver PDF da NF (evita esperar e-mail/PDF e travar o modal).
+      const canEmail = clientEmail && hasNfPdf && (noBoleto || hasBoleto);
       if (canEmail) {
         try {
-          await sendBillingEmail({
-            clientName: clientName || 'Cliente',
-            clientCnpj: clientCpfCnpj,
-            clientEmail,
-            invoiceNumber: invoiceNumber || undefined,
-            issuerCompany: issuerCompany || 'Grupo TM SEG',
-            value: parseFloat(value),
-            dueDate,
-            description: noBoleto
-              ? `${descText} | Pagamento por transferência bancária (sem boleto)`
-              : descText,
-            paymentId: payment.id,
-            boletoUrl: noBoleto ? undefined : (payment.bankSlipUrl || undefined),
-            pixPayload: pixData?.payload || undefined,
-            pixQrCodeBase64: pixData?.encodedImage || undefined,
-            boletoBarcode: noBoleto ? undefined : (bankSlipData?.barCode || undefined),
-            boletoDigitableLine: noBoleto ? undefined : (bankSlipData?.identificationField || undefined),
-            nfPdfUrl: invoiceData?.pdfUrl || undefined,
-            nfNumber: invoiceData?.number || undefined,
-          });
+          await Promise.race([
+            sendBillingEmail({
+              clientName: clientName || 'Cliente',
+              clientCnpj: clientCpfCnpj,
+              clientEmail,
+              invoiceNumber: invoiceNumber || undefined,
+              issuerCompany: issuerCompany || 'Grupo TM SEG',
+              value: parseFloat(value),
+              dueDate,
+              description: noBoleto
+                ? `${descText} | Pagamento por transferência bancária (sem boleto)`
+                : descText,
+              paymentId: payment.id,
+              boletoUrl: noBoleto ? undefined : (payment.bankSlipUrl || undefined),
+              pixPayload: pixData?.payload || undefined,
+              pixQrCodeBase64: pixData?.encodedImage || undefined,
+              boletoBarcode: noBoleto ? undefined : (bankSlipData?.barCode || undefined),
+              boletoDigitableLine: noBoleto ? undefined : (bankSlipData?.identificationField || undefined),
+              nfPdfUrl: invoiceData?.pdfUrl || undefined,
+              nfNumber: invoiceData?.number || undefined,
+            }),
+            new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error('Timeout e-mail 8s')), 8_000);
+            }),
+          ]);
           emailSent = true;
         } catch (emailErr: any) {
           console.log(`[Asaas] AVISO: Email de cobrança não enviado para ${clientEmail}: ${emailErr.message}`);
         }
       } else if (clientEmail) {
-        console.log(`[Asaas] Email NÃO enviado — aguardando: boleto=${hasBoleto}, NF=${hasNf}, skipBoleto=${noBoleto}.`);
+        console.log(`[Asaas] Email NÃO enviado — aguardando: boleto=${hasBoleto}, NF_PDF=${hasNfPdf}, skipBoleto=${noBoleto}.`);
       }
 
       res.status(nfErrorPayload ? 207 : 200).json({

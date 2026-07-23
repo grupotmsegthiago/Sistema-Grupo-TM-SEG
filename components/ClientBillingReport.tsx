@@ -2935,10 +2935,13 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
         const clientObj = clients.find(c => c.id.toString() === invoiceForm.client);
 
-        if (showMedicaoEmailInput && invoiceMedicaoEmail) {
-            await saveMedicaoEmailToClient(invoiceForm.client, invoiceMedicaoEmail);
-            setShowMedicaoEmailInput(false);
+        if (!invoiceMedicaoEmail.trim() || !invoiceMedicaoEmail.includes('@')) {
+            alert('Informe o e-mail do responsável financeiro antes de emitir.');
+            return;
         }
+        // Sempre persiste o e-mail editado no cadastro do cliente (responsável financeiro).
+        await saveMedicaoEmailToClient(invoiceForm.client, invoiceMedicaoEmail);
+        setShowMedicaoEmailInput(false);
 
         if (asaasSplitMode && asaasSplitCharges.length > 0) {
             const validCharges = asaasSplitCharges.filter(c => {
@@ -2956,9 +2959,13 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             const skipBoleto = isBankTransferBillingClient(clientObj?.name, clientObj?.trading_name);
             const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
             setAsaasLoading(true);
+            setAiStatus('Emitindo cobranças no Asaas...');
+            const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            const hangTimer = setTimeout(() => ctrl?.abort(), 55_000);
             try {
                 const res = await authFetch('/api/asaas/create-charge', {
                     method: 'POST',
+                    ...(ctrl ? { signal: ctrl.signal } : {}),
                     body: JSON.stringify({
                         clientName: clientObj?.trading_name || clientObj?.name || 'Cliente',
                         clientEmail: invoiceMedicaoEmail,
@@ -2998,9 +3005,13 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 }
                 await autoSaveInvoiceAfterAsaas(data, firstNf);
             } catch (err: any) {
-                alert('Erro ao gerar cobranças no Asaas: ' + err.message);
-                setAiStatus('Erro: ' + err.message);
+                const msg = err?.name === 'AbortError'
+                  ? 'Tempo esgotado (55s). Confira em Faturamento se a cobrança foi criada.'
+                  : (err.message || 'Erro ao criar cobranças');
+                alert('Erro ao gerar cobranças no Asaas: ' + msg);
+                setAiStatus('Erro: ' + msg);
             } finally {
+                clearTimeout(hangTimer);
                 setAsaasLoading(false);
             }
             return;
@@ -3014,9 +3025,13 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         const skipBoleto = isBankTransferBillingClient(clientObj.name, clientObj.trading_name);
         const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
         setAsaasLoading(true);
+        setAiStatus('Emitindo cobrança no Asaas (boleto/PIX + NF)...');
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const hangTimer = setTimeout(() => ctrl?.abort(), 55_000);
         try {
             const res = await authFetch('/api/asaas/create-charge', {
                 method: 'POST',
+                ...(ctrl ? { signal: ctrl.signal } : {}),
                 body: JSON.stringify({
                     clientName: clientObj.trading_name || clientObj.name,
                     clientCpfCnpj: clientObj.cnpj.replace(/\D/g, ''),
@@ -3033,9 +3048,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 }),
             });
             const data = await res.json();
-            // 207 = NF PlugNotas falhou MAS a cobrança Asaas foi criada. Persistimos
-            // a cobrança localmente para evitar pagamento órfão e exibimos aviso para
-            // o operador usar "Reemitir via PlugNotas" depois de corrigir a config.
+            // 207 = NF falhou/timeout MAS a cobrança Asaas foi criada. Persistimos
+            // a cobrança localmente para evitar pagamento órfão.
             if (!res.ok && res.status !== 207) throw new Error(data.error || 'Erro ao criar cobrança');
             setAsaasResult(data);
             const nfNum = data.payment?.id ? `ASAAS-${data.payment.id}` : '';
@@ -3043,8 +3057,15 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 setInvoiceForm(prev => ({ ...prev, number: nfNum }));
             }
             if (data.nfPending && data.nfError) {
-                setAiStatus(`⚠️ Cobrança Asaas gerada, mas NF PlugNotas falhou: ${data.nfError.message}. Persistindo localmente.`);
-                alert(`Atenção: cobrança Asaas foi criada com sucesso, mas a NF PlugNotas falhou:\n\n${data.nfError.message}\n\nA cobrança será salva localmente. Use "Reemitir via PlugNotas" na tela de Faturamento depois de corrigir a configuração.`);
+                const soft = data.nfError.code === 'NF_TIMEOUT';
+                setAiStatus(
+                  soft
+                    ? 'Cobrança Asaas OK. NF ainda processando — salve e sincronize no Faturamento.'
+                    : `⚠️ Cobrança Asaas gerada, mas NF falhou: ${data.nfError.message}. Persistindo localmente.`,
+                );
+                if (!soft) {
+                  alert(`Atenção: cobrança Asaas foi criada com sucesso, mas a NF falhou:\n\n${data.nfError.message}\n\nA cobrança será salva localmente. Use "Reemitir via PlugNotas" / Sincronizar na tela de Faturamento.`);
+                }
             } else {
                 setAiStatus(skipBoleto
                     ? 'NF/fatura gerada (sem boleto — transferência). Salvando Contas a Receber...'
@@ -3053,9 +3074,13 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
             await autoSaveInvoiceAfterAsaas(data, nfNum);
         } catch (err: any) {
-            alert('Erro ao gerar cobrança no Asaas: ' + err.message);
-            setAiStatus('Erro: ' + err.message);
+            const msg = err?.name === 'AbortError'
+              ? 'Tempo esgotado (55s). Se a cobrança foi criada no Asaas, confira em Faturamento → Sincronizar.'
+              : (err.message || 'Erro ao criar cobrança');
+            alert('Erro ao gerar cobrança no Asaas: ' + msg);
+            setAiStatus('Erro: ' + msg);
         } finally {
+            clearTimeout(hangTimer);
             setAsaasLoading(false);
         }
     };
@@ -3219,6 +3244,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             Boolean(invoiceForm.amount) &&
             Boolean(invoiceForm.boleto_due_date) &&
             Boolean(invoiceForm.notes?.trim()) &&
+            Boolean(invoiceMedicaoEmail.trim() && invoiceMedicaoEmail.includes('@')) &&
             !(asaasSplitMode && Math.abs(asaasSplitDiff) >= 0.01);
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -3273,15 +3299,25 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             <p className="text-[9px] font-black text-orange-600 uppercase tracking-widest mb-3 flex items-center gap-1"><Receipt size={10}/> Dados Manuais</p>
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="col-span-2">
-                                    <label className={`text-[10px] font-black uppercase mb-1 block flex items-center gap-1 ${showMedicaoEmailInput ? 'text-red-500' : 'text-gray-400'}`}>
-                                        {showMedicaoEmailInput ? <AlertCircle size={10}/> : null} E-mail Medição *
-                                        {showMedicaoEmailInput && <span className="text-[8px] text-red-400 font-bold ml-1">(Obrigatório — será salvo no cadastro do cliente)</span>}
+                                    <label className={`text-[10px] font-black uppercase mb-1 block flex items-center gap-1 ${!invoiceMedicaoEmail.trim() ? 'text-red-500' : 'text-orange-600'}`}>
+                                        {!invoiceMedicaoEmail.trim() ? <AlertCircle size={10}/> : null} E-mail responsável financeiro *
+                                        <span className="text-[8px] font-bold ml-1 text-gray-400 normal-case">(editável — salva no cadastro do cliente)</span>
                                     </label>
-                                    {showMedicaoEmailInput ? (
-                                        <input type="email" className="w-full p-2.5 border-2 border-red-300 rounded-lg text-sm font-bold bg-red-50 focus:ring-2 focus:ring-red-400 lowercase" placeholder="Digite o e-mail de medição do cliente..." value={invoiceMedicaoEmail} onChange={e => setInvoiceMedicaoEmail(e.target.value.toLowerCase())} data-testid="input-billing-medicao-email" />
-                                    ) : (
-                                        <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold bg-white cursor-not-allowed lowercase" readOnly value={invoiceMedicaoEmail} data-testid="display-billing-medicao-email" />
-                                    )}
+                                    <input
+                                        type="email"
+                                        className={`w-full p-2.5 border-2 rounded-lg text-sm font-bold lowercase focus:ring-2 ${
+                                          !invoiceMedicaoEmail.trim()
+                                            ? 'border-red-300 bg-red-50 focus:ring-red-400'
+                                            : 'border-orange-300 bg-orange-50 focus:ring-orange-400'
+                                        }`}
+                                        placeholder="E-mail do responsável financeiro do cliente..."
+                                        value={invoiceMedicaoEmail}
+                                        onChange={e => {
+                                          setInvoiceMedicaoEmail(e.target.value.toLowerCase());
+                                          setShowMedicaoEmailInput(true);
+                                        }}
+                                        data-testid="input-billing-medicao-email"
+                                    />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-black text-orange-500 uppercase mb-1 block flex items-center gap-1">
@@ -3562,23 +3598,49 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 ) : null}
 
                                 {asaasResult && (
-                                    <div
-                                        className={`mt-3 rounded-xl border-2 p-3 ${invoiceReceivableOk ? 'bg-sky-50 border-sky-300' : 'bg-amber-50 border-amber-300'}`}
-                                        data-testid="invoice-proof-receivable"
-                                    >
-                                        <p className="text-[10px] font-black uppercase tracking-wide text-sky-900">
-                                            {invoiceReceivableOk ? 'Contas a Receber: lançamento criado' : 'Contas a Receber: confira manualmente'}
-                                        </p>
-                                        <p className="text-[11px] font-semibold text-sky-800 mt-1">
-                                            Vencimento {invoiceForm.boleto_due_date
-                                                ? new Date(invoiceForm.boleto_due_date + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
-                                                : '—'}
-                                            {' · '}Valor R$ {Number(invoiceForm.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                            {asaasResult.payment?.id ? ` · Asaas ${asaasResult.payment.id}` : ''}
-                                        </p>
-                                        <p className="text-[10px] text-sky-700 mt-1 font-bold">
-                                            Abra Financeiro → Contas a Receber para conferir o título PENDING.
-                                        </p>
+                                    <div className="mt-3 space-y-2" data-testid="invoice-proof-panel">
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className={`rounded-xl border-2 p-2.5 ${asaasResult.payment?.bankSlipUrl || asaasResult.bankSlip || asaasResult.skipBoleto ? 'bg-orange-50 border-orange-300' : 'bg-amber-50 border-amber-300'}`}>
+                                                <p className="text-[9px] font-black uppercase text-orange-800">Boleto</p>
+                                                <p className="text-[11px] font-bold text-orange-900 mt-0.5">
+                                                    {asaasResult.skipBoleto || asaasResult.payment?.skipBoleto
+                                                      ? 'N/A (transferência)'
+                                                      : (asaasResult.payment?.bankSlipUrl || asaasResult.bankSlip)
+                                                        ? 'Emitido no Asaas'
+                                                        : 'Pendente — sincronize'}
+                                                </p>
+                                            </div>
+                                            <div className={`rounded-xl border-2 p-2.5 ${asaasResult.invoice?.id || asaasResult.invoice?.pdfUrl ? 'bg-emerald-50 border-emerald-300' : 'bg-amber-50 border-amber-300'}`}>
+                                                <p className="text-[9px] font-black uppercase text-emerald-800">Nota Fiscal</p>
+                                                <p className="text-[11px] font-bold text-emerald-900 mt-0.5">
+                                                    {asaasResult.invoice?.pdfUrl
+                                                      ? `PDF OK${asaasResult.invoice?.number ? ` · NF ${asaasResult.invoice.number}` : ''}`
+                                                      : asaasResult.invoice?.id
+                                                        ? `Agendada (${asaasResult.invoice.status || 'PROCESSANDO'})`
+                                                        : asaasResult.nfPending
+                                                          ? 'Pendente — sincronize / reemitir'
+                                                          : 'Pendente'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div
+                                            className={`rounded-xl border-2 p-3 ${invoiceReceivableOk ? 'bg-sky-50 border-sky-300' : 'bg-amber-50 border-amber-300'}`}
+                                            data-testid="invoice-proof-receivable"
+                                        >
+                                            <p className="text-[10px] font-black uppercase tracking-wide text-sky-900">
+                                                {invoiceReceivableOk ? 'Contas a Receber: lançamento criado' : 'Contas a Receber: confira manualmente'}
+                                            </p>
+                                            <p className="text-[11px] font-semibold text-sky-800 mt-1">
+                                                Vencimento {invoiceForm.boleto_due_date
+                                                    ? new Date(invoiceForm.boleto_due_date + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+                                                    : '—'}
+                                                {' · '}Valor R$ {Number(invoiceForm.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                {asaasResult.payment?.id ? ` · Asaas ${asaasResult.payment.id}` : ''}
+                                            </p>
+                                            <p className="text-[10px] text-sky-700 mt-1 font-bold">
+                                                Confira em Financeiro → Contas a Receber e em Faturamento (status NF/boleto). Use Sincronizar se o PDF da NF ainda não apareceu.
+                                            </p>
+                                        </div>
                                     </div>
                                 )}
                         </div>
@@ -3615,7 +3677,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         )}
                         {!asaasResult && !canSubmitInvoice && (
                             <p className="text-[10px] text-center text-gray-500 font-bold">
-                                Preencha valor, vencimento e observação na NF para habilitar o Enviar.
+                                Preencha e-mail do responsável financeiro, valor, vencimento e observação na NF para habilitar o Enviar.
                             </p>
                         )}
                     </div>

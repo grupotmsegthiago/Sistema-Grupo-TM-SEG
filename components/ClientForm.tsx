@@ -1109,7 +1109,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         )}
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
-                        <label className={LABEL_CLASS}>E-mail Medição</label>
+                        <label className={LABEL_CLASS}>E-mail responsável financeiro (medição / cobrança)</label>
                         <div className="flex gap-1.5">
                             <div className="relative flex-1">
                                 <input type="text" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={medicaoEmailInput} onChange={e => setMedicaoEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('medicao_email', medicaoEmailInput, setMedicaoEmailInput))} onPaste={e => { e.preventDefault(); const text = e.clipboardData.getData('text'); addEmail('medicao_email', text, setMedicaoEmailInput); }} data-testid="input-medicao-email" />
