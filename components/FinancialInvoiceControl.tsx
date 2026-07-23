@@ -1,8 +1,15 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { formatDateTimeBR } from '../lib/dateUtils';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import {
+  paymentStatusLabel,
+  overdueDays,
+  nfStatusBucket,
+  nfBucketLabel,
+  nfBucketDetail,
+} from '../lib/invoiceDisplay';
 import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
   AlertCircle, Clock, XCircle, DollarSign, Receipt, Eye, Loader2,
@@ -76,8 +83,8 @@ type SortDir = 'asc' | 'desc';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
   EMITIDA: { label: 'Em Aberto', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', icon: Clock },
-  PAGA: { label: 'Paga', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: CheckCircle2 },
-  VENCIDA: { label: 'Vencida', color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', icon: AlertCircle },
+  PAGA: { label: 'PAGO', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: CheckCircle2 },
+  VENCIDA: { label: 'VENCIDO', color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', icon: AlertCircle },
   CANCELADA: { label: 'Cancelada', color: 'text-gray-500', bg: 'bg-gray-50', border: 'border-gray-200', icon: XCircle },
 };
 
@@ -266,6 +273,43 @@ const FinancialInvoiceControl: React.FC = () => {
 
   // Realtime: refresh silencioso — não recoloca "Carregando faturas..." na tela.
   useRealtimeRefresh('financial_invoices', () => { fetchInvoices({ silent: true }); fetchIssuerSummary(); });
+
+  // Auto-cura ao abrir a tela:
+  // 1) Sincroniza pagamentos Asaas → marca PAGA (sem emitir NF)
+  // 2) Dispara ciclo de retry NF (cancela antes de reemitir — anti-duplicata)
+  // 3) Polling de pagamentos enquanto a tela estiver aberta
+  const autoHealStarted = useRef(false);
+  useEffect(() => {
+    if (autoHealStarted.current) return;
+    autoHealStarted.current = true;
+    let cancelled = false;
+    const heal = async () => {
+      try {
+        await authFetch('/api/asaas/sync-open-payments', { method: 'POST' });
+      } catch (e) {
+        console.warn('[InvoiceControl] sync-open-payments falhou', e);
+      }
+      if (cancelled) return;
+      try {
+        await authFetch('/api/nf/retry-now', { method: 'POST' });
+      } catch (e) {
+        console.warn('[InvoiceControl] nf/retry-now falhou', e);
+      }
+      if (cancelled) return;
+      await fetchInvoices({ silent: true });
+      await fetchIssuerSummary();
+    };
+    void heal();
+    const poll = setInterval(() => {
+      void authFetch('/api/asaas/sync-open-payments', { method: 'POST' })
+        .then(() => fetchInvoices({ silent: true }))
+        .catch(() => {});
+    }, 90_000);
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+    };
+  }, [fetchInvoices, fetchIssuerSummary]);
 
   const handleSyncStatus = async (inv: Invoice) => {
     if (!inv.asaas_payment_id) return;
@@ -689,7 +733,7 @@ const FinancialInvoiceControl: React.FC = () => {
           <div className="text-xs font-bold text-amber-600">{fmtBRL(stats.totalEmitida)}</div>
         </button>
         <button onClick={() => setStatusFilter(statusFilter === 'PAGA' ? 'ALL' : 'PAGA')} className={`rounded-xl p-4 border-2 transition-all text-left ${statusFilter === 'PAGA' ? 'border-emerald-400 bg-emerald-50 ring-2 ring-emerald-200' : 'border-gray-100 bg-white hover:border-emerald-200'}`} data-testid="filter-paga">
-          <div className="flex items-center gap-2 mb-1"><CheckCircle2 size={14} className="text-emerald-600" /><span className="text-[10px] font-black text-emerald-600 uppercase">Pagas</span></div>
+          <div className="flex items-center gap-2 mb-1"><CheckCircle2 size={14} className="text-emerald-600" /><span className="text-[10px] font-black text-emerald-600 uppercase">PAGO</span></div>
           <div className="text-xl font-black text-gray-900">{stats.paga}</div>
           <div className="text-xs font-bold text-emerald-600">{fmtBRL(stats.totalPaga)}</div>
         </button>
@@ -754,12 +798,14 @@ const FinancialInvoiceControl: React.FC = () => {
                 {filtered.map((inv, idx) => {
                   const cfg = STATUS_CONFIG[inv.status] || STATUS_CONFIG['EMITIDA'];
                   const StatusIcon = cfg.icon;
-                  const isOverdue = inv.status === 'VENCIDA';
+                  const daysOverdue = overdueDays(inv.boleto_due_date);
+                  const isOverdue = inv.status === 'VENCIDA' || (inv.status === 'EMITIDA' && !!daysOverdue && daysOverdue > 0);
+                  const payLabel = paymentStatusLabel(inv.status, inv.boleto_due_date);
                   return (
-                    <tr key={inv.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${isOverdue ? 'bg-red-50/30' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`} data-testid={`invoice-row-${inv.id}`}>
+                    <tr key={inv.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${isOverdue && inv.status !== 'PAGA' ? 'bg-red-50/30' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`} data-testid={`invoice-row-${inv.id}`}>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black border ${cfg.color} ${cfg.bg} ${cfg.border}`}>
-                          <StatusIcon size={10} /> {cfg.label}
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black border ${cfg.color} ${cfg.bg} ${cfg.border}`} data-testid={`payment-status-${inv.id}`}>
+                          <StatusIcon size={10} /> {payLabel}
                         </span>
                       </td>
                       <td className="px-4 py-3 font-mono font-bold text-gray-900 text-xs">{inv.number}</td>
@@ -768,7 +814,14 @@ const FinancialInvoiceControl: React.FC = () => {
                       <td className="px-4 py-3 text-center text-xs text-gray-600">{fmtDate(inv.date)}</td>
                       <td className="px-4 py-3 text-center text-xs">
                         {inv.boleto_due_date ? (
-                          <span className={isOverdue ? 'text-red-600 font-bold' : 'text-gray-600'}>{fmtDate(inv.boleto_due_date)}</span>
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className={isOverdue && inv.status !== 'PAGA' ? 'text-red-600 font-bold' : 'text-gray-600'}>{fmtDate(inv.boleto_due_date)}</span>
+                            {isOverdue && inv.status !== 'PAGA' && daysOverdue != null && daysOverdue > 0 && (
+                              <span className="text-[9px] font-black text-red-600" data-testid={`overdue-days-${inv.id}`}>
+                                VENCIDO ({daysOverdue} {daysOverdue === 1 ? 'dia' : 'dias'})
+                              </span>
+                            )}
+                          </div>
                         ) : <span className="text-gray-300">-</span>}
                       </td>
                       <td className="px-4 py-3 text-center text-[10px] font-bold text-gray-500 uppercase">
@@ -787,39 +840,28 @@ const FinancialInvoiceControl: React.FC = () => {
                           const ref = inv.nf_retry_at || inv.created_at;
                           const ageH = ref ? Math.floor((Date.now() - new Date(ref).getTime()) / 3600_000) : null;
                           const isStuckSync = ns === 'SYNCHRONIZED' && ageH !== null && ageH >= 24;
-                          const effectiveStatus = isStuckSync ? 'STUCK' : ns;
                           const invProvider = String(inv.nf_provider || '').toUpperCase() === 'PLUGNOTAS' || inv.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS';
-                          const stuckLabel = invProvider === 'PLUGNOTAS' ? 'TRAVADA — verificar PlugNotas' : 'TRAVADA — verificar Asaas';
-                          const nfLabel = effectiveStatus === 'AUTHORIZED' ? 'Autorizada'
-                            : effectiveStatus === 'SCHEDULED' ? 'Agendada'
-                            : effectiveStatus === 'SYNCHRONIZED' ? 'Em fila Prefeitura'
-                            : effectiveStatus === 'STUCK' ? stuckLabel
-                            : effectiveStatus === 'PROCESSING' ? 'Processando'
-                            : effectiveStatus === 'CANCELED' ? 'Cancelada'
-                            : effectiveStatus === 'ERROR' ? 'Erro'
-                            : effectiveStatus === 'WAITING_CUSTOMER_ACCEPTANCE' ? 'Aguardando'
-                            : effectiveStatus || 'Pendente';
-                          const nfColor = effectiveStatus === 'AUTHORIZED' ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                            : effectiveStatus === 'SCHEDULED' ? 'text-blue-600 bg-blue-50 border-blue-200'
-                            : effectiveStatus === 'SYNCHRONIZED' ? 'text-indigo-600 bg-indigo-50 border-indigo-200'
-                            : effectiveStatus === 'STUCK' ? 'text-white bg-red-600 border-red-700 animate-pulse'
-                            : effectiveStatus === 'PROCESSING' ? 'text-amber-600 bg-amber-50 border-amber-200'
-                            : effectiveStatus === 'CANCELED' || effectiveStatus === 'ERROR' ? 'text-red-600 bg-red-50 border-red-200'
+                          const bucket = nfStatusBucket(ns, { stuckByAge: isStuckSync });
+                          const shortLabel = nfBucketLabel(bucket);
+                          const detail = nfBucketDetail(ns, { stuckByAge: isStuckSync, provider: invProvider, ageHours: ageH });
+                          const nfColor = bucket === 'emitida' ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                            : bucket === 'aguardando' ? 'text-blue-700 bg-blue-50 border-blue-200'
+                            : bucket === 'falha' ? 'text-white bg-red-600 border-red-700 animate-pulse'
+                            : bucket === 'cancelada' ? 'text-gray-600 bg-gray-50 border-gray-200'
                             : 'text-gray-500 bg-gray-50 border-gray-200';
-                          const NfIcon = effectiveStatus === 'AUTHORIZED' ? CheckCircle2
-                            : effectiveStatus === 'STUCK' ? AlertCircle
-                            : effectiveStatus === 'CANCELED' || effectiveStatus === 'ERROR' ? XCircle
-                            : effectiveStatus === 'PROCESSING' || effectiveStatus === 'SCHEDULED' || effectiveStatus === 'SYNCHRONIZED' ? Clock
-                            : AlertCircle;
+                          const NfIcon = bucket === 'emitida' ? CheckCircle2
+                            : bucket === 'falha' ? AlertCircle
+                            : bucket === 'cancelada' ? XCircle
+                            : Clock;
                           return (
-                            <div className="flex flex-col items-center gap-0.5">
-                              <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full border ${nfColor}`} title={inv.nf_last_error || ''}>
-                                <NfIcon size={9} /> {nfLabel}
+                            <div className="flex flex-col items-center gap-0.5" data-testid={`nf-status-${inv.id}`}>
+                              <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full border ${nfColor}`} title={inv.nf_last_error || detail || ''}>
+                                <NfIcon size={9} /> {shortLabel}
                               </span>
-                              {inv.nf_number && <span className="text-[8px] text-gray-400 font-mono">Nº {inv.nf_number}</span>}
-                              {(effectiveStatus === 'SYNCHRONIZED' || effectiveStatus === 'STUCK') && ageH !== null && ageH >= 1 && (
-                                <span className={`text-[8px] font-bold ${isStuckSync ? 'text-red-600' : 'text-indigo-500'}`}>há {ageH}h</span>
+                              {detail && bucket !== 'emitida' && (
+                                <span className={`text-[8px] font-bold max-w-[140px] leading-tight ${bucket === 'falha' ? 'text-red-600' : 'text-gray-500'}`}>{detail}</span>
                               )}
+                              {inv.nf_number && <span className="text-[8px] text-gray-400 font-mono">Nº {inv.nf_number}</span>}
                             </div>
                           );
                         })() : <span className="text-[10px] text-gray-300">—</span>}
@@ -909,12 +951,37 @@ const FinancialInvoiceControl: React.FC = () => {
                 const inv = selectedInvoice;
                 const cfg = STATUS_CONFIG[inv.status] || STATUS_CONFIG['EMITIDA'];
                 const StatusIcon = cfg.icon;
+                const payLabel = paymentStatusLabel(inv.status, inv.boleto_due_date);
+                const ns = inv.nf_status?.toUpperCase();
+                const ageH = (inv.nf_retry_at || inv.created_at)
+                  ? Math.floor((Date.now() - new Date((inv.nf_retry_at || inv.created_at)!).getTime()) / 3600_000)
+                  : null;
+                const stuckByAge = ns === 'SYNCHRONIZED' && ageH !== null && ageH >= 24;
+                const nfBucket = nfStatusBucket(ns, { stuckByAge });
+                const nfShort = nfBucketLabel(nfBucket);
+                const nfDetail = nfBucketDetail(ns, {
+                  stuckByAge,
+                  provider: inv.nf_provider || (inv.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS'),
+                  ageHours: ageH,
+                });
                 return (
                   <>
-                    <div className="flex items-center justify-between">
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black border ${cfg.color} ${cfg.bg} ${cfg.border}`}>
-                        <StatusIcon size={14} /> {cfg.label}
-                      </span>
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black border ${cfg.color} ${cfg.bg} ${cfg.border}`}>
+                          <StatusIcon size={14} /> {payLabel}
+                        </span>
+                        {(inv.asaas_payment_id || inv.plugnotas_invoice_id) && (
+                          <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-black border ${
+                            nfBucket === 'emitida' ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                              : nfBucket === 'falha' ? 'text-red-700 bg-red-50 border-red-200'
+                              : nfBucket === 'aguardando' ? 'text-blue-700 bg-blue-50 border-blue-200'
+                              : 'text-gray-600 bg-gray-50 border-gray-200'
+                          }`} title={inv.nf_last_error || nfDetail || ''}>
+                            NF: {nfShort}{nfDetail && nfBucket !== 'emitida' ? ` — ${nfDetail}` : ''}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-2xl font-black text-gray-900">{fmtBRL(inv.amount)}</span>
                     </div>
 
@@ -927,7 +994,15 @@ const FinancialInvoiceControl: React.FC = () => {
                       <div className="space-y-3">
                         <div><p className="text-[9px] font-black text-gray-400 uppercase">Empresa Emissora</p><p className="text-sm font-bold text-gray-900 uppercase">{inv.issuer_company || '-'}</p></div>
                         <div><p className="text-[9px] font-black text-gray-400 uppercase">Fornecedor / Prestador</p><p className="text-sm font-bold text-gray-700 uppercase">{inv.provider || '-'}</p></div>
-                        <div><p className="text-[9px] font-black text-gray-400 uppercase">Vencimento Boleto</p><p className={`text-sm font-bold ${inv.status === 'VENCIDA' ? 'text-red-600' : 'text-gray-700'}`}>{inv.boleto_due_date ? fmtDate(inv.boleto_due_date) : '-'}</p></div>
+                        <div>
+                          <p className="text-[9px] font-black text-gray-400 uppercase">Vencimento Boleto</p>
+                          <p className={`text-sm font-bold ${inv.status === 'VENCIDA' || (inv.status === 'EMITIDA' && (overdueDays(inv.boleto_due_date) || 0) > 0) ? 'text-red-600' : 'text-gray-700'}`}>
+                            {inv.boleto_due_date ? fmtDate(inv.boleto_due_date) : '-'}
+                            {inv.status !== 'PAGA' && inv.status !== 'CANCELADA' && (overdueDays(inv.boleto_due_date) || 0) > 0 && (
+                              <span className="ml-2 text-xs">· {paymentStatusLabel(inv.status === 'EMITIDA' ? 'VENCIDA' : inv.status, inv.boleto_due_date)}</span>
+                            )}
+                          </p>
+                        </div>
                       </div>
                     </div>
 

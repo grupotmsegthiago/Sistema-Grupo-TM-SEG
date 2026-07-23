@@ -7319,23 +7319,91 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  // Sincroniza cobranças em aberto com o Asaas e marca PAGA quando pagas.
+  // Usado pela tela Controle de Faturas (abertura + polling) — não emite NF.
+  app.post("/api/asaas/sync-open-payments", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const { data: openInvs, error } = await supabase
+        .from('financial_invoices')
+        .select('id, number, client, asaas_payment_id, issuer_company, status')
+        .in('status', ['EMITIDA', 'VENCIDA'])
+        .not('asaas_payment_id', 'is', null)
+        .order('boleto_due_date', { ascending: true, nullsFirst: false })
+        .limit(40);
+      if (error) return res.status(500).json({ error: error.message });
+
+      let checked = 0;
+      let markedPaid = 0;
+      let markedOverdue = 0;
+      let errors = 0;
+      const paidIds: string[] = [];
+
+      for (const inv of openInvs || []) {
+        if (!inv.asaas_payment_id) continue;
+        checked++;
+        try {
+          const payment = await getPayment(inv.asaas_payment_id, inv.issuer_company || undefined);
+          const isPaid = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(payment.status);
+          if (isPaid) {
+            await supabase.from('financial_invoices').update({
+              status: 'PAGA',
+              asaas_status: payment.status,
+            }).eq('id', inv.id);
+            if (inv.number) {
+              await supabase.from('financial_transactions')
+                .update({ status: 'PAID', paid_date: new Date().toISOString().split('T')[0] })
+                .ilike('description', `%${inv.number}%`)
+                .eq('status', 'PENDING');
+            }
+            markedPaid++;
+            paidIds.push(inv.id);
+          } else if (payment.status === 'OVERDUE' && inv.status !== 'VENCIDA') {
+            await supabase.from('financial_invoices').update({
+              status: 'VENCIDA',
+              asaas_status: payment.status,
+            }).eq('id', inv.id);
+            markedOverdue++;
+          } else if (payment.status && payment.status !== inv.status) {
+            await supabase.from('financial_invoices').update({
+              asaas_status: payment.status,
+            }).eq('id', inv.id);
+          }
+        } catch (e: any) {
+          errors++;
+          console.log(`[Asaas Sync Open] falha fatura ${inv.id}: ${e.message}`);
+        }
+        // Evita saturar rate-limit Asaas
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      res.json({ success: true, checked, markedPaid, markedOverdue, errors, paidIds });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Webhook do Asaas para baixa automática
   app.post("/api/asaas/webhook", async (req: Request, res: Response) => {
     try {
       const { event, payment } = req.body;
       console.log(`[Asaas Webhook] Evento: ${event} | Payment: ${payment?.id}`);
 
-      if (['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED'].includes(event) && payment?.externalReference) {
-        const nfNumber = payment.externalReference.replace('NF-', '').replace('TMSEG-', '');
+      if (['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED'].includes(event) && payment?.id) {
+        // Prioridade: asaas_payment_id (estável). Fallback: externalReference (NF-xxx).
+        const orParts: string[] = [`asaas_payment_id.eq.${payment.id}`];
+        if (payment.externalReference) {
+          const nfNumber = String(payment.externalReference).replace(/^NF-/, '').replace(/^TMSEG-/, '');
+          if (nfNumber) orParts.push(`number.eq.${nfNumber}`);
+        }
         const { data: invoices } = await supabase.from('financial_invoices')
           .select('id, number, client')
-          .or(`number.eq.${nfNumber},asaas_payment_id.eq.${payment.id}`);
+          .or(orParts.join(','));
 
         if (invoices && invoices.length > 0) {
           for (const inv of invoices) {
             await supabase.from('financial_invoices').update({
               status: 'PAGA',
-              asaas_status: 'RECEIVED',
+              asaas_status: payment.status || 'RECEIVED',
             }).eq('id', inv.id);
 
             await supabase.from('financial_transactions')
@@ -7345,6 +7413,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
             console.log(`[Asaas Webhook] Baixa automática: NF ${inv.number} — ${inv.client}`);
           }
+        } else {
+          console.log(`[Asaas Webhook] Pagamento ${payment.id} sem fatura vinculada (ref=${payment.externalReference || '—'})`);
         }
       }
       res.json({ received: true });
