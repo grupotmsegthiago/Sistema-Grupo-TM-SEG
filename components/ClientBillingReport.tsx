@@ -23,10 +23,20 @@ import {
 } from '../lib/billing/municipalServiceOptions';
 import { stashInvoiceWatch } from '../lib/invoiceCleanSlate';
 import {
+    formatClientAddressIncompleteError,
+    isClientAddressComplete,
+    missingClientAddressFields,
+} from '../lib/clientAddressValidation';
+import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
 } from 'recharts';
 
-interface ClientBillingReportProps { onNavigate?: (screen: string) => void; onOpenMission?: (missionId: string) => void; }
+interface ClientBillingReportProps {
+    onNavigate?: (screen: string) => void;
+    onOpenMission?: (missionId: string) => void;
+    /** Abre o formulário de edição do cliente (cadastro). */
+    onEditClient?: (clientId: string) => void;
+}
 
 /** Ref. interna de rastreio (não é Nº NFS-e fiscal). Visível antes da emissão Asaas. */
 function buildInternalTrackingRef(): string {
@@ -37,7 +47,7 @@ function buildInternalTrackingRef(): string {
     return `TMSEG-${stamp}-${rand}`;
 }
 
-const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, onOpenMission }) => {
+const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, onOpenMission, onEditClient }) => {
     const [clients, setClients] = useState<Client[]>([]);
     const [selectedClient, setSelectedClient] = useState('');
     const [reportMode, setReportMode] = useState<'cliente' | 'fornecedor'>('cliente');
@@ -3125,6 +3135,25 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         }
     };
 
+    const assertClientAddressReady = (clientObj: Client | undefined): boolean => {
+        const missing = missingClientAddressFields(clientObj || null);
+        if (missing.length === 0) return true;
+        const payload = formatClientAddressIncompleteError({
+            clientName: clientObj?.trading_name || clientObj?.name,
+            missing,
+            cnpj: clientObj?.cnpj,
+        });
+        const goEdit = window.confirm(
+            `${payload.error}\n\nDeseja abrir o cadastro do cliente agora para corrigir?`,
+        );
+        if (goEdit && clientObj?.id != null) {
+            setShowInvoiceModal(false);
+            if (onEditClient) onEditClient(String(clientObj.id));
+            else onNavigate?.('clients');
+        }
+        return false;
+    };
+
     const handleGenerateAsaasCharge = async () => {
         if (!invoiceForm.amount || !invoiceForm.boleto_due_date) {
             alert('Preencha o Valor e o Vencimento antes de gerar a cobrança.');
@@ -3143,6 +3172,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             alert('Informe o e-mail do responsável financeiro antes de emitir.');
             return;
         }
+
+        // Bloqueia emissão se CEP/endereço fiscal estiver incompleto no cadastro.
+        if (!assertClientAddressReady(clientObj)) return;
+
         // Sempre persiste o e-mail editado no cadastro do cliente (responsável financeiro).
         await saveMedicaoEmailToClient(invoiceForm.client, invoiceMedicaoEmail);
         setShowMedicaoEmailInput(false);
@@ -3201,7 +3234,13 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 // 207 = partialFailure (PlugNotas falhou no meio do loop, mas
                 // cobranças Asaas anteriores foram criadas e devem ser persistidas
                 // para evitar cobranças órfãs).
-                if (!res.ok && res.status !== 207) throw new Error(data.error || 'Erro ao criar cobranças');
+                if (!res.ok && res.status !== 207) {
+                    if (data?.code === 'CLIENT_ADDRESS_INCOMPLETE' || data?.fixCadastro) {
+                        assertClientAddressReady(clientObj);
+                        throw new Error(data.error || 'Cadastro incompleto');
+                    }
+                    throw new Error(data.error || 'Erro ao criar cobranças');
+                }
                 setAsaasResult(data);
                 // Mantém TMSEG-… (rastreio); não sobrescreve com ASAAS-{id}.
                 const firstNf = trackingRef;
@@ -3315,7 +3354,13 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             const data = await res.json();
             // 207 = NF falhou hard MAS a cobrança Asaas foi criada. Persistimos
             // a cobrança localmente para evitar pagamento órfão.
-            if (!res.ok && res.status !== 207) throw new Error(data.error || 'Erro ao criar cobrança');
+            if (!res.ok && res.status !== 207) {
+                if (data?.code === 'CLIENT_ADDRESS_INCOMPLETE' || data?.fixCadastro) {
+                    assertClientAddressReady(clientObj);
+                    throw new Error(data.error || 'Cadastro incompleto');
+                }
+                throw new Error(data.error || 'Erro ao criar cobrança');
+            }
             setAsaasResult(data);
             // Mantém TMSEG-… (rastreio); não sobrescreve com ASAAS-{id}.
             const nfNum = trackingRef;
@@ -3428,6 +3473,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             return;
         }
         const clientObj = clients.find(c => c.id.toString() === selectedClient);
+        // Endereço fiscal incompleto: avisa e oferece abrir o cadastro antes de emitir.
+        if (!isClientAddressComplete(clientObj || null)) {
+            if (!assertClientAddressReady(clientObj)) return;
+        }
         const razaoSocial = clientObj?.name || clientObj?.trading_name || '';
         const tomador = razaoSocial;
         const issuer = (clientObj as any)?.issuer_company || '';
@@ -3563,11 +3612,15 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
     const renderInvoiceModal = () => {
         if (!showInvoiceModal) return null;
+        const invoiceClient = clients.find(c => c.id.toString() === invoiceForm.client);
+        const addressMissing = missingClientAddressFields(invoiceClient || null);
+        const addressReady = addressMissing.length === 0;
         const canSubmitInvoice =
             Boolean(invoiceForm.amount) &&
             Boolean(invoiceForm.boleto_due_date) &&
             Boolean(invoiceForm.notes?.trim()) &&
             Boolean(invoiceMedicaoEmail.trim() && invoiceMedicaoEmail.includes('@')) &&
+            addressReady &&
             !(asaasSplitMode && Math.abs(asaasSplitDiff) >= 0.01);
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -3584,6 +3637,31 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             <div className={`text-xs font-bold px-3 py-2 rounded-lg flex items-center gap-2 ${aiStatus.includes('Erro') && !aiStatus.includes('falhou:') ? 'bg-red-50 text-red-600' : aiStatus.includes('Comprovante') || (aiStatus.includes('OK') && !nfAwaiting) ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
                                 {asaasLoading || nfAwaiting ? <Loader2 size={12} className="animate-spin"/> : aiStatus.includes('Erro') ? <AlertCircle size={12}/> : <CheckCircle2 size={12}/>}
                                 {aiStatus}
+                            </div>
+                        )}
+                        {!addressReady && (
+                            <div className="text-[11px] font-bold px-3 py-2.5 rounded-lg bg-red-50 text-red-800 border border-red-200 space-y-2" data-testid="alert-client-address-incomplete">
+                                <p className="flex items-start gap-2">
+                                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                                    <span>
+                                        Cadastro incompleto para NF: falta <strong>{addressMissing.join(', ')}</strong>.
+                                        Corrija em Clientes (CEP, Logradouro, Número, Cidade e UF) antes de emitir.
+                                    </span>
+                                </p>
+                                {invoiceClient?.id != null && (
+                                    <button
+                                        type="button"
+                                        className="text-[10px] uppercase font-black tracking-wide bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700"
+                                        onClick={() => {
+                                            setShowInvoiceModal(false);
+                                            if (onEditClient) onEditClient(String(invoiceClient.id));
+                                            else onNavigate?.('clients');
+                                        }}
+                                        data-testid="btn-fix-client-address"
+                                    >
+                                        Corrigir cadastro do cliente
+                                    </button>
+                                )}
                             </div>
                         )}
                         {asaasStatusChecked && !asaasConfigured && (
@@ -4014,7 +4092,9 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         )}
                         {!asaasResult && !canSubmitInvoice && (
                             <p className="text-[10px] text-center text-gray-500 font-bold">
-                                Preencha e-mail do responsável financeiro, valor, vencimento e observação na NF para habilitar o Enviar.
+                                {!addressReady
+                                    ? 'Complete o endereço fiscal do cliente (CEP, logradouro, número, cidade e UF) para habilitar o Enviar.'
+                                    : 'Preencha e-mail do responsável financeiro, valor, vencimento e observação na NF para habilitar o Enviar.'}
                             </p>
                         )}
                     </div>

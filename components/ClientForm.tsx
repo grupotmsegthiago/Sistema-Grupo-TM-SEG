@@ -577,6 +577,20 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (duplicateError) return;
+    const cepDigits = String(formData.zip_code || '').replace(/\D/g, '');
+    const uf = String(formData.state || '').trim().toUpperCase();
+    if (cepDigits.length !== 8) {
+      showNotification('Cadastro incompleto', 'Informe um CEP válido com 8 dígitos (necessário para emitir NF).', 'error');
+      return;
+    }
+    if (!String(formData.street || '').trim() || !String(formData.number || '').trim()) {
+      showNotification('Cadastro incompleto', 'Informe Logradouro e Número (necessário para emitir NF).', 'error');
+      return;
+    }
+    if (!String(formData.city || '').trim() || uf.length !== 2) {
+      showNotification('Cadastro incompleto', 'Informe Cidade e UF (necessário para emitir NF).', 'error');
+      return;
+    }
     setIsSaving(true);
     try {
       const fullAddress = `${formData.street}, ${formData.number}${formData.complement ? ' - ' + formData.complement : ''}, ${formData.neighborhood}, ${formData.city} - ${formData.state}, CEP: ${formData.zip_code}`;
@@ -1136,11 +1150,12 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         </div>
                     </div>
                     <div className="space-y-1.5">
-                        <label className={LABEL_CLASS}>CEP</label>
+                        <label className={LABEL_CLASS}>CEP *</label>
                         <div className="relative">
                             <input 
                                 type="text" 
                                 className={`${INPUT_CLASS} pl-10 font-mono`} 
+                                required
                                 value={formData.zip_code} 
                                 onChange={e => { 
                                     setFormData({...formData, zip_code: e.target.value}); 
@@ -1149,14 +1164,16 @@ const ClientForm: React.FC<ClientFormProps> = ({
                                 onBlur={(e) => handleCepLookup(e.target.value)}
                                 maxLength={9}
                                 placeholder="00000-000"
+                                data-testid="input-client-zip"
                             />
                             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-red-500" size={16} />
                             {isSearchingCep && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400" size={16} />}
                         </div>
+                        <p className="text-[10px] text-gray-500 font-semibold">Obrigatório para emitir NF no Asaas. Digite o CEP para preencher o endereço.</p>
                     </div>
                     <div className="space-y-1.5">
-                        <label className={LABEL_CLASS}>UF</label>
-                        <input type="text" className={INPUT_CLASS} value={formData.state} onChange={e => setFormData({...formData, state: e.target.value.toUpperCase()})} maxLength={2} />
+                        <label className={LABEL_CLASS}>UF *</label>
+                        <input type="text" className={INPUT_CLASS} required value={formData.state} onChange={e => setFormData({...formData, state: e.target.value.toUpperCase()})} maxLength={2} data-testid="input-client-state" />
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
                         <label className={LABEL_CLASS}>Logradouro *</label>
@@ -1178,8 +1195,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         <input type="text" className={INPUT_CLASS} value={formData.neighborhood} onChange={e => setFormData({...formData, neighborhood: e.target.value.toUpperCase()})} />
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
-                        <label className={LABEL_CLASS}>Cidade</label>
-                        <input type="text" className={INPUT_CLASS} value={formData.city} onChange={e => setFormData({...formData, city: e.target.value.toUpperCase()})} />
+                        <label className={LABEL_CLASS}>Cidade *</label>
+                        <input type="text" className={INPUT_CLASS} required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value.toUpperCase()})} data-testid="input-client-city" />
                     </div>
                 </div>
                 

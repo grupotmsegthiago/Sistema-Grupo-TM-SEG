@@ -393,7 +393,13 @@ const App: React.FC = () => {
           ? <DashboardDiretoria onNavigate={navigateTo} />
           : <Dashboard onOpenMission={handleOpenBillingMission} />;
       }
-      case 'fin-billing': return <ClientBillingReport onNavigate={navigateTo} onOpenMission={handleOpenBillingMission} />;
+      case 'fin-billing': return (
+        <ClientBillingReport
+          onNavigate={navigateTo}
+          onOpenMission={handleOpenBillingMission}
+          onEditClient={(id) => handleEdit('client-form', id)}
+        />
+      );
       case 'fin-daily-movement': return <DailyCashMovement />;
       case 'fin-vendor-verification': return <VendorVerificationControl onNavigate={navigateTo} onOpenMission={handleOpenBillingMission} />;
       case 'fin-invoices': return <FinancialInvoiceControl />;

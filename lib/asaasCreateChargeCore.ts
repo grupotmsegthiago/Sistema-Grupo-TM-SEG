@@ -13,6 +13,13 @@ import {
   findRecentDuplicateOpenCharge,
   persistAsaasChargeInvoice,
 } from './persistAsaasChargeInvoice.js';
+import {
+  formatClientAddressIncompleteError,
+  isClientAddressComplete,
+  missingClientAddressFields,
+  toAsaasAddressPayload,
+  type ClientAddressLike,
+} from './clientAddressValidation.js';
 
 export type CreateChargeResult = {
   status: number;
@@ -24,84 +31,82 @@ export type CreateChargeInput = {
   createdBy?: string | null;
 };
 
-/** Fallback Receita (BrasilAPI) quando o cadastro local não tem CEP — evita NF 400. */
-async function lookupCnpjAddressBrasilApi(
-  cleanCnpj: string,
-  signal?: AbortSignal,
-): Promise<Record<string, string | undefined>> {
-  if (!cleanCnpj || cleanCnpj.length !== 14) return {};
-  try {
-    const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCnpj}`, { signal });
-    if (!res.ok) return {};
-    const j = await res.json();
-    const cep = String(j?.cep || '').replace(/\D/g, '');
-    if (cep.length !== 8) return {};
-    return {
-      postalCode: cep,
-      address: j.logradouro || undefined,
-      addressNumber: j.numero || undefined,
-      complement: j.complemento || undefined,
-      province: j.bairro || undefined,
-      city: j.municipio || undefined,
-      state: j.uf || undefined,
+type AddressLookupResult =
+  | { ok: true; address: ReturnType<typeof toAsaasAddressPayload>; clientName?: string }
+  | {
+      ok: false;
+      missing: ReturnType<typeof missingClientAddressFields>;
+      clientName?: string;
+      cnpj: string;
     };
-  } catch {
-    return {};
-  }
-}
 
-async function lookupClientAddress(cleanCnpj: string): Promise<Record<string, string | undefined>> {
-  if (!cleanCnpj) return {};
+/** Lê endereço do cadastro local (`clients`). Sem completar pela Receita — obriga corrigir o cadastro. */
+async function lookupClientAddress(cleanCnpj: string): Promise<AddressLookupResult> {
+  if (!cleanCnpj) {
+    return { ok: false, missing: missingClientAddressFields(null), cnpj: cleanCnpj };
+  }
   const sb = createSupabaseAdminClient();
   const addrCtrl = new AbortController();
   const addrTimer = setTimeout(() => addrCtrl.abort(), 2_500);
   try {
-    let local: Record<string, string | undefined> = {};
+    let local: ClientAddressLike = {};
+    let clientName: string | undefined;
     if (sb) {
       const { data: clientData } = await sb
         .from('clients')
-        .select('zip_code, street, number, complement, neighborhood, city, state, phone')
+        .select('name, trading_name, zip_code, street, number, complement, neighborhood, city, state')
         .or(`cnpj.ilike.%${cleanCnpj}%`)
         .limit(1)
         .abortSignal(addrCtrl.signal)
         .maybeSingle();
       if (clientData) {
+        clientName = clientData.trading_name || clientData.name || undefined;
         local = {
-          postalCode: clientData.zip_code || undefined,
-          address: clientData.street || undefined,
-          addressNumber: clientData.number || undefined,
+          zip_code: clientData.zip_code || undefined,
+          street: clientData.street || undefined,
+          number: clientData.number || undefined,
           complement: clientData.complement || undefined,
-          province: clientData.neighborhood || undefined,
+          neighborhood: clientData.neighborhood || undefined,
           city: clientData.city || undefined,
           state: clientData.state || undefined,
         };
       }
     }
-    const localCep = String(local.postalCode || '').replace(/\D/g, '');
-    if (localCep.length === 8) return local;
-
-    console.log(
-      `[CREATE-CHARGE] Cliente CNPJ ${cleanCnpj} sem CEP local — consultando Receita/BrasilAPI`,
-    );
-    const fromReceita = await lookupCnpjAddressBrasilApi(cleanCnpj, addrCtrl.signal);
-    // Preferir rua/número do cadastro TM SEG quando existirem; CEP/cidade da Receita.
-    return {
-      ...fromReceita,
-      address: local.address || fromReceita.address,
-      addressNumber: local.addressNumber || fromReceita.addressNumber,
-      complement: local.complement || fromReceita.complement,
-      province: local.province || fromReceita.province,
-    };
+    if (!isClientAddressComplete(local)) {
+      return {
+        ok: false,
+        missing: missingClientAddressFields(local),
+        clientName,
+        cnpj: cleanCnpj,
+      };
+    }
+    return { ok: true, address: toAsaasAddressPayload(local), clientName };
   } catch (e: any) {
     if (addrCtrl.signal.aborted || e?.name === 'AbortError') {
-      console.log(`[CREATE-CHARGE] Endereço local não obtido a tempo — segue sem CEP`);
+      console.log(`[CREATE-CHARGE] Timeout ao ler endereço do cadastro (CNPJ ${cleanCnpj})`);
     } else {
       console.warn(`[CREATE-CHARGE] Lookup endereço falhou: ${e?.message || e}`);
     }
-    return {};
+    return { ok: false, missing: missingClientAddressFields(null), cnpj: cleanCnpj };
   } finally {
     clearTimeout(addrTimer);
   }
+}
+
+function addressIncompleteResponse(lookup: Extract<AddressLookupResult, { ok: false }>, fallbackName?: string) {
+  const payload = formatClientAddressIncompleteError({
+    clientName: lookup.clientName || fallbackName,
+    missing: lookup.missing,
+    cnpj: lookup.cnpj,
+  });
+  return {
+    status: 400 as const,
+    body: {
+      success: false,
+      ...payload,
+      fixCadastro: true,
+    },
+  };
 }
 
 export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<CreateChargeResult> {
@@ -129,7 +134,11 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
 
     const lookupCnpj = clientCpfCnpj || (charges?.[0]?.cpfCnpj) || '';
     const cleanLookup = String(lookupCnpj).replace(/\D/g, '');
-    const clientAddress = await lookupClientAddress(cleanLookup);
+    const clientAddressLookup = await lookupClientAddress(cleanLookup);
+    if (!clientAddressLookup.ok) {
+      return addressIncompleteResponse(clientAddressLookup, clientName);
+    }
+    const clientAddress = clientAddressLookup.address;
 
     // ── Split (subcontas) ─────────────────────────────────────────────
     if (charges && Array.isArray(charges) && charges.length > 0) {
@@ -168,17 +177,23 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
 
           let chargeAddress = clientAddress;
           if (cleanCnpj !== cleanLookup) {
-            chargeAddress = await lookupClientAddress(cleanCnpj);
+            const subLookup = await lookupClientAddress(cleanCnpj);
+            if (!subLookup.ok) {
+              return addressIncompleteResponse(
+                subLookup,
+                charge.name || clientName,
+              );
+            }
+            chargeAddress = subLookup.address;
           }
 
-          // CEP é obrigatório para NF — não omitir (antes omitia e a NF quebrava com
-          // "Endereço do cliente incompleto / CEP inválido" no Controle).
+          // CEP/endereço do cadastro — obrigatório (bloqueado acima se incompleto).
           const customer = await findOrCreateCustomer({
             name: charge.name || clientName || 'Cliente',
             cpfCnpj: cleanCnpj,
             email: charge.email || clientEmail || undefined,
             company: issuerCompany,
-            ...(chargeAddress || {}),
+            ...chargeAddress,
             signal: splitCtrl.signal,
           });
 
@@ -399,7 +414,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
             cpfCnpj: clientCpfCnpj,
             email: clientEmail || undefined,
             company: issuerCompany,
-            ...(clientAddress || {}),
+            ...clientAddress,
             signal,
           }),
         );
