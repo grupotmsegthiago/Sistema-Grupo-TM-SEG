@@ -213,17 +213,28 @@ const FinancialInvoiceControl: React.FC = () => {
   };
 
   const handleBulkRetryNfs = async () => {
-    if (!confirm('Reemitir NFs pendentes agora?\n\nIsso vai:\n• Reabrir pausadas soft\n• Tentar autorizar até 20 NFs\n• Cancelar e reagendar só quando seguro (anti-duplicata)')) return;
+    if (!confirm('Reemitir NFs pendentes agora?\n\nIsso vai:\n• Reabrir pausadas soft\n• Tentar autorizar até 10 NFs\n• Cancelar e reagendar só quando seguro (anti-duplicata)')) return;
     setBulkRetrying(true);
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const hang = setTimeout(() => ctrl?.abort(), 90_000);
+    // Handler leve (nf-control) — 100s; se a chave Asaas estiver inválida, falha rápido com 401.
+    const hang = setTimeout(() => ctrl?.abort(), 100_000);
     try {
-      const res = await authFetch('/api/nf/retry-now?limit=20&reopen=1', {
+      const res = await authFetch('/api/nf/retry-now?limit=10&reopen=1', {
         method: 'POST',
         ...(ctrl ? { signal: ctrl.signal } : {}),
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Falha ao executar ciclo.');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        const err = String(data.error || `HTTP ${res.status}`);
+        if (/chave de API|401|403|ASAAS_TMGESTAO/i.test(err)) {
+          throw new Error(
+            `${err}\n\nA chave Asaas na Vercel está inválida/expirada.\n` +
+              `Atualize ASAAS_TMGESTAO_API (TM GESTÃO) com $aact_prod_... do painel Asaas e faça Redeploy.\n` +
+              `Diagnóstico: /api/asaas/status?probe=1`,
+          );
+        }
+        throw new Error(err || 'Falha ao executar ciclo.');
+      }
       const parts = [
         `${data.reopened || 0} reaberta(s)`,
         `${data.processed || 0} processada(s)`,
@@ -237,7 +248,7 @@ const FinancialInvoiceControl: React.FC = () => {
       await fetchIssuerSummary();
     } catch (e: any) {
       const msg = e?.name === 'AbortError'
-        ? 'Tempo esgotado no ciclo (90s). Parte pode ter sido processada — atualize a lista.'
+        ? 'Tempo esgotado no ciclo (100s). Parte pode ter sido processada — atualize a lista.'
         : (e.message || 'Erro');
       alert('Erro: ' + msg);
     } finally {
