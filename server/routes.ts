@@ -274,7 +274,21 @@ async function resolvePrincipal(token: string): Promise<ResolvedPrincipal | null
   try {
     const sb = createSupabaseAdminClient();
     if (!sb) return null;
-    const { data } = await sb.from('system_users').select('id, name, email, status, client_id, permissions, profiles:profile_id ( name, permissions )').eq('id', userId).single();
+    // Abort real — Promise.race sem signal deixa fetch zumbi e a Vercel segura a resposta.
+    const authCtrl = new AbortController();
+    const authTimer = setTimeout(() => authCtrl.abort(), 5_000);
+    let data: any = null;
+    try {
+      const result = await sb
+        .from('system_users')
+        .select('id, name, email, status, client_id, permissions, profiles:profile_id ( name, permissions )')
+        .eq('id', userId)
+        .abortSignal(authCtrl.signal)
+        .single();
+      data = result.data;
+    } finally {
+      clearTimeout(authTimer);
+    }
     if (!data || data.status !== 'Ativo') return null;
     const profilePerms: string[] = Array.isArray((data.profiles as any)?.permissions) ? (data.profiles as any).permissions : [];
     const userPerms: string[] = Array.isArray((data as any).permissions) ? (data as any).permissions : [];
@@ -6716,18 +6730,17 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const cleanLookup = String(lookupCnpj).replace(/\D/g, '');
       let clientAddress: any = {};
       if (cleanLookup) {
-        // Lookup local com teto — nunca pode segurar create-charge.
+        // Lookup local com AbortSignal — Promise.race sem abort deixa fetch zumbi na Vercel.
+        const addrCtrl = new AbortController();
+        const addrTimer = setTimeout(() => addrCtrl.abort(), 1_500);
         try {
-          const addrRace = await Promise.race([
-            supabase
-              .from('clients')
-              .select('zip_code, street, number, complement, neighborhood, city, state, phone')
-              .or(`cnpj.ilike.%${cleanLookup}%`)
-              .limit(1)
-              .maybeSingle(),
-            new Promise<{ data: null }>((resolve) => setTimeout(() => resolve({ data: null }), 1_500)),
-          ]);
-          const clientData = (addrRace as any)?.data;
+          const { data: clientData } = await supabase
+            .from('clients')
+            .select('zip_code, street, number, complement, neighborhood, city, state, phone')
+            .or(`cnpj.ilike.%${cleanLookup}%`)
+            .limit(1)
+            .abortSignal(addrCtrl.signal)
+            .maybeSingle();
           if (clientData) {
             clientAddress = {
               postalCode: clientData.zip_code || undefined,
@@ -6741,11 +6754,15 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             if (!clientData.zip_code) {
               console.log(`[CREATE-CHARGE] AVISO: Cliente CNPJ ${cleanLookup} sem CEP`);
             }
-          } else {
-            console.log(`[CREATE-CHARGE] Endereço local não obtido a tempo — segue sem CEP`);
           }
         } catch (e: any) {
-          console.warn(`[CREATE-CHARGE] Lookup endereço falhou: ${e?.message || e}`);
+          if (addrCtrl.signal.aborted || e?.name === 'AbortError') {
+            console.log(`[CREATE-CHARGE] Endereço local não obtido a tempo — segue sem CEP`);
+          } else {
+            console.warn(`[CREATE-CHARGE] Lookup endereço falhou: ${e?.message || e}`);
+          }
+        } finally {
+          clearTimeout(addrTimer);
         }
       }
 
@@ -6891,239 +6908,276 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const descText = description || `Ref. aos Serviços de Intermediação de Escolta Armada`;
       const createdBy = ((req as any).user?.name) || 'Sistema';
       const t0 = Date.now();
-      const stepTimeout = async <T,>(step: string, ms: number, fn: () => Promise<T>): Promise<T> => {
+      // Ref. interna de rastreio (TMSEG-…) — vem do frontend ou gera no servidor.
+      const trackingRef = String(invoiceNumber || '').trim() || `TMSEG-${Date.now()}`;
+      // Deadline global: cancela I/O pendente para a Vercel liberar o HTTP (sem zumbi).
+      const routeCtrl = new AbortController();
+      const routeTimer = setTimeout(() => routeCtrl.abort(), 22_000);
+      const stepTimeout = async <T,>(
+        step: string,
+        ms: number,
+        fn: (signal: AbortSignal) => Promise<T>,
+      ): Promise<T> => {
+        const stepCtrl = new AbortController();
+        const onRouteAbort = () => stepCtrl.abort();
+        if (routeCtrl.signal.aborted) {
+          throw Object.assign(new Error(`Timeout global na rota create-charge`), { step });
+        }
+        routeCtrl.signal.addEventListener('abort', onRouteAbort, { once: true });
+        const timer = setTimeout(() => stepCtrl.abort(), ms);
         try {
-          return await Promise.race([
-            fn(),
-            new Promise<never>((_, reject) => {
-              setTimeout(() => reject(new Error(`Timeout no passo "${step}" (${ms / 1000}s)`)), ms);
-            }),
-          ]);
+          return await fn(stepCtrl.signal);
         } catch (e: any) {
-          const msg = e?.message || String(e);
+          const aborted = stepCtrl.signal.aborted || e?.name === 'AbortError' || routeCtrl.signal.aborted;
+          const msg = aborted
+            ? `Timeout no passo "${step}" (${ms / 1000}s)`
+            : e?.message || String(e);
           console.error(`[ASAAS-EMISSAO-ERRO] passo=${step} after=${Date.now() - t0}ms: ${msg}`);
           throw Object.assign(new Error(msg), { step });
+        } finally {
+          clearTimeout(timer);
+          routeCtrl.signal.removeEventListener('abort', onRouteAbort);
         }
       };
 
-      console.log(`[ASAAS-EMISSAO] 1. Iniciando processamento... client=${clientName || '-'} valor=${amountNum} venc=${dueDate} empresa=${issuerCompany || '-'}`);
-
-      // PASSO 0 — idempotência rápida (máx 2s). Sem getPayment Asaas (evita travar).
       try {
-        const dup = await stepTimeout('idempotencia_supabase', 2_000, () =>
-          findRecentDuplicateOpenCharge({
-            clientName: clientName || 'Cliente',
-            amount: amountNum,
-            dueDate,
-            issuerCompany,
-            withinHours: 2,
-          }),
-        );
-        if (dup?.asaas_payment_id) {
-          console.log(`[ASAAS-EMISSAO] Idempotência: reutilizando ${dup.asaas_payment_id} / fatura ${dup.id}`);
-          console.log(`[ASAAS-EMISSAO] 5. Sucesso! Enviando resposta HTTP 200 (reused) (${Date.now() - t0}ms)`);
-          return res.status(200).json({
-            success: true,
-            message: 'Cobrança já existia — reutilizada',
-            paymentId: dup.asaas_payment_id,
-            nfPending: true,
-            earlyReturn: true,
-            nfIsolated: true,
-            reused: true,
-            skipBoleto: noBoleto,
-            emailSent: false,
-            nfError: {
-              provider: 'ASAAS',
-              code: 'NF_SCHEDULE_PENDING',
-              message: 'Cobrança já existia (reenvio). NF segue no Controle como Processando.',
-            },
-            persisted: { ok: true, invoiceId: dup.id, created: false },
-            payment: {
-              id: dup.asaas_payment_id,
-              status: 'PENDING',
-              statusBr: 'PENDENTE',
-              value: amountNum,
+        console.log(`[ASAAS-EMISSAO] 1. Iniciando processamento... client=${clientName || '-'} valor=${amountNum} venc=${dueDate} empresa=${issuerCompany || '-'} ref=${trackingRef}`);
+
+        // PASSO 0 — idempotência rápida (máx 2s). Sem getPayment Asaas (evita travar).
+        try {
+          const dup = await stepTimeout('idempotencia_supabase', 2_000, async (signal) => {
+            if (signal.aborted) return null;
+            return findRecentDuplicateOpenCharge({
+              clientName: clientName || 'Cliente',
+              amount: amountNum,
               dueDate,
-              invoiceUrl: null,
-              bankSlipUrl: null,
+              issuerCompany,
+              withinHours: 2,
+            });
+          });
+          if (dup?.asaas_payment_id) {
+            console.log(`[ASAAS-EMISSAO] Idempotência: reutilizando ${dup.asaas_payment_id} / fatura ${dup.id}`);
+            console.log(`[ASAAS-EMISSAO] 5. Sucesso! Enviando resposta HTTP 200 (reused) (${Date.now() - t0}ms)`);
+            return res.status(200).json({
+              success: true,
+              message: 'Cobrança já existia — reutilizada',
+              paymentId: dup.asaas_payment_id,
+              trackingNumber: trackingRef,
+              nfPending: true,
+              earlyReturn: true,
+              nfIsolated: true,
+              reused: true,
               skipBoleto: noBoleto,
-            },
-            pix: null,
-            bankSlip: null,
-            customer: { id: null, name: clientName || 'Cliente' },
-            invoice: null,
+              emailSent: false,
+              nfError: {
+                provider: 'ASAAS',
+                code: 'NF_SCHEDULE_PENDING',
+                message: 'Cobrança já existia (reenvio). NF segue no Controle como Processando.',
+              },
+              persisted: { ok: true, invoiceId: dup.id, created: false },
+              payment: {
+                id: dup.asaas_payment_id,
+                status: 'PENDING',
+                statusBr: 'PENDENTE',
+                value: amountNum,
+                dueDate,
+                invoiceUrl: null,
+                bankSlipUrl: null,
+                skipBoleto: noBoleto,
+                externalReference: trackingRef,
+              },
+              pix: null,
+              bankSlip: null,
+              customer: { id: null, name: clientName || 'Cliente' },
+              invoice: null,
+            });
+          }
+        } catch (e: any) {
+          // Idempotência é best-effort — não bloqueia emissão nova.
+          console.warn(`[ASAAS-EMISSAO] Idempotência ignorada: ${e?.message || e}`);
+        }
+
+        // PASSO 1 — Cliente Asaas (AbortSignal cancela fetch de verdade)
+        console.log('[ASAAS-EMISSAO] 2. Buscando/Criando cliente...');
+        let customer: any;
+        try {
+          // Sem postalCode: evita PUT updateCustomerAddress (2ª chamada Asaas).
+          const { postalCode: _omitCep, ...addressNoCep } = clientAddress || {};
+          customer = await stepTimeout('asaas_cliente', 8_000, (signal) =>
+            findOrCreateCustomer({
+              name: clientName || 'Cliente',
+              cpfCnpj: clientCpfCnpj,
+              email: clientEmail || undefined,
+              company: issuerCompany,
+              ...addressNoCep,
+              signal,
+            }),
+          );
+        } catch (e: any) {
+          routeCtrl.abort();
+          return res.status(504).json({
+            success: false,
+            step: e?.step || 'asaas_cliente',
+            trackingNumber: trackingRef,
+            error: `Erro no passo 1 (cliente Asaas): ${e?.message || e}`,
           });
         }
-      } catch (e: any) {
-        // Idempotência é best-effort — não bloqueia emissão nova.
-        console.warn(`[ASAAS-EMISSAO] Idempotência ignorada: ${e?.message || e}`);
-      }
+        console.log(`[ASAAS-EMISSAO] 2. Cliente OK: ${customer?.id} (${Date.now() - t0}ms)`);
 
-      // PASSO 1 — Cliente Asaas (AbortSignal 8s em asaasFetch + teto do passo)
-      console.log('[ASAAS-EMISSAO] 2. Buscando/Criando cliente...');
-      let customer: any;
-      try {
-        // Sem postalCode: findOrCreateCustomer só faz PUT de endereço se houver CEP —
-        // omitir evita 2ª chamada Asaas (updateCustomerAddress) que dobrava o tempo.
-        const { postalCode: _omitCep, ...addressNoCep } = clientAddress || {};
-        customer = await stepTimeout('asaas_cliente', 8_000, () =>
-          findOrCreateCustomer({
-            name: clientName || 'Cliente',
-            cpfCnpj: clientCpfCnpj,
-            email: clientEmail || undefined,
-            company: issuerCompany,
-            ...addressNoCep,
-          }),
-        );
-      } catch (e: any) {
-        return res.status(504).json({
-          success: false,
-          step: e?.step || 'asaas_cliente',
-          error: `Erro no passo 1 (cliente Asaas): ${e?.message || e}`,
-        });
-      }
-      console.log(`[ASAAS-EMISSAO] 2. Cliente OK: ${customer?.id} (${Date.now() - t0}ms)`);
+        // PASSO 2 — Cobrança (POST /v3/payments) — sem NF
+        const externalRef = trackingRef;
+        console.log('[ASAAS-EMISSAO] 3. Gerando cobrança no Asaas...');
+        let payment: any;
+        try {
+          payment = await stepTimeout('asaas_cobranca', 8_000, (signal) =>
+            createPayment({
+              customerId: customer.id,
+              value: amountNum,
+              dueDate,
+              description: noBoleto
+                ? `${descText} | Pagamento via transferência bancária (sem boleto)`
+                : descText,
+              externalReference: externalRef,
+              billingType: 'UNDEFINED',
+              company: issuerCompany,
+              signal,
+            }),
+          );
+        } catch (e: any) {
+          routeCtrl.abort();
+          return res.status(504).json({
+            success: false,
+            step: e?.step || 'asaas_cobranca',
+            trackingNumber: trackingRef,
+            error: `Erro no passo 2 (cobrança Asaas): ${e?.message || e}`,
+          });
+        }
+        console.log(`[ASAAS-EMISSAO] 3. Cobrança criada no Asaas: ID ${payment.id} (${Date.now() - t0}ms)`);
 
-      // PASSO 2 — Cobrança (POST /v3/payments) — sem NF
-      const externalRef = invoiceNumber ? `NF-${invoiceNumber}` : `TMSEG-${Date.now()}`;
-      console.log('[ASAAS-EMISSAO] 3. Gerando cobrança no Asaas...');
-      let payment: any;
-      try {
-        payment = await stepTimeout('asaas_cobranca', 8_000, () =>
-          createPayment({
-            customerId: customer.id,
-            value: amountNum,
-            dueDate,
-            description: noBoleto
-              ? `${descText} | Pagamento via transferência bancária (sem boleto)`
-              : descText,
-            externalReference: externalRef,
-            billingType: 'UNDEFINED',
-            company: issuerCompany,
-          }),
-        );
-      } catch (e: any) {
-        return res.status(504).json({
-          success: false,
-          step: e?.step || 'asaas_cobranca',
-          error: `Erro no passo 2 (cobrança Asaas): ${e?.message || e}`,
-        });
-      }
-      console.log(`[ASAAS-EMISSAO] 3. Cobrança criada no Asaas: ID ${payment.id} (${Date.now() - t0}ms)`);
-
-      // PASSO 3 — Supabase (service role) — teto 5s
-      console.log('[ASAAS-EMISSAO] 4. Persistindo no Supabase (financial_invoices)...');
-      let persistEarly: Awaited<ReturnType<typeof persistAsaasChargeInvoice>>;
-      try {
-        persistEarly = await stepTimeout('supabase_persist', 5_000, () =>
-          persistAsaasChargeInvoice({
+        // PASSO 3 — Supabase (service role) — teto 5s com abortSignal
+        console.log('[ASAAS-EMISSAO] 4. Persistindo no Supabase (financial_invoices)...');
+        let persistEarly: Awaited<ReturnType<typeof persistAsaasChargeInvoice>>;
+        try {
+          persistEarly = await stepTimeout('supabase_persist', 5_000, (signal) =>
+            persistAsaasChargeInvoice({
+              paymentId: payment.id,
+              clientName: clientName || 'Cliente',
+              amount: amountNum,
+              dueDate,
+              trackingNumber: trackingRef,
+              issuerCompany,
+              notes: [
+                nfObservations || descText,
+                `Ref. rastreio: ${trackingRef}`,
+                nfMunicipalCode
+                  ? `CNAE/Serviço municipal: ${nfMunicipalCode}${nfMunicipalName ? ` — ${nfMunicipalName}` : ''}`
+                  : '',
+              ]
+                .filter(Boolean)
+                .join('\n'),
+              createdBy,
+              asaasStatus: payment.status,
+              invoiceUrl: payment.invoiceUrl || null,
+              bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
+              nfStatus: 'PROCESSING',
+              nfProvider: 'ASAAS',
+              nfLastError: 'NF isolada — agendada pelo Controle/worker (fora desta request).',
+              signal,
+            }),
+          );
+        } catch (e: any) {
+          routeCtrl.abort();
+          return res.status(504).json({
+            success: false,
+            step: e?.step || 'supabase_persist',
+            trackingNumber: trackingRef,
+            error: `Erro no passo 3 (Supabase): ${e?.message || e}. Cobrança Asaas ${payment.id} pode ter sido criada — confira antes de emitir de novo (ref. ${trackingRef}).`,
             paymentId: payment.id,
-            clientName: clientName || 'Cliente',
-            amount: amountNum,
-            dueDate,
-            issuerCompany,
-            notes: [
-              nfObservations || descText,
-              nfMunicipalCode
-                ? `CNAE/Serviço municipal: ${nfMunicipalCode}${nfMunicipalName ? ` — ${nfMunicipalName}` : ''}`
-                : '',
-            ]
-              .filter(Boolean)
-              .join('\n'),
-            createdBy,
-            asaasStatus: payment.status,
-            invoiceUrl: payment.invoiceUrl || null,
-            bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
-            nfStatus: 'PROCESSING',
-            nfProvider: 'ASAAS',
-            nfLastError: 'NF isolada — agendada pelo Controle/worker (fora desta request).',
-          }),
-        );
-      } catch (e: any) {
-        return res.status(504).json({
-          success: false,
-          step: e?.step || 'supabase_persist',
-          error: `Erro no passo 3 (Supabase): ${e?.message || e}. Cobrança Asaas ${payment.id} pode ter sido criada — confira antes de emitir de novo.`,
-          paymentId: payment.id,
-          payment: {
-            id: payment.id,
-            status: payment.status,
-            statusBr: mapAsaasStatus(payment.status),
-            value: payment.value,
-            dueDate: payment.dueDate,
-            invoiceUrl: payment.invoiceUrl || null,
-            bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
-            externalReference: externalRef,
-            skipBoleto: noBoleto,
-          },
-        });
-      }
-      if (!persistEarly.ok) {
-        console.error(`[ASAAS-EMISSAO-ERRO] Persistência falhou: ${persistEarly.error}`);
-        return res.status(500).json({
-          success: false,
-          step: 'supabase_persist',
-          error: `Erro no passo 3 (Supabase): ${persistEarly.error || 'falha ao salvar'}. Cobrança Asaas ${payment.id} criada — confira antes de emitir de novo.`,
-          paymentId: payment.id,
-          persisted: persistEarly,
-          payment: {
-            id: payment.id,
-            status: payment.status,
-            statusBr: mapAsaasStatus(payment.status),
-            value: payment.value,
-            dueDate: payment.dueDate,
-            invoiceUrl: payment.invoiceUrl || null,
-            bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
-            externalReference: externalRef,
-            skipBoleto: noBoleto,
-          },
-        });
-      }
-      console.log(`[ASAAS-EMISSAO] 4. Fatura salva no Supabase: ID ${persistEarly.invoiceId} (${Date.now() - t0}ms)`);
+            payment: {
+              id: payment.id,
+              status: payment.status,
+              statusBr: mapAsaasStatus(payment.status),
+              value: payment.value,
+              dueDate: payment.dueDate,
+              invoiceUrl: payment.invoiceUrl || null,
+              bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
+              externalReference: externalRef,
+              skipBoleto: noBoleto,
+            },
+          });
+        }
+        if (!persistEarly.ok) {
+          console.error(`[ASAAS-EMISSAO-ERRO] Persistência falhou: ${persistEarly.error}`);
+          routeCtrl.abort();
+          return res.status(500).json({
+            success: false,
+            step: 'supabase_persist',
+            trackingNumber: trackingRef,
+            error: `Erro no passo 3 (Supabase): ${persistEarly.error || 'falha ao salvar'}. Cobrança Asaas ${payment.id} criada — confira antes de emitir de novo (ref. ${trackingRef}).`,
+            paymentId: payment.id,
+            persisted: persistEarly,
+            payment: {
+              id: payment.id,
+              status: payment.status,
+              statusBr: mapAsaasStatus(payment.status),
+              value: payment.value,
+              dueDate: payment.dueDate,
+              invoiceUrl: payment.invoiceUrl || null,
+              bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
+              externalReference: externalRef,
+              skipBoleto: noBoleto,
+            },
+          });
+        }
+        console.log(`[ASAAS-EMISSAO] 4. Fatura salva no Supabase: ID ${persistEarly.invoiceId} (${Date.now() - t0}ms)`);
 
-      // PASSO 4 — HTTP 200 imediato. NF NÃO roda aqui (setImmediate após res.json
-      // na Vercel segura a conexão e causa Abort no browser — NF fica no Controle/worker).
-      console.log(`[ASAAS-EMISSAO] 5. Sucesso! Enviando resposta HTTP 200 (${Date.now() - t0}ms)`);
-      return res.status(200).json({
-        success: true,
-        message: 'Cobrança gerada com sucesso',
-        paymentId: payment.id,
-        invoiceId: persistEarly.invoiceId,
-        nfPending: true,
-        earlyReturn: true,
-        nfIsolated: true,
-        skipBoleto: noBoleto,
-        emailSent: false,
-        emailPendingReason: 'NF/boleto sincronizam no Controle (sync + retry)',
-        nfError: {
-          provider: 'ASAAS',
-          code: 'NF_SCHEDULE_PENDING',
-          message: 'Cobrança salva no Controle como Processando. NF fora desta requisição.',
-        },
-        persisted: {
-          ok: true,
+        // PASSO 4 — HTTP 200 imediato. NF NÃO roda aqui (trabalho pós-res.json
+        // na Vercel segura a conexão e causa Abort no browser — NF fica no Controle/worker).
+        console.log(`[ASAAS-EMISSAO] 5. Sucesso! Enviando resposta HTTP 200 (${Date.now() - t0}ms)`);
+        return res.status(200).json({
+          success: true,
+          message: 'Cobrança gerada com sucesso',
+          paymentId: payment.id,
           invoiceId: persistEarly.invoiceId,
-          created: persistEarly.created,
-        },
-        payment: {
-          id: payment.id,
-          status: payment.status,
-          statusBr: mapAsaasStatus(payment.status),
-          value: payment.value,
-          dueDate: payment.dueDate,
-          invoiceUrl: payment.invoiceUrl || null,
-          bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
-          externalReference: externalRef,
+          trackingNumber: trackingRef,
+          nfPending: true,
+          earlyReturn: true,
+          nfIsolated: true,
           skipBoleto: noBoleto,
-        },
-        pix: null,
-        bankSlip: null,
-        customer: { id: customer.id, name: customer.name },
-        invoice: null,
-        municipalServiceCode: nfMunicipalCode || null,
-        municipalServiceName: nfMunicipalName || null,
-        elapsedMs: Date.now() - t0,
-      });
+          emailSent: false,
+          emailPendingReason: 'NF/boleto sincronizam no Controle (sync + retry)',
+          nfError: {
+            provider: 'ASAAS',
+            code: 'NF_SCHEDULE_PENDING',
+            message: 'Cobrança salva no Controle como Processando. NF fora desta requisição.',
+          },
+          persisted: {
+            ok: true,
+            invoiceId: persistEarly.invoiceId,
+            created: persistEarly.created,
+          },
+          payment: {
+            id: payment.id,
+            status: payment.status,
+            statusBr: mapAsaasStatus(payment.status),
+            value: payment.value,
+            dueDate: payment.dueDate,
+            invoiceUrl: payment.invoiceUrl || null,
+            bankSlipUrl: noBoleto ? null : (payment.bankSlipUrl || null),
+            externalReference: externalRef,
+            skipBoleto: noBoleto,
+          },
+          pix: null,
+          bankSlip: null,
+          customer: { id: customer.id, name: customer.name },
+          invoice: null,
+          municipalServiceCode: nfMunicipalCode || null,
+          municipalServiceName: nfMunicipalName || null,
+          elapsedMs: Date.now() - t0,
+        });
+      } finally {
+        clearTimeout(routeTimer);
+      }
     } catch (err: any) {
       console.error(`[ASAAS-EMISSAO-ERRO] Falha capturada na rota step=${err?.step || 'unknown'}:`, err?.message || err);
       return res.status(500).json({

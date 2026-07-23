@@ -26,7 +26,8 @@ describe('Emissão Asaas — persistência server-side + Abort', () => {
     assert.match(ui, /earlyReturn/);
     assert.match(ui, /AbortError/);
     assert.match(ui, /onNavigate\('fin-invoices'\)/);
-    assert.match(ui, /45_000/);
+    assert.match(ui, /30_000/);
+    assert.match(ui, /buildInternalTrackingRef|TMSEG-/);
     assert.match(ui, /asaas_payment_id/);
   });
 });

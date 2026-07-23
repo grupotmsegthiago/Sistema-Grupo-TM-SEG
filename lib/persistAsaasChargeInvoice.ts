@@ -12,6 +12,8 @@ export type PersistAsaasChargeInput = {
   dueDate: string;
   /** Data de competência / emissão local (YYYY-MM-DD). Default = hoje UTC. */
   date?: string;
+  /** Ref. interna de rastreio (ex. TMSEG-…). Preferida em `number` se informada. */
+  trackingNumber?: string | null;
   issuerCompany?: string | null;
   notes?: string | null;
   createdBy?: string | null;
@@ -29,6 +31,8 @@ export type PersistAsaasChargeInput = {
   plugnotasProtocol?: string | null;
   skipReceivable?: boolean;
   entityId?: string | number | null;
+  /** Cancela queries Supabase se o passo estourar (evita hang na Vercel). */
+  signal?: AbortSignal;
 };
 
 export type PersistAsaasChargeResult = {
@@ -62,10 +66,12 @@ export async function persistAsaasChargeInvoice(
     };
   }
 
-  const number = `ASAAS-${paymentId}`;
+  const tracking = String(input.trackingNumber || '').trim();
+  const number = tracking || `ASAAS-${paymentId}`;
   const date = (input.date || todayIsoDate()).slice(0, 10);
   const nfStatus = (input.nfStatus || 'PROCESSING').toUpperCase();
   const nfProvider = (input.nfProvider || 'ASAAS').toUpperCase();
+  const signal = input.signal;
 
   const baseRow: Record<string, unknown> = {
     client: input.clientName || 'Cliente',
@@ -96,27 +102,28 @@ export async function persistAsaasChargeInvoice(
   };
 
   try {
-    const { data: existing } = await sb
+    let existingQuery = sb
       .from('financial_invoices')
       .select('id')
-      .eq('asaas_payment_id', paymentId)
-      .maybeSingle();
+      .eq('asaas_payment_id', paymentId);
+    if (signal) existingQuery = existingQuery.abortSignal(signal);
+    const { data: existing } = await existingQuery.maybeSingle();
 
     let invoiceId: string | null = existing?.id ? String(existing.id) : null;
     let created = false;
 
     if (invoiceId) {
       const { created_at: _c, ...patch } = baseRow;
-      const { error: upErr } = await sb.from('financial_invoices').update(patch).eq('id', invoiceId);
+      let upQuery = sb.from('financial_invoices').update(patch).eq('id', invoiceId);
+      if (signal) upQuery = upQuery.abortSignal(signal);
+      const { error: upErr } = await upQuery;
       if (upErr) {
         return { ok: false, invoiceId, created: false, receivableCreated: false, error: upErr.message };
       }
     } else {
-      const { data: inserted, error: insErr } = await sb
-        .from('financial_invoices')
-        .insert(baseRow)
-        .select('id')
-        .maybeSingle();
+      let insQuery = sb.from('financial_invoices').insert(baseRow).select('id');
+      if (signal) insQuery = insQuery.abortSignal(signal);
+      const { data: inserted, error: insErr } = await insQuery.maybeSingle();
       if (insErr) {
         // Coluna ausente: tenta payload mínimo
         if (insErr.code === '42703') {
@@ -134,7 +141,9 @@ export async function persistAsaasChargeInvoice(
             boleto_due_date: baseRow.boleto_due_date,
             created_at: baseRow.created_at,
           };
-          const retry = await sb.from('financial_invoices').insert(minimal).select('id').maybeSingle();
+          let retryQuery = sb.from('financial_invoices').insert(minimal).select('id');
+          if (signal) retryQuery = retryQuery.abortSignal(signal);
+          const retry = await retryQuery.maybeSingle();
           if (retry.error) {
             return {
               ok: false,
@@ -158,14 +167,16 @@ export async function persistAsaasChargeInvoice(
     let receivableCreated = false;
     if (!input.skipReceivable && invoiceId) {
       const desc = `NF ${number} — ${input.clientName || 'Cliente'}`;
-      const { data: rxExisting } = await sb
+      let rxQuery = sb
         .from('financial_transactions')
         .select('id')
         .ilike('description', `%${number}%`)
         .eq('status', 'PENDING')
         .limit(1);
+      if (signal) rxQuery = rxQuery.abortSignal(signal);
+      const { data: rxExisting } = await rxQuery;
       if (!rxExisting?.length) {
-        const { error: rxErr } = await sb.from('financial_transactions').insert({
+        let rxIns = sb.from('financial_transactions').insert({
           description: desc,
           amount: Number(input.amount) || 0,
           type: 'INCOME',
@@ -174,22 +185,28 @@ export async function persistAsaasChargeInvoice(
           entity_type: 'Client',
           entity_id: input.entityId ?? null,
           entity_name: input.clientName || 'Cliente',
-          notes: `Fatura NF ${number} | Asaas: ${paymentId} | Emissora: ${input.issuerCompany || '-'}`,
+          notes: `Fatura ${number} | Asaas: ${paymentId} | Emissora: ${input.issuerCompany || '-'}`,
           created_by: input.createdBy || 'Sistema',
           payment_method: 'BOLETO',
         });
+        if (signal) rxIns = rxIns.abortSignal(signal);
+        const { error: rxErr } = await rxIns;
         if (!rxErr) receivableCreated = true;
       }
     }
 
     return { ok: !!invoiceId, invoiceId, created, receivableCreated };
   } catch (e: any) {
+    const aborted =
+      e?.name === 'AbortError' ||
+      signal?.aborted ||
+      /aborted|timeout/i.test(String(e?.message || ''));
     return {
       ok: false,
       invoiceId: null,
       created: false,
       receivableCreated: false,
-      error: e?.message || 'erro ao persistir',
+      error: aborted ? 'Timeout ao persistir no Supabase' : e?.message || 'erro ao persistir',
     };
   }
 }

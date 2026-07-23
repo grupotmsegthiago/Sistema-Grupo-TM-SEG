@@ -27,6 +27,16 @@ import {
 } from 'recharts';
 
 interface ClientBillingReportProps { onNavigate?: (screen: string) => void; onOpenMission?: (missionId: string) => void; }
+
+/** Ref. interna de rastreio (não é Nº NFS-e fiscal). Visível antes da emissão Asaas. */
+function buildInternalTrackingRef(): string {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+    return `TMSEG-${stamp}-${rand}`;
+}
+
 const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, onOpenMission }) => {
     const [clients, setClients] = useState<Client[]>([]);
     const [selectedClient, setSelectedClient] = useState('');
@@ -3146,13 +3156,17 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             }
             const skipBoleto = isBankTransferBillingClient(clientObj?.name, clientObj?.trading_name);
             const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
+            const trackingRef = invoiceForm.number || buildInternalTrackingRef();
+            if (!invoiceForm.number) {
+                setInvoiceForm(prev => ({ ...prev, number: trackingRef }));
+            }
             setAsaasLoading(true);
-            setAiStatus('Emitindo cobranças no Asaas...');
-            // Rede de segurança 45s — create-charge responde após persistir (early return).
+            setAiStatus(`Emitindo cobranças no Asaas… Ref. ${trackingRef}`);
+            // Rede 30s — backend com abort real deve responder bem antes.
             const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-            const hangTimer = setTimeout(() => ctrl?.abort(), 45_000);
+            const hangTimer = setTimeout(() => ctrl?.abort(), 30_000);
             const progressTimer = setInterval(() => {
-                setAiStatus('Criando cobrança e salvando no Controle (Processando)...');
+                setAiStatus(`Criando cobrança e salvando no Controle… Ref. ${trackingRef}`);
             }, 4_000);
             try {
                 const res = await authFetch('/api/asaas/create-charge', {
@@ -3164,7 +3178,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         dueDate: invoiceForm.boleto_due_date,
                         description: asaasDescription,
                         observations: invoiceForm.notes || '',
-                        invoiceNumber: invoiceForm.number,
+                        invoiceNumber: trackingRef,
                         issuerCompany: invoiceForm.issuer_company,
                         skipBoleto,
                         municipalServiceCode: municipalOpt.code,
@@ -3183,10 +3197,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 // para evitar cobranças órfãs).
                 if (!res.ok && res.status !== 207) throw new Error(data.error || 'Erro ao criar cobranças');
                 setAsaasResult(data);
-                const firstNf = data.charges?.[0]?.payment?.id ? `ASAAS-${data.charges[0].payment.id}` : '';
-                if (firstNf) {
-                    setInvoiceForm(prev => ({ ...prev, number: firstNf }));
-                }
+                // Mantém TMSEG-… (rastreio); não sobrescreve com ASAAS-{id}.
+                const firstNf = trackingRef;
                 if (data.partialFailure) {
                     const failedCharge = data.charges?.[data.failedAtIndex];
                     const errMsg = failedCharge?.nfError?.message || data.error || 'NF PlugNotas falhou';
@@ -3202,9 +3214,17 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     .map((c: any) => c?.payment?.id)
                     .filter(Boolean) as string[];
                 const serverOk = (data.charges || []).some((c: any) => c?.persisted?.ok && c?.persisted?.invoiceId);
-                const saved = serverOk
+                let saved: any = serverOk
                     ? { ok: true, savedCount: serverPersistedIds.length || 1, invoiceIds: serverPersistedIds, paymentIds: serverPaymentIds }
-                    : await autoSaveInvoiceAfterAsaas(data, firstNf);
+                    : null;
+                if (!saved) {
+                    saved = await Promise.race([
+                        autoSaveInvoiceAfterAsaas(data, firstNf),
+                        new Promise<{ ok: false; savedCount: 0 }>((resolve) =>
+                            setTimeout(() => resolve({ ok: false, savedCount: 0 }), 8_000),
+                        ),
+                    ]);
+                }
                 clearTimeout(hangTimer);
                 clearInterval(progressTimer);
                 setAsaasLoading(false);
@@ -3229,15 +3249,15 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     setAsaasLoading(false);
                     setShowInvoiceModal(false);
                     resetInvoiceForm();
-                    setAiStatus('Timeout — abrindo Controle para conferir se já salvou como Processando.');
+                    setAiStatus(`Timeout — busque no Controle pela ref. ${trackingRef}`);
                     if (onNavigate) onNavigate('fin-invoices');
                     setTimeout(() => {
-                        alert('A emissão demorou no navegador. No Controle de Faturas clique Atualizar — se a cobrança foi criada, aparece como Processando. Não emita de novo sem conferir o Asaas.');
+                        alert(`A emissão demorou. Ref. de rastreio: ${trackingRef}\nNo Controle clique Atualizar e busque por essa referência. Não emita de novo sem conferir o Asaas.`);
                     }, 200);
                     return;
                 } else {
                     const msg = err.message || 'Erro ao criar cobranças';
-                    alert('Erro ao gerar cobranças no Asaas: ' + msg);
+                    alert(`Erro ao gerar cobranças no Asaas (ref. ${trackingRef}): ${msg}`);
                     setAiStatus('Erro: ' + msg);
                 }
             } finally {
@@ -3255,13 +3275,17 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
         const skipBoleto = isBankTransferBillingClient(clientObj.name, clientObj.trading_name);
         const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
+        const trackingRef = invoiceForm.number || buildInternalTrackingRef();
+        if (!invoiceForm.number) {
+            setInvoiceForm(prev => ({ ...prev, number: trackingRef }));
+        }
         setAsaasLoading(true);
-        setAiStatus('Emitindo cobrança no Asaas (boleto/PIX + NF)...');
-        // Rede de segurança 45s — create-charge responde após persistir (early return).
+        setAiStatus(`Emitindo cobrança no Asaas… Ref. ${trackingRef}`);
+        // Rede 30s — backend com abort real deve responder bem antes.
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const hangTimer = setTimeout(() => ctrl?.abort(), 45_000);
+        const hangTimer = setTimeout(() => ctrl?.abort(), 30_000);
         const progressTimer = setInterval(() => {
-            setAiStatus('Criando cobrança e salvando no Controle (Processando)...');
+            setAiStatus(`Criando cobrança e salvando no Controle… Ref. ${trackingRef}`);
         }, 4_000);
         try {
             const res = await authFetch('/api/asaas/create-charge', {
@@ -3275,7 +3299,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     dueDate: invoiceForm.boleto_due_date,
                     description: asaasDescription,
                     observations: invoiceForm.notes || '',
-                    invoiceNumber: invoiceForm.number || `TMSEG-${Date.now()}`,
+                    invoiceNumber: trackingRef,
                     issuerCompany: invoiceForm.issuer_company,
                     skipBoleto,
                     municipalServiceCode: municipalOpt.code,
@@ -3287,10 +3311,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             // a cobrança localmente para evitar pagamento órfão.
             if (!res.ok && res.status !== 207) throw new Error(data.error || 'Erro ao criar cobrança');
             setAsaasResult(data);
-            const nfNum = data.payment?.id ? `ASAAS-${data.payment.id}` : '';
-            if (nfNum) {
-                setInvoiceForm(prev => ({ ...prev, number: nfNum }));
-            }
+            // Mantém TMSEG-… (rastreio); não sobrescreve com ASAAS-{id}.
+            const nfNum = trackingRef;
             const softNf = data.nfPending && data.nfError && ['NF_TIMEOUT', 'NF_SCHEDULE_PENDING'].includes(String(data.nfError.code || ''));
             if (data.nfPending && data.nfError && !softNf) {
                 setAiStatus(`⚠️ Cobrança Asaas gerada, mas NF falhou: ${data.nfError.message}. Persistindo e retentando automaticamente...`);
@@ -3302,7 +3324,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
             // earlyReturn: servidor já gravou Processando — fecha modal sem esperar NF.
             const serverOk = !!(data?.persisted?.ok && data?.persisted?.invoiceId);
-            const saved = serverOk
+            let saved: any = serverOk
                 ? {
                     ok: true,
                     savedCount: 1,
@@ -3311,17 +3333,26 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     paymentIds: data.payment?.id ? [String(data.payment.id)] : [],
                     paymentId: data.payment?.id as string | undefined,
                 }
-                : await autoSaveInvoiceAfterAsaas(data, nfNum);
+                : null;
+            if (!saved) {
+                // Fallback com teto — nunca segurar o spinner no autoSave do browser.
+                saved = await Promise.race([
+                    autoSaveInvoiceAfterAsaas(data, nfNum),
+                    new Promise<{ ok: false; savedCount: 0 }>((resolve) =>
+                        setTimeout(() => resolve({ ok: false, savedCount: 0 }), 8_000),
+                    ),
+                ]);
+            }
             clearTimeout(hangTimer);
             clearInterval(progressTimer);
             setAsaasLoading(false);
             if (!saved?.ok || !(saved.savedCount > 0)) {
                 setShowInvoiceModal(false);
                 resetInvoiceForm();
-                setAiStatus('Cobrança Asaas pode ter sido criada — conferindo Controle.');
+                setAiStatus(`Cobrança pode ter sido criada — busque ref. ${trackingRef} no Controle.`);
                 if (onNavigate) onNavigate('fin-invoices');
                 setTimeout(() => {
-                    alert('Cobrança pode ter sido criada no Asaas. No Controle clique Atualizar. Não emita de novo sem conferir.');
+                    alert(`Cobrança pode ter sido criada no Asaas. Ref. de rastreio: ${trackingRef}\nNo Controle clique Atualizar. Não emita de novo sem conferir.`);
                 }, 200);
                 return;
             }
@@ -3333,26 +3364,26 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             resetInvoiceForm();
             setAiStatus(
                 data?.nfIsolated || data?.earlyReturn || data?.nfPending
-                    ? 'Cobrança salva. Abrindo Controle — NF em Processando (isolada)...'
-                    : 'Cobrança OK — abrindo Controle...',
+                    ? `Cobrança salva (${trackingRef}). Controle — NF em Processando...`
+                    : `Cobrança OK (${trackingRef}) — abrindo Controle...`,
             );
             if (onNavigate) onNavigate('fin-invoices');
-            else alert('Cobrança criada. Abra Controle de Faturas / NF — fica Processando até a NF sair.');
+            else alert(`Cobrança criada (ref. ${trackingRef}). Abra Controle de Faturas / NF.`);
             return;
         } catch (err: any) {
             if (err?.name === 'AbortError') {
                 setAsaasLoading(false);
                 setShowInvoiceModal(false);
                 resetInvoiceForm();
-                setAiStatus('Timeout — abrindo Controle para conferir se já salvou como Processando.');
+                setAiStatus(`Timeout — busque no Controle pela ref. ${trackingRef}`);
                 if (onNavigate) onNavigate('fin-invoices');
                 setTimeout(() => {
-                    alert('A emissão demorou no navegador. No Controle de Faturas clique Atualizar — se a cobrança foi criada, aparece como Processando. Não emita de novo sem conferir o Asaas.');
+                    alert(`A emissão demorou. Ref. de rastreio: ${trackingRef}\nNo Controle clique Atualizar e busque por essa referência. Não emita de novo sem conferir o Asaas.`);
                 }, 200);
                 return;
             } else {
                 const msg = err.message || 'Erro ao criar cobrança';
-                alert('Erro ao gerar cobrança no Asaas: ' + msg);
+                alert(`Erro ao gerar cobrança no Asaas (ref. ${trackingRef}): ${msg}`);
                 setAiStatus('Erro: ' + msg);
             }
         } finally {
@@ -3408,6 +3439,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         const todayIso = new Date().toISOString().slice(0, 10);
         const defaultDue = addCalendarDaysIso(todayIso, dueDays);
 
+        const trackingRef = buildInternalTrackingRef();
         setInvoiceForm(prev => ({
             ...prev,
             client: selectedClient,
@@ -3415,7 +3447,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             provider: tomador,
             issuer_company: issuer,
             notes: notesText,
-            number: '',
+            number: trackingRef,
             boleto_due_date: prev.boleto_due_date || defaultDue,
         }));
         setAsaasPeriod(periodRef);
@@ -3423,16 +3455,22 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         setAsaasSplitCharges([]);
         setInvoiceMunicipalOptionId(municipalDefault.id);
         setShowCnaePicker(false);
-        if (transferClient) {
-            setAiStatus(`Cliente paga por transferência bancária — boleto Asaas não será gerado/enviado (venc. padrão ${dueDays} dias).`);
-        }
+        setAiStatus(
+            transferClient
+                ? `Ref. ${trackingRef} · Cliente paga por transferência — boleto Asaas não será gerado (venc. padrão ${dueDays} dias).`
+                : `Ref. interna ${trackingRef} — use para rastrear se a emissão falhar.`,
+        );
         setShowInvoiceModal(true);
     };
 
     const handleSaveInvoice = async () => {
         const nfNumber = invoiceForm.number || (asaasResult?.payment?.id ? `ASAAS-${asaasResult.payment.id}` : '');
-        if (!invoiceForm.client || !nfNumber || !invoiceForm.amount) { alert('Preencha todos os campos obrigatórios (Cliente, Valor). Gere a cobrança Asaas primeiro para obter o Nº NF.'); return; }
-        if (!nfNumber) { alert('Gere a cobrança no Asaas primeiro para obter o número da fatura.'); return; }
+        if (!invoiceForm.client || !invoiceForm.amount) { alert('Preencha Cliente e Valor.'); return; }
+        if (!asaasResult?.payment?.id && !asaasResult?.persisted?.invoiceId) {
+            alert('Gere a cobrança no Asaas primeiro. A ref. TMSEG-… é só rastreio interno — não substitui a emissão.');
+            return;
+        }
+        if (!nfNumber) { alert('Referência de rastreio ausente. Feche e abra o modal novamente.'); return; }
         const parsedAmt = parseFloat(invoiceForm.amount);
         if (isNaN(parsedAmt) || parsedAmt <= 0) { alert('Valor inválido.'); return; }
         const clientObj = clients.find(c => c.id.toString() === invoiceForm.client);
@@ -3566,8 +3604,20 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-white cursor-not-allowed" readOnly value={invoiceForm.provider} data-testid="display-billing-invoice-provider" />
                                 </div>
                                 <div className="col-span-2">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Nº NF (Gerado pelo Asaas)</label>
-                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold bg-white cursor-not-allowed" readOnly value={invoiceForm.number || 'Será gerado automaticamente ao criar cobrança'} placeholder="Será gerado automaticamente" data-testid="display-billing-invoice-number" />
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">
+                                        Ref. interna (rastreio) — não é Nº NFS-e fiscal
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold bg-amber-50 border-amber-200 text-amber-950 cursor-not-allowed"
+                                        readOnly
+                                        value={invoiceForm.number || ''}
+                                        placeholder="TMSEG-…"
+                                        data-testid="display-billing-invoice-number"
+                                    />
+                                    <p className="text-[9px] text-gray-500 mt-1">
+                                        Use esta referência no Controle/Asaas se a emissão falhar. O Nº fiscal da NF sai depois (Processando → Emitida).
+                                    </p>
                                 </div>
                             </div>
                         </div>
