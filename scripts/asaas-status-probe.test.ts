@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-describe('asaas-status probe e retry-now leve', () => {
+describe('asaas-status probe e nf-control leve', () => {
   it('asaas-status expõe probe sem revelar a chave', () => {
     const src = fs.readFileSync('api/asaas-status.ts', 'utf8');
     assert.match(src, /summarizeAsaasTransferEnv/);
@@ -11,14 +11,20 @@ describe('asaas-status probe e retry-now leve', () => {
     assert.match(src, /ASAAS_TMGESTAO_API/);
   });
 
-  it('nf-control tem op retry-now e rewrite no vercel.json', () => {
+  it('nf-control NÃO importa nfRetryWorker (quebra na Vercel)', () => {
     const ctl = fs.readFileSync('api/nf-control.ts', 'utf8');
-    assert.match(ctl, /op === 'retry-now'/);
-    assert.match(ctl, /runRetryCycle/);
-    const vercel = fs.readFileSync('vercel.json', 'utf8');
-    assert.match(vercel, /\/api\/nf\/retry-now/);
-    assert.match(vercel, /nf-control\?op=retry-now/);
-    const fnCount = Object.keys(JSON.parse(vercel).functions || {}).length;
+    assert.doesNotMatch(ctl, /nfRetryWorker/);
+    assert.doesNotMatch(ctl, /runRetryCycle/);
+    const vercel = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));
+    const retryRewrite = (vercel.rewrites || []).find(
+      (r: { source?: string }) => r.source === '/api/nf/retry-now',
+    );
+    assert.equal(
+      retryRewrite,
+      undefined,
+      'retry-now deve ir ao Express (catch-all), não ao nf-control',
+    );
+    const fnCount = Object.keys(vercel.functions || {}).length;
     assert.ok(fnCount <= 50, `functions=${fnCount} excede limite 50`);
   });
 });

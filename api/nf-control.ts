@@ -6,7 +6,11 @@
  *   GET  /api/nf/summary                  → ?op=summary
  *   GET  /api/nf/provider-preferences     → ?op=preferences
  *   PUT  /api/nf/provider-preferences     → ?op=preferences
- *   POST /api/nf/retry-now                → ?op=retry-now
+ *   POST /api/nf/ensure-clean-slate       → ?op=clean-slate
+ *
+ * POST /api/nf/retry-now fica no Express (api/index / vercelApp.cjs):
+ * importar server/nfRetryWorker neste handler leve quebra na Vercel
+ * (Cannot find module '/var/task/server/nfRetryWorker').
  */
 import {
   assertFinanceNfAccess,
@@ -106,45 +110,15 @@ export default async function handler(req: LiteReq, res: LiteRes) {
       return;
     }
 
-    // Reemitir NFs pendentes — mesmo ciclo do worker, sem cold-start do Express 1.3MB.
-    if (method === 'POST' && (op === 'retry-now' || op === 'retry')) {
-      const qLimit = Number(req.query?.limit);
-      const body = parseBody(req.body);
-      const bodyLimit = Number(body.limit);
-      const limitRaw = Number.isFinite(qLimit) && qLimit > 0 ? qLimit : bodyLimit;
-      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 40) : 10;
-      const reopen =
-        String(req.query?.reopen || '') === '1' ||
-        body.reopen === true ||
-        body.reopen === 1 ||
-        body.reopen === '1';
-
-      const { runRetryCycle, reopenPausedNfs } = await import('../server/nfRetryWorker');
-      let reopened = 0;
-      if (reopen) {
-        const r = await reopenPausedNfs(limit);
-        reopened = r.reopened;
-      }
-      const result = await runRetryCycle({ limit });
-      res.status(200).json({ success: true, reopened, ...result });
-      return;
-    }
-
     res.status(405).json({ ok: false, error: 'method_not_allowed', op, method });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
     console.error('[nf-control]', message);
-    const isAsaasKey =
-      /chave de API fornecida é inválida|Asaas API Error \(401\)|Asaas API Error \(403\)/i.test(
-        message,
-      );
-    res.status(isAsaasKey ? 502 : 500).json({
+    res.status(500).json({
       ok: false,
-      error: isAsaasKey
-        ? `${message} — confira ASAAS_TMGESTAO_API / ASAAS_TMSEGURANCA_API / ASAAS_TMSECURITY_API na Vercel ($aact_prod_...) e faça redeploy. Diagnóstico: GET /api/asaas/status?probe=1`
-        : message || 'Falha no controle de NF',
+      error: message || 'Falha no controle de NF',
     });
   }
 }
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 60 };
