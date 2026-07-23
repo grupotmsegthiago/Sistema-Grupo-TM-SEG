@@ -76,6 +76,15 @@ execSync(
 );
 console.log('Recalculate-open core bundle: api/_recalculate-open-core.cjs');
 
+// Bundle do worker de reemissão NF para api/nf-control.ts (retry-now).
+// Import ESM de server/nfRetryWorker quebra na Vercel (MODULE_NOT_FOUND) e o
+// Express (api/index) está com cold-start lento demais para o botão Reemitir.
+execSync(
+  'npx esbuild server/nfRetryWorker.ts --bundle --platform=node --format=cjs --outfile=api/_nf-retry-core.cjs --packages=external',
+  { stdio: 'inherit' },
+);
+console.log('NF retry core bundle: api/_nf-retry-core.cjs');
+
 const dhlBundlesDir = path.join(distDir, 'dhl-bundles');
 fs.mkdirSync(dhlBundlesDir, { recursive: true });
 for (const name of [

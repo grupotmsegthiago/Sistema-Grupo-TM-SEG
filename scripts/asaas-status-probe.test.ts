@@ -11,22 +11,21 @@ describe('asaas-status probe e nf-control leve', () => {
     assert.match(src, /ASAAS_TMGESTAO_API/);
   });
 
-  it('nf-control NÃO importa nfRetryWorker (quebra na Vercel)', () => {
+  it('retry-now usa bundle _nf-retry-core.cjs (não import server/)', () => {
     const ctl = fs.readFileSync('api/nf-control.ts', 'utf8');
-    assert.doesNotMatch(ctl, /import\(['"].*nfRetryWorker/);
-    assert.doesNotMatch(ctl, /from ['"].*nfRetryWorker/);
-    assert.doesNotMatch(ctl, /runRetryCycle\s*\(/);
+    assert.match(ctl, /_nf-retry-core\.cjs/);
+    assert.doesNotMatch(ctl, /import\(['"].*server\/nfRetryWorker/);
+    assert.doesNotMatch(ctl, /from ['"].*server\/nfRetryWorker/);
+    assert.match(ctl, /require\('\.\/_nf-retry-core\.cjs'\)/);
+    const build = fs.readFileSync('build-server.mjs', 'utf8');
+    assert.match(build, /_nf-retry-core\.cjs/);
     const vercel = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));
     const retryRewrite = (vercel.rewrites || []).find(
       (r: { source?: string }) => r.source === '/api/nf/retry-now',
     );
-    assert.equal(
-      retryRewrite,
-      undefined,
-      'retry-now deve ir ao Express (catch-all), não ao nf-control',
-    );
+    assert.equal(retryRewrite?.destination, '/api/nf-control?op=retry-now');
+    assert.ok(fs.existsSync('api/_nf-retry-core.cjs'), 'bundle api/_nf-retry-core.cjs deve existir após build');
     const fnCount = Object.keys(vercel.functions || {}).length;
     assert.ok(fnCount <= 50, `functions=${fnCount} excede limite 50`);
   });
 });
-

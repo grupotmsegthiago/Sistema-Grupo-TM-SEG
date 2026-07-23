@@ -150,7 +150,7 @@
       "maxDuration": 30
     },
     "api/nf-control.ts": {
-      "maxDuration": 60
+      "maxDuration": 120
     },
     "api/relatorios-dhl-se-183013.ts": {
       "maxDuration": 30,
@@ -409,6 +409,10 @@
     {
       "source": "/api/nf/ensure-clean-slate",
       "destination": "/api/nf-control?op=clean-slate"
+    },
+    {
+      "source": "/api/nf/retry-now",
+      "destination": "/api/nf-control?op=retry-now"
     },
     {
       "source": "/relatorios/dhl-se-183013",

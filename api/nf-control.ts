@@ -7,11 +7,12 @@
  *   GET  /api/nf/provider-preferences     → ?op=preferences
  *   PUT  /api/nf/provider-preferences     → ?op=preferences
  *   POST /api/nf/ensure-clean-slate       → ?op=clean-slate
+ *   POST /api/nf/retry-now                → ?op=retry-now
  *
- * POST /api/nf/retry-now fica no Express (api/index / vercelApp.cjs):
- * importar server/nfRetryWorker neste handler leve quebra na Vercel
- * (Cannot find module '/var/task/server/nfRetryWorker').
+ * retry-now usa bundle CJS gerado no build (`api/_nf-retry-core.cjs`).
+ * Não importar server/nfRetryWorker direto — a Vercel não empacota esse path.
  */
+import { createRequire } from 'node:module';
 import {
   assertFinanceNfAccess,
   readBearer,
@@ -25,6 +26,20 @@ import {
   saveNfProviderPreferences,
   wipeOpenInvoicesCleanSlate,
 } from '../lib/nfInvoiceControlApi.js';
+
+const require = createRequire(import.meta.url);
+
+// Require ESTÁTICO — file tracer da Vercel precisa do caminho literal.
+const nfRetryCore = require('./_nf-retry-core.cjs') as {
+  runRetryCycle: (opts?: { limit?: number }) => Promise<{
+    processed: number;
+    ok: number;
+    paused: number;
+    errors: number;
+    stuck: number;
+  }>;
+  reopenPausedNfs: (limit?: number) => Promise<{ reopened: number }>;
+};
 
 type LiteReq = {
   method?: string;
@@ -110,15 +125,44 @@ export default async function handler(req: LiteReq, res: LiteRes) {
       return;
     }
 
+    // Reemitir NFs pendentes — bundle CJS (não Express / não import server/).
+    if (method === 'POST' && (op === 'retry-now' || op === 'retry')) {
+      const qLimit = Number(req.query?.limit);
+      const body = parseBody(req.body);
+      const bodyLimit = Number(body.limit);
+      const limitRaw = Number.isFinite(qLimit) && qLimit > 0 ? qLimit : bodyLimit;
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 40) : 10;
+      const reopen =
+        String(req.query?.reopen || '') === '1' ||
+        body.reopen === true ||
+        body.reopen === 1 ||
+        body.reopen === '1';
+
+      let reopened = 0;
+      if (reopen) {
+        const r = await nfRetryCore.reopenPausedNfs(limit);
+        reopened = r.reopened;
+      }
+      const result = await nfRetryCore.runRetryCycle({ limit });
+      res.status(200).json({ success: true, reopened, ...result, liteHandler: true });
+      return;
+    }
+
     res.status(405).json({ ok: false, error: 'method_not_allowed', op, method });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
     console.error('[nf-control]', message);
-    res.status(500).json({
+    const isAsaasKey =
+      /chave de API fornecida é inválida|Asaas API Error \(401\)|Asaas API Error \(403\)/i.test(
+        message,
+      );
+    res.status(isAsaasKey ? 502 : 500).json({
       ok: false,
-      error: message || 'Falha no controle de NF',
+      error: isAsaasKey
+        ? `${message} — confira ASAAS_TMGESTAO_API na Vercel e faça redeploy. Diagnóstico: GET /api/asaas/status?probe=1`
+        : message || 'Falha no controle de NF',
     });
   }
 }
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 120 };
