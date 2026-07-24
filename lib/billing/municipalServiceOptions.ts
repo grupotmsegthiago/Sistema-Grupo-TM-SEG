@@ -30,10 +30,11 @@ export const MUNICIPAL_SERVICE_OPTIONS: readonly MunicipalServiceOption[] = [
   {
     id: 'intermediacao',
     code: '07930',
-    // Nome alinhado à NFS-e manual SP (ex.: Amazon NF 265) — item LC 116 / código municipal 07930.
-    name: '07930 - Agenciamento, corretagem ou intermediação de bens móveis ou imóveis, não abrangidos em outros itens',
+    // Igual à NFS-e manual SP Amazon (NF 265): descrição do código sem prefixar "07930 -".
+    name: 'Agenciamento, corretagem ou intermediação de bens móveis ou imóveis, não abrangidos em outros itens',
     label: '07930 — Intermediação / Agenciamento',
-    descriptionBase: 'Ref. aos Serviços de Intermediação de Agenciamento de Contrato',
+    // Discriminação dos serviços da mesma NF manual.
+    descriptionBase: 'CONTRATAÇÃO E INTERMEDIAÇÃO DE CONTRATOS E AGENCIAMENTO DE VENDAS',
   },
 ] as const;
 

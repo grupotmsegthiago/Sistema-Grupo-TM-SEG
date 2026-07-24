@@ -30,9 +30,11 @@ test('Amazon resolve sempre intermediação mesmo com nf_* incompleto', () => {
   });
   assert.equal(opt.id, 'intermediacao');
   assert.match(opt.name, /Agenciamento/i);
+  assert.doesNotMatch(opt.name, /^07930\s*-/);
   const fields = amazonClientNfFields();
   assert.equal(fields.nf_municipal_service_code, '07930');
   assert.match(fields.nf_municipal_service_name, /Agenciamento/i);
+  assert.match(fields.nf_service_description, /CONTRATAÇÃO E INTERMEDIAÇÃO/i);
 });
 
 test('CEVA sugere intermediação', () => {

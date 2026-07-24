@@ -43,12 +43,12 @@ function asaasCompanies(): Record<string, CompanyConfig> {
       aliases: ['TM GESTAO', 'TM GESTÃO', 'GESTAO', 'GESTÃO'],
       nf: {
         // Alinhado à NFS-e manual SP (Amazon NF 265): serviço 07930 agenciamento + ISS 2% (Simples Nacional).
-        serviceDescription: 'Ref. aos Serviços de Intermediação de Agenciamento de Contrato',
+        serviceDescription: 'CONTRATAÇÃO E INTERMEDIAÇÃO DE CONTRATOS E AGENCIAMENTO DE VENDAS',
         issRate: 2,
         retainIss: false,
         municipalServiceCode: '07930',
         municipalServiceName:
-          '07930 - Agenciamento, corretagem ou intermediação de bens móveis ou imóveis, não abrangidos em outros itens',
+          'Agenciamento, corretagem ou intermediação de bens móveis ou imóveis, não abrangidos em outros itens',
       },
     },
     'TM SEGURANCA': {
@@ -473,12 +473,12 @@ function isAmazonClientLabel(name?: string | null): boolean {
   return String(name || '').toUpperCase().includes('AMAZON');
 }
 
-/** Regra fixa Amazon (cadastro + fallback se nf_* incompleto). */
+/** Regra fixa Amazon — textos iguais à NFS-e manual SP (NF 265). */
 const AMAZON_NF_DEFAULTS: ClientNfDefaults = {
-  serviceDescription: 'Ref. aos Serviços de Intermediação de Agenciamento de Contrato',
+  serviceDescription: 'CONTRATAÇÃO E INTERMEDIAÇÃO DE CONTRATOS E AGENCIAMENTO DE VENDAS',
   municipalServiceCode: '07930',
   municipalServiceName:
-    '07930 - Agenciamento, corretagem ou intermediação de bens móveis ou imóveis, não abrangidos em outros itens',
+    'Agenciamento, corretagem ou intermediação de bens móveis ou imóveis, não abrangidos em outros itens',
 };
 
 async function lookupClientNfDefaults(cnpj?: string | null, name?: string | null): Promise<ClientNfDefaults | null> {

@@ -3507,7 +3507,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     });
             }
         }
-        const notesText = `${municipalDefault.descriptionBase.replace(/^Ref\.\s*aos\s*/i, 'Referente aos ')} - Referente ao ${periodRef}`;
+        // Amazon: discriminação igual à NF manual (sem prefixo "Referente aos").
+        const notesText = isAmazonBillingClient(clientObj?.name, clientObj?.trading_name)
+            ? `${municipalDefault.descriptionBase} - Referente ao ${periodRef}`
+            : `${municipalDefault.descriptionBase.replace(/^Ref\.\s*aos\s*/i, 'Referente aos ')} - Referente ao ${periodRef}`;
 
         const existingMedicaoEmail = (clientObj as any)?.medicao_email || '';
         const emailList = existingMedicaoEmail ? existingMedicaoEmail.split(',').map((e: string) => e.trim()).filter(Boolean) : [];
