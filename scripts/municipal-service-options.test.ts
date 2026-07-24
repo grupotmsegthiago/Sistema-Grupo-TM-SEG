@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  amazonClientNfFields,
   defaultMunicipalServiceForClient,
   findMunicipalServiceOption,
+  isAmazonBillingClient,
   MUNICIPAL_SERVICE_OPTIONS,
+  resolveMunicipalServiceForClient,
 } from '../lib/billing/municipalServiceOptions.ts';
 
 test('presets incluem 06298 e 07930', () => {
@@ -16,6 +19,20 @@ test('Amazon sugere intermediação 07930', () => {
   const opt = defaultMunicipalServiceForClient('AMAZON TRANSPORTES LTDA');
   assert.equal(opt.id, 'intermediacao');
   assert.equal(opt.code, '07930');
+});
+
+test('Amazon resolve sempre intermediação mesmo com nf_* incompleto', () => {
+  assert.equal(isAmazonBillingClient('AMAZON', null), true);
+  const opt = resolveMunicipalServiceForClient({
+    name: 'AMAZON TRANSPORTES LTDA',
+    nf_municipal_service_code: '07930',
+    nf_municipal_service_name: null,
+  });
+  assert.equal(opt.id, 'intermediacao');
+  assert.match(opt.name, /Agenciamento/i);
+  const fields = amazonClientNfFields();
+  assert.equal(fields.nf_municipal_service_code, '07930');
+  assert.match(fields.nf_municipal_service_name, /Agenciamento/i);
 });
 
 test('CEVA sugere intermediação', () => {

@@ -17,9 +17,11 @@ import {
 } from '../lib/billing/transferBillingClients';
 import { addCalendarDaysIso } from '../lib/billing/medicaoDueDate';
 import {
-    defaultMunicipalServiceForClient,
+    amazonClientNfFields,
     findMunicipalServiceOption,
+    isAmazonBillingClient,
     MUNICIPAL_SERVICE_OPTIONS,
+    resolveMunicipalServiceForClient,
 } from '../lib/billing/municipalServiceOptions';
 import { stashInvoiceWatch } from '../lib/invoiceCleanSlate';
 import {
@@ -3481,7 +3483,30 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         const tomador = razaoSocial;
         const issuer = (clientObj as any)?.issuer_company || '';
         const periodRef = buildPeriodRef();
-        const municipalDefault = defaultMunicipalServiceForClient(clientObj?.name, clientObj?.trading_name);
+        const municipalDefault = resolveMunicipalServiceForClient(clientObj as any);
+        // Amazon: grava regra 07930/agenciamento no cadastro para todas as próximas emissões.
+        if (clientObj?.id && isAmazonBillingClient(clientObj?.name, clientObj?.trading_name)) {
+            const nfFields = amazonClientNfFields();
+            const needsPersist =
+                String((clientObj as any).nf_municipal_service_code || '').replace(/\D/g, '') !== nfFields.nf_municipal_service_code ||
+                String((clientObj as any).nf_municipal_service_name || '').trim() !== nfFields.nf_municipal_service_name ||
+                !String((clientObj as any).nf_service_description || '').trim();
+            if (needsPersist) {
+                void supabase
+                    .from('clients')
+                    .update(nfFields)
+                    .eq('id', clientObj.id)
+                    .then(({ error }) => {
+                        if (error) {
+                            console.warn('[Faturamento] Falha ao gravar regra NF Amazon no cadastro:', error.message);
+                            return;
+                        }
+                        setClients((prev) =>
+                            prev.map((c) => (c.id === clientObj.id ? ({ ...c, ...nfFields } as any) : c)),
+                        );
+                    });
+            }
+        }
         const notesText = `${municipalDefault.descriptionBase.replace(/^Ref\.\s*aos\s*/i, 'Referente aos ')} - Referente ao ${periodRef}`;
 
         const existingMedicaoEmail = (clientObj as any)?.medicao_email || '';

@@ -463,6 +463,24 @@ interface ClientNfDefaults {
 const clientNfCache: Record<string, { value: ClientNfDefaults | null; ts: number }> = {};
 const CLIENT_NF_CACHE_TTL_MS = 60_000;
 
+function formatCnpjMask(digits: string): string {
+  const d = digits.replace(/\D/g, '');
+  if (d.length !== 14) return d;
+  return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+}
+
+function isAmazonClientLabel(name?: string | null): boolean {
+  return String(name || '').toUpperCase().includes('AMAZON');
+}
+
+/** Regra fixa Amazon (cadastro + fallback se nf_* incompleto). */
+const AMAZON_NF_DEFAULTS: ClientNfDefaults = {
+  serviceDescription: 'Ref. aos Serviços de Intermediação de Agenciamento de Contrato',
+  municipalServiceCode: '07930',
+  municipalServiceName:
+    '07930 - Agenciamento, corretagem ou intermediação de bens móveis ou imóveis, não abrangidos em outros itens',
+};
+
 async function lookupClientNfDefaults(cnpj?: string | null, name?: string | null): Promise<ClientNfDefaults | null> {
   if (!cnpj && !name) return null;
   const key = (cnpj || '').replace(/\D/g, '') || `name:${(name || '').toUpperCase().trim()}`;
@@ -471,20 +489,47 @@ async function lookupClientNfDefaults(cnpj?: string | null, name?: string | null
   try {
     const { createSupabaseAdminClient } = await import('./supabaseConfig');
     const supabase = createSupabaseAdminClient();
-    if (!supabase) return null;
+    if (!supabase) {
+      // Sem Supabase: ainda aplica regra Amazon por nome.
+      if (isAmazonClientLabel(name)) {
+        clientNfCache[key] = { value: AMAZON_NF_DEFAULTS, ts: Date.now() };
+        return AMAZON_NF_DEFAULTS;
+      }
+      return null;
+    }
     let row: any = null;
     if (cnpj) {
       const cleanCnpj = cnpj.replace(/\D/g, '');
+      const formatted = formatCnpjMask(cleanCnpj);
+      // clients.cnpj pode estar mascarado (01.661.770/0003-00) — eq só com dígitos falhava.
       const { data } = await supabase.from('clients')
-        .select('nf_service_description, nf_municipal_service_code, nf_municipal_service_name')
-        .eq('cnpj', cleanCnpj).maybeSingle();
+        .select('name, trading_name, nf_service_description, nf_municipal_service_code, nf_municipal_service_name')
+        .or(`cnpj.eq.${cleanCnpj},cnpj.eq.${formatted}`)
+        .limit(1)
+        .maybeSingle();
       row = data;
     }
     if (!row && name) {
       const { data } = await supabase.from('clients')
-        .select('nf_service_description, nf_municipal_service_code, nf_municipal_service_name')
+        .select('name, trading_name, nf_service_description, nf_municipal_service_code, nf_municipal_service_name')
         .ilike('name', name.split(/[\s,.]+/)[0] + '%').limit(1).maybeSingle();
       row = data;
+    }
+    const rowName = `${row?.name || ''} ${row?.trading_name || ''} ${name || ''}`;
+    if (isAmazonClientLabel(rowName)) {
+      const out: ClientNfDefaults = {
+        serviceDescription: row?.nf_service_description || AMAZON_NF_DEFAULTS.serviceDescription,
+        municipalServiceCode: row?.nf_municipal_service_code || AMAZON_NF_DEFAULTS.municipalServiceCode,
+        municipalServiceName: row?.nf_municipal_service_name || AMAZON_NF_DEFAULTS.municipalServiceName,
+      };
+      // Garante 07930 agenciamento mesmo se o cadastro tiver só o código sem nome.
+      if (!out.municipalServiceCode || out.municipalServiceCode === '07930') {
+        out.municipalServiceCode = AMAZON_NF_DEFAULTS.municipalServiceCode;
+        out.municipalServiceName = AMAZON_NF_DEFAULTS.municipalServiceName;
+        if (!out.serviceDescription) out.serviceDescription = AMAZON_NF_DEFAULTS.serviceDescription;
+      }
+      clientNfCache[key] = { value: out, ts: Date.now() };
+      return out;
     }
     const out: ClientNfDefaults | null = row ? {
       serviceDescription: row.nf_service_description || null,
@@ -527,10 +572,9 @@ export async function scheduleInvoice(params: {
   const companyEntry = resolveCompanyEntry(params.company);
   const nfConfig = companyEntry.nf;
   const overrideCode = String(params.municipalServiceCode || '').replace(/\D/g, '');
-  // Com código do modal, pula lookup no banco (mais rápido / menos falha).
-  const clientDefaults = overrideCode
-    ? null
-    : await lookupClientNfDefaults(params.clientCnpj, params.clientName);
+  // Sempre consulta cadastro (Amazon: regra fixa 07930/agenciamento no lookup).
+  const clientDefaults = await lookupClientNfDefaults(params.clientCnpj, params.clientName);
+  const isAmazonNf = isAmazonClientLabel(params.clientName);
   const taxes = {
     retainIss: params.taxes?.retainIss ?? nfConfig.retainIss,
     iss: params.taxes?.iss ?? nfConfig.issRate,
@@ -540,7 +584,12 @@ export async function scheduleInvoice(params: {
     ir: params.taxes?.ir ?? nfConfig.ir ?? 0,
     pis: params.taxes?.pis ?? nfConfig.pis ?? 0,
   };
-  let rawDesc = clientDefaults?.serviceDescription || params.serviceDescription || nfConfig.serviceDescription;
+  let rawDesc =
+    (isAmazonNf
+      ? clientDefaults?.serviceDescription || AMAZON_NF_DEFAULTS.serviceDescription
+      : clientDefaults?.serviceDescription) ||
+    params.serviceDescription ||
+    nfConfig.serviceDescription;
   // Sanitização preventiva: usuários às vezes colam "07930 | Serviços relacionados..."
   // (código + nome do serviço municipal) no campo descrição. Isso quebra a NF
   // (Prefeitura SP devolve NFe003). Detecta e substitui por descrição padrão.
@@ -560,7 +609,11 @@ export async function scheduleInvoice(params: {
   const overrideName = String(params.municipalServiceName || '').trim();
   const clientCode = String(clientDefaults?.municipalServiceCode || '').replace(/\D/g, '');
   const clientNameSvc = String(clientDefaults?.municipalServiceName || '').trim();
-  if (params.municipalServiceId) {
+  if (isAmazonNf) {
+    // Regra permanente Amazon: ignora nome antigo (monitoramento) e força agenciamento 07930.
+    body.municipalServiceCode = AMAZON_NF_DEFAULTS.municipalServiceCode;
+    body.municipalServiceName = AMAZON_NF_DEFAULTS.municipalServiceName;
+  } else if (params.municipalServiceId) {
     body.municipalServiceId = params.municipalServiceId;
   } else if (overrideCode) {
     body.municipalServiceCode = overrideCode;
