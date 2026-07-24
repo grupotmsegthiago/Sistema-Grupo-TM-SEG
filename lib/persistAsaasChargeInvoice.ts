@@ -4,6 +4,10 @@
  * Idempotente por asaas_payment_id.
  */
 import { createSupabaseAdminClient } from './supabaseAdmin.js';
+import {
+  CLIENT_RECEIVABLE_CATEGORY,
+  resolveClientReceivableDescription,
+} from './billing/receivableDescription.js';
 
 export type PersistAsaasChargeInput = {
   paymentId: string;
@@ -52,26 +56,30 @@ function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Extrai o texto da NF (discriminação) a partir de notes/serviceDescription. */
+/**
+ * Descrição do Contas a Receber na emissão de NF.
+ * Formato: "Ref. a primeira quinzena de Junho/2026" (não "NF TMSEG — Cliente").
+ */
 export function resolveNfServiceDescription(input: {
   serviceDescription?: string | null;
   notes?: string | null;
   clientName?: string | null;
   trackingNumber?: string | null;
   paymentId?: string | null;
+  competenceDate?: string | null;
 }): string {
-  const explicit = String(input.serviceDescription || '').trim();
-  if (explicit) return explicit.slice(0, 500);
-  const lines = String(input.notes || '')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
-  const main = lines.find(
-    (l) => !/^Ref\.\s*rastreio:/i.test(l) && !/^CNAE\//i.test(l) && !/^Asaas:/i.test(l),
-  );
-  if (main) return main.slice(0, 500);
-  const number = String(input.trackingNumber || '').trim() || (input.paymentId ? `ASAAS-${input.paymentId}` : '');
-  return number ? `NF ${number} — ${input.clientName || 'Cliente'}` : String(input.clientName || 'Cliente');
+  const tracking =
+    String(input.trackingNumber || '').trim() ||
+    (input.paymentId ? `ASAAS-${input.paymentId}` : '');
+  const fallback = tracking
+    ? `NF ${tracking} — ${input.clientName || 'Cliente'}`
+    : String(input.clientName || 'Cliente');
+  return resolveClientReceivableDescription({
+    serviceDescription: input.serviceDescription,
+    notes: input.notes,
+    competenceDate: input.competenceDate,
+    fallback,
+  });
 }
 
 export async function persistAsaasChargeInvoice(
@@ -193,17 +201,18 @@ export async function persistAsaasChargeInvoice(
 
     let receivableCreated = false;
     if (!input.skipReceivable && invoiceId) {
-      // Mesmo texto da discriminação da NF (não "NF TMSEG — Cliente").
+      // Contas a Receber: categoria Cliente + descrição no formato da quinzena.
       const desc = resolveNfServiceDescription({
         serviceDescription: input.serviceDescription,
         notes: input.notes,
         clientName: input.clientName,
         trackingNumber: number,
         paymentId,
+        competenceDate: date,
       });
       let rxQuery = sb
         .from('financial_transactions')
-        .select('id')
+        .select('id, description, category_name')
         .or(`description.ilike.%${number}%,notes.ilike.%${number}%,notes.ilike.%${paymentId}%`)
         .eq('status', 'PENDING')
         .limit(1);
@@ -219,6 +228,7 @@ export async function persistAsaasChargeInvoice(
           entity_type: 'Client',
           entity_id: input.entityId ?? null,
           entity_name: input.clientName || 'Cliente',
+          category_name: CLIENT_RECEIVABLE_CATEGORY,
           notes: `Fatura ${number} | Asaas: ${paymentId} | Emissora: ${input.issuerCompany || '-'} | ${desc}`,
           created_by: input.createdBy || 'Sistema',
           payment_method: 'BOLETO',
@@ -226,6 +236,25 @@ export async function persistAsaasChargeInvoice(
         if (signal) rxIns = rxIns.abortSignal(signal);
         const { error: rxErr } = await rxIns;
         if (!rxErr) receivableCreated = true;
+      } else {
+        // Corrige lançamento antigo criado com fallback "NF TMSEG — …" / sem categoria.
+        const existingId = rxExisting[0]?.id;
+        const prevDesc = String(rxExisting[0]?.description || '');
+        const prevCat = String(rxExisting[0]?.category_name || '').trim();
+        const looksLikeLegacyNf =
+          /^NF\s+(TMSEG-|ASAAS-)/i.test(prevDesc) || !/^Ref\.\s+a/i.test(prevDesc);
+        if (existingId && (looksLikeLegacyNf || !prevCat)) {
+          let rxUp = sb
+            .from('financial_transactions')
+            .update({
+              description: desc,
+              category_name: prevCat || CLIENT_RECEIVABLE_CATEGORY,
+              notes: `Fatura ${number} | Asaas: ${paymentId} | Emissora: ${input.issuerCompany || '-'} | ${desc}`,
+            })
+            .eq('id', existingId);
+          if (signal) rxUp = rxUp.abortSignal(signal);
+          await rxUp;
+        }
       }
     }
 

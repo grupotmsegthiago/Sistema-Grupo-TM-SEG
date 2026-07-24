@@ -23,6 +23,10 @@ import {
     MUNICIPAL_SERVICE_OPTIONS,
     resolveMunicipalServiceForClient,
 } from '../lib/billing/municipalServiceOptions';
+import {
+    CLIENT_RECEIVABLE_CATEGORY,
+    resolveClientReceivableDescription,
+} from '../lib/billing/receivableDescription';
 import { stashInvoiceWatch } from '../lib/invoiceCleanSlate';
 import {
     formatClientAddressIncompleteError,
@@ -2704,14 +2708,16 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         return urlData.publicUrl || '';
     };
 
-    const getQuinzenaRef = (dateStr: string, clientName: string): string => {
-        const d = new Date(dateStr + 'T12:00:00');
-        const day = d.getDate();
-        const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-        const month = monthNames[d.getMonth()];
-        const year = d.getFullYear();
-        const quinzena = day <= 15 ? 'Primeira' : 'Segunda';
-        return `Ref. ${quinzena} Quinzena de ${month}/${year} - ${clientName}`;
+    /** Descrição do Contas a Receber na emissão de NF: "Ref. a primeira quinzena de Junho/2026". */
+    const getQuinzenaRef = (dateStr: string, _clientName?: string): string => {
+        return resolveClientReceivableDescription({
+            startDate,
+            endDate,
+            competenceDate: dateStr,
+            serviceDescription: invoiceForm.notes || asaasDescription,
+            notes: invoiceForm.notes,
+            asaasDescription,
+        });
     };
 
     const resetInvoiceForm = () => {
@@ -2935,22 +2941,55 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     let receivableOk = false;
                     try {
                         const transferPay = isBankTransferBillingClient(chClientName, clientName);
-                        // Descrição = texto da NF (observação/discriminação), não "NF TMSEG — cliente".
-                        const nfDescSplit = String(invoiceForm.notes || asaasDescription || quinzenaDesc || '').trim()
-                          || `NF ${chNfNumber} — ${chClientName}`;
-                        const { error: rxError } = await supabase.from('financial_transactions').insert({
+                        const nfDescSplit = quinzenaDesc || resolveClientReceivableDescription({
+                            startDate,
+                            endDate,
+                            competenceDate: invoiceForm.date,
+                            serviceDescription: invoiceForm.notes || asaasDescription,
+                            notes: invoiceForm.notes,
+                            asaasDescription,
+                            fallback: `NF ${chNfNumber} — ${chClientName}`,
+                        });
+                        const rxPayload = {
                             description: nfDescSplit.slice(0, 500),
                             amount: chValue,
-                            type: 'INCOME',
-                            status: 'PENDING',
+                            type: 'INCOME' as const,
+                            status: 'PENDING' as const,
                             due_date: dueDate,
                             entity_type: 'Client',
                             entity_id: invoiceForm.client,
                             entity_name: chClientName,
+                            category_name: CLIENT_RECEIVABLE_CATEGORY,
                             notes: `Fatura ${chNfNumber} | Asaas: ${chPayment?.id || '-'} | CNPJ: ${ch.customer?.cpfCnpj || '-'} | Emissora: ${invoiceForm.issuer_company || '-'} | ${nfDescSplit}`.trim(),
                             created_by: userName,
                             payment_method: transferPay ? 'TRANSFERENCIA' : 'BOLETO',
-                        });
+                        };
+                        // Idempotente: servidor pode ter criado no create-charge.
+                        let rxError: any = null;
+                        if (chPayment?.id || chNfNumber) {
+                            const orParts = [
+                                chNfNumber ? `notes.ilike.%${chNfNumber}%` : '',
+                                chPayment?.id ? `notes.ilike.%${chPayment.id}%` : '',
+                            ].filter(Boolean).join(',');
+                            const { data: rxExisting } = orParts
+                                ? await supabase.from('financial_transactions').select('id').or(orParts).eq('status', 'PENDING').limit(1)
+                                : { data: null as any };
+                            if (rxExisting?.[0]?.id) {
+                                const up = await supabase.from('financial_transactions').update({
+                                    description: rxPayload.description,
+                                    category_name: CLIENT_RECEIVABLE_CATEGORY,
+                                    notes: rxPayload.notes,
+                                    payment_method: rxPayload.payment_method,
+                                }).eq('id', rxExisting[0].id);
+                                rxError = up.error;
+                            } else {
+                                const ins = await supabase.from('financial_transactions').insert(rxPayload);
+                                rxError = ins.error;
+                            }
+                        } else {
+                            const ins = await supabase.from('financial_transactions').insert(rxPayload);
+                            rxError = ins.error;
+                        }
                         if (rxError) {
                             console.error(`[Auto Contas a Receber ${i + 1}]`, rxError);
                         } else {
@@ -3083,22 +3122,54 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             let receivableOk = false;
             try {
                 const transferPay = isBankTransferBillingClient(clientName);
-                // Descrição = texto da NF (observação/discriminação), igual ao modal.
-                const nfDesc = String(invoiceForm.notes || asaasDescription || quinzenaDesc || '').trim()
-                  || `NF ${nfNumber} — ${clientName}`;
-                const { error: rxError } = await supabase.from('financial_transactions').insert({
+                const nfDesc = quinzenaDesc || resolveClientReceivableDescription({
+                    startDate,
+                    endDate,
+                    competenceDate: invoiceForm.date,
+                    serviceDescription: invoiceForm.notes || asaasDescription,
+                    notes: invoiceForm.notes,
+                    asaasDescription,
+                    fallback: `NF ${nfNumber} — ${clientName}`,
+                });
+                const rxPayload = {
                     description: nfDesc.slice(0, 500),
                     amount: parsedAmt,
-                    type: 'INCOME',
-                    status: 'PENDING',
+                    type: 'INCOME' as const,
+                    status: 'PENDING' as const,
                     due_date: dueDate,
                     entity_type: 'Client',
                     entity_id: invoiceForm.client,
                     entity_name: clientName,
+                    category_name: CLIENT_RECEIVABLE_CATEGORY,
                     notes: `Fatura ${nfNumber} | Asaas: ${payment?.id || '-'} | Emissora: ${invoiceForm.issuer_company || '-'} | ${nfDesc}`.trim(),
                     created_by: userName,
                     payment_method: transferPay ? 'TRANSFERENCIA' : 'BOLETO',
-                });
+                };
+                let rxError: any = null;
+                if (payment?.id || nfNumber) {
+                    const orParts = [
+                        nfNumber ? `notes.ilike.%${nfNumber}%` : '',
+                        payment?.id ? `notes.ilike.%${payment.id}%` : '',
+                    ].filter(Boolean).join(',');
+                    const { data: rxExisting } = orParts
+                        ? await supabase.from('financial_transactions').select('id').or(orParts).eq('status', 'PENDING').limit(1)
+                        : { data: null as any };
+                    if (rxExisting?.[0]?.id) {
+                        const up = await supabase.from('financial_transactions').update({
+                            description: rxPayload.description,
+                            category_name: CLIENT_RECEIVABLE_CATEGORY,
+                            notes: rxPayload.notes,
+                            payment_method: rxPayload.payment_method,
+                        }).eq('id', rxExisting[0].id);
+                        rxError = up.error;
+                    } else {
+                        const ins = await supabase.from('financial_transactions').insert(rxPayload);
+                        rxError = ins.error;
+                    }
+                } else {
+                    const ins = await supabase.from('financial_transactions').insert(rxPayload);
+                    rxError = ins.error;
+                }
                 if (rxError) {
                     console.error('[Auto Contas a Receber]', rxError);
                     setAiStatus(`Cobrança Asaas e fatura salvas, mas Contas a Receber falhou: ${rxError.message}`);
@@ -3606,20 +3677,44 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             const dueDate = invoiceForm.boleto_due_date || invoiceForm.date;
             const quinzenaDesc = getQuinzenaRef(invoiceForm.date, clientName);
             try {
-                const nfDescSave = String(invoiceForm.notes || asaasDescription || quinzenaDesc || '').trim()
-                  || `NF ${nfNumber} — ${clientName}`;
-                await supabase.from('financial_transactions').insert({
+                const nfDescSave = quinzenaDesc || resolveClientReceivableDescription({
+                    startDate,
+                    endDate,
+                    competenceDate: invoiceForm.date,
+                    serviceDescription: invoiceForm.notes || asaasDescription,
+                    notes: invoiceForm.notes,
+                    asaasDescription,
+                    fallback: `NF ${nfNumber} — ${clientName}`,
+                });
+                const rxPayload = {
                     description: nfDescSave.slice(0, 500),
                     amount: parsedAmt,
-                    type: 'INCOME',
-                    status: 'PENDING',
+                    type: 'INCOME' as const,
+                    status: 'PENDING' as const,
                     due_date: dueDate,
                     entity_type: 'Client',
                     entity_id: invoiceForm.client,
                     entity_name: clientName,
+                    category_name: CLIENT_RECEIVABLE_CATEGORY,
                     notes: `Fatura ${nfNumber} | Emissora: ${invoiceForm.issuer_company || '-'} | ${nfDescSave}`.trim(),
                     created_by: userName,
-                });
+                };
+                const orParts = [
+                    nfNumber ? `notes.ilike.%${nfNumber}%` : '',
+                    asaasResult?.payment?.id ? `notes.ilike.%${asaasResult.payment.id}%` : '',
+                ].filter(Boolean).join(',');
+                const { data: rxExisting } = orParts
+                    ? await supabase.from('financial_transactions').select('id').or(orParts).eq('status', 'PENDING').limit(1)
+                    : { data: null as any };
+                if (rxExisting?.[0]?.id) {
+                    await supabase.from('financial_transactions').update({
+                        description: rxPayload.description,
+                        category_name: CLIENT_RECEIVABLE_CATEGORY,
+                        notes: rxPayload.notes,
+                    }).eq('id', rxExisting[0].id);
+                } else {
+                    await supabase.from('financial_transactions').insert(rxPayload);
+                }
             } catch (e) {
                 console.error('[Auto Contas a Receber] Erro:', e);
             }
