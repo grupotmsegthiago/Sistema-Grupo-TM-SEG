@@ -30,10 +30,10 @@ export const MUNICIPAL_SERVICE_OPTIONS: readonly MunicipalServiceOption[] = [
   {
     id: 'intermediacao',
     code: '07930',
-    // Igual à NFS-e manual SP Amazon (NF 265): descrição do código sem prefixar "07930 -".
-    name: 'Agenciamento, corretagem ou intermediação de bens móveis ou imóveis, não abrangidos em outros itens',
-    label: '07930 — Intermediação / Agenciamento',
-    // Discriminação dos serviços da mesma NF manual.
+    // Código 07930 na NFS-e SP: descrição oficial de monitoramento/rastreamento.
+    name: '07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
+    label: '07930 — Intermediação / Monitoramento',
+    // Discriminação comercial (texto da NF); o nome do código fica em `name` acima.
     descriptionBase: 'CONTRATAÇÃO E INTERMEDIAÇÃO DE CONTRATOS E AGENCIAMENTO DE VENDAS',
   },
 ] as const;
@@ -53,7 +53,7 @@ export function isAmazonBillingClient(
   return `${name || ''} ${tradingName || ''}`.toUpperCase().includes('AMAZON');
 }
 
-/** Regra fixa Amazon (NFS-e manual SP nº 265): 07930 agenciamento. */
+/** Regra fixa Amazon: código 07930 com descrição de monitoramento. */
 export function amazonMunicipalServiceOption(): MunicipalServiceOption {
   return findMunicipalServiceOption('intermediacao');
 }
@@ -82,7 +82,7 @@ export type ClientMunicipalNfFields = {
 
 /**
  * Resolve serviço municipal do cliente.
- * Amazon: sempre intermediação 07930 (cadastro + default de nome).
+ * Amazon: sempre 07930 com descrição de monitoramento.
  * Demais: usa `nf_*` do cadastro quando completo; senão heurística por nome.
  */
 export function resolveMunicipalServiceForClient(
@@ -95,7 +95,10 @@ export function resolveMunicipalServiceForClient(
   const code = String(client?.nf_municipal_service_code || '').replace(/\D/g, '');
   const storedName = String(client?.nf_municipal_service_name || '').trim();
   if (code && storedName) {
-    if (/agenciamento|intermedia/i.test(storedName)) {
+    if (/monitoramento|rastreamento/i.test(storedName) && code === '07930') {
+      return findMunicipalServiceOption('intermediacao');
+    }
+    if (/agenciamento|intermedia/i.test(storedName) && code === '07930') {
       return findMunicipalServiceOption('intermediacao');
     }
     const exact = MUNICIPAL_SERVICE_OPTIONS.find(
