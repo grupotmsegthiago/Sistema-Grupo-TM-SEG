@@ -313,5 +313,5 @@ export async function transferPixFromCompanyCore(params: {
   const combined = [internalError ? `Repasse interno: ${internalError}` : null, pixError ? `Pix: ${pixError}` : null]
     .filter(Boolean)
     .join('. ');
-  throw new Error(formatAsaasTransferError(combined || 'Falha na transferência'));
+  throw new Error(formatAsaasTransferError(combined || 'Falha na transferência', company));
 }

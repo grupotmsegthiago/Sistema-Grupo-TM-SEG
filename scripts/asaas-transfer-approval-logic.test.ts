@@ -18,14 +18,25 @@ test('normalizeAsaasWebhookToken remove Bearer', () => {
 });
 
 test('matchAsaasTransferWebhookToken aceita token por empresa', () => {
-  const prev = {
-    ASAAS_TRANSFER_WEBHOOK_TOKEN: process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN,
-    ASAAS_WEBHOOK_TMGESTAO_API: process.env.ASAAS_WEBHOOK_TMGESTAO_API,
-    ASAAS_WEBHOOK_TMSEGURANCA_API: process.env.ASAAS_WEBHOOK_TMSEGURANCA_API,
-    ASAAS_WEBHOOK_TMSECURITY_API: process.env.ASAAS_WEBHOOK_TMSECURITY_API,
-  };
+  const names = [
+    'ASAAS_TRANSFER_WEBHOOK_TOKEN',
+    'ASAAS_WEBHOOK_TMGESTAO_API',
+    'ASAAS_WEBHOOK_TMSEGURANCA_API',
+    'ASAAS_WEBHOOK_TMSECURITY_API',
+    'ASAAS_WEBHOOK_TMGESTAO',
+    'ASAAS_WEBHOOK_TMSEGURANCA',
+    'ASAAS_WEBHOOK_TMSECURITY',
+    'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMGESTAO',
+    'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMSEGURANCA',
+    'ASAAS_TRANSFER_WEBHOOK_TOKEN_TMSECURITY',
+    'ZAPI_WEBHOOK_TMSECURITY_API',
+  ];
+  const prev: Record<string, string | undefined> = {};
+  for (const n of names) {
+    prev[n] = process.env[n];
+    delete process.env[n];
+  }
   try {
-    delete process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN;
     process.env.ASAAS_WEBHOOK_TMGESTAO_API = 'tok-gestao';
     process.env.ASAAS_WEBHOOK_TMSEGURANCA_API = 'tok-seg';
     process.env.ASAAS_WEBHOOK_TMSECURITY_API = 'tok-security';

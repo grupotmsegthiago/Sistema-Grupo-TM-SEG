@@ -6,12 +6,13 @@ import { ASAAS_PIX_FINANCEIRO_EMAIL } from '../lib/asaasPixTransfer.ts';
 test('formatAsaasTransferError orienta liberar saque no painel Asaas', () => {
   const msg = formatAsaasTransferError(
     'Asaas: A chave de API fornecida não possui permissão para realizar operações de saque via API.',
+    'TM SEGURANCA',
   );
   assert.match(msg, /recusou o saque via API/i);
   assert.match(msg, /Mecanismos de segurança/i);
   assert.match(msg, /transfer-approval/);
-  assert.match(msg, /ASAAS_WEBHOOK_TMGESTAO_API/);
-  assert.match(msg, /Asaas_TMSEGESTÃO_API|ASAAS_TMGESTAO_API/i);
+  assert.match(msg, /ASAAS_WEBHOOK_TMSEGURANCA_API/);
+  assert.match(msg, /ASAAS_TMSEGURANCA_API|TMSEGURANCA/i);
   assert.doesNotMatch(msg, /Replit/i);
   assert.doesNotMatch(msg, /ASAAS_API_KEY_TMSECURITY_60/);
 });

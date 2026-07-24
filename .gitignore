@@ -25,3 +25,4 @@ client/public/build-meta.json
 .vercel
 .env.vercel.production
 .env*
+.env.vercel.prod

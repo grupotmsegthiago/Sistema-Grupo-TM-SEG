@@ -36,16 +36,30 @@ function splitCombinedTransferErrors(msg: string): CombinedTransferErrors {
   };
 }
 
-function withdrawalDeniedMessage(): string {
+function withdrawalDeniedMessage(companyHint?: string): string {
+  const company = String(companyHint || '').trim();
+  const isSeguranca = /SEGURAN/i.test(company);
+  const keyEnv = isSeguranca
+    ? 'ASAAS_TMSEGURANCA_API (ou TMSEGURANCA)'
+    : /SECURITY/i.test(company)
+      ? 'ASAAS_TMSECURITY_API'
+      : 'ASAAS_TMGESTAO_API (ou Asaas_TMSEGESTÃO_API)';
+  const webhookEnv = isSeguranca
+    ? 'ASAAS_WEBHOOK_TMSEGURANCA_API'
+    : /SECURITY/i.test(company)
+      ? 'ASAAS_WEBHOOK_TMSECURITY_API'
+      : 'ASAAS_WEBHOOK_TMGESTAO_API';
+  const conta = company || 'TM Gestão / TM Segurança / TM Security';
+
   return (
-    'O Asaas recusou o saque via API nesta conta (o saldo aparece, mas a transferência é bloqueada). ' +
-    'Na conta Asaas de origem (TM Gestão / TM Segurança / TM Security): ' +
-    '1) Integrações → Mecanismos de segurança → ative o webhook de aprovação de transferências com a URL ' +
+    `O Asaas recusou o saque via API na conta ${conta} (o saldo aparece, mas a chave não tem permissão de transferência). ` +
+    'Isso costuma acontecer na TM Segurança quando a chave foi gerada antes do mecanismo de saque. ' +
+    `Na conta Asaas ${isSeguranca ? 'TM Segurança' : 'de origem'}: ` +
+    '1) Integrações → Mecanismos de segurança → webhook de aprovação com a URL ' +
     'https://sistema.grupotmseg.com.br/api/asaas/transfer-approval e um authToken; ' +
-    '2) grave esse authToken na Vercel (ASAAS_WEBHOOK_TMGESTAO_API, ASAAS_WEBHOOK_TMSEGURANCA_API ou ASAAS_WEBHOOK_TMSECURITY_API); ' +
-    '3) se a chave API foi criada antes dessa liberação, gere uma nova chave no Asaas, cole em ' +
-    'Asaas_TMSEGESTÃO_API / ASAAS_TMGESTAO_API, ASAAS_TMSEGURANCA_API ou ASAAS_TMSECURITY_API e faça redeploy. ' +
-    'Sem o mecanismo de saque liberado, o Asaas sempre devolve “sem permissão para saque via API”.'
+    `2) grave o authToken na Vercel em ${webhookEnv}; ` +
+    `3) Integrações → Chaves de API → gere uma NOVA chave, cole em ${keyEnv} e faça redeploy. ` +
+    'A chave antiga continua bloqueada mesmo com saldo liberado.'
   );
 }
 
@@ -57,13 +71,17 @@ function accountsNotLinkedMessage(): string {
   );
 }
 
-export function formatAsaasTransferError(raw: string): string {
+export function formatAsaasTransferError(raw: string, companyHint?: string): string {
   const msg = String(raw || '').trim();
   if (!msg) return 'Falha na transferência Pix. Tente novamente.';
 
   const combined = splitCombinedTransferErrors(msg);
   const internal = combined.internal || '';
   const pix = combined.pix || '';
+  // Se a mensagem citar a empresa, preferir esse hint no texto final.
+  const inferredCompany =
+    companyHint ||
+    (msg.match(/TM\s*SEGURAN[ÇC]A|TM\s*SECURITY|TM\s*GEST[AÃ]O/i)?.[0] ?? undefined);
 
   if (PIX_DEST_NOT_REGISTERED.test(pix || internal || msg)) {
     return (
@@ -74,15 +92,15 @@ export function formatAsaasTransferError(raw: string): string {
   }
 
   if (internal && ACCOUNTS_NOT_LINKED.test(internal) && pix && WITHDRAWAL_DENIED.test(pix)) {
-    return `${accountsNotLinkedMessage()} Em seguida: ${withdrawalDeniedMessage()}`;
+    return `${accountsNotLinkedMessage()} Em seguida: ${withdrawalDeniedMessage(inferredCompany)}`;
   }
 
   if (ACCOUNTS_NOT_LINKED.test(internal || msg) && !WITHDRAWAL_DENIED.test(pix || msg)) {
     return accountsNotLinkedMessage();
   }
 
-  if (WITHDRAWAL_DENIED.test(pix || msg)) {
-    return withdrawalDeniedMessage();
+  if (WITHDRAWAL_DENIED.test(pix || msg) || /insufficient_permission/i.test(msg)) {
+    return withdrawalDeniedMessage(inferredCompany);
   }
 
   if (DUPLICATE_TRANSFER.test(msg)) {
