@@ -255,6 +255,15 @@ export async function findOrCreateCustomer(params: {
   return asaasFetch('/customers', { method: 'POST', body: JSON.stringify(body), signal: params.signal }, params.company);
 }
 
+/** Cobrança Asaas (handler leve — sem server/asaasService). */
+export async function getPayment(
+  paymentId: string,
+  company?: string,
+  signal?: AbortSignal,
+): Promise<AsaasPayment & Record<string, any>> {
+  return asaasFetch(`/payments/${encodeURIComponent(paymentId)}`, { signal }, company);
+}
+
 /** Lista NFs Asaas de uma cobrança (handler leve — sem server/asaasService). */
 export async function getInvoicesByPayment(
   paymentId: string,
@@ -269,6 +278,38 @@ export async function getInvoicesByPayment(
   if (Array.isArray(data?.data)) return data.data;
   if (Array.isArray(data)) return data;
   return [];
+}
+
+export async function getPaymentPixQrCode(
+  paymentId: string,
+  company?: string,
+  signal?: AbortSignal,
+): Promise<{ payload?: string; encodedImage?: string } | null> {
+  try {
+    return await asaasFetch(
+      `/payments/${encodeURIComponent(paymentId)}/pixQrCode`,
+      { signal },
+      company,
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function getPaymentBankSlip(
+  paymentId: string,
+  company?: string,
+  signal?: AbortSignal,
+): Promise<{ identificationField?: string; barCode?: string } | null> {
+  try {
+    return await asaasFetch(
+      `/payments/${encodeURIComponent(paymentId)}/identificationField`,
+      { signal },
+      company,
+    );
+  } catch {
+    return null;
+  }
 }
 
 export async function createPayment(params: {

@@ -437,17 +437,29 @@ const FinancialInvoiceControl: React.FC = () => {
           company: inv.issuer_company || '',
         }),
       });
-      const result = await res.json();
-      if (result.error) throw new Error(result.error);
+      const raw = await res.text();
+      let result: any = {};
+      try {
+        result = raw.trim() ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(
+          res.status === 504 || /An error occurred|FUNCTION_INVOCATION_TIMEOUT/i.test(raw)
+            ? 'Timeout ao sincronizar (servidor). Atualize a página e tente de novo.'
+            : `Resposta inválida do servidor (${res.status}).`,
+        );
+      }
+      if (!res.ok || result.error) throw new Error(result.error || `HTTP ${res.status}`);
       const parts: string[] = [`Pagamento: ${result.statusBr || result.status}`];
       if (result.nfStatus) {
         const nfLabel = result.nfStatus === 'AUTHORIZED' ? 'Autorizada'
           : result.nfStatus === 'SCHEDULED' ? 'Agendada'
-          : result.nfStatus === 'PROCESSING' ? 'Processando'
+          : result.nfStatus === 'PROCESSING' || result.nfStatus === 'SYNCHRONIZED' ? 'Processando'
+          : result.nfStatus === 'ERROR' ? 'Erro na prefeitura'
           : result.nfStatus === 'CANCELED' ? 'Cancelada'
           : result.nfStatus;
         parts.push(`NF: ${nfLabel}${result.nfNumber ? ` (Nº ${result.nfNumber})` : ''}`);
       }
+      if (result.nfLastError) parts.push(`Detalhe: ${result.nfLastError}`);
       if (result.nfPdfUrl) parts.push('NF PDF atualizado');
       parts.push(`Boleto: ${result.hasBoleto ? 'Disponível ✓' : 'Pendente ✗'}`);
       parts.push(`NF Fiscal: ${result.hasNf ? 'Disponível ✓' : 'Pendente ✗'}`);

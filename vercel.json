@@ -399,6 +399,10 @@
       "destination": "/api/asaas-transfer-approval"
     },
     {
+      "source": "/api/asaas/sync-payment-status",
+      "destination": "/api/asaas-sync-payment-status"
+    },
+    {
       "source": "/api/nf/summary",
       "destination": "/api/nf-control?op=summary"
     },

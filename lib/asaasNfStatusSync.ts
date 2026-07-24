@@ -97,14 +97,19 @@ export async function syncPendingAsaasNfStatuses(opts?: {
         patch.asaas_invoice_url = nf.pdfUrl;
         patch.nf_retry_paused = false;
       }
-      // Qualquer NF encontrada no Asaas invalida erro stale de chave/CEP antigo.
-      if (hadStaleError) {
-        patch.nf_last_error = null;
-        result.clearedErrors++;
-      }
-      if (nf.status === 'AUTHORIZED' || nf.pdfUrl) {
+      const asaasErr = String(nf.statusDescription || '').trim();
+      const nfStatusUpper = String(nf.status || '').toUpperCase();
+      if ((nfStatusUpper === 'ERROR' || nfStatusUpper === 'FAILED') && asaasErr) {
+        // Erro real da prefeitura/Asaas (ex.: falha de autenticação fiscal).
+        patch.nf_last_error = asaasErr.slice(0, 500);
+      } else if (nf.status === 'AUTHORIZED' || nf.pdfUrl) {
         patch.nf_last_error = null;
         patch.nf_retry_paused = false;
+        if (hadStaleError) result.clearedErrors++;
+      } else if (hadStaleError && nfStatusUpper !== 'ERROR' && nfStatusUpper !== 'FAILED') {
+        // Qualquer NF ativa no Asaas invalida erro stale de chave/CEP antigo.
+        patch.nf_last_error = null;
+        result.clearedErrors++;
       }
 
       const { error: upErr } = await sb.from('financial_invoices').update(patch).eq('id', inv.id);
