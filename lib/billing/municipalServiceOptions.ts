@@ -30,7 +30,8 @@ export const MUNICIPAL_SERVICE_OPTIONS: readonly MunicipalServiceOption[] = [
   {
     id: 'intermediacao',
     code: '07930',
-    name: '07930 - Intermediação / Agenciamento de Contrato',
+    // Nome alinhado à NFS-e manual SP (ex.: Amazon NF 265) — item LC 116 / código municipal 07930.
+    name: '07930 - Agenciamento, corretagem ou intermediação de bens móveis ou imóveis, não abrangidos em outros itens',
     label: '07930 — Intermediação / Agenciamento',
     descriptionBase: 'Ref. aos Serviços de Intermediação de Agenciamento de Contrato',
   },
@@ -50,7 +51,8 @@ export function defaultMunicipalServiceForClient(
   tradingName?: string | null,
 ): MunicipalServiceOption {
   const nm = `${name || ''} ${tradingName || ''}`.toUpperCase();
-  if (nm.includes('AMAZON')) return findMunicipalServiceOption('rastreamento');
+  // Amazon: NFS-e manual SP usa 07930 (agenciamento/intermediação), não 06298.
+  if (nm.includes('AMAZON')) return findMunicipalServiceOption('intermediacao');
   if (nm.includes('CEVA')) return findMunicipalServiceOption('intermediacao');
   return findMunicipalServiceOption('escolta');
 }

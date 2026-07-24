@@ -12,10 +12,10 @@ test('presets incluem 06298 e 07930', () => {
   assert.ok(codes.includes('07930'));
 });
 
-test('Amazon sugere rastreamento 06298', () => {
+test('Amazon sugere intermediação 07930', () => {
   const opt = defaultMunicipalServiceForClient('AMAZON TRANSPORTES LTDA');
-  assert.equal(opt.id, 'rastreamento');
-  assert.equal(opt.code, '06298');
+  assert.equal(opt.id, 'intermediacao');
+  assert.equal(opt.code, '07930');
 });
 
 test('CEVA sugere intermediação', () => {

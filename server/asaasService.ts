@@ -42,11 +42,13 @@ function asaasCompanies(): Record<string, CompanyConfig> {
       name: 'TM GESTÃO',
       aliases: ['TM GESTAO', 'TM GESTÃO', 'GESTAO', 'GESTÃO'],
       nf: {
-        serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
-        issRate: 5,
+        // Alinhado à NFS-e manual SP (Amazon NF 265): serviço 07930 agenciamento + ISS 2% (Simples Nacional).
+        serviceDescription: 'Ref. aos Serviços de Intermediação de Agenciamento de Contrato',
+        issRate: 2,
         retainIss: false,
         municipalServiceCode: '07930',
-        municipalServiceName: '07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
+        municipalServiceName:
+          '07930 - Agenciamento, corretagem ou intermediação de bens móveis ou imóveis, não abrangidos em outros itens',
       },
     },
     'TM SEGURANCA': {
