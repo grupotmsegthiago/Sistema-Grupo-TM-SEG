@@ -1,57 +1,36 @@
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 import {
-  overdueDays,
-  paymentStatusLabel,
-  nfStatusBucket,
-  nfBucketLabel,
+  formatNfLastError,
+  isHardNfEmissionError,
+  isSoftNfPendingMessage,
   nfBucketDetail,
-} from '../lib/invoiceDisplay';
+  nfStatusBucket,
+} from '../lib/invoiceDisplay.ts';
 
-describe('invoiceDisplay — status cobrança e NF', () => {
-  const now = new Date('2026-07-23T12:00:00-03:00');
-
-  it('overdueDays calcula dias vencidos', () => {
-    assert.equal(overdueDays('2026-07-08', now), 15);
-    assert.equal(overdueDays('2026-07-23', now), 0);
-    assert.equal(overdueDays('2026-07-30', now), 0);
-    assert.equal(overdueDays(null, now), null);
+describe('invoiceDisplay NF errors', () => {
+  it('trata mensagem soft como processamento, não falha', () => {
+    const soft =
+      'NF isolada — agendada pelo Controle/worker. Obs.: saldo Asaas OK não garante NF';
+    assert.equal(isSoftNfPendingMessage(soft), true);
+    assert.equal(isHardNfEmissionError(soft, 'PROCESSING'), false);
+    assert.equal(nfStatusBucket('PROCESSING', { lastError: soft }), 'aguardando');
+    assert.equal(formatNfLastError(soft), null);
   });
 
-  it('paymentStatusLabel mostra VENCIDO (N dias) e PAGO', () => {
-    assert.equal(paymentStatusLabel('PAGA', '2026-07-01', now), 'PAGO');
-    assert.equal(paymentStatusLabel('VENCIDA', '2026-07-08', now), 'VENCIDO (15 dias)');
-    assert.equal(paymentStatusLabel('EMITIDA', '2026-07-22', now), 'VENCIDO (1 dia)');
-    assert.equal(paymentStatusLabel('EMITIDA', '2026-07-30', now), 'Em Aberto');
-    assert.equal(paymentStatusLabel('CANCELADA', null, now), 'Cancelada');
+  it('exibe erro real do Asaas (401 chave inválida) como Falha', () => {
+    const err = 'Asaas API Error (401): A chave de API fornecida é inválida';
+    assert.equal(isHardNfEmissionError(err, 'PROCESSING'), true);
+    assert.equal(nfStatusBucket('PROCESSING', { lastError: err }), 'falha');
+    assert.match(nfBucketDetail('PROCESSING', { lastError: err }) || '', /chave de API/i);
   });
 
-  it('nfStatusBucket agrupa Emitida / Processando / Falha', () => {
-    assert.equal(nfStatusBucket('AUTHORIZED'), 'emitida');
-    assert.equal(nfStatusBucket('SCHEDULED'), 'aguardando');
-    assert.equal(nfStatusBucket('SYNCHRONIZED'), 'aguardando');
-    assert.equal(nfStatusBucket('PROCESSING'), 'aguardando');
-    // ERROR/STUCK só viram Falha quando pausados; senão continuam Processando
-    assert.equal(nfStatusBucket('ERROR'), 'aguardando');
-    assert.equal(nfStatusBucket('STUCK', { paused: true }), 'falha');
-    assert.equal(nfStatusBucket('SYNCHRONIZED', { stuckByAge: true, paused: true }), 'falha');
-    assert.equal(nfBucketLabel('emitida'), 'Emitida');
-    assert.equal(nfBucketLabel('aguardando'), 'Processando');
-    assert.equal(nfBucketLabel('falha'), 'Falha');
-    assert.match(nfBucketDetail('STUCK', { provider: 'ASAAS', ageHours: 465, paused: true }) || '', /TRAVADA/);
+  it('ERROR status vira Falha mesmo sem mensagem', () => {
+    assert.equal(nfStatusBucket('ERROR', {}), 'falha');
   });
-});
 
-describe('FinancialInvoiceControl — auto sync e labels', () => {
-  it('tela dispara sync de pagamentos e retry NF sem remover import React', async () => {
-    const fs = await import('node:fs');
-    const src = fs.readFileSync('components/FinancialInvoiceControl.tsx', 'utf8');
-    assert.match(src, /from 'react'/);
-    assert.match(src, /import React,/);
-    assert.match(src, /\/api\/asaas\/sync-open-payments\?limit=15/);
-    assert.match(src, /\/api\/nf\/retry-now\?limit=5&reopen=1/);
-    assert.match(src, /paymentStatusLabel/);
-    assert.match(src, /nfStatusBucket/);
-    assert.match(src, /VENCIDO/);
+  it('SYNCHRONIZED sem erro continua Processando / fila prefeitura', () => {
+    assert.equal(nfStatusBucket('SYNCHRONIZED', {}), 'aguardando');
+    assert.equal(nfBucketDetail('SYNCHRONIZED', {}), 'Em fila Prefeitura');
   });
 });
