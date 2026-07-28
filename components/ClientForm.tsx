@@ -803,7 +803,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
           <CommercialProposalModal 
             onClose={() => { setIsProposalModalOpen(false); fetchClientData(); }} 
             clientName={formData.trading_name || formData.name} 
-            priceTables={priceTables} 
+            priceTables={
+              selectedPriceIds.length > 0
+                ? priceTables.filter((t) => selectedPriceIds.includes(t.id))
+                : priceTables
+            }
             contactName={formData.contact} 
             email={formData.email} 
             cnpj={formData.cnpj} 
@@ -833,7 +837,28 @@ const ClientForm: React.FC<ClientFormProps> = ({
             <button onClick={() => setShowCalculator(!showCalculator)} className={`px-6 py-2.5 rounded-xl text-sm font-black flex items-center gap-2 shadow-xl transition-all uppercase border ${showCalculator ? 'bg-red-600 text-white border-red-700' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
                 <Calculator size={18} /> Simulador Comercial
             </button>
-            {id && <button onClick={() => setIsProposalModalOpen(true)} className="bg-black text-white px-6 py-2.5 rounded-xl text-sm font-black flex items-center gap-2 shadow-xl hover:bg-gray-800 transition-all uppercase"><ScrollText size={18} /> Gerar Contrato / Proposta</button>}
+            {id && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedPriceIds.length === 0) {
+                    setActiveTab('costs');
+                    showNotification(
+                      'Atenção',
+                      'Na aba Tabela de Preços, marque as rotas/tabelas que devem entrar na proposta. Só as selecionadas serão emitidas no documento.',
+                      'warning',
+                    );
+                    return;
+                  }
+                  setIsProposalModalOpen(true);
+                }}
+                className="bg-black text-white px-6 py-2.5 rounded-xl text-sm font-black flex items-center gap-2 shadow-xl hover:bg-gray-800 transition-all uppercase"
+                data-testid="button-gerar-proposta"
+              >
+                <ScrollText size={18} /> Gerar Contrato / Proposta
+                {selectedPriceIds.length > 0 ? ` (${selectedPriceIds.length})` : ''}
+              </button>
+            )}
         </div>}
       </div>
 
@@ -1347,7 +1372,9 @@ const ClientForm: React.FC<ClientFormProps> = ({
                           <div>
                               <h3 className="font-bold text-base uppercase tracking-tighter">Reajuste Seletivo</h3>
                               <p className="text-[10px] text-white/80 uppercase font-bold tracking-widest mt-1">
-                                  {selectedPriceIds.length > 0 ? `Ações em ${selectedPriceIds.length} itens marcados` : 'Marque os itens abaixo para reajustar'}
+                                  {selectedPriceIds.length > 0
+                                    ? `${selectedPriceIds.length} itens marcados — entram na proposta / reajuste / exclusão`
+                                    : 'Marque as rotas abaixo para a proposta, reajuste ou exclusão'}
                               </p>
                           </div>
                       </div>
