@@ -10,7 +10,14 @@ import {
 } from 'lucide-react';
 import MissionFinancialModal from './MissionFinancialModal';
 import MissionAuditModal from './MissionAuditModal';
-import { calculateMissionFinancials } from '../lib/financialUtils';
+import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
+
+/** Rota no relatório: cidades (não endereço completo). Ex.: PALHOÇA → FLORIANÓPOLIS */
+function formatRouteCities(origin?: string | null, destination?: string | null): string {
+  const originCity = extractCityFromAddress(origin || '').trim() || '-';
+  const destCity = extractCityFromAddress(destination || '').trim() || '-';
+  return `${originCity} → ${destCity}`;
+}
 import {
   auditMissionsBatchAsync,
   clearMissionBillingAuditCache,
@@ -594,7 +601,7 @@ const MissionReportPage: React.FC = () => {
         m.provider || '',
         m.vehicleId || '',
         [m.agent1, m.agent2].filter(Boolean).join(' & '),
-        `${m.origin ? m.origin.split(',')[0].split('-')[0].trim() : ''} → ${m.destination ? m.destination.split(',')[0].split('-')[0].trim() : ''}`,
+        formatRouteCities(m.origin, m.destination),
         fmtDate(m.created_at),
         m.startTime ? fmtTime(m.startTime) : '',
         m.endTime ? fmtDate(m.endTime) : '',
@@ -1061,8 +1068,8 @@ const MissionReportPage: React.FC = () => {
                       <td className="px-3 py-2 border-r border-gray-100 text-gray-700 max-w-[140px] truncate">{m.provider || '-'}</td>
                       <td className="px-3 py-2 border-r border-gray-100 font-mono text-gray-700 whitespace-nowrap">{m.vehicleId || '-'}</td>
                       <td className="px-3 py-2 border-r border-gray-100 text-gray-600 max-w-[180px] truncate" title={agentes}>{agentes}</td>
-                      <td className="px-3 py-2 border-r border-gray-100 text-gray-600 max-w-[200px] truncate" title={`${m.origin || ''} → ${m.destination || ''}`}>
-                        {m.origin ? m.origin.split(',')[0].split('-')[0].trim() : '-'} → {m.destination ? m.destination.split(',')[0].split('-')[0].trim() : '-'}
+                      <td className="px-3 py-2 border-r border-gray-100 text-gray-600 max-w-[200px] truncate" title={`${formatRouteCities(m.origin, m.destination)}\n${m.origin || ''} → ${m.destination || ''}`}>
+                        {formatRouteCities(m.origin, m.destination)}
                       </td>
                       <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">{fmtDate(m.created_at)}</td>
                       <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">{m.startTime ? fmtTime(m.startTime) : '-'}</td>
