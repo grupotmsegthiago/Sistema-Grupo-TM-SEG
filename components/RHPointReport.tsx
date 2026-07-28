@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { Download, FileText, Loader2, MapPin, PencilLine, Printer } from 'lucide-react';
-import { formatDateBR, formatTimeBR } from '../lib/dateUtils';
+import { formatCivilDateBR, formatIsoDateBR, formatIsoDateFromTimestampBR, formatTimeBR } from '../lib/dateUtils';
 import {
   TIME_CLOCK_STAGE_LABELS,
   TIME_CLOCK_STAGE_ORDER,
@@ -25,7 +25,8 @@ type FolhaRow = {
 function groupLogsForFolha(logs: TimeClockEntry[]): FolhaRow[] {
   const map = new Map<string, FolhaRow>();
   for (const log of logs) {
-    const date = log.timestamp.slice(0, 10);
+    // Dia civil em Brasília (não UTC — evita +1 dia após ~21h).
+    const date = formatIsoDateFromTimestampBR(log.timestamp);
     const key = `${log.user_id}_${date}`;
     const existing = map.get(key);
     if (existing) {
@@ -47,8 +48,8 @@ const RHPointReport: React.FC = () => {
     const [logs, setLogs] = useState<TimeClockEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+    const [startDate, setStartDate] = useState(() => formatIsoDateBR());
+    const [endDate, setEndDate] = useState(() => formatIsoDateBR());
     const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
     const [selectedUser, setSelectedUser] = useState('ALL');
     const [viewMode, setViewMode] = useState<'folha' | 'detalhado'>('folha');
@@ -114,7 +115,7 @@ const RHPointReport: React.FC = () => {
           };
           const first = row.entries[0];
           return [
-            formatDateBR(row.date),
+            formatCivilDateBR(row.date),
             row.userName,
             getTime('IN'),
             getTime('BREAK_START'),
@@ -220,7 +221,7 @@ const RHPointReport: React.FC = () => {
                             const lastSigned = [...row.entries].reverse().find((e) => e.signature_url);
                             return (
                               <tr key={row.key} className="hover:bg-gray-50 text-xs font-medium">
-                                <td className="px-4 py-4 font-mono">{formatDateBR(row.date)}</td>
+                                <td className="px-4 py-4 font-mono">{formatCivilDateBR(row.date)}</td>
                                 <td className="px-4 py-4 font-black uppercase text-gray-900">{row.userName}</td>
                                 {TIME_CLOCK_STAGE_ORDER.map((stage) => {
                                   const entry = getTimeClockEntryForStage(row.entries, stage);

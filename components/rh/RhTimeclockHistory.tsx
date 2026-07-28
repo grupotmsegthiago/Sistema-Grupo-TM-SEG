@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { History, User, Users, Loader2, Download, PencilLine } from 'lucide-react';
 import { useRealtimeRefresh } from '../../lib/RealtimeProvider';
-import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../../lib/dateUtils';
+import {
+  formatCivilDateBR,
+  formatDateTimeBR,
+  formatIsoDateBR,
+  formatIsoDateFromTimestampBR,
+  formatTimeBR,
+} from '../../lib/dateUtils';
 import {
   TIME_CLOCK_STAGE_LABELS,
   TIME_CLOCK_STAGE_ORDER,
@@ -23,7 +29,8 @@ type Tab = 'geral' | 'funcionario';
 function groupByDay(entries: TimeClockEntry[]): { date: string; items: TimeClockEntry[] }[] {
   const map = new Map<string, TimeClockEntry[]>();
   for (const e of entries) {
-    const date = e.timestamp.slice(0, 10);
+    // Dia civil em Brasília (não UTC — evita +1 dia após ~21h).
+    const date = formatIsoDateFromTimestampBR(e.timestamp);
     const list = map.get(date) || [];
     list.push(e);
     map.set(date, list);
@@ -43,9 +50,9 @@ const RhTimeclockHistory: React.FC = () => {
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
+    return formatIsoDateBR(d);
   });
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(() => formatIsoDateBR());
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjustPreset, setAdjustPreset] = useState<TimeclockAdjustPreset | null>(null);
   const canAdjust = canAdjustTimeclock();
@@ -220,7 +227,7 @@ const RhTimeclockHistory: React.FC = () => {
             </div>
             <div className="bg-green-600 text-white rounded-xl p-4 md:col-span-2">
               <p className="text-[10px] uppercase font-bold text-green-100">Período</p>
-              <p className="text-sm font-black">{formatDateBR(startDate)} — {formatDateBR(endDate)}</p>
+              <p className="text-sm font-black">{formatCivilDateBR(startDate)} — {formatCivilDateBR(endDate)}</p>
             </div>
           </div>
 
@@ -246,7 +253,7 @@ const RhTimeclockHistory: React.FC = () => {
                       const rowEntries = day.items;
                       return (
                         <tr key={day.date} className="border-b border-gray-50">
-                          <td className="px-4 py-2 font-mono">{formatDateBR(day.date)}</td>
+                          <td className="px-4 py-2 font-mono">{formatCivilDateBR(day.date)}</td>
                           {TIME_CLOCK_STAGE_ORDER.map((stage) => {
                             const entry = getTimeClockEntryForStage(rowEntries, stage);
                             return (
@@ -320,7 +327,7 @@ const RhTimeclockHistory: React.FC = () => {
                   <tbody className="divide-y">
                     {groupByDay(logs).map((day) => (
                       <tr key={day.date}>
-                        <td className="px-4 py-3 font-mono font-bold">{formatDateBR(day.date)}</td>
+                        <td className="px-4 py-3 font-mono font-bold">{formatCivilDateBR(day.date)}</td>
                         {TIME_CLOCK_STAGE_ORDER.map((stage) => {
                           const entry = getTimeClockEntryForStage(day.items, stage);
                           return (

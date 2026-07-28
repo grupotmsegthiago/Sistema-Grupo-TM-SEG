@@ -67,6 +67,27 @@ export const formatIsoDateBR = (date: Date = new Date()): string => {
 };
 
 /**
+ * Dia civil (yyyy-mm-dd) em Brasília a partir de um timestamp.
+ * Evita o bug de `timestamp.slice(0, 10)` (UTC), que após ~21h BRT
+ * joga a batida para o dia seguinte.
+ */
+export function formatIsoDateFromTimestampBR(timestamp: string | Date | null | undefined): string {
+  const d = toDate(timestamp);
+  if (!d) return '';
+  return formatIsoDateBR(d);
+}
+
+/**
+ * Formata data civil yyyy-mm-dd → dd/mm/aaaa sem deslocar fuso.
+ * `new Date('2026-07-28')` é UTC midnight e em BRT vira dia anterior.
+ */
+export function formatCivilDateBR(isoDate: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoDate || '').trim());
+  if (!m) return formatDateBR(isoDate);
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+/**
  * Limites UTC (ISO) do dia civil em Brasília.
  * Corrige consultas que usavam T00:00:00 sem offset e perdiam batidas após ~21h BRT.
  */
