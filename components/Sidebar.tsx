@@ -8,6 +8,7 @@ import { NAV_ITEMS, APP_VERSION } from '../constants';
 import { NavItem } from '../constants'; // Explicit import to avoid TS error if NAV_ITEMS interface isn't exported correctly
 import { logAction } from '../lib/logger';
 import { canAccessDiretoriaMenu, DIRETORIA_MENU_SCREEN_IDS } from '../lib/diretoriaAccess';
+import { canAccessGcModule, canAccessGcScreen } from '../lib/gestores/comercial/access';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -177,17 +178,29 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         if (itemId === 'finance-group' || itemId === 'fin-report') return true;
     }
 
+    // Grupo Diretoria: Cockpit (Thiagos) OU Gestor Comercial (Diretoria/Comercial)
+    if (itemId === 'diretoria-group') {
+      return canAccessDiretoriaMenu(currentUser) || canAccessGcModule(currentUser);
+    }
+
     // Menu Diretoria / Cockpit — SOMENTE Thiago Moreira ou Thiago Santos
     // (perfil "Diretoria"/Administrador sozinho NÃO libera).
     if (DIRETORIA_MENU_SCREEN_IDS.has(itemId)) {
       return canAccessDiretoriaMenu(currentUser);
     }
+
+    // Gestor Comercial IA (e futuros gestores com prefixo gc-)
+    if (itemId.startsWith('gc-')) {
+      return canAccessGcScreen(itemId, currentUser);
+    }
+
     if (itemId === 'fin-report' && canAccessDiretoriaMenu(currentUser)) return true;
     if (itemId === 'fin-report' && role === 'diretoria') return true;
 
     if (role === 'comercial') {
         const forbiddenGroups = ['finance-group', 'settings-group'];
         if (forbiddenGroups.includes(itemId)) return false;
+        if (itemId.startsWith('gc-')) return canAccessGcScreen(itemId, currentUser);
         return userPermissions.includes(itemId);
     }
 

@@ -7,6 +7,7 @@ import { runClientEmailQueueCycle } from "./clientEmailQueueWorker";
 import { runDhlWorkerTick } from "./dhlSupplierIntake";
 import { runZapiWatchdogTick } from "./zapiWatchdog";
 import { runBillingSyncTick } from "./billingSyncWorker";
+import { runGcFollowupCycle } from "./gcFollowupWorker";
 
 type CronJob = () => Promise<unknown>;
 
@@ -34,7 +35,12 @@ export function registerCronRoutes(app: Express): void {
   });
 
   cronRoute(app, "/api/cron/nf-retry", () => runRetryCycle());
-  cronRoute(app, "/api/cron/email-queue", () => runClientEmailQueueCycle());
+  cronRoute(app, "/api/cron/email-queue", async () => {
+    const emailQueue = await runClientEmailQueueCycle();
+    // Cobrança automática de agenda do Gestor Comercial (sem nova entrada em vercel.json)
+    const gcFollowups = await runGcFollowupCycle();
+    return { emailQueue, gcFollowups };
+  });
   cronRoute(app, "/api/cron/dhl", () => runDhlWorkerTick());
   cronRoute(app, "/api/cron/zapi", () => runZapiWatchdogTick());
   cronRoute(app, "/api/cron/billing-sync", () => runBillingSyncTick());
