@@ -34,6 +34,7 @@ import ExecutiveDashboard from './ExecutiveDashboard';
 import DhlSolicitationModal from './DhlSolicitationModal';
 import LossesDialog from './LossesDialog';
 import MissingTableDialog, { computeMissingTableRows, type MissingTableRow } from './MissingTableDialog';
+import { isOfficialNegativeMargin } from '../lib/resolveOfficialMissionFinancials';
 import {
   computeCanonicalRevenueCost as computeCanonicalRC,
   getCanonicalDateRange as getCanonicalDR,
@@ -1220,12 +1221,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     // OS vinculadas a um prejuízo entram no filtro mesmo com cliente diferente da mãe/filha.
     const negativeLinkedIds = useMemo(() => {
         const allSource = allMissions.length > 0 ? allMissions : periodMissions;
+        // Mesmo critério do MissionCard (pedágio + DESL), via resolver oficial.
         const negativeIds = allSource
-            .filter((m) => {
-                const rev = m.revenue_value || 0;
-                const cost = m.is_same_os ? 0 : (m.cost_value || 0);
-                return (rev - cost) < 0;
-            })
+            .filter((m) => isOfficialNegativeMargin(m))
             .map((m) => m.id);
         return collectLinkedFamilyIds(negativeIds, allSource);
     }, [allMissions, periodMissions]);
@@ -1292,10 +1290,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             }
 
             if (showNegativeMarginOnly) {
-                const rev = mission.revenue_value || 0;
-                const cost = mission.is_same_os ? 0 : (mission.cost_value || 0);
-                const resultado = rev - cost;
-                const isNegative = resultado < 0;
+                const isNegative = isOfficialNegativeMargin(mission);
                 const isLinkedToNegative = negativeLinkedIds.has(mission.id);
                 if (!isNegative && !isLinkedToNegative) return false;
             }
@@ -1371,12 +1366,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     // Counts for Badge Indicators (Global context)
     const negativeMarginCount = useMemo(() => {
         const source = periodMissions.length > 0 ? periodMissions : allMissions;
-        return source.filter(m => {
-            const rev = m.revenue_value || 0;
-            const cost = m.is_same_os ? 0 : (m.cost_value || 0);
-            const resultado = rev - cost;
-            return resultado < 0;
-        }).length;
+        return source.filter((m) => isOfficialNegativeMargin(m)).length;
     }, [periodMissions, allMissions, parentMissionIds]);
     const pendingCount = useMemo(() => allMissions.filter(m => isMissionPending(m)).length, [allMissions]);
     const tollNotConfirmedCount = useMemo(() => {
