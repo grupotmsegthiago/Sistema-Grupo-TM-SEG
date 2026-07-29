@@ -3,7 +3,13 @@
  * Diretoria / Thiagos (canRequestOsAnalysis).
  */
 
-import { canRequestOsAnalysis } from '../osAnalysisAccess';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { canRequestOsAnalysis } from '../osAnalysisAccess.js';
+import {
+  DEFAULT_SUPABASE_ANON_KEY,
+  DEFAULT_SUPABASE_URL,
+  TMSEG_SUPABASE_PROJECT_REF,
+} from '../supabaseDefaults.js';
 
 type ReqHeaders = Record<string, string | string[] | undefined>;
 
@@ -17,6 +23,11 @@ export type OsAnalysisPrincipal = {
 export function extractUserIdFromToken(token: string): string | null {
   const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
   return match ? match[1] : null;
+}
+
+function cleanEnv(value: unknown): string {
+  if (value == null) return '';
+  return String(value).trim().replace(/^["']|["']$/g, '');
 }
 
 function headerValue(req: { headers?: ReqHeaders } | undefined, name: string): string {
@@ -41,20 +52,24 @@ function normalizeRole(role: string): string {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-function parsePermissions(raw: string): string[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return raw.split(',').map((p) => p.trim()).filter(Boolean);
+function pickServiceRoleKey(): string {
+  for (const candidate of [
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_KEY,
+    process.env.TMSEG_SUPABASE_SERVICE_ROLE_KEY,
+  ]) {
+    const key = cleanEnv(candidate);
+    if (key && !key.includes('anon')) return key;
   }
+  return '';
 }
 
-/** Mesmo client admin do restante do servidor (service_role TM SEG). */
-export async function adminSupabase() {
-  const { createSupabaseAdminClient } = await import('../supabaseAdmin.js');
-  return createSupabaseAdminClient();
+export function adminSupabase(): SupabaseClient | null {
+  const key = pickServiceRoleKey();
+  if (!key) return null;
+  const envUrl = cleanEnv(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL);
+  const url = envUrl.includes(TMSEG_SUPABASE_PROJECT_REF) ? envUrl : DEFAULT_SUPABASE_URL;
+  return createClient(url || DEFAULT_SUPABASE_URL, key);
 }
 
 type ProfileRow = { name?: string; permissions?: string[] };
@@ -74,7 +89,7 @@ export async function resolveOsAnalysisPrincipal(
   const userId = extractUserIdFromToken(token);
   if (!userId) return null;
 
-  const sb = await adminSupabase();
+  const sb = adminSupabase();
   if (sb) {
     const { data } = await sb
       .from('system_users')
@@ -92,7 +107,6 @@ export async function resolveOsAnalysisPrincipal(
     }
   }
 
-  // Fallback headers (authFetch envia x-tmseg-*)
   const headerUserId = headerValue(req, 'x-tmseg-user-id');
   if (!headerUserId || headerUserId !== userId) return null;
   return {
@@ -107,6 +121,10 @@ export function principalCanRequestAnalysis(principal: OsAnalysisPrincipal): boo
   return canRequestOsAnalysis({
     name: principal.name,
     role: principal.role,
-    permissions: parsePermissions(''),
   });
+}
+
+/** Exposto para testes / fallback anon (somente leitura se RLS permitir). */
+export function anonSupabaseFallback(): SupabaseClient {
+  return createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY);
 }

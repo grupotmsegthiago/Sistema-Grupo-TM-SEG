@@ -1,4 +1,4 @@
-import { canAccessDiretoriaMenu } from './diretoriaAccess';
+import { canAccessDiretoriaMenu } from './diretoriaAccess.js';
 
 export type OsAnalysisUser = {
   name?: string | null;

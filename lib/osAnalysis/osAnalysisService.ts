@@ -3,8 +3,9 @@
  * Usado pelo handler serverless /api/os-analysis (Express catch-all está instável na Vercel).
  */
 
-import { OS_ANALYSIS_RECIPIENT_EMAILS } from '../osAnalysisAccess';
-import { adminSupabase, type OsAnalysisPrincipal } from './apiAuth';
+import { OS_ANALYSIS_RECIPIENT_EMAILS } from '../osAnalysisAccess.js';
+import { adminSupabase, type OsAnalysisPrincipal } from './apiAuth.js';
+import { sendOsAnalysisAlertEmail } from './sendAlertEmail.js';
 
 const SYSTEM_URL = (process.env.SYSTEM_URL || 'https://sistema.grupotmseg.com.br').replace(/\/$/, '');
 
@@ -16,7 +17,7 @@ let schemaReady = false;
 
 export async function ensureOsAnalysisSchema(): Promise<void> {
   if (schemaReady) return;
-  const sb = await adminSupabase();
+  const sb = adminSupabase();
   if (!sb) return;
   try {
     const { error } = await sb.from('os_analysis_requests').select('id').limit(1);
@@ -69,8 +70,7 @@ CREATE INDEX IF NOT EXISTS idx_os_analysis_status ON os_analysis_requests (statu
 
 async function sendAlert(to: string[], subject: string, html: string): Promise<boolean> {
   try {
-    const { sendSystemAlertEmail } = await import('../../server/emailService.js');
-    return await sendSystemAlertEmail(to, subject, html);
+    return await sendOsAnalysisAlertEmail(to, subject, html);
   } catch (e: any) {
     console.error('[os-analysis] e-mail falhou:', e?.message);
     return false;
@@ -90,8 +90,8 @@ export type RequestAnalysisInput = {
 
 export async function requestOsAnalysis(principal: OsAnalysisPrincipal, input: RequestAnalysisInput) {
   await ensureOsAnalysisSchema();
-  const sb = await adminSupabase();
-  if (!sb) throw new Error('Supabase admin indisponível');
+  const sb = adminSupabase();
+  if (!sb) throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel');
 
   const missionId = String(input.missionId || '').trim();
   const note = String(input.note || '').trim();
@@ -175,8 +175,8 @@ export async function requestOsAnalysis(principal: OsAnalysisPrincipal, input: R
 
 export async function listOsAnalysisRequests(status?: string) {
   await ensureOsAnalysisSchema();
-  const sb = await adminSupabase();
-  if (!sb) throw new Error('Supabase admin indisponível');
+  const sb = adminSupabase();
+  if (!sb) throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel');
   let q = sb.from('os_analysis_requests').select('*').order('created_at', { ascending: false }).limit(300);
   if (status) q = q.eq('status', status);
   const { data, error } = await q;
@@ -186,8 +186,8 @@ export async function listOsAnalysisRequests(status?: string) {
 
 export async function getOpenOsAnalysisRequest(missionId: string) {
   await ensureOsAnalysisSchema();
-  const sb = await adminSupabase();
-  if (!sb) throw new Error('Supabase admin indisponível');
+  const sb = adminSupabase();
+  if (!sb) throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel');
   const { data, error } = await sb
     .from('os_analysis_requests')
     .select('*')
@@ -212,8 +212,8 @@ export type RespondAnalysisInput = {
 
 export async function respondOsAnalysis(principal: OsAnalysisPrincipal, input: RespondAnalysisInput) {
   await ensureOsAnalysisSchema();
-  const sb = await adminSupabase();
-  if (!sb) throw new Error('Supabase admin indisponível');
+  const sb = adminSupabase();
+  if (!sb) throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel');
 
   const missionId = String(input.missionId || '').trim();
   const reason = String(input.reason || '').trim();
@@ -287,8 +287,8 @@ export async function respondOsAnalysis(principal: OsAnalysisPrincipal, input: R
 
 export async function reviewOsAnalysis(principal: OsAnalysisPrincipal, id: string, notes?: string) {
   await ensureOsAnalysisSchema();
-  const sb = await adminSupabase();
-  if (!sb) throw new Error('Supabase admin indisponível');
+  const sb = adminSupabase();
+  if (!sb) throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel');
   const { data, error } = await sb
     .from('os_analysis_requests')
     .update({
