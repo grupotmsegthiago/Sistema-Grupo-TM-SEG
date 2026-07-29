@@ -69,16 +69,24 @@ function decodeJwtRole(key: string): string | null {
  * Importante: o ref do JWT deve ser comparado com o ref da URL
  * (`extractSupabaseProjectRef`), NUNCA com `decodeJwtProjectRef(url)` —
  * URL não é JWT e retorna null, descartando a chave correta.
+ *
+ * Aceita só JWT LEGACY (`eyJ...` com role=service_role).
+ * Chaves novas `sb_secret_...` / `sb_publishable_...` são rejeitadas —
+ * o PostgREST deste projeto responde "Invalid API key" com esse formato.
  */
 export function isTmSegServiceRoleKey(
   key: string,
   expectedRef: string = TMSEG_SUPABASE_PROJECT_REF,
-): { ok: boolean; reason?: 'empty' | 'foreign_project' | 'anon_role' } {
+): { ok: boolean; reason?: 'empty' | 'foreign_project' | 'anon_role' | 'not_jwt' } {
   const cleaned = cleanEnv(key);
   if (!cleaned) return { ok: false, reason: 'empty' };
+  // Formato novo do painel Supabase — não usar em SUPABASE_SERVICE_ROLE_KEY neste sistema
+  if (cleaned.startsWith('sb_')) return { ok: false, reason: 'not_jwt' };
   const ref = decodeJwtProjectRef(cleaned);
-  if (ref && ref !== expectedRef) return { ok: false, reason: 'foreign_project' };
-  if (decodeJwtRole(cleaned) === 'anon') return { ok: false, reason: 'anon_role' };
+  const role = decodeJwtRole(cleaned);
+  if (!ref || !role) return { ok: false, reason: 'not_jwt' };
+  if (ref !== expectedRef) return { ok: false, reason: 'foreign_project' };
+  if (role !== 'service_role') return { ok: false, reason: 'anon_role' };
   return { ok: true };
 }
 
@@ -118,7 +126,14 @@ export function getSupabaseServiceRoleKey(): string {
         warnedAnonKeyAsService = true;
         console.error(
           '[Supabase] SUPABASE_SERVICE_KEY contém a chave ANON, não service_role. ' +
-            'Substitua pelo valor "service_role" no .env (Settings → API no Supabase).',
+            'Substitua pelo valor "service_role" LEGACY (eyJ...) no .env (Settings → API no Supabase).',
+        );
+      }
+      if (check.reason === 'not_jwt' && !warnedAnonKeyAsService) {
+        warnedAnonKeyAsService = true;
+        console.error(
+          '[Supabase] SUPABASE_SERVICE_ROLE_KEY não é JWT service_role LEGACY. ' +
+            'Use a chave "service_role (LEGACY)" (eyJ...), não sb_secret_/sb_publishable_.',
         );
       }
       continue;

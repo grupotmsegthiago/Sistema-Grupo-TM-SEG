@@ -29,6 +29,16 @@ describe('isTmSegServiceRoleKey', () => {
     const key = makeJwt({ role: 'anon', ref: TMSEG_SUPABASE_PROJECT_REF });
     assert.deepEqual(isTmSegServiceRoleKey(key), { ok: false, reason: 'anon_role' });
   });
+
+  it('rejeita formato novo sb_secret_ / sb_publishable_', () => {
+    assert.deepEqual(isTmSegServiceRoleKey('sb_secret_abc123'), { ok: false, reason: 'not_jwt' });
+    assert.deepEqual(isTmSegServiceRoleKey('sb_publishable_abc123'), { ok: false, reason: 'not_jwt' });
+  });
+
+  it('rejeita JWT sem role service_role', () => {
+    const key = makeJwt({ role: 'authenticated', ref: TMSEG_SUPABASE_PROJECT_REF });
+    assert.deepEqual(isTmSegServiceRoleKey(key), { ok: false, reason: 'anon_role' });
+  });
 });
 
 describe('comparação de project ref (regressão do bug)', () => {

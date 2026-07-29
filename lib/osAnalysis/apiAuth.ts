@@ -1,15 +1,28 @@
 /**
  * Auth leve para /api/os-analysis (handler serverless — evita Express).
  * Diretoria / Thiagos (canRequestOsAnalysis).
+ *
+ * IMPORTANTE: usa o mesmo cliente admin do restante do sistema
+ * (`createSupabaseAdminClient` / `getSupabaseServiceRoleKey`).
+ * O picker antigo aceitava qualquer string (sb_secret, JWT de outro projeto)
+ * e gerava "Invalid API key", enquanto RH/Billing/DHL ignoravam a chave
+ * inválida e caiam na anon hardcoded — por isso só o Pedir Análise quebrava.
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { canRequestOsAnalysis } from '../osAnalysisAccess.js';
 import {
+  createSupabaseAdminClient,
+  getSupabaseServiceRoleKey,
+  getSupabaseUrl,
+  isTmSegServiceRoleKey,
+} from '../supabaseAdmin.js';
+import {
   DEFAULT_SUPABASE_ANON_KEY,
   DEFAULT_SUPABASE_URL,
   TMSEG_SUPABASE_PROJECT_REF,
 } from '../supabaseDefaults.js';
+import { decodeJwtProjectRef } from '../supabasePublicEnv.js';
 
 type ReqHeaders = Record<string, string | string[] | undefined>;
 
@@ -52,24 +65,98 @@ function normalizeRole(role: string): string {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-function pickServiceRoleKey(): string {
+function pickRawServiceRoleCandidate(): string {
   for (const candidate of [
     process.env.SUPABASE_SERVICE_ROLE_KEY,
     process.env.SUPABASE_SERVICE_KEY,
     process.env.TMSEG_SUPABASE_SERVICE_ROLE_KEY,
   ]) {
     const key = cleanEnv(candidate);
-    if (key && !key.includes('anon')) return key;
+    if (key) return key;
   }
   return '';
 }
 
+function decodeJwtRoleSafe(key: string): string | null {
+  try {
+    const part = key.split('.')[1];
+    if (!part) return null;
+    const json = Buffer.from(part, 'base64url').toString('utf8');
+    const payload = JSON.parse(json) as { role?: string };
+    return payload.role ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Meta segura da chave (sem expor o segredo) — para op=diag. */
+export function describeOsAnalysisSupabaseConfig(): {
+  url: string;
+  projectRef: string;
+  hasServiceRole: boolean;
+  rawKeyConfigured: boolean;
+  rawKeyLength: number;
+  rawKeyPrefix: string;
+  jwtRole: string | null;
+  jwtRef: string | null;
+  validation: ReturnType<typeof isTmSegServiceRoleKey>;
+  hintPt: string;
+} {
+  const url = getSupabaseUrl() || DEFAULT_SUPABASE_URL;
+  const raw = pickRawServiceRoleCandidate();
+  const validation = isTmSegServiceRoleKey(raw || '', TMSEG_SUPABASE_PROJECT_REF);
+  const hasServiceRole = Boolean(getSupabaseServiceRoleKey());
+  let hintPt =
+    'OK — service_role LEGACY do projeto TM SEG configurada.';
+  if (!raw) {
+    hintPt =
+      'Falta SUPABASE_SERVICE_ROLE_KEY na Vercel. Cole a service_role LEGACY (eyJ...) do projeto ajhmmjuewdsukecaimik e faça Redeploy.';
+  } else if (validation.reason === 'not_jwt') {
+    hintPt =
+      'A chave não é JWT LEGACY. No Supabase use "service_role (LEGACY)" (eyJ...), não sb_secret_ / sb_publishable_. Depois Redeploy.';
+  } else if (validation.reason === 'foreign_project') {
+    hintPt =
+      `A chave é de outro projeto (ref=${decodeJwtProjectRef(raw) || '?'}). Use a do Grupo TMSEG (ajhmmjuewdsukecaimik). Depois Redeploy.`;
+  } else if (validation.reason === 'anon_role') {
+    hintPt =
+      'Foi colada a chave anon (ou sem role service_role). Copie a service_role LEGACY. Depois Redeploy.';
+  } else if (!hasServiceRole) {
+    hintPt =
+      'Chave presente mas rejeitada. Confira service_role LEGACY do projeto ajhmmjuewdsukecaimik + Redeploy.';
+  }
+
+  return {
+    url,
+    projectRef: TMSEG_SUPABASE_PROJECT_REF,
+    hasServiceRole,
+    rawKeyConfigured: Boolean(raw),
+    rawKeyLength: raw.length,
+    rawKeyPrefix: raw ? `${raw.slice(0, 6)}…` : '',
+    jwtRole: raw ? decodeJwtRoleSafe(raw) : null,
+    jwtRef: raw ? decodeJwtProjectRef(raw) : null,
+    validation,
+    hintPt,
+  };
+}
+
+/**
+ * Cliente admin alinhado ao restante do sistema (valida JWT + fallback anon).
+ * Nunca passa chave inválida ao Supabase (evita "Invalid API key").
+ */
 export function adminSupabase(): SupabaseClient | null {
-  const key = pickServiceRoleKey();
-  if (!key) return null;
-  const envUrl = cleanEnv(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL);
-  const url = envUrl.includes(TMSEG_SUPABASE_PROJECT_REF) ? envUrl : DEFAULT_SUPABASE_URL;
-  return createClient(url || DEFAULT_SUPABASE_URL, key);
+  return createSupabaseAdminClient();
+}
+
+/** Exige service_role válida do TM SEG — obrigatória para gravar pedidos de análise. */
+export function requireOsAnalysisAdmin(): SupabaseClient {
+  const key = getSupabaseServiceRoleKey();
+  if (!key) {
+    const diag = describeOsAnalysisSupabaseConfig();
+    throw new Error(diag.hintPt);
+  }
+  return createClient(getSupabaseUrl() || DEFAULT_SUPABASE_URL, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 }
 
 type ProfileRow = { name?: string; permissions?: string[] };
@@ -91,19 +178,23 @@ export async function resolveOsAnalysisPrincipal(
 
   const sb = adminSupabase();
   if (sb) {
-    const { data } = await sb
-      .from('system_users')
-      .select('id, name, email, status, permissions, profiles:profile_id ( name, permissions )')
-      .eq('id', userId)
-      .maybeSingle();
-    if (data && data.status === 'Ativo') {
-      const profile = readProfile(data as { profiles?: ProfileRow | ProfileRow[] | null });
-      return {
-        id: String(data.id),
-        name: String(data.name || 'Sistema'),
-        role: normalizeRole(profile?.name || ''),
-        email: data.email ? String(data.email) : null,
-      };
+    try {
+      const { data, error } = await sb
+        .from('system_users')
+        .select('id, name, email, status, permissions, profiles:profile_id ( name, permissions )')
+        .eq('id', userId)
+        .maybeSingle();
+      if (!error && data && data.status === 'Ativo') {
+        const profile = readProfile(data as { profiles?: ProfileRow | ProfileRow[] | null });
+        return {
+          id: String(data.id),
+          name: String(data.name || 'Sistema'),
+          role: normalizeRole(profile?.name || ''),
+          email: data.email ? String(data.email) : null,
+        };
+      }
+    } catch {
+      // fallback headers abaixo
     }
   }
 

@@ -43,6 +43,12 @@ describe('Pedido de análise de OS', () => {
     assert.match(fs.readFileSync('api/os-analysis.ts', 'utf8'), /op === 'request'/);
     assert.match(fs.readFileSync('api/os-analysis.ts', 'utf8'), /op === 'inbox'/);
     assert.match(fs.readFileSync('api/os-analysis.ts', 'utf8'), /op === 'claim'/);
+    assert.match(fs.readFileSync('api/os-analysis.ts', 'utf8'), /op === 'diag'/);
+    const apiAuth = fs.readFileSync('lib/osAnalysis/apiAuth.ts', 'utf8');
+    assert.match(apiAuth, /createSupabaseAdminClient/);
+    assert.match(apiAuth, /requireOsAnalysisAdmin/);
+    assert.match(apiAuth, /describeOsAnalysisSupabaseConfig/);
+    assert.doesNotMatch(apiAuth, /if \(key && !key\.includes\('anon'\)\) return key/);
     assert.match(fs.readFileSync('vercel.json', 'utf8'), /api\/os-analysis/);
     assert.match(app, /OsAnalysisDiretoriaModal/);
     assert.match(fs.readFileSync('components/OsAnalysisDiretoriaModal.tsx', 'utf8'), /Um recado da Diretoria/);

@@ -8,11 +8,12 @@ export default async function handler(req: any, res: any) {
 
     const op = String(req.query?.op || '').trim().toLowerCase();
     if (!op) {
-      res.status(400).json({ ok: false, error: 'Informe op=request|list|open|respond|review|inbox|claim' });
+      res.status(400).json({ ok: false, error: 'Informe op=request|list|open|respond|review|inbox|claim|diag' });
       return;
     }
 
     const {
+      describeOsAnalysisSupabaseConfig,
       extractAuthToken,
       principalCanRequestAnalysis,
       resolveOsAnalysisPrincipal,
@@ -23,6 +24,16 @@ export default async function handler(req: any, res: any) {
     const principal = await resolveOsAnalysisPrincipal(token, req);
     if (!principal) {
       res.status(401).json({ ok: false, error: 'Não autorizado' });
+      return;
+    }
+
+    // Diagnóstico seguro da SUPABASE_SERVICE_ROLE_KEY (sem expor o segredo)
+    if (op === 'diag') {
+      if (!principalCanRequestAnalysis(principal)) {
+        res.status(403).json({ ok: false, error: 'Somente Diretoria.' });
+        return;
+      }
+      res.status(200).json({ ok: true, ...describeOsAnalysisSupabaseConfig() });
       return;
     }
 

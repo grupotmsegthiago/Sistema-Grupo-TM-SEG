@@ -3,7 +3,7 @@
  * Usado pelo handler serverless /api/os-analysis (Express catch-all está instável na Vercel).
  */
 
-import { adminSupabase, type OsAnalysisPrincipal } from './apiAuth.js';
+import { requireOsAnalysisAdmin, type OsAnalysisPrincipal } from './apiAuth.js';
 import { sendOsAnalysisAlertEmail } from './sendAlertEmail.js';
 import type { OsAnalysisRecipient } from '../osAnalysisTypes.js';
 
@@ -61,8 +61,12 @@ CREATE INDEX IF NOT EXISTS idx_os_analysis_recipient_ids ON os_analysis_requests
 
 export async function ensureOsAnalysisSchema(): Promise<void> {
   if (schemaReady) return;
-  const sb = adminSupabase();
-  if (!sb) return;
+  let sb;
+  try {
+    sb = requireOsAnalysisAdmin();
+  } catch {
+    return;
+  }
   for (const statement of SCHEMA_SQL.split(';').map((s) => s.trim()).filter(Boolean)) {
     try {
       await sb.rpc('exec_sql', { sql: statement + ';' });
@@ -111,8 +115,7 @@ export type RequestAnalysisInput = {
 
 export async function requestOsAnalysis(principal: OsAnalysisPrincipal, input: RequestAnalysisInput) {
   await ensureOsAnalysisSchema();
-  const sb = adminSupabase();
-  if (!sb) throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel');
+  const sb = requireOsAnalysisAdmin();
 
   const missionId = String(input.missionId || '').trim();
   const note = String(input.note || '').trim();
@@ -190,8 +193,7 @@ export async function requestOsAnalysis(principal: OsAnalysisPrincipal, input: R
 /** Pedidos pendentes que bloqueiam o usuário (destinatário sem claim de outra pessoa). */
 export async function listInboxForUser(userId: string) {
   await ensureOsAnalysisSchema();
-  const sb = adminSupabase();
-  if (!sb) throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel');
+  const sb = requireOsAnalysisAdmin();
   const uid = String(userId || '').trim();
   if (!uid) return [];
 
@@ -216,8 +218,7 @@ export async function listInboxForUser(userId: string) {
 /** Um destinatário abre a mensagem e assume — libera os demais. */
 export async function claimOsAnalysis(principal: OsAnalysisPrincipal, requestId: string) {
   await ensureOsAnalysisSchema();
-  const sb = adminSupabase();
-  if (!sb) throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel');
+  const sb = requireOsAnalysisAdmin();
   const id = String(requestId || '').trim();
   if (!id) throw new Error('Informe o id do pedido.');
 
@@ -265,8 +266,7 @@ export async function claimOsAnalysis(principal: OsAnalysisPrincipal, requestId:
 
 export async function listOsAnalysisRequests(status?: string) {
   await ensureOsAnalysisSchema();
-  const sb = adminSupabase();
-  if (!sb) throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel');
+  const sb = requireOsAnalysisAdmin();
   let q = sb.from('os_analysis_requests').select('*').order('created_at', { ascending: false }).limit(300);
   if (status) q = q.eq('status', status);
   const { data, error } = await q;
@@ -276,8 +276,7 @@ export async function listOsAnalysisRequests(status?: string) {
 
 export async function getOpenOsAnalysisRequest(missionId: string) {
   await ensureOsAnalysisSchema();
-  const sb = adminSupabase();
-  if (!sb) throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel');
+  const sb = requireOsAnalysisAdmin();
   const { data, error } = await sb
     .from('os_analysis_requests')
     .select('*')
@@ -302,8 +301,7 @@ export type RespondAnalysisInput = {
 
 export async function respondOsAnalysis(principal: OsAnalysisPrincipal, input: RespondAnalysisInput) {
   await ensureOsAnalysisSchema();
-  const sb = adminSupabase();
-  if (!sb) throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel');
+  const sb = requireOsAnalysisAdmin();
 
   const missionId = String(input.missionId || '').trim();
   const reason = String(input.reason || '').trim();
@@ -377,8 +375,7 @@ export async function respondOsAnalysis(principal: OsAnalysisPrincipal, input: R
 
 export async function reviewOsAnalysis(principal: OsAnalysisPrincipal, id: string, notes?: string) {
   await ensureOsAnalysisSchema();
-  const sb = adminSupabase();
-  if (!sb) throw new Error('Supabase admin indisponível — configure SUPABASE_SERVICE_ROLE_KEY na Vercel');
+  const sb = requireOsAnalysisAdmin();
   const { data, error } = await sb
     .from('os_analysis_requests')
     .update({
