@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, TrendingDown, Download, ExternalLink, AlertTriangle, Search, Layers, Link2, MailWarning } from 'lucide-react';
+import { X, TrendingDown, Download, ExternalLink, AlertTriangle, Search, Layers, Link2, MailWarning, EyeOff } from 'lucide-react';
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { canRequestOsAnalysis } from '../lib/osAnalysisAccess';
 import RequestOsAnalysisModal, { type RequestOsAnalysisPayload } from './RequestOsAnalysisModal';
@@ -14,6 +14,12 @@ import {
   collectLinkedFamilyIds,
   isLinkedChildMission,
 } from '../lib/missionLinkage';
+import {
+  getCurrentUserNameForLossHide,
+  isOsLossHidden,
+  loadOsLossHiddenMap,
+  markOsLossHidden,
+} from '../lib/osLossHidden';
 import { supabase } from '../lib/supabase';
 
 interface Props {
@@ -27,6 +33,8 @@ interface Props {
   customStartDate?: string;
   customEndDate?: string;
   onOpenMission: (m: Mission) => void;
+  /** Notifica a tela pai (card) para atualizar a contagem. */
+  onHiddenChange?: () => void;
 }
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -51,7 +59,7 @@ const LINKED_SELECT =
 
 const LossesDialog: React.FC<Props> = ({
   isOpen, onClose, missions, clientTables, providerTables, clientsData,
-  viewPeriod, customStartDate, customEndDate, onOpenMission,
+  viewPeriod, customStartDate, customEndDate, onOpenMission, onHiddenChange,
 }) => {
   const [includeLowMargin, setIncludeLowMargin] = useState(false);
   const [search, setSearch] = useState('');
@@ -61,6 +69,8 @@ const LossesDialog: React.FC<Props> = ({
   const [extraLinked, setExtraLinked] = useState<any[]>([]);
   const [requestAnalysisOpen, setRequestAnalysisOpen] = useState(false);
   const [requestAnalysisPayload, setRequestAnalysisPayload] = useState<RequestOsAnalysisPayload | null>(null);
+  /** Incrementa ao ocultar — força reler o mapa do localStorage. */
+  const [hiddenTick, setHiddenTick] = useState(0);
   const canAskAnalysis = useMemo(() => {
     try {
       return canRequestOsAnalysis(JSON.parse(localStorage.getItem('userData') || '{}'));
@@ -68,6 +78,8 @@ const LossesDialog: React.FC<Props> = ({
       return false;
     }
   }, []);
+
+  const hiddenMap = useMemo(() => loadOsLossHiddenMap(), [hiddenTick]);
 
   const refs = useMemo(
     () => ({ clientTables, providerTables, clientsData }),
@@ -247,20 +259,53 @@ const LossesDialog: React.FC<Props> = ({
     return out;
   }, [isOpen, missions, missionPool, refs, viewPeriod, customStartDate, customEndDate, includeLowMargin]);
 
+  /** Linhas ainda visíveis (não ocultadas após análise). */
+  const visibleRows = useMemo(() => {
+    return rows.filter((r) => !isOsLossHidden(hiddenMap, String(r.m.id), r.rev, r.cost));
+  }, [rows, hiddenMap]);
+
+  const hiddenCount = useMemo(() => {
+    return rows.filter((r) => !r.linkedOnly && isOsLossHidden(hiddenMap, String(r.m.id), r.rev, r.cost)).length;
+  }, [rows, hiddenMap]);
+
+  const handleHide = (r: Row) => {
+    const items: Array<{ missionId: string; rev: number; cost: number }> = [
+      { missionId: String(r.m.id), rev: r.rev, cost: r.cost },
+    ];
+    // Oculta a família vinculada junto (mesma lógica do “verificar” na margem baixa).
+    const family = collectLinkedFamilyIds(new Set([String(r.m.id)]), missionPool);
+    for (const id of family) {
+      if (id === String(r.m.id)) continue;
+      const linked = rows.find((x) => String(x.m.id) === id);
+      if (linked) {
+        items.push({ missionId: id, rev: linked.rev, cost: linked.cost });
+      } else {
+        const m = missionPool.find((x) => String(x.id) === id);
+        if (!m) continue;
+        const cr = computeCanonicalRevenueCost(m, refs);
+        const cost = m.is_same_os ? 0 : cr.cost;
+        items.push({ missionId: id, rev: cr.rev, cost });
+      }
+    }
+    markOsLossHidden(items, getCurrentUserNameForLossHide());
+    setHiddenTick((t) => t + 1);
+    onHiddenChange?.();
+  };
+
   const filteredRows = useMemo(() => {
     const q = search.trim().toUpperCase();
-    if (!q) return rows;
+    if (!q) return visibleRows;
     // Busca casa uma OS — e mantém a família vinculada junto (independente do cliente).
     const matchedIds = new Set<string>();
-    for (const r of rows) {
+    for (const r of visibleRows) {
       const id = String(r.m.id || '').toUpperCase();
       const cli = String(r.m.client || '').toUpperCase();
       const prov = String(r.m.provider || '').toUpperCase();
       if (id.includes(q) || cli.includes(q) || prov.includes(q)) matchedIds.add(String(r.m.id));
     }
     const withFamily = collectLinkedFamilyIds(matchedIds, missionPool);
-    return rows.filter((r) => withFamily.has(String(r.m.id)));
-  }, [rows, search, missionPool]);
+    return visibleRows.filter((r) => withFamily.has(String(r.m.id)));
+  }, [visibleRows, search, missionPool]);
 
   const totals = useMemo(() => {
     // Totais financeiros só das OS com prejuízo/margem baixa próprios (não inflar com só-vinculadas).
@@ -395,6 +440,11 @@ const LossesDialog: React.FC<Props> = ({
                 + {totals.linkedCount} vinculada{totals.linkedCount === 1 ? '' : 's'}
               </span>
             )}
+            {hiddenCount > 0 && (
+              <span className="text-slate-600 text-xs font-semibold" data-testid="text-hidden-losses-count">
+                · {hiddenCount} ocultada{hiddenCount === 1 ? '' : 's'} (já analisadas)
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-4 text-xs">
             <span className="text-gray-600">Receita: <span className="font-bold text-gray-900">{fmt(totals.rev)}</span></span>
@@ -407,8 +457,19 @@ const LossesDialog: React.FC<Props> = ({
           {filteredRows.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center text-gray-500">
               <TrendingDown size={42} className="text-emerald-400 mb-3" />
-              <p className="text-sm font-semibold text-gray-700">Nenhuma OS com prejuízo no período.</p>
-              <p className="text-xs text-gray-500 mt-1">Todas as missões cobriram seu custo de fornecedor.</p>
+              {hiddenCount > 0 ? (
+                <>
+                  <p className="text-sm font-semibold text-emerald-800">Nenhuma OS pendente de análise neste período.</p>
+                  <p className="text-xs text-emerald-700 mt-1">
+                    {hiddenCount} OS com prejuízo já foram ocultadas após análise.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-gray-700">Nenhuma OS com prejuízo no período.</p>
+                  <p className="text-xs text-gray-500 mt-1">Todas as missões cobriram seu custo de fornecedor.</p>
+                </>
+              )}
             </div>
           ) : (
             <table className="w-full text-sm">
@@ -506,6 +567,15 @@ const LossesDialog: React.FC<Props> = ({
                               <MailWarning size={11} /> Análise
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => handleHide(r)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition"
+                            title="Ocultar — já analisei; some da lista (volta se receita/custo mudarem)"
+                            data-testid={`button-hide-loss-${r.m.id}`}
+                          >
+                            <EyeOff size={11} /> Ocultar
+                          </button>
                           <button
                             onClick={() => { onOpenMission(r.m); onClose(); }}
                             className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition"
