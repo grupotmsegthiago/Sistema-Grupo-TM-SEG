@@ -716,6 +716,14 @@ export async function registerRoutes(
     }
   });
 
+  // Pedido de análise Diretoria → Bárbara/Giovanna + pendências
+  try {
+    const { registerOsAnalysisRoutes } = await import('./osAnalysisRequests');
+    registerOsAnalysisRoutes(app, requireAuth);
+  } catch (e: any) {
+    console.warn('[OS Analysis] rotas não registradas:', e?.message);
+  }
+
   app.post('/api/missions/:id/loss-alert-email', requireAuth, async (req: Request, res: Response) => {
     try {
       const { missionId, client, provider, origin, destination, revenueTotal, costTotal, toll, tollProvider, resultado, userName } = req.body;

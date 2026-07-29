@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, TrendingDown, Download, ExternalLink, AlertTriangle, Search, Layers, Link2 } from 'lucide-react';
+import { X, TrendingDown, Download, ExternalLink, AlertTriangle, Search, Layers, Link2, MailWarning } from 'lucide-react';
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable, Client } from '../types';
+import { canRequestOsAnalysis } from '../lib/osAnalysisAccess';
+import RequestOsAnalysisModal, { type RequestOsAnalysisPayload } from './RequestOsAnalysisModal';
 import {
   computeCanonicalRevenueCost,
   getCanonicalDateRange,
@@ -57,6 +59,15 @@ const LossesDialog: React.FC<Props> = ({
   const [hoverParent, setHoverParent] = useState<{ id: string; top: number; left: number } | null>(null);
   /** OS vinculadas buscadas no Supabase sem filtro de cliente (completam o pool local). */
   const [extraLinked, setExtraLinked] = useState<any[]>([]);
+  const [requestAnalysisOpen, setRequestAnalysisOpen] = useState(false);
+  const [requestAnalysisPayload, setRequestAnalysisPayload] = useState<RequestOsAnalysisPayload | null>(null);
+  const canAskAnalysis = useMemo(() => {
+    try {
+      return canRequestOsAnalysis(JSON.parse(localStorage.getItem('userData') || '{}'));
+    } catch {
+      return false;
+    }
+  }, []);
 
   const refs = useMemo(
     () => ({ clientTables, providerTables, clientsData }),
@@ -472,14 +483,38 @@ const LossesDialog: React.FC<Props> = ({
                         {r.marginPct.toFixed(1)}%
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <button
-                          onClick={() => { onOpenMission(r.m); onClose(); }}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition"
-                          title="Abrir financeiro da OS"
-                          data-testid={`button-open-mission-${r.m.id}`}
-                        >
-                          Abrir <ExternalLink size={11} />
-                        </button>
+                        <div className="inline-flex items-center gap-1">
+                          {canAskAnalysis && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRequestAnalysisPayload({
+                                  missionId: r.m.id,
+                                  client: r.m.client,
+                                  provider: r.m.provider,
+                                  revenueBefore: r.rev,
+                                  costBefore: r.cost,
+                                  resultBefore: r.rev - r.cost,
+                                  source: 'losses',
+                                });
+                                setRequestAnalysisOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 rounded-md transition"
+                              title="Pedir análise (Bárbara e Giovanna)"
+                              data-testid={`button-request-analysis-${r.m.id}`}
+                            >
+                              <MailWarning size={11} /> Análise
+                            </button>
+                          )}
+                          <button
+                            onClick={() => { onOpenMission(r.m); onClose(); }}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition"
+                            title="Abrir financeiro da OS"
+                            data-testid={`button-open-mission-${r.m.id}`}
+                          >
+                            Abrir <ExternalLink size={11} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -549,6 +584,12 @@ const LossesDialog: React.FC<Props> = ({
           </div>
         </div>
       )}
+
+      <RequestOsAnalysisModal
+        open={requestAnalysisOpen}
+        onClose={() => setRequestAnalysisOpen(false)}
+        payload={requestAnalysisPayload}
+      />
     </div>
   );
 };

@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { X, TableProperties, Download, ExternalLink, AlertTriangle, Search } from 'lucide-react';
+import { X, TableProperties, Download, ExternalLink, AlertTriangle, Search, MailWarning } from 'lucide-react';
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable, Client } from '../types';
+import { canRequestOsAnalysis } from '../lib/osAnalysisAccess';
+import RequestOsAnalysisModal, { type RequestOsAnalysisPayload } from './RequestOsAnalysisModal';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import {
   getCanonicalDateRange,
@@ -96,6 +98,15 @@ const MissingTableDialog: React.FC<Props> = ({
   isOpen, onClose, rows, viewPeriod, onOpenMission, scopeLabel,
 }) => {
   const [search, setSearch] = useState('');
+  const [requestAnalysisOpen, setRequestAnalysisOpen] = useState(false);
+  const [requestAnalysisPayload, setRequestAnalysisPayload] = useState<RequestOsAnalysisPayload | null>(null);
+  const canAskAnalysis = useMemo(() => {
+    try {
+      return canRequestOsAnalysis(JSON.parse(localStorage.getItem('userData') || '{}'));
+    } catch {
+      return false;
+    }
+  }, []);
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toUpperCase();
@@ -225,14 +236,38 @@ const MissingTableDialog: React.FC<Props> = ({
                         : <span className="inline-block px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-700">OK</span>}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <button
-                        onClick={() => { onOpenMission(r.m); onClose(); }}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition"
-                        title="Abrir financeiro da OS"
-                        data-testid={`button-open-mission-${r.m.id}`}
-                      >
-                        Abrir <ExternalLink size={11} />
-                      </button>
+                      <div className="inline-flex items-center gap-1">
+                        {canAskAnalysis && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRequestAnalysisPayload({
+                                missionId: r.m.id,
+                                client: r.m.client,
+                                provider: r.m.provider,
+                                revenueBefore: Number(r.m.revenue_value || 0),
+                                costBefore: Number(r.m.cost_value || 0),
+                                resultBefore: Number(r.m.revenue_value || 0) - Number(r.m.cost_value || 0),
+                                source: 'missing_table',
+                              });
+                              setRequestAnalysisOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 rounded-md transition"
+                            title="Pedir análise (Bárbara e Giovanna)"
+                            data-testid={`button-request-analysis-${r.m.id}`}
+                          >
+                            <MailWarning size={11} /> Análise
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { onOpenMission(r.m); onClose(); }}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition"
+                          title="Abrir financeiro da OS"
+                          data-testid={`button-open-mission-${r.m.id}`}
+                        >
+                          Abrir <ExternalLink size={11} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -241,6 +276,12 @@ const MissingTableDialog: React.FC<Props> = ({
           )}
         </div>
       </div>
+
+      <RequestOsAnalysisModal
+        open={requestAnalysisOpen}
+        onClose={() => setRequestAnalysisOpen(false)}
+        payload={requestAnalysisPayload}
+      />
     </div>
   );
 };

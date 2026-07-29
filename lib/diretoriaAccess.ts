@@ -24,7 +24,8 @@ export function canAccessDiretoriaMenu(user: DiretoriaAccessUser | null | undefi
   return n.includes('thiago moreira') || n.includes('thiago santos');
 }
 
+/** Cockpit continua exclusivo dos Thiagos.
+ *  O grupo `diretoria-group` e telas como Pendências de OS têm regra própria no Sidebar. */
 export const DIRETORIA_MENU_SCREEN_IDS = new Set([
-  'diretoria-group',
   'diretoria-cockpit',
 ]);

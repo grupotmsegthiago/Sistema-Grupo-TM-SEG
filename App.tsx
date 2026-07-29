@@ -95,6 +95,8 @@ import { wireUserActivityTracker, touchUserActivity } from './lib/userActivityTr
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { canAccessDiretoriaMenu } from './lib/diretoriaAccess';
+import { canViewOsAnalysisPendencies } from './lib/osAnalysisAccess';
+import OsAnalysisPendingPage from './components/OsAnalysisPendingPage';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
 import { persistScreen, resolveInitialScreen, getRoleDefaultScreen, getScreenFromUrl } from './lib/screenNavigation';
 
@@ -391,6 +393,12 @@ const App: React.FC = () => {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
         return canAccessDiretoriaMenu(u)
           ? <DashboardDiretoria onNavigate={navigateTo} />
+          : <Dashboard onOpenMission={handleOpenBillingMission} />;
+      }
+      case 'os-analysis-pending': {
+        const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+        return canViewOsAnalysisPendencies(u)
+          ? <OsAnalysisPendingPage onOpenMission={handleOpenBillingMission} />
           : <Dashboard onOpenMission={handleOpenBillingMission} />;
       }
       case 'fin-billing': return (

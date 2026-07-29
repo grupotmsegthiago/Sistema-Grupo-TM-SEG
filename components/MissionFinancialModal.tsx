@@ -16,7 +16,10 @@ import {
   findDhlCorrectionSource,
   type DhlCorrectionRecord,
 } from '../lib/dhlAutoTableSelector';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History, Settings2, FileText, Copy } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History, Settings2, FileText, Copy, MailWarning } from 'lucide-react';
+import { canRequestOsAnalysis } from '../lib/osAnalysisAccess';
+import RequestOsAnalysisModal, { type RequestOsAnalysisPayload } from './RequestOsAnalysisModal';
+import type { OsAnalysisRequest } from '../lib/osAnalysisTypes';
 import { suggestPriceTable } from '../lib/gemini';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
@@ -401,6 +404,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Histórico permanente de alterações pós-aprovação (Data / Quem / Mudanças / Observação)
   const [editHistory, setEditHistory] = useState<Array<{user: string; date: string; changes: string[]; note: string}>>([]);
   const [editObservation, setEditObservation] = useState('');
+  const [analysisReason, setAnalysisReason] = useState('');
+  const [openAnalysisRequest, setOpenAnalysisRequest] = useState<OsAnalysisRequest | null>(null);
+  const [requestAnalysisOpen, setRequestAnalysisOpen] = useState(false);
+  const [requestAnalysisPayload, setRequestAnalysisPayload] = useState<RequestOsAnalysisPayload | null>(null);
   // Histórico financeiro (FINANCIAL_RECALC + billing_override) por OS, com filtro por período.
   const [finHistory, setFinHistory] = useState<Array<any>>([]);
   const [finHistLoading, setFinHistLoading] = useState(false);
@@ -532,6 +539,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isBarbaraFinance = useMemo(() => {
     return isFinanceSupervisorName(userNameLower);
   }, [userNameLower]);
+  const canAskOsAnalysis = useMemo(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('userData') || '{}');
+      return canRequestOsAnalysis(u);
+    } catch {
+      return false;
+    }
+  }, [userNameLower, userRoleLower]);
   const canGenerateDhlOccurrenceReport = useMemo(() => userRoleLower === 'diretoria', [userRoleLower]);
   const dhlSeNumber = String((mission as any)?.dhl_se_number || '').trim();
   const showDhlOccurrenceReportBtn =
@@ -604,8 +619,23 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode || isPlinio || isBarbaraFinance;
   const isDirectorAccess = userRoleLower === 'diretoria' || userRoleLower === 'administrador';
   const [unlockOverride, setUnlockOverride] = useState(false);
-  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); staleAutoResyncDoneRef.current = null; }, [mission?.id]);
-  useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); setShowTollConfirmDialog(false); setTollConfirmAutoOpened(false); } }, [isOpen]);
+  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setAnalysisReason(''); setOpenAnalysisRequest(null); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); staleAutoResyncDoneRef.current = null; }, [mission?.id]);
+  useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); setAnalysisReason(''); setShowTollConfirmDialog(false); setTollConfirmAutoOpened(false); } }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !mission?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch(`/api/missions/${encodeURIComponent(mission.id)}/analysis-requests/open`);
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok) setOpenAnalysisRequest(data.request || null);
+      } catch {
+        if (!cancelled) setOpenAnalysisRequest(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen, mission?.id]);
   const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
   const canEditOpsEvenIfLocked = isBarbaraFinance || !isEffectivelyLocked;
   // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
@@ -2506,6 +2536,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           showNotification('Observação Obrigatória', 'OS já aprovada. Descreva brevemente o motivo da alteração para registrar no histórico.', 'error');
           return;
       }
+      // Pedido de análise da Diretoria pendente: exige motivo do ajuste (Bárbara/Giovanna)
+      if (openAnalysisRequest && detectedChanges.length > 0 && !analysisReason.trim() && !editObservation.trim()) {
+          showNotification(
+            'Motivo obrigatório',
+            'Esta OS tem pedido de análise da Diretoria. Informe o motivo do ajuste (campo Motivo da análise).',
+            'error',
+          );
+          return;
+      }
 
       setIsUpdating(true);
       isSavingRef.current = true;
@@ -2985,6 +3024,28 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   console.log(`[Loss Alert] Email de prejuízo enviado para OS ${mission.id} — Resultado: R$ ${resultado.toFixed(2)}`);
               } catch (lossErr) {
                   console.warn('[Loss Alert] Falha ao enviar email:', lossErr);
+              }
+          }
+
+          if (openAnalysisRequest && (detectedChanges.length > 0 || analysisReason.trim() || editObservation.trim())) {
+              try {
+                  const reason = (analysisReason.trim() || editObservation.trim() || 'Ajuste após pedido de análise');
+                  await authFetch(`/api/missions/${mission.id}/analysis-response`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                          requestId: openAnalysisRequest.id,
+                          reason,
+                          revenueAfter: r2(revServiceOnly + toll + displacement),
+                          costAfter: r2(costServiceOnly + tollProv + dispProv),
+                          resultAfter: r2(resultado),
+                          changesSummary: detectedChanges.join('\n'),
+                      }),
+                  });
+                  setOpenAnalysisRequest(null);
+                  setAnalysisReason('');
+              } catch (analysisErr) {
+                  console.warn('[OS Analysis] Falha ao registrar resposta:', analysisErr);
               }
           }
 
@@ -5819,6 +5880,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         </div>
                     )}
 
+                    {/* Pedido de análise da Diretoria — Bárbara/Giovanna devem informar o motivo ao ajustar */}
+                    {openAnalysisRequest && (
+                        <div className="mx-4 mb-4 p-3 bg-violet-50 rounded-xl border-2 border-violet-300" data-testid="panel-os-analysis-pending">
+                            <p className="text-[10px] font-black text-violet-800 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                                <MailWarning size={12} /> Pedido de análise — {openAnalysisRequest.requested_by}
+                            </p>
+                            <p className="text-xs text-violet-900 mb-2">{openAnalysisRequest.request_note}</p>
+                            <label className="text-[10px] font-black text-violet-800 uppercase tracking-widest mb-1 block">
+                                Motivo da análise / ajuste (obrigatório ao salvar alteração)
+                            </label>
+                            <textarea
+                                className="w-full text-xs font-bold text-gray-800 border border-violet-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-violet-400/30 outline-none bg-white resize-none"
+                                rows={2}
+                                placeholder="Explique o que foi corrigido e por quê…"
+                                value={analysisReason}
+                                onChange={e => setAnalysisReason(e.target.value)}
+                                data-testid="input-os-analysis-reason"
+                            />
+                        </div>
+                    )}
+
                     {/* Observação obrigatória ao alterar OS já aprovada */}
                     {isBillingLocked && !isEffectivelyLocked && (
                         <div className="mx-4 mb-4 p-3 bg-amber-50 rounded-xl border-2 border-amber-300" data-testid="panel-edit-observation">
@@ -5892,6 +5974,29 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="truncate">Plano DHL</span>
                                   </button>
                                 )}
+                                {canAskOsAnalysis && mission && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRequestAnalysisPayload({
+                                        missionId: mission.id,
+                                        client: mission.client,
+                                        provider: mission.provider,
+                                        revenueBefore: Number(mission.revenue_value || 0) + Number(mission.toll_value || 0) + Number((mission as any).displacement_value || 0),
+                                        costBefore: Number(mission.cost_value || 0) + Number((mission as any).toll_value_provider || 0) + Number((mission as any).displacement_value_provider || 0),
+                                        resultBefore: footerProfit,
+                                        source: 'audit',
+                                      });
+                                      setRequestAnalysisOpen(true);
+                                    }}
+                                    className="flex-1 sm:flex-none px-2 sm:px-4 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 bg-amber-500 hover:bg-amber-600 text-slate-900"
+                                    title="Enviar para Bárbara e Giovanna analisarem"
+                                    data-testid="button-request-os-analysis"
+                                  >
+                                    <MailWarning size={14} className="shrink-0" />
+                                    <span className="truncate">Pedir Análise</span>
+                                  </button>
+                                )}
                                 <button onClick={() => handleUpdate(false)} disabled={isUpdating || (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={isEffectivelyLocked ? 'Faturamento travado — destrave para editar' : ''} data-testid="button-save-adjustments">
                                     {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? <Lock size={14} className="shrink-0" /> : <Save size={14} className="shrink-0" />}
                                     <span className="truncate">{(currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado' : 'Salvar'}</span>
@@ -5956,6 +6061,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           onClose={() => setDhlOccurrenceReportOpen(false)}
         />
       )}
+      <RequestOsAnalysisModal
+        open={requestAnalysisOpen}
+        onClose={() => setRequestAnalysisOpen(false)}
+        payload={requestAnalysisPayload}
+        onSent={() => {
+          // Recarrega pedido pendente (útil se pedir de novo / banner)
+          if (mission?.id) {
+            void authFetch(`/api/missions/${encodeURIComponent(mission.id)}/analysis-requests/open`)
+              .then((r) => r.json())
+              .then((d) => setOpenAnalysisRequest(d.request || null))
+              .catch(() => {});
+          }
+        }}
+      />
     </div>
   );
 };

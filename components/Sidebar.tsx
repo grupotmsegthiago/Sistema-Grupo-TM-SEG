@@ -8,6 +8,7 @@ import { NAV_ITEMS, APP_VERSION } from '../constants';
 import { NavItem } from '../constants'; // Explicit import to avoid TS error if NAV_ITEMS interface isn't exported correctly
 import { logAction } from '../lib/logger';
 import { canAccessDiretoriaMenu, DIRETORIA_MENU_SCREEN_IDS } from '../lib/diretoriaAccess';
+import { canRequestOsAnalysis } from '../lib/osAnalysisAccess';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -177,11 +178,21 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         if (itemId === 'finance-group' || itemId === 'fin-report') return true;
     }
 
+    // Grupo Diretoria: Cockpit (Thiagos) ou Pendências de OS (Diretoria)
+    if (itemId === 'diretoria-group') {
+      return canAccessDiretoriaMenu(currentUser) || canRequestOsAnalysis(currentUser);
+    }
+
     // Menu Diretoria / Cockpit — SOMENTE Thiago Moreira ou Thiago Santos
     // (perfil "Diretoria"/Administrador sozinho NÃO libera).
     if (DIRETORIA_MENU_SCREEN_IDS.has(itemId)) {
       return canAccessDiretoriaMenu(currentUser);
     }
+
+    if (itemId === 'os-analysis-pending') {
+      return canRequestOsAnalysis(currentUser);
+    }
+
     if (itemId === 'fin-report' && canAccessDiretoriaMenu(currentUser)) return true;
     if (itemId === 'fin-report' && role === 'diretoria') return true;
 
