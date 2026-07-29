@@ -95,6 +95,8 @@ import { wireUserActivityTracker, touchUserActivity } from './lib/userActivityTr
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { canAccessDiretoriaMenu } from './lib/diretoriaAccess';
+import GcModule from './components/gestores/GcModule';
+import { canAccessGcScreen } from './lib/gestores/comercial/access';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
 import { persistScreen, resolveInitialScreen, getRoleDefaultScreen, getScreenFromUrl } from './lib/screenNavigation';
 
@@ -459,6 +461,11 @@ const App: React.FC = () => {
           const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
           if (!canAccessRhScreen(currentScreen, u)) return <Dashboard onOpenMission={handleOpenBillingMission} />;
           return <RhModule screen={currentScreen} selectedId={selectedId} onNavigate={navigateTo} onEdit={handleEdit} />;
+        }
+        if (currentScreen.startsWith('gc-')) {
+          const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+          if (!canAccessGcScreen(currentScreen, u)) return <Dashboard onOpenMission={handleOpenBillingMission} />;
+          return <GcModule screen={currentScreen} selectedId={selectedId} onNavigate={navigateTo} onEdit={handleEdit} />;
         }
         return <Dashboard onOpenMission={handleOpenBillingMission} />;
       }

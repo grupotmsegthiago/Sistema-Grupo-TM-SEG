@@ -24,7 +24,9 @@ export function canAccessDiretoriaMenu(user: DiretoriaAccessUser | null | undefi
   return n.includes('thiago moreira') || n.includes('thiago santos');
 }
 
+/** Screens do menu Diretoria exclusivos dos Thiagos (Cockpit).
+ *  O grupo `diretoria-group` e as telas `gc-*` têm regras próprias no Sidebar
+ *  para permitir Gestor Comercial a Diretoria/Comercial sem abrir o Cockpit. */
 export const DIRETORIA_MENU_SCREEN_IDS = new Set([
-  'diretoria-group',
   'diretoria-cockpit',
 ]);

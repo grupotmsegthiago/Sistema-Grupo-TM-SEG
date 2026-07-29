@@ -14,6 +14,7 @@ import { runEmailHealthCheck } from "./emailHealth";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { registerRhRoutes } from "./rhRoutes";
 import { runRhMigrations } from "./rhMigrations";
+import { runGcMigrations } from "./gcMigrations";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances, transferPixFromCompany } from "./asaasService";
 import {
   findRecentDuplicateOpenCharge,
@@ -2854,6 +2855,11 @@ export async function registerRoutes(
     await runRhMigrations();
   } catch (e: any) {
     console.warn('[Migration] RH:', e?.message || 'falhou');
+  }
+  try {
+    await runGcMigrations();
+  } catch (e: any) {
+    console.warn('[Migration] Gestor Comercial:', e?.message || 'falhou');
   }
   try {
     const { runBillingUsageMigrations } = await import('./billingUsageMigrations.js');
