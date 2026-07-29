@@ -107,7 +107,7 @@ export function computeCanonicalRevenueCost(
         if (!hasStoredRev) revBase = num(fin.client.total);
         if (!hasStoredCost) costBase = num(fin.provider.total);
         clientUnitKm = num(fin.client.unitPriceKm);
-        providerUnitKm = num(fin.provider.unitPriceKm);
+        providerUnitKm = num(fin.provider.unitCostKm);
       } catch {
         // mantém parciais se a estimativa falhar
       }
@@ -141,7 +141,7 @@ export function computeCanonicalRevenueCost(
       const matchedClient = refs.clientsData.find(c => c.name === clientName);
       const fin = calculateMissionFinancials(missionObj, refs.clientTables, refs.providerTables, matchedClient, currentTime);
       if (clientUnitKm <= 0) clientUnitKm = num(fin.client.unitPriceKm);
-      if (providerUnitKm <= 0) providerUnitKm = num(fin.provider.unitPriceKm);
+      if (providerUnitKm <= 0) providerUnitKm = num(fin.provider.unitCostKm);
     } catch {
       /* fallback DHL por UF cobre o cliente */
     }

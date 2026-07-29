@@ -13,7 +13,6 @@ import MissionAuditModal from './MissionAuditModal';
 import {
   calculateMissionFinancials,
   extractCityFromAddress,
-  resolveDisplacementFromAuthorizedKm,
 } from '../lib/financialUtils';
 
 /** Rota no relatório: cidades (não endereço completo). Ex.: PALHOÇA → FLORIANÓPOLIS */
@@ -540,24 +539,17 @@ const MissionReportPage: React.FC = () => {
     const asNum = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
     for (const m of displayMissions) {
       if (!auditEnabled) {
-        // Modo rápido: valores salvos + deslocamento derivado do KM autorizado (se faltar R$).
+        // Modo rápido: base/pedágio salvos; DESL via canônico (KM autorizado × taxa).
+        const can = computeCanonicalRevenueCost(m, refs, now);
         const revBase = asNum((m as any).revenue_value);
         const costBase = asNum((m as any).cost_value);
-        const tollRev = asNum((m as any).toll_value);
-        const tollCost = asNum((m as any).toll_value_provider) || tollRev;
-        const disp = resolveDisplacementFromAuthorizedKm({
-          dhlDeslocamentoKm: (m as any).dhl_deslocamento_km,
-          displacementValue: (m as any).displacement_value,
-          displacementValueProvider: (m as any).displacement_value_provider,
-          origin: m.origin,
-          isSameOs: !!(m as any).is_same_os,
-        });
-        const dispRev = disp.client;
-        const dispCost = disp.provider;
-        const rev = revBase + tollRev + dispRev;
-        const cost = costBase + tollCost + dispCost;
+        const tollRev = asNum((m as any).toll_value) || can.tollRev;
+        const tollCost = asNum((m as any).toll_value_provider) || tollRev || can.tollCost;
+        const rev = revBase + tollRev + can.dispRev;
+        const cost = costBase + tollCost + can.dispCost;
         map.set(m.id, {
-          revBase, tollRev, dispRev, rev, costBase, tollCost, dispCost, cost,
+          revBase, tollRev, dispRev: can.dispRev, rev,
+          costBase, tollCost, dispCost: can.dispCost, cost,
           profit: rev - cost, source: 'saved',
         });
       } else {

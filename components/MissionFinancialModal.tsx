@@ -1747,7 +1747,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   displacementValue: parseNumber(displacementInput),
                   displacementValueProvider: parseNumber(displacementProviderInput),
                   clientUnitPriceKm: financialData.client.unitPriceKm,
-                  providerUnitPriceKm: financialData.provider.unitPriceKm,
+                  providerUnitPriceKm: financialData.provider.unitCostKm,
                   origin: mission.origin,
                   isSameOs: !!mission.is_same_os,
               });
@@ -1925,7 +1925,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             displacementValue: parseNumber(displacementInput),
             displacementValueProvider: parseNumber(displacementProviderInput),
             clientUnitPriceKm: financialData.client.unitPriceKm,
-            providerUnitPriceKm: financialData.provider.unitPriceKm,
+            providerUnitPriceKm: financialData.provider.unitCostKm,
             origin: mission?.origin,
             isSameOs: !!(mission as any)?.is_same_os,
         });
