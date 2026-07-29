@@ -35,10 +35,11 @@ const RequestOsAnalysisModal: React.FC<Props> = ({ open, onClose, payload, onSen
     }
     setSending(true);
     try {
-      const res = await authFetch(`/api/missions/${encodeURIComponent(payload.missionId)}/request-analysis`, {
+      const res = await authFetch('/api/os-analysis?op=request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          missionId: payload.missionId,
           note: observation,
           source: payload.source,
           client: payload.client,

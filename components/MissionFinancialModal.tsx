@@ -627,7 +627,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     let cancelled = false;
     (async () => {
       try {
-        const res = await authFetch(`/api/missions/${encodeURIComponent(mission.id)}/analysis-requests/open`);
+        const res = await authFetch(`/api/os-analysis?op=open&missionId=${encodeURIComponent(mission.id)}`);
         const data = await res.json().catch(() => ({}));
         if (!cancelled && res.ok) setOpenAnalysisRequest(data.request || null);
       } catch {
@@ -3030,10 +3030,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (openAnalysisRequest && (detectedChanges.length > 0 || analysisReason.trim() || editObservation.trim())) {
               try {
                   const reason = (analysisReason.trim() || editObservation.trim() || 'Ajuste após pedido de análise');
-                  await authFetch(`/api/missions/${mission.id}/analysis-response`, {
+                  await authFetch('/api/os-analysis?op=respond', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
+                          missionId: mission.id,
                           requestId: openAnalysisRequest.id,
                           reason,
                           revenueAfter: r2(revServiceOnly + toll + displacement),
@@ -6068,7 +6069,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         onSent={() => {
           // Recarrega pedido pendente (útil se pedir de novo / banner)
           if (mission?.id) {
-            void authFetch(`/api/missions/${encodeURIComponent(mission.id)}/analysis-requests/open`)
+            void authFetch(`/api/os-analysis?op=open&missionId=${encodeURIComponent(mission.id)}`)
               .then((r) => r.json())
               .then((d) => setOpenAnalysisRequest(d.request || null))
               .catch(() => {});

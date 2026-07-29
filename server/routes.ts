@@ -13,6 +13,7 @@ import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResend
 import { runEmailHealthCheck } from "./emailHealth";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { registerRhRoutes } from "./rhRoutes";
+import { registerOsAnalysisRoutes } from "./osAnalysisRequests";
 import { runRhMigrations } from "./rhMigrations";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances, transferPixFromCompany } from "./asaasService";
 import {
@@ -716,13 +717,9 @@ export async function registerRoutes(
     }
   });
 
-  // Pedido de análise Diretoria → Bárbara/Giovanna + pendências
-  try {
-    const { registerOsAnalysisRoutes } = await import('./osAnalysisRequests');
-    registerOsAnalysisRoutes(app, requireAuth);
-  } catch (e: any) {
-    console.warn('[OS Analysis] rotas não registradas:', e?.message);
-  }
+  // Pedido de análise — também em /api/os-analysis (handler leve na Vercel).
+  // NÃO usar await import aqui: trava getApp se o chunk falhar no bundle.
+  registerOsAnalysisRoutes(app, requireAuth);
 
   app.post('/api/missions/:id/loss-alert-email', requireAuth, async (req: Request, res: Response) => {
     try {

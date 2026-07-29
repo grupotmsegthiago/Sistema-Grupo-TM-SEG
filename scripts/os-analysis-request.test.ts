@@ -27,11 +27,17 @@ describe('Pedido de análise de OS', () => {
     const sidebar = fs.readFileSync('components/Sidebar.tsx', 'utf8');
     assert.match(modal, /button-request-os-analysis/);
     assert.match(modal, /from 'react'/);
+    assert.match(modal, /\/api\/os-analysis\?op=open/);
+    assert.match(modal, /\/api\/os-analysis\?op=respond/);
     assert.match(losses, /RequestOsAnalysisModal/);
     assert.match(missing, /RequestOsAnalysisModal/);
     assert.match(app, /os-analysis-pending/);
     assert.match(sidebar, /canRequestOsAnalysis/);
+    assert.match(fs.readFileSync('components/RequestOsAnalysisModal.tsx', 'utf8'), /\/api\/os-analysis\?op=request/);
     assert.match(fs.readFileSync('components/RequestOsAnalysisModal.tsx', 'utf8'), /from 'react'/);
+    assert.match(fs.readFileSync('components/OsAnalysisPendingPage.tsx', 'utf8'), /\/api\/os-analysis\?/);
     assert.match(fs.readFileSync('components/OsAnalysisPendingPage.tsx', 'utf8'), /from 'react'/);
+    assert.match(fs.readFileSync('api/os-analysis.ts', 'utf8'), /op === 'request'/);
+    assert.match(fs.readFileSync('vercel.json', 'utf8'), /api\/os-analysis/);
   });
 });

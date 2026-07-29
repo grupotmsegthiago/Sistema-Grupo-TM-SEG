@@ -21,8 +21,8 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const q = filter === 'all' ? '' : `?status=${filter}`;
-      const res = await authFetch(`/api/missions/analysis-requests${q}`);
+      const q = filter === 'all' ? 'op=list' : `op=list&status=${encodeURIComponent(filter)}`;
+      const res = await authFetch(`/api/os-analysis?${q}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao carregar');
       setItems(data.items || []);
@@ -39,7 +39,7 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
   }, [load, user]);
 
   const markReviewed = async (id: string) => {
-    const res = await authFetch(`/api/missions/analysis-requests/${id}/review`, {
+    const res = await authFetch(`/api/os-analysis?op=review&id=${encodeURIComponent(id)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ notes: 'Revisado pela Diretoria' }),

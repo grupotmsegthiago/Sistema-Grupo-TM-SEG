@@ -76,8 +76,8 @@
     "api/investment-accounts.ts": {
       "maxDuration": 30
     },
-    "api/investment-accounts-item.ts": {
-      "maxDuration": 30
+    "api/os-analysis.ts": {
+      "maxDuration": 60
     },
     "api/email-mission-scheduled.ts": {
       "maxDuration": 120
@@ -345,6 +345,10 @@
     {
       "source": "/api/system/diagnostics",
       "destination": "/api/system-diagnostics"
+    },
+    {
+      "source": "/api/os-analysis",
+      "destination": "/api/os-analysis"
     },
     {
       "source": "/api/billing/dashboard",
