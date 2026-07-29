@@ -1,6 +1,6 @@
 /**
  * Pedido de análise de OS — handler leve (não usa Express / api/index).
- * Ops: request | list | open | respond | review
+ * Ops: request | list | open | respond | review | inbox | claim
  */
 export default async function handler(req: any, res: any) {
   try {
@@ -8,7 +8,7 @@ export default async function handler(req: any, res: any) {
 
     const op = String(req.query?.op || '').trim().toLowerCase();
     if (!op) {
-      res.status(400).json({ ok: false, error: 'Informe op=request|list|open|respond|review' });
+      res.status(400).json({ ok: false, error: 'Informe op=request|list|open|respond|review|inbox|claim' });
       return;
     }
 
@@ -87,8 +87,31 @@ export default async function handler(req: any, res: any) {
         resultBefore: body.resultBefore,
         client: body.client,
         provider: body.provider,
+        recipients: body.recipients,
       });
       res.status(200).json({ ok: true, ...result });
+      return;
+    }
+
+    if (op === 'inbox') {
+      if (req.method !== 'GET') {
+        res.status(405).json({ ok: false, error: 'method_not_allowed' });
+        return;
+      }
+      const items = await service.listInboxForUser(principal.id);
+      res.status(200).json({ ok: true, items });
+      return;
+    }
+
+    if (op === 'claim') {
+      if (req.method !== 'POST') {
+        res.status(405).json({ ok: false, error: 'method_not_allowed' });
+        return;
+      }
+      const body = readBody();
+      const id = String(req.query?.id || body?.id || body?.requestId || '').trim();
+      const result = await service.claimOsAnalysis(principal, id);
+      res.status(result.conflict ? 409 : 200).json(result);
       return;
     }
 

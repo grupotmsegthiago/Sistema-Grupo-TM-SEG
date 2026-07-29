@@ -114,6 +114,12 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
                     <p className="text-sm text-slate-600 mt-1">
                       <strong>Pedido ({item.requested_by}):</strong> {item.request_note}
                     </p>
+                    {Array.isArray(item.recipients) && item.recipients.length > 0 && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Destinatários: {item.recipients.map((r) => r.name).join(', ')}
+                        {item.claimed_by_name ? ` · Assumido por ${item.claimed_by_name}` : ''}
+                      </p>
+                    )}
                   </div>
                   <button
                     type="button"

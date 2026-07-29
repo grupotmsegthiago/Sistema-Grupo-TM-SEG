@@ -1,5 +1,11 @@
 export type OsAnalysisStatus = 'pending' | 'adjusted' | 'reviewed';
 
+export type OsAnalysisRecipient = {
+  id: string;
+  name: string;
+  email: string;
+};
+
 export interface OsAnalysisRequest {
   id: string;
   mission_id: string;
@@ -24,4 +30,13 @@ export interface OsAnalysisRequest {
   reviewed_at?: string | null;
   review_notes?: string | null;
   created_at: string;
+  recipient_ids?: string[] | null;
+  recipients?: OsAnalysisRecipient[] | null;
+  claimed_by_id?: string | null;
+  claimed_by_name?: string | null;
+  claimed_at?: string | null;
+  message_opened_at?: string | null;
 }
+
+/** Canal broadcast para refresh do modal “Um recado da Diretoria”. */
+export const OS_ANALYSIS_BROADCAST_CHANNEL = 'os-analysis-inbox';

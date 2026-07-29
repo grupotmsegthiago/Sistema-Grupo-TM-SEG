@@ -23,11 +23,8 @@ export function canViewOsAnalysisPendencies(user: OsAnalysisUser | null | undefi
   return canRequestOsAnalysis(user);
 }
 
-/** Quem recebe o e-mail para analisar (Bárbara e Giovanna). */
-export const OS_ANALYSIS_RECIPIENT_EMAILS = [
-  'barbara@grupotmseg.com.br',
-  'giovanna@grupotmseg.com.br',
-];
+/** Prefill sugerido no seletor (Bárbara / Giovanna) — a Diretoria escolhe livremente. */
+export const OS_ANALYSIS_DEFAULT_RECIPIENT_HINTS = ['barbara', 'giovanna'] as const;
 
 export function buildOsAuditDeepLink(missionId: string): string {
   const base = (typeof window !== 'undefined'

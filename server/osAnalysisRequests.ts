@@ -5,7 +5,9 @@
  */
 import type { Express, Request, Response } from 'express';
 import {
+  claimOsAnalysis,
   getOpenOsAnalysisRequest,
+  listInboxForUser,
   listOsAnalysisRequests,
   requestOsAnalysis,
   respondOsAnalysis,
@@ -27,7 +29,6 @@ async function resolveUser(req: Request): Promise<{ name: string; role: string; 
 }
 
 export function registerOsAnalysisRoutes(app: Express, requireAuth: any): void {
-  // Paths novos (preferidos)
   app.post('/api/os-analysis', requireAuth, async (req: Request, res: Response) => {
     try {
       const op = String(req.query.op || req.body?.op || '').trim().toLowerCase();
@@ -47,8 +48,14 @@ export function registerOsAnalysisRoutes(app: Express, requireAuth: any): void {
           resultBefore: req.body?.resultBefore,
           client: req.body?.client,
           provider: req.body?.provider,
+          recipients: req.body?.recipients,
         });
         return res.json({ ok: true, ...result });
+      }
+      if (op === 'claim') {
+        const id = String(req.query.id || req.body?.id || req.body?.requestId || '');
+        const result = await claimOsAnalysis(user, id);
+        return res.status(result.conflict ? 409 : 200).json(result);
       }
       if (op === 'respond') {
         const result = await respondOsAnalysis(user, {
@@ -88,6 +95,10 @@ export function registerOsAnalysisRoutes(app: Express, requireAuth: any): void {
       if (op === 'open') {
         const request = await getOpenOsAnalysisRequest(String(req.query.missionId || ''));
         return res.json({ ok: true, request });
+      }
+      if (op === 'inbox') {
+        const items = await listInboxForUser(user.id);
+        return res.json({ ok: true, items });
       }
       return res.status(400).json({ ok: false, error: 'op inválida' });
     } catch (e: any) {
