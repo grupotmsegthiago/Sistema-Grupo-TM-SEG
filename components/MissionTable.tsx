@@ -48,6 +48,7 @@ import MissionOperationalReport from './MissionOperationalReport';
 import MissionTeamPresenceBoard from './MissionTeamPresenceBoard';
 import { hasFullMissionListAccess, isMissionClientScopeRestricted } from '../lib/missionAccess';
 import { canSeeOsComPrejuizo, isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { isOsLossHidden, loadOsLossHiddenMap } from '../lib/osLossHidden';
 import { collectLinkedFamilyIds } from '../lib/missionLinkage';
 const cevaLogoPath = '/logo_ceva.png';
 
@@ -181,6 +182,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [isFinancialModalOpen, setIsFinancialModalOpen] = useState(false);
   const [missionForFinancials, setMissionForFinancials] = useState<Mission | null>(null);
   const [isLossesOpen, setIsLossesOpen] = useState(false);
+  /** Atualiza contagem do card quando o usuário oculta OS já analisadas. */
+  const [lossHiddenTick, setLossHiddenTick] = useState(0);
   const [isMissingTableOpen, setIsMissingTableOpen] = useState(false);
   const [showClientRequestModal, setShowClientRequestModal] = useState(false);
   const [solicitationCount, setSolicitationCount] = useState(0);
@@ -328,18 +331,21 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     if (!canSeeFinancials) return 0;
     try {
       const refs = { clientTables, providerTables, clientsData };
+      const hiddenMap = loadOsLossHiddenMap();
       let count = 0;
       for (const m of missionsInCanonicalPeriod) {
         if ((m as any).status === MissionStatus.REFUSED) continue;
         const r = computeCanonicalRC(m as any, refs);
         if (r.rev <= 0 && r.cost <= 0) continue;
-        if (r.cost - r.rev > 0) count++;
+        if (r.cost - r.rev <= 0) continue;
+        if (isOsLossHidden(hiddenMap, String(m.id), r.rev, r.cost)) continue;
+        count++;
       }
       return count;
     } catch {
       return 0;
     }
-  }, [canSeeFinancials, missionsInCanonicalPeriod, clientTables, providerTables, clientsData]);
+  }, [canSeeFinancials, missionsInCanonicalPeriod, clientTables, providerTables, clientsData, lossHiddenTick]);
 
   // Fonte dedicada: TODAS as OS não-aprovadas de MAIO/2026 em diante, buscadas
   // direto do banco — independente da paginação/período da tela (que pode não ter
@@ -2307,6 +2313,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             customStartDate={customStartDate}
             customEndDate={customEndDate}
             onOpenMission={(m) => handleOpenFinancialModal(m)}
+            onHiddenChange={() => setLossHiddenTick((t) => t + 1)}
           />
         )}
         {isMissingTableOpen && canSeeMissingTableAlert && (
