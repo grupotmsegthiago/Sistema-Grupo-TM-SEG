@@ -6,7 +6,7 @@ import { useLoadScript, Autocomplete } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
-import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, isIntentionalBillingOverride, extractCityFromAddress } from '../lib/financialUtils';
+import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, isIntentionalBillingOverride, extractCityFromAddress, resolveDisplacementFromAuthorizedKm } from '../lib/financialUtils';
 import {
   isDhlSupplyClient,
   validateDhlTableName,
@@ -1741,13 +1741,33 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
               // Persiste automaticamente no banco (uma vez por abertura) para não exigir
               // clique em "Restaurar Auto" nem novo Salvar só por regra de cálculo atualizada.
-              if ((needRev || needCost) && staleAutoResyncDoneRef.current !== mission.id) {
+              // Também materializa deslocamento (KM autorizado → R$ cliente/fornecedor).
+              const dispResolve = resolveDisplacementFromAuthorizedKm({
+                  dhlDeslocamentoKm: dhlDeslocKmRef.current,
+                  displacementValue: parseNumber(displacementInput),
+                  displacementValueProvider: parseNumber(displacementProviderInput),
+                  clientUnitPriceKm: financialData.client.unitPriceKm,
+                  providerUnitPriceKm: financialData.provider.unitPriceKm,
+                  origin: mission.origin,
+                  isSameOs: !!mission.is_same_os,
+              });
+              const needDispClient = dispResolve.km > 0 && parseNumber(displacementInput) <= 0 && dispResolve.client > 0;
+              const needDispProvider =
+                  dispResolve.km > 0 &&
+                  !mission.is_same_os &&
+                  parseNumber(displacementProviderInput) <= 0 &&
+                  dispResolve.provider > 0;
+              if ((needRev || needCost || needDispClient || needDispProvider) && staleAutoResyncDoneRef.current !== mission.id) {
                   staleAutoResyncDoneRef.current = mission.id;
                   const r2 = (v: number) => Math.round(v * 100) / 100;
                   const revServiceOnly = financialData.client.serviceTotal;
                   const costServiceOnly = mission.is_same_os ? 0 : financialData.provider.serviceTotal;
                   const toll = parseNumber(tollInput);
                   const tollProv = mission.is_same_os ? 0 : parseNumber(tollProviderInput);
+                  const dispClient = needDispClient ? dispResolve.client : parseNumber(displacementInput);
+                  const dispProv = needDispProvider
+                      ? dispResolve.provider
+                      : (mission.is_same_os ? 0 : parseNumber(displacementProviderInput));
                   const payload: Record<string, unknown> = {
                       last_update: new Date().toISOString(),
                   };
@@ -1759,12 +1779,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       payload.cost_value = r2(costServiceOnly);
                       payload.cost_edit_reason = '[Sistema] Recalculado pelo sistema — alinhado ao motor';
                   }
+                  if (needDispClient) payload.displacement_value = r2(dispResolve.client);
+                  if (needDispProvider) payload.displacement_value_provider = r2(dispResolve.provider);
                   // Snapshot aprovado também precisa acompanhar (ex.: hora extra fantasma
                   // em Cancelada executada). Sem isso a auditoria reabre com valores velhos.
                   const existingSnap = (mission.snapshot_data && typeof mission.snapshot_data === 'object')
                       ? (mission.snapshot_data as Record<string, unknown>)
                       : null;
-                  if (existingSnap && (needRev || needCost)) {
+                  if (existingSnap && (needRev || needCost || needDispClient || needDispProvider)) {
                       payload.snapshot_data = {
                           ...existingSnap,
                           durationHours: financialData.durationHours,
@@ -1774,14 +1796,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           kmExtraTotal: r2(financialData.client.extraKmVal),
                           revenueServiceOnly: r2(revServiceOnly),
                           costServiceOnly: r2(costServiceOnly),
-                          totalGeral: r2(revServiceOnly + toll),
-                          systemCalculatedRevenue: r2(revServiceOnly + toll),
-                          systemCalculatedCost: r2(costServiceOnly + tollProv),
+                          displacementValue: r2(dispClient),
+                          displacementValueProvider: r2(dispProv),
+                          totalGeral: r2(revServiceOnly + toll + dispClient),
+                          systemCalculatedRevenue: r2(revServiceOnly + toll + dispClient),
+                          systemCalculatedCost: r2(costServiceOnly + tollProv + dispProv),
                           snapshot_resynced_at: new Date().toISOString(),
                           snapshot_resynced_by: 'AUTO_RESYNC_BILLING',
                       };
                   }
-                  if (!mission.billing_verified_by && (needRev || needCost)) {
+                  if (!mission.billing_verified_by && (needRev || needCost || needDispClient || needDispProvider)) {
                       payload.billing_verified_by = null;
                   }
                   (async () => {
@@ -1792,6 +1816,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                               ...prev,
                               ...(needRev ? { revenue_value: payload.revenue_value as number, revenue_edit_reason: String(payload.revenue_edit_reason || '') } : {}),
                               ...(needCost ? { cost_value: payload.cost_value as number, cost_edit_reason: String(payload.cost_edit_reason || '') } : {}),
+                              ...(needDispClient ? { displacement_value: payload.displacement_value as number } : {}),
+                              ...(needDispProvider ? { displacement_value_provider: payload.displacement_value_provider as number } : {}),
                               ...(payload.snapshot_data ? { snapshot_data: payload.snapshot_data as any } : {}),
                           } : prev);
                           await supabase.from('system_logs').insert([{
@@ -1802,6 +1828,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                               details: JSON.stringify({
                                   revenue: needRev ? r2(revServiceOnly) : null,
                                   cost: needCost ? r2(costServiceOnly) : null,
+                                  displacement: needDispClient ? r2(dispResolve.client) : null,
+                                  displacementProvider: needDispProvider ? r2(dispResolve.provider) : null,
                                   toll: r2(toll),
                                   tollProvider: r2(tollProv),
                                   clientExcessKm: financialData.client.excessKm,
@@ -1813,7 +1841,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           }]);
                           showNotification(
                               'Cálculo atualizado',
-                              'Valor salvo anteriormente foi alinhado automaticamente ao cálculo da tabela.',
+                              needDispClient || needDispProvider
+                                  ? 'Deslocamento (KM autorizado) e valores alinhados automaticamente ao cálculo.'
+                                  : 'Valor salvo anteriormente foi alinhado automaticamente ao cálculo da tabela.',
                               'success',
                           );
                       } catch (e) {
@@ -1882,52 +1912,48 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       }
     }, [financialData, memoryLoaded, mission, tollProviderInput, displacementInput, displacementProviderInput, useSavedValues, isLoading, isEffectivelyLocked, lockAllowsRecalc, revenueInput, costInput, tollInput, showNotification]); 
 
-    // KM de deslocamento autorizado pela DHL: o campo dhl_deslocamento_km
-    // (digitado no "Atualizar Missão") vira cobrança automática pelo campo
-    // aditivo "Deslocamento Aprovado (Cobrado)" — mesma via do pedágio.
-    // Cliente paga km × R$/km excedente da tabela aplicada; fornecedor
-    // recebe km × R$/km excedente da tabela de custo (0 se MESMA OS).
+    // KM de deslocamento autorizado (`dhl_deslocamento_km`) → R$ aditivo
+    // (cliente e fornecedor). Preserva valores já digitados/salvos (> 0).
     // NÃO toca: revenue/cost de serviço, OS travada/aprovada (snapshot
-    // imutável), override manual (userManuallyEditedRef) nem valor de
-    // deslocamento já salvo/digitado (> 0). Nesses casos apenas exibe a
-    // sugestão com botão APLICAR (quando destravado).
+    // imutável). Nesses casos apenas exibe a sugestão com botão APLICAR.
     useEffect(() => {
         if (!financialData || isLoading) return;
         const km = dhlDeslocKmRef.current;
         if (!(km > 0)) { if (dhlDeslocInfo) setDhlDeslocInfo(null); return; }
-        let clientRate = financialData.client.unitPriceKm || 0;
-        // Tabelas DHL fixas (ex: SUL - RAIO SC 200KM) têm price_per_extra_km = 0.
-        // Para o KM de deslocamento autorizado vale a taxa FIXA por UF de origem
-        // do boletim DHL (coluna AA): SC/RS = R$ 7,35; demais UFs = R$ 6,90.
-        const isDhlClient = (mission?.client || '').toUpperCase().includes('DHL');
-        if (isDhlClient && clientRate <= 0) {
-            const ufOrigem = extractUF(mission?.origin || '');
-            clientRate = (ufOrigem === 'SC' || ufOrigem === 'RS') ? 7.35 : 6.90;
-        }
-        const clientVal = Math.round(km * clientRate * 100) / 100;
-        if (!dhlDeslocInfo || dhlDeslocInfo.clientVal !== clientVal) {
-            setDhlDeslocInfo({ km, clientRate, clientVal });
+        const disp = resolveDisplacementFromAuthorizedKm({
+            dhlDeslocamentoKm: km,
+            displacementValue: parseNumber(displacementInput),
+            displacementValueProvider: parseNumber(displacementProviderInput),
+            clientUnitPriceKm: financialData.client.unitPriceKm,
+            providerUnitPriceKm: financialData.provider.unitPriceKm,
+            origin: mission?.origin,
+            isSameOs: !!(mission as any)?.is_same_os,
+        });
+        if (!dhlDeslocInfo || dhlDeslocInfo.clientVal !== disp.client || dhlDeslocInfo.km !== disp.km) {
+            setDhlDeslocInfo({ km: disp.km, clientRate: disp.clientRate, clientVal: disp.client });
         }
         if (dhlDeslocAutoAppliedRef.current) return;
         if (isEffectivelyLocked || isSavingRef.current) return;
-        if (parseNumber(displacementInput) > 0) {
-            // Já existe deslocamento salvo/digitado — não sobrescrever.
+        const hadClient = parseNumber(displacementInput) > 0;
+        const hadProvider = parseNumber(displacementProviderInput) > 0;
+        if (hadClient && (hadProvider || !!(mission as any)?.is_same_os || disp.provider <= 0)) {
             dhlDeslocAutoAppliedRef.current = true;
             return;
         }
-        if (clientVal <= 0) return;
+        if (disp.client <= 0 && disp.provider <= 0) return;
         dhlDeslocAutoAppliedRef.current = true;
         const fmtBR = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        // Cobrança automática SÓ no lado do cliente. O deslocamento do fornecedor é
-        // sempre manual: só entra se o fornecedor cobrar algo (digitado pelo operador).
-        setDisplacementInput(fmtBR(clientVal));
-        if (userManuallyEditedRef.current) {
-            // Com valor manual salvo, o efeito de sync do número grande não roda —
-            // então somamos o deslocamento direto no Valor Final do cliente.
-            const currentRev = parseNumber(revenueInput);
-            setRevenueInput(fmtBR(currentRev + clientVal));
+        if (!hadClient && disp.client > 0) {
+            setDisplacementInput(fmtBR(disp.client));
+            if (userManuallyEditedRef.current) {
+                const currentRev = parseNumber(revenueInput);
+                setRevenueInput(fmtBR(currentRev + disp.client));
+            }
         }
-    }, [financialData, isLoading, mission, displacementInput, revenueInput, isEffectivelyLocked, dhlDeslocInfo]);
+        if (!hadProvider && disp.provider > 0 && !(mission as any)?.is_same_os) {
+            setDisplacementProviderInput(fmtBR(disp.provider));
+        }
+    }, [financialData, isLoading, mission, displacementInput, displacementProviderInput, revenueInput, isEffectivelyLocked, dhlDeslocInfo]);
 
     // Auto-recálculo: quando o usuário mexer em qualquer parâmetro (tabela, base/km/hora customizados,
     // IBL, override do fornecedor) após o carregamento inicial, liberamos os refs para que o autofill

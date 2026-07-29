@@ -11,7 +11,7 @@
 // fallback `m.startTime ?? m.start_time` etc.
 
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable, Client } from '../types';
-import { calculateMissionFinancials } from './financialUtils';
+import { calculateMissionFinancials, resolveDisplacementFromAuthorizedKm } from './financialUtils';
 import { resolveStoredClientToll, resolveStoredProviderToll } from './toll/clientTollBilling';
 
 export type CanonicalPeriod = 'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM' | 'ALL';
@@ -72,11 +72,11 @@ export function computeCanonicalRevenueCost(
   // pedágio pago = toll_value_provider (valor real; fallback toll_value).
   const tollRev = resolveStoredClientToll(m.toll_value, m.toll_value_provider);
   const tollCost = resolveStoredProviderToll(m.toll_value, m.toll_value_provider, !!m.is_same_os);
-  const dispRev = Math.max(0, num(m.displacement_value));
-  const dispCost = Math.max(0, num(m.displacement_value_provider));
 
   let revBase = 0;
   let costBase = 0;
+  let clientUnitKm = 0;
+  let providerUnitKm = 0;
   let source: CanonicalResult['source'] = 'estimated';
 
   if (hasSavedValues || (hasStoredRev && hasStoredCost)) {
@@ -106,6 +106,8 @@ export function computeCanonicalRevenueCost(
         const fin = calculateMissionFinancials(missionObj, refs.clientTables, refs.providerTables, matchedClient, currentTime);
         if (!hasStoredRev) revBase = num(fin.client.total);
         if (!hasStoredCost) costBase = num(fin.provider.total);
+        clientUnitKm = num(fin.client.unitPriceKm);
+        providerUnitKm = num(fin.provider.unitPriceKm);
       } catch {
         // mantém parciais se a estimativa falhar
       }
@@ -114,6 +116,48 @@ export function computeCanonicalRevenueCost(
       source = 'saved';
     }
   }
+
+  // Com KM autorizado e sem R$ salvo, busca taxas da tabela (mesmo em OS já salva)
+  // para o auditor/relatório contabilizar DESL sem abrir o modal financeiro.
+  const kmAuth = num(m.dhl_deslocamento_km);
+  const needsDispDerive =
+    kmAuth > 0 &&
+    (!(num(m.displacement_value) > 0) || (!(num(m.displacement_value_provider) > 0) && !m.is_same_os));
+  if (needsDispDerive && (clientUnitKm <= 0 || providerUnitKm <= 0)) {
+    try {
+      const isCancelled = m.status === MissionStatus.CANCELLED;
+      const missionObj: Mission = {
+        ...m,
+        startKm: m.startKm ?? m.start_km,
+        endKm: m.endKm ?? m.end_km,
+        startTime: m.startTime ?? m.start_time,
+        endTime: m.endTime ?? m.end_time,
+        createdAt: m.createdAt ?? m.created_at,
+        lastUpdate: m.lastUpdate ?? m.last_update,
+        totalDistance: m.totalDistance ?? m.total_distance,
+        ...(isCancelled ? { status: MissionStatus.COMPLETED } : {}),
+      } as Mission;
+      const clientName = ((m as any).originalClientName || m.client || '').toString().trim();
+      const matchedClient = refs.clientsData.find(c => c.name === clientName);
+      const fin = calculateMissionFinancials(missionObj, refs.clientTables, refs.providerTables, matchedClient, currentTime);
+      if (clientUnitKm <= 0) clientUnitKm = num(fin.client.unitPriceKm);
+      if (providerUnitKm <= 0) providerUnitKm = num(fin.provider.unitPriceKm);
+    } catch {
+      /* fallback DHL por UF cobre o cliente */
+    }
+  }
+
+  const disp = resolveDisplacementFromAuthorizedKm({
+    dhlDeslocamentoKm: m.dhl_deslocamento_km,
+    displacementValue: m.displacement_value,
+    displacementValueProvider: m.displacement_value_provider,
+    clientUnitPriceKm: clientUnitKm,
+    providerUnitPriceKm: providerUnitKm,
+    origin: m.origin,
+    isSameOs: !!m.is_same_os,
+  });
+  const dispRev = disp.client;
+  const dispCost = disp.provider;
 
   const rev = revBase + tollRev + dispRev;
   const cost = costBase + tollCost + dispCost;

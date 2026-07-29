@@ -10,7 +10,11 @@ import {
 } from 'lucide-react';
 import MissionFinancialModal from './MissionFinancialModal';
 import MissionAuditModal from './MissionAuditModal';
-import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
+import {
+  calculateMissionFinancials,
+  extractCityFromAddress,
+  resolveDisplacementFromAuthorizedKm,
+} from '../lib/financialUtils';
 
 /** Rota no relatório: cidades (não endereço completo). Ex.: PALHOÇA → FLORIANÓPOLIS */
 function formatRouteCities(origin?: string | null, destination?: string | null): string {
@@ -536,13 +540,20 @@ const MissionReportPage: React.FC = () => {
     const asNum = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
     for (const m of displayMissions) {
       if (!auditEnabled) {
-        // Modo rápido: só valores salvos (sem reestimar tabelas linha a linha).
+        // Modo rápido: valores salvos + deslocamento derivado do KM autorizado (se faltar R$).
         const revBase = asNum((m as any).revenue_value);
         const costBase = asNum((m as any).cost_value);
         const tollRev = asNum((m as any).toll_value);
         const tollCost = asNum((m as any).toll_value_provider) || tollRev;
-        const dispRev = Math.max(0, asNum((m as any).displacement_value));
-        const dispCost = Math.max(0, asNum((m as any).displacement_value_provider));
+        const disp = resolveDisplacementFromAuthorizedKm({
+          dhlDeslocamentoKm: (m as any).dhl_deslocamento_km,
+          displacementValue: (m as any).displacement_value,
+          displacementValueProvider: (m as any).displacement_value_provider,
+          origin: m.origin,
+          isSameOs: !!(m as any).is_same_os,
+        });
+        const dispRev = disp.client;
+        const dispCost = disp.provider;
         const rev = revBase + tollRev + dispRev;
         const cost = costBase + tollCost + dispCost;
         map.set(m.id, {

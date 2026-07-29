@@ -72,6 +72,44 @@ export function dhlDefaultUnitKmExcess(originUF: string): number {
     return (uf === 'SC' || uf === 'RS') ? 7.35 : 6.90;
 }
 
+/**
+ * Materializa R$ de deslocamento a partir do KM autorizado (`dhl_deslocamento_km`).
+ * Se já houver `displacement_value` / `_provider` salvo (> 0), preserva.
+ * Cliente: km × taxa (tabela ou fallback DHL por UF).
+ * Fornecedor: km × taxa da tabela de custo (0 se MESMA OS ou taxa 0).
+ */
+export function resolveDisplacementFromAuthorizedKm(opts: {
+  dhlDeslocamentoKm?: number | null;
+  displacementValue?: number | null;
+  displacementValueProvider?: number | null;
+  clientUnitPriceKm?: number | null;
+  providerUnitPriceKm?: number | null;
+  origin?: string | null;
+  isSameOs?: boolean | null;
+}): { client: number; provider: number; km: number; clientRate: number; providerRate: number } {
+  const km = Math.max(0, Number(opts.dhlDeslocamentoKm) || 0);
+  const storedClient = Math.max(0, Number(opts.displacementValue) || 0);
+  const storedProvider = Math.max(0, Number(opts.displacementValueProvider) || 0);
+
+  let clientRate = Math.max(0, Number(opts.clientUnitPriceKm) || 0);
+  if (km > 0 && clientRate <= 0) {
+    // Tabelas DHL fixas frequentemente têm price_per_extra_km = 0.
+    clientRate = dhlDefaultUnitKmExcess(extractUF(opts.origin || ''));
+  }
+  const providerRate = opts.isSameOs ? 0 : Math.max(0, Number(opts.providerUnitPriceKm) || 0);
+
+  const derivedClient = km > 0 && clientRate > 0 ? Math.round(km * clientRate * 100) / 100 : 0;
+  const derivedProvider = km > 0 && providerRate > 0 ? Math.round(km * providerRate * 100) / 100 : 0;
+
+  return {
+    km,
+    clientRate,
+    providerRate,
+    client: storedClient > 0 ? Math.round(storedClient * 100) / 100 : derivedClient,
+    provider: opts.isSameOs ? 0 : (storedProvider > 0 ? Math.round(storedProvider * 100) / 100 : derivedProvider),
+  };
+}
+
 /** Decide se uma linha de client_price_tables pertence ao cliente da OS. */
 export function clientTableMatchesMission(tableClient: string, missionClientName: string): boolean {
     const mission = String(missionClientName || '').trim();
