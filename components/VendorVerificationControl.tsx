@@ -13,6 +13,8 @@ import {
     Upload, Scale, FileSpreadsheet, HelpCircle, Download, Printer, Filter, Link2
 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
+import { resolveMissionDisplacement } from '../lib/billing/resolveMissionDisplacement';
+import { calculateMissionFinancials } from '../lib/financialUtils';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -42,8 +44,12 @@ async function parseJsonResponse(res: Response): Promise<any> {
 const providerTollOf = (m: any) => Math.max(0, m.toll_value_provider ?? 0);
 const providerDispOf = (m: any) => {
     if (m.is_same_os) return 0;
-    const disp = m.displacement_value_provider || 0;
-    return Math.max(0, disp);
+    // Persistido ou derivado do KM autorizado (mesma regra do Relatório de OS).
+    // providerUnitPriceKm vem de `_providerUnitKm` quando o painel carrega as tabelas.
+    return resolveMissionDisplacement(m, {
+        clientUnitPriceKm: m._clientUnitKm,
+        providerUnitPriceKm: m._providerUnitKm,
+    }).provider;
 };
 const providerCostOf = (m: any) => (m.cost_value || 0) + providerTollOf(m) + providerDispOf(m);
 
@@ -55,7 +61,7 @@ const provStartKmOf = (m: any) => (m.provider_ops_edited && m.provider_start_km 
 const provEndKmOf = (m: any) => (m.provider_ops_edited && m.provider_end_km != null) ? m.provider_end_km : m.end_km;
 
 // Colunas buscadas para a tabela (compartilhado entre o load completo e a busca server-side).
-const MISSION_SELECT = 'id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, provider_start_time, provider_end_time, provider_start_km, provider_end_km, provider_ops_edited, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, displacement_value, displacement_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2, vehicle_id, is_same_os, parent_mission_id';
+const MISSION_SELECT = 'id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, provider_start_time, provider_end_time, provider_start_km, provider_end_km, provider_ops_edited, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, displacement_value, displacement_value_provider, dhl_deslocamento_km, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2, vehicle_id, is_same_os, parent_mission_id';
 
 const fmtDate = (d: string | null | undefined) => {
     if (!d) return '—';
@@ -313,11 +319,13 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 return all;
             };
 
-            const [clientsRes, missionData, vehiclesRes, escortVehiclesRes] = await Promise.all([
+            const [clientsRes, missionData, vehiclesRes, escortVehiclesRes, pctRes, cptRes] = await Promise.all([
                 supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name'),
                 fetchAllMissions(),
                 supabase.from('client_vehicles').select('id, plate, model'),
-                supabase.from('vehicles').select('id, plate, model')
+                supabase.from('vehicles').select('id, plate, model'),
+                supabase.from('provider_cost_tables').select('*'),
+                supabase.from('client_price_tables').select('*'),
             ]);
 
             if (clientsRes.data) setClients(clientsRes.data);
@@ -326,11 +334,33 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             (vehiclesRes.data || []).forEach((v: any) => vehicleMap.set(v.id, { plate: v.plate || '', model: v.model || '' }));
             const escortMap = new Map<number, { plate: string; model: string }>();
             (escortVehiclesRes.data || []).forEach((v: any) => escortMap.set(v.id, { plate: v.plate || '', model: v.model || '' }));
+            const providerTables = (pctRes.data || []) as any[];
+            const clientTables = (cptRes.data || []) as any[];
             const enrichedMissions = missionData.map((m: any) => {
                 const v1 = m.client_vehicle ? vehicleMap.get(m.client_vehicle) : null;
                 const v2 = m.client_vehicle_2 ? vehicleMap.get(m.client_vehicle_2) : null;
                 const ev = m.vehicle_id ? escortMap.get(m.vehicle_id) : null;
-                return { ...m, _plate1: v1?.plate || '', _plate2: v2?.plate || '', _escortPlate: ev?.plate || '' };
+                let _clientUnitKm = 0;
+                let _providerUnitKm = 0;
+                const needsDispRate =
+                    (Number(m.dhl_deslocamento_km) || 0) > 0 &&
+                    !(Number(m.displacement_value_provider) > 0) &&
+                    !m.is_same_os;
+                if (needsDispRate) {
+                    try {
+                        const fin = calculateMissionFinancials(m, clientTables, providerTables, undefined);
+                        _clientUnitKm = fin.client.unitPriceKm || 0;
+                        _providerUnitKm = fin.provider.unitCostKm || 0;
+                    } catch { /* ignore */ }
+                }
+                return {
+                    ...m,
+                    _plate1: v1?.plate || '',
+                    _plate2: v2?.plate || '',
+                    _escortPlate: ev?.plate || '',
+                    _clientUnitKm,
+                    _providerUnitKm,
+                };
             });
 
             const uniqueProviders = [...new Set(enrichedMissions.map((m: any) => m.provider).filter(Boolean))].sort();
@@ -402,20 +432,41 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 if (m.client_vehicle_2) cvSet.add(m.client_vehicle_2);
                 if (m.vehicle_id) vSet.add(m.vehicle_id);
             });
-            const [cvFull, vFull] = await Promise.all([
+            const [cvFull, vFull, pctSearch, cptSearch] = await Promise.all([
                 cvSet.size ? supabase.from('client_vehicles').select('id, plate, model').in('id', Array.from(cvSet)) : Promise.resolve({ data: [] as any[] }),
                 vSet.size ? supabase.from('vehicles').select('id, plate, model').in('id', Array.from(vSet)) : Promise.resolve({ data: [] as any[] }),
+                supabase.from('provider_cost_tables').select('*'),
+                supabase.from('client_price_tables').select('*'),
             ]);
             const vmap = new Map<number, any>();
             (cvFull.data || []).forEach((v: any) => vmap.set(v.id, v));
             const emap = new Map<number, any>();
             (vFull.data || []).forEach((v: any) => emap.set(v.id, v));
-            const enriched = rows.map((m: any) => ({
-                ...m,
-                _plate1: m.client_vehicle ? (vmap.get(m.client_vehicle)?.plate || '') : '',
-                _plate2: m.client_vehicle_2 ? (vmap.get(m.client_vehicle_2)?.plate || '') : '',
-                _escortPlate: m.vehicle_id ? (emap.get(m.vehicle_id)?.plate || '') : '',
-            }));
+            const providerTablesS = (pctSearch.data || []) as any[];
+            const clientTablesS = (cptSearch.data || []) as any[];
+            const enriched = rows.map((m: any) => {
+                let _clientUnitKm = 0;
+                let _providerUnitKm = 0;
+                const needsDispRate =
+                    (Number(m.dhl_deslocamento_km) || 0) > 0 &&
+                    !(Number(m.displacement_value_provider) > 0) &&
+                    !m.is_same_os;
+                if (needsDispRate) {
+                    try {
+                        const fin = calculateMissionFinancials(m, clientTablesS, providerTablesS, undefined);
+                        _clientUnitKm = fin.client.unitPriceKm || 0;
+                        _providerUnitKm = fin.provider.unitCostKm || 0;
+                    } catch { /* ignore */ }
+                }
+                return {
+                    ...m,
+                    _plate1: m.client_vehicle ? (vmap.get(m.client_vehicle)?.plate || '') : '',
+                    _plate2: m.client_vehicle_2 ? (vmap.get(m.client_vehicle_2)?.plate || '') : '',
+                    _escortPlate: m.vehicle_id ? (emap.get(m.vehicle_id)?.plate || '') : '',
+                    _clientUnitKm,
+                    _providerUnitKm,
+                };
+            });
             setServerRows(enriched);
         } catch (e) {
             console.error('Erro na busca:', e);

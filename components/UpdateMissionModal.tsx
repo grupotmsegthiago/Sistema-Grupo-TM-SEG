@@ -5,7 +5,7 @@ import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType,
 import { authFetch } from '../lib/authFetch';
 import { supabase, MISSION_UPDATES_BROADCAST_CHANNEL } from '../lib/supabase';
 import { logAction } from '../lib/logger';
-import { clientFuzzyFilter, extractCityFromAddress } from '../lib/financialUtils';
+import { calculateMissionFinancials, clientFuzzyFilter, extractCityFromAddress, resolveDisplacementFromAuthorizedKm } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
 import { optimizeImageForAI } from '../lib/imageForAI';
 import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
@@ -1963,18 +1963,58 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         if (!mission || !currentUser) return;
 
         if (isCompletedMission && isBillingApproved && !canEditApproved) {
-            // OS aprovada: o snapshot financeiro é IMUTÁVEL. Porém o KM de deslocamento
-            // DHL é auditoria-only (alimenta apenas a coluna T da planilha SE) e o
-            // requisito é que esse campo seja editável SEMPRE, inclusive em OS
-            // finalizada/aprovada. Persistimos só esse campo, sem tocar em
-            // revenue/cost/toll/snapshot, e bloqueamos o resto.
+            // OS aprovada: não altera serviço/pedágio/snapshot. Mas se o KM autorizado
+            // foi informado e o DESL em R$ ainda está zerado, materializa o aditivo
+            // (cliente/fornecedor) — senão o Relatório mostra DESL e o faturamento não cobra.
             const deslocKmValue = editData.dhl_deslocamento_km !== '' ? (parseFloat(editData.dhl_deslocamento_km) || 0) : null;
-            const { error: deslocErr } = await supabase.from('missions').update({ dhl_deslocamento_km: deslocKmValue }).eq('id', mission.id);
+            const approvedPayload: Record<string, unknown> = { dhl_deslocamento_km: deslocKmValue };
+            const curDisp = Math.max(0, Number((mission as any).displacement_value) || 0);
+            const curDispProv = Math.max(0, Number((mission as any).displacement_value_provider) || 0);
+            if ((deslocKmValue || 0) > 0 && (curDisp <= 0 || (curDispProv <= 0 && !mission.is_same_os))) {
+                try {
+                    const [{ data: pct }, { data: clientsRow }] = await Promise.all([
+                        supabase.from('provider_cost_tables').select('*'),
+                        supabase.from('clients').select('*').eq('name', mission.client).maybeSingle(),
+                    ]);
+                    const mObj = {
+                        ...mission,
+                        startKm: mission.startKm || (mission as any).start_km,
+                        endKm: mission.endKm || (mission as any).end_km,
+                        startTime: mission.startTime || (mission as any).start_time,
+                        endTime: mission.endTime || (mission as any).end_time,
+                        dhl_deslocamento_km: deslocKmValue,
+                    } as any;
+                    const fin = calculateMissionFinancials(mObj, clientTables, (pct || []) as any, clientsRow || undefined);
+                    const disp = resolveDisplacementFromAuthorizedKm({
+                        dhlDeslocamentoKm: deslocKmValue,
+                        displacementValue: curDisp,
+                        displacementValueProvider: curDispProv,
+                        clientUnitPriceKm: fin.client.unitPriceKm,
+                        providerUnitPriceKm: fin.provider.unitCostKm,
+                        origin: mission.origin,
+                        isSameOs: !!mission.is_same_os,
+                    });
+                    const r2 = (v: number) => Math.round(v * 100) / 100;
+                    if (curDisp <= 0 && disp.client > 0) approvedPayload.displacement_value = r2(disp.client);
+                    if (curDispProv <= 0 && !mission.is_same_os && disp.provider > 0) {
+                        approvedPayload.displacement_value_provider = r2(disp.provider);
+                    }
+                } catch (e) {
+                    console.warn('[UpdateMission] materializar DESL (OS aprovada):', e);
+                }
+            }
+            const { error: deslocErr } = await supabase.from('missions').update(approvedPayload).eq('id', mission.id);
             if (deslocErr) {
                 showNotification('Erro', 'Falha ao salvar KM de deslocamento: ' + deslocErr.message, 'error');
                 return;
             }
-            showNotification('Salvo', 'KM de deslocamento atualizado. Os demais campos estão travados porque a OS já foi aprovada.', 'success');
+            showNotification(
+                'Salvo',
+                approvedPayload.displacement_value || approvedPayload.displacement_value_provider
+                    ? 'KM e deslocamento (R$) atualizados. Demais campos permanecem travados pela aprovação.'
+                    : 'KM de deslocamento atualizado. Os demais campos estão travados porque a OS já foi aprovada.',
+                'success',
+            );
             return;
         }
 
@@ -2376,6 +2416,55 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 dhl_deslocamento_km: editData.dhl_deslocamento_km !== '' ? (parseFloat(editData.dhl_deslocamento_km) || 0) : null
             };
 
+            // Materializa DESL em R$ a partir do KM autorizado quando ainda zerado —
+            // alinha faturamento/pagamento ao que o Relatório de OS já exibe.
+            const deslocKmSave = updateData.dhl_deslocamento_km;
+            const curDispSave = Math.max(0, Number((mission as any).displacement_value) || 0);
+            const curDispProvSave = Math.max(0, Number((mission as any).displacement_value_provider) || 0);
+            if (
+                finalStatus !== MissionStatus.REFUSED &&
+                (deslocKmSave || 0) > 0 &&
+                (curDispSave <= 0 || (curDispProvSave <= 0 && !editData.isSameOs))
+            ) {
+                try {
+                    const { data: pctSave } = await supabase.from('provider_cost_tables').select('*');
+                    const mObjSave = {
+                        ...mission,
+                        ...editData,
+                        startKm: sKm || mission.startKm || (mission as any).start_km,
+                        endKm: eKm || mission.endKm || (mission as any).end_km,
+                        startTime: startIso,
+                        endTime: endIso,
+                        dhl_deslocamento_km: deslocKmSave,
+                        is_same_os: editData.isSameOs,
+                        origin: editData.origin,
+                    } as any;
+                    const clientMatchSave = undefined; // calculateMissionFinancials usa nome da OS
+                    const finSave = calculateMissionFinancials(
+                        mObjSave,
+                        clientTables,
+                        (pctSave || []) as any,
+                        clientMatchSave,
+                    );
+                    const dispSave = resolveDisplacementFromAuthorizedKm({
+                        dhlDeslocamentoKm: deslocKmSave,
+                        displacementValue: curDispSave,
+                        displacementValueProvider: curDispProvSave,
+                        clientUnitPriceKm: finSave.client.unitPriceKm,
+                        providerUnitPriceKm: finSave.provider.unitCostKm,
+                        origin: editData.origin || mission.origin,
+                        isSameOs: !!editData.isSameOs,
+                    });
+                    const r2s = (v: number) => Math.round(v * 100) / 100;
+                    if (curDispSave <= 0 && dispSave.client > 0) updateData.displacement_value = r2s(dispSave.client);
+                    if (curDispProvSave <= 0 && !editData.isSameOs && dispSave.provider > 0) {
+                        updateData.displacement_value_provider = r2s(dispSave.provider);
+                    }
+                } catch (e) {
+                    console.warn('[UpdateMission] materializar DESL:', e);
+                }
+            }
+
             // REGRA PRIORITÁRIA: OS Recusada SEMPRE zera valores de cliente,
             // fornecedor e pedágio — independente do que estiver salvo. Sem
             // exceções, sem snapshot, sem aprovação.
@@ -2384,6 +2473,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 updateData.cost_value = 0;
                 updateData.toll_value = 0;
                 updateData.toll_value_provider = 0;
+                updateData.displacement_value = 0;
+                updateData.displacement_value_provider = 0;
                 updateData.snapshot_data = null;
                 updateData.billing_approved = false;
                 updateData.valor_zero_motivo = 'OS Recusada — zerado automaticamente';
