@@ -33,6 +33,8 @@ import {
   getTransactionPaidAmount,
 } from '../lib/financial/partialPayments';
 import ReceivablePaymentsModal from './ReceivablePaymentsModal';
+import ReceivablePayConfirmModal from './ReceivablePayConfirmModal';
+import { extractParentTransactionId } from '../lib/financial/confirmReceivablePay';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -95,6 +97,10 @@ const FinancialTransactionList: React.FC = () => {
         balance: number;
     } | null>(null);
     const [paymentsTx, setPaymentsTx] = useState<FinancialTransaction | null>(null);
+    /** Modal de confirmação ao marcar PAGO em Contas a Receber. */
+    const [payConfirmTx, setPayConfirmTx] = useState<FinancialTransaction | null>(null);
+    /** Pais com residual expandido (sublinhas). */
+    const [expandedResidualParents, setExpandedResidualParents] = useState<Set<string>>(() => new Set());
 
     const ASAAS_CARD_KEYS = ['TM GESTÃO', 'TM SEGURANCA', 'TM SECURITY'] as const;
 
@@ -343,6 +349,15 @@ const FinancialTransactionList: React.FC = () => {
 
     const handleStatusChange = async (t: FinancialTransaction, newStatus: TransactionStatus) => {
         if (newStatus === t.status) return;
+        // Contas a Receber: PAGO abre modal de confirmação (valor / parcial / juros).
+        if (
+            (activeStep === 'RECEBER' || t.type === 'INCOME') &&
+            newStatus === 'PAID' &&
+            t.status !== 'PAID'
+        ) {
+            setPayConfirmTx(t);
+            return;
+        }
         const updates: any = { status: newStatus };
         if (newStatus === 'PAID') {
             updates.payment_date = t.due_date;
@@ -936,6 +951,42 @@ const FinancialTransactionList: React.FC = () => {
     const renderTransactionTable = (list: FinancialTransaction[], typeLabel: string, showConferencia = false) => {
         const isReceber = typeLabel === 'Receita' || typeLabel === 'RECEBER' || activeStep === 'RECEBER';
         const colCount = (showConferencia ? 9 : 8) + (isReceber ? 1 : 0);
+
+        // Agrupa saldos residuais logo abaixo do título pai (Contas a Receber).
+        const residualByParent = new Map<string, FinancialTransaction[]>();
+        if (isReceber) {
+            for (const t of list) {
+                const parentId = extractParentTransactionId(t.notes);
+                if (!parentId) continue;
+                const arr = residualByParent.get(parentId) || [];
+                arr.push(t);
+                residualByParent.set(parentId, arr);
+            }
+        }
+        const residualIds = new Set(
+            [...residualByParent.values()].flat().map((r) => r.id),
+        );
+        const orderedList: FinancialTransaction[] = [];
+        if (isReceber) {
+            for (const t of list) {
+                if (residualIds.has(t.id)) continue;
+                orderedList.push(t);
+                const children = residualByParent.get(t.id);
+                // Por padrão expandido; usuário pode recolher pelo botão (−).
+                if (children?.length && !expandedResidualParents.has(`collapsed:${t.id}`)) {
+                    orderedList.push(...children);
+                }
+            }
+            // Residuais órfãos (pai fora do filtro) ainda aparecem
+            for (const t of list) {
+                if (residualIds.has(t.id) && !orderedList.some((x) => x.id === t.id)) {
+                    orderedList.push(t);
+                }
+            }
+        } else {
+            orderedList.push(...list);
+        }
+
         return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
@@ -957,30 +1008,79 @@ const FinancialTransactionList: React.FC = () => {
                     <tbody className="divide-y divide-gray-100">
                         {loading ? (
                             <tr><td colSpan={colCount} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-red-700"/></td></tr>
-                        ) : list.length === 0 ? (
+                        ) : orderedList.length === 0 ? (
                             <tr><td colSpan={colCount} className="p-12 text-center text-gray-400 font-bold uppercase italic text-sm">Nenhum lançamento encontrado.</td></tr>
-                        ) : list.map(t => {
+                        ) : orderedList.map(t => {
                             const isOverdueRow = (t.status === 'PENDING' || t.status === 'PARTIALLY_PAID' || t.status === 'OVERDUE') && t.due_date.split('T')[0] < getTodayBR();
                             const openAmt = getTransactionOpenAmount(t);
                             const paidAmt = getTransactionPaidAmount(t);
+                            const parentId = isReceber ? extractParentTransactionId(t.notes) : null;
+                            const isResidualRow = !!parentId;
+                            const childResiduals = isReceber ? residualByParent.get(t.id) : undefined;
+                            const hasResidualChildren = !!(childResiduals && childResiduals.length > 0);
+                            const residualCollapsed = expandedResidualParents.has(`collapsed:${t.id}`);
+                            const residualExpanded = hasResidualChildren && !residualCollapsed;
                             return (
-                                <tr key={t.id} className={`hover:bg-gray-50 transition-colors ${isOverdueRow ? 'bg-red-50/50' : t.status === 'PARTIALLY_PAID' ? 'bg-orange-50/40' : ''}`}>
+                                <tr
+                                    key={t.id}
+                                    className={`hover:bg-gray-50 transition-colors ${
+                                        isResidualRow
+                                            ? 'bg-orange-50/50 border-l-4 border-l-orange-400'
+                                            : isOverdueRow
+                                              ? 'bg-red-50/50'
+                                              : t.status === 'PARTIALLY_PAID'
+                                                ? 'bg-orange-50/40'
+                                                : ''
+                                    }`}
+                                    data-testid={isResidualRow ? `residual-row-${t.id}` : `tx-row-${t.id}`}
+                                >
                                     <td className="px-4 py-3">
                                         <span className={`text-xs font-mono font-bold ${isOverdueRow ? 'text-red-600' : 'text-gray-500'}`}>
                                             {formatDateBR(t.due_date + 'T12:00:00')}
                                         </span>
                                         {isOverdueRow && <span className="block text-[8px] font-black text-red-500 uppercase">Vencido</span>}
                                     </td>
-                                    <td className="px-4 py-3">
-                                        <div className="font-bold text-gray-800 text-sm uppercase">{t.description}</div>
-                                        {isReceber && paidAmt > 0 && t.status !== 'PAID' && (
-                                            <span className="block text-[9px] font-bold text-green-700 mt-0.5">
-                                              Recebido: {formatCurrency(paidAmt)}
-                                              {openAmt > 0.009 && t.status !== 'PARTIALLY_PAID' && (
-                                                <span className="ml-1 text-orange-700">· Parcial</span>
-                                              )}
-                                            </span>
-                                        )}
+                                    <td className={`px-4 py-3 ${isResidualRow ? 'pl-8' : ''}`}>
+                                        <div className="flex items-start gap-1.5">
+                                            {hasResidualChildren && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setExpandedResidualParents((prev) => {
+                                                            const next = new Set(prev);
+                                                            const key = `collapsed:${t.id}`;
+                                                            if (next.has(key)) next.delete(key);
+                                                            else next.add(key);
+                                                            return next;
+                                                        });
+                                                    }}
+                                                    className="mt-0.5 w-5 h-5 shrink-0 rounded border border-orange-300 bg-orange-100 text-orange-700 text-[11px] font-black leading-none"
+                                                    title={residualExpanded ? 'Ocultar saldo residual' : 'Ver saldo residual'}
+                                                    data-testid={`btn-toggle-residual-${t.id}`}
+                                                >
+                                                    {residualExpanded ? '−' : '+'}
+                                                </button>
+                                            )}
+                                            <div className="min-w-0">
+                                                <div className={`font-bold text-sm uppercase ${isResidualRow ? 'text-orange-800' : 'text-gray-800'}`}>{t.description}</div>
+                                                {isResidualRow && (
+                                                    <span className="block text-[9px] font-black text-orange-600 mt-0.5 uppercase">Saldo residual</span>
+                                                )}
+                                                {hasResidualChildren && (
+                                                    <span className="block text-[9px] font-bold text-orange-700 mt-0.5">
+                                                        Pago incompleto · {childResiduals!.length} residual(is)
+                                                    </span>
+                                                )}
+                                                {isReceber && paidAmt > 0 && t.status !== 'PAID' && (
+                                                    <span className="block text-[9px] font-bold text-green-700 mt-0.5">
+                                                      Recebido: {formatCurrency(paidAmt)}
+                                                      {openAmt > 0.009 && t.status !== 'PARTIALLY_PAID' && (
+                                                        <span className="ml-1 text-orange-700">· Parcial</span>
+                                                      )}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
                                     </td>
                                     <td className="px-4 py-3">
                                         <span className="text-xs font-bold text-gray-600 uppercase">{t.entity_name || 'Geral'}</span>
@@ -1436,6 +1536,31 @@ const FinancialTransactionList: React.FC = () => {
                     onUpdated={(patch) => {
                         setTransactions(prev => prev.map(item => item.id === paymentsTx.id ? { ...item, ...patch } : item));
                         setPaymentsTx(prev => (prev ? { ...prev, ...patch } : prev));
+                    }}
+                />
+            )}
+            {payConfirmTx && (
+                <ReceivablePayConfirmModal
+                    transaction={payConfirmTx}
+                    onClose={() => setPayConfirmTx(null)}
+                    onConfirmed={({ updated, residual }) => {
+                        setTransactions((prev) => {
+                            const next = prev.map((item) =>
+                                item.id === payConfirmTx.id ? { ...item, ...updated } : item,
+                            );
+                            if (residual && !next.some((x) => x.id === residual.id)) {
+                                return [residual, ...next];
+                            }
+                            return next;
+                        });
+                        if (residual) {
+                            setExpandedResidualParents((prev) => {
+                                const n = new Set(prev);
+                                n.delete(`collapsed:${payConfirmTx.id}`);
+                                return n;
+                            });
+                        }
+                        setPayConfirmTx(null);
                     }}
                 />
             )}
