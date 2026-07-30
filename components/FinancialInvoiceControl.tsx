@@ -15,6 +15,7 @@ import {
   isAfterInvoiceControlEpoch,
   readInvoiceWatch,
 } from '../lib/invoiceCleanSlate';
+import { isPureMedicaoInvoice } from '../lib/billing/medicaoVisibility';
 import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
   AlertCircle, Clock, XCircle, DollarSign, Receipt, Eye, Loader2,
@@ -281,6 +282,9 @@ const FinancialInvoiceControl: React.FC = () => {
         const updated: Invoice[] = data
           // Só created_at (não date de competência) — emissão nova com período antigo aparece.
           .filter((inv) => isAfterInvoiceControlEpoch(inv.created_at))
+          // Medições MED- sem boleto/Asaas não entram no Controle de NF
+          // (só após Gerar Fatura / boleto — registro TMSEG-/Asaas).
+          .filter((inv) => !isPureMedicaoInvoice(inv))
           .map((inv) => {
             if (inv.status === 'EMITIDA' && inv.boleto_due_date) {
               const due = new Date(inv.boleto_due_date + 'T23:59:59');
