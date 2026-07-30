@@ -1303,8 +1303,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             {
                 const cName = ((mission as any).originalClientName || mission.client || '').toUpperCase();
                 const isDhl = cName.includes('DHL');
+                // Toggle ON: só DHL. Toggle OFF: operadores comuns escondem DHL;
+                // Administrador / Bárbara / Giovanna / '*' veem DHL + demais sempre.
                 if (showDhlOnly && !isDhl) return false;
-                // Admin / Bárbara: com DHL off vê DHL + demais (lista completa para faturamento).
                 if (!showDhlOnly && isDhl && !hasFullMissionListAccessFlag) return false;
             }
 
@@ -1422,11 +1423,16 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         eligibleApprovalMissions.forEach(m => {
             const stages = (approvalMap[m.id] || []).map(s => s.stage);
             if (!stages.includes('auditor')) auditor.push(m);
-            if (stages.includes('auditor') && !stages.includes('financeiro')) financeiro.push(m);
+            // Admin / Bárbara / Giovanna: fila financeira inclui OS ainda sem validação do Daniel (auditor).
+            // Demais perfis financeiro mantêm a regra antiga (só após auditor).
+            const financeiroReady = hasFullMissionListAccessFlag
+                ? !stages.includes('financeiro')
+                : (stages.includes('auditor') && !stages.includes('financeiro'));
+            if (financeiroReady) financeiro.push(m);
             if (!stages.includes('diretoria')) diretoria.push(m);
         });
         return { auditor, financeiro, diretoria };
-    }, [eligibleApprovalMissions, approvalMap]);
+    }, [eligibleApprovalMissions, approvalMap, hasFullMissionListAccessFlag]);
 
     const myApprovalMissions = useMemo(() => {
         if (!myApprovalStage) return [];
@@ -1448,8 +1454,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             ]);
             return sortByDateDesc(eligibleApprovalMissions.filter(m => allIds.has(m.id)));
         }
+        // Administrador na fila financeira: vê todas as elegíveis (aprovadas ou não pelo auditor).
+        if (myApprovalStage === 'financeiro' && hasFullMissionListAccessFlag) {
+            return sortByDateDesc(pendingByStage.financeiro);
+        }
         return sortByDateDesc(pendingByStage[myApprovalStage] || []);
-    }, [myApprovalStage, pendingByStage, eligibleApprovalMissions, approvalViewStage]);
+    }, [myApprovalStage, pendingByStage, eligibleApprovalMissions, approvalViewStage, hasFullMissionListAccessFlag]);
 
     const myApprovalCount = myApprovalMissions.length;
   

@@ -16,7 +16,8 @@ import {
   findDhlCorrectionSource,
   type DhlCorrectionRecord,
 } from '../lib/dhlAutoTableSelector';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History, Settings2, FileText, Copy, MailWarning } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Unlink2, Layers, Scale, Sparkles, Navigation, History, Settings2, FileText, Copy, MailWarning } from 'lucide-react';
+import { buildSameOsUnlinkPayload, isSameOsChildMission } from '../lib/sameOsLink';
 import { canRequestOsAnalysis } from '../lib/osAnalysisAccess';
 import RequestOsAnalysisModal, { type RequestOsAnalysisPayload } from './RequestOsAnalysisModal';
 import type { OsAnalysisRequest } from '../lib/osAnalysisTypes';
@@ -3500,6 +3501,53 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                 </span>
               );
             })()}
+            {isSameOsChildMission(mission) && (
+              <button
+                type="button"
+                data-testid="btn-unlink-same-os"
+                onClick={async () => {
+                  const parentId = mission.parent_mission_id;
+                  if (!confirm(`Desvincular Mesma OS?\n\nA OS ${mission.id} deixará de ser filha de ${parentId || '—'} e passará a ser independente (custo do fornecedor volta a ser cobrado).`)) {
+                    return;
+                  }
+                  try {
+                    const updateData = {
+                      ...buildSameOsUnlinkPayload(),
+                      last_update: new Date().toISOString(),
+                    };
+                    const { error } = await supabase.from('missions').update(updateData).eq('id', mission.id);
+                    if (error) throw error;
+                    let userData: any = {};
+                    try { userData = JSON.parse(localStorage.getItem('userData') || localStorage.getItem('user') || '{}'); } catch { /* ignore */ }
+                    await supabase.from('system_logs').insert([{
+                      user_name: userData.name || 'Sistema',
+                      action_type: 'UPDATE',
+                      entity: 'Mission',
+                      entity_id: mission.id,
+                      details: JSON.stringify({
+                        field: 'unlink_same_os',
+                        oldParent: parentId,
+                        is_same_os: false,
+                        parent_mission_id: null,
+                      }),
+                    }]);
+                    mission.is_same_os = false;
+                    mission.parent_mission_id = undefined;
+                    broadcastMissionRefresh();
+                    showNotification('Mesma OS desvinculada', `${mission.id} agora é OS independente.`, 'success');
+                    onUpdate?.();
+                    await loadData();
+                  } catch (err: any) {
+                    showNotification('Erro', err?.message || 'Falha ao desvincular', 'error');
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-md active:scale-95 bg-rose-600 text-white hover:bg-rose-700 border border-rose-400"
+                title="Retira o vínculo com a OS mãe — esta OS vira independente"
+              >
+                <Unlink2 size={12} />
+                Desvincular Mesma OS
+              </button>
+            )}
             <button
               data-testid="btn-toggle-same-os"
               onClick={async () => {
@@ -3507,15 +3555,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                 if (newVal && !confirm('Marcar como MESMA OS? O custo do fornecedor será zerado.')) return;
                 if (!newVal && !confirm('Desmarcar MESMA OS? O custo do fornecedor será recalculado.')) return;
                 try {
-                  const updateData: any = { is_same_os: newVal };
-                  if (!newVal) updateData.parent_mission_id = null;
-                  if (newVal) {
-                    updateData.cost_value = 0;
-                    updateData.toll_value_provider = 0;
-                    updateData.displacement_value_provider = 0;
-                  }
+                  const updateData: any = newVal
+                    ? { is_same_os: true, cost_value: 0, toll_value_provider: 0, displacement_value_provider: 0 }
+                    : { ...buildSameOsUnlinkPayload() };
                   await supabase.from('missions').update(updateData).eq('id', mission.id);
-                  const userData = JSON.parse(localStorage.getItem('user') || '{}');
+                  let userData: any = {};
+                  try { userData = JSON.parse(localStorage.getItem('userData') || localStorage.getItem('user') || '{}'); } catch { /* ignore */ }
                   await supabase.from('system_logs').insert([{
                     user_name: userData.name || 'Sistema',
                     action_type: 'UPDATE',
@@ -3966,6 +4011,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                     <div className="space-y-2 max-h-[250px] overflow-y-auto">
                         {linkedMissions.map((lm) => {
                             const isParent = lm.id === mission.parent_mission_id;
+                            const isChildOfCurrent = isCurrentParent && lm.is_same_os && !isParent;
                             const lmCost = lm.is_same_os ? 0 : safeNumber(lm.cost_value);
                             const lmRevenue = safeNumber(lm.revenue_value);
                             const lmMargin = lmRevenue - lmCost;
@@ -3978,7 +4024,49 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         {lm.is_same_os && !isParent && <span className="text-[8px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase shrink-0">MESMA OS</span>}
                                         <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase shrink-0 ${lm.status === 'Concluída' ? 'bg-green-100 text-green-700' : lm.status === 'Cancelada' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{lm.status}</span>
                                     </div>
-                                    <span className="text-gray-400 text-[9px] shrink-0">{lm.start_time ? formatTimeBR(lm.start_time, '--:--') : '--:--'}</span>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      {isChildOfCurrent && (
+                                        <button
+                                          type="button"
+                                          data-testid={`btn-unlink-same-os-child-${lm.id}`}
+                                          onClick={async () => {
+                                            if (!confirm(`Desvincular Mesma OS?\n\nA OS ${lm.id} deixará de ser filha de ${mission.id} e passará a ser independente.`)) return;
+                                            try {
+                                              const { error } = await supabase
+                                                .from('missions')
+                                                .update({ ...buildSameOsUnlinkPayload(), last_update: new Date().toISOString() })
+                                                .eq('id', lm.id);
+                                              if (error) throw error;
+                                              let userData: any = {};
+                                              try { userData = JSON.parse(localStorage.getItem('userData') || localStorage.getItem('user') || '{}'); } catch { /* ignore */ }
+                                              await supabase.from('system_logs').insert([{
+                                                user_name: userData.name || 'Sistema',
+                                                action_type: 'UPDATE',
+                                                entity: 'Mission',
+                                                entity_id: lm.id,
+                                                details: JSON.stringify({
+                                                  field: 'unlink_same_os',
+                                                  oldParent: mission.id,
+                                                  unlinkedFromParentUi: true,
+                                                }),
+                                              }]);
+                                              broadcastMissionRefresh();
+                                              showNotification('Mesma OS desvinculada', `${lm.id} agora é OS independente.`, 'success');
+                                              onUpdate?.();
+                                              await loadData();
+                                            } catch (err: any) {
+                                              showNotification('Erro', err?.message || 'Falha ao desvincular', 'error');
+                                            }
+                                          }}
+                                          className="flex items-center gap-1 px-2 py-1 rounded-md text-[8px] font-black uppercase bg-rose-600 text-white hover:bg-rose-700"
+                                          title="Desvincular esta filha da OS mãe"
+                                        >
+                                          <Unlink2 size={10} />
+                                          Desvincular
+                                        </button>
+                                      )}
+                                      <span className="text-gray-400 text-[9px]">{lm.start_time ? formatTimeBR(lm.start_time, '--:--') : '--:--'}</span>
+                                    </div>
                                 </div>
                                 <div className="flex items-center justify-between mt-1.5">
                                     <span className="text-gray-500 truncate text-[10px]" title={`${lm.origin} → ${lm.destination}`}>
