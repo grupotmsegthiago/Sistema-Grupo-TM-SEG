@@ -41,6 +41,9 @@ import {
 } from '../lib/missionFinancialsCanonical';
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 
+/** Limite de linhas na tabela — evita freeze com centenas de OS no DOM. */
+const REPORT_PAGE_SIZE = 10;
+
 const AUDIT_SORT_PRIORITY: Record<AuditStatusLevel, number> = {
   erro: 0,
   atencao: 1,
@@ -100,6 +103,7 @@ const MissionReportPage: React.FC = () => {
   const [auditStatusFilter, setAuditStatusFilter] = useState<AuditStatusLevel | ''>('erro');
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     try {
@@ -318,6 +322,18 @@ const MissionReportPage: React.FC = () => {
     });
   }, [filteredMissions, auditStatusFilter, auditByMission, auditEnabled, auditBusy]);
 
+  // Volta à 1ª página quando filtros mudam (evita página vazia / índice inválido).
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [periodFilter, customStartDate, customEndDate, clientFilter, providerFilter, statusFilter, searchTerm, auditStatusFilter, auditEnabled]);
+
+  const totalPages = Math.max(1, Math.ceil(displayMissions.length / REPORT_PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const pagedMissions = useMemo(() => {
+    const start = (safePage - 1) * REPORT_PAGE_SIZE;
+    return displayMissions.slice(start, start + REPORT_PAGE_SIZE);
+  }, [displayMissions, safePage]);
+
   const toggleAuditStatusFilter = useCallback((level: AuditStatusLevel) => {
     setAuditStatusFilter((prev) => (prev === level ? '' : level));
   }, []);
@@ -365,10 +381,10 @@ const MissionReportPage: React.FC = () => {
     return map;
   }, [filteredMissions]);
 
-  // Só linhas visíveis — evita calculateMissionFinancials em 400+ OS no MÊS.
+  // Só linhas da página atual — evita calculateMissionFinancials em 400+ OS no MÊS.
   const tableInfoMap = useMemo(() => {
     const map = new Map<string, { clientTable: string; providerTable: string }>();
-    for (const m of displayMissions) {
+    for (const m of pagedMissions) {
       const adj = m.id ? billingAdjustmentsMap.get(m.id) : undefined;
       if (adj?.clientTableName || adj?.providerTableName) {
         map.set(m.id, {
@@ -390,7 +406,7 @@ const MissionReportPage: React.FC = () => {
       } catch { /* skip */ }
     }
     return map;
-  }, [displayMissions, auditEnabled, clientPriceTables, providerCostTables, clientsData, billingAdjustmentsMap]);
+  }, [pagedMissions, auditEnabled, clientPriceTables, providerCostTables, clientsData, billingAdjustmentsMap]);
 
   const handleRecalcRow = async (missionId: string) => {
     setRecalcRowId(missionId);
@@ -675,9 +691,11 @@ const MissionReportPage: React.FC = () => {
             <FileBarChart size={22} className="text-red-600" />
             <h1 className="text-lg font-black text-gray-900 uppercase tracking-tight">Relatório de OS</h1>
             <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded" data-testid="report-mission-count">
-              {auditEnabled && auditStatusFilter
-                ? `${displayMissions.length} de ${filteredMissions.length} missões`
-                : `${displayMissions.length} missões`}
+              {displayMissions.length === 0
+                ? '0 missões'
+                : auditEnabled && auditStatusFilter
+                  ? `${displayMissions.length} de ${filteredMissions.length} missões · pág. ${safePage}/${totalPages}`
+                  : `${displayMissions.length} missões · pág. ${safePage}/${totalPages}`}
             </span>
             {canSeeFinancials && (
               <div className="flex items-center gap-1.5 text-[10px] font-black">
@@ -1020,7 +1038,7 @@ const MissionReportPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {displayMissions.map((m, idx) => {
+                {pagedMissions.map((m, idx) => {
                   // Usa o cálculo CANÔNICO (mesmo do Termômetro/Dashboard/Worker)
                   // para que a soma das linhas BATA com o total do rodapé.
                   const c = canonicalByMission.get(m.id);
@@ -1039,10 +1057,11 @@ const MissionReportPage: React.FC = () => {
                   const childrenOfThis = parentChildMap.get(m.id);
                   const hasLink = isParentMission || (m.is_same_os && !!m.parent_mission_id);
                   const rowBg = isParentMission ? 'bg-blue-50' : (m.is_same_os && m.parent_mission_id) ? 'bg-blue-50/40' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+                  const rowNumber = (safePage - 1) * REPORT_PAGE_SIZE + idx + 1;
 
                   return (
                     <tr key={m.id} className={`${rowBg} hover:bg-yellow-50 border-b border-gray-200 transition-colors ${hasLink ? 'border-l-4 border-l-blue-500' : ''}`} data-testid={`report-row-${m.id}`}>
-                      <td className="px-3 py-2 font-black text-gray-500 border-r border-gray-100">{idx + 1}</td>
+                      <td className="px-3 py-2 font-black text-gray-500 border-r border-gray-100">{rowNumber}</td>
                       <td className="px-3 py-2 font-black text-gray-900 border-r border-gray-100 whitespace-nowrap">
                         <div className="flex items-center gap-1 flex-wrap">
                           {hasLink && <Link2 size={12} className="text-blue-500 shrink-0" />}
@@ -1273,6 +1292,69 @@ const MissionReportPage: React.FC = () => {
                 </tfoot>
               )}
             </table>
+            {displayMissions.length > REPORT_PAGE_SIZE && (
+              <div
+                className="flex flex-wrap items-center justify-between gap-3 m-3 px-3 py-3 bg-white border border-gray-200 rounded-lg"
+                data-testid="report-pagination-bar"
+              >
+                <div className="text-xs text-gray-600 font-medium">
+                  Mostrando{' '}
+                  <span className="font-bold text-gray-900">{(safePage - 1) * REPORT_PAGE_SIZE + 1}</span>
+                  {' – '}
+                  <span className="font-bold text-gray-900">
+                    {Math.min(safePage * REPORT_PAGE_SIZE, displayMissions.length)}
+                  </span>
+                  {' de '}
+                  <span className="font-bold text-gray-900">{displayMissions.length}</span>
+                  {' OS · '}
+                  <span className="font-bold text-gray-900">{REPORT_PAGE_SIZE}</span> por página
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={safePage === 1}
+                    data-testid="report-btn-page-first"
+                    className="px-2.5 py-1.5 text-xs font-bold rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    «
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={safePage === 1}
+                    data-testid="report-btn-page-prev"
+                    className="px-3 py-1.5 text-xs font-bold rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    ‹ Anterior
+                  </button>
+                  <span
+                    className="px-3 py-1.5 text-xs font-bold text-gray-700 bg-gray-100 rounded-md min-w-[80px] text-center"
+                    data-testid="report-text-page-info"
+                  >
+                    {safePage} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={safePage >= totalPages}
+                    data-testid="report-btn-page-next"
+                    className="px-3 py-1.5 text-xs font-bold rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Próxima ›
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={safePage >= totalPages}
+                    data-testid="report-btn-page-last"
+                    className="px-2.5 py-1.5 text-xs font-bold rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    »
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
