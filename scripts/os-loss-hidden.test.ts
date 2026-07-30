@@ -18,11 +18,12 @@ describe('OS com Prejuízo — ocultar após análise', () => {
     };
   });
 
-  it('marca e filtra OS ocultada com mesmos valores', () => {
+  it('marca e filtra OS ocultada de forma permanente (mesmo se rev/custo mudarem)', () => {
     markOsLossHidden([{ missionId: 'GTM-6444', rev: 1000, cost: 1600 }], 'Bárbara');
     const map = loadOsLossHiddenMap();
     assert.equal(isOsLossHidden(map, 'GTM-6444', 1000, 1600), true);
-    assert.equal(isOsLossHidden(map, 'GTM-6444', 1000, 1700), false, 'reaparece se custo mudar');
+    assert.equal(isOsLossHidden(map, 'GTM-6444', 1000, 1700), true, 'permanece oculta se custo mudar');
+    assert.equal(isOsLossHidden(map, 'GTM-6444', 900, 1600), true, 'permanece oculta se receita mudar');
     assert.equal(isOsLossHidden(map, 'GTM-9999', 1000, 1600), false);
   });
 
@@ -38,6 +39,9 @@ describe('OS com Prejuízo — ocultar após análise', () => {
     assert.match(src, /button-hide-loss-/);
     assert.match(src, /EyeOff/);
     assert.match(src, /markOsLossHidden/);
-    assert.match(fs.readFileSync('components/MissionTable.tsx', 'utf8'), /loadOsLossHiddenMap/);
+    assert.match(src, /não volta mais/);
+    const table = fs.readFileSync('components/MissionTable.tsx', 'utf8');
+    assert.match(table, /loadOsLossHiddenMap/);
+    assert.match(table, /lossesCount > 0/);
   });
 });

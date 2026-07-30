@@ -268,6 +268,15 @@ const LossesDialog: React.FC<Props> = ({
     return rows.filter((r) => !r.linkedOnly && isOsLossHidden(hiddenMap, String(r.m.id), r.rev, r.cost)).length;
   }, [rows, hiddenMap]);
 
+  // Não manter a tela aberta sem nenhuma OS própria visível (todas ocultadas ou lista vazia).
+  useEffect(() => {
+    if (!isOpen) return;
+    const ownVisible = visibleRows.filter((r) => !r.linkedOnly);
+    if (ownVisible.length > 0) return;
+    const ownTotal = rows.filter((r) => !r.linkedOnly).length;
+    if (ownTotal === 0 || visibleRows.length === 0) onClose();
+  }, [isOpen, visibleRows, rows, onClose]);
+
   const handleHide = (r: Row) => {
     const items: Array<{ missionId: string; rev: number; cost: number }> = [
       { missionId: String(r.m.id), rev: r.rev, cost: r.cost },
@@ -290,6 +299,15 @@ const LossesDialog: React.FC<Props> = ({
     markOsLossHidden(items, getCurrentUserNameForLossHide());
     setHiddenTick((t) => t + 1);
     onHiddenChange?.();
+
+    // Se após ocultar não restar nenhuma OS própria na lista, fecha o dialog.
+    const hiddenIds = new Set(items.map((i) => i.missionId));
+    const remainingOwn = rows.filter(
+      (row) => !row.linkedOnly && !hiddenIds.has(String(row.m.id)) && !isOsLossHidden(hiddenMap, String(row.m.id), row.rev, row.cost),
+    );
+    if (remainingOwn.length === 0) {
+      onClose();
+    }
   };
 
   const filteredRows = useMemo(() => {
@@ -571,7 +589,7 @@ const LossesDialog: React.FC<Props> = ({
                             type="button"
                             onClick={() => handleHide(r)}
                             className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition"
-                            title="Ocultar — já analisei; some da lista (volta se receita/custo mudarem)"
+                            title="Ocultar — já analisei; some da lista e não volta mais"
                             data-testid={`button-hide-loss-${r.m.id}`}
                           >
                             <EyeOff size={11} /> Ocultar

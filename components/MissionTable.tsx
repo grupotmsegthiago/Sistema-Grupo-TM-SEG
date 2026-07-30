@@ -312,7 +312,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   }, [currentUser]);
 
   // Conta quantas OS estão com prejuízo direto (custo > receita) no período
-  // canônico selecionado. O card permanece visível mesmo com 0 OS.
+  // canônico selecionado. Com 0 OS o card não aparece (não abre tela vazia).
   // Filtragem por período para a contagem de prejuízo (segue o período da tela).
   // A detecção de "OS sem tabela" NÃO usa esta lista — ela tem piso fixo em maio/2026.
   const missionsInCanonicalPeriod = useMemo(() => {
@@ -1933,7 +1933,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
              </div>
              </>
              )}
-             {canSeeFinancials && (
+             {canSeeFinancials && lossesCount > 0 && (
              <div className="w-full sm:w-auto sm:shrink-0 flex items-stretch">
                 <button
                    onClick={() => setIsLossesOpen(true)}

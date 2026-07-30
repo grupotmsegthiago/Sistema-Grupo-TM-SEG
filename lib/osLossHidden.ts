@@ -1,6 +1,7 @@
 /**
  * OS ocultadas no dialog "OS com Prejuízo" após análise.
- * Persiste no navegador; reaparece se receita/custo canônicos mudarem.
+ * Persiste no navegador; uma vez ocultada, permanece oculta (por missionId).
+ * rev/cost ficam gravados só como metadado da análise (auditoria local).
  */
 
 export type OsLossHiddenEntry = {
@@ -12,7 +13,6 @@ export type OsLossHiddenEntry = {
 };
 
 const STORAGE_KEY = 'tmseg_os_loss_hidden_v1';
-const VALUE_EPS = 0.02;
 
 export function loadOsLossHiddenMap(): Record<string, OsLossHiddenEntry> {
   try {
@@ -26,16 +26,17 @@ export function loadOsLossHiddenMap(): Record<string, OsLossHiddenEntry> {
   }
 }
 
-/** Oculta permanece até os valores canônicos (rev/custo) mudarem. */
+/**
+ * Oculta permanente por missionId.
+ * rev/cost na assinatura são mantidos por compatibilidade com call sites; não invalidam o hide.
+ */
 export function isOsLossHidden(
   map: Record<string, OsLossHiddenEntry>,
   missionId: string,
-  rev: number,
-  cost: number,
+  _rev?: number,
+  _cost?: number,
 ): boolean {
-  const entry = map[missionId];
-  if (!entry) return false;
-  return Math.abs(entry.rev - rev) < VALUE_EPS && Math.abs(entry.cost - cost) < VALUE_EPS;
+  return Boolean(map[String(missionId || '').trim()]);
 }
 
 export function markOsLossHidden(
