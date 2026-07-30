@@ -32,6 +32,7 @@ import {
   getTransactionOpenAmount,
   getTransactionPaidAmount,
 } from '../lib/financial/partialPayments';
+import { isPureMedicaoInvoice, isPureMedicaoReceivable } from '../lib/billing/medicaoVisibility';
 import ReceivablePaymentsModal from './ReceivablePaymentsModal';
 
 const formatCurrency = (val: number | null | undefined) => {
@@ -235,7 +236,8 @@ const FinancialTransactionList: React.FC = () => {
             }
             return;
         }
-        if (data) setInvoices(data as any);
+        // Medições MED- sem boleto/Asaas não entram nos painéis de fatura/fechamento
+        if (data) setInvoices((data as any[]).filter((inv) => !isPureMedicaoInvoice(inv)) as any);
         try { await authFetch('/api/supabase/init-invoices', { method: 'POST' }); } catch {}
     };
 
@@ -268,7 +270,8 @@ const FinancialTransactionList: React.FC = () => {
             const merged = new Map<string, FinancialTransaction>();
             (mainRes.data as FinancialTransaction[]).forEach(t => merged.set(t.id, t));
             (overdueRes.data as FinancialTransaction[]).forEach(t => { if (!merged.has(t.id)) merged.set(t.id, t); });
-            setTransactions(Array.from(merged.values()));
+            // Medição enviada por e-mail (sem fatura/boleto Asaas) não aparece em Contas a Receber
+            setTransactions(Array.from(merged.values()).filter((t) => !isPureMedicaoReceivable(t)));
         } catch (e) { console.error(e); } finally { setLoading(false); }
     };
 
