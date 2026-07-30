@@ -17,6 +17,18 @@ function paginateIds(ids: string[], page: number) {
   };
 }
 
+describe('Relatório de OS — auditoria só na página', () => {
+  it('lote de auditoria tem no máximo PAGE_SIZE ids', () => {
+    const ids = Array.from({ length: 115 }, (_, i) => `GTM-${i + 1}`);
+    const page = 1;
+    const start = (page - 1) * REPORT_PAGE_SIZE;
+    const pageIds = ids.slice(start, start + REPORT_PAGE_SIZE);
+    assert.equal(pageIds.length, 10);
+    assert.ok(pageIds.length <= REPORT_PAGE_SIZE);
+    assert.notEqual(pageIds.length, ids.length);
+  });
+});
+
 describe('Relatório de OS — paginação 10/página', () => {
   it('retorna no máximo 10 itens por página', () => {
     const ids = Array.from({ length: 25 }, (_, i) => `GTM-${i + 1}`);

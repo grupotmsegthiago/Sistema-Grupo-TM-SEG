@@ -44,14 +44,6 @@ import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 /** Limite de linhas na tabela — evita freeze com centenas de OS no DOM. */
 const REPORT_PAGE_SIZE = 10;
 
-const AUDIT_SORT_PRIORITY: Record<AuditStatusLevel, number> = {
-  erro: 0,
-  atencao: 1,
-  pendente: 2,
-  validado: 3,
-  em_viagem: 4,
-};
-
 function resolveMissionAuditLevel(
   mission: Mission,
   auditByMission: Map<string, MissionBillingAuditResult>,
@@ -299,33 +291,18 @@ const MissionReportPage: React.FC = () => {
     return filtered;
   }, [allMissions, periodFilter, customStartDate, customEndDate, clientFilter, providerFilter, statusFilter, searchTerm]);
 
+  // Lista base para paginação — independente da auditoria (senão precisaríamos
+  // auditar 100+ OS só para montar a grade).
   const displayMissions = useMemo(() => {
-    let list = filteredMissions;
-
-    // Sem auditoria: lista rápida (só filtros de período/cliente/etc.).
-    if (!auditEnabled) {
-      return [...list].sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      );
-    }
-
-    if (auditStatusFilter) {
-      list = list.filter(
-        (m) => resolveMissionAuditLevel(m, auditByMission) === auditStatusFilter,
-      );
-    }
-    return [...list].sort((a, b) => {
-      const priorityA = AUDIT_SORT_PRIORITY[resolveMissionAuditLevel(a, auditByMission)];
-      const priorityB = AUDIT_SORT_PRIORITY[resolveMissionAuditLevel(b, auditByMission)];
-      if (priorityA !== priorityB) return priorityA - priorityB;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
-  }, [filteredMissions, auditStatusFilter, auditByMission, auditEnabled, auditBusy]);
+    return [...filteredMissions].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+  }, [filteredMissions]);
 
   // Volta à 1ª página quando filtros mudam (evita página vazia / índice inválido).
   useEffect(() => {
     setCurrentPage(1);
-  }, [periodFilter, customStartDate, customEndDate, clientFilter, providerFilter, statusFilter, searchTerm, auditStatusFilter, auditEnabled]);
+  }, [periodFilter, customStartDate, customEndDate, clientFilter, providerFilter, statusFilter, searchTerm, auditEnabled]);
 
   const totalPages = Math.max(1, Math.ceil(displayMissions.length / REPORT_PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
@@ -333,6 +310,19 @@ const MissionReportPage: React.FC = () => {
     const start = (safePage - 1) * REPORT_PAGE_SIZE;
     return displayMissions.slice(start, start + REPORT_PAGE_SIZE);
   }, [displayMissions, safePage]);
+
+  // Chip 🔴/🟡/🟢 filtra só as 10 da página atual (após auditar esse lote).
+  const tableMissions = useMemo(() => {
+    if (!auditEnabled || !auditStatusFilter || auditBusy) return pagedMissions;
+    return pagedMissions.filter(
+      (m) => resolveMissionAuditLevel(m, auditByMission) === auditStatusFilter,
+    );
+  }, [pagedMissions, auditEnabled, auditStatusFilter, auditByMission, auditBusy]);
+
+  const pageMissionIdsKey = useMemo(
+    () => pagedMissions.map((m) => m.id).join('|'),
+    [pagedMissions],
+  );
 
   const toggleAuditStatusFilter = useCallback((level: AuditStatusLevel) => {
     setAuditStatusFilter((prev) => (prev === level ? '' : level));
@@ -342,7 +332,7 @@ const MissionReportPage: React.FC = () => {
     setAuditEnabled((prev) => {
       const next = !prev;
       if (next) {
-        // Ao religar, volta ao recorte útil (só erros).
+        // Ao religar, destaca erros — mas só nas OS da página atual.
         setAuditStatusFilter('erro');
       } else {
         setAuditByMission(new Map());
@@ -440,20 +430,25 @@ const MissionReportPage: React.FC = () => {
     }
   };
 
-  // Auditoria em background — só OS finalizadas (concluída / recusada / cancelada).
+  // Limpa cache de auditoria ao mudar o recorte (período/filtros) — não ao trocar de página.
+  useEffect(() => {
+    setAuditByMission(new Map());
+  }, [periodFilter, customStartDate, customEndDate, clientFilter, providerFilter, statusFilter, searchTerm]);
+
+  // Auditoria em background — SOMENTE as OS da página atual (máx. 10),
+  // para não travar com 100+ missões do período.
   useEffect(() => {
     if (!auditEnabled) {
       setAuditByMission(new Map());
       setAuditBusy(false);
       return;
     }
-    if (!refDataReady || !canSeeFinancials || filteredMissions.length === 0) {
+    if (!refDataReady || !canSeeFinancials || pagedMissions.length === 0) {
       return;
     }
 
-    const terminalMissions = filteredMissions.filter((m) => isTerminalMissionStatusForAudit(m.status));
+    const terminalMissions = pagedMissions.filter((m) => isTerminalMissionStatusForAudit(m.status));
     if (terminalMissions.length === 0) {
-      setAuditByMission(new Map());
       setAuditBusy(false);
       return;
     }
@@ -461,7 +456,6 @@ const MissionReportPage: React.FC = () => {
     const runId = ++auditRunRef.current;
     const signal = { cancelled: false };
     setAuditBusy(true);
-    setAuditByMission(new Map());
 
     auditMissionsBatchAsync(
       terminalMissions,
@@ -470,16 +464,24 @@ const MissionReportPage: React.FC = () => {
       clientsData,
       providersData,
       billingAdjustmentsMap,
-      40,
+      REPORT_PAGE_SIZE,
       signal,
       (partial) => {
         if (auditRunRef.current !== runId) return;
-        setAuditByMission(partial);
+        setAuditByMission((prev) => {
+          const next = new Map(prev);
+          partial.forEach((v, k) => next.set(k, v));
+          return next;
+        });
       },
     )
       .then((map) => {
         if (auditRunRef.current !== runId) return;
-        setAuditByMission(map);
+        setAuditByMission((prev) => {
+          const next = new Map(prev);
+          map.forEach((v, k) => next.set(k, v));
+          return next;
+        });
         setAuditBusy(false);
       })
       .catch(() => {
@@ -490,9 +492,11 @@ const MissionReportPage: React.FC = () => {
     return () => {
       signal.cancelled = true;
     };
+    // pageMissionIdsKey estabiliza o lote da página (evita re-run por nova ref de array).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pagedMissions via pageMissionIdsKey
   }, [
     auditEnabled,
-    filteredMissions,
+    pageMissionIdsKey,
     clientPriceTables,
     providerCostTables,
     clientsData,
@@ -526,9 +530,10 @@ const MissionReportPage: React.FC = () => {
     setAuditForModal({ mission, audit });
   }, [clientPriceTables, providerCostTables, clientsData, providersData, billingAdjustmentsMap]);
 
+  // Contadores dos chips = só a página atual (lote auditado).
   const auditSummary = useMemo(() => {
     let validado = 0, atencao = 0, erro = 0, pendente = 0, emViagem = 0;
-    for (const m of filteredMissions) {
+    for (const m of pagedMissions) {
       if (!isTerminalMissionStatusForAudit(m.status)) {
         emViagem++;
         continue;
@@ -536,6 +541,7 @@ const MissionReportPage: React.FC = () => {
       const a = auditByMission.get(m.id);
       if (!a || a.skipped) {
         if (a?.overallStatus === 'pendente') pendente++;
+        else pendente++;
         continue;
       }
       if (a.overallStatus === 'validado') validado++;
@@ -545,35 +551,41 @@ const MissionReportPage: React.FC = () => {
       else pendente++;
     }
     return { validado, atencao, erro, pendente, emViagem };
-  }, [auditByMission, filteredMissions]);
+  }, [auditByMission, pagedMissions]);
 
-  // Totais e células alinhados às linhas visíveis (filtro ERRO / auditoria off).
+  // Células financeiras: só a página atual (evita freeze com 100+ OS).
+  // Totais do cabeçalho/rodapé usam o conjunto filtrado com caminho leve (valores salvos).
   const canonicalByMission = useMemo(() => {
     const refs = { clientTables: clientPriceTables, providerTables: providerCostTables, clientsData };
     const now = new Date();
     const map = new Map<string, CanonicalResult>();
     const asNum = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+    const lightCanonical = (m: Mission): CanonicalResult => {
+      const can = computeCanonicalRevenueCost(m, refs, now);
+      const revBase = asNum((m as any).revenue_value);
+      const costBase = asNum((m as any).cost_value);
+      const tollRev = asNum((m as any).toll_value) || can.tollRev;
+      const tollCost = asNum((m as any).toll_value_provider) || tollRev || can.tollCost;
+      const rev = revBase + tollRev + can.dispRev;
+      const cost = costBase + tollCost + can.dispCost;
+      return {
+        revBase, tollRev, dispRev: can.dispRev, rev,
+        costBase, tollCost, dispCost: can.dispCost, cost,
+        profit: rev - cost, source: 'saved',
+      };
+    };
+    // Totais (período filtrado) — caminho leve
     for (const m of displayMissions) {
-      if (!auditEnabled) {
-        // Modo rápido: base/pedágio salvos; DESL via canônico (KM autorizado × taxa).
-        const can = computeCanonicalRevenueCost(m, refs, now);
-        const revBase = asNum((m as any).revenue_value);
-        const costBase = asNum((m as any).cost_value);
-        const tollRev = asNum((m as any).toll_value) || can.tollRev;
-        const tollCost = asNum((m as any).toll_value_provider) || tollRev || can.tollCost;
-        const rev = revBase + tollRev + can.dispRev;
-        const cost = costBase + tollCost + can.dispCost;
-        map.set(m.id, {
-          revBase, tollRev, dispRev: can.dispRev, rev,
-          costBase, tollCost, dispCost: can.dispCost, cost,
-          profit: rev - cost, source: 'saved',
-        });
-      } else {
+      map.set(m.id, lightCanonical(m));
+    }
+    // Página atual com auditoria ON: recalcula canônico completo para bater com ST AUD
+    if (auditEnabled) {
+      for (const m of pagedMissions) {
         map.set(m.id, computeCanonicalRevenueCost(m, refs, now));
       }
     }
     return map;
-  }, [displayMissions, auditEnabled, clientPriceTables, providerCostTables, clientsData]);
+  }, [displayMissions, pagedMissions, auditEnabled, clientPriceTables, providerCostTables, clientsData]);
 
   const totals = useMemo(() => {
     let revBase = 0, tollRev = 0, dispRev = 0, costBase = 0, tollCost = 0, dispCost = 0, profit = 0;
@@ -693,8 +705,8 @@ const MissionReportPage: React.FC = () => {
             <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded" data-testid="report-mission-count">
               {displayMissions.length === 0
                 ? '0 missões'
-                : auditEnabled && auditStatusFilter
-                  ? `${displayMissions.length} de ${filteredMissions.length} missões · pág. ${safePage}/${totalPages}`
+                : auditEnabled
+                  ? `${displayMissions.length} missões · pág. ${safePage}/${totalPages} · audita ${pagedMissions.length} nesta página`
                   : `${displayMissions.length} missões · pág. ${safePage}/${totalPages}`}
             </span>
             {canSeeFinancials && (
@@ -705,7 +717,7 @@ const MissionReportPage: React.FC = () => {
                   onClick={toggleAuditEnabled}
                   title={auditEnabled
                     ? 'Desligar auditoria (lista rápida, sem ST AUD)'
-                    : 'Ligar auditoria e filtrar OS com erro'}
+                    : 'Ligar auditoria só nas OS desta página (máx. 10)'}
                   className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
                     auditEnabled
                       ? 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-300'
@@ -720,7 +732,7 @@ const MissionReportPage: React.FC = () => {
                       type="button"
                       data-testid="filter-audit-validado"
                       onClick={() => toggleAuditStatusFilter('validado')}
-                      title="Filtrar VALIDADO"
+                      title="Filtrar VALIDADO nesta página"
                       className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
                         auditStatusFilter === 'validado'
                           ? 'bg-emerald-600 text-white border-emerald-700 ring-2 ring-emerald-300'
@@ -733,7 +745,7 @@ const MissionReportPage: React.FC = () => {
                       type="button"
                       data-testid="filter-audit-atencao"
                       onClick={() => toggleAuditStatusFilter('atencao')}
-                      title="Filtrar ATENÇÃO"
+                      title="Filtrar ATENÇÃO nesta página"
                       className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
                         auditStatusFilter === 'atencao'
                           ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
@@ -746,7 +758,7 @@ const MissionReportPage: React.FC = () => {
                       type="button"
                       data-testid="filter-audit-erro"
                       onClick={() => toggleAuditStatusFilter('erro')}
-                      title="Filtrar ERRO"
+                      title="Filtrar ERRO nesta página"
                       className={`px-2 py-0.5 rounded border transition-all active:scale-95 ${
                         auditStatusFilter === 'erro'
                           ? 'bg-red-600 text-white border-red-700 ring-2 ring-red-300'
@@ -979,23 +991,30 @@ const MissionReportPage: React.FC = () => {
           </div>
         ) : displayMissions.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-            {auditEnabled && auditBusy && auditStatusFilter === 'erro' ? (
+            <List size={40} className="mx-auto mb-3 opacity-30" />
+            <p className="font-bold">Nenhuma OS encontrada para os filtros selecionados</p>
+          </div>
+        ) : tableMissions.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+            {auditEnabled && auditBusy ? (
               <>
                 <Loader2 size={32} className="mx-auto mb-3 animate-spin text-red-600" />
-                <p className="font-bold text-gray-600">Calculando auditoria…</p>
-                <p className="text-xs mt-1">Em seguida serão listadas só as OS com erro</p>
+                <p className="font-bold text-gray-600">Auditando as {pagedMissions.length} OS desta página…</p>
+                <p className="text-xs mt-1">A auditoria não processa o período inteiro — só o lote visível</p>
               </>
             ) : (
               <>
                 <List size={40} className="mx-auto mb-3 opacity-30" />
                 <p className="font-bold">
                   {auditEnabled && auditStatusFilter === 'erro'
-                    ? 'Nenhuma OS com erro de auditoria neste período'
-                    : 'Nenhuma OS encontrada para os filtros selecionados'}
+                    ? 'Nenhuma OS com erro nesta página'
+                    : auditEnabled && auditStatusFilter
+                      ? 'Nenhuma OS com este status de auditoria nesta página'
+                      : 'Nenhuma OS nesta página'}
                 </p>
-                {auditEnabled && auditStatusFilter === 'erro' && (
+                {auditEnabled && auditStatusFilter && (
                   <p className="text-xs mt-2 max-w-sm text-center">
-                    Clique em outro chip (🟢/🟡) ou em <span className="font-black">Auditoria OFF</span> para ver todas as OS sem o cálculo pesado.
+                    Troque de página, limpe o chip (🟢/🟡/🔴) ou use <span className="font-black">Auditoria OFF</span>.
                   </p>
                 )}
               </>
@@ -1038,7 +1057,7 @@ const MissionReportPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {pagedMissions.map((m, idx) => {
+                {tableMissions.map((m, idx) => {
                   // Usa o cálculo CANÔNICO (mesmo do Termômetro/Dashboard/Worker)
                   // para que a soma das linhas BATA com o total do rodapé.
                   const c = canonicalByMission.get(m.id);
@@ -1057,7 +1076,8 @@ const MissionReportPage: React.FC = () => {
                   const childrenOfThis = parentChildMap.get(m.id);
                   const hasLink = isParentMission || (m.is_same_os && !!m.parent_mission_id);
                   const rowBg = isParentMission ? 'bg-blue-50' : (m.is_same_os && m.parent_mission_id) ? 'bg-blue-50/40' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50';
-                  const rowNumber = (safePage - 1) * REPORT_PAGE_SIZE + idx + 1;
+                  const pageIndex = pagedMissions.findIndex((x) => x.id === m.id);
+                  const rowNumber = (safePage - 1) * REPORT_PAGE_SIZE + (pageIndex >= 0 ? pageIndex : idx) + 1;
 
                   return (
                     <tr key={m.id} className={`${rowBg} hover:bg-yellow-50 border-b border-gray-200 transition-colors ${hasLink ? 'border-l-4 border-l-blue-500' : ''}`} data-testid={`report-row-${m.id}`}>
