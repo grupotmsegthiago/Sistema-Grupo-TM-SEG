@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw, Send } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, resolveCancelledWindow } from '../lib/financialUtils';
+import { resolveMissionDisplacement } from '../lib/billing/resolveMissionDisplacement';
 import { resolveStoredClientToll } from '../lib/toll/clientTollBilling';
 import { computeDhlBand, findDhlAutoClient, selectDhlClientTable, DHL_CLIENT_NAME } from '../lib/dhlAutoTableSelector';
 import MissionFinancialModal from './MissionFinancialModal';
@@ -625,8 +626,20 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             let revenue: number;
             let cost: number;
 
-            const dispVal = Math.max(0, m.displacement_value || 0);
-            const dispProv = Math.max(0, m.displacement_value_provider || 0);
+            // DESL: persistido ou derivado do KM autorizado (igual Relatório de OS)
+            let clientUnitKm = 0;
+            let providerUnitKm = 0;
+            try {
+                const finChart = calculateMissionFinancials(m, allClientTables, allProviderTables, clientObj, new Date());
+                clientUnitKm = finChart.client.unitPriceKm || 0;
+                providerUnitKm = finChart.provider.unitCostKm || 0;
+            } catch { /* fallback DHL por UF no resolver */ }
+            const dispChart = resolveMissionDisplacement(m as any, {
+                clientUnitPriceKm: clientUnitKm,
+                providerUnitPriceKm: providerUnitKm,
+            });
+            const dispVal = dispChart.client;
+            const dispProv = dispChart.provider;
             revenue = (m.revenue_value || 0) + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider) + dispVal;
             const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
             cost = (m.cost_value || 0) + tollProv + dispProv;
@@ -996,7 +1009,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const finP = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overridesP);
                 const prov = finP.provider;
                 const tollProv = Math.max(0, ((m.toll_value_provider != null ? m.toll_value_provider : m.toll_value)) || 0);
-                const dispProvP = Math.max(0, m.displacement_value_provider || 0);
+                const dispProvP = resolveMissionDisplacement(m as any, {
+                    clientUnitPriceKm: finP.client.unitPriceKm,
+                    providerUnitPriceKm: prov.unitCostKm,
+                }).provider;
                 const savedCost = m.cost_value || 0;
 
                 const isCancelledP = (m.status || '').toString().toLowerCase().includes('cancel');
@@ -1073,12 +1089,34 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const useKmEx = snap.kmExtraTotal ?? 0;
                 const useHrEx = snap.hrExtraTotal ?? 0;
                 const useToll = resolveStoredClientToll(m.toll_value ?? snap.tollVal ?? 0, m.toll_value_provider);
-                const useDisp = Math.max(0, m.displacement_value ?? snap.displacementVal ?? 0);
+                // Snapshot pode ter DESL zerado mesmo com KM autorizado — alinha ao Relatório.
+                let snapClientUnitKm = Number(snap.unitKm) || 0;
+                let snapProviderUnitKm = 0;
+                try {
+                    const finSnapRates = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date());
+                    if (snapClientUnitKm <= 0) snapClientUnitKm = finSnapRates.client.unitPriceKm || 0;
+                    snapProviderUnitKm = finSnapRates.provider.unitCostKm || 0;
+                } catch { /* fallback UF */ }
+                const useDisp = resolveMissionDisplacement({
+                    dhl_deslocamento_km: (m as any).dhl_deslocamento_km,
+                    displacement_value: m.displacement_value ?? snap.displacementVal ?? 0,
+                    displacement_value_provider: m.displacement_value_provider,
+                    origin: m.origin,
+                    is_same_os: (m as any).is_same_os,
+                }, {
+                    clientUnitPriceKm: snapClientUnitKm,
+                    providerUnitPriceKm: snapProviderUnitKm,
+                }).client;
                 const dbRevenue = m.revenue_value ?? 0;
                 const dbTotal = dbRevenue + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider) + useDisp;
                 const wasManuallyEdited = !!(m.billing_verified_by || m.revenue_edit_reason);
                 const snapTotal = snap.totalGeral ?? 0;
-                const useTotal = wasManuallyEdited ? dbTotal : (snapTotal > 0 ? snapTotal : (useBase + useKmEx + useHrEx + useToll + useDisp));
+                const snapDispStored = Math.max(0, Number(snap.displacementVal) || 0);
+                // Se o snapshot não tinha DESL mas o KM autoriza, soma o DESL derivado ao total.
+                const snapTotalWithDisp = snapTotal > 0 && snapDispStored <= 0 && useDisp > 0
+                    ? snapTotal + useDisp
+                    : snapTotal;
+                const useTotal = wasManuallyEdited ? dbTotal : (snapTotalWithDisp > 0 ? snapTotalWithDisp : (useBase + useKmEx + useHrEx + useToll + useDisp));
 
                 // FALLBACK p/ snapshots legados: se franquia zerada mas há cálculo possível,
                 // busca os dados da tabela real para exibição (totais financeiros permanecem congelados)
@@ -1182,7 +1220,6 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
 
             const tollVal = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
-            const dispValN = Math.max(0, m.displacement_value || 0);
             const savedRevenue = m.revenue_value || 0;
             const hasSavedRevenue = savedRevenue > 0;
 
@@ -1203,6 +1240,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const activationFee = usedTable?.activation_fee ?? 0;
             const unitKm = usedTable?.price_per_extra_km ?? 0;
             const unitHr = usedTable?.price_per_extra_hour ?? 0;
+            const dispValN = resolveMissionDisplacement(m as any, {
+                clientUnitPriceKm: fin.client.unitPriceKm,
+                providerUnitPriceKm: fin.provider.unitCostKm,
+            }).client;
 
             // OS Cancelada: KM = 0 (regra do negócio).
             const isCancelled = (m.status || '').toString().toLowerCase().includes('cancel');
@@ -1320,18 +1361,27 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const grandTotal = useMemo(() => {
         return missions.reduce((s: number, m: any) => {
+            let clientUnitKm = 0;
+            let providerUnitKm = 0;
+            try {
+                const finG = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date());
+                clientUnitKm = finG.client.unitPriceKm || 0;
+                providerUnitKm = finG.provider.unitCostKm || 0;
+            } catch { /* fallback UF */ }
+            const dispG = resolveMissionDisplacement(m, {
+                clientUnitPriceKm: clientUnitKm,
+                providerUnitPriceKm: providerUnitKm,
+            });
             if (reportMode === 'fornecedor') {
                 const cost = m.cost_value ?? 0;
                 const tollP = Math.max(0, (m.toll_value_provider != null ? m.toll_value_provider : m.toll_value) || 0);
-                const dispP = Math.max(0, m.displacement_value_provider || 0);
-                return s + cost + tollP + dispP;
+                return s + cost + tollP + dispG.provider;
             }
             const rev = m.revenue_value ?? 0;
             const toll = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
-            const disp = Math.max(0, m.displacement_value || 0);
-            return s + rev + toll + disp;
+            return s + rev + toll + dispG.client;
         }, 0);
-    }, [missions, reportMode]);
+    }, [missions, reportMode, priceTables, providerTables, clientData]);
 
     const [pendingRecompare, setPendingRecompare] = useState(false);
 
