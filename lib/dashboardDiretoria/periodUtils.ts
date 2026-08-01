@@ -149,7 +149,6 @@ export function isCurrentCalendarMonth(period: DashboardPeriod, now = new Date()
 
 /**
  * Lista de meses calendário terminando no período âncora (mais antigo → mais recente).
- * Usado no gráfico de faturamento diário com várias séries (ex.: 12 meses).
  */
 export function listMonthsEndingAt(anchor: DashboardPeriod, count = 12): DashboardPeriod[] {
   const n = Math.max(1, Math.floor(count));
@@ -167,14 +166,40 @@ export function listMonthsEndingAt(anchor: DashboardPeriod, count = 12): Dashboa
   return months.reverse();
 }
 
-/** Intervalo de fetch cobrindo todos os meses do comparativo multi-mês. */
+/**
+ * Meses do comparativo: de junho em diante até o âncora.
+ * Ex.: em Ago/2026 → Jun, Jul, Ago. Se o âncora for antes de junho,
+ * começa em junho do ano anterior (ex.: Mar/2026 → Jun/2025 … Mar/2026).
+ */
+export function listMonthsFromJuneThrough(anchor: DashboardPeriod): DashboardPeriod[] {
+  const JUNE = 5; // 0-based
+  let year = anchor.month >= JUNE ? anchor.year : anchor.year - 1;
+  let month = JUNE;
+  const months: DashboardPeriod[] = [];
+  // Proteção: no máximo ~18 passos (jun→mar do ano seguinte).
+  for (let i = 0; i < 24; i++) {
+    months.push({ mode: 'month', year, month });
+    if (year === anchor.year && month === anchor.month) break;
+    month += 1;
+    if (month > 11) {
+      month = 0;
+      year += 1;
+    }
+  }
+  return months;
+}
+
+/** Intervalo de fetch cobrindo os meses do comparativo (junho → âncora; inclui mês anterior se faltar). */
 export function getRevenueCompareFetchRange(
   period: DashboardPeriod,
   now = new Date(),
-  monthCount = 12,
 ): { startIso: string; endIso: string } {
   const anchor = resolveRevenueComparePeriod(period, now);
-  const months = listMonthsEndingAt(anchor, monthCount);
+  const months = listMonthsFromJuneThrough(anchor);
+  const prev = getPreviousMonthPeriod(anchor);
+  if (!months.some((m) => m.year === prev.year && m.month === prev.month)) {
+    months.unshift(prev);
+  }
   const first = getPeriodRange(months[0], now);
   const last = getPeriodRange(months[months.length - 1], now);
   return { startIso: first.startIso, endIso: last.endIso };

@@ -158,7 +158,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
     setError(null);
     try {
       const { startIso, endIso } = getPeriodRange(period);
-      // Inclui os últimos 12 meses do comparativo de faturamento diário (multi-série).
+      // Inclui meses de junho → âncora no comparativo de faturamento diário (multi-série).
       // KPIs de período continuam filtrando via getPeriodRange / filterMissionsByPeriod.
       const compareFetch = getRevenueCompareFetchRange(period);
       const fetchStartIso = compareFetch.startIso < startIso ? compareFetch.startIso : startIso;

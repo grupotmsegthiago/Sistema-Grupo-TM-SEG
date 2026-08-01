@@ -202,8 +202,9 @@ describe('dashboardDiretoria aggregations', () => {
     );
     assert.equal(cmp.previousLabel, 'Jun/2026');
     assert.equal(cmp.currentLabel, 'Jul/2026');
-    assert.equal(cmp.series.length, 12);
-    assert.equal(cmp.series.filter((s) => s.role === 'other').length, 10);
+    // De junho em diante: Jun + Jul (sem meses anteriores a junho)
+    assert.equal(cmp.series.length, 2);
+    assert.equal(cmp.series.filter((s) => s.role === 'other').length, 0);
     assert.equal(cmp.series.find((s) => s.role === 'current')?.color, '#14532d');
     assert.equal(cmp.series.find((s) => s.role === 'previous')?.color, '#7f1d1d');
     assert.ok(cmp.series.every((s) => s.role !== 'other' || s.color === '#e5e7eb'));
@@ -271,7 +272,10 @@ describe('dashboardDiretoria aggregations', () => {
     assert.equal(cmp.currentCumTotal, 2500);
     assert.equal(cmp.previousCumTotal, 10_000);
     assert.ok((cmp.deltaCumPct ?? 0) < 0);
-    assert.equal(cmp.series.length, 12);
+    // Ago → Jun, Jul, Ago
+    assert.equal(cmp.series.length, 3);
+    assert.equal(cmp.series.filter((s) => s.role === 'other').length, 1);
+    assert.equal(cmp.series.find((s) => s.role === 'other')?.label, 'Jun/2026');
     assert.equal(cmp.series.at(-1)?.role, 'current');
     assert.equal(cmp.series.at(-2)?.role, 'previous');
   });
@@ -513,7 +517,7 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(ui, /buildDailyRevenueMonthComparison/);
     assert.match(ui, /revenue-month-compare-diretoria/);
     assert.match(ui, /Faturamento diário \(OS\)/);
-    assert.match(ui, /últimos 12 meses|Demais meses/);
+    assert.match(ui, /de junho em diante|Demais meses/);
     assert.match(ui, /followCurrentMonth/);
     assert.match(ui, /createDefaultPeriod/);
     assert.match(ui, /import React, \{[^}]*useEffect/);

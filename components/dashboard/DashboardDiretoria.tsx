@@ -646,7 +646,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const revenueMonthCompareSection = (
     <Card
       title="Faturamento diário (OS)"
-      subtitle={`Acumulado por dia — últimos 12 meses. ${revenueMonthCompare.previousLabel} (vermelho escuro) × ${revenueMonthCompare.currentLabel} (verde escuro); demais meses em cinza bem claro.`}
+      subtitle={`Acumulado por dia — de junho em diante. ${revenueMonthCompare.previousLabel} (vermelho escuro) × ${revenueMonthCompare.currentLabel} (verde escuro); demais meses em cinza bem claro.`}
       testId="revenue-month-compare-diretoria"
     >
       {/* Legenda de cores + acumulados — acima do gráfico */}

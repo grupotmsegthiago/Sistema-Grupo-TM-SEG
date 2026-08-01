@@ -14,7 +14,7 @@ import {
   getCalendarPartsBR,
   resolveRevenueComparePeriod,
   isCurrentCalendarMonth,
-  listMonthsEndingAt,
+  listMonthsFromJuneThrough,
 } from './periodUtils';
 import { formatIsoDateFromTimestampBR } from '../dateUtils';
 import type {
@@ -561,14 +561,12 @@ export function buildDailyCashFlow(
     .map(([day, v]) => ({ day: day.slice(8, 10) + '/' + day.slice(5, 7), inflow: round2(v.inflow), outflow: round2(v.outflow) }));
 }
 
-const REVENUE_COMPARE_MONTH_COUNT = 12;
-
 function monthSeriesKey(year: number, month: number): string {
   return `m_${year}_${String(month + 1).padStart(2, '0')}`;
 }
 
 /**
- * Faturamento diário OS (receita canônica) — dia D alinhado entre os últimos 12 meses.
+ * Faturamento diário OS (receita canônica) — dia D alinhado de junho até o mês âncora.
  * Linhas = acumulado no mês. Mês atual / anterior em destaque; demais bem claros.
  * No mês civil vigente, dias futuros ficam null (não puxam a linha a zero).
  */
@@ -580,7 +578,11 @@ export function buildDailyRevenueMonthComparison(
 ): DailyRevenueMonthComparison {
   const currentPeriod = resolveRevenueComparePeriod(period, now);
   const previousPeriod = getPreviousMonthPeriod(currentPeriod);
-  const monthPeriods = listMonthsEndingAt(currentPeriod, REVENUE_COMPARE_MONTH_COUNT);
+  const monthPeriods = listMonthsFromJuneThrough(currentPeriod);
+  // Garante o mês anterior no gráfico (ex.: âncora em junho → inclui maio para o MoM).
+  if (!monthPeriods.some((m) => m.year === previousPeriod.year && m.month === previousPeriod.month)) {
+    monthPeriods.unshift(previousPeriod);
+  }
   const { day: todayBR } = getCalendarPartsBR(now);
 
   const sumByDayOfMonth = (start: Date, end: Date): Map<number, number> => {

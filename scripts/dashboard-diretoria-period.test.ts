@@ -11,7 +11,7 @@ import {
   getWeekMonday,
   getWeekSunday,
   isCurrentCalendarMonth,
-  listMonthsEndingAt,
+  listMonthsFromJuneThrough,
   resolveRevenueComparePeriod,
   toIsoDate,
 } from '../lib/dashboardDiretoria/periodUtils';
@@ -80,13 +80,14 @@ describe('dashboardDiretoria periodUtils', () => {
     assert.deepEqual(explicit, { mode: 'month', year: 2026, month: 5 });
   });
 
-  it('listMonthsEndingAt cobre 12 meses até o âncora (Ago → Set ano anterior)', () => {
-    const months = listMonthsEndingAt({ mode: 'month', year: 2026, month: 7 }, 12);
-    assert.equal(months.length, 12);
-    assert.deepEqual(months[0], { mode: 'month', year: 2025, month: 8 });
-    assert.deepEqual(months[11], { mode: 'month', year: 2026, month: 7 });
+  it('listMonthsFromJuneThrough cobre junho → âncora (Ago → Jun/Jul/Ago)', () => {
+    const months = listMonthsFromJuneThrough({ mode: 'month', year: 2026, month: 7 });
+    assert.equal(months.length, 3);
+    assert.deepEqual(months[0], { mode: 'month', year: 2026, month: 5 });
+    assert.deepEqual(months[1], { mode: 'month', year: 2026, month: 6 });
+    assert.deepEqual(months[2], { mode: 'month', year: 2026, month: 7 });
     const range = getRevenueCompareFetchRange({ mode: 'month', year: 2026, month: 7 });
-    assert.equal(range.startIso, '2025-09-01');
+    assert.equal(range.startIso, '2026-06-01');
     assert.equal(range.endIso, '2026-08-31');
   });
 });
