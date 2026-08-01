@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, Legend, ComposedChart, Area,
@@ -32,7 +32,13 @@ import {
   fmtBRL,
   fmtShort,
 } from '../../lib/dashboardDiretoria/aggregations';
-import { buildYearOptions, createDefaultPeriod, formatPeriodRangeHint, getPeriodRange } from '../../lib/dashboardDiretoria/periodUtils';
+import {
+  buildYearOptions,
+  createDefaultPeriod,
+  formatPeriodRangeHint,
+  getPeriodRange,
+  isCurrentCalendarMonth,
+} from '../../lib/dashboardDiretoria/periodUtils';
 import type { CashTitleRow, DashboardPeriod, DashboardPeriodMode, DiretoriaTab } from '../../lib/dashboardDiretoria/types';
 import { MARGIN_GOAL_PCT } from '../../lib/dashboardDiretoria/types';
 
@@ -170,7 +176,37 @@ const PERIOD_MODES: { id: DashboardPeriodMode; label: string }[] = [
 const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const now = new Date();
   const [tab, setTab] = useState<DiretoriaTab>('geral');
+  /** Abre sempre no mês civil vigente (Brasília). */
   const [period, setPeriod] = useState<DashboardPeriod>(() => createDefaultPeriod(now));
+  /**
+   * Enquanto true, acompanha a virada do mês (ex.: jul → ago) sem o usuário
+   * precisar trocar o filtro. Desliga se o usuário escolher outro mês/ano.
+   */
+  const [followCurrentMonth, setFollowCurrentMonth] = useState(true);
+
+  useEffect(() => {
+    if (!followCurrentMonth) return;
+    const sync = () => {
+      const cur = createDefaultPeriod();
+      setPeriod((p) => {
+        if (p.year === cur.year && p.month === cur.month) return p;
+        return { ...p, year: cur.year, month: cur.month };
+      });
+    };
+    sync();
+    const id = window.setInterval(sync, 60_000);
+    const onFocus = () => sync();
+    const onVis = () => {
+      if (document.visibilityState === 'visible') sync();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [followCurrentMonth]);
 
   const data = useDashboardDiretoriaData(period);
 
@@ -594,7 +630,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const revenueMonthCompareSection = (
     <Card
       title="Faturamento diário (OS)"
-      subtitle={`Comparativo dia a dia: ${revenueMonthCompare.previousLabel} × ${revenueMonthCompare.currentLabel} (receita canônica). Linhas tracejadas = acumulado no mês.`}
+      subtitle={`Comparativo do mês ${revenueMonthCompare.previousLabel} × ${revenueMonthCompare.currentLabel} (receita canônica). Linhas tracejadas = acumulado no mês.`}
       testId="revenue-month-compare-diretoria"
     >
       {/* Legenda de cores + acumulados — acima do gráfico */}
@@ -1038,7 +1074,17 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
                 <button
                   key={m.id}
                   type="button"
-                  onClick={() => setPeriod(p => ({ ...p, mode: m.id }))}
+                  onClick={() => {
+                    const cur = createDefaultPeriod();
+                    setPeriod(p => ({
+                      ...p,
+                      mode: m.id,
+                      // Em Hoje/Semana, realinha mês/ano ao vigente para o comparativo MoM.
+                      ...(m.id !== 'month' || followCurrentMonth
+                        ? { year: cur.year, month: cur.month }
+                        : {}),
+                    }));
+                  }}
                   className={`px-3 py-2 text-xs font-bold transition-colors ${
                     period.mode === m.id
                       ? 'bg-red-700 text-white'
@@ -1054,7 +1100,12 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
               <>
                 <select
                   value={period.month}
-                  onChange={e => setPeriod(p => ({ ...p, month: Number(e.target.value) }))}
+                  onChange={e => {
+                    const month = Number(e.target.value);
+                    const next = { ...period, month };
+                    setFollowCurrentMonth(isCurrentCalendarMonth(next));
+                    setPeriod(next);
+                  }}
                   className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-2 font-bold"
                   data-testid="filter-month"
                 >
@@ -1062,7 +1113,12 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
                 </select>
                 <select
                   value={period.year}
-                  onChange={e => setPeriod(p => ({ ...p, year: Number(e.target.value) }))}
+                  onChange={e => {
+                    const year = Number(e.target.value);
+                    const next = { ...period, year };
+                    setFollowCurrentMonth(isCurrentCalendarMonth(next));
+                    setPeriod(next);
+                  }}
                   className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-2 font-bold"
                   data-testid="filter-year"
                 >

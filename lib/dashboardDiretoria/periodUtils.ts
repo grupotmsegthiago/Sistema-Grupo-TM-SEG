@@ -1,7 +1,15 @@
 import type { DashboardPeriod, DashboardPeriodMode } from './types';
 import type { FinancialTransaction } from '../../types';
+import { formatIsoDateBR } from '../dateUtils';
 
 const pad = (n: number) => String(n).padStart(2, '0');
+
+/** Partes do calendário civil em Brasília (ano, mês 0–11, dia). */
+export function getCalendarPartsBR(now = new Date()): { year: number; month: number; day: number } {
+  const iso = formatIsoDateBR(now); // yyyy-mm-dd
+  const [y, m, d] = iso.split('-').map(Number);
+  return { year: y, month: m - 1, day: d };
+}
 
 /** Data de movimentação de caixa: pagamento quando PAID, senão vencimento. */
 export function getCashMovementDate(t: FinancialTransaction): string {
@@ -97,16 +105,19 @@ export function getRhReferenceMonth(period: DashboardPeriod, now = new Date()): 
   if (mode === 'month') {
     return `${period.year}-${pad(period.month + 1)}`;
   }
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  const { year, month } = getCalendarPartsBR(now);
+  return `${year}-${pad(month + 1)}`;
 }
 
 export function buildYearOptions(back = 3): number[] {
-  const y = new Date().getFullYear();
-  return Array.from({ length: back + 1 }, (_, i) => y - i);
+  const { year } = getCalendarPartsBR();
+  return Array.from({ length: back + 1 }, (_, i) => year - i);
 }
 
+/** Período padrão = mês civil vigente em Brasília (ex.: em 01/08 → Agosto). */
 export function createDefaultPeriod(now = new Date()): DashboardPeriod {
-  return { mode: 'month', year: now.getFullYear(), month: now.getMonth() };
+  const { year, month } = getCalendarPartsBR(now);
+  return { mode: 'month', year, month };
 }
 
 /** Mês calendário imediatamente anterior ao período (para comparação MoM). */
@@ -115,4 +126,23 @@ export function getPreviousMonthPeriod(period: DashboardPeriod): DashboardPeriod
     return { mode: 'month', year: period.year - 1, month: 11 };
   }
   return { mode: 'month', year: period.year, month: period.month - 1 };
+}
+
+/**
+ * Mês usado no comparativo de faturamento diário (MoM).
+ * - mode "month": respeita o mês selecionado no filtro
+ * - mode "today"/"week": sempre o mês civil vigente (Brasília)
+ */
+export function resolveRevenueComparePeriod(period: DashboardPeriod, now = new Date()): DashboardPeriod {
+  const mode: DashboardPeriodMode = period.mode ?? 'month';
+  if (mode === 'month') {
+    return { mode: 'month', year: period.year, month: period.month };
+  }
+  return createDefaultPeriod(now);
+}
+
+/** True se o período (mês) é o mês civil vigente em Brasília. */
+export function isCurrentCalendarMonth(period: DashboardPeriod, now = new Date()): boolean {
+  const cur = getCalendarPartsBR(now);
+  return period.year === cur.year && period.month === cur.month;
 }

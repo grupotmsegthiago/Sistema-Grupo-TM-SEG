@@ -1,11 +1,16 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  createDefaultPeriod,
   formatPeriodLabel,
+  getCalendarPartsBR,
   getPeriodRange,
+  getPreviousMonthPeriod,
   getRhReferenceMonth,
   getWeekMonday,
   getWeekSunday,
+  isCurrentCalendarMonth,
+  resolveRevenueComparePeriod,
   toIsoDate,
 } from '../lib/dashboardDiretoria/periodUtils';
 
@@ -34,10 +39,10 @@ describe('dashboardDiretoria periodUtils', () => {
     assert.equal(endIso, '2026-07-12');
   });
 
-  it('mês corrente termina hoje; mês passado termina no último dia', () => {
+  it('mês calendário vai do dia 01 ao último dia (inclusive o mês corrente)', () => {
     const cur = getPeriodRange({ mode: 'month', year: 2026, month: 6 }, sunday);
     assert.equal(cur.startIso, '2026-07-01');
-    assert.equal(cur.endIso, '2026-07-12');
+    assert.equal(cur.endIso, '2026-07-31');
 
     const past = getPeriodRange({ mode: 'month', year: 2026, month: 5 }, sunday);
     assert.equal(past.startIso, '2026-06-01');
@@ -53,5 +58,23 @@ describe('dashboardDiretoria periodUtils', () => {
   it('RH usa mês calendário atual em hoje/semana', () => {
     assert.equal(getRhReferenceMonth({ mode: 'today', year: 2025, month: 0 }, sunday), '2026-07');
     assert.equal(getRhReferenceMonth({ mode: 'month', year: 2026, month: 5 }, sunday), '2026-06');
+  });
+
+  it('createDefaultPeriod usa mês civil vigente (ex.: 01/08 → Agosto)', () => {
+    const aug1 = new Date(2026, 7, 1, 12, 0, 0);
+    const p = createDefaultPeriod(aug1);
+    assert.deepEqual(p, { mode: 'month', year: 2026, month: 7 });
+    assert.equal(isCurrentCalendarMonth(p, aug1), true);
+    assert.deepEqual(getPreviousMonthPeriod(p), { mode: 'month', year: 2026, month: 6 });
+    assert.deepEqual(getCalendarPartsBR(aug1), { year: 2026, month: 7, day: 1 });
+  });
+
+  it('resolveRevenueComparePeriod em hoje/semana força mês vigente', () => {
+    const aug1 = new Date(2026, 7, 1, 14, 0, 0);
+    const stale = { mode: 'today' as const, year: 2026, month: 5 }; // filtro ainda em junho
+    const cmp = resolveRevenueComparePeriod(stale, aug1);
+    assert.deepEqual(cmp, { mode: 'month', year: 2026, month: 7 });
+    const explicit = resolveRevenueComparePeriod({ mode: 'month', year: 2026, month: 5 }, aug1);
+    assert.deepEqual(explicit, { mode: 'month', year: 2026, month: 5 });
   });
 });

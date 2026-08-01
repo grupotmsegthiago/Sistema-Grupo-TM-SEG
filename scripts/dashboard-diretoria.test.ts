@@ -20,6 +20,8 @@ import {
   getCashMovementDate,
   formatPeriodRangeHint,
   getPreviousMonthPeriod,
+  createDefaultPeriod,
+  resolveRevenueComparePeriod,
 } from '../lib/dashboardDiretoria/periodUtils';
 import { MissionStatus } from '../types';
 
@@ -153,7 +155,7 @@ describe('dashboardDiretoria aggregations', () => {
       {
         id: 'j1',
         status: MissionStatus.COMPLETED,
-        start_time: '2026-06-01T10:00:00',
+        start_time: '2026-06-01T13:00:00.000Z',
         revenue_value: 1000,
         cost_value: 400,
         billing_approved: true,
@@ -161,7 +163,7 @@ describe('dashboardDiretoria aggregations', () => {
       {
         id: 'j2',
         status: MissionStatus.COMPLETED,
-        start_time: '2026-06-01T15:00:00',
+        start_time: '2026-06-01T18:00:00.000Z',
         revenue_value: 500,
         cost_value: 200,
         billing_approved: true,
@@ -169,7 +171,7 @@ describe('dashboardDiretoria aggregations', () => {
       {
         id: 'l1',
         status: MissionStatus.COMPLETED,
-        start_time: '2026-07-01T10:00:00',
+        start_time: '2026-07-01T13:00:00.000Z',
         revenue_value: 2000,
         cost_value: 800,
         billing_approved: true,
@@ -177,7 +179,7 @@ describe('dashboardDiretoria aggregations', () => {
       {
         id: 'l2',
         status: MissionStatus.COMPLETED,
-        start_time: '2026-07-02T10:00:00',
+        start_time: '2026-07-02T13:00:00.000Z',
         revenue_value: 300,
         cost_value: 100,
         billing_approved: true,
@@ -186,7 +188,7 @@ describe('dashboardDiretoria aggregations', () => {
         // depois de "hoje" — não deve entrar no acumulado do mês corrente
         id: 'l-future',
         status: MissionStatus.COMPLETED,
-        start_time: '2026-07-20T10:00:00',
+        start_time: '2026-07-20T13:00:00.000Z',
         revenue_value: 9999,
         cost_value: 1,
         billing_approved: true,
@@ -211,6 +213,54 @@ describe('dashboardDiretoria aggregations', () => {
     const d20 = cmp.points.find((p) => p.day === 20);
     assert.equal(d20!.current, null);
     assert.ok((cmp.deltaCumPct ?? 0) > 0);
+  });
+
+  it('em agosto o padrão e o comparativo usam Ago × Jul automaticamente', () => {
+    const now = new Date(2026, 7, 1, 15, 0, 0); // 01/08/2026
+    const defaultPeriod = createDefaultPeriod(now);
+    assert.deepEqual(defaultPeriod, { mode: 'month', year: 2026, month: 7 });
+    assert.deepEqual(getPreviousMonthPeriod(defaultPeriod), {
+      mode: 'month',
+      year: 2026,
+      month: 6,
+    });
+
+    const refs = { clientTables: [], providerTables: [], clientsData: [] };
+    const missions = [
+      {
+        id: 'jul1',
+        status: MissionStatus.COMPLETED,
+        start_time: '2026-07-01T15:00:00.000Z',
+        revenue_value: 10_000,
+        cost_value: 1,
+        billing_approved: true,
+      },
+      {
+        id: 'ago1',
+        status: MissionStatus.COMPLETED,
+        start_time: '2026-08-01T15:00:00.000Z',
+        revenue_value: 2_500,
+        cost_value: 1,
+        billing_approved: true,
+      },
+    ];
+    // Filtro "hoje" com mês stale no objeto — comparativo ainda usa agosto vigente
+    const cmp = buildDailyRevenueMonthComparison(
+      missions,
+      refs,
+      { mode: 'today', year: 2026, month: 5 },
+      now,
+    );
+    assert.deepEqual(resolveRevenueComparePeriod({ mode: 'today', year: 2026, month: 5 }, now), {
+      mode: 'month',
+      year: 2026,
+      month: 7,
+    });
+    assert.equal(cmp.currentLabel, 'Ago/2026');
+    assert.equal(cmp.previousLabel, 'Jul/2026');
+    assert.equal(cmp.currentCumTotal, 2500);
+    assert.equal(cmp.previousCumTotal, 10_000);
+    assert.ok((cmp.deltaCumPct ?? 0) < 0);
   });
 
   it('buildProvisionHorizon alinha dívidas até a última data da receita em aberto', () => {
@@ -450,6 +500,10 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(ui, /buildDailyRevenueMonthComparison/);
     assert.match(ui, /revenue-month-compare-diretoria/);
     assert.match(ui, /Faturamento diário \(OS\)/);
+    assert.match(ui, /Comparativo do mês/);
+    assert.match(ui, /followCurrentMonth/);
+    assert.match(ui, /createDefaultPeriod/);
+    assert.match(ui, /import React, \{[^}]*useEffect/);
     // Mês passado = vermelho · mês atual = verde
     assert.match(ui, /stroke="#dc2626"/);
     assert.match(ui, /stroke="#16a34a"/);

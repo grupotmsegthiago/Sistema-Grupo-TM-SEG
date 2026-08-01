@@ -7,7 +7,15 @@ import {
   type CanonicalRefs,
 } from '../missionFinancialsCanonical';
 import { isInternalGroupTransfer, normalizeFinancialText } from '../financialInternalTransfer';
-import { getPeriodRange, getCashMovementDate, getPreviousMonthPeriod } from './periodUtils';
+import {
+  getPeriodRange,
+  getCashMovementDate,
+  getPreviousMonthPeriod,
+  getCalendarPartsBR,
+  resolveRevenueComparePeriod,
+  isCurrentCalendarMonth,
+} from './periodUtils';
+import { formatIsoDateFromTimestampBR } from '../dateUtils';
 import type {
   AccountBalanceOverview,
   CashKpis,
@@ -549,6 +557,7 @@ export function buildDailyCashFlow(
  * Faturamento diário OS (receita canônica) — dia D do mês atual vs dia D do mês anterior.
  * Inclui linhas acumuladas para acompanhar a evolução (bem/mal vs mês passado).
  * No mês corrente, dias futuros ficam null (não puxam a linha a zero).
+ * Em hoje/semana, o mês do gráfico é sempre o vigente em Brasília.
  */
 export function buildDailyRevenueMonthComparison(
   missions: any[],
@@ -556,11 +565,7 @@ export function buildDailyRevenueMonthComparison(
   period: DashboardPeriod,
   now = new Date(),
 ): DailyRevenueMonthComparison {
-  const currentPeriod: DashboardPeriod = {
-    mode: 'month',
-    year: period.year,
-    month: period.month,
-  };
+  const currentPeriod = resolveRevenueComparePeriod(period, now);
   const previousPeriod = getPreviousMonthPeriod(currentPeriod);
   const currentRange = getPeriodRange(currentPeriod, now);
   const previousRange = getPeriodRange(previousPeriod, now);
@@ -572,8 +577,10 @@ export function buildDailyRevenueMonthComparison(
       if (m.status === MissionStatus.REFUSED) continue;
       const ref = m.start_time || m.startTime || m.created_at || m.createdAt;
       if (!ref) continue;
-      const d = new Date(ref);
-      const day = d.getDate();
+      const dayIso = formatIsoDateFromTimestampBR(ref);
+      if (!dayIso) continue;
+      const day = Number(dayIso.slice(8, 10));
+      if (!Number.isFinite(day) || day < 1) continue;
       const c = computeCanonicalRevenueCost(m, refs, now);
       byDay.set(day, round2((byDay.get(day) || 0) + c.rev));
     }
@@ -587,10 +594,10 @@ export function buildDailyRevenueMonthComparison(
   const daysInPrevious = previousRange.end.getDate();
   const axisDays = Math.max(daysInCurrent, daysInPrevious);
 
-  const isViewingCurrentCalendarMonth =
-    now.getFullYear() === currentPeriod.year && now.getMonth() === currentPeriod.month;
-  const lastComparableDay = isViewingCurrentCalendarMonth
-    ? Math.min(now.getDate(), daysInCurrent)
+  const viewingCurrent = isCurrentCalendarMonth(currentPeriod, now);
+  const { day: todayBR } = getCalendarPartsBR(now);
+  const lastComparableDay = viewingCurrent
+    ? Math.min(todayBR, daysInCurrent)
     : daysInCurrent;
 
   const prevMm = String(previousPeriod.month + 1).padStart(2, '0');
