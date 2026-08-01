@@ -40,7 +40,12 @@ import {
   isCurrentCalendarMonth,
 } from '../../lib/dashboardDiretoria/periodUtils';
 import type { CashTitleRow, DashboardPeriod, DashboardPeriodMode, DiretoriaTab } from '../../lib/dashboardDiretoria/types';
-import { MARGIN_GOAL_PCT } from '../../lib/dashboardDiretoria/types';
+import {
+  MARGIN_GOAL_PCT,
+  REVENUE_MONTH_COLOR_CURRENT,
+  REVENUE_MONTH_COLOR_OTHER,
+  REVENUE_MONTH_COLOR_PREVIOUS,
+} from '../../lib/dashboardDiretoria/types';
 
 const CHART_COLORS = ['#dc2626', '#16a34a', '#2563eb', '#d97706', '#7c3aed', '#0891b2'];
 const GRID_STROKE = '#e5e7eb';
@@ -62,17 +67,28 @@ const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', '
 const FinTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   const compareLabel = payload[0]?.payload?.labelCompare;
+  const rows = [...payload]
+    .filter((p: any) => p.value != null && !Number.isNaN(p.value))
+    .sort((a: any, b: any) => {
+      const rank = (color: string) => {
+        if (color === REVENUE_MONTH_COLOR_CURRENT) return 0;
+        if (color === REVENUE_MONTH_COLOR_PREVIOUS) return 1;
+        return 2;
+      };
+      return rank(a.color) - rank(b.color);
+    });
   return (
-    <div className="bg-white border border-gray-200 text-gray-800 px-3 py-2 rounded-lg shadow-lg text-xs">
+    <div className="bg-white border border-gray-200 text-gray-800 px-3 py-2 rounded-lg shadow-lg text-xs max-h-64 overflow-y-auto">
       <p className="font-bold mb-1 text-gray-500">{compareLabel || label}</p>
-      {payload.map((p: any, i: number) => {
-        if (p.value == null || Number.isNaN(p.value)) return null;
-        return (
-          <p key={i} style={{ color: p.color }} className="font-mono font-bold">
-            {p.name}: {typeof p.value === 'number' && Math.abs(p.value) > 50 ? fmtBRL(p.value) : p.value}
-          </p>
-        );
-      })}
+      {rows.map((p: any, i: number) => (
+        <p
+          key={i}
+          style={{ color: p.color === REVENUE_MONTH_COLOR_OTHER ? '#9ca3af' : p.color }}
+          className="font-mono font-bold"
+        >
+          {p.name}: {typeof p.value === 'number' && Math.abs(p.value) > 50 ? fmtBRL(p.value) : p.value}
+        </p>
+      ))}
     </div>
   );
 };
@@ -630,24 +646,28 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const revenueMonthCompareSection = (
     <Card
       title="Faturamento diário (OS)"
-      subtitle={`Comparativo do mês ${revenueMonthCompare.previousLabel} × ${revenueMonthCompare.currentLabel} (receita canônica). Linhas tracejadas = acumulado no mês.`}
+      subtitle={`Acumulado por dia — últimos 12 meses. ${revenueMonthCompare.previousLabel} (vermelho escuro) × ${revenueMonthCompare.currentLabel} (verde escuro); demais meses em cinza bem claro.`}
       testId="revenue-month-compare-diretoria"
     >
       {/* Legenda de cores + acumulados — acima do gráfico */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 text-[11px]">
-        <span className="inline-flex items-center gap-1.5 font-black text-red-700">
-          <span className="inline-block w-3 h-0.5 rounded-full bg-red-600" aria-hidden />
+        <span className="inline-flex items-center gap-1.5 font-black" style={{ color: REVENUE_MONTH_COLOR_PREVIOUS }}>
+          <span className="inline-block w-3 h-0.5 rounded-full" style={{ backgroundColor: REVENUE_MONTH_COLOR_PREVIOUS }} aria-hidden />
           Mês passado ({revenueMonthCompare.previousLabel})
         </span>
-        <span className="inline-flex items-center gap-1.5 font-black text-green-700">
-          <span className="inline-block w-3 h-0.5 rounded-full bg-green-600" aria-hidden />
+        <span className="inline-flex items-center gap-1.5 font-black" style={{ color: REVENUE_MONTH_COLOR_CURRENT }}>
+          <span className="inline-block w-3 h-0.5 rounded-full" style={{ backgroundColor: REVENUE_MONTH_COLOR_CURRENT }} aria-hidden />
           Mês atual ({revenueMonthCompare.currentLabel})
         </span>
+        <span className="inline-flex items-center gap-1.5 font-bold text-gray-400">
+          <span className="inline-block w-3 h-0.5 rounded-full" style={{ backgroundColor: REVENUE_MONTH_COLOR_OTHER }} aria-hidden />
+          Demais meses
+        </span>
         <span className="text-gray-300">|</span>
-        <span className="font-mono font-bold text-green-700">
+        <span className="font-mono font-bold" style={{ color: REVENUE_MONTH_COLOR_CURRENT }}>
           Acumulado {revenueMonthCompare.currentLabel}: {fmtBRL(revenueMonthCompare.currentCumTotal)}
         </span>
-        <span className="font-mono font-bold text-red-700">
+        <span className="font-mono font-bold" style={{ color: REVENUE_MONTH_COLOR_PREVIOUS }}>
           Acumulado {revenueMonthCompare.previousLabel}: {fmtBRL(revenueMonthCompare.previousCumTotal)}
         </span>
         {revenueMonthCompare.deltaCumPct != null && (
@@ -663,52 +683,39 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
           </span>
         )}
       </div>
-      <div className="h-64">
+      <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={revenueMonthCompare.points} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
             <XAxis dataKey="label" tick={AXIS_TICK} interval={1} />
             <YAxis tick={AXIS_TICK} tickFormatter={(v) => fmtShort(v)} width={48} />
             <Tooltip content={<FinTooltip />} />
-            <Legend />
-            <Line
-              type="monotone"
-              dataKey="previous"
-              name={`Diário ${revenueMonthCompare.previousLabel}`}
-              stroke="#dc2626"
-              strokeWidth={2}
-              dot={false}
-              connectNulls={false}
+            <Legend
+              wrapperStyle={{ fontSize: 10 }}
+              formatter={(value, entry: any) => {
+                const role = revenueMonthCompare.series.find((s) => s.dataKey === entry?.dataKey)?.role;
+                if (role === 'other') {
+                  return <span className="text-gray-300 font-medium">{value}</span>;
+                }
+                if (role === 'previous') {
+                  return <span style={{ color: REVENUE_MONTH_COLOR_PREVIOUS, fontWeight: 800 }}>{value}</span>;
+                }
+                return <span style={{ color: REVENUE_MONTH_COLOR_CURRENT, fontWeight: 800 }}>{value}</span>;
+              }}
             />
-            <Line
-              type="monotone"
-              dataKey="current"
-              name={`Diário ${revenueMonthCompare.currentLabel}`}
-              stroke="#16a34a"
-              strokeWidth={2.5}
-              dot={false}
-              connectNulls={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="previousCum"
-              name={`Acumulado ${revenueMonthCompare.previousLabel}`}
-              stroke="#b91c1c"
-              strokeWidth={2}
-              strokeDasharray="6 4"
-              dot={false}
-              connectNulls={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="currentCum"
-              name={`Acumulado ${revenueMonthCompare.currentLabel}`}
-              stroke="#15803d"
-              strokeWidth={2.5}
-              strokeDasharray="6 4"
-              dot={false}
-              connectNulls={false}
-            />
+            {revenueMonthCompare.series.map((s) => (
+              <Line
+                key={s.dataKey}
+                type="monotone"
+                dataKey={s.dataKey}
+                name={s.label}
+                stroke={s.color}
+                strokeWidth={s.strokeWidth}
+                dot={false}
+                connectNulls={false}
+                isAnimationActive={false}
+              />
+            ))}
           </LineChart>
         </ResponsiveContainer>
       </div>

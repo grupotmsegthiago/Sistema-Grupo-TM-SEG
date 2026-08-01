@@ -146,3 +146,36 @@ export function isCurrentCalendarMonth(period: DashboardPeriod, now = new Date()
   const cur = getCalendarPartsBR(now);
   return period.year === cur.year && period.month === cur.month;
 }
+
+/**
+ * Lista de meses calendário terminando no período âncora (mais antigo → mais recente).
+ * Usado no gráfico de faturamento diário com várias séries (ex.: 12 meses).
+ */
+export function listMonthsEndingAt(anchor: DashboardPeriod, count = 12): DashboardPeriod[] {
+  const n = Math.max(1, Math.floor(count));
+  const months: DashboardPeriod[] = [];
+  let year = anchor.year;
+  let month = anchor.month;
+  for (let i = 0; i < n; i++) {
+    months.push({ mode: 'month', year, month });
+    month -= 1;
+    if (month < 0) {
+      month = 11;
+      year -= 1;
+    }
+  }
+  return months.reverse();
+}
+
+/** Intervalo de fetch cobrindo todos os meses do comparativo multi-mês. */
+export function getRevenueCompareFetchRange(
+  period: DashboardPeriod,
+  now = new Date(),
+  monthCount = 12,
+): { startIso: string; endIso: string } {
+  const anchor = resolveRevenueComparePeriod(period, now);
+  const months = listMonthsEndingAt(anchor, monthCount);
+  const first = getPeriodRange(months[0], now);
+  const last = getPeriodRange(months[months.length - 1], now);
+  return { startIso: first.startIso, endIso: last.endIso };
+}

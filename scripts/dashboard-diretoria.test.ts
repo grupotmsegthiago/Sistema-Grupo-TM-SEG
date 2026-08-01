@@ -202,16 +202,26 @@ describe('dashboardDiretoria aggregations', () => {
     );
     assert.equal(cmp.previousLabel, 'Jun/2026');
     assert.equal(cmp.currentLabel, 'Jul/2026');
+    assert.equal(cmp.series.length, 12);
+    assert.equal(cmp.series.filter((s) => s.role === 'other').length, 10);
+    assert.equal(cmp.series.find((s) => s.role === 'current')?.color, '#14532d');
+    assert.equal(cmp.series.find((s) => s.role === 'previous')?.color, '#7f1d1d');
+    assert.ok(cmp.series.every((s) => s.role !== 'other' || s.color === '#e5e7eb'));
     const d1 = cmp.points.find((p) => p.day === 1);
     assert.ok(d1);
     assert.equal(d1!.previous, 1500);
     assert.equal(d1!.current, 2000);
-    assert.equal(d1!.labelCompare, '01/06 × 01/07');
+    assert.equal(d1!.labelCompare, 'Dia 01');
+    assert.equal(d1!['m_2026_07'], 2000);
+    assert.equal(d1!['m_2026_06'], 1500);
     const d2 = cmp.points.find((p) => p.day === 2);
     assert.equal(d2!.currentCum, 2300);
     assert.equal(d2!.previousCum, 1500); // jun sem fatura no dia 2
     const d20 = cmp.points.find((p) => p.day === 20);
     assert.equal(d20!.current, null);
+    // mês atual (jul) corta em 14; mês anterior (jun) segue a curva completa no dataKey
+    assert.equal(d20!['m_2026_07'], null);
+    assert.equal(d20!['m_2026_06'], 1500);
     assert.ok((cmp.deltaCumPct ?? 0) > 0);
   });
 
@@ -261,6 +271,9 @@ describe('dashboardDiretoria aggregations', () => {
     assert.equal(cmp.currentCumTotal, 2500);
     assert.equal(cmp.previousCumTotal, 10_000);
     assert.ok((cmp.deltaCumPct ?? 0) < 0);
+    assert.equal(cmp.series.length, 12);
+    assert.equal(cmp.series.at(-1)?.role, 'current');
+    assert.equal(cmp.series.at(-2)?.role, 'previous');
   });
 
   it('buildProvisionHorizon alinha dívidas até a última data da receita em aberto', () => {
@@ -500,17 +513,17 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(ui, /buildDailyRevenueMonthComparison/);
     assert.match(ui, /revenue-month-compare-diretoria/);
     assert.match(ui, /Faturamento diário \(OS\)/);
-    assert.match(ui, /Comparativo do mês/);
+    assert.match(ui, /últimos 12 meses|Demais meses/);
     assert.match(ui, /followCurrentMonth/);
     assert.match(ui, /createDefaultPeriod/);
     assert.match(ui, /import React, \{[^}]*useEffect/);
-    // Mês passado = vermelho · mês atual = verde
-    assert.match(ui, /stroke="#dc2626"/);
-    assert.match(ui, /stroke="#16a34a"/);
+    assert.match(ui, /REVENUE_MONTH_COLOR_CURRENT|REVENUE_MONTH_COLOR_PREVIOUS/);
+    assert.match(ui, /revenueMonthCompare\.series\.map/);
     assert.match(ui, /Mês passado/);
     assert.match(ui, /Mês atual/);
+    assert.match(ui, /Demais meses/);
     assert.match(ui, /resolveOpenCashEntityName|Outros/);
-    assert.match(hook, /getPreviousMonthPeriod/);
+    assert.match(hook, /getRevenueCompareFetchRange/);
     assert.doesNotMatch(ui, /Saldo total de todas as contas/);
     // Ordem Visão Geral: Cards → OS → Provisionamento → Faturamento → Caixa → Detalhe
     const geralStart = ui.indexOf('const renderGeral');

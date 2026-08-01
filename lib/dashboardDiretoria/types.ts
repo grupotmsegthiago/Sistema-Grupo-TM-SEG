@@ -192,16 +192,35 @@ export interface DashboardDiretoriaData {
   refresh: () => Promise<void>;
 }
 
+/** Papel visual da série no gráfico multi-mês. */
+export type DailyRevenueMonthRole = 'current' | 'previous' | 'other';
+
 /**
- * Ponto do gráfico: faturamento OS do dia D do mês atual × dia D do mês anterior.
- * Acumulados permitem ver se a evolução está acima/abaixo do mês passado.
+ * Série de um mês no gráfico (eixo X = dia 1–31).
+ * `dataKey` aponta para o acumulado no ponto (Recharts).
+ */
+export interface DailyRevenueMonthSeriesMeta {
+  key: string;
+  dataKey: string;
+  label: string;
+  year: number;
+  month: number;
+  role: DailyRevenueMonthRole;
+  cumTotal: number;
+  color: string;
+  strokeWidth: number;
+}
+
+/**
+ * Ponto do gráfico: faturamento OS do dia D — mês atual, anterior e demais meses.
+ * Campos `current*` / `previous*` mantidos para o resumo MoM; séries extras via dataKeys.
  */
 export interface DailyRevenueMonthComparePoint {
   /** Dia do mês (1–31) */
   day: number;
   /** Rótulo curto do eixo (01, 02, …) */
   label: string;
-  /** Tooltip: "01/06 × 01/07" */
+  /** Tooltip: "Dia 01" */
   labelCompare: string;
   /** Receita canônica no dia (mês atual); null = dia futuro ainda não chegou */
   current: number | null;
@@ -209,10 +228,14 @@ export interface DailyRevenueMonthComparePoint {
   previous: number | null;
   currentCum: number | null;
   previousCum: number | null;
+  /** Acumulados por mês: chave = dataKey da série (ex.: m_2026_08) */
+  [dataKey: string]: number | string | null;
 }
 
 export interface DailyRevenueMonthComparison {
   points: DailyRevenueMonthComparePoint[];
+  /** Séries na ordem de desenho (outros atrás → atual na frente) */
+  series: DailyRevenueMonthSeriesMeta[];
   currentLabel: string;
   previousLabel: string;
   /** Acumulado atual até o último dia com dados */
@@ -222,6 +245,11 @@ export interface DailyRevenueMonthComparison {
   /** (atual − anterior) / anterior · 100; null se anterior = 0 */
   deltaCumPct: number | null;
 }
+
+/** Cores do comparativo multi-mês (vermelho/verde escuros + demais bem claros). */
+export const REVENUE_MONTH_COLOR_CURRENT = '#14532d';
+export const REVENUE_MONTH_COLOR_PREVIOUS = '#7f1d1d';
+export const REVENUE_MONTH_COLOR_OTHER = '#e5e7eb';
 
 /** Meta de margem operacional (OS) — alinhada ao termômetro / diretoria */
 export const MARGIN_GOAL_PCT = 40;

@@ -14,6 +14,7 @@ import {
   getCalendarPartsBR,
   resolveRevenueComparePeriod,
   isCurrentCalendarMonth,
+  listMonthsEndingAt,
 } from './periodUtils';
 import { formatIsoDateFromTimestampBR } from '../dateUtils';
 import type {
@@ -23,6 +24,7 @@ import type {
   CashTitleRow,
   CriticalAlert,
   DailyRevenueMonthComparison,
+  DailyRevenueMonthSeriesMeta,
   DashboardPeriod,
   DiretoriaAccountBalance,
   OpenCashOutlook,
@@ -31,7 +33,13 @@ import type {
   PendingApprovalItem,
   ProvisionHorizon,
 } from './types';
-import { DEFAULT_MONTHLY_REVENUE_GOAL, MARGIN_GOAL_PCT } from './types';
+import {
+  DEFAULT_MONTHLY_REVENUE_GOAL,
+  MARGIN_GOAL_PCT,
+  REVENUE_MONTH_COLOR_CURRENT,
+  REVENUE_MONTH_COLOR_OTHER,
+  REVENUE_MONTH_COLOR_PREVIOUS,
+} from './types';
 
 const MONTH_SHORT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -553,11 +561,16 @@ export function buildDailyCashFlow(
     .map(([day, v]) => ({ day: day.slice(8, 10) + '/' + day.slice(5, 7), inflow: round2(v.inflow), outflow: round2(v.outflow) }));
 }
 
+const REVENUE_COMPARE_MONTH_COUNT = 12;
+
+function monthSeriesKey(year: number, month: number): string {
+  return `m_${year}_${String(month + 1).padStart(2, '0')}`;
+}
+
 /**
- * Faturamento diário OS (receita canônica) — dia D do mês atual vs dia D do mês anterior.
- * Inclui linhas acumuladas para acompanhar a evolução (bem/mal vs mês passado).
- * No mês corrente, dias futuros ficam null (não puxam a linha a zero).
- * Em hoje/semana, o mês do gráfico é sempre o vigente em Brasília.
+ * Faturamento diário OS (receita canônica) — dia D alinhado entre os últimos 12 meses.
+ * Linhas = acumulado no mês. Mês atual / anterior em destaque; demais bem claros.
+ * No mês civil vigente, dias futuros ficam null (não puxam a linha a zero).
  */
 export function buildDailyRevenueMonthComparison(
   missions: any[],
@@ -567,8 +580,8 @@ export function buildDailyRevenueMonthComparison(
 ): DailyRevenueMonthComparison {
   const currentPeriod = resolveRevenueComparePeriod(period, now);
   const previousPeriod = getPreviousMonthPeriod(currentPeriod);
-  const currentRange = getPeriodRange(currentPeriod, now);
-  const previousRange = getPeriodRange(previousPeriod, now);
+  const monthPeriods = listMonthsEndingAt(currentPeriod, REVENUE_COMPARE_MONTH_COUNT);
+  const { day: todayBR } = getCalendarPartsBR(now);
 
   const sumByDayOfMonth = (start: Date, end: Date): Map<number, number> => {
     const inPeriod = filterMissionsByPeriod(missions, start, end);
@@ -587,52 +600,98 @@ export function buildDailyRevenueMonthComparison(
     return byDay;
   };
 
-  const currentByDay = sumByDayOfMonth(currentRange.start, currentRange.end);
-  const previousByDay = sumByDayOfMonth(previousRange.start, previousRange.end);
+  type MonthBuild = {
+    period: DashboardPeriod;
+    key: string;
+    dataKey: string;
+    label: string;
+    role: DailyRevenueMonthSeriesMeta['role'];
+    byDay: Map<number, number>;
+    daysInMonth: number;
+    lastDay: number;
+    cum: number;
+  };
 
-  const daysInCurrent = currentRange.end.getDate();
-  const daysInPrevious = previousRange.end.getDate();
-  const axisDays = Math.max(daysInCurrent, daysInPrevious);
+  const monthBuilds: MonthBuild[] = monthPeriods.map((mp) => {
+    const range = getPeriodRange(mp, now);
+    const daysInMonth = range.end.getDate();
+    const isAnchorCurrent = mp.year === currentPeriod.year && mp.month === currentPeriod.month;
+    const isAnchorPrevious = mp.year === previousPeriod.year && mp.month === previousPeriod.month;
+    const viewingThisAsLive = isCurrentCalendarMonth(mp, now);
+    const lastDay = viewingThisAsLive ? Math.min(todayBR, daysInMonth) : daysInMonth;
+    const role: DailyRevenueMonthSeriesMeta['role'] = isAnchorCurrent
+      ? 'current'
+      : isAnchorPrevious
+        ? 'previous'
+        : 'other';
+    const key = monthSeriesKey(mp.year, mp.month);
+    return {
+      period: mp,
+      key,
+      dataKey: key,
+      label: `${MONTH_SHORT[mp.month]}/${mp.year}`,
+      role,
+      byDay: sumByDayOfMonth(range.start, range.end),
+      daysInMonth,
+      lastDay,
+      cum: 0,
+    };
+  });
 
-  const viewingCurrent = isCurrentCalendarMonth(currentPeriod, now);
-  const { day: todayBR } = getCalendarPartsBR(now);
-  const lastComparableDay = viewingCurrent
-    ? Math.min(todayBR, daysInCurrent)
-    : daysInCurrent;
-
-  const prevMm = String(previousPeriod.month + 1).padStart(2, '0');
-  const curMm = String(currentPeriod.month + 1).padStart(2, '0');
-
-  let currentCum = 0;
-  let previousCum = 0;
+  const axisDays = Math.max(...monthBuilds.map((m) => m.daysInMonth), 1);
+  const currentBuild = monthBuilds.find((m) => m.role === 'current');
+  const previousBuild = monthBuilds.find((m) => m.role === 'previous');
+  /** Dia de corte do resumo MoM (mês vigente → hoje; mês passado selecionado → fim do mês). */
+  const momCompareDay = currentBuild?.lastDay ?? 0;
   const points: DailyRevenueMonthComparison['points'] = [];
 
   for (let day = 1; day <= axisDays; day++) {
     const dd = String(day).padStart(2, '0');
-    const hasPrevDay = day <= daysInPrevious;
-    const hasCurDay = day <= daysInCurrent;
-    const currentReached = hasCurDay && day <= lastComparableDay;
-
-    const currentVal = currentReached ? (currentByDay.get(day) || 0) : null;
-    const previousVal = hasPrevDay && day <= lastComparableDay ? (previousByDay.get(day) || 0) : null;
-
-    if (currentVal != null) currentCum = round2(currentCum + currentVal);
-    if (previousVal != null) previousCum = round2(previousCum + previousVal);
-
-    points.push({
+    const point: DailyRevenueMonthComparison['points'][number] = {
       day,
       label: dd,
-      labelCompare: `${dd}/${prevMm} × ${dd}/${curMm}`,
-      current: currentVal,
-      previous: previousVal,
-      currentCum: currentVal != null ? currentCum : null,
-      previousCum: previousVal != null ? previousCum : null,
-    });
+      labelCompare: `Dia ${dd}`,
+      current: null,
+      previous: null,
+      currentCum: null,
+      previousCum: null,
+    };
+
+    for (const mb of monthBuilds) {
+      const reached = day <= mb.lastDay && day <= mb.daysInMonth;
+      if (!reached) {
+        point[mb.dataKey] = null;
+        continue;
+      }
+      const daily = mb.byDay.get(day) || 0;
+      mb.cum = round2(mb.cum + daily);
+      // Linha do gráfico = acumulado completo do mês (histórico inteiro; atual corta em hoje).
+      point[mb.dataKey] = mb.cum;
+
+      if (mb.role === 'current') {
+        point.current = daily;
+        point.currentCum = mb.cum;
+      } else if (mb.role === 'previous' && day <= momCompareDay) {
+        // Campos previous* = comparativo no mesmo dia (apples-to-apples).
+        point.previous = daily;
+        point.previousCum = mb.cum;
+      }
+    }
+
+    points.push(point);
   }
 
-  const lastWithData = [...points].reverse().find((p) => p.currentCum != null || p.previousCum != null);
-  const currentCumTotal = lastWithData?.currentCum ?? 0;
-  const previousCumTotal = lastWithData?.previousCum ?? 0;
+  const sumThrough = (mb: MonthBuild | undefined, throughDay: number): number => {
+    if (!mb || throughDay < 1) return 0;
+    let run = 0;
+    for (let day = 1; day <= Math.min(throughDay, mb.daysInMonth); day++) {
+      run = round2(run + (mb.byDay.get(day) || 0));
+    }
+    return run;
+  };
+
+  const currentCumTotal = sumThrough(currentBuild, momCompareDay);
+  const previousCumTotal = sumThrough(previousBuild, momCompareDay);
   const deltaCumPct =
     previousCumTotal > 0
       ? round2(((currentCumTotal - previousCumTotal) / previousCumTotal) * 100)
@@ -640,10 +699,35 @@ export function buildDailyRevenueMonthComparison(
         ? 100
         : null;
 
+  // Ordem de desenho: outros atrás, anterior, atual na frente.
+  const seriesMeta = (mb: MonthBuild): DailyRevenueMonthSeriesMeta => ({
+    key: mb.key,
+    dataKey: mb.dataKey,
+    label: mb.label,
+    year: mb.period.year,
+    month: mb.period.month,
+    role: mb.role,
+    cumTotal: mb.role === 'current' || mb.role === 'previous' ? sumThrough(mb, momCompareDay) : mb.cum,
+    color:
+      mb.role === 'current'
+        ? REVENUE_MONTH_COLOR_CURRENT
+        : mb.role === 'previous'
+          ? REVENUE_MONTH_COLOR_PREVIOUS
+          : REVENUE_MONTH_COLOR_OTHER,
+    strokeWidth: mb.role === 'other' ? 1.25 : 2.75,
+  });
+
+  const series = [
+    ...monthBuilds.filter((m) => m.role === 'other').map(seriesMeta),
+    ...monthBuilds.filter((m) => m.role === 'previous').map(seriesMeta),
+    ...monthBuilds.filter((m) => m.role === 'current').map(seriesMeta),
+  ];
+
   return {
     points,
-    currentLabel: `${MONTH_SHORT[currentPeriod.month]}/${currentPeriod.year}`,
-    previousLabel: `${MONTH_SHORT[previousPeriod.month]}/${previousPeriod.year}`,
+    series,
+    currentLabel: currentBuild?.label ?? `${MONTH_SHORT[currentPeriod.month]}/${currentPeriod.year}`,
+    previousLabel: previousBuild?.label ?? `${MONTH_SHORT[previousPeriod.month]}/${previousPeriod.year}`,
     currentCumTotal,
     previousCumTotal,
     deltaCumPct,

@@ -9,7 +9,7 @@ import {
   formatPeriodLabel,
   getCashMovementDate,
   getPeriodRange,
-  getPreviousMonthPeriod,
+  getRevenueCompareFetchRange,
   getRhReferenceMonth,
 } from './periodUtils';
 import type { DashboardDiretoriaData, DashboardPeriod, DashboardRefs } from './types';
@@ -158,13 +158,13 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
     setError(null);
     try {
       const { startIso, endIso } = getPeriodRange(period);
-      // Inclui o mês calendário anterior (comparativo de faturamento diário MoM no cockpit).
+      // Inclui os últimos 12 meses do comparativo de faturamento diário (multi-série).
       // KPIs de período continuam filtrando via getPeriodRange / filterMissionsByPeriod.
-      const prevMonth = getPreviousMonthPeriod({ mode: 'month', year: period.year, month: period.month });
-      const prevRange = getPeriodRange(prevMonth);
-      const fetchStartIso = prevRange.startIso < startIso ? prevRange.startIso : startIso;
+      const compareFetch = getRevenueCompareFetchRange(period);
+      const fetchStartIso = compareFetch.startIso < startIso ? compareFetch.startIso : startIso;
+      const fetchEndIso = compareFetch.endIso > endIso ? compareFetch.endIso : endIso;
       const rangeStart = `${fetchStartIso}T00:00:00`;
-      const rangeEnd = `${endIso}T23:59:59`;
+      const rangeEnd = `${fetchEndIso}T23:59:59`;
       const rangeOr = `and(start_time.gte.${rangeStart},start_time.lte.${rangeEnd}),and(start_time.is.null,created_at.gte.${rangeStart},created_at.lte.${rangeEnd})`;
       const openOr = 'status.in.("Pendente","Solicitada","Documentação","Agendada","Origem","Em Viagem"),and(status.eq."Concluída",billing_approved.not.is.true)';
 
