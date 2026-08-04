@@ -7,8 +7,14 @@ import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 import { canAccessDiretoriaMenu } from '../diretoriaAccess.js';
 import { extractAuthToken, extractUserIdFromToken } from '../osAnalysis/apiAuth.js';
 import { createDraftInvestorProfile, evaluateProfileCompleteness } from './profileValidation.js';
-import { buildProvision30dEstimate, describeMonthlyTargetBand } from './targetReturn.js';
 import { isGestaoInvestimentoSchemaReady, runGestaoInvestimentoMigrations } from './schemaMigrations.js';
+import {
+  buildDashboardSnapshot,
+  readCachedSnapshot,
+  refreshAllOwnerCaches,
+  refreshOwnerCache,
+  writeCachedSnapshot,
+} from './dashboardCache.js';
 import type {
   InvestorProfile,
   InvestmentPosition,
@@ -190,6 +196,39 @@ export async function handleGestaoInvestimentoOp(
     }
   }
 
+  if (op === 'refresh-cache') {
+    // Pesquisa “off”: cron a cada 30 min pré-calcula o painel (Bearer CRON_SECRET).
+    // POST Diretoria força recálculo do próprio usuário.
+    if (method !== 'GET' && method !== 'POST') {
+      return { status: 405, body: { ok: false, error: 'method_not_allowed' } };
+    }
+    const cronSecret = String(process.env.CRON_SECRET || '').trim();
+    const auth = headerValue(req, 'authorization');
+    const isCron = Boolean(cronSecret && auth === `Bearer ${cronSecret}`);
+    if (isCron || method === 'GET') {
+      if (!isCron) return { status: 401, body: { ok: false, error: 'Não autorizado' } };
+      try {
+        if (!(await isGestaoInvestimentoSchemaReady())) {
+          await runGestaoInvestimentoMigrations();
+        }
+        const result = await Promise.race([
+          refreshAllOwnerCaches(),
+          new Promise<{ ok: false; refreshed: number; errors: string[] }>((resolve) =>
+            setTimeout(() => resolve({ ok: false, refreshed: 0, errors: ['timeout 50s'] }), 50_000),
+          ),
+        ]);
+        return { status: result.ok || result.refreshed > 0 ? 200 : 500, body: { ok: true, ...result, via: 'cron' } };
+      } catch (e: any) {
+        return { status: 500, body: { ok: false, error: e?.message || 'Falha no refresh-cache' } };
+      }
+    }
+    const user = await resolvePrincipal(req);
+    const denied = assertDiretoria(user);
+    if (denied) return denied;
+    const r = await refreshOwnerCache((user as Principal).id);
+    return { status: r.ok ? 200 : 500, body: { ok: r.ok, ...r, via: 'manual' } };
+  }
+
   const user = await resolvePrincipal(req);
   const denied = assertDiretoria(user);
   if (denied) return denied;
@@ -198,7 +237,16 @@ export async function handleGestaoInvestimentoOp(
 
   if (op === 'summary') {
     if (method !== 'GET') return { status: 405, body: { ok: false, error: 'method_not_allowed' } };
+    const forceLive = String(q.fresh || q.live || '') === '1';
     try {
+      // Caminho rápido: 1 leitura do cache pré-calculado (cron 30 min).
+      if (!forceLive) {
+        const cached = await readCachedSnapshot(principal.id);
+        if (cached) {
+          return { status: 200, body: { ...cached, via: 'cache', schemaReady: true } };
+        }
+      }
+
       const ready = await Promise.race([
         isGestaoInvestimentoSchemaReady(),
         new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 6_000)),
@@ -215,69 +263,21 @@ export async function handleGestaoInvestimentoOp(
         };
       }
 
-      const sb = createSupabaseAdminClient();
-      if (!sb) return { status: 503, body: { ok: false, error: 'Supabase admin indisponível' } };
-
-      const [{ data: profile, error: pErr }, { data: positions, error: posErr }, { data: watchlist }, { data: limits }, { data: sources }] =
-        await Promise.all([
-          sb.from('investor_profiles').select('*').eq('owner_user_id', principal.id).maybeSingle(),
-          sb.from('investment_positions').select('*').eq('owner_user_id', principal.id).eq('is_active', true).order('created_at', { ascending: false }),
-          sb.from('investment_watchlists').select('*').eq('owner_user_id', principal.id).order('priority', { ascending: true }),
-          sb.from('investment_risk_limits').select('*').eq('owner_user_id', principal.id).maybeSingle(),
-          sb.from('investment_data_sources').select('code, name, url, reliability, is_active, last_collected_at').eq('is_active', true),
-        ]);
-
-      if (pErr && isMissingTableError(pErr)) {
-        return {
-          status: 503,
-          body: {
-            ok: false,
-            error: 'schema_missing',
-            message: 'Migration da Gestão Investimento ainda não aplicada.',
-          },
-        };
+      const snap = await buildDashboardSnapshot(principal.id);
+      if (!snap.ok) {
+        if (snap.schema_missing) {
+          return {
+            status: 503,
+            body: { ok: false, error: 'schema_missing', message: 'Migration da Gestão Investimento ainda não aplicada.' },
+          };
+        }
+        return { status: 500, body: { ok: false, error: snap.error } };
       }
-      if (pErr) return { status: 500, body: { ok: false, error: pErr.message } };
-      if (posErr && !isMissingTableError(posErr)) return { status: 500, body: { ok: false, error: posErr.message } };
 
-      const draft = profile
-        ? ({ ...createDraftInvestorProfile(), ...profile } as InvestorProfile)
-        : createDraftInvestorProfile();
-      const completeness = evaluateProfileCompleteness(profile ? (profile as InvestorProfile) : null);
-      const targetBand = describeMonthlyTargetBand(
-        Number(draft.monthly_target_pct_min ?? 1.5),
-        Number(draft.monthly_target_pct_max ?? 2.0),
-      );
-      const positionsList = (positions || []) as InvestmentPosition[];
-      const portfolioValue = positionsList.reduce((s, p) => s + Number(p.current_value || 0), 0);
-      const capitalBase = Number(draft.capital_available || portfolioValue || 100_000);
-      const provision30d = buildProvision30dEstimate(capitalBase, targetBand.monthlyMinPct, targetBand.monthlyMaxPct);
+      // Grava cache para as próximas aberturas / cron (não bloqueia resposta se falhar).
+      void writeCachedSnapshot(principal.id, snap).catch(() => {});
 
-      return {
-        status: 200,
-        body: {
-          ok: true,
-          schemaReady: true,
-          via: 'light',
-          profile: profile || null,
-          draftDefaults: createDraftInvestorProfile(),
-          completeness,
-          canRecommend: completeness.complete,
-          positions: positionsList,
-          watchlist: watchlist || [],
-          riskLimits: limits || null,
-          dataSources: sources || [],
-          portfolioValue,
-          capitalBase,
-          targetBand,
-          provision30d,
-          recommendationsBlockedReason: completeness.complete ? null : completeness.message,
-          automation: {
-            canTrade: false,
-            note: 'A IA não está autorizada a comprar, vender, resgatar, transferir ou movimentar dinheiro automaticamente.',
-          },
-        },
-      };
+      return { status: 200, body: { ...snap, via: 'live', fromCache: false } };
     } catch (e: any) {
       if (isMissingTableError(e)) {
         return { status: 503, body: { ok: false, error: 'schema_missing', message: 'Migration ainda não aplicada.' } };
@@ -348,6 +348,7 @@ export async function handleGestaoInvestimentoOp(
         complete: completeness.complete,
         missing: completeness.missing,
       });
+      void refreshOwnerCache(principal.id).catch(() => {});
       return { status: 200, body: { ok: true, profile: saved, completeness } };
     } catch (e: any) {
       if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: 'schema_missing', message: 'Migration ainda não aplicada.' } };
@@ -404,6 +405,7 @@ export async function handleGestaoInvestimentoOp(
           current_value: row.current_value,
           broker: row.broker,
         });
+        void refreshOwnerCache(principal.id).catch(() => {});
         return { status: 201, body: { ok: true, position: data } };
       } catch (e: any) {
         if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: 'schema_missing' } };
@@ -421,6 +423,7 @@ export async function handleGestaoInvestimentoOp(
           .eq('owner_user_id', principal.id);
         if (error) throw error;
         await writeAudit(principal.id, principal, 'position_deactivate', 'investment_positions', id, 'Posição desativada');
+        void refreshOwnerCache(principal.id).catch(() => {});
         return { status: 200, body: { ok: true } };
       } catch (e: any) {
         if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: 'schema_missing' } };
@@ -455,6 +458,7 @@ export async function handleGestaoInvestimentoOp(
         const { data, error } = await sb.from('investment_watchlists').insert(row).select('*').single();
         if (error) throw error;
         await writeAudit(principal.id, principal, 'watchlist_create', 'investment_watchlists', data.id, `Watchlist: ${instrument_name}`);
+        void refreshOwnerCache(principal.id).catch(() => {});
         return { status: 201, body: { ok: true, item: data } };
       } catch (e: any) {
         if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: 'schema_missing' } };
@@ -468,6 +472,7 @@ export async function handleGestaoInvestimentoOp(
         const { error } = await sb.from('investment_watchlists').delete().eq('id', id).eq('owner_user_id', principal.id);
         if (error) throw error;
         await writeAudit(principal.id, principal, 'watchlist_delete', 'investment_watchlists', id, 'Item removido da watchlist');
+        void refreshOwnerCache(principal.id).catch(() => {});
         return { status: 200, body: { ok: true } };
       } catch (e: any) {
         if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: 'schema_missing' } };
@@ -536,6 +541,6 @@ export async function handleGestaoInvestimentoOp(
 
   return {
     status: 400,
-    body: { ok: false, error: 'Informe op=health|summary|ensure-schema|profile|positions|watchlist|audit|risk-limits' },
+    body: { ok: false, error: 'Informe op=health|summary|ensure-schema|refresh-cache|profile|positions|watchlist|audit|risk-limits' },
   };
 }

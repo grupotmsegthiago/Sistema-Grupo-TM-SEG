@@ -128,5 +128,25 @@ describe('gestao investimento — fase 2 fundação', () => {
       'cron ensure-schema deve existir',
     );
   });
+
+  it('cache automático 30 min + UI sem botão Atualizar obrigatório', async () => {
+    const cache = await readFile('lib/investimentos/dashboardCache.ts', 'utf8');
+    const api = await readFile('lib/investimentos/gestaoInvestimentoApi.ts', 'utf8');
+    const ui = await readFile('components/investimentos/GestaoInvestimento.tsx', 'utf8');
+    const vercel = await readFile('vercel.json', 'utf8');
+    assert.match(cache, /GESTAO_CACHE_TTL_MS\s*=\s*30\s*\*\s*60\s*\*\s*1000/);
+    assert.match(cache, /system_settings/);
+    assert.match(cache, /buildBriefing|allocationByType/);
+    assert.match(api, /refresh-cache/);
+    assert.match(api, /readCachedSnapshot/);
+    assert.match(vercel, /gestao-investimento-api\?op=refresh-cache/);
+    assert.match(vercel, /\*\/30 \* \* \* \*/);
+    assert.match(ui, /tmseg_gestao_investimento_summary_v1/);
+    assert.match(ui, /AUTO_REFRESH_MS/);
+    assert.match(ui, /gestao-investimento-cache-status/);
+    assert.doesNotMatch(ui, /data-testid="gestao-investimento-refresh"/);
+    assert.match(ui, /from 'react'/);
+    assert.match(ui, /useState/);
+  });
 });
 

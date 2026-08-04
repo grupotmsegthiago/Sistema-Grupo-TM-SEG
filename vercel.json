@@ -367,6 +367,10 @@
       "destination": "/api/gestao-investimento-api?op=ensure-schema"
     },
     {
+      "source": "/api/gestao-investimento/refresh-cache",
+      "destination": "/api/gestao-investimento-api?op=refresh-cache"
+    },
+    {
       "source": "/api/gestao-investimento/profile",
       "destination": "/api/gestao-investimento-api?op=profile"
     },
@@ -594,7 +598,11 @@
     },
     {
       "path": "/api/gestao-investimento/ensure-schema",
-      "schedule": "*/10 * * * *"
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/gestao-investimento/refresh-cache",
+      "schedule": "*/30 * * * *"
     }
   ],
   "headers": [

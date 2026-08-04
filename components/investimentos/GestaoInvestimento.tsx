@@ -1,12 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, Briefcase, Loader2, Plus, RefreshCw, Shield, Trash2, TrendingUp, Wallet,
+  AlertTriangle, Briefcase, Loader2, Plus, Shield, Trash2, TrendingUp, Wallet,
 } from 'lucide-react';
 import { authFetch } from '../../lib/authFetch';
 import {
   PROFILE_INCOMPLETE_MESSAGE,
   TARGET_RETURN_DISCLAIMER,
   createDraftInvestorProfile,
+  type DashboardBriefing,
   type InvestorProfile,
   type InvestmentPosition,
   type InvestmentWatchlistItem,
@@ -20,6 +21,11 @@ type SummaryResponse = {
   schemaReady?: boolean;
   error?: string;
   message?: string;
+  fromCache?: boolean;
+  via?: string;
+  refreshedAt?: string;
+  nextRefreshAt?: string;
+  cacheAgeSec?: number;
   profile: InvestorProfile | null;
   draftDefaults?: InvestorProfile;
   completeness: ProfileCompleteness;
@@ -32,10 +38,41 @@ type SummaryResponse = {
   provision30d: Provision30dEstimate;
   recommendationsBlockedReason: string | null;
   automation: { canTrade: boolean; note: string };
+  briefing?: DashboardBriefing;
 };
+
+const LOCAL_CACHE_KEY = 'tmseg_gestao_investimento_summary_v1';
+const AUTO_REFRESH_MS = 30 * 60 * 1000;
 
 const fmtBRL = (v: number) =>
   (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const fmtWhen = (iso?: string) => {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  } catch {
+    return iso;
+  }
+};
+
+function readLocalSummary(): SummaryResponse | null {
+  try {
+    const raw = localStorage.getItem(LOCAL_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.ok) return null;
+    return parsed as SummaryResponse;
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalSummary(data: SummaryResponse) {
+  try {
+    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(data));
+  } catch { /* quota */ }
+}
 
 const INSTRUMENT_TYPES = [
   'tesouro', 'cdb', 'lci_lca', 'debenture', 'fundo_rf', 'fundo_mm', 'fundo_acoes',
@@ -43,11 +80,15 @@ const INSTRUMENT_TYPES = [
 ];
 
 const GestaoInvestimento: React.FC = () => {
-  const [loading, setLoading] = useState(true);
+  const localBoot = typeof window !== 'undefined' ? readLocalSummary() : null;
+  const [loading, setLoading] = useState(!localBoot);
+  const [syncing, setSyncing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [schemaMissing, setSchemaMissing] = useState(false);
-  const [summary, setSummary] = useState<SummaryResponse | null>(null);
+  const [summary, setSummary] = useState<SummaryResponse | null>(localBoot);
+  const hasSummaryRef = useRef(Boolean(localBoot));
+  const loadRef = useRef<(opts?: { silent?: boolean; fresh?: boolean }) => Promise<void>>(async () => {});
   const [profileForm, setProfileForm] = useState<InvestorProfile>(() => createDraftInvestorProfile());
   const [tab, setTab] = useState<'resumo' | 'perfil' | 'carteira' | 'watchlist' | 'auditoria'>('resumo');
   const [posForm, setPosForm] = useState({
@@ -70,38 +111,52 @@ const GestaoInvestimento: React.FC = () => {
   });
   const [audit, setAudit] = useState<any[]>([]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const applySummary = useCallback((json: SummaryResponse) => {
+    setSchemaMissing(false);
+    setSummary(json);
+    hasSummaryRef.current = true;
+    setProfileForm(createDraftInvestorProfile({ ...(json.draftDefaults || {}), ...(json.profile || {}) }));
+    writeLocalSummary(json);
+  }, []);
+
+  const load = useCallback(async (opts?: { silent?: boolean; fresh?: boolean }) => {
+    const silent = Boolean(opts?.silent);
+    if (silent || hasSummaryRef.current) setSyncing(true);
+    else setLoading(true);
     setError(null);
     const ctrl = new AbortController();
-    const timer = window.setTimeout(() => ctrl.abort(), 20_000);
+    const timer = window.setTimeout(() => ctrl.abort(), 15_000);
     try {
-      const res = await authFetch('/api/gestao-investimento/summary', { signal: ctrl.signal });
+      const qs = opts?.fresh ? '?fresh=1' : '';
+      const res = await authFetch(`/api/gestao-investimento/summary${qs}`, { signal: ctrl.signal });
       const json = await res.json();
       if (res.status === 503 && (json.error === 'schema_missing' || json.message)) {
         setSchemaMissing(true);
-        setSummary(null);
+        if (!hasSummaryRef.current) setSummary(null);
         setError(json.message || 'Migration ainda não aplicada no Supabase.');
         return;
       }
       if (!res.ok || !json.ok) {
         throw new Error(json.error || json.message || 'Falha ao carregar');
       }
-      setSchemaMissing(false);
-      setSummary(json);
-      setProfileForm(createDraftInvestorProfile({ ...(json.draftDefaults || {}), ...(json.profile || {}) }));
+      applySummary(json);
     } catch (e: any) {
       if (e?.name === 'AbortError') {
-        setError('Tempo esgotado ao carregar. Tente de novo ou aplique o schema no Supabase.');
-        setSchemaMissing(true);
-      } else {
+        if (!hasSummaryRef.current) {
+          setError('Tempo esgotado ao carregar. O schema pode estar pendente no Supabase.');
+          setSchemaMissing(true);
+        }
+      } else if (!hasSummaryRef.current) {
         setError(e?.message || 'Falha ao carregar Gestão Investimento');
       }
     } finally {
       window.clearTimeout(timer);
       setLoading(false);
+      setSyncing(false);
     }
-  }, []);
+  }, [applySummary]);
+
+  loadRef.current = load;
 
   const loadAudit = useCallback(async () => {
     try {
@@ -114,8 +169,13 @@ const GestaoInvestimento: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    // Abre na hora com cache local; sincroniza em silêncio com o servidor.
+    void loadRef.current({ silent: Boolean(localBoot) });
+    const id = window.setInterval(() => {
+      void loadRef.current({ silent: true });
+    }, AUTO_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (tab === 'auditoria') void loadAudit();
@@ -131,7 +191,7 @@ const GestaoInvestimento: React.FC = () => {
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || json.message || 'Falha ao salvar perfil');
-      await load();
+      await load({ silent: true, fresh: true });
       setTab('resumo');
     } catch (e: any) {
       setError(e?.message || 'Falha ao salvar perfil');
@@ -156,7 +216,7 @@ const GestaoInvestimento: React.FC = () => {
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || 'Falha ao incluir posição');
       setPosForm((p) => ({ ...p, instrument_name: '', instrument_code: '', avg_price: '', current_value: '' }));
-      await load();
+      await load({ silent: true, fresh: true });
     } catch (e: any) {
       setError(e?.message || 'Falha ao incluir posição');
     } finally {
@@ -171,7 +231,7 @@ const GestaoInvestimento: React.FC = () => {
       const res = await authFetch(`/api/gestao-investimento/positions/${id}`, { method: 'DELETE' });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || 'Falha');
-      await load();
+      await load({ silent: true, fresh: true });
     } catch (e: any) {
       setError(e?.message || 'Falha ao remover');
     } finally {
@@ -189,7 +249,7 @@ const GestaoInvestimento: React.FC = () => {
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || 'Falha');
       setWatchForm({ instrument_name: '', instrument_code: '', instrument_type: 'tesouro', notes: '', status: 'observar' });
-      await load();
+      await load({ silent: true, fresh: true });
     } catch (e: any) {
       setError(e?.message || 'Falha na watchlist');
     } finally {
@@ -201,7 +261,7 @@ const GestaoInvestimento: React.FC = () => {
     setSaving(true);
     try {
       await authFetch(`/api/gestao-investimento/watchlist/${id}`, { method: 'DELETE' });
-      await load();
+      await load({ silent: true, fresh: true });
     } finally {
       setSaving(false);
     }
@@ -211,7 +271,7 @@ const GestaoInvestimento: React.FC = () => {
     setProfileForm((p) => ({ ...p, [key]: value }));
   };
 
-  if (loading) {
+  if (loading && !summary) {
     return (
       <div className="flex items-center gap-3 p-8 text-gray-500" data-testid="gestao-investimento-loading">
         <Loader2 className="animate-spin text-red-700" /> Carregando Gestão Investimento…
@@ -228,17 +288,14 @@ const GestaoInvestimento: React.FC = () => {
             Gestão Investimento
           </h1>
           <p className="text-sm text-gray-500 mt-1 ml-12">
-            Gestor Financeiro Sênior · Fase 2 (fundação) · XP · sem execução automática
+            Painel automático · pesquisa off a cada 30 min · XP · sem ordens automáticas
+          </p>
+          <p className="text-[11px] text-gray-400 mt-1 ml-12" data-testid="gestao-investimento-cache-status">
+            {syncing ? 'Sincronizando…' : summary?.refreshedAt
+              ? `Atualizado ${fmtWhen(summary.refreshedAt)}${summary.fromCache || summary.via === 'cache' ? ' · cache' : ''}${summary.nextRefreshAt ? ` · próximo ciclo ${fmtWhen(summary.nextRefreshAt)}` : ''}`
+              : 'Aguardando primeiro ciclo automático'}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="inline-flex items-center gap-2 bg-red-700 hover:bg-red-800 text-white text-sm font-bold px-4 py-2 rounded-xl"
-          data-testid="gestao-investimento-refresh"
-        >
-          <RefreshCw size={14} /> Atualizar
-        </button>
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-[11px] text-amber-900 font-medium" data-testid="gestao-investimento-disclaimer">
@@ -263,7 +320,7 @@ const GestaoInvestimento: React.FC = () => {
                     const res = await authFetch('/api/gestao-investimento/ensure-schema', { method: 'POST', body: '{}' });
                     const json = await res.json();
                     if (!res.ok || !json.ok) throw new Error(json.message || json.error || 'Falha ao aplicar schema');
-                    await load();
+                    await load({ silent: false, fresh: true });
                   } catch (e: any) {
                     setError(e?.message || 'Falha ao aplicar schema');
                   } finally {
@@ -344,22 +401,58 @@ const GestaoInvestimento: React.FC = () => {
 
       {tab === 'resumo' && summary && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card title="Estado do módulo">
+          <Card title="Briefing automático" subtitle="Pré-calculado a cada 30 min — sem pesar o banco na abertura">
             <ul className="text-xs text-gray-700 space-y-2">
               <li><b>Recomendações:</b> {summary.canRecommend ? 'Perfil completo — motor (Fase 3) ainda não ativo' : 'Bloqueadas'}</li>
               <li><b>Corretora padrão:</b> {profileForm.broker_default || 'XP'}</li>
-              <li><b>Posições ativas:</b> {summary.positions.length}</li>
-              <li><b>Watchlist:</b> {summary.watchlist.length}</li>
+              <li><b>Posições ativas:</b> {summary.briefing?.positionsCount ?? summary.positions.length}</li>
+              <li><b>Watchlist:</b> {summary.briefing?.watchlistCount ?? summary.watchlist.length}</li>
               <li><b>Automação de ordens:</b> desligada</li>
             </ul>
+            {summary.briefing?.topPositions && summary.briefing.topPositions.length > 0 && (
+              <div className="mt-3">
+                <p className="text-[10px] font-black uppercase text-gray-500 mb-1">Maiores posições</p>
+                <ul className="text-xs text-gray-700 space-y-1">
+                  {summary.briefing.topPositions.map((p) => (
+                    <li key={`${p.name}-${p.type}`} className="flex justify-between gap-2">
+                      <span>{p.name} <span className="text-gray-400">· {p.type}</span></span>
+                      <span className="font-bold">{fmtBRL(p.value)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <p className="text-[10px] text-gray-500 mt-3">{summary.automation.note}</p>
           </Card>
-          <Card title="Próximas fases">
-            <ol className="text-xs text-gray-700 space-y-1 list-decimal pl-4">
-              <li>Motor quantitativo e ranking das 5 oportunidades</li>
-              <li>Monitoramento contínuo + alertas por e-mail</li>
-              <li>Comparador X→Y e diário do gestor completo</li>
-            </ol>
+          <Card title="Alocação · lacunas · próximos passos">
+            {summary.briefing?.allocationByType && summary.briefing.allocationByType.length > 0 ? (
+              <ul className="text-xs text-gray-700 space-y-1 mb-3">
+                {summary.briefing.allocationByType.slice(0, 6).map((a) => (
+                  <li key={a.type} className="flex justify-between gap-2">
+                    <span className="uppercase font-bold text-gray-500">{a.type}</span>
+                    <span>{a.pct.toFixed(1)}% · {fmtBRL(a.value)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-gray-500 mb-3">Sem alocação ainda — cadastre posições na carteira XP.</p>
+            )}
+            {summary.briefing?.gaps && summary.briefing.gaps.length > 0 && (
+              <div className="mb-3">
+                <p className="text-[10px] font-black uppercase text-amber-700 mb-1">Lacunas</p>
+                <ul className="text-xs text-amber-900 space-y-1 list-disc pl-4">
+                  {summary.briefing.gaps.map((g) => <li key={g}>{g}</li>)}
+                </ul>
+              </div>
+            )}
+            {summary.briefing?.nextActions && summary.briefing.nextActions.length > 0 && (
+              <div>
+                <p className="text-[10px] font-black uppercase text-red-700 mb-1">Próximos passos</p>
+                <ol className="text-xs text-gray-700 space-y-1 list-decimal pl-4">
+                  {summary.briefing.nextActions.map((a) => <li key={a}>{a}</li>)}
+                </ol>
+              </div>
+            )}
           </Card>
         </div>
       )}

@@ -296,50 +296,6 @@ function createDraftInvestorProfile(partial) {
   };
 }
 
-// lib/investimentos/targetReturn.ts
-function monthlyPctToAnnualCompoundPct(monthlyPct) {
-  const r = monthlyPct / 100;
-  return (Math.pow(1 + r, 12) - 1) * 100;
-}
-function describeMonthlyTargetBand(monthlyMinPct = 1.5, monthlyMaxPct = 2) {
-  const min = Number(monthlyMinPct);
-  const max = Number(monthlyMaxPct);
-  return {
-    monthlyMinPct: min,
-    monthlyMaxPct: max,
-    annualMinPct: round4(monthlyPctToAnnualCompoundPct(min)),
-    annualMaxPct: round4(monthlyPctToAnnualCompoundPct(max)),
-    disclaimer: TARGET_RETURN_DISCLAIMER
-  };
-}
-function buildProvision30dEstimate(capitalBase, monthlyMinPct = 1.5, monthlyMaxPct = 2) {
-  const capital = Math.max(0, Number(capitalBase) || 0);
-  const min = Number(monthlyMinPct);
-  const max = Number(monthlyMaxPct);
-  const mid = (min + max) / 2;
-  const pessimisticPct = round4(min * 0.3);
-  const basePct = round4(mid);
-  const optimisticPct = round4(max);
-  return {
-    capitalBase: capital,
-    days: 30,
-    pessimisticBrl: round2(capital * (pessimisticPct / 100)),
-    baseBrl: round2(capital * (basePct / 100)),
-    optimisticBrl: round2(capital * (optimisticPct / 100)),
-    pessimisticPct,
-    basePct,
-    optimisticPct,
-    kind: "cenario_objetivo",
-    disclaimer: "Provis\xE3o de 30 dias em cen\xE1rios-objetivo com base na meta cadastrada. N\xE3o constitui garantia, promessa nem proje\xE7\xE3o de mercado. Rentabilidade pode ser zero ou negativa."
-  };
-}
-function round2(n) {
-  return Math.round(n * 100) / 100;
-}
-function round4(n) {
-  return Math.round(n * 1e4) / 1e4;
-}
-
 // lib/investimentos/fundacaoSql.ts
 var GESTAO_INVESTIMENTO_FUNDACAO_SQL = `-- ============================================================================
 -- Gest\xE3o Investimento \u2014 Fase 2 (funda\xE7\xE3o)
@@ -627,6 +583,272 @@ async function runGestaoInvestimentoMigrations() {
   return { ok: true, message: "Schema Gest\xE3o Investimento OK", applied: true };
 }
 
+// lib/investimentos/targetReturn.ts
+function monthlyPctToAnnualCompoundPct(monthlyPct) {
+  const r = monthlyPct / 100;
+  return (Math.pow(1 + r, 12) - 1) * 100;
+}
+function describeMonthlyTargetBand(monthlyMinPct = 1.5, monthlyMaxPct = 2) {
+  const min = Number(monthlyMinPct);
+  const max = Number(monthlyMaxPct);
+  return {
+    monthlyMinPct: min,
+    monthlyMaxPct: max,
+    annualMinPct: round4(monthlyPctToAnnualCompoundPct(min)),
+    annualMaxPct: round4(monthlyPctToAnnualCompoundPct(max)),
+    disclaimer: TARGET_RETURN_DISCLAIMER
+  };
+}
+function buildProvision30dEstimate(capitalBase, monthlyMinPct = 1.5, monthlyMaxPct = 2) {
+  const capital = Math.max(0, Number(capitalBase) || 0);
+  const min = Number(monthlyMinPct);
+  const max = Number(monthlyMaxPct);
+  const mid = (min + max) / 2;
+  const pessimisticPct = round4(min * 0.3);
+  const basePct = round4(mid);
+  const optimisticPct = round4(max);
+  return {
+    capitalBase: capital,
+    days: 30,
+    pessimisticBrl: round2(capital * (pessimisticPct / 100)),
+    baseBrl: round2(capital * (basePct / 100)),
+    optimisticBrl: round2(capital * (optimisticPct / 100)),
+    pessimisticPct,
+    basePct,
+    optimisticPct,
+    kind: "cenario_objetivo",
+    disclaimer: "Provis\xE3o de 30 dias em cen\xE1rios-objetivo com base na meta cadastrada. N\xE3o constitui garantia, promessa nem proje\xE7\xE3o de mercado. Rentabilidade pode ser zero ou negativa."
+  };
+}
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+function round4(n) {
+  return Math.round(n * 1e4) / 1e4;
+}
+
+// lib/investimentos/dashboardCache.ts
+var GESTAO_CACHE_TTL_MS = 30 * 60 * 1e3;
+var CACHE_KEY_PREFIX = "gestao_investimento_cache_";
+var OWNERS_KEY = "gestao_investimento_cache_owners";
+function cacheKey(ownerUserId) {
+  return `${CACHE_KEY_PREFIX}${ownerUserId}`;
+}
+function isMissingTableError(err) {
+  const msg = String(err?.message || err || "");
+  const code = String(err?.code || "");
+  return code === "42P01" || /does not exist|schema cache|Could not find the table/i.test(msg);
+}
+function buildBriefing(profile, positions, watchlist, completeness, portfolioValue) {
+  const byType = /* @__PURE__ */ new Map();
+  for (const p of positions) {
+    const t = String(p.instrument_type || "outros");
+    byType.set(t, (byType.get(t) || 0) + Number(p.current_value || 0));
+  }
+  const allocationByType = [...byType.entries()].map(([type, value]) => ({
+    type,
+    value,
+    pct: portfolioValue > 0 ? value / portfolioValue * 100 : 0
+  })).sort((a, b) => b.value - a.value);
+  const topPositions = [...positions].sort((a, b) => Number(b.current_value || 0) - Number(a.current_value || 0)).slice(0, 5).map((p) => ({
+    name: String(p.instrument_name || ""),
+    type: String(p.instrument_type || "outros"),
+    value: Number(p.current_value || 0),
+    broker: String(p.broker || "XP")
+  }));
+  const gaps = [];
+  if (!completeness.complete) {
+    gaps.push(...completeness.missing.slice(0, 6));
+  }
+  if (positions.length === 0) {
+    gaps.push("Nenhuma posi\xE7\xE3o XP cadastrada na carteira");
+  }
+  if (watchlist.length === 0) {
+    gaps.push("Watchlist vazia \u2014 sem candidatos em observa\xE7\xE3o");
+  }
+  const maxPct = allocationByType[0]?.pct ?? 0;
+  if (maxPct >= 60) {
+    gaps.push(`Concentra\xE7\xE3o alta em ${allocationByType[0].type} (${maxPct.toFixed(0)}%)`);
+  }
+  const nextActions = [];
+  if (!completeness.complete) {
+    nextActions.push("Completar perfil do investidor (bloqueia recomenda\xE7\xF5es)");
+  }
+  if (positions.length === 0) {
+    nextActions.push("Registrar posi\xE7\xF5es manuais da XP (valor atual)");
+  } else {
+    nextActions.push("Revisar valores atuais da carteira se houve aporte/resgate");
+  }
+  if (watchlist.length < 3) {
+    nextActions.push("Incluir 3+ ativos na watchlist para o motor da Fase 3");
+  }
+  if (profile?.emergency_reserve != null && Number(profile.emergency_reserve) <= 0) {
+    nextActions.push("Definir reserva de emerg\xEAncia > 0");
+  }
+  nextActions.push("Pesquisa e rec\xE1lculo autom\xE1ticos a cada 30 min (sem clicar em Atualizar)");
+  return {
+    allocationByType,
+    topPositions,
+    gaps,
+    nextActions: nextActions.slice(0, 6),
+    positionsCount: positions.length,
+    watchlistCount: watchlist.length,
+    profileComplete: completeness.complete
+  };
+}
+async function buildDashboardSnapshot(ownerUserId) {
+  const sb = createSupabaseAdminClient();
+  if (!sb) return { ok: false, error: "Supabase admin indispon\xEDvel" };
+  const [{ data: profile, error: pErr }, { data: positions, error: posErr }, { data: watchlist }, { data: limits }, { data: sources }] = await Promise.all([
+    sb.from("investor_profiles").select("*").eq("owner_user_id", ownerUserId).maybeSingle(),
+    sb.from("investment_positions").select("*").eq("owner_user_id", ownerUserId).eq("is_active", true).order("created_at", { ascending: false }),
+    sb.from("investment_watchlists").select("*").eq("owner_user_id", ownerUserId).order("priority", { ascending: true }),
+    sb.from("investment_risk_limits").select("*").eq("owner_user_id", ownerUserId).maybeSingle(),
+    sb.from("investment_data_sources").select("code, name, url, reliability, is_active, last_collected_at").eq("is_active", true)
+  ]);
+  if (pErr && isMissingTableError(pErr)) {
+    return { ok: false, error: "schema_missing", schema_missing: true };
+  }
+  if (pErr) return { ok: false, error: pErr.message };
+  if (posErr && !isMissingTableError(posErr)) return { ok: false, error: posErr.message };
+  const draft = profile ? { ...createDraftInvestorProfile(), ...profile } : createDraftInvestorProfile();
+  const completeness = evaluateProfileCompleteness(profile ? profile : null);
+  const targetBand = describeMonthlyTargetBand(
+    Number(draft.monthly_target_pct_min ?? 1.5),
+    Number(draft.monthly_target_pct_max ?? 2)
+  );
+  const positionsList = positions || [];
+  const portfolioValue = positionsList.reduce((s, p) => s + Number(p.current_value || 0), 0);
+  const capitalBase = Number(draft.capital_available || portfolioValue || 1e5);
+  const provision30d = buildProvision30dEstimate(capitalBase, targetBand.monthlyMinPct, targetBand.monthlyMaxPct);
+  const briefing = buildBriefing(
+    profile ? profile : null,
+    positionsList,
+    watchlist || [],
+    completeness,
+    portfolioValue
+  );
+  const refreshedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const nextRefreshAt = new Date(Date.now() + GESTAO_CACHE_TTL_MS).toISOString();
+  return {
+    ok: true,
+    schemaReady: true,
+    fromCache: false,
+    refreshedAt,
+    nextRefreshAt,
+    cacheAgeSec: 0,
+    profile: profile || null,
+    draftDefaults: createDraftInvestorProfile(),
+    completeness,
+    canRecommend: completeness.complete,
+    positions: positionsList,
+    watchlist: watchlist || [],
+    riskLimits: limits || null,
+    dataSources: sources || [],
+    portfolioValue,
+    capitalBase,
+    targetBand,
+    provision30d,
+    recommendationsBlockedReason: completeness.complete ? null : completeness.message,
+    automation: {
+      canTrade: false,
+      note: "A IA n\xE3o est\xE1 autorizada a comprar, vender, resgatar, transferir ou movimentar dinheiro automaticamente."
+    },
+    briefing
+  };
+}
+async function readCachedSnapshot(ownerUserId) {
+  const sb = createSupabaseAdminClient();
+  if (!sb) return null;
+  try {
+    const { data, error } = await sb.from("system_settings").select("value").eq("key", cacheKey(ownerUserId)).maybeSingle();
+    if (error || !data?.value) return null;
+    const raw = typeof data.value === "string" ? JSON.parse(data.value) : data.value;
+    if (!raw || raw.ok !== true || !raw.refreshedAt) return null;
+    const age = Date.now() - new Date(raw.refreshedAt).getTime();
+    if (!Number.isFinite(age) || age < 0) return null;
+    if (age > GESTAO_CACHE_TTL_MS + 5 * 60 * 1e3) return null;
+    return {
+      ...raw,
+      fromCache: true,
+      cacheAgeSec: Math.round(age / 1e3),
+      nextRefreshAt: raw.nextRefreshAt || new Date(new Date(raw.refreshedAt).getTime() + GESTAO_CACHE_TTL_MS).toISOString()
+    };
+  } catch {
+    return null;
+  }
+}
+async function writeCachedSnapshot(ownerUserId, snapshot) {
+  const sb = createSupabaseAdminClient();
+  if (!sb) return;
+  const toStore = {
+    ...snapshot,
+    fromCache: true,
+    ownerUserId
+  };
+  await sb.from("system_settings").upsert(
+    [{ key: cacheKey(ownerUserId), value: toStore, updated_at: (/* @__PURE__ */ new Date()).toISOString() }],
+    { onConflict: "key" }
+  );
+  try {
+    const { data } = await sb.from("system_settings").select("value").eq("key", OWNERS_KEY).maybeSingle();
+    let owners = [];
+    if (data?.value) {
+      const raw = typeof data.value === "string" ? JSON.parse(data.value) : data.value;
+      owners = Array.isArray(raw?.owners) ? raw.owners.map(String) : [];
+    }
+    if (!owners.includes(ownerUserId)) {
+      owners.push(ownerUserId);
+      await sb.from("system_settings").upsert(
+        [{ key: OWNERS_KEY, value: { owners }, updated_at: (/* @__PURE__ */ new Date()).toISOString() }],
+        { onConflict: "key" }
+      );
+    }
+  } catch {
+  }
+}
+async function listCacheOwnerIds() {
+  const sb = createSupabaseAdminClient();
+  if (!sb) return [];
+  const ids = /* @__PURE__ */ new Set();
+  try {
+    const { data } = await sb.from("system_settings").select("value").eq("key", OWNERS_KEY).maybeSingle();
+    if (data?.value) {
+      const raw = typeof data.value === "string" ? JSON.parse(data.value) : data.value;
+      for (const id of raw?.owners || []) ids.add(String(id));
+    }
+  } catch {
+  }
+  try {
+    const { data } = await sb.from("investor_profiles").select("owner_user_id").limit(50);
+    for (const row of data || []) {
+      if (row?.owner_user_id) ids.add(String(row.owner_user_id));
+    }
+  } catch {
+  }
+  return [...ids];
+}
+async function refreshOwnerCache(ownerUserId) {
+  const snap = await buildDashboardSnapshot(ownerUserId);
+  if (!snap.ok) return { ok: false, error: snap.error };
+  await writeCachedSnapshot(ownerUserId, snap);
+  return { ok: true, refreshedAt: snap.refreshedAt };
+}
+async function refreshAllOwnerCaches() {
+  const owners = await listCacheOwnerIds();
+  if (owners.length === 0) {
+    return { ok: true, refreshed: 0, errors: [] };
+  }
+  const errors = [];
+  let refreshed = 0;
+  for (const id of owners) {
+    const r = await refreshOwnerCache(id);
+    if (r.ok) refreshed++;
+    else if (r.error) errors.push(`${id}: ${r.error}`);
+  }
+  return { ok: errors.length === 0, refreshed, errors };
+}
+
 // lib/investimentos/gestaoInvestimentoApi.ts
 function headerValue2(req, name) {
   const raw = req.headers?.[name] ?? req.headers?.[name.toLowerCase()];
@@ -676,7 +898,7 @@ function assertDiretoria(user) {
   }
   return null;
 }
-function isMissingTableError(err) {
+function isMissingTableError2(err) {
   const msg = String(err?.message || err || "");
   const code = String(err?.code || "");
   return code === "42P01" || /does not exist|schema cache|Could not find the table/i.test(msg);
@@ -768,13 +990,50 @@ async function handleGestaoInvestimentoOp(op, req) {
       return { status: 500, body: { ok: false, error: e?.message || "Falha" } };
     }
   }
+  if (op === "refresh-cache") {
+    if (method !== "GET" && method !== "POST") {
+      return { status: 405, body: { ok: false, error: "method_not_allowed" } };
+    }
+    const cronSecret = String(process.env.CRON_SECRET || "").trim();
+    const auth = headerValue2(req, "authorization");
+    const isCron = Boolean(cronSecret && auth === `Bearer ${cronSecret}`);
+    if (isCron || method === "GET") {
+      if (!isCron) return { status: 401, body: { ok: false, error: "N\xE3o autorizado" } };
+      try {
+        if (!await isGestaoInvestimentoSchemaReady()) {
+          await runGestaoInvestimentoMigrations();
+        }
+        const result = await Promise.race([
+          refreshAllOwnerCaches(),
+          new Promise(
+            (resolve) => setTimeout(() => resolve({ ok: false, refreshed: 0, errors: ["timeout 50s"] }), 5e4)
+          )
+        ]);
+        return { status: result.ok || result.refreshed > 0 ? 200 : 500, body: { ok: true, ...result, via: "cron" } };
+      } catch (e) {
+        return { status: 500, body: { ok: false, error: e?.message || "Falha no refresh-cache" } };
+      }
+    }
+    const user2 = await resolvePrincipal(req);
+    const denied2 = assertDiretoria(user2);
+    if (denied2) return denied2;
+    const r = await refreshOwnerCache(user2.id);
+    return { status: r.ok ? 200 : 500, body: { ok: r.ok, ...r, via: "manual" } };
+  }
   const user = await resolvePrincipal(req);
   const denied = assertDiretoria(user);
   if (denied) return denied;
   const principal = user;
   if (op === "summary") {
     if (method !== "GET") return { status: 405, body: { ok: false, error: "method_not_allowed" } };
+    const forceLive = String(q.fresh || q.live || "") === "1";
     try {
+      if (!forceLive) {
+        const cached = await readCachedSnapshot(principal.id);
+        if (cached) {
+          return { status: 200, body: { ...cached, via: "cache", schemaReady: true } };
+        }
+      }
       const ready = await Promise.race([
         isGestaoInvestimentoSchemaReady(),
         new Promise((resolve) => setTimeout(() => resolve(false), 6e3))
@@ -789,64 +1048,21 @@ async function handleGestaoInvestimentoOp(op, req) {
           }
         };
       }
-      const sb = createSupabaseAdminClient();
-      if (!sb) return { status: 503, body: { ok: false, error: "Supabase admin indispon\xEDvel" } };
-      const [{ data: profile, error: pErr }, { data: positions, error: posErr }, { data: watchlist }, { data: limits }, { data: sources }] = await Promise.all([
-        sb.from("investor_profiles").select("*").eq("owner_user_id", principal.id).maybeSingle(),
-        sb.from("investment_positions").select("*").eq("owner_user_id", principal.id).eq("is_active", true).order("created_at", { ascending: false }),
-        sb.from("investment_watchlists").select("*").eq("owner_user_id", principal.id).order("priority", { ascending: true }),
-        sb.from("investment_risk_limits").select("*").eq("owner_user_id", principal.id).maybeSingle(),
-        sb.from("investment_data_sources").select("code, name, url, reliability, is_active, last_collected_at").eq("is_active", true)
-      ]);
-      if (pErr && isMissingTableError(pErr)) {
-        return {
-          status: 503,
-          body: {
-            ok: false,
-            error: "schema_missing",
-            message: "Migration da Gest\xE3o Investimento ainda n\xE3o aplicada."
-          }
-        };
-      }
-      if (pErr) return { status: 500, body: { ok: false, error: pErr.message } };
-      if (posErr && !isMissingTableError(posErr)) return { status: 500, body: { ok: false, error: posErr.message } };
-      const draft = profile ? { ...createDraftInvestorProfile(), ...profile } : createDraftInvestorProfile();
-      const completeness = evaluateProfileCompleteness(profile ? profile : null);
-      const targetBand = describeMonthlyTargetBand(
-        Number(draft.monthly_target_pct_min ?? 1.5),
-        Number(draft.monthly_target_pct_max ?? 2)
-      );
-      const positionsList = positions || [];
-      const portfolioValue = positionsList.reduce((s, p) => s + Number(p.current_value || 0), 0);
-      const capitalBase = Number(draft.capital_available || portfolioValue || 1e5);
-      const provision30d = buildProvision30dEstimate(capitalBase, targetBand.monthlyMinPct, targetBand.monthlyMaxPct);
-      return {
-        status: 200,
-        body: {
-          ok: true,
-          schemaReady: true,
-          via: "light",
-          profile: profile || null,
-          draftDefaults: createDraftInvestorProfile(),
-          completeness,
-          canRecommend: completeness.complete,
-          positions: positionsList,
-          watchlist: watchlist || [],
-          riskLimits: limits || null,
-          dataSources: sources || [],
-          portfolioValue,
-          capitalBase,
-          targetBand,
-          provision30d,
-          recommendationsBlockedReason: completeness.complete ? null : completeness.message,
-          automation: {
-            canTrade: false,
-            note: "A IA n\xE3o est\xE1 autorizada a comprar, vender, resgatar, transferir ou movimentar dinheiro automaticamente."
-          }
+      const snap = await buildDashboardSnapshot(principal.id);
+      if (!snap.ok) {
+        if (snap.schema_missing) {
+          return {
+            status: 503,
+            body: { ok: false, error: "schema_missing", message: "Migration da Gest\xE3o Investimento ainda n\xE3o aplicada." }
+          };
         }
-      };
+        return { status: 500, body: { ok: false, error: snap.error } };
+      }
+      void writeCachedSnapshot(principal.id, snap).catch(() => {
+      });
+      return { status: 200, body: { ...snap, via: "live", fromCache: false } };
     } catch (e) {
-      if (isMissingTableError(e)) {
+      if (isMissingTableError2(e)) {
         return { status: 503, body: { ok: false, error: "schema_missing", message: "Migration ainda n\xE3o aplicada." } };
       }
       return { status: 500, body: { ok: false, error: e?.message || "Falha" } };
@@ -905,9 +1121,11 @@ async function handleGestaoInvestimentoOp(op, req) {
         complete: completeness.complete,
         missing: completeness.missing
       });
+      void refreshOwnerCache(principal.id).catch(() => {
+      });
       return { status: 200, body: { ok: true, profile: saved, completeness } };
     } catch (e) {
-      if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: "schema_missing", message: "Migration ainda n\xE3o aplicada." } };
+      if (isMissingTableError2(e)) return { status: 503, body: { ok: false, error: "schema_missing", message: "Migration ainda n\xE3o aplicada." } };
       return { status: 500, body: { ok: false, error: e?.message || "Falha" } };
     }
   }
@@ -921,7 +1139,7 @@ async function handleGestaoInvestimentoOp(op, req) {
         if (error) throw error;
         return { status: 200, body: { ok: true, positions: data || [] } };
       } catch (e) {
-        if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
+        if (isMissingTableError2(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
         return { status: 500, body: { ok: false, error: e?.message || "Falha" } };
       }
     }
@@ -953,9 +1171,11 @@ async function handleGestaoInvestimentoOp(op, req) {
           current_value: row.current_value,
           broker: row.broker
         });
+        void refreshOwnerCache(principal.id).catch(() => {
+        });
         return { status: 201, body: { ok: true, position: data } };
       } catch (e) {
-        if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
+        if (isMissingTableError2(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
         return { status: 500, body: { ok: false, error: e?.message || "Falha" } };
       }
     }
@@ -965,9 +1185,11 @@ async function handleGestaoInvestimentoOp(op, req) {
         const { error } = await sb.from("investment_positions").update({ is_active: false, updated_by: principal.name, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id).eq("owner_user_id", principal.id);
         if (error) throw error;
         await writeAudit(principal.id, principal, "position_deactivate", "investment_positions", id, "Posi\xE7\xE3o desativada");
+        void refreshOwnerCache(principal.id).catch(() => {
+        });
         return { status: 200, body: { ok: true } };
       } catch (e) {
-        if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
+        if (isMissingTableError2(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
         return { status: 500, body: { ok: false, error: e?.message || "Falha" } };
       }
     }
@@ -996,9 +1218,11 @@ async function handleGestaoInvestimentoOp(op, req) {
         const { data, error } = await sb.from("investment_watchlists").insert(row).select("*").single();
         if (error) throw error;
         await writeAudit(principal.id, principal, "watchlist_create", "investment_watchlists", data.id, `Watchlist: ${instrument_name}`);
+        void refreshOwnerCache(principal.id).catch(() => {
+        });
         return { status: 201, body: { ok: true, item: data } };
       } catch (e) {
-        if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
+        if (isMissingTableError2(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
         return { status: 500, body: { ok: false, error: e?.message || "Falha" } };
       }
     }
@@ -1008,9 +1232,11 @@ async function handleGestaoInvestimentoOp(op, req) {
         const { error } = await sb.from("investment_watchlists").delete().eq("id", id).eq("owner_user_id", principal.id);
         if (error) throw error;
         await writeAudit(principal.id, principal, "watchlist_delete", "investment_watchlists", id, "Item removido da watchlist");
+        void refreshOwnerCache(principal.id).catch(() => {
+        });
         return { status: 200, body: { ok: true } };
       } catch (e) {
-        if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
+        if (isMissingTableError2(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
         return { status: 500, body: { ok: false, error: e?.message || "Falha" } };
       }
     }
@@ -1026,7 +1252,7 @@ async function handleGestaoInvestimentoOp(op, req) {
       if (error) throw error;
       return { status: 200, body: { ok: true, items: data || [] } };
     } catch (e) {
-      if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
+      if (isMissingTableError2(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
       return { status: 500, body: { ok: false, error: e?.message || "Falha" } };
     }
   }
@@ -1057,13 +1283,13 @@ async function handleGestaoInvestimentoOp(op, req) {
       await writeAudit(principal.id, principal, "risk_limits_upsert", "investment_risk_limits", data.id, "Limites de risco atualizados");
       return { status: 200, body: { ok: true, riskLimits: data } };
     } catch (e) {
-      if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
+      if (isMissingTableError2(e)) return { status: 503, body: { ok: false, error: "schema_missing" } };
       return { status: 500, body: { ok: false, error: e?.message || "Falha" } };
     }
   }
   return {
     status: 400,
-    body: { ok: false, error: "Informe op=health|summary|ensure-schema|profile|positions|watchlist|audit|risk-limits" }
+    body: { ok: false, error: "Informe op=health|summary|ensure-schema|refresh-cache|profile|positions|watchlist|audit|risk-limits" }
   };
 }
 // Annotate the CommonJS export names for ESM import in node:
