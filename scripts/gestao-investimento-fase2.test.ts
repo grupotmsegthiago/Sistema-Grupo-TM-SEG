@@ -129,6 +129,18 @@ describe('gestao investimento — fase 2 fundação', () => {
     );
   });
 
+  it('split SQL não quebra comentário com ponto-e-vírgula (bug coleta)', async () => {
+    const { splitStatements } = await import('../lib/investimentos/schemaMigrations');
+    const { GESTAO_INVESTIMENTO_FUNDACAO_SQL } = await import('../lib/investimentos/fundacaoSql');
+    const stmts = splitStatements(GESTAO_INVESTIMENTO_FUNDACAO_SQL);
+    assert.ok(stmts.some((s) => /CREATE TABLE IF NOT EXISTS public\.investment_data_sources/i.test(s)));
+    for (const s of stmts) {
+      assert.equal(/^\s*coleta\b/i.test(s), false, `statement inválido iniciando com coleta: ${s.slice(0, 80)}`);
+      assert.equal(/^\s*anon\b/i.test(s), false, `statement inválido iniciando com anon: ${s.slice(0, 80)}`);
+    }
+    assert.ok(!/cadastro; coleta/.test(GESTAO_INVESTIMENTO_FUNDACAO_SQL));
+  });
+
   it('cache automático 30 min + UI sem botão Atualizar obrigatório', async () => {
     const cache = await readFile('lib/investimentos/dashboardCache.ts', 'utf8');
     const api = await readFile('lib/investimentos/gestaoInvestimentoApi.ts', 'utf8');

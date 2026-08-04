@@ -444,7 +444,7 @@ CREATE TABLE IF NOT EXISTS public.investment_risk_limits (
   UNIQUE (owner_user_id)
 );
 
--- Fontes de dados (cadastro; coleta vem nas fases seguintes)
+-- Fontes de dados (cadastro \u2014 coleta vem nas fases seguintes)
 CREATE TABLE IF NOT EXISTS public.investment_data_sources (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code TEXT NOT NULL UNIQUE,
@@ -489,7 +489,7 @@ CREATE TABLE IF NOT EXISTS public.investment_audit_log (
 CREATE INDEX IF NOT EXISTS idx_investment_audit_log_owner_created
   ON public.investment_audit_log (owner_user_id, created_at DESC);
 
--- RLS: m\xF3dulo restrito \u2014 service role (API) bypassa; anon sem acesso amplo.
+-- RLS: m\xF3dulo restrito \u2014 service role (API) bypassa, anon sem acesso amplo.
 ALTER TABLE public.investor_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.investment_portfolios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.investment_positions ENABLE ROW LEVEL SECURITY;
@@ -511,6 +511,9 @@ COMMENT ON TABLE public.investment_positions IS
   'Posi\xE7\xF5es manuais (ex.: XP). Sem execu\xE7\xE3o autom\xE1tica de ordens.';
 COMMENT ON TABLE public.investment_audit_log IS
   'Auditoria de an\xE1lises, altera\xE7\xF5es de perfil/carteira e decis\xF5es humanas.';
+
+-- Recarrega cache do PostgREST (Supabase)
+NOTIFY pgrst, 'reload schema';
 `;
 
 // lib/investimentos/schemaMigrations.ts
@@ -523,10 +526,18 @@ var REQUIRED_TABLES = [
   "investment_data_sources",
   "investment_audit_log"
 ];
+function stripSqlLineComments(sql) {
+  return sql.split("\n").map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("--")) return "";
+    const inSingle = false;
+    const idx = line.indexOf("--");
+    if (idx >= 0 && !inSingle) return line.slice(0, idx);
+    return line;
+  }).join("\n");
+}
 function splitStatements(sql) {
-  return sql.split(";").map(
-    (block) => block.split("\n").filter((line) => !line.trim().startsWith("--")).join("\n").trim()
-  ).filter(Boolean);
+  return stripSqlLineComments(sql).split(";").map((block) => block.replace(/\s+/g, " ").trim()).filter(Boolean);
 }
 async function isGestaoInvestimentoSchemaReady() {
   const client = createSupabaseAdminClient();
@@ -566,12 +577,23 @@ async function runGestaoInvestimentoMigrations() {
       }
     }
   }
+  await new Promise((r) => setTimeout(r, 800));
   for (const table of REQUIRED_TABLES) {
-    const { error } = await client.from(table).select("*").limit(1);
-    if (error) {
+    let lastErr = "";
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const { error } = await client.from(table).select("*").limit(1);
+      if (!error) {
+        lastErr = "";
+        break;
+      }
+      lastErr = error.message;
+      if (!/schema cache|Could not find the table/i.test(error.message)) break;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (lastErr) {
       return {
         ok: false,
-        message: `Tabela ${table} inacess\xEDvel ap\xF3s migration: ${error.message}${errors.length ? ` | ${errors[0]}` : ""}`,
+        message: `Tabela ${table} inacess\xEDvel ap\xF3s migration: ${lastErr}${errors.length ? ` | ${errors[0]}` : ""}`,
         applied: true
       };
     }

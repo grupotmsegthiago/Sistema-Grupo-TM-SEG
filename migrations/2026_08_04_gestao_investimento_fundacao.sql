@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS public.investment_risk_limits (
   UNIQUE (owner_user_id)
 );
 
--- Fontes de dados (cadastro; coleta vem nas fases seguintes)
+-- Fontes de dados (cadastro — coleta vem nas fases seguintes)
 CREATE TABLE IF NOT EXISTS public.investment_data_sources (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code TEXT NOT NULL UNIQUE,
@@ -190,7 +190,7 @@ CREATE TABLE IF NOT EXISTS public.investment_audit_log (
 CREATE INDEX IF NOT EXISTS idx_investment_audit_log_owner_created
   ON public.investment_audit_log (owner_user_id, created_at DESC);
 
--- RLS: módulo restrito — service role (API) bypassa; anon sem acesso amplo.
+-- RLS: módulo restrito — service role (API) bypassa, anon sem acesso amplo.
 ALTER TABLE public.investor_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.investment_portfolios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.investment_positions ENABLE ROW LEVEL SECURITY;
@@ -212,3 +212,6 @@ COMMENT ON TABLE public.investment_positions IS
   'Posições manuais (ex.: XP). Sem execução automática de ordens.';
 COMMENT ON TABLE public.investment_audit_log IS
   'Auditoria de análises, alterações de perfil/carteira e decisões humanas.';
+
+-- Recarrega cache do PostgREST (Supabase)
+NOTIFY pgrst, 'reload schema';

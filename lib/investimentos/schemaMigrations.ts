@@ -16,16 +16,26 @@ const REQUIRED_TABLES = [
   'investment_audit_log',
 ] as const;
 
-function splitStatements(sql: string): string[] {
+/** Remove comentários `--` ANTES de partir em `;` — senão `cadastro; coleta` quebra o SQL. */
+function stripSqlLineComments(sql: string): string {
   return sql
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('--')) return '';
+      const inSingle = false;
+      // Comentário de linha fora de string simples (SQL da fundação não usa -- em literais).
+      const idx = line.indexOf('--');
+      if (idx >= 0 && !inSingle) return line.slice(0, idx);
+      return line;
+    })
+    .join('\n');
+}
+
+export function splitStatements(sql: string): string[] {
+  return stripSqlLineComments(sql)
     .split(';')
-    .map((block) =>
-      block
-        .split('\n')
-        .filter((line) => !line.trim().startsWith('--'))
-        .join('\n')
-        .trim(),
-    )
+    .map((block) => block.replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 }
 
@@ -72,12 +82,25 @@ export async function runGestaoInvestimentoMigrations(): Promise<{ ok: boolean; 
     }
   }
 
+  // Aguarda PostgREST recarregar o schema cache após NOTIFY.
+  await new Promise((r) => setTimeout(r, 800));
+
   for (const table of REQUIRED_TABLES) {
-    const { error } = await client.from(table).select('*').limit(1);
-    if (error) {
+    let lastErr = '';
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const { error } = await client.from(table).select('*').limit(1);
+      if (!error) {
+        lastErr = '';
+        break;
+      }
+      lastErr = error.message;
+      if (!/schema cache|Could not find the table/i.test(error.message)) break;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (lastErr) {
       return {
         ok: false,
-        message: `Tabela ${table} inacessível após migration: ${error.message}${errors.length ? ` | ${errors[0]}` : ''}`,
+        message: `Tabela ${table} inacessível após migration: ${lastErr}${errors.length ? ` | ${errors[0]}` : ''}`,
         applied: true,
       };
     }
