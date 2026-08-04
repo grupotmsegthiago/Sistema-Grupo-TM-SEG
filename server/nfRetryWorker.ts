@@ -10,6 +10,7 @@ import {
   isPlugNotasConfigured,
   getNfsePdfUrl as plugGetPdfUrl,
 } from './plugnotasService';
+import { isNfSchedulePendingMessage, isNonRetryable } from '../lib/nfRetryGuards';
 
 const RETRY_INTERVAL_MS = 15 * 60 * 1000;
 const MAX_RETRIES = 30;
@@ -18,34 +19,6 @@ const MAX_RETRIES = 30;
 const STUCK_HOURS_RETRY = 6;
 const STUCK_HOURS_ALERT = 24;
 const MAX_SYNC_RETRIES = 3;
-
-const NON_RETRYABLE_PATTERNS = [
-  /NFe003/i,
-  /descri[cç][aã]o do servi[cç]o/i,
-  /descri[cç][aã]o municipal/i,
-  /CNPJ inv[aá]lido/i,
-  /endere[cç]o.*incompleto/i,
-  /CEP.*inv[aá]lido/i,
-  /inscri[cç][aã]o municipal/i,
-  /tomador.*n[aã]o.*habilitad/i,
-];
-
-// Erros transitórios conhecidos da Prefeitura/Asaas — vale cancelar+reagendar.
-const RETRYABLE_PREFEITURA_PATTERNS = [
-  /sobrecarregad/i,
-  /tente novamente/i,
-  /servidor.*prefeitura/i,
-  /timeout/i,
-  /tempo limite/i,
-  /indispon[ií]vel/i,
-];
-
-function isNonRetryable(errorMessage: string): boolean {
-  if (!errorMessage) return false;
-  // Se é claramente um erro transitório da prefeitura, NÃO é permanente.
-  if (RETRYABLE_PREFEITURA_PATTERNS.some(rx => rx.test(errorMessage))) return false;
-  return NON_RETRYABLE_PATTERNS.some(rx => rx.test(errorMessage));
-}
 
 // Extrai uma string de erro a partir do payload do Asaas.
 // `errorMessages` pode ser array [{code, description}], string ou ausente.
@@ -661,8 +634,11 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
   }
 
   // 5) Erro permanente (validação) — pausa
+  // Ignora placeholder "NF isolada..." (create-charge): não é erro Asaas e
+  // menciona "Inscrição Municipal" só como observação — senão o worker pausava
+  // sem nunca chamar POST /invoices.
   const errMsg = extractAsaasErrorText(currentInvoice) || inv.nf_last_error || '';
-  if (isNonRetryable(errMsg)) {
+  if (errMsg && !isNfSchedulePendingMessage(errMsg) && isNonRetryable(errMsg)) {
     await markInvoice(inv.id, {
       nf_status: 'ERROR',
       nf_retry_paused: true,

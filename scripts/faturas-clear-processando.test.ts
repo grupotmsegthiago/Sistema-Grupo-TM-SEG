@@ -27,5 +27,6 @@ describe('Controle de Faturas — limpar fila + Processando + espelhos', () => {
     assert.match(worker, /PROCESSING/);
     assert.match(worker, /reopenPausedNfs/);
     assert.match(worker, /runRetryCycle\(opts/);
+    assert.match(worker, /isNfSchedulePendingMessage/);
   });
 });

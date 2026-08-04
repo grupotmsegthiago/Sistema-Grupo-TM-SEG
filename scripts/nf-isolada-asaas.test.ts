@@ -24,4 +24,14 @@ describe('NF isolada do create-charge (sem Abort na Vercel)', () => {
     assert.match(svc, /Inscrição Municipal/);
     assert.match(svc, /POST \/invoices/);
   });
+
+  it('placeholder NF isolada não cita Inscrição Municipal (evita pausa falsa no worker)', () => {
+    const core = fs.readFileSync('lib/asaasCreateChargeCore.ts', 'utf8');
+    assert.match(core, /NF isolada —/);
+    assert.doesNotMatch(core, /nfLastError:[\s\S]{0,200}Inscri[cç][aã]o Municipal/);
+    const worker = fs.readFileSync('server/nfRetryWorker.ts', 'utf8');
+    assert.match(worker, /isNfSchedulePendingMessage/);
+    assert.match(worker, /from '\.\.\/lib\/nfRetryGuards'/);
+  });
 });
+
