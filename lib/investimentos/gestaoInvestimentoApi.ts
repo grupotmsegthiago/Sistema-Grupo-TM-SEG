@@ -162,15 +162,26 @@ export async function handleGestaoInvestimentoOp(
   }
 
   if (op === 'ensure-schema') {
-    if (method !== 'POST') return { status: 405, body: { ok: false, error: 'method_not_allowed' } };
-    const user = await resolvePrincipal(req);
-    const denied = assertDiretoria(user);
-    if (denied) return denied;
+    // POST: UI Diretoria. GET: Vercel Cron (Authorization: Bearer CRON_SECRET).
+    if (method !== 'POST' && method !== 'GET') {
+      return { status: 405, body: { ok: false, error: 'method_not_allowed' } };
+    }
+    const cronSecret = String(process.env.CRON_SECRET || '').trim();
+    const auth = headerValue(req, 'authorization');
+    const isCron = Boolean(cronSecret && auth === `Bearer ${cronSecret}`);
+    if (!isCron) {
+      if (method === 'GET') {
+        return { status: 401, body: { ok: false, error: 'Não autorizado' } };
+      }
+      const user = await resolvePrincipal(req);
+      const denied = assertDiretoria(user);
+      if (denied) return denied;
+    }
     try {
       const result = await Promise.race([
         runGestaoInvestimentoMigrations(),
         new Promise<{ ok: false; message: string; applied: false }>((resolve) =>
-          setTimeout(() => resolve({ ok: false, message: 'Timeout ao aplicar schema (15s)', applied: false }), 15_000),
+          setTimeout(() => resolve({ ok: false, message: 'Timeout ao aplicar schema (45s)', applied: false }), 45_000),
         ),
       ]);
       return { status: result.ok ? 200 : 500, body: { ok: result.ok, ...result } };

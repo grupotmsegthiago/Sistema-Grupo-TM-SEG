@@ -113,7 +113,17 @@ describe('gestao investimento — fase 2 fundação', () => {
     assert.match(lib, /op === 'summary'/);
     assert.match(vercel, /gestao-investimento-api\?op=summary/);
     assert.match(vercel, /gestao-investimento-api\?op=health/);
+    assert.match(vercel, /gestao-investimento-api\?op=ensure-schema/);
+    assert.match(lib, /CRON_SECRET/);
     assert.match(ui, /AbortController/);
     assert.match(cron, /NÃO await/);
+    const vercelJson = JSON.parse(vercel);
+    assert.ok(
+      (vercelJson.crons || []).some((c: { path?: string }) =>
+        String(c.path || '').includes('gestao-investimento/ensure-schema'),
+      ),
+      'cron ensure-schema deve existir',
+    );
   });
 });
+

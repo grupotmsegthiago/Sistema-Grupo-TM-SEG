@@ -43,4 +43,4 @@ export default async function handler(req: any, res: any) {
   }
 }
 
-export const config = { maxDuration: 30 };
+export const config = { maxDuration: 60 };
