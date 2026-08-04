@@ -109,11 +109,14 @@ describe('gestao investimento — fase 2 fundação', () => {
     const vercel = await readFile('vercel.json', 'utf8');
     const ui = await readFile('components/investimentos/GestaoInvestimento.tsx', 'utf8');
     const cron = await readFile('server/registerCronRoutes.ts', 'utf8');
+    const build = await readFile('build-server.mjs', 'utf8');
+    assert.match(api, /_gestao-investimento-core\.cjs/);
     assert.match(api, /handleGestaoInvestimentoOp/);
     assert.match(lib, /op === 'summary'/);
     assert.match(vercel, /gestao-investimento-api\?op=summary/);
     assert.match(vercel, /gestao-investimento-api\?op=health/);
     assert.match(ui, /AbortController/);
     assert.match(cron, /NÃO await/);
+    assert.match(build, /_gestao-investimento-core\.cjs/);
   });
 });

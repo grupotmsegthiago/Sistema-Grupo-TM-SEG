@@ -96,6 +96,14 @@ for (const name of [
 }
 console.log('DHL occurrence report bundles copiados para dist/dhl-bundles/');
 
+// Bundle da Gestão Investimento para api/gestao-investimento-api.ts (imports .ts
+// sem extensão quebram no runtime ESM da Vercel — mesmo padrão DHL/NF).
+execSync(
+  'npx esbuild lib/investimentos/gestaoInvestimentoApi.ts --bundle --platform=node --format=cjs --outfile=api/_gestao-investimento-core.cjs --packages=external',
+  { stdio: 'inherit' },
+);
+console.log('Gestão Investimento core bundle: api/_gestao-investimento-core.cjs');
+
 // Bundle leve para api/index.ts na Vercel (carregado sob demanda, não no top-level).
 execSync(
   'npx esbuild server/vercelAppEntry.ts --bundle --platform=node --format=cjs --outfile=dist/vercelApp.cjs --packages=external',
