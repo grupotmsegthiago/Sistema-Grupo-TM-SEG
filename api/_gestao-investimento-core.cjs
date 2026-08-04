@@ -649,10 +649,226 @@ function round4(n) {
   return Math.round(n * 1e4) / 1e4;
 }
 
+// lib/investimentos/allocationEngine.ts
+var DISCLAIMER = "Cen\xE1rio sugerido pela IA com base no seu perfil. N\xE3o \xE9 ordem de compra, nem garantia de retorno. Voc\xEA decide e executa na XP. A IA n\xE3o movimenta dinheiro.";
+var CLASS_META = {
+  emergencia: {
+    label: "Reserva de emerg\xEAncia",
+    instrumentHint: "Tesouro Selic / CDB liquidez di\xE1ria",
+    instrumentType: "tesouro",
+    liquidity: "D+0 / D+1",
+    rationale: "Colch\xE3o fora do risco de mercado \u2014 n\xE3o conta como \u201Caposta\u201D."
+  },
+  caixa: {
+    label: "Caixa / liquidez",
+    instrumentHint: "Tesouro Selic 2029+ ou fundo DI XP",
+    instrumentType: "tesouro",
+    liquidity: "D+0",
+    rationale: "Base l\xEDquida para oportunidades e meta de curto prazo."
+  },
+  renda_fix_pos: {
+    label: "Renda fixa p\xF3s-fixada",
+    instrumentHint: "CDB / LCI / LCA de banco s\xF3lido (CDI+)",
+    instrumentType: "cdb",
+    liquidity: "D+30 a D+90 (conforme t\xEDtulo)",
+    rationale: "Carrega o portf\xF3lio com cupom pr\xF3ximo ao CDI, risco de cr\xE9dito controlado."
+  },
+  renda_fix_ipca: {
+    label: "Renda fixa atrelada \xE0 infla\xE7\xE3o",
+    instrumentHint: "Tesouro IPCA+ (venc. alinhado ao horizonte)",
+    instrumentType: "tesouro",
+    liquidity: "Marca\xE7\xE3o a mercado",
+    rationale: "Protege poder de compra no horizonte m\xE9dio/longo."
+  },
+  fii: {
+    label: "Fundos imobili\xE1rios",
+    instrumentHint: "FIIs de tijolo/papel diversificados (cesta 3\u20135 tickers)",
+    instrumentType: "fii",
+    liquidity: "D+2 Bolsa",
+    rationale: "Renda peri\xF3dica e diversifica\xE7\xE3o; respeita teto por ativo."
+  },
+  acoes_etf: {
+    label: "A\xE7\xF5es / ETF Brasil",
+    instrumentHint: "ETF BOVA11 ou carteira 4\u20136 blue chips",
+    instrumentType: "etf",
+    liquidity: "D+2 Bolsa",
+    rationale: "Motor de retorno de longo prazo; volatilidade elevada."
+  },
+  internacional: {
+    label: "Exterior (ETF/BDR)",
+    instrumentHint: "IVVB11 / BDR de \xEDndice global",
+    instrumentType: "bdr",
+    liquidity: "D+2 Bolsa",
+    rationale: "Diversifica\xE7\xE3o cambial e geogr\xE1fica."
+  },
+  credito_privado: {
+    label: "Cr\xE9dito privado",
+    instrumentHint: "Deb\xEAnture incentivada / CRF (rating alto)",
+    instrumentType: "debenture",
+    liquidity: "Baixa / secund\xE1rio",
+    rationale: "Pr\xEAmio sobre o CDI; s\xF3 com experi\xEAncia e teto r\xEDgido."
+  },
+  cripto: {
+    label: "Cripto (teto baixo)",
+    instrumentHint: "BTC via ETF/exchange regulada (fatia m\xEDnima)",
+    instrumentType: "cripto",
+    liquidity: "Alta / vol\xE1til",
+    rationale: "Somente se autorizado no perfil; nunca acima do teto."
+  }
+};
+function baseWeights(risk) {
+  switch (risk) {
+    case "conservador":
+      return { caixa: 25, renda_fix_pos: 45, renda_fix_ipca: 20, fii: 5, acoes_etf: 5 };
+    case "moderado":
+      return { caixa: 15, renda_fix_pos: 30, renda_fix_ipca: 20, fii: 15, acoes_etf: 15, internacional: 5 };
+    case "arrojado":
+      return { caixa: 10, renda_fix_pos: 15, renda_fix_ipca: 15, fii: 15, acoes_etf: 30, internacional: 10, credito_privado: 5 };
+    case "agressivo":
+      return { caixa: 5, renda_fix_pos: 10, renda_fix_ipca: 10, fii: 10, acoes_etf: 40, internacional: 15, credito_privado: 5, cripto: 5 };
+    default:
+      return { caixa: 20, renda_fix_pos: 35, renda_fix_ipca: 20, fii: 10, acoes_etf: 15 };
+  }
+}
+function normalize(weights) {
+  const sum = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
+  const out = {};
+  for (const [k, v] of Object.entries(weights)) {
+    if (v > 0) out[k] = v / sum * 100;
+  }
+  return out;
+}
+function round22(n) {
+  return Math.round(n * 100) / 100;
+}
+function buildAllocationScenario(profile, positions = []) {
+  if (!profile?.risk_profile || profile.capital_available == null || profile.capital_available <= 0) {
+    return null;
+  }
+  const capital = Number(profile.capital_available);
+  const emergency = Math.max(0, Number(profile.emergency_reserve || 0));
+  const emergencyHeld = Math.min(emergency, capital);
+  const investable = Math.max(0, capital - emergencyHeld);
+  const maxPer = profile.max_per_investment != null && profile.max_per_investment > 0 ? Number(profile.max_per_investment) : investable;
+  let weights = baseWeights(profile.risk_profile);
+  if (profile.liquidity_need === "D0" || profile.liquidity_need === "D1") {
+    weights.caixa = (weights.caixa || 0) + 10;
+    weights.acoes_etf = Math.max(0, (weights.acoes_etf || 0) - 5);
+    weights.internacional = Math.max(0, (weights.internacional || 0) - 3);
+  }
+  if (profile.exp_fii === false) {
+    weights.caixa = (weights.caixa || 0) + (weights.fii || 0);
+    delete weights.fii;
+  }
+  if (profile.exp_equity === false) {
+    weights.renda_fix_pos = (weights.renda_fix_pos || 0) + (weights.acoes_etf || 0);
+    delete weights.acoes_etf;
+  }
+  if (profile.exp_private_credit === false) {
+    weights.renda_fix_pos = (weights.renda_fix_pos || 0) + (weights.credito_privado || 0);
+    delete weights.credito_privado;
+  }
+  if (!profile.allows_crypto || profile.exp_crypto === false) {
+    delete weights.cripto;
+  }
+  if (!profile.allows_international) {
+    weights.acoes_etf = (weights.acoes_etf || 0) + (weights.internacional || 0);
+    delete weights.internacional;
+  }
+  if (profile.needs_monthly_income) {
+    weights.fii = (weights.fii || 0) + 8;
+    weights.renda_fix_pos = (weights.renda_fix_pos || 0) + 5;
+    weights.acoes_etf = Math.max(0, (weights.acoes_etf || 0) - 8);
+  }
+  if (profile.max_loss_pct != null && profile.max_loss_pct < 10) {
+    const cut = Math.min(weights.acoes_etf || 0, 10);
+    weights.acoes_etf = (weights.acoes_etf || 0) - cut;
+    weights.renda_fix_pos = (weights.renda_fix_pos || 0) + cut;
+  }
+  weights = normalize(weights);
+  const warnings = [];
+  const lines = [];
+  if (emergencyHeld > 0) {
+    const meta = CLASS_META.emergencia;
+    const pctOfTotal = capital > 0 ? emergencyHeld / capital * 100 : 0;
+    lines.push({
+      classKey: "emergencia",
+      classLabel: meta.label,
+      instrumentHint: meta.instrumentHint,
+      instrumentType: meta.instrumentType,
+      pct: round22(pctOfTotal),
+      amountBrl: round22(emergencyHeld),
+      rationale: meta.rationale,
+      liquidity: meta.liquidity
+    });
+  }
+  for (const [key, pct] of Object.entries(weights)) {
+    const meta = CLASS_META[key];
+    if (!meta || pct <= 0 || investable <= 0) continue;
+    let amount = round22(investable * pct / 100);
+    if (amount > maxPer) {
+      warnings.push(
+        `${meta.label}: sugest\xE3o ${amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} acima do seu teto por ativo (${maxPer.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}). Divida em 2+ instrumentos.`
+      );
+    }
+    const pctOfTotal = capital > 0 ? amount / capital * 100 : pct;
+    lines.push({
+      classKey: key,
+      classLabel: meta.label,
+      instrumentHint: meta.instrumentHint,
+      instrumentType: meta.instrumentType,
+      pct: round22(pctOfTotal),
+      amountBrl: amount,
+      rationale: meta.rationale,
+      liquidity: meta.liquidity
+    });
+  }
+  const investedSum = lines.filter((l) => l.classKey !== "emergencia").reduce((s, l) => s + l.amountBrl, 0);
+  const drift = round22(investable - investedSum);
+  if (Math.abs(drift) >= 0.01 && lines.length > 1) {
+    const idx = lines.findIndex((l) => l.classKey !== "emergencia");
+    if (idx >= 0) {
+      lines[idx] = {
+        ...lines[idx],
+        amountBrl: round22(lines[idx].amountBrl + drift),
+        pct: capital > 0 ? round22((lines[idx].amountBrl + drift) / capital * 100) : lines[idx].pct
+      };
+    }
+  }
+  if (positions.length === 0) {
+    warnings.push("Carteira ainda sem posi\xE7\xF5es cadastradas \u2014 este cen\xE1rio \xE9 para montar do zero na XP.");
+  } else {
+    warnings.push("H\xE1 posi\xE7\xF5es cadastradas: use o cen\xE1rio como alvo; rebalanceie s\xF3 o que fizer sentido (custos/IR).");
+  }
+  const riskLabel = profile.risk_profile === "conservador" ? "Conservador" : profile.risk_profile === "moderado" ? "Moderado" : profile.risk_profile === "arrojado" ? "Arrojado" : profile.risk_profile === "agressivo" ? "Agressivo" : "Indefinido";
+  const investableLines = lines.filter((l) => l.classKey !== "emergencia").sort((a, b) => b.amountBrl - a.amountBrl);
+  const topActions = investableLines.slice(0, 5).map((l, i) => ({
+    rank: i + 1,
+    title: `Alocar em ${l.classLabel}`,
+    amountBrl: l.amountBrl,
+    pct: l.pct,
+    detail: `${l.instrumentHint} \xB7 ${l.liquidity}`
+  }));
+  return {
+    id: `scenario_${profile.risk_profile}_v1`,
+    name: `Cen\xE1rio ${riskLabel}`,
+    tagline: `Como equilibrar R$ ${capital.toLocaleString("pt-BR")} na XP (sugest\xE3o da IA)`,
+    riskLabel,
+    investableCapital: round22(investable),
+    emergencyHeld: round22(emergencyHeld),
+    lines,
+    topActions,
+    warnings,
+    disclaimer: DISCLAIMER,
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    source: "rules_v1"
+  };
+}
+
 // lib/investimentos/dashboardCache.ts
 var GESTAO_CACHE_TTL_MS = 30 * 60 * 1e3;
-var CACHE_KEY_PREFIX = "gestao_investimento_cache_";
-var OWNERS_KEY = "gestao_investimento_cache_owners";
+var CACHE_KEY_PREFIX = "gestao_investimento_cache_v2_";
+var OWNERS_KEY = "gestao_investimento_cache_owners_v2";
 function cacheKey(ownerUserId) {
   return `${CACHE_KEY_PREFIX}${ownerUserId}`;
 }
@@ -683,31 +899,37 @@ function buildBriefing(profile, positions, watchlist, completeness, portfolioVal
     gaps.push(...completeness.missing.slice(0, 6));
   }
   if (positions.length === 0) {
-    gaps.push("Nenhuma posi\xE7\xE3o XP cadastrada na carteira");
+    gaps.push(
+      completeness.complete ? "Ainda sem posi\xE7\xF5es na carteira XP \u2014 execute o cen\xE1rio na corretora e registre depois" : "Nenhuma posi\xE7\xE3o XP cadastrada na carteira"
+    );
   }
-  if (watchlist.length === 0) {
+  if (watchlist.length === 0 && !completeness.complete) {
     gaps.push("Watchlist vazia \u2014 sem candidatos em observa\xE7\xE3o");
   }
   const maxPct = allocationByType[0]?.pct ?? 0;
   if (maxPct >= 60) {
     gaps.push(`Concentra\xE7\xE3o alta em ${allocationByType[0].type} (${maxPct.toFixed(0)}%)`);
   }
+  const scenario = completeness.complete ? buildAllocationScenario(profile, positions) : null;
   const nextActions = [];
   if (!completeness.complete) {
     nextActions.push("Completar perfil do investidor (bloqueia recomenda\xE7\xF5es)");
+  } else if (scenario?.topActions?.length) {
+    nextActions.push(
+      ...scenario.topActions.slice(0, 3).map(
+        (a) => `${a.rank}. ${a.title}: ${a.amountBrl.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} (${a.pct.toFixed(1)}%)`
+      )
+    );
+    nextActions.push("Executar na XP o que fizer sentido \u2014 a IA n\xE3o envia ordem");
   }
-  if (positions.length === 0) {
-    nextActions.push("Registrar posi\xE7\xF5es manuais da XP (valor atual)");
-  } else {
-    nextActions.push("Revisar valores atuais da carteira se houve aporte/resgate");
-  }
-  if (watchlist.length < 3) {
-    nextActions.push("Incluir 3+ ativos na watchlist para o motor da Fase 3");
+  if (positions.length === 0 && completeness.complete) {
+    nextActions.push("Depois de aplicar, registre as posi\xE7\xF5es reais na aba Carteira XP");
+  } else if (positions.length > 0) {
+    nextActions.push("Revisar valores atuais se houve aporte/resgate");
   }
   if (profile?.emergency_reserve != null && Number(profile.emergency_reserve) <= 0) {
     nextActions.push("Definir reserva de emerg\xEAncia > 0");
   }
-  nextActions.push("Pesquisa e rec\xE1lculo autom\xE1ticos a cada 30 min (sem clicar em Atualizar)");
   return {
     allocationByType,
     topPositions,
@@ -715,7 +937,8 @@ function buildBriefing(profile, positions, watchlist, completeness, portfolioVal
     nextActions: nextActions.slice(0, 6),
     positionsCount: positions.length,
     watchlistCount: watchlist.length,
-    profileComplete: completeness.complete
+    profileComplete: completeness.complete,
+    scenario
   };
 }
 async function buildDashboardSnapshot(ownerUserId) {

@@ -41,7 +41,7 @@ type SummaryResponse = {
   briefing?: DashboardBriefing;
 };
 
-const LOCAL_CACHE_KEY = 'tmseg_gestao_investimento_summary_v1';
+const LOCAL_CACHE_KEY = 'tmseg_gestao_investimento_summary_v2';
 const AUTO_REFRESH_MS = 30 * 60 * 1000;
 
 const fmtBRL = (v: number) =>
@@ -361,7 +361,7 @@ const GestaoInvestimento: React.FC = () => {
             <div className="bg-rose-50 border border-rose-200 rounded-xl p-4" data-testid="gestao-investimento-perfil-bloqueio">
               <p className="text-sm font-black text-rose-800">{PROFILE_INCOMPLETE_MESSAGE}</p>
               <p className="text-xs text-rose-700 mt-1">
-                Complete o perfil para liberar as cinco recomendações personalizadas (Fase 3).
+                Complete o perfil para liberar o cenário sugerido (quanto em cada classe).
               </p>
               {summary.completeness.missing.length > 0 && (
                 <ul className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-1 text-[11px] text-rose-700 list-disc pl-5">
@@ -375,6 +375,70 @@ const GestaoInvestimento: React.FC = () => {
               >
                 Completar perfil
               </button>
+            </div>
+          )}
+
+          {summary.canRecommend && summary.briefing?.scenario && (
+            <div
+              className="bg-white border-2 border-red-700/20 rounded-2xl p-4 shadow-sm"
+              data-testid="gestao-investimento-cenario"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-red-700">Cenário sugerido pela IA</p>
+                  <h2 className="text-base font-black text-gray-900">{summary.briefing.scenario.name}</h2>
+                  <p className="text-xs text-gray-500">{summary.briefing.scenario.tagline}</p>
+                </div>
+                <div className="text-right text-[11px] text-gray-500">
+                  <p>Investível: <b className="text-gray-900">{fmtBRL(summary.briefing.scenario.investableCapital)}</b></p>
+                  <p>Emergência: <b className="text-gray-900">{fmtBRL(summary.briefing.scenario.emergencyHeld)}</b></p>
+                </div>
+              </div>
+
+              <p className="text-[11px] font-bold text-gray-700 mb-2">
+                O que fazer (você executa na XP — a IA não envia ordem):
+              </p>
+              <ol className="space-y-2 mb-3" data-testid="gestao-investimento-cenario-acoes">
+                {summary.briefing.scenario.topActions.map((a) => (
+                  <li
+                    key={a.rank}
+                    className="flex items-start justify-between gap-3 bg-red-50/60 border border-red-100 rounded-xl px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-gray-900">
+                        {a.rank}. {a.title}
+                      </p>
+                      <p className="text-[11px] text-gray-500 truncate">{a.detail}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-black text-red-800">{fmtBRL(a.amountBrl)}</p>
+                      <p className="text-[10px] font-bold text-gray-500">{a.pct.toFixed(1)}%</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+
+              <details className="text-xs text-gray-600">
+                <summary className="cursor-pointer font-bold text-gray-700 mb-2">Ver alocação completa (%)</summary>
+                <ul className="space-y-1.5">
+                  {summary.briefing.scenario.lines.map((l) => (
+                    <li key={l.classKey} className="flex justify-between gap-2 border-b border-gray-100 py-1">
+                      <span>
+                        <b>{l.classLabel}</b>
+                        <span className="text-gray-400"> · {l.instrumentHint}</span>
+                      </span>
+                      <span className="font-bold whitespace-nowrap">{l.pct.toFixed(1)}% · {fmtBRL(l.amountBrl)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+
+              {summary.briefing.scenario.warnings.length > 0 && (
+                <ul className="mt-3 text-[11px] text-amber-800 space-y-1 list-disc pl-4">
+                  {summary.briefing.scenario.warnings.map((w) => <li key={w}>{w}</li>)}
+                </ul>
+              )}
+              <p className="text-[10px] text-gray-500 mt-3">{summary.briefing.scenario.disclaimer}</p>
             </div>
           )}
         </>
@@ -403,7 +467,7 @@ const GestaoInvestimento: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Card title="Briefing automático" subtitle="Pré-calculado a cada 30 min — sem pesar o banco na abertura">
             <ul className="text-xs text-gray-700 space-y-2">
-              <li><b>Recomendações:</b> {summary.canRecommend ? 'Perfil completo — motor (Fase 3) ainda não ativo' : 'Bloqueadas'}</li>
+              <li><b>Recomendações:</b> {summary.canRecommend ? (summary.briefing?.scenario ? `Cenário ${summary.briefing.scenario.riskLabel} ativo` : 'Perfil completo') : 'Bloqueadas'}</li>
               <li><b>Corretora padrão:</b> {profileForm.broker_default || 'XP'}</li>
               <li><b>Posições ativas:</b> {summary.briefing?.positionsCount ?? summary.positions.length}</li>
               <li><b>Watchlist:</b> {summary.briefing?.watchlistCount ?? summary.watchlist.length}</li>

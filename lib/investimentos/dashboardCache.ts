@@ -6,6 +6,7 @@
 import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 import { createDraftInvestorProfile, evaluateProfileCompleteness } from './profileValidation.js';
 import { buildProvision30dEstimate, describeMonthlyTargetBand } from './targetReturn.js';
+import { buildAllocationScenario, type AllocationScenario } from './allocationEngine.js';
 import type {
   InvestorProfile,
   InvestmentPosition,
@@ -16,8 +17,9 @@ import type {
 } from './types.js';
 
 export const GESTAO_CACHE_TTL_MS = 30 * 60 * 1000;
-const CACHE_KEY_PREFIX = 'gestao_investimento_cache_';
-const OWNERS_KEY = 'gestao_investimento_cache_owners';
+/** v2: inclui cenário de alocação (Fase 3). */
+const CACHE_KEY_PREFIX = 'gestao_investimento_cache_v2_';
+const OWNERS_KEY = 'gestao_investimento_cache_owners_v2';
 
 export type AllocationRow = { type: string; value: number; pct: number };
 
@@ -29,6 +31,8 @@ export type DashboardBriefing = {
   positionsCount: number;
   watchlistCount: number;
   profileComplete: boolean;
+  /** Cenário sugerido pela IA (R$ + %) — sem executar ordens */
+  scenario: AllocationScenario | null;
 };
 
 export type DashboardSnapshot = {
@@ -100,9 +104,14 @@ function buildBriefing(
     gaps.push(...completeness.missing.slice(0, 6));
   }
   if (positions.length === 0) {
-    gaps.push('Nenhuma posição XP cadastrada na carteira');
+    gaps.push(
+      completeness.complete
+        ? 'Ainda sem posições na carteira XP — execute o cenário na corretora e registre depois'
+        : 'Nenhuma posição XP cadastrada na carteira',
+    );
   }
-  if (watchlist.length === 0) {
+  // Watchlist só é lacuna crítica quando ainda não há cenário (perfil incompleto)
+  if (watchlist.length === 0 && !completeness.complete) {
     gaps.push('Watchlist vazia — sem candidatos em observação');
   }
   const maxPct = allocationByType[0]?.pct ?? 0;
@@ -110,22 +119,28 @@ function buildBriefing(
     gaps.push(`Concentração alta em ${allocationByType[0].type} (${maxPct.toFixed(0)}%)`);
   }
 
+  const scenario = completeness.complete ? buildAllocationScenario(profile, positions) : null;
+
   const nextActions: string[] = [];
   if (!completeness.complete) {
     nextActions.push('Completar perfil do investidor (bloqueia recomendações)');
+  } else if (scenario?.topActions?.length) {
+    nextActions.push(
+      ...scenario.topActions.slice(0, 3).map(
+        (a) =>
+          `${a.rank}. ${a.title}: ${a.amountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${a.pct.toFixed(1)}%)`,
+      ),
+    );
+    nextActions.push('Executar na XP o que fizer sentido — a IA não envia ordem');
   }
-  if (positions.length === 0) {
-    nextActions.push('Registrar posições manuais da XP (valor atual)');
-  } else {
-    nextActions.push('Revisar valores atuais da carteira se houve aporte/resgate');
-  }
-  if (watchlist.length < 3) {
-    nextActions.push('Incluir 3+ ativos na watchlist para o motor da Fase 3');
+  if (positions.length === 0 && completeness.complete) {
+    nextActions.push('Depois de aplicar, registre as posições reais na aba Carteira XP');
+  } else if (positions.length > 0) {
+    nextActions.push('Revisar valores atuais se houve aporte/resgate');
   }
   if (profile?.emergency_reserve != null && Number(profile.emergency_reserve) <= 0) {
     nextActions.push('Definir reserva de emergência > 0');
   }
-  nextActions.push('Pesquisa e recálculo automáticos a cada 30 min (sem clicar em Atualizar)');
 
   return {
     allocationByType,
@@ -135,6 +150,7 @@ function buildBriefing(
     positionsCount: positions.length,
     watchlistCount: watchlist.length,
     profileComplete: completeness.complete,
+    scenario,
   };
 }
 

@@ -144,6 +144,37 @@ describe('gestao investimento — fase 2 fundação', () => {
     assert.ok(!/cadastro; coleta/.test(GESTAO_INVESTIMENTO_FUNDACAO_SQL));
   });
 
+  it('motor de cenários sugere R$ e % sem executar ordem', async () => {
+    const { buildAllocationScenario, createDraftInvestorProfile } = await import('../lib/investimentos');
+    const profile = createDraftInvestorProfile({
+      person_type: 'PF',
+      capital_available: 100_000,
+      emergency_reserve: 20_000,
+      max_per_investment: 25_000,
+      horizon_months: 36,
+      liquidity_need: 'D30',
+      max_loss_pct: 15,
+      risk_profile: 'moderado',
+      exp_equity: true,
+      exp_private_credit: false,
+      exp_fii: true,
+      exp_crypto: false,
+      needs_monthly_income: false,
+      investor_category: 'geral',
+      allows_crypto: false,
+      allows_international: true,
+    });
+    const scenario = buildAllocationScenario(profile, []);
+    assert.ok(scenario);
+    assert.equal(scenario!.emergencyHeld, 20_000);
+    assert.equal(scenario!.investableCapital, 80_000);
+    assert.ok(scenario!.topActions.length >= 3);
+    const sumLines = scenario!.lines.reduce((s, l) => s + l.amountBrl, 0);
+    assert.ok(Math.abs(sumLines - 100_000) < 1, `soma linhas ${sumLines}`);
+    assert.match(scenario!.disclaimer, /não.*ordem|não movimenta/i);
+    assert.equal(scenario!.source, 'rules_v1');
+  });
+
   it('cache automático 30 min + UI sem botão Atualizar obrigatório', async () => {
     const cache = await readFile('lib/investimentos/dashboardCache.ts', 'utf8');
     const api = await readFile('lib/investimentos/gestaoInvestimentoApi.ts', 'utf8');
@@ -156,12 +187,14 @@ describe('gestao investimento — fase 2 fundação', () => {
     assert.match(api, /readCachedSnapshot/);
     assert.match(vercel, /gestao-investimento-api\?op=refresh-cache/);
     assert.match(vercel, /\*\/30 \* \* \* \*/);
-    assert.match(ui, /tmseg_gestao_investimento_summary_v1/);
+    assert.match(ui, /tmseg_gestao_investimento_summary_v2/);
     assert.match(ui, /AUTO_REFRESH_MS/);
     assert.match(ui, /gestao-investimento-cache-status/);
     assert.doesNotMatch(ui, /data-testid="gestao-investimento-refresh"/);
     assert.match(ui, /from 'react'/);
     assert.match(ui, /useState/);
+    assert.match(ui, /gestao-investimento-cenario/);
+    assert.match(ui, /Cenário sugerido pela IA/);
   });
 });
 
