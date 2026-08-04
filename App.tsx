@@ -82,7 +82,8 @@ import FinancialDRE from './components/FinancialDRE';
 import FinancialAccountManager from './components/FinancialAccountManager';
 import FinancialCategoryManager from './components/FinancialCategoryManager';
 import FinancialReport from './components/FinancialReport';
-import DashboardDiretoria from './components/dashboard/DashboardDiretoria'; 
+import DashboardDiretoria from './components/dashboard/DashboardDiretoria';
+import GestaoInvestimento from './components/investimentos/GestaoInvestimento'; 
 import ClientBillingReport from './components/ClientBillingReport';
 import DailyCashMovement from './components/DailyCashMovement';
 import VendorVerificationControl from './components/VendorVerificationControl';
@@ -394,6 +395,12 @@ const App: React.FC = () => {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
         return canAccessDiretoriaMenu(u)
           ? <DashboardDiretoria onNavigate={navigateTo} />
+          : <Dashboard onOpenMission={handleOpenBillingMission} />;
+      }
+      case 'gestao-investimento': {
+        const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+        return canAccessDiretoriaMenu(u)
+          ? <GestaoInvestimento />
           : <Dashboard onOpenMission={handleOpenBillingMission} />;
       }
       case 'os-analysis-pending': {

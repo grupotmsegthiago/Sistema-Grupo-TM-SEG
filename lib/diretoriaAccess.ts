@@ -28,4 +28,5 @@ export function canAccessDiretoriaMenu(user: DiretoriaAccessUser | null | undefi
  *  O grupo `diretoria-group` e telas como Pendências de OS têm regra própria no Sidebar. */
 export const DIRETORIA_MENU_SCREEN_IDS = new Set([
   'diretoria-cockpit',
+  'gestao-investimento',
 ]);
