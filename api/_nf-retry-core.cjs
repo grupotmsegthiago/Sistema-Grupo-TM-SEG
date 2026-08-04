@@ -159,9 +159,12 @@ function decodeJwtRole(key) {
 function isTmSegServiceRoleKey(key, expectedRef = TMSEG_SUPABASE_PROJECT_REF) {
   const cleaned = cleanEnv(key);
   if (!cleaned) return { ok: false, reason: "empty" };
+  if (cleaned.startsWith("sb_")) return { ok: false, reason: "not_jwt" };
   const ref = decodeJwtProjectRef(cleaned);
-  if (ref && ref !== expectedRef) return { ok: false, reason: "foreign_project" };
-  if (decodeJwtRole(cleaned) === "anon") return { ok: false, reason: "anon_role" };
+  const role = decodeJwtRole(cleaned);
+  if (!ref || !role) return { ok: false, reason: "not_jwt" };
+  if (ref !== expectedRef) return { ok: false, reason: "foreign_project" };
+  if (role !== "service_role") return { ok: false, reason: "anon_role" };
   return { ok: true };
 }
 function getSupabaseUrl() {
@@ -186,7 +189,13 @@ function getSupabaseServiceRoleKey() {
       if (check.reason === "anon_role" && !warnedAnonKeyAsService) {
         warnedAnonKeyAsService = true;
         console.error(
-          '[Supabase] SUPABASE_SERVICE_KEY cont\xE9m a chave ANON, n\xE3o service_role. Substitua pelo valor "service_role" no .env (Settings \u2192 API no Supabase).'
+          '[Supabase] SUPABASE_SERVICE_KEY cont\xE9m a chave ANON, n\xE3o service_role. Substitua pelo valor "service_role" LEGACY (eyJ...) no .env (Settings \u2192 API no Supabase).'
+        );
+      }
+      if (check.reason === "not_jwt" && !warnedAnonKeyAsService) {
+        warnedAnonKeyAsService = true;
+        console.error(
+          '[Supabase] SUPABASE_SERVICE_ROLE_KEY n\xE3o \xE9 JWT service_role LEGACY. Use a chave "service_role (LEGACY)" (eyJ...), n\xE3o sb_secret_/sb_publishable_.'
         );
       }
       continue;
@@ -319,8 +328,9 @@ function asaasCompanies() {
       name: "TM GEST\xC3O",
       aliases: ["TM GESTAO", "TM GEST\xC3O", "GESTAO", "GEST\xC3O"],
       nf: {
-        serviceDescription: "Ref. aos Servi\xE7os de Intermedia\xE7\xE3o de Escolta Armada",
-        issRate: 5,
+        // Amazon/TM GESTÃO: código 07930 (monitoramento) + ISS 2% (Simples Nacional).
+        serviceDescription: "CONTRATA\xC7\xC3O E INTERMEDIA\xC7\xC3O DE CONTRATOS E AGENCIAMENTO DE VENDAS",
+        issRate: 2,
         retainIss: false,
         municipalServiceCode: "07930",
         municipalServiceName: "07930 - Monitoramento e rastreamento a dist\xE2ncia de ve\xEDculos, cargas, pessoas e semoventes"
@@ -487,6 +497,19 @@ async function resolveMunicipalService(company) {
 }
 var clientNfCache = {};
 var CLIENT_NF_CACHE_TTL_MS = 6e4;
+function formatCnpjMask(digits) {
+  const d = digits.replace(/\D/g, "");
+  if (d.length !== 14) return d;
+  return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+}
+function isAmazonClientLabel(name) {
+  return String(name || "").toUpperCase().includes("AMAZON");
+}
+var AMAZON_NF_DEFAULTS = {
+  serviceDescription: "CONTRATA\xC7\xC3O E INTERMEDIA\xC7\xC3O DE CONTRATOS E AGENCIAMENTO DE VENDAS",
+  municipalServiceCode: "07930",
+  municipalServiceName: "07930 - Monitoramento e rastreamento a dist\xE2ncia de ve\xEDculos, cargas, pessoas e semoventes"
+};
 async function lookupClientNfDefaults(cnpj, name) {
   if (!cnpj && !name) return null;
   const key = (cnpj || "").replace(/\D/g, "") || `name:${(name || "").toUpperCase().trim()}`;
@@ -495,16 +518,38 @@ async function lookupClientNfDefaults(cnpj, name) {
   try {
     const { createSupabaseAdminClient: createSupabaseAdminClient2 } = await Promise.resolve().then(() => (init_supabaseConfig(), supabaseConfig_exports));
     const supabase = createSupabaseAdminClient2();
-    if (!supabase) return null;
+    if (!supabase) {
+      if (isAmazonClientLabel(name)) {
+        clientNfCache[key] = { value: AMAZON_NF_DEFAULTS, ts: Date.now() };
+        return AMAZON_NF_DEFAULTS;
+      }
+      return null;
+    }
     let row = null;
     if (cnpj) {
       const cleanCnpj = cnpj.replace(/\D/g, "");
-      const { data } = await supabase.from("clients").select("nf_service_description, nf_municipal_service_code, nf_municipal_service_name").eq("cnpj", cleanCnpj).maybeSingle();
+      const formatted = formatCnpjMask(cleanCnpj);
+      const { data } = await supabase.from("clients").select("name, trading_name, nf_service_description, nf_municipal_service_code, nf_municipal_service_name").or(`cnpj.eq.${cleanCnpj},cnpj.eq.${formatted}`).limit(1).maybeSingle();
       row = data;
     }
     if (!row && name) {
-      const { data } = await supabase.from("clients").select("nf_service_description, nf_municipal_service_code, nf_municipal_service_name").ilike("name", name.split(/[\s,.]+/)[0] + "%").limit(1).maybeSingle();
+      const { data } = await supabase.from("clients").select("name, trading_name, nf_service_description, nf_municipal_service_code, nf_municipal_service_name").ilike("name", name.split(/[\s,.]+/)[0] + "%").limit(1).maybeSingle();
       row = data;
+    }
+    const rowName = `${row?.name || ""} ${row?.trading_name || ""} ${name || ""}`;
+    if (isAmazonClientLabel(rowName)) {
+      const out2 = {
+        serviceDescription: row?.nf_service_description || AMAZON_NF_DEFAULTS.serviceDescription,
+        municipalServiceCode: row?.nf_municipal_service_code || AMAZON_NF_DEFAULTS.municipalServiceCode,
+        municipalServiceName: row?.nf_municipal_service_name || AMAZON_NF_DEFAULTS.municipalServiceName
+      };
+      if (!out2.municipalServiceCode || out2.municipalServiceCode === "07930") {
+        out2.municipalServiceCode = AMAZON_NF_DEFAULTS.municipalServiceCode;
+        out2.municipalServiceName = AMAZON_NF_DEFAULTS.municipalServiceName;
+        if (!out2.serviceDescription) out2.serviceDescription = AMAZON_NF_DEFAULTS.serviceDescription;
+      }
+      clientNfCache[key] = { value: out2, ts: Date.now() };
+      return out2;
     }
     const out = row ? {
       serviceDescription: row.nf_service_description || null,
@@ -525,7 +570,8 @@ async function scheduleInvoice(params) {
   const companyEntry = resolveCompanyEntry(params.company);
   const nfConfig = companyEntry.nf;
   const overrideCode = String(params.municipalServiceCode || "").replace(/\D/g, "");
-  const clientDefaults = overrideCode ? null : await lookupClientNfDefaults(params.clientCnpj, params.clientName);
+  const clientDefaults = await lookupClientNfDefaults(params.clientCnpj, params.clientName);
+  const isAmazonNf = isAmazonClientLabel(params.clientName);
   const taxes = {
     retainIss: params.taxes?.retainIss ?? nfConfig.retainIss,
     iss: params.taxes?.iss ?? nfConfig.issRate,
@@ -535,7 +581,7 @@ async function scheduleInvoice(params) {
     ir: params.taxes?.ir ?? nfConfig.ir ?? 0,
     pis: params.taxes?.pis ?? nfConfig.pis ?? 0
   };
-  let rawDesc = clientDefaults?.serviceDescription || params.serviceDescription || nfConfig.serviceDescription;
+  let rawDesc = (isAmazonNf ? clientDefaults?.serviceDescription || AMAZON_NF_DEFAULTS.serviceDescription : clientDefaults?.serviceDescription) || params.serviceDescription || nfConfig.serviceDescription;
   const codePrefix = /^\s*\d{4,6}\s*[|\-–]/;
   if (codePrefix.test(rawDesc)) {
     console.log(`[Asaas NF] Descri\xE7\xE3o mal formatada detectada ("${rawDesc.substring(0, 60)}..."). Substituindo por padr\xE3o da empresa para evitar NFe003.`);
@@ -550,7 +596,10 @@ async function scheduleInvoice(params) {
   const overrideName = String(params.municipalServiceName || "").trim();
   const clientCode = String(clientDefaults?.municipalServiceCode || "").replace(/\D/g, "");
   const clientNameSvc = String(clientDefaults?.municipalServiceName || "").trim();
-  if (params.municipalServiceId) {
+  if (isAmazonNf) {
+    body.municipalServiceCode = AMAZON_NF_DEFAULTS.municipalServiceCode;
+    body.municipalServiceName = AMAZON_NF_DEFAULTS.municipalServiceName;
+  } else if (params.municipalServiceId) {
     body.municipalServiceId = params.municipalServiceId;
   } else if (overrideCode) {
     body.municipalServiceCode = overrideCode;
@@ -876,12 +925,13 @@ function mapPlugNotasStatusToNf(status) {
   return s;
 }
 
-// server/nfRetryWorker.ts
-var RETRY_INTERVAL_MS = 15 * 60 * 1e3;
-var MAX_RETRIES = 30;
-var STUCK_HOURS_RETRY = 6;
-var STUCK_HOURS_ALERT = 24;
-var MAX_SYNC_RETRIES = 3;
+// lib/nfRetryGuards.ts
+var NF_SCHEDULE_PENDING_PATTERNS = [
+  /NF isolada/i,
+  /NF_SCHEDULE_PENDING/i,
+  /ser[aá] agendada pelo Controle\/worker/i,
+  /agendada pelo Controle\/worker/i
+];
 var NON_RETRYABLE_PATTERNS = [
   /NFe003/i,
   /descri[cç][aã]o do servi[cç]o/i,
@@ -900,11 +950,23 @@ var RETRYABLE_PREFEITURA_PATTERNS = [
   /tempo limite/i,
   /indispon[ií]vel/i
 ];
+function isNfSchedulePendingMessage(errorMessage) {
+  if (!errorMessage) return false;
+  return NF_SCHEDULE_PENDING_PATTERNS.some((rx) => rx.test(errorMessage));
+}
 function isNonRetryable(errorMessage) {
   if (!errorMessage) return false;
+  if (isNfSchedulePendingMessage(errorMessage)) return false;
   if (RETRYABLE_PREFEITURA_PATTERNS.some((rx) => rx.test(errorMessage))) return false;
   return NON_RETRYABLE_PATTERNS.some((rx) => rx.test(errorMessage));
 }
+
+// server/nfRetryWorker.ts
+var RETRY_INTERVAL_MS = 15 * 60 * 1e3;
+var MAX_RETRIES = 30;
+var STUCK_HOURS_RETRY = 6;
+var STUCK_HOURS_ALERT = 24;
+var MAX_SYNC_RETRIES = 3;
 function extractAsaasErrorText(invoice) {
   if (!invoice) return "";
   const parts = [];
@@ -1392,7 +1454,7 @@ async function retryOne(inv, opts) {
     }
   }
   const errMsg = extractAsaasErrorText(currentInvoice) || inv.nf_last_error || "";
-  if (isNonRetryable(errMsg)) {
+  if (errMsg && !isNfSchedulePendingMessage(errMsg) && isNonRetryable(errMsg)) {
     await markInvoice(inv.id, {
       nf_status: "ERROR",
       nf_retry_paused: true,
