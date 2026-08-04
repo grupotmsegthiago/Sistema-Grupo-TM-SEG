@@ -176,6 +176,7 @@ export const NAV_ITEMS: NavItem[] = [
       { name: 'Configurações do Sistema', id: 'system-settings' },
       { name: 'Auditoria & Logs', id: 'system-logs' },
       { name: 'Status do Servidor', id: 'server-stats' },
+      { name: 'Gestor de Desenvolvimento', id: 'gestor-desenvolvimento' },
     ]
   },
 ];
