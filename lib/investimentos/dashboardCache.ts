@@ -17,9 +17,9 @@ import type {
 } from './types.js';
 
 export const GESTAO_CACHE_TTL_MS = 30 * 60 * 1000;
-/** v2: inclui cenário de alocação (Fase 3). */
-const CACHE_KEY_PREFIX = 'gestao_investimento_cache_v2_';
-const OWNERS_KEY = 'gestao_investimento_cache_owners_v2';
+/** v3: cenário com tickers/nomes pesquisáveis na XP. */
+const CACHE_KEY_PREFIX = 'gestao_investimento_cache_v3_';
+const OWNERS_KEY = 'gestao_investimento_cache_owners_v3';
 
 export type AllocationRow = { type: string; value: number; pct: number };
 
@@ -126,12 +126,12 @@ function buildBriefing(
     nextActions.push('Completar perfil do investidor (bloqueia recomendações)');
   } else if (scenario?.topActions?.length) {
     nextActions.push(
-      ...scenario.topActions.slice(0, 3).map(
+      ...scenario.topActions.slice(0, 4).map(
         (a) =>
-          `${a.rank}. ${a.title}: ${a.amountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${a.pct.toFixed(1)}%)`,
+          `${a.rank}. ${a.ticker || a.title}: ${a.amountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${a.pct.toFixed(1)}%) — busque na XP`,
       ),
     );
-    nextActions.push('Executar na XP o que fizer sentido — a IA não envia ordem');
+    nextActions.push('Execute na XP pelo nome/ticker — a IA não envia ordem');
   }
   if (positions.length === 0 && completeness.complete) {
     nextActions.push('Depois de aplicar, registre as posições reais na aba Carteira XP');

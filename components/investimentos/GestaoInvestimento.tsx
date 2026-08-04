@@ -41,7 +41,7 @@ type SummaryResponse = {
   briefing?: DashboardBriefing;
 };
 
-const LOCAL_CACHE_KEY = 'tmseg_gestao_investimento_summary_v2';
+const LOCAL_CACHE_KEY = 'tmseg_gestao_investimento_summary_v3';
 const AUTO_REFRESH_MS = 30 * 60 * 1000;
 
 const fmtBRL = (v: number) =>
@@ -396,19 +396,24 @@ const GestaoInvestimento: React.FC = () => {
               </div>
 
               <p className="text-[11px] font-bold text-gray-700 mb-2">
-                O que fazer (você executa na XP — a IA não envia ordem):
+                Digite o nome/ticker na busca da XP e aplique o valor (a IA não envia ordem):
               </p>
               <ol className="space-y-2 mb-3" data-testid="gestao-investimento-cenario-acoes">
                 {summary.briefing.scenario.topActions.map((a) => (
                   <li
-                    key={a.rank}
+                    key={`${a.rank}-${a.ticker || a.title}`}
                     className="flex items-start justify-between gap-3 bg-red-50/60 border border-red-100 rounded-xl px-3 py-2"
                   >
                     <div className="min-w-0">
                       <p className="text-xs font-black text-gray-900">
                         {a.rank}. {a.title}
                       </p>
-                      <p className="text-[11px] text-gray-500 truncate">{a.detail}</p>
+                      <p className="text-[11px] text-gray-700 font-semibold truncate">
+                        {a.xpName || a.detail}
+                      </p>
+                      <p className="text-[10px] text-gray-500 truncate">
+                        {a.ticker ? `Busca XP: “${a.ticker}”` : a.detail}
+                      </p>
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-sm font-black text-red-800">{fmtBRL(a.amountBrl)}</p>
@@ -419,13 +424,16 @@ const GestaoInvestimento: React.FC = () => {
               </ol>
 
               <details className="text-xs text-gray-600">
-                <summary className="cursor-pointer font-bold text-gray-700 mb-2">Ver alocação completa (%)</summary>
+                <summary className="cursor-pointer font-bold text-gray-700 mb-2">Ver alocação completa (ticker + %)</summary>
                 <ul className="space-y-1.5">
                   {summary.briefing.scenario.lines.map((l) => (
-                    <li key={l.classKey} className="flex justify-between gap-2 border-b border-gray-100 py-1">
+                    <li
+                      key={`${l.classKey}-${l.ticker || l.instrumentHint}`}
+                      className="flex justify-between gap-2 border-b border-gray-100 py-1"
+                    >
                       <span>
-                        <b>{l.classLabel}</b>
-                        <span className="text-gray-400"> · {l.instrumentHint}</span>
+                        <b className="text-gray-900">{l.ticker || l.classLabel}</b>
+                        <span className="text-gray-500"> · {l.xpName || l.instrumentHint}</span>
                       </span>
                       <span className="font-bold whitespace-nowrap">{l.pct.toFixed(1)}% · {fmtBRL(l.amountBrl)}</span>
                     </li>

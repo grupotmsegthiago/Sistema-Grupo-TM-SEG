@@ -650,71 +650,151 @@ function round4(n) {
 }
 
 // lib/investimentos/allocationEngine.ts
-var DISCLAIMER = "Cen\xE1rio sugerido pela IA com base no seu perfil. N\xE3o \xE9 ordem de compra, nem garantia de retorno. Voc\xEA decide e executa na XP. A IA n\xE3o movimenta dinheiro.";
-var CLASS_META = {
-  emergencia: {
-    label: "Reserva de emerg\xEAncia",
-    instrumentHint: "Tesouro Selic / CDB liquidez di\xE1ria",
-    instrumentType: "tesouro",
-    liquidity: "D+0 / D+1",
-    rationale: "Colch\xE3o fora do risco de mercado \u2014 n\xE3o conta como \u201Caposta\u201D."
-  },
-  caixa: {
-    label: "Caixa / liquidez",
-    instrumentHint: "Tesouro Selic 2029+ ou fundo DI XP",
-    instrumentType: "tesouro",
-    liquidity: "D+0",
-    rationale: "Base l\xEDquida para oportunidades e meta de curto prazo."
-  },
-  renda_fix_pos: {
-    label: "Renda fixa p\xF3s-fixada",
-    instrumentHint: "CDB / LCI / LCA de banco s\xF3lido (CDI+)",
-    instrumentType: "cdb",
-    liquidity: "D+30 a D+90 (conforme t\xEDtulo)",
-    rationale: "Carrega o portf\xF3lio com cupom pr\xF3ximo ao CDI, risco de cr\xE9dito controlado."
-  },
-  renda_fix_ipca: {
-    label: "Renda fixa atrelada \xE0 infla\xE7\xE3o",
-    instrumentHint: "Tesouro IPCA+ (venc. alinhado ao horizonte)",
-    instrumentType: "tesouro",
-    liquidity: "Marca\xE7\xE3o a mercado",
-    rationale: "Protege poder de compra no horizonte m\xE9dio/longo."
-  },
-  fii: {
-    label: "Fundos imobili\xE1rios",
-    instrumentHint: "FIIs de tijolo/papel diversificados (cesta 3\u20135 tickers)",
-    instrumentType: "fii",
-    liquidity: "D+2 Bolsa",
-    rationale: "Renda peri\xF3dica e diversifica\xE7\xE3o; respeita teto por ativo."
-  },
-  acoes_etf: {
-    label: "A\xE7\xF5es / ETF Brasil",
-    instrumentHint: "ETF BOVA11 ou carteira 4\u20136 blue chips",
-    instrumentType: "etf",
-    liquidity: "D+2 Bolsa",
-    rationale: "Motor de retorno de longo prazo; volatilidade elevada."
-  },
-  internacional: {
-    label: "Exterior (ETF/BDR)",
-    instrumentHint: "IVVB11 / BDR de \xEDndice global",
-    instrumentType: "bdr",
-    liquidity: "D+2 Bolsa",
-    rationale: "Diversifica\xE7\xE3o cambial e geogr\xE1fica."
-  },
-  credito_privado: {
-    label: "Cr\xE9dito privado",
-    instrumentHint: "Deb\xEAnture incentivada / CRF (rating alto)",
-    instrumentType: "debenture",
-    liquidity: "Baixa / secund\xE1rio",
-    rationale: "Pr\xEAmio sobre o CDI; s\xF3 com experi\xEAncia e teto r\xEDgido."
-  },
-  cripto: {
-    label: "Cripto (teto baixo)",
-    instrumentHint: "BTC via ETF/exchange regulada (fatia m\xEDnima)",
-    instrumentType: "cripto",
-    liquidity: "Alta / vol\xE1til",
-    rationale: "Somente se autorizado no perfil; nunca acima do teto."
-  }
+var DISCLAIMER = "Cen\xE1rio sugerido pela IA com base no seu perfil. Use o nome/ticker na busca da XP. N\xE3o \xE9 ordem de compra, nem garantia de retorno. Voc\xEA decide e executa. A IA n\xE3o movimenta dinheiro.";
+var CLASS_LABELS = {
+  emergencia: "Reserva de emerg\xEAncia",
+  caixa: "Caixa / liquidez",
+  renda_fix_pos: "Renda fixa p\xF3s-fixada",
+  renda_fix_ipca: "Renda fixa atrelada \xE0 infla\xE7\xE3o",
+  fii: "Fundos imobili\xE1rios",
+  acoes_etf: "A\xE7\xF5es / ETF Brasil",
+  internacional: "Exterior (ETF/BDR)",
+  credito_privado: "Cr\xE9dito privado",
+  cripto: "Cripto"
+};
+var XP_CATALOG = {
+  emergencia: [
+    {
+      ticker: "Tesouro Selic 2029",
+      xpName: "Tesouro Selic 2029",
+      instrumentType: "tesouro",
+      liquidity: "D+1",
+      rationale: "Reserva com liquidez di\xE1ria no Tesouro Direto via XP."
+    }
+  ],
+  caixa: [
+    {
+      ticker: "Tesouro Selic 2029",
+      xpName: "Tesouro Selic 2029",
+      instrumentType: "tesouro",
+      liquidity: "D+1",
+      rationale: "Caixa t\xE1tico l\xEDquido no Tesouro Direto."
+    }
+  ],
+  renda_fix_pos: [
+    {
+      ticker: "CDB liquidez di\xE1ria",
+      xpName: "CDB Liquidez Di\xE1ria (banco s\xF3lido na XP)",
+      instrumentType: "cdb",
+      liquidity: "D+0",
+      rationale: "Renda fixa p\xF3s CDI com resgate r\xE1pido; escolha banco AAA na lista XP.",
+      weight: 2
+    },
+    {
+      ticker: "LCI",
+      xpName: "LCI isenta de IR (prazo ~90\u2013180 dias)",
+      instrumentType: "lci",
+      liquidity: "No vencimento",
+      rationale: "Complemento isento para PF; busque LCI na aba Renda Fixa da XP.",
+      weight: 1
+    }
+  ],
+  renda_fix_ipca: [
+    {
+      ticker: "Tesouro IPCA+ 2035",
+      xpName: "Tesouro IPCA+ 2035",
+      instrumentType: "tesouro",
+      liquidity: "Marca\xE7\xE3o a mercado",
+      rationale: "Prote\xE7\xE3o contra infla\xE7\xE3o no horizonte m\xE9dio."
+    }
+  ],
+  fii: [
+    {
+      ticker: "HGLG11",
+      xpName: "HGLG11 \u2014 CSHG Log\xEDstica",
+      instrumentType: "fii",
+      liquidity: "D+2 Bolsa",
+      rationale: "FII de log\xEDstica (tijolo), l\xEDquido na B3.",
+      weight: 1
+    },
+    {
+      ticker: "XPLG11",
+      xpName: "XPLG11 \u2014 XP Log",
+      instrumentType: "fii",
+      liquidity: "D+2 Bolsa",
+      rationale: "FII de galp\xF5es; busque XPLG11 na XP.",
+      weight: 1
+    },
+    {
+      ticker: "MXRF11",
+      xpName: "MXRF11 \u2014 Maxi Renda",
+      instrumentType: "fii",
+      liquidity: "D+2 Bolsa",
+      rationale: "FII de papel (CRI), renda mensal mais frequente.",
+      weight: 1
+    }
+  ],
+  acoes_etf: [
+    {
+      ticker: "BOVA11",
+      xpName: "BOVA11 \u2014 iShares Ibovespa",
+      instrumentType: "etf",
+      liquidity: "D+2 Bolsa",
+      rationale: "ETF do Ibovespa: uma ordem cobre o \xEDndice.",
+      weight: 2
+    },
+    {
+      ticker: "PETR4",
+      xpName: "PETR4 \u2014 Petrobras PN",
+      instrumentType: "acao",
+      liquidity: "D+2 Bolsa",
+      rationale: "Blue chip l\xEDquida; busque PETR4 na XP.",
+      weight: 1
+    },
+    {
+      ticker: "VALE3",
+      xpName: "VALE3 \u2014 Vale ON",
+      instrumentType: "acao",
+      liquidity: "D+2 Bolsa",
+      rationale: "Blue chip l\xEDquida; busque VALE3 na XP.",
+      weight: 1
+    },
+    {
+      ticker: "ITUB4",
+      xpName: "ITUB4 \u2014 Ita\xFA Unibanco PN",
+      instrumentType: "acao",
+      liquidity: "D+2 Bolsa",
+      rationale: "Banco blue chip; busque ITUB4 na XP.",
+      weight: 1
+    }
+  ],
+  internacional: [
+    {
+      ticker: "IVVB11",
+      xpName: "IVVB11 \u2014 iShares S&P 500",
+      instrumentType: "etf",
+      liquidity: "D+2 Bolsa",
+      rationale: "ETF do S&P 500 negociado na B3 via XP."
+    }
+  ],
+  credito_privado: [
+    {
+      ticker: "Deb\xEAnture incentivada",
+      xpName: "Deb\xEAnture incentivada (isenta) \u2014 rating alto",
+      instrumentType: "debenture",
+      liquidity: "Baixa / secund\xE1rio",
+      rationale: "Na XP: Renda Fixa \u2192 Deb\xEAntures; escolha emissor com bom rating."
+    }
+  ],
+  cripto: [
+    {
+      ticker: "HASH11",
+      xpName: "HASH11 \u2014 Hashdex Nasdaq Crypto Index",
+      instrumentType: "etf",
+      liquidity: "D+2 Bolsa",
+      rationale: "ETF de cripto na B3; busque HASH11 na XP (n\xE3o envia ordem sozinho)."
+    }
+  ]
 };
 function baseWeights(risk) {
   switch (risk) {
@@ -740,6 +820,49 @@ function normalize(weights) {
 }
 function round22(n) {
   return Math.round(n * 100) / 100;
+}
+function expandClassToLines(classKey, classAmount, capital, maxPer, warnings) {
+  const products = XP_CATALOG[classKey];
+  if (!products?.length || classAmount <= 0) return [];
+  const classLabel = CLASS_LABELS[classKey] || classKey;
+  const totalW = products.reduce((s, p) => s + (p.weight ?? 1), 0) || 1;
+  let selected = products;
+  if (classAmount <= maxPer && products.length > 1 && classAmount < 8e3) {
+    selected = [products[0]];
+  }
+  const selW = selected.reduce((s, p) => s + (p.weight ?? 1), 0) || totalW;
+  const raw = selected.map((p) => {
+    const share = (p.weight ?? 1) / selW;
+    return { p, amount: round22(classAmount * share) };
+  });
+  const sum = raw.reduce((s, r) => s + r.amount, 0);
+  const drift = round22(classAmount - sum);
+  if (raw.length > 0 && Math.abs(drift) >= 0.01) {
+    raw[0].amount = round22(raw[0].amount + drift);
+  }
+  const lines = [];
+  for (const { p, amount } of raw) {
+    if (amount <= 0) continue;
+    if (amount > maxPer) {
+      warnings.push(
+        `${p.ticker}: sugest\xE3o ${amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} acima do seu teto por ativo (${maxPer.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}). Divida a compra em mais de um dia ou reduz o lote.`
+      );
+    }
+    const pctOfTotal = capital > 0 ? amount / capital * 100 : 0;
+    lines.push({
+      classKey,
+      classLabel,
+      ticker: p.ticker,
+      xpName: p.xpName,
+      instrumentHint: p.xpName,
+      instrumentType: p.instrumentType,
+      pct: round22(pctOfTotal),
+      amountBrl: amount,
+      rationale: p.rationale,
+      liquidity: p.liquidity
+    });
+  }
+  return lines;
 }
 function buildAllocationScenario(profile, positions = []) {
   if (!profile?.risk_profile || profile.capital_available == null || profile.capital_available <= 0) {
@@ -789,86 +912,65 @@ function buildAllocationScenario(profile, positions = []) {
   const warnings = [];
   const lines = [];
   if (emergencyHeld > 0) {
-    const meta = CLASS_META.emergencia;
-    const pctOfTotal = capital > 0 ? emergencyHeld / capital * 100 : 0;
-    lines.push({
-      classKey: "emergencia",
-      classLabel: meta.label,
-      instrumentHint: meta.instrumentHint,
-      instrumentType: meta.instrumentType,
-      pct: round22(pctOfTotal),
-      amountBrl: round22(emergencyHeld),
-      rationale: meta.rationale,
-      liquidity: meta.liquidity
-    });
+    lines.push(...expandClassToLines("emergencia", emergencyHeld, capital, maxPer, warnings));
   }
   for (const [key, pct] of Object.entries(weights)) {
-    const meta = CLASS_META[key];
-    if (!meta || pct <= 0 || investable <= 0) continue;
-    let amount = round22(investable * pct / 100);
-    if (amount > maxPer) {
-      warnings.push(
-        `${meta.label}: sugest\xE3o ${amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} acima do seu teto por ativo (${maxPer.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}). Divida em 2+ instrumentos.`
-      );
-    }
-    const pctOfTotal = capital > 0 ? amount / capital * 100 : pct;
-    lines.push({
-      classKey: key,
-      classLabel: meta.label,
-      instrumentHint: meta.instrumentHint,
-      instrumentType: meta.instrumentType,
-      pct: round22(pctOfTotal),
-      amountBrl: amount,
-      rationale: meta.rationale,
-      liquidity: meta.liquidity
-    });
+    if (pct <= 0 || investable <= 0) continue;
+    const classAmount = round22(investable * pct / 100);
+    lines.push(...expandClassToLines(key, classAmount, capital, maxPer, warnings));
   }
   const investedSum = lines.filter((l) => l.classKey !== "emergencia").reduce((s, l) => s + l.amountBrl, 0);
   const drift = round22(investable - investedSum);
-  if (Math.abs(drift) >= 0.01 && lines.length > 1) {
+  if (Math.abs(drift) >= 0.01) {
     const idx = lines.findIndex((l) => l.classKey !== "emergencia");
     if (idx >= 0) {
+      const next = round22(lines[idx].amountBrl + drift);
       lines[idx] = {
         ...lines[idx],
-        amountBrl: round22(lines[idx].amountBrl + drift),
-        pct: capital > 0 ? round22((lines[idx].amountBrl + drift) / capital * 100) : lines[idx].pct
+        amountBrl: next,
+        pct: capital > 0 ? round22(next / capital * 100) : lines[idx].pct
       };
     }
   }
   if (positions.length === 0) {
-    warnings.push("Carteira ainda sem posi\xE7\xF5es cadastradas \u2014 este cen\xE1rio \xE9 para montar do zero na XP.");
+    warnings.push("Carteira ainda sem posi\xE7\xF5es cadastradas \u2014 use os nomes/tickers abaixo na busca da XP.");
   } else {
-    warnings.push("H\xE1 posi\xE7\xF5es cadastradas: use o cen\xE1rio como alvo; rebalanceie s\xF3 o que fizer sentido (custos/IR).");
+    warnings.push("H\xE1 posi\xE7\xF5es cadastradas: use os tickers como alvo; rebalanceie s\xF3 o que fizer sentido (custos/IR).");
   }
   const riskLabel = profile.risk_profile === "conservador" ? "Conservador" : profile.risk_profile === "moderado" ? "Moderado" : profile.risk_profile === "arrojado" ? "Arrojado" : profile.risk_profile === "agressivo" ? "Agressivo" : "Indefinido";
-  const investableLines = lines.filter((l) => l.classKey !== "emergencia").sort((a, b) => b.amountBrl - a.amountBrl);
-  const topActions = investableLines.slice(0, 5).map((l, i) => ({
+  const ordered = [
+    ...lines.filter((l) => l.classKey === "emergencia"),
+    ...lines.filter((l) => l.classKey !== "emergencia").sort((a, b) => b.amountBrl - a.amountBrl)
+  ];
+  const topActions = ordered.slice(0, 10).map((l, i) => ({
     rank: i + 1,
-    title: `Alocar em ${l.classLabel}`,
+    title: l.classKey === "emergencia" ? `Aplicar em ${l.ticker}` : `Comprar ${l.ticker}`,
     amountBrl: l.amountBrl,
     pct: l.pct,
-    detail: `${l.instrumentHint} \xB7 ${l.liquidity}`
+    detail: `${l.xpName} \xB7 busque na XP: \u201C${l.ticker}\u201D \xB7 ${l.liquidity}`,
+    ticker: l.ticker,
+    xpName: l.xpName
   }));
   return {
-    id: `scenario_${profile.risk_profile}_v1`,
+    id: `scenario_${profile.risk_profile}_v2`,
     name: `Cen\xE1rio ${riskLabel}`,
-    tagline: `Como equilibrar R$ ${capital.toLocaleString("pt-BR")} na XP (sugest\xE3o da IA)`,
+    tagline: `Como equilibrar R$ ${capital.toLocaleString("pt-BR")} na XP \u2014 nomes para buscar na corretora`,
     riskLabel,
     investableCapital: round22(investable),
     emergencyHeld: round22(emergencyHeld),
-    lines,
+    lines: ordered,
     topActions,
     warnings,
     disclaimer: DISCLAIMER,
     generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    source: "rules_v1"
+    source: "rules_v2"
   };
 }
 
 // lib/investimentos/dashboardCache.ts
 var GESTAO_CACHE_TTL_MS = 30 * 60 * 1e3;
-var CACHE_KEY_PREFIX = "gestao_investimento_cache_v2_";
-var OWNERS_KEY = "gestao_investimento_cache_owners_v2";
+var CACHE_KEY_PREFIX = "gestao_investimento_cache_v3_";
+var OWNERS_KEY = "gestao_investimento_cache_owners_v3";
 function cacheKey(ownerUserId) {
   return `${CACHE_KEY_PREFIX}${ownerUserId}`;
 }
@@ -916,11 +1018,11 @@ function buildBriefing(profile, positions, watchlist, completeness, portfolioVal
     nextActions.push("Completar perfil do investidor (bloqueia recomenda\xE7\xF5es)");
   } else if (scenario?.topActions?.length) {
     nextActions.push(
-      ...scenario.topActions.slice(0, 3).map(
-        (a) => `${a.rank}. ${a.title}: ${a.amountBrl.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} (${a.pct.toFixed(1)}%)`
+      ...scenario.topActions.slice(0, 4).map(
+        (a) => `${a.rank}. ${a.ticker || a.title}: ${a.amountBrl.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} (${a.pct.toFixed(1)}%) \u2014 busque na XP`
       )
     );
-    nextActions.push("Executar na XP o que fizer sentido \u2014 a IA n\xE3o envia ordem");
+    nextActions.push("Execute na XP pelo nome/ticker \u2014 a IA n\xE3o envia ordem");
   }
   if (positions.length === 0 && completeness.complete) {
     nextActions.push("Depois de aplicar, registre as posi\xE7\xF5es reais na aba Carteira XP");

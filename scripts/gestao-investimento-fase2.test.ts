@@ -172,7 +172,11 @@ describe('gestao investimento — fase 2 fundação', () => {
     const sumLines = scenario!.lines.reduce((s, l) => s + l.amountBrl, 0);
     assert.ok(Math.abs(sumLines - 100_000) < 1, `soma linhas ${sumLines}`);
     assert.match(scenario!.disclaimer, /não.*ordem|não movimenta/i);
-    assert.equal(scenario!.source, 'rules_v1');
+    assert.equal(scenario!.source, 'rules_v2');
+    // Nomes objetivos pesquisáveis na XP (não só classe genérica)
+    assert.ok(scenario!.topActions.every((a) => a.ticker && a.xpName));
+    assert.ok(scenario!.lines.some((l) => l.ticker === 'BOVA11' || l.ticker === 'IVVB11' || /Tesouro/i.test(l.ticker)));
+    assert.match(scenario!.topActions[0].detail, /busque na XP/i);
   });
 
   it('cache automático 30 min + UI sem botão Atualizar obrigatório', async () => {
@@ -187,7 +191,7 @@ describe('gestao investimento — fase 2 fundação', () => {
     assert.match(api, /readCachedSnapshot/);
     assert.match(vercel, /gestao-investimento-api\?op=refresh-cache/);
     assert.match(vercel, /\*\/30 \* \* \* \*/);
-    assert.match(ui, /tmseg_gestao_investimento_summary_v2/);
+    assert.match(ui, /tmseg_gestao_investimento_summary_v3/);
     assert.match(ui, /AUTO_REFRESH_MS/);
     assert.match(ui, /gestao-investimento-cache-status/);
     assert.doesNotMatch(ui, /data-testid="gestao-investimento-refresh"/);
