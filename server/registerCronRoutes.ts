@@ -31,6 +31,13 @@ export function registerCronRoutes(app: Express): void {
     for (const tick of getScheduledTicks()) {
       await tick();
     }
+    // Idempotente: aplica schema da Gestão Investimento se ainda faltar (Fase 2).
+    try {
+      const { runGestaoInvestimentoMigrations } = await import("../lib/investimentos/schemaMigrations");
+      await runGestaoInvestimentoMigrations();
+    } catch (e: any) {
+      console.warn("[Cron] gestao-investimento schema:", e?.message || e);
+    }
   });
 
   cronRoute(app, "/api/cron/nf-retry", () => runRetryCycle());

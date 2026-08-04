@@ -89,4 +89,17 @@ describe('gestao investimento — fase 2 fundação', () => {
     assert.match(sql, /NÃO aplicar em produção sem autorização/i);
     assert.match(sql, /NÃO está autorizada a comprar/i);
   });
+
+  it('ensure-schema e SQL embutido estão disponíveis para runtime Vercel', async () => {
+    const routes = await readFile('server/gestaoInvestimentoRoutes.ts', 'utf8');
+    const cron = await readFile('server/registerCronRoutes.ts', 'utf8');
+    const emb = await readFile('lib/investimentos/fundacaoSql.ts', 'utf8');
+    const ui = await readFile('components/investimentos/GestaoInvestimento.tsx', 'utf8');
+    assert.match(routes, /ensure-schema/);
+    assert.match(routes, /runGestaoInvestimentoMigrations/);
+    assert.match(cron, /runGestaoInvestimentoMigrations/);
+    assert.match(emb, /GESTAO_INVESTIMENTO_FUNDACAO_SQL/);
+    assert.match(emb, /investor_profiles/);
+    assert.match(ui, /gestao-investimento-ensure-schema/);
+  });
 });

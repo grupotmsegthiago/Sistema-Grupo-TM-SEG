@@ -13,11 +13,14 @@ import {
   createDraftInvestorProfile,
   describeMonthlyTargetBand,
   evaluateProfileCompleteness,
+  isGestaoInvestimentoSchemaReady,
+  runGestaoInvestimentoMigrations,
   type InvestorProfile,
   type InvestmentPosition,
   type InvestmentRiskLimits,
   type InvestmentWatchlistItem,
 } from '../lib/investimentos';
+import { verifyCronRequest } from './cronAuth';
 
 type Principal = { id: string; name: string; role: string; email: string | null };
 
@@ -128,10 +131,53 @@ function mapProfileRow(body: any): Partial<InvestorProfile> {
 export function registerGestaoInvestimentoRoutes(app: Express, requireAuth: any): void {
   const base = '/api/gestao-investimento';
 
+  /** Health público mínimo — só indica se o schema existe (sem dados financeiros). */
+  app.get(`${base}/health`, async (_req: Request, res: Response) => {
+    try {
+      const schemaReady = await isGestaoInvestimentoSchemaReady();
+      return res.json({ ok: true, schemaReady, module: 'gestao-investimento' });
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, schemaReady: false, error: e?.message || 'Falha' });
+    }
+  });
+
+  /** Aplica migration (service role). Diretoria autenticada ou CRON_SECRET. */
+  app.post(`${base}/ensure-schema`, async (req: Request, res: Response) => {
+    try {
+      const cronOk = verifyCronRequest(req);
+      if (!cronOk) {
+        const authHeader = req.headers.authorization || '';
+        if (authHeader) {
+          (req as any).authToken = String(authHeader).replace(/^Bearer\s+/i, '');
+        }
+        const user = await resolvePrincipal(req);
+        if (!denyIfNotDiretoria(user, res)) return;
+      }
+      const result = await runGestaoInvestimentoMigrations();
+      return res.status(result.ok ? 200 : 500).json({ ok: result.ok, ...result });
+    } catch (e: any) {
+      console.error('[gestao-investimento/ensure-schema]', e?.message || e);
+      return res.status(500).json({ ok: false, error: e?.message || 'Falha' });
+    }
+  });
+
   app.get(`${base}/summary`, requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await resolvePrincipal(req);
       if (!denyIfNotDiretoria(user, res)) return;
+
+      // Auto-aplica schema na primeira carga da Diretoria (idempotente).
+      if (!(await isGestaoInvestimentoSchemaReady())) {
+        const mig = await runGestaoInvestimentoMigrations();
+        if (!mig.ok) {
+          return res.status(503).json({
+            ok: false,
+            error: 'schema_missing',
+            message: mig.message,
+          });
+        }
+      }
+
       const sb = createSupabaseAdminClient();
       if (!sb) return res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
 

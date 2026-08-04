@@ -241,9 +241,33 @@ const GestaoInvestimento: React.FC = () => {
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-800 text-sm" data-testid="gestao-investimento-error">
           {error}
           {schemaMissing && (
-            <p className="mt-2 text-xs font-bold">
-              Aplique a migration <code>migrations/2026_08_04_gestao_investimento_fundacao.sql</code> no Supabase (somente com sua autorização) e recarregue.
-            </p>
+            <div className="mt-3 space-y-2">
+              <p className="text-xs font-bold">
+                O schema ainda não está no banco. Clique para aplicar a migration de fundação (service role no servidor).
+              </p>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={async () => {
+                  setSaving(true);
+                  setError(null);
+                  try {
+                    const res = await authFetch('/api/gestao-investimento/ensure-schema', { method: 'POST', body: '{}' });
+                    const json = await res.json();
+                    if (!res.ok || !json.ok) throw new Error(json.message || json.error || 'Falha ao aplicar schema');
+                    await load();
+                  } catch (e: any) {
+                    setError(e?.message || 'Falha ao aplicar schema');
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                className="inline-flex items-center gap-2 bg-red-700 hover:bg-red-800 text-white text-xs font-bold px-3 py-2 rounded-lg"
+                data-testid="gestao-investimento-ensure-schema"
+              >
+                Aplicar schema no Supabase
+              </button>
+            </div>
           )}
         </div>
       )}
