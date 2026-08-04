@@ -287,6 +287,10 @@
       "destination": "/api/cron/email-queue"
     },
     {
+      "source": "/api/cron/gestao-investimento-schema",
+      "destination": "/api/cron/gestao-investimento-schema"
+    },
+    {
       "source": "/api/password-reset/request",
       "destination": "/api/password-reset-request"
     },
@@ -593,7 +597,7 @@
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/gestao-investimento/ensure-schema",
+      "path": "/api/cron/gestao-investimento-schema",
       "schedule": "*/10 * * * *"
     }
   ],

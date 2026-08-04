@@ -123,10 +123,14 @@ describe('gestao investimento — fase 2 fundação', () => {
     const vercelJson = JSON.parse(vercel);
     assert.ok(
       (vercelJson.crons || []).some((c: { path?: string }) =>
-        String(c.path || '').includes('gestao-investimento/ensure-schema'),
+        String(c.path || '').includes('/api/cron/gestao-investimento-schema'),
       ),
-      'cron ensure-schema deve existir',
+      'cron ensure-schema deve existir em path de arquivo real',
     );
+    const cronApi = await readFile('api/cron/gestao-investimento-schema.ts', 'utf8');
+    assert.match(cronApi, /_gestao-investimento-core\.cjs/);
+    assert.match(cronApi, /ensure-schema/);
   });
 });
+
 
