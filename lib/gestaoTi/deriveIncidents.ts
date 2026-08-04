@@ -1,8 +1,9 @@
 import type { CatalogSnapshot, DerivedIncident, HealthCheckResult, SsotEntry } from './types.js';
-import { sanitizeForDisplay } from './sanitize.js';
+import { maskZapiInstanceIds, sanitizeForDisplay } from './sanitize.js';
 
 /**
  * Incidentes derivados em memória (Fase 2) — sem persistência em tabelas inadequadas.
+ * Registra falhas reais detectadas (Z-API, diagnostics, timeouts) sem corrigi-las.
  */
 export function deriveIncidentsFromCatalogAndHealth(
   catalog: CatalogSnapshot,
@@ -13,30 +14,44 @@ export function deriveIncidentsFromCatalogAndHealth(
 
   for (const h of health) {
     if (h.tone === 'red') {
+      const evidence = maskZapiInstanceIds(
+        sanitizeForDisplay(`${h.path} → HTTP ${h.statusCode ?? 'n/a'} | ${h.summary}`),
+      );
       incidents.push({
         code: `INC-HC-${h.id.toUpperCase()}`,
         title: `Health check com falha: ${h.label}`,
-        severity: h.moduleId === 'mod-asaas' || h.moduleId === 'mod-infra' ? 'P1' : 'P2',
+        severity:
+          h.moduleId === 'mod-asaas' || h.moduleId === 'mod-infra' || h.moduleId === 'mod-whatsapp'
+            ? 'P1'
+            : 'P2',
         moduleId: h.moduleId,
-        evidence: sanitizeForDisplay(`${h.path} → HTTP ${h.statusCode ?? 'n/a'} | ${h.summary}`),
+        evidence,
         firstSeenAt: h.checkedAt,
         lastSeenAt: h.checkedAt,
         count: 1,
         state: 'aberto',
-        impact: 'Integração ou disponibilidade degradada conforme health check existente.',
+        impact:
+          'Falha confirmada pelo health check existente. Registrada para investigação posterior — sem autocorreção nesta fase.',
       });
     } else if (h.tone === 'yellow') {
+      const isTimeout = /timeout|falha de rede|aborted|AbortError|inconclusiv/i.test(h.summary || '');
       incidents.push({
         code: `INC-HC-WARN-${h.id.toUpperCase()}`,
-        title: `Health check inconclusivo: ${h.label}`,
+        title: isTimeout
+          ? `Timeout inconclusivo: ${h.label}`
+          : `Health check inconclusivo: ${h.label}`,
         severity: 'P3',
         moduleId: h.moduleId,
-        evidence: sanitizeForDisplay(`${h.path} | retries=${h.retries} | ${h.summary}`),
+        evidence: maskZapiInstanceIds(
+          sanitizeForDisplay(`${h.path} | retries=${h.retries} | ${h.summary}`),
+        ),
         firstSeenAt: h.checkedAt,
         lastSeenAt: h.checkedAt,
         count: 1,
         state: 'observado',
-        impact: 'Não classificado como falha definitiva; requer nova verificação.',
+        impact: isTimeout
+          ? 'Resultado inconclusivo por timeout após retry — não declarar indisponibilidade confirmada.'
+          : 'Não classificado como falha definitiva; requer nova verificação.',
       });
     }
   }

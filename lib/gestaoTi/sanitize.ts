@@ -59,6 +59,18 @@ export function sanitizeForDisplay(input: unknown): string {
   return sanitizeLogText(input, 800);
 }
 
+/** Mascara identificadores completos de instância Z-API (sufixo/ID). */
+export function maskZapiInstanceIds(text: string): string {
+  return String(text ?? '')
+    .replace(/\b3E[A-Z0-9]{6,}\b/gi, '[instância]')
+    .replace(/\bINSTANCE[_-]?[A-Z0-9*]{4,}\b/gi, '[instância]')
+    .replace(/("instanceId"\s*:\s*")[^"]{4,}(")/gi, '$1[instância]$2')
+    .replace(/("instance"\s*:\s*")[^"]{4,}(")/gi, '$1[instância]$2')
+    .replace(/\bInstância\s+[A-Za-z0-9_*-]{6,}/gi, 'Instância [mascarada]')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 /** Sanitiza objetos/arrays aninhados (valores viram texto redigido). */
 export function sanitizeDeep(input: unknown, maxLen = 2000, depth = 0): unknown {
   if (depth > 6) return '[REDACTED_DEPTH]';

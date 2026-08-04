@@ -86,7 +86,10 @@ export interface HealthCheckResult {
   ok: boolean | null;
   statusCode: number | null;
   latencyMs: number | null;
+  /** Mensagem executiva curta (sem JSON bruto). */
   summary: string;
+  /** Detalhe técnico sanitizado (recolhido na UI). */
+  detail?: string;
   checkedAt: string;
   retries: number;
 }
