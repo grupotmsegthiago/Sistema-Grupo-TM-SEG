@@ -73,8 +73,10 @@ const GestaoInvestimento: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), 20_000);
     try {
-      const res = await authFetch('/api/gestao-investimento/summary');
+      const res = await authFetch('/api/gestao-investimento/summary', { signal: ctrl.signal });
       const json = await res.json();
       if (res.status === 503 && (json.error === 'schema_missing' || json.message)) {
         setSchemaMissing(true);
@@ -89,8 +91,14 @@ const GestaoInvestimento: React.FC = () => {
       setSummary(json);
       setProfileForm(createDraftInvestorProfile({ ...(json.draftDefaults || {}), ...(json.profile || {}) }));
     } catch (e: any) {
-      setError(e?.message || 'Falha ao carregar Gestão Investimento');
+      if (e?.name === 'AbortError') {
+        setError('Tempo esgotado ao carregar. Tente de novo ou aplique o schema no Supabase.');
+        setSchemaMissing(true);
+      } else {
+        setError(e?.message || 'Falha ao carregar Gestão Investimento');
+      }
     } finally {
+      window.clearTimeout(timer);
       setLoading(false);
     }
   }, []);

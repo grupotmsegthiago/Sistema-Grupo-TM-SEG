@@ -17,6 +17,7 @@ export const authFetch = (url: string, options: RequestInit = {}) => {
   return fetch(url, {
     cache: 'no-store',
     ...options,
+    signal: options.signal,
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,

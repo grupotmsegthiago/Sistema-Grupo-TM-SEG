@@ -351,6 +351,50 @@
       "destination": "/api/os-analysis"
     },
     {
+      "source": "/api/gestao-investimento",
+      "destination": "/api/gestao-investimento-api?op=summary"
+    },
+    {
+      "source": "/api/gestao-investimento/health",
+      "destination": "/api/gestao-investimento-api?op=health"
+    },
+    {
+      "source": "/api/gestao-investimento/summary",
+      "destination": "/api/gestao-investimento-api?op=summary"
+    },
+    {
+      "source": "/api/gestao-investimento/ensure-schema",
+      "destination": "/api/gestao-investimento-api?op=ensure-schema"
+    },
+    {
+      "source": "/api/gestao-investimento/profile",
+      "destination": "/api/gestao-investimento-api?op=profile"
+    },
+    {
+      "source": "/api/gestao-investimento/positions",
+      "destination": "/api/gestao-investimento-api?op=positions"
+    },
+    {
+      "source": "/api/gestao-investimento/positions/:id",
+      "destination": "/api/gestao-investimento-api?op=positions&id=:id"
+    },
+    {
+      "source": "/api/gestao-investimento/watchlist",
+      "destination": "/api/gestao-investimento-api?op=watchlist"
+    },
+    {
+      "source": "/api/gestao-investimento/watchlist/:id",
+      "destination": "/api/gestao-investimento-api?op=watchlist&id=:id"
+    },
+    {
+      "source": "/api/gestao-investimento/audit",
+      "destination": "/api/gestao-investimento-api?op=audit"
+    },
+    {
+      "source": "/api/gestao-investimento/risk-limits",
+      "destination": "/api/gestao-investimento-api?op=risk-limits"
+    },
+    {
       "source": "/api/billing/dashboard",
       "destination": "/api/billing-dashboard"
     },

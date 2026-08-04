@@ -31,13 +31,16 @@ export function registerCronRoutes(app: Express): void {
     for (const tick of getScheduledTicks()) {
       await tick();
     }
-    // Idempotente: aplica schema da Gestão Investimento se ainda faltar (Fase 2).
-    try {
-      const { runGestaoInvestimentoMigrations } = await import("../lib/investimentos/schemaMigrations");
-      await runGestaoInvestimentoMigrations();
-    } catch (e: any) {
-      console.warn("[Cron] gestao-investimento schema:", e?.message || e);
-    }
+    // NÃO await — migration longa/trava no cron derruba o Express (api/index)
+    // e deixa telas em "Carregando…" infinito. Schema via botão ensure-schema / SQL.
+    void import("../lib/investimentos/schemaMigrations")
+      .then(({ runGestaoInvestimentoMigrations }) =>
+        Promise.race([
+          runGestaoInvestimentoMigrations(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout 12s")), 12_000)),
+        ]),
+      )
+      .catch((e: any) => console.warn("[Cron] gestao-investimento schema:", e?.message || e));
   });
 
   cronRoute(app, "/api/cron/nf-retry", () => runRetryCycle());

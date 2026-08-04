@@ -166,16 +166,20 @@ export function registerGestaoInvestimentoRoutes(app: Express, requireAuth: any)
       const user = await resolvePrincipal(req);
       if (!denyIfNotDiretoria(user, res)) return;
 
-      // Auto-aplica schema na primeira carga da Diretoria (idempotente).
-      if (!(await isGestaoInvestimentoSchemaReady())) {
-        const mig = await runGestaoInvestimentoMigrations();
-        if (!mig.ok) {
-          return res.status(503).json({
-            ok: false,
-            error: 'schema_missing',
-            message: mig.message,
-          });
-        }
+      // NÃO auto-aplica no summary: migration sequencial via exec_sql pode
+      // segurar a request até o timeout da Vercel → tela "Carregando…" eterna.
+      // Schema: POST /ensure-schema (handler leve) ou SQL manual.
+      const schemaReady = await Promise.race([
+        isGestaoInvestimentoSchemaReady(),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 6_000)),
+      ]);
+      if (!schemaReady) {
+        return res.status(503).json({
+          ok: false,
+          error: 'schema_missing',
+          message:
+            'Migration da Gestão Investimento ainda não aplicada. Use “Aplicar schema no Supabase” ou o SQL em migrations/2026_08_04_gestao_investimento_fundacao.sql',
+        });
       }
 
       const sb = createSupabaseAdminClient();

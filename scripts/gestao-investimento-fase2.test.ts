@@ -102,4 +102,18 @@ describe('gestao investimento — fase 2 fundação', () => {
     assert.match(emb, /investor_profiles/);
     assert.match(ui, /gestao-investimento-ensure-schema/);
   });
+
+  it('handler leve na Vercel evita Express e tem rewrites', async () => {
+    const api = await readFile('api/gestao-investimento-api.ts', 'utf8');
+    const lib = await readFile('lib/investimentos/gestaoInvestimentoApi.ts', 'utf8');
+    const vercel = await readFile('vercel.json', 'utf8');
+    const ui = await readFile('components/investimentos/GestaoInvestimento.tsx', 'utf8');
+    const cron = await readFile('server/registerCronRoutes.ts', 'utf8');
+    assert.match(api, /handleGestaoInvestimentoOp/);
+    assert.match(lib, /op === 'summary'/);
+    assert.match(vercel, /gestao-investimento-api\?op=summary/);
+    assert.match(vercel, /gestao-investimento-api\?op=health/);
+    assert.match(ui, /AbortController/);
+    assert.match(cron, /NÃO await/);
+  });
 });

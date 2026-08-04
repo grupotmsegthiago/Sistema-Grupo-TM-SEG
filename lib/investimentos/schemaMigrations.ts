@@ -51,7 +51,13 @@ export async function runGestaoInvestimentoMigrations(): Promise<{ ok: boolean; 
 
   for (const statement of statements) {
     try {
-      const { error } = await client.rpc('exec_sql', { sql: `${statement};` });
+      const rpcResult = await Promise.race([
+        client.rpc('exec_sql', { sql: `${statement};` }),
+        new Promise<{ error: { message: string } }>((resolve) =>
+          setTimeout(() => resolve({ error: { message: 'exec_sql timeout 8s' } }), 8_000),
+        ),
+      ]);
+      const error = (rpcResult as any)?.error;
       if (error) {
         const msg = String(error.message || error);
         if (!/already exists|duplicate/i.test(msg)) {
