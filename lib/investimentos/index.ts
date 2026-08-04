@@ -11,3 +11,8 @@ export {
   type DashboardBriefing,
   type DashboardSnapshot,
 } from './dashboardCache';
+export {
+  buildAllocationScenario,
+  type AllocationLine,
+  type AllocationScenario,
+} from './allocationEngine';
