@@ -605,6 +605,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
       showNotification('Cadastro incompleto', 'Informe Cidade e UF (necessário para emitir NF).', 'error');
       return;
     }
+    const cnpjDigits = String(formData.cnpj || '').replace(/\D/g, '');
+    if (String(formData.status || '') === 'Ativo' && cnpjDigits.length !== 11 && cnpjDigits.length !== 14) {
+      showNotification('Cadastro incompleto', 'Informe um CNPJ/CPF válido para cadastrar o cliente no Asaas.', 'error');
+      return;
+    }
     setIsSaving(true);
     try {
       const fullAddress = `${formData.street}, ${formData.number}${formData.complement ? ' - ' + formData.complement : ''}, ${formData.neighborhood}, ${formData.city} - ${formData.state}, CEP: ${formData.zip_code}`;
@@ -639,6 +644,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
         nf_municipal_service_name: formData.nf_municipal_service_name?.trim() || null
       };
 
+      let savedClientId: string | null = id ? String(id) : null;
       if (id) {
           let { error: updErr } = await supabase.from('clients').update(payload).eq('id', id);
           if (updErr && updErr.code === '42703') {
@@ -650,16 +656,53 @@ const ClientForm: React.FC<ClientFormProps> = ({
           await logAction('UPDATE', 'Client', id, `Cliente atualizado: ${formData.name}`);
       } else {
           payload.created_by = currentUser?.name || 'SISTEMA';
-          let { error: insErr } = await supabase.from('clients').insert([payload]).select();
+          let { data: inserted, error: insErr } = await supabase.from('clients').insert([payload]).select('id').single();
           if (insErr && insErr.code === '42703') {
             const { operational_email, ...safePayload } = payload;
             safePayload.created_by = currentUser?.name || 'SISTEMA';
-            const res2 = await supabase.from('clients').insert([safePayload]).select();
+            const res2 = await supabase.from('clients').insert([safePayload]).select('id').single();
             insErr = res2.error;
+            inserted = res2.data;
           }
           if (insErr) throw insErr;
-          await logAction('CREATE', 'Client', 'NEW', `Cliente cadastrado: ${formData.name}`);
+          savedClientId = inserted?.id != null ? String(inserted.id) : null;
+          await logAction('CREATE', 'Client', savedClientId || 'NEW', `Cliente cadastrado: ${formData.name}`);
       }
+
+      // Cliente Ativo: cadastra/atualiza nas 3 contas Asaas (endereço fiscal obrigatório).
+      if (String(formData.status || '') === 'Ativo' && savedClientId) {
+        const syncRes = await authFetch('/api/asaas/sync-customers', {
+          method: 'POST',
+          body: JSON.stringify({ clientId: savedClientId }),
+        });
+        const syncData = await syncRes.json().catch(() => ({} as any));
+        if (!syncRes.ok && syncRes.status !== 207) {
+          throw new Error(
+            syncData?.error ||
+              syncData?.results?.[0]?.skipReason ||
+              'Falha ao cadastrar o cliente no Asaas. Corrija o endereço/CNPJ e salve novamente.',
+          );
+        }
+        const companyErrors = (syncData?.results?.[0]?.companies || []).filter((c: any) => !c.ok);
+        if (syncData?.results?.[0]?.skipped) {
+          throw new Error(
+            syncData.results[0].skipReason ||
+              'Cadastro incompleto para o Asaas. Preencha CNPJ e endereço completo.',
+          );
+        }
+        if (companyErrors.length > 0) {
+          const detail = companyErrors
+            .map((c: any) => `${c.company}: ${c.error || 'erro'}`)
+            .join(' | ');
+          throw new Error(`Salvo no sistema, mas falhou no Asaas (${detail}). Ajuste e salve novamente.`);
+        }
+        showNotification(
+          'Cliente sincronizado',
+          'Cadastro salvo e enviado às 3 contas Asaas (TM Gestão, TM Segurança e TM Security).',
+          'success',
+        );
+      }
+
       onBack();
     } catch (error) { 
         console.error(error);
@@ -1031,7 +1074,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         <select className={INPUT_CLASS} value={formData.issuer_company} onChange={e => setFormData({...formData, issuer_company: e.target.value})} data-testid="select-client-issuer-company">
                             <option value="">Selecione...</option>
                             <option value="TM GESTÃO">TM GESTÃO — CNPJ 60.485.843/0001-57</option>
-                            <option value="TM SEGURANÇA">TM SEGURANÇA — CNPJ 60.508.931/0001-27</option>
+                            <option value="TM SEGURANÇA">TM SEGURANÇA — CNPJ 28.804.378/0001-67</option>
                             <option value="TM SECURITY">TM SECURITY — CNPJ 60.508.931/0001-27</option>
                         </select>
                     </div>

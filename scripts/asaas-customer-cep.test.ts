@@ -10,9 +10,10 @@ describe('Asaas create-charge — CEP no cliente (anti NF 400)', () => {
     assert.match(src, /isClientAddressComplete/);
   });
 
-  it('findOrCreateCustomer atualiza endereço quando CEP falta no Asaas', () => {
+  it('findOrCreateCustomer atualiza endereço quando há CEP local', () => {
     const api = fs.readFileSync('lib/asaasChargeApi.ts', 'utf8');
     assert.match(api, /updateCustomerAddress/);
-    assert.match(api, /params\.postalCode && !String\(existing\.postalCode/);
+    assert.match(api, /if \(params\.postalCode\)/);
+    assert.match(api, /await updateCustomerAddress\(existing\.id, params\)/);
   });
 });

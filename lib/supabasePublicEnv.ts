@@ -18,6 +18,15 @@ export function extractSupabaseProjectRef(url: string): string | null {
   return match?.[1]?.toLowerCase() ?? null;
 }
 
+/** Remove `/rest/v1` e barra final — o client JS já acrescenta o path da API. */
+export function normalizeSupabaseProjectUrl(url: string): string {
+  const cleaned = cleanEnv(url);
+  if (!cleaned) return '';
+  return cleaned
+    .replace(/\/rest\/v1\/?$/i, '')
+    .replace(/\/+$/, '');
+}
+
 export function decodeJwtProjectRef(key: string): string | null {
   try {
     const part = cleanEnv(key).split('.')[1];
