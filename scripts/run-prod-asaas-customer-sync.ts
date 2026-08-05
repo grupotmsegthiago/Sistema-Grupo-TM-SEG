@@ -16,7 +16,7 @@ async function main() {
     process.exit(1);
   }
   const base = String(process.env.TMSEG_PUBLIC_URL || 'https://sistema.grupotmseg.com.br').replace(/\/$/, '');
-  const limit = 4;
+  const limit = 2;
   let offset = 0;
   let totalProcessed = 0;
   let totalUpdated = 0;

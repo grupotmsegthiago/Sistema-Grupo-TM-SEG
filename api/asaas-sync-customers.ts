@@ -58,16 +58,24 @@ export default async function handler(req: any, res: any) {
     }
 
     const body = parseBody(req.body);
+    if (body.ping === true) {
+      res.status(200).json({ ok: true, ping: true, ts: Date.now() });
+      return;
+    }
+
+    const started = Date.now();
     const result = await runAsaasSyncCustomers({
       clientId: body.clientId != null ? String(body.clientId) : undefined,
-      limit: body.limit != null ? Number(body.limit) : 5,
+      limit: body.limit != null ? Number(body.limit) : 2,
       offset: body.offset != null ? Number(body.offset) : 0,
       dryRun: body.dryRun === true,
-      // Em serverless, delay mínimo — o Asaas aguenta o ritmo deste lote.
     });
-    // delay padrão do core (40ms) já reduz risco de timeout de 60s.
 
-    res.status(result.errors > 0 ? 207 : 200).json({ ok: result.errors === 0, ...result });
+    res.status(result.errors > 0 ? 207 : 200).json({
+      ok: result.errors === 0,
+      ...result,
+      elapsedMs: Date.now() - started,
+    });
   } catch (e: any) {
     console.error('[asaas-sync-customers]', e?.message || e);
     res.status(500).json({ ok: false, error: e?.message || 'Erro ao sincronizar clientes no Asaas' });
