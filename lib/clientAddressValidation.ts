@@ -97,16 +97,28 @@ export function formatClientAddressIncompleteError(opts: {
   clientName?: string;
   missing: ClientAddressFieldKey[];
   cnpj?: string;
-}): { error: string; code: string; missing: ClientAddressFieldKey[] } {
+  clientId?: string | number | null;
+}): {
+  error: string;
+  code: string;
+  missing: ClientAddressFieldKey[];
+  clientId?: string;
+  fixCadastro: true;
+} {
   const who = opts.clientName ? `"${opts.clientName}"` : 'do cliente';
   const list = opts.missing.join(', ');
   const cnpjHint = opts.cnpj ? ` (CNPJ ${opts.cnpj})` : '';
+  const clientId =
+    opts.clientId != null && String(opts.clientId).trim() !== ''
+      ? String(opts.clientId)
+      : undefined;
   return {
     code: 'CLIENT_ADDRESS_INCOMPLETE',
     missing: opts.missing,
+    fixCadastro: true,
+    ...(clientId ? { clientId } : {}),
     error:
       `Cadastro incompleto ${who}${cnpjHint}: falta ${list}. ` +
-      `Abra Clientes → edite o cadastro → preencha CEP, Logradouro, Número, Cidade e UF (use a busca por CEP) e salve. ` +
-      `Só então emita a fatura/NF novamente.`,
+      `O sistema abrirá o cadastro do cliente — preencha CEP, Logradouro, Número, Cidade e UF (use a busca por CEP), salve e emita a fatura/NF novamente.`,
   };
 }

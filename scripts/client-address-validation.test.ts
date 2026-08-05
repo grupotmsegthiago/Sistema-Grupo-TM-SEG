@@ -54,12 +54,31 @@ describe('clientAddressValidation — endereço fiscal obrigatório', () => {
     const core = fs.readFileSync('lib/asaasCreateChargeCore.ts', 'utf8');
     assert.match(core, /CLIENT_ADDRESS_INCOMPLETE|formatClientAddressIncompleteError/);
     assert.match(core, /addressIncompleteResponse/);
+    assert.match(core, /clientId/);
     assert.doesNotMatch(core, /lookupCnpjAddressBrasilApi/);
     const billing = fs.readFileSync('components/ClientBillingReport.tsx', 'utf8');
     assert.match(billing, /assertClientAddressReady/);
+    assert.match(billing, /openClientAddressFix/);
     assert.match(billing, /alert-client-address-incomplete/);
     const form = fs.readFileSync('components/ClientForm.tsx', 'utf8');
     assert.match(form, /CEP \*/);
     assert.match(form, /Cidade \*/);
+    assert.match(form, /nfAddressRequiredHint/);
+    assert.match(form, /client-nf-address-section/);
+    const app = fs.readFileSync('App.tsx', 'utf8');
+    assert.match(app, /clientFormReturnTo|fin-billing/);
+    assert.match(app, /nfAddressRequiredHint/);
+  });
+
+  it('erro de endereço incompleto inclui clientId quando informado', () => {
+    const err = formatClientAddressIncompleteError({
+      clientName: 'RFM',
+      missing: ['CEP', 'Cidade'],
+      cnpj: '24455580000170',
+      clientId: 42,
+    });
+    assert.equal(err.clientId, '42');
+    assert.equal(err.fixCadastro, true);
+    assert.match(err.error, /abrirá o cadastro/);
   });
 });

@@ -26,6 +26,8 @@ interface ClientFormProps {
   onEditQuote: (id: string) => void;
   onSave: (client: Client) => void;
   id?: string | null;
+  /** Aberto a partir do faturamento para completar endereço fiscal da NF Asaas. */
+  nfAddressRequiredHint?: boolean;
 }
 
 const REGIONS = ['NÍVEL BRASIL', 'NORTE', 'NORDESTE', 'CENTRO-OESTE', 'SUDESTE', 'SUL'];
@@ -51,7 +53,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
     onAddVehicle, onEditVehicle, 
     onAddRoute, onEditRoute, 
     onAddQuote, onEditQuote, 
-    onSave, id 
+    onSave, id,
+    nfAddressRequiredHint = false,
 }) => {
   const { showNotification } = useNotification();
   const [activeTab, setActiveTab] = useState<'registration' | 'costs' | 'cancellation' | 'vehicles' | 'routes' | 'quotes' | 'contracts'>('registration');
@@ -250,6 +253,17 @@ const ClientForm: React.FC<ClientFormProps> = ({
     supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name')
         .then(({ data }) => data && setClientsList(data as any));
   }, [id]);
+
+  useEffect(() => {
+    if (!nfAddressRequiredHint) return;
+    setActiveTab('registration');
+    const t = window.setTimeout(() => {
+      document.getElementById('client-nf-address-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const cepInput = document.querySelector<HTMLInputElement>('[data-testid="input-client-zip"]');
+      cepInput?.focus();
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [nfAddressRequiredHint, id]);
 
   const handleSearchCNPJ = async () => {
     const cleanCnpj = formData.cnpj.replace(/\D/g, '');
@@ -823,6 +837,18 @@ const ClientForm: React.FC<ClientFormProps> = ({
           />
       )}
 
+      {nfAddressRequiredHint && (
+        <div
+          className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+          data-testid="alert-nf-address-required"
+        >
+          <p className="font-black uppercase tracking-wide text-[11px] text-amber-800 mb-1">Endereço obrigatório para NF (Asaas)</p>
+          <p className="font-semibold leading-relaxed">
+            Preencha CEP, Logradouro, Número, Cidade e UF (use a busca por CEP), salve o cadastro e volte ao faturamento para emitir a fatura/NF novamente.
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
             <button onClick={onBack} className="p-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"><ArrowLeft size={20} /></button>
@@ -1174,7 +1200,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
                             <PhoneIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         </div>
                     </div>
-                    <div className="space-y-1.5">
+                    <div
+                      id="client-nf-address-section"
+                      className={`space-y-1.5 ${nfAddressRequiredHint ? 'rounded-xl border-2 border-red-300 bg-red-50/60 p-3 ring-2 ring-red-200' : ''}`}
+                    >
                         <label className={LABEL_CLASS}>CEP *</label>
                         <div className="relative">
                             <input 

@@ -32,11 +32,12 @@ export type CreateChargeInput = {
 };
 
 type AddressLookupResult =
-  | { ok: true; address: ReturnType<typeof toAsaasAddressPayload>; clientName?: string }
+  | { ok: true; address: ReturnType<typeof toAsaasAddressPayload>; clientName?: string; clientId?: string }
   | {
       ok: false;
       missing: ReturnType<typeof missingClientAddressFields>;
       clientName?: string;
+      clientId?: string;
       cnpj: string;
     };
 
@@ -51,16 +52,18 @@ async function lookupClientAddress(cleanCnpj: string): Promise<AddressLookupResu
   try {
     let local: ClientAddressLike = {};
     let clientName: string | undefined;
+    let clientId: string | undefined;
     if (sb) {
       const { data: clientData } = await sb
         .from('clients')
-        .select('name, trading_name, zip_code, street, number, complement, neighborhood, city, state')
+        .select('id, name, trading_name, zip_code, street, number, complement, neighborhood, city, state')
         .or(`cnpj.ilike.%${cleanCnpj}%`)
         .limit(1)
         .abortSignal(addrCtrl.signal)
         .maybeSingle();
       if (clientData) {
         clientName = clientData.trading_name || clientData.name || undefined;
+        clientId = clientData.id != null ? String(clientData.id) : undefined;
         local = {
           zip_code: clientData.zip_code || undefined,
           street: clientData.street || undefined,
@@ -77,10 +80,11 @@ async function lookupClientAddress(cleanCnpj: string): Promise<AddressLookupResu
         ok: false,
         missing: missingClientAddressFields(local),
         clientName,
+        clientId,
         cnpj: cleanCnpj,
       };
     }
-    return { ok: true, address: toAsaasAddressPayload(local), clientName };
+    return { ok: true, address: toAsaasAddressPayload(local), clientName, clientId };
   } catch (e: any) {
     if (addrCtrl.signal.aborted || e?.name === 'AbortError') {
       console.log(`[CREATE-CHARGE] Timeout ao ler endereço do cadastro (CNPJ ${cleanCnpj})`);
@@ -98,13 +102,13 @@ function addressIncompleteResponse(lookup: Extract<AddressLookupResult, { ok: fa
     clientName: lookup.clientName || fallbackName,
     missing: lookup.missing,
     cnpj: lookup.cnpj,
+    clientId: lookup.clientId,
   });
   return {
     status: 400 as const,
     body: {
       success: false,
       ...payload,
-      fixCadastro: true,
     },
   };
 }

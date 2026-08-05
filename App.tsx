@@ -117,6 +117,9 @@ const App: React.FC = () => {
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
   const [currentScreen, setCurrentScreen] = useState(() => resolveInitialScreen('dashboard'));
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** Quando o faturamento abre o cadastro para corrigir endereço fiscal da NF. */
+  const [clientFormReturnTo, setClientFormReturnTo] = useState<string | null>(null);
+  const [clientFormNfAddressHint, setClientFormNfAddressHint] = useState(false);
   
   const [rebootCountdown, setRebootCountdown] = useState<number | null>(null);
   const [isCevaClient, setIsCevaClient] = useState(false);
@@ -413,7 +416,11 @@ const App: React.FC = () => {
         <ClientBillingReport
           onNavigate={navigateTo}
           onOpenMission={handleOpenBillingMission}
-          onEditClient={(id) => handleEdit('client-form', id)}
+          onEditClient={(id) => {
+            setClientFormReturnTo('fin-billing');
+            setClientFormNfAddressHint(true);
+            handleEdit('client-form', id);
+          }}
         />
       );
       case 'fin-daily-movement': return <DailyCashMovement />;
@@ -421,7 +428,25 @@ const App: React.FC = () => {
       case 'fin-invoices': return <FinancialInvoiceControl />;
       case 'fin-dhl-noncompliant': return <DhlNonCompliantTables onBack={() => navigateTo('fin-billing')} />;
       case 'clients': return <ClientList onAddClient={() => navigateTo('client-form')} onEdit={(id) => handleEdit('client-form', id)} />;
-      case 'client-form': return ( <ClientForm id={selectedId} onBack={() => navigateTo('clients')} onSave={() => {}} onAddVehicle={() => navigateTo('client-vehicle-form')} onEditVehicle={(vid) => handleEdit('client-vehicle-form', vid)} onAddRoute={() => navigateTo('client-route-form')} onEditRoute={(rid) => handleEdit('client-route-form', rid)} onAddQuote={() => navigateTo('quote-form')} onEditQuote={(qid) => handleEdit('quote-form', qid)} /> );
+      case 'client-form': return (
+        <ClientForm
+          id={selectedId}
+          nfAddressRequiredHint={clientFormNfAddressHint}
+          onBack={() => {
+            const ret = clientFormReturnTo;
+            setClientFormReturnTo(null);
+            setClientFormNfAddressHint(false);
+            navigateTo(ret || 'clients');
+          }}
+          onSave={() => {}}
+          onAddVehicle={() => navigateTo('client-vehicle-form')}
+          onEditVehicle={(vid) => handleEdit('client-vehicle-form', vid)}
+          onAddRoute={() => navigateTo('client-route-form')}
+          onEditRoute={(rid) => handleEdit('client-route-form', rid)}
+          onAddQuote={() => navigateTo('quote-form')}
+          onEditQuote={(qid) => handleEdit('quote-form', qid)}
+        />
+      );
       case 'contract-manager': return <ContractManager />;
       case 'client-users': return <UserList userType="client" onAddUser={() => navigateTo('client-user-form')} onEdit={(id) => handleEdit('client-user-form', id)} />;
       case 'client-user-form': return <UserForm id={selectedId} userType="client" onBack={() => navigateTo('client-users')} />;

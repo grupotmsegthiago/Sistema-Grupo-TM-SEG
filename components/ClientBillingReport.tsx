@@ -3258,22 +3258,47 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         }
     };
 
+    /** Abre o cadastro do cliente para completar endereço fiscal (sem alert bloqueante). */
+    const openClientAddressFix = (opts?: {
+        clientObj?: Client | null;
+        clientId?: string | number | null;
+        missing?: string[];
+        cnpj?: string;
+        clientName?: string;
+    }): void => {
+        const clientObj = opts?.clientObj ?? clients.find(c => c.id.toString() === (invoiceForm.client || selectedClient));
+        const id =
+            opts?.clientId != null && String(opts.clientId).trim() !== ''
+                ? String(opts.clientId)
+                : clientObj?.id != null
+                    ? String(clientObj.id)
+                    : '';
+        const missing =
+            opts?.missing && opts.missing.length > 0
+                ? opts.missing
+                : missingClientAddressFields(clientObj || null);
+        const payload = formatClientAddressIncompleteError({
+            clientName: opts?.clientName || clientObj?.trading_name || clientObj?.name,
+            missing: missing as any,
+            cnpj: opts?.cnpj || clientObj?.cnpj,
+            clientId: id || undefined,
+        });
+        setShowInvoiceModal(false);
+        setAsaasLoading(false);
+        setAiStatus(`Cadastro incompleto — corrija o endereço (falta ${missing.join(', ')}) e emita novamente.`);
+        if (id && onEditClient) {
+            onEditClient(id);
+            return;
+        }
+        // Sem id: mantém mensagem e leva à lista de Clientes.
+        window.alert(payload.error);
+        onNavigate?.('clients');
+    };
+
     const assertClientAddressReady = (clientObj: Client | undefined): boolean => {
         const missing = missingClientAddressFields(clientObj || null);
         if (missing.length === 0) return true;
-        const payload = formatClientAddressIncompleteError({
-            clientName: clientObj?.trading_name || clientObj?.name,
-            missing,
-            cnpj: clientObj?.cnpj,
-        });
-        const goEdit = window.confirm(
-            `${payload.error}\n\nDeseja abrir o cadastro do cliente agora para corrigir?`,
-        );
-        if (goEdit && clientObj?.id != null) {
-            setShowInvoiceModal(false);
-            if (onEditClient) onEditClient(String(clientObj.id));
-            else onNavigate?.('clients');
-        }
+        openClientAddressFix({ clientObj, missing });
         return false;
     };
 
@@ -3359,8 +3384,14 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 // para evitar cobranças órfãs).
                 if (!res.ok && res.status !== 207) {
                     if (data?.code === 'CLIENT_ADDRESS_INCOMPLETE' || data?.fixCadastro) {
-                        assertClientAddressReady(clientObj);
-                        throw new Error(data.error || 'Cadastro incompleto');
+                        openClientAddressFix({
+                            clientObj,
+                            clientId: data.clientId,
+                            missing: data.missing,
+                            cnpj: data.cnpj || clientObj?.cnpj,
+                            clientName: data.clientName || clientObj?.trading_name || clientObj?.name,
+                        });
+                        return;
                     }
                     throw new Error(data.error || 'Erro ao criar cobranças');
                 }
@@ -3425,6 +3456,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     return;
                 } else {
                     const msg = err.message || 'Erro ao criar cobranças';
+                    if (/Cadastro incompleto|CLIENT_ADDRESS_INCOMPLETE|fixCadastro/i.test(msg)) {
+                        openClientAddressFix({ clientObj });
+                        return;
+                    }
                     alert(`Erro ao gerar cobranças no Asaas (ref. ${trackingRef}): ${msg}`);
                     setAiStatus('Erro: ' + msg);
                 }
@@ -3479,8 +3514,14 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             // a cobrança localmente para evitar pagamento órfão.
             if (!res.ok && res.status !== 207) {
                 if (data?.code === 'CLIENT_ADDRESS_INCOMPLETE' || data?.fixCadastro) {
-                    assertClientAddressReady(clientObj);
-                    throw new Error(data.error || 'Cadastro incompleto');
+                    openClientAddressFix({
+                        clientObj,
+                        clientId: data.clientId,
+                        missing: data.missing,
+                        cnpj: data.cnpj || clientObj?.cnpj,
+                        clientName: data.clientName || clientObj?.trading_name || clientObj?.name,
+                    });
+                    return;
                 }
                 throw new Error(data.error || 'Erro ao criar cobrança');
             }
@@ -3557,6 +3598,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 return;
             } else {
                 const msg = err.message || 'Erro ao criar cobrança';
+                if (/Cadastro incompleto|CLIENT_ADDRESS_INCOMPLETE|fixCadastro/i.test(msg)) {
+                    openClientAddressFix({ clientObj });
+                    return;
+                }
                 alert(`Erro ao gerar cobrança no Asaas (ref. ${trackingRef}): ${msg}`);
                 setAiStatus('Erro: ' + msg);
             }
