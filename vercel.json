@@ -141,7 +141,7 @@
       "maxDuration": 60
     },
     "api/asaas-sync-customers.ts": {
-      "maxDuration": 300
+      "maxDuration": 60
     },
     "api/asaas-balances.ts": {
       "maxDuration": 60

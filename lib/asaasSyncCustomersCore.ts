@@ -116,7 +116,7 @@ export async function syncOneClientToAsaas(
   const address = toAsaasAddressPayload(row);
   const email = pickEmail(row);
   const companies = opts?.companies || ASAAS_SYNC_COMPANIES;
-  const delayMs = opts?.delayMs ?? 150;
+  const delayMs = opts?.delayMs ?? 40;
 
   for (const company of companies) {
     try {

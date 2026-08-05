@@ -10,7 +10,7 @@
 import { assertAsaasApiAccess, extractAuthToken } from '../lib/asaasApiAuth.js';
 import { runAsaasSyncCustomers } from '../lib/asaasSyncCustomersCore.js';
 
-export const config = { maxDuration: 300 };
+export const config = { maxDuration: 60 };
 
 function parseBody(body: unknown): Record<string, unknown> {
   if (!body) return {};
@@ -60,10 +60,12 @@ export default async function handler(req: any, res: any) {
     const body = parseBody(req.body);
     const result = await runAsaasSyncCustomers({
       clientId: body.clientId != null ? String(body.clientId) : undefined,
-      limit: body.limit != null ? Number(body.limit) : 20,
+      limit: body.limit != null ? Number(body.limit) : 5,
       offset: body.offset != null ? Number(body.offset) : 0,
       dryRun: body.dryRun === true,
+      // Em serverless, delay mínimo — o Asaas aguenta o ritmo deste lote.
     });
+    // delay padrão do core (40ms) já reduz risco de timeout de 60s.
 
     res.status(result.errors > 0 ? 207 : 200).json({ ok: result.errors === 0, ...result });
   } catch (e: any) {
