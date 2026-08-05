@@ -140,9 +140,6 @@
     "api/asaas-create-charge.ts": {
       "maxDuration": 60
     },
-    "api/asaas-sync-customers.ts": {
-      "maxDuration": 60
-    },
     "api/asaas-balances.ts": {
       "maxDuration": 60
     },
