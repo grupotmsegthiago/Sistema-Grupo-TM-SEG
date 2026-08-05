@@ -27,7 +27,7 @@ async function main() {
 
   console.log(`[prod-sync] ${base}/api/asaas/sync-customers`);
 
-  for (let round = 0; round < 20; round++) {
+  for (let round = 0; round < 100; round++) {
     const res = await fetch(`${base}/api/asaas/sync-customers`, {
       method: 'POST',
       headers: {
