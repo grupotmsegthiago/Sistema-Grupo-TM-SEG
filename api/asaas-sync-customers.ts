@@ -48,6 +48,18 @@ export default async function handler(req: any, res: any) {
 
     res.setHeader('Cache-Control', 'no-store');
 
+    const body = parseBody(req.body);
+    // Ping antes da auth — evita depender de CRON_SECRET/login só para healthcheck.
+    if (body.ping === true) {
+      res.status(200).json({
+        ok: true,
+        ping: true,
+        ts: Date.now(),
+        cronAuth: hasCronSecret(req),
+      });
+      return;
+    }
+
     if (!hasCronSecret(req)) {
       const token = extractAuthToken(req);
       const denied = await assertAsaasApiAccess(token, req);
@@ -55,12 +67,6 @@ export default async function handler(req: any, res: any) {
         res.status(denied === 'Não autorizado' ? 401 : 403).json({ ok: false, error: denied });
         return;
       }
-    }
-
-    const body = parseBody(req.body);
-    if (body.ping === true) {
-      res.status(200).json({ ok: true, ping: true, ts: Date.now() });
-      return;
     }
 
     const started = Date.now();

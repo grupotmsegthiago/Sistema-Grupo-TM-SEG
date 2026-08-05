@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Client } from '../types';
 import { supabase } from '../lib/supabase';
+import { authFetch } from '../lib/authFetch';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
 import { formatDateBR } from '../lib/dateUtils';
@@ -32,6 +33,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
 
   const [filterAdjustment, setFilterAdjustment] = useState<'ALL' | 'PENDING' | 'DONE'>('ALL');
   const [filterType, setFilterType] = useState<'ALL' | 'CLIENT' | 'PROSPECT'>('ALL');
+  const [isSyncingAsaas, setIsSyncingAsaas] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('userData');
@@ -216,6 +218,45 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
 
   const canEditRule = isAdmin || isDirector;
 
+  const syncAllActiveClientsToAsaas = async () => {
+    if (isSyncingAsaas) return;
+    const ok = window.confirm(
+      'Enviar todos os clientes ATIVOS (com endereço completo) para as 3 contas Asaas?\n\nTM Gestão, TM Segurança e TM Security.\nQuem estiver sem CEP/endereço será pulado.',
+    );
+    if (!ok) return;
+    setIsSyncingAsaas(true);
+    let offset = 0;
+    let synced = 0;
+    let skipped = 0;
+    let errors = 0;
+    try {
+      for (let round = 0; round < 40; round++) {
+        const res = await authFetch('/api/asaas/sync-customers', {
+          method: 'POST',
+          body: JSON.stringify({ limit: 2, offset }),
+        });
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok && res.status !== 207) {
+          throw new Error(data.error || `Falha HTTP ${res.status}`);
+        }
+        synced += Number(data.updated || 0) + Number(data.created || 0);
+        skipped += Number(data.skipped || 0);
+        errors += Number(data.errors || 0);
+        if (data.nextOffset == null) break;
+        offset = Number(data.nextOffset);
+      }
+      showNotification(
+        errors > 0 ? 'Sync Asaas com avisos' : 'Sync Asaas concluído',
+        `Sincronizados: ${synced} | Pulados: ${skipped} | Erros: ${errors}`,
+        errors > 0 ? 'warning' : 'success',
+      );
+    } catch (e: any) {
+      showNotification('Erro no sync Asaas', e?.message || 'Falha ao sincronizar', 'error');
+    } finally {
+      setIsSyncingAsaas(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="bg-gradient-to-r from-gray-900 via-gray-800 to-black p-6 rounded-2xl shadow-xl border border-white/5 text-white">
@@ -262,6 +303,18 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
             <button onClick={fetchClients} className="p-2.5 border rounded-lg hover:bg-gray-50 text-gray-500">
                 <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
             </button>
+            {isAdmin && (
+                <button
+                  type="button"
+                  onClick={syncAllActiveClientsToAsaas}
+                  disabled={isSyncingAsaas}
+                  className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white px-4 py-2.5 rounded-lg text-xs font-black transition-colors shadow-sm uppercase"
+                  data-testid="btn-sync-clients-asaas"
+                >
+                  {isSyncingAsaas ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                  Sync Asaas (3 contas)
+                </button>
+            )}
             {!lockedClientId && (
                 <button onClick={onAddClient} className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-sm uppercase">
                 <Plus size={18} /> Novo Cliente
