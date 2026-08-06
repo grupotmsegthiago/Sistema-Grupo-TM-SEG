@@ -2,6 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
+  cpfCnpjLookupVariants,
+  formatBrazilCpfCnpj,
   formatClientAddressIncompleteError,
   isClientAddressComplete,
   missingClientAddressFields,
@@ -27,6 +29,15 @@ describe('clientAddressValidation — endereço fiscal obrigatório', () => {
         state: 'SP',
       }),
     );
+  });
+
+  it('formata CNPJ e monta variantes que casam com cadastro pontuado', () => {
+    assert.equal(formatBrazilCpfCnpj('24455580000170'), '24.455.580/0001-70');
+    assert.equal(formatBrazilCpfCnpj('24.455.580/0001-70'), '24.455.580/0001-70');
+    const variants = cpfCnpjLookupVariants('24455580000170');
+    assert.deepEqual(variants, ['24455580000170', '24.455.580/0001-70']);
+    // Regressão: lookup NÃO pode depender de ilike só com dígitos limpos.
+    assert.ok(variants.includes('24.455.580/0001-70'));
   });
 
   it('monta payload Asaas e mensagem de erro', () => {
@@ -55,11 +66,14 @@ describe('clientAddressValidation — endereço fiscal obrigatório', () => {
     assert.match(core, /CLIENT_ADDRESS_INCOMPLETE|formatClientAddressIncompleteError/);
     assert.match(core, /addressIncompleteResponse/);
     assert.match(core, /clientId/);
+    assert.match(core, /cpfCnpjLookupVariants/);
+    assert.doesNotMatch(core, /cnpj\.ilike\.%\$\{cleanCnpj\}%/);
     assert.doesNotMatch(core, /lookupCnpjAddressBrasilApi/);
     const billing = fs.readFileSync('components/ClientBillingReport.tsx', 'utf8');
     assert.match(billing, /assertClientAddressReady/);
     assert.match(billing, /openClientAddressFix/);
     assert.match(billing, /alert-client-address-incomplete/);
+    assert.match(billing, /clientId:\s*clientObj/);
     const form = fs.readFileSync('components/ClientForm.tsx', 'utf8');
     assert.match(form, /CEP \*/);
     assert.match(form, /Cidade \*/);

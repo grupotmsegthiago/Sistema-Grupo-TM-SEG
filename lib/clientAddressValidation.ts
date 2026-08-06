@@ -36,6 +36,34 @@ function readCep(input: ClientAddressLike): string {
   return String(input.zip_code || input.postalCode || '').replace(/\D/g, '');
 }
 
+/** Só dígitos de CPF/CNPJ. */
+export function cleanCpfCnpjDigits(value: unknown): string {
+  return String(value || '').replace(/\D/g, '');
+}
+
+/**
+ * Formata CPF (11) / CNPJ (14) no padrão brasileiro com pontuação.
+ * O cadastro `clients.cnpj` costuma estar formatado; o create-charge manda só dígitos.
+ */
+export function formatBrazilCpfCnpj(digitsOrMasked: unknown): string {
+  const d = cleanCpfCnpjDigits(digitsOrMasked);
+  if (d.length === 14) {
+    return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+  }
+  if (d.length === 11) {
+    return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  }
+  return d;
+}
+
+/** Variantes de CNPJ/CPF para lookup no cadastro (dígitos + máscara BR). */
+export function cpfCnpjLookupVariants(digitsOrMasked: unknown): string[] {
+  const clean = cleanCpfCnpjDigits(digitsOrMasked);
+  if (!clean) return [];
+  const formatted = formatBrazilCpfCnpj(clean);
+  return formatted === clean ? [clean] : [clean, formatted];
+}
+
 function readStreet(input: ClientAddressLike): string {
   return String(input.street || input.address || '').trim();
 }

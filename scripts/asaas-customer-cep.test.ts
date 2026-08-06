@@ -8,6 +8,10 @@ describe('Asaas create-charge — CEP no cliente (anti NF 400)', () => {
     assert.doesNotMatch(src, /postalCode:\s*_omit/);
     assert.match(src, /addressIncompleteResponse|CLIENT_ADDRESS_INCOMPLETE|formatClientAddressIncompleteError/);
     assert.match(src, /isClientAddressComplete/);
+    assert.match(src, /cpfCnpjLookupVariants/);
+    assert.match(src, /bodyClientId|opts\?\.clientId/);
+    // Regressão: ilike só com dígitos limpos não encontra CNPJ formatado no banco.
+    assert.doesNotMatch(src, /cnpj\.ilike\.%\$\{cleanCnpj\}%/);
   });
 
   it('findOrCreateCustomer atualiza endereço quando há CEP local', () => {

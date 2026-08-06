@@ -3360,6 +3360,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     method: 'POST',
                     ...(ctrl ? { signal: ctrl.signal } : {}),
                     body: JSON.stringify({
+                        clientId: clientObj?.id != null ? String(clientObj.id) : invoiceForm.client || undefined,
                         clientName: clientObj?.trading_name || clientObj?.name || 'Cliente',
                         clientEmail: invoiceMedicaoEmail,
                         dueDate: invoiceForm.boleto_due_date,
@@ -3495,6 +3496,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 method: 'POST',
                 ...(ctrl ? { signal: ctrl.signal } : {}),
                 body: JSON.stringify({
+                    clientId: clientObj.id != null ? String(clientObj.id) : invoiceForm.client || undefined,
                     clientName: clientObj.trading_name || clientObj.name,
                     clientCpfCnpj: clientObj.cnpj.replace(/\D/g, ''),
                     clientEmail: invoiceMedicaoEmail,
