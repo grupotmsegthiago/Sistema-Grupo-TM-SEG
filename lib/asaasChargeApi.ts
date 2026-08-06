@@ -209,6 +209,16 @@ export async function updateCustomerAddress(
   );
 }
 
+export async function findCustomerByCpfCnpj(
+  cpfCnpj: string,
+  company?: string,
+  signal?: AbortSignal,
+): Promise<AsaasCustomer | null> {
+  const clean = cpfCnpj.replace(/\D/g, '');
+  const found = await asaasFetch(`/customers?cpfCnpj=${clean}`, { signal }, company);
+  return found.data?.length > 0 ? (found.data[0] as AsaasCustomer) : null;
+}
+
 export async function findOrCreateCustomer(params: {
   name: string;
   cpfCnpj: string;
@@ -227,8 +237,8 @@ export async function findOrCreateCustomer(params: {
   const found = await asaasFetch(`/customers?cpfCnpj=${clean}`, { signal: params.signal }, params.company);
   if (found.data?.length > 0) {
     const existing = found.data[0] as AsaasCustomer & { postalCode?: string };
-    // Sem CEP no Asaas a NF falha (endereço incompleto). Atualiza quando temos dados locais.
-    if (params.postalCode && !String(existing.postalCode || '').replace(/\D/g, '')) {
+    // Atualiza endereço fiscal local → Asaas (NF exige CEP/logradouro completos).
+    if (params.postalCode) {
       try {
         await updateCustomerAddress(existing.id, params);
       } catch (e: any) {

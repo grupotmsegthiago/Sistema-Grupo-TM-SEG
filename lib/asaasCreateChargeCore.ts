@@ -14,6 +14,7 @@ import {
   persistAsaasChargeInvoice,
 } from './persistAsaasChargeInvoice.js';
 import {
+  cpfCnpjLookupVariants,
   formatClientAddressIncompleteError,
   isClientAddressComplete,
   missingClientAddressFields,
@@ -32,17 +33,21 @@ export type CreateChargeInput = {
 };
 
 type AddressLookupResult =
-  | { ok: true; address: ReturnType<typeof toAsaasAddressPayload>; clientName?: string }
+  | { ok: true; address: ReturnType<typeof toAsaasAddressPayload>; clientName?: string; clientId?: string }
   | {
       ok: false;
       missing: ReturnType<typeof missingClientAddressFields>;
       clientName?: string;
+      clientId?: string;
       cnpj: string;
     };
 
 /** Lê endereço do cadastro local (`clients`). Sem completar pela Receita — obriga corrigir o cadastro. */
-async function lookupClientAddress(cleanCnpj: string): Promise<AddressLookupResult> {
-  if (!cleanCnpj) {
+async function lookupClientAddress(
+  cleanCnpj: string,
+  opts?: { clientId?: string | number | null },
+): Promise<AddressLookupResult> {
+  if (!cleanCnpj && (opts?.clientId == null || String(opts.clientId).trim() === '')) {
     return { ok: false, missing: missingClientAddressFields(null), cnpj: cleanCnpj };
   }
   const sb = createSupabaseAdminClient();
@@ -51,16 +56,45 @@ async function lookupClientAddress(cleanCnpj: string): Promise<AddressLookupResu
   try {
     let local: ClientAddressLike = {};
     let clientName: string | undefined;
+    let clientId: string | undefined;
     if (sb) {
-      const { data: clientData } = await sb
-        .from('clients')
-        .select('name, trading_name, zip_code, street, number, complement, neighborhood, city, state')
-        .or(`cnpj.ilike.%${cleanCnpj}%`)
-        .limit(1)
-        .abortSignal(addrCtrl.signal)
-        .maybeSingle();
+      const select =
+        'id, name, trading_name, cnpj, zip_code, street, number, complement, neighborhood, city, state';
+      let clientData: any = null;
+
+      // 1) Preferência: id do cliente (vindo do faturamento) — evita falha por máscara de CNPJ.
+      const rawId = opts?.clientId != null ? String(opts.clientId).trim() : '';
+      if (rawId) {
+        const byId = await sb
+          .from('clients')
+          .select(select)
+          .eq('id', rawId)
+          .abortSignal(addrCtrl.signal)
+          .maybeSingle();
+        if (byId.data) clientData = byId.data;
+      }
+
+      // 2) Fallback: CNPJ em dígitos E formatado (cadastro usa 24.455.580/0001-70).
+      //    NÃO usar ilike.%digitosLimpos% — não casa com CNPJ pontuado no banco.
+      if (!clientData && cleanCnpj) {
+        for (const variant of cpfCnpjLookupVariants(cleanCnpj)) {
+          const byCnpj = await sb
+            .from('clients')
+            .select(select)
+            .eq('cnpj', variant)
+            .limit(1)
+            .abortSignal(addrCtrl.signal)
+            .maybeSingle();
+          if (byCnpj.data) {
+            clientData = byCnpj.data;
+            break;
+          }
+        }
+      }
+
       if (clientData) {
         clientName = clientData.trading_name || clientData.name || undefined;
+        clientId = clientData.id != null ? String(clientData.id) : undefined;
         local = {
           zip_code: clientData.zip_code || undefined,
           street: clientData.street || undefined,
@@ -77,10 +111,11 @@ async function lookupClientAddress(cleanCnpj: string): Promise<AddressLookupResu
         ok: false,
         missing: missingClientAddressFields(local),
         clientName,
+        clientId,
         cnpj: cleanCnpj,
       };
     }
-    return { ok: true, address: toAsaasAddressPayload(local), clientName };
+    return { ok: true, address: toAsaasAddressPayload(local), clientName, clientId };
   } catch (e: any) {
     if (addrCtrl.signal.aborted || e?.name === 'AbortError') {
       console.log(`[CREATE-CHARGE] Timeout ao ler endereço do cadastro (CNPJ ${cleanCnpj})`);
@@ -98,13 +133,13 @@ function addressIncompleteResponse(lookup: Extract<AddressLookupResult, { ok: fa
     clientName: lookup.clientName || fallbackName,
     missing: lookup.missing,
     cnpj: lookup.cnpj,
+    clientId: lookup.clientId,
   });
   return {
     status: 400 as const,
     body: {
       success: false,
       ...payload,
-      fixCadastro: true,
     },
   };
 }
@@ -134,7 +169,8 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
 
     const lookupCnpj = clientCpfCnpj || (charges?.[0]?.cpfCnpj) || '';
     const cleanLookup = String(lookupCnpj).replace(/\D/g, '');
-    const clientAddressLookup = await lookupClientAddress(cleanLookup);
+    const bodyClientId = body.clientId != null ? String(body.clientId) : undefined;
+    const clientAddressLookup = await lookupClientAddress(cleanLookup, { clientId: bodyClientId });
     if (!clientAddressLookup.ok) {
       return addressIncompleteResponse(clientAddressLookup, clientName);
     }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Save, Building2, Truck, Users, Search, Loader2, AlertTriangle, DollarSign, Edit, Trash2, Plus, FileSpreadsheet, MessageCircle, RefreshCw, Navigation, FileText, MapPin, CheckSquare, Square, X, Edit2, Clock, ScrollText, TrendingUp, Percent, Send, CheckCircle, ShieldCheck, ArrowRight, RotateCcw, Copy, Lock, Calendar, Check, Mail, Phone as PhoneIcon, Map as MapIcon, Hash, Fingerprint, Calculator, Target, UserCheck, XCircle } from 'lucide-react';
 import { Client, ClientPriceTable } from '../types';
 import { supabase } from '../lib/supabase';
@@ -7,6 +7,10 @@ import { logAction } from '../lib/logger';
 import { clientFuzzyFilter } from '../lib/financialUtils';
 import { generateAutoBands, suggestAutoMasterFromManualTables, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
 import { useNotification } from '../lib/NotificationContext';
+import {
+  missingClientAddressFields,
+  type ClientAddressFieldKey,
+} from '../lib/clientAddressValidation';
 import ImportClientPriceModal from './ImportClientPriceModal';
 import ClientVehicleList from './ClientVehicleList';
 import ClientRouteList from './ClientRouteList';
@@ -26,12 +30,17 @@ interface ClientFormProps {
   onEditQuote: (id: string) => void;
   onSave: (client: Client) => void;
   id?: string | null;
+  /** Aberto a partir do faturamento para completar endereço fiscal da NF Asaas. */
+  nfAddressRequiredHint?: boolean;
 }
 
 const REGIONS = ['NÍVEL BRASIL', 'NORTE', 'NORDESTE', 'CENTRO-OESTE', 'SUDESTE', 'SUL'];
 
 const INPUT_CLASS = "w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500/20 focus:border-red-500 text-sm transition-all font-medium";
 const LABEL_CLASS = "text-[10px] font-black text-gray-500 uppercase mb-1.5 block tracking-wider";
+/** Destaque só no campo que ainda falta — não pintar CEP se ele já está ok. */
+const NF_FIELD_MISSING_CLASS =
+  'rounded-xl border-2 border-red-300 bg-red-50/60 p-3 ring-2 ring-red-200';
 
 const parseCurrency = (value: string | number): number => {
     if (value === undefined || value === null || value === '') return 0;
@@ -51,7 +60,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
     onAddVehicle, onEditVehicle, 
     onAddRoute, onEditRoute, 
     onAddQuote, onEditQuote, 
-    onSave, id 
+    onSave, id,
+    nfAddressRequiredHint = false,
 }) => {
   const { showNotification } = useNotification();
   const [activeTab, setActiveTab] = useState<'registration' | 'costs' | 'cancellation' | 'vehicles' | 'routes' | 'quotes' | 'contracts'>('registration');
@@ -250,6 +260,37 @@ const ClientForm: React.FC<ClientFormProps> = ({
     supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name')
         .then(({ data }) => data && setClientsList(data as any));
   }, [id]);
+
+  useEffect(() => {
+    if (!nfAddressRequiredHint) return;
+    setActiveTab('registration');
+    const t = window.setTimeout(() => {
+      document.getElementById('client-nf-address-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const firstMissing = missingClientAddressFields(formData)[0];
+      const testIdByField: Partial<Record<ClientAddressFieldKey, string>> = {
+        CEP: 'input-client-zip',
+        UF: 'input-client-state',
+        Cidade: 'input-client-city',
+        Número: 'input-client-number',
+        Logradouro: 'input-client-street',
+      };
+      const testId = (firstMissing && testIdByField[firstMissing]) || 'input-client-zip';
+      document.querySelector<HTMLInputElement>(`[data-testid="${testId}"]`)?.focus();
+    }, 350);
+    return () => window.clearTimeout(t);
+    // formData intencional só no mount do hint — evita refoco a cada tecla
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nfAddressRequiredHint, id]);
+
+  /** Campos ainda incompletos para NF; o destaque vermelho acompanha o preenchimento. */
+  const missingNfAddressFields = useMemo(
+    () => missingClientAddressFields(formData),
+    [formData],
+  );
+  const nfAddressComplete = missingNfAddressFields.length === 0;
+  const showNfAddressGuide = nfAddressRequiredHint && !nfAddressComplete;
+  const isNfFieldMissing = (field: ClientAddressFieldKey) =>
+    showNfAddressGuide && missingNfAddressFields.includes(field);
 
   const handleSearchCNPJ = async () => {
     const cleanCnpj = formData.cnpj.replace(/\D/g, '');
@@ -591,6 +632,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
       showNotification('Cadastro incompleto', 'Informe Cidade e UF (necessário para emitir NF).', 'error');
       return;
     }
+    const cnpjDigits = String(formData.cnpj || '').replace(/\D/g, '');
+    if (String(formData.status || '') === 'Ativo' && cnpjDigits.length !== 11 && cnpjDigits.length !== 14) {
+      showNotification('Cadastro incompleto', 'Informe um CNPJ/CPF válido para cadastrar o cliente no Asaas.', 'error');
+      return;
+    }
     setIsSaving(true);
     try {
       const fullAddress = `${formData.street}, ${formData.number}${formData.complement ? ' - ' + formData.complement : ''}, ${formData.neighborhood}, ${formData.city} - ${formData.state}, CEP: ${formData.zip_code}`;
@@ -625,6 +671,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
         nf_municipal_service_name: formData.nf_municipal_service_name?.trim() || null
       };
 
+      let savedClientId: string | null = id ? String(id) : null;
       if (id) {
           let { error: updErr } = await supabase.from('clients').update(payload).eq('id', id);
           if (updErr && updErr.code === '42703') {
@@ -636,16 +683,53 @@ const ClientForm: React.FC<ClientFormProps> = ({
           await logAction('UPDATE', 'Client', id, `Cliente atualizado: ${formData.name}`);
       } else {
           payload.created_by = currentUser?.name || 'SISTEMA';
-          let { error: insErr } = await supabase.from('clients').insert([payload]).select();
+          let { data: inserted, error: insErr } = await supabase.from('clients').insert([payload]).select('id').single();
           if (insErr && insErr.code === '42703') {
             const { operational_email, ...safePayload } = payload;
             safePayload.created_by = currentUser?.name || 'SISTEMA';
-            const res2 = await supabase.from('clients').insert([safePayload]).select();
+            const res2 = await supabase.from('clients').insert([safePayload]).select('id').single();
             insErr = res2.error;
+            inserted = res2.data;
           }
           if (insErr) throw insErr;
-          await logAction('CREATE', 'Client', 'NEW', `Cliente cadastrado: ${formData.name}`);
+          savedClientId = inserted?.id != null ? String(inserted.id) : null;
+          await logAction('CREATE', 'Client', savedClientId || 'NEW', `Cliente cadastrado: ${formData.name}`);
       }
+
+      // Cliente Ativo: cadastra/atualiza nas 3 contas Asaas (endereço fiscal obrigatório).
+      if (String(formData.status || '') === 'Ativo' && savedClientId) {
+        const syncRes = await authFetch('/api/asaas/sync-customers', {
+          method: 'POST',
+          body: JSON.stringify({ clientId: savedClientId }),
+        });
+        const syncData = await syncRes.json().catch(() => ({} as any));
+        if (!syncRes.ok && syncRes.status !== 207) {
+          throw new Error(
+            syncData?.error ||
+              syncData?.results?.[0]?.skipReason ||
+              'Falha ao cadastrar o cliente no Asaas. Corrija o endereço/CNPJ e salve novamente.',
+          );
+        }
+        const companyErrors = (syncData?.results?.[0]?.companies || []).filter((c: any) => !c.ok);
+        if (syncData?.results?.[0]?.skipped) {
+          throw new Error(
+            syncData.results[0].skipReason ||
+              'Cadastro incompleto para o Asaas. Preencha CNPJ e endereço completo.',
+          );
+        }
+        if (companyErrors.length > 0) {
+          const detail = companyErrors
+            .map((c: any) => `${c.company}: ${c.error || 'erro'}`)
+            .join(' | ');
+          throw new Error(`Salvo no sistema, mas falhou no Asaas (${detail}). Ajuste e salve novamente.`);
+        }
+        showNotification(
+          'Cliente sincronizado',
+          'Cadastro salvo e enviado às 3 contas Asaas (TM Gestão, TM Segurança e TM Security).',
+          'success',
+        );
+      }
+
       onBack();
     } catch (error) { 
         console.error(error);
@@ -821,6 +905,32 @@ const ClientForm: React.FC<ClientFormProps> = ({
             state={formData.state}
             address={`${formData.street}, ${formData.number}, ${formData.city}-${formData.state}`} 
           />
+      )}
+
+      {nfAddressRequiredHint && (
+        <div
+          className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+            nfAddressComplete
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-950'
+              : 'border-amber-300 bg-amber-50 text-amber-950'
+          }`}
+          data-testid="alert-nf-address-required"
+        >
+          <p
+            className={`font-black uppercase tracking-wide text-[11px] mb-1 ${
+              nfAddressComplete ? 'text-emerald-800' : 'text-amber-800'
+            }`}
+          >
+            {nfAddressComplete
+              ? 'Endereço fiscal completo — salve o cadastro'
+              : 'Endereço obrigatório para NF (Asaas)'}
+          </p>
+          <p className="font-semibold leading-relaxed">
+            {nfAddressComplete
+              ? 'CEP, Logradouro, Número, Cidade e UF estão preenchidos. Clique em Finalizar e Salvar Cliente e volte ao faturamento para emitir a fatura/NF.'
+              : `Ainda falta: ${missingNfAddressFields.join(', ')}. Use a busca por CEP para preencher o endereço, complete o que faltar, salve e volte ao faturamento.`}
+          </p>
+        </div>
       )}
 
       <div className="flex items-center justify-between">
@@ -1005,7 +1115,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         <select className={INPUT_CLASS} value={formData.issuer_company} onChange={e => setFormData({...formData, issuer_company: e.target.value})} data-testid="select-client-issuer-company">
                             <option value="">Selecione...</option>
                             <option value="TM GESTÃO">TM GESTÃO — CNPJ 60.485.843/0001-57</option>
-                            <option value="TM SEGURANÇA">TM SEGURANÇA — CNPJ 60.508.931/0001-27</option>
+                            <option value="TM SEGURANÇA">TM SEGURANÇA — CNPJ 28.804.378/0001-67</option>
                             <option value="TM SECURITY">TM SECURITY — CNPJ 60.508.931/0001-27</option>
                         </select>
                     </div>
@@ -1174,7 +1284,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
                             <PhoneIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         </div>
                     </div>
-                    <div className="space-y-1.5">
+                    <div
+                      id="client-nf-address-section"
+                      className={`space-y-1.5 ${isNfFieldMissing('CEP') ? NF_FIELD_MISSING_CLASS : ''}`}
+                    >
                         <label className={LABEL_CLASS}>CEP *</label>
                         <div className="relative">
                             <input 
@@ -1191,23 +1304,32 @@ const ClientForm: React.FC<ClientFormProps> = ({
                                 placeholder="00000-000"
                                 data-testid="input-client-zip"
                             />
-                            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-red-500" size={16} />
+                            <MapPin
+                              className={`absolute left-3 top-1/2 -translate-y-1/2 ${
+                                isNfFieldMissing('CEP') ? 'text-red-500' : 'text-gray-400'
+                              }`}
+                              size={16}
+                            />
                             {isSearchingCep && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400" size={16} />}
                         </div>
-                        <p className="text-[10px] text-gray-500 font-semibold">Obrigatório para emitir NF no Asaas. Digite o CEP para preencher o endereço.</p>
+                        <p className="text-[10px] text-gray-500 font-semibold">
+                          {isNfFieldMissing('CEP')
+                            ? 'CEP inválido ou vazio — digite 8 dígitos para buscar o endereço (obrigatório na NF Asaas).'
+                            : 'Obrigatório para emitir NF no Asaas. Digite o CEP para preencher o endereço.'}
+                        </p>
                     </div>
-                    <div className="space-y-1.5">
+                    <div className={`space-y-1.5 ${isNfFieldMissing('UF') ? NF_FIELD_MISSING_CLASS : ''}`}>
                         <label className={LABEL_CLASS}>UF *</label>
                         <input type="text" className={INPUT_CLASS} required value={formData.state} onChange={e => setFormData({...formData, state: e.target.value.toUpperCase()})} maxLength={2} data-testid="input-client-state" />
                     </div>
-                    <div className="space-y-1.5 md:col-span-2">
+                    <div className={`space-y-1.5 md:col-span-2 ${isNfFieldMissing('Logradouro') ? NF_FIELD_MISSING_CLASS : ''}`}>
                         <label className={LABEL_CLASS}>Logradouro *</label>
-                        <input type="text" className={INPUT_CLASS} required value={formData.street} onChange={e => setFormData({...formData, street: e.target.value.toUpperCase()})} />
+                        <input type="text" className={INPUT_CLASS} required value={formData.street} onChange={e => setFormData({...formData, street: e.target.value.toUpperCase()})} data-testid="input-client-street" />
                     </div>
-                    <div className="space-y-1.5">
+                    <div className={`space-y-1.5 ${isNfFieldMissing('Número') ? NF_FIELD_MISSING_CLASS : ''}`}>
                         <label className={LABEL_CLASS}>Número *</label>
                         <div className="relative">
-                            <input type="text" className={`${INPUT_CLASS} pl-10`} required value={formData.number} onChange={e => setFormData({...formData, number: e.target.value})} />
+                            <input type="text" className={`${INPUT_CLASS} pl-10`} required value={formData.number} onChange={e => setFormData({...formData, number: e.target.value})} data-testid="input-client-number" />
                             <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         </div>
                     </div>
@@ -1219,7 +1341,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         <label className={LABEL_CLASS}>Bairro</label>
                         <input type="text" className={INPUT_CLASS} value={formData.neighborhood} onChange={e => setFormData({...formData, neighborhood: e.target.value.toUpperCase()})} />
                     </div>
-                    <div className="space-y-1.5 md:col-span-2">
+                    <div className={`space-y-1.5 md:col-span-2 ${isNfFieldMissing('Cidade') ? NF_FIELD_MISSING_CLASS : ''}`}>
                         <label className={LABEL_CLASS}>Cidade *</label>
                         <input type="text" className={INPUT_CLASS} required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value.toUpperCase()})} data-testid="input-client-city" />
                     </div>

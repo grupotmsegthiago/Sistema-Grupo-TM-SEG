@@ -2,6 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
+  cpfCnpjLookupVariants,
+  formatBrazilCpfCnpj,
   formatClientAddressIncompleteError,
   isClientAddressComplete,
   missingClientAddressFields,
@@ -29,6 +31,15 @@ describe('clientAddressValidation — endereço fiscal obrigatório', () => {
     );
   });
 
+  it('formata CNPJ e monta variantes que casam com cadastro pontuado', () => {
+    assert.equal(formatBrazilCpfCnpj('24455580000170'), '24.455.580/0001-70');
+    assert.equal(formatBrazilCpfCnpj('24.455.580/0001-70'), '24.455.580/0001-70');
+    const variants = cpfCnpjLookupVariants('24455580000170');
+    assert.deepEqual(variants, ['24455580000170', '24.455.580/0001-70']);
+    // Regressão: lookup NÃO pode depender de ilike só com dígitos limpos.
+    assert.ok(variants.includes('24.455.580/0001-70'));
+  });
+
   it('monta payload Asaas e mensagem de erro', () => {
     const payload = toAsaasAddressPayload({
       zip_code: '02167010',
@@ -54,12 +65,45 @@ describe('clientAddressValidation — endereço fiscal obrigatório', () => {
     const core = fs.readFileSync('lib/asaasCreateChargeCore.ts', 'utf8');
     assert.match(core, /CLIENT_ADDRESS_INCOMPLETE|formatClientAddressIncompleteError/);
     assert.match(core, /addressIncompleteResponse/);
+    assert.match(core, /clientId/);
+    assert.match(core, /cpfCnpjLookupVariants/);
+    assert.doesNotMatch(core, /cnpj\.ilike\.%\$\{cleanCnpj\}%/);
     assert.doesNotMatch(core, /lookupCnpjAddressBrasilApi/);
     const billing = fs.readFileSync('components/ClientBillingReport.tsx', 'utf8');
     assert.match(billing, /assertClientAddressReady/);
+    assert.match(billing, /openClientAddressFix/);
     assert.match(billing, /alert-client-address-incomplete/);
+    assert.match(billing, /clientId:\s*clientObj/);
     const form = fs.readFileSync('components/ClientForm.tsx', 'utf8');
     assert.match(form, /CEP \*/);
     assert.match(form, /Cidade \*/);
+    assert.match(form, /nfAddressRequiredHint/);
+    assert.match(form, /client-nf-address-section/);
+    // Destaque vermelho acompanha campos faltantes — não pinta CEP se já preenchido.
+    assert.match(form, /missingClientAddressFields/);
+    assert.match(form, /isNfFieldMissing\('CEP'\)/);
+    assert.match(form, /isNfFieldMissing\('Logradouro'\)/);
+    assert.match(form, /isNfFieldMissing\('Número'\)/);
+    assert.match(form, /isNfFieldMissing\('Cidade'\)/);
+    assert.match(form, /isNfFieldMissing\('UF'\)/);
+    assert.doesNotMatch(
+      form,
+      /nfAddressRequiredHint \? 'rounded-xl border-2 border-red-300/,
+    );
+    const app = fs.readFileSync('App.tsx', 'utf8');
+    assert.match(app, /clientFormReturnTo|fin-billing/);
+    assert.match(app, /nfAddressRequiredHint/);
+  });
+
+  it('erro de endereço incompleto inclui clientId quando informado', () => {
+    const err = formatClientAddressIncompleteError({
+      clientName: 'RFM',
+      missing: ['CEP', 'Cidade'],
+      cnpj: '24455580000170',
+      clientId: 42,
+    });
+    assert.equal(err.clientId, '42');
+    assert.equal(err.fixCadastro, true);
+    assert.match(err.error, /abrirá o cadastro/);
   });
 });

@@ -80,6 +80,10 @@ import { registerScheduledTick } from "./scheduledRegistry";
 import { registerMaintenanceTick } from "./maintenanceJobs";
 import { registerCronRoutes } from "./registerCronRoutes";
 import {
+  executeProductivityDailyReport,
+  registerProductivityReportSchedule,
+} from "./productivityReport";
+import {
   AUDIT_SUMMARY_DEFAULTS,
   AUDIT_SUMMARY_SETTINGS_KEY,
   sanitizeAuditSummarySettings,
@@ -9768,6 +9772,29 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar histórico de execuções' });
     }
   });
+
+  // Relatório diário de produtividade / vigia noturna (09h → só diretoria)
+  registerProductivityReportSchedule(supabase);
+
+  app.post(
+    '/api/admin/productivity-report',
+    requireAuth,
+    requireRole('administrador', 'diretoria'),
+    async (req: Request, res: Response) => {
+      try {
+        const override =
+          typeof req.body?.emails === 'string' && req.body.emails.trim()
+            ? req.body.emails.trim()
+            : null;
+        const result = await executeProductivityDailyReport(supabase, {
+          overrideEmails: override,
+        });
+        res.json({ ok: true, ...result, testMode: !!override });
+      } catch (e: any) {
+        res.status(500).json({ ok: false, error: e?.message || 'Falha ao gerar relatório' });
+      }
+    },
+  );
 
   registerCronRoutes(app);
 

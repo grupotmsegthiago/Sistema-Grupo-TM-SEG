@@ -7,6 +7,7 @@ import {
   isTmSegSupabaseAnonKey,
   isTmSegSupabaseUrl,
   isValidHttpUrl,
+  normalizeSupabaseProjectUrl,
   resolveSupabasePublicEnv,
 } from './supabasePublicEnv.js';
 
@@ -31,7 +32,7 @@ function pickServerUrl(): string {
     process.env.TMSEG_SUPABASE_URL,
   ];
   for (const candidate of candidates) {
-    const value = cleanEnv(candidate);
+    const value = normalizeSupabaseProjectUrl(candidate as string);
     if (isValidHttpUrl(value) && isTmSegSupabaseUrl(value)) return value;
     if (isValidHttpUrl(value)) warnForeignProjectOnce();
   }

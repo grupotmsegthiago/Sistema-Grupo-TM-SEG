@@ -459,6 +459,10 @@
       "destination": "/api/asaas-sync-payment-status"
     },
     {
+      "source": "/api/asaas/sync-customers",
+      "destination": "/api/asaas-sync-customers"
+    },
+    {
       "source": "/api/nf/summary",
       "destination": "/api/nf-control?op=summary"
     },
