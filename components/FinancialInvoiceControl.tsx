@@ -15,6 +15,7 @@ import {
   isAfterInvoiceControlEpoch,
   readInvoiceWatch,
 } from '../lib/invoiceCleanSlate';
+import { kickNfRetryCycle } from '../lib/kickNfSchedule';
 import { isPureMedicaoInvoice } from '../lib/billing/medicaoVisibility';
 import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
@@ -397,6 +398,19 @@ const FinancialInvoiceControl: React.FC = () => {
       // Idle: refresh leve a cada 60s (4 ticks).
       if (!activeWatch && ticks % 4 !== 0) return;
       await syncOpen(activeWatch ? 25 : 10);
+      if (cancelled) return;
+      // Enquanto houver NF em fila (Processando sem invoice Asaas), empurra o worker
+      // a cada ~30s — não depende só do cron nem do botão "Reemitir TODAS".
+      if (activeWatch && ticks % 2 === 0) {
+        const needsSchedule = invoicesRef.current.some((i) => {
+          if (i.status === 'CANCELADA' || i.status === 'PAGA') return false;
+          if ((i.nf_provider || 'ASAAS').toUpperCase() === 'PLUGNOTAS') return false;
+          if (!i.asaas_payment_id) return false;
+          if (i.asaas_invoice_id) return false;
+          return nfStatusBucket(i.nf_status, { paused: !!i.nf_retry_paused }) === 'aguardando';
+        });
+        if (needsSchedule) kickNfRetryCycle(8);
+      }
       if (cancelled) return;
       await fetchInvoices({ silent: true });
       if (watch?.paymentIds?.length) {

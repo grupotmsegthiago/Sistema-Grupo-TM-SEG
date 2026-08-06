@@ -29,6 +29,7 @@ import {
     resolveClientReceivableDescription,
 } from '../lib/billing/receivableDescription';
 import { stashInvoiceWatch } from '../lib/invoiceCleanSlate';
+import { kickNfScheduleForInvoices } from '../lib/kickNfSchedule';
 import {
     formatClientAddressIncompleteError,
     isClientAddressComplete,
@@ -3438,6 +3439,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     paymentIds: saved.paymentIds || serverPaymentIds,
                     invoiceIds: saved.invoiceIds || serverPersistedIds,
                 });
+                // NF isolada: agenda agora (não espera cron / abrir Controle).
+                kickNfScheduleForInvoices(saved.invoiceIds || serverPersistedIds);
                 // Fecha e manda para Controle — Processando até Emitida (poll automático).
                 setShowInvoiceModal(false);
                 resetInvoiceForm();
@@ -3577,6 +3580,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 paymentIds: saved.paymentIds || (saved.paymentId ? [saved.paymentId] : []),
                 invoiceIds: saved.invoiceIds || (saved.invoiceId ? [saved.invoiceId] : []),
             });
+            // NF isolada: agenda agora (não espera cron / abrir Controle).
+            kickNfScheduleForInvoices(saved.invoiceIds || (saved.invoiceId ? [saved.invoiceId] : []));
             setShowInvoiceModal(false);
             resetInvoiceForm();
             setAiStatus(
