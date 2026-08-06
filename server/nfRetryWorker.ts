@@ -102,7 +102,7 @@ export async function listPendingNfs(): Promise<PendingInvoice[]> {
     // Só pega faturas com algum identificador de NF/provider — evita varrer milhares
     // de faturas legacy sem cobrança Asaas nem NF PlugNotas e saturar o ciclo.
     const { data, error } = await sb.from('financial_invoices')
-      .select('id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_retry_at, created_at, nf_provider, plugnotas_invoice_id, plugnotas_protocol, notes, description')
+      .select('id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_retry_at, created_at, nf_provider, plugnotas_invoice_id, plugnotas_protocol, notes')
       .or('asaas_payment_id.not.is.null,plugnotas_invoice_id.not.is.null')
       .or(`nf_status.is.null,nf_status.in.(${PENDING_NF_STATUSES.join(',')})`)
       .or('nf_retry_paused.is.null,nf_retry_paused.eq.false')
@@ -110,10 +110,7 @@ export async function listPendingNfs(): Promise<PendingInvoice[]> {
       .order('nf_retry_at', { ascending: true, nullsFirst: true })
       .limit(100);
     if (error) {
-      if (error.code === '42703') {
-        console.log('[NF Retry] colunas nf_status/nf_retry_* ainda não existem no Supabase — ignore por enquanto.');
-        return [];
-      }
+      // 42703 em coluna legítima (ex.: description inexistente) não deve zerar a fila.
       console.log('[NF Retry] erro ao listar pendentes:', error.message);
       return [];
     }
@@ -398,19 +395,19 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
   }
   const company = inv.issuer_company || undefined;
   const paymentId = inv.asaas_payment_id!;
-  // Notes/descrição da fatura → discriminação da NF (igual ao modal de emissão).
+  // Notes da fatura → discriminação da NF (igual ao modal de emissão).
+  // NÃO selecionar coluna `description` — não existe em financial_invoices (42703).
   if (!inv.notes) {
     try {
       const sb = getSupabase();
       if (sb) {
         const { data: full } = await sb
           .from('financial_invoices')
-          .select('notes, description')
+          .select('notes')
           .eq('id', inv.id)
           .maybeSingle();
         if (full) {
           inv.notes = (full as any).notes || null;
-          inv.description = (full as any).description || inv.description || null;
         }
       }
     } catch {

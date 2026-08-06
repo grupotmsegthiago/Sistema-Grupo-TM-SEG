@@ -28,5 +28,11 @@ describe('Controle de Faturas — limpar fila + Processando + espelhos', () => {
     assert.match(worker, /reopenPausedNfs/);
     assert.match(worker, /runRetryCycle\(opts/);
     assert.match(worker, /isNfSchedulePendingMessage/);
+    // Regressão: coluna `description` não existe em financial_invoices — select
+    // dela retorna 42703 e o worker esvazia a fila (NFs ficam em Processando).
+    assert.doesNotMatch(
+      worker,
+      /from\('financial_invoices'\)[\s\S]{0,400}select\([^)]*\bdescription\b/,
+    );
   });
 });

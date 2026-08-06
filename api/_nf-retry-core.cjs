@@ -48,6 +48,11 @@ function extractSupabaseProjectRef(url) {
   const match = cleanEnv(url).match(/^https?:\/\/([^.]+)\.supabase\.co/i);
   return match?.[1]?.toLowerCase() ?? null;
 }
+function normalizeSupabaseProjectUrl(url) {
+  const cleaned = cleanEnv(url);
+  if (!cleaned) return "";
+  return cleaned.replace(/\/rest\/v1\/?$/i, "").replace(/\/+$/, "");
+}
 function decodeJwtProjectRef(key) {
   try {
     const part = cleanEnv(key).split(".")[1];
@@ -126,7 +131,7 @@ function pickServerUrl() {
     process.env.TMSEG_SUPABASE_URL
   ];
   for (const candidate of candidates) {
-    const value = cleanEnv(candidate);
+    const value = normalizeSupabaseProjectUrl(candidate);
     if (isValidHttpUrl(value) && isTmSegSupabaseUrl(value)) return value;
     if (isValidHttpUrl(value)) warnForeignProjectOnce();
   }
@@ -1006,12 +1011,8 @@ async function listPendingNfs() {
   const sb = getSupabase();
   if (!sb) return [];
   try {
-    const { data, error } = await sb.from("financial_invoices").select("id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_retry_at, created_at, nf_provider, plugnotas_invoice_id, plugnotas_protocol, notes, description").or("asaas_payment_id.not.is.null,plugnotas_invoice_id.not.is.null").or(`nf_status.is.null,nf_status.in.(${PENDING_NF_STATUSES.join(",")})`).or("nf_retry_paused.is.null,nf_retry_paused.eq.false").or(`nf_retry_count.is.null,nf_retry_count.lt.${MAX_RETRIES}`).order("nf_retry_at", { ascending: true, nullsFirst: true }).limit(100);
+    const { data, error } = await sb.from("financial_invoices").select("id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_retry_at, created_at, nf_provider, plugnotas_invoice_id, plugnotas_protocol, notes").or("asaas_payment_id.not.is.null,plugnotas_invoice_id.not.is.null").or(`nf_status.is.null,nf_status.in.(${PENDING_NF_STATUSES.join(",")})`).or("nf_retry_paused.is.null,nf_retry_paused.eq.false").or(`nf_retry_count.is.null,nf_retry_count.lt.${MAX_RETRIES}`).order("nf_retry_at", { ascending: true, nullsFirst: true }).limit(100);
     if (error) {
-      if (error.code === "42703") {
-        console.log("[NF Retry] colunas nf_status/nf_retry_* ainda n\xE3o existem no Supabase \u2014 ignore por enquanto.");
-        return [];
-      }
       console.log("[NF Retry] erro ao listar pendentes:", error.message);
       return [];
     }
@@ -1266,10 +1267,9 @@ async function retryOne(inv, opts) {
     try {
       const sb = getSupabase();
       if (sb) {
-        const { data: full } = await sb.from("financial_invoices").select("notes, description").eq("id", inv.id).maybeSingle();
+        const { data: full } = await sb.from("financial_invoices").select("notes").eq("id", inv.id).maybeSingle();
         if (full) {
           inv.notes = full.notes || null;
-          inv.description = full.description || inv.description || null;
         }
       }
     } catch {
