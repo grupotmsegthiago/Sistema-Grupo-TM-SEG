@@ -230,7 +230,9 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
     let skipped = 0;
     let errors = 0;
     try {
-      for (let round = 0; round < 40; round++) {
+      // Lotes de 2 (anti-timeout Vercel). Cap alto só como trava de segurança —
+      // a saída real é nextOffset == null (carteira inteira).
+      for (let round = 0; round < 500; round++) {
         const res = await authFetch('/api/asaas/sync-customers', {
           method: 'POST',
           body: JSON.stringify({ limit: 2, offset }),

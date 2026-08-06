@@ -57,6 +57,12 @@ describe('asaasSyncCustomers — elegibilidade e wiring', () => {
     assert.match(vercel, /asaas\/sync-customers/);
     const form = fs.readFileSync('components/ClientForm.tsx', 'utf8');
     assert.match(form, /asaas\/sync-customers/);
+    const list = fs.readFileSync('components/ClientList.tsx', 'utf8');
+    assert.match(list, /asaas\/sync-customers/);
+    assert.match(list, /btn-sync-clients-asaas/);
+    // Botão em massa não pode parar em 40 lotes (carteira > 80 ativos).
+    assert.match(list, /round < 500/);
+    assert.doesNotMatch(list, /round < 40/);
     const admin = fs.readFileSync('lib/supabaseAdmin.ts', 'utf8');
     assert.match(admin, /normalizeSupabaseProjectUrl/);
   });
