@@ -65,6 +65,17 @@ describe('clientAddressValidation — endereço fiscal obrigatório', () => {
     assert.match(form, /Cidade \*/);
     assert.match(form, /nfAddressRequiredHint/);
     assert.match(form, /client-nf-address-section/);
+    // Destaque vermelho acompanha campos faltantes — não pinta CEP se já preenchido.
+    assert.match(form, /missingClientAddressFields/);
+    assert.match(form, /isNfFieldMissing\('CEP'\)/);
+    assert.match(form, /isNfFieldMissing\('Logradouro'\)/);
+    assert.match(form, /isNfFieldMissing\('Número'\)/);
+    assert.match(form, /isNfFieldMissing\('Cidade'\)/);
+    assert.match(form, /isNfFieldMissing\('UF'\)/);
+    assert.doesNotMatch(
+      form,
+      /nfAddressRequiredHint \? 'rounded-xl border-2 border-red-300/,
+    );
     const app = fs.readFileSync('App.tsx', 'utf8');
     assert.match(app, /clientFormReturnTo|fin-billing/);
     assert.match(app, /nfAddressRequiredHint/);

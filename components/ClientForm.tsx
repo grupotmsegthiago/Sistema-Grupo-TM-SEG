@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Save, Building2, Truck, Users, Search, Loader2, AlertTriangle, DollarSign, Edit, Trash2, Plus, FileSpreadsheet, MessageCircle, RefreshCw, Navigation, FileText, MapPin, CheckSquare, Square, X, Edit2, Clock, ScrollText, TrendingUp, Percent, Send, CheckCircle, ShieldCheck, ArrowRight, RotateCcw, Copy, Lock, Calendar, Check, Mail, Phone as PhoneIcon, Map as MapIcon, Hash, Fingerprint, Calculator, Target, UserCheck, XCircle } from 'lucide-react';
 import { Client, ClientPriceTable } from '../types';
 import { supabase } from '../lib/supabase';
@@ -7,6 +7,10 @@ import { logAction } from '../lib/logger';
 import { clientFuzzyFilter } from '../lib/financialUtils';
 import { generateAutoBands, suggestAutoMasterFromManualTables, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
 import { useNotification } from '../lib/NotificationContext';
+import {
+  missingClientAddressFields,
+  type ClientAddressFieldKey,
+} from '../lib/clientAddressValidation';
 import ImportClientPriceModal from './ImportClientPriceModal';
 import ClientVehicleList from './ClientVehicleList';
 import ClientRouteList from './ClientRouteList';
@@ -34,6 +38,9 @@ const REGIONS = ['NÍVEL BRASIL', 'NORTE', 'NORDESTE', 'CENTRO-OESTE', 'SUDESTE'
 
 const INPUT_CLASS = "w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500/20 focus:border-red-500 text-sm transition-all font-medium";
 const LABEL_CLASS = "text-[10px] font-black text-gray-500 uppercase mb-1.5 block tracking-wider";
+/** Destaque só no campo que ainda falta — não pintar CEP se ele já está ok. */
+const NF_FIELD_MISSING_CLASS =
+  'rounded-xl border-2 border-red-300 bg-red-50/60 p-3 ring-2 ring-red-200';
 
 const parseCurrency = (value: string | number): number => {
     if (value === undefined || value === null || value === '') return 0;
@@ -259,11 +266,31 @@ const ClientForm: React.FC<ClientFormProps> = ({
     setActiveTab('registration');
     const t = window.setTimeout(() => {
       document.getElementById('client-nf-address-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      const cepInput = document.querySelector<HTMLInputElement>('[data-testid="input-client-zip"]');
-      cepInput?.focus();
+      const firstMissing = missingClientAddressFields(formData)[0];
+      const testIdByField: Partial<Record<ClientAddressFieldKey, string>> = {
+        CEP: 'input-client-zip',
+        UF: 'input-client-state',
+        Cidade: 'input-client-city',
+        Número: 'input-client-number',
+        Logradouro: 'input-client-street',
+      };
+      const testId = (firstMissing && testIdByField[firstMissing]) || 'input-client-zip';
+      document.querySelector<HTMLInputElement>(`[data-testid="${testId}"]`)?.focus();
     }, 350);
     return () => window.clearTimeout(t);
+    // formData intencional só no mount do hint — evita refoco a cada tecla
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nfAddressRequiredHint, id]);
+
+  /** Campos ainda incompletos para NF; o destaque vermelho acompanha o preenchimento. */
+  const missingNfAddressFields = useMemo(
+    () => missingClientAddressFields(formData),
+    [formData],
+  );
+  const nfAddressComplete = missingNfAddressFields.length === 0;
+  const showNfAddressGuide = nfAddressRequiredHint && !nfAddressComplete;
+  const isNfFieldMissing = (field: ClientAddressFieldKey) =>
+    showNfAddressGuide && missingNfAddressFields.includes(field);
 
   const handleSearchCNPJ = async () => {
     const cleanCnpj = formData.cnpj.replace(/\D/g, '');
@@ -882,12 +909,26 @@ const ClientForm: React.FC<ClientFormProps> = ({
 
       {nfAddressRequiredHint && (
         <div
-          className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+          className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+            nfAddressComplete
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-950'
+              : 'border-amber-300 bg-amber-50 text-amber-950'
+          }`}
           data-testid="alert-nf-address-required"
         >
-          <p className="font-black uppercase tracking-wide text-[11px] text-amber-800 mb-1">Endereço obrigatório para NF (Asaas)</p>
+          <p
+            className={`font-black uppercase tracking-wide text-[11px] mb-1 ${
+              nfAddressComplete ? 'text-emerald-800' : 'text-amber-800'
+            }`}
+          >
+            {nfAddressComplete
+              ? 'Endereço fiscal completo — salve o cadastro'
+              : 'Endereço obrigatório para NF (Asaas)'}
+          </p>
           <p className="font-semibold leading-relaxed">
-            Preencha CEP, Logradouro, Número, Cidade e UF (use a busca por CEP), salve o cadastro e volte ao faturamento para emitir a fatura/NF novamente.
+            {nfAddressComplete
+              ? 'CEP, Logradouro, Número, Cidade e UF estão preenchidos. Clique em Finalizar e Salvar Cliente e volte ao faturamento para emitir a fatura/NF.'
+              : `Ainda falta: ${missingNfAddressFields.join(', ')}. Use a busca por CEP para preencher o endereço, complete o que faltar, salve e volte ao faturamento.`}
           </p>
         </div>
       )}
@@ -1245,7 +1286,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     </div>
                     <div
                       id="client-nf-address-section"
-                      className={`space-y-1.5 ${nfAddressRequiredHint ? 'rounded-xl border-2 border-red-300 bg-red-50/60 p-3 ring-2 ring-red-200' : ''}`}
+                      className={`space-y-1.5 ${isNfFieldMissing('CEP') ? NF_FIELD_MISSING_CLASS : ''}`}
                     >
                         <label className={LABEL_CLASS}>CEP *</label>
                         <div className="relative">
@@ -1263,23 +1304,32 @@ const ClientForm: React.FC<ClientFormProps> = ({
                                 placeholder="00000-000"
                                 data-testid="input-client-zip"
                             />
-                            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-red-500" size={16} />
+                            <MapPin
+                              className={`absolute left-3 top-1/2 -translate-y-1/2 ${
+                                isNfFieldMissing('CEP') ? 'text-red-500' : 'text-gray-400'
+                              }`}
+                              size={16}
+                            />
                             {isSearchingCep && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400" size={16} />}
                         </div>
-                        <p className="text-[10px] text-gray-500 font-semibold">Obrigatório para emitir NF no Asaas. Digite o CEP para preencher o endereço.</p>
+                        <p className="text-[10px] text-gray-500 font-semibold">
+                          {isNfFieldMissing('CEP')
+                            ? 'CEP inválido ou vazio — digite 8 dígitos para buscar o endereço (obrigatório na NF Asaas).'
+                            : 'Obrigatório para emitir NF no Asaas. Digite o CEP para preencher o endereço.'}
+                        </p>
                     </div>
-                    <div className="space-y-1.5">
+                    <div className={`space-y-1.5 ${isNfFieldMissing('UF') ? NF_FIELD_MISSING_CLASS : ''}`}>
                         <label className={LABEL_CLASS}>UF *</label>
                         <input type="text" className={INPUT_CLASS} required value={formData.state} onChange={e => setFormData({...formData, state: e.target.value.toUpperCase()})} maxLength={2} data-testid="input-client-state" />
                     </div>
-                    <div className="space-y-1.5 md:col-span-2">
+                    <div className={`space-y-1.5 md:col-span-2 ${isNfFieldMissing('Logradouro') ? NF_FIELD_MISSING_CLASS : ''}`}>
                         <label className={LABEL_CLASS}>Logradouro *</label>
-                        <input type="text" className={INPUT_CLASS} required value={formData.street} onChange={e => setFormData({...formData, street: e.target.value.toUpperCase()})} />
+                        <input type="text" className={INPUT_CLASS} required value={formData.street} onChange={e => setFormData({...formData, street: e.target.value.toUpperCase()})} data-testid="input-client-street" />
                     </div>
-                    <div className="space-y-1.5">
+                    <div className={`space-y-1.5 ${isNfFieldMissing('Número') ? NF_FIELD_MISSING_CLASS : ''}`}>
                         <label className={LABEL_CLASS}>Número *</label>
                         <div className="relative">
-                            <input type="text" className={`${INPUT_CLASS} pl-10`} required value={formData.number} onChange={e => setFormData({...formData, number: e.target.value})} />
+                            <input type="text" className={`${INPUT_CLASS} pl-10`} required value={formData.number} onChange={e => setFormData({...formData, number: e.target.value})} data-testid="input-client-number" />
                             <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         </div>
                     </div>
@@ -1291,7 +1341,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         <label className={LABEL_CLASS}>Bairro</label>
                         <input type="text" className={INPUT_CLASS} value={formData.neighborhood} onChange={e => setFormData({...formData, neighborhood: e.target.value.toUpperCase()})} />
                     </div>
-                    <div className="space-y-1.5 md:col-span-2">
+                    <div className={`space-y-1.5 md:col-span-2 ${isNfFieldMissing('Cidade') ? NF_FIELD_MISSING_CLASS : ''}`}>
                         <label className={LABEL_CLASS}>Cidade *</label>
                         <input type="text" className={INPUT_CLASS} required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value.toUpperCase()})} data-testid="input-client-city" />
                     </div>
