@@ -2,8 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   brasiliaLocalToUtc,
+  dinnerBreakLabel,
   getNightWatchWindowBounds,
   getPreviousBrasiliaDayBounds,
+  isDinnerBreakWindow,
+  isNightWatchActive,
   isNightWatchExemptRole,
   isNightWatchWindow,
   keywordMatches,
@@ -30,6 +33,23 @@ test('diretoria/admin isentos; operador não', () => {
   assert.equal(isNightWatchExemptRole('administrador'), true);
   assert.equal(isNightWatchExemptRole('Operador'), false);
   assert.equal(isNightWatchExemptRole('Avançado'), false);
+});
+
+test('horário de janta 00:00–01:00 BRT não contabiliza na vigia', () => {
+  assert.equal(dinnerBreakLabel(), '00:00–01:00');
+  // 00:30 BRT = 03:30 UTC
+  const janta = new Date('2026-08-06T03:30:00.000Z');
+  assert.equal(isDinnerBreakWindow(janta), true);
+  assert.equal(isNightWatchWindow(janta), true);
+  assert.equal(isNightWatchActive(janta), false);
+  // 00:00 BRT = 03:00 UTC → início da janta
+  assert.equal(isDinnerBreakWindow(new Date('2026-08-06T03:00:00.000Z')), true);
+  // 01:00 BRT = 04:00 UTC → fim (já fora)
+  assert.equal(isDinnerBreakWindow(new Date('2026-08-06T04:00:00.000Z')), false);
+  assert.equal(isNightWatchActive(new Date('2026-08-06T04:00:00.000Z')), true);
+  // 23:30 BRT = 02:30 UTC → ainda não é janta
+  assert.equal(isDinnerBreakWindow(new Date('2026-08-06T02:30:00.000Z')), false);
+  assert.equal(isNightWatchActive(new Date('2026-08-06T02:30:00.000Z')), true);
 });
 
 test('palavra-chave case-insensitive e sem acento', () => {

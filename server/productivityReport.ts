@@ -8,6 +8,7 @@ import {
   type UserProductivityRow,
 } from '../lib/productivity/aggregateProductivity';
 import {
+  dinnerBreakLabel,
   getNightWatchWindowBounds,
   getPreviousBrasiliaDayBounds,
   NIGHT_IDLE_MINUTES,
@@ -88,6 +89,7 @@ export function buildProductivityReportHtml(opts: {
     <p style="font-size:13px;color:#555;">
       Tempo ativo estimado por sequências de logs com pausa ≤ 30 min.
       Desafio de presença dispara após <strong>${NIGHT_IDLE_MINUTES} min</strong> sem interação na vigia noturna.
+      <strong>Horário de janta ${dinnerBreakLabel()} BRT não contabiliza</strong> (sem desafio e sem ociosidade).
       Linhas em amarelo: baixo uso (&lt; 1h) ou desafio sem confirmação/timeout.
     </p>
     <table style="border-collapse:collapse;width:100%;font-size:12px;">

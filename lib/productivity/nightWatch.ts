@@ -15,6 +15,14 @@ export const NIGHT_WATCH_START_HOUR = 20;
 /** Fim da vigia (hora local BRT do dia seguinte). */
 export const NIGHT_WATCH_END_HOUR = 8;
 
+/**
+ * Horário de janta do plantão noturno (BRT) — não contabiliza improdutividade
+ * e não dispara desafio de presença.
+ * Janela: 00:00 (inclusive) → 01:00 (exclusive).
+ */
+export const DINNER_BREAK_START = { hour: 0, minute: 0 };
+export const DINNER_BREAK_END = { hour: 1, minute: 0 };
+
 /** Palavras-chave simples (sem acento) exibidas no desafio. */
 export const NIGHT_WATCH_KEYWORDS = [
   'PRESENTE',
@@ -72,6 +80,28 @@ export function getBrasiliaParts(date: Date = new Date()): NightWatchParts {
 export function isNightWatchWindow(date: Date = new Date()): boolean {
   const { hour } = getBrasiliaParts(date);
   return hour >= NIGHT_WATCH_START_HOUR || hour < NIGHT_WATCH_END_HOUR;
+}
+
+/** true durante a janta (00:00–01:00 BRT) — pausa não conta como ociosidade. */
+export function isDinnerBreakWindow(date: Date = new Date()): boolean {
+  const { hour, minute } = getBrasiliaParts(date);
+  const nowMin = hour * 60 + minute;
+  const startMin = DINNER_BREAK_START.hour * 60 + DINNER_BREAK_START.minute;
+  const endMin = DINNER_BREAK_END.hour * 60 + DINNER_BREAK_END.minute;
+  return nowMin >= startMin && nowMin < endMin;
+}
+
+/**
+ * Vigia efetiva: dentro de 20h–08h e fora do horário de janta.
+ * É esta função que deve disparar o desafio de presença.
+ */
+export function isNightWatchActive(date: Date = new Date()): boolean {
+  return isNightWatchWindow(date) && !isDinnerBreakWindow(date);
+}
+
+export function dinnerBreakLabel(): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(DINNER_BREAK_START.hour)}:${pad(DINNER_BREAK_START.minute)}–${pad(DINNER_BREAK_END.hour)}:${pad(DINNER_BREAK_END.minute)}`;
 }
 
 /** Diretoria / admin não entram no bloqueio noturno. */

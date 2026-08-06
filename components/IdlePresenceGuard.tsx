@@ -4,6 +4,9 @@ import { readInteractionStats } from '../lib/productivity/interactionCounters';
 import { flushInteractionStats } from '../lib/productivity/interactionStats';
 import { logProductivityEvent } from '../lib/productivity/logProductivity';
 import {
+  dinnerBreakLabel,
+  isDinnerBreakWindow,
+  isNightWatchActive,
   isNightWatchExemptRole,
   isNightWatchWindow,
   keywordMatches,
@@ -77,12 +80,20 @@ export default function IdlePresenceGuard() {
     forceTouchUserActivity();
   }, []);
 
-  // Poll: dentro da janela noturna, idle >= 15 min → bloqueia
+  // Poll: vigia efetiva (20h–08h, fora da janta), idle >= 15 min → bloqueia
   useEffect(() => {
     const tick = () => {
       const user = readUser();
       if (!user?.id) return;
       if (isNightWatchExemptRole(user.role)) return;
+
+      // Horário de janta: não contabiliza — libera desafio pendente e zera idle
+      if (isDinnerBreakWindow()) {
+        if (open) closeChallenge();
+        else forceTouchUserActivity();
+        return;
+      }
+
       if (!isNightWatchWindow()) {
         if (open) {
           // Fora da janela: libera sem exigir (fim do plantão 08h)
@@ -90,6 +101,8 @@ export default function IdlePresenceGuard() {
         }
         return;
       }
+
+      if (!isNightWatchActive()) return;
       if (open) return;
       const idleMs = getIdleMs();
       if (idleMs >= NIGHT_IDLE_MS) {
@@ -99,13 +112,8 @@ export default function IdlePresenceGuard() {
 
     tick();
     const id = window.setInterval(tick, 15_000);
-    const onActivity = () => {
-      // se já bloqueado, ignora
-    };
-    window.addEventListener('tmseg:activity', onActivity);
     return () => {
       window.clearInterval(id);
-      window.removeEventListener('tmseg:activity', onActivity);
     };
   }, [open, openChallenge, closeChallenge]);
 
@@ -166,7 +174,7 @@ export default function IdlePresenceGuard() {
                 Confirme que você está aí
               </h2>
               <p className="text-xs text-amber-100 font-medium">
-                Vigia noturna 20h–08h · sem interação há ~{idleMinutesShown} min
+                Vigia noturna 20h–08h (janta {dinnerBreakLabel()} isenta) · sem interação há ~{idleMinutesShown} min
               </p>
             </div>
           </div>
@@ -239,7 +247,7 @@ export default function IdlePresenceGuard() {
           </button>
 
           <p className="text-[10px] text-center text-slate-400 uppercase tracking-wide">
-            Home office · registro enviado à diretoria no relatório das 09h
+            Home office · janta {dinnerBreakLabel()} não conta · relatório 09h à diretoria
           </p>
         </div>
       </div>
