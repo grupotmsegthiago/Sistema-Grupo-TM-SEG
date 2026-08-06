@@ -5,6 +5,7 @@ import Header from './components/Header';
 import WhatsAppStatusBanner from './components/WhatsAppStatusBanner';
 import WhatsAppOfflineModal from './components/WhatsAppOfflineModal';
 import OsAnalysisDiretoriaModal from './components/OsAnalysisDiretoriaModal';
+import IdlePresenceGuard from './components/IdlePresenceGuard';
 import Login from './components/Login';
 import ResetPassword from './components/ResetPassword';
 import { APP_VERSION } from './constants';
@@ -533,6 +534,7 @@ const App: React.FC = () => {
             <WhatsAppStatusBanner />
             <WhatsAppOfflineModal />
             <OsAnalysisDiretoriaModal />
+            <IdlePresenceGuard />
             <main className="flex-1 overflow-x-auto overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="w-full mx-auto relative">
                 <AppErrorBoundary onReset={() => {
