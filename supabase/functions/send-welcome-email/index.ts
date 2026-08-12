@@ -1,10 +1,11 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 declare const Deno: any;
 
-// Chave fornecida pelo usuário
-const RESEND_API_KEY = "re_5Fc9hUR7_CtftxF7E5NzPAhmfygSvCxA2";
+/** Lê a chave do secret Supabase Edge — nunca hardcodear no repositório. */
+function getResendApiKey(): string {
+  return String(Deno.env.get("RESEND_API_KEY") || "").trim();
+}
 
 interface EmailPayload {
   type: 'NEW_USER' | 'MISSION_SCHEDULED';
@@ -23,12 +24,17 @@ const handler = async (request: Request): Promise<Response> => {
   }
 
   try {
+    const resendApiKey = getResendApiKey();
+    if (!resendApiKey) {
+      console.error('[send-welcome-email] RESEND_API_KEY ausente no ambiente da Edge Function');
+      return new Response(JSON.stringify({ error: 'RESEND_API_KEY is not configured' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 503,
+      });
+    }
+
     const payload: EmailPayload = await request.json()
     const { type, to, data } = payload;
-
-    if (!RESEND_API_KEY) {
-      throw new Error('RESEND_API_KEY is missing.')
-    }
 
     let subject = '';
     let htmlContent = '';
@@ -117,7 +123,7 @@ const handler = async (request: Request): Promise<Response> => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'Authorization': `Bearer ${resendApiKey}`,
       },
       body: JSON.stringify({
         from: 'Grupo TMSEG <onboarding@resend.dev>', // Em produção, altere para seu domínio verificado
