@@ -39,6 +39,19 @@ Regras consolidadas — aplicar **sempre**, antes de codar, publicar ou abrir PR
 - **Dúvida = parar:** se não tiver 100% de certeza do impacto, explicar o risco e perguntar antes de alterar.
 - **Consistência:** mudou backend (`server/`, `api/`), verificar frontend (`components/`, `lib/`) e vice-versa.
 
+#### Integridade de conjunto de dados (regra permanente)
+
+Aplicar em **todas as fases** ao auditar ou alterar consultas financeiras/operacionais:
+
+- **Proibido** tratar `.limit(N)` / primeira página como conjunto completo quando a regra exige universo total.
+- **Fail-closed:** ausência de dado ≠ inexistência; não substituir silenciosamente valor oficial por fallback/recálculo.
+- Estados explícitos: `ENCONTRADO` | `NÃO EXISTE` | `NÃO CARREGADO` | `CONSULTA INCOMPLETA` | `ERRO` | `NÃO VALIDADO`.
+- Preferir filtro/agregação/RPC no banco a aumentar `.limit` arbitrariamente.
+- Testes de paridade entre telas críticas (OS → faturamento → financeiro → diretoria) e volume (999/1000/1001+).
+- Handoff: seção **INTEGRIDADE DE CONJUNTO DE DADOS** em `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` quando aplicável.
+
+Princípio: **consulta parcial não é fonte da verdade**; **fallback não mascara erro financeiro**.
+
 #### Antes de mexer no código — diagnosticar infra
 
 Ordem obrigatória em falhas de integração (WhatsApp, Gemini, Asaas, Supabase):

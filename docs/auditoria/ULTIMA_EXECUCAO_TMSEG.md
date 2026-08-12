@@ -11,15 +11,13 @@
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-12 (UTC) |
-| **Fase** | FASE 1 — Encerramento + Hotfix de Segurança Resend |
-| **Objetivo** | Merge do handoff (PR #253), remover hardcode Resend, validar build/testes/deploy, encerrar Fase 1 |
+| **Fase** | Governança permanente — Integridade de Conjunto de Dados |
+| **Objetivo** | Registrar regra permanente de integridade de dados (limites, paginação, fallbacks, fail-closed) na governança do programa |
 | **Branch** | `main` |
-| **Commit inicial** | `cadffc46` (pós-merge PR #253) |
-| **Commit final** | `147318e9` (merge PR #254 — hotfix Resend) |
-| **Versão produção** | `3.7.60` |
-| **Build ID produção** | `147318e953c3bd65e53dc7f303f0f9be2b508eb0` |
-| **Ambiente** | Produção `https://sistema.grupotmseg.com.br`, Vercel `sistema-grupo-tm-seg` |
-| **Produção alterada** | **SIM** — deploy Vercel do hotfix de segurança (sem alteração de lógica de negócio) |
+| **Commit inicial** | `5555c505` |
+| **Commit final** | ver HEAD após push desta execução |
+| **Versão produção** | `3.7.60` (inalterada por esta execução) |
+| **Produção alterada** | **NÃO** |
 
 ---
 
@@ -27,97 +25,86 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **PROGRESSO DA FASE 1** | **98%** |
+| **PROGRESSO DA FASE 1** | **98%** (inalterado — pendência: rotação Resend humana) |
 | **PROGRESSO GERAL DO PROGRAMA** | **10%** |
-
-### Por que não 100%?
-
-Falta **ação humana obrigatória**: revogar a chave Resend antiga no painel do provedor (exposta no histórico Git). Todo o restante do critério da Fase 1 foi atendido.
 
 ---
 
 ## O QUE FOI PEDIDO
 
-1. Confirmar e mergear PR #253 (somente docs)
-2. Hotfix controlado do incidente Resend (sem refatorar negócio)
-3. Validar build, testes, deploy
-4. Atualizar handoff e encerrar Fase 1
+Incorporar permanentemente à governança do Sistema Grupo TM SEG a **Regra de Integridade de Conjunto de Dados**, aplicável em todas as fases futuras e na auditoria do código existente. Atualizar handoff com seção obrigatória quando aplicável.
 
 ---
 
 ## ESTADO ANTERIOR
 
-- Fase 1 em 96%; PR #253 draft com handoff
-- Chave Resend hardcoded em `supabase/functions/send-welcome-email/index.ts` desde commit `bf9c0fa5`
-- Fluxo prod de boas-vindas via SMTP (`/api/email/welcome`), não via Edge Function Resend
-- Tag `baseline-fase1-20260812` em `88992034` (pré-hotfix)
+- Regras de governança cobriam handoff, progresso %, testes antes de entregar, preservação de negócio e SSOT em nível conceitual.
+- Não existia regra formal explícita sobre: truncamento silencioso por `.limit()`, fallbacks financeiros fail-open, paridade entre telas e estados `NÃO CARREGADO` vs `NÃO EXISTE`.
+- Fase 1 em 98% (pendência Resend).
 
 ---
 
-## INVESTIGAÇÃO — MAPEAMENTO RESEND
+## INVESTIGAÇÃO
 
-| Arquivo | Utilização | Ativo? | Ambiente |
-|---------|------------|--------|----------|
-| `supabase/functions/send-welcome-email/index.ts` | Edge Function HTTP → API Resend | **Legado** (não usado pelo fluxo prod atual) | Supabase Edge (se deployada) |
-| `components/UserForm.tsx` | `authFetch('/api/email/welcome')` | **SIM** — fluxo prod | Vercel |
-| `server/routes.ts` | `POST /api/email/welcome` → `sendWelcomeEmail` | **SIM** | Vercel |
-| `server/emailService.ts` | `sendWelcomeEmail` via **nodemailer/SMTP Office365** | **SIM** | Vercel (`EMAIL_PASS`) |
-| `attached_assets/**/send-welcome-email/index.ts` | Cópia legada com hardcode | **NÃO** (não entra no build) | Arquivo morto |
-| `attached_assets/**/UserForm.tsx` | Chamava Edge Function antiga | **NÃO** | Legado |
-| Pacote npm `resend` | Dependência declarada | **NÃO importado** em código ativo server/frontend | — |
+### Causa raiz que a regra previne
 
-### Conclusão do fluxo prod
+Consultas com limite arbitrário (ex.: 1.000 registros Supabase/PostgREST) podem fazer uma OS existir em uma tela e sumir em outra. Código interpreta ausência como “não existe”, aciona fallback e recalcula — gerando divergência entre telas sem erro visível.
 
-```
-UserForm.tsx → POST /api/email/welcome → emailService.sendWelcomeEmail → SMTP Office365
-```
+### Componentes que serão afetados nas fases futuras
 
-**Não passa por Resend** no caminho operacional atual.
+| Área | Onde auditar |
+|------|--------------|
+| OS | `MissionTable`, `MissionReportPage`, `MissionFinancialModal`, `ClientBillingReport` |
+| Financeiro | `FinancialDRE`, `FinancialDashboard`, `FinancialAuditor`, `server/routes.ts` |
+| Faturamento | `ClientBillingReport`, APIs de recálculo |
+| Diretoria | `lib/dashboardDiretoria/*`, `DashboardDiretoria` |
+| Relatórios | `ReportsDashboard`, exports, workers |
+| Backend | `server/routes.ts` (36 ocorrências `.limit`/`.range`), workers NF/e-mail |
+
+### Varredura preliminar (somente contagem — auditoria completa na Fase 2+)
+
+| Escopo | Ocorrências `.limit(` / `.range(` |
+|--------|-------------------------------------|
+| `components/` | ~70+ em 30+ arquivos (destaque: `MissionFinancialModal` 9, `ClientBillingReport` 5, `MissionTable` 4) |
+| `lib/` | ~35+ em 25+ arquivos (destaque: `dashboardDiretoria` 4, `osAnalysis` 4) |
+| `server/` | ~35+ em 14 arquivos (destaque: `routes.ts` 36, `dhlSupplierIntake` 6) |
+
+**Classificação:** todas as ocorrências acima estão **INDETERMINADO** até análise caso a caso nas Fases 2, 4, 5 e 6.
 
 ---
 
 ## ANÁLISE DE IMPACTO
 
-### Se remover hardcode da Edge Function
+Esta execução **não alterou código funcional**. Impacto futuro:
 
-| Pergunta | Resposta |
-|----------|----------|
-| Edge Function continua funcionando? | Sim, **se** `RESEND_API_KEY` estiver em secret Supabase Edge |
-| Existe `RESEND_API_KEY` na Vercel? | **SIM** (nome confirmado; valor oculto) |
-| Existe secret na Edge Function Supabase? | **NÃO VALIDADO** — requer `supabase secrets set` se função deployada |
-| Fluxo prod depende dela? | **NÃO** — boas-vindas usa SMTP |
-| Telas afetadas pelo hotfix Vercel? | **Nenhuma** — alteração só em `supabase/functions/` |
+```
+CONSULTA (limit/range)
+    ↓
+CONJUNTO RECEBIDO (possivelmente parcial)
+    ↓
+CACHE / TRANSFORMAÇÃO
+    ↓
+TELA A / TELA B / RELATÓRIO
+    ↓
+FALLBACK financeiro? → PROIBIDO fail-open
+```
 
-### Conexões verificadas
-
-| Conexão | Status |
-|---------|--------|
-| PR #253 somente docs | 🟢 |
-| Hotfix não altera SMTP welcome | 🟢 |
-| Código ativo sem literal Resend | 🟢 |
-| Deploy prod = commit esperado | 🟢 `147318e9` |
-| Rotação chave antiga | 🔴 pendente humano |
+Conexões a verificar nas próximas fases: query → API → cache → componente → paridade entre telas.
 
 ---
 
 ## ALTERAÇÕES REALIZADAS
 
-### Código
+### Documentação / governança
 
 | Arquivo | Alteração | Motivo |
 |---------|-----------|--------|
-| `supabase/functions/send-welcome-email/index.ts` | `Deno.env.get('RESEND_API_KEY')`; HTTP 503 se ausente | Remover hardcode comprometido |
-| `scripts/resend-no-hardcode.test.ts` | Novo teste de guarda | Impedir reintrodução de literal |
+| `AGENTS.md` | Seção **Integridade de conjunto de dados (regra permanente)** | Referência permanente para agentes |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Este documento | Handoff da execução |
 
-### Documentação
+### Código / banco / deploy
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Este documento |
-
-### Configuração / banco / migration
-
-Nenhuma.
+Nenhuma alteração.
 
 ---
 
@@ -129,72 +116,75 @@ Nenhuma.
 
 ## REGRAS DE NEGÓCIO
 
-### Alteradas
+### Regras alteradas
 
-Nenhuma.
+Nenhuma regra de cálculo ou negócio.
 
-### Preservadas
+### Regras preservadas
 
-Todas (OS, faturamento, financeiro, cálculos, relatórios).
+Todas as existentes.
 
-### Críticas
+### Regras novas (governança permanente)
 
-Inalteradas.
+1. **Proibido** assumir que primeira página ou `.limit(N)` = conjunto completo em consultas críticas.
+2. **Fail-closed** para valores financeiros: ausência por truncamento/erro não autoriza fallback silencioso.
+3. Estados explícitos obrigatórios: `ENCONTRADO`, `NÃO EXISTE`, `NÃO CARREGADO`, `CONSULTA INCOMPLETA`, `ERRO DE CONSULTA`, `NÃO VALIDADO`.
+4. Paginação exaustiva com ordenação estável (`created_at + id`) quando universo completo for necessário.
+5. Preferir filtro/agregação/RPC no banco a inflar `.limit`.
+6. Testes de paridade entre telas e volume (999 / 1000 / 1001+).
+7. Consulta direta por ID quando apenas uma OS/registro é necessário (`WHERE mission_id = X`).
+8. Inventariar fallbacks (`??`, `||`, `fallback`, `default`, recálculo por ausência).
+9. Handoff deve incluir seção **INTEGRIDADE DE CONJUNTO DE DADOS** quando aplicável.
+
+**Princípios:** ausência ≠ inexistência; consulta parcial ≠ SSOT; fallback ≠ máscara de erro financeiro.
+
+---
+
+## INTEGRIDADE DE CONJUNTO DE DADOS
+
+> Seção obrigatória a partir desta governança. Nesta execução: **registro da regra + varredura preliminar**. Auditoria caso a caso: **pendente Fase 2+**.
+
+| Item | Status |
+|------|--------|
+| Consultas auditadas (caso a caso) | ⚪ **Pendente Fase 2** |
+| Limites encontrados (preliminar) | 🟡 ~140+ ocorrências `.limit`/`.range` em components/lib/server — **não classificadas** |
+| Paginações completas verificadas | ⚪ Pendente |
+| Risco de truncamento confirmado | ⚪ Pendente |
+| Fallbacks financeiros inventariados | ⚪ Pendente Fase 4/5/6 |
+| Testes de volume (999/1000/1001) | ⚪ Pendente |
+| Paridade entre telas | ⚪ Pendente |
+| **Resultado desta execução** | **Regra registrada; auditoria não iniciada** |
+
+### Classificações a aplicar na Fase 2+
+
+| Classe | Significado |
+|--------|-------------|
+| SEGURO | Limite intencional e correto |
+| PAGINADO | Paginação completa e determinística |
+| AGREGADO | Cálculo no banco sem carregar dataset inteiro |
+| PERIGOSO | Limite arbitrário sobre conjunto que deveria ser completo |
+| INDETERMINADO | Requer investigação |
 
 ---
 
 ## SINCRONISMO
 
-| Conexão | Status |
-|---------|--------|
-| UserForm → /api/email/welcome → SMTP | 🟡 não testado E2E (requer auth + e-mail real); caminho mapeado e **inalterado** pelo hotfix |
-| Edge Function Resend | ⚪ não aplicável ao fluxo prod |
-| Deploy commit = produção buildId | 🟢 validado |
+Não aplicável — nenhuma alteração funcional.
 
 ---
 
 ## TESTES EXECUTADOS
 
-| Comando | Esperado | Obtido | Status |
-|---------|----------|--------|--------|
-| `npx tsx --test scripts/resend-no-hardcode.test.ts` | Sem literal `re_` no código ativo | 1/1 pass | 🟢 |
-| `bash scripts/run-tests.sh` | Sem falhas novas | **673 pass / 5 fail / 678** | 🟢 (baseline 5 falhas conhecidas) |
-| `npm run build` | Sucesso | OK | 🟢 |
-| `curl /api/version` pós-deploy | buildId = `147318e9` | Confirmado | 🟢 |
-| `curl /api/health` | ok | ok | 🟢 |
-| E2E e-mail boas-vindas | Envio real | **NÃO EXECUTADO** — sem credencial SMTP local; fluxo usa SMTP não Resend | ⚪ |
-
-### 5 falhas conhecidas (não corrigidas — conforme instrução)
-
-investment-accounts, invoice-display, presence-refresh, receivable-desc-nf, zapi-sdk-cockpit
-
----
-
-## TESTE FUNCIONAL E-MAIL
-
-O fluxo prod **não usa Resend** para boas-vindas. O hotfix afeta apenas código da Edge Function legada.
-
-Teste Resend da Edge Function: **NÃO VALIDADO** — função legada; secret Supabase Edge não confirmado.
-
-Teste SMTP boas-vindas: **NÃO VALIDADO E2E** — endpoint exige autenticação; sem `EMAIL_PASS` no ambiente cloud.
+| Comando | Finalidade | Resultado |
+|---------|------------|-----------|
+| `rg '\.limit\(|\.range\(' components lib server` | Contagem preliminar para handoff | ~140+ ocorrências mapeadas por escopo |
+| Build / suite completa | N/A nesta execução | Não executados (somente docs) |
 
 ---
 
 ## SEGURANÇA
 
-### Varredura pós-hotfix
-
-| Pergunta | Resposta |
-|----------|----------|
-| Existe secret Resend literal no **código ativo**? | **NÃO** (`supabase/functions/` limpo) |
-| Existe em cópias legadas `attached_assets/`? | **SIM** — escopo Fase 2 (limpeza código órfão) |
-| Outro segredo crítico novo? | **NÃO** detectado nesta execução |
-
-### Impacto do hotfix
-
-- Autenticação/autorização: inalterado
-- RLS: inalterado
-- Fluxo prod e-mail: inalterado (SMTP)
+Sem impacto. Nenhum segredo envolvido.
 
 ---
 
@@ -202,133 +192,54 @@ Teste SMTP boas-vindas: **NÃO VALIDADO E2E** — endpoint exige autenticação;
 
 | Item | Valor |
 |------|-------|
-| PR #253 | **MERGEADO** → `cadffc46` (somente handoff) |
-| PR #254 | **MERGEADO** → `147318e9` (hotfix Resend) |
-| `origin/main` | `147318e9` |
-| `origin/dev` | **NÃO sincronizado** nesta execução (fluxo Thiago: `publicar.ps1`) |
-| Tag pré-hotfix | `baseline-fase1-20260812` → `88992034` (**preservada**) |
-| Tag pós-hotfix | `baseline-fase1-final-20260812` → `147318e9` (push OK) |
-
----
-
-## DEPLOY
-
-| Item | Valor |
-|------|-------|
-| Deploy realizado | **SIM** (Vercel automático da `main`) |
-| Commit publicado | `147318e9` |
-| buildId confirmado | `147318e953c3bd65e53dc7f303f0f9be2b508eb0` |
-| `/api/health` pós-deploy | 🟢 ok |
-| Edge Function Supabase | **NÃO redeployada** — alteração no repo; deploy Supabase é ação separada |
+| Arquivos alterados | `AGENTS.md`, `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` |
+| Produção | Não alterada |
+| Deploy | Não realizado |
 
 ---
 
 ## ROLLBACK
 
-### Voltar ao baseline pré-hotfix (auditoria pura)
-
-```bash
-git checkout baseline-fase1-20260812
-# commit 88992034 — inclui handoff após merge #253 usar cadffc46
-```
-
-### Voltar ao encerramento Fase 1 (com hotfix)
-
-```bash
-git checkout baseline-fase1-final-20260812
-# commit 147318e9
-```
-
-| Risco rollback hotfix | Baixo para fluxo prod (SMTP inalterado) |
-
----
-
-## INCIDENTE RESEND — RESULTADO DA ROTAÇÃO
-
-| Etapa | Status |
-|-------|--------|
-| Hardcode removido do código ativo | 🟢 |
-| Teste de guarda adicionado | 🟢 |
-| `RESEND_API_KEY` na Vercel | 🟢 nome confirmado |
-| Revogar chave antiga no Resend | 🔴 **AÇÃO HUMANA OBRIGATÓRIA** |
-| Atualizar secret Supabase Edge (se função ativa) | 🟡 pendente verificação |
-| Redeploy Edge Function Supabase | 🟡 pendente se ainda em uso |
-| Higienização histórico Git (BFG/filter-repo) | ⚪ adiado (conforme instrução) |
-
----
-
-# AÇÃO HUMANA OBRIGATÓRIA — RESEND
-
-1. Acessar o painel [Resend](https://resend.com/api-keys)
-2. Criar uma **NOVA** API Key
-3. **NÃO** colar a chave no chat, GitHub ou código
-4. Atualizar `RESEND_API_KEY` na Vercel (Production + Preview)
-5. Se a Edge Function `send-welcome-email` estiver deployada no Supabase: `supabase secrets set RESEND_API_KEY=...` e redeploy da função
-6. Testar envio (Edge Function ou fluxo que usar Resend no futuro)
-7. **Somente após confirmar funcionamento**, revogar a chave antiga exposta no histórico Git
+Reverter commit desta execução remove apenas entradas de governança em `AGENTS.md` e handoff. Sem impacto em produção.
 
 ---
 
 ## PENDÊNCIAS
 
-### 🔴 Crítica
+### 🔴 Crítica (Fase 1)
 
-1. Revogar chave Resend antiga (humano)
+1. Rotação chave Resend antiga (ação humana — inalterada)
 
-### 🟠 Alta
+### 🟠 Alta (Fases 2–6)
 
-2. Limpar hardcode em `attached_assets/**/send-welcome-email/` (Fase 2 — código órfão)
-3. Confirmar se Edge Function está deployada no Supabase; configurar secret se sim
-
-### 🟡 Média
-
-4. Sincronizar `dev` com `main` via `publicar.ps1` (fluxo Thiago)
-5. Schema/RLS real — Fase 3
+2. Classificar cada `.limit`/`.range` em consultas financeiras/OS
+3. Inventariar fallbacks financeiros fail-open
+4. Testes de paridade OS → faturamento → financeiro → diretoria
+5. Testes de volume 999/1000/1001+
 
 ### 🔵 Baixa
 
-6. Cinco testes desatualizados (classificação mantida)
+6. Observabilidade futura (query truncada, fallback acionado, divergência telas)
 
 ---
 
 ## EVIDÊNCIAS
 
-```bash
-# PR #253
-git diff 88992034..cadffc46 --name-only
-# → docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md
-
-# Hotfix
-git show 2448268f --stat
-
-# Testes
-bash scripts/run-tests.sh
-# → 673 pass / 5 fail / 678
-
-# Build
-npm run build
-
-# Produção
-curl https://sistema.grupotmseg.com.br/api/version
-# → buildId 147318e9...
-
-# Tags
-git show baseline-fase1-20260812 --no-patch
-git show baseline-fase1-final-20260812 --no-patch
-
-# Guarda Resend
-npx tsx --test scripts/resend-no-hardcode.test.ts
-```
+- Regra recebida e incorporada em `AGENTS.md`
+- Contagem preliminar via ripgrep em `components/`, `lib/`, `server/`
+- Fase 1 permanece em 98% (critério Resend não alterado por esta execução)
 
 ---
 
 ## RESULTADO FINAL
 
-### 🟡 CONCLUÍDO COM PENDÊNCIAS
+### 🟢 CONCLUÍDO E VALIDADO
 
-Fase 1 encerrada tecnicamente com baseline, tags, build, deploy do hotfix e código ativo sem hardcode Resend. **Pendência única bloqueadora dos 100%:** rotação/revogação da chave antiga no provedor Resend (ação humana).
+*(para o escopo desta execução: registro de governança permanente)*
 
-**Fase 2 NÃO iniciada.**
+A regra de Integridade de Conjunto de Dados está registrada em `AGENTS.md` e no handoff. A auditoria detalhada do código existente inicia na **Fase 2** (e aprofunda nas Fases 4, 5 e 6).
+
+**Fase 2 não iniciada automaticamente.**
 
 ---
 
@@ -337,4 +248,4 @@ Fase 1 encerrada tecnicamente com baseline, tags, build, deploy do hotfix e cód
 
 ---
 
-*Gerado em: 2026-08-12 UTC | Execução: Hotfix Resend + Encerramento Fase 1*
+*Gerado em: 2026-08-12 UTC | Execução: Governança — Integridade de Conjunto de Dados*
