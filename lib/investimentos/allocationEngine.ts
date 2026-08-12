@@ -5,6 +5,10 @@
  */
 import type { InvestorProfile, InvestmentPosition, RiskProfile } from './types.js';
 import { formatPct, type MacroRates } from './marketRates.js';
+import {
+  buildAssetPerformanceOutlook,
+  type AssetPerformanceOutlook,
+} from './performanceProjection.js';
 
 /** Instituições onde o usuário pode aplicar (escolha fechada do produto). */
 export type AllowedInstitution = 'Nubank' | 'XP' | 'Itaú' | 'BTG';
@@ -38,6 +42,8 @@ export type AllocationLine = {
   amountBrl: number;
   rationale: string;
   liquidity: string;
+  /** Projeção 30d→1a (cenário-objetivo; RF por taxa, RV bear/base/bull). */
+  performanceOutlook: AssetPerformanceOutlook;
 };
 
 export type AllocationScenario = {
@@ -78,11 +84,12 @@ export type AllocationScenario = {
     signalNote: string;
     marketContext: string;
     liquidity: string;
+    performanceOutlook: AssetPerformanceOutlook;
   }>;
   warnings: string[];
   disclaimer: string;
   generatedAt: string;
-  source: 'rules_v4';
+  source: 'rules_v5';
 };
 
 const DISCLAIMER =
@@ -681,6 +688,11 @@ function expandClassToLines(
       amountBrl: amount,
       rationale: p.rationale,
       liquidity: p.liquidity,
+      performanceOutlook: buildAssetPerformanceOutlook(
+        amount,
+        { instrumentType: p.instrumentType, ticker: p.ticker, subtype: p.subtype },
+        rates,
+      ),
     });
   }
   return lines;
@@ -779,6 +791,15 @@ export function buildAllocationScenario(
           } as ExpertProduct,
           next,
         ),
+        performanceOutlook: buildAssetPerformanceOutlook(
+          next,
+          {
+            instrumentType: lines[idx].instrumentType,
+            ticker: lines[idx].ticker,
+            subtype: lines[idx].subtype,
+          },
+          rates,
+        ),
       };
     }
   }
@@ -828,6 +849,7 @@ export function buildAllocationScenario(
     signalNote: l.signalNote,
     marketContext: l.marketContext,
     liquidity: l.liquidity,
+    performanceOutlook: l.performanceOutlook,
   }));
 
   const selic = formatPct(rates?.selicPct ?? null);
@@ -837,12 +859,13 @@ export function buildAllocationScenario(
   const consultantBrief =
     `Leitura de consultor (${riskLabel}): Selic ${selic}, CDI ${cdi}, IPCA 12m ${ipca}. `
     + `Primeiro trave a reserva no Tesouro Selic (Governo). Depois monte o núcleo (ETF/ações ou RF conforme o perfil) `
-    + `e satélites (FII tijolo/papel, exterior). Em Bolsa use ordem limitada. A IA não executa ordens.`;
+    + `e satélites (FII tijolo/papel, exterior). Em Bolsa use ordem limitada. `
+    + `Cada linha traz projeção 30d/60d/90d/6m/1a (cenário-objetivo). A IA não executa ordens.`;
 
   return {
-    id: `scenario_${profile.risk_profile}_v4`,
+    id: `scenario_${profile.risk_profile}_v5`,
     name: `Parecer ${riskLabel}`,
-    tagline: `Consultor TM SEG · R$ ${capital.toLocaleString('pt-BR')} · Selic ${selic} · onde aplicar e como comprar`,
+    tagline: `Consultor TM SEG · R$ ${capital.toLocaleString('pt-BR')} · Selic ${selic} · projeção 30d→1a · onde aplicar`,
     riskLabel,
     investableCapital: round2(investable),
     emergencyHeld: round2(emergencyHeld),
@@ -859,16 +882,17 @@ export function buildAllocationScenario(
     warnings,
     disclaimer: DISCLAIMER,
     generatedAt: new Date().toISOString(),
-    source: 'rules_v4',
+    source: 'rules_v5',
   };
 }
 
-/** Cache antigo (v2/v3) sem campos de consultor → precisa regenerar. */
+/** Cache antigo (v2–v4) sem projeção por horizonte → precisa regenerar. */
 export function isScenarioStale(scenario: AllocationScenario | null | undefined): boolean {
   if (!scenario) return true;
-  if (scenario.source !== 'rules_v4') return true;
+  if (scenario.source !== 'rules_v5') return true;
   const a = scenario.topActions?.[0];
   if (!a?.categoryKind || a.categoryKind === 'Ativo') return true;
   if (!a.howToBuy?.length || !a.assetNature) return true;
+  if (!a.performanceOutlook?.horizons?.length) return true;
   return false;
 }

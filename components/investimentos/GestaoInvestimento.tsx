@@ -42,7 +42,7 @@ type SummaryResponse = {
   briefing?: DashboardBriefing;
 };
 
-const LOCAL_CACHE_KEY = 'tmseg_gestao_investimento_summary_v5';
+const LOCAL_CACHE_KEY = 'tmseg_gestao_investimento_summary_v6';
 const AUTO_REFRESH_MS = 30 * 60 * 1000;
 
 const fmtBRL = (v: number) =>
@@ -193,9 +193,10 @@ const GestaoInvestimento: React.FC = () => {
     const staleLocal = Boolean(
       localBoot?.briefing?.scenario
       && (
-        (localBoot.briefing.scenario as any).source !== 'rules_v4'
+        (localBoot.briefing.scenario as any).source !== 'rules_v5'
         || !localBoot.briefing.scenario.topActions?.[0]?.categoryKind
         || localBoot.briefing.scenario.topActions?.[0]?.categoryKind === 'Ativo'
+        || !localBoot.briefing.scenario.topActions?.[0]?.performanceOutlook?.horizons?.length
       ),
     );
     void loadRef.current({ silent: Boolean(localBoot) && !staleLocal, fresh: staleLocal || !localBoot });
@@ -604,6 +605,38 @@ const GestaoInvestimento: React.FC = () => {
                         </p>
                         <p className="text-[10px] text-gray-600 mt-0.5">{a.marketContext || a.searchHint}</p>
                         <p className="text-[10px] text-gray-700 mt-1 font-medium">{a.signalNote || a.thesis}</p>
+                        {a.performanceOutlook?.horizons?.length > 0 && (
+                          <div
+                            className="mt-2 rounded-lg border border-emerald-100 bg-white/80 px-2 py-1.5"
+                            data-testid="gestao-investimento-projecao"
+                          >
+                            <p className="text-[9px] font-black uppercase tracking-wide text-emerald-800 mb-1">
+                              Projeção {a.performanceOutlook.rateLabel}
+                              {a.performanceOutlook.kind === 'rv_scenario' ? ' · bear/base/bull' : ''}
+                            </p>
+                            <div className="grid grid-cols-5 gap-1">
+                              {a.performanceOutlook.horizons.map((h: any) => (
+                                <div key={h.key} className="text-center">
+                                  <p className="text-[9px] font-bold text-gray-500 uppercase">{h.label}</p>
+                                  <p className="text-[10px] font-black text-emerald-900">
+                                    {h.returnPct >= 0 ? '+' : ''}{Number(h.returnPct).toFixed(1)}%
+                                  </p>
+                                  <p className="text-[9px] text-gray-600 leading-tight">
+                                    {fmtBRL(h.valueBrl)}
+                                  </p>
+                                  {h.bearReturnPct != null && h.bullReturnPct != null && (
+                                    <p className="text-[8px] text-gray-400 leading-tight mt-0.5">
+                                      {Number(h.bearReturnPct).toFixed(0)}%…{Number(h.bullReturnPct).toFixed(0)}%
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                            <p className="text-[8px] text-gray-400 mt-1 leading-snug">
+                              {a.performanceOutlook.disclaimer}
+                            </p>
+                          </div>
+                        )}
                         {Array.isArray(a.howToBuy) && a.howToBuy.length > 0 && (
                           <details className="mt-1.5">
                             <summary className="cursor-pointer text-[10px] font-black text-red-800 uppercase tracking-wide">

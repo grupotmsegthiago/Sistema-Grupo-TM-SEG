@@ -172,12 +172,13 @@ describe('gestao investimento — fase 2 fundação', () => {
     const sumLines = scenario!.lines.reduce((s, l) => s + l.amountBrl, 0);
     assert.ok(Math.abs(sumLines - 100_000) < 1, `soma linhas ${sumLines}`);
     assert.match(scenario!.disclaimer, /não.*ordem|não executa/i);
-    assert.equal(scenario!.source, 'rules_v4');
+    assert.equal(scenario!.source, 'rules_v5');
     assert.ok(scenario!.topActions.every((a) => a.ticker && a.xpName && a.categoryKind && a.institution && a.searchHint));
     assert.ok(scenario!.topActions.every((a) => a.howToBuy?.length && a.assetNature && a.signal));
+    assert.ok(scenario!.topActions.every((a) => a.performanceOutlook?.horizons?.length === 5));
     assert.ok(scenario!.lines.some((l) => l.ticker === 'BOVA11' || l.ticker === 'IVVB11' || /Tesouro/i.test(l.ticker)));
     assert.ok(scenario!.topActions.every((a) => ['Nubank', 'XP', 'Itaú', 'BTG'].includes(a.institution)));
-    assert.match(scenario!.consultantBrief, /Selic|consultor/i);
+    assert.match(scenario!.consultantBrief, /Selic|consultor|projeção/i);
   });
 
   it('classifica tipo do ativo e escolhe instituição entre Nubank/XP/Itaú/BTG', async () => {
@@ -231,9 +232,14 @@ describe('gestao investimento — fase 2 fundação', () => {
     assert.match(tesouro!.assetNature, /público federal|Governo/i);
     assert.ok(tesouro!.howToBuy.some((s) => /Tesouro Selic|LFT/i.test(s)));
     assert.match(tesouro!.marketContext, /14/);
+    assert.ok(tesouro!.performanceOutlook?.horizons?.length === 5);
+    assert.equal(tesouro!.performanceOutlook.kind, 'rf_rate');
+    assert.ok(tesouro!.performanceOutlook.annualBasePct >= 13);
     const acao = scenario!.lines.find((l) => l.instrumentType === 'acao' || l.instrumentType === 'etf');
     assert.ok(acao);
     assert.equal(acao!.institution, 'XP');
+    assert.equal(acao!.performanceOutlook.kind, 'rv_scenario');
+    assert.ok(acao!.performanceOutlook.horizons.every((h) => h.bearReturnPct != null && h.bullReturnPct != null));
   });
 
   it('cache automático 30 min + UI sem botão Atualizar obrigatório', async () => {
@@ -248,7 +254,7 @@ describe('gestao investimento — fase 2 fundação', () => {
     assert.match(api, /readCachedSnapshot/);
     assert.match(vercel, /gestao-investimento-api\?op=refresh-cache/);
     assert.match(vercel, /\*\/30 \* \* \* \*/);
-    assert.match(ui, /tmseg_gestao_investimento_summary_v5/);
+    assert.match(ui, /tmseg_gestao_investimento_summary_v6/);
     assert.match(ui, /AUTO_REFRESH_MS/);
     assert.match(ui, /gestao-investimento-cache-status/);
     assert.doesNotMatch(ui, /data-testid="gestao-investimento-refresh"/);
@@ -259,9 +265,10 @@ describe('gestao investimento — fase 2 fundação', () => {
     assert.match(ui, /gestao-investimento-acao-tipo/);
     assert.match(ui, /gestao-investimento-acao-instituicao/);
     assert.match(ui, /gestao-investimento-macro/);
+    assert.match(ui, /gestao-investimento-projecao/);
     assert.match(ui, /Como comprar/);
     assert.match(ui, /Aplicar em:/);
-    assert.match(cache, /gestao_investimento_cache_v4_/);
+    assert.match(cache, /gestao_investimento_cache_v5_/);
     assert.match(cache, /reviveStaleScenario/);
   });
 });

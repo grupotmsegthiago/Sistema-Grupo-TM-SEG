@@ -25,3 +25,10 @@ export {
 } from './allocationEngine';
 export { fetchMacroRates, formatPct, type MacroRates } from './marketRates';
 export { buildTradingDesk, type DeskAlert, type TradingDeskSnapshot } from './tradingDesk';
+export {
+  buildAssetPerformanceOutlook,
+  compoundValue,
+  type AssetPerformanceOutlook,
+  type HorizonKey,
+  type HorizonProjection,
+} from './performanceProjection';
