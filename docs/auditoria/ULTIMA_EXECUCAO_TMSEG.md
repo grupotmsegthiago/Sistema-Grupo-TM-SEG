@@ -11,12 +11,12 @@
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-12 (UTC) |
-| **Fase** | Governança permanente — Integridade de Conjunto de Dados |
-| **Objetivo** | Registrar regra permanente de integridade de dados (limites, paginação, fallbacks, fail-closed) na governança do programa |
+| **Fase** | Fase 1 — Validação final Resend (fechamento) |
+| **Objetivo** | Comprovar configuração da nova `RESEND_API_KEY`, ausência de hardcode ativo, integridade de testes/build/produção e decisão segura sobre revogação da chave antiga |
 | **Branch** | `main` |
-| **Commit inicial** | `5555c505` |
+| **Commit inicial** | `d487f469` |
 | **Commit final** | ver HEAD após push desta execução |
-| **Versão produção** | `3.7.60` (inalterada por esta execução) |
+| **Versão produção** | `3.7.60` (`buildId d487f469…`) |
 | **Produção alterada** | **NÃO** |
 
 ---
@@ -25,86 +25,150 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **PROGRESSO DA FASE 1** | **98%** (inalterado — pendência: rotação Resend humana) |
+| **PROGRESSO DA FASE 1** | **99%** |
 | **PROGRESSO GERAL DO PROGRAMA** | **10%** |
+
+**Motivo de não declarar 100%:** nova chave `RESEND_API_KEY` configurada na Vercel, mas **teste funcional real da API Resend não pôde ser executado** neste ambiente (token Vercel sem permissão de decrypt; Edge Function Supabase não deployada; nenhum fluxo prod ativo consome Resend hoje).
 
 ---
 
 ## O QUE FOI PEDIDO
 
-Incorporar permanentemente à governança do Sistema Grupo TM SEG a **Regra de Integridade de Conjunto de Dados**, aplicável em todas as fases futuras e na auditoria do código existente. Atualizar handoff com seção obrigatória quando aplicável.
+Validação final da integração Resend após rotação manual da chave na Vercel, sem alterar regras de negócio, OS, financeiro, banco ou RLS. Confirmar variável, consumidores, segurança, testes, produção e emitir decisão sobre revogação da chave antiga.
 
 ---
 
 ## ESTADO ANTERIOR
 
-- Regras de governança cobriam handoff, progresso %, testes antes de entregar, preservação de negócio e SSOT em nível conceitual.
-- Não existia regra formal explícita sobre: truncamento silencioso por `.limit()`, fallbacks financeiros fail-open, paridade entre telas e estados `NÃO CARREGADO` vs `NÃO EXISTE`.
-- Fase 1 em 98% (pendência Resend).
+- Hotfix PR #254 mergeado: Edge Function `send-welcome-email` lê `RESEND_API_KEY` via env; HTTP 503 se ausente; sem hardcode ativo.
+- Fluxo prod de boas-vindas usa **SMTP Office365** (`/api/email/welcome` → `server/emailService.ts`), **não Resend**.
+- Fase 1 em 98–99% aguardando validação funcional pós-rotação humana da chave.
 
 ---
 
-## INVESTIGAÇÃO
+## 1. VARIÁVEL NA VERCEL (somente nomes)
 
-### Causa raiz que a regra previne
+Projeto oficial: **`sistema-grupo-tm-seg`** (`prj_vFuq5oPg20uHhSg59h9z2UCiRtkZ`)
 
-Consultas com limite arbitrário (ex.: 1.000 registros Supabase/PostgREST) podem fazer uma OS existir em uma tela e sumir em outra. Código interpreta ausência como “não existe”, aciona fallback e recalcula — gerando divergência entre telas sem erro visível.
+| Variável | Production | Preview | Observação |
+|----------|------------|---------|------------|
+| `RESEND_API_KEY` | 🟢 presente | 🟢 presente | `updatedAt` 2026-08-12 13:13 UTC (rotação recente) |
+| `TMSEG_RESEND` | 🟢 presente | 🟢 presente | `createdAt`/`updatedAt` 2026-08-12 13:10 UTC — **não referenciada no código ativo** |
 
-### Componentes que serão afetados nas fases futuras
-
-| Área | Onde auditar |
-|------|--------------|
-| OS | `MissionTable`, `MissionReportPage`, `MissionFinancialModal`, `ClientBillingReport` |
-| Financeiro | `FinancialDRE`, `FinancialDashboard`, `FinancialAuditor`, `server/routes.ts` |
-| Faturamento | `ClientBillingReport`, APIs de recálculo |
-| Diretoria | `lib/dashboardDiretoria/*`, `DashboardDiretoria` |
-| Relatórios | `ReportsDashboard`, exports, workers |
-| Backend | `server/routes.ts` (36 ocorrências `.limit`/`.range`), workers NF/e-mail |
-
-### Varredura preliminar (somente contagem — auditoria completa na Fase 2+)
-
-| Escopo | Ocorrências `.limit(` / `.range(` |
-|--------|-------------------------------------|
-| `components/` | ~70+ em 30+ arquivos (destaque: `MissionFinancialModal` 9, `ClientBillingReport` 5, `MissionTable` 4) |
-| `lib/` | ~35+ em 25+ arquivos (destaque: `dashboardDiretoria` 4, `osAnalysis` 4) |
-| `server/` | ~35+ em 14 arquivos (destaque: `routes.ts` 36, `dhlSupplierIntake` 6) |
-
-**Classificação:** todas as ocorrências acima estão **INDETERMINADO** até análise caso a caso nas Fases 2, 4, 5 e 6.
+**Alerta operacional:** se a nova chave foi colocada apenas em `TMSEG_RESEND`, o runtime **não a utilizará**. O código ativo lê somente `RESEND_API_KEY` (Edge Function Supabase).
 
 ---
 
-## ANÁLISE DE IMPACTO
+## 2. MAPEAMENTO CONSUMIDORES RESEND
 
-Esta execução **não alterou código funcional**. Impacto futuro:
+| Consumer | Ambiente | `RESEND_API_KEY`? | Ativo em prod? |
+|----------|----------|-------------------|----------------|
+| `supabase/functions/send-welcome-email/index.ts` | Supabase Edge | Sim (`Deno.env.get`) | **Não** — HTTP **404** em `/functions/v1/send-welcome-email` |
+| `components/UserForm.tsx` → `POST /api/email/welcome` | Vercel | Não (usa SMTP `EMAIL_PASS`) | **Sim** — boas-vindas reais |
+| `server/routes.ts` | Vercel | Apenas `RESEND_MONTHLY_USD` (custo estimado) | N/A |
+| Pacote npm `resend` | — | — | **Não importado** em código ativo |
+| `attached_assets/**/send-welcome-email/` | Legado | Hardcode histórico | **Não** (fora do build) |
 
+**Conclusão:** testar SMTP de boas-vindas **não** valida Resend. Único consumidor Resend no código ativo é a Edge Function legada (não deployada).
+
+---
+
+## 3. TESTE FUNCIONAL RESEND
+
+| Tentativa | Resultado |
+|-----------|-----------|
+| `vercel env pull` | Falhou (CLI não linkada no ambiente cloud) |
+| Vercel API `decrypt=true` (lista e item `RESEND_API_KEY`) | `decrypted: false` — token sem permissão de decrypt |
+| `GET https://api.resend.com/domains` com valor indisponível | Não executável com chave real |
+| `POST …/functions/v1/send-welcome-email` (Supabase) | HTTP **404** — função não encontrada |
+
+**Classificação:** 🟡 **RESEND CONFIGURADA, MAS TESTE REAL NÃO EXECUTADO**
+
+**Motivo:** ambiente do agente não possui acesso à chave descriptografada nem runtime Edge ativo para invocar o único consumidor Resend. Fluxo prod de e-mail usa SMTP.
+
+**Passo manual recomendado ao operador (sem expor segredo no chat):**
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" \
+  https://api.resend.com/domains \
+  -H "Authorization: Bearer $RESEND_API_KEY"
 ```
-CONSULTA (limit/range)
-    ↓
-CONJUNTO RECEBIDO (possivelmente parcial)
-    ↓
-CACHE / TRANSFORMAÇÃO
-    ↓
-TELA A / TELA B / RELATÓRIO
-    ↓
-FALLBACK financeiro? → PROIBIDO fail-open
-```
 
-Conexões a verificar nas próximas fases: query → API → cache → componente → paridade entre telas.
+Esperado: **HTTP 200**. Se 401/403, a chave em `RESEND_API_KEY` está inválida ou em variável errada.
 
 ---
 
-## ALTERAÇÕES REALIZADAS
+## 4. TESTE DE ERRO (ausência de `RESEND_API_KEY`)
 
-### Documentação / governança
+Validado por análise estática + teste automatizado (`scripts/resend-no-hardcode.test.ts`):
 
-| Arquivo | Alteração | Motivo |
-|---------|-----------|--------|
-| `AGENTS.md` | Seção **Integridade de conjunto de dados (regra permanente)** | Referência permanente para agentes |
-| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Este documento | Handoff da execução |
+- Ausência da chave → HTTP **503**
+- Mensagem genérica `RESEND_API_KEY is not configured`
+- **Sem** fallback hardcoded
+- **Sem** exposição de segredo em logs (apenas log de ausência)
 
-### Código / banco / deploy
+---
 
-Nenhuma alteração.
+## 5. VARREDURA DE SEGREDOS (código ativo)
+
+Escopo: exclui `attached_assets/`, `dist/`, `node_modules/`, histórico Git.
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Padrão `re_[A-Za-z0-9]{10,}` em código ativo | **NÃO** encontrado |
+| `RESEND_API_KEY` hardcoded em TS/TSX ativo | **NÃO** |
+| Fallback de chave na Edge Function ativa | **NÃO** |
+| Legado `attached_assets/**/send-welcome-email/index.ts` | Contém hardcode histórico — **fora do build** (limpeza Fase 2) |
+
+**Existe chave Resend literal no código ativo? NÃO**
+
+---
+
+## 6. TESTES E BUILD
+
+| Comando | Resultado |
+|---------|-----------|
+| `npx tsx --test scripts/resend-no-hardcode.test.ts` | **2/2 pass** (anti-hardcode + fail-safe 503) |
+| `bash scripts/run-tests.sh` | **673 pass / 5 fail / 678** — **sem falhas novas** |
+| `npm run build` | **OK** |
+
+Falhas conhecidas fora do escopo (inalteradas): `investment-accounts`, `invoice-display`, `presence-refresh`, `receivable-desc-nf`, `zapi-sdk-cockpit`.
+
+---
+
+## 7. PRODUÇÃO
+
+| Endpoint | Resultado |
+|----------|-----------|
+| `GET /api/version` | `version: 3.7.60`, `buildId: d487f469…`, `builtAt: 2026-08-12T13:14:02Z` |
+| `GET /api/health` | `{"status":"ok"}` |
+
+Produção saudável. Presença da variável na Vercel **não** comprova uso runtime em fluxo ativo (nenhum fluxo prod consome Resend hoje).
+
+---
+
+## 8. DECISÃO SOBRE CHAVE ANTIGA
+
+### **B — NÃO REVOGAR AINDA** (do ponto de vista desta validação)
+
+**Bloqueio:** teste funcional da nova chave contra `api.resend.com` não executado neste ambiente.
+
+**Mitigação de risco operacional:** como boas-vindas e demais e-mails prod usam **SMTP**, revogar a chave antiga tem **baixo impacto imediato** em produção — porém a **nova chave ainda não foi comprovada** pelo agente.
+
+**Após o operador confirmar HTTP 200 no curl acima:** pode revogar a chave antiga no painel Resend com segurança operacional.
+
+**Cursor não revogou credenciais** (conforme instrução).
+
+---
+
+## ALTERAÇÕES REALIZADAS NESTA EXECUÇÃO
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `scripts/resend-no-hardcode.test.ts` | Teste adicional: fail-safe HTTP 503 sem fallback |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Este handoff |
+
+Nenhuma alteração em regras de negócio, OS, financeiro, banco, RLS ou deploy.
 
 ---
 
@@ -114,132 +178,56 @@ Nenhuma alteração.
 
 ---
 
-## REGRAS DE NEGÓCIO
-
-### Regras alteradas
-
-Nenhuma regra de cálculo ou negócio.
-
-### Regras preservadas
-
-Todas as existentes.
-
-### Regras novas (governança permanente)
-
-1. **Proibido** assumir que primeira página ou `.limit(N)` = conjunto completo em consultas críticas.
-2. **Fail-closed** para valores financeiros: ausência por truncamento/erro não autoriza fallback silencioso.
-3. Estados explícitos obrigatórios: `ENCONTRADO`, `NÃO EXISTE`, `NÃO CARREGADO`, `CONSULTA INCOMPLETA`, `ERRO DE CONSULTA`, `NÃO VALIDADO`.
-4. Paginação exaustiva com ordenação estável (`created_at + id`) quando universo completo for necessário.
-5. Preferir filtro/agregação/RPC no banco a inflar `.limit`.
-6. Testes de paridade entre telas e volume (999 / 1000 / 1001+).
-7. Consulta direta por ID quando apenas uma OS/registro é necessário (`WHERE mission_id = X`).
-8. Inventariar fallbacks (`??`, `||`, `fallback`, `default`, recálculo por ausência).
-9. Handoff deve incluir seção **INTEGRIDADE DE CONJUNTO DE DADOS** quando aplicável.
-
-**Princípios:** ausência ≠ inexistência; consulta parcial ≠ SSOT; fallback ≠ máscara de erro financeiro.
-
----
-
-## INTEGRIDADE DE CONJUNTO DE DADOS
-
-> Seção obrigatória a partir desta governança. Nesta execução: **registro da regra + varredura preliminar**. Auditoria caso a caso: **pendente Fase 2+**.
+## SEGURANÇA
 
 | Item | Status |
 |------|--------|
-| Consultas auditadas (caso a caso) | ⚪ **Pendente Fase 2** |
-| Limites encontrados (preliminar) | 🟡 ~140+ ocorrências `.limit`/`.range` em components/lib/server — **não classificadas** |
-| Paginações completas verificadas | ⚪ Pendente |
-| Risco de truncamento confirmado | ⚪ Pendente |
-| Fallbacks financeiros inventariados | ⚪ Pendente Fase 4/5/6 |
-| Testes de volume (999/1000/1001) | ⚪ Pendente |
-| Paridade entre telas | ⚪ Pendente |
-| **Resultado desta execução** | **Regra registrada; auditoria não iniciada** |
-
-### Classificações a aplicar na Fase 2+
-
-| Classe | Significado |
-|--------|-------------|
-| SEGURO | Limite intencional e correto |
-| PAGINADO | Paginação completa e determinística |
-| AGREGADO | Cálculo no banco sem carregar dataset inteiro |
-| PERIGOSO | Limite arbitrário sobre conjunto que deveria ser completo |
-| INDETERMINADO | Requer investigação |
-
----
-
-## SINCRONISMO
-
-Não aplicável — nenhuma alteração funcional.
-
----
-
-## TESTES EXECUTADOS
-
-| Comando | Finalidade | Resultado |
-|---------|------------|-----------|
-| `rg '\.limit\(|\.range\(' components lib server` | Contagem preliminar para handoff | ~140+ ocorrências mapeadas por escopo |
-| Build / suite completa | N/A nesta execução | Não executados (somente docs) |
-
----
-
-## SEGURANÇA
-
-Sem impacto. Nenhum segredo envolvido.
-
----
-
-## GIT
-
-| Item | Valor |
-|------|-------|
-| Arquivos alterados | `AGENTS.md`, `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` |
-| Produção | Não alterada |
-| Deploy | Não realizado |
-
----
-
-## ROLLBACK
-
-Reverter commit desta execução remove apenas entradas de governança em `AGENTS.md` e handoff. Sem impacto em produção.
+| Hardcode ativo removido (PR #254) | 🟢 |
+| `RESEND_API_KEY` na Vercel (Prod + Preview) | 🟢 |
+| Chave nova validada funcionalmente | 🟡 pendente teste operador |
+| `TMSEG_RESEND` órfã no código | 🟡 revisar se duplicata desnecessária |
+| Edge Function deploy + secret Supabase | 🟡 pendente se Resend for reativado |
 
 ---
 
 ## PENDÊNCIAS
 
-### 🔴 Crítica (Fase 1)
+### 🔴 Crítica (Fase 1 → 100%)
 
-1. Rotação chave Resend antiga (ação humana — inalterada)
+1. Operador: `curl` Resend domains com `RESEND_API_KEY` → confirmar HTTP 200
+2. Operador: revogar chave antiga no painel Resend **após** confirmação acima
+3. Confirmar que nova chave está em **`RESEND_API_KEY`** (não só `TMSEG_RESEND`)
 
-### 🟠 Alta (Fases 2–6)
+### 🟠 Alta (Fases 2+)
 
-2. Classificar cada `.limit`/`.range` em consultas financeiras/OS
-3. Inventariar fallbacks financeiros fail-open
-4. Testes de paridade OS → faturamento → financeiro → diretoria
-5. Testes de volume 999/1000/1001+
+4. Limpar hardcodes em `attached_assets/**/send-welcome-email/`
+5. Decidir destino de `TMSEG_RESEND` (remover ou mapear no código)
+6. Se Resend voltar a ser usado: deploy Edge Function + `supabase secrets set RESEND_API_KEY`
 
 ### 🔵 Baixa
 
-6. Observabilidade futura (query truncada, fallback acionado, divergência telas)
+7. Auditoria integridade de conjunto de dados (regra já em `AGENTS.md`)
 
 ---
 
 ## EVIDÊNCIAS
 
-- Regra recebida e incorporada em `AGENTS.md`
-- Contagem preliminar via ripgrep em `components/`, `lib/`, `server/`
-- Fase 1 permanece em 98% (critério Resend não alterado por esta execução)
+- Vercel API: `RESEND_API_KEY` e `TMSEG_RESEND` presentes em Production + Preview
+- `RESEND_API_KEY` atualizada 2026-08-12 13:13 UTC
+- Supabase Edge: 404 (função não deployada)
+- Suite: 673/678 (baseline mantido)
+- Build OK
+- `/api/version` + `/api/health` OK em produção
 
 ---
 
 ## RESULTADO FINAL
 
-### 🟢 CONCLUÍDO E VALIDADO
+### 🟡 CONCLUÍDO COM PENDÊNCIA
 
-*(para o escopo desta execução: registro de governança permanente)*
+Validação de configuração, código, testes, build e produção **concluída**. Teste funcional da nova chave Resend **não executado** por limitação de ambiente. Fase 1 permanece em **99%** até confirmação humana da chave.
 
-A regra de Integridade de Conjunto de Dados está registrada em `AGENTS.md` e no handoff. A auditoria detalhada do código existente inicia na **Fase 2** (e aprofunda nas Fases 4, 5 e 6).
-
-**Fase 2 não iniciada automaticamente.**
+**Fase 2 não iniciada.**
 
 ---
 
@@ -248,4 +236,4 @@ A regra de Integridade de Conjunto de Dados está registrada em `AGENTS.md` e no
 
 ---
 
-*Gerado em: 2026-08-12 UTC | Execução: Governança — Integridade de Conjunto de Dados*
+*Gerado em: 2026-08-12 UTC | Execução: Validação final Resend — Fase 1*
