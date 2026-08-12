@@ -15,7 +15,7 @@
 | **Objetivo** | Descobrir, documentar e validar (somente leitura) a fotografia técnica do sistema antes de qualquer intervenção: código → GitHub → Vercel → runtime → APIs → banco → integrações externas |
 | **Branch** | `main` |
 | **Commit inicial** | `88992034fd26f28c30937cf59a1b95b59eb04ebe` |
-| **Commit final** | `4f55bf94` (handoff: `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md`) |
+| **Commit final** | `da00ecd9` (handoff na branch `cursor/handoff-fase1-auditoria-eaa8`, PR #253) |
 | **Versão produção** | `3.7.60` |
 | **Ambiente analisado** | Repositório local `/workspace`, produção `https://sistema.grupotmseg.com.br`, leitura remota GitHub/Vercel via curl e código-fonte |
 | **Produção alterada** | **NÃO** |
