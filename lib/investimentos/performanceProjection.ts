@@ -240,3 +240,87 @@ export function buildAssetPerformanceOutlook(
     asOf,
   };
 }
+
+export type PortfolioPerformanceOutlook = {
+  principalBrl: number;
+  blendedAnnualBasePct: number;
+  rateLabel: string;
+  horizons: HorizonProjection[];
+  disclaimer: string;
+  asOf: string;
+  lineCount: number;
+};
+
+type PortfolioLineRef = {
+  amountBrl: number;
+  performanceOutlook: AssetPerformanceOutlook;
+};
+
+/**
+ * Soma as projeções de cada linha → retorno total da carteira (ex.: R$ 100 mil).
+ * Por horizonte: valor/lucro/% do portfólio inteiro; bear/bull quando houver RV.
+ */
+export function buildPortfolioPerformanceOutlook(
+  lines: PortfolioLineRef[],
+): PortfolioPerformanceOutlook | null {
+  const usable = (lines || []).filter(
+    (l) => l.amountBrl > 0 && l.performanceOutlook?.horizons?.length,
+  );
+  if (!usable.length) return null;
+
+  const principalBrl = round2(usable.reduce((s, l) => s + l.amountBrl, 0));
+  if (!(principalBrl > 0)) return null;
+
+  const blendedAnnualBasePct = round2(
+    usable.reduce((s, l) => s + l.amountBrl * l.performanceOutlook.annualBasePct, 0) / principalBrl,
+  );
+
+  const asOf = usable.map((l) => l.performanceOutlook.asOf).sort().at(-1)
+    || new Date().toISOString();
+
+  const hasRange = usable.some((l) =>
+    l.performanceOutlook.horizons.some((h) => h.bearValueBrl != null || h.bullValueBrl != null),
+  );
+
+  const horizons: HorizonProjection[] = HORIZONS.map((meta) => {
+    let valueBrl = 0;
+    let bearValueBrl = 0;
+    let bullValueBrl = 0;
+    for (const line of usable) {
+      const h = line.performanceOutlook.horizons.find((x) => x.key === meta.key);
+      const base = h?.valueBrl ?? line.amountBrl;
+      valueBrl += base;
+      bearValueBrl += h?.bearValueBrl ?? base;
+      bullValueBrl += h?.bullValueBrl ?? base;
+    }
+    valueBrl = round2(valueBrl);
+    const row: HorizonProjection = {
+      key: meta.key,
+      days: meta.days,
+      label: meta.label,
+      valueBrl,
+      profitBrl: round2(valueBrl - principalBrl),
+      returnPct: periodReturnPct(principalBrl, valueBrl),
+    };
+    if (hasRange) {
+      bearValueBrl = round2(bearValueBrl);
+      bullValueBrl = round2(bullValueBrl);
+      row.bearValueBrl = bearValueBrl;
+      row.bullValueBrl = bullValueBrl;
+      row.bearReturnPct = periodReturnPct(principalBrl, bearValueBrl);
+      row.bullReturnPct = periodReturnPct(principalBrl, bullValueBrl);
+    }
+    return row;
+  });
+
+  return {
+    principalBrl,
+    blendedAnnualBasePct,
+    rateLabel: `Carteira · retorno misturado ~${blendedAnnualBasePct.toFixed(1)}% a.a.`,
+    horizons,
+    disclaimer:
+      'Total da carteira sugerida (soma das linhas). Cenário-objetivo — não é garantia de retorno.',
+    asOf,
+    lineCount: usable.length,
+  };
+}

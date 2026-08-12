@@ -7,7 +7,9 @@ import type { InvestorProfile, InvestmentPosition, RiskProfile } from './types.j
 import { formatPct, type MacroRates } from './marketRates.js';
 import {
   buildAssetPerformanceOutlook,
+  buildPortfolioPerformanceOutlook,
   type AssetPerformanceOutlook,
+  type PortfolioPerformanceOutlook,
 } from './performanceProjection.js';
 
 /** Instituições onde o usuário pode aplicar (escolha fechada do produto). */
@@ -86,10 +88,12 @@ export type AllocationScenario = {
     liquidity: string;
     performanceOutlook: AssetPerformanceOutlook;
   }>;
+  /** Projeção do valor total da carteira (ex.: R$ 100 mil) nos mesmos horizontes. */
+  portfolioOutlook: PortfolioPerformanceOutlook | null;
   warnings: string[];
   disclaimer: string;
   generatedAt: string;
-  source: 'rules_v5';
+  source: 'rules_v6';
 };
 
 const DISCLAIMER =
@@ -856,16 +860,18 @@ export function buildAllocationScenario(
   const cdi = formatPct(rates?.cdiPct ?? null);
   const ipca = formatPct(rates?.ipcaPct ?? null);
 
+  const portfolioOutlook = buildPortfolioPerformanceOutlook(ordered);
+
   const consultantBrief =
     `Leitura de consultor (${riskLabel}): Selic ${selic}, CDI ${cdi}, IPCA 12m ${ipca}. `
     + `Primeiro trave a reserva no Tesouro Selic (Governo). Depois monte o núcleo (ETF/ações ou RF conforme o perfil) `
     + `e satélites (FII tijolo/papel, exterior). Em Bolsa use ordem limitada. `
-    + `Cada linha traz projeção 30d/60d/90d/6m/1a (cenário-objetivo). A IA não executa ordens.`;
+    + `Há projeção do total da carteira e de cada linha (30d→1a, cenário-objetivo). A IA não executa ordens.`;
 
   return {
-    id: `scenario_${profile.risk_profile}_v5`,
+    id: `scenario_${profile.risk_profile}_v6`,
     name: `Parecer ${riskLabel}`,
-    tagline: `Consultor TM SEG · R$ ${capital.toLocaleString('pt-BR')} · Selic ${selic} · projeção 30d→1a · onde aplicar`,
+    tagline: `Consultor TM SEG · R$ ${capital.toLocaleString('pt-BR')} · Selic ${selic} · retorno total 30d→1a · onde aplicar`,
     riskLabel,
     investableCapital: round2(investable),
     emergencyHeld: round2(emergencyHeld),
@@ -879,20 +885,22 @@ export function buildAllocationScenario(
     consultantBrief,
     lines: ordered,
     topActions,
+    portfolioOutlook,
     warnings,
     disclaimer: DISCLAIMER,
     generatedAt: new Date().toISOString(),
-    source: 'rules_v5',
+    source: 'rules_v6',
   };
 }
 
-/** Cache antigo (v2–v4) sem projeção por horizonte → precisa regenerar. */
+/** Cache antigo (v2–v5) sem projeção total da carteira → precisa regenerar. */
 export function isScenarioStale(scenario: AllocationScenario | null | undefined): boolean {
   if (!scenario) return true;
-  if (scenario.source !== 'rules_v5') return true;
+  if (scenario.source !== 'rules_v6') return true;
   const a = scenario.topActions?.[0];
   if (!a?.categoryKind || a.categoryKind === 'Ativo') return true;
   if (!a.howToBuy?.length || !a.assetNature) return true;
   if (!a.performanceOutlook?.horizons?.length) return true;
+  if (!scenario.portfolioOutlook?.horizons?.length) return true;
   return false;
 }

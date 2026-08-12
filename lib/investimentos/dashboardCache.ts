@@ -19,9 +19,9 @@ import type {
 } from './types.js';
 
 export const GESTAO_CACHE_TTL_MS = 30 * 60 * 1000;
-/** v5: parecer + projeção de performance 30d→1a por linha. */
-const CACHE_KEY_PREFIX = 'gestao_investimento_cache_v5_';
-const OWNERS_KEY = 'gestao_investimento_cache_owners_v5';
+/** v6: parecer + projeção por linha + retorno total da carteira. */
+const CACHE_KEY_PREFIX = 'gestao_investimento_cache_v6_';
+const OWNERS_KEY = 'gestao_investimento_cache_owners_v6';
 
 export type AllocationRow = { type: string; value: number; pct: number };
 

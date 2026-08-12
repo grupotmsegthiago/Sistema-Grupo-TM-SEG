@@ -27,8 +27,10 @@ export { fetchMacroRates, formatPct, type MacroRates } from './marketRates';
 export { buildTradingDesk, type DeskAlert, type TradingDeskSnapshot } from './tradingDesk';
 export {
   buildAssetPerformanceOutlook,
+  buildPortfolioPerformanceOutlook,
   compoundValue,
   type AssetPerformanceOutlook,
   type HorizonKey,
   type HorizonProjection,
+  type PortfolioPerformanceOutlook,
 } from './performanceProjection';

@@ -42,7 +42,7 @@ type SummaryResponse = {
   briefing?: DashboardBriefing;
 };
 
-const LOCAL_CACHE_KEY = 'tmseg_gestao_investimento_summary_v6';
+const LOCAL_CACHE_KEY = 'tmseg_gestao_investimento_summary_v7';
 const AUTO_REFRESH_MS = 30 * 60 * 1000;
 
 const fmtBRL = (v: number) =>
@@ -193,10 +193,11 @@ const GestaoInvestimento: React.FC = () => {
     const staleLocal = Boolean(
       localBoot?.briefing?.scenario
       && (
-        (localBoot.briefing.scenario as any).source !== 'rules_v5'
+        (localBoot.briefing.scenario as any).source !== 'rules_v6'
         || !localBoot.briefing.scenario.topActions?.[0]?.categoryKind
         || localBoot.briefing.scenario.topActions?.[0]?.categoryKind === 'Ativo'
         || !localBoot.briefing.scenario.topActions?.[0]?.performanceOutlook?.horizons?.length
+        || !(localBoot.briefing.scenario as any).portfolioOutlook?.horizons?.length
       ),
     );
     void loadRef.current({ silent: Boolean(localBoot) && !staleLocal, fresh: staleLocal || !localBoot });
@@ -559,6 +560,51 @@ const GestaoInvestimento: React.FC = () => {
                 <p className="text-[11px] text-gray-700 leading-relaxed mb-3 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
                   {summary.briefing.scenario.consultantBrief}
                 </p>
+              )}
+
+              {(summary.briefing.scenario as any).portfolioOutlook?.horizons?.length > 0 && (
+                <div
+                  className="mb-3 rounded-xl border-2 border-emerald-700/30 bg-emerald-50/70 px-3 py-2.5"
+                  data-testid="gestao-investimento-projecao-carteira"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 mb-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-900">
+                      Retorno total da carteira
+                    </p>
+                    <p className="text-[11px] font-bold text-emerald-900">
+                      Base {fmtBRL((summary.briefing.scenario as any).portfolioOutlook.principalBrl)}
+                      {' · '}
+                      {(summary.briefing.scenario as any).portfolioOutlook.rateLabel}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {(summary.briefing.scenario as any).portfolioOutlook.horizons.map((h: any) => (
+                      <div
+                        key={h.key}
+                        className="rounded-lg bg-white/90 border border-emerald-100 px-1 py-1.5 text-center"
+                      >
+                        <p className="text-[9px] font-bold text-gray-500 uppercase">{h.label}</p>
+                        <p className="text-xs font-black text-emerald-900">
+                          {h.returnPct >= 0 ? '+' : ''}{Number(h.returnPct).toFixed(1)}%
+                        </p>
+                        <p className="text-[10px] font-bold text-gray-800 leading-tight">
+                          {fmtBRL(h.valueBrl)}
+                        </p>
+                        <p className="text-[9px] text-gray-500 leading-tight">
+                          {h.profitBrl >= 0 ? '+' : ''}{fmtBRL(h.profitBrl)}
+                        </p>
+                        {h.bearReturnPct != null && h.bullReturnPct != null && (
+                          <p className="text-[8px] text-gray-400 leading-tight mt-0.5">
+                            {Number(h.bearReturnPct).toFixed(0)}%…{Number(h.bullReturnPct).toFixed(0)}%
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[8px] text-emerald-800/70 mt-1.5 leading-snug">
+                    {(summary.briefing.scenario as any).portfolioOutlook.disclaimer}
+                  </p>
+                </div>
               )}
 
               <p className="text-[11px] font-bold text-gray-700 mb-2">

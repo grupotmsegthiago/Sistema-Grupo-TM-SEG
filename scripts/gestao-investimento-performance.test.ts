@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildAllocationScenario,
   buildAssetPerformanceOutlook,
+  buildPortfolioPerformanceOutlook,
   compoundValue,
   createDraftInvestorProfile,
   isScenarioStale,
@@ -56,7 +57,7 @@ describe('gestao investimento — projeção de performance', () => {
     assert.ok(d90.bullValueBrl! > d90.valueBrl);
   });
 
-  it('cenário rules_v5 inclui outlook em cada linha e ação', () => {
+  it('cenário rules_v6 inclui outlook por linha e total da carteira', () => {
     const profile = createDraftInvestorProfile({
       person_type: 'PF',
       capital_available: 100_000,
@@ -77,10 +78,47 @@ describe('gestao investimento — projeção de performance', () => {
     });
     const scenario = buildAllocationScenario(profile, [], RATES);
     assert.ok(scenario);
-    assert.equal(scenario!.source, 'rules_v5');
+    assert.equal(scenario!.source, 'rules_v6');
     assert.equal(isScenarioStale(scenario), false);
     assert.ok(scenario!.lines.every((l) => l.performanceOutlook?.horizons?.length === 5));
     assert.ok(scenario!.topActions.every((a) => a.performanceOutlook?.horizons?.length === 5));
-    assert.equal(isScenarioStale({ ...scenario!, source: 'rules_v4' as any }), true);
+    assert.ok(scenario!.portfolioOutlook);
+    assert.equal(scenario!.portfolioOutlook!.principalBrl, 100_000);
+    assert.equal(scenario!.portfolioOutlook!.horizons.length, 5);
+    const y1 = scenario!.portfolioOutlook!.horizons.find((h) => h.key === 'y1')!;
+    assert.ok(y1.valueBrl > 100_000);
+    assert.ok(y1.profitBrl > 0);
+    // Soma das linhas no horizonte = total da carteira
+    const sumY1 = scenario!.lines.reduce((s, l) => {
+      const h = l.performanceOutlook.horizons.find((x) => x.key === 'y1')!;
+      return s + h.valueBrl;
+    }, 0);
+    assert.ok(Math.abs(sumY1 - y1.valueBrl) < 0.5);
+    assert.equal(isScenarioStale({ ...scenario!, source: 'rules_v5' as any }), true);
+  });
+
+  it('buildPortfolioPerformanceOutlook agrega R$ 100 mil em 5 horizontes', () => {
+    const a = buildAssetPerformanceOutlook(
+      60_000,
+      { instrumentType: 'tesouro', ticker: 'Tesouro Selic', subtype: 'LFT' },
+      RATES,
+    );
+    const b = buildAssetPerformanceOutlook(
+      40_000,
+      { instrumentType: 'etf', ticker: 'BOVA11' },
+      RATES,
+    );
+    const port = buildPortfolioPerformanceOutlook([
+      { amountBrl: 60_000, performanceOutlook: a },
+      { amountBrl: 40_000, performanceOutlook: b },
+    ]);
+    assert.ok(port);
+    assert.equal(port!.principalBrl, 100_000);
+    assert.equal(port!.horizons.length, 5);
+    const d30 = port!.horizons.find((h) => h.key === 'd30')!;
+    assert.ok(d30.valueBrl > 100_000);
+    assert.ok(d30.bearValueBrl != null && d30.bullValueBrl != null);
+    assert.ok(d30.bearValueBrl! < d30.valueBrl);
+    assert.ok(d30.bullValueBrl! > d30.valueBrl);
   });
 });
