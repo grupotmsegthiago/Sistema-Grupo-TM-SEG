@@ -12,21 +12,67 @@
 | **Data** | 2026-08-12 (UTC) |
 | **Fase** | **Fase 3 — Integridade, Segurança e SSOT (bloco P0 — 1ª execução)** |
 | **Baseline Fase 2** | `baseline-fase2-merged-20260812` → `463eebe6` |
-| **Branch** | `cursor/fase3-p0-integridade-eaa8` → PR (ver Git) |
+| **Branch** | `cursor/fase3-p0-integridade-eaa8` → PR #257 |
 | **Produção alterada** | **NÃO** |
 | **Banco/schema alterado** | **NÃO** |
 | **Deploy** | **NÃO** |
 
 ---
 
-## PROGRESSO
+## PROGRESSO — TRÊS INDICADORES OBRIGATÓRIOS
 
-| Métrica | Valor |
-|---------|-------|
+> **Regra:** 100% da execução atual **≠** 100% da Fase 3. Cada indicador mede um escopo diferente.
+
+| Indicador | Valor | Significado |
+|-----------|-------|-------------|
+| **EXECUÇÃO ATUAL** | **100%** 🟢 | Trabalho solicitado **neste prompt** (consolidar F2 + bloco P0 F3) — **concluído** |
+| **FASE 3 (total)** | **20%** 🔵 | 1º bloco P0 entregue; P1/P2/P3 + subfases pendentes |
+| **PROGRAMA GERAL** | **22%** | Soma ponderada de todas as fases (ver fórmula abaixo) |
+
+### Referência histórica (fases encerradas)
+
+| Fase | Status |
+|------|--------|
 | **FASE 1** | **100%** 🟢 |
-| **FASE 2** | **100%** 🟢 (consolidada na `main` @ `463eebe6`, tag `baseline-fase2-merged-20260812`) |
-| **FASE 3** | **20%** 🔵 (bloco P0 concluído; P1/P2/P3 pendentes) |
-| **PROGRAMA GERAL** | **22%** |
+| **FASE 2** | **100%** 🟢 (`main` @ `463eebe6`, tag `baseline-fase2-merged-20260812`) |
+
+### Metodologia — EXECUÇÃO ATUAL (prompt desta rodada)
+
+Marcos verificáveis desta execução:
+
+| Marco | % execução | Evidência |
+|-------|------------|-----------|
+| Verificar PR #256 (somente docs) | 10% | Diff único arquivo `.md` |
+| Merge `main` + tag `baseline-fase2-merged-20260812` | 25% | `main` @ `463eebe6` |
+| P0-01 + P0-02 (pedágio filha DRE/charts) | 50% | Código + testes P0-01/02 |
+| P0-03 + P0-04 (canônico + migration auth) | 75% | Código + testes P0-03/04 |
+| P0-05 + testes + build + handoff + PR #257 | 90% | 25 testes pass, build OK |
+| Entrega final documentada | **100%** | Este arquivo + commits `3d31901d`, `a2b31671` |
+
+### Metodologia — FASE 3 (total estimado em 5 blocos ≈ 20% cada)
+
+| Bloco | Escopo | Status | Peso Fase 3 |
+|-------|--------|--------|-------------|
+| **P0** | Integridade, segurança, SSOT crítico (5 itens) | ✅ **100%** | **20%** |
+| **P1** | Sincronismo, limit 300, realtime, fork financialUtils, quotes 500 | ⏳ 0% | 20% |
+| **P2** | Funcionalidades inacabadas (AI Chat, BillingControlCenter, etc.) | ⏳ 0% | 20% |
+| **P3** | Dívida técnica, replit, endpoints admin órfãos | ⏳ 0% | 20% |
+| **F3-final** | RLS/schema, validação runtime amostral, hardening permissões API | ⏳ 0% | 20% |
+
+**Fase 3 atual = 20% × 1 bloco / 5 = 20%.**
+
+### Metodologia — PROGRAMA GERAL
+
+| Fase | Peso programa | Progresso fase | Contribuição |
+|------|---------------|----------------|--------------|
+| Fase 1 — Segurança Resend / baseline | 10% | 100% | 10,0% |
+| Fase 2 — Raio-X funcional | 8% | 100% | 8,0% |
+| Fase 3 — Integridade / SSOT / correções | 40% | 20% | 8,0% |
+| Fase 4 — (planejada) Estabilização operacional | 20% | 0% | 0% |
+| Fase 5 — (planejada) Evolução comercial/jurídico | 22% | 0% | 0% |
+| **Total** | **100%** | — | **22,0%** ≈ **22%** |
+
+> Percentuais só sobem com evidência verificável (código, teste, merge, tag ou documentação auditável). Não inflar por estimativa.
 
 ---
 
@@ -193,7 +239,9 @@ Busca limit 300, realtime Dashboard/DRE, fork financialUtils, quotes 500, AI Cha
 | Base | `main` @ `463eebe6` |
 | Tag Fase 2 | `baseline-fase2-merged-20260812` |
 | PR Fase 2 | #256 merged |
-| PR Fase 3 | (criar após push) |
+| PR Fase 3 | #257 (draft) |
+| Commits funcionais | `3d31901d` |
+| Commits handoff | `a2b31671` (+ atualização indicadores) |
 
 ---
 
@@ -217,6 +265,12 @@ Busca limit 300, realtime Dashboard/DRE, fork financialUtils, quotes 500, AI Cha
 ---
 
 ## ENCERRAMENTO
+
+| Indicador | Valor |
+|-----------|-------|
+| **EXECUÇÃO ATUAL** | **100%** 🟢 |
+| **FASE 3** | **20%** 🔵 |
+| **PROGRAMA GERAL** | **22%** |
 
 **PARADO após bloco P0.** Não iniciado P1. Não deploy. Aguardando autorização para próxima subfase.
 
