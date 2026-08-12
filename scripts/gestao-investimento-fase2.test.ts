@@ -172,11 +172,56 @@ describe('gestao investimento — fase 2 fundação', () => {
     const sumLines = scenario!.lines.reduce((s, l) => s + l.amountBrl, 0);
     assert.ok(Math.abs(sumLines - 100_000) < 1, `soma linhas ${sumLines}`);
     assert.match(scenario!.disclaimer, /não.*ordem|não movimenta/i);
-    assert.equal(scenario!.source, 'rules_v2');
-    // Nomes objetivos pesquisáveis na XP (não só classe genérica)
-    assert.ok(scenario!.topActions.every((a) => a.ticker && a.xpName));
+    assert.equal(scenario!.source, 'rules_v3');
+    // Nomes objetivos + tipo + instituição (Nubank/XP/Itaú/BTG)
+    assert.ok(scenario!.topActions.every((a) => a.ticker && a.xpName && a.categoryKind && a.institution && a.searchHint));
     assert.ok(scenario!.lines.some((l) => l.ticker === 'BOVA11' || l.ticker === 'IVVB11' || /Tesouro/i.test(l.ticker)));
-    assert.match(scenario!.topActions[0].detail, /busque na XP/i);
+    assert.ok(scenario!.topActions.every((a) => ['Nubank', 'XP', 'Itaú', 'BTG'].includes(a.institution)));
+    assert.match(scenario!.topActions[0].detail, /Nubank|XP|Itaú|BTG/i);
+  });
+
+  it('classifica tipo do ativo e escolhe instituição entre Nubank/XP/Itaú/BTG', async () => {
+    const {
+      categorizeInstrument,
+      pickInstitution,
+      buildAllocationScenario,
+      createDraftInvestorProfile,
+    } = await import('../lib/investimentos');
+    assert.equal(categorizeInstrument('acao').kind, 'RV');
+    assert.match(categorizeInstrument('acao').label, /Renda Variável/i);
+    assert.equal(categorizeInstrument('fii').kind, 'Fundo');
+    assert.equal(categorizeInstrument('cdb').kind, 'RF');
+    assert.equal(categorizeInstrument('etf', 'BOVA11').kind, 'ETF');
+    assert.equal(pickInstitution('tesouro', { broker_default: 'XP', restricted_institutions: '' }), 'XP');
+    assert.equal(pickInstitution('tesouro', { broker_default: '', restricted_institutions: '' }), 'Nubank');
+    assert.equal(pickInstitution('fii', { broker_default: 'Nubank', restricted_institutions: '' }), 'Nubank');
+    assert.equal(pickInstitution('fii', { broker_default: 'XP', restricted_institutions: 'XP' }), 'BTG');
+
+    const profile = createDraftInvestorProfile({
+      person_type: 'PF',
+      capital_available: 100_000,
+      emergency_reserve: 10_000,
+      max_per_investment: 25_000,
+      horizon_months: 36,
+      liquidity_need: 'D30',
+      max_loss_pct: 20,
+      risk_profile: 'agressivo',
+      exp_equity: true,
+      exp_private_credit: true,
+      exp_fii: true,
+      exp_crypto: false,
+      needs_monthly_income: false,
+      investor_category: 'geral',
+      allows_crypto: false,
+      allows_international: true,
+      broker_default: 'XP',
+    });
+    const scenario = buildAllocationScenario(profile, []);
+    assert.ok(scenario);
+    const acao = scenario!.lines.find((l) => l.instrumentType === 'acao' || l.instrumentType === 'etf');
+    assert.ok(acao);
+    assert.equal(acao!.institution, 'XP');
+    assert.match(acao!.categoryLabel, /Renda Variável|ETF/i);
   });
 
   it('cache automático 30 min + UI sem botão Atualizar obrigatório', async () => {
@@ -199,6 +244,9 @@ describe('gestao investimento — fase 2 fundação', () => {
     assert.match(ui, /useState/);
     assert.match(ui, /gestao-investimento-cenario/);
     assert.match(ui, /Cenário sugerido pela IA/);
+    assert.match(ui, /gestao-investimento-acao-tipo/);
+    assert.match(ui, /gestao-investimento-acao-instituicao/);
+    assert.match(ui, /Aplicar em:/);
   });
 });
 

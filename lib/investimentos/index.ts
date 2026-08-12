@@ -12,7 +12,12 @@ export {
   type DashboardSnapshot,
 } from './dashboardCache';
 export {
+  ALLOWED_INSTITUTIONS,
   buildAllocationScenario,
+  buildSearchHint,
+  categorizeInstrument,
+  pickInstitution,
+  type AllowedInstitution,
   type AllocationLine,
   type AllocationScenario,
 } from './allocationEngine';

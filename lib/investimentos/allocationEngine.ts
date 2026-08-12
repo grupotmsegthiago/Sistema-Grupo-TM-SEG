@@ -1,21 +1,34 @@
 /**
  * Motor de cenários de alocação (Fase 3 — recomendação, sem execução).
- * Cada ação traz o nome/ticker pesquisável na XP (o que digitar na busca).
- * A decisão e a ordem na XP são sempre humanas.
+ * Cada ação traz tipo do ativo, instituição sugerida (Nubank/XP/Itaú/BTG)
+ * e o nome/ticker para buscar na corretora. A decisão e a ordem são sempre humanas.
  */
 import type { InvestorProfile, InvestmentPosition, RiskProfile } from './types.js';
+
+/** Instituições onde o usuário pode aplicar (escolha fechada do produto). */
+export type AllowedInstitution = 'Nubank' | 'XP' | 'Itaú' | 'BTG';
+
+export const ALLOWED_INSTITUTIONS: AllowedInstitution[] = ['Nubank', 'XP', 'Itaú', 'BTG'];
 
 export type AllocationLine = {
   /** Classe / bucket */
   classKey: string;
   classLabel: string;
-  /** Código/ticker ou termo exato para buscar na XP */
+  /** Código/ticker ou termo exato para buscar na corretora */
   ticker: string;
-  /** Nome do produto como costuma aparecer na XP */
+  /** Nome do produto como costuma aparecer na corretora */
   xpName: string;
   /** @deprecated use xpName — mantido para cache antigo */
   instrumentHint: string;
   instrumentType: string;
+  /** Badge curto: RF, RV, Fundo, ETF, Tesouro */
+  categoryKind: string;
+  /** Rótulo legível: Renda Fixa, Renda Variável (Ação), Fundo Imobiliário… */
+  categoryLabel: string;
+  /** Onde aplicar: Nubank | XP | Itaú | BTG */
+  institution: AllowedInstitution;
+  /** Onde clicar/buscar na instituição escolhida */
+  searchHint: string;
   pct: number;
   amountBrl: number;
   rationale: string;
@@ -33,24 +46,135 @@ export type AllocationScenario = {
   /** Sugestões objetivas: “Comprar BOVA11 — R$ X” */
   topActions: Array<{
     rank: number;
-    /** Título curto com ticker/nome XP */
+    /** Título curto com ticker/nome */
     title: string;
     amountBrl: number;
     pct: number;
-    /** Como buscar na XP + liquidez */
+    /** Como buscar na instituição + liquidez */
     detail: string;
     ticker: string;
     xpName: string;
+    categoryKind: string;
+    categoryLabel: string;
+    institution: AllowedInstitution;
+    searchHint: string;
   }>;
   warnings: string[];
   disclaimer: string;
   generatedAt: string;
-  source: 'rules_v2';
+  source: 'rules_v3';
 };
 
 const DISCLAIMER =
-  'Cenário sugerido pela IA com base no seu perfil. Use o nome/ticker na busca da XP. Não é ordem de compra, nem garantia de retorno. Você decide e executa. A IA não movimenta dinheiro.';
+  'Cenário sugerido pela IA com base no seu perfil. Cada item indica o tipo (RF/RV/Fundo/ETF) e onde aplicar (Nubank, XP, Itaú ou BTG). Não é ordem de compra, nem garantia de retorno. Você decide e executa. A IA não movimenta dinheiro.';
 
+/** Preferência de instituição por tipo de instrumento (primeiro = melhor encaixe). */
+const INSTITUTION_PREFERENCE: Record<string, AllowedInstitution[]> = {
+  tesouro: ['Nubank', 'XP', 'Itaú', 'BTG'],
+  cdb: ['Nubank', 'Itaú', 'XP', 'BTG'],
+  lci: ['Itaú', 'XP', 'BTG'],
+  fii: ['XP', 'BTG', 'Itaú'],
+  acao: ['XP', 'BTG', 'Itaú', 'Nubank'],
+  etf: ['XP', 'BTG', 'Itaú'],
+  debenture: ['XP', 'BTG', 'Itaú'],
+};
+
+export function categorizeInstrument(
+  instrumentType: string,
+  ticker = '',
+): { kind: string; label: string } {
+  switch (instrumentType) {
+    case 'tesouro':
+      return { kind: 'Tesouro', label: 'Tesouro Direto' };
+    case 'cdb':
+    case 'lci':
+      return { kind: 'RF', label: 'Renda Fixa' };
+    case 'debenture':
+      return { kind: 'RF', label: 'Crédito Privado (RF)' };
+    case 'fii':
+      return { kind: 'Fundo', label: 'Fundo Imobiliário (FII)' };
+    case 'acao':
+      return { kind: 'RV', label: 'Renda Variável (Ação)' };
+    case 'etf':
+      if (/HASH|CRIPTO|CRYPTO/i.test(ticker)) {
+        return { kind: 'ETF', label: 'ETF de Cripto' };
+      }
+      return { kind: 'ETF', label: 'ETF (Fundo de índice)' };
+    default:
+      return { kind: 'Ativo', label: 'Ativo' };
+  }
+}
+
+function parseRestrictedInstitutions(raw: string | null | undefined): Set<string> {
+  const set = new Set<string>();
+  for (const part of String(raw || '').split(/[,;/|]+/)) {
+    const t = part.trim().toLowerCase();
+    if (!t) continue;
+    set.add(t);
+    if (t.includes('itau') || t.includes('itaú')) set.add('itaú');
+  }
+  return set;
+}
+
+function normalizeInstitutionName(raw: string | null | undefined): AllowedInstitution | null {
+  const t = String(raw || '').trim().toLowerCase();
+  if (!t) return null;
+  if (t === 'xp' || t.includes('xp investimentos')) return 'XP';
+  if (t.includes('nubank') || t === 'nu') return 'Nubank';
+  if (t.includes('itaú') || t.includes('itau')) return 'Itaú';
+  if (t.includes('btg') || t.includes('pactual')) return 'BTG';
+  return null;
+}
+
+/** Escolhe onde aplicar entre Nubank, XP, Itaú e BTG. */
+export function pickInstitution(
+  instrumentType: string,
+  profile?: Pick<InvestorProfile, 'broker_default' | 'restricted_institutions'> | null,
+): AllowedInstitution {
+  const restricted = parseRestrictedInstitutions(profile?.restricted_institutions);
+  const preferredDefault = normalizeInstitutionName(profile?.broker_default);
+  const base = INSTITUTION_PREFERENCE[instrumentType] || [...ALLOWED_INSTITUTIONS];
+
+  // Preferência do perfil primeiro; depois o melhor encaixe do produto; depois as demais.
+  const ordered: AllowedInstitution[] = [];
+  if (preferredDefault) ordered.push(preferredDefault);
+  for (const inst of base) {
+    if (!ordered.includes(inst)) ordered.push(inst);
+  }
+  for (const inst of ALLOWED_INSTITUTIONS) {
+    if (!ordered.includes(inst)) ordered.push(inst);
+  }
+
+  const available = ordered.filter((inst) => !restricted.has(inst.toLowerCase()));
+  return available[0] || 'XP';
+}
+
+export function buildSearchHint(
+  institution: AllowedInstitution,
+  ticker: string,
+  instrumentType: string,
+): string {
+  const q = ticker;
+  switch (institution) {
+    case 'Nubank':
+      if (instrumentType === 'tesouro') return `App Nubank → Investimentos → busque “${q}”`;
+      if (instrumentType === 'cdb') return `App Nubank → Caixinhas / RDB (equivalente a CDB liquidez)`;
+      if (instrumentType === 'acao' || instrumentType === 'etf' || instrumentType === 'fii') {
+        return `App Nubank → Investimentos / NuInvest → busque “${q}”`;
+      }
+      return `App Nubank → Investimentos → busque “${q}”`;
+    case 'Itaú':
+      if (instrumentType === 'tesouro' || instrumentType === 'cdb' || instrumentType === 'lci') {
+        return `App Itaú → Investimentos → Renda Fixa / Tesouro → “${q}”`;
+      }
+      return `Itaú Corretora → busque “${q}”`;
+    case 'BTG':
+      return `BTG App / Trading → busque “${q}”`;
+    case 'XP':
+    default:
+      return `Busca XP: “${q}”`;
+  }
+}
 type Weights = Record<string, number>;
 
 type XpProduct = {
@@ -281,6 +405,8 @@ function expandClassToLines(
       );
     }
     const pctOfTotal = capital > 0 ? (amount / capital) * 100 : 0;
+    const cat = categorizeInstrument(p.instrumentType, p.ticker);
+    // institution/searchHint preenchidos em buildAllocationScenario (precisa do perfil)
     lines.push({
       classKey,
       classLabel,
@@ -288,6 +414,10 @@ function expandClassToLines(
       xpName: p.xpName,
       instrumentHint: p.xpName,
       instrumentType: p.instrumentType,
+      categoryKind: cat.kind,
+      categoryLabel: cat.label,
+      institution: 'XP',
+      searchHint: buildSearchHint('XP', p.ticker, p.instrumentType),
       pct: round2(pctOfTotal),
       amountBrl: amount,
       rationale: p.rationale,
@@ -387,8 +517,23 @@ export function buildAllocationScenario(
     }
   }
 
+  // Enriquece cada linha com tipo + instituição sugerida (Nubank/XP/Itaú/BTG)
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const cat = categorizeInstrument(l.instrumentType, l.ticker);
+    const institution = pickInstitution(l.instrumentType, profile);
+    const searchHint = buildSearchHint(institution, l.ticker, l.instrumentType);
+    lines[i] = {
+      ...l,
+      categoryKind: cat.kind,
+      categoryLabel: cat.label,
+      institution,
+      searchHint,
+    };
+  }
+
   if (positions.length === 0) {
-    warnings.push('Carteira ainda sem posições cadastradas — use os nomes/tickers abaixo na busca da XP.');
+    warnings.push('Carteira ainda sem posições — use tipo + instituição + ticker abaixo para localizar e aplicar.');
   } else {
     warnings.push('Há posições cadastradas: use os tickers como alvo; rebalanceie só o que fizer sentido (custos/IR).');
   }
@@ -413,15 +558,19 @@ export function buildAllocationScenario(
       : `Comprar ${l.ticker}`,
     amountBrl: l.amountBrl,
     pct: l.pct,
-    detail: `${l.xpName} · busque na XP: “${l.ticker}” · ${l.liquidity}`,
+    detail: `${l.categoryLabel} · ${l.institution} · ${l.searchHint} · ${l.liquidity}`,
     ticker: l.ticker,
     xpName: l.xpName,
+    categoryKind: l.categoryKind,
+    categoryLabel: l.categoryLabel,
+    institution: l.institution,
+    searchHint: l.searchHint,
   }));
 
   return {
-    id: `scenario_${profile.risk_profile}_v2`,
+    id: `scenario_${profile.risk_profile}_v3`,
     name: `Cenário ${riskLabel}`,
-    tagline: `Como equilibrar R$ ${capital.toLocaleString('pt-BR')} na XP — nomes para buscar na corretora`,
+    tagline: `Como equilibrar R$ ${capital.toLocaleString('pt-BR')} — tipo do ativo + onde aplicar (Nubank, XP, Itaú ou BTG)`,
     riskLabel,
     investableCapital: round2(investable),
     emergencyHeld: round2(emergencyHeld),
@@ -430,6 +579,6 @@ export function buildAllocationScenario(
     warnings,
     disclaimer: DISCLAIMER,
     generatedAt: new Date().toISOString(),
-    source: 'rules_v2',
+    source: 'rules_v3',
   };
 }

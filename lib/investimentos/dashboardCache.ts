@@ -128,13 +128,13 @@ function buildBriefing(
     nextActions.push(
       ...scenario.topActions.slice(0, 4).map(
         (a) =>
-          `${a.rank}. ${a.ticker || a.title}: ${a.amountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${a.pct.toFixed(1)}%) — busque na XP`,
+          `${a.rank}. ${a.ticker || a.title}: ${a.amountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${a.pct.toFixed(1)}%) — ${a.categoryKind || 'Ativo'} · ${a.institution || 'XP'}`,
       ),
     );
-    nextActions.push('Execute na XP pelo nome/ticker — a IA não envia ordem');
+    nextActions.push('Execute na instituição indicada (tipo + ticker) — a IA não envia ordem');
   }
   if (positions.length === 0 && completeness.complete) {
-    nextActions.push('Depois de aplicar, registre as posições reais na aba Carteira XP');
+    nextActions.push('Depois de aplicar, registre as posições reais na aba Carteira');
   } else if (positions.length > 0) {
     nextActions.push('Revisar valores atuais se houve aporte/resgate');
   }

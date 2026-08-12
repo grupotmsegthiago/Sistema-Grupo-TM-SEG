@@ -396,23 +396,40 @@ const GestaoInvestimento: React.FC = () => {
               </div>
 
               <p className="text-[11px] font-bold text-gray-700 mb-2">
-                Digite o nome/ticker na busca da XP e aplique o valor (a IA não envia ordem):
+                Cada item mostra o tipo (RF / RV / Fundo / ETF) e onde aplicar (Nubank, XP, Itaú ou BTG). A IA não envia ordem:
               </p>
               <ol className="space-y-2 mb-3" data-testid="gestao-investimento-cenario-acoes">
                 {summary.briefing.scenario.topActions.map((a) => (
                   <li
                     key={`${a.rank}-${a.ticker || a.title}`}
                     className="flex items-start justify-between gap-3 bg-red-50/60 border border-red-100 rounded-xl px-3 py-2"
+                    data-testid="gestao-investimento-cenario-acao"
                   >
                     <div className="min-w-0">
                       <p className="text-xs font-black text-gray-900">
                         {a.rank}. {a.title}
                       </p>
+                      <div className="flex flex-wrap gap-1 mt-1 mb-1">
+                        <span
+                          className="inline-flex items-center rounded-md bg-white border border-red-200 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-red-800"
+                          data-testid="gestao-investimento-acao-tipo"
+                          title={a.categoryLabel || a.categoryKind}
+                        >
+                          {a.categoryKind || 'Ativo'}
+                          {a.categoryLabel ? ` · ${a.categoryLabel}` : ''}
+                        </span>
+                        <span
+                          className="inline-flex items-center rounded-md bg-gray-900 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white"
+                          data-testid="gestao-investimento-acao-instituicao"
+                        >
+                          Aplicar em: {a.institution || 'XP'}
+                        </span>
+                      </div>
                       <p className="text-[11px] text-gray-700 font-semibold truncate">
                         {a.xpName || a.detail}
                       </p>
                       <p className="text-[10px] text-gray-500 truncate">
-                        {a.ticker ? `Busca XP: “${a.ticker}”` : a.detail}
+                        {a.searchHint || (a.ticker ? `Busca: “${a.ticker}”` : a.detail)}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
@@ -424,16 +441,18 @@ const GestaoInvestimento: React.FC = () => {
               </ol>
 
               <details className="text-xs text-gray-600">
-                <summary className="cursor-pointer font-bold text-gray-700 mb-2">Ver alocação completa (ticker + %)</summary>
+                <summary className="cursor-pointer font-bold text-gray-700 mb-2">Ver alocação completa (tipo + instituição + %)</summary>
                 <ul className="space-y-1.5">
                   {summary.briefing.scenario.lines.map((l) => (
                     <li
                       key={`${l.classKey}-${l.ticker || l.instrumentHint}`}
                       className="flex justify-between gap-2 border-b border-gray-100 py-1"
                     >
-                      <span>
+                      <span className="min-w-0">
                         <b className="text-gray-900">{l.ticker || l.classLabel}</b>
-                        <span className="text-gray-500"> · {l.xpName || l.instrumentHint}</span>
+                        <span className="text-gray-500"> · {l.categoryLabel || l.classLabel}</span>
+                        <span className="text-gray-700 font-semibold"> · {l.institution || 'XP'}</span>
+                        <span className="block text-[10px] text-gray-400 truncate">{l.searchHint || l.xpName || l.instrumentHint}</span>
                       </span>
                       <span className="font-bold whitespace-nowrap">{l.pct.toFixed(1)}% · {fmtBRL(l.amountBrl)}</span>
                     </li>
@@ -549,11 +568,20 @@ const GestaoInvestimento: React.FC = () => {
             <Num label="Renda mensal necessária (R$)" value={profileForm.monthly_income_amount} onChange={(v) => setField('monthly_income_amount', v)} />
             <Num label="Meta mensal mín. (%)" value={profileForm.monthly_target_pct_min} onChange={(v) => setField('monthly_target_pct_min', v ?? 1.5)} />
             <Num label="Meta mensal máx. (%)" value={profileForm.monthly_target_pct_max} onChange={(v) => setField('monthly_target_pct_max', v ?? 2.0)} />
-            <Text label="Corretora padrão" value={profileForm.broker_default} onChange={(v) => setField('broker_default', v)} />
+            <Select
+              label="Instituição padrão (preferência)"
+              value={profileForm.broker_default || 'XP'}
+              onChange={(v) => setField('broker_default', v || 'XP')}
+              options={[['Nubank', 'Nubank'], ['XP', 'XP'], ['Itaú', 'Itaú'], ['BTG', 'BTG']]}
+            />
             <Select label="Autoriza cripto?" value={profileForm.allows_crypto ? '1' : '0'} onChange={(v) => setField('allows_crypto', v === '1')} options={[['0', 'Não'], ['1', 'Sim']]} />
             <Select label="Autoriza exterior?" value={profileForm.allows_international ? '1' : '0'} onChange={(v) => setField('allows_international', v === '1')} options={[['0', 'Não'], ['1', 'Sim']]} />
             <Text label="Restrições de setores" value={profileForm.restricted_sectors} onChange={(v) => setField('restricted_sectors', v)} />
-            <Text label="Restrições de instituições" value={profileForm.restricted_institutions} onChange={(v) => setField('restricted_institutions', v)} />
+            <Text
+              label="Restrições de instituições (ex: BTG, Nubank)"
+              value={profileForm.restricted_institutions}
+              onChange={(v) => setField('restricted_institutions', v)}
+            />
           </div>
           <button
             type="button"
