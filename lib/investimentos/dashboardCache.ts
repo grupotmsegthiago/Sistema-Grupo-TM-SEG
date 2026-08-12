@@ -6,7 +6,8 @@
 import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 import { createDraftInvestorProfile, evaluateProfileCompleteness } from './profileValidation.js';
 import { buildProvision30dEstimate, describeMonthlyTargetBand } from './targetReturn.js';
-import { buildAllocationScenario, type AllocationScenario } from './allocationEngine.js';
+import { buildAllocationScenario, isScenarioStale, type AllocationScenario } from './allocationEngine.js';
+import { fetchMacroRates } from './marketRates.js';
 import type {
   InvestorProfile,
   InvestmentPosition,
@@ -17,9 +18,9 @@ import type {
 } from './types.js';
 
 export const GESTAO_CACHE_TTL_MS = 30 * 60 * 1000;
-/** v3: cenário com tickers/nomes pesquisáveis na XP. */
-const CACHE_KEY_PREFIX = 'gestao_investimento_cache_v3_';
-const OWNERS_KEY = 'gestao_investimento_cache_owners_v3';
+/** v4: parecer de consultor (tipo, instituição, Selic, como comprar). */
+const CACHE_KEY_PREFIX = 'gestao_investimento_cache_v4_';
+const OWNERS_KEY = 'gestao_investimento_cache_owners_v4';
 
 export type AllocationRow = { type: string; value: number; pct: number };
 
@@ -119,7 +120,8 @@ function buildBriefing(
     gaps.push(`Concentração alta em ${allocationByType[0].type} (${maxPct.toFixed(0)}%)`);
   }
 
-  const scenario = completeness.complete ? buildAllocationScenario(profile, positions) : null;
+  // buildBriefing sincroniza; taxas entram em buildBriefingAsync / revive
+  const scenario = completeness.complete ? buildAllocationScenario(profile, positions, null) : null;
 
   const nextActions: string[] = [];
   if (!completeness.complete) {
@@ -128,10 +130,10 @@ function buildBriefing(
     nextActions.push(
       ...scenario.topActions.slice(0, 4).map(
         (a) =>
-          `${a.rank}. ${a.ticker || a.title}: ${a.amountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${a.pct.toFixed(1)}%) — ${a.categoryKind || 'Ativo'} · ${a.institution || 'XP'}`,
+          `${a.rank}. ${a.signal || 'COMPRAR'} ${a.ticker || a.title}: ${a.amountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} — ${a.categoryKind} · ${a.institution}`,
       ),
     );
-    nextActions.push('Execute na instituição indicada (tipo + ticker) — a IA não envia ordem');
+    nextActions.push('Siga o passo a passo na instituição — a IA não envia ordem');
   }
   if (positions.length === 0 && completeness.complete) {
     nextActions.push('Depois de aplicar, registre as posições reais na aba Carteira');
@@ -151,6 +153,55 @@ function buildBriefing(
     watchlistCount: watchlist.length,
     profileComplete: completeness.complete,
     scenario,
+  };
+}
+
+async function buildBriefingWithRates(
+  profile: InvestorProfile | null,
+  positions: InvestmentPosition[],
+  watchlist: InvestmentWatchlistItem[],
+  completeness: ProfileCompleteness,
+  portfolioValue: number,
+): Promise<DashboardBriefing> {
+  const base = buildBriefing(profile, positions, watchlist, completeness, portfolioValue);
+  if (!completeness.complete || !profile) return base;
+  const rates = await fetchMacroRates();
+  const scenario = buildAllocationScenario(profile, positions, rates);
+  if (!scenario) return base;
+  return {
+    ...base,
+    scenario,
+    nextActions: [
+      ...scenario.topActions.slice(0, 4).map(
+        (a) =>
+          `${a.rank}. ${a.signal} ${a.ticker}: ${a.amountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} — ${a.categoryKind} · ${a.institution}`,
+      ),
+      'Siga o passo a passo na instituição — a IA não envia ordem',
+    ].slice(0, 6),
+  };
+}
+
+/** Regenera parecer se cache antigo (ATIVO / sem Selic / sem howToBuy). */
+export async function reviveStaleScenario(snap: DashboardSnapshot): Promise<DashboardSnapshot> {
+  if (!snap.canRecommend || !snap.profile) return snap;
+  if (!isScenarioStale(snap.briefing?.scenario)) return snap;
+  const rates = await fetchMacroRates();
+  const scenario = buildAllocationScenario(snap.profile, snap.positions || [], rates);
+  if (!scenario) return snap;
+  return {
+    ...snap,
+    briefing: {
+      ...snap.briefing,
+      scenario,
+      nextActions: [
+        ...scenario.topActions.slice(0, 4).map(
+          (a) =>
+            `${a.rank}. ${a.signal} ${a.ticker}: ${a.amountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} — ${a.categoryKind} · ${a.institution}`,
+        ),
+        'Siga o passo a passo na instituição — a IA não envia ordem',
+      ].slice(0, 6),
+    },
+    fromCache: false,
   };
 }
 
@@ -186,7 +237,7 @@ export async function buildDashboardSnapshot(ownerUserId: string): Promise<Dashb
   const portfolioValue = positionsList.reduce((s, p) => s + Number(p.current_value || 0), 0);
   const capitalBase = Number(draft.capital_available || portfolioValue || 100_000);
   const provision30d = buildProvision30dEstimate(capitalBase, targetBand.monthlyMinPct, targetBand.monthlyMaxPct);
-  const briefing = buildBriefing(
+  const briefing = await buildBriefingWithRates(
     profile ? (profile as InvestorProfile) : null,
     positionsList,
     (watchlist || []) as InvestmentWatchlistItem[],

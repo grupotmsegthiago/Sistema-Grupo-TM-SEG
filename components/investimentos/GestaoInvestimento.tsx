@@ -41,7 +41,7 @@ type SummaryResponse = {
   briefing?: DashboardBriefing;
 };
 
-const LOCAL_CACHE_KEY = 'tmseg_gestao_investimento_summary_v3';
+const LOCAL_CACHE_KEY = 'tmseg_gestao_investimento_summary_v5';
 const AUTO_REFRESH_MS = 30 * 60 * 1000;
 
 const fmtBRL = (v: number) =>
@@ -169,8 +169,16 @@ const GestaoInvestimento: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Abre na hora com cache local; sincroniza em silêncio com o servidor.
-    void loadRef.current({ silent: Boolean(localBoot) });
+    // Cache local antigo (sem tipo/Selic) → força fresh na 1ª carga.
+    const staleLocal = Boolean(
+      localBoot?.briefing?.scenario
+      && (
+        (localBoot.briefing.scenario as any).source !== 'rules_v4'
+        || !localBoot.briefing.scenario.topActions?.[0]?.categoryKind
+        || localBoot.briefing.scenario.topActions?.[0]?.categoryKind === 'Ativo'
+      ),
+    );
+    void loadRef.current({ silent: Boolean(localBoot) && !staleLocal, fresh: staleLocal || !localBoot });
     const id = window.setInterval(() => {
       void loadRef.current({ silent: true });
     }, AUTO_REFRESH_MS);
@@ -385,7 +393,7 @@ const GestaoInvestimento: React.FC = () => {
             >
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-red-700">Cenário sugerido pela IA</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-red-700">Parecer do consultor (IA)</p>
                   <h2 className="text-base font-black text-gray-900">{summary.briefing.scenario.name}</h2>
                   <p className="text-xs text-gray-500">{summary.briefing.scenario.tagline}</p>
                 </div>
@@ -395,64 +403,129 @@ const GestaoInvestimento: React.FC = () => {
                 </div>
               </div>
 
+              {(summary.briefing.scenario as any).macro && (
+                <div
+                  className="grid grid-cols-3 gap-2 mb-3 text-center"
+                  data-testid="gestao-investimento-macro"
+                >
+                  <div className="rounded-xl bg-gray-900 text-white px-2 py-2">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-gray-300">Selic</p>
+                    <p className="text-sm font-black">
+                      {summary.briefing.scenario.macro.selicPct != null
+                        ? `${Number(summary.briefing.scenario.macro.selicPct).toFixed(2)}%`
+                        : '—'}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-red-50 border border-red-100 px-2 py-2">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-red-700">CDI</p>
+                    <p className="text-sm font-black text-red-900">
+                      {summary.briefing.scenario.macro.cdiPct != null
+                        ? `${Number(summary.briefing.scenario.macro.cdiPct).toFixed(2)}%`
+                        : '—'}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-red-50 border border-red-100 px-2 py-2">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-red-700">IPCA 12m</p>
+                    <p className="text-sm font-black text-red-900">
+                      {summary.briefing.scenario.macro.ipcaPct != null
+                        ? `${Number(summary.briefing.scenario.macro.ipcaPct).toFixed(2)}%`
+                        : '—'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {(summary.briefing.scenario as any).consultantBrief && (
+                <p className="text-[11px] text-gray-700 leading-relaxed mb-3 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                  {summary.briefing.scenario.consultantBrief}
+                </p>
+              )}
+
               <p className="text-[11px] font-bold text-gray-700 mb-2">
-                Cada item mostra o tipo (RF / RV / Fundo / ETF) e onde aplicar (Nubank, XP, Itaú ou BTG). A IA não envia ordem:
+                Cada item: natureza do ativo · sinal · instituição · passo a passo. A IA <u>não</u> envia ordem:
               </p>
-              <ol className="space-y-2 mb-3" data-testid="gestao-investimento-cenario-acoes">
-                {summary.briefing.scenario.topActions.map((a) => (
+              <ol className="space-y-3 mb-3" data-testid="gestao-investimento-cenario-acoes">
+                {summary.briefing.scenario.topActions.map((a: any) => (
                   <li
                     key={`${a.rank}-${a.ticker || a.title}`}
-                    className="flex items-start justify-between gap-3 bg-red-50/60 border border-red-100 rounded-xl px-3 py-2"
+                    className="bg-red-50/60 border border-red-100 rounded-xl px-3 py-2.5"
                     data-testid="gestao-investimento-cenario-acao"
                   >
-                    <div className="min-w-0">
-                      <p className="text-xs font-black text-gray-900">
-                        {a.rank}. {a.title}
-                      </p>
-                      <div className="flex flex-wrap gap-1 mt-1 mb-1">
-                        <span
-                          className="inline-flex items-center rounded-md bg-white border border-red-200 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-red-800"
-                          data-testid="gestao-investimento-acao-tipo"
-                          title={a.categoryLabel || a.categoryKind}
-                        >
-                          {a.categoryKind || 'Ativo'}
-                          {a.categoryLabel ? ` · ${a.categoryLabel}` : ''}
-                        </span>
-                        <span
-                          className="inline-flex items-center rounded-md bg-gray-900 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white"
-                          data-testid="gestao-investimento-acao-instituicao"
-                        >
-                          Aplicar em: {a.institution || 'XP'}
-                        </span>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-black text-gray-900">
+                          {a.rank}. {a.title}
+                        </p>
+                        <div className="flex flex-wrap gap-1 mt-1.5 mb-1.5">
+                          <span
+                            className="inline-flex items-center rounded-md bg-emerald-700 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white"
+                            data-testid="gestao-investimento-acao-sinal"
+                          >
+                            {a.signal || 'COMPRAR'}
+                          </span>
+                          <span
+                            className="inline-flex items-center rounded-md bg-white border border-red-200 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-red-800"
+                            data-testid="gestao-investimento-acao-tipo"
+                          >
+                            {a.categoryKind || 'Ativo'}
+                          </span>
+                          <span className="inline-flex items-center rounded-md bg-white border border-gray-200 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">
+                            {a.assetNature || a.categoryLabel || '—'}
+                          </span>
+                          <span
+                            className="inline-flex items-center rounded-md bg-gray-900 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white"
+                            data-testid="gestao-investimento-acao-instituicao"
+                          >
+                            Aplicar em: {a.institution || 'XP'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-800 font-semibold">{a.xpName || a.detail}</p>
+                        <p className="text-[10px] text-gray-600 mt-0.5">
+                          <b>Emissor:</b> {a.issuer || '—'} · <b>Subtipo:</b> {a.subtype || '—'}
+                        </p>
+                        <p className="text-[10px] text-gray-600 mt-0.5">{a.marketContext || a.searchHint}</p>
+                        <p className="text-[10px] text-gray-700 mt-1 font-medium">{a.signalNote || a.thesis}</p>
+                        {Array.isArray(a.howToBuy) && a.howToBuy.length > 0 && (
+                          <details className="mt-1.5">
+                            <summary className="cursor-pointer text-[10px] font-black text-red-800 uppercase tracking-wide">
+                              Como comprar em {a.institution || 'XP'}
+                            </summary>
+                            <ol className="mt-1 list-decimal pl-4 text-[10px] text-gray-700 space-y-0.5">
+                              {a.howToBuy.map((step: string) => (
+                                <li key={step}>{step}</li>
+                              ))}
+                            </ol>
+                            {Array.isArray(a.searchAliases) && a.searchAliases.length > 0 && (
+                              <p className="mt-1 text-[10px] text-gray-500">
+                                Busque por: {a.searchAliases.map((s: string) => `“${s}”`).join(' · ')}
+                              </p>
+                            )}
+                          </details>
+                        )}
                       </div>
-                      <p className="text-[11px] text-gray-700 font-semibold truncate">
-                        {a.xpName || a.detail}
-                      </p>
-                      <p className="text-[10px] text-gray-500 truncate">
-                        {a.searchHint || (a.ticker ? `Busca: “${a.ticker}”` : a.detail)}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-black text-red-800">{fmtBRL(a.amountBrl)}</p>
-                      <p className="text-[10px] font-bold text-gray-500">{a.pct.toFixed(1)}%</p>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-black text-red-800">{fmtBRL(a.amountBrl)}</p>
+                        <p className="text-[10px] font-bold text-gray-500">{a.pct.toFixed(1)}%</p>
+                        <p className="text-[9px] text-gray-400 mt-1">{a.liquidity || ''}</p>
+                      </div>
                     </div>
                   </li>
                 ))}
               </ol>
 
               <details className="text-xs text-gray-600">
-                <summary className="cursor-pointer font-bold text-gray-700 mb-2">Ver alocação completa (tipo + instituição + %)</summary>
+                <summary className="cursor-pointer font-bold text-gray-700 mb-2">Ver alocação completa</summary>
                 <ul className="space-y-1.5">
-                  {summary.briefing.scenario.lines.map((l) => (
+                  {summary.briefing.scenario.lines.map((l: any) => (
                     <li
                       key={`${l.classKey}-${l.ticker || l.instrumentHint}`}
                       className="flex justify-between gap-2 border-b border-gray-100 py-1"
                     >
                       <span className="min-w-0">
                         <b className="text-gray-900">{l.ticker || l.classLabel}</b>
-                        <span className="text-gray-500"> · {l.categoryLabel || l.classLabel}</span>
+                        <span className="text-gray-500"> · {l.assetNature || l.categoryLabel}</span>
                         <span className="text-gray-700 font-semibold"> · {l.institution || 'XP'}</span>
-                        <span className="block text-[10px] text-gray-400 truncate">{l.searchHint || l.xpName || l.instrumentHint}</span>
+                        <span className="block text-[10px] text-gray-400 truncate">{l.marketContext || l.searchHint}</span>
                       </span>
                       <span className="font-bold whitespace-nowrap">{l.pct.toFixed(1)}% · {fmtBRL(l.amountBrl)}</span>
                     </li>

@@ -8,6 +8,7 @@ export {
   readCachedSnapshot,
   refreshAllOwnerCaches,
   refreshOwnerCache,
+  reviveStaleScenario,
   type DashboardBriefing,
   type DashboardSnapshot,
 } from './dashboardCache';
@@ -16,8 +17,10 @@ export {
   buildAllocationScenario,
   buildSearchHint,
   categorizeInstrument,
+  isScenarioStale,
   pickInstitution,
   type AllowedInstitution,
   type AllocationLine,
   type AllocationScenario,
 } from './allocationEngine';
+export { fetchMacroRates, formatPct, type MacroRates } from './marketRates';

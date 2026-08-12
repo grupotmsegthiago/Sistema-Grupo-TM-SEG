@@ -171,13 +171,13 @@ describe('gestao investimento — fase 2 fundação', () => {
     assert.ok(scenario!.topActions.length >= 3);
     const sumLines = scenario!.lines.reduce((s, l) => s + l.amountBrl, 0);
     assert.ok(Math.abs(sumLines - 100_000) < 1, `soma linhas ${sumLines}`);
-    assert.match(scenario!.disclaimer, /não.*ordem|não movimenta/i);
-    assert.equal(scenario!.source, 'rules_v3');
-    // Nomes objetivos + tipo + instituição (Nubank/XP/Itaú/BTG)
+    assert.match(scenario!.disclaimer, /não.*ordem|não executa/i);
+    assert.equal(scenario!.source, 'rules_v4');
     assert.ok(scenario!.topActions.every((a) => a.ticker && a.xpName && a.categoryKind && a.institution && a.searchHint));
+    assert.ok(scenario!.topActions.every((a) => a.howToBuy?.length && a.assetNature && a.signal));
     assert.ok(scenario!.lines.some((l) => l.ticker === 'BOVA11' || l.ticker === 'IVVB11' || /Tesouro/i.test(l.ticker)));
     assert.ok(scenario!.topActions.every((a) => ['Nubank', 'XP', 'Itaú', 'BTG'].includes(a.institution)));
-    assert.match(scenario!.topActions[0].detail, /Nubank|XP|Itaú|BTG/i);
+    assert.match(scenario!.consultantBrief, /Selic|consultor/i);
   });
 
   it('classifica tipo do ativo e escolhe instituição entre Nubank/XP/Itaú/BTG', async () => {
@@ -187,9 +187,10 @@ describe('gestao investimento — fase 2 fundação', () => {
       buildAllocationScenario,
       createDraftInvestorProfile,
     } = await import('../lib/investimentos');
-    assert.equal(categorizeInstrument('acao').kind, 'RV');
-    assert.match(categorizeInstrument('acao').label, /Renda Variável/i);
-    assert.equal(categorizeInstrument('fii').kind, 'Fundo');
+    assert.equal(categorizeInstrument('acao').kind, 'Ação');
+    assert.match(categorizeInstrument('acao').label, /Renda Variável|ação/i);
+    assert.equal(categorizeInstrument('fii', 'HGLG11', 'FII tijolo').kind, 'FII');
+    assert.match(categorizeInstrument('fii', 'MXRF11', 'FII papel — CRI').label, /papel/i);
     assert.equal(categorizeInstrument('cdb').kind, 'RF');
     assert.equal(categorizeInstrument('etf', 'BOVA11').kind, 'ETF');
     assert.equal(pickInstitution('tesouro', { broker_default: 'XP', restricted_institutions: '' }), 'XP');
@@ -216,12 +217,23 @@ describe('gestao investimento — fase 2 fundação', () => {
       allows_international: true,
       broker_default: 'XP',
     });
-    const scenario = buildAllocationScenario(profile, []);
+    const scenario = buildAllocationScenario(profile, [], {
+      selicPct: 14,
+      cdiPct: 13.9,
+      ipcaPct: 4.44,
+      fetchedAt: new Date().toISOString(),
+      source: 'brasilapi',
+    });
     assert.ok(scenario);
+    assert.equal(scenario!.macro.selicPct, 14);
+    const tesouro = scenario!.topActions.find((a) => /Tesouro Selic/i.test(a.ticker));
+    assert.ok(tesouro);
+    assert.match(tesouro!.assetNature, /público federal|Governo/i);
+    assert.ok(tesouro!.howToBuy.some((s) => /Tesouro Selic|LFT/i.test(s)));
+    assert.match(tesouro!.marketContext, /14/);
     const acao = scenario!.lines.find((l) => l.instrumentType === 'acao' || l.instrumentType === 'etf');
     assert.ok(acao);
     assert.equal(acao!.institution, 'XP');
-    assert.match(acao!.categoryLabel, /Renda Variável|ETF/i);
   });
 
   it('cache automático 30 min + UI sem botão Atualizar obrigatório', async () => {
@@ -236,17 +248,21 @@ describe('gestao investimento — fase 2 fundação', () => {
     assert.match(api, /readCachedSnapshot/);
     assert.match(vercel, /gestao-investimento-api\?op=refresh-cache/);
     assert.match(vercel, /\*\/30 \* \* \* \*/);
-    assert.match(ui, /tmseg_gestao_investimento_summary_v3/);
+    assert.match(ui, /tmseg_gestao_investimento_summary_v5/);
     assert.match(ui, /AUTO_REFRESH_MS/);
     assert.match(ui, /gestao-investimento-cache-status/);
     assert.doesNotMatch(ui, /data-testid="gestao-investimento-refresh"/);
     assert.match(ui, /from 'react'/);
     assert.match(ui, /useState/);
     assert.match(ui, /gestao-investimento-cenario/);
-    assert.match(ui, /Cenário sugerido pela IA/);
+    assert.match(ui, /Parecer do consultor/);
     assert.match(ui, /gestao-investimento-acao-tipo/);
     assert.match(ui, /gestao-investimento-acao-instituicao/);
+    assert.match(ui, /gestao-investimento-macro/);
+    assert.match(ui, /Como comprar/);
     assert.match(ui, /Aplicar em:/);
+    assert.match(cache, /gestao_investimento_cache_v4_/);
+    assert.match(cache, /reviveStaleScenario/);
   });
 });
 

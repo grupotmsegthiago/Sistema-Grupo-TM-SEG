@@ -13,6 +13,7 @@ import {
   readCachedSnapshot,
   refreshAllOwnerCaches,
   refreshOwnerCache,
+  reviveStaleScenario,
   writeCachedSnapshot,
 } from './dashboardCache.js';
 import type {
@@ -243,7 +244,11 @@ export async function handleGestaoInvestimentoOp(
       if (!forceLive) {
         const cached = await readCachedSnapshot(principal.id);
         if (cached) {
-          return { status: 200, body: { ...cached, via: 'cache', schemaReady: true } };
+          const revived = await reviveStaleScenario(cached);
+          if (revived !== cached) {
+            void writeCachedSnapshot(principal.id, revived).catch(() => {});
+          }
+          return { status: 200, body: { ...revived, via: revived.fromCache ? 'cache' : 'cache_revived', schemaReady: true } };
         }
       }
 
