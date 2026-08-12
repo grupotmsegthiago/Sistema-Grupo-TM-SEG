@@ -403,6 +403,18 @@
       "destination": "/api/gestao-investimento-api?op=risk-limits"
     },
     {
+      "source": "/api/gestao-investimento/mark",
+      "destination": "/api/gestao-investimento-api?op=mark"
+    },
+    {
+      "source": "/api/gestao-investimento/trade",
+      "destination": "/api/gestao-investimento-api?op=trade"
+    },
+    {
+      "source": "/api/gestao-investimento/trades",
+      "destination": "/api/gestao-investimento-api?op=trade"
+    },
+    {
       "source": "/api/billing/dashboard",
       "destination": "/api/billing-dashboard"
     },

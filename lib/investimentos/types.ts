@@ -31,6 +31,8 @@ export interface InvestorProfile {
   monthly_target_pct_min: number;
   monthly_target_pct_max: number;
   broker_default: string;
+  /** % do capital para trading do dia (resto = investimento). Padrão 20. */
+  trading_sleeve_pct?: number;
   notes: string;
   version?: number;
   updated_at?: string;
@@ -51,6 +53,34 @@ export interface InvestmentPosition {
   taxation_notes: string;
   currency: string;
   is_active: boolean;
+  /** trading = sleeve operacional do dia; investimento = buy&hold */
+  sleeve?: 'trading' | 'investimento';
+  /** Última cotação lançada do banco (manual) */
+  last_mark_price?: number | null;
+  last_mark_at?: string | null;
+  target_sell_pct?: number | null;
+  stop_loss_pct?: number | null;
+}
+
+export interface InvestmentTrade {
+  id?: string;
+  owner_user_id?: string;
+  position_id?: string | null;
+  side: 'buy' | 'sell';
+  instrument_name: string;
+  instrument_code: string;
+  instrument_type: string;
+  sleeve: 'trading' | 'investimento';
+  quantity: number;
+  price: number;
+  amount_brl: number;
+  broker: string;
+  executed_at?: string;
+  proof_note?: string;
+  proof_image?: string;
+  notes?: string;
+  rotated_buy_code?: string;
+  rotated_buy_name?: string;
 }
 
 export interface InvestmentWatchlistItem {

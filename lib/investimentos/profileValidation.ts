@@ -82,6 +82,7 @@ export function createDraftInvestorProfile(partial?: Partial<InvestorProfile>): 
     monthly_target_pct_min: 1.5,
     monthly_target_pct_max: 2.0,
     broker_default: 'XP',
+    trading_sleeve_pct: 20,
     notes: '',
     ...partial,
   };

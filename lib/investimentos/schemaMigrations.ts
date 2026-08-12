@@ -5,6 +5,7 @@
  */
 import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 import { GESTAO_INVESTIMENTO_FUNDACAO_SQL } from './fundacaoSql.js';
+import { GESTAO_INVESTIMENTO_MESA_SQL } from './mesaSql.js';
 
 const REQUIRED_TABLES = [
   'investor_profiles',
@@ -15,6 +16,37 @@ const REQUIRED_TABLES = [
   'investment_data_sources',
   'investment_audit_log',
 ] as const;
+
+async function applySqlBundle(
+  client: NonNullable<ReturnType<typeof createSupabaseAdminClient>>,
+  sql: string,
+): Promise<string[]> {
+  const statements = splitStatements(sql);
+  const errors: string[] = [];
+  for (const statement of statements) {
+    try {
+      const rpcResult = await Promise.race([
+        client.rpc('exec_sql', { sql: `${statement};` }),
+        new Promise<{ error: { message: string } }>((resolve) =>
+          setTimeout(() => resolve({ error: { message: 'exec_sql timeout 8s' } }), 8_000),
+        ),
+      ]);
+      const error = (rpcResult as any)?.error;
+      if (error) {
+        const msg = String(error.message || error);
+        if (!/already exists|duplicate|already exists/i.test(msg)) {
+          errors.push(msg.slice(0, 180));
+        }
+      }
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (!/already exists|duplicate/i.test(msg)) {
+        errors.push(msg.slice(0, 180));
+      }
+    }
+  }
+  return errors;
+}
 
 /** Remove comentários `--` ANTES de partir em `;` — senão `cadastro; coleta` quebra o SQL. */
 function stripSqlLineComments(sql: string): string {
@@ -52,38 +84,20 @@ export async function runGestaoInvestimentoMigrations(): Promise<{ ok: boolean; 
     return { ok: false, message: 'Supabase admin indisponível', applied: false };
   }
 
-  if (await isGestaoInvestimentoSchemaReady()) {
-    return { ok: true, message: 'Schema Gestão Investimento já pronto', applied: false };
-  }
-
-  const statements = splitStatements(GESTAO_INVESTIMENTO_FUNDACAO_SQL);
+  const ready = await isGestaoInvestimentoSchemaReady();
   const errors: string[] = [];
+  let applied = false;
 
-  for (const statement of statements) {
-    try {
-      const rpcResult = await Promise.race([
-        client.rpc('exec_sql', { sql: `${statement};` }),
-        new Promise<{ error: { message: string } }>((resolve) =>
-          setTimeout(() => resolve({ error: { message: 'exec_sql timeout 8s' } }), 8_000),
-        ),
-      ]);
-      const error = (rpcResult as any)?.error;
-      if (error) {
-        const msg = String(error.message || error);
-        if (!/already exists|duplicate/i.test(msg)) {
-          errors.push(msg.slice(0, 180));
-        }
-      }
-    } catch (e: any) {
-      const msg = String(e?.message || e);
-      if (!/already exists|duplicate/i.test(msg)) {
-        errors.push(msg.slice(0, 180));
-      }
-    }
+  if (!ready) {
+    errors.push(...(await applySqlBundle(client, GESTAO_INVESTIMENTO_FUNDACAO_SQL)));
+    applied = true;
+    await new Promise((r) => setTimeout(r, 800));
   }
 
-  // Aguarda PostgREST recarregar o schema cache após NOTIFY.
-  await new Promise((r) => setTimeout(r, 800));
+  // Mesa (sleeve/trades/marcação) — sempre tenta (idempotente), mesmo com fundação já pronta.
+  const mesaErrors = await applySqlBundle(client, GESTAO_INVESTIMENTO_MESA_SQL);
+  if (mesaErrors.length) errors.push(...mesaErrors);
+  else if (ready) applied = true; // colunas/tabelas novas podem ter sido criadas
 
   for (const table of REQUIRED_TABLES) {
     let lastErr = '';
@@ -101,7 +115,7 @@ export async function runGestaoInvestimentoMigrations(): Promise<{ ok: boolean; 
       return {
         ok: false,
         message: `Tabela ${table} inacessível após migration: ${lastErr}${errors.length ? ` | ${errors[0]}` : ''}`,
-        applied: true,
+        applied,
       };
     }
   }
@@ -109,6 +123,6 @@ export async function runGestaoInvestimentoMigrations(): Promise<{ ok: boolean; 
   if (errors.length) {
     console.warn('[GestaoInvestimento] Migration avisos:', errors.join(' | '));
   }
-  console.log('[GestaoInvestimento] Schema fundação aplicado/verificado.');
-  return { ok: true, message: 'Schema Gestão Investimento OK', applied: true };
+  console.log('[GestaoInvestimento] Schema fundação + mesa aplicado/verificado.');
+  return { ok: true, message: ready ? 'Schema Gestão Investimento OK (mesa verificada)' : 'Schema Gestão Investimento OK', applied };
 }

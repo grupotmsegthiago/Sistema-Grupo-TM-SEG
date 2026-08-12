@@ -8,6 +8,7 @@ import {
   TARGET_RETURN_DISCLAIMER,
   createDraftInvestorProfile,
   type DashboardBriefing,
+  type DeskAlert,
   type InvestorProfile,
   type InvestmentPosition,
   type InvestmentWatchlistItem,
@@ -90,17 +91,36 @@ const GestaoInvestimento: React.FC = () => {
   const hasSummaryRef = useRef(Boolean(localBoot));
   const loadRef = useRef<(opts?: { silent?: boolean; fresh?: boolean }) => Promise<void>>(async () => {});
   const [profileForm, setProfileForm] = useState<InvestorProfile>(() => createDraftInvestorProfile());
-  const [tab, setTab] = useState<'resumo' | 'perfil' | 'carteira' | 'watchlist' | 'auditoria'>('resumo');
+  const [tab, setTab] = useState<'resumo' | 'mesa' | 'perfil' | 'carteira' | 'watchlist' | 'auditoria'>('mesa');
+  const [tradeMsg, setTradeMsg] = useState<string | null>(null);
+  const [tradeForm, setTradeForm] = useState({
+    side: 'buy' as 'buy' | 'sell',
+    instrument_name: '',
+    instrument_code: '',
+    instrument_type: 'acao',
+    quantity: '',
+    price: '',
+    broker: 'XP',
+    position_id: '',
+    proof_note: '',
+    proof_image: '',
+    sleeve: 'trading' as 'trading' | 'investimento',
+  });
+  const [markDrafts, setMarkDrafts] = useState<Record<string, string>>({});
   const [posForm, setPosForm] = useState({
     instrument_name: '',
     instrument_code: '',
-    instrument_type: 'cdb',
+    instrument_type: 'acao',
     quantity: '1',
     avg_price: '',
-    current_value: '100000',
+    current_value: '',
     entry_date: new Date().toISOString().slice(0, 10),
     broker: 'XP',
     taxation_notes: '',
+    sleeve: 'trading',
+    last_mark_price: '',
+    target_sell_pct: '3',
+    stop_loss_pct: '2',
   });
   const [watchForm, setWatchForm] = useState({
     instrument_name: '',
@@ -219,11 +239,22 @@ const GestaoInvestimento: React.FC = () => {
           quantity: Number(posForm.quantity || 0),
           avg_price: Number(posForm.avg_price || 0),
           current_value: Number(posForm.current_value || 0),
+          last_mark_price: posForm.last_mark_price ? Number(posForm.last_mark_price) : Number(posForm.avg_price || 0),
+          target_sell_pct: Number(posForm.target_sell_pct || 3),
+          stop_loss_pct: Number(posForm.stop_loss_pct || 2),
+          sleeve: posForm.sleeve || 'trading',
         }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || 'Falha ao incluir posição');
-      setPosForm((p) => ({ ...p, instrument_name: '', instrument_code: '', avg_price: '', current_value: '' }));
+      setPosForm((p) => ({
+        ...p,
+        instrument_name: '',
+        instrument_code: '',
+        avg_price: '',
+        current_value: '',
+        last_mark_price: '',
+      }));
       await load({ silent: true, fresh: true });
     } catch (e: any) {
       setError(e?.message || 'Falha ao incluir posição');
@@ -275,6 +306,94 @@ const GestaoInvestimento: React.FC = () => {
     }
   };
 
+  const openTradeFromAlert = (a: DeskAlert) => {
+    setTradeMsg(null);
+    setTradeForm({
+      side: a.side === 'VENDER' ? 'sell' : 'buy',
+      instrument_name: a.name,
+      instrument_code: a.ticker,
+      instrument_type: a.instrumentType || 'acao',
+      quantity: a.quantity > 0 ? String(a.quantity) : '',
+      price: a.refPrice != null ? String(a.refPrice) : '',
+      broker: a.broker || profileForm.broker_default || 'XP',
+      position_id: a.positionId || '',
+      proof_note: '',
+      proof_image: '',
+      sleeve: 'trading',
+    });
+    setTab('mesa');
+  };
+
+  const submitTrade = async () => {
+    setSaving(true);
+    setTradeMsg(null);
+    setError(null);
+    try {
+      const res = await authFetch('/api/gestao-investimento/trade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...tradeForm,
+          quantity: Number(tradeForm.quantity),
+          price: Number(tradeForm.price),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || json.message || 'Falha ao registrar');
+      setTradeMsg(json.message || 'Operação registrada');
+      if (json.rotateBuy) {
+        setTradeMsg(
+          `${json.message}\nPróxima compra: ${json.rotateBuy.ticker} — ${json.rotateBuy.name}`,
+        );
+      }
+      await load({ silent: true, fresh: true });
+    } catch (e: any) {
+      setError(e?.message || 'Falha ao registrar operação');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitMark = async (positionId: string) => {
+    const price = Number(markDrafts[positionId]);
+    if (!(price > 0)) {
+      setError('Informe o preço que está no banco');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await authFetch('/api/gestao-investimento/mark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: positionId, price }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Falha ao marcar cotação');
+      await load({ silent: true, fresh: true });
+    } catch (e: any) {
+      setError(e?.message || 'Falha ao marcar cotação');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onProofFile = (file: File | null) => {
+    if (!file) {
+      setTradeForm((p) => ({ ...p, proof_image: '' }));
+      return;
+    }
+    if (file.size > 220_000) {
+      setError('Print muito grande (máx ~200 KB). Tire um print menor ou comprima.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setTradeForm((p) => ({ ...p, proof_image: String(reader.result || '') }));
+    };
+    reader.readAsDataURL(file);
+  };
+
   const setField = <K extends keyof InvestorProfile>(key: K, value: InvestorProfile[K]) => {
     setProfileForm((p) => ({ ...p, [key]: value }));
   };
@@ -296,7 +415,7 @@ const GestaoInvestimento: React.FC = () => {
             Gestão Investimento
           </h1>
           <p className="text-sm text-gray-500 mt-1 ml-12">
-            Painel automático · pesquisa off a cada 30 min · XP · sem ordens automáticas
+            Mesa semi-manual · você opera no banco · alertas comprar/vender · sem ordem automática
           </p>
           <p className="text-[11px] text-gray-400 mt-1 ml-12" data-testid="gestao-investimento-cache-status">
             {syncing ? 'Sincronizando…' : summary?.refreshedAt
@@ -546,9 +665,10 @@ const GestaoInvestimento: React.FC = () => {
 
       <div className="flex flex-wrap gap-1 bg-white border border-gray-200 rounded-xl p-1" data-testid="gestao-investimento-tabs">
         {([
+          ['mesa', 'Mesa do dia'],
           ['resumo', 'Resumo'],
           ['perfil', 'Perfil'],
-          ['carteira', 'Carteira XP'],
+          ['carteira', 'Carteira'],
           ['watchlist', 'Watchlist'],
           ['auditoria', 'Auditoria'],
         ] as const).map(([id, label]) => (
@@ -621,12 +741,198 @@ const GestaoInvestimento: React.FC = () => {
         </div>
       )}
 
+      {tab === 'mesa' && summary && (
+        <div className="space-y-4" data-testid="gestao-investimento-mesa">
+          {!summary.canRecommend ? (
+            <Card title="Mesa bloqueada" subtitle="Complete o perfil para liberar alertas">
+              <p className="text-sm text-gray-600">Com o perfil completo, a mesa mostra COMPRAR/VENDER do sleeve de trading (~20%) e a rotação da próxima compra quando você vender.</p>
+            </Card>
+          ) : (
+            <>
+              {summary.briefing?.tradingDesk && (
+                <Card
+                  title="Sleeve e atualização"
+                  subtitle={summary.briefing.tradingDesk.note}
+                >
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center mb-2">
+                    <div className="rounded-xl bg-gray-900 text-white px-2 py-2">
+                      <p className="text-[9px] uppercase font-bold text-gray-300">Trading</p>
+                      <p className="text-sm font-black">{summary.briefing.tradingDesk.tradingSleevePct}%</p>
+                      <p className="text-[10px] text-gray-300">{fmtBRL(summary.briefing.tradingDesk.tradingBudget)}</p>
+                    </div>
+                    <div className="rounded-xl bg-red-50 border border-red-100 px-2 py-2">
+                      <p className="text-[9px] uppercase font-bold text-red-700">Investimento</p>
+                      <p className="text-sm font-black text-red-900">{summary.briefing.tradingDesk.investSleevePct}%</p>
+                      <p className="text-[10px] text-red-800">{fmtBRL(summary.briefing.tradingDesk.investBudget)}</p>
+                    </div>
+                    <div className="rounded-xl bg-white border border-gray-200 px-2 py-2">
+                      <p className="text-[9px] uppercase font-bold text-gray-500">Em trading agora</p>
+                      <p className="text-sm font-black">{fmtBRL(summary.briefing.tradingDesk.tradingMarketValue)}</p>
+                    </div>
+                    <div className="rounded-xl bg-white border border-gray-200 px-2 py-2">
+                      <p className="text-[9px] uppercase font-bold text-gray-500">Última cotação</p>
+                      <p className="text-[11px] font-black text-gray-800">
+                        {summary.briefing.tradingDesk.lastMarkAt
+                          ? fmtWhen(summary.briefing.tradingDesk.lastMarkAt)
+                          : 'Sem marcação — lance o preço do banco'}
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              <Card title="Top 10 do dia — alertas" subtitle="Vender libera automaticamente uma nova compra sugerida">
+                {!summary.briefing?.tradingDesk?.top10?.length ? (
+                  <p className="text-sm text-gray-500">Cadastre posições de trading e atualize a cotação do banco para gerar alertas.</p>
+                ) : (
+                  <ol className="space-y-2" data-testid="gestao-investimento-mesa-top10">
+                    {summary.briefing.tradingDesk.top10.map((a) => (
+                      <li key={a.id} className="border border-gray-200 rounded-xl px-3 py-2 bg-white">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-gray-900">
+                              {a.rank}. {a.ticker} <span className="text-gray-500 font-semibold">· {a.name}</span>
+                            </p>
+                            <div className="flex flex-wrap gap-1 mt-1 mb-1">
+                              <span className={`inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-black text-white ${a.side === 'VENDER' ? 'bg-rose-700' : a.side === 'COMPRAR' ? 'bg-emerald-700' : 'bg-gray-600'}`}>
+                                {a.side}
+                              </span>
+                              <span className="inline-flex rounded-md bg-gray-100 border border-gray-200 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">
+                                {a.sleeve}
+                              </span>
+                              {a.pnlPct != null && (
+                                <span className={`inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-bold ${a.pnlPct >= 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'}`}>
+                                  P&L {a.pnlPct >= 0 ? '+' : ''}{a.pnlPct.toFixed(2)}%
+                                </span>
+                              )}
+                              {a.refPrice != null && (
+                                <span className="inline-flex rounded-md bg-white border border-gray-200 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">
+                                  Ref. R$ {Number(a.refPrice).toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-gray-700">{a.reason}</p>
+                            {a.rotateBuy && (
+                              <p className="text-[11px] text-emerald-800 font-semibold mt-1">
+                                Próxima compra sugerida: {a.rotateBuy.ticker} — {a.rotateBuy.name}
+                              </p>
+                            )}
+                            {a.lastMarkAt && (
+                              <p className="text-[10px] text-gray-400 mt-0.5">Cotação lançada em {fmtWhen(a.lastMarkAt)}</p>
+                            )}
+                          </div>
+                          <div className="flex gap-2 shrink-0">
+                            {(a.side === 'COMPRAR' || a.side === 'VENDER') && (
+                              <button
+                                type="button"
+                                onClick={() => openTradeFromAlert(a)}
+                                className={`text-[11px] font-black px-3 py-1.5 rounded-lg text-white ${a.side === 'VENDER' ? 'bg-rose-700' : 'bg-emerald-700'}`}
+                                data-testid="gestao-investimento-mesa-acao"
+                              >
+                                {a.side === 'VENDER' ? 'Registrar venda' : 'Registrar compra'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </Card>
+
+              <Card title="Registrar operação no banco" subtitle="Depois de comprar/vender no app do banco, lance aqui com preço e print">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <Select
+                    label="Lado"
+                    value={tradeForm.side}
+                    onChange={(v) => setTradeForm((p) => ({ ...p, side: (v as 'buy' | 'sell') || 'buy' }))}
+                    options={[['buy', 'Compra'], ['sell', 'Venda']]}
+                  />
+                  <Text label="Ticker" value={tradeForm.instrument_code} onChange={(v) => setTradeForm((p) => ({ ...p, instrument_code: v }))} />
+                  <Text label="Nome" value={tradeForm.instrument_name} onChange={(v) => setTradeForm((p) => ({ ...p, instrument_name: v }))} />
+                  <Text label="Quantidade" value={tradeForm.quantity} onChange={(v) => setTradeForm((p) => ({ ...p, quantity: v }))} />
+                  <Text label="Preço no banco (R$)" value={tradeForm.price} onChange={(v) => setTradeForm((p) => ({ ...p, price: v }))} />
+                  <Select
+                    label="Instituição"
+                    value={tradeForm.broker}
+                    onChange={(v) => setTradeForm((p) => ({ ...p, broker: v || 'XP' }))}
+                    options={[['Nubank', 'Nubank'], ['XP', 'XP'], ['Itaú', 'Itaú'], ['BTG', 'BTG']]}
+                  />
+                  <Text label="Nota / comprovante (texto)" value={tradeForm.proof_note} onChange={(v) => setTradeForm((p) => ({ ...p, proof_note: v }))} />
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Print (opcional, ~200 KB)</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="block w-full text-xs"
+                      onChange={(e) => onProofFile(e.target.files?.[0] || null)}
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void submitTrade()}
+                  className="mt-3 inline-flex items-center gap-2 bg-red-700 text-white text-xs font-bold px-3 py-2 rounded-lg"
+                  data-testid="gestao-investimento-registrar-trade"
+                >
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                  Confirmar registro
+                </button>
+                {tradeMsg && (
+                  <p className="mt-2 text-xs text-emerald-800 whitespace-pre-line bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+                    {tradeMsg}
+                  </p>
+                )}
+              </Card>
+
+              <Card title="Atualizar cotação do banco (manual)" subtitle="Sem token de corretora: você cola o preço que está vendo agora">
+                {summary.positions.filter((p) => (p as any).sleeve !== 'investimento' || ['acao', 'etf', 'fii', 'bdr'].includes(p.instrument_type)).length === 0 ? (
+                  <p className="text-sm text-gray-500">Nenhuma posição de trading. Cadastre na aba Carteira (sleeve Trading).</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {summary.positions.map((p) => (
+                      <li key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-2 border border-gray-200 rounded-lg px-3 py-2 text-xs bg-gray-50">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-black text-gray-900">{p.instrument_code || p.instrument_name}</p>
+                          <p className="text-gray-500">
+                            Médio {Number(p.avg_price || 0).toFixed(2)} · qtd {p.quantity}
+                            {(p as any).last_mark_at ? ` · última ${fmtWhen((p as any).last_mark_at)}` : ' · sem marcação'}
+                          </p>
+                        </div>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="Preço banco"
+                          className="border border-gray-300 rounded-lg px-2 py-1.5 w-28"
+                          value={markDrafts[p.id || ''] || ''}
+                          onChange={(e) => setMarkDrafts((m) => ({ ...m, [p.id || '']: e.target.value }))}
+                        />
+                        <button
+                          type="button"
+                          disabled={saving || !p.id}
+                          onClick={() => p.id && void submitMark(p.id)}
+                          className="bg-gray-900 text-white font-bold px-3 py-1.5 rounded-lg"
+                        >
+                          Atualizar
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            </>
+          )}
+        </div>
+      )}
+
       {tab === 'perfil' && (
         <Card title="Perfil do investidor" subtitle="Obrigatório antes de qualquer recomendação personalizada">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             <Select label="Pessoa" value={profileForm.person_type || ''} onChange={(v) => setField('person_type', (v || null) as any)} options={[['PF', 'Pessoa física'], ['PJ', 'Pessoa jurídica']]} />
             <Num label="Capital disponível (R$)" value={profileForm.capital_available} onChange={(v) => setField('capital_available', v)} />
             <Num label="Reserva de emergência (R$)" value={profileForm.emergency_reserve} onChange={(v) => setField('emergency_reserve', v)} />
+            <Num label="% sleeve trading (restante = investimento)" value={profileForm.trading_sleeve_pct ?? 20} onChange={(v) => setField('trading_sleeve_pct', v ?? 20)} />
             <Num label="Máx. por investimento (R$)" value={profileForm.max_per_investment} onChange={(v) => setField('max_per_investment', v)} />
             <Num label="Horizonte (meses)" value={profileForm.horizon_months} onChange={(v) => setField('horizon_months', v)} int />
             <Select label="Liquidez" value={profileForm.liquidity_need || ''} onChange={(v) => setField('liquidity_need', (v || null) as any)} options={[['D0', 'D+0'], ['D1', 'D+1'], ['D30', 'Até 30 dias'], ['D90', 'Até 90 dias'], ['ILLIQUID_OK', 'Aceito iliquidez']]} />
@@ -671,16 +977,20 @@ const GestaoInvestimento: React.FC = () => {
 
       {tab === 'carteira' && summary && (
         <div className="space-y-4">
-          <Card title="Nova posição (manual — XP)" subtitle="Informe o que está na corretora. Sem ordem automática.">
+          <Card title="Nova posição" subtitle="Informe o que está na corretora. Sleeve Trading = mesa do dia; Investimento = buy&hold.">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <Text label="Nome do ativo" value={posForm.instrument_name} onChange={(v) => setPosForm((p) => ({ ...p, instrument_name: v }))} />
               <Text label="Código" value={posForm.instrument_code} onChange={(v) => setPosForm((p) => ({ ...p, instrument_code: v }))} />
               <Select label="Tipo" value={posForm.instrument_type} onChange={(v) => setPosForm((p) => ({ ...p, instrument_type: v }))} options={INSTRUMENT_TYPES.map((t) => [t, t])} />
+              <Select label="Sleeve" value={posForm.sleeve} onChange={(v) => setPosForm((p) => ({ ...p, sleeve: v || 'trading' }))} options={[['trading', 'Trading (mesa)'], ['investimento', 'Investimento']]} />
               <Text label="Quantidade" value={posForm.quantity} onChange={(v) => setPosForm((p) => ({ ...p, quantity: v }))} />
               <Text label="Preço médio" value={posForm.avg_price} onChange={(v) => setPosForm((p) => ({ ...p, avg_price: v }))} />
-              <Text label="Valor atual (R$)" value={posForm.current_value} onChange={(v) => setPosForm((p) => ({ ...p, current_value: v }))} />
+              <Text label="Cotação no banco agora" value={posForm.last_mark_price} onChange={(v) => setPosForm((p) => ({ ...p, last_mark_price: v }))} />
+              <Text label="Valor atual (R$) opcional" value={posForm.current_value} onChange={(v) => setPosForm((p) => ({ ...p, current_value: v }))} />
+              <Text label="Alvo venda (%)" value={posForm.target_sell_pct} onChange={(v) => setPosForm((p) => ({ ...p, target_sell_pct: v }))} />
+              <Text label="Stop (%)" value={posForm.stop_loss_pct} onChange={(v) => setPosForm((p) => ({ ...p, stop_loss_pct: v }))} />
               <Text label="Data de entrada" value={posForm.entry_date} onChange={(v) => setPosForm((p) => ({ ...p, entry_date: v }))} />
-              <Text label="Corretora" value={posForm.broker} onChange={(v) => setPosForm((p) => ({ ...p, broker: v }))} />
+              <Select label="Instituição" value={posForm.broker} onChange={(v) => setPosForm((p) => ({ ...p, broker: v || 'XP' }))} options={[['Nubank', 'Nubank'], ['XP', 'XP'], ['Itaú', 'Itaú'], ['BTG', 'BTG']]} />
               <Text label="Tributação / notas" value={posForm.taxation_notes} onChange={(v) => setPosForm((p) => ({ ...p, taxation_notes: v }))} />
             </div>
             <button

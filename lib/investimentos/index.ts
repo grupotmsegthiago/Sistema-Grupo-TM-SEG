@@ -24,3 +24,4 @@ export {
   type AllocationScenario,
 } from './allocationEngine';
 export { fetchMacroRates, formatPct, type MacroRates } from './marketRates';
+export { buildTradingDesk, type DeskAlert, type TradingDeskSnapshot } from './tradingDesk';

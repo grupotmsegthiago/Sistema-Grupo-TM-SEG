@@ -16,10 +16,12 @@ import {
   reviveStaleScenario,
   writeCachedSnapshot,
 } from './dashboardCache.js';
+import { buildTradingDesk } from './tradingDesk.js';
 import type {
   InvestorProfile,
   InvestmentPosition,
   InvestmentRiskLimits,
+  InvestmentTrade,
   InvestmentWatchlistItem,
 } from './types.js';
 
@@ -144,6 +146,7 @@ function mapProfileRow(body: any): Partial<InvestorProfile> {
     monthly_target_pct_min: Number(body.monthly_target_pct_min ?? 1.5),
     monthly_target_pct_max: Number(body.monthly_target_pct_max ?? 2.0),
     broker_default: String(body.broker_default || 'XP'),
+    trading_sleeve_pct: Number(body.trading_sleeve_pct ?? 20),
     notes: String(body.notes || ''),
   };
 }
@@ -386,18 +389,28 @@ export async function handleGestaoInvestimentoOp(
       try {
         const instrument_name = String(body.instrument_name || '').trim();
         if (!instrument_name) return { status: 400, body: { ok: false, error: 'Nome do ativo é obrigatório' } };
+        const qty = Number(body.quantity || 0);
+        const avg = Number(body.avg_price || 0);
+        const mark = body.last_mark_price != null && body.last_mark_price !== ''
+          ? Number(body.last_mark_price)
+          : avg;
         const row = {
           owner_user_id: principal.id,
           instrument_name,
           instrument_code: String(body.instrument_code || ''),
           instrument_type: String(body.instrument_type || 'outros'),
-          quantity: Number(body.quantity || 0),
-          avg_price: Number(body.avg_price || 0),
-          current_value: Number(body.current_value || 0),
+          quantity: qty,
+          avg_price: avg,
+          current_value: Number(body.current_value || (qty > 0 && mark > 0 ? qty * mark : 0)),
           entry_date: body.entry_date || null,
           broker: String(body.broker || 'XP'),
           taxation_notes: String(body.taxation_notes || ''),
           currency: String(body.currency || 'BRL'),
+          sleeve: String(body.sleeve || 'trading') === 'investimento' ? 'investimento' : 'trading',
+          last_mark_price: mark > 0 ? mark : null,
+          last_mark_at: mark > 0 ? new Date().toISOString() : null,
+          target_sell_pct: Number(body.target_sell_pct ?? 3),
+          stop_loss_pct: Number(body.stop_loss_pct ?? 2),
           is_active: true,
           source: 'manual',
           created_by: principal.name,
@@ -486,6 +499,256 @@ export async function handleGestaoInvestimentoOp(
     }
 
     return { status: 405, body: { ok: false, error: 'method_not_allowed' } };
+  }
+
+  /** Atualiza cotação manual (o que você vê no banco agora). */
+  if (op === 'mark') {
+    if (method !== 'POST' && method !== 'PUT') return { status: 405, body: { ok: false, error: 'method_not_allowed' } };
+    const sb = createSupabaseAdminClient();
+    if (!sb) return { status: 503, body: { ok: false, error: 'Supabase admin indisponível' } };
+    const id = String(body.id || q.id || '').trim();
+    const price = Number(body.price ?? body.last_mark_price);
+    if (!id) return { status: 400, body: { ok: false, error: 'Informe id da posição' } };
+    if (!Number.isFinite(price) || price <= 0) return { status: 400, body: { ok: false, error: 'Informe preço válido do banco' } };
+    try {
+      const { data: pos, error: pErr } = await sb
+        .from('investment_positions')
+        .select('*')
+        .eq('id', id)
+        .eq('owner_user_id', principal.id)
+        .maybeSingle();
+      if (pErr) throw pErr;
+      if (!pos) return { status: 404, body: { ok: false, error: 'Posição não encontrada' } };
+      const qty = Number(pos.quantity || 0);
+      const now = new Date().toISOString();
+      const { data, error } = await sb
+        .from('investment_positions')
+        .update({
+          last_mark_price: price,
+          last_mark_at: now,
+          current_value: qty > 0 ? Math.round(qty * price * 100) / 100 : Number(pos.current_value || 0),
+          updated_by: principal.name,
+          updated_at: now,
+          data_reference_at: now,
+        })
+        .eq('id', id)
+        .eq('owner_user_id', principal.id)
+        .select('*')
+        .single();
+      if (error) throw error;
+      await writeAudit(principal.id, principal, 'position_mark', 'investment_positions', id, `Cotação manual ${pos.instrument_code || pos.instrument_name}: ${price}`, {
+        price,
+        at: now,
+      });
+      void refreshOwnerCache(principal.id).catch(() => {});
+      return { status: 200, body: { ok: true, position: data } };
+    } catch (e: any) {
+      if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: 'schema_missing' } };
+      return { status: 500, body: { ok: false, error: e?.message || 'Falha' } };
+    }
+  }
+
+  /** Registra compra/venda feita no banco (semi-manual) e sugere rotação. */
+  if (op === 'trade') {
+    if (method === 'GET') {
+      const sb = createSupabaseAdminClient();
+      if (!sb) return { status: 503, body: { ok: false, error: 'Supabase admin indisponível' } };
+      try {
+        const limit = Math.min(100, Math.max(1, Number(q.limit || 30)));
+        const { data, error } = await sb
+          .from('investment_trades')
+          .select('*')
+          .eq('owner_user_id', principal.id)
+          .order('executed_at', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        return { status: 200, body: { ok: true, trades: data || [] } };
+      } catch (e: any) {
+        if (isMissingTableError(e)) return { status: 503, body: { ok: false, error: 'schema_missing', message: 'Rode ensure-schema (mesa de trading).' } };
+        return { status: 500, body: { ok: false, error: e?.message || 'Falha' } };
+      }
+    }
+
+    if (method !== 'POST') return { status: 405, body: { ok: false, error: 'method_not_allowed' } };
+    const sb = createSupabaseAdminClient();
+    if (!sb) return { status: 503, body: { ok: false, error: 'Supabase admin indisponível' } };
+    const side = String(body.side || '').toLowerCase() === 'sell' ? 'sell' : String(body.side || '').toLowerCase() === 'buy' ? 'buy' : '';
+    if (!side) return { status: 400, body: { ok: false, error: 'side deve ser buy ou sell' } };
+    const instrument_name = String(body.instrument_name || '').trim();
+    const instrument_code = String(body.instrument_code || '').trim();
+    const quantity = Number(body.quantity || 0);
+    const price = Number(body.price || 0);
+    if (!instrument_name && !instrument_code) return { status: 400, body: { ok: false, error: 'Informe o ativo' } };
+    if (!(quantity > 0) || !(price > 0)) return { status: 400, body: { ok: false, error: 'Quantidade e preço do banco são obrigatórios' } };
+
+    try {
+      const amount = Math.round(quantity * price * 100) / 100;
+      const broker = String(body.broker || 'XP');
+      const sleeve = String(body.sleeve || 'trading') === 'investimento' ? 'investimento' : 'trading';
+      const proof_note = String(body.proof_note || '').slice(0, 2000);
+      const proof_image = String(body.proof_image || '').slice(0, 350_000);
+      const now = new Date().toISOString();
+
+      // Desk para rotação se for venda
+      const [{ data: positions }, { data: watchlist }, { data: profile }] = await Promise.all([
+        sb.from('investment_positions').select('*').eq('owner_user_id', principal.id).eq('is_active', true),
+        sb.from('investment_watchlists').select('*').eq('owner_user_id', principal.id),
+        sb.from('investor_profiles').select('*').eq('owner_user_id', principal.id).maybeSingle(),
+      ]);
+      const desk = buildTradingDesk(
+        profile ? ({ ...createDraftInvestorProfile(), ...profile } as InvestorProfile) : createDraftInvestorProfile(),
+        (positions || []) as InvestmentPosition[],
+        (watchlist || []) as InvestmentWatchlistItem[],
+      );
+      const rotate = side === 'sell'
+        ? desk.top10.find((a) => a.side === 'COMPRAR') || desk.alerts.find((a) => a.side === 'COMPRAR')
+        : null;
+
+      let positionId = String(body.position_id || '').trim() || null;
+      if (side === 'buy') {
+        const code = (instrument_code || instrument_name).toUpperCase();
+        const existing = (positions || []).find(
+          (p: any) => String(p.instrument_code || '').toUpperCase() === code || String(p.instrument_name || '').toUpperCase() === code,
+        );
+        if (existing) {
+          const newQty = Number(existing.quantity || 0) + quantity;
+          const oldCost = Number(existing.quantity || 0) * Number(existing.avg_price || 0);
+          const newAvg = newQty > 0 ? (oldCost + amount) / newQty : price;
+          const { data: upd, error: uErr } = await sb
+            .from('investment_positions')
+            .update({
+              quantity: newQty,
+              avg_price: newAvg,
+              current_value: Math.round(newQty * price * 100) / 100,
+              last_mark_price: price,
+              last_mark_at: now,
+              sleeve,
+              broker,
+              updated_by: principal.name,
+              updated_at: now,
+              data_reference_at: now,
+            })
+            .eq('id', existing.id)
+            .eq('owner_user_id', principal.id)
+            .select('id')
+            .single();
+          if (uErr) throw uErr;
+          positionId = upd.id;
+        } else {
+          const { data: created, error: cErr } = await sb
+            .from('investment_positions')
+            .insert({
+              owner_user_id: principal.id,
+              instrument_name: instrument_name || instrument_code,
+              instrument_code: instrument_code || instrument_name,
+              instrument_type: String(body.instrument_type || 'acao'),
+              quantity,
+              avg_price: price,
+              current_value: amount,
+              entry_date: (body.executed_at || now).slice(0, 10),
+              broker,
+              sleeve,
+              last_mark_price: price,
+              last_mark_at: now,
+              target_sell_pct: Number(body.target_sell_pct ?? 3),
+              stop_loss_pct: Number(body.stop_loss_pct ?? 2),
+              is_active: true,
+              source: 'manual',
+              created_by: principal.name,
+              updated_by: principal.name,
+              data_reference_at: now,
+            })
+            .select('id')
+            .single();
+          if (cErr) throw cErr;
+          positionId = created.id;
+        }
+      } else if (side === 'sell' && positionId) {
+        const { data: pos, error: pErr } = await sb
+          .from('investment_positions')
+          .select('*')
+          .eq('id', positionId)
+          .eq('owner_user_id', principal.id)
+          .maybeSingle();
+        if (pErr) throw pErr;
+        if (pos) {
+          const left = Math.max(0, Number(pos.quantity || 0) - quantity);
+          await sb
+            .from('investment_positions')
+            .update({
+              quantity: left,
+              current_value: Math.round(left * price * 100) / 100,
+              last_mark_price: price,
+              last_mark_at: now,
+              is_active: left > 0.0000001,
+              updated_by: principal.name,
+              updated_at: now,
+              data_reference_at: now,
+            })
+            .eq('id', positionId)
+            .eq('owner_user_id', principal.id);
+        }
+      }
+
+      const tradeRow: Partial<InvestmentTrade> & Record<string, unknown> = {
+        owner_user_id: principal.id,
+        position_id: positionId,
+        side,
+        instrument_name: instrument_name || instrument_code,
+        instrument_code: instrument_code || instrument_name,
+        instrument_type: String(body.instrument_type || 'acao'),
+        sleeve,
+        quantity,
+        price,
+        amount_brl: amount,
+        broker,
+        executed_at: body.executed_at || now,
+        proof_note,
+        proof_image,
+        notes: String(body.notes || ''),
+        rotated_buy_code: rotate?.ticker || '',
+        rotated_buy_name: rotate?.name || '',
+        source: 'manual',
+        created_by: principal.name,
+      };
+      const { data: trade, error: tErr } = await sb.from('investment_trades').insert(tradeRow).select('*').single();
+      if (tErr) throw tErr;
+
+      await writeAudit(
+        principal.id,
+        principal,
+        side === 'buy' ? 'trade_buy' : 'trade_sell',
+        'investment_trades',
+        trade.id,
+        `${side === 'buy' ? 'Compra' : 'Venda'} registrada: ${tradeRow.instrument_code} @ ${price}`,
+        {
+          quantity,
+          price,
+          amount,
+          rotated_buy: rotate?.ticker || null,
+        },
+      );
+      void refreshOwnerCache(principal.id).catch(() => {});
+      return {
+        status: 201,
+        body: {
+          ok: true,
+          trade,
+          rotateBuy: rotate
+            ? { ticker: rotate.ticker, name: rotate.name, reason: rotate.reason, amountBrl: rotate.amountBrl }
+            : null,
+          message:
+            side === 'sell' && rotate
+              ? `Venda registrada. Próxima compra sugerida: ${rotate.ticker} — ${rotate.name}`
+              : 'Operação registrada. Cotação/posição atualizadas.',
+        },
+      };
+    } catch (e: any) {
+      if (isMissingTableError(e)) {
+        return { status: 503, body: { ok: false, error: 'schema_missing', message: 'Rode “Aplicar schema” para liberar a mesa de trading.' } };
+      }
+      return { status: 500, body: { ok: false, error: e?.message || 'Falha' } };
+    }
   }
 
   if (op === 'audit') {

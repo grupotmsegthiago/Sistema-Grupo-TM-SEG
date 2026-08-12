@@ -8,6 +8,7 @@ import { createDraftInvestorProfile, evaluateProfileCompleteness } from './profi
 import { buildProvision30dEstimate, describeMonthlyTargetBand } from './targetReturn.js';
 import { buildAllocationScenario, isScenarioStale, type AllocationScenario } from './allocationEngine.js';
 import { fetchMacroRates } from './marketRates.js';
+import { buildTradingDesk, type TradingDeskSnapshot } from './tradingDesk.js';
 import type {
   InvestorProfile,
   InvestmentPosition,
@@ -34,6 +35,8 @@ export type DashboardBriefing = {
   profileComplete: boolean;
   /** Cenário sugerido pela IA (R$ + %) — sem executar ordens */
   scenario: AllocationScenario | null;
+  /** Mesa semi-manual do dia (alertas comprar/vender + rotação) */
+  tradingDesk: TradingDeskSnapshot | null;
 };
 
 export type DashboardSnapshot = {
@@ -144,6 +147,8 @@ function buildBriefing(
     nextActions.push('Definir reserva de emergência > 0');
   }
 
+  const tradingDesk = completeness.complete ? buildTradingDesk(profile, positions, watchlist) : null;
+
   return {
     allocationByType,
     topPositions,
@@ -153,6 +158,7 @@ function buildBriefing(
     watchlistCount: watchlist.length,
     profileComplete: completeness.complete,
     scenario,
+    tradingDesk,
   };
 }
 
@@ -168,13 +174,18 @@ async function buildBriefingWithRates(
   const rates = await fetchMacroRates();
   const scenario = buildAllocationScenario(profile, positions, rates);
   if (!scenario) return base;
+  const tradingDesk = buildTradingDesk(profile, positions, watchlist);
   return {
     ...base,
     scenario,
+    tradingDesk,
     nextActions: [
-      ...scenario.topActions.slice(0, 4).map(
+      ...(tradingDesk.top10.slice(0, 3).map(
+        (a) => `${a.rank}. ${a.side} ${a.ticker}: ${a.reason.slice(0, 80)}`,
+      )),
+      ...scenario.topActions.slice(0, 2).map(
         (a) =>
-          `${a.rank}. ${a.signal} ${a.ticker}: ${a.amountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} — ${a.categoryKind} · ${a.institution}`,
+          `${a.signal} ${a.ticker}: ${a.amountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} — ${a.institution}`,
       ),
       'Siga o passo a passo na instituição — a IA não envia ordem',
     ].slice(0, 6),
@@ -188,15 +199,18 @@ export async function reviveStaleScenario(snap: DashboardSnapshot): Promise<Dash
   const rates = await fetchMacroRates();
   const scenario = buildAllocationScenario(snap.profile, snap.positions || [], rates);
   if (!scenario) return snap;
+  const tradingDesk = buildTradingDesk(snap.profile, snap.positions || [], snap.watchlist || []);
   return {
     ...snap,
     briefing: {
       ...snap.briefing,
       scenario,
+      tradingDesk,
       nextActions: [
-        ...scenario.topActions.slice(0, 4).map(
+        ...tradingDesk.top10.slice(0, 3).map((a) => `${a.rank}. ${a.side} ${a.ticker}`),
+        ...scenario.topActions.slice(0, 2).map(
           (a) =>
-            `${a.rank}. ${a.signal} ${a.ticker}: ${a.amountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} — ${a.categoryKind} · ${a.institution}`,
+            `${a.signal} ${a.ticker}: ${a.amountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} — ${a.institution}`,
         ),
         'Siga o passo a passo na instituição — a IA não envia ordem',
       ].slice(0, 6),
