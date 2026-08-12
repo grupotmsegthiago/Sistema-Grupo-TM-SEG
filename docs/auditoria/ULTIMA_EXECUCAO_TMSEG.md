@@ -1,6 +1,6 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — validação PR #257 (bloco P0 Fase 3).  
+> Handoff oficial — merge + validação pós-publicação PR #257.  
 > **Não contém segredos.**
 
 ---
@@ -10,282 +10,165 @@
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-12 (UTC) |
-| **Tipo** | Validação pré-merge PR #257 — **sem merge, sem deploy** |
-| **Branch** | `cursor/fase3-p0-integridade-eaa8` |
-| **PR** | [#257](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/257) |
-| **Base** | `main` @ `463eebe6` |
-| **Commits PR** | `3d31901d`, `a2b31671`, `30373e58` |
+| **Tipo** | Merge controlado PR #257 + smoke pós-deploy |
+| **PR** | [#257](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/257) — **MERGED** |
+| **Branch origem** | `cursor/fase3-p0-integridade-eaa8` |
+| **Commit final `main`** | `5a3ef6b7195acb3bea8d91f9e4abf2fc7b5e4ed7` |
+| **Tag** | `baseline-fase3-p0-merged-20260812` |
+| **Produção** | `https://sistema.grupotmseg.com.br` |
+| **Banco alterado** | **NÃO** |
 
 ---
 
 ## PROGRESSO — TRÊS INDICADORES
 
-| Indicador | Valor | Nota |
-|-----------|-------|------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 | Validação integral PR #257 concluída |
-| **FASE 3 (total)** | **20%** 🔵 | Bloco P0 implementado; P1+ pendente — validação não avança a fase |
-| **PROGRAMA GERAL** | **22%** | Inalterado nesta execução (só validação) |
+| Indicador | Valor | Significado |
+|-----------|-------|-------------|
+| **EXECUÇÃO ATUAL** | **100%** 🟢 | Merge + tag + deploy + smoke desta rodada — concluído |
+| **FASE 3 (total)** | **20%** 🔵 | Bloco P0 publicado; P1/P2/P3/F3-final pendentes — merge **não** encerra a fase |
+| **PROGRAMA GERAL** | **22%** | Inalterado (publicação P0 não infla programa além do bloco já contabilizado) |
 
-### Marcos desta execução (validação)
+### Marcos desta execução
 
 | Marco | % execução | Evidência |
 |-------|------------|-----------|
-| Diff revisado (10 arquivos) | 10% | §1 abaixo |
-| P0-03 consumidores + valueStatus | 25% | §2 |
-| P0-01/02 cenários mãe/filha | 50% | §3 + testes |
-| P0-04 auth runtime + P0-05 paridade | 75% | §4–5 |
-| Suíte + build + impacto + decisão | 90% | §6–10 |
-| Handoff entregue | **100%** | Este arquivo |
+| Revalidar HEAD PR = `5a3ef6b7` | 10% | Diff vazio vs commit validado |
+| Merge `main` + PR MERGED | 25% | Fast-forward `463eebe6`→`5a3ef6b7` |
+| Tag `baseline-fase3-p0-merged-20260812` | 50% | Push tag OK |
+| Deploy Vercel + `/api/version` | 75% | buildId `5a3ef6b7…` |
+| Smoke + testes P0 + handoff | **100%** | §5–6 |
 
 ---
 
-## DECISÃO DE MERGE
+## DECISÃO FINAL
 
-# 🟡 PR #257 APTO COM PENDÊNCIA NÃO BLOQUEANTE
-
-**Recomendação:** pode mergear após aceitar pendências documentadas em §10.  
-**Não executar merge nesta execução.**
+# 🟡 P0 PUBLICADO COM PENDÊNCIA
 
 | Critério | Resultado |
 |----------|-----------|
-| Escopo respeitado | ✅ |
-| Testes sem falha nova | ✅ 690 pass / 5 fail / 695 (baseline 673/5/678) |
-| Build | ✅ |
-| P0-01/02/04/05 | ✅ validados |
-| P0-03 núcleo fail-closed | ✅ rev/cost base não estimados em OS aprovada incompleta |
-| Pendências não bloqueantes | 🟡 §10 |
+| Merge | ✅ |
+| Deploy commit = main | ✅ `5a3ef6b7` |
+| Health / version / app | ✅ |
+| P0 frontend (DRE, charts, canônico, mission-report) | ✅ no bundle publicado |
+| P0-04 auth migration em **produção** | 🟡 **TIMEOUT** — ver NB-06 |
+| Regressão funcional crítica | ❌ não detectada nos smoke core |
+
+**Rollback:** não necessário nesta execução. Reverter `main` para `463eebe6` + redeploy se regressão confirmada.
 
 ---
 
-## 1. REVISÃO DE DIFF (10 arquivos)
+## 1. REVALIDAÇÃO PR
 
-| Arquivo | P0 | Alteração | Necessária? | Risco |
-|---------|-----|-----------|-------------|-------|
-| `lib/missionFinancialsCanonical.ts` | P0-03 | `valueStatus` + branch `needs_validation` | ✅ | 🟡 médio — ver §2 |
-| `lib/missionReportAccess.ts` | P0-05 | Nova fonte única permissão | ✅ | 🟢 baixo |
-| `components/FinancialDRE.tsx` | P0-01 | `resolveStoredProviderToll` + desloc. forn filha=0 | ✅ | 🟢 baixo |
-| `components/ClientBillingReport.tsx` | P0-02 | Idem charts + `costBase` filha=0 | ✅ | 🟢 baixo |
-| `server/routes.ts` | P0-04 | `requireAuth`+`requireRole` em 2 migrations | ✅ | 🟢 baixo |
-| `server/financialReportWorker.ts` | P0-03 | `valueStatus` para label email | ✅ | 🟡 ver §2 |
-| `App.tsx` | P0-05 | Usa `canAccessMissionReport` | ✅ | 🟢 baixo |
-| `components/Sidebar.tsx` | P0-05 | Delega para `canAccessMissionReport` | ✅ | 🟢 baixo |
-| `scripts/fase3-p0-financial-integrity.test.ts` | testes | 16 testes novos | ✅ | 🟢 |
-| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | docs | Handoff | ✅ | 🟢 |
-
-### Verificações negativas ✅
-
-| Item | Resultado |
-|------|-----------|
-| Refatoração paralela | ❌ Não |
-| Alteração estética | ❌ Não |
-| Regra fora escopo | ❌ Não (desloc. forn filha no DRE é extensão coerente de P0-01) |
-| Banco/schema | ❌ Não |
-| Integração não relacionada | ❌ Não |
-| Nova SSOT duplicada | ❌ Não — reutiliza `clientTollBilling` e consolida `missionReportAccess` |
-
-**Diff total:** +436 / −521 linhas (handoff enxuto reduz linhas doc).
+| Verificação | Resultado |
+|-------------|-----------|
+| HEAD PR | `5a3ef6b7` |
+| Commit validado anteriormente | `5a3ef6b7` |
+| Alteração nova desde revisão? | **NÃO** — diff vazio |
+| Ação | ✅ Prosseguir merge |
 
 ---
 
-## 2. P0-03 — CANÔNICO FAIL-CLOSED (revisão profunda)
+## 2. MERGE
 
-### Consumidores de `computeCanonicalRevenueCost`
+| Campo | Valor |
+|-------|-------|
+| Tipo | Fast-forward |
+| `main` antes | `463eebe6` (Fase 2 docs) |
+| `main` depois | `5a3ef6b7` |
+| PR status | **MERGED** @ 2026-08-12T15:39:47Z |
+| mergeCommit | `5a3ef6b7195acb3bea8d91f9e4abf2fc7b5e4ed7` |
 
-| Consumidor | Usa `valueStatus`? | OS aprovada sem valor | OS pendente | Risco |
-|------------|-------------------|----------------------|-------------|-------|
-| `lib/missionFinancialsCanonical.sumCanonical` | ❌ | rev/cost base=0, não estima | estima ✅ | 🟡 soma parcial |
-| `server/financialReportWorker` | ✅ parcial | label `estimated` (não `saved`) | OK | 🟡 |
-| `components/ExecutiveDashboard` | ❌ | base não estimada | preview OK | 🟡 |
-| `lib/dashboardDiretoria/aggregations` | ❌ | idem | OK | 🟡 |
-| `components/MissionTable` (perdas) | ❌ | idem | OK | 🟡 |
-| `components/MissionReportPage` | ❌* | lightCanonical usa DB direto | OK | 🟡 *pré-existente |
-| `components/LowMarginDialog` | ❌ | idem | OK | 🟡 |
-| `components/LossesDialog` | ❌ | idem | OK | 🟡 |
-| `lib/lowMarginVerified` | ❌ | idem | OK | 🟡 |
+### Arquivos no merge (10)
 
-### Comportamento por cenário (testado)
-
-| Cenário | `valueStatus` | revBase/costBase estimado? |
-|---------|---------------|---------------------------|
-| OS pendente sem valores | `estimated` | ✅ sim (preview legítimo) |
-| OS aprovada completa | `official` | ❌ usa persistido |
-| OS aprovada sem receita | `needs_validation` | ❌ revBase=0 |
-| OS filha aprovada | `official` | custo/pedágio forn=0 |
-| OS cancelada pendente | `estimated` | motor trata como completed só p/ estimativa |
-
-### Conclusão P0-03
-
-- **✅ Critério principal atendido:** OS aprovada sem valor oficial **não** recebe estimativa em `revBase`/`costBase`.
-- **🟡 Pendência:** nenhuma tela exibe badge `needs_validation`; consumidores somam `c.rev`/`c.cost` sem filtrar flag.
-- **🟡 Edge case:** bloco `needsDispDerive` ainda chama `calculateMissionFinancials` para taxas KM (só deslocamento, não base).
-- **Não é 🔴 bloqueio:** estimativa de receita/custo base em OS aprovada foi eliminada; ignorar `valueStatus` na UI não reintroduz estimativa como oficial nos campos críticos.
+`App.tsx`, `ClientBillingReport.tsx`, `FinancialDRE.tsx`, `Sidebar.tsx`, `missionFinancialsCanonical.ts`, `missionReportAccess.ts`, `financialReportWorker.ts`, `server/routes.ts`, `fase3-p0-financial-integrity.test.ts`, handoff.
 
 ---
 
-## 3. P0-01 / P0-02 — OS MÃE/FILHA
+## 3. TAG
 
-### Cenários determinísticos (`scripts/fase3-p0-financial-integrity.test.ts`)
-
-| Cenário | Receita cliente | Custo forn | Pedágio forn | Testes |
-|---------|-----------------|------------|--------------|--------|
-| **A — OS normal** | preservada | 500 | 50 | ✅ P0-01/02/03 |
-| **B — OS mãe** | preservada | 600 | 100 | ✅ canônico |
-| **C — OS filha** | 300 (nova) | 0 | 0 | ✅ DRE mix=50 só mãe; chart=0 |
-
-### Paridade conceitual
-
-| Camada | Pedágio forn filha | SSOT |
-|--------|-------------------|------|
-| Canônico | 0 | `resolveStoredProviderToll` |
-| FinancialDRE | 0 | idem |
-| ClientBillingReport charts | 0 | idem |
-| Central OS (MissionTable) | 0 (pré-existente) | `is_same_os ? 0 : cost` |
+| Tag | Commit | Status |
+|-----|--------|--------|
+| `baseline-fase3-p0-merged-20260812` | `5a3ef6b7` | ✅ criada e push |
+| Tags anteriores | `baseline-fase2-merged-20260812`, `baseline-fase1-*` | ✅ preservadas |
 
 ---
 
-## 4. P0-04 — AUTORIZAÇÃO
+## 4. PUBLICAÇÃO / DEPLOY
 
-### Runtime (dev local `npm run dev`)
+| Campo | Antes | Depois |
+|-------|-------|--------|
+| buildId | `463eebe6…` | **`5a3ef6b7195acb3bea8d91f9e4abf2fc7b5e4ed7`** |
+| builtAt | 2026-08-12T14:44:17Z | **2026-08-12T15:40:03Z** |
+| version | 3.7.60 | 3.7.60 |
+| Deploy manual | ❌ não executado | Vercel automático da `main` |
+| Projeto | `sistema-grupo-tm-seg` | inalterado |
 
-| Chamada | HTTP | Esperado |
-|---------|------|----------|
-| `POST /api/migration/add-mission-columns` sem token | **401** | ✅ |
-| `POST /api/migrations/provider-ops-columns` sem token | **401** | ✅ |
-| Com `Bearer fake-token` | **403** | ✅ (principal não resolvido) |
-
-### Estático
-
-| Endpoint | Middleware |
-|----------|------------|
-| `/api/migration/add-mission-columns` | `requireAuth, requireRole('diretoria','administrador')` |
-| `/api/migrations/provider-ops-columns` | idem |
-
-**Não testado com token real** de diretoria/administrador (sem credencial no ambiente).  
-**Migration não executada** — somente camada auth.  
-**Chamadas internas:** endpoints são one-shot ops HTTP; sem referências internas no código que dependam de acesso anônimo.
-
-### Família verificada (fora escopo, documentado)
-
-Outros `POST` sem auth permanecem (`fix-ceva-logitech-values`, `ensure-report-column`, etc.) — **pendência P3**.
+**Confirmação:** `GET /api/version` em produção retorna buildId = commit da `main`.
 
 ---
 
-## 5. P0-05 — MISSION REPORT
+## 5. SMOKE TEST PÓS-DEPLOY (read-only)
 
-### Fonte única: `lib/missionReportAccess.ts` → `canAccessMissionReport()`
+| Teste | Resultado |
+|-------|-----------|
+| `GET /api/health` | ✅ 200 `{"status":"ok"}` |
+| `GET /api/version` | ✅ 200 buildId `5a3ef6b7…` |
+| App HTML `/` | ✅ 200 (13 KB), `__TMSEG_SUPABASE__` presente |
+| `GET /api/whatsapp/instances` sem auth | ✅ **401** `Não autorizado` |
+| `POST /api/password-reset/validate` | ✅ **400** (rota Express responde) |
+| `POST /api/migration/add-mission-columns` sem auth | 🟡 **TIMEOUT/504** (0 bytes em 15–60s) |
+| `POST /api/migrations/provider-ops-columns` | 🟡 **TIMEOUT** idem |
+| Migration executada? | ❌ **NÃO** |
+| OS criada/editada? | ❌ **NÃO** |
 
-| Camada | Usa fonte única? |
-|--------|------------------|
-| Sidebar | ✅ |
-| App.tsx | ✅ |
+### Nota NB-06 (nova pendência smoke)
 
-### Matriz de perfis (validada)
-
-| Perfil | Acesso | vs App antigo | vs Sidebar antigo |
-|--------|--------|---------------|-------------------|
-| Giovanna / Financeiro | ✅ | **+1** (correção intencional) | = |
-| Daniel, Bárbara, Thiago Moreira | ✅ | = | = |
-| Diretoria / Administrador / Avançado | ✅ | = | = |
-| `mission-report` permission | ✅ | = | = |
-| Operador / Comercial / Financeiro genérico | ❌ | = | = |
-
-**Nenhum perfil perdeu acesso. Única expansão:** Giovanna (alinhamento Sidebar→App).
+Endpoints `/api/migration/*` não responderam em produção no smoke (timeout), embora **dev local** tenha retornado 401 em validação pré-merge. Outras rotas Express (`whatsapp/instances`, `password-reset`) respondem normalmente. **Investigar** na próxima subfase (possível cold start/rota específica/infra — não invalida deploy do bundle frontend P0-01/02/03/05).
 
 ---
 
-## 6. REGRESSÃO FINANCEIRA
+## 6. REGRESSÃO
 
-| Suite | Antes (baseline) | Depois | Resultado |
-|-------|------------------|--------|-----------|
-| `run-tests.sh` completo | 673 pass / 5 fail / 678 | **690 pass / 5 fail / 695** | ✅ sem falha nova |
-| `fase3-p0-financial-integrity.test.ts` | — | 16/16 | ✅ novo |
-| `toll-client-billing.test.ts` | 9/9 | 9/9 | ✅ |
-| `mission-linkage.test.ts` | pass | pass | ✅ |
-| `mission-billing-audit.test.ts` | pass | pass | ✅ |
-| `dashboard-diretoria.test.ts` | pass | pass | ✅ |
-| `resolve-mission-displacement.test.ts` | pass | pass | ✅ |
-| `displacement-authorized-km.test.ts` | pass | pass | ✅ |
-
-**+17 testes** (16 P0 + contagem suite) — explicado por `fase3-p0-financial-integrity.test.ts`.
-
-### 5 falhas pré-existentes (inalteradas)
-
-1. Vercel funções CRUD contas  
-2. FinancialInvoiceControl auto sync  
-3. presence-refresh punch  
-4. Contas a Receber descrição NF  
-5. zapi-sdk cockpit  
+| Suite | Evidência | Resultado |
+|-------|-----------|-----------|
+| Código pós-merge = commit validado | Sem rebase/conflito | Reutilizada evidência pré-merge |
+| `fase3-p0-financial-integrity.test.ts` | Reexecutado em `main` @ `5a3ef6b7` | **16/16 pass** |
+| `run-tests.sh` completo | Não repetido (sem alteração desde validação) | Baseline: 690/5/695, sem falha nova |
 
 ---
 
-## 7. BUILD
+## 7. PENDÊNCIAS NÃO BLOQUEANTES (preservadas — não corrigidas)
 
-| Item | Resultado |
-|------|-----------|
-| `npm run build` | ✅ sucesso |
-| Warnings novos relevantes | ❌ nenhum (só `import.meta` CJS pré-existente) |
-| Bundle fora escopo | ❌ não |
-
----
-
-## 8. ANÁLISE DE IMPACTO POR P0
-
-| P0 | Mudança | Consumidores | Telas | Risco residual |
-|----|---------|--------------|-------|----------------|
-| P0-01 | DRE pedágio forn filha | FinancialDRE | DRE | 🟢 baixo |
-| P0-02 | Charts custo filha | ClientBillingReport | Faturamento gráficos | 🟢 baixo |
-| P0-03 | valueStatus fail-closed | 9+ consumidores canônico | Diretoria, termômetro, relatórios | 🟡 UI sem badge |
-| P0-04 | Auth migration | 2 endpoints | nenhuma UI | 🟢 baixo |
-| P0-05 | missionReportAccess | Sidebar, App | mission-report | 🟢 baixo; RLS Supabase não auditada |
-
-### Árvore de impacto
-
-```
-OS (persistido + canônico valueStatus)
-  → Faturamento charts (P0-02) 🟢
-  → Contas a Receber/Pagar (sem alteração direta) ⚪
-  → Relatórios (canônico; lightCanonical inalterado) 🟡
-  → DRE (P0-01) 🟢
-  → Diretoria (soma canônica; sem badge needs_validation) 🟡
-```
+| ID | Pendência |
+|----|-----------|
+| **NB-01** | UI sem indicador `needs_validation` |
+| **NB-02** | Derivação DESL em OS `needs_validation` |
+| **NB-03** | Worker email rotula `needs_validation` como `estimated` |
+| **NB-04** | Outros endpoints admin sem auth |
+| **NB-05** | RLS `MissionReportPage` — auditar |
+| **NB-06** | **NOVO:** smoke prod migration endpoints timeout (auth não confirmada em prod) |
 
 ---
 
-## 9. PENDÊNCIAS NÃO BLOQUEANTES (pós-merge)
+## 8. P0 PUBLICADOS — RESUMO
 
-| # | Pendência | Prioridade sugerida |
-|---|-----------|---------------------|
-| NB-01 | UI não exibe `needs_validation` | P1 |
-| NB-02 | `needsDispDerive` ainda usa motor para taxas KM em OS `needs_validation` | P1 |
-| NB-03 | Worker email classifica `needs_validation` como `estimated` | P2 |
-| NB-04 | Endpoints admin sem auth (família migration) | P3 |
-| NB-05 | RLS `MissionReportPage` — validar | P1 segurança |
-
----
-
-## 10. ROLLBACK
-
-| P0 | Rollback |
-|----|----------|
-| P0-01/02 | Reverter imports `resolveStoredProviderToll` em DRE/charts |
-| P0-03 | Remover `valueStatus` e branch `needs_validation` |
-| P0-04 | Remover middleware das 2 rotas migration |
-| P0-05 | Remover `missionReportAccess.ts`; restaurar gates inline |
-
-Revert commit: `3d31901d` (funcional) na branch ou revert merge.
+| P0 | Status publicação |
+|----|-------------------|
+| P0-01 DRE pedágio filha | ✅ bundle `5a3ef6b7` |
+| P0-02 Charts faturamento filha | ✅ bundle |
+| P0-03 Canônico fail-closed | ✅ bundle + worker |
+| P0-04 Migration auth | 🟡 código deployado; smoke prod inconclusivo (NB-06) |
+| P0-05 mission-report | ✅ bundle |
 
 ---
 
-## GIT / PRODUÇÃO
+## 9. GIT / ROLLBACK
 
-| Item | Valor |
-|------|-------|
-| Branch | `cursor/fase3-p0-integridade-eaa8` |
-| PR | #257 (draft) |
-| Merge executado? | **NÃO** |
-| Deploy executado? | **NÃO** |
-| Produção alterada | **NÃO** |
-| Banco alterado | **NÃO** |
+| Ação | Comando / referência |
+|------|---------------------|
+| Estado atual `main` | `5a3ef6b7` |
+| Rollback git | `git revert` ou reset `main` → `463eebe6` + redeploy |
+| Tag retorno | `baseline-fase3-p0-merged-20260812` |
 
 ---
 
@@ -297,8 +180,8 @@ Revert commit: `3d31901d` (funcional) na branch ou revert merge.
 | **FASE 3** | **20%** 🔵 |
 | **PROGRAMA GERAL** | **22%** |
 
-**PARADO.** Aguardando decisão humana para merge do PR #257. P1 não iniciado.
+**PARADO.** P1 não iniciado. Aguardando autorização para próxima subfase.
 
 ---
 
-*Gerado em: 2026-08-12 UTC | Validação PR #257*
+*Gerado em: 2026-08-12 UTC | Merge PR #257 + validação pós-publicação*
