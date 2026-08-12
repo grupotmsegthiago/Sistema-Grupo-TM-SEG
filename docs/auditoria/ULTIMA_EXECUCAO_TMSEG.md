@@ -13,8 +13,8 @@
 | **Data** | 2026-08-12 (UTC) |
 | **Fase** | **Fase 1 — Encerramento formal** |
 | **Objetivo** | Fechar a Fase 1 (auditoria inicial, hotfix Resend, governança, validação final) sem iniciar Fase 2 |
-| **Branch de trabalho** | `cursor/resend-validacao-final-eaa8` → PR #255 |
-| **Produção (`main`)** | `d487f469` — versão `3.7.60` |
+| **Branch de trabalho** | `cursor/resend-validacao-final-eaa8` → PR #255 (**MERGED**) |
+| **Produção (`main`)** | `1a3dc010` — versão `3.7.60` (deploy prod anterior: `d487f469`) |
 | **Produção alterada nesta execução** | **NÃO** |
 | **Código funcional alterado nesta execução** | **NÃO** |
 
@@ -129,9 +129,10 @@ Previne:
 | Tag | Commit | Descrição |
 |-----|--------|-----------|
 | `baseline-fase1-20260812` | `88992034` | Baseline inicial pré-hotfix Resend — **preservada** |
-| `baseline-fase1-final-20260812` | ver commit pós-merge PR #255 | Marco final aprovado da Fase 1 |
+| `baseline-fase1-final-20260812` | `13c2bd77` | Marco documental pré-merge PR #255 (branch) |
+| `baseline-fase1-merged-20260812` | `1a3dc010` | Marco imutável pós-merge PR #255 em `main` |
 
-Tag `baseline-fase1-final-20260812` existia em `147318e9` (pós-PR #254). Atualizada nesta execução para o commit de encerramento documental (handoff final).
+**Divergência:** `baseline-fase1-final-20260812` aponta para o tip da branch (`13c2bd77`), não para o merge commit em `main` (`1a3dc010`). Tag **não reescrita** (imutabilidade). Usar `baseline-fase1-merged-20260812` como referência final em `main`.
 
 ---
 
@@ -141,9 +142,9 @@ Tag `baseline-fase1-final-20260812` existia em `147318e9` (pós-PR #254). Atuali
 |----|--------|--------|----------|------|
 | **#253** | handoff oficial Fase 1 + governança | **MERGED** (2026-08-12) | Somente docs | ✅ Concluído |
 | **#254** | hotfix Resend hardcode | **MERGED** (2026-08-12) | Edge Function + teste anti-hardcode | ✅ Concluído |
-| **#255** | validação final + encerramento Fase 1 | **OPEN** | Somente docs (`ULTIMA_EXECUCAO_TMSEG.md`, teste fail-safe) | **Mergear** para `main` |
+| **#255** | encerramento formal Fase 1 | **MERGED** (2026-08-12 13:55 UTC) | Somente docs + teste fail-safe | ✅ Concluído |
 
-**Ordem:** #253 e #254 já mergeados. **Mergear #255** para consolidar handoff de encerramento em `main`. Sem alteração funcional.
+**Encerramento administrativo:** PR #255 mergeado em `main` @ `1a3dc010`. Sem alteração funcional adicional.
 
 ---
 
@@ -184,8 +185,8 @@ Tag `baseline-fase1-final-20260812` existia em `147318e9` (pós-PR #254). Atuali
 | Banco / RLS | **Nenhuma** |
 | Vercel / produção | **Nenhuma** |
 | Chaves Resend | **Nenhuma revogada** |
-| Documentação | Este handoff (encerramento Fase 1) |
-| Tag Git | `baseline-fase1-final-20260812` atualizada |
+| Documentação | Handoff encerramento + registro merge PR #255 |
+| Tag Git | `baseline-fase1-merged-20260812` criada em `1a3dc010` |
 
 ---
 
