@@ -97,6 +97,7 @@ import AppErrorBoundary from './components/AppErrorBoundary';
 import { wireUserActivityTracker, touchUserActivity } from './lib/userActivityTracker';
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
+import { canAccessMissionReport } from './lib/missionReportAccess';
 import { canAccessDiretoriaMenu } from './lib/diretoriaAccess';
 import { canViewOsAnalysisPendencies } from './lib/osAnalysisAccess';
 import OsAnalysisPendingPage from './components/OsAnalysisPendingPage';
@@ -481,13 +482,7 @@ const App: React.FC = () => {
       case 'reports': return <ReportsDashboard />;
       case 'mission-report': {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
-        const nm = (u.name || '').toLowerCase();
-        const rl = (u.role || '').toLowerCase();
-        const perms: string[] = Array.isArray(u.permissions) ? u.permissions : [];
-        const allowed = ['daniel', 'barbara', 'bárbara', 'thiago moreira'].some(n => nm.includes(n))
-          || rl === 'diretoria' || rl === 'administrador' || rl === 'avançado' || rl === 'avancado'
-          || perms.includes('mission-report');
-        return allowed ? <MissionReportPage /> : <Dashboard />;
+        return canAccessMissionReport(u) ? <MissionReportPage /> : <Dashboard />;
       }
       case 'ranking-dhl': {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();

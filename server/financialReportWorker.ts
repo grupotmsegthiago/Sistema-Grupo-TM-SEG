@@ -115,7 +115,7 @@ function computeMissionRevenue(
     client, ts,
     revenue: c.rev,
     cost: c.cost,
-    source: c.source === 'saved' ? 'saved' : 'estimated',
+    source: c.valueStatus === 'official' ? 'saved' : 'estimated',
   };
 }
 

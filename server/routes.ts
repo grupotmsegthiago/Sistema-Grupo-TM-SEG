@@ -2661,7 +2661,7 @@ export async function registerRoutes(
     }
   })();
 
-  app.post('/api/migration/add-mission-columns', async (_req: Request, res: Response) => {
+  app.post('/api/migration/add-mission-columns', requireAuth, requireRole('diretoria', 'administrador'), async (_req: Request, res: Response) => {
     res.json({
       message: 'Execute o seguinte SQL no Supabase SQL Editor:',
       sql: [
@@ -5110,7 +5110,7 @@ export async function registerRoutes(
       }
   });
 
-  app.post("/api/migrations/provider-ops-columns", async (_req: Request, res: Response) => {
+  app.post("/api/migrations/provider-ops-columns", requireAuth, requireRole('diretoria', 'administrador'), async (_req: Request, res: Response) => {
     try {
       const sbUrl = getSupabaseUrl();
       const sbKey = getSupabaseServiceRoleKey();

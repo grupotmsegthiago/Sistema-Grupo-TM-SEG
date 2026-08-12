@@ -7,7 +7,7 @@ import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw, Send } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, resolveCancelledWindow } from '../lib/financialUtils';
 import { resolveMissionDisplacement } from '../lib/billing/resolveMissionDisplacement';
-import { resolveStoredClientToll } from '../lib/toll/clientTollBilling';
+import { resolveStoredClientToll, resolveStoredProviderToll } from '../lib/toll/clientTollBilling';
 import { computeDhlBand, findDhlAutoClient, selectDhlClientTable, DHL_CLIENT_NAME } from '../lib/dhlAutoTableSelector';
 import MissionFinancialModal from './MissionFinancialModal';
 
@@ -642,8 +642,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const dispVal = dispChart.client;
             const dispProv = dispChart.provider;
             revenue = (m.revenue_value || 0) + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider) + dispVal;
-            const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-            cost = (m.cost_value || 0) + tollProv + dispProv;
+            const isSameOsChild = !!(m as { is_same_os?: boolean }).is_same_os;
+            const tollProv = resolveStoredProviderToll(m.toll_value || 0, m.toll_value_provider, isSameOsChild);
+            const costBase = isSameOsChild ? 0 : (m.cost_value || 0);
+            cost = costBase + tollProv + dispProv;
             const mLucro = revenue - cost;
             const mPct = revenue > 0 ? Math.round((mLucro / revenue) * 100) : 0;
 

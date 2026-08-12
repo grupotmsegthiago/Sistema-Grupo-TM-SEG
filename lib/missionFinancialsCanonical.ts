@@ -33,6 +33,8 @@ export interface CanonicalResult {
   cost: number;      // costBase + tollCost + dispCost — o "custo total" da OS
   profit: number;    // rev - cost
   source: 'saved' | 'estimated' | 'mixed';
+  /** official = persistido; estimated = projeção legítima; needs_validation = aprovado sem dado oficial completo */
+  valueStatus: 'official' | 'estimated' | 'needs_validation';
 }
 
 const num = (v: any): number => (typeof v === 'number' && isFinite(v)) ? v : 0;
@@ -40,7 +42,7 @@ const num = (v: any): number => (typeof v === 'number' && isFinite(v)) ? v : 0;
 const ZERO_RESULT: CanonicalResult = {
   revBase: 0, tollRev: 0, dispRev: 0, rev: 0,
   costBase: 0, tollCost: 0, dispCost: 0, cost: 0,
-  profit: 0, source: 'saved',
+  profit: 0, source: 'saved', valueStatus: 'official',
 };
 
 /**
@@ -65,24 +67,37 @@ export function computeCanonicalRevenueCost(
 
   const hasStoredRev = (m.revenue_value != null && m.revenue_value > 0);
   const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
+  const revExplicitlySaved = m.revenue_value != null;
+  const costExplicitlySaved = m.cost_value != null;
   const isVerified = !!(m.billing_approved || m.billing_verified_by);
+  const isSameOs = !!m.is_same_os;
   const hasSavedValues = isVerified && (hasStoredRev || hasStoredCost || m.revenue_value === 0 || m.cost_value === 0);
 
   // Pedágio recebido = toll_value (com regra; legado aplica na leitura);
   // pedágio pago = toll_value_provider (valor real; fallback toll_value).
   const tollRev = resolveStoredClientToll(m.toll_value, m.toll_value_provider);
-  const tollCost = resolveStoredProviderToll(m.toll_value, m.toll_value_provider, !!m.is_same_os);
+  const tollCost = resolveStoredProviderToll(m.toll_value, m.toll_value_provider, isSameOs);
 
   let revBase = 0;
   let costBase = 0;
   let clientUnitKm = 0;
   let providerUnitKm = 0;
   let source: CanonicalResult['source'] = 'estimated';
+  let valueStatus: CanonicalResult['valueStatus'] = 'estimated';
 
-  if (hasSavedValues || (hasStoredRev && hasStoredCost)) {
+  const missingOfficialRev = isVerified && !revExplicitlySaved;
+  const missingOfficialCost = isVerified && !isSameOs && !costExplicitlySaved;
+
+  if (missingOfficialRev || missingOfficialCost) {
+    revBase = revExplicitlySaved ? num(m.revenue_value) : 0;
+    costBase = isSameOs ? 0 : (costExplicitlySaved ? num(m.cost_value) : 0);
+    source = (revExplicitlySaved || costExplicitlySaved) ? 'mixed' : 'saved';
+    valueStatus = 'needs_validation';
+  } else if (hasSavedValues || (hasStoredRev && hasStoredCost)) {
     revBase = num(m.revenue_value);
-    costBase = num(m.cost_value);
+    costBase = isSameOs ? 0 : num(m.cost_value);
     source = 'saved';
+    valueStatus = 'official';
   } else {
     if (hasStoredRev) revBase = num(m.revenue_value);
     if (hasStoredCost) costBase = num(m.cost_value);
@@ -112,8 +127,10 @@ export function computeCanonicalRevenueCost(
         // mantém parciais se a estimativa falhar
       }
       source = (hasStoredRev || hasStoredCost) ? 'mixed' : 'estimated';
+      valueStatus = 'estimated';
     } else {
       source = 'saved';
+      valueStatus = 'official';
     }
   }
 
@@ -161,7 +178,7 @@ export function computeCanonicalRevenueCost(
 
   const rev = revBase + tollRev + dispRev;
   const cost = costBase + tollCost + dispCost;
-  return { revBase, tollRev, dispRev, rev, costBase, tollCost, dispCost, cost, profit: rev - cost, source };
+  return { revBase, tollRev, dispRev, rev, costBase, tollCost, dispCost, cost, profit: rev - cost, source, valueStatus };
 }
 
 /**

@@ -6,7 +6,7 @@ import { formatDateBR } from '../lib/dateUtils';
 import { FinancialCategory, FinancialTransaction } from '../types';
 import { Calendar, FileText, Download, Loader2, Printer, TrendingUp, DollarSign, RefreshCw } from 'lucide-react';
 import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
-import { resolveStoredClientToll } from '../lib/toll/clientTollBilling';
+import { resolveStoredClientToll, resolveStoredProviderToll } from '../lib/toll/clientTollBilling';
 
 const getTodayBR = (): string => {
     const now = new Date();
@@ -105,8 +105,14 @@ const FinancialDRE: React.FC = () => {
             const missionTollClient = missions.reduce((acc: number, m: any) => acc + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider), 0);
             const missionDisplacementClient = missions.reduce((acc: number, m: any) => acc + (m.displacement_value || 0), 0);
             const missionCost = missions.filter((m: any) => m.is_same_os !== true).reduce((acc: number, m: any) => acc + (m.cost_value || 0), 0);
-            const missionTollProvider = missions.reduce((acc: number, m: any) => acc + (m.toll_value_provider || m.toll_value || 0), 0);
-            const missionDisplacementProvider = missions.reduce((acc: number, m: any) => acc + (m.displacement_value_provider || 0), 0);
+            const missionTollProvider = missions.reduce(
+                (acc: number, m: any) => acc + resolveStoredProviderToll(m.toll_value || 0, m.toll_value_provider, !!m.is_same_os),
+                0,
+            );
+            const missionDisplacementProvider = missions.reduce(
+                (acc: number, m: any) => acc + (m.is_same_os === true ? 0 : (m.displacement_value_provider || 0)),
+                0,
+            );
             const totalMissionCount = missions.length;
 
             const rows: DRERow[] = [];

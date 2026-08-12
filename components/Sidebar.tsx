@@ -7,6 +7,7 @@ import {
 import { NAV_ITEMS, APP_VERSION } from '../constants';
 import { NavItem } from '../constants'; // Explicit import to avoid TS error if NAV_ITEMS interface isn't exported correctly
 import { logAction } from '../lib/logger';
+import { canAccessMissionReport } from '../lib/missionReportAccess';
 import { canAccessDiretoriaMenu, DIRETORIA_MENU_SCREEN_IDS } from '../lib/diretoriaAccess';
 import { canRequestOsAnalysis } from '../lib/osAnalysisAccess';
 
@@ -166,12 +167,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
     }
 
     if (itemId === 'mission-report') {
-      const nameLower = (currentUser?.name || '').toLowerCase();
-      const allowedNames = ['daniel', 'barbara', 'bárbara', 'giovanna', 'thiago moreira'];
-      if (allowedNames.some(n => nameLower.includes(n))) return true;
-      if (role === 'diretoria' || role === 'administrador' || role === 'avançado' || role === 'avancado') return true;
-      if (userPermissions.includes('mission-report')) return true;
-      return false;
+      return canAccessMissionReport(currentUser);
     }
 
     if (role === 'financeiro') {
