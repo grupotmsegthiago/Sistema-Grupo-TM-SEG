@@ -4,14 +4,23 @@ import fs from 'node:fs';
 
 import addMissionHandler from '../api/migration-add-mission-columns.ts';
 import providerOpsHandler from '../api/migrations-provider-ops-columns.ts';
+import {
+  ADD_MISSION_COLUMNS_RESPONSE,
+  buildProviderOpsColumnsResponse,
+} from '../lib/migrationEndpointPayloads.ts';
 
 function mockRes() {
-  const state: { statusCode: number; body: unknown } = { statusCode: 200, body: null };
+  const state: { statusCode: number; body: unknown; headers: Record<string, string> } = {
+    statusCode: 200,
+    body: null,
+    headers: {},
+  };
   const res = {
     statusCode: 200,
     headers: {} as Record<string, string>,
     setHeader(k: string, v: string) {
       this.headers[k] = v;
+      state.headers[k] = v;
     },
     status(code: number) {
       state.statusCode = code;
@@ -27,10 +36,29 @@ function mockRes() {
   return { res, state };
 }
 
-async function invoke(handler: (req: any, res: any) => Promise<void>, method: string, headers: Record<string, string> = {}) {
+async function invoke(
+  handler: (req: any, res: any) => Promise<void>,
+  method: string,
+  headers: Record<string, string> = {},
+) {
   const { res, state } = mockRes();
   await handler({ method, headers }, res);
   return state;
+}
+
+function resolveRewrite(path: string): string | null {
+  const vercel = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));
+  const rewrites = vercel.rewrites as { source: string; destination: string }[];
+  for (const rule of rewrites) {
+    const src = rule.source;
+    if (src === path) return rule.destination;
+    if (src.includes(':')) {
+      const pattern = '^' + src.replace(/:[^/]+/g, '[^/]+').replace(/\(\.\*\)/g, '.*') + '$';
+      if (new RegExp(pattern).test(path)) return rule.destination;
+    }
+    if (src === '/api/(.*)' && path.startsWith('/api/')) return rule.destination;
+  }
+  return null;
 }
 
 describe('NB-06 — migration handlers leves (auth antes de payload)', () => {
@@ -40,7 +68,7 @@ describe('NB-06 — migration handlers leves (auth antes de payload)', () => {
     assert.match(String((state.body as any)?.error || ''), /Não autorizado/i);
   });
 
-  it('add-mission-columns: token inválido → 403', async () => {
+  it('add-mission-columns: token inválido → 401/403', async () => {
     const state = await invoke(addMissionHandler, 'POST', {
       authorization: 'Bearer invalid-token-xyz',
     });
@@ -69,6 +97,37 @@ describe('NB-06 — migration handlers leves (auth antes de payload)', () => {
     }
   });
 
+  it('handlers migration não executam SQL (sem Supabase/exec_sql/fetch)', () => {
+    const forbidden = /createClient|exec_sql|from\(['"]missions|\.rpc\(|fetch\(/i;
+    for (const file of [
+      'api/migration-add-mission-columns.ts',
+      'api/migrations-provider-ops-columns.ts',
+      'lib/migrationApiAuth.ts',
+      'lib/migrationEndpointPayloads.ts',
+    ]) {
+      const src = fs.readFileSync(file, 'utf8');
+      assert.doesNotMatch(src, forbidden, `${file} não deve tocar banco`);
+    }
+  });
+
+  it('payload dedicado add-mission equivale ao SSOT lib', async () => {
+    const state = await invoke(addMissionHandler, 'POST', {
+      authorization: 'Bearer tmseg-token-fake-user-1',
+    });
+    assert.ok(state.statusCode === 401 || state.statusCode === 403);
+    assert.deepEqual(ADD_MISSION_COLUMNS_RESPONSE.message, 'Execute o seguinte SQL no Supabase SQL Editor:');
+    assert.equal(ADD_MISSION_COLUMNS_RESPONSE.sql.length, 4);
+  });
+
+  it('payload dedicado provider-ops equivale ao SSOT lib', () => {
+    const payload = buildProviderOpsColumnsResponse();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.method, 'manual');
+    assert.equal(payload.columns.length, 13);
+    assert.match(payload.sql, /provider_start_km/);
+    assert.match(payload.hint, /SQL Editor/i);
+  });
+
   it('vercel.json reescreve rotas migration para handlers leves', () => {
     const vercel = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));
     const rewrites = vercel.rewrites as { source: string; destination: string }[];
@@ -82,5 +141,90 @@ describe('NB-06 — migration handlers leves (auth antes de payload)', () => {
     const routes = fs.readFileSync('server/routes.ts', 'utf8');
     assert.match(routes, /app\.post\('\/api\/migration\/add-mission-columns', requireAuth, requireRole\('diretoria', 'administrador'\)/);
     assert.match(routes, /app\.post\("\/api\/migrations\/provider-ops-columns", requireAuth, requireRole\('diretoria', 'administrador'\)/);
+  });
+});
+
+describe('NB-06 — hardening endpoints 🔴 (auth obrigatória)', () => {
+  it('run-monthly-logs-cleanup exige requireAuth + administrador/diretoria', () => {
+    const routes = fs.readFileSync('server/routes.ts', 'utf8');
+    assert.match(
+      routes,
+      /app\.post\('\/api\/admin\/run-monthly-logs-cleanup', requireAuth, requireRole\('administrador', 'diretoria'\)/,
+    );
+  });
+
+  it('fix-ceva-logitech-values exige requireAuth + diretoria/administrador/financeiro', () => {
+    const routes = fs.readFileSync('server/routes.ts', 'utf8');
+    assert.match(
+      routes,
+      /app\.post\("\/api\/missions\/fix-ceva-logitech-values", requireAuth, requireRole\('diretoria', 'administrador', 'financeiro'\)/,
+    );
+  });
+
+  it('Express local: endpoints protegidos rejeitam sem token e GET inválido', async () => {
+    const { getApp } = await import('../server/createApp.ts');
+    const app = await getApp();
+    const server = app.listen(0);
+    try {
+      const port = (server.address() as { port: number }).port;
+      const base = `http://127.0.0.1:${port}`;
+      for (const path of [
+        '/api/admin/run-monthly-logs-cleanup',
+        '/api/missions/fix-ceva-logitech-values',
+        '/api/migration/add-mission-columns',
+        '/api/migrations/provider-ops-columns',
+      ]) {
+        const r = await fetch(`${base}${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        assert.equal(r.status, 401, `${path} deve retornar 401 sem token`);
+      }
+      const getR = await fetch(`${base}/api/migration/add-mission-columns`);
+      assert.equal(getR.status, 404);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
+describe('NB-06 — regressão de roteamento vercel.json', () => {
+  it('catch-all /api/(.*) é o último rewrite de API', () => {
+    const vercel = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));
+    const rewrites = vercel.rewrites as { source: string; destination: string }[];
+    const apiRewrites = rewrites.filter((r) => r.source.startsWith('/api'));
+    const catchAllIdx = apiRewrites.findIndex((r) => r.source === '/api/(.*)');
+    assert.ok(catchAllIdx >= 0);
+    assert.equal(catchAllIdx, apiRewrites.length - 1);
+  });
+
+  it('rotas migration ficam antes do catch-all', () => {
+    const vercel = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));
+    const rewrites = vercel.rewrites as { source: string; destination: string }[];
+    const idxMigration = rewrites.findIndex((r) => r.source === '/api/migration/add-mission-columns');
+    const idxCatchAll = rewrites.findIndex((r) => r.source === '/api/(.*)');
+    assert.ok(idxMigration >= 0 && idxCatchAll >= 0);
+    assert.ok(idxMigration < idxCatchAll);
+  });
+
+  it('amostra de rotas dedicadas existentes não mudou destino', () => {
+    const samples: Array<[string, string]> = [
+      ['/api/health', '/api/health'],
+      ['/api/version', '/api/version'],
+      ['/api/billing/ensure-schema', '/api/billing-ensure-schema'],
+      ['/api/recalculate-open', '/api/recalculate-open'],
+      ['/api/nf/summary', '/api/nf-control?op=summary'],
+      ['/api/whatsapp/groups', '/api/whatsapp/groups'],
+    ];
+    for (const [path, expected] of samples) {
+      const dest = resolveRewrite(path);
+      assert.equal(dest, expected, `${path} deve continuar → ${expected}`);
+    }
+  });
+
+  it('rotas catch-all ainda apontam para api/index', () => {
+    assert.equal(resolveRewrite('/api/chat'), '/api/index');
+    assert.equal(resolveRewrite('/api/admin/manual-override-settings'), '/api/index');
   });
 });

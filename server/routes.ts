@@ -75,6 +75,7 @@ import {
   listPatrimonioBackups,
   restorePatrimonioFromBackup,
 } from "./patrimonioStore";
+import { ADD_MISSION_COLUMNS_RESPONSE, buildProviderOpsColumnsResponse } from "../lib/migrationEndpointPayloads";
 import { isLongRunningHost } from "./runtime";
 import { registerScheduledTick } from "./scheduledRegistry";
 import { registerMaintenanceTick } from "./maintenanceJobs";
@@ -2662,15 +2663,7 @@ export async function registerRoutes(
   })();
 
   app.post('/api/migration/add-mission-columns', requireAuth, requireRole('diretoria', 'administrador'), async (_req: Request, res: Response) => {
-    res.json({
-      message: 'Execute o seguinte SQL no Supabase SQL Editor:',
-      sql: [
-        "ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT '';",
-        "ALTER TABLE missions ADD COLUMN IF NOT EXISTS reference_number TEXT DEFAULT '';",
-        "ALTER TABLE missions ADD COLUMN IF NOT EXISTS billing_release TEXT DEFAULT '';",
-        "NOTIFY pgrst, 'reload schema';"
-      ]
-    });
+    res.json(ADD_MISSION_COLUMNS_RESPONSE);
   });
 
   // CRÍTICO (Vercel): estas migrations NÃO podem bloquear registerRoutes/getApp.
@@ -4882,7 +4875,7 @@ export async function registerRoutes(
   }
 
   // Endpoint manual pra forçar a limpeza mensal (útil pra testes/diretoria)
-  app.post('/api/admin/run-monthly-logs-cleanup', async (_req: Request, res: Response) => {
+  app.post('/api/admin/run-monthly-logs-cleanup', requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
       try {
           const results = await runMonthlySystemLogsCleanup();
           res.json({ ok: true, results });
@@ -5111,50 +5104,10 @@ export async function registerRoutes(
   });
 
   app.post("/api/migrations/provider-ops-columns", requireAuth, requireRole('diretoria', 'administrador'), async (_req: Request, res: Response) => {
-    try {
-      const sbUrl = getSupabaseUrl();
-      const sbKey = getSupabaseServiceRoleKey();
-      if (!sbUrl || !sbKey) return res.status(503).json({ error: 'Supabase não configurado' });
-      const headers = { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
-
-      const columns = [
-        { name: 'provider_start_km', type: 'double precision' },
-        { name: 'provider_end_km', type: 'double precision' },
-        { name: 'provider_start_time', type: 'timestamptz' },
-        { name: 'provider_end_time', type: 'timestamptz' },
-        { name: 'provider_ops_edited', type: 'boolean default false' },
-        { name: 'revenue_edit_reason', type: 'text' },
-        { name: 'cost_edit_reason', type: 'text' },
-        { name: 'vendor_os_number', type: 'text' },
-        { name: 'invoice_number', type: 'text' },
-        { name: 'release_date', type: 'text' },
-        { name: 'payment_date', type: 'text' },
-        { name: 'verified_by', type: 'text' },
-        { name: 'verified_at', type: 'timestamptz' }
-      ];
-
-      const results: string[] = [];
-      for (const col of columns) {
-        try {
-          const rpcRes = await fetch(`${sbUrl}/rest/v1/rpc/`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({})
-          });
-          results.push(`${col.name}: attempted`);
-        } catch (e: any) {
-          results.push(`${col.name}: ${e.message}`);
-        }
-      }
-
-      const sqlStatements = columns.map(c => `ALTER TABLE missions ADD COLUMN IF NOT EXISTS ${c.name} ${c.type};`).join('\n');
-      res.json({ ok: true, method: 'manual', columns: columns.map(c => c.name), sql: sqlStatements, hint: 'Execute this SQL in Supabase SQL Editor if columns do not exist' });
-    } catch (e: any) {
-      res.json({ ok: false, error: e.message });
-    }
+    res.json(buildProviderOpsColumnsResponse());
   });
 
-  app.post("/api/missions/fix-ceva-logitech-values", async (_req: Request, res: Response) => {
+  app.post("/api/missions/fix-ceva-logitech-values", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (_req: Request, res: Response) => {
     try {
       const sbUrl = getSupabaseUrl();
       const sbKey = getSupabaseServerKey();
