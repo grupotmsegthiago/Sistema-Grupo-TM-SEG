@@ -747,7 +747,7 @@ Qualquer dúvida, estamos a disposição.
                                 <Layers size={10} /> MESMA OS
                             </span>
                         )}
-                        {mission.parent_mission_id && !hideProviderInfo && (
+                        {mission.is_same_os && mission.parent_mission_id && !hideProviderInfo && (
                             <span className="bg-blue-600 text-white px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 border border-blue-700 shadow-sm" title={`Vinculada à OS Principal: ${mission.parent_mission_id}`}>
                                 <Link2 size={10} /> MÃE: {mission.parent_mission_id}
                             </span>

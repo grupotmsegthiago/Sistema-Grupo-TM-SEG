@@ -21,6 +21,7 @@ import {
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 
 const COLORS = ['#dc2626', '#059669', '#2563eb', '#d97706', '#7c3aed', '#ec4899', '#0891b2', '#84cc16'];
 const STATUS_COLORS: Record<string, string> = {
@@ -87,6 +88,9 @@ const mapViewPeriodToDash = (vp?: string): DashPeriod => {
 };
 
 const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTables, providerTables, clientsData, onOpenMission, onRefreshMissions, viewPeriod: parentPeriod, customStartDate: parentStartDate, customEndDate: parentEndDate }) => {
+    useRealtimeRefresh('missions', () => {
+        if (onRefreshMissions) onRefreshMissions();
+    });
 
     const [refreshKey, setRefreshKey] = useState(0);
     const [lastUpdate, setLastUpdate] = useState(new Date());

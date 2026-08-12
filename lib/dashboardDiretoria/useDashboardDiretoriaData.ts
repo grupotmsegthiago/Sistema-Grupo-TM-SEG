@@ -3,6 +3,7 @@ import { supabase } from '../supabase';
 import { authFetch } from '../authFetch';
 import { useRealtimeRefresh } from '../RealtimeProvider';
 import { listBalanceSnapshotsDirect } from '../investment/snapshotClient';
+import { fetchAllPages } from '../supabasePaging';
 import { fetchEmployeeCostSummary } from '../rh/fetchEmployeeCostSummary';
 import type { Client, ClientPriceTable, FinancialCategory, FinancialTransaction, Mission, ProviderCostTable } from '../../types';
 import {
@@ -34,18 +35,9 @@ function latestBalanceByAccount(
   return out;
 }
 
-async function fetchAllPages<T>(buildQuery: (from: number, size: number) => Promise<{ data: T[] | null; error: any }>, pageSize = 1000): Promise<T[]> {
-  const all: T[] = [];
-  let from = 0;
-  while (true) {
-    const { data, error } = await buildQuery(from, pageSize);
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    all.push(...data);
-    if (data.length < pageSize) break;
-    from += pageSize;
-  }
-  return all;
+async function fetchAllPagesLegacy<T>(buildQuery: (from: number, size: number) => Promise<{ data: T[] | null; error: any }>, pageSize = 1000): Promise<T[]> {
+  const { rows } = await fetchAllPages(buildQuery, pageSize);
+  return rows;
 }
 
 /**
@@ -184,20 +176,24 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
         empsRes,
         costSummaryRes,
       ] = await Promise.all([
-        fetchAllPages((from, size) =>
+        fetchAllPagesLegacy((from, size) =>
           supabase.from('missions').select('*').or(rangeOr).order('created_at', { ascending: false }).range(from, from + size - 1)
         ),
-        fetchAllPages((from, size) =>
+        fetchAllPagesLegacy((from, size) =>
           supabase.from('missions').select('*').or(openOr).order('created_at', { ascending: false }).range(from, from + size - 1)
         ),
         supabase.from('client_price_tables').select('*'),
         supabase.from('provider_cost_tables').select('*'),
         supabase.from('clients').select('*'),
-        fetchAllPages((from, size) =>
+        fetchAllPagesLegacy((from, size) =>
           supabase.from('financial_transactions').select('*').order('due_date', { ascending: false }).range(from, from + size - 1)
         ),
         supabase.from('financial_categories').select('*'),
-        supabase.from('quotes').select('id, client_name, status, total_value, created_at').order('created_at', { ascending: false }).limit(500),
+        fetchAllPages((from, size) =>
+          supabase.from('quotes').select('id, client_name, status, total_value, created_at').order('created_at', { ascending: false }).range(from, from + size - 1),
+          500,
+          10_000,
+        ).then((r) => ({ data: r.rows, error: null })),
         supabase.from('financial_accounts').select('id, name, bank_name, initial_balance, status').eq('status', 'Ativo'),
         listBalanceSnapshotsDirect(3650).catch((e) => {
           console.warn('[DashboardDiretoria] snapshots de saldo indisponíveis:', e);

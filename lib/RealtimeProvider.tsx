@@ -156,7 +156,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const handleChange = (table: TableName, payload?: unknown) => {
       if (table === 'missions') {
         const eventType = String((payload as { eventType?: string } | undefined)?.eventType || '');
-        if (eventType === 'INSERT' || eventType === 'DELETE') {
+        if (eventType === 'INSERT' || eventType === 'UPDATE' || eventType === 'DELETE') {
           pendingMissionFullRefreshRef.current = true;
         }
       }

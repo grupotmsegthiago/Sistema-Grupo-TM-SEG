@@ -1,6 +1,6 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — merge PR #258 + fechamento definitivo NB-06 em produção.  
+> Handoff oficial — Fase 3 Bloco P1 (sincronismo, integridade de conjunto e SSOT).  
 > **Não contém segredos.**
 
 ---
@@ -10,14 +10,15 @@
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-12 (UTC) |
-| **Tipo** | Merge controlado PR #258 + validação NB-06 produção |
-| **PR** | [#258](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/258) — **MERGED** |
-| **Branch origem** | `cursor/nb06-migration-504-eaa8` |
-| **Commit funcional `main`** | `b6291411dcbacc1fa00687514bb9f71feb5c2d08` |
-| **Tag** | `baseline-fase3-nb06-merged-20260812` |
-| **Produção** | `https://sistema.grupotmseg.com.br` |
+| **Tipo** | Fase 3 — Bloco P1 (P1-01 a P1-05) |
+| **Branch** | `cursor/fase3-p1-integridade-eaa8` |
+| **Base `main`** | `b6291411dcbacc1fa00687514bb9f71feb5c2d08` |
+| **Tag baseline anterior** | `baseline-fase3-nb06-merged-20260812` |
+| **Produção (inalterada)** | `https://sistema.grupotmseg.com.br` @ `b6291411` |
+| **Produção alterada** | **NÃO** |
 | **Banco alterado** | **NÃO** |
-| **P1 iniciado** | **NÃO** |
+| **NB-07** | **Preservado** — `api/index` catch-all não alterado |
+| **P2/P3** | **NÃO iniciados** |
 
 ---
 
@@ -25,187 +26,189 @@
 
 | Indicador | Valor | Metodologia |
 |-----------|-------|-------------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 | Merge + tag + deploy + smoke NB-06 concluídos |
-| **FASE 3 (total)** | **22%** 🔵 | P0 publicado (20%) + NB-06 resolvido (+2% fechamento operacional P0-04) |
-| **PROGRAMA GERAL** | **23%** | +1% pelo encerramento auditável do débito NB-06 |
+| **EXECUÇÃO ATUAL** | **100%** 🟢 | Investigação + implementação + testes + build + handoff + PR draft |
+| **FASE 3 (total)** | **37%** 🔵 | P0 publicado (20%) + NB-06 (+2%) + P1 implementado (+15%) |
+| **PROGRAMA GERAL** | **38%** | +15% pelo fechamento auditável do bloco P1 |
 
 ### Marcos desta execução
 
 | Marco | % execução | Evidência |
 |-------|------------|-----------|
-| Revalidar HEAD = `b6291411` | 10% | Diff vazio vs commit validado |
-| Merge `main` + PR MERGED | 25% | Fast-forward `420e9680`→`b6291411` |
-| Tag `baseline-fase3-nb06-merged-20260812` | 50% | Push tag OK |
-| Deploy Vercel buildId = commit | 75% | `/api/version` @ 18:25:18Z |
-| Smoke NB-06 + regressão + handoff | **100%** | §5–9 |
+| Reutilizar Raio-X Fase 2 (P1-01…05) | 10% | § P1 abaixo |
+| Implementação mínima (5 itens) | 50% | Commits na branch |
+| Testes P1 + P0 + NB-06 + build | 75% | § Testes |
+| Handoff + PR draft | **100%** | Este documento + PR |
 
 ---
 
 ## DECISÃO FINAL
 
-# 🟢 NB-06 RESOLVIDA
+# 🟢 P1 APTO PARA REVISÃO/MERGE
 
 | Critério | Resultado |
 |----------|-----------|
-| Migration sem auth → 401/403 rápido | ✅ 74–182 ms |
-| Token inválido → 401/403 | ✅ 403 em 85–186 ms |
-| GET → 404/405 | ✅ 405 em 60–74 ms |
-| SQL/migration executado | ❌ **NÃO** |
-| Deploy commit = main | ✅ `b6291411` |
-| Regressão smoke core | ✅ |
+| P1-01 busca OS sem `.limit(300)` | ✅ `searchMissionsByTerm` + aviso Torres |
+| P1-02 realtime Dashboard/DRE | ✅ UPDATE em missions + `ExecutiveDashboard` |
+| P1-03 fork `financialUtils` | ✅ Adaptador SSOT (classificação B) |
+| P1-04 quotes Diretoria | ✅ `fetchAllPages` (teto 10.000) |
+| P1-05 `is_same_os` / vínculo | ✅ Cenários A–D cobertos |
+| Build `npm run build` | ✅ OK |
+| Regressão suíte | ✅ Sem falhas **novas** (baseline 5 fail preservado) |
+| NB-07 intocado | ✅ |
+| Deploy / merge | ❌ **NÃO** (conforme escopo) |
 
 ---
 
-## 1. REVALIDAÇÃO PRÉ-MERGE
+## P1-01 — BUSCA DE OS `.limit(300)`
 
-| Verificação | Resultado |
-|-------------|-----------|
-| HEAD PR / branch | `b6291411` |
-| Commit validado anteriormente | `b6291411` |
-| Alteração nova desde validação? | **NÃO** |
-| Ação | ✅ Prosseguir merge |
-
----
-
-## 2. MERGE
-
-| Campo | Valor |
-|-------|-------|
-| Tipo | Fast-forward |
-| `main` antes | `420e9680` |
-| `main` depois | `b6291411` |
-| PR status | **MERGED** @ 2026-08-12T18:25:02Z |
-| mergeCommit | `b6291411dcbacc1fa00687514bb9f71feb5c2d08` |
-
-### Arquivos no merge (8)
-
-`api/migration-add-mission-columns.ts`, `api/migrations-provider-ops-columns.ts`, `lib/migrationApiAuth.ts`, `lib/migrationEndpointPayloads.ts`, `scripts/nb06-migration-routes.test.ts`, `server/routes.ts`, `vercel.json`, handoff.
+| Campo | Detalhe |
+|-------|---------|
+| **Problema** | Busca textual na Central OS consultava só as 300 OS mais recentes; OS antiga existente no banco aparecia como inexistente |
+| **Causa raiz** | `MissionTable.tsx` usava query com `.limit(300)` no ramo de busca |
+| **Regra esperada** | Busca server-side por termo com paginação; ausência na lista parcial ≠ inexistência no banco (Torres) |
+| **Consumidores** | `MissionTable`, filtros de OS, usuários operacionais |
+| **Alteração** | Novo `lib/missionTableSearch.ts` (`searchMissionsByTerm`, paginação 100/página, teto 500, ID exato GTM-*); `MissionTable` usa busca dedicada + estado `searchMatchesTruncated` com aviso |
+| **Arquivos** | `lib/missionTableSearch.ts` (novo), `components/MissionTable.tsx` |
+| **Testes** | `scripts/fase3-p1-integridade.test.ts` (sanitize, or-filter, aviso Torres); manual: termo ≥2 chars, ID exato, truncamento |
+| **Impacto** | OS antigas encontráveis sem carregar banco inteiro no navegador |
+| **Risco residual** | Teto 500 resultados textuais — usuário deve refinar termo ou usar ID exato |
+| **Rollback** | Reverter `MissionTable.tsx` + remover `missionTableSearch.ts` |
 
 ---
 
-## 3. TAG
+## P1-02 — REALTIME / SINCRONISMO
 
-| Tag | Commit | Status |
-|-----|--------|--------|
-| `baseline-fase3-nb06-merged-20260812` | `b6291411` | ✅ criada e push |
-| Tags anteriores | `baseline-fase3-p0-merged-*`, fase1/fase2 | ✅ preservadas |
-
----
-
-## 4. DEPLOY
-
-| Campo | Antes | Depois |
-|-------|-------|--------|
-| buildId | `420e9680…` | **`b6291411dcbacc1fa00687514bb9f71feb5c2d08`** |
-| builtAt | 2026-08-12T15:57:33Z | **2026-08-12T18:25:18Z** |
-| Deploy manual | ❌ não executado | Vercel automático da `main` |
-| Projeto | `sistema-grupo-tm-seg` | inalterado |
-
-**Confirmação:** `GET /api/version` = commit mergeado `b6291411`.
+| Campo | Detalhe |
+|-------|---------|
+| **Problema** | Dashboard executivo e DRE não refletiam UPDATE de `missions` sem F5 |
+| **Causa raiz** | `RealtimeProvider` disparava `refreshMissions` completo só em INSERT/DELETE; `ExecutiveDashboard` não escutava canal |
+| **Regra esperada** | Uma OS alterada → fonte atualizada → consumidores sincronizados via mecanismo oficial (`RealtimeProvider` → `refreshMissions` / `useRealtimeRefresh`) |
+| **Consumidores** | `ExecutiveDashboard`, `FinancialDRE` (já OK), `MissionTable` (já OK), Diretoria (já escuta missions) |
+| **Alteração** | `RealtimeProvider`: INSERT **ou UPDATE** ou DELETE em `missions` → `pendingMissionFullRefreshRef`; `ExecutiveDashboard`: `useRealtimeRefresh('missions', onRefresh)` |
+| **Arquivos** | `lib/RealtimeProvider.tsx`, `components/ExecutiveDashboard.tsx` |
+| **Testes** | Testes estáticos em `fase3-p1-integridade.test.ts`; `FinancialDRE` já tinha listener — não alterado |
+| **Impacto** | Dashboard e DRE atualizam após edição de OS |
+| **Risco residual** | Refetch completo em UPDATE (mesmo padrão INSERT/DELETE existente) — sem loop adicional |
+| **Rollback** | Reverter UPDATE no `RealtimeProvider` e hook no `ExecutiveDashboard` |
+| **Nota** | `FinancialDashboard` não consome `missions` (só transações) — fora do escopo |
 
 ---
 
-## 5. TESTE DEFINITIVO NB-06 (produção @ `b6291411`)
+## P1-03 — `export_relatorio/financialUtils` (FORK)
 
-> Timestamp smoke: **2026-08-12T18:27:15Z** — somente leitura; **zero SQL/migration**.
-
-### POST sem autenticação
-
-| Endpoint | HTTP | Tempo | Corpo (trecho) |
-|----------|------|-------|----------------|
-| `POST /api/migration/add-mission-columns` | **401** | **84 ms** | `{"error":"Não autorizado"}` |
-| `POST /api/migrations/provider-ops-columns` | **401** | **182 ms** | `{"error":"Não autorizado"}` |
-
-### Token inválido
-
-| Endpoint | HTTP | Tempo | Corpo (trecho) |
-|----------|------|-------|----------------|
-| `POST /api/migration/add-mission-columns` | **403** | **186 ms** | `Permissão negada — usuário inativo ou não encontrado` |
-| `POST /api/migrations/provider-ops-columns` | **403** | **85 ms** | idem |
-
-### Método incorreto (GET)
-
-| Endpoint | HTTP | Tempo | Corpo |
-|----------|------|-------|-------|
-| `GET /api/migration/add-mission-columns` | **405** | **74 ms** | `method_not_allowed` |
-| `GET /api/migrations/provider-ops-columns` | **405** | **60 ms** | `method_not_allowed` |
-
-**Antes do PR:** timeout 20–120 s, 0 bytes. **Depois:** 401/403/405 em <200 ms.
+| Campo | Detalhe |
+|-------|---------|
+| **Problema** | Duas cópias de utilitários financeiros com risco de divergência |
+| **Causa raiz** | Cópia histórica em `export_relatorio/financialUtils.ts` sem imports ativos, potencialmente stale |
+| **Classificação** | **(B) Adaptador legítimo** — reexport fino da SSOT |
+| **Regra esperada** | Motor financeiro único em `lib/financialUtils.ts` |
+| **Consumidores** | `export_relatorio/ClientBillingReport.tsx` (já importava `lib/financialUtils`) |
+| **Alteração** | `export_relatorio/financialUtils.ts` → `export * from '../lib/financialUtils'` |
+| **Arquivos** | `export_relatorio/financialUtils.ts` |
+| **Testes** | `fase3-p1-integridade.test.ts` (sem `calculateMissionFinancials` duplicado) |
+| **Impacto** | Elimina fork semântico; export usa SSOT |
+| **Risco residual** | Nenhum — reexport puro |
+| **Rollback** | Restaurar arquivo anterior (não recomendado) |
 
 ---
 
-## 6. PROVA DE NÃO EXECUÇÃO
+## P1-04 — DIRETORIA / QUOTES `.limit(500)`
 
-| Verificação | Resultado |
-|-------------|-----------|
-| Migration SQL executada | ❌ **NÃO** |
-| `ALTER TABLE` / `exec_sql` | ❌ **NÃO** |
-| Schema alterado | ❌ **NÃO** |
-| OS/dados modificados | ❌ **NÃO** |
-| Respostas de erro apenas (401/403/405) | ✅ |
-
-Handlers dedicados retornam somente erro de auth ou `method_not_allowed` — nenhum payload SQL em requests não autenticados.
-
----
-
-## 7. SMOKE REGRESSÃO
-
-| Teste | HTTP | Tempo | Resultado |
-|-------|------|-------|-----------|
-| `GET /api/health` | 200 | 140 ms | `{"status":"ok"}` |
-| `GET /api/version` | 200 | 62 ms | buildId `b6291411` |
-| `POST /api/billing/ensure-schema` sem auth | 401 | 77 ms | `Não autorizado` |
-| `GET /` (app) | 200 | 61 ms | HTML + `__TMSEG_SUPABASE__` |
-| `GET /api/nf/summary` sem auth | 401 | 83 ms | inalterado |
-| `GET /api/recalculate-open` | 405 | 80 ms | inalterado |
-| `POST /api/chat` (catch-all) | timeout | ~20 s | **esperado** — NB-07 |
-
-Rewrites migration **não** afetaram rotas dedicadas existentes.
+| Campo | Detalhe |
+|-------|---------|
+| **Problema** | Funil comercial limitado aos últimos 500 quotes — podia ser interpretado como total da empresa |
+| **Causa raiz** | `.limit(500)` hardcoded em `useDashboardDiretoriaData.ts` |
+| **Regra esperada** | Paginação até teto seguro; conjunto parcial não representa total absoluto |
+| **Consumidores** | `DashboardDiretoria`, KPIs comerciais, funil |
+| **Alteração** | `fetchAllPages` (página 500, `maxRows` 10.000) para `quotes`; utilitário compartilhado `lib/supabasePaging.ts` |
+| **Arquivos** | `lib/supabasePaging.ts` (novo), `lib/dashboardDiretoria/useDashboardDiretoriaData.ts` |
+| **Testes** | `fase3-p1-integridade.test.ts` (paginação, sem `.limit(500)`); `fetchAllPages` truncamento |
+| **Impacto** | Até 10.000 quotes no funil; acima disso `truncated=true` internamente (teto documentado) |
+| **Risco residual** | >10.000 quotes: agregação server-side seria P2 — teto explícito no código |
+| **Rollback** | Reverter para `.limit(500)` |
 
 ---
 
-## 8. ENDPOINTS HARDENED (código publicado — não testados em prod)
+## P1-05 — `is_same_os` / VÍNCULO MÃE-FILHA
 
-| Rota | Proteção no bundle `b6291411` | Acesso prod hoje |
-|------|------------------------------|------------------|
-| `POST /api/admin/run-monthly-logs-cleanup` | `requireAuth` + `administrador\|diretoria` | catch-all timeout (NB-07) |
-| `POST /api/missions/fix-ceva-logitech-values` | `requireAuth` + `diretoria\|administrador\|financeiro` | catch-all timeout (NB-07) |
-
-**Não** reparado `api/index`. **NB-07** permanece aberto.
-
----
-
-## 9. PENDÊNCIAS
-
-| ID | Status |
-|----|--------|
-| **NB-06** | 🟢 **RESOLVIDA** |
-| **NB-07** | 🟡 `api/index` catch-all — auditoria futura |
-| NB-01 a NB-05 | Preservadas — não corrigidas |
+| Campo | Detalhe |
+|-------|---------|
+| **Problema** | `parent_mission_id` sozinho podia implicar vínculo financeiro / compartilhamento de custo |
+| **Causa raiz** | `isLinkedChildMission` aceitava só `parent_mission_id`; badge MÃE e agregações Diretoria idem |
+| **Regra esperada** | Vínculo financeiro exige `is_same_os === true` **e** `parent_mission_id`; regra P0 (`computeCanonicalRevenueCost`) **preservada** |
+| **Consumidores** | `missionLinkage`, `buildParentMissionsSummary`, `MissionCard`, faturamento canônico |
+| **Alteração** | `isLinkedChildMission`: exige `is_same_os === true`; `aggregations.buildParentMissionsSummary` filtra filhas; `MissionCard` badge MÃE condicionado |
+| **Arquivos** | `lib/missionLinkage.ts`, `lib/dashboardDiretoria/aggregations.ts`, `components/MissionCard.tsx` |
+| **Testes** | Cenários A–D em `fase3-p1-integridade.test.ts` + `fase3-p0-financial-integrity.test.ts` (regressão P0) |
+| **Impacto** | Cenário D (parent sem `is_same_os`) não zera custo nem conta como filha vinculada |
+| **Risco residual** | Baixo — alinha UI/agregação à regra financeira P0 já validada |
+| **Rollback** | Reverter `missionLinkage.ts` e consumidores |
 
 ---
 
-## 10. GIT / ROLLBACK
+## TESTES EXECUTADOS
 
-| Ação | Referência |
-|------|------------|
-| Estado atual `main` | `b6291411` |
-| Tag retorno | `baseline-fase3-nb06-merged-20260812` |
-| Rollback git | `main` → `420e9680` + redeploy |
-| Rollback tag | não mover; criar nova tag se necessário |
+| Suíte | Resultado |
+|-------|-----------|
+| `scripts/fase3-p1-integridade.test.ts` | **19 pass / 0 fail** |
+| `scripts/fase3-p0-financial-integrity.test.ts` + `nb06-migration-routes.test.ts` + P1 (combinado) | **53 pass / 0 fail** |
+| `npm run build` | **OK** |
+| `scripts/run-tests.sh` (server `*.test.ts`) | **~690 pass / 5 fail** — mesmas falhas baseline (sem novas) |
+| `scripts/*.test.tsx` | **2 pass / 2 fail** — falhas pré-existentes (`dhl-intake-render`) |
 
----
+### Falhas baseline preservadas (não introduzidas por P1)
 
-## ENCERRAMENTO
-
-| Indicador | Valor |
-|-----------|-------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 |
-| **FASE 3** | **22%** 🔵 |
-| **PROGRAMA GERAL** | **23%** |
-
-**PARADO.** P1 não iniciado. NB-07 não corrigido. Aguardando autorização para próxima subfase.
+1. `Vercel tem funções leves para CRUD de contas`
+2. `FinancialInvoiceControl — auto sync e labels` (suite + subtest)
+3. `dhl-intake-render.test.tsx` (2 subtests)
 
 ---
 
-*Gerado em: 2026-08-12 UTC | Merge PR #258 + NB-06 resolvida em produção*
+## ARQUIVOS ALTERADOS (RESUMO)
+
+| Arquivo | P1 |
+|---------|-----|
+| `lib/missionTableSearch.ts` | 01 (novo) |
+| `lib/supabasePaging.ts` | 04 (novo) |
+| `components/MissionTable.tsx` | 01 |
+| `lib/RealtimeProvider.tsx` | 02 |
+| `components/ExecutiveDashboard.tsx` | 02 |
+| `export_relatorio/financialUtils.ts` | 03 |
+| `lib/dashboardDiretoria/useDashboardDiretoriaData.ts` | 04 |
+| `lib/missionLinkage.ts` | 05 |
+| `lib/dashboardDiretoria/aggregations.ts` | 05 |
+| `components/MissionCard.tsx` | 05 |
+| `scripts/fase3-p1-integridade.test.ts` | QA (novo) |
+
+---
+
+## GIT / PR
+
+| Item | Valor |
+|------|-------|
+| Branch | `cursor/fase3-p1-integridade-eaa8` |
+| Base | `main` @ `b6291411` |
+| PR | Draft — ver link no comentário final do agente |
+| Merge | **NÃO** |
+| Deploy | **NÃO** |
+
+---
+
+## REGRA TORRES — CONFORMIDADE
+
+- Busca OS: aviso explícito quando `truncated=true` (`Conjunto de busca incompleto…`)
+- Quotes: paginação com teto 10.000 documentado no código
+- Nenhum fallback financeiro silencioso introduzido
+
+---
+
+## PRÓXIMOS PASSOS (FORA DESTE ESCOPO)
+
+1. Revisão humana + merge controlado na `dev` → `publicar.ps1`
+2. P2/P3 conforme roadmap auditoria
+3. NB-07 — decomposição do catch-all `api/index`
+4. Agregação server-side de quotes se volume > 10.000
+
+---
+
+*Gerado pelo Cloud Agent — Fase 3 P1 — 2026-08-12*

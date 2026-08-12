@@ -843,7 +843,7 @@ export function buildMissionStatusCounts(missions: any[]): Array<{ status: strin
 export function buildParentMissionsSummary(missions: any[]): { total: number; active: number } {
   const parentIds = new Set<string>();
   for (const m of missions) {
-    if (m.parent_mission_id) parentIds.add(String(m.parent_mission_id));
+    if (m.is_same_os && m.parent_mission_id) parentIds.add(String(m.parent_mission_id));
   }
   const parents = missions.filter(m => parentIds.has(String(m.id)));
   const terminal = new Set(['Concluída', 'Cancelada', 'Recusada', 'Faturada']);

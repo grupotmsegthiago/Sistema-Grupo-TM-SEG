@@ -11,13 +11,11 @@ export type LinkedMissionLike = {
   [key: string]: unknown;
 };
 
-/** Filha vinculada: tem mãe (parent_mission_id). Aceita is_same_os true ou só o vínculo. */
+/** Filha vinculada financeiramente: exige is_same_os=true (parent_mission_id sozinho ≠ mesma OS). */
 export function isLinkedChildMission(m: LinkedMissionLike | null | undefined): boolean {
   const pid = String(m?.parent_mission_id || '').trim();
   if (!pid) return false;
-  // Histórico: filhas oficiais marcam is_same_os. Se só houver parent_mission_id, ainda conta.
-  if (m?.is_same_os === false) return false;
-  return true;
+  return m?.is_same_os === true;
 }
 
 /** Mapa mãe → filhas (qualquer cliente). */

@@ -48,6 +48,7 @@ import MissionOperationalReport from './MissionOperationalReport';
 import MissionTeamPresenceBoard from './MissionTeamPresenceBoard';
 import { hasFullMissionListAccess, isMissionClientScopeRestricted } from '../lib/missionAccess';
 import { canSeeOsComPrejuizo, isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { searchMissionsByTerm } from '../lib/missionTableSearch';
 import { isOsLossHidden, loadOsLossHiddenMap } from '../lib/osLossHidden';
 import { collectLinkedFamilyIds } from '../lib/missionLinkage';
 const cevaLogoPath = '/logo_ceva.png';
@@ -203,6 +204,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   // Resultados de busca server-side (OS/cliente/fornecedor/motorista/SE) para
   // que a busca encontre OS fora do período atualmente carregado.
   const [searchMatches, setSearchMatches] = useState<Mission[]>([]);
+  const [searchMatchesTruncated, setSearchMatchesTruncated] = useState(false);
   // Sinal para re-disparar a busca server-side (searchMatches) após qualquer
   // refresh de missões — cobre visão restrita/comercial (sem patch direcionado)
   // e reconexão de realtime, mantendo os cards encontrados por busca em dia.
@@ -1118,22 +1120,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(() => {
       const term = (osFilterTerm.trim() || searchTerm.trim());
-      if (term.length < 2) { setSearchMatches([]); return; }
+      if (term.length < 2) { setSearchMatches([]); setSearchMatchesTruncated(false); return; }
       // Não busca antes do escopo de cliente estar resolvido (evita IDOR).
-      if (!scopeReady) { setSearchMatches([]); return; }
+      if (!scopeReady) { setSearchMatches([]); setSearchMatchesTruncated(false); return; }
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
       searchDebounceRef.current = setTimeout(async () => {
         try {
           const scope = clientScopeRef.current;
-          if (scope.type === 'empty') { setSearchMatches([]); return; }
-          let q = supabase.from('missions').select('*').order('created_at', { ascending: false });
-          if (scope.type === 'eq') q = q.eq('client', scope.value!);
-          else if (scope.type === 'in') q = q.in('client', scope.values!);
-          // Sanitiza caracteres que quebram a sintaxe do filtro PostgREST.
-          const like = `%${term.replace(/[%,().]/g, ' ')}%`;
-          q = q.or(`id.ilike.${like},client.ilike.${like},provider.ilike.${like},driver_name.ilike.${like},dhl_se_number.ilike.${like}`);
-          const { data } = await q.limit(300);
-          if (data) setSearchMatches(data.map((m: any) => mapRawMissionRow(m)));
+          if (scope.type === 'empty') { setSearchMatches([]); setSearchMatchesTruncated(false); return; }
+          const { rows, truncated } = await searchMissionsByTerm(supabase, term, scope);
+          setSearchMatches(rows.map((m: any) => mapRawMissionRow(m)));
+          setSearchMatchesTruncated(truncated);
         } catch { /* silencioso */ }
       }, 400);
       return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
@@ -2127,6 +2124,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 <div className="relative flex-1 max-w-md">
                     <input type="text" placeholder="OS, Cliente, Placa, Motorista..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                     <Search size={18} className="absolute left-3.5 top-3 text-gray-400" />
+                    {searchMatchesTruncated && (searchTerm.trim().length >= 2 || osFilterTerm.trim().length >= 2) && (
+                      <p className="mt-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        Conjunto de busca incompleto (limite atingido). Refine o termo ou filtre por ID exato — ausência na lista não significa inexistência no banco.
+                      </p>
+                    )}
                 </div>
           
             </div>
