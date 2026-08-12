@@ -571,6 +571,14 @@
       "destination": "/api/admin/system-settings-daily-reports"
     },
     {
+      "source": "/api/migration/add-mission-columns",
+      "destination": "/api/migration-add-mission-columns"
+    },
+    {
+      "source": "/api/migrations/provider-ops-columns",
+      "destination": "/api/migrations-provider-ops-columns"
+    },
+    {
       "source": "/api/zapi/webhook/connection",
       "destination": "/api/zapi-webhook-connection"
     },
