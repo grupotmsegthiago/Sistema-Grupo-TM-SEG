@@ -11,13 +11,12 @@
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-12 (UTC) |
-| **Fase** | Governança permanente — Integridade de Conjunto de Dados |
-| **Objetivo** | Registrar regra permanente de integridade de dados (limites, paginação, fallbacks, fail-closed) na governança do programa |
-| **Branch** | `main` |
-| **Commit inicial** | `5555c505` |
-| **Commit final** | ver HEAD após push desta execução |
-| **Versão produção** | `3.7.60` (inalterada por esta execução) |
-| **Produção alterada** | **NÃO** |
+| **Fase** | **Fase 1 — Encerramento formal** |
+| **Objetivo** | Fechar a Fase 1 (auditoria inicial, hotfix Resend, governança, validação final) sem iniciar Fase 2 |
+| **Branch de trabalho** | `cursor/resend-validacao-final-eaa8` → PR #255 |
+| **Produção (`main`)** | `d487f469` — versão `3.7.60` |
+| **Produção alterada nesta execução** | **NÃO** |
+| **Código funcional alterado nesta execução** | **NÃO** |
 
 ---
 
@@ -25,221 +24,174 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **PROGRESSO DA FASE 1** | **98%** (inalterado — pendência: rotação Resend humana) |
+| **PROGRESSO DA FASE 1** | **100%** |
 | **PROGRESSO GERAL DO PROGRAMA** | **10%** |
-
----
-
-## O QUE FOI PEDIDO
-
-Incorporar permanentemente à governança do Sistema Grupo TM SEG a **Regra de Integridade de Conjunto de Dados**, aplicável em todas as fases futuras e na auditoria do código existente. Atualizar handoff com seção obrigatória quando aplicável.
-
----
-
-## ESTADO ANTERIOR
-
-- Regras de governança cobriam handoff, progresso %, testes antes de entregar, preservação de negócio e SSOT em nível conceitual.
-- Não existia regra formal explícita sobre: truncamento silencioso por `.limit()`, fallbacks financeiros fail-open, paridade entre telas e estados `NÃO CARREGADO` vs `NÃO EXISTE`.
-- Fase 1 em 98% (pendência Resend).
-
----
-
-## INVESTIGAÇÃO
-
-### Causa raiz que a regra previne
-
-Consultas com limite arbitrário (ex.: 1.000 registros Supabase/PostgREST) podem fazer uma OS existir em uma tela e sumir em outra. Código interpreta ausência como “não existe”, aciona fallback e recalcula — gerando divergência entre telas sem erro visível.
-
-### Componentes que serão afetados nas fases futuras
-
-| Área | Onde auditar |
-|------|--------------|
-| OS | `MissionTable`, `MissionReportPage`, `MissionFinancialModal`, `ClientBillingReport` |
-| Financeiro | `FinancialDRE`, `FinancialDashboard`, `FinancialAuditor`, `server/routes.ts` |
-| Faturamento | `ClientBillingReport`, APIs de recálculo |
-| Diretoria | `lib/dashboardDiretoria/*`, `DashboardDiretoria` |
-| Relatórios | `ReportsDashboard`, exports, workers |
-| Backend | `server/routes.ts` (36 ocorrências `.limit`/`.range`), workers NF/e-mail |
-
-### Varredura preliminar (somente contagem — auditoria completa na Fase 2+)
-
-| Escopo | Ocorrências `.limit(` / `.range(` |
-|--------|-------------------------------------|
-| `components/` | ~70+ em 30+ arquivos (destaque: `MissionFinancialModal` 9, `ClientBillingReport` 5, `MissionTable` 4) |
-| `lib/` | ~35+ em 25+ arquivos (destaque: `dashboardDiretoria` 4, `osAnalysis` 4) |
-| `server/` | ~35+ em 14 arquivos (destaque: `routes.ts` 36, `dhlSupplierIntake` 6) |
-
-**Classificação:** todas as ocorrências acima estão **INDETERMINADO** até análise caso a caso nas Fases 2, 4, 5 e 6.
-
----
-
-## ANÁLISE DE IMPACTO
-
-Esta execução **não alterou código funcional**. Impacto futuro:
-
-```
-CONSULTA (limit/range)
-    ↓
-CONJUNTO RECEBIDO (possivelmente parcial)
-    ↓
-CACHE / TRANSFORMAÇÃO
-    ↓
-TELA A / TELA B / RELATÓRIO
-    ↓
-FALLBACK financeiro? → PROIBIDO fail-open
-```
-
-Conexões a verificar nas próximas fases: query → API → cache → componente → paridade entre telas.
-
----
-
-## ALTERAÇÕES REALIZADAS
-
-### Documentação / governança
-
-| Arquivo | Alteração | Motivo |
-|---------|-----------|--------|
-| `AGENTS.md` | Seção **Integridade de conjunto de dados (regra permanente)** | Referência permanente para agentes |
-| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Este documento | Handoff da execução |
-
-### Código / banco / deploy
-
-Nenhuma alteração.
-
----
-
-## ALTERAÇÕES DE BANCO
-
-**BANCO DE DADOS NÃO ALTERADO.**
-
----
-
-## REGRAS DE NEGÓCIO
-
-### Regras alteradas
-
-Nenhuma regra de cálculo ou negócio.
-
-### Regras preservadas
-
-Todas as existentes.
-
-### Regras novas (governança permanente)
-
-1. **Proibido** assumir que primeira página ou `.limit(N)` = conjunto completo em consultas críticas.
-2. **Fail-closed** para valores financeiros: ausência por truncamento/erro não autoriza fallback silencioso.
-3. Estados explícitos obrigatórios: `ENCONTRADO`, `NÃO EXISTE`, `NÃO CARREGADO`, `CONSULTA INCOMPLETA`, `ERRO DE CONSULTA`, `NÃO VALIDADO`.
-4. Paginação exaustiva com ordenação estável (`created_at + id`) quando universo completo for necessário.
-5. Preferir filtro/agregação/RPC no banco a inflar `.limit`.
-6. Testes de paridade entre telas e volume (999 / 1000 / 1001+).
-7. Consulta direta por ID quando apenas uma OS/registro é necessário (`WHERE mission_id = X`).
-8. Inventariar fallbacks (`??`, `||`, `fallback`, `default`, recálculo por ausência).
-9. Handoff deve incluir seção **INTEGRIDADE DE CONJUNTO DE DADOS** quando aplicável.
-
-**Princípios:** ausência ≠ inexistência; consulta parcial ≠ SSOT; fallback ≠ máscara de erro financeiro.
-
----
-
-## INTEGRIDADE DE CONJUNTO DE DADOS
-
-> Seção obrigatória a partir desta governança. Nesta execução: **registro da regra + varredura preliminar**. Auditoria caso a caso: **pendente Fase 2+**.
-
-| Item | Status |
-|------|--------|
-| Consultas auditadas (caso a caso) | ⚪ **Pendente Fase 2** |
-| Limites encontrados (preliminar) | 🟡 ~140+ ocorrências `.limit`/`.range` em components/lib/server — **não classificadas** |
-| Paginações completas verificadas | ⚪ Pendente |
-| Risco de truncamento confirmado | ⚪ Pendente |
-| Fallbacks financeiros inventariados | ⚪ Pendente Fase 4/5/6 |
-| Testes de volume (999/1000/1001) | ⚪ Pendente |
-| Paridade entre telas | ⚪ Pendente |
-| **Resultado desta execução** | **Regra registrada; auditoria não iniciada** |
-
-### Classificações a aplicar na Fase 2+
-
-| Classe | Significado |
-|--------|-------------|
-| SEGURO | Limite intencional e correto |
-| PAGINADO | Paginação completa e determinística |
-| AGREGADO | Cálculo no banco sem carregar dataset inteiro |
-| PERIGOSO | Limite arbitrário sobre conjunto que deveria ser completo |
-| INDETERMINADO | Requer investigação |
-
----
-
-## SINCRONISMO
-
-Não aplicável — nenhuma alteração funcional.
-
----
-
-## TESTES EXECUTADOS
-
-| Comando | Finalidade | Resultado |
-|---------|------------|-----------|
-| `rg '\.limit\(|\.range\(' components lib server` | Contagem preliminar para handoff | ~140+ ocorrências mapeadas por escopo |
-| Build / suite completa | N/A nesta execução | Não executados (somente docs) |
-
----
-
-## SEGURANÇA
-
-Sem impacto. Nenhum segredo envolvido.
-
----
-
-## GIT
-
-| Item | Valor |
-|------|-------|
-| Arquivos alterados | `AGENTS.md`, `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` |
-| Produção | Não alterada |
-| Deploy | Não realizado |
-
----
-
-## ROLLBACK
-
-Reverter commit desta execução remove apenas entradas de governança em `AGENTS.md` e handoff. Sem impacto em produção.
-
----
-
-## PENDÊNCIAS
-
-### 🔴 Crítica (Fase 1)
-
-1. Rotação chave Resend antiga (ação humana — inalterada)
-
-### 🟠 Alta (Fases 2–6)
-
-2. Classificar cada `.limit`/`.range` em consultas financeiras/OS
-3. Inventariar fallbacks financeiros fail-open
-4. Testes de paridade OS → faturamento → financeiro → diretoria
-5. Testes de volume 999/1000/1001+
-
-### 🔵 Baixa
-
-6. Observabilidade futura (query truncada, fallback acionado, divergência telas)
-
----
-
-## EVIDÊNCIAS
-
-- Regra recebida e incorporada em `AGENTS.md`
-- Contagem preliminar via ripgrep em `components/`, `lib/`, `server/`
-- Fase 1 permanece em 98% (critério Resend não alterado por esta execução)
 
 ---
 
 ## RESULTADO FINAL
 
-### 🟢 CONCLUÍDO E VALIDADO
+### 🟢 FASE 1 CONCLUÍDA E VALIDADA
 
-*(para o escopo desta execução: registro de governança permanente)*
+---
 
-A regra de Integridade de Conjunto de Dados está registrada em `AGENTS.md` e no handoff. A auditoria detalhada do código existente inicia na **Fase 2** (e aprofunda nas Fases 4, 5 e 6).
+## 1. RESEND — CONCLUSÃO DO INCIDENTE
 
-**Fase 2 não iniciada automaticamente.**
+### Evidência consolidada (prefixos seguros — operador)
+
+| Credencial | Prefixo seguro (painel / histórico) | Papel |
+|------------|-------------------------------------|-------|
+| Chave histórica exposta no Git | `re_5Fc9…` | Hardcode removido em PR #254 |
+| `RESEND_API_KEY` (nova, Vercel) | `re_J7vL1PyT…` | Chave ativa de rotação — **não revogar** |
+| Integração Supabase (painel) | `re_EzyJ8pYq…` | Chave ativa — **não é a vazada** |
+| Integração (painel) | `re_errCuUkJ…` | Chave ativa — **não é a vazada** |
+
+### Conclusão formal
+
+**A credencial historicamente exposta (`re_5Fc9…`) não corresponde a nenhuma das três chaves atualmente exibidas no painel Resend.** Com as evidências disponíveis, é considerada **não mais presente entre as chaves ativas observadas**.
+
+### Ações nesta execução
+
+| Ação | Status |
+|------|--------|
+| Revogar chaves atuais do painel | **NÃO** — nenhuma das três |
+| Hardcode Resend no código ativo | **Ausente** (confirmado abaixo) |
+| Fluxo prod de e-mail boas-vindas | **SMTP Office365** — não usa Resend |
+| Edge Function `send-welcome-email` | Corrigida (env only); **não deployada** (404) |
+
+### Segurança — código ativo (reconfirmação)
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Padrão `re_*` literal em TS/TSX ativo (excl. `attached_assets/`) | **NÃO encontrado** |
+| `scripts/resend-no-hardcode.test.ts` | **2/2 pass** (execução desta sessão) |
+| Legado `attached_assets/**/send-welcome-email/` | Hardcode histórico — limpeza **Fase 2+** |
+
+---
+
+## 2. LIMPEZA DE CONFIGURAÇÃO (pendente futura)
+
+| Item | Status | Decisão |
+|------|--------|---------|
+| `TMSEG_RESEND` (Vercel) | Presente em Production + Preview | **Redundante** — não referenciada no código ativo |
+| Remoção automática nesta execução | **NÃO realizada** | Limpeza segura futura; evitar alteração desnecessária no encerramento |
+
+---
+
+## 3. ESTADO FINAL VALIDADO
+
+Baseline reutilizado da execução anterior (nenhum código funcional alterado desde então).
+
+| Verificação | Resultado | Evidência |
+|-------------|-----------|-----------|
+| Build (`npm run build`) | **OK** | Execução anterior (2026-08-12) |
+| Suite (`bash scripts/run-tests.sh`) | **673 pass / 5 fail / 678** | Sem falhas novas |
+| `GET /api/health` (prod) | `{"status":"ok"}` | Revalidado 2026-08-12 |
+| `GET /api/version` (prod) | `3.7.60`, `buildId d487f469…` | Revalidado 2026-08-12 |
+| Hardcode Resend ativo | **Ausente** | Teste + grep |
+| Branch produção | `main` @ `d487f469` | Git |
+
+---
+
+## 4. CINCO TESTES CONHECIDOS (fora do escopo Fase 1)
+
+Mantidos registrados — **não corrigidos** — encaminhados às fases próprias:
+
+| # | Suite / arquivo | Fase destino |
+|---|-----------------|--------------|
+| 1 | `investment-accounts` | Fase posterior (investimentos) |
+| 2 | `invoice-display` | Fase posterior (faturamento/NF) |
+| 3 | `presence-refresh` | Fase posterior (presença/realtime) |
+| 4 | `receivable-desc-nf` | Fase posterior (financeiro/NF) |
+| 5 | `zapi-sdk-cockpit` | Fase posterior (WhatsApp/Z-API) |
+
+---
+
+## 5. INTEGRIDADE DE DADOS — GOVERNANÇA PERMANENTE
+
+Regra incorporada em `AGENTS.md` (seção **Integridade de conjunto de dados**). Confirmada **ativa** neste encerramento.
+
+Previne:
+
+- `.limit(1000)` perigoso em consultas críticas
+- Paginação incompleta tratada como conjunto total
+- Consulta truncada sem estado explícito
+- Fallback financeiro silencioso (fail-open)
+- Divergência entre telas sem paridade
+- Ausência de dado interpretada como inexistência
+
+**Auditoria das ~140+ ocorrências `.limit`/`.range`:** **não iniciada** — pertence às Fases 2, 4, 5 e 6.
+
+---
+
+## 6. PONTOS DE RETORNO (tags Git)
+
+| Tag | Commit | Descrição |
+|-----|--------|-----------|
+| `baseline-fase1-20260812` | `88992034` | Baseline inicial pré-hotfix Resend — **preservada** |
+| `baseline-fase1-final-20260812` | ver commit pós-merge PR #255 | Marco final aprovado da Fase 1 |
+
+Tag `baseline-fase1-final-20260812` existia em `147318e9` (pós-PR #254). Atualizada nesta execução para o commit de encerramento documental (handoff final).
+
+---
+
+## 7. PULL REQUESTS — ESTADO E ORDEM
+
+| PR | Título | Estado | Conteúdo | Ação |
+|----|--------|--------|----------|------|
+| **#253** | handoff oficial Fase 1 + governança | **MERGED** (2026-08-12) | Somente docs | ✅ Concluído |
+| **#254** | hotfix Resend hardcode | **MERGED** (2026-08-12) | Edge Function + teste anti-hardcode | ✅ Concluído |
+| **#255** | validação final + encerramento Fase 1 | **OPEN** | Somente docs (`ULTIMA_EXECUCAO_TMSEG.md`, teste fail-safe) | **Mergear** para `main` |
+
+**Ordem:** #253 e #254 já mergeados. **Mergear #255** para consolidar handoff de encerramento em `main`. Sem alteração funcional.
+
+---
+
+## 8. ENTREGÁVEIS DA FASE 1
+
+| Entregável | Status |
+|------------|--------|
+| Auditoria inicial (somente leitura) | ✅ |
+| Tag baseline inicial | ✅ `baseline-fase1-20260812` |
+| Hotfix segurança Resend (PR #254) | ✅ |
+| Regra governança handoff + progresso % | ✅ |
+| Regra integridade de conjunto de dados | ✅ `AGENTS.md` |
+| Validação variável Vercel `RESEND_API_KEY` | ✅ |
+| Identificação prefixos + conclusão incidente | ✅ |
+| Teste anti-hardcode Resend | ✅ |
+| Encerramento documental | ✅ este arquivo |
+
+---
+
+## 9. PENDÊNCIAS FORA DA FASE 1 (não bloqueiam 100%)
+
+| Item | Fase |
+|------|------|
+| Limpeza `TMSEG_RESEND` (Vercel) | Config / Fase 2+ |
+| Limpeza hardcode em `attached_assets/` | Fase 2+ |
+| Auditoria `.limit`/`.range` (~140+) | Fases 2, 4, 5, 6 |
+| Schema / RLS real | Fase 3 |
+| Correção dos 5 testes conhecidos | Fases próprias |
+| Deploy Edge Function Resend (se reativada) | Sob demanda |
+
+---
+
+## 10. ALTERAÇÕES NESTA EXECUÇÃO
+
+| Escopo | Alteração |
+|--------|-----------|
+| Código funcional | **Nenhuma** |
+| Banco / RLS | **Nenhuma** |
+| Vercel / produção | **Nenhuma** |
+| Chaves Resend | **Nenhuma revogada** |
+| Documentação | Este handoff (encerramento Fase 1) |
+| Tag Git | `baseline-fase1-final-20260812` atualizada |
+
+---
+
+## 11. NÃO INICIADO
+
+- **Fase 2** e demais fases do programa — aguardando instrução explícita.
 
 ---
 
@@ -248,4 +200,4 @@ A regra de Integridade de Conjunto de Dados está registrada em `AGENTS.md` e no
 
 ---
 
-*Gerado em: 2026-08-12 UTC | Execução: Governança — Integridade de Conjunto de Dados*
+*Gerado em: 2026-08-12 UTC | Execução: Encerramento formal Fase 1*
