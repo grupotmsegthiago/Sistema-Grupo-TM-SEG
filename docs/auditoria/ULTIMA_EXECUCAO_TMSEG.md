@@ -11,12 +11,12 @@
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-12 (UTC) |
-| **Fase** | **Fase 1 — Encerramento formal** |
-| **Objetivo** | Fechar a Fase 1 (auditoria inicial, hotfix Resend, governança, validação final) sem iniciar Fase 2 |
-| **Branch de trabalho** | `cursor/resend-validacao-final-eaa8` → PR #255 (**MERGED**) |
-| **Produção (`main`)** | `1a3dc010` — versão `3.7.60` (deploy prod anterior: `d487f469`) |
-| **Produção alterada nesta execução** | **NÃO** |
-| **Código funcional alterado nesta execução** | **NÃO** |
+| **Fase** | **Fase 2 — Raio-X funcional, dependências e integridade (início)** |
+| **Objetivo** | Diagnóstico completo antes de correções sistêmicas — investigar, não corrigir |
+| **Baseline** | `baseline-fase1-merged-20260812` → `d78e3ed3` |
+| **Produção** | `3.7.60` / `buildId d78e3ed3…` / health OK |
+| **Código funcional alterado** | **NÃO** |
+| **Branch** | `cursor/fase2-raio-x-eaa8` |
 
 ---
 
@@ -24,175 +24,392 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **PROGRESSO DA FASE 1** | **100%** |
-| **PROGRESSO GERAL DO PROGRAMA** | **10%** |
+| **PROGRESSO DA FASE 1** | **100%** 🟢 |
+| **PROGRESSO DA FASE 2** | **55%** 🔵 |
+| **PROGRESSO GERAL DO PROGRAMA** | **13%** |
+
+### Marcos Fase 2
+
+| Marco | Status |
+|-------|--------|
+| 25% — Inventário telas + domínios + endpoints | ✅ |
+| 50% — Árvore OS + SSOT amostra + inacabados + diretoria/jurídico | ✅ |
+| 75% — Classificação completa limit/fallback/cache + matriz paridade | ⏳ pendente |
+| 100% — Smoke funcional amplo + relatórios + riscos fechados | ⏳ pendente |
 
 ---
 
-## RESULTADO FINAL
+## RESULTADO PARCIAL
 
-### 🟢 FASE 1 CONCLUÍDA E VALIDADA
-
----
-
-## 1. RESEND — CONCLUSÃO DO INCIDENTE
-
-### Evidência consolidada (prefixos seguros — operador)
-
-| Credencial | Prefixo seguro (painel / histórico) | Papel |
-|------------|-------------------------------------|-------|
-| Chave histórica exposta no Git | `re_5Fc9…` | Hardcode removido em PR #254 |
-| `RESEND_API_KEY` (nova, Vercel) | `re_J7vL1PyT…` | Chave ativa de rotação — **não revogar** |
-| Integração Supabase (painel) | `re_EzyJ8pYq…` | Chave ativa — **não é a vazada** |
-| Integração (painel) | `re_errCuUkJ…` | Chave ativa — **não é a vazada** |
-
-### Conclusão formal
-
-**A credencial historicamente exposta (`re_5Fc9…`) não corresponde a nenhuma das três chaves atualmente exibidas no painel Resend.** Com as evidências disponíveis, é considerada **não mais presente entre as chaves ativas observadas**.
-
-### Ações nesta execução
-
-| Ação | Status |
-|------|--------|
-| Revogar chaves atuais do painel | **NÃO** — nenhuma das três |
-| Hardcode Resend no código ativo | **Ausente** (confirmado abaixo) |
-| Fluxo prod de e-mail boas-vindas | **SMTP Office365** — não usa Resend |
-| Edge Function `send-welcome-email` | Corrigida (env only); **não deployada** (404) |
-
-### Segurança — código ativo (reconfirmação)
-
-| Verificação | Resultado |
-|-------------|-----------|
-| Padrão `re_*` literal em TS/TSX ativo (excl. `attached_assets/`) | **NÃO encontrado** |
-| `scripts/resend-no-hardcode.test.ts` | **2/2 pass** (execução desta sessão) |
-| Legado `attached_assets/**/send-welcome-email/` | Hardcode histórico — limpeza **Fase 2+** |
+### 🔵 FASE 2 EM ANDAMENTO — DIAGNÓSTICO SEM CORREÇÕES
 
 ---
 
-## 2. LIMPEZA DE CONFIGURAÇÃO (pendente futura)
+## 1. MAPA FUNCIONAL — TELAS (57 views + rotas públicas)
 
-| Item | Status | Decisão |
-|------|--------|---------|
-| `TMSEG_RESEND` (Vercel) | Presente em Production + Preview | **Redundante** — não referenciada no código ativo |
-| Remoção automática nesta execução | **NÃO realizada** | Limpeza segura futura; evitar alteração desnecessária no encerramento |
+**Fonte:** `App.tsx`, `constants.ts` (`NAV_ITEMS`), `Sidebar.tsx`, `RhModule.tsx`.
 
----
+### Resumo quantitativo
 
-## 3. ESTADO FINAL VALIDADO
+| Categoria | Qtd |
+|-----------|-----|
+| Cases em `App.tsx` | 57 (+ default) |
+| Itens menu `NAV_ITEMS` | 38 telas + 7 grupos |
+| Sub-rotas (forms) | ~15 |
+| Rotas públicas | 3 (`/cadastro-operacional`, `/fornecedor/dhl`, `/reset-password`) |
+| Retorna `null` | 1 (`ai-support`) |
+| Órfã vs menu | ~5 divergências documentadas |
 
-Baseline reutilizado da execução anterior (nenhum código funcional alterado desde então).
+### Telas principais por domínio (classificação preliminar)
 
-| Verificação | Resultado | Evidência |
-|-------------|-----------|-----------|
-| Build (`npm run build`) | **OK** | Execução anterior (2026-08-12) |
-| Suite (`bash scripts/run-tests.sh`) | **673 pass / 5 fail / 678** | Sem falhas novas |
-| `GET /api/health` (prod) | `{"status":"ok"}` | Revalidado 2026-08-12 |
-| `GET /api/version` (prod) | `3.7.60`, `buildId d487f469…` | Revalidado 2026-08-12 |
-| Hardcode Resend ativo | **Ausente** | Teste + grep |
-| Branch produção | `main` @ `d487f469` | Git |
+| Domínio | viewKey | Componente | Menu | Classificação | Perfis / notas |
+|---------|---------|------------|------|---------------|----------------|
+| **Dashboard** | `dashboard` | `Dashboard` | Sim | 🟢 | Todos |
+| **OS** | `missions` | `MissionTable` | Sim | 🟢 | Central operacional |
+| **OS** | `new-mission` | `MissionForm` | Sub-rota | 🟢 | Perm `new-mission` |
+| **OS** | `mission-report` | `MissionReportPage` | Sim | 🟡 | Divergência menu↔App (Giovanna) |
+| **OS** | `shift-handover` | `ShiftHandover` | Sim | 🟢 | Bloqueado cliente restrito |
+| **Diretoria** | `diretoria-cockpit` | `DashboardDiretoria` | Sim* | 🟢 | *Só Thiagos no menu; role diretoria não abre |
+| **Diretoria** | `gestao-investimento` | `GestaoInvestimento` | Sim* | 🟡 | Fase 2 investimentos parcial |
+| **Diretoria** | `os-analysis-pending` | `OsAnalysisPendingPage` | Sim | 🟢 | Análise OS pendente |
+| **Financeiro** | `fin-*` (10 telas) | vários | Sim | 🟢 | Bloqueado avançado/cliente |
+| **Faturamento** | `fin-billing` | `ClientBillingReport` | Sim | 🟢 | Motor faturamento |
+| **Clientes** | `clients`, forms | `ClientList`, `ClientForm`… | Sim | 🟢 | Tabelas preço/rota/veículo |
+| **Fornecedores** | `providers`, forms | `ProviderList`… | Sim | 🟢 | Agentes, veículos, tecnologias |
+| **RH** | `rh-*` | `RhModule` | Sim | 🟢 | diretoria / rh |
+| **Jurídico** | `legal-dashboard` | `LegalDashboard` | Sim | 🟢 | DataJud + processos |
+| **DHL** | `ranking-dhl` | `RankingDHL` | Sim | 🟢 | avançado/diretoria |
+| **WhatsApp** | — | `WhatsAppConnectionPanel` em Settings | Sim | 🟢 | Configurações |
+| **Relatórios** | `reports` | `ReportsDashboard` | Sim | 🟢 | Analíticos + exports |
+| **Config** | `system-settings`, etc. | vários | Sim | 🟢 | diretoria/admin |
+| **IA** | `ai-support` | `null` | Removido | ⚫ | `AIChatbot` importado morto |
+| **Legado** | `fin-billing-control` | `BillingControlCenter` | Não | ⚫ | Sem case em App atual |
+| **Legado** | — | `FinancialAuditor`, `CloudCostManager`… | Não | ⚫ | Componentes sem import |
 
----
+### Divergências críticas menu ↔ App
 
-## 4. CINCO TESTES CONHECIDOS (fora do escopo Fase 1)
+| viewKey | Problema | Risco |
+|---------|----------|-------|
+| `mission-report` | Menu inclui Giovanna; App não | 🟠 Médio — menu visível, tela bloqueada |
+| `diretoria-cockpit` | Role `diretoria` sem menu Thiago | 🟡 Médio — UX |
+| `manual-override-settings` | Sem `NAV_ITEMS` | 🔵 Baixo — deep link only |
+| `ai-support` | Case retorna `null` | 🔵 Baixo — legado |
 
-Mantidos registrados — **não corrigidos** — encaminhados às fases próprias:
+### Modais globais (fora do switch)
 
-| # | Suite / arquivo | Fase destino |
-|---|-----------------|--------------|
-| 1 | `investment-accounts` | Fase posterior (investimentos) |
-| 2 | `invoice-display` | Fase posterior (faturamento/NF) |
-| 3 | `presence-refresh` | Fase posterior (presença/realtime) |
-| 4 | `receivable-desc-nf` | Fase posterior (financeiro/NF) |
-| 5 | `zapi-sdk-cockpit` | Fase posterior (WhatsApp/Z-API) |
-
----
-
-## 5. INTEGRIDADE DE DADOS — GOVERNANÇA PERMANENTE
-
-Regra incorporada em `AGENTS.md` (seção **Integridade de conjunto de dados**). Confirmada **ativa** neste encerramento.
-
-Previne:
-
-- `.limit(1000)` perigoso em consultas críticas
-- Paginação incompleta tratada como conjunto total
-- Consulta truncada sem estado explícito
-- Fallback financeiro silencioso (fail-open)
-- Divergência entre telas sem paridade
-- Ausência de dado interpretada como inexistência
-
-**Auditoria das ~140+ ocorrências `.limit`/`.range`:** **não iniciada** — pertence às Fases 2, 4, 5 e 6.
-
----
-
-## 6. PONTOS DE RETORNO (tags Git)
-
-| Tag | Commit | Descrição |
-|-----|--------|-----------|
-| `baseline-fase1-20260812` | `88992034` | Baseline inicial pré-hotfix Resend — **preservada** |
-| `baseline-fase1-final-20260812` | `13c2bd77` | Marco documental pré-merge PR #255 (branch) |
-| `baseline-fase1-merged-20260812` | `1a3dc010` | Marco imutável pós-merge PR #255 em `main` |
-
-**Divergência:** `baseline-fase1-final-20260812` aponta para o tip da branch (`13c2bd77`), não para o merge commit em `main` (`1a3dc010`). Tag **não reescrita** (imutabilidade). Usar `baseline-fase1-merged-20260812` como referência final em `main`.
+`MissionFinancialModal`, `ProfileSettingsModal`, `WhatsAppOfflineModal`, `OsAnalysisDiretoriaModal`, `MissionAlertMonitor`, `TimeClockGate`, `ChangePasswordModal`, `MotivationGate`.
 
 ---
 
-## 7. PULL REQUESTS — ESTADO E ORDEM
+## 2. MAPA DE DOMÍNIOS
 
-| PR | Título | Estado | Conteúdo | Ação |
-|----|--------|--------|----------|------|
-| **#253** | handoff oficial Fase 1 + governança | **MERGED** (2026-08-12) | Somente docs | ✅ Concluído |
-| **#254** | hotfix Resend hardcode | **MERGED** (2026-08-12) | Edge Function + teste anti-hardcode | ✅ Concluído |
-| **#255** | encerramento formal Fase 1 | **MERGED** (2026-08-12 13:55 UTC) | Somente docs + teste fail-safe | ✅ Concluído |
-
-**Encerramento administrativo:** PR #255 mergeado em `main` @ `1a3dc010`. Sem alteração funcional adicional.
-
----
-
-## 8. ENTREGÁVEIS DA FASE 1
-
-| Entregável | Status |
-|------------|--------|
-| Auditoria inicial (somente leitura) | ✅ |
-| Tag baseline inicial | ✅ `baseline-fase1-20260812` |
-| Hotfix segurança Resend (PR #254) | ✅ |
-| Regra governança handoff + progresso % | ✅ |
-| Regra integridade de conjunto de dados | ✅ `AGENTS.md` |
-| Validação variável Vercel `RESEND_API_KEY` | ✅ |
-| Identificação prefixos + conclusão incidente | ✅ |
-| Teste anti-hardcode Resend | ✅ |
-| Encerramento documental | ✅ este arquivo |
-
----
-
-## 9. PENDÊNCIAS FORA DA FASE 1 (não bloqueiam 100%)
-
-| Item | Fase |
-|------|------|
-| Limpeza `TMSEG_RESEND` (Vercel) | Config / Fase 2+ |
-| Limpeza hardcode em `attached_assets/` | Fase 2+ |
-| Auditoria `.limit`/`.range` (~140+) | Fases 2, 4, 5, 6 |
-| Schema / RLS real | Fase 3 |
-| Correção dos 5 testes conhecidos | Fases próprias |
-| Deploy Edge Function Resend (se reativada) | Sob demanda |
+| Domínio | Telas principais | APIs / services | Tabelas centrais | Status |
+|---------|------------------|-----------------|------------------|--------|
+| **CLIENTE** | `ClientList`, `ClientForm`, rotas, veículos, usuários | Supabase direto + `/api/clients/*` | `clients`, `client_price_tables`, `client_routes`, `client_vehicles` | 🟢 |
+| **FORNECEDOR** | `ProviderList`, `ProviderForm`, agentes | Supabase + escoltistas | `providers`, `provider_cost_tables`, `provider_escoltistas` | 🟢 |
+| **VIGILANTE TERCEIRIZADO** | `ProviderAgentList`, cadastro público | `PublicAgentRegistration` | `agents`, `provider_escoltistas` | 🟢 |
+| **OS** | `MissionTable`, `MissionForm`, modais | `/api/missions/*`, Supabase | `missions`, `mission_history`, `mission_logs` | 🟢 |
+| **OS MÃE/FILHA** | `MissionForm` (Mesma OS) | `lib/missionLinkage.ts` | `missions.is_same_os`, `parent_mission_id` | 🟡 ver §5 |
+| **TABELA CLIENTE** | `ClientForm` abas preço | Supabase | `client_price_tables` | 🟢 |
+| **TABELA FORNECEDOR** | `ProviderForm` custos | Supabase | `provider_cost_tables` | 🟢 |
+| **PEDÁGIO** | `MissionForm`, modal financeiro | `lib/toll/*`, `/api/toll/*` | `missions.toll_value`, `toll_value_provider` | 🟢 |
+| **FATURAMENTO** | `ClientBillingReport` | `/api/billing/*`, recálculos | `missions` + snapshots logs | 🟢 |
+| **CONTAS A RECEBER** | `FinancialTransactionList`, faturamento | Asaas + `financial_transactions` | `financial_transactions`, `financial_invoices` | 🟢 |
+| **CONTAS A PAGAR** | idem | idem | idem | 🟢 |
+| **FINANCEIRO** | `FinancialDashboard`, DRE, contas | `/api/asaas/*`, `/api/nf/*` | transações, categorias, contas | 🟢 |
+| **COMISSÃO** | RH workspace, Cockpit RH tab | `lib/rh/commissionAuto.ts`, `/api/rh/*` | `rh_commissions`, `rh_commission_rules` | 🟡 |
+| **RELATÓRIOS** | `ReportsDashboard`, `MissionReportPage` | vários `/api/admin/*` | misto | 🟢 |
+| **DIRETORIA** | `DashboardDiretoria` | `lib/dashboardDiretoria/*` | agregações sobre missions + financeiro | 🟢 |
+| **RH** | `RhModule` | `/api/rh/*` + Supabase | `rh_*` | 🟢 |
+| **JURÍDICO** | `LegalDashboard` | `/api/datajud/*`, `/api/monitored-processes` | `monitored_processes` | 🟢 |
+| **INVESTIMENTOS** | `GestaoInvestimento` | `/api/gestao-investimento/*` | tabelas gestão investimento | 🟡 Fase 2 parcial |
+| **WHATSAPP** | Settings, modais | `/api/whatsapp/*`, `/api/zapi/*` | `whatsapp_instances`, mensagens | 🟢 |
+| **DHL** | intake público, timeline, ranking | `/api/dhl/*` | `dhl_supplier_intakes`, resends | 🟢 |
+| **PATRIMÔNIO** | `EquipmentManager` | `/api/patrimonio/*`, `/api/equipment/*` | `patrimonio_equipments` | 🟢 |
+| **COMERCIAL** | `QuoteList`, `ContractManager`, propostas | Supabase | `quotes`, `commercial_proposals` | 🟡 sem CRM |
 
 ---
 
-## 10. ALTERAÇÕES NESTA EXECUÇÃO
+## 3. ÁRVORE DA OS (fluxo real)
+
+| Etapa | Implementação | Status |
+|-------|---------------|--------|
+| CRIAÇÃO | `MissionForm` → insert `missions` | 🟢 |
+| CLIENTE | select cliente + tabela preço | 🟢 |
+| RESPONSÁVEL COMERCIAL | campo em cliente/OS (parcial) | 🟡 |
+| TABELA CLIENTE | `client_price_tables` + motor `financialUtils` | 🟢 |
+| FORNECEDOR | select + tabela custo | 🟢 |
+| TABELA FORNECEDOR | `provider_cost_tables` | 🟢 |
+| VIGILANTES | agentes no form / fornecedor | 🟢 |
+| ORIGEM/DESTINO | form + geocode | 🟢 |
+| KM/HORAS | franquias + excesso | 🟢 |
+| PEDÁGIO | `lib/toll/clientTollBilling.ts` | 🟢 |
+| APROVAÇÃO | `billing_approved`, status | 🟢 |
+| FATURAMENTO | `ClientBillingReport` + override | 🟢 |
+| CONTAS A RECEBER | `financial_transactions` + Asaas | 🟢 |
+| CONTAS A PAGAR | idem | 🟢 |
+| COMISSÃO | auto ao concluir OS (`commissionAuto`) | 🟡 |
+| RELATÓRIOS | `MissionReportPage`, `ReportsDashboard` | 🟢 |
+| DIRETORIA | `computeCanonicalRevenueCost` em agregações | 🟢 |
+
+**Motor canônico:** `lib/financialUtils.ts` → `calculateMissionFinancials`; persistência via `lib/missionFinancialsCanonical.ts` → `computeCanonicalRevenueCost`.
+
+---
+
+## 4. OS MÃE / OS FILHA — REGRA EXISTENTE
+
+| Pergunta | Resposta |
+|----------|----------|
+| Quando nasce filha? | Operador marca **Mesma OS** + escolhe `parent_mission_id` no `MissionForm` |
+| O que reutiliza? | **Custo fornecedor zerado** (conceito operacional); **não** copia cliente/fornecedor/rota automaticamente |
+| Cliente nova cobrança? | **Sim** — cada filha tem `revenue_value` próprio |
+| Fornecedor nova cobrança? | **Não** — `cost_value=0`, pedágio fornecedor zerado na filha |
+| Faturamento | Lista individual; badges MESMA OS; agregação em `LowMarginDialog`/`LossesDialog` |
+| Financeiro/DRE | Exclui custo filha; risco se `toll_value_provider` não zerado |
+| Risco duplicidade | 🟠 Somar receitas sem entender vínculo; margem da filha isolada parece alta |
+| Arquivos-chave | `lib/missionLinkage.ts`, `lib/missionFinancialsCanonical.ts`, `MissionForm.tsx`, `server/routes.ts` recalc |
+
+---
+
+## 5. MATRIZ DE PARIDADE (amostra crítica)
+
+| Dado | Fonte oficial aparente | Consumidores | Divergência |
+|------|------------------------|--------------|-------------|
+| `revenue_value` | Coluna `missions` após verificação OU `computeCanonicalRevenueCost` | MissionTable, MissionFinancialModal, ClientBillingReport, FinancialDRE, DashboardDiretoria | 🟡 POTENCIAL SSOT — alguns recalculam via `calculateMissionFinancials` |
+| `cost_value` | idem | idem + DRE | 🟡 filha força 0; DRE pedágio fornecedor |
+| `toll_value` / `toll_value_provider` | `lib/toll/clientTollBilling.ts` | Modal, faturamento, canônico | 🟠 charts ClientBillingReport podem não zerar filha |
+| `billing_approved` | `missions` | Faturamento, diretoria abertas | 🟢 |
+| Margem grupo OS mãe | `buildGroupSummary` | LowMarginDialog, LossesDialog | 🟢 agregado |
+| Saldo caixa | `financial_transactions` + snapshots | FinancialDashboard, Diretoria | 🟡 snapshots vs transações |
+
+**Violações SSOT candidatas (não consolidadas):**
+- `export_relatorio/financialUtils.ts` — cópia paralela do motor (Fase 1 já citada)
+- Recálculo frontend vs valor persistido em telas legadas
+- RH payroll: Supabase client vs `/api/rh/payroll/*`
+
+---
+
+## 6. LIMIT / RANGE / PAGINAÇÃO
+
+**Total ocorrências ativas:** 187 em `components/` + `lib/` + `server/` (excl. `attached_assets`).
+
+### Top arquivos
+
+| Arquivo | Ocorrências | Prioridade |
+|---------|-------------|------------|
+| `server/routes.ts` | 36 | 🔴 |
+| `MissionFinancialModal.tsx` | 9 | 🔴 |
+| `ClientBillingReport.tsx` | 5 | 🔴 |
+| `MissionTable.tsx` | 4 | 🔴 |
+| `useDashboardDiretoriaData.ts` | 4 | 🔴 |
+| `dhlSupplierIntake.ts` | 6 | 🟡 |
+
+### Amostra classificada
+
+| Arquivo | Função/contexto | Limite | Classificação |
+|---------|-----------------|--------|---------------|
+| `MissionTable.tsx` | busca server-side termo | `.limit(300)` | 🔴 PERIGOSO se >300 OS match |
+| `MissionTable.tsx` | período selecionado | fetch por intervalo | 🔵 PAGINADO (refatorado) |
+| `useDashboardDiretoriaData.ts` | missões período | `fetchAllPages` + `.range` | 🔵 PAGINADO |
+| `useDashboardDiretoriaData.ts` | quotes | `.limit(500)` | 🔴 PERIGOSO se >500 cotações |
+| `ClientBillingReport.tsx` | logs ajuste | `missionIds.length * 5` | 🟣 AGREGADO condicional |
+| `server/routes.ts` | vários endpoints | misto | ⚪ INDETERMINADO — auditar na 75% |
+
+**Pendente Fase 2 (75%):** classificar todas as 187 ocorrências.
+
+---
+
+## 7. FALLBACKS (amostra)
+
+| Padrão | Exemplo | Risco |
+|--------|---------|-------|
+| `computeCanonicalRevenueCost` | se não verificado → recalcula | 🟡 fail-open financeiro se tabela ausente |
+| `missionLinkage` | `parent_mission_id` sem `is_same_os` | 🟠 custo não zerado |
+| `localStorage userData` | nome usuário em modais | 🔵 baixo |
+| `catch { /* silencioso */ }` | MissionTable busca | 🟡 mascara erro consulta |
+| `?? 0` / `\|\| 0` | valores financeiros | ⚪ auditar caso a caso |
+
+**Pendente:** inventário sistemático `??`, `||`, `fallback`, `default` em `lib/financialUtils.ts`, `missionFinancialsCanonical.ts`, `ClientBillingReport.tsx`.
+
+---
+
+## 8. CACHE E REALTIME
+
+### Realtime (`lib/RealtimeProvider.tsx`)
+
+- **55+ tabelas** com invalidação React Query parcial
+- `missions` → invalidação **não mapeada** em `TABLE_TO_QUERY_KEYS` (array vazio) — 🟠 **presence-refresh** relacionado
+- Demais tabelas: mapeamento para query keys específicas
+
+### React Query
+
+Usado em: `ProviderList`, `ProfileList`, partes financeiras. Cobertura **parcial**.
+
+### localStorage
+
+`userData`, `authToken`, preferências MissionTable, `openMissionOnLoad`, MotivationGate.
+
+### Resposta sincronismo
+
+| Evento | Telas que atualizam | Telas que podem precisar F5 |
+|--------|---------------------|----------------------------|
+| Editar OS | MissionTable (período), realtime parcial | Dashboard, Diretoria até refresh manual |
+| Transação financeira | FinancialDashboard keys | ClientBillingReport |
+| WhatsApp status | modais + realtime instances | — |
+
+**Teste `presence-refresh`:** prioridade Fase 2 — indica gap realtime/presença.
+
+---
+
+## 9. ENDPOINTS (~313 paths)
+
+| Categoria | Qtd aprox. | Notas |
+|-----------|------------|-------|
+| Utilizados UI | ~227 | grep components/lib |
+| Cron/webhook | ~25 | sem UI esperado |
+| Admin/migração órfã | ~15 | `/api/migration/*`, cleanup |
+| Duplicado Express+serverless | ~48 | arquitetura Vercel intencional |
+| Legado Replit não registrado | 6 | `server/replit_integrations/` |
+
+**Top consumidores:** `/api/missions/:id/billing-override`, `force-recalculate`, `/api/os-analysis`, domínios Asaas/NF/WhatsApp.
+
+---
+
+## 10. FUNCIONALIDADES INACABADAS
+
+| Item | Classificação | Notas |
+|------|---------------|-------|
+| `ai-support` / `AIChatbot` | **FINALIZAR** | API `/api/chat` viva, UI morta |
+| Gestão Investimento Fase 2 | **FINALIZAR** | watchlist sem recomendação auto |
+| Comissão API duplicada | **FINALIZAR** | client vs `/api/rh/commissions/calculate-mission` |
+| `manual-override-settings` menu | **FINALIZAR** | fora NAV_ITEMS |
+| Permissões fantasma (`client-reports`…) | **INVESTIGAR** | sem rota App |
+| `BillingControlCenter` | **POSSÍVEL REMOÇÃO** | órfão |
+| `replit_integrations/` | **POSSÍVEL REMOÇÃO** | não registrado |
+| CRM/leads | **INVESTIGAR** | não existe — roadmap? |
+| Provider Meta WhatsApp | **FINALIZAR** | stub não implementado |
+
+---
+
+## 11. RELATÓRIOS
+
+| Relatório | Fonte | Paginação | Export | Paridade tela |
+|-----------|-------|-----------|--------|---------------|
+| `ReportsDashboard` | missions + logs + motor auto | misto | CSV múltiplos | 🟡 |
+| `MissionReportPage` | missions + linkage | período | print | 🟢 |
+| `ClientBillingReport` | missions + canônico | por seleção | PDF/email | 🟡 charts |
+| `FinancialReport` | transações | ⚪ | ⚪ | ⚪ |
+| `RHPointReport` | ⚫ órfão | — | — | — |
+| DHL occurrence | `/api/dhl/occurrence-report` | API | PDF/HTML | 🟢 |
+| DataJud diário | LegalDashboard + cron | API | email | 🟢 |
+
+---
+
+## 12. DIRETORIA (`DashboardDiretoria`)
+
+**Abas:** Geral, Financeiro, Operação, Clientes & Fornecedores, RH & Comissões, Sistema.
+
+**KPIs/gráficos:** faturamento, custos, margem vs meta, caixa, AR/AP, fluxo diário, funil cotações, OS mãe ativas, alertas críticos, comissões RH, billing Cursor.
+
+**Fonte dados:** `useDashboardDiretoriaData` — `fetchAllPages` para missions/transações; `computeCanonicalRevenueCost` nas agregações.
+
+**Calcula autonomamente:** sim — agregações em `lib/dashboardDiretoria/aggregations.ts`.
+
+**Evolução futura preparada:** volume cliente/fornecedor, tendências — estrutura existe; não implementar agora.
+
+---
+
+## 13. JURÍDICO (`LegalDashboard`)
+
+- Processos monitorados: CRUD via `/api/monitored-processes`
+- DataJud: `/api/datajud/consulta`, relatório diário POST
+- Tabela: `monitored_processes` (realtime ativo)
+- **Comparar futuro:** dossiê vigilante terceirizado — não existe ainda
+
+---
+
+## 14. COMERCIAL / COMISSÃO
+
+| Área | Existe? |
+|------|---------|
+| CRM/leads | **Não** |
+| Cotações | `QuoteList`, `QuoteForm` 🟢 |
+| Contratos | `ContractManager` 🟢 |
+| Propostas | `CommercialProposalModal` 🟢 |
+| Role comercial | permissões granulares 🟢 |
+| Comissão | `rh_commission_rules`, auto OS, folha 🟡 |
+
+---
+
+## 15. TESTES CONHECIDOS (5 — não corrigidos)
+
+| # | Suite | Fase destino | Prioridade Fase 2 |
+|---|-------|--------------|-------------------|
+| 1 | investment-accounts | investimentos | 🔵 |
+| 2 | invoice-display | faturamento/NF | 🟡 |
+| 3 | **presence-refresh** | realtime/sync | 🔴 **prioridade** |
+| 4 | receivable-desc-nf | financeiro | 🟡 |
+| 5 | zapi-sdk-cockpit | WhatsApp | 🟡 |
+
+---
+
+## 16. SMOKE TEST
+
+| Área | Método | Resultado |
+|------|--------|-----------|
+| Produção health | `GET /api/health` | 🟢 ok |
+| Produção version | `GET /api/version` | 🟢 `3.7.60` / `d78e3ed3` |
+| Login/UI/browser | — | ⚪ NÃO VALIDADO (sem sessão operador) |
+| CRUD OS | — | ⚪ NÃO VALIDADO — exigiria escrita |
+| Demais áreas | — | ⚪ pendente smoke guiado |
+
+---
+
+## 17. RISCOS PRIORIZADOS
+
+| Risco | Nível | Domínio |
+|-------|-------|---------|
+| `missions` sem invalidação React Query no realtime | 🔴 | Sincronismo |
+| `MissionTable` busca `.limit(300)` | 🔴 | Integridade OS |
+| Divergência menu/App `mission-report` | 🟠 | Permissões |
+| OS filha margem isolada / charts pedágio | 🟠 | SSOT financeiro |
+| `export_relatorio/financialUtils` duplicado | 🟠 | SSOT |
+| Quotes `.limit(500)` diretoria | 🟠 | Integridade |
+| Endpoints migração admin expostos | 🟡 | Segurança |
+| Componentes órfãos (`attached_assets`, BillingControlCenter) | 🔵 | Dívida técnica |
+| `TMSEG_RESEND` Vercel redundante | 🔵 | Config |
+
+---
+
+## 18. ALTERAÇÕES NESTA EXECUÇÃO
 
 | Escopo | Alteração |
 |--------|-----------|
 | Código funcional | **Nenhuma** |
-| Banco / RLS | **Nenhuma** |
-| Vercel / produção | **Nenhuma** |
-| Chaves Resend | **Nenhuma revogada** |
-| Documentação | Handoff encerramento + registro merge PR #255 |
-| Tag Git | `baseline-fase1-merged-20260812` criada em `1a3dc010` |
+| Banco / Vercel / produção | **Nenhuma** |
+| Documentação | Este handoff Fase 2 |
 
 ---
 
-## 11. NÃO INICIADO
+## 19. PENDÊNCIAS FASE 2 (para 75% e 100%)
 
-- **Fase 2** e demais fases do programa — aguardando instrução explícita.
+1. Classificar **todas** as 187 ocorrências `.limit`/`.range`
+2. Inventário completo de fallbacks financeiros fail-open
+3. Matriz de paridade expandida (10+ campos críticos)
+4. Smoke test browser com credencial teste (se disponível)
+5. Mapa endpoint → consumidor para órfãos
+6. Inventário cache por tela (completar)
+7. Relatórios — validação fonte vs tela operacional
+
+---
+
+## 20. NÃO INICIADO
+
+- **Fase 3** (RLS/schema profundo)
+- Gestor Comercial
+- Novo módulo Jurídico
+- Refatoração motores financeiros
+- Correções dos 5 testes (exceto investigação presence-refresh)
 
 ---
 
@@ -201,4 +418,4 @@ Previne:
 
 ---
 
-*Gerado em: 2026-08-12 UTC | Execução: Encerramento formal Fase 1*
+*Gerado em: 2026-08-12 UTC | Execução: Fase 2 Raio-X — marco 55%*
