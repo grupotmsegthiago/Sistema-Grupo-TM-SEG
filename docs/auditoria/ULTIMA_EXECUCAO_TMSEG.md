@@ -1,6 +1,6 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — investigação NB-06 (504 migration em produção).  
+> Handoff oficial — fechamento NB-06 + revisão PR #258 + hardening preventivo.  
 > **Não contém segredos.**
 
 ---
@@ -10,259 +10,273 @@
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-12 (UTC) |
-| **Tipo** | Investigação NB-06 — timeout `/api/migration/*` em produção |
+| **Tipo** | Revisão integral PR #258 + hardening endpoints 🔴 |
+| **PR** | [#258](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/258) — **NÃO mergeado** |
 | **Branch** | `cursor/nb06-migration-504-eaa8` |
-| **Produção (sem deploy desta correção)** | buildId `420e9680…` |
-| **Migration executada?** | **NÃO** |
-| **P1 iniciado?** | **NÃO** |
+| **Produção atual** | buildId `420e9680…` (sem deploy desta revisão) |
+| **Migration/SQL executado** | **NÃO** |
+| **P1 iniciado** | **NÃO** |
 
 ---
 
 ## PROGRESSO — TRÊS INDICADORES
 
-| Indicador | Valor | Significado |
-|-----------|-------|-------------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 | Investigação NB-06 concluída |
-| **FASE 3 (total)** | **20%** 🔵 | Sem avanço funcional publicado — investigação não infla a fase |
-| **PROGRAMA GERAL** | **22%** | Inalterado |
-
-### Marcos desta execução
-
-| Marco | % execução | Evidência |
-|-------|------------|-----------|
-| Mapear rotas + diff local/prod | 10% | §2 |
-| Testes seguros produção/local | 25% | §5 |
-| Causa raiz 504 | 50% | §3 |
-| Inventário família admin | 75% | §7 |
-| Correção mínima + testes + handoff | **100%** | §8–12 |
+| Indicador | Valor |
+|-----------|-------|
+| **EXECUÇÃO ATUAL** | **100%** 🟢 |
+| **FASE 3 (total)** | **20%** 🔵 |
+| **PROGRAMA GERAL** | **22%** |
 
 ---
 
-## DECISÃO FINAL
+## DECISÃO PR #258
 
-# 🟡 NB-06 NÃO BLOQUEANTE — P1 PODE INICIAR COM MONITORAMENTO
+# 🟢 PR #258 APTO PARA MERGE
 
 | Critério | Resultado |
 |----------|-----------|
-| Causa raiz identificada | ✅ `api/index` catch-all (Express 1,4 MB) trava em produção |
-| Auth migration no código | ✅ `requireAuth` → `requireRole` **antes** do handler (Express + handlers leves) |
-| 401/403 comprovado em produção (rotas migration) | ❌ **Ainda não** — timeout impede resposta; correção na branch aguarda deploy |
-| Migration/SQL executado nos testes | ❌ **NÃO** |
-| Risco de exposição imediata | 🟢 Baixo — endpoints inacessíveis (timeout), não respondem com SQL |
-| Correção preparada | ✅ Handlers leves + rewrites (branch, **sem publicar**) |
+| Revisão integral dos arquivos | ✅ |
+| Equivalência handlers ↔ Express | ✅ (SSOT `lib/migrationEndpointPayloads.ts`) |
+| Auth antes de operação privilegiada | ✅ |
+| Endpoints 🔴 protegidos | ✅ |
+| Rewrites sem regressão | ✅ |
+| `api/index` global | ❌ **não reparado** (deliberado) |
+| Testes NB-06 + P0 | ✅ **34/34 pass** |
+| Build | ✅ OK |
+| Suíte completa | ✅ sem falha nova no escopo (baseline 5 fail mantida) |
+| NB-06 🟢 em produção | ⏳ **após deploy + smoke pós-merge** |
 
-**Não é 🔴 bloqueio:** o 504 não indica endpoint desprotegido executando migration; indica função `api/index` que não completa a resposta. Efeito colateral: negação de serviço, não bypass de auth.
-
-**Não é 🟢 resolvida:** critério de fechamento exige 401/403 em produção — depende de deploy autorizado da correção.
-
----
-
-## 1. OBJETIVO
-
-Explicar por que `POST /api/migration/*` retorna TIMEOUT/504 em produção enquanto localmente retorna 401, e classificar impacto em P1.
+**NÃO mergeado nesta execução.** **NÃO deployado.**
 
 ---
 
-## 2. MAPEAMENTO DE ROTAS
+## 1. CAUSA NB-06 (recapitulação)
 
-### 2.1 Endpoints NB-06
+Rotas migration existiam **somente** no catch-all `api/index` → Express `vercelApp.cjs` (~1,4 MB) que **não completa resposta HTTP** na Vercel (timeout 0 bytes). Não é falha de auth nem execução de SQL.
 
-| Campo | `add-mission-columns` | `provider-ops-columns` |
-|-------|----------------------|------------------------|
-| **Caminho** | `POST /api/migration/add-mission-columns` | `POST /api/migrations/provider-ops-columns` |
-| **Express** | `server/routes.ts` L2664 | `server/routes.ts` L5113 |
-| **Middleware** | `requireAuth` → `requireRole('diretoria','administrador')` → handler | idem |
-| **Handler** | Retorna JSON com SQL (manual) — **não executa** | Retorna SQL manual — **não executa** `ALTER` |
-| **Rewrite Vercel (antes)** | catch-all ` /api/(.*)` → `/api/index` | idem |
-| **Serverless (antes)** | `api/index.ts` → `dist/vercelApp.cjs` → Express | idem |
-| **Rewrite Vercel (correção branch)** | → `/api/migration-add-mission-columns` | → `/api/migrations-provider-ops-columns` |
+**Correção:** handlers serverless leves + rewrites específicos **antes** do catch-all.
 
-### 2.2 Diferença local × produção
-
-| Ambiente | Runtime | Resultado sem token |
-|----------|---------|---------------------|
-| **Local** (`getApp()` direto) | Express | **401** em ~3–6 ms |
-| **Produção** (pré-correção) | `api/index` catch-all | **TIMEOUT** 0 bytes (20–120 s) |
-| **Produção** (handlers dedicados, controle) | ex. `api/billing-ensure-schema` | **401** em ~70 ms |
+**Problema global `api/index`:** registrado para auditoria futura — **não reparado** nesta execução (evita expor rotas hoje inacessíveis).
 
 ---
 
-## 3. CAUSA RAIZ DO 504
+## 2. REVISÃO ARQUIVO A ARQUIVO (PR #258 + hardening)
 
-### Diagnóstico
+### `api/migration-add-mission-columns.ts`
 
-O 504 **não** é falha do middleware `requireAuth` nem execução de migration antes da auth.
+| Campo | Detalhe |
+|-------|---------|
+| Necessidade | Contornar timeout `api/index` |
+| Alteração | Handler POST leve; auth → JSON SQL manual |
+| Equivalência | Idêntico ao Express original (só retorna SQL) |
+| Risco | Baixo — zero SQL executado |
+| Regra de negócio | **Inalterada** |
 
-**Causa comprovada:** rotas que dependem exclusivamente do catch-all Express (`api/index.ts` → `serverless-http` → `dist/vercelApp.cjs` ~1,4 MB) **não completam a resposta HTTP** na Vercel (0 bytes recebidos, timeout cliente).
+### `api/migrations-provider-ops-columns.ts`
 
-Evidências:
+| Campo | Detalhe |
+|-------|---------|
+| Necessidade | Idem |
+| Alteração | Handler POST leve; auth → `buildProviderOpsColumnsResponse()` |
+| Equivalência | **Melhor** que Express antigo (removeu fetches RPC vazios inúteis); resposta JSON igual |
+| Risco | Baixo |
+| Regra de negócio | **Inalterada** |
 
-1. **Padrão sistemático** — mesmas rotas via `api/index` travam; handlers leves respondem:
-   - TIMEOUT: `/api/migration/*`, `/api/chat`, `/api/admin/manual-override-settings`, `/api/push/send`, `/api/supabase/health-check`
-   - OK rápido: `/api/billing/ensure-schema`, `/api/nf/summary`, `/api/whatsapp/groups`, `/api/recalculate-open`
+### `lib/migrationApiAuth.ts`
 
-2. **Documentação interna pré-existente** — `server/osAnalysisRequests.ts`, `api/nf-control.ts`, `api/recalculate-open.ts` citam explicitamente que `api/index` causa timeout/504 em produção.
+| Campo | Detalhe |
+|-------|---------|
+| Necessidade | Auth serverless sem Express |
+| Alteração | `assertMigrationAdminAccess` via `tmsegAuth` (`readBearer` + `resolveLitePrincipal` + `hasRole`) |
+| Equivalência | Espelha `requireAuth` + `requireRole('diretoria','administrador')` |
+| Risco | Baixo — reutiliza mecanismo oficial |
+| SSOT duplicado? | **Não** — delega a `lib/tmsegAuth.ts` |
 
-3. **Logs Vercel** — invocações de `api/cron/email-queue` (mesmo `getApp`) bootam Express com sucesso via cron; requisições externas a `api/index` **não** geram linha `express POST /api/migration/...` nos logs (request não chega a responder).
+### `lib/migrationEndpointPayloads.ts`
 
-4. **Deploy inspect** — `api/index` = **18,18 MB** (bundle pesado); handlers leves ~280 KB.
+| Campo | Detalhe |
+|-------|---------|
+| Necessidade | SSOT único payload migration |
+| Alteração | Constantes + `buildProviderOpsColumnsResponse()` |
+| Equivalência | Express **agora importa** este módulo (sem duplicação) |
+| Risco | Nenhum |
 
-5. **Local** — auth e ordem de middleware corretos; handler migration não toca Supabase/SQL.
+### `server/routes.ts` (hardening)
 
-### Onde o request trava
+| Rota | Antes | Depois | Justificativa perfis |
+|------|-------|--------|----------------------|
+| `POST /api/admin/run-monthly-logs-cleanup` | **sem auth** | `requireAuth` + `requireRole('administrador','diretoria')` | Irmão de `cleanup-history`; comentário "diretoria" |
+| `POST /api/missions/fix-ceva-logitech-values` | **sem auth** | `requireAuth` + `requireRole('diretoria','administrador','financeiro')` | Alinhado a `fix-divergences` (altera revenue/cost) |
+| migration endpoints Express | payloads inline | import `migrationEndpointPayloads` | SSOT |
 
-```
-Cliente → Vercel Edge → rewrite catch-all → λ api/index
-  → require vercelApp.cjs + getApp() + serverless-http
-  → (hang / sem resposta HTTP dentro do limite efetivo do cliente)
-```
+### `vercel.json`
 
-**Não** trava no handler de migration nem em `exec_sql` — a requisição não retorna corpo algum.
+| Campo | Detalhe |
+|-------|---------|
+| Alteração | 2 rewrites migration **antes** de `/api/(.*)` |
+| Risco interceptação | Testado — rotas dedicadas existentes inalteradas |
+| Catch-all | Permanece último rewrite de API |
+
+### `scripts/nb06-migration-routes.test.ts`
+
+| Campo | Detalhe |
+|-------|---------|
+| Cobertura | 18 testes: auth handlers, SQL zero, hardening 🔴, roteamento, Express 401 local |
+| Falhas | 0 |
 
 ---
 
-## 4. ORDEM DO MIDDLEWARE (Express)
+## 3. ENDPOINTS 🔴 — INVESTIGAÇÃO INDIVIDUAL
+
+### `POST /api/admin/run-monthly-logs-cleanup`
+
+| Campo | Valor |
+|-------|-------|
+| Consumidor frontend | **Nenhum** (só `server/routes.ts`) |
+| Finalidade | Disparo manual da limpeza mensal de `system_logs` (>90d, tipos HEARTBEAT/LOGIN/LOGOUT/OTHER) |
+| Operação | **DELETE** em lote no Supabase |
+| Risco pré-correção | 🔴 alto se `api/index` voltar a funcionar |
+| Auth aplicada | `administrador`, `diretoria` (fail-closed) |
+
+### `POST /api/missions/fix-ceva-logitech-values`
+
+| Campo | Valor |
+|-------|-------|
+| Consumidor frontend | **Nenhum** |
+| Finalidade | Correção em lote revenue/cost CEVA/LOGITECH/200KM |
+| Operação | **PATCH** em `missions` via REST |
+| Risco pré-correção | 🔴 alto |
+| Auth aplicada | `diretoria`, `administrador`, `financeiro` (fail-closed, espelha `fix-divergences`) |
+
+**Nota:** ambos permanecem no catch-all `api/index` (timeout em prod hoje). Hardening Express protege dev local e futuro reparo do catch-all.
+
+---
+
+## 4. ORDEM MIDDLEWARE / AUTH (comprovada)
 
 ```text
-POST /api/migration/add-mission-columns
-  → requireAuth (síncrono: sem token → 401)
-  → requireRole (async: Supabase system_users → 403 se role inválida)
-  → handler (só JSON com SQL)
+Request → método HTTP (405 se inválido)
+       → assertMigrationAdminAccess / requireAuth (401 sem token)
+       → requireRole / hasRole (403 se role inválida)
+       → handler (JSON read-only OU operação privilegiada)
 ```
 
-Nenhum acesso a Supabase migration, `exec_sql`, ou `ALTER` ocorre **antes** de `requireAuth`.
-
-**Classificação segurança middleware:** 🟢 ordem correta no código — **não** 🔴 bloqueio de segurança por ordem invertida.
+**Migration handlers dedicados:** 0 imports de Supabase/`exec_sql`/`fetch` — **0 SQL executado**.
 
 ---
 
-## 5. TESTES SEGUROS (sem executar migration)
+## 5. TESTES EXECUTADOS
 
-### Produção @ buildId `420e9680` (pré-deploy correção)
+### NB-06 + P0
 
-| Caso | Rota | Esperado | Obtido |
-|------|------|----------|--------|
-| A — sem token | `POST /api/migration/add-mission-columns` | 401/403 | **TIMEOUT** 0 bytes (25–120 s) |
-| A — sem token | `POST /api/migrations/provider-ops-columns` | 401/403 | **TIMEOUT** |
-| B — token inválido | `POST /api/migration/add-mission-columns` + `Bearer fake` | 401/403 | **TIMEOUT** |
-| C — método incorreto | `GET /api/migration/add-mission-columns` | 404/405 | **TIMEOUT** |
-| Controle dedicado | `POST /api/billing/ensure-schema` sem token | 401 | **401** em 77 ms |
-| Controle dedicado | `GET /api/whatsapp/instances` sem token | 401 | **401** em 67 ms |
+```bash
+npx tsx --test --test-force-exit scripts/nb06-migration-routes.test.ts scripts/fase3-p0-financial-integrity.test.ts
+```
 
-### Local Express (`getApp()`)
+| Resultado | 34 pass / 0 fail |
 
-| Caso | Resultado |
-|------|-----------|
-| POST sem token | **401** `Não autorizado` (~3 ms) |
-| POST token inválido | **403** (via `requireRole`) |
-| GET | **404** |
+### Casos de segurança (todos sem executar migration/dados)
 
-### Handlers leves (branch, teste unitário)
+| Endpoint | Sem token | Token inválido | Método errado | Handler executado |
+|----------|-----------|----------------|---------------|-------------------|
+| `migration/add-mission-columns` (handler) | 401 ✅ | 401/403 ✅ | 405 ✅ | ❌ |
+| `migrations/provider-ops-columns` (handler) | 401 ✅ | — | 405 ✅ | ❌ |
+| `admin/run-monthly-logs-cleanup` (Express) | 401 ✅ | — | — | ❌ |
+| `missions/fix-ceva-logitech-values` (Express) | 401 ✅ | — | — | ❌ |
 
-`scripts/nb06-migration-routes.test.ts` — **8/8 pass**
+### Regressão roteamento
 
----
+| Rota | Destino | Status |
+|------|---------|--------|
+| `/api/health` | `/api/health` | ✅ inalterado |
+| `/api/version` | `/api/version` | ✅ |
+| `/api/billing/ensure-schema` | `/api/billing-ensure-schema` | ✅ |
+| `/api/recalculate-open` | `/api/recalculate-open` | ✅ |
+| `/api/nf/summary` | `/api/nf-control?op=summary` | ✅ |
+| `/api/whatsapp/groups` | `/api/whatsapp/groups` | ✅ |
+| `/api/chat` | `/api/index` | ✅ catch-all preservado |
+| `/api/migration/add-mission-columns` | `/api/migration-add-mission-columns` | ✅ **novo** |
 
-## 6. LOGS VERCEL (sanitizados)
+### Build
 
-| Request | Função | Etapa alcançada | Resultado |
-|---------|--------|-----------------|-----------|
-| `POST /api/migration/add-mission-columns` | `api/index` | Boot Express não confirmado para esta request | Timeout cliente, sem log `express POST` |
-| `GET /api/cron/email-queue` (cron interno) | `api/cron/email-queue` | `getApp()` OK, migrations background | Sucesso |
-| `GET /api/billing/dashboard` | handler dedicado | auth check | 401 imediato |
+`npm run build` — **OK**
 
----
+### Suíte completa
 
-## 7. INVENTÁRIO FAMÍLIA ADMIN (somente classificação)
-
-### Migration / schema
-
-| Rota | Runtime prod | Auth código | Classificação |
-|------|--------------|-------------|---------------|
-| `POST /api/migration/add-mission-columns` | api/index (timeout) | requireAuth + role | 🟡 precisa validar em prod (fix na branch) |
-| `POST /api/migrations/provider-ops-columns` | api/index (timeout) | requireAuth + role | 🟡 idem |
-| `POST /api/billing/ensure-schema` | dedicado | assertBilling + role | 🟢 protegido (401 prod) |
-| `POST /api/gestao-investimento/ensure-schema` | dedicado | auth no handler | 🟢 protegido |
-| `GET /api/whatsapp/telemetry/migrations-sql` | api/index | requireAuth + role | 🟡 timeout catch-all |
-
-### Admin (amostra)
-
-| Rota | Auth | Classificação |
-|------|------|---------------|
-| `GET/PUT /api/admin/manual-override-settings` | requireAuth + role | 🟡 Express-only, timeout prod |
-| `GET /api/admin/system-settings/daily-reports` | dedicado parcial | 🟢 GET dedicado |
-| `POST /api/admin/run-monthly-logs-cleanup` | **SEM auth** | 🔴 sem auth no código — mitigado por timeout api/index hoje |
-| `POST /api/missions/fix-ceva-logitech-values` | **SEM auth** | 🔴 altera dados se acessível — mitigado por timeout hoje |
-
-### Recalculate / maintenance
-
-| Rota | Runtime | Classificação |
-|------|---------|---------------|
-| `POST /api/recalculate-open` | dedicado | 🟢 401 prod |
-| `POST /api/recalculate-all` | api/index | 🟡 timeout |
-| `POST /api/admin/recalculate-batch` | api/index | 🟡 timeout |
-| `GET /api/cron/maintenance` | api/index | 🟡 timeout (cron Vercel pode funcionar internamente) |
-
-**Nota:** endpoints 🔴 não foram corrigidos nesta execução (escopo NB-06). Se `api/index` for reparado globalmente, exigem auth imediata.
+`bash scripts/run-tests.sh` — executada; **sem falha nova** nos testes migration/NB-06/hardening. Baseline histórica de 5 falhas mantida (pré-existentes, fora do escopo).
 
 ---
 
-## 8. CORREÇÃO IMPLEMENTADA (branch — NÃO publicada)
+## 6. DIFF COMPLETO (branch vs main)
 
-### Causa → arquivos → impacto
-
-| Item | Detalhe |
-|------|---------|
-| **Causa** | Migration só no catch-all `api/index` que trava |
-| **Arquivos novos** | `api/migration-add-mission-columns.ts`, `api/migrations-provider-ops-columns.ts`, `lib/migrationApiAuth.ts`, `lib/migrationEndpointPayloads.ts` |
-| **Arquivos alterados** | `vercel.json` (2 rewrites antes do catch-all) |
-| **Impacto** | Rotas migration passam a handlers leves; auth antes de payload; **zero SQL** |
-| **Express** | Rotas mantidas para dev local (inalteradas) |
-
-### Testes pós-correção (local)
-
-| Teste | Resultado |
-|-------|-----------|
-| `npx tsx --test scripts/nb06-migration-routes.test.ts` | **8/8 pass** |
-| `npm run build` | **OK** |
-
-### Deploy
-
-**NÃO executado** — aguardando autorização explícita.
-
-Após deploy: repetir Casos A/B/C em produção; esperado **401/403** em &lt;200 ms.
+| Arquivo | Ação |
+|---------|------|
+| `api/migration-add-mission-columns.ts` | novo |
+| `api/migrations-provider-ops-columns.ts` | novo |
+| `lib/migrationApiAuth.ts` | novo |
+| `lib/migrationEndpointPayloads.ts` | novo |
+| `scripts/nb06-migration-routes.test.ts` | novo/ampliado |
+| `vercel.json` | +2 rewrites |
+| `server/routes.ts` | SSOT payloads + auth 🔴 |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | handoff |
 
 ---
 
-## 9. RISCO E ROLLBACK
+## 7. PLANO PÓS-MERGE (obrigatório antes de NB-06 🟢)
 
-| Risco | Nível | Mitigação |
-|-------|-------|-----------|
-| Migration exposta sem auth em prod hoje | Baixo | Timeout = inacessível |
-| Admin settings via Express quebrados em prod | Médio | Já conhecido; extrair handlers (padrão P1) |
-| Endpoints sem auth se api/index voltar a funcionar | Alto | Inventário 🔴 — corrigir antes de reparar catch-all |
+Após merge autorizado + deploy Vercel (`sistema-grupo-tm-seg`):
 
-**Rollback da correção NB-06:** reverter rewrites + apagar handlers leves (Express fallback permanece).
+```bash
+BASE="https://sistema.grupotmseg.com.br"
+
+# Migration — deve responder rápido (não timeout)
+curl -sS -m 15 -w "\nHTTP:%{http_code}\n" -X POST -H "Content-Type: application/json" -d '{}' \
+  "$BASE/api/migration/add-mission-columns"
+# Esperado: HTTP 401
+
+curl -sS -m 15 -w "\nHTTP:%{http_code}\n" -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer token-invalido" -d '{}' \
+  "$BASE/api/migration/add-mission-columns"
+# Esperado: HTTP 401 ou 403
+
+curl -sS -m 15 -w "\nHTTP:%{http_code}\n" -X POST -H "Content-Type: application/json" -d '{}' \
+  "$BASE/api/migrations/provider-ops-columns"
+# Esperado: HTTP 401
+
+# Controles (não devem regredir)
+curl -sS -m 10 "$BASE/api/health"
+curl -sS -m 10 "$BASE/api/version"
+curl -sS -m 10 -X POST -H "Content-Type: application/json" -d '{}' "$BASE/api/billing/ensure-schema"
+# Esperado: health 200, version 200, billing 401
+```
+
+**Critério NB-06 🟢:** migration retorna **401/403** em produção em <2s (não timeout); handler não executa SQL.
+
+Endpoints 🔴 (`run-monthly-logs-cleanup`, `fix-ceva-logitech-values`) continuam no catch-all — em prod hoje ainda timeout; após reparo futuro do `api/index`, validar 401 sem token.
 
 ---
 
-## 10. P1
+## 8. ROLLBACK
 
-| Pergunta | Resposta |
-|----------|----------|
-| NB-06 bloqueia P1? | **Não** — classificação 🟡 |
-| Condição | P1 pode iniciar com monitoramento; deploy da correção migration recomendado cedo no P1 |
-| P1 iniciado nesta execução? | **NÃO** |
+| Ação | Comando / referência |
+|------|---------------------|
+| Reverter PR | `git revert` do merge commit |
+| Rewrites | remover entradas migration em `vercel.json` |
+| Hardening | reverter `server/routes.ts` (não recomendado) |
 
 ---
 
-## 11. GIT
+## 9. PENDÊNCIAS PRESERVADAS
 
-| Item | Valor |
-|------|-------|
-| Branch | `cursor/nb06-migration-504-eaa8` |
-| Base | `main` @ `420e9680` |
-| Publicado | **NÃO** |
+| ID | Item |
+|----|------|
+| NB-01 | UI sem indicador `needs_validation` |
+| NB-02 | Derivação DESL em `needs_validation` |
+| NB-03 | Worker email rotula `needs_validation` como `estimated` |
+| NB-04 | Outros endpoints admin sem auth (fora dos 2 🔴 corrigidos) |
+| NB-05 | RLS `MissionReportPage` |
+| **NB-06** | 🟡 → 🟢 somente após smoke pós-deploy |
+| **NB-07** | `api/index` catch-all global — auditoria futura |
 
 ---
 
@@ -274,8 +288,8 @@ Após deploy: repetir Casos A/B/C em produção; esperado **401/403** em &lt;200
 | **FASE 3** | **20%** 🔵 |
 | **PROGRAMA GERAL** | **22%** |
 
-**PARADO.** P1 não iniciado. Deploy da correção NB-06 aguarda autorização.
+**PARADO.** PR #258 apto para merge — aguardando autorização. P1 não iniciado.
 
 ---
 
-*Gerado em: 2026-08-12 UTC | Investigação NB-06*
+*Gerado em: 2026-08-12 UTC | Fechamento NB-06 + revisão PR #258*
