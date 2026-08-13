@@ -68,6 +68,10 @@ import SystemSettingsPage from './components/SystemSettingsPage';
 
 // INTELIGÊNCIA ARTIFICIAL
 import AIChatbot from './components/AIChatbot';
+import FeatureInactivePanel from './components/FeatureInactivePanel';
+
+// Preservado para reativação futura (P2-01 — não remover).
+void AIChatbot;
 
 // TECNOLOGIAS
 import VehicleTechnologyList from './components/VehicleTechnologyList';
@@ -387,7 +391,15 @@ const App: React.FC = () => {
         return allowed ? <ShiftHandover /> : <Dashboard onOpenMission={handleOpenBillingMission} />;
       }
       case 'new-mission': return <MissionForm onBack={() => navigateTo('missions')} onSaveAndContinue={handleSaveAndContinue} onAddClient={() => navigateTo('client-form')} />;
-      case 'ai-support': return null;
+      case 'ai-support':
+        // P2-01: mantido inativo — AIChatbot + /api/chat existem; ativação exige validação de custo/segurança.
+        return (
+          <FeatureInactivePanel
+            title="Assistente IA (Suporte)"
+            reason="O chat com IA não está ativo nesta versão. O módulo AIChatbot e o endpoint /api/chat permanecem no código para eventual reativação após revisão de permissões, custo Gemini e política de uso."
+            backlogRef="Classificação P2-01: MANTER INATIVO (decisão 2026-08-13)."
+          />
+        );
       case 'cost-optimization': return <CostOptimizationDashboard />;
       case 'db-maintenance': return <MaintenanceDashboard />;
       case 'fin-dashboard': return <FinancialDashboard />;

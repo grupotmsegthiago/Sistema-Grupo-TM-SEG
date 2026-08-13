@@ -5,6 +5,7 @@ import { ArrowLeft, Save, MapPin, Flag, FileText, Building2, Ruler, Loader2, Plu
 import { MissionStatus, Client, ClientRoute, ClientPriceTable, ProviderData, ProviderCostTable, ClientVehicleDB } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
+import { fetchParentMissionCandidates } from '../lib/parentMissionSearch';
 import { logAction } from '../lib/logger';
 import { useNotification } from '../lib/NotificationContext';
 import { useLoadScript, Autocomplete } from '@react-google-maps/api';
@@ -193,6 +194,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [isVehicleModalOpen, setIsVehicleModalOpen] = useState(false);
   const [parentOsSuggestions, setParentOsSuggestions] = useState<{id: string, client: string, provider: string, origin: string, destination: string, start_time: string, status: string}[]>([]);
   const [parentOsSearch, setParentOsSearch] = useState('');
+  const [parentOsTruncated, setParentOsTruncated] = useState(false);
   const [showParentOsDropdown, setShowParentOsDropdown] = useState(false);
 
   const [evidenceFiles, setEvidenceFiles] = useState<{ file: File; preview: string }[]>([]);
@@ -628,16 +630,24 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   }, []);
 
   useEffect(() => {
-    if (!formData.isSameOs || !formData.client) { setParentOsSuggestions([]); return; }
-    const fetchSuggestions = async () => {
-      let query = supabase.from('missions').select('id, client, provider, origin, destination, start_time, status, parent_mission_id')
-        .eq('client', formData.client).is('parent_mission_id', null).order('created_at', { ascending: false }).limit(50);
-      if (formData.provider) query = query.eq('provider', formData.provider);
-      const { data } = await query;
-      if (data) setParentOsSuggestions(data);
-    };
-    fetchSuggestions();
-  }, [formData.isSameOs, formData.client, formData.provider]);
+    if (!formData.isSameOs || !formData.client) { setParentOsSuggestions([]); setParentOsTruncated(false); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const { rows, truncated } = await fetchParentMissionCandidates(supabase, {
+          client: formData.client,
+          provider: formData.provider || undefined,
+          onlyRootMothers: true,
+          searchTerm: parentOsSearch || undefined,
+        });
+        setParentOsSuggestions(rows);
+        setParentOsTruncated(truncated);
+      } catch {
+        setParentOsSuggestions([]);
+        setParentOsTruncated(false);
+      }
+    }, parentOsSearch ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [formData.isSameOs, formData.client, formData.provider, parentOsSearch]);
 
   const handleEvidenceFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
@@ -1843,6 +1853,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   </button>
                 ))}
                 {parentOsSuggestions.length === 0 && <div className="px-3 py-4 text-center text-xs text-gray-400">Nenhuma OS encontrada para este cliente</div>}
+                {parentOsTruncated && (
+                  <p className="px-3 py-2 text-[10px] font-semibold text-amber-800 bg-amber-50 border-t border-amber-100">
+                    Lista parcial — refine o ID (ex.: GTM-1234). Ausência aqui não significa que a OS mãe não exista.
+                  </p>
+                )}
                 {parentOsSearch && !parentOsSuggestions.find(s => s.id === parentOsSearch) && (
                   <button type="button" className="w-full text-left px-3 py-2 hover:bg-blue-50 border-t border-gray-100 text-blue-700" onClick={() => { setFormData(prev => ({...prev, parentMissionId: parentOsSearch.toUpperCase()})); setParentOsSearch(''); setShowParentOsDropdown(false); }}>
                     <div className="flex items-center gap-2"><Plus size={12}/><span className="text-xs font-bold">Usar "{parentOsSearch.toUpperCase()}" como OS Mãe</span></div>

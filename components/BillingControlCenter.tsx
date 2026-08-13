@@ -1,4 +1,11 @@
 
+/**
+ * ÓRFÃO CONFIRMADO (P2-02 — Raio-X Fase 2)
+ *
+ * - Sem rota em App.tsx (`fin-billing-control` ausente).
+ * - Zero imports em produção; substituído operacionalmente por ClientBillingReport.
+ * - NÃO remover nesta fase — apenas documentação de órfão.
+ */
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { supabase, MISSION_UPDATES_BROADCAST_CHANNEL } from '../lib/supabase';
+import { fetchParentMissionCandidates } from '../lib/parentMissionSearch';
 import { logAction } from '../lib/logger';
 import { calculateMissionFinancials, clientFuzzyFilter, extractCityFromAddress, resolveDisplacementFromAuthorizedKm } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
@@ -1246,6 +1247,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const [parentOsSuggestions, setParentOsSuggestions] = useState<{id: string, client: string, provider: string, origin: string, destination: string, status: string}[]>([]);
     const [parentOsSearch, setParentOsSearch] = useState('');
+    const [parentOsTruncated, setParentOsTruncated] = useState(false);
     const [showParentOsDropdown, setShowParentOsDropdown] = useState(false);
 
     const updateLocRef = useRef<any>(null);
@@ -1836,36 +1838,25 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     useEffect(() => { if (isOpen && mission) loadMissionData(); }, [isOpen, mission]);
 
     useEffect(() => {
-        if (!editData.isSameOs || !mission?.client) { setParentOsSuggestions([]); return; }
-        const fetchParentSuggestions = async () => {
-            let query = supabase.from('missions').select('id, client, provider, origin, destination, status')
-                .eq('client', mission.client).neq('id', mission.id).order('created_at', { ascending: false }).limit(50);
-            if (editData.provider) query = query.eq('provider', editData.provider);
-            const { data } = await query;
-            if (data) setParentOsSuggestions(data);
-        };
-        fetchParentSuggestions();
-    }, [editData.isSameOs, mission?.client, editData.provider, mission?.id]);
-
-    useEffect(() => {
-        if (!editData.isSameOs || !parentOsSearch || parentOsSearch.length < 2) return;
-        const searchTerm = parentOsSearch.toUpperCase().replace('GTM-', '');
-        const alreadyFound = parentOsSuggestions.some(s => s.id.toUpperCase().includes(searchTerm));
-        if (alreadyFound) return;
+        if (!editData.isSameOs || !mission?.client) { setParentOsSuggestions([]); setParentOsTruncated(false); return; }
         const timer = setTimeout(async () => {
-            const searchId = parentOsSearch.toUpperCase().startsWith('GTM-') ? parentOsSearch.toUpperCase() : `GTM-${searchTerm}`;
-            const { data } = await supabase.from('missions').select('id, client, provider, origin, destination, status')
-                .ilike('id', `%${searchTerm}%`).neq('id', mission?.id || '').limit(10);
-            if (data && data.length > 0) {
-                setParentOsSuggestions(prev => {
-                    const existing = new Set(prev.map(p => p.id));
-                    const newItems = data.filter((d: any) => !existing.has(d.id));
-                    return [...prev, ...newItems];
+            try {
+                const { rows, truncated } = await fetchParentMissionCandidates(supabase, {
+                    client: mission.client,
+                    excludeMissionId: mission.id,
+                    provider: editData.provider || undefined,
+                    onlyRootMothers: false,
+                    searchTerm: parentOsSearch || undefined,
                 });
+                setParentOsSuggestions(rows);
+                setParentOsTruncated(truncated);
+            } catch {
+                setParentOsSuggestions([]);
+                setParentOsTruncated(false);
             }
-        }, 300);
+        }, parentOsSearch ? 300 : 0);
         return () => clearTimeout(timer);
-    }, [parentOsSearch, editData.isSameOs]);
+    }, [editData.isSameOs, mission?.client, mission?.id, editData.provider, parentOsSearch]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -3520,6 +3511,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                                 >
                                                     <div className="flex items-center gap-2"><Plus size={12}/><span className="text-xs font-bold">Usar "{parentOsSearch.toUpperCase()}" como OS Mãe</span></div>
                                                 </button>
+                                            )}
+                                            {parentOsTruncated && (
+                                              <p className="px-3 py-2 text-[10px] font-semibold text-amber-800 bg-amber-50 border-t border-amber-100">
+                                                Lista parcial — refine o ID (ex.: GTM-1234). Ausência aqui não significa que a OS mãe não exista.
+                                              </p>
                                             )}
                                         </div>
                                     )}

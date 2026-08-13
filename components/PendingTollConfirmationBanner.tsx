@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { fetchAllPages } from '../lib/supabasePaging';
 import { AlertTriangle, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
 
 import { formatDateBR } from '../lib/dateUtils';
@@ -23,21 +24,30 @@ const PendingTollConfirmationBanner: React.FC<Props> = ({ onOpenMission }) => {
     const [missions, setMissions] = useState<PendingMission[]>([]);
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState(false);
+    const [listTruncated, setListTruncated] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
         try {
             // Só pedágios pendentes de OS concluídas a partir de maio/2026.
-            const { data: candidateMissions, error } = await supabase
-                .from('missions')
-                .select('id, client, origin, destination, end_time, last_update')
-                .eq('status', 'Concluída')
-                .is('toll_value', null)
-                .gte('end_time', '2026-05-01')
-                .order('end_time', { ascending: false })
-                .limit(200);
+            const { rows: candidateMissions, truncated } = await fetchAllPages<PendingMission>(
+                async (from, size) => {
+                    const { data, error } = await supabase
+                        .from('missions')
+                        .select('id, client, origin, destination, end_time, last_update')
+                        .eq('status', 'Concluída')
+                        .is('toll_value', null)
+                        .gte('end_time', '2026-05-01')
+                        .order('end_time', { ascending: false })
+                        .range(from, from + size - 1);
+                    return { data, error };
+                },
+                100,
+                2000,
+            );
+            setListTruncated(truncated);
 
-            if (error || !candidateMissions || candidateMissions.length === 0) {
+            if (!candidateMissions || candidateMissions.length === 0) {
                 setMissions([]);
                 return;
             }
@@ -93,6 +103,11 @@ const PendingTollConfirmationBanner: React.FC<Props> = ({ onOpenMission }) => {
                         {missions.length} OS concluída{missions.length > 1 ? 's' : ''} sem confirmação de pedágio.
                         Confirme agora para evitar travas no faturamento.
                     </p>
+                    {listTruncated && (
+                      <p className="text-[10px] font-semibold text-amber-900 mt-1.5 bg-amber-100/80 border border-amber-300 rounded px-2 py-1">
+                        Conjunto parcial (limite de carregamento). Pode haver mais OS pendentes — use busca na Central OS.
+                      </p>
+                    )}
                 </div>
                 <button
                     onClick={load}
