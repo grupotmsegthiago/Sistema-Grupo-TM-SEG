@@ -45,19 +45,55 @@ export function paymentStatusLabel(
 
 export type NfBucket = 'emitida' | 'aguardando' | 'falha' | 'cancelada' | 'nenhuma';
 
+/** Mensagens soft do pipeline (ainda não é falha real da prefeitura/Asaas). */
+export function isSoftNfPendingMessage(lastError?: string | null): boolean {
+  const e = String(lastError || '').trim();
+  if (!e) return true;
+  return /NF isolada|agendada pelo Controle|NF_SCHEDULE_PENDING|NF_TIMEOUT|aguardando autorização|em segundo plano/i.test(
+    e,
+  );
+}
+
+/**
+ * Erro real de emissão (Asaas / prefeitura / sistema) — deve aparecer como Falha
+ * com o texto completo, mesmo se o worker ainda tentar de novo.
+ */
+export function isHardNfEmissionError(
+  lastError?: string | null,
+  nfStatus?: string | null,
+): boolean {
+  const ns = (nfStatus || '').toUpperCase();
+  if (ns === 'ERROR' || ns === 'FAILED') return true;
+  const e = String(lastError || '').trim();
+  if (!e || isSoftNfPendingMessage(e)) return false;
+  return /chave de API|inv[aá]lida|\b401\b|\b403\b|\b422\b|Retorno da prefeitura|C[oó]digo:\s*\d+|assinatura do RPS|inscri[cç][aã]o municipal|certificado|unauthorized|forbidden|Asaas API Error/i.test(
+    e,
+  );
+}
+
+/** Texto claro do erro para a UI (origem Asaas/sistema). */
+export function formatNfLastError(lastError?: string | null, maxLen = 180): string | null {
+  const e = String(lastError || '').trim();
+  if (!e || isSoftNfPendingMessage(e)) return null;
+  const clean = e.replace(/\s+/g, ' ');
+  if (clean.length <= maxLen) return clean;
+  return `${clean.slice(0, maxLen - 1)}…`;
+}
+
 export function nfStatusBucket(
   nfStatus?: string | null,
-  opts?: { stuckByAge?: boolean; paused?: boolean },
+  opts?: { stuckByAge?: boolean; paused?: boolean; lastError?: string | null },
 ): NfBucket {
   const ns = (nfStatus || '').toUpperCase();
-  // Falha só quando pausado de verdade (erro permanente). Enquanto o worker
-  // ainda tenta, STUCK/ERROR aparecem como Processando.
-  const hardFail = opts?.paused && (opts?.stuckByAge || ns === 'STUCK' || ns === 'ERROR' || ns === 'FAILED');
-  if (hardFail) return 'falha';
   if (ns === 'AUTHORIZED') return 'emitida';
   if (ns === 'CANCELED' || ns === 'CANCELLED') return 'cancelada';
   if (!ns) return 'nenhuma';
-  // SCHEDULED, SYNCHRONIZED, PROCESSING, PENDING, RETRY, ERROR em retry, etc.
+
+  // Erro real Asaas/prefeitura/sistema → Falha (texto completo vem do lastError).
+  if (isHardNfEmissionError(opts?.lastError, ns)) return 'falha';
+  if (opts?.paused && (opts?.stuckByAge || ns === 'STUCK')) return 'falha';
+
+  // SCHEDULED, SYNCHRONIZED, PROCESSING, PENDING, RETRY…
   return 'aguardando';
 }
 
@@ -77,22 +113,30 @@ export function nfBucketLabel(bucket: NfBucket): string {
   }
 }
 
-/** Detalhe opcional sob o rótulo curto (ex.: "Em fila Prefeitura", "TRAVADA — Asaas"). */
+/** Detalhe sob o rótulo curto — prioriza erro real (Asaas/sistema). */
 export function nfBucketDetail(
   nfStatus?: string | null,
-  opts?: { stuckByAge?: boolean; provider?: string | null; ageHours?: number | null; paused?: boolean },
+  opts?: {
+    stuckByAge?: boolean;
+    provider?: string | null;
+    ageHours?: number | null;
+    paused?: boolean;
+    lastError?: string | null;
+  },
 ): string | null {
   const ns = (nfStatus || '').toUpperCase();
   const provider = String(opts?.provider || '').toUpperCase() === 'PLUGNOTAS' ? 'PlugNotas' : 'Asaas';
+  const hardErr = formatNfLastError(opts?.lastError, 160);
+  if (hardErr) return hardErr;
+
   if (opts?.paused && (opts?.stuckByAge || ns === 'STUCK')) {
     const age = opts?.ageHours != null && opts.ageHours >= 1 ? ` há ${opts.ageHours}h` : '';
     return `TRAVADA — verificar ${provider}${age}`;
   }
-  if (opts?.paused && (ns === 'ERROR' || ns === 'FAILED')) return 'Erro na emissão';
   if (ns === 'AUTHORIZED') return null;
   if (ns === 'SYNCHRONIZED') return 'Em fila Prefeitura';
   if (ns === 'SCHEDULED') return 'Agendada no Asaas';
-  if (ns === 'PROCESSING' || ns === 'PENDING' || ns === 'RETRY' || ns === 'STUCK' || ns === 'ERROR' || ns === 'FAILED') {
+  if (ns === 'PROCESSING' || ns === 'PENDING' || ns === 'RETRY') {
     return 'Aguardando autorização';
   }
   if (ns === 'WAITING_CUSTOMER_ACCEPTANCE') return 'Aguardando aceite';

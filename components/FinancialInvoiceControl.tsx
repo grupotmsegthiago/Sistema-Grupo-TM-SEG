@@ -9,6 +9,7 @@ import {
   nfStatusBucket,
   nfBucketLabel,
   nfBucketDetail,
+  formatNfLastError,
 } from '../lib/invoiceDisplay';
 import {
   clearInvoiceWatch,
@@ -392,7 +393,7 @@ const FinancialInvoiceControl: React.FC = () => {
       const watch = readInvoiceWatch();
       const hasProcessing = invoicesRef.current.some((i) => {
         if (i.status === 'CANCELADA' || i.status === 'PAGA') return false;
-        return nfStatusBucket(i.nf_status, { paused: !!i.nf_retry_paused }) === 'aguardando';
+        return nfStatusBucket(i.nf_status, { paused: !!i.nf_retry_paused, lastError: i.nf_last_error }) === 'aguardando';
       });
       const activeWatch = !!watch || hasProcessing;
       // Idle: refresh leve a cada 60s (4 ticks).
@@ -417,11 +418,11 @@ const FinancialInvoiceControl: React.FC = () => {
         try {
           const { data: rows } = await supabase
             .from('financial_invoices')
-            .select('id, nf_status, asaas_payment_id, nf_retry_paused')
+            .select('id, nf_status, asaas_payment_id, nf_retry_paused, nf_last_error')
             .in('asaas_payment_id', watch.paymentIds);
           const pending = (rows || []).some((r) =>
-            nfStatusBucket(r.nf_status, { paused: !!(r as any).nf_retry_paused }) === 'aguardando'
-            || nfStatusBucket(r.nf_status, { paused: !!(r as any).nf_retry_paused }) === 'nenhuma',
+            nfStatusBucket(r.nf_status, { paused: !!(r as any).nf_retry_paused, lastError: (r as any).nf_last_error }) === 'aguardando'
+            || nfStatusBucket(r.nf_status, { paused: !!(r as any).nf_retry_paused, lastError: (r as any).nf_last_error }) === 'nenhuma',
           );
           if (!pending && (rows || []).length > 0) clearInvoiceWatch();
         } catch {
@@ -1002,9 +1003,16 @@ const FinancialInvoiceControl: React.FC = () => {
                           const isStuckSync = ns === 'SYNCHRONIZED' && ageH !== null && ageH >= 24;
                           const invProvider = String(inv.nf_provider || '').toUpperCase() === 'PLUGNOTAS' || inv.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS';
                           const paused = !!inv.nf_retry_paused;
-                          const bucket = nfStatusBucket(ns, { stuckByAge: isStuckSync, paused });
+                          const bucket = nfStatusBucket(ns, { stuckByAge: isStuckSync, paused, lastError: inv.nf_last_error });
                           const shortLabel = nfBucketLabel(bucket);
-                          const detail = nfBucketDetail(ns, { stuckByAge: isStuckSync, provider: invProvider, ageHours: ageH, paused });
+                          const detail = nfBucketDetail(ns, {
+                            stuckByAge: isStuckSync,
+                            provider: invProvider,
+                            ageHours: ageH,
+                            paused,
+                            lastError: inv.nf_last_error,
+                          });
+                          const errText = formatNfLastError(inv.nf_last_error, 140);
                           const nfColor = bucket === 'emitida' ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
                             : bucket === 'aguardando' ? 'text-blue-700 bg-blue-50 border-blue-200'
                             : bucket === 'falha' ? 'text-white bg-red-600 border-red-700 animate-pulse'
@@ -1015,12 +1023,18 @@ const FinancialInvoiceControl: React.FC = () => {
                             : bucket === 'cancelada' ? XCircle
                             : Clock;
                           return (
-                            <div className="flex flex-col items-center gap-0.5" data-testid={`nf-status-${inv.id}`}>
+                            <div className="flex flex-col items-center gap-0.5 max-w-[220px]" data-testid={`nf-status-${inv.id}`}>
                               <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full border ${nfColor}`} title={inv.nf_last_error || detail || ''}>
                                 {bucket === 'aguardando' ? <Loader2 size={9} className="animate-spin" /> : <NfIcon size={9} />} {shortLabel}
                               </span>
                               {detail && bucket !== 'emitida' && (
-                                <span className={`text-[8px] font-bold max-w-[140px] leading-tight ${bucket === 'falha' ? 'text-red-600' : 'text-gray-500'}`}>{detail}</span>
+                                <span
+                                  className={`text-[8px] font-bold max-w-[220px] leading-tight text-center ${bucket === 'falha' || errText ? 'text-red-700' : 'text-gray-500'}`}
+                                  title={inv.nf_last_error || detail}
+                                  data-testid={`nf-error-${inv.id}`}
+                                >
+                                  {detail}
+                                </span>
                               )}
                               {inv.nf_number && <span className="text-[8px] text-gray-400 font-mono">Nº {inv.nf_number}</span>}
                             </div>
@@ -1059,7 +1073,7 @@ const FinancialInvoiceControl: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-center gap-1 flex-wrap">
                           <button onClick={() => openDetail(inv)} className="bg-gray-100 hover:bg-gray-200 text-gray-600 p-1.5 rounded-lg" title="Detalhes" data-testid={`btn-detail-${inv.id}`}><Eye size={13} /></button>
                           {inv.asaas_payment_id && (
                             <button onClick={() => handleSyncStatus(inv)} disabled={syncingId === inv.id} className="bg-blue-50 hover:bg-blue-100 text-blue-600 p-1.5 rounded-lg" title="Sincronizar status" data-testid={`btn-sync-${inv.id}`}>
@@ -1070,11 +1084,12 @@ const FinancialInvoiceControl: React.FC = () => {
                             <button
                               onClick={() => handleRetryNf(inv)}
                               disabled={retryingNfId === inv.id}
-                              className="bg-amber-50 hover:bg-amber-100 text-amber-700 p-1.5 rounded-lg"
-                              title="Reemitir NF (Asaas)"
+                              className="inline-flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide shadow-sm"
+                              title="Reemitir NF + boleto no Asaas (emissão padrão)"
                               data-testid={`btn-retry-nf-${inv.id}`}
                             >
-                              {retryingNfId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                              {retryingNfId === inv.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                              Reemitir NF
                             </button>
                           )}
                           {(() => {
@@ -1139,14 +1154,16 @@ const FinancialInvoiceControl: React.FC = () => {
                   : null;
                 const stuckByAge = ns === 'SYNCHRONIZED' && ageH !== null && ageH >= 24;
                 const paused = !!inv.nf_retry_paused;
-                const nfBucket = nfStatusBucket(ns, { stuckByAge, paused });
+                const nfBucket = nfStatusBucket(ns, { stuckByAge, paused, lastError: inv.nf_last_error });
                 const nfShort = nfBucketLabel(nfBucket);
                 const nfDetail = nfBucketDetail(ns, {
                   stuckByAge,
                   provider: inv.nf_provider || (inv.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS'),
                   ageHours: ageH,
                   paused,
+                  lastError: inv.nf_last_error,
                 });
+                const detailErr = formatNfLastError(inv.nf_last_error, 400);
                 return (
                   <>
                     <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1161,12 +1178,35 @@ const FinancialInvoiceControl: React.FC = () => {
                               : nfBucket === 'aguardando' ? 'text-blue-700 bg-blue-50 border-blue-200'
                               : 'text-gray-600 bg-gray-50 border-gray-200'
                           }`} title={inv.nf_last_error || nfDetail || ''}>
-                            NF: {nfShort}{nfDetail && nfBucket !== 'emitida' ? ` — ${nfDetail}` : ''}
+                            NF: {nfShort}{nfDetail && nfBucket !== 'emitida' && !detailErr ? ` — ${nfDetail}` : ''}
                           </span>
                         )}
                       </div>
                       <span className="text-2xl font-black text-gray-900">{fmtBRL(inv.amount)}</span>
                     </div>
+
+                    {(detailErr || (nfBucket === 'falha' && nfDetail)) && (
+                      <div className="rounded-xl border border-red-300 bg-red-50 p-3 space-y-2" data-testid={`nf-error-box-${inv.id}`}>
+                        <p className="text-[10px] font-black text-red-700 uppercase tracking-widest flex items-center gap-1.5">
+                          <AlertCircle size={12} /> Erro na emissão da NF (Asaas / sistema)
+                        </p>
+                        <p className="text-xs font-bold text-red-800 leading-snug whitespace-pre-wrap">
+                          {detailErr || nfDetail}
+                        </p>
+                        {inv.asaas_payment_id && (inv.nf_provider || 'ASAAS').toUpperCase() !== 'PLUGNOTAS' && inv.nf_status?.toUpperCase() !== 'AUTHORIZED' && (
+                          <button
+                            type="button"
+                            onClick={() => handleRetryNf(inv)}
+                            disabled={retryingNfId === inv.id}
+                            className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase"
+                            data-testid={`btn-retry-nf-detail-${inv.id}`}
+                          >
+                            {retryingNfId === inv.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                            Reemitir NF (padrão Asaas + boleto)
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-3">
