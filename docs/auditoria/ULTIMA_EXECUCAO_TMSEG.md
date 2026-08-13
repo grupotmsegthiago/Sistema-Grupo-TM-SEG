@@ -1,8 +1,7 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **Fase 3 Bloco P3 — CORREÇÃO FINAL PLINIO + REVALIDAÇÃO PR #261**  
-> **Não contém segredos.**  
-> **NÃO mergeado. NÃO publicado.**
+> Handoff oficial — **Fase 3 Bloco P3 — MERGE CONTROLADO + PUBLICAÇÃO**  
+> **Não contém segredos.**
 
 ---
 
@@ -11,13 +10,12 @@
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-13 (UTC) |
-| **Tipo** | Correção gap Plinio + revalidação integral PR #261 |
-| **Branch** | `cursor/fase3-p3-limpeza-seguranca-eaa8` |
+| **Tipo** | Merge + publicação P3 (PR #261) |
 | **PR** | [#261](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/261) |
-| **Produção (inalterada)** | `ae2fc382` |
-| **Produção alterada** | **NÃO** |
-| **Banco alterado** | **NÃO** |
-| **Próxima fase** | **NÃO iniciada** |
+| **Commit publicado** | `9a083213` |
+| **Tag baseline** | `baseline-fase3-p3-merged-20260813` |
+| **Projeto Vercel** | `sistema-grupo-tm-seg` |
+| **Domínio** | `sistema.grupotmseg.com.br` |
 
 ---
 
@@ -25,209 +23,181 @@
 
 | Indicador | Valor | Metodologia |
 |-----------|-------|-------------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 | Gap Plinio corrigido + testes + build + revalidação + handoff |
-| **FASE 3 (total)** | **58%** 🔵 | P3 validado na branch; merge/publicação ainda pendente |
-| **PROGRAMA GERAL** | **57%** 🔵 | Sem inflação por correção de fechamento |
+| **EXECUÇÃO ATUAL** | **100%** 🟢 | Revalidação + merge + testes + deploy + smoke + handoff |
+| **FASE 3 (total)** | **64%** 🟢 | P0+NB-06+P1+P2+P3 publicados (52% + 6% P3 validado + 6% P3 publicado) |
+| **PROGRAMA GERAL** | **59%** 🟢 | +2% publicação P3 confirmada em produção |
 
 ---
 
-## DECISÃO FINAL — PR #261
+## DECISÃO FINAL
 
-# 🟢 PR #261 APTO PARA MERGE
+# 🟢 P3 PUBLICADO E VALIDADO
 
 | Critério | Resultado |
 |----------|-----------|
-| Escopo autorizado P3 completo | ✅ |
-| Gap Plinio fechado | ✅ `clientFinanceInputLocked` |
-| PDFs (KM/Hora Extra) | ✅ Inalterados — evidências preservadas |
-| billing-override protegido | ✅ |
-| replit removido com segurança | ✅ |
-| Testes — zero falha nova | ✅ **735 / 730 / 5 fail** |
+| HEAD validado antes do merge | ✅ `9a083213` |
+| Diff somente escopo P3 | ✅ 14 arquivos |
+| Merge dev + main | ✅ fast-forward |
+| Testes pré-produção | ✅ 735/730/5 (zero falha nova) |
 | Build | ✅ |
-| Merge / deploy nesta execução | ❌ **NÃO** (conforme instrução) |
-
-**Nota:** SEC-01/02/03 e NB-07 permanecem como **próximo bloco controlado** — não fazem parte do escopo autorizado do PR #261 e não bloqueiam merge deste diff.
-
----
-
-## 1. GAP PLINIO — CORREÇÃO
-
-### Problema (gap residual comprovado)
-
-Após `canUnlockBilling`, Plinio ainda podia editar campos cliente porque usavam apenas `(isController || isEffectivelyLocked)`:
-
-- `tollInput` (pedágio cliente)
-- `displacementInput` (deslocamento cliente)
-- `customClientBase`, `customClientKm`, `customClientHour`
-- Seletor tabela cliente (`select-client-table`) quando OS destravada
-
-### Solução mínima
-
-Gate unificado reutilizando permissão existente:
-
-```typescript
-const clientFinanceInputLocked = isController || isEffectivelyLocked || !canEditClientData;
-```
-
-Aplicado em todos os inputs financeiros/comerciais do **CLIENTE**. Para Plinio, `canEditClientData = false` → `clientFinanceInputLocked` permanece `true` **mesmo com OS destravada** (`unlockOverride`).
-
-Também: `if (!canEditClientData) return;` no `handleChange` da tabela cliente.
-
-### Fornecedor preservado
-
-`input-toll-provider`, `input-displacement-provider`, `customProvider*`, `costInput`, `TableSwapControl` fornecedor — **não** usam `clientFinanceInputLocked`.
+| Deploy Vercel confirmado | ✅ `buildId` = `9a083213` |
+| `/api/health` + `/` | ✅ 200 |
+| Smoke Plinio/PDF no bundle | ✅ testids presentes |
+| NB-06 migration | ✅ POST 401, GET 405 |
+| billing-override prod | 🟡 504 timeout (catch-all NB-07) — auth validada em código + local |
+| SEC-01/02/03/NB-07 | Backlog — não iniciado |
 
 ---
 
-## 2. ESTADOS DA OS — MATRIZ PLINIO
+## 1. REVALIDAÇÃO PRÉ-MERGE
 
-| Estado | Cliente | Fornecedor |
-|--------|---------|------------|
-| OS bloqueada | ❌ bloqueado | ✅ conforme regra existente |
-| OS destravada (`unlockOverride`) | ❌ bloqueado (`!canEditClientData`) | ✅ editável |
-| `fullEditMode` | ❌ Plinio excluído (`canActivateFullEdit=false`) | ✅ |
-| Tabela cliente travada | ❌ | — |
-| Tabela fornecedor travada | — | ✅ `canEditProviderTablesEvenIfLocked` |
-| Admin/Diretoria full access | ✅ permissões preservadas | ✅ |
+| Verificação | Resultado |
+|-------------|-----------|
+| HEAD branch PR | `9a083213` — coincide com commit validado |
+| Commits posteriores | Nenhum |
+| Alterações não commitadas | Apenas artefatos `.cjs` de build local (descartados, não publicados) |
+| Diff vs `main` | 14 arquivos — escopo P3 autorizado exclusivamente |
 
 ---
 
-## 3. OUTROS PERFIS — PRESERVADOS
-
-| Perfil | Cliente | Fornecedor |
-|--------|---------|------------|
-| Administrador / Diretoria | ✅ editável (quando regra existente permitir) | ✅ |
-| Financeiro / Controller | ✅ conforme gates existentes | ✅ |
-| Plinio | ❌ bloqueado | ✅ autorizado |
-| Operacional / outros | ❌ sem ampliação — gates originais | conforme role |
-
-Identificação Plinio por nome — padrão existente; migrar para perfil estável em fase futura.
-
----
-
-## 4. DIFF FINAL PR #261 (15 arquivos)
-
-| Arquivo | Alteração | Escopo |
-|---------|-----------|--------|
-| `server/replit_integrations/*` (8) | Removido | P3 limpeza |
-| `server/routes.ts` | Auth billing-override | P3 segurança |
-| `MissionFinancialModal.tsx` | Plinio + `clientFinanceInputLocked` | Autorizado |
-| `CommercialProposalModal.tsx` | PDF KM/Hora Extra | Autorizado |
-| `QuotePrintModal.tsx` | PDF KM/Hora Extra | Autorizado |
-| `fase3-p3-limpeza-seguranca.test.ts` | 6 testes P3 | Testes |
-| `ULTIMA_EXECUCAO_TMSEG.md` | Handoff | Docs |
-
-**Sem código inesperado** — diff restrito ao P3 autorizado.
-
----
-
-## 5. PDFs — EVIDÊNCIAS PRESERVADAS (sem alteração nesta execução)
-
-| Item | Proposta | Simulação |
-|------|----------|-----------|
-| KM Extra | `price_per_extra_km` | `getExtraKmValue()` cascata |
-| Hora Extra | `price_per_extra_hour` | `getExtraHourValue()` cascata |
-| Unidades | R$/km, R$/h | R$/km, R$/h |
-| Cálculo paralelo | ❌ | ❌ |
-
----
-
-## 6. SEGURANÇA — BACKLOG (NÃO CORRIGIDO NESTA EXECUÇÃO)
-
-### SEC-01 — `investment/*`
-
-Rotas sensíveis sem auth em handlers Vercel: `init`, `snapshots`, `snapshots-all`, `snapshot-delete`. Accounts com `assertAsaasApiAccess`.
-
-### SEC-02 — `/api/supabase/*`
-
-7 rotas Express com `supabaseAdmin` sem `requireAuth` (incl. `init-invoices`, `db-metrics`).
-
-### SEC-03 — `asaas/webhook`
-
-`POST /api/asaas/webhook` sem validação de origem no código. **NÃO VALIDADO** em produção.
-
-**Requisitos futuros SEC-03:**
-
-- Validar header `asaas-access-token`
-- Segredo próprio de webhook (não API key Asaas)
-- Comparação segura (timing-safe)
-- Idempotência por event ID
-- Não quebrar eventos legítimos
-
-### NB-07 — catch-all `api/index`
-
-~138 rotas (~64%) ainda no catch-all. Estratégia: rota crítica → handler leve → teste → deploy.
-
----
-
-## 7. OUTROS ITENS P3 (revalidados)
-
-| Item | Status |
-|------|--------|
-| replit removido | 🟢 SEGURA |
-| billing-override | ✅ requireAuth + requireRole; 401 sem token |
-| realtime 2–4 refreshes | Dívida performance — não bloqueante |
-
----
-
-## 8. TESTES
-
-| Suíte | Resultado |
-|-------|-----------|
-| `fase3-p3-limpeza-seguranca.test.ts` | **6/6 pass** (+1 teste gap Plinio) |
-| P0+P1+P2+P3 | **56/56 pass** |
-| Completa (excl. NB-06 hang) | **735 / 730 / 5 fail** |
-| Delta vs baseline anterior | +1 teste, +1 pass, **mesmas 5 falhas** |
-| `npm run build` | **OK** |
-
-### 5 falhas baseline (inalteradas)
-
-1. `Vercel tem funções leves para CRUD de contas` — `investment-accounts.test.ts`
-2. `tela dispara sync de pagamentos e retry NF sem remover import React` — `invoice-display.test.ts`
-3. `registerTimeClockPunch dispara requestPresenceRefresh após inserir` — `presence-refresh.test.ts`
-4. `resolveNfServiceDescription usa discriminação, não prefixo NF TMSEG` — `receivable-desc-nf.test.ts`
-5. `DashboardDiretoria não renderiza a seção Detalhe do em aberto` — `zapi-sdk-cockpit.test.ts`
-
-### Teste de regressão Plinio (novo)
-
-`Plinio + OS destravada: campos financeiros cliente usam clientFinanceInputLocked` — verifica:
-
-- `input-toll-client`, `input-displacement-client`, `input-custom-client-base/km/hour` → `readOnly={clientFinanceInputLocked}`
-- `input-toll-provider` → **não** usa gate cliente
-- `if (!canEditClientData) return` na troca de tabela cliente
-
----
-
-## 9. ROLLBACK
-
-| Item | Ação |
-|------|------|
-| Correção Plinio | Reverter `clientFinanceInputLocked` em `MissionFinancialModal.tsx` |
-| PR inteiro | Não mergear |
-| Produção | Permanece `ae2fc382` |
-
----
-
-## 10. FILA PRÓXIMO BLOCO
-
-1. **SEC-01** — auth em investment snapshots/init/delete
-2. **SEC-02** — auth + handlers leves supabase admin
-3. **SEC-03** — webhook Asaas (token + idempotência)
-4. **NB-07** — catch-all rota a rota
-5. Testes baseline desatualizados (5)
-6. Realtime performance (opcional)
-
----
-
-## GIT / PR
+## 2. PONTO DE RETORNO (pré-P3)
 
 | Item | Valor |
 |------|-------|
-| Branch | `cursor/fase3-p3-limpeza-seguranca-eaa8` |
-| PR | #261 (draft) |
-| Merge | **NÃO** |
-| Deploy | **NÃO** |
+| `main` (antes) | `b720ea61` |
+| `dev` (antes) | `b720ea61` |
+| Produção `buildId` (antes) | `b720ea619744aae71525821584780dabde865e2b` |
+| Tag anterior | `baseline-fase3-p2-merged-20260813` |
+| Commit funcional P2 | `ae2fc382` (referência handoff P2) |
+
+### Tag criada pós-merge
+
+`baseline-fase3-p3-merged-20260813` → `9a083213`
+
+### Rollback (se necessário)
+
+```bash
+git checkout main && git reset --hard b720ea61 && git push origin main
+# Redeploy Vercel da main anterior ou alias para deploy anterior
+```
 
 ---
 
-*Fase 3 P3 — Correção Final Plinio — Cloud Agent — 2026-08-13*
+## 3. MERGE / PUBLICAÇÃO
+
+| Etapa | Resultado |
+|-------|-----------|
+| `cursor/fase3-p3-limpeza-seguranca-eaa8` → `dev` | fast-forward `b720ea61..9a083213` |
+| `git push origin dev` | ✅ |
+| `dev` → `main` | fast-forward `b720ea61..9a083213` |
+| `git push origin main` | ✅ |
+| Voltou para `dev` | ✅ |
+| Banco / migration | ❌ Não executado |
+| Código adicional | ❌ Nenhum |
+
+---
+
+## 4. TESTES PRÉ-PRODUÇÃO (em `dev` @ `9a083213`)
+
+| Suíte | Resultado |
+|-------|-----------|
+| P3 (`fase3-p3-limpeza-seguranca`) | **6/6** |
+| P0+P1+P2+P3 | **56/56** |
+| Completa (excl. NB-06 hang) | **735 / 730 / 5 fail** |
+| Delta vs baseline | +1 teste, +1 pass, mesmas 5 falhas |
+| `npm run build` | **OK** |
+
+---
+
+## 5. DEPLOY PRODUÇÃO
+
+| Endpoint | Resultado |
+|----------|-----------|
+| `GET /api/version` | `buildId`: **`9a083213fe3a0fecc3dd613df42741af49eb2de8`** |
+| `builtAt` | `2026-08-13T20:55:50.300Z` |
+| `GET /api/health` | **200** |
+| `GET /` | **200** |
+
+Deploy confirmado após ~75s do push (poll 5 iterações).
+
+---
+
+## 6. SMOKE P3 (sem alterar dados)
+
+### Plinio — bundle publicado
+
+Strings presentes no asset `dist/public/assets/index-*.js` (build local do commit publicado):
+
+- `input-toll-client`
+- `input-displacement-client`
+- `input-custom-client-base`
+- `input-custom-client-km` / `input-custom-client-hour` (via testids no source)
+- Proteção `clientFinanceInputLocked` no source (minificado no bundle)
+- Fornecedor: `input-toll-provider` sem gate cliente
+
+### Billing override
+
+| Ambiente | Resultado |
+|----------|-----------|
+| Código (`server/routes.ts`) | `requireAuth` + `requireRole` antes do handler |
+| Local (pré-merge) | **401** sem token |
+| Produção `PATCH /api/missions/.../billing-override` | **504** timeout — rota no catch-all Express (NB-07); não comprova escrita |
+
+### NB-06 migration (produção)
+
+| Rota | Resultado |
+|------|-----------|
+| `POST /api/migration/add-mission-columns` | **401** `{"error":"Não autorizado"}` |
+| `GET /api/migration/add-mission-columns` | **405** `{"error":"method_not_allowed"}` |
+
+### PDFs — bundle
+
+- `KM Extra (R$/km)` ✅
+- `Hora Extra (R$/h)` ✅
+
+---
+
+## 7. ESCOPO PUBLICADO (P3)
+
+| Item | Status |
+|------|--------|
+| Remoção `replit_integrations` | ✅ |
+| Auth `billing-override` | ✅ |
+| Plinio `clientFinanceInputLocked` | ✅ |
+| PDF KM/Hora Extra (proposta + simulação) | ✅ |
+| Testes P3 (6) | ✅ |
+
+---
+
+## 8. BACKLOG — PRÓXIMO BLOCO (NÃO INICIADO)
+
+| ID | Item | Notas |
+|----|------|-------|
+| **SEC-01** | `investment/*` sem auth | snapshots/init/delete |
+| **SEC-02** | `/api/supabase/*` service role público | 7 rotas Express |
+| **SEC-03** | `asaas/webhook` | Requisitos futuros: `asaas-access-token`, segredo próprio webhook, comparação timing-safe, idempotência por event ID |
+| **NB-07** | catch-all `api/index` | ~138 rotas; billing-override em prod sofre timeout |
+
+---
+
+## 9. COMMITS FINAIS
+
+| Branch | Commit |
+|--------|--------|
+| `main` | `9a083213` |
+| `dev` | `9a083213` |
+| PR #261 branch | `9a083213` |
+
+---
+
+## GIT / ROLLBACK
+
+| Ação | Comando / referência |
+|------|----------------------|
+| Rollback git | `main` @ `b720ea61` / tag `baseline-fase3-p2-merged-20260813` |
+| Rollback produção | Redeploy commit `b720ea61` no projeto `sistema-grupo-tm-seg` |
+| Tag P3 | `baseline-fase3-p3-merged-20260813` |
+
+---
+
+*Fase 3 P3 — Merge + Publicação — Cloud Agent — 2026-08-13*
