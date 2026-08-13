@@ -1,7 +1,8 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **Merge e publicação controlada P1 — PR #259**.  
-> **Não contém segredos.**
+> Handoff oficial — **Fase 3 Bloco P2** (funcionalidades inacabadas, órfãos, consistência operacional).  
+> **Não contém segredos.**  
+> **NÃO mergeado. NÃO publicado.**
 
 ---
 
@@ -10,14 +11,15 @@
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-13 (UTC) |
-| **Tipo** | Integração PR #259 → `dev` → `main` → Vercel |
-| **PR** | [#259](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/259) — mergeado via fast-forward |
-| **HEAD validado** | `6264443de429bd80ade0bafcde1898dafccfc8b5` |
-| **Tag P1** | `baseline-fase3-p1-merged-20260813` @ `6264443d` |
-| **Produção** | `https://sistema.grupotmseg.com.br` |
+| **Tipo** | Fase 3 — Bloco P2 (investigação + correções aplicáveis) |
+| **Branch** | `cursor/fase3-p2-operacional-eaa8` |
+| **Base `main`** | `6290f14f` (handoff P1 publicado) |
+| **Baseline funcional** | `baseline-fase3-p1-merged-20260813` @ `6264443d` |
+| **Produção (inalterada)** | `6264443d` |
+| **Produção alterada** | **NÃO** |
 | **Banco alterado** | **NÃO** |
-| **Migration executada** | **NÃO** |
-| **NB-07** | **Aberto** — não alterado |
+| **NB-07** | **Preservado** |
+| **P3** | **NÃO iniciado** |
 
 ---
 
@@ -25,186 +27,164 @@
 
 | Indicador | Valor | Metodologia |
 |-----------|-------|-------------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 | Revalidação + merge + tag + deploy + smoke + testes + handoff |
-| **FASE 3 (total)** | **40%** 🔵 | P0 publicado (20%) + NB-06 (+2%) + P1 publicado e validado (+18%) |
-| **PROGRAMA GERAL** | **41%** | +3% pelo fechamento operacional do P1 em produção |
+| **EXECUÇÃO ATUAL** | **100%** 🟢 | Investigação + decisões + implementação + testes + build + handoff + PR draft |
+| **FASE 3 (total)** | **52%** 🔵 | P0 (20%) + NB-06 (2%) + P1 publicado (18%) + P2 investigado/corrigido (+12%) |
+| **PROGRAMA GERAL** | **53%** | +12% bloco P2 (pendente merge humano) |
 
 ---
 
 ## DECISÃO FINAL
 
-# 🟢 P1 PUBLICADO E VALIDADO
+# 🟢 P2 APTO PARA REVISÃO/MERGE
 
 | Critério | Resultado |
 |----------|-----------|
-| HEAD PR = `6264443d` | ✅ |
-| Fluxo `dev` → `main` → Vercel | ✅ |
-| buildId produção = commit publicado | ✅ |
-| `/api/health` | ✅ `{"status":"ok"}` |
-| Testes P1/P0/NB-06 | ✅ 57/57 |
-| Suíte completa | ✅ 736 / 731 pass / 5 fail (baseline) |
-| NB-06 smoke produção | ✅ 401 rápido, GET 405 |
-| NB-07 | 📋 Aberto |
-| Rollback necessário | ❌ |
+| Investigação Raio-X reutilizada | ✅ |
+| P2-01 a P2-05 classificados | ✅ |
+| Implementação mínima (sem ativar riscos) | ✅ |
+| Regras P0/P1 financeiras preservadas | ✅ |
+| Testes — nenhuma falha nova | ✅ |
+| Build | ✅ |
+| Deploy / merge | ❌ **NÃO** |
 
 ---
 
-## 1. REVALIDAÇÃO PRÉ-MERGE
+## P2-01 — AI CHAT / ai-support
 
-| Verificação | Resultado |
-|-------------|-----------|
-| HEAD `cursor/fase3-p1-integridade-eaa8` | `6264443d` ✅ |
-| Commits no PR vs validado | 3 commits (`d03e37ff`, `a1f704e8`, `6264443d`) — sem alteração posterior |
-| Diff vs `main` | 14 arquivos, escopo P1 exclusivo ✅ |
-| Alteração fora do P1 | ❌ Não encontrada |
-
-### Arquivos no merge (14)
-
-`missionTableSearch.ts`, `supabasePaging.ts`, `MissionTable.tsx`, `ExecutiveDashboard.tsx`, `RealtimeProvider.tsx`, `financialUtils` export, `useDashboardDiretoriaData.ts`, `types.ts`, `DashboardDiretoria.tsx`, `missionLinkage.ts`, `aggregations.ts`, `MissionCard.tsx`, `fase3-p1-integridade.test.ts`, `ULTIMA_EXECUCAO_TMSEG.md`
-
----
-
-## 2. PONTO DE RETORNO (ANTES DA PUBLICAÇÃO)
-
-| Referência | Valor |
-|------------|-------|
-| `main` (antes) | `79613f45` |
-| `dev` (antes) | `88992034` |
-| Produção buildId (antes) | `79613f45d8b0af757455636419e09e58663b1ca6` |
-| Tag rollback imediato | `baseline-fase3-nb06-merged-20260812` @ `b6291411` |
-| Tags preservadas | `baseline-fase3-p0-merged-20260812`, `baseline-fase3-nb06-merged-20260812` |
+| Campo | Detalhe |
+|-------|---------|
+| **Estado** | `AIChatbot.tsx` completo (~205 linhas); `/api/chat` ativo com `requireAuth` + Gemini; `App.tsx` retornava `null`; **sem item no menu** `constants.ts` |
+| **Causa desativação** | Rota morta (`return null`) — provável desligamento intencional sem remover código |
+| **Dependências** | Gemini env, `authFetch`, `CostOptimizationDashboard` lê logs `AIChatbot` |
+| **Decisão** | **(B) MANTER INATIVO** com status explícito |
+| **Alteração** | `FeatureInactivePanel` em `case 'ai-support'`; `AIChatbot` preservado (`void AIChatbot`) |
+| **Arquivos** | `components/FeatureInactivePanel.tsx` (novo), `App.tsx` |
+| **Testes** | `fase3-p2-operacional.test.ts` |
+| **Risco residual** | Reativação exige revisão custo Gemini + permissões + política de uso |
+| **Rollback** | Reverter `App.tsx` para `return null` ou reativar `<AIChatbot />` |
 
 ---
 
-## 3. INTEGRAÇÃO E PUBLICAÇÃO
+## P2-02 — BILLING CONTROL CENTER
 
-### Fluxo `publicar.ps1` verificado
-
-Script implementa: `dev` limpa → `merge dev→main` → `push main` → `push dev` → volta `dev`.  
-**Executado equivalente em bash** (ambiente Linux sem PowerShell).
-
-### Passos executados
-
-1. `dev` fast-forward → `79613f45` (sync com `main`)
-2. `dev` fast-forward → `6264443d` (merge PR #259)
-3. Testes + build na `dev` ✅
-4. `main` fast-forward → `6264443d`
-5. `push origin main` + `push origin dev`
-6. Tag `baseline-fase3-p1-merged-20260813` criada e enviada
-
-### Commits depois
-
-| Branch | Commit |
-|--------|--------|
-| `main` | `6264443d` |
-| `dev` | `6264443d` |
+| Campo | Detalhe |
+|-------|---------|
+| **Estado** | `components/BillingControlCenter.tsx` (~330 linhas), funcional isolado |
+| **Consumidores** | **Zero** em `App.tsx` / rotas / Sidebar produção |
+| **Substituto operacional** | `ClientBillingReport` (`fin-billing`) |
+| **Decisão** | **ÓRFÃO CONFIRMADO** — **REMOVER FUTURAMENTE** (não deletar nesta execução) |
+| **Alteração** | Cabeçalho documental `ÓRFÃO CONFIRMADO (P2-02)` no arquivo |
+| **Arquivos** | `components/BillingControlCenter.tsx` |
+| **Testes** | Estático em `fase3-p2-operacional.test.ts` |
+| **Risco residual** | Confusão para devs — mitigado por comentário |
+| **Rollback** | Remover comentário |
 
 ---
 
-## 4. CONFIRMAÇÃO DEPLOY VERCEL
+## P2-03 — GESTÃO DE INVESTIMENTOS (~70%)
 
-| Endpoint | Resultado |
-|----------|-----------|
-| `GET /api/version` | `buildId: 6264443de429bd80ade0bafcde1898dafccfc8b5` ✅ |
-| `builtAt` | `2026-08-13T13:08:37.458Z` |
-| `GET /api/health` | `{"status":"ok"}` ✅ |
-| `GET /` | HTTP 200 ✅ |
-| Tempo até deploy | ~2 min após push |
-
-Projeto Vercel: `sistema-grupo-tm-seg` (domínio oficial).
-
----
-
-## 5. SMOKE TEST P1 (READ-ONLY)
-
-### Bundle produção (`/assets/index-OUgqBgJa.js`)
-
-| Marcador | Status |
-|----------|--------|
-| `Conjunto de busca incompleto` (busca teto 500 + aviso Torres) | ✅ |
-| `quotesTruncated` | ✅ |
-| `Conjunto parcial de cotações` (aviso Diretoria) | ✅ |
-| `refreshMissions` / `supabase:missions` (realtime) | ✅ (23 / 6 ocorrências) |
-
-**Não executado em produção:** criação de OS, quotes ou UPDATE artificial em missions.
-
-### Mãe/filha
-
-Regra validada por testes determinísticos `fase3-p1-integridade.test.ts` (23/23) no commit publicado.
+| Campo | Detalhe |
+|-------|---------|
+| **Estado** | UI `GestaoInvestimento.tsx` (~1225 linhas) + API `gestaoInvestimentoRoutes.ts` + `lib/investimentos/*` (13 arquivos) + SQL `fundacaoSql.ts` + testes `gestao-investimento-fase2.test.ts` |
+| **Pronto** | Menu Diretoria, gate `canAccessDiretoriaMenu`, perfil investidor, watchlist, cache 30min, provisão 30d, meta 1,5–2% a.m., `canRecommend` bloqueado se perfil incompleto |
+| **Incompleto** | Trading automático (`canTrade: false`), recomendações bloqueadas sem perfil, mesa do dia semi-manual, limits residuais em `gestaoInvestimentoApi.ts` (P3-02) |
+| **Fluxo** | banco (`patrimonio_*`) → cálculo (`allocationEngine`, `targetReturn`) → cache (`dashboardCache`) → UI → Diretoria (contas investimento separadas operacionais) |
+| **Decisão** | **INVESTIGAR MAIS → FINALIZAR** escopo F2 trading (não ativar cálculos não validados) |
+| **Alteração código** | **Nenhuma** — apenas mapeamento no handoff |
+| **Testes** | `gestao-investimento-fase2.test.ts` existente (não regressou) |
+| **Risco residual** | Cálculos de projeção são cenário-objetivo com disclaimer — não garantia |
+| **Rollback** | N/A |
 
 ---
 
-## 6. NB-06 SMOKE (PRODUÇÃO)
+## P2-04 — LIMITS VÍNCULO MÃE/FILHA
 
-| Rota | Método | Resultado | Latência |
-|------|--------|-----------|----------|
-| `/api/migration/add-mission-columns` | POST sem auth | **401** | ~70 ms |
-| `/api/migrations/provider-ops-columns` | POST sem auth | **401** | ~61 ms |
-| `/api/migration/add-mission-columns` | GET | **405** | — |
-
-**NB-06 continua resolvida.** Sem timeout.
+| Campo | Detalhe |
+|-------|---------|
+| **Problema** | `MissionForm` `.limit(50)`; `UpdateMissionModal` `.limit(50)` + `.limit(10)` — OS mãe antiga invisível |
+| **Regra preservada** | `is_same_os === true` + `parent_mission_id` na gravação (P0/P1 intocados) |
+| **Decisão** | **FINALIZAR** busca paginada |
+| **Alteração** | Novo `lib/parentMissionSearch.ts` — paginação 50/página, teto 200, sentinela, ID exato GTM-* |
+| **Arquivos** | `lib/parentMissionSearch.ts`, `MissionForm.tsx`, `UpdateMissionModal.tsx` |
+| **UI** | Aviso âmbar quando `parentOsTruncated` |
+| **Testes** | `fase3-p2-operacional.test.ts` |
+| **Performance** | +1 request sentinela só ao atingir teto |
+| **Rollback** | Reverter para `.limit(50/10)` |
 
 ---
 
-## 7. TESTES PÓS-INTEGRAÇÃO
+## P2-05 — BANNER PEDÁGIO + INCOMPLETOS RESTANTES
+
+### P2-05a — PendingTollConfirmationBanner
+
+| Campo | Detalhe |
+|-------|---------|
+| **Problema** | `.limit(200)` — OS pendentes além de 200 invisíveis |
+| **Decisão** | **FINALIZAR** paginação |
+| **Alteração** | `fetchAllPages` (100/página, teto 2000) + `listTruncated` + aviso Torres |
+| **Arquivos** | `PendingTollConfirmationBanner.tsx` |
+| **Testes** | `fase3-p2-operacional.test.ts` |
+
+### P2-05b — Inventário restante (Raio-X §10)
+
+| Item | Estado | Decisão |
+|------|--------|---------|
+| `replit_integrations` | Não registrado em `createApp` | **REMOVER FUTURAMENTE** (P3-01) |
+| `mission-report` | 85% — auth alinhada P0 | **FINALIZADO** (P0-05) |
+| Gestor Comercial / CRM | 0% | Fora escopo |
+| `CostOptimizationDashboard` | 50% — métricas AIChatbot | **INVESTIGAR MAIS** |
+| `ExecutiveDashboard` | 60% — adoção | **INVESTIGAR MAIS** (P1-02 melhorou realtime) |
+| Quotes >10k agregação server | Residual P1 | **P3** / follow-up |
+
+---
+
+## DÍVIDA REGISTRADA (NÃO ALTERADA)
+
+- Duplo `fetchMissions` em UPDATE (realtime) — monitorar performance
+- NB-07 `api/index` catch-all — aberto
+
+---
+
+## TESTES
 
 | Suíte | Resultado |
 |-------|-----------|
-| `fase3-p1-integridade.test.ts` | **23/23 pass** |
-| P0 + NB-06 + P1 | **57/57 pass** |
-| `scripts/*.test.ts` | **736 / 731 pass / 5 fail** |
+| `fase3-p2-operacional.test.ts` | **7 pass / 0 fail** (novo) |
+| P2 + P1 + P0 + NB-06 | **64 pass / 0 fail** |
+| `scripts/*.test.ts` completa | **743 / 738 pass / 5 fail** |
+| Delta vs baseline P1 | **+7 testes, todos pass; mesmas 5 falhas** |
 | `npm run build` | **OK** |
 
-### 5 falhas baseline (inalteradas)
+---
 
-1. Vercel CRUD contas leves
-2. FinancialInvoiceControl auto sync
-3. registerTimeClockPunch requestPresenceRefresh
-4. Contas a Receber descrição NF
-5. cockpit sem detalhe em aberto
+## DIFF DESTA EXECUÇÃO
 
-**Nenhuma falha nova.**
+| Arquivo | P2 |
+|---------|-----|
+| `components/FeatureInactivePanel.tsx` | 01 (novo) |
+| `App.tsx` | 01 |
+| `components/BillingControlCenter.tsx` | 02 (doc órfão) |
+| `lib/parentMissionSearch.ts` | 04 (novo) |
+| `components/MissionForm.tsx` | 04 |
+| `components/UpdateMissionModal.tsx` | 04 |
+| `components/PendingTollConfirmationBanner.tsx` | 05 |
+| `scripts/fase3-p2-operacional.test.ts` | QA (novo) |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | handoff |
+
+**Nenhuma alteração:** Gestão Investimentos motor, regras financeiras P0/P1, schema, NB-07.
 
 ---
 
-## 8. ROLLBACK (NÃO EXECUTADO)
-
-| Gatilho | Ação |
-|---------|------|
-| Commit anterior `main` | `79613f45` |
-| Procedimento | `git checkout main && git reset --hard 79613f45 && git push origin main` (somente se autorizado) + redeploy Vercel |
-| Tag de referência | `baseline-fase3-nb06-merged-20260812` |
-
-Motivo rollback: **não aplicável** — deploy e smoke OK.
-
----
-
-## 9. RISCOS RESIDUAIS
-
-| Item | Status |
-|------|--------|
-| Duplo `fetchMissions` em UPDATE (realtime) | 📋 Dívida performance — monitorar |
-| Quotes >10.000 | Aviso UI ativo; agregação server-side = P2 |
-| Busca textual teto 500 | Aviso UI + sentinela; ID exato independente |
-| NB-07 catch-all `api/index` | 📋 Aberto |
-
----
-
-## 10. GIT / TAGS
+## GIT / PR
 
 | Item | Valor |
 |------|-------|
-| Tag criada | `baseline-fase3-p1-merged-20260813` |
-| Commit tagado | `6264443d` |
-| Tags antigas | **Preservadas** (não movidas) |
-| P2 | **NÃO iniciado** |
+| Branch | `cursor/fase3-p2-operacional-eaa8` |
+| Base | `main` @ `6290f14f` |
+| PR | Draft (a criar) |
+| Merge | **NÃO** |
+| Deploy | **NÃO** |
 
 ---
 
-## 11. FLUXO RECOMENDADO PÓS-P1
-
-Desenvolvimento continua em `dev` → próxima publicação via `publicar.ps1` na máquina Windows do Thiago ou equivalente bash.
-
----
-
-*Publicação P1 — Cloud Agent — 2026-08-13*
+*Fase 3 P2 — Cloud Agent — 2026-08-13*
