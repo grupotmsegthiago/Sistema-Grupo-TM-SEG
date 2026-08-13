@@ -321,6 +321,8 @@ const QuotePrintModal: React.FC<Props> = ({ quote, onClose, waypoints = [] }) =>
                                 <tr>
                                     <th className="p-4">Item</th>
                                     <th className="p-4 text-center">Referência / Franquia</th>
+                                    <th className="p-4 text-center">KM Extra (R$/km)</th>
+                                    <th className="p-4 text-center">Hora Extra (R$/h)</th>
                                     <th className="p-4 text-right">Valor Líquido</th>
                                 </tr>
                             </thead>
@@ -334,6 +336,8 @@ const QuotePrintModal: React.FC<Props> = ({ quote, onClose, waypoints = [] }) =>
                                         {extractDetail(['Base Contratual', 'Tabela', 'Tabela Base']) || 'Tabela Referencial'}<br/>
                                         <span className="text-[9px] font-black text-indigo-600">FRANQUIA: {quote.total_hours}h</span>
                                     </td>
+                                    <td className="p-4 text-center text-xs font-bold text-slate-700 font-mono">{getExtraKmValue()}</td>
+                                    <td className="p-4 text-center text-xs font-bold text-slate-700 font-mono">{getExtraHourValue()}</td>
                                     <td className="p-4 text-right font-black text-slate-900 text-lg">
                                         {formatCurrency(quote.total_value)}
                                     </td>
@@ -344,6 +348,8 @@ const QuotePrintModal: React.FC<Props> = ({ quote, onClose, waypoints = [] }) =>
                                         <p className="text-[10px] text-gray-400 font-medium">Lançamento por reembolso (valor real)</p>
                                     </td>
                                     <td className="p-4 text-center text-xs font-bold text-slate-500">-</td>
+                                    <td className="p-4 text-center text-xs text-slate-400">-</td>
+                                    <td className="p-4 text-center text-xs text-slate-400">-</td>
                                     <td className="p-4 text-right font-black text-amber-600 text-xs uppercase tracking-widest">
                                         À PARTE
                                     </td>

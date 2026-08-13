@@ -695,6 +695,8 @@ const CommercialProposalModal: React.FC<Props> = ({
                                     <tr>
                                         <th className="p-5 text-left border-r border-gray-700">Operação / Rota</th>
                                         <th className="p-5 text-center border-r border-gray-700">Franquia</th>
+                                        <th className="p-5 text-center border-r border-gray-700">KM Extra</th>
+                                        <th className="p-5 text-center border-r border-gray-700">Hora Extra</th>
                                         <th className="p-5 text-right">Valor Base</th>
                                     </tr>
                                 </thead>
@@ -706,6 +708,8 @@ const CommercialProposalModal: React.FC<Props> = ({
                                                 {t.id === 'virtual-logitech' && <span className="block text-[8px] text-red-700 font-black mt-1">REGRA AUTOMÁTICA ATIVA</span>}
                                             </td>
                                             <td className="p-5 text-center text-black font-mono border-r border-black font-bold">{t.franchise_km}KM / {t.franchise_hours}H</td>
+                                            <td className="p-5 text-center text-black font-mono border-r border-black font-bold">R$ {(t.price_per_extra_km || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                            <td className="p-5 text-center text-black font-mono border-r border-black font-bold">R$ {(t.price_per_extra_hour || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                             <td className="p-5 text-right font-black text-black text-sm">R$ {t.activation_fee.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                                         </tr>
                                     ))}

@@ -561,12 +561,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // MODO EDIÇÃO TOTAL: Barbara e Thiago podem destravar TODOS os campos da OS
   // (operacional, cliente, fornecedor, financeiro), inclusive em OS aprovadas.
   // O acionamento é registrado em system_logs (MissionEditHistory).
+  const isPlinio = userNameLower.includes('plinio') || userNameLower.includes('plínio');
   const canActivateFullEdit = useMemo(() => {
+    if (isPlinio) return false;
     return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
       || isFinanceSupervisorName(userNameLower) || userNameLower.includes('thiago')
-      || userNameLower.includes('simone')
-      || userNameLower.includes('plinio') || userNameLower.includes('plínio');
-  }, [userRoleLower, userNameLower]);
+      || userNameLower.includes('simone');
+  }, [userRoleLower, userNameLower, isPlinio]);
   // OS 5046: libera a troca da TABELA DE CUSTO mesmo com o Motor Automático ativo
   // para os responsáveis pela auditoria (Thiago Moreira, Simone, Barbara) e
   // diretoria/admin. Ao selecionar uma tabela, o motor é desligado para esta
@@ -585,7 +586,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // ligar a EDIÇÃO TOTAL. Isso apenas destrava o campo; NÃO recalcula nem
   // sobrescreve valores por conta própria (os snapshots de OS aprovadas seguem
   // protegidos no fluxo de salvar/aprovar).
-  const canEditTablesEvenIfLocked = canOverrideAutoProvider;
+  const canEditClientTablesEvenIfLocked = canOverrideAutoProvider && !isPlinio;
+  const canEditProviderTablesEvenIfLocked = canOverrideAutoProvider || isPlinio;
+  const canEditTablesEvenIfLocked = canEditClientTablesEvenIfLocked || canEditProviderTablesEvenIfLocked;
   const [fullEditMode, setFullEditMode] = useState(false);
   // isController: identifica o cargo Controller para travas de edição.
   // Quando EDIÇÃO TOTAL está ligada, o gate de Controller é suspenso para
@@ -604,7 +607,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const canEditEndTimeOnly = useMemo(() => {
     return canEditOpsData || ['operacional', 'operador'].includes(userRoleLower) || fullEditMode;
   }, [canEditOpsData, userRoleLower, fullEditMode]);
-  const canEditClientData = (canEditOpsData && !isController) || fullEditMode;
+  // Plinio: somente fornecedor — bloqueio explícito do lado cliente (P3).
+  const canEditClientData = !isPlinio && ((canEditOpsData && !isController) || fullEditMode);
   // Controller pode ajustar o valor total do fornecedor mesmo após verificação.
   const canEditProviderCostTotal = canEditOpsData && (fullEditMode || !isProviderTotalLockedByController || isControllerRole);
 
@@ -612,11 +616,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // todos os campos editáveis são bloqueados em todas as telas. Diretoria,
   // administrador e CEO podem destravar manualmente para corrigir algo.
   const isBillingLocked = !!(mission?.billing_verified_by || mission?.billing_approved || mission?.snapshot_approved_by);
-  const isPlinio = userNameLower.includes('plinio') || userNameLower.includes('plínio');
   const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower) || isPlinio || isBarbaraFinance;
   // ADMINISTRADOR (ex: Barbara) tem liberação permanente: pode editar OS aprovada
   // a qualquer momento. O sistema registra cada alteração no histórico permanente.
-  const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode || isPlinio || isBarbaraFinance;
+  const isAdminFullAccess = (userRoleLower === 'administrador' || fullEditMode || isBarbaraFinance) && !isPlinio;
   const isDirectorAccess = userRoleLower === 'diretoria' || userRoleLower === 'administrador';
   const [unlockOverride, setUnlockOverride] = useState(false);
   useEffect(() => { setUnlockOverride(false); setEditObservation(''); setAnalysisReason(''); setOpenAnalysisRequest(null); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); staleAutoResyncDoneRef.current = null; }, [mission?.id]);
@@ -2254,7 +2257,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setUseSavedValues(false);
       userManuallyEditedRef.current = false;
       dbValuesLoadedRef.current = false;
-      if (!(isBillingLocked && canEditTablesEvenIfLocked)) {
+      if (!(isBillingLocked && canEditClientTablesEvenIfLocked)) {
           setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
           if (mission) {
               supabase.from('missions')
@@ -2274,7 +2277,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setUseSavedValues(false);
       userManuallyEditedRef.current = false;
       dbValuesLoadedRef.current = false;
-      if (!(isBillingLocked && canEditTablesEvenIfLocked)) {
+      if (!(isBillingLocked && canEditProviderTablesEvenIfLocked)) {
           setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
           if (mission) {
               supabase.from('missions')
@@ -5414,7 +5417,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             value={manualClientTableId || ''}
                                             onSelect={swapClientTable}
                                             onApply={() => handleUpdate(false)}
-                                            disabled={isEffectivelyLocked && !canEditTablesEvenIfLocked}
+                                            disabled={!canEditClientData || (isEffectivelyLocked && !canEditClientTablesEvenIfLocked)}
                                             isApplying={isUpdating}
                                             previewTotal={financialData ? (financialData.client.total + parseNumber(displacementInput)) : 0}
                                         />
@@ -5544,7 +5547,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             value={manualProviderTableId || ''}
                                             onSelect={swapProviderTable}
                                             onApply={() => handleUpdate(false)}
-                                            disabled={(isEffectivelyLocked && !fullEditMode && !canEditTablesEvenIfLocked) || (!!financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider)}
+                                            disabled={(isEffectivelyLocked && !fullEditMode && !canEditProviderTablesEvenIfLocked) || (!!financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider && !isPlinio)}
                                             isApplying={isUpdating}
                                             previewTotal={financialData ? (financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput)) : 0}
                                         />

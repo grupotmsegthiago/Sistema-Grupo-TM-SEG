@@ -3815,7 +3815,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/missions/:id/billing-override", async (req: Request, res: Response) => {
+  app.patch("/api/missions/:id/billing-override", requireAuth, requireRole('diretoria', 'administrador', 'ceo', 'financeiro', 'controller'), async (req: Request, res: Response) => {
     try {
       const missionId = req.params.id;
       const { revenue_value, billing_verified_by, billing_approved, revenue_edit_reason, toll_value } = req.body || {};
