@@ -1,8 +1,7 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **Fechamento pendências PR #259** (P1 Torres + busca 500).  
-> **Não contém segredos.**  
-> **NÃO mergeado. NÃO publicado.**
+> Handoff oficial — **Merge e publicação controlada P1 — PR #259**.  
+> **Não contém segredos.**
 
 ---
 
@@ -11,15 +10,14 @@
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-13 (UTC) |
-| **Tipo** | Correção das 2 pendências não bloqueantes da validação PR #259 |
-| **PR** | [#259](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/259) — **DRAFT** |
-| **Branch** | `cursor/fase3-p1-integridade-eaa8` |
-| **Commit anterior** | `a1f704e8` (validação pré-merge) |
-| **Produção (inalterada)** | `https://sistema.grupotmseg.com.br` @ `b6291411` |
-| **Produção alterada** | **NÃO** |
+| **Tipo** | Integração PR #259 → `dev` → `main` → Vercel |
+| **PR** | [#259](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/259) — mergeado via fast-forward |
+| **HEAD validado** | `6264443de429bd80ade0bafcde1898dafccfc8b5` |
+| **Tag P1** | `baseline-fase3-p1-merged-20260813` @ `6264443d` |
+| **Produção** | `https://sistema.grupotmseg.com.br` |
 | **Banco alterado** | **NÃO** |
-| **NB-07** | **Preservado** |
-| **P2/P3** | **NÃO iniciados** |
+| **Migration executada** | **NÃO** |
+| **NB-07** | **Aberto** — não alterado |
 
 ---
 
@@ -27,177 +25,186 @@
 
 | Indicador | Valor | Metodologia |
 |-----------|-------|-------------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 | 2 pendências corrigidas + testes + build + handoff |
-| **FASE 3 (total)** | **37%** 🔵 | Inalterado — correção de pendências, não novo bloco |
-| **PROGRAMA GERAL** | **38%** | Inalterado |
+| **EXECUÇÃO ATUAL** | **100%** 🟢 | Revalidação + merge + tag + deploy + smoke + testes + handoff |
+| **FASE 3 (total)** | **40%** 🔵 | P0 publicado (20%) + NB-06 (+2%) + P1 publicado e validado (+18%) |
+| **PROGRAMA GERAL** | **41%** | +3% pelo fechamento operacional do P1 em produção |
 
 ---
 
 ## DECISÃO FINAL
 
-# 🟢 PR #259 APTO PARA MERGE
+# 🟢 P1 PUBLICADO E VALIDADO
 
 | Critério | Resultado |
 |----------|-----------|
-| Pendência 1 — `quotesTruncated` até UI | ✅ |
-| Pendência 2 — falso positivo busca em 500 | ✅ |
-| Pendência 3 — duplo fetch realtime | 📋 Dívida registrada (não alterada) |
-| Escopo restrito (sem P2/NB-07/refatoração) | ✅ |
-| Testes — nenhuma falha nova | ✅ |
-| Build | ✅ |
+| HEAD PR = `6264443d` | ✅ |
+| Fluxo `dev` → `main` → Vercel | ✅ |
+| buildId produção = commit publicado | ✅ |
+| `/api/health` | ✅ `{"status":"ok"}` |
+| Testes P1/P0/NB-06 | ✅ 57/57 |
+| Suíte completa | ✅ 736 / 731 pass / 5 fail (baseline) |
+| NB-06 smoke produção | ✅ 401 rápido, GET 405 |
+| NB-07 | 📋 Aberto |
+| Rollback necessário | ❌ |
 
 ---
 
-## PENDÊNCIA 1 — QUOTES >10.000 (Torres)
+## 1. REVALIDAÇÃO PRÉ-MERGE
 
-### Problema anterior
+| Verificação | Resultado |
+|-------------|-----------|
+| HEAD `cursor/fase3-p1-integridade-eaa8` | `6264443d` ✅ |
+| Commits no PR vs validado | 3 commits (`d03e37ff`, `a1f704e8`, `6264443d`) — sem alteração posterior |
+| Diff vs `main` | 14 arquivos, escopo P1 exclusivo ✅ |
+| Alteração fora do P1 | ❌ Não encontrada |
 
-`fetchAllPages` retornava `truncated`, mas `useDashboardDiretoriaData` descartava o flag (`.then(r => ({ data: r.rows }))`). Funil comercial podia ser interpretado como total da empresa.
+### Arquivos no merge (14)
 
-### Causa
-
-Flag não propagado do hook para tipo/interface/UI.
-
-### Correção
-
-| Camada | Alteração |
-|--------|-----------|
-| `lib/supabasePaging.ts` | Sentinel `buildQuery(maxRows, 1)` — `truncated=true` só com evidência de registro além do teto |
-| `lib/dashboardDiretoria/types.ts` | Campo `quotesTruncated: boolean` |
-| `useDashboardDiretoriaData.ts` | `setQuotesTruncated(!!quotesRes.truncated)` + retorno no hook |
-| `DashboardDiretoria.tsx` | Aviso discreto no card Pipeline Comercial |
-
-### Texto UI
-
-> Conjunto parcial de cotações (limite de carregamento atingido). Os indicadores comerciais abaixo não representam o total da empresa — refine o período ou filtros.
-
-### Resultados testados (`fetchAllPages`, page=500, max=10.000)
-
-| Total | Retornados | `truncated` |
-|-------|------------|-------------|
-| 9.999 | 9.999 | **false** |
-| 10.000 | 10.000 | **false** |
-| 10.001 | 10.000 | **true** |
-
-- Erro em página intermediária → **throw** (não retorna parcial como completo)
-- Sem duplicidade entre páginas (validado no teste)
+`missionTableSearch.ts`, `supabasePaging.ts`, `MissionTable.tsx`, `ExecutiveDashboard.tsx`, `RealtimeProvider.tsx`, `financialUtils` export, `useDashboardDiretoriaData.ts`, `types.ts`, `DashboardDiretoria.tsx`, `missionLinkage.ts`, `aggregations.ts`, `MissionCard.tsx`, `fase3-p1-integridade.test.ts`, `ULTIMA_EXECUCAO_TMSEG.md`
 
 ---
 
-## PENDÊNCIA 2 — BUSCA EXATAMENTE 500 RESULTADOS
+## 2. PONTO DE RETORNO (ANTES DA PUBLICAÇÃO)
 
-### Problema anterior
-
-`truncated: rows.length >= maxResults` marcava truncamento quando havia **exatamente** 500 matches (falso positivo).
-
-### Causa
-
-Teto confundido com evidência de conjunto maior.
-
-### Correção (`lib/missionTableSearch.ts`)
-
-- Flag `exhausted` quando última página retorna menos que `take`
-- Se `!exhausted && rows.length >= maxResults` → consulta sentinela `.range(maxResults, maxResults)` com `select('id')`
-- `truncated=true` **somente** se sentinela retorna ≥1 registro
-
-### Preservado
-
-- Paginação 100/página
-- Teto proteção 500
-- ID exato GTM-* (query `.eq('id')` antes da busca textual)
-- Sanitização PostgREST
-- Aviso Torres em `MissionTable` quando `searchMatchesTruncated`
-
-### Resultados testados (`searchMissionsByTerm`, mock)
-
-| Total matches | `truncated` |
-|---------------|-------------|
-| 499 | **false** |
-| 500 | **false** |
-| 501 | **true** |
-
-- ID exato `GTM-OLD-9999` fora do top 500 → encontrado via caminho determinístico ✅
-
-### Performance
-
-| Operação | Requests adicionais |
-|----------|---------------------|
-| Busca textual (pior caso) | +1 sentinela (só quando atinge teto sem página parcial) |
-| Quotes paginação (pior caso) | +1 sentinela (só quando atinge 10.000 sem página parcial) |
+| Referência | Valor |
+|------------|-------|
+| `main` (antes) | `79613f45` |
+| `dev` (antes) | `88992034` |
+| Produção buildId (antes) | `79613f45d8b0af757455636419e09e58663b1ca6` |
+| Tag rollback imediato | `baseline-fase3-nb06-merged-20260812` @ `b6291411` |
+| Tags preservadas | `baseline-fase3-p0-merged-20260812`, `baseline-fase3-nb06-merged-20260812` |
 
 ---
 
-## PENDÊNCIA 3 — REALTIME (NÃO ALTERADA)
+## 3. INTEGRAÇÃO E PUBLICAÇÃO
 
-**Dívida registrada:** possível duplo `fetchMissions` em UPDATE (`ExecutiveDashboard` + `refreshMissions` global). Debounce 2s mitiga tempestade. **Monitorar em produção** — não otimizado nesta execução por ausência de evidência de regressão.
+### Fluxo `publicar.ps1` verificado
+
+Script implementa: `dev` limpa → `merge dev→main` → `push main` → `push dev` → volta `dev`.  
+**Executado equivalente em bash** (ambiente Linux sem PowerShell).
+
+### Passos executados
+
+1. `dev` fast-forward → `79613f45` (sync com `main`)
+2. `dev` fast-forward → `6264443d` (merge PR #259)
+3. Testes + build na `dev` ✅
+4. `main` fast-forward → `6264443d`
+5. `push origin main` + `push origin dev`
+6. Tag `baseline-fase3-p1-merged-20260813` criada e enviada
+
+### Commits depois
+
+| Branch | Commit |
+|--------|--------|
+| `main` | `6264443d` |
+| `dev` | `6264443d` |
 
 ---
 
-## DIFF DESTA EXECUÇÃO (escopo verificado)
+## 4. CONFIRMAÇÃO DEPLOY VERCEL
 
-| Arquivo | Motivo |
-|---------|--------|
-| `lib/supabasePaging.ts` | Sentinel truncamento |
-| `lib/missionTableSearch.ts` | Sentinel busca 500 |
-| `lib/dashboardDiretoria/types.ts` | `quotesTruncated` |
-| `lib/dashboardDiretoria/useDashboardDiretoriaData.ts` | Propaga flag |
-| `components/dashboard/DashboardDiretoria.tsx` | Aviso UI |
-| `scripts/fase3-p1-integridade.test.ts` | +4 testes borda |
-| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Handoff |
+| Endpoint | Resultado |
+|----------|-----------|
+| `GET /api/version` | `buildId: 6264443de429bd80ade0bafcde1898dafccfc8b5` ✅ |
+| `builtAt` | `2026-08-13T13:08:37.458Z` |
+| `GET /api/health` | `{"status":"ok"}` ✅ |
+| `GET /` | HTTP 200 ✅ |
+| Tempo até deploy | ~2 min após push |
 
-**Nenhuma outra regra alterada.**
+Projeto Vercel: `sistema-grupo-tm-seg` (domínio oficial).
 
 ---
 
-## TESTES
+## 5. SMOKE TEST P1 (READ-ONLY)
+
+### Bundle produção (`/assets/index-OUgqBgJa.js`)
+
+| Marcador | Status |
+|----------|--------|
+| `Conjunto de busca incompleto` (busca teto 500 + aviso Torres) | ✅ |
+| `quotesTruncated` | ✅ |
+| `Conjunto parcial de cotações` (aviso Diretoria) | ✅ |
+| `refreshMissions` / `supabase:missions` (realtime) | ✅ (23 / 6 ocorrências) |
+
+**Não executado em produção:** criação de OS, quotes ou UPDATE artificial em missions.
+
+### Mãe/filha
+
+Regra validada por testes determinísticos `fase3-p1-integridade.test.ts` (23/23) no commit publicado.
+
+---
+
+## 6. NB-06 SMOKE (PRODUÇÃO)
+
+| Rota | Método | Resultado | Latência |
+|------|--------|-----------|----------|
+| `/api/migration/add-mission-columns` | POST sem auth | **401** | ~70 ms |
+| `/api/migrations/provider-ops-columns` | POST sem auth | **401** | ~61 ms |
+| `/api/migration/add-mission-columns` | GET | **405** | — |
+
+**NB-06 continua resolvida.** Sem timeout.
+
+---
+
+## 7. TESTES PÓS-INTEGRAÇÃO
 
 | Suíte | Resultado |
 |-------|-----------|
-| `fase3-p1-integridade.test.ts` | **23 pass / 0 fail** (+4) |
-| P0 + NB-06 + P1 combinado | **57 pass / 0 fail** |
-| `scripts/*.test.ts` completa | **736 tests / 731 pass / 5 fail** |
-| Delta vs baseline PR | **+4 testes novos, todos pass; mesmas 5 falhas** |
+| `fase3-p1-integridade.test.ts` | **23/23 pass** |
+| P0 + NB-06 + P1 | **57/57 pass** |
+| `scripts/*.test.ts` | **736 / 731 pass / 5 fail** |
 | `npm run build` | **OK** |
 
 ### 5 falhas baseline (inalteradas)
 
-1. `Vercel tem funções leves para CRUD de contas`
-2. `FinancialInvoiceControl — auto sync e labels`
-3. `registerTimeClockPunch dispara requestPresenceRefresh após inserir`
-4. `Contas a Receber — descrição = texto da NF`
-5. `cockpit sem detalhe em aberto`
+1. Vercel CRUD contas leves
+2. FinancialInvoiceControl auto sync
+3. registerTimeClockPunch requestPresenceRefresh
+4. Contas a Receber descrição NF
+5. cockpit sem detalhe em aberto
+
+**Nenhuma falha nova.**
 
 ---
 
-## FLUXO GIT / VERCEL (referência)
+## 8. ROLLBACK (NÃO EXECUTADO)
 
-```
-PR #259 → revisão → merge em dev → publicar.ps1 (dev→main) → Vercel deploy main
-```
+| Gatilho | Ação |
+|---------|------|
+| Commit anterior `main` | `79613f45` |
+| Procedimento | `git checkout main && git reset --hard 79613f45 && git push origin main` (somente se autorizado) + redeploy Vercel |
+| Tag de referência | `baseline-fase3-nb06-merged-20260812` |
 
-Projeto Vercel oficial: `sistema-grupo-tm-seg` apenas.
-
-**Não executado nesta execução.**
-
----
-
-## ROLLBACK
-
-```bash
-git revert <commit-pendências>  # reverte só sentinel + quotesTruncated
-```
+Motivo rollback: **não aplicável** — deploy e smoke OK.
 
 ---
 
-## GIT / PR
+## 9. RISCOS RESIDUAIS
+
+| Item | Status |
+|------|--------|
+| Duplo `fetchMissions` em UPDATE (realtime) | 📋 Dívida performance — monitorar |
+| Quotes >10.000 | Aviso UI ativo; agregação server-side = P2 |
+| Busca textual teto 500 | Aviso UI + sentinela; ID exato independente |
+| NB-07 catch-all `api/index` | 📋 Aberto |
+
+---
+
+## 10. GIT / TAGS
 
 | Item | Valor |
 |------|-------|
-| Branch | `cursor/fase3-p1-integridade-eaa8` |
-| PR | [#259](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/259) DRAFT |
-| Merge | **NÃO** |
-| Deploy | **NÃO** |
+| Tag criada | `baseline-fase3-p1-merged-20260813` |
+| Commit tagado | `6264443d` |
+| Tags antigas | **Preservadas** (não movidas) |
+| P2 | **NÃO iniciado** |
 
 ---
 
-*Fechamento pendências P1 — Cloud Agent — 2026-08-13*
+## 11. FLUXO RECOMENDADO PÓS-P1
+
+Desenvolvimento continua em `dev` → próxima publicação via `publicar.ps1` na máquina Windows do Thiago ou equivalente bash.
+
+---
+
+*Publicação P1 — Cloud Agent — 2026-08-13*
