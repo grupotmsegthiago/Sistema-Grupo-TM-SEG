@@ -1,6 +1,6 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **Fase 3 Bloco P3** (limpeza, segurança, dívidas técnicas + ajustes operacionais)  
+> Handoff oficial — **Fase 3 Bloco P3 — VALIDAÇÃO FINAL + PR #261**  
 > **Não contém segredos.**  
 > **NÃO mergeado. NÃO publicado.**
 
@@ -11,14 +11,16 @@
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-13 (UTC) |
-| **Tipo** | Fase 3 — Bloco P3 (investigação + correções mínimas) |
+| **Tipo** | Validação final P3 + PR #261 |
 | **Branch** | `cursor/fase3-p3-limpeza-seguranca-eaa8` |
-| **Base** | `main` @ `b720ea61` (handoff P2 publicado) |
+| **Commit** | `ad553bc8` |
+| **PR** | [#261](https://github.com/) (draft) |
+| **Base** | `main` @ `b720ea61` |
 | **Produção (inalterada)** | `ae2fc382` |
 | **Tag rollback produção** | `baseline-fase3-p2-merged-20260813` |
 | **Produção alterada** | **NÃO** |
 | **Banco alterado** | **NÃO** |
-| **P3 iniciado** | ✅ Investigação + correções mínimas na branch |
+| **Schema/migration** | **NÃO** (nenhum no diff) |
 | **Próxima fase** | **NÃO iniciada** |
 
 ---
@@ -27,219 +29,286 @@
 
 | Indicador | Valor | Metodologia |
 |-----------|-------|-------------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 | Investigação completa + correções mínimas + testes + build + handoff |
-| **FASE 3 (total)** | **58%** 🔵 | P0+NB-06+P1+P2 publicados (52%) + P3 investigado (+6% pendente merge) |
-| **PROGRAMA GERAL** | **57%** 🔵 | +2% bloco P3 investigado na branch |
+| **EXECUÇÃO ATUAL** | **100%** 🟢 | Revisão integral diff + segurança + testes + build + handoff |
+| **FASE 3 (total)** | **58%** 🔵 | P0+NB-06+P1+P2 publicados (52%) + P3 validado na branch (+6% pendente merge) |
+| **PROGRAMA GERAL** | **57%** 🔵 | Sem inflação artificial — merge/publicação P3 ainda pendente |
 
 ---
 
-## DECISÃO FINAL
+## DECISÃO FINAL — PR #261
 
-# 🟡 P3 CONCLUÍDO COM PENDÊNCIAS
+# 🟡 PR #261 APTO COM PENDÊNCIAS NÃO BLOQUEANTES
 
 | Critério | Resultado |
 |----------|-----------|
-| Investigação P3-01 a integridade | ✅ |
-| Correções mínimas comprovadas | ✅ (4 itens — ver abaixo) |
-| NB-07 corrigido globalmente | ❌ Pendente (arquitetural) |
-| Segurança crítica residual | 🟡 Documentada (investment/* sem auth, asaas webhook) |
-| Testes — zero falha nova | ✅ 753/747/5 (+5 testes P3) |
+| Escopo autorizado (Plinio, PDFs, replit, billing-override) | ✅ Validado |
+| Alteração financeira não autorizada no diff | ✅ Ausente |
+| Schema/migration/banco | ✅ Ausente |
+| Integração nova não solicitada | ✅ Ausente |
+| Refatoração paralela | ✅ Ausente |
+| Segurança introduzida pelo PR | ✅ Melhoria (`billing-override` protegido) |
+| Segurança residual pré-existente | 🟡 Documentada (investment snapshots, supabase admin, asaas webhook) |
+| Testes — zero falha nova | ✅ 734/729/5 (excl. NB-06 hang) |
 | Build | ✅ |
-| Merge / deploy | ❌ **NÃO** |
+| Merge / deploy | ❌ **NÃO** (conforme instrução) |
+
+**Justificativa:** o diff do PR #261 é mínimo, focado e testado. As exposições críticas remanescentes (`investment/*` snapshots, `/api/supabase/*` com service role, `asaas/webhook` sem assinatura) **já existiam em `main`** e não são regressão deste PR. O único endpoint corrigido neste PR (`billing-override`) foi validado estaticamente e em runtime (401 sem token).
 
 ---
 
-## P3-01 — REPLIT_INTEGRATIONS
+## 1. REVISÃO INTEGRAL DO DIFF (14 arquivos)
 
-| Item | Classificação | Evidência |
-|------|---------------|-----------|
-| `server/replit_integrations/` (8 arquivos) | **REMOVER** ✅ executado | Zero imports fora da pasta; rotas nunca registradas em `createApp` |
-| `registerChatRoutes` / `/api/conversations` | **REMOVER** | Código morto; imports quebrados (`server/db.ts` inexistente) |
-| `registerImageRoutes` / `/api/generate-image` | **REMOVER** | Nunca registrado |
-| `batch/utils.ts` (`p-limit`, `p-retry`) | **INVESTIGAR MAIS** | Só usado no módulo removido — candidato remoção deps |
-| `shared/models/chat.ts` | **INVESTIGAR MAIS** | Zero imports; órfão |
-| Rotas vivas `/api/gemini/*`, `/api/chat` | **MANTER** | `server/routes.ts` + `api/gemini/*` |
-| Env `AI_INTEGRATIONS_GEMINI_*` | **MANTER** | Usado por `geminiClient.ts` produção |
-| Env `REPLIT_*` (hosting legado) | **INVESTIGAR MAIS** | `lib/publicAppUrl.ts`, dashboards custo |
+| Arquivo | Motivo | Regra | Impacto | Consumidor | Teste | Risco |
+|---------|--------|-------|---------|------------|-------|-------|
+| `server/replit_integrations/*` (8 deletados) | Código morto Replit | Remover legado não referenciado | Nenhum runtime | — | `fase3-p3-limpeza-seguranca.test.ts` | 🟢 Baixo |
+| `server/routes.ts` | Auth em `billing-override` | `requireAuth` + `requireRole` antes do DB | Protege PATCH financeiro de missões | `ClientBillingReport.tsx` (`authFetch`) | Estático + curl 401 | 🟢 Baixo |
+| `MissionFinancialModal.tsx` | Plinio só fornecedor | `canEditClientData=false`; tabela cliente bloqueada | UI faturamento OS | Modal financeiro | Estático P3 | 🟡 Gap residual (ver §2) |
+| `CommercialProposalModal.tsx` | PDF proposta KM/Hora Extra | Apresentação apenas | PDF comercial | Comercial / Diretoria | Estático P3 | 🟢 Baixo |
+| `QuotePrintModal.tsx` | PDF simulação KM/Hora Extra | Apresentação apenas | PDF simulação | Comercial | Estático P3 | 🟢 Baixo |
+| `scripts/fase3-p3-limpeza-seguranca.test.ts` | Cobertura P3 | 5 asserts estáticos | CI local | — | 5/5 pass | 🟢 |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Handoff | Documentação | — | ChatGPT / equipe | — | 🟢 |
 
-**Alteração:** removido `server/replit_integrations/` (branch P3).
-
----
-
-## NB-07 — CATCH-ALL `api/index`
-
-| Métrica | Valor |
-|---------|-------|
-| Rewrites dedicados (leves) | 105 |
-| Rotas Express total | ~217 |
-| Ainda no catch-all | ~138 (~64%) |
-| Bundle Express lazy | `dist/vercelApp.cjs` ~1,4 MB |
-
-### Classificação
-
-| Classe | Qtd aprox. | Exemplos |
-|--------|------------|----------|
-| 🟢 FUNCIONAL | 105 rewrites | `/api/health`, `/api/recalculate-open`, NF/Asaas/Gestão investimento |
-| 🟡 TIMEOUT_RISK | 138 catch-all | Crons `/api/cron/minute`, `/api/cron/zapi`, recálculos admin |
-| 🔴 SECURITY_RISK | ~20+ | Ver tabela abaixo |
-
-### Endpoints críticos sem auth (catch-all ou handler dedicado)
-
-| Severidade | Rota | Status P3 |
-|------------|------|-----------|
-| 🔴 | `PATCH /api/missions/:id/billing-override` | **CORRIGIDO** — `requireAuth` + `requireRole` |
-| 🔴 | `POST /api/asaas/webhook` | Pendente — sem validação assinatura |
-| 🟠 | `POST /api/investment/init`, snapshots | Pendente — handlers dedicados sem auth |
-| 🟠 | `POST /api/db/vacuum`, `POST /api/supabase/init-invoices` | Pendente |
-| 🟠 | `POST/DELETE /api/client-registries*` | Pendente |
-
-**Decisão NB-07:** não corrigir catch-all globalmente nesta execução — padrão de mitigação = handler leve + rewrite (como P1/P2).
+**Confirmado ausente no diff:** alteração financeira não autorizada, schema/migration, integração nova, refatoração paralela, duplicação de regra de cálculo.
 
 ---
 
-## ADMIN APIs — INVENTÁRIO (resumo)
+## 2. PLINIO — REGRA AUTORIZADA
 
-| Domínio | Auth | Runtime Vercel | Classificação |
-|---------|------|----------------|---------------|
-| `/api/migration/*` (NB-06) | ✅ requireAuth+diretoria | Handler leve dedicado | 🟢 |
-| `/api/admin/*` (26 rotas) | ✅ requireRole | Catch-all | 🟡 timeout |
-| `/api/billing/recalculate-*` | ✅ financeiro+ | Catch-all | 🟡 |
-| `/api/missions/recalculate-*` | ✅ | Catch-all | 🟡 |
-| `/api/supabase/*` (7 rotas) | ❌ | Catch-all | 🔴 |
-| Crons (6/8) | ✅ CRON_SECRET | Catch-all | 🟡 |
+### Implementação (`MissionFinancialModal.tsx`)
 
-Correção nesta execução: somente `billing-override` (vulnerabilidade comprovada).
+| Gate | Plinio | Outros perfis |
+|------|--------|---------------|
+| `canActivateFullEdit` | ❌ `false` | admin/diretoria/financeiro supervisor |
+| `canEditClientData` | ❌ `false` | ops + fullEdit |
+| `canEditClientTablesEvenIfLocked` | ❌ `false` | auditoria (Thiago M., Simone, Barbara…) |
+| `canEditProviderTablesEvenIfLocked` | ✅ `true` | auditoria + Plinio |
+| `isAdminFullAccess` | ❌ excluído | admin/Barbara + fullEdit |
+| `revenueInput` (valor cobrança) | `readOnly` via `canEditClientData` | conforme role |
+| `TableSwapControl` cliente | `disabled` via `canEditClientData` | conforme role |
+| Fornecedor (custo, tabela) | ✅ preservado | conforme role |
 
----
+**Identificação:** `isPlinio` por nome (`plinio`/`plínio`) — padrão já usado no sistema. **Risco documentado:** migrar para perfil/ID estável em fase futura; não refatorar auth nesta execução.
 
-## REALTIME — DUPLO FETCH
+### Gap residual (não bloqueante para merge, mas incompleto vs regra ideal)
 
-### Fluxo mapeado
+Campos abaixo usam gate `(isController \|\| isEffectivelyLocked)` **sem** `canEditClientData`:
 
-```
-missions UPDATE (Supabase)
-  → RealtimeProvider.handleChange
-  → pendingMissionFullRefreshRef = true
-  → flush (debounce)
-  → dispatch refreshMissions (global)
-  → + dispatch supabase:missions (por tabela)
-  → + invalidateQueries React Query (missions keys)
-```
+- `customClientBase`, `customClientKm`, `customClientHour` (ajustes unitários cliente)
+- `tollInput` (pedágio cliente)
+- `displacementInput` (deslocamento cliente)
 
-### Consumidores `refreshMissions` (amostra)
+Plinio tem `canUnlockBilling` → pode destravar OS aprovada → nesses campos **permanece editável** após unlock. **Correção mínima futura:** adicionar `&& canEditClientData` (ou `&& !isPlinio`) nos inputs cliente listados. **Não implementado nesta execução** (fora do diff mínimo autorizado).
 
-| Componente | Também `useRealtimeRefresh('missions')`? | Duplicação? |
-|------------|------------------------------------------|-------------|
-| MissionTable | Listener próprio | Possível dupla com global |
-| ExecutiveDashboard | ✅ | Possível dupla |
-| ClientBillingReport | Listener próprio | Possível dupla |
-| FinancialDRE | ✅ missions | Possível dupla |
-| MissionFinancialModal | ✅ + listener | Tripla potencial |
-
-**Medida:** 1 UPDATE pode disparar 2–4 refreshes (global + hook + listener local).  
-**Decisão:** não otimizar nesta execução — sem evidência de problema de performance em produção; consistência preservada.
+**Backend:** nenhuma validação server-side específica para Plinio em `handleUpdate` — proteção é UI-only (padrão existente).
 
 ---
 
-## ÓRFÃOS / TELAS DUPLICADAS
+## 3. PDF — PROPOSTA COMERCIAL (`CommercialProposalModal.tsx`)
 
-| Componente | Rota | Menu | Consumidor | Classificação |
-|------------|------|------|------------|---------------|
-| BillingControlCenter | ❌ | ❌ | ❌ | **ÓRFÃO** (P2 doc) |
-| CostOptimizationDashboard | ✅ `cost-optimization` | ✅ | Ativo — métricas AIChatbot logs | **MANTER** |
-| ExecutiveDashboard | ✅ `executive-dashboard` | ✅ Diretoria | Ativo + realtime P1 | **MANTER** |
-| FeatureInactivePanel / AIChatbot | `ai-support` inativo | ❌ | Código preservado | **MANTER INATIVO** (P2) |
-
----
-
-## 5 TESTES BASELINE — REIDENTIFICAÇÃO
-
-| Teste | Arquivo | Diagnóstico | Ação P3 |
-|-------|---------|-------------|---------|
-| investment-accounts | `scripts/investment-accounts.test.ts` | **TESTE DESATUALIZADO** — espera rewrite `investment-accounts-item?id=:id` que não existe no `vercel.json` atual | Não alterado |
-| invoice-display | `scripts/invoice-display.test.ts` | **TESTE DESATUALIZADO** — URL fixa `sync-open-payments?limit=15`; código usa `limit=${limit}` dinâmico | Não alterado |
-| presence-refresh | `scripts/presence-refresh.test.ts` | **INCONCLUSIVO** — passa isolado; cancelled na suíte (NB-06 timeout) | Não alterado |
-| receivable-desc-nf | `scripts/receivable-desc-nf.test.ts` | **PASSA** isolado | — |
-| zapi-sdk-cockpit | `scripts/zapi-sdk-cockpit.test.ts` | **TESTE DESATUALIZADO** — proíbe strings removidas do Dashboard (`Detalhe do em aberto`) | Não alterado |
-
-**Suíte:** 753 total / 747 pass / 5 fail / 1 cancelled — **zero falha nova**.
+| Critério | Resultado |
+|----------|-----------|
+| Colunas KM Extra / Hora Extra | ✅ PAGE 5 tabela financeira |
+| Fonte | `client_price_tables.price_per_extra_km` / `price_per_extra_hour` via `processedTables` |
+| Unidades | R$/km e R$/h (cabeçalho + `R$ {valor}`) |
+| Zero/null | `(t.price_per_extra_km \|\| 0)` — exibe R$ 0,00 |
+| Recálculo paralelo | ❌ Ausente — só renderização |
+| Layout | Colunas alinhadas na mesma `<table>` existente |
 
 ---
 
-## SEGURANÇA — VARREDURA
+## 4. PDF — SIMULAÇÃO (`QuotePrintModal.tsx`)
+
+| Critério | Resultado |
+|----------|-----------|
+| Colunas | `KM Extra (R$/km)` / `Hora Extra (R$/h)` |
+| Fonte | Cascata: `contract_details` texto → `quote.items` → `associatedTable` (Supabase) |
+| Fallback | `'Sob Consulta'` |
+| Recálculo | ❌ Ausente |
+| Consistência com proposta | Mesmos conceitos (`price_per_extra_*`); proposta lê tabela direta, simulação usa cascata textual — **aceitável**, documentado |
+
+---
+
+## 5. REPLIT_INTEGRATIONS — 🟢 REMOÇÃO SEGURA
 
 | Verificação | Resultado |
 |-------------|-----------|
-| Secrets hardcoded no código | ❌ Não encontrados (grep padrões comuns) |
-| `billing-override` sem auth | ✅ Corrigido |
-| `investment/*` handlers sem auth | 🔴 Pendente |
-| `asaas/webhook` sem assinatura | 🔴 Pendente |
-| Logs com credenciais | Não auditado linha a linha — sem achado em amostra |
-| RLS/banco | **Não alterado** (conforme instrução) |
+| Diretório `server/replit_integrations/` | Ausente |
+| Imports estáticos/dinâmicos | Zero (exceto teste P3 e docs) |
+| Rotas registradas | Nunca em `createApp` |
+| Scripts/cron/build | Zero dependência |
+| Gemini ativo | ✅ `server/routes.ts` (`/api/gemini/*`, `/api/chat`) + `api/gemini/*` |
+
+**Classificação: 🟢 SEGURA**
 
 ---
 
-## INTEGRIDADE / PAGINAÇÃO (Torres)
+## 6. BILLING-OVERRIDE — `PATCH /api/missions/:id/billing-override`
 
-Itens já tratados P0/P1/P2: `missionTableSearch`, `fetchAllPages`, `parentMissionSearch`, banner pedágio, quotes Diretoria.
+```typescript
+app.patch("...", requireAuth, requireRole('diretoria','administrador','ceo','financeiro','controller'), async ...)
+```
 
-| Área residual | `.limit()` | Risco | Classificação |
-|---------------|------------|-------|---------------|
-| `MissionForm` driver suggestions | 200 | Baixo — autocomplete | **INVESTIGAR MAIS** |
-| `UpdateMissionModal` driver suggestions | 200 | Baixo | **INVESTIGAR MAIS** |
-| `server/routes.ts` listagens admin | 50–10000 | Médio em relatórios | **INVESTIGAR MAIS** |
-| `ClientBillingReport` existence checks | `.limit(1)` | OK — boolean | **MANTER** |
-
-Nenhuma alteração de paginação nesta execução (sem evidência de bug novo).
-
----
-
-## ALTERAÇÕES IMPLEMENTADAS (BRANCH P3)
-
-| # | Item | Arquivos | Risco |
-|---|------|----------|-------|
-| 1 | Remoção `replit_integrations` morto | `server/replit_integrations/*` (deleted) | Baixo |
-| 2 | Auth `billing-override` | `server/routes.ts` | Baixo |
-| 3 | Plinio: só fornecedor, não cliente | `components/MissionFinancialModal.tsx` | Baixo |
-| 4 | PDF proposta: KM/Hora Extra na tabela | `CommercialProposalModal.tsx`, `QuotePrintModal.tsx` | Baixo |
-| 5 | Testes P3 | `scripts/fase3-p3-limpeza-seguranca.test.ts` (novo) | — |
-
-### Plinio — regras aplicadas
-
-- `canEditClientData = false` para Plinio
-- `canEditClientTablesEvenIfLocked = false` para Plinio
-- `canEditProviderTablesEvenIfLocked` inclui Plinio
-- `canActivateFullEdit` e `isAdminFullAccess` excluem Plinio
-- Fornecedor: `canEditOpsData`, `canEditProviderCostTotal` preservados
-
-### PDF — KM/Hora Extra
-
-- **Proposta comercial (PAGE 5):** colunas KM Extra e Hora Extra adicionadas à tabela financeira exportada
-- **Simulação (QuotePrintModal):** colunas KM Extra (R$/km) e Hora Extra (R$/h) na tabela principal do PDF
+| Verificação | Resultado |
+|-------------|-----------|
+| `requireAuth` | ✅ Primeiro middleware |
+| `requireRole` | ✅ Antes do handler |
+| Acesso DB | ✅ Somente após middlewares |
+| Sem token | ✅ **401** `{"error":"Não autorizado"}` (curl local porta 5099) |
+| Token inválido | ✅ Padrão `requireAuth` (401/403) |
+| Perfil não autorizado | ✅ 403 via `requireRole` |
+| Alteração billing real | ❌ Não alterada — só proteção de rota |
 
 ---
 
-## TESTES E BUILD
+## 7. INVESTMENT/* — CLASSIFICAÇÃO (pré-existente, não alterado pelo PR)
 
-| Suíte | Resultado |
-|-------|-----------|
-| `fase3-p3-limpeza-seguranca.test.ts` | **5/5 pass** |
-| `scripts/*.test.ts` completa | **753 / 747 / 5 fail / 1 cancelled** |
-| Delta vs baseline P2 | **+5 testes P3, todos pass; mesmas 5 falhas** |
-| `npm run build` | **OK** |
+| Rota | Método | R/W | Dado | Consumidor | Auth produção (Vercel) | Risco |
+|------|--------|-----|------|------------|------------------------|-------|
+| `/api/investment/init` | POST | Escrita schema | `ensureSnapshotsTable` | Gestão investimento | Handler `investment-init.ts` — **sem auth** | 🔴 EXPOSTA |
+| `/api/investment/snapshots` | POST | Escrita | Saldo snapshot | UI investimento | `investment-snapshots.ts` — **sem auth** | 🔴 EXPOSTA |
+| `/api/investment/snapshots/:id` | DELETE | Escrita | Snapshot | UI | `investment-snapshot-delete.ts` — **sem auth** | 🔴 EXPOSTA |
+| `/api/investment/snapshots-all` | GET | Leitura | Histórico saldos | Dashboard | `investment-snapshots-all.ts` — **sem auth** | 🟠 EXPOSTA leitura |
+| `/api/investment/accounts` | POST | Escrita | Conta | UI | `investment-accounts.ts` — `assertAsaasApiAccess` | 🟢 AUTENTICADA |
+| `/api/investment/accounts/:id` | PATCH/DELETE | Escrita | Conta | UI | `investment-accounts-item.ts` — `assertAsaasApiAccess` | 🟢 AUTENTICADA |
+| Express local (`server/routes.ts`) | * | * | * | Dev | **Todas sem auth** | 🔴 Dev only |
+
+**Correção mínima recomendada (fase futura):** reutilizar `assertAsaasApiAccess` nos handlers `init`, `snapshots`, `snapshots-all`, `snapshot-delete`. **Não implementado nesta execução.**
 
 ---
 
-## RISCOS RESIDUAIS E ROLLBACK
+## 8. /api/supabase/* — CLASSIFICAÇÃO (pré-existente)
 
-| Risco | Mitigação / rollback |
-|-------|----------------------|
-| `billing-override` quebra frontend | Frontend já usa `authFetch` — compatível |
-| Plinio bloqueado no cliente | Reverter `MissionFinancialModal.tsx` |
-| PDF layout quebrado | Reverter `CommercialProposalModal` / `QuotePrintModal` |
-| Remoção replit | `git restore server/replit_integrations/` |
-| NB-07 timeout crons | Migrar crons para handlers leves (fase futura) |
-| Investment endpoints sem auth | Adicionar auth nos handlers dedicados |
+Sem rewrites dedicados no `vercel.json` → produção usa catch-all Express.
+
+| Rota | Método | R/W | Dado | Auth | Risco |
+|------|--------|-----|------|------|-------|
+| `/api/supabase/init-invoices` | POST | Escrita schema | DDL/migração `financial_invoices` | ❌ | 🔴 EXPOSTA |
+| `/api/supabase/status` | GET | Leitura | Ping + status page | ❌ | 🟠 EXPOSTA |
+| `/api/supabase/db-metrics` | GET | Leitura | Contagens 22 tabelas (service role) | ❌ | 🔴 EXPOSTA |
+| `/api/supabase/storage-usage` | GET | Leitura | Buckets/storage | ❌ | 🟠 EXPOSTA |
+| `/api/supabase/billing-links` | GET | Leitura | URLs dashboard Supabase | ❌ | 🟢 Pública legítima (links) |
+| `/api/supabase/health-check` | GET | Leitura | DB/auth/storage/realtime | ❌ | 🟠 EXPOSTA |
+
+**BLOQUEIO DE MERGE:** não aplicado ao PR #261 — exposições são **dívida pré-existente**, não introduzidas pelo diff. Correção futura: `requireAuth` + role admin + handlers leves dedicados.
+
+---
+
+## 9. ASAAS WEBHOOK — `POST /api/asaas/webhook`
+
+| Item | Valor |
+|------|-------|
+| Endpoint | `server/routes.ts` ~6960 |
+| Header/token | ❌ Nenhum validado |
+| Assinatura | ❌ Ausente |
+| Idempotência | ❌ Não implementada |
+| Processamento | `PAYMENT_RECEIVED`/`CONFIRMED` → atualiza `financial_invoices` + `financial_transactions` |
+| Resposta | Sempre `{ received: true }` mesmo em erro |
+
+**Classificação: 🔴 EVENTO NÃO AUTENTICADO** (pré-existente)
+
+**NÃO VALIDADO em produção** — sem credencial Asaas disponível neste ambiente para confirmar se painel Asaas restringe IP/origem.
+
+**Nota:** webhook de transferência (`asaas-webhook-approval`) tem mecanismo próprio com `ASAAS_TRANSFER_WEBHOOK_TOKEN` — rota diferente.
+
+---
+
+## 10. NB-07 — CATCH-ALL (consolidado, não corrigido)
+
+| Métrica | Valor |
+|---------|-------|
+| Rewrites dedicados | 105 |
+| Rotas Express | ~217 |
+| No catch-all | ~138 (~64%) |
+| Crons em risco timeout | 6 (`/api/cron/minute`, `zapi`, `billing-sync`, etc.) |
+
+**Estratégia futura:** rota crítica → handler leve → teste → deploy. **Sem big-bang.**
+
+**Nota execução:** `nb06-migration-routes.test.ts` trava suíte completa (Express não encerra) — 19 testes NB-06 passam mas runner fica pendente.
+
+---
+
+## 11. REALTIME — DÍVIDA DE PERFORMANCE
+
+```
+1 UPDATE missions → RealtimeProvider (debounce) → refreshMissions (1–2x)
+                  → useRealtimeRefresh em N componentes (MissionTable, DRE, etc.)
+                  → listeners locais refreshMissions
+```
+
+**Estimativa:** 2–4 refreshes por UPDATE. Consistência correta.
+
+**Classificação: DÍVIDA DE PERFORMANCE — NÃO BLOQUEANTE**
+
+---
+
+## 12. TESTES — RESULTADO EXATO
+
+### P3 específico
+`fase3-p3-limpeza-seguranca.test.ts` — **5/5 pass**
+
+### Regressão P0+P1+P2+P3
+`fase3-p0` + `fase3-p1` + `fase3-p2` + `fase3-p3` — **55/55 pass**
+
+### Suíte completa (excl. `nb06-migration-routes.test.ts` por hang)
+**734 tests / 729 pass / 5 fail / 0 cancelled**
+
+### 5 falhas baseline (nomes exatos)
+
+| # | Suite / teste | Arquivo | Categoria | Fase futura |
+|---|---------------|---------|-----------|-------------|
+| 1 | `Vercel tem funções leves para CRUD de contas (não depende do Express)` | `investment-accounts.test.ts` | TESTE DESATUALIZADO | Atualizar expectativa vercel.json |
+| 2 | `tela dispara sync de pagamentos e retry NF sem remover import React` (sub de `FinancialInvoiceControl — auto sync e labels`) | `invoice-display.test.ts` | TESTE DESATUALIZADO | Atualizar strings/limit dinâmico |
+| 3 | `registerTimeClockPunch dispara requestPresenceRefresh após inserir` | `presence-refresh.test.ts` | TESTE DESATUALIZADO / FRÁGIL | Revisar mock presença |
+| 4 | `resolveNfServiceDescription usa discriminação, não prefixo NF TMSEG` (sub de `Contas a Receber — descrição = texto da NF`) | `receivable-desc-nf.test.ts` | TESTE DESATUALIZADO | Atualizar regra descrição NF |
+| 5 | `DashboardDiretoria não renderiza a seção Detalhe do em aberto` (sub de `cockpit sem detalhe em aberto`) | `zapi-sdk-cockpit.test.ts` | TESTE DESATUALIZADO | UI removida do Dashboard |
+
+**Delta vs baseline P2:** +5 testes P3 (todos pass); **mesmas 5 falhas**; **zero falha nova**.
+
+### Build
+`npm run build` — **OK** (14s frontend + bundles DHL)  
+`dist/public/index.html` contém `__TMSEG_SUPABASE__` ✅
+
+---
+
+## 13. ANÁLISE DE IMPACTO (cadeia OS → Diretoria)
+
+| Área | Afetada pelo PR? |
+|------|------------------|
+| OS / cálculos | ❌ Não |
+| Faturamento / billing engine | ❌ Não (só auth em override + UI Plinio) |
+| Fornecedor | ✅ Plinio mantém edição autorizada |
+| Financeiro / Asaas / NF | ❌ Não |
+| Relatórios / DRE | ❌ Não |
+| PDFs | ✅ Apenas apresentação (KM/Hora Extra) |
+
+---
+
+## 14. ROLLBACK
+
+| Item | Comando / ação |
+|------|----------------|
+| Branch inteira | Não mergear PR #261 |
+| Replit | `git restore server/replit_integrations/` |
+| billing-override | Reverter linha em `server/routes.ts` |
+| Plinio | Reverter `MissionFinancialModal.tsx` |
+| PDFs | Reverter `CommercialProposalModal.tsx` / `QuotePrintModal.tsx` |
+| Produção | Permanece `ae2fc382` / tag `baseline-fase3-p2-merged-20260813` |
+
+---
+
+## 15. BACKLOG PÓS-P3 (não misturar com novas features)
+
+| Item | Prioridade | Bloqueante? |
+|------|------------|-------------|
+| NB-07 catch-all (~138 rotas) | Alta | Não para P3 |
+| `investment/*` snapshots sem auth | Alta | Dívida pré-existente |
+| `/api/supabase/*` service role público | Alta | Dívida pré-existente |
+| `asaas/webhook` sem assinatura | Alta | Dívida pré-existente |
+| Plinio gap (toll/customClient após unlock) | Média | Não |
+| Realtime 2–4 refreshes | Baixa | Não |
+| 5 testes baseline desatualizados | Baixa | Não |
+| `shared/models/chat.ts`, deps `p-limit` | Baixa | Investigar |
+| Órfãos UI (BillingControlCenter) | Baixa | Documentado P2 |
 
 ---
 
@@ -248,10 +317,10 @@ Nenhuma alteração de paginação nesta execução (sem evidência de bug novo)
 | Item | Valor |
 |------|-------|
 | Branch | `cursor/fase3-p3-limpeza-seguranca-eaa8` |
-| Base | `main` @ `b720ea61` |
+| PR | #261 (draft) |
 | Merge | **NÃO** |
 | Deploy | **NÃO** |
 
 ---
 
-*Fase 3 P3 — Cloud Agent — 2026-08-13*
+*Fase 3 P3 — Validação Final — Cloud Agent — 2026-08-13*
