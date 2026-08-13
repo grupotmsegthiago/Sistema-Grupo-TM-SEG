@@ -28,6 +28,36 @@ describe('P3 — Plinio somente fornecedor', () => {
     assert.match(src, /canEditProviderTablesEvenIfLocked = canOverrideAutoProvider \|\| isPlinio/);
     assert.doesNotMatch(src, /isAdminFullAccess = userRoleLower === 'administrador' \|\| fullEditMode \|\| isPlinio/);
   });
+
+  it('Plinio + OS destravada: campos financeiros cliente usam clientFinanceInputLocked', () => {
+    const src = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
+    assert.match(src, /const clientFinanceInputLocked = isController \|\| isEffectivelyLocked \|\| !canEditClientData/);
+
+    const clientFields = [
+      'input-toll-client',
+      'input-displacement-client',
+      'input-custom-client-base',
+      'input-custom-client-km',
+      'input-custom-client-hour',
+    ];
+    for (const testId of clientFields) {
+      const idx = src.indexOf(`data-testid="${testId}"`);
+      assert.ok(idx > 0, `campo ${testId} deve existir`);
+      const slice = src.slice(Math.max(0, idx - 600), idx + 80);
+      assert.match(slice, /clientFinanceInputLocked/, `${testId} deve respeitar clientFinanceInputLocked`);
+      assert.match(slice, /readOnly=\{clientFinanceInputLocked\}/, `${testId} deve ter readOnly ligado ao gate`);
+    }
+
+    // Fornecedor permanece editável (pedágio fornecedor não usa clientFinanceInputLocked)
+    const provIdx = src.indexOf('data-testid="input-toll-provider"');
+    assert.ok(provIdx > 0);
+    const provSlice = src.slice(Math.max(0, provIdx - 400), provIdx + 120);
+    assert.doesNotMatch(provSlice, /clientFinanceInputLocked/);
+
+    // Destravar billing não contorna: gate inclui !canEditClientData (false para Plinio)
+    assert.match(src, /canUnlockBilling[\s\S]{0,200}isPlinio/);
+    assert.match(src, /if \(!canEditClientData\) return;/);
+  });
 });
 
 describe('P3 — PDF proposta/tabela com KM e Hora Extra', () => {

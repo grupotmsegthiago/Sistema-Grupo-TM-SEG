@@ -640,6 +640,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     return () => { cancelled = true; };
   }, [isOpen, mission?.id]);
   const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
+  // Gate unificado: nenhum input financeiro/comercial do CLIENTE editável sem canEditClientData
+  // (inclui OS destravada — unlock não contorna a regra do Plinio).
+  const clientFinanceInputLocked = isController || isEffectivelyLocked || !canEditClientData;
   const canEditOpsEvenIfLocked = isBarbaraFinance || !isEffectivelyLocked;
   // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
   // da memória de cálculo devem ACOMPANHAR a tabela escolhida sempre que o
@@ -4457,6 +4460,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             }),
                                         ];
                                         const handleChange = (newTableId: string) => {
+                                            if (!canEditClientData) return;
                                             if ((isController || isEffectivelyLocked) && !canEditTablesEvenIfLocked) return;
                                             // Task #111: registra correção do auditor quando troca a sugestão do motor DHL.
                                             try {
@@ -4550,7 +4554,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 value={manualClientTableId || ''}
                                                 onChange={handleChange}
                                                 options={options}
-                                                disabled={(isController || isEffectivelyLocked) && !canEditTablesEvenIfLocked}
+                                                disabled={clientFinanceInputLocked || ((isController || isEffectivelyLocked) && !canEditClientTablesEvenIfLocked)}
                                                 accentColor="blue"
                                                 data-testid="select-client-table"
                                             />
@@ -4831,7 +4835,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${(isController || isEffectivelyLocked) ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.base.toFixed(2)} value={customClientBase} onChange={e => { if (!isController && !isEffectivelyLocked) handleManualInput(setCustomClientBase, e.target.value); }} readOnly={isController || isEffectivelyLocked} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${clientFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.base.toFixed(2)} value={customClientBase} onChange={e => { if (!clientFinanceInputLocked) handleManualInput(setCustomClientBase, e.target.value); }} readOnly={clientFinanceInputLocked} data-testid="input-custom-client-base" />
                                         {customClientBase && <span className="text-[8px] text-blue-600 font-bold bg-blue-50 px-1 py-0.5 rounded shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -4847,7 +4851,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${(isController || isEffectivelyLocked) ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceKm.toFixed(2)} value={customClientKm} onChange={e => { if (!isController && !isEffectivelyLocked) handleManualInput(setCustomClientKm, e.target.value); }} readOnly={isController || isEffectivelyLocked} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${clientFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceKm.toFixed(2)} value={customClientKm} onChange={e => { if (!clientFinanceInputLocked) handleManualInput(setCustomClientKm, e.target.value); }} readOnly={clientFinanceInputLocked} data-testid="input-custom-client-km" />
                                         {customClientKm && <span className="text-[8px] text-blue-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -4869,7 +4873,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${(isController || isEffectivelyLocked) ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceHour.toFixed(2)} value={customClientHour} onChange={e => { if (!isController && !isEffectivelyLocked) handleManualInput(setCustomClientHour, e.target.value); }} readOnly={isController || isEffectivelyLocked} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${clientFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceHour.toFixed(2)} value={customClientHour} onChange={e => { if (!clientFinanceInputLocked) handleManualInput(setCustomClientHour, e.target.value); }} readOnly={clientFinanceInputLocked} data-testid="input-custom-client-hour" />
                                         {customClientHour && <span className="text-[8px] text-blue-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -5259,10 +5263,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="text-sm font-bold text-green-500 mr-2">R$</span>
                                     <input 
                                         type="text" 
-                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900 ${(isController || isEffectivelyLocked) ? 'pointer-events-none' : ''}`}
+                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900 ${clientFinanceInputLocked ? 'pointer-events-none' : ''}`}
                                         value={tollInput} 
-                                        onChange={e => { if (!isController && !isEffectivelyLocked) handleTollChange(e.target.value); }} 
-                                        readOnly={isController || isEffectivelyLocked}
+                                        onChange={e => { if (!clientFinanceInputLocked) handleTollChange(e.target.value); }} 
+                                        readOnly={clientFinanceInputLocked}
                                         data-testid="input-toll-client"
                                     />
                                     <Building2 size={16} className="text-green-300 ml-2" />
@@ -5277,10 +5281,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="text-sm font-bold text-green-500 mr-2">R$</span>
                                     <input 
                                         type="text" 
-                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900 ${(isController || isEffectivelyLocked) ? 'pointer-events-none' : ''}`}
+                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900 ${clientFinanceInputLocked ? 'pointer-events-none' : ''}`}
                                         value={displacementInput} 
-                                        onChange={e => { if (!isController && !isEffectivelyLocked) handleDisplacementChange(e.target.value); }} 
-                                        readOnly={isController || isEffectivelyLocked}
+                                        onChange={e => { if (!clientFinanceInputLocked) handleDisplacementChange(e.target.value); }} 
+                                        readOnly={clientFinanceInputLocked}
                                         data-testid="input-displacement-client"
                                     />
                                     <Building2 size={16} className="text-green-300 ml-2" />
@@ -5293,7 +5297,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <span className="text-[8px] font-bold text-emerald-700" data-testid="text-dhl-desloc-client">
                                             KM DHL AUTORIZADO: {dhlDeslocInfo.km.toLocaleString('pt-BR')} km × R$ {dhlDeslocInfo.clientRate.toFixed(2)} = {formatCurrency(dhlDeslocInfo.clientVal)}
                                         </span>
-                                        {!isController && !isEffectivelyLocked && Math.abs(parseNumber(displacementInput) - dhlDeslocInfo.clientVal) > 0.01 && (
+                                        {!clientFinanceInputLocked && Math.abs(parseNumber(displacementInput) - dhlDeslocInfo.clientVal) > 0.01 && (
                                             <button
                                                 type="button"
                                                 onClick={() => {
