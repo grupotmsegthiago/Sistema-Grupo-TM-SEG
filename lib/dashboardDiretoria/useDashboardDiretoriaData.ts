@@ -131,6 +131,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
   const [latestAccountBalances, setLatestAccountBalances] = useState<Record<string, number>>({});
   const [categories, setCategories] = useState<FinancialCategory[]>([]);
   const [quotes, setQuotes] = useState<DashboardDiretoriaData['quotes']>([]);
+  const [quotesTruncated, setQuotesTruncated] = useState(false);
   const [accountBalance, setAccountBalance] = useState(0);
   const [rhSnapshot, setRhSnapshot] = useState<DashboardDiretoriaData['rhSnapshot']>({
     totalEmployees: 0,
@@ -193,7 +194,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
           supabase.from('quotes').select('id, client_name, status, total_value, created_at').order('created_at', { ascending: false }).range(from, from + size - 1),
           500,
           10_000,
-        ).then((r) => ({ data: r.rows, error: null })),
+        ).then((r) => ({ data: r.rows, truncated: r.truncated, error: null })),
         supabase.from('financial_accounts').select('id, name, bank_name, initial_balance, status').eq('status', 'Ativo'),
         listBalanceSnapshotsDirect(3650).catch((e) => {
           console.warn('[DashboardDiretoria] snapshots de saldo indisponíveis:', e);
@@ -217,6 +218,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
       }));
       setCategories((catRes.data || []) as FinancialCategory[]);
       setQuotes((quotesRes.data || []) as DashboardDiretoriaData['quotes']);
+      setQuotesTruncated(!!quotesRes.truncated);
       const accs = (accountsRes.data || []).map((a: any) => ({
         id: String(a.id),
         name: String(a.name || ''),
@@ -298,6 +300,7 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
     allTransactions,
     categories,
     quotes,
+    quotesTruncated,
     refs,
     accounts,
     latestAccountBalances,

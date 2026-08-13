@@ -7,14 +7,26 @@ export async function fetchAllPages<T>(
 ): Promise<{ rows: T[]; truncated: boolean }> {
   const all: T[] = [];
   let from = 0;
+  let exhausted = false;
   while (all.length < maxRows) {
     const take = Math.min(pageSize, maxRows - all.length);
     const { data, error } = await buildQuery(from, take);
     if (error) throw error;
     if (!data || data.length === 0) break;
     all.push(...data);
-    if (data.length < take) break;
+    if (data.length < take) {
+      exhausted = true;
+      break;
+    }
     from += data.length;
   }
-  return { rows: all, truncated: all.length >= maxRows };
+
+  let truncated = false;
+  if (!exhausted && all.length >= maxRows) {
+    const { data, error } = await buildQuery(maxRows, 1);
+    if (error) throw error;
+    truncated = !!(data && data.length > 0);
+  }
+
+  return { rows: all, truncated };
 }

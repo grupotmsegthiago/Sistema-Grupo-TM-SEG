@@ -54,6 +54,7 @@ export async function searchMissionsByTerm(
   }
 
   let from = 0;
+  let exhausted = false;
   while (byId.size < maxResults) {
     const take = Math.min(pageSize, maxResults - byId.size);
     let q = supabase
@@ -70,10 +71,27 @@ export async function searchMissionsByTerm(
       const id = String((row as { id?: string }).id || '');
       if (id) byId.set(id, row as Record<string, unknown>);
     }
-    if (data.length < take) break;
+    if (data.length < take) {
+      exhausted = true;
+      break;
+    }
     from += data.length;
   }
 
   const rows = Array.from(byId.values());
-  return { rows, truncated: rows.length >= maxResults, exactIdAttempted };
+  let truncated = false;
+  if (!exhausted && rows.length >= maxResults) {
+    let sentinelQ = supabase
+      .from('missions')
+      .select('id')
+      .order('created_at', { ascending: false })
+      .or(buildMissionSearchOrFilter(rawTerm))
+      .range(maxResults, maxResults);
+    sentinelQ = applyClientScope(sentinelQ, scope);
+    const { data: sentinel, error: sentinelError } = await sentinelQ;
+    if (sentinelError) throw sentinelError;
+    truncated = !!(sentinel && sentinel.length > 0);
+  }
+
+  return { rows, truncated, exactIdAttempted };
 }

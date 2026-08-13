@@ -166,6 +166,8 @@ export interface DashboardDiretoriaData {
     total_value: number;
     created_at: string;
   }>;
+  /** true quando há mais quotes no banco além do teto carregado (integridade de conjunto). */
+  quotesTruncated: boolean;
   refs: DashboardRefs;
   accounts: Array<{ id: string; initial_balance: number; name?: string; bank_name?: string }>;
   /** Último saldo registrado por conta (account_balance_snapshots); vazio se sem histórico. */

@@ -763,6 +763,11 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
       <div className="lg:col-span-6">
         <Card title="Pipeline Comercial" subtitle="Cotações por estágio">
+          {data.quotesTruncated && (
+            <p className="mb-2 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 leading-snug">
+              Conjunto parcial de cotações (limite de carregamento atingido). Os indicadores comerciais abaixo não representam o total da empresa — refine o período ou filtros.
+            </p>
+          )}
           <div className="h-52">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={funnel} layout="vertical">

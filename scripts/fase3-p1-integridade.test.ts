@@ -7,6 +7,7 @@ import {
   MISSION_SEARCH_MAX_RESULTS,
   MISSION_SEARCH_PAGE_SIZE,
   sanitizeMissionSearchTerm,
+  searchMissionsByTerm,
 } from '../lib/missionTableSearch.ts';
 import { fetchAllPages } from '../lib/supabasePaging.ts';
 import { isLinkedChildMission } from '../lib/missionLinkage.ts';
@@ -41,6 +42,90 @@ describe('P1-01 — busca OS sem limit(300) fixo na MissionTable', () => {
     const src = fs.readFileSync('components/MissionTable.tsx', 'utf8');
     assert.match(src, /searchMatchesTruncated/);
     assert.match(src, /Conjunto de busca incompleto/);
+  });
+
+  it('busca: 499/500 não truncado; 501 truncado; ID exato independente do teto', async () => {
+    const scope = { type: 'eq' as const, value: 'CLIENTE' };
+    const makeRows = (total: number) =>
+      Array.from({ length: total }, (_, i) => ({
+        id: `GTM-${String(9000 - i).padStart(4, '0')}`,
+        client: 'CLIENTE',
+        created_at: '2026-01-01',
+      }));
+
+    const mockSupabase = (total: number) => ({
+      from() {
+        const filters: Array<{ col: string; val: string }> = [];
+        let range: { from: number; to: number } | null = null;
+        let selectCols = '*';
+        const rows = makeRows(total);
+        const chain: any = {
+          select(cols: string) { selectCols = cols; return chain; },
+          eq(col: string, val: string) { filters.push({ col, val }); return chain; },
+          order() { return chain; },
+          or() { return chain; },
+          in() { return chain; },
+          limit() { return chain; },
+          range(from: number, to: number) { range = { from, to }; return chain; },
+          then(resolve: (v: unknown) => void) {
+            let data = rows;
+            for (const f of filters) {
+              if (f.col === 'id') data = data.filter((r) => r.id === f.val);
+              if (f.col === 'client') data = data.filter((r) => r.client === f.val);
+            }
+            if (range) {
+              const size = range.to - range.from + 1;
+              data = data.slice(range.from, range.from + size);
+            }
+            const out = selectCols === 'id' ? data.map((r) => ({ id: r.id })) : data;
+            resolve({ data: out, error: null });
+          },
+        };
+        return chain;
+      },
+    });
+
+    for (const [total, expectTruncated] of [[499, false], [500, false], [501, true]] as const) {
+      const r = await searchMissionsByTerm(mockSupabase(total) as any, 'CLIENTE', scope, { pageSize: 100, maxResults: 500 });
+      assert.equal(r.rows.length, Math.min(total, 500), `total=${total} rows`);
+      assert.equal(r.truncated, expectTruncated, `total=${total} truncated`);
+    }
+
+    const oldId = 'GTM-OLD-9999';
+    const sbExact = {
+      from() {
+        const filters: Array<{ col: string; val: string }> = [];
+        let range: { from: number; to: number } | null = null;
+        let selectCols = '*';
+        const rows = [...makeRows(600), { id: oldId, client: 'CLIENTE', created_at: '2020-01-01' }];
+        const chain: any = {
+          select(cols: string) { selectCols = cols; return chain; },
+          eq(col: string, val: string) { filters.push({ col, val }); return chain; },
+          order() { return chain; },
+          or() { return chain; },
+          in() { return chain; },
+          limit() { return chain; },
+          range(from: number, to: number) { range = { from, to }; return chain; },
+          then(resolve: (v: unknown) => void) {
+            let data = rows as Array<{ id: string; client: string; created_at: string }>;
+            for (const f of filters) {
+              if (f.col === 'id') data = data.filter((r) => r.id === f.val);
+              if (f.col === 'client') data = data.filter((r) => r.client === f.val);
+            }
+            if (range) {
+              const size = range.to - range.from + 1;
+              data = data.slice(range.from, range.from + size);
+            }
+            const out = selectCols === 'id' ? data.map((r) => ({ id: r.id })) : data;
+            resolve({ data: out, error: null });
+          },
+        };
+        return chain;
+      },
+    };
+    const exact = await searchMissionsByTerm(sbExact as any, oldId, scope, { pageSize: 100, maxResults: 500 });
+    assert.ok(exact.rows.some((m) => m.id === oldId), 'ID exato fora do top 500');
+    assert.equal(exact.exactIdAttempted, true);
   });
 });
 
@@ -91,6 +176,46 @@ describe('P1-04 — quotes Diretoria sem limit(500) fixo', () => {
     assert.equal(rows.length, 25);
     assert.equal(truncated, true);
     assert.ok(calls >= 3);
+  });
+
+  it('fetchAllPages: 9.999 → completo; 10.000 sem página extra → completo; >10.000 → truncado', async () => {
+    for (const total of [9999, 10000, 10001]) {
+      const { rows, truncated } = await fetchAllPages(async (from, size) => {
+        const chunk = [];
+        for (let i = from; i < Math.min(from + size, total); i++) chunk.push({ id: i });
+        return { data: chunk, error: null };
+      }, 500, 10_000);
+      const ids = rows.map((r) => r.id);
+      assert.equal(new Set(ids).size, ids.length, `duplicata em total=${total}`);
+      if (total <= 10000) {
+        assert.equal(rows.length, total, `total=${total}`);
+        assert.equal(truncated, false, `total=${total}`);
+      } else {
+        assert.equal(rows.length, 10_000);
+        assert.equal(truncated, true);
+      }
+    }
+  });
+
+  it('fetchAllPages: erro em página intermediária propaga (não retorna parcial como completo)', async () => {
+    await assert.rejects(
+      () => fetchAllPages(async (from, size) => {
+        if (from >= 500) return { data: null, error: new Error('falha página 2') };
+        return { data: Array.from({ length: size }, (_, i) => from + i), error: null };
+      }, 500, 10_000),
+      /falha página 2/,
+    );
+  });
+
+  it('useDashboardDiretoriaData expõe quotesTruncated até a UI', () => {
+    const hook = fs.readFileSync('lib/dashboardDiretoria/useDashboardDiretoriaData.ts', 'utf8');
+    const types = fs.readFileSync('lib/dashboardDiretoria/types.ts', 'utf8');
+    const ui = fs.readFileSync('components/dashboard/DashboardDiretoria.tsx', 'utf8');
+    assert.match(hook, /quotesTruncated/);
+    assert.match(hook, /setQuotesTruncated\(!!quotesRes\.truncated\)/);
+    assert.match(types, /quotesTruncated:\s*boolean/);
+    assert.match(ui, /data\.quotesTruncated/);
+    assert.match(ui, /Conjunto parcial de cotações/);
   });
 });
 
