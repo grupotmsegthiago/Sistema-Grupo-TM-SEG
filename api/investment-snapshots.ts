@@ -1,4 +1,8 @@
 import { insertSnapshot } from '../lib/investment/accountBalanceSnapshots.js';
+import {
+  denyInvestmentApiUnlessAuthorized,
+  investmentApiDeniedStatus,
+} from '../lib/investmentApiAuth.js';
 
 function parseBody(body: unknown): Record<string, any> {
   if (typeof body !== 'string') return (body as Record<string, any>) || {};
@@ -9,6 +13,12 @@ function parseBody(body: unknown): Record<string, any> {
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'method_not_allowed' });
+    return;
+  }
+
+  const denied = await denyInvestmentApiUnlessAuthorized(req);
+  if (denied) {
+    res.status(investmentApiDeniedStatus(denied)).json({ error: denied });
     return;
   }
 
