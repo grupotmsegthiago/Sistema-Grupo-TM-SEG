@@ -3,18 +3,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 describe('Controle de Faturas — loading não bloqueia em init-invoices', () => {
-  it('FinancialInvoiceControl carrega financial_invoices antes do init API', () => {
+  it('FinancialInvoiceControl carrega faturas via API autenticada antes do init', () => {
     const src = fs.readFileSync('components/FinancialInvoiceControl.tsx', 'utf8');
     const start = src.indexOf('const fetchInvoices = useCallback');
     const end = src.indexOf('}, []);', start) + '}, []);'.length;
     const fetchFn = src.slice(start, end);
-    assert.match(fetchFn, /from\('financial_invoices'\)/);
+    assert.match(fetchFn, /authFetch\('\/api\/nf\/invoices'\)/);
+    assert.doesNotMatch(fetchFn, /from\('financial_invoices'\)/);
     assert.match(fetchFn, /setLoading\(false\)/);
-    const selectIdx = fetchFn.indexOf("from('financial_invoices')");
     const initIdx = fetchFn.indexOf('/api/supabase/init-invoices');
-    assert.ok(selectIdx >= 0, 'deve selecionar financial_invoices');
-    assert.ok(initIdx > selectIdx, 'select deve vir antes do init-invoices');
-    assert.match(fetchFn, /timeout_financial_invoices/);
+    const apiIdx = fetchFn.indexOf('/api/nf/invoices');
+    assert.ok(apiIdx >= 0, 'deve chamar /api/nf/invoices');
+    assert.ok(initIdx > apiIdx, 'lista via API deve vir antes do init-invoices');
     assert.match(fetchFn, /void authFetch\('\/api\/supabase\/init-invoices'/);
     assert.match(src, /from 'react'/);
     assert.match(src, /fetchInvoices\(\{ silent: true \}\)/);
@@ -36,6 +36,8 @@ describe('Controle de Faturas — loading não bloqueia em init-invoices', () =>
     assert.match(vercel, /"api\/nf-control\.ts"/);
     assert.match(vercel, /\/api\/nf\/summary/);
     assert.match(vercel, /\/api\/nf-control\?op=summary/);
+    assert.match(vercel, /\/api\/nf\/invoices/);
+    assert.match(vercel, /\/api\/nf-control\?op=list/);
     assert.match(vercel, /\/api\/nf\/provider-preferences/);
     assert.match(vercel, /\/api\/nf-control\?op=preferences/);
     const fnCount = (JSON.parse(vercel).functions && Object.keys(JSON.parse(vercel).functions).length) || 0;

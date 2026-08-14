@@ -6194,57 +6194,19 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   app.get("/api/nf/summary", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
     try {
-      const sb = createSupabaseAdminClient();
-      if (!sb) return res.json({ success: true, summary: [], stuck: [], byProvider: {} });
-      const { data, error } = await sb.from('financial_invoices')
-        .select('id, client, number, amount, issuer_company, nf_status, nf_retry_at, created_at, asaas_payment_id, nf_provider, plugnotas_invoice_id');
-      if (error) return res.status(500).json({ error: error.message });
-      const byCompany: Record<string, any> = {};
-      const byProvider: Record<string, { total: number; authorized: number; error: number; stuck: number; processing: number }> = {
-        ASAAS: { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 },
-        PLUGNOTAS: { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 },
-      };
-      const stuck: any[] = [];
-      const now = Date.now();
-      (data || []).forEach((r: any) => {
-        // ignora linhas sem qualquer ID de provider (faturas retroativas sem NF)
-        if (!r.asaas_payment_id && !r.plugnotas_invoice_id) return;
-        const c = r.issuer_company || '(sem emissora)';
-        // Inferência espelha /sync-payment-status e /retry: se nf_provider está
-        // null mas há plugnotas_invoice_id, classifica como PLUGNOTAS.
-        const provider = (
-          r.nf_provider
-          || (r.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS')
-        ).toUpperCase();
-        if (!byCompany[c]) byCompany[c] = { company: c, total: 0, authorized: 0, synchronized: 0, scheduled: 0, error: 0, stuck: 0, canceled: 0, other: 0, asaas: 0, plugnotas: 0 };
-        byCompany[c].total++;
-        if (provider === 'PLUGNOTAS') byCompany[c].plugnotas++; else byCompany[c].asaas++;
-        const bp = byProvider[provider] || (byProvider[provider] = { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 });
-        bp.total++;
-        const s = (r.nf_status || '').toUpperCase();
-        if (s === 'AUTHORIZED') { byCompany[c].authorized++; bp.authorized++; }
-        else if (s === 'SYNCHRONIZED') {
-          byCompany[c].synchronized++;
-          const ref = r.nf_retry_at || r.created_at;
-          const ageH = ref ? (now - new Date(ref).getTime()) / 3600_000 : 0;
-          if (ageH >= 24) {
-            byCompany[c].stuck++; bp.stuck++;
-            stuck.push({ ...r, hours_stuck: Math.floor(ageH) });
-          } else { bp.processing++; }
-        } else if (s === 'SCHEDULED' || s === 'PROCESSING') { byCompany[c].scheduled++; bp.processing++; }
-        else if (s === 'ERROR' || s === 'FAILED') { byCompany[c].error++; bp.error++; }
-        else if (s === 'STUCK') {
-          byCompany[c].stuck++; bp.stuck++;
-          const ref = r.nf_retry_at || r.created_at;
-          const ageH = ref ? (now - new Date(ref).getTime()) / 3600_000 : 0;
-          stuck.push({ ...r, hours_stuck: Math.floor(ageH) });
-        }
-        else if (s === 'CANCELED') byCompany[c].canceled++;
-        else byCompany[c].other++;
-      });
-      res.json({ success: true, summary: Object.values(byCompany), stuck, byProvider });
+      const { buildNfIssuerSummary } = await import('../lib/nfInvoiceControlApi.js');
+      res.json(await buildNfIssuerSummary());
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/nf/invoices", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const { listFinancialInvoicesForControl } = await import('../lib/nfInvoiceControlApi.js');
+      res.json(await listFinancialInvoicesForControl());
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 

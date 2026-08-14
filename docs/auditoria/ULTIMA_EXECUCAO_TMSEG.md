@@ -23,9 +23,84 @@
 
 | Indicador | Valor | Metodologia |
 |-----------|-------|-------------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 | Investigação Asaas (somente leitura) + handoff |
-| **FASE 3 (total)** | **70%** 🟢 | Sem alteração — investigação não incrementa fase |
+| **EXECUÇÃO ATUAL** | **100%** 🟢 | Incidente Controle Faturas — diagnóstico + correção + testes |
+| **FASE 3 (total)** | **70%** 🟢 | Sem alteração |
 | **PROGRAMA GERAL** | **61%** 🟢 | Sem alteração |
+
+---
+
+## INCIDENTE — CONTROLE DE FATURAS / NF VAZIO
+
+### Sintoma reportado
+
+- Painel superior (Saúde das emissoras): TM GESTÃO TOTAL 15 / AUTORIZ. 15; TM SECURITY TOTAL 2 / AUTORIZ. 2
+- Listagem inferior: **0 faturas** em todos os status (Em aberto, Pago, Vencidas, Canceladas)
+
+### Mapeamento da tela
+
+```
+FinancialInvoiceControl.tsx (App → fin-invoices)
+  ├─ fetchIssuerSummary() → authFetch GET /api/nf/summary
+  │     → vercel rewrite → api/nf-control?op=summary
+  │     → buildNfIssuerSummary() → Supabase **service role** → financial_invoices
+  │
+  └─ fetchInvoices() [ANTES] → supabase.from('financial_invoices') **anon/RLS** → []
+     fetchInvoices() [DEPOIS] → authFetch GET /api/nf/invoices
+           → api/nf-control?op=list → listFinancialInvoicesForControl() → service role
+```
+
+**Tabelas:** `financial_invoices` (principal), `financial_transactions` (receivables, não usada na listagem).
+
+### Causa raiz
+
+| Item | Detalhe |
+|------|---------|
+| **Classificação** | 🔴 **REGRESSÃO DE LEITURA/APRESENTAÇÃO** (dados existem) |
+| **Causa** | `fetchInvoices` lia via cliente Supabase **anon**; RLS em `financial_invoices` retorna **0 linhas** para anon |
+| **Evidência** | Query anon: `count=0` sem erro; summary admin via `/api/nf/summary` mostra 15+2 |
+| **Relação PR #262** | **Não causado pelo hardening SEC** — `FinancialInvoiceControl.tsx` não mudou no commit SEC; problema estrutural pré-existente (desde migração para leitura direta anon) |
+| **SEC init-invoices** | Irrelevante para listagem — fire-and-forget; não cria policy RLS em tabela existente |
+
+### Dados no banco
+
+- **Não apagados** — summary com 17 faturas ativas (15 Gestão + 2 Security) comprova existência
+- Nenhum DELETE/UPDATE executado nesta investigação
+- `init-invoices` / `ensure-clean-slate` **não executados**
+
+### Correção mínima (branch)
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `lib/nfInvoiceControlApi.ts` | `listFinancialInvoicesForControl()` — epoch + MED- + VENCIDA |
+| `api/nf-control.ts` | `GET ?op=list` |
+| `vercel.json` | rewrite `/api/nf/invoices` → `nf-control?op=list` |
+| `server/routes.ts` | `GET /api/nf/invoices` (dev local) + summary via `buildNfIssuerSummary` |
+| `components/FinancialInvoiceControl.tsx` | `fetchInvoices` → `authFetch('/api/nf/invoices')` |
+| `scripts/nf-invoices-list.test.ts` | **NOVO** — regressão listagem |
+| `scripts/invoice-control-loading.test.ts` | atualizado |
+| `scripts/nb06-migration-routes.test.ts` | rewrite invoices |
+
+**Preserva:** auth (`assertFinanceNfAccess`), dados, regras financeiras, sem schema/migration.
+
+### Testes
+
+| Suíte | Resultado |
+|-------|-----------|
+| `nf-invoices-list.test.ts` | **4/4** |
+| `invoice-control-loading.test.ts` | **3/3** |
+| SEC + P0–P3 | **47/47** |
+| TS completa (excl. NB-06 hang) | **766 / 759 / 7 fail** (5 baseline + 2 pré-existentes; zero falha nova da correção) |
+| `npm run build` | **OK** |
+
+### Decisão incidente
+
+# 🟢 INCIDENTE CORRIGIDO NA BRANCH — PRONTO PARA REVISÃO
+
+**NÃO mergeado. NÃO publicado.**
+
+### Rollback desta correção
+
+Reverter commit do incidente na branch ou restaurar `fetchInvoices` anterior (voltará a listar vazio com RLS).
 
 ---
 

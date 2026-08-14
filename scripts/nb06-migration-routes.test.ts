@@ -215,6 +215,7 @@ describe('NB-06 — regressão de roteamento vercel.json', () => {
       ['/api/billing/ensure-schema', '/api/billing-ensure-schema'],
       ['/api/recalculate-open', '/api/recalculate-open'],
       ['/api/nf/summary', '/api/nf-control?op=summary'],
+      ['/api/nf/invoices', '/api/nf-control?op=list'],
       ['/api/whatsapp/groups', '/api/whatsapp/groups'],
     ];
     for (const [path, expected] of samples) {
