@@ -1,7 +1,7 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
 > Handoff oficial — **Hotfix Controle de Faturas / NF — listagem vazia**
-> **Não contém segredos. Não mergeado. Não publicado.**
+> **Não contém segredos. Publicado; validação autenticada/visual pendente por ausência de sessão.**
 
 ## IDENTIFICAÇÃO
 
@@ -9,7 +9,11 @@
 |-------|-------|
 | Data | 2026-08-14 (UTC) |
 | Branch | `cursor/hotfix-nf-invoices-list-empty-eaa8` |
-| Base | `main` @ `0eb5cdad` (produção funcional `9a083213`) |
+| PR | [#263](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/263) |
+| Commit publicado | `c70acec9d7649ef91eda2ee3297f3ffe434bafd0` |
+| Tag | `baseline-hotfix-nf-invoices-20260814` |
+| Build Vercel | `c70acec9d7649ef91eda2ee3297f3ffe434bafd0` |
+| Deploy | `sistema-grupo-tm-seg` — Production Ready |
 | Origem técnica | Hunks exclusivos do incidente no commit `21f02e10` |
 | PR SEC congelado | [#262](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/262) |
 | Banco/schema | Não alterado |
@@ -90,7 +94,8 @@ FinancialInvoiceControl
 - `/api/nf/invoices` reutiliza `assertFinanceNfAccess`.
 - Sem credencial: 401.
 - Perfil sem autorização: 403.
-- Perfil autorizado alcança o handler.
+- Perfil autorizado alcança o handler nos testes automatizados.
+- Produção autorizada não foi testada: navegador sem sessão e nenhuma credencial disponível.
 - Service role permanece apenas em `lib/nfInvoiceControlApi.ts`/backend.
 - Nenhum segredo é enviado ao frontend, bundle ou logs.
 - Nenhuma rota privilegiada foi tornada pública.
@@ -138,13 +143,35 @@ Falhas TSX baseline:
 O teste NB-06 possui hang conhecido no ambiente e foi executado separadamente sem
 conclusão; o rewrite novo está coberto pelos testes específicos e pela inspeção do diff.
 
+## VALIDAÇÃO EM PRODUÇÃO
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `/api/version` | `buildId=c70acec9d7649ef91eda2ee3297f3ffe434bafd0` |
+| `/api/health` | HTTP 200 |
+| `/` | HTTP 200 |
+| `/api/nf/invoices` sem auth | HTTP 401 `Não autorizado` |
+| `/api/nf/invoices` perfil operador | HTTP 403 |
+| `/api/nf/invoices` perfil autorizado | Não executado — ausência de sessão/credencial |
+| Quantidade retornada pela API | **Não determinada** |
+| Tela Controle de Faturas/NF | Login carregou; listagem não acessível sem sessão |
+| Criação/reemissão/sync/init | **Não executados** |
+
+O navegador de validação não possuía cookie, token ou sessão autenticada. Não foram
+fabricados tokens nem extraídas credenciais. Assim, o deploy está confirmado e a
+segurança negativa está validada, mas a restauração visual não pode ser afirmada.
+
 ## ROLLBACK
 
-Reverter o commit do hotfix ou restaurar a produção para `9a083213`.
+Reverter os commits do hotfix em `main` ou restaurar a tag
+`baseline-fase3-p3-merged-20260813` (`9a083213`).
 Nenhum rollback de banco é necessário.
 
 ## DECISÃO
 
-# 🟢 HOTFIX NF APTO PARA MERGE/PUBLICAÇÃO
+# 🔴 HOTFIX PUBLICADO — VALIDAÇÃO DA LISTAGEM INCONCLUSIVA
 
-Decisão técnica somente. **Não mergeado e não publicado nesta execução.**
+Não considerar o incidente resolvido até um usuário autorizado confirmar que
+`/api/nf/invoices` retorna registros e que a lista inferior os renderiza. Isso não
+significa que a lista permaneça vazia; significa que não foi possível observá-la com
+segurança nesta execução.
