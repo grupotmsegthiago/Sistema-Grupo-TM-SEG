@@ -13,7 +13,7 @@
 | **PR** | [#265](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/265) |
 | **Branch** | `cursor/nb07-supabase-routes-eaa8` |
 | **Commit anterior (bloqueado)** | `ac48c308` |
-| **Commit desta correção** | `88d32e4e` |
+| **Commit desta correção** | `9b31c98c` |
 | **Base / produção funcional** | `main` / `c8f7c59d` |
 | **Tag produção** | `baseline-fase3-sec01-sec02-merged-20260814` |
 | **Merge / publicação** | **Não executados** |
