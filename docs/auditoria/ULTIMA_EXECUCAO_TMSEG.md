@@ -1,7 +1,7 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **SEC-01/SEC-02 Safe (sem SEC-03, Asaas e NF preservados)**  
-> **Não contém segredos. NÃO mergeado. NÃO publicado.**
+> Handoff oficial — **Publicação SEC-01 + SEC-02 (PR #264)**  
+> **Não contém segredos. PR #262 (SEC-03) permanece congelado.**
 
 ---
 
@@ -10,181 +10,171 @@
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-14 (UTC) |
-| **Tipo** | Separação controlada SEC-01 + SEC-02 |
-| **Branch** | `cursor/fase3-sec01-sec02-safe-eaa8` |
-| **Base** | `main` @ `c70acec9` (hotfix NF publicado e validado) |
-| **Tag produção** | `baseline-hotfix-nf-invoices-20260814` |
-| **PR #262** | **Congelado** — SEC-03 permanece na branch antiga |
+| **Tipo** | Publicação controlada SEC-01 + SEC-02 |
+| **PR publicado** | [#264](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/264) |
+| **PR congelado** | [#262](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/262) (SEC-03) |
+| **Branch origem** | `cursor/fase3-sec01-sec02-safe-eaa8` |
+| **Commit publicado** | `c8f7c59d` |
+| **Tag** | `baseline-fase3-sec01-sec02-merged-20260814` |
 | **Projeto Vercel** | `sistema-grupo-tm-seg` |
+| **Domínio** | `sistema.grupotmseg.com.br` |
 
 ---
 
 ## PROGRESSO — TRÊS INDICADORES
 
-| Indicador | Valor |
-|-----------|-------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 |
-| **FASE 3 (total)** | **70%** 🟢 (sem aumento — apenas preparação) |
-| **PROGRAMA GERAL** | **61%** 🟢 |
+| Indicador | Valor | Metodologia |
+|-----------|-------|-------------|
+| **EXECUÇÃO ATUAL** | **100%** 🟢 | Revalidação + merge + deploy + smoke + handoff |
+| **FASE 3 (total)** | **74%** 🟢 | +4% SEC-01/02 publicados (SEC-03 pendente) |
+| **PROGRAMA GERAL** | **63%** 🟢 | +2% publicação parcial bloco SEC |
 
 ---
 
 ## DECISÃO FINAL
 
-# 🟢 SEC-01/02 APTO PARA REVISÃO/MERGE
+# 🟡 PUBLICADO COM PENDÊNCIA NB-07
 
 | Critério | Resultado |
 |----------|-----------|
-| SEC-03 excluído | ✅ **ZERO alterações** webhook / `ASAAS_PAYMENT_WEBHOOK_TOKEN` |
-| Asaas funcional | ✅ diff funcional **ZERO** vs `main` |
-| Hotfix NF | ✅ `transformFinancialInvoicesForControl` + `/api/nf/invoices` preservados |
-| SEC-01 investment | ✅ fail-closed (`assertAsaasApiAccess`) |
-| SEC-02 supabase | ✅ 6 rotas protegidas; consumidores com `authFetch` |
-| NB-07 `/api/supabase/*` | 🟡 **pré-existente** — timeout catch-all não piorado por esta branch |
-| Testes SEC novos | ✅ **26/26** (19 SEC + 7 guard) |
-| NF regressão | ✅ **7/7** |
-| Asaas | ✅ **70/70** |
-| P0–P3 | ✅ **56/56** |
-| TS completa (excl. NB-06 hang) | ✅ **769 / 764 / 5 fail** (baseline; **zero falha nova**) |
-| Build | ✅ `npm run build` OK |
-| Merge / publicação | ❌ **Não executado** |
-
-### NB-07 — classificação SEC-02
-
-As 6 rotas `/api/supabase/*` **continuam** no catch-all `api/index` (mesmo que `main`). O hardening adiciona `requireAuth`+`requireRole` **antes** do handler — não aumenta cold-start. Timeout operacional é **pré-existente**, não introduzido por SEC-02.
-
-**Classificação:** SEC-02 **APTO** (auth correto; NB-07 documentado como pendência arquitetural separada).
+| Merge PR #264 → dev → main | ✅ `c8f7c59d` |
+| Deploy Vercel | ✅ buildId `c8f7c59dd440f0bb806af7d6e4b2a888f4440345` |
+| SEC-03 ausente | ✅ zero alterações webhook/token |
+| SEC-01 smoke prod | ✅ `/api/investment/*` → **401** sem auth (handler leve) |
+| SEC-02 smoke prod | 🟡 `/api/supabase/*` → **timeout 20s** (NB-07 catch-all) — auth no código, runtime limitado |
+| NF hotfix | ✅ `/api/nf/invoices` → **401** sem auth |
+| Asaas inalterado | ✅ saldo 401; status 200; webhook timeout (igual pré-publicação) |
+| Vercel ENV | ✅ não alterado |
+| PR #262 | ✅ congelado |
 
 ---
 
-## 1. ABORT MERGE CONFLITANTE (#262)
+## PONTO DE RETORNO (pré-publicação)
 
-- Branch `cursor/sec-01-02-03-seguranca-eaa8` — merge/rebase **não** continuado
-- Conflitos financeiros (`lib/nfInvoiceControlApi.ts`) **não** resolvidos automaticamente
-- Nova branch criada **a partir de `main`**, não da branch SEC antiga
+| Item | Valor |
+|------|-------|
+| `main` | `c70acec9` |
+| `dev` | `9d03166a` |
+| Tag anterior | `baseline-hotfix-nf-invoices-20260814` |
+| buildId produção | `c70acec9d7649ef91eda2ee3297f3ffe434bafd0` |
+| `/api/version` | `3.7.60` |
 
----
-
-## 2. ARQUIVOS ALTERADOS (SOMENTE SEC-01/02)
-
-| Arquivo | Bloco | Alteração |
-|---------|-------|-----------|
-| `lib/investmentApiAuth.ts` | SEC-01 | **NOVO** — `denyInvestmentApiUnlessAuthorized` |
-| `api/investment-init.ts` | SEC-01 | +auth |
-| `api/investment-snapshots.ts` | SEC-01 | +auth |
-| `api/investment-snapshots-all.ts` | SEC-01 | +auth |
-| `api/investment-snapshot-delete.ts` | SEC-01 | +auth |
-| `server/routes.ts` | SEC-01/02 | auth investment (8 rotas) + supabase (6 rotas) |
-| `scripts/fase3-sec01-sec02-security.test.ts` | testes | **NOVO** — 19 casos |
-| `scripts/sec-safe-nf-hotfix-guard.test.ts` | testes | **NOVO** — 7 casos guard NF + anti-SEC-03 |
-
-### Explicitamente NÃO alterados
-
-- `api/asaas-payment-webhook.ts` — **não existe** nesta branch
-- `lib/asaasPaymentWebhook.ts` — **não existe**
-- `vercel.json` — **inalterado** (sem rewrite webhook)
-- `components/FinancialInvoiceControl.tsx` — **inalterado** (hotfix main)
-- `lib/nfInvoiceControlApi.ts` — **inalterado** (SSOT main com `transformFinancialInvoicesForControl`)
-- Webhook Express `/api/asaas/webhook` — **byte-equivalente** à main
-
----
-
-## 3. SEC-01 — INVESTMENT (ANTES → DEPOIS)
-
-| Rota | Antes | Depois | Auth | Perfis | Consumidor |
-|------|-------|--------|------|--------|------------|
-| `POST /api/investment/init` | público | fail-closed | `assertAsaasApiAccess` | admin, diretoria, financeiro, ceo | `FinancialAccountManager` |
-| `GET /api/investment/snapshots/:id` | público | fail-closed | idem | idem | Express fallback |
-| `GET /api/investment/snapshots-all` | público | fail-closed | idem | idem | `FinancialAccountManager` |
-| `POST /api/investment/snapshots` | público | fail-closed | idem | idem | `FinancialAccountManager` |
-| `DELETE /api/investment/snapshots/:id` | público | fail-closed | idem | idem | `FinancialAccountManager` |
-| `POST /api/investment/accounts` | público Express | fail-closed | idem | idem | `FinancialAccountManager` |
-| `PATCH /api/investment/accounts/:id` | público Express | fail-closed | idem | idem | `FinancialAccountManager` |
-| `DELETE /api/investment/accounts/:id` | público Express | fail-closed | idem | idem | `FinancialAccountManager` |
-
-Handlers Vercel (`investment-init`, `snapshots*`, `snapshot-delete`) já tinham rewrite; agora também exigem auth. `investment-accounts` já protegido — **preservado**.
-
----
-
-## 4. SEC-02 — `/api/supabase/*` (ANTES → DEPOIS)
-
-| Rota | Antes | Depois | Auth | Perfis | Consumidor |
-|------|-------|--------|------|--------|------------|
-| `POST /api/supabase/init-invoices` | público | fail-closed | `requireAuth`+`requireRole` | diretoria, admin, ceo, financeiro, controller | `FinancialInvoiceControl`, `FinancialTransactionList` |
-| `GET /api/supabase/status` | público | fail-closed | idem | diretoria, admin, ceo | `ServerStats` |
-| `GET /api/supabase/db-metrics` | público | fail-closed | idem | idem | `ServerStats` |
-| `GET /api/supabase/storage-usage` | público | fail-closed | idem | idem | `ServerStats` |
-| `GET /api/supabase/billing-links` | público | fail-closed | idem | idem | `ServerStats` |
-| `GET /api/supabase/health-check` | público | fail-closed | idem | idem | `ServerStats`, diagnostics |
-
-Todos os consumidores usam `authFetch` — perfis legítimos **preservados**.
-
----
-
-## 5. SEC-03 — EXCLUÍDO DESTE CICLO
-
-Auditoria `git diff origin/main...HEAD`:
-
-```
-ASAAS_PAYMENT_WEBHOOK_TOKEN     → ZERO
-asaas-payment-webhook           → ZERO
-asaasPaymentWebhook             → ZERO
-/api/asaas/webhook (diff)       → ZERO
-```
-
-SEC-03 permanece **congelado** na branch `cursor/sec-01-02-03-seguranca-eaa8` / PR #262.
-
----
-
-## 6. HOTFIX NF — PRESERVADO
-
-| Item | Status |
-|------|--------|
-| `transformFinancialInvoicesForControl()` | ✅ exportada e usada por `listFinancialInvoicesForControl` |
-| `authFetch('/api/nf/invoices')` | ✅ em `FinancialInvoiceControl` |
-| Rewrite `/api/nf/invoices` | ✅ em `vercel.json` |
-| Teste guard `sec-safe-nf-hotfix-guard.test.ts` | ✅ 7/7 |
-
----
-
-## 7. TESTES
-
-| Suíte | Resultado |
-|-------|-----------|
-| `fase3-sec01-sec02-security.test.ts` | **19/19** |
-| `sec-safe-nf-hotfix-guard.test.ts` | **7/7** |
-| `nf-invoices-list.test.ts` + `invoice-control-loading.test.ts` | **7/7** |
-| `asaas-*.test.ts` + `nf-isolada-asaas` | **70/70** |
-| P0+P1+P2+P3 | **56/56** |
-| TS excl. `nb06-migration-routes` | **769 / 764 / 5 fail** |
-| `npm run build` | **OK** |
-
-### 5 falhas baseline (inalteradas)
-
-Mesmas da produção/hotfix — nenhuma introduzida por SEC-01/02.
-
----
-
-## 8. ROLLBACK
+### Rollback
 
 ```bash
 git checkout main
-git branch -D cursor/fase3-sec01-sec02-safe-eaa8
+git revert c8f7c59d   # ou reset --hard c70acec9 + force (somente se autorizado)
+git push origin main
+# Redeploy Vercel projeto sistema-grupo-tm-seg
 ```
 
-Produção permanece em `c70acec9` até merge explícito.
+Tag de retorno funcional: `baseline-hotfix-nf-invoices-20260814` @ `c70acec9`
 
 ---
 
-## 9. PRÓXIMOS PASSOS (NÃO INICIADOS)
+## MERGE EXECUTADO
 
-| Item | Branch |
+```
+PR #264 → dev (merge commit c8f7c59d)
+dev → main (fast-forward c70acec9..c8f7c59d)
+push origin dev main
+tag baseline-fase3-sec01-sec02-merged-20260814
+```
+
+**Conflito:** apenas `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` (documentação) — arquivos SEC mergearam limpos.
+
+---
+
+## DEPLOY PRODUÇÃO
+
+| Check | Resultado |
+|-------|-----------|
+| `GET /api/version` | `buildId=c8f7c59d…` ✅ |
+| `GET /api/health` | **200** ✅ |
+| `GET /` | **200** ✅ |
+| builtAt | `2026-08-14T14:59:47.234Z` |
+
+---
+
+## SMOKE PRODUÇÃO (2026-08-14)
+
+### SEC-01 — Investment
+
+| Rota | Sem auth | Esperado |
+|------|----------|----------|
+| `GET /api/investment/snapshots-all` | **401** `Não autorizado` | ✅ |
+| `POST /api/investment/init` | **401** `Não autorizado` | ✅ |
+
+Handlers Vercel dedicados — auth fail-closed **comprovado em produção**.
+
+### SEC-02 — Supabase
+
+| Rota | Sem auth | Resultado |
+|------|----------|-----------|
+| `GET /api/supabase/status` | timeout 20s | 🟡 **NB-07** |
+| `GET /api/supabase/db-metrics` | timeout 20s | 🟡 **NB-07** |
+
+**Classificação:** **SEGURANÇA APLICADA / RUNTIME AINDA LIMITADO POR NB-07**  
+Rotas caem no catch-all `api/index`; auth `requireAuth` está no Express mas cold-start/timeout impede resposta 401 rápida. **Não corrigido nesta execução.**
+
+Consumidores (`ServerStats`, etc.) com `authFetch` + sessão válida podem continuar sujeitos ao mesmo timeout pré-existente.
+
+### NF — hotfix preservado
+
+| Rota | Sem auth | Resultado |
+|------|----------|-----------|
+| `GET /api/nf/invoices` | **401** | ✅ protegido |
+
+Código: `FinancialInvoiceControl` → `authFetch('/api/nf/invoices')`; `transformFinancialInvoicesForControl()` intacto na main publicada.
+
+### Asaas — zero alteração
+
+| Rota | Resultado | Notas |
+|------|-----------|-------|
+| `GET /api/asaas/balances` | **401** | inalterado (já protegido) |
+| `GET /api/asaas/status` | **200** | handler leve OK |
+| `POST /api/asaas/webhook` | timeout 20s | **igual pré-publicação** (catch-all NB-07) |
+
+**SEC-03 / `ASAAS_PAYMENT_WEBHOOK_TOKEN`:** não publicado.
+
+---
+
+## TESTES PRÉ-DEPLOY
+
+| Suíte | Resultado |
+|-------|-----------|
+| SEC-01/02 | **19/19** |
+| Guard NF + anti-SEC-03 | **7/7** |
+| NF regressão | **7/7** |
+| Asaas | **70/70** |
+| P0–P3 | **56/56** |
+| TS excl. NB-06 hang | **769 / 764 / 5 fail** (baseline) |
+| `npm run build` | **OK** |
+
+---
+
+## ARQUIVOS PUBLICADOS
+
+| Arquivo | Bloco |
+|---------|-------|
+| `lib/investmentApiAuth.ts` | SEC-01 |
+| `api/investment-init.ts` (+ snapshots*) | SEC-01 |
+| `server/routes.ts` (investment + supabase auth) | SEC-01/02 |
+| `scripts/fase3-sec01-sec02-security.test.ts` | testes |
+| `scripts/sec-safe-nf-hotfix-guard.test.ts` | testes |
+
+**Não publicado:** `asaas-payment-webhook.ts`, `asaasPaymentWebhook.ts`, rewrite webhook, SEC-03.
+
+---
+
+## PRÓXIMOS PASSOS (NÃO INICIADOS)
+
+| Item | Status |
 |------|--------|
-| Publicar SEC-01/02 safe | `cursor/fase3-sec01-sec02-safe-eaa8` (após revisão humana) |
-| SEC-03 webhook token | PR #262 — **congelado** até ciclo separado |
-| Handlers dedicados `/api/supabase/*` | NB-07 — fora deste escopo |
+| SEC-03 webhook token | PR #262 congelado |
+| Handlers dedicados `/api/supabase/*` | NB-07 — pendência arquitetural |
 | Configurar `ASAAS_PAYMENT_WEBHOOK_TOKEN` | **Não** neste ciclo |
 
 ---
 
-*SEC-01/02 Safe — Cloud Agent — 2026-08-14 — NÃO mergeado, NÃO publicado, Asaas/Vercel ENV inalterados*
+*Publicação SEC-01/02 — Cloud Agent — 2026-08-14 — PR #262 não iniciado*
