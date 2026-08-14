@@ -467,6 +467,10 @@
       "destination": "/api/asaas-transfer-approval"
     },
     {
+      "source": "/api/asaas/webhook",
+      "destination": "/api/asaas-payment-webhook"
+    },
+    {
       "source": "/api/asaas/sync-payment-status",
       "destination": "/api/asaas-sync-payment-status"
     },
@@ -477,6 +481,10 @@
     {
       "source": "/api/nf/summary",
       "destination": "/api/nf-control?op=summary"
+    },
+    {
+      "source": "/api/nf/invoices",
+      "destination": "/api/nf-control?op=list"
     },
     {
       "source": "/api/nf/provider-preferences",

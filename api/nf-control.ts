@@ -4,6 +4,7 @@
  *
  * Rotas (via rewrite em vercel.json):
  *   GET  /api/nf/summary                  → ?op=summary
+ *   GET  /api/nf/invoices                 → ?op=list
  *   GET  /api/nf/provider-preferences     → ?op=preferences
  *   PUT  /api/nf/provider-preferences     → ?op=preferences
  *   POST /api/nf/ensure-clean-slate       → ?op=clean-slate
@@ -21,6 +22,7 @@ import {
 import {
   buildNfIssuerSummary,
   isPlugNotasConfiguredLite,
+  listFinancialInvoicesForControl,
   listPlugNotasCompaniesLite,
   loadNfProviderPreferences,
   saveNfProviderPreferences,
@@ -88,6 +90,11 @@ export default async function handler(req: LiteReq, res: LiteRes) {
   try {
     if (method === 'GET' && op === 'summary') {
       res.status(200).json(await buildNfIssuerSummary());
+      return;
+    }
+
+    if (method === 'GET' && (op === 'list' || op === 'invoices')) {
+      res.status(200).json(await listFinancialInvoicesForControl());
       return;
     }
 

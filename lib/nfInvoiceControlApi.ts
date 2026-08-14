@@ -3,6 +3,7 @@
  * (sem cold-start do Express em api/index).
  */
 import { createSupabaseAdminClient } from './supabaseAdmin.js';
+import { isPureMedicaoInvoice } from './billing/medicaoVisibility.js';
 import { INVOICE_CONTROL_EPOCH, isAfterInvoiceControlEpoch } from './invoiceCleanSlate.js';
 
 export type NfProvider = 'ASAAS' | 'PLUGNOTAS';
@@ -133,6 +134,39 @@ export async function buildNfIssuerSummary(): Promise<{
   }
 
   return { success: true, summary: Object.values(byCompany), stuck, byProvider };
+}
+
+/** Lista faturas do Controle — service role (RLS anon retorna vazio). */
+export async function listFinancialInvoicesForControl(): Promise<{
+  success: true;
+  invoices: Record<string, unknown>[];
+  epoch: string;
+}> {
+  const sb = createSupabaseAdminClient();
+  if (!sb) {
+    return { success: true, invoices: [], epoch: INVOICE_CONTROL_EPOCH };
+  }
+
+  const { data, error } = await sb
+    .from('financial_invoices')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+
+  const now = new Date();
+  const invoices = (data || [])
+    .filter((inv) => isAfterInvoiceControlEpoch((inv as { created_at?: string }).created_at))
+    .filter((inv) => !isPureMedicaoInvoice(inv as Parameters<typeof isPureMedicaoInvoice>[0]))
+    .map((inv) => {
+      const row = inv as { status?: string; boleto_due_date?: string };
+      if (row.status === 'EMITIDA' && row.boleto_due_date) {
+        const due = new Date(`${row.boleto_due_date}T23:59:59`);
+        if (now > due) return { ...inv, status: 'VENCIDA' };
+      }
+      return inv;
+    });
+
+  return { success: true, invoices, epoch: INVOICE_CONTROL_EPOCH };
 }
 
 export async function loadNfProviderPreferences(): Promise<Record<string, NfProvider>> {

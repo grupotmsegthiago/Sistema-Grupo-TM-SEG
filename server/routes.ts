@@ -344,6 +344,19 @@ function requireRole(...allowedRoles: string[]) {
   };
 }
 
+/** SEC-01: mesma regra dos handlers Vercel investment-* (assertAsaasApiAccess). */
+function requireInvestmentApiAccess() {
+  return async (req: Request, res: Response, next: Function) => {
+    const { extractAuthToken, assertAsaasApiAccess } = await import('../lib/asaasApiAuth.js');
+    const token = extractAuthToken(req);
+    const denied = await assertAsaasApiAccess(token, req);
+    if (denied) {
+      return res.status(denied === 'Não autorizado' ? 401 : 403).json({ error: denied });
+    }
+    return next();
+  };
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -3142,7 +3155,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
+  app.post("/api/supabase/init-invoices", requireAuth, requireRole('diretoria', 'administrador', 'ceo', 'financeiro', 'controller'), async (_req: Request, res: Response) => {
     // Resposta rápida: a tela de faturas não deve depender deste endpoint.
     // Checagens de schema com timeout curto — tabela já existe em produção.
     const soft = async <T>(work: PromiseLike<T>, ms = 4_000): Promise<T | null> => {
@@ -3208,7 +3221,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/supabase/status", async (_req: Request, res: Response) => {
+  app.get("/api/supabase/status", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
     try {
       const startTime = Date.now();
       const { error: pingError } = await supabaseAdmin.from('profiles').select('id', { count: 'exact', head: true });
@@ -3240,7 +3253,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/supabase/db-metrics", async (_req: Request, res: Response) => {
+  app.get("/api/supabase/db-metrics", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
     try {
       const tables = [
         'missions', 'clients', 'providers', 'vehicles', 'client_vehicles',
@@ -3287,7 +3300,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/supabase/storage-usage", async (_req: Request, res: Response) => {
+  app.get("/api/supabase/storage-usage", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
     try {
       const { data: buckets, error: bucketsError } = await supabaseAdmin.storage.listBuckets();
       if (bucketsError) throw bucketsError;
@@ -3736,7 +3749,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/supabase/billing-links", (_req: Request, res: Response) => {
+  app.get("/api/supabase/billing-links", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), (_req: Request, res: Response) => {
     const projectRef = 'ajhmmjuewdsukecaimik';
     res.json({
       billing: "https://supabase.com/dashboard/org/_/billing",
@@ -3749,7 +3762,7 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/supabase/health-check", async (_req: Request, res: Response) => {
+  app.get("/api/supabase/health-check", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
     try {
       const checks: any = {};
 
@@ -5360,7 +5373,7 @@ export async function registerRoutes(
   });
   // =============================================================
 
-  app.post("/api/investment/init", async (_req: Request, res: Response) => {
+  app.post("/api/investment/init", requireAuth, requireInvestmentApiAccess(), async (_req: Request, res: Response) => {
     try {
       await pgPool.query(`CREATE TABLE IF NOT EXISTS public.account_balance_snapshots (
         id serial PRIMARY KEY,
@@ -5376,7 +5389,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/investment/snapshots/:accountId", async (req: Request, res: Response) => {
+  app.get("/api/investment/snapshots/:accountId", requireAuth, requireInvestmentApiAccess(), async (req: Request, res: Response) => {
     try {
       const { accountId } = req.params;
       const days = parseInt(req.query.days as string) || 365;
@@ -5391,7 +5404,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/investment/snapshots-all", async (req: Request, res: Response) => {
+  app.get("/api/investment/snapshots-all", requireAuth, requireInvestmentApiAccess(), async (req: Request, res: Response) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
@@ -5408,7 +5421,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/investment/snapshots", async (req: Request, res: Response) => {
+  app.post("/api/investment/snapshots", requireAuth, requireInvestmentApiAccess(), async (req: Request, res: Response) => {
     try {
       const { account_id, balance, notes, created_by } = req.body;
       const { rows } = await pgPool.query(
@@ -5421,7 +5434,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/investment/snapshots/:id", async (req: Request, res: Response) => {
+  app.delete("/api/investment/snapshots/:id", requireAuth, requireInvestmentApiAccess(), async (req: Request, res: Response) => {
     try {
       await pgPool.query('DELETE FROM account_balance_snapshots WHERE id = $1', [req.params.id]);
       res.json({ ok: true });
@@ -5430,7 +5443,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/investment/accounts", async (req: Request, res: Response) => {
+  app.post("/api/investment/accounts", requireAuth, requireInvestmentApiAccess(), async (req: Request, res: Response) => {
     try {
       const name = String(req.body?.name || '').trim();
       const bank_name = String(req.body?.bank_name || '').trim();
@@ -5458,7 +5471,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/investment/accounts/:id", async (req: Request, res: Response) => {
+  app.patch("/api/investment/accounts/:id", requireAuth, requireInvestmentApiAccess(), async (req: Request, res: Response) => {
     try {
       const id = String(req.params.id || '').trim();
       const name = String(req.body?.name || '').trim();
@@ -5496,7 +5509,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/investment/accounts/:id", async (req: Request, res: Response) => {
+  app.delete("/api/investment/accounts/:id", requireAuth, requireInvestmentApiAccess(), async (req: Request, res: Response) => {
     try {
       const id = String(req.params.id || '').trim();
       if (!id) {
@@ -6181,57 +6194,19 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   app.get("/api/nf/summary", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
     try {
-      const sb = createSupabaseAdminClient();
-      if (!sb) return res.json({ success: true, summary: [], stuck: [], byProvider: {} });
-      const { data, error } = await sb.from('financial_invoices')
-        .select('id, client, number, amount, issuer_company, nf_status, nf_retry_at, created_at, asaas_payment_id, nf_provider, plugnotas_invoice_id');
-      if (error) return res.status(500).json({ error: error.message });
-      const byCompany: Record<string, any> = {};
-      const byProvider: Record<string, { total: number; authorized: number; error: number; stuck: number; processing: number }> = {
-        ASAAS: { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 },
-        PLUGNOTAS: { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 },
-      };
-      const stuck: any[] = [];
-      const now = Date.now();
-      (data || []).forEach((r: any) => {
-        // ignora linhas sem qualquer ID de provider (faturas retroativas sem NF)
-        if (!r.asaas_payment_id && !r.plugnotas_invoice_id) return;
-        const c = r.issuer_company || '(sem emissora)';
-        // Inferência espelha /sync-payment-status e /retry: se nf_provider está
-        // null mas há plugnotas_invoice_id, classifica como PLUGNOTAS.
-        const provider = (
-          r.nf_provider
-          || (r.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS')
-        ).toUpperCase();
-        if (!byCompany[c]) byCompany[c] = { company: c, total: 0, authorized: 0, synchronized: 0, scheduled: 0, error: 0, stuck: 0, canceled: 0, other: 0, asaas: 0, plugnotas: 0 };
-        byCompany[c].total++;
-        if (provider === 'PLUGNOTAS') byCompany[c].plugnotas++; else byCompany[c].asaas++;
-        const bp = byProvider[provider] || (byProvider[provider] = { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 });
-        bp.total++;
-        const s = (r.nf_status || '').toUpperCase();
-        if (s === 'AUTHORIZED') { byCompany[c].authorized++; bp.authorized++; }
-        else if (s === 'SYNCHRONIZED') {
-          byCompany[c].synchronized++;
-          const ref = r.nf_retry_at || r.created_at;
-          const ageH = ref ? (now - new Date(ref).getTime()) / 3600_000 : 0;
-          if (ageH >= 24) {
-            byCompany[c].stuck++; bp.stuck++;
-            stuck.push({ ...r, hours_stuck: Math.floor(ageH) });
-          } else { bp.processing++; }
-        } else if (s === 'SCHEDULED' || s === 'PROCESSING') { byCompany[c].scheduled++; bp.processing++; }
-        else if (s === 'ERROR' || s === 'FAILED') { byCompany[c].error++; bp.error++; }
-        else if (s === 'STUCK') {
-          byCompany[c].stuck++; bp.stuck++;
-          const ref = r.nf_retry_at || r.created_at;
-          const ageH = ref ? (now - new Date(ref).getTime()) / 3600_000 : 0;
-          stuck.push({ ...r, hours_stuck: Math.floor(ageH) });
-        }
-        else if (s === 'CANCELED') byCompany[c].canceled++;
-        else byCompany[c].other++;
-      });
-      res.json({ success: true, summary: Object.values(byCompany), stuck, byProvider });
+      const { buildNfIssuerSummary } = await import('../lib/nfInvoiceControlApi.js');
+      res.json(await buildNfIssuerSummary());
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/nf/invoices", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const { listFinancialInvoicesForControl } = await import('../lib/nfInvoiceControlApi.js');
+      res.json(await listFinancialInvoicesForControl());
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -6956,45 +6931,25 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  // Webhook do Asaas para baixa automática
+  // Webhook do Asaas para baixa automática (SEC-03: token próprio antes de processar)
   app.post("/api/asaas/webhook", async (req: Request, res: Response) => {
     try {
-      const { event, payment } = req.body;
-      console.log(`[Asaas Webhook] Evento: ${event} | Payment: ${payment?.id}`);
-
-      if (['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED'].includes(event) && payment?.id) {
-        // Prioridade: asaas_payment_id (estável). Fallback: externalReference (NF-xxx).
-        const orParts: string[] = [`asaas_payment_id.eq.${payment.id}`];
-        if (payment.externalReference) {
-          const nfNumber = String(payment.externalReference).replace(/^NF-/, '').replace(/^TMSEG-/, '');
-          if (nfNumber) orParts.push(`number.eq.${nfNumber}`);
-        }
-        const { data: invoices } = await supabase.from('financial_invoices')
-          .select('id, number, client')
-          .or(orParts.join(','));
-
-        if (invoices && invoices.length > 0) {
-          for (const inv of invoices) {
-            await supabase.from('financial_invoices').update({
-              status: 'PAGA',
-              asaas_status: payment.status || 'RECEIVED',
-            }).eq('id', inv.id);
-
-            await supabase.from('financial_transactions')
-              .update({ status: 'PAID', paid_date: new Date().toISOString().split('T')[0] })
-              .ilike('description', `%${inv.number}%`)
-              .eq('status', 'PENDING');
-
-            console.log(`[Asaas Webhook] Baixa automática: NF ${inv.number} — ${inv.client}`);
-          }
-        } else {
-          console.log(`[Asaas Webhook] Pagamento ${payment.id} sem fatura vinculada (ref=${payment.externalReference || '—'})`);
-        }
+      const { verifyAsaasPaymentWebhookRequest, processAsaasPaymentWebhookEvent } = await import('../lib/asaasPaymentWebhook.js');
+      const auth = verifyAsaasPaymentWebhookRequest(req);
+      if (!auth.ok) {
+        const status = auth.reason === 'webhook_not_configured' ? 503 : 401;
+        return res.status(status).json({ received: false, error: auth.reason });
       }
-      res.json({ received: true });
+
+      const sb = supabaseAdmin || supabase;
+      const result = await processAsaasPaymentWebhookEvent(req.body, sb);
+      if (result.processed) {
+        console.log(`[Asaas Webhook] Baixa automática: ${result.matched} fatura(s)`);
+      }
+      res.json(result);
     } catch (err: any) {
       console.error('[Asaas Webhook] Erro:', err.message);
-      res.json({ received: true, error: err.message });
+      res.json({ received: true, processed: false, error: err.message });
     }
   });
 
