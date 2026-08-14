@@ -98,6 +98,10 @@ export async function handleSupabaseAdminRequest(
     res.status(200).json(result);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
+    if (op === 'init-invoices') {
+      res.status(200).json({ ok: false, error: message });
+      return;
+    }
     res.status(500).json({ error: message });
   }
 }
