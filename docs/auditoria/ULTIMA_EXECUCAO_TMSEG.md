@@ -1,6 +1,6 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **Fase 3 Bloco P3 — MERGE CONTROLADO + PUBLICAÇÃO**  
+> Handoff oficial — **Fase 3 Bloco SEC-01 / SEC-02 / SEC-03**  
 > **Não contém segredos.**
 
 ---
@@ -9,11 +9,11 @@
 
 | Campo | Valor |
 |-------|-------|
-| **Data** | 2026-08-13 (UTC) |
-| **Tipo** | Merge + publicação P3 (PR #261) |
-| **PR** | [#261](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/261) |
-| **Commit publicado** | `9a083213` |
-| **Tag baseline** | `baseline-fase3-p3-merged-20260813` |
+| **Data** | 2026-08-14 (UTC) |
+| **Tipo** | Segurança SEC-01 / SEC-02 / SEC-03 (sem merge, sem publicação) |
+| **Branch** | `cursor/sec-01-02-03-seguranca-eaa8` |
+| **Base** | `9a083213` (produção atual) |
+| **Tag baseline anterior** | `baseline-fase3-p3-merged-20260813` |
 | **Projeto Vercel** | `sistema-grupo-tm-seg` |
 | **Domínio** | `sistema.grupotmseg.com.br` |
 
@@ -23,181 +23,214 @@
 
 | Indicador | Valor | Metodologia |
 |-----------|-------|-------------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 | Revalidação + merge + testes + deploy + smoke + handoff |
-| **FASE 3 (total)** | **64%** 🟢 | P0+NB-06+P1+P2+P3 publicados (52% + 6% P3 validado + 6% P3 publicado) |
-| **PROGRAMA GERAL** | **59%** 🟢 | +2% publicação P3 confirmada em produção |
+| **EXECUÇÃO ATUAL** | **100%** 🟢 | Inventário + correções + testes + handoff |
+| **FASE 3 (total)** | **70%** 🟢 | P0+NB-06+P1+P2+P3 publicados (64%) + bloco SEC implementado (+6%) |
+| **PROGRAMA GERAL** | **61%** 🟢 | +2% bloco SEC concluído em branch (não publicado) |
 
 ---
 
 ## DECISÃO FINAL
 
-# 🟢 P3 PUBLICADO E VALIDADO
+# 🟡 BLOCO SEC COM PENDÊNCIAS
 
 | Critério | Resultado |
 |----------|-----------|
-| HEAD validado antes do merge | ✅ `9a083213` |
-| Diff somente escopo P3 | ✅ 14 arquivos |
-| Merge dev + main | ✅ fast-forward |
-| Testes pré-produção | ✅ 735/730/5 (zero falha nova) |
-| Build | ✅ |
-| Deploy Vercel confirmado | ✅ `buildId` = `9a083213` |
-| `/api/health` + `/` | ✅ 200 |
-| Smoke Plinio/PDF no bundle | ✅ testids presentes |
-| NB-06 migration | ✅ POST 401, GET 405 |
-| billing-override prod | 🟡 504 timeout (catch-all NB-07) — auth validada em código + local |
-| SEC-01/02/03/NB-07 | Backlog — não iniciado |
+| SEC-02 `/api/supabase/*` protegido no código | ✅ `requireAuth` + `requireRole` em 6 rotas Express |
+| SEC-01 `investment/*` fail-closed | ✅ `assertAsaasApiAccess` em Express + handlers Vercel |
+| SEC-03 webhook Asaas validação token | ✅ código pronto; **env ausente em produção** |
+| Testes SEC novos | ✅ **27/27** |
+| Regressão P0–P3 | ✅ **67/67** |
+| Suíte TS (excl. NB-06 hang) | ✅ **762 / 757 / 5 fail** (mesmas 5 falhas baseline) |
+| Build | ✅ `npm run build` OK |
+| Merge / publicação | ❌ **Não executado** (conforme escopo) |
+| Env `ASAAS_PAYMENT_WEBHOOK_TOKEN` | 🟡 **AÇÃO HUMANA NECESSÁRIA** antes de publicar |
+| Idempotência Asaas por event ID | 🟡 dependência futura (sem migration nesta execução) |
+| NB-07 catch-all | 🟡 `/api/supabase/*` ainda depende de `api/index` em produção |
 
 ---
 
-## 1. REVALIDAÇÃO PRÉ-MERGE
+## AÇÃO HUMANA NECESSÁRIA
 
-| Verificação | Resultado |
-|-------------|-----------|
-| HEAD branch PR | `9a083213` — coincide com commit validado |
-| Commits posteriores | Nenhum |
-| Alterações não commitadas | Apenas artefatos `.cjs` de build local (descartados, não publicados) |
-| Diff vs `main` | 14 arquivos — escopo P3 autorizado exclusivamente |
+Antes de publicar SEC-03 em produção, configurar na Vercel (projeto `sistema-grupo-tm-seg`):
+
+| Variável | Descrição |
+|----------|-----------|
+| **`ASAAS_PAYMENT_WEBHOOK_TOKEN`** | Segredo próprio do webhook de pagamento Asaas (não reutilizar API key principal). Valor configurado no painel Asaas → Webhooks → token de autenticação (`asaas-access-token`). |
+
+Sem esta variável, o endpoint retorna **503** `webhook_not_configured` (fail-closed).
 
 ---
 
-## 2. PONTO DE RETORNO (pré-P3)
+## 1. SEC-02 — `/api/supabase/*` (PRIORIDADE MÁXIMA)
 
-| Item | Valor |
-|------|-------|
-| `main` (antes) | `b720ea61` |
-| `dev` (antes) | `b720ea61` |
-| Produção `buildId` (antes) | `b720ea619744aae71525821584780dabde865e2b` |
-| Tag anterior | `baseline-fase3-p2-merged-20260813` |
-| Commit funcional P2 | `ae2fc382` (referência handoff P2) |
+### Inventário
 
-### Tag criada pós-merge
+| Rota | Método | Consumidor | Operação | Service role? | Dados | Risco antes |
+|------|--------|------------|----------|---------------|-------|-------------|
+| `/api/supabase/init-invoices` | POST | `FinancialInvoiceControl.tsx`, `FinancialTransactionList.tsx` | DDL/seed tabela faturas | ✅ `supabaseAdmin` | `financial_invoices` | 🔴 CRÍTICA — público |
+| `/api/supabase/status` | GET | `ServerStats.tsx` | métricas projeto Supabase | ✅ | status API | 🔴 CRÍTICA |
+| `/api/supabase/db-metrics` | GET | `ServerStats.tsx` | contagem linhas tabelas | ✅ | múltiplas tabelas | 🔴 CRÍTICA |
+| `/api/supabase/storage-usage` | GET | `ServerStats.tsx` | uso storage buckets | ✅ | buckets/arquivos | 🔴 CRÍTICA |
+| `/api/supabase/billing-links` | GET | `ServerStats.tsx` | links painel billing | ❌ (estático) | URLs painel | 🟡 médio |
+| `/api/supabase/health-check` | GET | `ServerStats.tsx`, `integracoesDiagnostics.ts` | probe tabelas críticas | ✅ | schema health | 🔴 CRÍTICA |
 
-`baseline-fase3-p3-merged-20260813` → `9a083213`
+**Handlers Vercel dedicados:** nenhum — rotas existem apenas no Express (`server/routes.ts`). Em produção Vercel, caem no catch-all `api/index` (NB-07).
 
-### Rollback (se necessário)
+### Auth — antes → depois
 
-```bash
-git checkout main && git reset --hard b720ea61 && git push origin main
-# Redeploy Vercel da main anterior ou alias para deploy anterior
+| Rota | Antes | Depois |
+|------|-------|--------|
+| Todas as 6 | **Sem auth** (qualquer caller) | `requireAuth` + `requireRole` |
+| `init-invoices` | — | roles: `diretoria`, `administrador`, `ceo`, `financeiro`, `controller` |
+| demais GET | — | roles: `diretoria`, `administrador`, `ceo` |
+
+**Consumidores legítimos:** todos usam `authFetch` (usuário autenticado com perfil admin/diretoria). Nenhum cron/webhook externo identificado.
+
+**Service role:** continua no servidor (`supabaseAdmin`); nunca exposto ao navegador.
+
+---
+
+## 2. SEC-01 — `investment/*`
+
+### Inventário
+
+| Rota | Escrita/Leitura | Consumidor | Handler prod | Auth antes | Auth depois | Risco antes |
+|------|-----------------|------------|--------------|------------|-------------|-------------|
+| `POST /api/investment/init` | escrita (DDL) | `FinancialAccountManager.tsx` | `api/investment-init.ts` | ❌ | ✅ `denyInvestmentApiUnlessAuthorized` | 🔴 |
+| `GET /api/investment/snapshots/:accountId` | leitura | — (Express fallback) | catch-all | ❌ | ✅ Express | 🟡 |
+| `GET /api/investment/snapshots-all` | leitura | `FinancialAccountManager.tsx` | `api/investment-snapshots-all.ts` | ❌ | ✅ | 🔴 |
+| `POST /api/investment/snapshots` | escrita | `FinancialAccountManager.tsx` | `api/investment-snapshots.ts` | ❌ | ✅ | 🔴 |
+| `DELETE /api/investment/snapshots/:id` | escrita | `FinancialAccountManager.tsx` | `api/investment-snapshot-delete.ts` | ❌ | ✅ | 🔴 |
+| `POST /api/investment/accounts` | escrita | `FinancialAccountManager.tsx` | `api/investment-accounts.ts` | ✅ (preservado) | ✅ | — |
+| `PATCH /api/investment/accounts/:id` | escrita | `FinancialAccountManager.tsx` | `api/investment-accounts-item.ts` | ✅ (preservado) | ✅ | — |
+| `DELETE /api/investment/accounts/:id` | escrita | `FinancialAccountManager.tsx` | `api/investment-accounts-item.ts` | ✅ (preservado) | ✅ | — |
+
+### Mecanismo de auth (reutilizado, sem padrão novo)
+
+- **Vercel handlers:** `lib/investmentApiAuth.ts` → `denyInvestmentApiUnlessAuthorized` → `assertAsaasApiAccess`
+- **Express:** `requireAuth` + `requireInvestmentApiAccess()` (mesma regra)
+- **Roles permitidos:** `administrador`, `diretoria`, `financeiro`, `ceo` (+ permissões equivalentes via `system_users`)
+- **Fail-closed:** sem token → 401; perfil não autorizado → 403
+
+---
+
+## 3. SEC-03 — `asaas/webhook`
+
+### Fluxo mapeado
+
+```
+Asaas (PAYMENT_RECEIVED / PAYMENT_CONFIRMED)
+  → POST /api/asaas/webhook
+  → vercel.json rewrite → api/asaas-payment-webhook.ts (handler dedicado)
+  → verifyAsaasPaymentWebhookRequest (header asaas-access-token)
+  → processAsaasPaymentWebhookEvent
+  → supabaseAdmin: UPDATE financial_invoices SET status='PAGA'
 ```
 
+### Estado antes → depois
+
+| Aspecto | Antes | Depois |
+|---------|-------|--------|
+| Validação origem | ❌ nenhuma | ✅ `asaas-access-token` vs `ASAAS_PAYMENT_WEBHOOK_TOKEN` |
+| Segredo próprio | ❌ | ✅ env dedicada (não API key) |
+| Comparação segura | — | ✅ `timingSafeEqual` |
+| Token ausente/incorreto | processava | ✅ 401 antes do handler |
+| Env ausente | processava | ✅ 503 `webhook_not_configured` |
+| `requireAuth` usuário | ❌ (correto para webhook) | ❌ (mantido — S2S) |
+| Idempotência event ID | ❌ | 🟡 comportamental (reprocessar `payment.id` mantém PAGA); **sem tabela dedup** |
+| Logs sensíveis | logava contagem faturas | ✅ sem logar token/payload completo |
+| Handler dedicado | catch-all Express | ✅ `api/asaas-payment-webhook.ts` + rewrite |
+
+### Idempotência — dependência futura
+
+Reprocessar o mesmo `payment.id` é seguro comportamentalmente (UPDATE idempotente para `PAGA`), mas **não há dedup por `event.id`** persistido. Implementação com tabela/coluna exigiria migration — **não implementado nesta execução**.
+
 ---
 
-## 3. MERGE / PUBLICAÇÃO
+## 4. TESTES DE SEGURANÇA
 
-| Etapa | Resultado |
-|-------|-----------|
-| `cursor/fase3-p3-limpeza-seguranca-eaa8` → `dev` | fast-forward `b720ea61..9a083213` |
-| `git push origin dev` | ✅ |
-| `dev` → `main` | fast-forward `b720ea61..9a083213` |
-| `git push origin main` | ✅ |
-| Voltou para `dev` | ✅ |
-| Banco / migration | ❌ Não executado |
-| Código adicional | ❌ Nenhum |
+### SEC (`scripts/fase3-sec-security.test.ts`) — 27/27
 
----
+| Bloco | Casos |
+|-------|-------|
+| SEC-02 | 6 rotas supabase com `requireAuth`+`requireRole` |
+| SEC-01 | 4 handlers Vercel + 8 rotas Express + preservação accounts |
+| SEC-03 | sem env → 503; token ausente → 401; incorreto → 401; correto → ok; handler dedicado; rewrite vercel; mock processamento |
 
-## 4. TESTES PRÉ-PRODUÇÃO (em `dev` @ `9a083213`)
+### Regressão
 
 | Suíte | Resultado |
 |-------|-----------|
-| P3 (`fase3-p3-limpeza-seguranca`) | **6/6** |
-| P0+P1+P2+P3 | **56/56** |
-| Completa (excl. NB-06 hang) | **735 / 730 / 5 fail** |
-| Delta vs baseline | +1 teste, +1 pass, mesmas 5 falhas |
+| P0+P1+P2+P3 | **67/67** |
+| TS completa (excl. `nb06-migration-routes` hang) | **762 / 757 / 5 fail** |
+| Delta vs baseline P3 | +27 testes SEC, +27 pass, **zero falha nova** |
 | `npm run build` | **OK** |
 
----
+### 5 falhas baseline (inalteradas)
 
-## 5. DEPLOY PRODUÇÃO
+1. `Vercel tem funções leves para CRUD de contas (não depende do Express)` — `investment-accounts.test.ts`
+2. `FinancialInvoiceControl — auto sync e labels` — `invoice-control-loading.test.ts`
+3. `registerTimeClockPunch dispara requestPresenceRefresh após inserir` — `timeclock-presence.test.ts`
+4. `Contas a Receber — descrição = texto da NF` — `receivable-desc-nf.test.ts`
+5. `cockpit sem detalhe em aberto` — `zapi-sdk-cockpit.test.ts`
 
-| Endpoint | Resultado |
-|----------|-----------|
-| `GET /api/version` | `buildId`: **`9a083213fe3a0fecc3dd613df42741af49eb2de8`** |
-| `builtAt` | `2026-08-13T20:55:50.300Z` |
-| `GET /api/health` | **200** |
-| `GET /` | **200** |
-
-Deploy confirmado após ~75s do push (poll 5 iterações).
+**Nenhuma operação financeira real executada nos testes** (mocks após camada de auth).
 
 ---
 
-## 6. SMOKE P3 (sem alterar dados)
+## 5. NB-07 — dependências SEC (não corrigido globalmente)
 
-### Plinio — bundle publicado
+| Rota SEC | Handler dedicado? | Timeout prod? | Notas |
+|----------|-------------------|---------------|-------|
+| `/api/supabase/*` (6 rotas) | ❌ catch-all `api/index` | 🟡 provável 504 | auth no código; rota não alcança handler rápido |
+| `/api/investment/*` | ✅ rewrites Vercel | ✅ OK | handlers leves com auth |
+| `/api/asaas/webhook` | ✅ `api/asaas-payment-webhook.ts` | ✅ OK (novo) | não depende mais do catch-all |
 
-Strings presentes no asset `dist/public/assets/index-*.js` (build local do commit publicado):
+**Handler dedicado criado nesta execução:** somente `api/asaas-payment-webhook.ts` (rota crítica SEC-03).
 
-- `input-toll-client`
-- `input-displacement-client`
-- `input-custom-client-base`
-- `input-custom-client-km` / `input-custom-client-hour` (via testids no source)
-- Proteção `clientFinanceInputLocked` no source (minificado no bundle)
-- Fornecedor: `input-toll-provider` sem gate cliente
-
-### Billing override
-
-| Ambiente | Resultado |
-|----------|-----------|
-| Código (`server/routes.ts`) | `requireAuth` + `requireRole` antes do handler |
-| Local (pré-merge) | **401** sem token |
-| Produção `PATCH /api/missions/.../billing-override` | **504** timeout — rota no catch-all Express (NB-07); não comprova escrita |
-
-### NB-06 migration (produção)
-
-| Rota | Resultado |
-|------|-----------|
-| `POST /api/migration/add-mission-columns` | **401** `{"error":"Não autorizado"}` |
-| `GET /api/migration/add-mission-columns` | **405** `{"error":"method_not_allowed"}` |
-
-### PDFs — bundle
-
-- `KM Extra (R$/km)` ✅
-- `Hora Extra (R$/h)` ✅
+**Correção SEC-02 em produção** exigiria handlers dedicados para `/api/supabase/*` — fora do escopo desta execução.
 
 ---
 
-## 7. ESCOPO PUBLICADO (P3)
+## 6. ARQUIVOS ALTERADOS
 
-| Item | Status |
-|------|--------|
-| Remoção `replit_integrations` | ✅ |
-| Auth `billing-override` | ✅ |
-| Plinio `clientFinanceInputLocked` | ✅ |
-| PDF KM/Hora Extra (proposta + simulação) | ✅ |
-| Testes P3 (6) | ✅ |
+| Arquivo | Alteração |
+|---------|-----------|
+| `lib/investmentApiAuth.ts` | **NOVO** — auth compartilhada investment |
+| `lib/asaasPaymentWebhook.ts` | **NOVO** — validação token + processamento |
+| `api/asaas-payment-webhook.ts` | **NOVO** — handler Vercel dedicado |
+| `api/investment-init.ts` | +auth |
+| `api/investment-snapshots.ts` | +auth |
+| `api/investment-snapshots-all.ts` | +auth |
+| `api/investment-snapshot-delete.ts` | +auth |
+| `server/routes.ts` | supabase auth, investment auth, webhook token |
+| `vercel.json` | rewrite `/api/asaas/webhook` |
+| `scripts/fase3-sec-security.test.ts` | **NOVO** — 27 testes |
 
----
-
-## 8. BACKLOG — PRÓXIMO BLOCO (NÃO INICIADO)
-
-| ID | Item | Notas |
-|----|------|-------|
-| **SEC-01** | `investment/*` sem auth | snapshots/init/delete |
-| **SEC-02** | `/api/supabase/*` service role público | 7 rotas Express |
-| **SEC-03** | `asaas/webhook` | Requisitos futuros: `asaas-access-token`, segredo próprio webhook, comparação timing-safe, idempotência por event ID |
-| **NB-07** | catch-all `api/index` | ~138 rotas; billing-override em prod sofre timeout |
+**Não alterado:** schema/banco, regras financeiras, `api/index` (NB-07), funcionalidades novas.
 
 ---
 
-## 9. COMMITS FINAIS
+## 7. ROLLBACK
 
-| Branch | Commit |
-|--------|--------|
-| `main` | `9a083213` |
-| `dev` | `9a083213` |
-| PR #261 branch | `9a083213` |
-
----
-
-## GIT / ROLLBACK
-
-| Ação | Comando / referência |
-|------|----------------------|
-| Rollback git | `main` @ `b720ea61` / tag `baseline-fase3-p2-merged-20260813` |
-| Rollback produção | Redeploy commit `b720ea61` no projeto `sistema-grupo-tm-seg` |
-| Tag P3 | `baseline-fase3-p3-merged-20260813` |
+| Ação | Referência |
+|------|------------|
+| Descartar branch | `git checkout dev && git branch -D cursor/sec-01-02-03-seguranca-eaa8` |
+| Produção inalterada | `9a083213` / tag `baseline-fase3-p3-merged-20260813` |
+| Após merge futuro | redeploy commit anterior no projeto `sistema-grupo-tm-seg` |
 
 ---
 
-*Fase 3 P3 — Merge + Publicação — Cloud Agent — 2026-08-13*
+## 8. PRÓXIMOS PASSOS (NÃO INICIADOS)
+
+| ID | Item |
+|----|------|
+| SEC-03 publish | Configurar `ASAAS_PAYMENT_WEBHOOK_TOKEN` na Vercel + redeploy |
+| SEC-02 prod | Handlers dedicados `/api/supabase/*` (NB-07) |
+| Idempotência Asaas | Tabela `asaas_webhook_events` (migration) |
+| NB-07 | catch-all global `api/index` |
+| 5 testes baseline | Atualizar expectativas desatualizadas |
+
+---
+
+*Fase 3 Bloco SEC-01/02/03 — Cloud Agent — 2026-08-14 — NÃO mergeado, NÃO publicado*
