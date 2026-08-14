@@ -1,6 +1,6 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **NB-07: migração gradual das seis rotas `/api/supabase/*`**  
+> Handoff oficial — **NB-07: migração gradual das seis rotas `/api/supabase/*`**
 > **Não contém segredos. NÃO mergeado. NÃO publicado.**
 
 ---
