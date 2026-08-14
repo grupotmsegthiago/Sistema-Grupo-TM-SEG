@@ -9,9 +9,11 @@ describe('Controle de Faturas — tela limpa sem botão Limpar', () => {
     assert.doesNotMatch(ui, /handleClearAllOpen/);
     assert.doesNotMatch(ui, /Limpar todas em aberto/);
     assert.match(ui, /\/api\/nf\/ensure-clean-slate/);
-    assert.match(ui, /isAfterInvoiceControlEpoch/);
     assert.match(ui, /from 'react'/);
     assert.match(ui, /import React,/);
+    const lib = fs.readFileSync('lib/nfInvoiceControlApi.ts', 'utf8');
+    assert.match(lib, /transformFinancialInvoicesForControl/);
+    assert.match(lib, /isAfterInvoiceControlEpoch/);
   });
 
   it('backend limpa em lote via lib compartilhada', () => {

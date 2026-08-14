@@ -12,9 +12,8 @@ describe('Controle de Faturas — excluir fila antiga / epoch', () => {
     assert.ok(INVOICE_CONTROL_EPOCH.startsWith('2026-07-23'));
   });
 
-  it('UI filtra por epoch e chama handler leve clean-slate', () => {
+  it('API filtra por epoch e UI chama handler leve clean-slate', () => {
     const ui = fs.readFileSync('components/FinancialInvoiceControl.tsx', 'utf8');
-    assert.match(ui, /isAfterInvoiceControlEpoch/);
     assert.match(ui, /\/api\/nf\/ensure-clean-slate/);
     assert.doesNotMatch(ui, /btn-clear-all-open/);
     assert.match(ui, /import React,/);
@@ -25,6 +24,8 @@ describe('Controle de Faturas — excluir fila antiga / epoch', () => {
     assert.match(api, /wipeOpenInvoicesCleanSlate/);
     assert.match(api, /clean-slate/);
     const lib = fs.readFileSync('lib/nfInvoiceControlApi.ts', 'utf8');
+    assert.match(lib, /transformFinancialInvoicesForControl/);
+    assert.match(lib, /isAfterInvoiceControlEpoch/);
     assert.match(lib, /wipeOpenInvoicesCleanSlate/);
     assert.match(lib, /\.lt\('created_at', INVOICE_CONTROL_EPOCH\)/);
     assert.match(lib, /\.in\('id', ids\)/);
