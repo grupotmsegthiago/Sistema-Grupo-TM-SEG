@@ -251,6 +251,30 @@
       "destination": "/api/vendor-verification?missionId=:missionId"
     },
     {
+      "source": "/api/supabase/init-invoices",
+      "destination": "/api/supabase-admin?op=init-invoices"
+    },
+    {
+      "source": "/api/supabase/status",
+      "destination": "/api/supabase-admin?op=status"
+    },
+    {
+      "source": "/api/supabase/db-metrics",
+      "destination": "/api/supabase-admin?op=db-metrics"
+    },
+    {
+      "source": "/api/supabase/storage-usage",
+      "destination": "/api/supabase-admin?op=storage-usage"
+    },
+    {
+      "source": "/api/supabase/billing-links",
+      "destination": "/api/supabase-admin?op=billing-links"
+    },
+    {
+      "source": "/api/supabase/health-check",
+      "destination": "/api/supabase-admin?op=health-check"
+    },
+    {
       "source": "/api/investment/init",
       "destination": "/api/investment-init"
     },
