@@ -479,6 +479,10 @@
       "destination": "/api/nf-control?op=summary"
     },
     {
+      "source": "/api/nf/invoices",
+      "destination": "/api/nf-control?op=list"
+    },
+    {
       "source": "/api/nf/provider-preferences",
       "destination": "/api/nf-control?op=preferences"
     },

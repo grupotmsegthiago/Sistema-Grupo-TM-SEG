@@ -6235,6 +6235,15 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  app.get("/api/nf/invoices", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const { listFinancialInvoicesForControl } = await import('../lib/nfInvoiceControlApi.js');
+      res.json(await listFinancialInvoicesForControl());
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // ═══════════════════════════════════════════════════════
   // PLUGNOTAS — Provider de NFS-e alternativo (coexistência com Asaas)
   // ═══════════════════════════════════════════════════════

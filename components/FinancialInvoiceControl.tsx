@@ -12,11 +12,9 @@ import {
 } from '../lib/invoiceDisplay';
 import {
   clearInvoiceWatch,
-  isAfterInvoiceControlEpoch,
   readInvoiceWatch,
 } from '../lib/invoiceCleanSlate';
 import { kickNfRetryCycle } from '../lib/kickNfSchedule';
-import { isPureMedicaoInvoice } from '../lib/billing/medicaoVisibility';
 import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
   AlertCircle, Clock, XCircle, DollarSign, Receipt, Eye, Loader2,
@@ -263,40 +261,13 @@ const FinancialInvoiceControl: React.FC = () => {
     const silent = !!opts?.silent;
     if (!silent) setLoading(true);
     try {
-      // Fonte da verdade: Supabase direto (anon/RLS). Timeout evita spinner eterno
-      // se a rede/PostgREST travar. NÃO depender do Express (api/index) para listar.
-      const query = supabase
-        .from('financial_invoices')
-        .select('*')
-        .order('created_at', { ascending: false });
-      const result = await Promise.race([
-        query,
-        new Promise<{ data: null; error: { message: string } }>((resolve) =>
-          setTimeout(() => resolve({ data: null, error: { message: 'timeout_financial_invoices' } }), 12_000),
-        ),
-      ]);
-      const { data, error } = result as { data: Invoice[] | null; error: { message: string } | null };
-      if (error) throw error;
-      if (data) {
-        const now = new Date();
-        // Esconde fila antiga: só faturas criadas a partir do marco "tela limpa".
-        const updated: Invoice[] = data
-          // Só created_at (não date de competência) — emissão nova com período antigo aparece.
-          .filter((inv) => isAfterInvoiceControlEpoch(inv.created_at))
-          // Medições MED- sem boleto/Asaas não entram no Controle de NF
-          // (só após Gerar Fatura / boleto — registro TMSEG-/Asaas).
-          .filter((inv) => !isPureMedicaoInvoice(inv))
-          .map((inv) => {
-            if (inv.status === 'EMITIDA' && inv.boleto_due_date) {
-              const due = new Date(inv.boleto_due_date + 'T23:59:59');
-              if (now > due) return { ...inv, status: 'VENCIDA' };
-            }
-            return inv;
-          });
-        setInvoices(updated);
-      } else {
-        setInvoices([]);
+      // Handler autenticado (service role) — leitura direta anon/RLS retorna [].
+      const res = await authFetch('/api/nf/invoices');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `HTTP ${res.status}`);
       }
+      setInvoices(Array.isArray(data.invoices) ? data.invoices : []);
     } catch (e: any) {
       console.error('[InvoiceControl] Fetch error:', e.message);
       if (!silent) setInvoices([]);

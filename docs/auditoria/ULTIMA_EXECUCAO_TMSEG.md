@@ -1,203 +1,134 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **Fase 3 Bloco P3 — MERGE CONTROLADO + PUBLICAÇÃO**  
-> **Não contém segredos.**
-
----
+> Handoff oficial — **Hotfix Controle de Faturas / NF — listagem vazia**
+> **Não contém segredos. Não mergeado. Não publicado.**
 
 ## IDENTIFICAÇÃO
 
 | Campo | Valor |
 |-------|-------|
-| **Data** | 2026-08-13 (UTC) |
-| **Tipo** | Merge + publicação P3 (PR #261) |
-| **PR** | [#261](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/261) |
-| **Commit publicado** | `9a083213` |
-| **Tag baseline** | `baseline-fase3-p3-merged-20260813` |
-| **Projeto Vercel** | `sistema-grupo-tm-seg` |
-| **Domínio** | `sistema.grupotmseg.com.br` |
+| Data | 2026-08-14 (UTC) |
+| Branch | `cursor/hotfix-nf-invoices-list-empty-eaa8` |
+| Base | `main` @ `0eb5cdad` (produção funcional `9a083213`) |
+| Origem técnica | Hunks exclusivos do incidente no commit `21f02e10` |
+| PR SEC congelado | [#262](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/262) |
+| Banco/schema | Não alterado |
+| Asaas/webhooks/env | Não alterados |
 
----
+## PROGRESSO
 
-## PROGRESSO — TRÊS INDICADORES
+| Indicador | Valor |
+|-----------|-------|
+| EXECUÇÃO ATUAL | **100%** |
+| FASE 3 | **70%** (inalterada) |
+| PROGRAMA GERAL | **61%** (inalterado) |
 
-| Indicador | Valor | Metodologia |
-|-----------|-------|-------------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 | Revalidação + merge + testes + deploy + smoke + handoff |
-| **FASE 3 (total)** | **64%** 🟢 | P0+NB-06+P1+P2+P3 publicados (52% + 6% P3 validado + 6% P3 publicado) |
-| **PROGRAMA GERAL** | **59%** 🟢 | +2% publicação P3 confirmada em produção |
+## CAUSA RAIZ
 
----
+**Classificação:** 🔴 regressão de leitura/apresentação; dados preservados.
 
-## DECISÃO FINAL
+`FinancialInvoiceControl.fetchInvoices()` consultava `financial_invoices` diretamente
+com o cliente Supabase anon. A tabela está com RLS e essa consulta retorna zero linhas
+sem erro. Em paralelo, o painel superior chamava `/api/nf/summary`, autenticado e com
+service role no servidor, por isso exibia TM Gestão 15 e TM Security 2.
 
-# 🟢 P3 PUBLICADO E VALIDADO
+O incidente não foi introduzido pelo hardening SEC: o componente não foi alterado pelo
+commit SEC. O PR #262 permanece separado e congelado.
 
-| Critério | Resultado |
-|----------|-----------|
-| HEAD validado antes do merge | ✅ `9a083213` |
-| Diff somente escopo P3 | ✅ 14 arquivos |
-| Merge dev + main | ✅ fast-forward |
-| Testes pré-produção | ✅ 735/730/5 (zero falha nova) |
-| Build | ✅ |
-| Deploy Vercel confirmado | ✅ `buildId` = `9a083213` |
-| `/api/health` + `/` | ✅ 200 |
-| Smoke Plinio/PDF no bundle | ✅ testids presentes |
-| NB-06 migration | ✅ POST 401, GET 405 |
-| billing-override prod | 🟡 504 timeout (catch-all NB-07) — auth validada em código + local |
-| SEC-01/02/03/NB-07 | Backlog — não iniciado |
+## FLUXO ANTES E DEPOIS
 
----
+```text
+ANTES
+FinancialInvoiceControl
+  → Supabase anon
+  → financial_invoices (RLS)
+  → []
 
-## 1. REVALIDAÇÃO PRÉ-MERGE
-
-| Verificação | Resultado |
-|-------------|-----------|
-| HEAD branch PR | `9a083213` — coincide com commit validado |
-| Commits posteriores | Nenhum |
-| Alterações não commitadas | Apenas artefatos `.cjs` de build local (descartados, não publicados) |
-| Diff vs `main` | 14 arquivos — escopo P3 autorizado exclusivamente |
-
----
-
-## 2. PONTO DE RETORNO (pré-P3)
-
-| Item | Valor |
-|------|-------|
-| `main` (antes) | `b720ea61` |
-| `dev` (antes) | `b720ea61` |
-| Produção `buildId` (antes) | `b720ea619744aae71525821584780dabde865e2b` |
-| Tag anterior | `baseline-fase3-p2-merged-20260813` |
-| Commit funcional P2 | `ae2fc382` (referência handoff P2) |
-
-### Tag criada pós-merge
-
-`baseline-fase3-p3-merged-20260813` → `9a083213`
-
-### Rollback (se necessário)
-
-```bash
-git checkout main && git reset --hard b720ea61 && git push origin main
-# Redeploy Vercel da main anterior ou alias para deploy anterior
+DEPOIS
+FinancialInvoiceControl
+  → authFetch('/api/nf/invoices')
+  → api/nf-control?op=list
+  → assertFinanceNfAccess
+  → listFinancialInvoicesForControl()
+  → service role somente no backend
+  → financial_invoices
 ```
 
----
+## DADOS PRESERVADOS
 
-## 3. MERGE / PUBLICAÇÃO
+- O resumo administrativo comprovou 17 faturas ativas (15 TM Gestão + 2 TM Security).
+- A consulta anon reproduziu `count=0` sem erro, confirmando RLS em vez de perda.
+- Nenhum `DELETE`, `UPDATE`, migration, init ou sincronização destrutiva foi executado.
+- Fonte única da verdade permanece `financial_invoices`.
+- `financial_transactions` permanece a fonte relacionada de Contas a Receber; não foi alterada.
 
-| Etapa | Resultado |
-|-------|-----------|
-| `cursor/fase3-p3-limpeza-seguranca-eaa8` → `dev` | fast-forward `b720ea61..9a083213` |
-| `git push origin dev` | ✅ |
-| `dev` → `main` | fast-forward `b720ea61..9a083213` |
-| `git push origin main` | ✅ |
-| Voltou para `dev` | ✅ |
-| Banco / migration | ❌ Não executado |
-| Código adicional | ❌ Nenhum |
+## ARQUIVOS DO HOTFIX
 
----
+| Arquivo | Alteração |
+|---------|-----------|
+| `components/FinancialInvoiceControl.tsx` | Listagem via `authFetch('/api/nf/invoices')` |
+| `lib/nfInvoiceControlApi.ts` | Leitura server-side e transformação existente |
+| `api/nf-control.ts` | Operação autenticada `list` |
+| `vercel.json` | Rewrite específico `/api/nf/invoices` |
+| `server/routes.ts` | Rota dev equivalente |
+| `scripts/nf-invoices-list.test.ts` | Regressão do incidente |
+| `scripts/invoice-control-loading.test.ts` | Fluxo autenticado antes de `init-invoices` |
+| `scripts/nb06-migration-routes.test.ts` | Cobertura do rewrite dedicado |
 
-## 4. TESTES PRÉ-PRODUÇÃO (em `dev` @ `9a083213`)
+## FILTROS E STATUS PRESERVADOS
 
-| Suíte | Resultado |
-|-------|-----------|
-| P3 (`fase3-p3-limpeza-seguranca`) | **6/6** |
-| P0+P1+P2+P3 | **56/56** |
-| Completa (excl. NB-06 hang) | **735 / 730 / 5 fail** |
-| Delta vs baseline | +1 teste, +1 pass, mesmas 5 falhas |
-| `npm run build` | **OK** |
+- Marco temporal `INVOICE_CONTROL_EPOCH`.
+- Exclusão de medição pura `MED-` sem cobrança/NF.
+- `EMITIDA` vencida pela data do boleto é apresentada como `VENCIDA`.
+- Status `EMITIDA`, `PAGA`, `VENCIDA` e `CANCELADA`.
+- Busca por cliente, número, fornecedor, emissora e notas.
+- Filtro por emissora e estado da NF.
+- Ordenação e comportamento de lista vazia legítima.
 
----
+## SEGURANÇA
 
-## 5. DEPLOY PRODUÇÃO
+- `/api/nf/invoices` reutiliza `assertFinanceNfAccess`.
+- Sem credencial: 401.
+- Perfil sem autorização: 403.
+- Perfil autorizado alcança o handler.
+- Service role permanece apenas em `lib/nfInvoiceControlApi.ts`/backend.
+- Nenhum segredo é enviado ao frontend, bundle ou logs.
+- Nenhuma rota privilegiada foi tornada pública.
 
-| Endpoint | Resultado |
-|----------|-----------|
-| `GET /api/version` | `buildId`: **`9a083213fe3a0fecc3dd613df42741af49eb2de8`** |
-| `builtAt` | `2026-08-13T20:55:50.300Z` |
-| `GET /api/health` | **200** |
-| `GET /` | **200** |
+## ISOLAMENTO DO PR SEC
 
-Deploy confirmado após ~75s do push (poll 5 iterações).
+O diff desta branch não contém:
 
----
+- variável ou handler de webhook Asaas;
+- SEC-01 investment;
+- SEC-02 hardening geral `/api/supabase/*`;
+- SEC-03;
+- alteração de env;
+- alteração de integração Asaas;
+- correção global NB-07.
 
-## 6. SMOKE P3 (sem alterar dados)
+## TESTES
 
-### Plinio — bundle publicado
+| Validação | Resultado |
+|-----------|-----------|
+| `nf-invoices-list.test.ts` | 4/4 |
+| `invoice-control-loading.test.ts` | 3/3 |
+| Testes incidentes + SEC executados antes da separação | 34/34 |
+| P0–P3 + incidentes | 47/47 |
+| Lint arquivos TS/TSX | 0 erro |
+| `npm run build` | OK |
+| Suíte completa TS, exceto hang conhecido NB-06 | 766 total / 759 pass / 7 fail |
 
-Strings presentes no asset `dist/public/assets/index-*.js` (build local do commit publicado):
+As 7 falhas observadas eram pré-existentes no baseline de execução e não são causadas
+pelos arquivos do hotfix. O teste NB-06 possui hang conhecido no ambiente.
 
-- `input-toll-client`
-- `input-displacement-client`
-- `input-custom-client-base`
-- `input-custom-client-km` / `input-custom-client-hour` (via testids no source)
-- Proteção `clientFinanceInputLocked` no source (minificado no bundle)
-- Fornecedor: `input-toll-provider` sem gate cliente
+## ROLLBACK
 
-### Billing override
+Reverter o commit do hotfix ou restaurar a produção para `9a083213`.
+Nenhum rollback de banco é necessário.
 
-| Ambiente | Resultado |
-|----------|-----------|
-| Código (`server/routes.ts`) | `requireAuth` + `requireRole` antes do handler |
-| Local (pré-merge) | **401** sem token |
-| Produção `PATCH /api/missions/.../billing-override` | **504** timeout — rota no catch-all Express (NB-07); não comprova escrita |
+## DECISÃO
 
-### NB-06 migration (produção)
+# 🟢 HOTFIX NF APTO PARA MERGE/PUBLICAÇÃO
 
-| Rota | Resultado |
-|------|-----------|
-| `POST /api/migration/add-mission-columns` | **401** `{"error":"Não autorizado"}` |
-| `GET /api/migration/add-mission-columns` | **405** `{"error":"method_not_allowed"}` |
-
-### PDFs — bundle
-
-- `KM Extra (R$/km)` ✅
-- `Hora Extra (R$/h)` ✅
-
----
-
-## 7. ESCOPO PUBLICADO (P3)
-
-| Item | Status |
-|------|--------|
-| Remoção `replit_integrations` | ✅ |
-| Auth `billing-override` | ✅ |
-| Plinio `clientFinanceInputLocked` | ✅ |
-| PDF KM/Hora Extra (proposta + simulação) | ✅ |
-| Testes P3 (6) | ✅ |
-
----
-
-## 8. BACKLOG — PRÓXIMO BLOCO (NÃO INICIADO)
-
-| ID | Item | Notas |
-|----|------|-------|
-| **SEC-01** | `investment/*` sem auth | snapshots/init/delete |
-| **SEC-02** | `/api/supabase/*` service role público | 7 rotas Express |
-| **SEC-03** | `asaas/webhook` | Requisitos futuros: `asaas-access-token`, segredo próprio webhook, comparação timing-safe, idempotência por event ID |
-| **NB-07** | catch-all `api/index` | ~138 rotas; billing-override em prod sofre timeout |
-
----
-
-## 9. COMMITS FINAIS
-
-| Branch | Commit |
-|--------|--------|
-| `main` | `9a083213` |
-| `dev` | `9a083213` |
-| PR #261 branch | `9a083213` |
-
----
-
-## GIT / ROLLBACK
-
-| Ação | Comando / referência |
-|------|----------------------|
-| Rollback git | `main` @ `b720ea61` / tag `baseline-fase3-p2-merged-20260813` |
-| Rollback produção | Redeploy commit `b720ea61` no projeto `sistema-grupo-tm-seg` |
-| Tag P3 | `baseline-fase3-p3-merged-20260813` |
-
----
-
-*Fase 3 P3 — Merge + Publicação — Cloud Agent — 2026-08-13*
+Decisão técnica somente. **Não mergeado e não publicado nesta execução.**
