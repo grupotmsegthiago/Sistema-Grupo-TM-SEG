@@ -1,7 +1,7 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **Fase 3 Bloco SEC-01 / SEC-02 / SEC-03**  
-> **Não contém segredos.**
+> Handoff oficial — **Revisão Final PR #262 (SEC-01/02/03) sem quebrar Asaas**  
+> **Não contém segredos. NÃO mergeado. NÃO publicado.**
 
 ---
 
@@ -10,10 +10,11 @@
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-14 (UTC) |
-| **Tipo** | Segurança SEC-01 / SEC-02 / SEC-03 (sem merge, sem publicação) |
+| **Tipo** | Revisão final PR #262 — SEC-01/02/03 + não-regressão Asaas/NF |
 | **Branch** | `cursor/sec-01-02-03-seguranca-eaa8` |
-| **Base** | `9a083213` (produção atual) |
-| **Tag baseline anterior** | `baseline-fase3-p3-merged-20260813` |
+| **PR** | [#262](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/262) |
+| **Produção atual** | `main` @ `c70acec9` — tag `baseline-hotfix-nf-invoices-20260814` (hotfix NF publicado e validado pelo usuário) |
+| **Base original PR** | `9a083213` (antes do hotfix NF) |
 | **Projeto Vercel** | `sistema-grupo-tm-seg` |
 | **Domínio** | `sistema.grupotmseg.com.br` |
 
@@ -23,9 +24,230 @@
 
 | Indicador | Valor | Metodologia |
 |-----------|-------|-------------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 | Incidente Controle Faturas — diagnóstico + correção + testes |
-| **FASE 3 (total)** | **70%** 🟢 | Sem alteração |
+| **EXECUÇÃO ATUAL** | **100%** 🟢 | Rebase/merge + diff + mapa Asaas + SEC-03 + testes + handoff |
+| **FASE 3 (total)** | **70%** 🟢 | SEC implementado em branch; aguarda merge coordenado |
 | **PROGRAMA GERAL** | **61%** 🟢 | Sem alteração |
+
+---
+
+## DECISÃO FINAL — REVISÃO PR #262
+
+# 🟡 PR #262 PRECISA AJUSTE ANTES DO MERGE
+
+| Critério | Resultado |
+|----------|-----------|
+| Rebase/merge com `main` (hotfix NF) | 🟡 **Conflito** — ver seção abaixo; **não resolvido automaticamente** |
+| Hotfix NF preservado no diff | ✅ `FinancialInvoiceControl` → `/api/nf/invoices`; **não revertido** |
+| SEC-01 investment | ✅ fail-closed; consumidores com `authFetch` |
+| SEC-02 `/api/supabase/*` | ✅ 6 rotas protegidas; `ServerStats`/`FinancialInvoiceControl` usam `authFetch` |
+| SEC-03 webhook pagamento | 🟡 **muda comportamento** — exige `ASAAS_PAYMENT_WEBHOOK_TOKEN` ou webhook para de baixar |
+| Fluxos Asaas saldo/transfer/cobrança/sync | ✅ **inalterados** no diff |
+| **PR #262 MUDA FLUXO ASAAS QUE JÁ FUNCIONA?** | **PARCIALMENTE** — somente webhook de **pagamento** (baixa automática) |
+| Testes SEC | ✅ **27/27** |
+| Testes NF regressão | ✅ **7/7** (`nf-invoices-list` + `invoice-control-loading`) |
+| Testes Asaas | ✅ **79/79** |
+| P0–P3 | ✅ **56/56** |
+| TS completa (excl. NB-06 hang) | ✅ **766 / 759 / 7 fail** (5 baseline + 2 pré-existentes hotfix; **zero falha nova SEC**) |
+| Build | ✅ `npm run build` OK |
+| Merge / publicação | ❌ **Não executado** |
+
+### Por que 🟡 e não 🟢
+
+1. **Conflito de merge** com `main` em `lib/nfInvoiceControlApi.ts` (hotfix publicado extraiu `transformFinancialInvoicesForControl`; branch SEC tem lógica inline equivalente) — precisa resolução manual antes do merge.
+2. **SEC-03 altera auth do webhook de pagamento**: produção hoje aceita POST sem token; após publicar PR #262 sem configurar `ASAAS_PAYMENT_WEBHOOK_TOKEN` na Vercel **e** nos 3 painéis Asaas, a baixa automática retorna **503** e para de funcionar.
+3. Deploy coordenado obrigatório: configurar env + `authToken` nas 3 contas **antes** ou **no mesmo deploy** da publicação.
+
+### Por que não 🔴
+
+- Saldo, transferência Pix, transfer-approval, create-charge, sync-payment-status, sync-customers **não são alterados** pelo PR.
+- Hotfix NF **não é revertido** — listagem continua via `/api/nf/invoices`.
+- Lógica de baixa do webhook é a **mesma** (extraída, não reescrita); só a validação de origem é nova.
+
+---
+
+## 1. REBASE / ATUALIZAÇÃO COM MAIN
+
+| Tentativa | Resultado |
+|-----------|-----------|
+| `git rebase origin/main` | ❌ Conflito **somente** em `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` |
+| `git merge origin/main` | ❌ Conflitos em 3 arquivos (ver abaixo) |
+| `server/routes.ts`, `vercel.json` | ✅ auto-merge OK no rebase (SEC + NF coexistem) |
+
+### Conflitos no merge (PARADO — não resolvido)
+
+| Arquivo | Natureza | Ação |
+|---------|----------|------|
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Documentação | Resolver na hora do merge |
+| `lib/nfInvoiceControlApi.ts` | **Financeiro** | `main` tem `transformFinancialInvoicesForControl()` exportada; SEC tem lógica inline em `listFinancialInvoicesForControl()` — **mesmo comportamento, estrutura diferente** |
+| `scripts/nf-invoices-list.test.ts` | Teste (add/add) | Alinhar com versão `main` pós-hotfix |
+
+**Regra aplicada:** conflito financeiro **não** resolvido automaticamente nesta execução.
+
+---
+
+## 2. DIFF PR #262 — CLASSIFICAÇÃO POR ARQUIVO
+
+`git diff origin/main...cursor/sec-01-02-03-seguranca-eaa8` — **17 arquivos**
+
+| Arquivo | Bloco | Alteração | Consumidor | Risco | Impacto produção |
+|---------|-------|-----------|------------|-------|------------------|
+| `lib/asaasPaymentWebhook.ts` | SEC-03 | **NOVO** — token + processamento baixa | `api/asaas-payment-webhook.ts`, Express fallback | Médio | Webhook exige env nova |
+| `api/asaas-payment-webhook.ts` | SEC-03 | **NOVO** — handler serverless leve | Asaas S2S (3 contas) | Médio | Substitui catch-all para webhook |
+| `vercel.json` | SEC-03 + NF | rewrite `/api/asaas/webhook` + `/api/nf/invoices` | Vercel routing | Baixo | Webhook rápido; NF já em prod |
+| `server/routes.ts` | SEC-01/02/03 + NF | auth supabase/investment; webhook token; `/api/nf/invoices` | Express dev + catch-all | Médio | Auth em rotas antes públicas |
+| `lib/investmentApiAuth.ts` | SEC-01 | **NOVO** — wrapper auth investment | handlers investment | Baixo | Fail-closed |
+| `api/investment-init.ts` | SEC-01 | +`denyInvestmentApiUnlessAuthorized` | `FinancialAccountManager` | Baixo | 401/403 sem auth |
+| `api/investment-snapshots.ts` | SEC-01 | +auth | `FinancialAccountManager` | Baixo | idem |
+| `api/investment-snapshots-all.ts` | SEC-01 | +auth | `FinancialAccountManager` | Baixo | idem |
+| `api/investment-snapshot-delete.ts` | SEC-01 | +auth | `FinancialAccountManager` | Baixo | idem |
+| `lib/nfInvoiceControlApi.ts` | NF (hotfix) | `listFinancialInvoicesForControl()` | `api/nf-control`, Express | Baixo | **Duplicado com main** — conflito merge |
+| `api/nf-control.ts` | NF (hotfix) | `GET ?op=list` | `FinancialInvoiceControl` | Baixo | Já em produção |
+| `components/FinancialInvoiceControl.tsx` | NF (hotfix) | `authFetch('/api/nf/invoices')` | UI Controle NF | Baixo | **Preservado** — não reverte anon |
+| `scripts/fase3-sec-security.test.ts` | SEC | **NOVO** 27 testes | CI | — | — |
+| `scripts/nf-invoices-list.test.ts` | NF | **NOVO** regressão listagem | CI | — | — |
+| `scripts/invoice-control-loading.test.ts` | NF | atualizado para API | CI | — | — |
+| `scripts/nb06-migration-routes.test.ts` | NF | +rewrite invoices | CI | — | — |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | docs | handoff | — | — | — |
+
+**Hotfix NF:** presente no PR (commit `21f02e10` anterior ao hotfix em `main`). Conteúdo **equivalente** ao publicado; merge com `main` exige deduplicar/alinhar `transformFinancialInvoicesForControl`.
+
+---
+
+## 3. MAPA FLUXOS ASAAS FUNCIONAIS (3 CONTAS) — INALTERADOS PELO PR
+
+### TM Gestão (`ASAAS_TMGESTAO_API`, CNPJ 60.485.843/0001-57)
+
+| Fluxo | Endpoint | Env | Consumidor | Auth atual | Alterado PR #262? |
+|-------|----------|-----|------------|------------|-------------------|
+| Saldo | `GET /api/asaas/balances` | `ASAAS_TMGESTAO_API` | `FinancialTransactionList`, `FinancialAccountManager` | `assertAsaasApiAccess` | ❌ |
+| Transferência Pix | `POST /api/asaas/transfer-pix` | API key Gestão + `ASAAS_FINANCEIRO_WALLET_ID` | `AsaasPixTransferModal` | `assertAsaasApiAccess` | ❌ |
+| Aprovação transferência | `POST /api/asaas/transfer-approval` | `ASAAS_WEBHOOK_TMGESTAO_API` | Asaas S2S | token por conta / open mode | ❌ |
+| Cobrança | `POST /api/asaas/create-charge` | API key por `issuer_company` | `ClientBillingReport` | `assertAsaasApiAccess` | ❌ |
+| Baixa manual | `POST /api/asaas/sync-payment-status` | API key emissora | `FinancialInvoiceControl`, `ClientBillingReport` | `assertAsaasApiAccess` | ❌ |
+| Baixa automática | `POST /api/asaas/webhook` | — (prod: sem token) | Asaas S2S | **nenhuma** → SEC-03: token global | ✅ **SIM** |
+| Sync clientes | `POST /api/asaas/sync-customers` | 3 API keys | `ClientList`, `ClientForm` | `CRON_SECRET` ou `assertAsaasApiAccess` | ❌ |
+
+### TM Segurança (`ASAAS_TMSEGURANCA_API`, CNPJ 28.804.378/0001-67)
+
+Mesma tabela — endpoints compartilhados; API key e webhook transfer (`ASAAS_WEBHOOK_TMSEGURANCA_API`) **isolados por emissor**. PR #262 **não altera** saldo/transfer/cobrança/sync.
+
+### TM Security (`ASAAS_TMSECURITY_API`, CNPJ 60.508.931/0001-27)
+
+Idem — isolamento por `issuer_company` e env própria. PR #262 **não altera** fluxos exceto webhook pagamento.
+
+---
+
+## 4. IMPACTO SEC-03 — CONCLUSÃO OBJETIVA
+
+### O que o PR faz com `/api/asaas/webhook`
+
+| Aspecto | Produção (`main` @ `c70acec9`) | PR #262 |
+|---------|--------------------------------|---------|
+| Roteamento | Catch-all Express `api/index` (NB-07) — risco 504 | Rewrite → `api/asaas-payment-webhook.ts` (leve) |
+| Handler Express | Inline em `routes.ts` | Chama `lib/asaasPaymentWebhook.ts` (mesma lógica) |
+| Auth | **Nenhuma** | `asaas-access-token` vs `ASAAS_PAYMENT_WEBHOOK_TOKEN` |
+| Env ausente | Processa baixa | **503** `webhook_not_configured` |
+| Token errado | Processa baixa | **401** |
+| Supabase client | `supabase` (anon em parte) | `createSupabaseAdminClient()` (service role) |
+
+**Classificação:** **EXTRAI + PARALELIZA + EXPÕE** — não cria fluxo de negócio novo; refatora roteamento e adiciona validação de origem.
+
+### PR #262 MUDA FLUXO ASAAS QUE JÁ FUNCIONA?
+
+# PARCIALMENTE
+
+- **SIM** para baixa automática via webhook (auth obrigatória após publicar).
+- **NÃO** para saldo, transferência, aprovação de transferência, cobrança, sync manual, sync clientes.
+
+---
+
+## 5. NECESSIDADE DE `ASAAS_PAYMENT_WEBHOOK_TOKEN`
+
+| Cenário | Necessário? |
+|---------|-------------|
+| Produção **hoje** (`main`) | **Não** — webhook funciona sem token (sem validação) |
+| Após publicar PR #262 **sem** configurar env | **Sim** — sem token → **503**, baixa automática **para** |
+| Baixa via `sync-payment-status` / `sync-open-payments` | **Não** — auth de usuário, independente do webhook |
+| Cobrança / emissão NF | **Não** |
+
+**Conclusão:** env nova é **necessária apenas para manter** a baixa automática via webhook **após** publicar SEC-03. Não substitui tokens de transfer-approval (`ASAAS_WEBHOOK_*_API`). **Não pedir alteração no painel Asaas nesta execução** — apenas documentar dependência para deploy futuro coordenado.
+
+---
+
+## 6. SEGURANÇA SEM QUEBRA — RESUMO ANTES/DEPOIS
+
+### SEC-02 — consumidores legítimos
+
+| Consumidor | Rotas | Auth enviada | Pós-SEC |
+|------------|-------|--------------|---------|
+| `ServerStats.tsx` | 5 GET supabase | `authFetch` (JWT) | ✅ preservado |
+| `FinancialInvoiceControl.tsx` | `init-invoices` POST | `authFetch` | ✅ preservado |
+| `FinancialTransactionList.tsx` | `init-invoices` POST | `authFetch` | ✅ preservado |
+| Anônimo | qualquer supabase | — | ❌ 401/403 (correto) |
+
+### SEC-01 — `FinancialAccountManager.tsx`
+
+Todas as rotas investment via `authFetch`; perfis financeiro/diretoria/admin. Anônimo → 401/403.
+
+### SEC-03 — webhook
+
+| Caller | Antes | Depois (com env) | Depois (sem env) |
+|--------|-------|------------------|------------------|
+| Asaas com token correto | 200 + baixa | 200 + baixa | 503 |
+| Asaas sem token | 200 + baixa | 401 | 503 |
+| Atacante externo | 200 + baixa possível | 401 | 503 |
+
+### NF — não-regressão
+
+| Item | Status |
+|------|--------|
+| `FinancialInvoiceControl` usa `/api/nf/invoices` | ✅ confirmado (grep + testes) |
+| PR reverte hotfix | ❌ não reverte |
+| Listagem anon | ❌ não reintroduzida |
+
+---
+
+## 7. TESTES DESTA REVISÃO
+
+| Suíte | Resultado |
+|-------|-----------|
+| `fase3-sec-security.test.ts` | **27/27** |
+| `nf-invoices-list.test.ts` + `invoice-control-loading.test.ts` | **7/7** |
+| `asaas-*.test.ts` + `nf-isolada-asaas` + `financial-internal-transfer` | **79/79** |
+| P0+P1+P2+P3 | **56/56** |
+| TS `*.test.ts` excl. `nb06-migration-routes` (hang) | **766 / 759 / 7 fail** |
+| `npm run build` | **OK** |
+
+### 7 falhas (nenhuma nova do SEC)
+
+5 baseline documentadas + 2 em `faturas-clean-slate.test.ts` / `faturas-excluir-todas.test.ts` (expectativa `transformFinancialInvoicesForControl` na `main` vs inline na branch SEC).
+
+---
+
+## 8. NB-07 — ROTAS SEC E DEPENDÊNCIA
+
+| Rota | Handler dedicado? | Depende NB-07 em prod? |
+|------|-------------------|------------------------|
+| `/api/supabase/*` (6 rotas) | ❌ | ✅ catch-all — timeout provável mesmo com auth |
+| `/api/investment/*` | ✅ rewrites Vercel | ❌ |
+| `/api/asaas/webhook` (SEC-03) | ✅ `asaas-payment-webhook` | ❌ após publicar |
+| `/api/nf/invoices` (hotfix) | ✅ `nf-control?op=list` | ❌ já em prod |
+
+**Não corrigido globalmente** nesta execução.
+
+---
+
+## 9. AÇÃO HUMANA ANTES DE PUBLICAR PR #262
+
+1. Resolver conflito merge `lib/nfInvoiceControlApi.ts` com `main` (preservar `transformFinancialInvoicesForControl` + SEC).
+2. Configurar `ASAAS_PAYMENT_WEBHOOK_TOKEN` na Vercel (`sistema-grupo-tm-seg`).
+3. Cadastrar **mesmo** `authToken` nos 3 painéis Asaas → webhook pagamento → URL `https://sistema.grupotmseg.com.br/api/asaas/webhook`.
+4. Deploy coordenado (env + código no mesmo ciclo).
+5. Validar POST webhook com token correto/incorreto; confirmar baixa automática e que saldo/transfer continuam OK.
+
+---
+
+*Revisão Final PR #262 — Cloud Agent — 2026-08-14 — NÃO mergeado, NÃO publicado*
 
 ---
 
