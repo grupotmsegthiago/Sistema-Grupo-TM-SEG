@@ -111,16 +111,32 @@ O diff desta branch não contém:
 
 | Validação | Resultado |
 |-----------|-----------|
-| `nf-invoices-list.test.ts` | 4/4 |
+| `nf-invoices-list.test.ts` | 8/8 |
 | `invoice-control-loading.test.ts` | 3/3 |
-| Testes incidentes + SEC executados antes da separação | 34/34 |
-| P0–P3 + incidentes | 47/47 |
+| Regressões específicas NF/receivables/auth | 38 total / 36 pass / 2 baseline |
+| P0–P3 | 56/56 |
 | Lint arquivos TS/TSX | 0 erro |
 | `npm run build` | OK |
-| Suíte completa TS, exceto hang conhecido NB-06 | 766 total / 759 pass / 7 fail |
+| Supabase público injetado no build | OK |
+| Service role no frontend | Nenhum valor secreto encontrado |
+| Suíte completa TS, exceto hang conhecido NB-06 | 743 total / 738 pass / 5 fail |
+| Suíte TSX | 4 total / 2 pass / 2 fail baseline |
 
-As 7 falhas observadas eram pré-existentes no baseline de execução e não são causadas
-pelos arquivos do hotfix. O teste NB-06 possui hang conhecido no ambiente.
+Falhas TS baseline, sem delta:
+
+1. `Vercel tem funções leves para CRUD de contas (não depende do Express)`
+2. `FinancialInvoiceControl — auto sync e labels`
+3. `registerTimeClockPunch dispara requestPresenceRefresh após inserir`
+4. `Contas a Receber — descrição = texto da NF`
+5. `cockpit sem detalhe em aberto`
+
+Falhas TSX baseline:
+
+1. `isDhl=false: o formulário público NÃO mostra identidade nem regras da DHL`
+2. `isDhl=true: o formulário público mostra identidade e regras da DHL (controle)`
+
+O teste NB-06 possui hang conhecido no ambiente e foi executado separadamente sem
+conclusão; o rewrite novo está coberto pelos testes específicos e pela inspeção do diff.
 
 ## ROLLBACK
 
