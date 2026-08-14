@@ -1,9 +1,171 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **NB-07: migração gradual das seis rotas `/api/supabase/*`**
+> Handoff oficial — **Validação final PR #265 — NB-07 Supabase**
 > **Não contém segredos. NÃO mergeado. NÃO publicado.**
 
 ---
+
+## VALIDAÇÃO FINAL PR #265 — IDENTIFICAÇÃO
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-14 (UTC) |
+| **PR** | [#265](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/265) |
+| **Branch** | `cursor/nb07-supabase-routes-eaa8` |
+| **Commit funcional validado** | `b45d43d5` |
+| **Base / produção funcional** | `main` / `c8f7c59d` |
+| **Tag produção** | `baseline-fase3-sec01-sec02-merged-20260814` |
+| **Merge / publicação** | **Não executados** |
+| **PR #262 / SEC-03** | **Congelado** |
+
+## PROGRESSO DA VALIDAÇÃO
+
+| Indicador | Valor |
+|-----------|-------|
+| **EXECUÇÃO ATUAL** | **100%** |
+| **FASE 3** | **74%** (inalterada) |
+| **PROGRAMA GERAL** | **63%** (inalterado) |
+
+## DECISÃO FINAL
+
+# 🔴 PR #265 NÃO APTO
+
+### Bloqueador comprovado
+
+`POST /api/supabase/init-invoices` não preserva o tratamento de erro do Express:
+
+| Cenário | Express preservado | Handler Vercel |
+|---------|--------------------|----------------|
+| Operação lança erro inesperado | HTTP **200**, `{ok:false,error}` | HTTP **500**, `{error}` |
+
+Evidência runtime com operação mockada no handler Vercel:
+
+```json
+{"status":500,"body":{"error":"mock_failure"}}
+```
+
+O Express em `server/routes.ts` mantém `res.json({ ok: false, error: e.message })`
+sem alterar status (200). A regra desta validação proíbe diferença silenciosa de
+método/auth/role/operação/resposta/tratamento de erro. Portanto, não recomendar merge
+até alinhar o contrato e adicionar teste específico de paridade.
+
+Nenhuma correção foi aplicada nesta validação.
+
+## REVISÃO DO DIFF — ARQUIVO POR ARQUIVO
+
+| Arquivo | Rota/função | Auth/role | Consumidor | Risco |
+|---------|-------------|-----------|------------|-------|
+| `api/supabase-admin.ts` | dispatch das 6 operações | auth serverless + matriz por operação | todos | **Médio** — divergência 500 no erro de init |
+| `lib/supabaseAdminApiAuth.ts` | `authorizeSupabaseAdminRequest` | 401 sem token; 403 inválido/role; roles equivalentes | handler Vercel | Baixo |
+| `lib/supabaseAdminOperations.ts` | SSOT das 6 operações | chamada somente após auth | Express + Vercel | Médio — consultas administrativas preservadas |
+| `server/routes.ts` | 6 handlers Express chamam SSOT | `requireAuth` + `requireRole` original | frontend/local | Baixo |
+| `vercel.json` | 6 rewrites específicos | encaminha ao handler leve | Vercel | Baixo |
+| `scripts/nb07-supabase-routes.test.ts` | 40 testes auth/método/dispatch/rewrite | mocks | CI | **Gap:** não compara erros Express × Vercel |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | handoff | — | auditoria | Nenhum |
+
+**Escopo do diff:** somente handler Supabase, auth, SSOT, Express adapter, rewrites,
+testes e documentação. Nenhum arquivo fora do escopo foi encontrado.
+
+## PARIDADE DAS SEIS ROTAS
+
+| Rota | Método | Roles Express = Vercel | Operação/resposta normal | Erros | Resultado |
+|------|--------|-------------------------|--------------------------|-------|-----------|
+| `/api/supabase/init-invoices` | POST | diretoria/admin/ceo/financeiro/controller | Mesma SSOT; probes e respostas normais iguais | **200 Express × 500 Vercel** | 🔴 |
+| `/api/supabase/status` | GET | diretoria/admin/ceo | Mesma SSOT | 500 em ambos | ✅ |
+| `/api/supabase/db-metrics` | GET | diretoria/admin/ceo | Mesma SSOT | 500 em ambos | ✅ |
+| `/api/supabase/storage-usage` | GET | diretoria/admin/ceo | Mesma SSOT | 500 em ambos | ✅ |
+| `/api/supabase/billing-links` | GET | diretoria/admin/ceo | Mesmo objeto estático | sem I/O operacional | ✅ |
+| `/api/supabase/health-check` | GET | diretoria/admin/ceo | Mesma SSOT | 500 em ambos | ✅ |
+
+## AUTH / ROLES
+
+Para cada uma das seis rotas, os testes confirmaram:
+
+| Caso | Resultado |
+|------|-----------|
+| Sem auth | 401 rápido, operação não executada |
+| Token inválido | 403, operação não executada |
+| Role incorreta | 403 |
+| Role permitida | chega à operação mock |
+| Método incorreto | 405 + header `Allow` |
+
+Os testes usam dependências injetadas; nenhuma operação privilegiada real foi executada.
+
+## SERVICE ROLE
+
+- Criada apenas por `createSupabaseAdminClient()` no backend.
+- Handler não lê nem retorna diretamente `SUPABASE_SERVICE_ROLE_KEY`.
+- Nenhum frontend alterado ou importando módulos backend.
+- Busca por código do novo handler no bundle público: zero ocorrência.
+- Scan de valores disponíveis no ambiente: nenhum valor secreto encontrado no bundle
+  (`configuredSecretsChecked=0`; portanto produção não pôde ser comparada por valor).
+- Existe no frontend uma mensagem preexistente que cita apenas o **nome** da env;
+  nenhum valor de credencial é empacotado.
+- Nenhum log novo imprime chave, token ou cliente.
+
+**Conclusão:** nenhuma exposição de service role identificada.
+
+## REWRITES
+
+As seis entradas foram adicionadas antes de `/api/(.*)` e apontam para
+`/api/supabase-admin?op=<operação>`.
+
+Rewrites confirmados inalterados:
+
+| Rota | Destino |
+|------|---------|
+| `/api/nf/invoices` | `/api/nf-control?op=list` |
+| `/api/investment/init` e demais | handlers investment existentes |
+| `/api/health` | `/api/health` |
+| `/api/version` | `/api/version` |
+
+O catch-all global não foi alterado.
+
+## NF E ASAAS PRESERVADOS
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `FinancialInvoiceControl` usa `authFetch('/api/nf/invoices')` | ✅ |
+| `transformFinancialInvoicesForControl()` existe intacta | ✅ |
+| Diff em arquivos NF | **ZERO** |
+| Diff em saldo/Pix/transferência/cobrança/sync/webhook Asaas | **ZERO** |
+| Diff em Investment funcional | **ZERO** |
+| PR #262 / SEC-03 | congelado |
+
+## PERFORMANCE
+
+- Rewrites específicos removem as seis rotas do catch-all.
+- Handler não adiciona chamada de negócio; auth adiciona somente a resolução de principal
+  necessária para equivaler ao Express.
+- `db-metrics` mantém 21 contagens paralelas; não introduz N+1 novo.
+- `storage-usage` mantém o loop sequencial preexistente por bucket e limite 1000.
+- Payloads normais são produzidos pela mesma SSOT.
+- Nenhuma otimização ou mudança de cálculo foi feita nesta validação.
+
+## TESTES REEXECUTADOS
+
+| Suíte | Resultado |
+|-------|-----------|
+| NB-07 + SEC-01/02 + NF | **77/77** |
+| Asaas + P0/P1/P2/P3 | **126/126** |
+| TS completa (exclui hang conhecido `nb06-migration-routes`) | **809 total / 804 pass / 5 fail** |
+| Componentes React | **4 total / 2 pass / 2 fail** |
+| `npm run build` | **OK** |
+
+As 5 falhas TS são exatamente o baseline informado. As 2 falhas React são casos DHL
+preexistentes; nenhum `.tsx` faz parte do diff.
+
+## ROLLBACK / PRÓXIMO PASSO
+
+- Produção permanece em `c8f7c59d`; nenhum rollback é necessário.
+- Não mergear/publicar o PR #265 no estado `b45d43d5`.
+- Ajuste mínimo futuro: preservar HTTP 200 + `{ok:false,error}` para erro inesperado
+  de `init-invoices` no handler Vercel e adicionar teste de paridade.
+- Depois do ajuste, repetir esta validação completa.
+
+---
+
+## HISTÓRICO — IMPLEMENTAÇÃO NB-07 SUPABASE
 
 ## NB-07 SUPABASE — IDENTIFICAÇÃO
 
