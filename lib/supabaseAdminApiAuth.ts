@@ -2,7 +2,6 @@
  * Autorização serverless equivalente ao requireAuth + requireRole do Express
  * para as seis rotas administrativas /api/supabase/*.
  */
-import { extractAuthToken } from './asaasApiAuth.js';
 import {
   resolvePrincipalFromToken,
   type ResolvedPrincipal,
@@ -11,6 +10,12 @@ import {
 type Headers = Record<string, string | string[] | undefined>;
 type RequestLike = { headers?: Headers };
 type PrincipalResolver = (token: string) => Promise<ResolvedPrincipal | null>;
+
+function extractAuthToken(req: RequestLike): string {
+  const raw = req.headers?.authorization || req.headers?.Authorization || req.headers?.['x-auth-token'];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return String(value || '').replace(/^Bearer\s+/i, '').trim();
+}
 
 export const SUPABASE_DIAGNOSTIC_ROLES = [
   'diretoria',
