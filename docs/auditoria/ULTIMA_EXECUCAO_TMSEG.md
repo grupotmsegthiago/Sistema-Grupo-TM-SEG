@@ -23,13 +23,100 @@
 
 | Indicador | Valor | Metodologia |
 |-----------|-------|-------------|
-| **EXECUÇÃO ATUAL** | **100%** 🟢 | Inventário + correções + testes + handoff |
-| **FASE 3 (total)** | **70%** 🟢 | P0+NB-06+P1+P2+P3 publicados (64%) + bloco SEC implementado (+6%) |
-| **PROGRAMA GERAL** | **61%** 🟢 | +2% bloco SEC concluído em branch (não publicado) |
+| **EXECUÇÃO ATUAL** | **100%** 🟢 | Investigação Asaas (somente leitura) + handoff |
+| **FASE 3 (total)** | **70%** 🟢 | Sem alteração — investigação não incrementa fase |
+| **PROGRAMA GERAL** | **61%** 🟢 | Sem alteração |
 
 ---
 
-## DECISÃO FINAL
+## INVESTIGAÇÃO — CONTA ASAAS DO SISTEMA TM SEG
+
+> Execução somente leitura — **nenhuma alteração** em Vercel, Asaas, chaves ou PR #262.
+
+### Resultado
+
+| Campo | Valor |
+|-------|-------|
+| **CONTA ASAAS USADA PELO SISTEMA** | **AS TRÊS CONTAS** (TM Gestão + TM Segurança + TM Security) — arquitetura multi-emissor |
+| **CONFIANÇA** | **confirmada** (código + produção `GET /api/asaas/status?probe=1`) |
+| **CONTA ÚNICA “PRINCIPAL”** | **NÃO FOI POSSÍVEL DETERMINAR** uma só — o sistema opera com 3 CNPJs/emissores em paralelo |
+| **Conta default (fallback)** | **TM Gestão** — quando `issuer_company` ausente ou não reconhecido |
+
+### Evidência — produção (2026-08-14, sem expor segredos)
+
+`GET https://sistema.grupotmseg.com.br/api/asaas/status`:
+
+```json
+{ "configured": true, "companies": { "tmGestao": true, "tmSeguranca": true, "tmSecurity": true } }
+```
+
+`GET .../api/asaas/status?probe=1` — as **3 chaves** são produção, aceitas pelo Asaas (saldo + invoices + transfers OK):
+
+| Conta | Env ativa (Vercel) | Fingerprint SHA-256 (12 chars) | CNPJ |
+|-------|-------------------|----------------------------------|------|
+| **TM Gestão** | `ASAAS_TMGESTAO_API` | `16d593003583` | `60.485.843/0001-57` |
+| **TM Segurança** | `ASAAS_TMSEGURANCA_API` | `e24d8bb2ae9c` | `28.804.378/0001-67` |
+| **TM Security** | `ASAAS_TMSECURITY_API` | `36aceed064c2` | `60.508.931/0001-27` |
+
+Base URL API: `https://api.asaas.com/v3` (produção; sandbox só se chave `_hmlg_`/`_sandbox_`).
+
+Wallet financeiro (repasses internos): `6641fec4-8476-48e3-90a8-3db6b14f538c` (`ASAAS_FINANCEIRO_WALLET_ID` ou default em código).
+
+### Evidência — código
+
+| Arquivo | O que prova |
+|---------|-------------|
+| `lib/asaasEnvKeys.ts` | 3 leitores de chave: `getAsaasApiKeyTmGestao`, `getAsaasApiKeyTmSeguranca`, `getAsaasApiKeyTmSecurity` |
+| `server/asaasService.ts` | Mapa `asaasCompanies()` com as 3 empresas + CNPJs; fallback → `TM GESTÃO` |
+| `lib/asaasSyncCustomersCore.ts` | `ASAAS_SYNC_COMPANIES = ['TM GESTÃO', 'TM SEGURANCA', 'TM SECURITY']` — sync para as 3 |
+| `api/asaas-status.ts` | Diagnóstico reporta `tmGestao`, `tmSeguranca`, `tmSecurity` |
+| `components/ClientForm.tsx` | Cliente vinculado a emissor (`issuer_company`) entre as 3 opções |
+| `components/FinancialInvoiceControl.tsx` | Faturas com `issuer_company`; default retro = `TM GESTÃO` |
+| `lib/asaasPaymentWebhook.ts` | Webhook de pagamento casa fatura por `asaas_payment_id` — **independente da conta emissora** |
+| `lib/asaasTransferApproval.ts` | Webhook transfer-approval: **mesma URL** nas 3 contas; tokens **por conta** (`ASAAS_WEBHOOK_*_API`) |
+| `api/asaas-transfer-approval.ts` | Hint: “Uma URL de webhook para as 3 contas” |
+
+### Variáveis de ambiente — mapa seguro
+
+| Finalidade | TM Gestão | TM Segurança | TM Security |
+|------------|-----------|--------------|-------------|
+| **API key (cobrança/NF/saldo)** | `ASAAS_TMGESTAO_API` (+ aliases legados `ASAAS_API_KEY`, `TMGESTAO`) | `ASAAS_TMSEGURANCA_API` (`TMSEGURANCA`) | `ASAAS_TMSECURITY_API` (`TMSECURITY`) |
+| **Webhook transfer-approval** | `ASAAS_WEBHOOK_TMGESTAO_API` | `ASAAS_WEBHOOK_TMSEGURANCA_API` | `ASAAS_WEBHOOK_TMSECURITY_API` |
+| **Webhook pagamento (SEC-03, PR #262)** | — | — | — |
+| | **`ASAAS_PAYMENT_WEBHOOK_TOKEN`** (único, compartilhado — não por conta) | | |
+
+### Webhooks existentes no desenho do sistema
+
+| Endpoint | Tipo | Contas |
+|----------|------|--------|
+| `POST /api/asaas/transfer-approval` | Aprovação de saque/transferência | **3 contas** → mesma URL; token **por conta** na Vercel |
+| `POST /api/asaas/webhook` | Baixa automática fatura (`PAYMENT_RECEIVED`) | **Qualquer conta** que emitiu a cobrança; token **único** `ASAAS_PAYMENT_WEBHOOK_TOKEN` |
+
+**Produção atual (`9a083213`):** `POST /api/asaas/webhook` → **504 timeout** (catch-all NB-07). Correção SEC-03 só na branch PR #262 (handler dedicado), **não publicada**.
+
+### QUAL CONTA DEVE RECEBER O `ASAAS_PAYMENT_WEBHOOK_TOKEN`?
+
+**Resposta:** **as três contas Asaas** devem apontar o webhook de pagamento para a mesma URL (`https://sistema.grupotmseg.com.br/api/asaas/webhook`) e usar o **mesmo** `authToken` configurado em `ASAAS_PAYMENT_WEBHOOK_TOKEN` na Vercel — porque:
+
+1. Cobranças são criadas na conta Asaas da **emissora** (`issuer_company` = TM Gestão, TM Segurança ou TM Security).
+2. O handler não filtra por conta — só por `payment.id` / `externalReference` na tabela `financial_invoices`.
+3. O padrão já adotado para transfer-approval documenta URL única nas 3 contas (com tokens separados); para pagamento o código prevê **um** token global.
+
+**Se hoje só uma conta tiver webhook de pagamento no painel Asaas:** verificar manualmente em cada painel qual já aponta para `sistema.grupotmseg.com.br` — o código **não** expõe essa informação.
+
+**TM Gestão como “primária” (provável, não exclusiva):** fallback de emissor, legado `ASAAS_API_KEY`, mensagens de erro citam `ASAAS_TMGESTAO_API` primeiro.
+
+### Ação humana (inalterada)
+
+Antes de publicar PR #262 e ativar SEC-03:
+
+1. Definir um `authToken` forte para o webhook de **pagamento**.
+2. Configurar em **cada** painel Asaas (Gestão, Segurança, Security) → Integrações → Webhooks → eventos `PAYMENT_RECEIVED` / `PAYMENT_CONFIRMED` → URL acima.
+3. Gravar o **mesmo** valor em `ASAAS_PAYMENT_WEBHOOK_TOKEN` na Vercel → redeploy.
+
+---
+
+## DECISÃO FINAL (bloco SEC — inalterada)
 
 # 🟡 BLOCO SEC COM PENDÊNCIAS
 
