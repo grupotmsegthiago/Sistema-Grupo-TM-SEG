@@ -15,6 +15,12 @@ import {
 import { useNotification } from '../lib/NotificationContext';
 import { resolveMissionDisplacement } from '../lib/billing/resolveMissionDisplacement';
 import { calculateMissionFinancials } from '../lib/financialUtils';
+import VendorPeriodPicker from './VendorPeriodPicker';
+import {
+    loadVendorFilters,
+    saveVendorFilters,
+    shouldLoadVendorGrid,
+} from '../lib/vendorVerificationPeriod';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -86,22 +92,24 @@ interface VendorVerificationControlProps {
 
 const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ onNavigate, onOpenMission }) => {
     const { showNotification } = useNotification();
+    const savedFilters = loadVendorFilters();
     const [missions, setMissions] = useState<any[]>([]);
     const [clients, setClients] = useState<any[]>([]);
     const [providers, setProviders] = useState<string[]>([]);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [selectedProvider, setSelectedProvider] = useState('ALL');
-    const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'VERIFIED'>('ALL');
+    const [searchTerm, setSearchTerm] = useState(savedFilters.searchTerm);
+    const [selectedProvider, setSelectedProvider] = useState(savedFilters.selectedProvider);
+    const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'VERIFIED'>(savedFilters.filterStatus);
     const [isLoading, setIsLoading] = useState(false);
     const [dataLoaded, setDataLoaded] = useState(false);
     const [counts, setCounts] = useState<{ verified: number; paid: number; pending: number } | null>(null);
     const [serverRows, setServerRows] = useState<any[] | null>(null);
-    const [currentPage, setCurrentPage] = useState(1);
+    const [currentPage, setCurrentPage] = useState(savedFilters.currentPage);
     const PER_PAGE = 10;
-    const [dateFrom, setDateFrom] = useState('2026-01-01');
-    const [dateTo, setDateTo] = useState('');
+    // Sem data pré-preenchida: a grade só carrega depois que o usuário escolhe Mês → Quinzena.
+    const [dateFrom, setDateFrom] = useState(savedFilters.dateFrom);
+    const [dateTo, setDateTo] = useState(savedFilters.dateTo);
     // Filtros tipo Excel por coluna
-    const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
+    const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>(savedFilters.columnFilters);
     const [openColumnFilter, setOpenColumnFilter] = useState<string | null>(null);
 
     const [selectedMission, setSelectedMission] = useState<any | null>(null);
@@ -843,15 +851,24 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         }));
     }, [missions, serverRows, dataLoaded, selectedProvider, filterStatus, searchTerm, dateFrom, dateTo, columnFilters, columnGetters]);
 
-    // Filtros que NÃO são a busca textual: provider/status/data/coluna ainda
-    // disparam o load completo (necessário p/ as opções de filtro por coluna).
-    const hasNonSearchQuery = useMemo(() => (
-        selectedProvider !== 'ALL' ||
-        filterStatus !== 'ALL' ||
-        !!dateTo ||
-        dateFrom !== '2026-01-01' ||
-        Object.values(columnFilters).some(v => v && v.length > 0)
-    ), [selectedProvider, filterStatus, dateFrom, dateTo, columnFilters]);
+    // A grade completa só carrega quando há período (Mês → Quinzena).
+    // Busca textual continua no caminho leve server-side, sem exigir data.
+    const hasNonSearchQuery = useMemo(
+        () => shouldLoadVendorGrid(dateFrom, dateTo),
+        [dateFrom, dateTo]
+    );
+
+    useEffect(() => {
+        saveVendorFilters({
+            searchTerm,
+            selectedProvider,
+            filterStatus,
+            dateFrom,
+            dateTo,
+            columnFilters,
+            currentPage,
+        });
+    }, [searchTerm, selectedProvider, filterStatus, dateFrom, dateTo, columnFilters, currentPage]);
 
     // Carrega a base completa sob demanda quando o usuário aplica filtros (não busca).
     useEffect(() => {
@@ -1713,11 +1730,9 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 <button
                     data-testid="btn-audit-trail"
                     onClick={() => {
-                        setShowAuditPanel(!showAuditPanel);
-                        if (!showAuditPanel) {
-                            loadAuditTrail();
-                            loadStatsHistory();
-                        }
+                        setShowAuditPanel(true);
+                        loadAuditTrail();
+                        loadStatsHistory();
                     }}
                     className={`rounded-2xl px-5 py-3 flex items-center gap-3 min-w-[130px] transition-all ${showAuditPanel ? 'bg-red-600 text-white border border-red-600' : 'bg-white border border-gray-200 hover:bg-gray-50'}`}
                 >
@@ -1742,7 +1757,8 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             </div>
 
             {showAuditPanel && (
-                <div className="bg-white rounded-2xl shadow-sm border border-red-200 overflow-hidden">
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowAuditPanel(false)} data-testid="modal-audit-trail">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
                     <div className="bg-red-50 p-4 border-b border-red-200 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <Eye size={20} className="text-red-600" />
@@ -1758,7 +1774,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                         </div>
                     </div>
 
-                    <div className="p-4 space-y-4">
+                    <div className="p-4 space-y-4 overflow-y-auto">
                         <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-2">
                             <Hash size={12} /> Evolução dos Contadores
                         </h4>
@@ -1888,6 +1904,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                         </div>
                     </div>
                 </div>
+                </div>
             )}
 
             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -1932,45 +1949,14 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                         ))}
                     </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
-                    <div className="flex items-center gap-2">
-                        <Calendar size={16} className="text-gray-400 shrink-0" />
-                        <label className="text-[10px] font-black text-gray-500 uppercase shrink-0">De:</label>
-                        <input type="date" className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm" value={dateFrom} onChange={e => setDateFrom(e.target.value)} data-testid="input-date-from" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Calendar size={16} className="text-gray-400 shrink-0" />
-                        <label className="text-[10px] font-black text-gray-500 uppercase shrink-0">Até:</label>
-                        <input type="date" className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm" value={dateTo} onChange={e => setDateTo(e.target.value)} data-testid="input-date-to" />
-                    </div>
-                    {(dateFrom || dateTo) && (
-                        <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="py-2 px-4 bg-gray-100 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-200 transition-colors flex items-center gap-2" data-testid="btn-clear-dates">
-                            <X size={14} /> Limpar Datas
-                        </button>
-                    )}
+                <div className="mt-3">
+                    <VendorPeriodPicker
+                        dateFrom={dateFrom}
+                        dateTo={dateTo}
+                        onApply={(from, to) => { setDateFrom(from); setDateTo(to); }}
+                        onClear={() => { setDateFrom(''); setDateTo(''); }}
+                    />
                 </div>
-                {(() => {
-                    const pad = (n: number) => String(n).padStart(2, '0');
-                    const today = new Date();
-                    const y = today.getFullYear();
-                    const m = today.getMonth();
-                    const firstDay = `${y}-${pad(m + 1)}-01`;
-                    const lastDay = new Date(y, m + 1, 0).getDate();
-                    const monthEnd = `${y}-${pad(m + 1)}-${pad(lastDay)}`;
-                    const q1End = `${y}-${pad(m + 1)}-15`;
-                    const q2Start = `${y}-${pad(m + 1)}-16`;
-                    const isMonth = dateFrom === firstDay && dateTo === monthEnd;
-                    const isQ1 = dateFrom === firstDay && dateTo === q1End;
-                    const isQ2 = dateFrom === q2Start && dateTo === monthEnd;
-                    const btn = (active: boolean) => `py-1.5 px-3 rounded-lg text-[11px] font-black uppercase tracking-wider transition-colors ${active ? 'bg-blue-600 text-white border border-blue-700' : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'}`;
-                    return (
-                        <div className="flex flex-wrap gap-2 mt-3">
-                            <button type="button" onClick={() => { setDateFrom(firstDay); setDateTo(monthEnd); }} className={btn(isMonth)} data-testid="btn-quick-mes">Mês Atual</button>
-                            <button type="button" onClick={() => { setDateFrom(firstDay); setDateTo(q1End); }} className={btn(isQ1)} data-testid="btn-quick-q1">1ª Quinzena</button>
-                            <button type="button" onClick={() => { setDateFrom(q2Start); setDateTo(monthEnd); }} className={btn(isQ2)} data-testid="btn-quick-q2">2ª Quinzena</button>
-                        </div>
-                    );
-                })()}
             </div>
 
             {selectedIds.size > 0 && (
@@ -2109,10 +2095,10 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                         <tbody className="divide-y divide-gray-100">
                             {isLoading ? (
                                 <tr><td colSpan={18} className="p-20 text-center"><Loader2 size={40} className="animate-spin text-blue-700 mx-auto" /></td></tr>
-                            ) : (!dataLoaded && serverRows === null) ? (
+                            ) : (!shouldLoadVendorGrid(dateFrom, dateTo) && !searchTerm.trim() && serverRows === null) ? (
                                 <tr><td colSpan={18} className="p-20 text-center text-gray-400 font-bold uppercase" data-testid="text-search-prompt">
                                     <Search size={32} className="mx-auto mb-3 text-gray-300" />
-                                    Use a busca ou os filtros acima para carregar as OS.
+                                    Selecione um mês (e a quinzena) ou use a busca para carregar as OS.
                                 </td></tr>
                             ) : filteredMissions.length === 0 ? (
                                 <tr><td colSpan={18} className="p-20 text-center text-gray-400 font-bold uppercase">Nenhuma missão encontrada.</td></tr>
@@ -2217,7 +2203,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                     <button
                                                         onClick={() => onOpenMission?.(m.id)}
                                                         className="p-2 rounded-xl transition-all bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                                                        title="Conferência e Auditoria da OS"
+                                                        title="Conferência e Auditoria da OS (abre sobreposta — filtros da lista são mantidos)"
                                                         data-testid={`button-audit-${m.id}`}
                                                     >
                                                         <FileText size={14} />
