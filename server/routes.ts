@@ -76,6 +76,14 @@ import {
   restorePatrimonioFromBackup,
 } from "./patrimonioStore";
 import { ADD_MISSION_COLUMNS_RESPONSE, buildProviderOpsColumnsResponse } from "../lib/migrationEndpointPayloads";
+import {
+  getSupabaseBillingLinks,
+  getSupabaseDbMetrics,
+  getSupabaseHealthCheck,
+  getSupabaseStatus,
+  getSupabaseStorageUsage,
+  initFinancialInvoicesProbe,
+} from "../lib/supabaseAdminOperations";
 import { isLongRunningHost } from "./runtime";
 import { registerScheduledTick } from "./scheduledRegistry";
 import { registerMaintenanceTick } from "./maintenanceJobs";
@@ -3156,66 +3164,8 @@ export async function registerRoutes(
   });
 
   app.post("/api/supabase/init-invoices", requireAuth, requireRole('diretoria', 'administrador', 'ceo', 'financeiro', 'controller'), async (_req: Request, res: Response) => {
-    // Resposta rápida: a tela de faturas não deve depender deste endpoint.
-    // Checagens de schema com timeout curto — tabela já existe em produção.
-    const soft = async <T>(work: PromiseLike<T>, ms = 4_000): Promise<T | null> => {
-      try {
-        return await Promise.race([
-          Promise.resolve(work),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
-        ]);
-      } catch {
-        return null;
-      }
-    };
-
     try {
-      const probe = await soft(
-        supabaseAdmin.from('financial_invoices').select('id', { count: 'exact', head: true }),
-      );
-      if (!probe) {
-        res.json({ ok: true, note: 'probe_timeout_or_skip' });
-        return;
-      }
-      const { error } = probe as { error: any };
-
-      const newCols = ['nf_image_url', 'boleto_image_url', 'provider', 'issuer_company', 'boleto_due_date', 'asaas_payment_id', 'asaas_status', 'asaas_invoice_url', 'asaas_bankslip_url', 'asaas_pix_payload', 'asaas_barcode', 'nf_status', 'nf_number'];
-
-      if (error && error.code === '42P01') {
-        const createSql = `
-          CREATE TABLE IF NOT EXISTS public.financial_invoices (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            client TEXT NOT NULL,
-            number TEXT NOT NULL,
-            amount DOUBLE PRECISION NOT NULL DEFAULT 0,
-            date TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'EMITIDA',
-            notes TEXT DEFAULT '',
-            created_by TEXT,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            nf_image_url TEXT,
-            boleto_image_url TEXT,
-            provider TEXT,
-            issuer_company TEXT,
-            boleto_due_date TEXT
-          );
-          ALTER TABLE public.financial_invoices ENABLE ROW LEVEL SECURITY;
-          CREATE POLICY IF NOT EXISTS "Allow all for financial_invoices" ON public.financial_invoices FOR ALL USING (true) WITH CHECK (true);
-        `;
-        res.json({ ok: false, note: 'Table does not exist. Please create it via Supabase SQL editor.', sql: createSql });
-        return;
-      }
-
-      const check = await soft(
-        supabaseAdmin.from('financial_invoices').select('nf_image_url').limit(1),
-      );
-      const checkErr = (check as any)?.error;
-      if (checkErr && checkErr.code === '42703') {
-        const migSql = newCols.map(c => `ALTER TABLE public.financial_invoices ADD COLUMN IF NOT EXISTS ${c} TEXT;`).join('\n');
-        res.json({ ok: true, migration_needed: true, sql: migSql, hint: 'Execute this SQL in Supabase SQL Editor to add the new columns' });
-        return;
-      }
-      res.json({ ok: true });
+      res.json(await initFinancialInvoicesProbe(supabaseAdmin));
     } catch (e: any) {
       res.json({ ok: false, error: e.message });
     }
@@ -3223,31 +3173,7 @@ export async function registerRoutes(
 
   app.get("/api/supabase/status", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
     try {
-      const startTime = Date.now();
-      const { error: pingError } = await supabaseAdmin.from('profiles').select('id', { count: 'exact', head: true });
-      const latencyMs = Date.now() - startTime;
-
-      let incidents: any[] = [];
-      try {
-        const statusRes = await fetch("https://status.supabase.com/api/v2/incidents.json");
-        const statusData = await statusRes.json() as any;
-        incidents = (statusData?.incidents || []).slice(0, 5);
-      } catch { }
-
-      let scheduledMaintenances: any[] = [];
-      try {
-        const maintRes = await fetch("https://status.supabase.com/api/v2/scheduled-maintenances.json");
-        const maintData = await maintRes.json() as any;
-        scheduledMaintenances = (maintData?.scheduled_maintenances || []).slice(0, 3);
-      } catch { }
-
-      res.json({
-        rest_ok: !pingError,
-        latency_ms: latencyMs,
-        incidents,
-        scheduled_maintenances: scheduledMaintenances,
-        timestamp: new Date().toISOString(),
-      });
+      res.json(await getSupabaseStatus(supabaseAdmin));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -3255,46 +3181,7 @@ export async function registerRoutes(
 
   app.get("/api/supabase/db-metrics", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
     try {
-      const tables = [
-        'missions', 'clients', 'providers', 'vehicles', 'client_vehicles',
-        'client_routes', 'client_price_tables', 'provider_cost_tables',
-        'system_users', 'system_logs', 'financial_transactions',
-        'financial_accounts', 'financial_categories', 'commercial_proposals',
-        'quotes', 'provider_agents', 'agents', 'mission_logs', 'mission_history',
-        'profiles', 'contracts'
-      ];
-
-      const results: { table: string; count: number; estimatedSizeKb: number }[] = [];
-
-      const counts = await Promise.allSettled(
-        tables.map(async (table) => {
-          const startTime = Date.now();
-          const { count, error } = await supabaseAdmin.from(table).select('*', { count: 'exact', head: true });
-          const elapsed = Date.now() - startTime;
-          if (error) return { table, count: 0, estimatedSizeKb: 0, latency: elapsed, error: error.message };
-          const rowCount = count || 0;
-          const avgRowSizeKb = ['system_logs', 'mission_logs', 'mission_history'].includes(table) ? 2 : 
-                               ['missions', 'commercial_proposals'].includes(table) ? 4 : 1;
-          return { table, count: rowCount, estimatedSizeKb: rowCount * avgRowSizeKb, latency: elapsed };
-        })
-      );
-
-      const tableMetrics = counts.map((result, i) => {
-        if (result.status === 'fulfilled') return result.value;
-        return { table: tables[i], count: 0, estimatedSizeKb: 0, error: 'Inacessível' };
-      });
-
-      const totalRows = tableMetrics.reduce((sum: number, t: any) => sum + (t.count || 0), 0);
-      const totalEstimatedKb = tableMetrics.reduce((sum: number, t: any) => sum + (t.estimatedSizeKb || 0), 0);
-
-      res.json({
-        tables: tableMetrics,
-        total_rows: totalRows,
-        total_estimated_size_mb: parseFloat((totalEstimatedKb / 1024).toFixed(2)),
-        quota_mb: 500,
-        usage_percent: parseFloat((totalEstimatedKb / 1024 / 500 * 100).toFixed(2)),
-        timestamp: new Date().toISOString(),
-      });
+      res.json(await getSupabaseDbMetrics(supabaseAdmin));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -3302,38 +3189,7 @@ export async function registerRoutes(
 
   app.get("/api/supabase/storage-usage", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
     try {
-      const { data: buckets, error: bucketsError } = await supabaseAdmin.storage.listBuckets();
-      if (bucketsError) throw bucketsError;
-
-      const bucketStats: any[] = [];
-      for (const bucket of (buckets || [])) {
-        try {
-          const { data: files, error: filesError } = await supabaseAdmin.storage.from(bucket.name).list('', { limit: 1000 });
-          if (!filesError && files) {
-            const totalBytes = files.reduce((sum, f: any) => sum + ((f.metadata as any)?.size || 0), 0);
-            bucketStats.push({
-              bucket_id: bucket.name,
-              objects: files.length,
-              size_bytes: totalBytes,
-              size_mb: parseFloat((totalBytes / 1024 / 1024).toFixed(2)),
-              public: bucket.public,
-            });
-          } else {
-            bucketStats.push({ bucket_id: bucket.name, objects: 0, size_bytes: 0, size_mb: 0, public: bucket.public, error: filesError?.message });
-          }
-        } catch {
-          bucketStats.push({ bucket_id: bucket.name, objects: 0, size_bytes: 0, size_mb: 0, public: bucket.public });
-        }
-      }
-
-      const totalStorageMb = bucketStats.reduce((sum, b) => sum + b.size_mb, 0);
-
-      res.json({
-        buckets: bucketStats,
-        total_storage_mb: parseFloat(totalStorageMb.toFixed(2)),
-        storage_quota_mb: 1024,
-        usage_percent: parseFloat((totalStorageMb / 1024 * 100).toFixed(2)),
-      });
+      res.json(await getSupabaseStorageUsage(supabaseAdmin));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -3750,57 +3606,16 @@ export async function registerRoutes(
   });
 
   app.get("/api/supabase/billing-links", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), (_req: Request, res: Response) => {
-    const projectRef = 'ajhmmjuewdsukecaimik';
-    res.json({
-      billing: "https://supabase.com/dashboard/org/_/billing",
-      usage: "https://supabase.com/dashboard/org/_/usage",
-      database: `https://supabase.com/dashboard/project/${projectRef}/database/tables`,
-      storage: `https://supabase.com/dashboard/project/${projectRef}/storage/buckets`,
-      logs: `https://supabase.com/dashboard/project/${projectRef}/logs/explorer`,
-      settings: `https://supabase.com/dashboard/project/${projectRef}/settings/general`,
-      api_docs: `https://supabase.com/dashboard/project/${projectRef}/api`,
-    });
+    res.json(getSupabaseBillingLinks());
   });
 
   app.get("/api/supabase/health-check", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (_req: Request, res: Response) => {
     try {
-      const checks: any = {};
-
-      const dbStart = Date.now();
-      const { error: dbErr } = await supabaseAdmin.from('profiles').select('id', { count: 'exact', head: true });
-      checks.database = { ok: !dbErr, latency_ms: Date.now() - dbStart, error: dbErr?.message || null };
-
-      const authStart = Date.now();
-      try {
-        const authRes = await fetch(`${SUPABASE_URL}/auth/v1/settings`, {
-          headers: { apikey: SUPABASE_ANON_KEY },
-        });
-        checks.auth = { ok: authRes.ok, latency_ms: Date.now() - authStart };
-      } catch (e: any) {
-        checks.auth = { ok: false, latency_ms: Date.now() - authStart, error: e.message };
-      }
-
-      const storageStart = Date.now();
-      const { error: storageErr } = await supabaseAdmin.storage.listBuckets();
-      checks.storage = { ok: !storageErr, latency_ms: Date.now() - storageStart, error: storageErr?.message || null };
-
-      const realtimeStart = Date.now();
-      try {
-        const rtRes = await fetch(`${SUPABASE_URL}/realtime/v1/api/tenants`, {
-          headers: { apikey: SUPABASE_ANON_KEY },
-        });
-        checks.realtime = { ok: rtRes.status !== 500, latency_ms: Date.now() - realtimeStart };
-      } catch (e: any) {
-        checks.realtime = { ok: false, latency_ms: Date.now() - realtimeStart, error: e.message };
-      }
-
-      const allOk = Object.values(checks).every((c: any) => c.ok);
-
-      res.json({
-        overall: allOk ? 'healthy' : 'degraded',
-        checks,
-        timestamp: new Date().toISOString(),
-      });
+      res.json(await getSupabaseHealthCheck(
+        supabaseAdmin,
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+      ));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
