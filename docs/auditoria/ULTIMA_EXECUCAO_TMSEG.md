@@ -1,11 +1,226 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **Publicação controlada PR #265 — NB-07 `/api/supabase/*`**
-> **Não contém segredos. Publicado e validado em produção.**
+> Handoff oficial — **Inventário Fase 3 — 78% → 100%**
+> **Execução de auditoria/planejamento. Nenhuma implementação, merge ou deploy.**
 
 ---
 
-## PUBLICAÇÃO CONTROLADA PR #265 — NB-07 SUPABASE
+## INVENTÁRIO FASE 3 — MAPA 78% → 100%
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-15 (UTC) |
+| **Produção funcional** | `d39d0309` |
+| **Handoff docs** | `2f2a577a` |
+| **Tag** | `baseline-fase3-nb07-supabase-merged-20260815` |
+| **Tipo** | Auditoria + planejamento (sem código) |
+
+## PROGRESSO
+
+| Indicador | Valor |
+|-----------|-------|
+| **EXECUÇÃO ATUAL** | **100%** |
+| **FASE 3** | **78%** (inalterada — investigação não incrementa) |
+| **PROGRAMA GERAL** | **65%** (inalterado) |
+
+## DECISÃO DESTA EXECUÇÃO
+
+**Mapa concluído.** Aguardar autorização humana para iniciar **P4-NB07-CRIT** (primeiro bloco recomendado).
+
+---
+
+### Metodologia dos percentuais
+
+A evolução **78%** está documentada por marcos publicados, não por soma item a item:
+
+| Marco publicado | Fase 3 acum. | Δ documentado | Programa |
+|-----------------|-------------|---------------|----------|
+| P0 + NB-06 | 20% | — | 22% |
+| P1 | 40% | +20% | 41% |
+| P2 | 52% | +12% | 55% |
+| P3 | 64% | +12% | 59% |
+| Hotfix NF (entre P3 e SEC) | ~70%* | +6%* | ~61%* |
+| SEC-01/02 | 74% | +4% | 63% |
+| NB-07 `/api/supabase/*` | 78% | +4% | 65% |
+
+\*Estimativa inferida: handoff SEC cita +4% sobre ~70%, mas P3→SEC não tinha linha explícita para hotfix NF. **Inconsistência de acompanhamento** — recomenda-se tabela única de marcos com commit/tag.
+
+**22% restantes** = 100% − 78%. Decomposição abaixo é **proposta baseada em evidência** (backlog Raio-X + handoffs + repo), não percentual oficial pré-existente por item.
+
+---
+
+## TABELA MESTRA — BLOCOS FASE 3
+
+| ID | Item | Objetivo | Status | % Fase* | Risco | Dependências | PR/Commit | Próxima ação |
+|----|------|----------|--------|---------|-------|--------------|-----------|--------------|
+| P0 | Integridade financeira OS/cômodo/canônico | Pedágio filha, fail-closed, auth migration | **PUBLICADO** | ~20% | — | — | PR #257 / `420e9680` | — |
+| NB-06 | Migration routes leves | 2 rotas migration off catch-all | **PUBLICADO** | incl. P0 | Baixo | P0-04 | PR #258 | — |
+| P1 | Integridade conjunto | Busca OS, realtime, quotes, is_same_os | **PUBLICADO** | ~20% | Baixo | P0 | PR #259 | Itens residuais → P4-SYNC |
+| P2 | Operacional / órfãos | AI inativo, billing órfão, OS mãe, pedágio | **PUBLICADO** | ~12% | Baixo | P1 | PR #260 | Decisões órfãos → P4-LIMPEZA |
+| P3 | Limpeza / segurança | replit_integrations, billing-override auth, PDF | **PUBLICADO** | ~12% | Baixo | P2 | PR #261 | — |
+| HOTFIX-NF | Lista faturas vazia | `/api/nf/invoices` + authFetch | **PUBLICADO VALIDADO** | ~6%* | — | SEC-02 | PR #263 / `c8f7c59d` | **NÃO TOCAR** |
+| SEC-01 | Investment auth | Fail-closed investment/* | **PUBLICADO** | ~2%* | Baixo | HOTFIX-NF | PR #264 | — |
+| SEC-02 | Supabase auth | requireAuth 6 rotas | **PUBLICADO** | ~2%* | Baixo | SEC-01 | PR #264 | — |
+| NB-07-SUP | 6 rotas `/api/supabase/*` | Handlers dedicados + paridade | **PUBLICADO VALIDADO** | +4% | Baixo | SEC-02 | PR #265 / `d39d0309` | **NÃO REFAZER** |
+| SEC-03 | Webhook Asaas token | Handler dedicado + token 3 contas | **CONGELADO** | ~4% est. | **Alto** | Decisão humana Asaas | PR #262 | Aguardar descongelamento |
+| NB-07-CRIT | Catch-all rotas críticas | Webhook/sync/recalc off catch-all | **PENDENTE** | ~6% est. | **Alto** | NB-07-SUP | — | **1º bloco recomendado** |
+| P4-SYNC | Sincronismo residual | DRE canônico, fornecedor, receivable desc | **PENDENTE** | ~4% est. | Médio | P1 backlog | — | Após NB-07-CRIT |
+| P4-TEST | Baseline 5+2 + nb06 hang | CI confiável | **PENDENTE** | ~3% est. | Baixo | — | — | Pode paralelizar |
+| P4-LIMPEZA | Órfãos / decisões feature | BillingControlCenter, AI Chat, replit restos | **PENDENTE** | ~3% est. | Baixo | P2 decisões | — | Fase 3 ou 4 |
+| P4-FECHAMENTO | Regressão final + 100% | Build, smoke, handoff fechamento | **PENDENTE** | ~2% est. | Baixo | todos acima | — | Último |
+
+\*% por item = estimativa para explicar 22%; marcos publicados (78%) são a fonte oficial.
+
+**Soma estimada pendente:** ~22% (4+6+4+3+3+2).
+
+---
+
+## BACKLOG CONHECIDO — CLASSIFICAÇÃO A–F
+
+| Item | Classe | Pertence Fase 3? | Evidência |
+|------|--------|------------------|-----------|
+| NB-07 catch-all remainder | **A** | Sim (~6%) | ~82 rotas Express ainda no catch-all; webhook timeout 25s prod |
+| SEC-03 webhook Asaas | **D** (congelado) | Sim (~4%) quando autorizado | PR #262; sem token; webhook sem auth |
+| 5 testes TS baseline | **C** | Sim (~3%) fechamento | 820/815/5; Raio-X P3-04 |
+| 2 testes TSX DHL | **C** | Opcional Fase 3 | Pré-existentes |
+| nb06-migration-routes hang | **C** | Sim | Excluído da suíte |
+| Realtime refresh duplicado | **C** | Parcial | P1 handoff: possível duplo fetchMissions; `RealtimeProvider` dispara `refreshMissions` 2× em flush |
+| P1-07 fallback fornecedor | **A** | Sim | Backlog Raio-X; sem teste fase3 |
+| DRE canônico completo | **A** | Sim | Backlog Raio-X P1-04 original |
+| receivable-desc-nf | **A** | Sim | Teste falha: `resolveNfServiceDescription` retorna texto diferente |
+| Gestão Investimento trading ~70% | **B** | Não obrigatório | P2-03 mapeado, não ativado |
+| AI Chat inativo | **E/B** | Decisão | P2-01 FeatureInactivePanel |
+| BillingControlCenter órfão | **E** | Limpeza futura | P2-02; substituto ClientBillingReport |
+| CostOptimizationDashboard | **B** | Investigar Fase 4 | Ativo em App.tsx |
+| ExecutiveDashboard | **F** parcial | — | P1-02 realtime OK; 60% Raio-X |
+| Idempotência webhook Asaas | **D** | SEC-03 dependência | Sem migration neste ciclo |
+| Plinio backend validation | **C** | P3 UI-only | Server-side futuro |
+| Catch-all global api/index | **B/C** | Fora escopo total | Deliberado não reparar globalmente |
+
+---
+
+## ÁREAS PROTEGIDAS (NÃO TOCAR)
+
+| Área | Estado | Regra |
+|------|--------|-------|
+| NF / FinancialInvoiceControl | Validado visualmente pelo usuário | Não alterar lista, filtros, `/api/nf/invoices`, `transformFinancialInvoicesForControl()`, RLS |
+| Asaas 3 contas | Funcional | Não alterar keys, ENV, webhooks, saldo, PIX, transferências, cobranças, sync |
+| NB-07 Supabase 6 rotas | Publicado `d39d0309` | Não refazer |
+| SEC-01/02 | Publicado | Não reabrir |
+| SEC-03 / PR #262 | Congelado | Não iniciar sem autorização |
+| Financeiro (cálculos) | Homologado P0 | Não alterar regras |
+
+---
+
+## TESTES BASELINE (820/815/5 + 2 TSX)
+
+| # | Teste | Classificação | Obrigatório p/ 100%? |
+|---|-------|---------------|----------------------|
+| 1 | `investment-accounts.test.ts` | **TESTE DESATUALIZADO** — exige `investment-accounts-item.ts` em `functions{}`; rewrite existe, entrada functions ausente | Recomendado (não bloqueia prod) |
+| 2 | `invoice-display.test.ts` | **TESTE DESATUALIZADO** — espera `limit=15` fixo; código usa variável dinâmica | Recomendado |
+| 3 | `presence-refresh.test.ts` | **TESTE DESATUALIZADO** — punch migrou para API; `.insert([payload])` não é mais o caminho principal | Recomendado |
+| 4 | `receivable-desc-nf.test.ts` | **BUG REAL ou REGRA ALTERADA** — expected texto longo vs actual `'Ref. a primeira quinzena...'` | **Sim** se sincronismo NF/recebíveis for escopo P4-SYNC |
+| 5 | `zapi-sdk-cockpit.test.ts` | **TESTE DESATUALIZADO** — DashboardDiretoria ainda renderiza "Detalhe do em aberto" | Baixa prioridade |
+| TSX | `dhl-intake-render.test.tsx` (2 fail) | **TESTE DESATUALIZADO / UI** | Fase 4 ou DHL |
+| — | `nb06-migration-routes.test.ts` | **INFRAESTRUTURA** — hang na suíte | Corrigir runner ou teste |
+
+---
+
+## NB-07 RESIDUAL — CATCH-ALL (inventário, sem migrar)
+
+**Estado:** 112 rewrites dedicados; ~82 rotas Express ainda dependem de `/api/(.*)` → `/api/index`.
+
+### Smoke produção (2026-08-15, pós NB-07-SUP)
+
+| Rota | Método | Status | Tempo | Handler dedicado? | Criticidade |
+|------|--------|--------|-------|-------------------|-------------|
+| `/api/supabase/status` | GET | 401 | **0,08 s** | ✅ NB-07 | — |
+| `/api/nf/retry-now` | POST | 401 | **0,14 s** | ✅ nf-control | — |
+| `/api/asaas/webhook` | POST | timeout | **~25 s** | ❌ catch-all | **🔴 CRÍTICA** |
+| `/api/asaas/sync-open-payments` | POST | timeout | **~25 s** | ❌ catch-all | **🔴 CRÍTICA** (InvoiceControl) |
+| `/api/asaas/payments` | GET | timeout | **~25 s** | ❌ catch-all | Alta |
+| `/api/missions/recalculate-all` | POST | timeout | **~25 s** | ❌ catch-all | Alta (admin) |
+| `/api/chat` | POST | timeout | **~25 s** | ❌ catch-all | Baixa (inativo) |
+
+### Recomendação de prioridade migração (futuro P4-NB07-CRIT)
+
+1. `POST /api/asaas/webhook` — financeiro + SEC-03 overlap
+2. `POST /api/asaas/sync-open-payments` — consumido por FinancialInvoiceControl
+3. `GET /api/asaas/payments`, `GET/DELETE /api/asaas/payment/:id`
+4. Rotas admin financeiras: `recalculate-all`, `scan-divergences`, `fix-divergences`
+5. Demais ~70 rotas — **somente se evidência de timeout em produção**
+
+**NÃO** migrar ~138 rotas em massa.
+
+---
+
+## SEGURANÇA RESIDUAL
+
+| Risco | Exposição | Impacto | Explorabilidade | Proteção atual | Urgência |
+|-------|-----------|---------|-----------------|----------------|----------|
+| `POST /api/asaas/webhook` sem token | Público | Baixa automática NF errada/ausente | Alta (URL conhecida) | Nenhuma validação secret | **Alta** — SEC-03 congelado |
+| Catch-all timeout | Rotas autenticadas | UX/ops; webhook Asaas falha | Média | Auth fail-closed após cold start | **Alta** runtime |
+| Rotas webhook Z-API/WhatsApp | Público intencional | Mensageria | Média | Tokens Z-API | Média — fora escopo |
+| `/api/chat` sem auth aparente | Catch-all | Custo Gemini se ativado | Baixa hoje | Feature inativa UI | Baixa |
+| Service role | Backend only | Crítico se vazasse | Baixa | SSOT admin handlers | OK pós NB-07 |
+
+SEC-01/02: **concluídos** — não reabrir.
+
+---
+
+## PAGINAÇÃO / UNIVERSO COMPLETO — RESÍDUOS
+
+| Local | Limite | Classificação | Tratado? |
+|-------|--------|---------------|----------|
+| MissionForm / ClientMissionRequest | `.limit(300)` id | **BAIXO** — autocomplete | Parcial |
+| UpdateMissionModal drivers | `.limit(200)` | **BAIXO** — autocomplete | OK apresentação |
+| VendorVerificationControl | `.limit(500)` | **MÉDIO** — verificação | Revisar escopo |
+| MissionFinancialModal | `.limit(1000)` | **MÉDIO** | P1 quotes usa fetchAllPages |
+| P1 busca OS / OS mãe | paginado | **CRÍTICO** | ✅ P1/P2 |
+| P1 quotes Diretoria | fetchAllPages 10k | **CRÍTICO** | ✅ P1 |
+| PendingTollConfirmationBanner | fetchAllPages | **CRÍTICO** | ✅ P2-05 |
+
+---
+
+## FUNCIONALIDADES INACABADAS
+
+| Feature | Estado | Classificação |
+|---------|--------|---------------|
+| AI Chat | Código existe; UI inativa | INATIVO INTENCIONALMENTE |
+| BillingControlCenter | Componente existe; sem rota App | ÓRFÃO |
+| Gestão Investimento trading | API parcial; sem ativação F2 | ATIVO MAS INCOMPLETO |
+| CostOptimizationDashboard | Rota ativa; lê logs AIChatbot | ATIVO MAS INCOMPLETO |
+| ExecutiveDashboard | Produção; realtime P1 | ATIVO E FUNCIONAL |
+| Investment accounts Vercel | Rewrite OK; functions item incompleto | INCOMPLETO infra |
+
+---
+
+## ORDEM RECOMENDADA DE EXECUÇÃO
+
+1. **P4-NB07-CRIT** (~6%) — migrar catch-all crítico (webhook + sync-open-payments + asaas payments); **Composer 2.5**; GPT-5.6 Sol Medium se paridade Express×Vercel
+2. **P4-SEC03** (~4%) — **somente após decisão humana** descongelar PR #262 + config token 3 contas; Composer 2.5
+3. **P4-SYNC** (~4%) — receivable desc, P1-07 fornecedor, DRE canônico residual; Composer 2.5
+4. **P4-TEST** (~3%) — alinhar 5 baseline + nb06 hang; Composer 2.5
+5. **P4-LIMPEZA** (~3%) — órfãos/decisões AI Chat, BillingControlCenter; Composer 2.5
+6. **P4-FECHAMENTO** (~2%) — regressão completa, smoke prod, tag baseline fase3-100%; Composer 2.5
+
+---
+
+## O QUE NÃO DEVE SER TOCADO
+
+- FinancialInvoiceControl, `/api/nf/invoices`, hotfix NF
+- Asaas ENV, contas, fluxos PIX/transferência/cobrança existentes (salvo SEC-03 autorizado)
+- 6 rotas NB-07 Supabase publicadas
+- SEC-01/02 publicados
+- Cálculos financeiros OS/comissão/DRE homologados P0
+- Catch-all global `api/index` como refatoração única
+- Banco/schema/migrations
+
+---
+
+## HISTÓRICO — PUBLICAÇÃO NB-07 (mantido abaixo)
+
+---
 
 | Campo | Valor |
 |-------|-------|
