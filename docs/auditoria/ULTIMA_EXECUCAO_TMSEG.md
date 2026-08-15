@@ -93,7 +93,11 @@ Sem autenticação (fail-closed esperado = **sucesso**):
 | `/api/supabase/init-invoices` | POST | **401** | **0,11 s** | sim (401 rápido, não timeout) | ✅ |
 | `/api/supabase/status` | GET | **401** | **0,08 s** | sim | ✅ |
 | `/api/supabase/db-metrics` | GET | **401** | **0,06 s** | sim | ✅ |
+<<<<<<< HEAD
 | `/api/supabase/storage-usage` | GET | **401** | **401** | **0,11 s** | sim | ✅ |
+=======
+| `/api/supabase/storage-usage` | GET | **401** | **0,11 s** | sim | ✅ |
+>>>>>>> ad3b64ec (docs(auditoria): NB-07 Supabase publicado — decisão 🟢 produção validada)
 | `/api/supabase/billing-links` | GET | **401** | **0,07 s** | sim | ✅ |
 | `/api/supabase/health-check` | GET | **401** | **0,09 s** | sim | ✅ |
 
