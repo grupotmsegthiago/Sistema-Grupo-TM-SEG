@@ -1,7 +1,129 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **Publicação controlada PR #265 — NB-07 `/api/supabase/*`**
-> **Não contém segredos. Publicado e validado em produção.**
+> Handoff oficial — **P4-NB07-CRIT — rotas Asaas críticas fora do catch-all**
+> **Não contém segredos. Branch de revisão — NÃO publicado.**
+
+---
+
+## P4-NB07-CRIT — ROTAS ASAAS CRÍTICAS (REVISÃO)
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-15 (UTC) |
+| **Agente / modelo** | Composer 2.5 (Cursor Cloud) |
+| **Branch** | `cursor/p4-nb07-crit-eaa8` |
+| **Base** | `main` @ `2f2a577a` |
+| **Tag baseline** | `baseline-fase3-nb07-supabase-merged-20260815` |
+| **Produção atual** | `buildId=2f2a577a` (NB-07 Supabase + handoff) |
+| **PR #262 / SEC-03** | **Congelado** — webhook sem token |
+
+## PROGRESSO
+
+| Indicador | Valor |
+|-----------|-------|
+| **EXECUÇÃO ATUAL** | **100%** |
+| **FASE 3** | **78%** (incremento oficial só após publicação futura) |
+| **PROGRAMA GERAL** | **65%** |
+
+## DECISÃO FINAL
+
+# 🟢 P4-NB07-CRIT APTO PARA REVISÃO/MERGE
+
+**Não mergeado. Não publicado.** Aguardando revisão humana.
+
+## RESUMO SIMPLES
+
+O sistema tinha quatro rotas do Asaas que ainda passavam pelo servidor pesado (catch-all) e demoravam ~5 minutos até dar timeout (504). Foram criados handlers leves na Vercel para essas rotas, copiando exatamente as mesmas regras que já existiam — sem mudar cobranças, PIX, saldo, NF, tokens ou painel Asaas. O webhook continua sem senha extra (SEC-03 fica para outro bloco). NF, Supabase e Investment não foram alterados no frontend.
+
+## ROTAS INVESTIGADAS
+
+| Rota | Consumidor | Timeout prod | Migrada | Motivo |
+|------|------------|--------------|---------|--------|
+| `POST /api/asaas/webhook` | Asaas server-to-server | **504 ~300s** | ✅ | Problema A (catch-all); contrato legado preservado |
+| `POST /api/asaas/sync-open-payments` | `FinancialInvoiceControl.tsx` (auto-heal) | **504 ~300s** | ✅ | Uso real + timeout |
+| `GET /api/asaas/payments` | Sem frontend direto | **504 ~300s** | ✅ | Mesmo fluxo API |
+| `GET/DELETE /api/asaas/payment/:id` | `FinancialInvoiceControl.tsx` (DELETE) | catch-all | ✅ | Par com payments |
+
+## EVIDÊNCIA TIMEOUT PRODUÇÃO (read-only, 2026-08-15)
+
+| Rota | Status | Tempo |
+|------|--------|-------|
+| `/api/health` | 200 | 0,15s |
+| `/api/supabase/status` | 401 | 0,09s |
+| `/api/asaas/payments` (sem auth) | **504** | **300s** |
+| `GET /api/asaas/webhook` | **504** | **300s** |
+| `POST /api/asaas/sync-open-payments` (sem auth) | **504** | **300s** |
+
+## SSOT (funções compartilhadas)
+
+| Rota | Core | Handler Vercel |
+|------|------|----------------|
+| sync-open-payments | `lib/asaasSyncOpenPaymentsCore.ts` | `api/asaas-sync-open-payments.ts` |
+| payments / payment | `lib/asaasPaymentRoutesCore.ts` | `api/asaas-payments.ts`, `api/asaas-payment.ts` |
+| webhook | `lib/asaasWebhookCore.ts` | `api/asaas-webhook.ts` |
+
+Express (`server/routes.ts`) chama as mesmas funções SSOT.
+
+## REWRITES VERCEL (antes de `/api/(.*)`)
+
+- `/api/asaas/webhook` → `/api/asaas-webhook`
+- `/api/asaas/sync-open-payments` → `/api/asaas-sync-open-payments`
+- `/api/asaas/payments` → `/api/asaas-payments`
+- `/api/asaas/payment/:id` → `/api/asaas-payment?id=:id`
+
+**Nota:** entradas `functions` mantidas em **50** (limite Vercel). `maxDuration` via `export const config` nos handlers.
+
+## SEGURANÇA
+
+| Rota | Auth |
+|------|------|
+| sync-open-payments, payments, payment | `requireAuth` + roles `administrador/diretoria/financeiro` (Express) = `authorizeSupabaseAdminRequest` (Vercel) |
+| webhook | **Sem** requireAuth; **sem** `ASAAS_PAYMENT_WEBHOOK_TOKEN` (SEC-03 congelado) |
+
+Contrato webhook: sucesso `{ received: true }`; erro `{ received: true, error }` HTTP **200**.
+
+## PRESERVAÇÃO (diff funcional ZERO)
+
+- NF / `FinancialInvoiceControl` / `/api/nf/invoices` — **não alterados**
+- 6 rotas NB-07 Supabase — rewrites intactos
+- SEC-01 Investment — intacto
+- Asaas keys / ENV / issuer / PIX / transferências — **não alterados**
+- PR #262 / SEC-03 — **não reutilizado**
+
+## TESTES
+
+| Suíte | Resultado |
+|-------|-----------|
+| P4-NB07-CRIT (`scripts/p4-nb07-crit.test.ts`) | **27/27** |
+| NB-07 Supabase | pass |
+| SEC safe + NF hotfix | pass |
+| TS completa | **878 / 872 / 5** (+27 novos, **0 falhas novas** vs baseline main) |
+| `npm run build` | **OK** |
+
+Falhas baseline pré-existentes (5): investment-accounts, invoice-display, nb06-migration-routes, receivable-desc-nf, zapi/cockpit (+ 1 cancelled hang).
+
+## ARQUIVOS ALTERADOS (vs `main`)
+
+**Novos:** `api/asaas-{webhook,sync-open-payments,payments,payment}.ts`, `lib/asaas{Webhook,SyncOpenPayments,PaymentRoutes}Core.ts`, `scripts/p4-nb07-crit.test.ts`
+
+**Modificados:** `server/routes.ts` (delegação SSOT), `vercel.json` (4 rewrites), `lib/asaasChargeApi.ts` (`listPayments`, `deletePayment`), testes de guarda (`sec-safe`, `faturas-clear-processando`)
+
+## ROLLBACK FUTURO
+
+Reverter merge + redeploy Vercel. Rotas voltam ao catch-all (timeout). Sem migration de banco.
+
+## PENDÊNCIAS
+
+- Publicação separada (merge `dev`→`main` + validação prod pós-deploy)
+- SEC-03 webhook token — bloco futuro (PR #262 congelado)
+- Demais rotas Asaas ainda no catch-all (fora escopo deste bloco)
+
+---
+
+## HISTÓRICO — PUBLICAÇÃO PR #265 NB-07 SUPABASE
+
+> Handoff anterior — **Publicação controlada PR #265 — NB-07 `/api/supabase/*`**
+> **Publicado e validado em produção.**
 
 ---
 
