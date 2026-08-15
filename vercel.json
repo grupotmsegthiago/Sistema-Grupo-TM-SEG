@@ -499,6 +499,22 @@
       "destination": "/api/asaas-sync-customers"
     },
     {
+      "source": "/api/asaas/webhook",
+      "destination": "/api/asaas-webhook"
+    },
+    {
+      "source": "/api/asaas/sync-open-payments",
+      "destination": "/api/asaas-sync-open-payments"
+    },
+    {
+      "source": "/api/asaas/payments",
+      "destination": "/api/asaas-payments"
+    },
+    {
+      "source": "/api/asaas/payment/:id",
+      "destination": "/api/asaas-payment?id=:id"
+    },
+    {
       "source": "/api/nf/summary",
       "destination": "/api/nf-control?op=summary"
     },

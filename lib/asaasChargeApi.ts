@@ -274,6 +274,36 @@ export async function getPayment(
   return asaasFetch(`/payments/${encodeURIComponent(paymentId)}`, { signal }, company);
 }
 
+export async function listPayments(params?: {
+  customer?: string;
+  status?: string;
+  externalReference?: string;
+  offset?: number;
+  limit?: number;
+  company?: string;
+  signal?: AbortSignal;
+}): Promise<{ data: AsaasPayment[]; totalCount: number }> {
+  const query = new URLSearchParams();
+  if (params?.customer) query.set('customer', params.customer);
+  if (params?.status) query.set('status', params.status);
+  if (params?.externalReference) query.set('externalReference', params.externalReference);
+  query.set('offset', String(params?.offset || 0));
+  query.set('limit', String(params?.limit || 50));
+  return asaasFetch(`/payments?${query.toString()}`, { signal: params?.signal }, params?.company);
+}
+
+export async function deletePayment(
+  paymentId: string,
+  company?: string,
+  signal?: AbortSignal,
+): Promise<any> {
+  return asaasFetch(
+    `/payments/${encodeURIComponent(paymentId)}`,
+    { method: 'DELETE', signal },
+    company,
+  );
+}
+
 /** Lista NFs Asaas de uma cobrança (handler leve — sem server/asaasService). */
 export async function getInvoicesByPayment(
   paymentId: string,
