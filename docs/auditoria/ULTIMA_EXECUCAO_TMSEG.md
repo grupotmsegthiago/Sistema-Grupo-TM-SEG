@@ -1,11 +1,173 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **Correção final PR #265 — paridade init-invoices**
-> **Não contém segredos. NÃO mergeado. NÃO publicado.**
+> Handoff oficial — **Publicação controlada PR #265 — NB-07 `/api/supabase/*`**
+> **Não contém segredos. Publicado e validado em produção.**
 
 ---
 
-## CORREÇÃO FINAL PR #265 — PARIDADE init-invoices
+## PUBLICAÇÃO CONTROLADA PR #265 — NB-07 SUPABASE
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-15 (UTC) |
+| **PR** | [#265](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/265) |
+| **Branch origem** | `cursor/nb07-supabase-routes-eaa8` |
+| **HEAD validado** | `d5511ab1` |
+| **Commit funcional correção** | `9b31c98c` |
+| **Commit publicado (merge dev→main)** | `d39d0309` |
+| **Tag criada** | `baseline-fase3-nb07-supabase-merged-20260815` |
+| **PR #262 / SEC-03** | **Congelado** |
+
+## PROGRESSO
+
+| Indicador | Valor |
+|-----------|-------|
+| **EXECUÇÃO ATUAL** | **100%** |
+| **FASE 3** | **78%** |
+| **PROGRAMA GERAL** | **65%** |
+
+## DECISÃO FINAL
+
+# 🟢 NB-07 SUPABASE PUBLICADO E VALIDADO
+
+## PONTO DE RETORNO (pré-publicação)
+
+| Item | Valor |
+|------|-------|
+| `main` / `dev` antes | `5bb4364c` |
+| `buildId` produção antes | `5bb4364cc76b5a00074dff25cc322fe4993e7916` |
+| Tag anterior | `baseline-fase3-sec01-sec02-merged-20260814` |
+| HEAD PR validado | `d5511ab1` |
+
+Rollback git: `git revert d39d0309` ou reset para tag `baseline-fase3-sec01-sec02-merged-20260814` + redeploy Vercel. **Sem rollback de banco necessário.**
+
+## REVALIDAÇÃO HEAD E DIFF
+
+| Verificação | Resultado |
+|-------------|-----------|
+| HEAD PR = `d5511ab1` | ✅ |
+| Commits posteriores não validados | **Nenhum** |
+| Diff vs `main` (pré-merge) | 8 arquivos NB-07 exclusivamente |
+| Asaas / webhook / SEC-03 / NF / Investment / schema | **ZERO diff funcional** |
+
+Arquivos publicados: `api/supabase-admin.ts`, `lib/supabaseAdminApiAuth.ts`, `lib/supabaseAdminOperations.ts`, `server/routes.ts`, `vercel.json`, testes NB-07, handoff.
+
+## TESTES PRÉ-MERGE (HEAD `d5511ab1`)
+
+| Suíte | Resultado |
+|-------|-----------|
+| NB-07 + paridade | **51/51** |
+| SEC-01/02 + NF | **37/37** |
+| Asaas + P0/P1/P2/P3 | **123/123** |
+| TS completa (excl. hang `nb06-migration-routes`) | **820 / 815 / 5** |
+| `npm run build` | **OK** |
+
+Paridade `init-invoices`: HTTP 200 `{ok:false,error}` Express = Vercel. Matriz **6/6**.
+
+## MERGE E PUBLICAÇÃO
+
+| Etapa | Resultado |
+|-------|-----------|
+| PR #265 → `dev` | merge limpo (`d39d0309`) |
+| `dev` → `main` | fast-forward |
+| Push `main` + `dev` | ✅ |
+| Conflitos | **Nenhum** |
+| Alteração de código durante publicação | **Nenhuma** |
+
+## DEPLOY VERCEL
+
+| Campo | Valor |
+|-------|-------|
+| `GET /api/version` | `buildId=d39d0309bbb39d4b227503dda22f1b0f896dda7e` |
+| `builtAt` | `2026-08-15T22:04:02.844Z` |
+| `GET /api/health` | **200** (0,06 s) |
+| `GET /` | **200** (0,45 s) |
+| Projeto | `sistema-grupo-tm-seg` |
+
+## SMOKE PRODUÇÃO — 6 ROTAS `/api/supabase/*`
+
+Sem autenticação (fail-closed esperado = **sucesso**):
+
+| Rota | Método | Status | Tempo | Handler dedicado | Resultado |
+|------|--------|--------|-------|------------------|-----------|
+| `/api/supabase/init-invoices` | POST | **401** | **0,11 s** | sim (401 rápido, não timeout) | ✅ |
+| `/api/supabase/status` | GET | **401** | **0,08 s** | sim | ✅ |
+| `/api/supabase/db-metrics` | GET | **401** | **0,06 s** | sim | ✅ |
+| `/api/supabase/storage-usage` | GET | **401** | **401** | **0,11 s** | sim | ✅ |
+| `/api/supabase/billing-links` | GET | **401** | **0,07 s** | sim | ✅ |
+| `/api/supabase/health-check` | GET | **401** | **0,09 s** | sim | ✅ |
+
+**Comparação timeout antes/depois:**
+
+| Rota | Antes (catch-all) | Depois (handler dedicado) |
+|------|-------------------|---------------------------|
+| `/api/supabase/status` | ~20 s timeout | **0,08 s** → 401 |
+| `/api/supabase/db-metrics` | ~20 s timeout | **0,06 s** → 401 |
+
+`init-invoices` método incorreto (GET): **405** em **0,06 s** — contrato preservado, sem operação destrutiva executada.
+
+## NF — NÃO REGRESSÃO
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `/api/nf/invoices` sem auth | **401** (0,14 s) |
+| Hotfix intacto no bundle | ✅ (rewrite `/api/nf/invoices` inalterado) |
+| `transformFinancialInvoicesForControl()` | não alterado neste PR |
+| init / reemissão / RLS | **não executados** |
+
+## ASAAS — PRESERVAÇÃO
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Diff funcional Asaas no PR | **ZERO** |
+| `/api/asaas/balances` sem auth | **401** (read-only smoke) |
+| Webhook / ENV / três contas | **não alterados** |
+| PR #262 / SEC-03 | congelado |
+
+## SEGURANÇA PÓS-BUILD
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Service role somente backend | ✅ |
+| Service role no bundle frontend | apenas string de mensagem UI (preexistente); **sem valor** |
+| Segredo em resposta HTTP | **não** |
+| Auth fail-closed (401 sem token) | ✅ nas 6 rotas |
+| Roles preservadas | ✅ |
+
+## CRITÉRIOS DE SUCESSO (12/12)
+
+1. HEAD validado incluído no merge publicado ✅
+2. Build Vercel correto (`d39d0309`) ✅
+3. Health = 200 ✅
+4. 6 rotas atingem handlers dedicados ✅
+5. `/api/supabase/status` sem timeout ✅
+6. `/api/supabase/db-metrics` sem timeout ✅
+7. Auth fail-closed ✅
+8. `init-invoices` contrato preservado (405/401) ✅
+9. NF não alterada ✅
+10. Asaas não alterado ✅
+11. Zero falhas novas nos testes ✅
+12. Banco/schema inalterados ✅
+
+## PRÓXIMO PASSO
+
+- SEC-03 / PR #262 permanece **congelado**.
+- Catch-all global **não** corrigido nesta execução.
+- Nenhuma melhoria adicional iniciada.
+
+---
+
+## HISTÓRICO — CORREÇÃO FINAL PR #265 (pré-publicação)
+
+> Registro preservado da correção de paridade validada em `d5511ab1`.
+
+| Indicador | Valor |
+|-----------|-------|
+| **Decisão pré-publicação** | 🟢 PR #265 APTO PARA MERGE |
+| **Correção** | `init-invoices` HTTP 200 `{ok:false,error}` no handler Vercel |
+| **Paridade** | 6/6 rotas |
+
+---
 
 | Campo | Valor |
 |-------|-------|
