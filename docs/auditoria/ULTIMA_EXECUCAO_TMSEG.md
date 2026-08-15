@@ -1,9 +1,178 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **P4-NB07-CRIT — rotas Asaas críticas fora do catch-all**
-> **Não contém segredos. Branch de revisão — NÃO publicado.**
+> Handoff oficial — **Validação final PR #267 — P4-NB07-CRIT**
+> **Não contém segredos. PR bloqueado — NÃO mergeado e NÃO publicado.**
 
 ---
+
+## VALIDAÇÃO FINAL PR #267 — P4-NB07-CRIT
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-15 (UTC) |
+| **Modelo Cursor** | GPT-5.6 Sol |
+| **PR** | [#267](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/267) — draft |
+| **Branch** | `cursor/p4-nb07-crit-eaa8` |
+| **HEAD funcional validado** | `b061dc40c4024784c519927f6a08e992f5675c8a` |
+| **Base** | `origin/main` @ `2f2a577a96e93f26212025b5b5662747fdbc2f6a` |
+| **Produção consultada** | `buildId=2f2a577a96e93f26212025b5b5662747fdbc2f6a` |
+| **Tag baseline** | `baseline-fase3-nb07-supabase-merged-20260815` |
+| **PR #262 / SEC-03** | **Congelado e não reutilizado** |
+
+### PROGRESSO
+
+**Programa geral: 65%**
+
+`█████████████░░░░░░░`
+
+**Fase 3: 78%**
+
+`████████████████░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🔴 PR #267 NÃO APTO
+
+**Não mergear e não publicar.** A validação determinística encontrou divergências entre o comportamento Express atual e os cores/handlers novos. Nenhuma regra financeira foi corrigida nesta execução, conforme a ordem de parar diante de comportamento inesperado.
+
+### RESUMO SIMPLES
+
+Todo o PR foi revisado, os handlers foram empacotados e as suítes foram executadas. Autorização, roles, seleção das três contas, rewrites, limite de funções e áreas protegidas ficaram consistentes. Porém, o novo código não reproduz exatamente três comportamentos atuais: a consulta de NF do sync ganhou um parâmetro adicional, webhook sem body deixou de devolver o erro legado e um evento em formato array antes ignorado passou a ser aceito. Os testes do PR também não exercitam os efeitos mockados de payments, payment GET/DELETE e sync. Por isso o PR permanece bloqueado para correção controlada posterior.
+
+### REVISÃO INTEGRAL DO DIFF (`origin/main...HEAD`)
+
+| Arquivo | Rota/motivo | Alteração/SSOT | Consumidor | Risco |
+|---------|-------------|----------------|------------|-------|
+| `api/asaas-webhook.ts` | webhook fora do catch-all | handler Vercel → `asaasWebhookCore` | Asaas | alto; contrato divergente para body inválido |
+| `api/asaas-sync-open-payments.ts` | sync fora do catch-all | auth + handler → `asaasSyncOpenPaymentsCore` | `FinancialInvoiceControl` | alto; escrita financeira |
+| `api/asaas-payments.ts` | lista fora do catch-all | auth + handler → `asaasPaymentRoutesCore` | sem consumidor frontend localizado | médio |
+| `api/asaas-payment.ts` | GET/DELETE fora do catch-all | auth + handler → `asaasPaymentRoutesCore` | DELETE em `FinancialInvoiceControl` | alto; operação destrutiva |
+| `lib/asaasWebhookCore.ts` | SSOT webhook | lógica extraída de Express | Express + Vercel | alto |
+| `lib/asaasSyncOpenPaymentsCore.ts` | SSOT sync | consulta/atualizações extraídas | Express + Vercel | alto |
+| `lib/asaasPaymentRoutesCore.ts` | SSOT payments | GET/list/DELETE compartilhados | Express + Vercel | alto no DELETE |
+| `lib/asaasChargeApi.ts` | cliente leve Asaas | adiciona list/delete | cores leves | médio |
+| `server/routes.ts` | delegação Express | blocos substituídos por SSOT | catch-all Express | alto; paridade obrigatória |
+| `vercel.json` | precedência | quatro rewrites específicos | Vercel | médio |
+| `scripts/p4-nb07-crit.test.ts` | testes P4 | auth, rewrites e contratos parciais | QA | cobertura insuficiente dos efeitos |
+| `scripts/faturas-clear-processando.test.ts` | guarda existente | aponta asserts ao novo core | QA NF | baixo |
+| `scripts/sec-safe-nf-hotfix-guard.test.ts` | guarda SEC | reconhece SSOT sem SEC-03 | QA segurança | baixo |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | handoff | documentação | continuidade | baixo |
+
+Não há diff em componentes frontend, migrations, schema, ENV, API keys, NF API, Supabase NB-07 ou Investment. O conteúdo funcional do PR está limitado ao bloco P4, testes e documentação.
+
+### PARIDADE — RESULTADOS
+
+#### `POST /api/asaas/sync-open-payments`
+
+- Auth e roles: equivalentes (`administrador`, `diretoria`, `financeiro`).
+- Limite de lote: mesma regra query → body → default 15, teto 40.
+- `issuer_company`: encaminhado para `getPayment` e consulta de NF.
+- Pagamentos recebidos/confirmados/em dinheiro, vencidos, patch da fatura, baixa da transação, erro parcial e payload final: extração textual preservada.
+- **Divergência bloqueante:** Express chama `/invoices?payment=<id>`; `getInvoicesByPayment()` novo chama `/invoices?payment=<id>&limit=20`. Isso altera a consulta financeira e pode alterar a NF escolhida.
+- Os testes P4 não mockam Supabase + Asaas para comparar chamadas/patches; o teste rotulado como sucesso executa o core real de um lado e devolve resultado fixo do outro.
+
+#### `GET /api/asaas/payments` e `GET /api/asaas/payment/:id`
+
+- Roles, query `company`, filtros, paginação, formato de sucesso e 500 `{error}` aparecem equivalentes por revisão.
+- Resolução mock das três contas produziu a mesma URL e a mesma credencial fictícia para TM Gestão, TM Segurança e TM Security.
+- **Paridade não comprovada por teste:** não há casos determinísticos de sucesso, paginação/filtros, ID inexistente ou erro Asaas comparando status + payload + chamadas.
+
+#### `DELETE /api/asaas/payment/:id`
+
+- Auth ocorre antes da operação no handler Vercel.
+- Roles são idênticas ao Express.
+- `id` e `company` chegam ao core; sucesso pretendido permanece `{success:true}` e falha Asaas permanece 500 `{error}`.
+- Nenhum DELETE real foi executado.
+- **Bloqueio de cobertura:** os testes não invocam sucesso mockado, ID inexistente, erro Asaas nem comprovam que sem auth/role incorreta a função `remove` recebeu zero chamadas.
+
+#### `POST /api/asaas/webhook`
+
+Eventos reais do código:
+
+| Evento/entrada | Tratamento atual | Ação | Retorno |
+|----------------|------------------|------|---------|
+| `PAYMENT_RECEIVED` + `payment.id` | processado | busca por payment id/ref, baixa fatura/transação | 200 `{received:true}` |
+| `PAYMENT_CONFIRMED` + `payment.id` | processado | mesma ação | 200 `{received:true}` |
+| eventos acima sem id | ignorado | nenhuma escrita | 200 `{received:true}` |
+| qualquer outro evento string | ignorado | nenhuma escrita | 200 `{received:true}` |
+| erro interno | capturado | sem propagação HTTP | 200 `{received:true,error}` |
+
+Preservado: sem `requireAuth`, sem `ASAAS_PAYMENT_WEBHOOK_TOKEN`, sem secret novo e sem SEC-03.
+
+Divergências bloqueantes:
+
+1. Express desestrutura `req.body`; body ausente gera erro capturado e `{received:true,error}`. Vercel converte body ausente/inválido em `{}` e responde sucesso silencioso.
+2. Express só aceita igualdade estrita do evento. O core converte com `String(event || '')`; `['PAYMENT_RECEIVED']` antes era ignorado e agora é processado.
+3. O comentário explicativo original sobre prioridade `asaas_payment_id`/fallback `externalReference` não foi preservado na extração.
+
+### TRÊS CONTAS ASAAS
+
+Com `fetch` e credenciais totalmente fictícias, `server/asaasService` e `lib/asaasChargeApi` produziram a mesma URL e selecionaram a mesma credencial para:
+
+- TM Gestão;
+- TM Segurança;
+- TM Security.
+
+Os aliases, CNPJs, fallback TM Gestão e leitura runtime das chaves são equivalentes. Nenhuma credencial real foi exibida.
+
+### FINANCIAL INVOICE CONTROL E ÁREAS PROTEGIDAS
+
+- `FinancialInvoiceControl` continua chamando `authFetch('/api/asaas/sync-open-payments?limit=...')`, POST, timeout 25 s e tratamento de erro.
+- DELETE continua usando `authFetch`, `asaas_payment_id` e `issuer_company`.
+- Listagem NF continua independente em `/api/nf/invoices`.
+- **Zero diff funcional** em `FinancialInvoiceControl`, `lib/nfInvoiceControlApi.ts`, `api/nf-control.ts`, RLS, filtros ou status.
+- Rewrites NB-07 Supabase, Investment, health e version continuam antes do catch-all.
+
+### VERCEL
+
+- `functions`: **50/50**; nenhuma entrada nova.
+- Os quatro handlers exportam `config.maxDuration` (30/60 s), formato suportado para Node `/api` routes segundo documentação Vercel.
+- Empacotamento ESM dos quatro handlers via esbuild: **OK**.
+- Rewrites novos: índices 85–88; catch-all: índice 118.
+- Controles preservados: NF índice 90, Supabase status 24, Investment snapshots-all 30, health 0, version 76.
+- Risco de limite `functions`: mitigado; nenhum indício de falha de configuração por exceder 50.
+
+### SEGURANÇA
+
+- Nenhuma alteração de ENV, token, API key, schema ou migration.
+- Service role e chaves Asaas permanecem em módulos backend; handlers não retornam esses valores.
+- Bundle frontend contém apenas configuração pública Supabase anon já homologada.
+- O bundle contém nomes de variáveis Asaas em mensagens/diagnósticos existentes, mas nenhum valor secreto foi introduzido pelo PR.
+- PR #262/SEC-03 permanece congelado.
+
+### TESTES E BUILD
+
+| Verificação | Resultado |
+|-------------|-----------|
+| P4 + Asaas + NF + NB-07 + SEC-01/02 + P0/P1/P2/P3 | **235/235** |
+| TS completa | **878 total / 872 pass / 5 fail / 1 cancelled** |
+| Falhas novas da suíte TS | **0** (mesmo baseline informado) |
+| React | **4 total / 2 pass / 2 fail baseline DHL** |
+| Build | **OK** |
+| Empacotamento dos 4 handlers | **OK** |
+| Produção `/api/health` | 200, 0,20 s |
+| Produção `/api/version` | 200, `buildId=2f2a577a` |
+| Produção `/api/supabase/status` sem auth | 401, 0,07 s |
+
+Falhas baseline TS preservadas: investment-accounts, invoice-display, presence-refresh, receivable-desc-nf e zapi/cockpit. `nb06-migration-routes` foi cancelado por timeout de 90 s, como no baseline conhecido. As duas falhas React são de render DHL e não têm diff neste PR.
+
+### RISCOS E PRÓXIMO PASSO
+
+Correção futura controlada deve:
+
+1. restaurar a query exata de NF do Express;
+2. preservar body/evento webhook exatamente, sem introduzir SEC-03;
+3. adicionar mocks injetáveis para Supabase/Asaas;
+4. cobrir efeitos de sync, list, GET e DELETE (incluindo zero chamadas sem autorização);
+5. repetir esta validação integral.
+
+---
+
+## HISTÓRICO — IMPLEMENTAÇÃO P4-NB07-CRIT (PR #267)
 
 ## P4-NB07-CRIT — ROTAS ASAAS CRÍTICAS (REVISÃO)
 
