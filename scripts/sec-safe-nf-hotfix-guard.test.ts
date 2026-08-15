@@ -31,20 +31,22 @@ describe('SEC safe — hotfix NF preservado e SEC-03 ausente', () => {
     assert.equal(fs.existsSync('lib/asaasPaymentWebhook.ts'), false);
   });
 
-  it('SEC-03 ausente — vercel.json sem rewrite webhook dedicado', () => {
+  it('SEC-03 ausente — vercel.json sem handler asaas-payment-webhook (SEC-03)', () => {
     const vercel = fs.readFileSync('vercel.json', 'utf8');
     assert.doesNotMatch(vercel, /asaas-payment-webhook/);
   });
 
-  it('SEC-03 ausente — webhook Express mantém lógica original (sem verifyAsaasPaymentWebhookRequest)', () => {
+  it('SEC-03 ausente — webhook Express usa SSOT legada (sem verifyAsaasPaymentWebhookRequest)', () => {
     const routes = fs.readFileSync('server/routes.ts', 'utf8');
+    const core = fs.readFileSync('lib/asaasWebhookCore.ts', 'utf8');
     const start = routes.indexOf('app.post("/api/asaas/webhook"');
     assert.ok(start >= 0);
-    const webhookBlock = routes.slice(start, start + 2500);
+    const webhookBlock = routes.slice(start, start + 800);
     assert.doesNotMatch(webhookBlock, /verifyAsaasPaymentWebhookRequest/);
     assert.doesNotMatch(webhookBlock, /ASAAS_PAYMENT_WEBHOOK_TOKEN/);
-    assert.match(webhookBlock, /PAYMENT_RECEIVED/);
-    assert.match(webhookBlock, /received: true/);
+    assert.match(webhookBlock, /handleAsaasPaymentWebhook/);
+    assert.match(core, /PAYMENT_RECEIVED/);
+    assert.match(core, /received: true/);
   });
 
   it('diff funcional Asaas — nenhuma referência ASAAS_PAYMENT_WEBHOOK_TOKEN no repo alterado', () => {
