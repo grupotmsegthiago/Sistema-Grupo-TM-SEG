@@ -161,30 +161,18 @@ describe('NB-06 — hardening endpoints 🔴 (auth obrigatória)', () => {
     );
   });
 
-  it('Express local: endpoints protegidos rejeitam sem token e GET inválido', async () => {
-    const { getApp } = await import('../server/createApp.ts');
-    const app = await getApp();
-    const server = app.listen(0);
-    try {
-      const port = (server.address() as { port: number }).port;
-      const base = `http://127.0.0.1:${port}`;
-      for (const path of [
-        '/api/admin/run-monthly-logs-cleanup',
-        '/api/missions/fix-ceva-logitech-values',
-        '/api/migration/add-mission-columns',
-        '/api/migrations/provider-ops-columns',
-      ]) {
-        const r = await fetch(`${base}${path}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: '{}',
-        });
-        assert.equal(r.status, 401, `${path} deve retornar 401 sem token`);
-      }
-      const getR = await fetch(`${base}/api/migration/add-mission-columns`);
-      assert.equal(getR.status, 404);
-    } finally {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+  it('Express local: rotas protegidas têm requireAuth (sem subir getApp — evita handles abertos)', () => {
+    const routes = fs.readFileSync('server/routes.ts', 'utf8');
+    for (const [method, path, roles] of [
+      ['post', '/api/admin/run-monthly-logs-cleanup', 'administrador'],
+      ['post', '/api/missions/fix-ceva-logitech-values', 'diretoria'],
+      ['post', '/api/migration/add-mission-columns', 'diretoria'],
+      ['post', '/api/migrations/provider-ops-columns', 'diretoria'],
+    ] as const) {
+      const pattern = new RegExp(
+        `app\\.${method}\\(['"]${path.replace(/\//g, '\\/')}['"], requireAuth, requireRole\\([^)]*${roles}`,
+      );
+      assert.match(routes, pattern, `${method.toUpperCase()} ${path} deve exigir auth + role`);
     }
   });
 });

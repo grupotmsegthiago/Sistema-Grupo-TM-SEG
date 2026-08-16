@@ -25,13 +25,13 @@ describe('zapiSdkConnector', () => {
   });
 });
 
-describe('cockpit sem detalhe em aberto', () => {
-  it('DashboardDiretoria não renderiza a seção Detalhe do em aberto', () => {
+describe('cockpit com detalhe do em aberto (P4-TEST)', () => {
+  it('DashboardDiretoria renderiza seção Detalhe do em aberto (feature ativa)', () => {
     const dash = readFileSync(resolve('components/dashboard/DashboardDiretoria.tsx'), 'utf8');
-    assert.doesNotMatch(dash, /Detalhe do em aberto/);
-    assert.doesNotMatch(dash, /open-cash-outlook-diretoria/);
-    assert.doesNotMatch(dash, /Receita em aberto por cliente/);
-    assert.doesNotMatch(dash, /Próximas dívidas/);
-    assert.doesNotMatch(dash, /Próximas receitas/);
+    assert.match(dash, /Detalhe do em aberto/);
+    assert.match(dash, /open-cash-outlook-diretoria/);
+    assert.match(dash, /Receita em aberto por cliente/);
+    assert.match(dash, /Próximas dívidas/);
+    assert.match(dash, /Próximas receitas/);
   });
 });

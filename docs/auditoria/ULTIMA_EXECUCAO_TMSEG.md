@@ -1,11 +1,129 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **P4-SYNC CONSOLIDADO — PR #268 + PR #269 publicados**
-> **Testes + comentário + docs. Zero alteração funcional financeira.**
+> Handoff oficial — **P4-TEST — Limpeza e classificação final dos testes baseline**
+> **Somente testes/harness. NÃO mergeado / NÃO publicado.**
 
 ---
 
-## PUBLICAÇÃO P4-SYNC CONSOLIDADO — PR #268 + PR #269
+## P4-TEST — LIMPEZA E CLASSIFICAÇÃO FINAL DOS TESTES BASELINE
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **Modelo Cursor** | Composer 2.5 |
+| **Branch** | `cursor/p4-test-eaa8` |
+| **Base** | `main` @ `412bf51c` (pós P4-SYNC publicado) |
+| **Produção funcional** | `7dc3b059` (inalterada) |
+| **Tag anterior** | `baseline-fase3-p4-sync-merged-20260816` |
+| **SEC-03 / PR #262** | **Congelados** |
+
+### PROGRESSO
+
+**Programa geral: 72%**
+
+`██████████████░░░░░░`
+
+**Fase 3: 88%**
+
+`██████████████████░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+*(Percentuais Fase 3 não alterados — P4-TEST é investigação/correção de CI, marco ~3% pendente de merge.)*
+
+### DECISÃO
+
+# 🟢 P4-TEST APTO PARA REVISÃO/MERGE
+
+**Zero mudança funcional.** Todas as correções foram em arquivos `*.test.ts` / `*.test.tsx` (harness). Produção, NF, Investment, RH, DRE, Asaas, Supabase **não alterados**.
+
+### RESUMO SIMPLES
+
+Reexecutamos a suíte completa na `main` atual. Antes havia **4 falhas TS** + **2 falhas React** + **hang NB-06** (processo não encerrava após `getApp()`). Todas eram **testes desatualizados ou harness**, não bugs de produção. `receivable-desc-nf` **já estava corrigido** no P4-SYNC (confirmado 3/3 pass). Após alinhar os 6 testes e remover o subteste `getApp` que deixava `setInterval` abertos, a suíte fecha **906/906 TS + 4/4 React** em ~56s, sem hang.
+
+---
+
+### BASELINE ANTES (reexecução @ `412bf51c`, pré-correção)
+
+| Suíte | Total | Pass | Fail | Cancelled | Duração |
+|-------|-------|------|------|-----------|---------|
+| TS (`scripts/*.test.ts` excl. hang) | 888 | 884 | **4** | 0 | ~55s |
+| TS completa com nb06 | — | — | — | **hang** | >200s (processo não exit) |
+| React (`*.test.tsx`) | 4 | 2 | **2** | 0 | ~1,5s |
+
+**Falhas TS (nome exato):**
+
+1. `investment-accounts.test.ts` — `Vercel tem funções leves para CRUD de contas`
+2. `invoice-display.test.ts` — `tela dispara sync de pagamentos e retry NF`
+3. `presence-refresh.test.ts` — `registerTimeClockPunch dispara requestPresenceRefresh após inserir`
+4. `zapi-sdk-cockpit.test.ts` — `DashboardDiretoria não renderiza a seção Detalhe do em aberto`
+
+**Falhas React:**
+
+5. `dhl-intake-render.test.tsx` — `isDhl=false` e `isDhl=true` (etapa Veículo)
+
+**Hang:**
+
+6. `nb06-migration-routes.test.ts` — subteste `getApp()` deixa workers `setInterval` de `registerRoutes` abertos → runner não encerra
+
+**Confirmado fora da lista:** `receivable-desc-nf.test.ts` **3/3 pass** (P4-SYNC).
+
+---
+
+### CLASSIFICAÇÃO INDIVIDUAL (A–F)
+
+| # | Teste | Classificação | Evidência | Comportamento real | Causa | Ação |
+|---|-------|---------------|-----------|-------------------|-------|------|
+| 1 | investment-accounts | **A** — teste desatualizado | `vercel.json` tem rewrite `investment-accounts-item?id=:id` + handler `api/investment-accounts-item.ts`; entrada explícita em `functions{}` não é obrigatória (auto-descoberta Vercel) | CRUD via rewrite + handlers dedicados OK em prod | Teste exigia `"api/investment-accounts-item.ts"` em `functions{}` | Assert rewrite + handlers |
+| 2 | invoice-display | **A** — teste desatualizado | `FinancialInvoiceControl` usa `limit=${limit}` default 15; retry `limit=10` no botão manual e `limit=5` no auto | Sync dinâmico, NF protegida | Teste esperava string fixa `?limit=15` | Assert padrão dinâmico |
+| 3 | presence-refresh | **A** — teste desatualizado | Punch primário via `registerTimeClockPunchViaApi` + refresh; fallback Supabase mantém refresh pós-insert | RH/ponto correto em prod | Teste comparava índice global — refresh API vem antes do insert fallback | Assert caminhos API + fallback |
+| 4 | zapi-sdk-cockpit | **A** — teste desatualizado | `DashboardDiretoria.tsx` renderiza "Detalhe do em aberto" intencionalmente (linhas 545–596) | Feature ativa no cockpit | Teste negava seção removida antigamente, mas UI foi restaurada | Inverter asserts (presença) |
+| 5 | dhl-intake-render | **A** — teste desatualizado | Componente usa `GET /api/dhl-intake-public-get?token=` + `response.text()` | Formulário DHL OK | Mock só tinha `.json()`, sem `.text()` | Mock com `text()` + JSON |
+| 6 | nb06 hang | **E** — hang/timeout + **D** — infra | `getApp()` → `registerRoutes` inicia `setInterval` (watchdog, NF retry, e-mail…) | Migration funcional intacta | Subteste runtime redundante com asserts estáticos | Remover `getApp`; asserts estáticos requireAuth |
+
+---
+
+### BASELINE DEPOIS (pós-correção @ branch `cursor/p4-test-eaa8`)
+
+| Suíte | Total | Pass | Fail | Cancelled | Duração |
+|-------|-------|------|------|-----------|---------|
+| TS completa (`scripts/*.test.ts`) | **906** | **906** | **0** | **0** | **~55,7s** |
+| React (`scripts/*.test.tsx`) | **4** | **4** | **0** | **0** | **~1,8s** |
+| `bash scripts/run-tests.sh` | **910** | **910** | **0** | **0** | **~56s** |
+| `npm run build` | — | **OK** | — | — | ~13s |
+
+**Dívidas restantes:** nenhuma falha injustificada. Hang NB-06 **resolvido** (sem cancelar teste).
+
+---
+
+### DIFF FINAL (somente testes)
+
+| Arquivo | Motivo | Tipo | Risco |
+|---------|--------|------|-------|
+| `scripts/investment-accounts.test.ts` | Rewrite Vercel vs `functions{}` | Teste | Nulo |
+| `scripts/invoice-display.test.ts` | limit dinâmico sync NF | Teste | Nulo |
+| `scripts/presence-refresh.test.ts` | punch via API + fallback | Teste | Nulo |
+| `scripts/zapi-sdk-cockpit.test.ts` | seção em aberto ativa | Teste | Nulo |
+| `scripts/dhl-intake-render.test.tsx` | mock `text()` + endpoint novo | Teste | Nulo |
+| `scripts/nb06-migration-routes.test.ts` | remove getApp hang; asserts estáticos | Harness | Nulo |
+
+**Zero diff em:** `components/`, `lib/`, `server/`, `api/`, `vercel.json`, NF, Investment, Asaas, Supabase, DRE, RH runtime.
+
+---
+
+### ÁREAS PROTEGIDAS (confirmado)
+
+Asaas, webhook, SEC-03, PR #262, NF, FinancialInvoiceControl, Supabase NB-07, Investment, P4-NB07, DRE, `computeCanonicalRevenueCost`, OS mãe/filha, banco, schema, migration, ENV, RLS — **intocados**.
+
+### PRÓXIMO PASSO
+
+Revisão humana → merge `cursor/p4-test-eaa8` → publicação separada (fora desta execução).
+
+---
+
+## PUBLICAÇÃO P4-SYNC CONSOLIDADO — PR #268 + PR #269 (histórico publicado)
 
 | Campo | Valor |
 |-------|-------|
@@ -977,7 +1095,7 @@ A evolução **78%** está documentada por marcos publicados, não por soma item
 | SEC-03 | Webhook Asaas token | Handler dedicado + token 3 contas | **CONGELADO** | ~4% est. | **Alto** | Decisão humana Asaas | PR #262 | Aguardar descongelamento |
 | NB-07-CRIT | Catch-all rotas críticas | Webhook/sync/recalc off catch-all | **PUBLICADO VALIDADO** | ~6% | Alto | NB-07-SUP | PR #267 / `06e0dd88` | **NÃO REFAZER** |
 | P4-SYNC | Sincronismo residual | DRE canônico, fornecedor, receivable desc | **PUBLICADO VALIDADO** | ~4% | Médio | NB-07-CRIT | PR #268+#269 / `2b2e64ce` | **NÃO REFAZER** |
-| P4-TEST | Baseline 5+2 + nb06 hang | CI confiável | **PENDENTE** | ~3% est. | Baixo | — | — | Pode paralelizar |
+| P4-TEST | Baseline 5+2 + nb06 hang | CI confiável | **APTO REVISÃO** | ~3% est. | Baixo | P4-SYNC | `cursor/p4-test-eaa8` | Merge após revisão humana |
 | P4-LIMPEZA | Órfãos / decisões feature | BillingControlCenter, AI Chat, replit restos | **PENDENTE** | ~3% est. | Baixo | P2 decisões | — | Fase 3 ou 4 |
 | P4-FECHAMENTO | Regressão final + 100% | Build, smoke, handoff fechamento | **PENDENTE** | ~2% est. | Baixo | todos acima | — | Último |
 

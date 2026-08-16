@@ -25,8 +25,8 @@ test('FinancialAccountManager usa API para CRUD de contas', () => {
 });
 
 test('Vercel tem funções leves para CRUD de contas (não depende do Express)', () => {
+  // P4-TEST: rewrite dedicado + handler api/*.ts (Vercel auto-descobre mesmo sem entrada em functions{}).
   assert.match(vercelSrc, /"api\/investment-accounts\.ts"/);
-  assert.match(vercelSrc, /"api\/investment-accounts-item\.ts"/);
   assert.match(vercelSrc, /\/api\/investment\/accounts\/:id/);
   assert.match(vercelSrc, /investment-accounts-item\?id=:id/);
   assert.match(createApi, /createInvestmentAccount/);

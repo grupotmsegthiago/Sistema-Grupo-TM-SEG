@@ -72,10 +72,12 @@ function buildPublicResponse(isDhl: boolean) {
 }
 
 async function renderIntake(isDhl: boolean): Promise<string> {
+  const payload = buildPublicResponse(isDhl);
   (globalThis as any).fetch = async () => ({
     ok: true,
     status: 200,
-    json: async () => buildPublicResponse(isDhl),
+    text: async () => JSON.stringify(payload),
+    json: async () => payload,
   });
 
   const container = window.document.createElement('div');
