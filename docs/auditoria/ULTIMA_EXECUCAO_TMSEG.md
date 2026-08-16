@@ -1,11 +1,233 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **P4-LIMPEZA PUBLICADO — PR #271**
-> **Auditoria + testes. ZERO remoções. ZERO alteração funcional.**
+> Handoff oficial — **P4-FECHAMENTO — Auditoria final da Fase 3**
+> **Auditoria/testes/documentação. NÃO mergeado / NÃO publicado.**
 
 ---
 
-## PUBLICAÇÃO P4-LIMPEZA — PR #271
+## FASE 3 — RELATÓRIO FINAL
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **Modelo Cursor** | GPT-5.6 Sol Medium |
+| **Branch** | `cursor/p4-fechamento-eaa8` |
+| **Base auditada** | `origin/main` = `origin/dev` = `dfbfc962` |
+| **Produção** | `buildId=dfbfc962` |
+| **builtAt produção** | `2026-08-16T02:17:15.613Z` |
+| **Código funcional atual** | `c5a98d7f` |
+| **Tag atual** | `baseline-fase3-p4-limpeza-merged-20260816` → `5f39ecfc` |
+| **SEC-03 / PR #262** | **Congelados; risco confirmado nesta auditoria** |
+| **Banco / schema / migration / ENV** | **Não alterados** |
+
+### PROGRESSO
+
+**Programa geral: 78%**
+
+`████████████████░░░░`
+
+**Fase 3: 94%**
+
+`███████████████████░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+*(Auditoria não aumenta percentuais. Não há merge/tag de fechamento e existe bloqueio SEC-03.)*
+
+### DECISÃO
+
+# 🔴 FASE 3 NÃO PODE SER ENCERRADA
+
+Todos os blocos publicados permanecem íntegros, a suíte está limpa e produção estável. Contudo, o **SEC-03 é uma vulnerabilidade real de integridade financeira**, não apenas hardening opcional: `POST /api/asaas/webhook` é público, não verifica token/assinatura e usa service role para marcar `financial_invoices.status='PAGA'` e `financial_transactions.status='PAID'`. Um payload forjado com evento permitido e identificador/referência de fatura pode provocar baixa falsa. Nenhuma exploração foi executada; a comprovação é estática pelo fluxo publicado.
+
+O impacto não movimenta saldo/PIX diretamente, mas pode corromper Contas a Receber, NF, DRE/relatórios e decisões operacionais. As barreiras atuais (event allowlist + necessidade de identificador/referência) não autenticam a origem e são insuficientes. Portanto, **não é seguro declarar Fase 3 em 100% sem SEC-03 ou aceite formal do risco pelo proprietário**.
+
+---
+
+### RESUMO SIMPLES
+
+O sistema está estável: `main`, `dev` e produção estão alinhados; **929/929 testes passam**, sem hang, e o build termina com sucesso. NF continua via API autenticada, rotas Supabase/Investment/Asaas privadas respondem rapidamente sem autenticação, e as regras financeiras P0/DRE/Diretoria continuam cobertas. A única pendência bloqueante é o webhook de pagamento Asaas sem validação de origem. O PR #262 não deve ser mergeado como está porque contém mudanças antigas já substituídas e exige configuração coordenada nas três contas. Deve-se extrair **somente SEC-03** sobre a `main` atual, configurar token nos três webhooks e validar sem alterar saldo/PIX/cobranças.
+
+---
+
+### MARCOS ÚNICOS DA FASE 3
+
+| Bloco | Objetivo | PR | Commit | Tag | Publicado/validado | Regressão | Pendência |
+|-------|----------|----|--------|-----|--------------------|-----------|-----------|
+| P0 | Integridade financeira, filha, fail-closed | #257 | `5a3ef6b7` | `baseline-fase3-p0-merged-20260812` | Sim / sim | Não | — |
+| NB-06 | Handlers migration leves | #258 | `b6291411` | `baseline-fase3-nb06-merged-20260812` | Sim / sim | Não | — |
+| P1 | Busca OS, realtime, quotes, `is_same_os` | #259 | `6264443d` | `baseline-fase3-p1-merged-20260813` | Sim / sim | Não | SYNC-07 futuro |
+| P2 | Operacional, órfãos, OS mãe, pedágio | #260 | `ae2fc382` | `baseline-fase3-p2-merged-20260813` | Sim / sim | Não | SYNC-02 condicionado |
+| P3 | Limpeza/segurança, PDF, billing override | #261 | `9a083213` | `baseline-fase3-p3-merged-20260813` | Sim / sim | Não | — |
+| Hotfix NF | Restaurar lista NF via API autenticada | #263 | `c70acec9` | `baseline-hotfix-nf-invoices-20260814` | Sim / sim (inclusive visual) | Não | Não tocar |
+| SEC-01 | Investment fail-closed | #264 | `c8f7c59d` | `baseline-fase3-sec01-sec02-merged-20260814` | Sim / sim | Não | — |
+| SEC-02 | Supabase admin fail-closed | #264 | `c8f7c59d` | mesma SEC-01/02 | Sim / sim | Não | — |
+| NB-07 Supabase | Rotas dedicadas fora do catch-all | #265 | `d39d0309` | `baseline-fase3-nb07-supabase-merged-20260815` | Sim / sim | Não | Catch-all residual futuro |
+| P4-NB07-CRIT | Rotas Asaas críticas dedicadas | #267 | `06e0dd88` | `baseline-fase3-p4-nb07-crit-merged-20260815` | Sim / sim | Não | SEC-03 separado |
+| P4-SYNC | SSOT quinzena/sincronismo | #268 | `c359bb97` | `baseline-fase3-p4-sync-merged-20260816` → `7dc3b059` | Sim / sim | Não | — |
+| P4-SYNC-DRE | DRE realizado vs Diretoria gerencial | #269 | `2b2e64ce` | consolidado com P4-SYNC | Sim / sim | Não | Diferença intencional |
+| P4-TEST | Baselines + hang NB-06 | #270 | `c5a98d7f` | `baseline-fase3-p4-test-merged-20260816` | Sim / sim | Não | — |
+| P4-LIMPEZA | Classificar órfãos/legado | #271 | `5f39ecfc` | `baseline-fase3-p4-limpeza-merged-20260816` | Sim / sim | Não | 12 órfãos futuros |
+
+---
+
+### BASELINE GIT / PRODUÇÃO
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `origin/main` | `dfbfc962` |
+| `origin/dev` | `dfbfc962` |
+| Diff `main` × `dev` | **Zero** |
+| Produção `/api/version` | `dfbfc962` — alinhada |
+| P4-LIMPEZA ancestral de main | **Sim** |
+| Commit funcional sem explicação | **Nenhum encontrado** |
+| Tags de P0 a P4-LIMPEZA | **Presentes e mapeadas** |
+
+### PONTO DE RETORNO
+
+| Nível | Ref |
+|-------|-----|
+| Estado atual estável | `dfbfc962` |
+| Última tag | `baseline-fase3-p4-limpeza-merged-20260816` → `5f39ecfc` |
+| Código funcional pré-handoffs | `c5a98d7f` |
+
+**Rollback:** nenhum rollback recomendado — não há regressão da Fase 3. Esta execução não altera runtime/banco. Para futuro SEC-03, criar ponto de retorno próprio antes de qualquer deploy coordenado.
+
+---
+
+### SUÍTE FINAL COMPLETA
+
+| Suíte | Total | Pass | Fail | Cancelled | Skipped | Duração |
+|-------|-------|------|------|-----------|---------|---------|
+| TS (`scripts/*.test.ts`) | **925** | **925** | **0** | **0** | **0** | **58,69s** |
+| React (`scripts/*.test.tsx`) | **4** | **4** | **0** | **0** | **0** | **1,32s** |
+| Total `bash scripts/run-tests.sh` | **929** | **929** | **0** | **0** | **0** | **61s** |
+| `npm run build` | — | **OK** | — | — | — | **20s** |
+
+Baseline 929/929 preservado. Zero hang. Warnings de chunks/imports do build são preexistentes e não bloqueantes.
+
+---
+
+### SMOKE FINAL PRODUÇÃO (SOMENTE LEITURA / AUTH NEGATIVA)
+
+| Rota | Resultado |
+|------|-----------|
+| `GET /api/version` | **200** em 0,18s |
+| `GET /api/health` | **200** em 0,10s |
+| `GET /` | **200** em 0,13s |
+| `GET /api/nf/invoices` | **401** em 0,63s |
+| `GET /api/supabase/status` | **401** em 0,23s |
+| `GET /api/supabase/db-metrics` | **401** em 0,08s |
+| `GET /api/asaas/payments` | **401** em 0,11s |
+| `GET /api/asaas/payment/test-id` | **401** em 0,15s |
+| `GET /api/asaas/sync-open-payments` | **405** em 0,09s (método correto é POST) |
+| `POST /api/asaas/sync-open-payments` sem auth | **401** em 0,06s; nenhuma execução |
+| `GET /api/investment/snapshots-all` | **401** em 0,09s |
+
+Nenhum token privilegiado e nenhuma escrita válida foram usados.
+
+---
+
+### FINANCEIRO / NF / SINCRONISMO
+
+| Item | Evidência final | Estado |
+|------|-----------------|--------|
+| P0 canônico | testes `official` / `estimated` / `needs_validation` | Preservado |
+| OS filha `is_same_os` | receita cliente preservada; custo/pedágio fornecedor zero | Preservado |
+| DRE | persistidos, realizado, `end_time` | Preservado |
+| Diretoria | `computeCanonicalRevenueCost`, gerencial, `start_time` | Preservado |
+| NF UI | `FinancialInvoiceControl` usa `authFetch('/api/nf/invoices')` | Preservado |
+| NF transformação | `transformFinancialInvoicesForControl()` presente | Preservado |
+| NF handler | `/api/nf/invoices` → handler dedicado; 401 sem auth | Preservado |
+| OS→Faturamento→Recebíveis→Fornecedor→NF→DRE→Diretoria | suítes P0–P4 + 929/929 | Sem regressão nova |
+| Busca OS / OS mãe | `searchMissionsByTerm` e paginação P1/P2 | Preservado |
+| Quotes Diretoria | `fetchAllPages`; sentinel truncamento | Preservado |
+| Pedágio | `resolveStoredProviderToll`; filha zerada | Preservado |
+| Supabase paging | testes NB-07/P1 | Preservado |
+
+Não alinhar DRE e Diretoria: a diferença de semântica/período é oficial e intencional.
+
+---
+
+### ASAAS / SEC-03 — DECISÃO FORMAL
+
+| Critério | Avaliação |
+|----------|-----------|
+| **Exposição** | Endpoint público dedicado `POST /api/asaas/webhook`; sem token/assinatura |
+| **Impacto** | Escrita service-role em `financial_invoices` e `financial_transactions`; baixa falsa |
+| **Explorabilidade** | Com evento permitido + `payment.id` arbitrário e referência/número conhecido ou adivinhado |
+| **Mitigações atuais** | Allowlist de dois eventos e necessidade de identificador; **não autenticam origem** |
+| **Movimentação direta de dinheiro** | Não; saldo/PIX/transferências/cobranças usam fluxos separados |
+| **Risco de alterar** | Alto: token/env precisam ser coordenados nos webhooks das três contas |
+| **Urgência** | Alta — integridade financeira |
+| **PR #262** | Draft antigo com SEC-01/02/NF já substituídos; **não mergear diretamente** |
+
+#### Respostas objetivas
+
+**A. Vulnerabilidade crítica/explorável comprovada?**  
+**Sim quanto à integridade financeira/explorabilidade.** O código aceita origem não autenticada e efetua escrita privilegiada. Embora não transfira dinheiro diretamente, pode falsificar situação de pagamento e contaminar relatórios/decisões.
+
+**B. SEC-03 é somente hardening futuro não bloqueante?**  
+**Não no estado atual.** Pode ser executado em uma etapa de segurança isolada e coordenada, mas enquanto não for concluído (ou formalmente aceito pelo proprietário), bloqueia declarar a Fase 3 em 100%.
+
+#### Procedimento recomendado (não executado)
+
+1. Não reutilizar/mergear integralmente PR #262.
+2. Criar branch nova da `main` atual contendo somente validação SEC-03.
+3. Definir secret forte na Vercel do projeto oficial e configurar o mesmo `authToken` nos webhooks de pagamento das três contas Asaas.
+4. Fazer deploy coordenado; validar 503 sem env, 401 token incorreto e 200 token correto em ambiente controlado.
+5. Confirmar saldo, PIX, transferências, cobranças, sync e NF inalterados.
+6. Só então executar P4-FECHAMENTO documental, merge e tag final.
+
+---
+
+### SEGURANÇA PASSIVA
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Service role no frontend | Testes NB-07 confirmam ausência de valor privilegiado |
+| Bundle | Contém nomes/mensagens de env e chave `anon` pública esperada; nenhum valor service-role identificado |
+| Google Maps | Chave pública browser preexistente é empacotada; restrições Google não verificáveis localmente — dívida de segurança |
+| `.env` versionado | Somente `.env.example`; zero diff de `.env` desde P0 |
+| Rotas admin auditadas | Fail-closed pelos testes e smokes |
+| Tokens/ENV Asaas | Não lidos, exibidos, alterados ou rotacionados |
+
+---
+
+### NB-07 / PERFORMANCE / LIMPEZA RESIDUAIS
+
+| Dívida | Classificação | Bloqueia? | Destino |
+|--------|---------------|-----------|---------|
+| Catch-all `/api/(.*)` residual | Arquitetura futura; rotas críticas auditadas têm rewrites dedicados | Não | Arquitetura |
+| SYNC-07 `refreshMissions` até 2× | Performance; sem evidência de corrupção | Não | Performance |
+| SYNC-02 fornecedor | Inconclusivo, sem reprodução | Não | Backlog condicionado |
+| 12 componentes órfãos | Fora do runtime, comprovados por teste | Não | Limpeza futura |
+| AI Chat | Inativo intencionalmente | Não | Decisão produto |
+| `attached_assets/extracted*` | Legado fora do build | Não | Limpeza futura |
+| Chave Maps pública | Restrição externa não verificada | Não imediato | Segurança futura |
+| **SEC-03 webhook Asaas** | **Integridade financeira explorável** | **Sim** | Segurança urgente / fechamento |
+
+---
+
+### CRITÉRIO DE ENCERRAMENTO
+
+| Critério | Resultado |
+|----------|-----------|
+| Blocos planejados executados | Sim |
+| Produção estável | Sim |
+| Suíte limpa / build OK | Sim |
+| Smokes críticos OK | Sim |
+| Regressão financeira / corrupção detectada | Não |
+| Vulnerabilidade crítica/explorável sem mitigação suficiente | **Sim — SEC-03** |
+| Merge/tag documental de fechamento | Não executado (por instrução) |
+
+**Conclusão:** Fase 3 permanece em **94%**. Após SEC-03 isolado/coordenado e nova auditoria limpa, realizar merge documental e criar tag de fechamento; somente então reavaliar 100%.
+
+---
+
+## PUBLICAÇÃO P4-LIMPEZA — PR #271 (histórico publicado)
 
 | Campo | Valor |
 |-------|-------|
@@ -1444,16 +1666,16 @@ A evolução **78%** está documentada por marcos publicados, não por soma item
 | P1 | Integridade conjunto | Busca OS, realtime, quotes, is_same_os | **PUBLICADO** | ~20% | Baixo | P0 | PR #259 | Itens residuais → P4-SYNC |
 | P2 | Operacional / órfãos | AI inativo, billing órfão, OS mãe, pedágio | **PUBLICADO** | ~12% | Baixo | P1 | PR #260 | Decisões órfãos → P4-LIMPEZA |
 | P3 | Limpeza / segurança | replit_integrations, billing-override auth, PDF | **PUBLICADO** | ~12% | Baixo | P2 | PR #261 | — |
-| HOTFIX-NF | Lista faturas vazia | `/api/nf/invoices` + authFetch | **PUBLICADO VALIDADO** | ~6%* | — | SEC-02 | PR #263 / `c8f7c59d` | **NÃO TOCAR** |
+| HOTFIX-NF | Lista faturas vazia | `/api/nf/invoices` + authFetch | **PUBLICADO VALIDADO** | ~6%* | — | SEC-02 | PR #263 / `c70acec9` | **NÃO TOCAR** |
 | SEC-01 | Investment auth | Fail-closed investment/* | **PUBLICADO** | ~2%* | Baixo | HOTFIX-NF | PR #264 | — |
 | SEC-02 | Supabase auth | requireAuth 6 rotas | **PUBLICADO** | ~2%* | Baixo | SEC-01 | PR #264 | — |
 | NB-07-SUP | 6 rotas `/api/supabase/*` | Handlers dedicados + paridade | **PUBLICADO VALIDADO** | +4% | Baixo | SEC-02 | PR #265 / `d39d0309` | **NÃO REFAZER** |
-| SEC-03 | Webhook Asaas token | Handler dedicado + token 3 contas | **CONGELADO** | ~4% est. | **Alto** | Decisão humana Asaas | PR #262 | Aguardar descongelamento |
+| SEC-03 | Webhook Asaas token | Handler dedicado + token 3 contas | **BLOQUEANTE — risco confirmado** | ~4% est. | **Crítico integridade** | Deploy coordenado Asaas | PR #262 (não mergear direto) | Extrair SEC-03 limpo |
 | NB-07-CRIT | Catch-all rotas críticas | Webhook/sync/recalc off catch-all | **PUBLICADO VALIDADO** | ~6% | Alto | NB-07-SUP | PR #267 / `06e0dd88` | **NÃO REFAZER** |
 | P4-SYNC | Sincronismo residual | DRE canônico, fornecedor, receivable desc | **PUBLICADO VALIDADO** | ~4% | Médio | NB-07-CRIT | PR #268+#269 / `2b2e64ce` | **NÃO REFAZER** |
 | P4-TEST | Baseline 5+2 + nb06 hang | CI confiável | **PUBLICADO VALIDADO** | ~3% | Baixo | P4-SYNC | PR #270 / `c5a98d7f` | **NÃO REFAZER** |
 | P4-LIMPEZA | Órfãos / decisões feature | BillingControlCenter, AI Chat, replit restos | **PUBLICADO VALIDADO** | ~3% | Baixo | P4-TEST | PR #271 / `5f39ecfc` | **NÃO REFAZER** |
-| P4-FECHAMENTO | Regressão final + 100% | Build, smoke, handoff fechamento | **PENDENTE** | ~2% est. | Baixo | todos acima | — | Último |
+| P4-FECHAMENTO | Regressão final + 100% | Build, smoke, handoff fechamento | **AUDITADO — BLOQUEADO SEC-03** | ~2% est. | Alto | SEC-03 | `cursor/p4-fechamento-eaa8` | Reauditar após SEC-03 |
 
 \*% por item = estimativa para explicar 22%; marcos publicados (78%) são a fonte oficial.
 
