@@ -311,7 +311,7 @@ export async function getInvoicesByPayment(
   signal?: AbortSignal,
 ): Promise<any[]> {
   const data = await asaasFetch(
-    `/invoices?payment=${encodeURIComponent(paymentId)}&limit=20`,
+    `/invoices?payment=${encodeURIComponent(paymentId)}`,
     { signal },
     company,
   );

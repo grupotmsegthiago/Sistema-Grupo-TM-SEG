@@ -18,8 +18,11 @@ export type AsaasWebhookResult = {
   error?: string;
 };
 
-export async function handleAsaasPaymentWebhook(body: AsaasWebhookPayload): Promise<AsaasWebhookResult> {
-  const { event, payment } = body || {};
+export async function handleAsaasPaymentWebhook(
+  body: AsaasWebhookPayload | null | undefined,
+): Promise<AsaasWebhookResult> {
+  // Paridade Express legado: const { event, payment } = req.body (lança se body ausente)
+  const { event, payment } = body as AsaasWebhookPayload;
   console.log(`[Asaas Webhook] Evento: ${event} | Payment: ${payment?.id}`);
 
   const supabase = createSupabaseAdminClient();
@@ -27,7 +30,7 @@ export async function handleAsaasPaymentWebhook(body: AsaasWebhookPayload): Prom
     throw new Error('Supabase admin indisponível');
   }
 
-  if (['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED'].includes(String(event || '')) && payment?.id) {
+  if (['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED'].includes(event as string) && payment?.id) {
     const orParts: string[] = [`asaas_payment_id.eq.${payment.id}`];
     if (payment.externalReference) {
       const nfNumber = String(payment.externalReference).replace(/^NF-/, '').replace(/^TMSEG-/, '');

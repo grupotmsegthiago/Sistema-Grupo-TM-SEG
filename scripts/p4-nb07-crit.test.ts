@@ -114,6 +114,28 @@ async function simulateExpressSyncOpenPayments(
   return state;
 }
 
+async function simulateExpressWebhook(body: unknown): Promise<ResponseState> {
+  const { res, state } = mockResponse();
+  try {
+    res.json(await handleAsaasPaymentWebhook(body as any));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.json({ received: true, error: message });
+  }
+  return state;
+}
+
+async function simulateVercelWebhook(body: unknown): Promise<ResponseState> {
+  const { res, state } = mockResponse();
+  await handleAsaasWebhookRequest({ method: 'POST', body }, res);
+  return state;
+}
+
+function assertWebhookParity(express: ResponseState, vercel: ResponseState) {
+  assert.equal(express.status, vercel.status, 'status HTTP divergente');
+  assert.deepEqual(express.body, vercel.body, 'payload divergente');
+}
+
 describe('P4-NB07-CRIT — rotas Asaas críticas fora do catch-all', () => {
   for (const route of AUTH_ROUTES) {
     describe(`${route.method} ${route.path}`, () => {
@@ -164,6 +186,16 @@ describe('P4-NB07-CRIT — rotas Asaas críticas fora do catch-all', () => {
       paidIds: ['inv-1'],
     };
 
+    it('A — consulta NF sem limit adicional (paridade getInvoiceByPayment)', () => {
+      const expressSrc = fs.readFileSync('server/asaasService.ts', 'utf8');
+      const chargeSrc = fs.readFileSync('lib/asaasChargeApi.ts', 'utf8');
+      assert.match(expressSrc, /getInvoiceByPayment[\s\S]*?`\/invoices\?payment=\$\{paymentId\}`/);
+      const fnBlock = chargeSrc.match(/export async function getInvoicesByPayment[\s\S]*?^}/m);
+      assert.ok(fnBlock, 'getInvoicesByPayment ausente');
+      assert.match(fnBlock![0], /`\/invoices\?payment=\$\{encodeURIComponent\(paymentId\)\}`/);
+      assert.doesNotMatch(fnBlock![0], /limit=/, 'Vercel não deve adicionar limit na consulta NF');
+    });
+
     it('sucesso SSOT → mesmo JSON (200)', async () => {
       const express = await simulateExpressSyncOpenPayments(async () =>
         runAsaasSyncOpenPayments({ queryLimit: '5', bodyLimit: undefined }),
@@ -210,7 +242,74 @@ describe('P4-NB07-CRIT — rotas Asaas críticas fora do catch-all', () => {
       assert.equal(state.status, 405);
     });
 
-    it('POST sucesso → 200 { received: true }', async () => {
+    it('B — POST sem body → Express = Vercel (erro legado no payload)', async () => {
+      const express = await simulateExpressWebhook(undefined);
+      const vercel = await simulateVercelWebhook(undefined);
+      assertWebhookParity(express, vercel);
+      assert.equal((express.body as any).received, true);
+      assert.match(String((express.body as any).error), /destructure|undefined|null/i);
+    });
+
+    it('C — body array (vazio, 1 evento, múltiplos) → Express = Vercel', async () => {
+      const cases = [
+        [],
+        [{ event: 'PAYMENT_RECEIVED', payment: { id: 'pay_arr_1' } }],
+        [
+          { event: 'PAYMENT_RECEIVED', payment: { id: 'pay_a' } },
+          { event: 'PAYMENT_CONFIRMED', payment: { id: 'pay_b' } },
+        ],
+      ];
+      for (const body of cases) {
+        const express = await simulateExpressWebhook(body);
+        const vercel = await simulateVercelWebhook(body);
+        assertWebhookParity(express, vercel);
+      }
+    });
+
+    it('D — body normal objeto → Express = Vercel', async () => {
+      const body = { event: 'PAYMENT_CREATED', payment: { id: 'pay_norm' } };
+      const express = await simulateExpressWebhook(body);
+      const vercel = await simulateVercelWebhook(body);
+      assertWebhookParity(express, vercel);
+    });
+
+    it('E — evento válido PAYMENT_RECEIVED → Express = Vercel', async () => {
+      const body = { event: 'PAYMENT_RECEIVED', payment: { id: 'pay_valid' } };
+      const express = await simulateExpressWebhook(body);
+      const vercel = await simulateVercelWebhook(body);
+      assertWebhookParity(express, vercel);
+    });
+
+    it('F — evento ignorado / event ausente / payment ausente → Express = Vercel', async () => {
+      const cases = [
+        { event: 'PAYMENT_DELETED', payment: { id: 'pay_ign' } },
+        { payment: { id: 'pay_no_event' } },
+        { event: 'PAYMENT_RECEIVED' },
+        { event: ['PAYMENT_RECEIVED'], payment: { id: 'pay_evt_array' } },
+      ];
+      for (const body of cases) {
+        const express = await simulateExpressWebhook(body);
+        const vercel = await simulateVercelWebhook(body);
+        assertWebhookParity(express, vercel);
+      }
+    });
+
+    it('G — body null → Express = Vercel (erro legado no payload)', async () => {
+      const express = await simulateExpressWebhook(null);
+      const vercel = await simulateVercelWebhook(null);
+      assertWebhookParity(express, vercel);
+      assert.equal((express.body as any).received, true);
+      assert.match(String((express.body as any).error), /destructure|undefined|null/i);
+    });
+
+    it('H — handler Vercel não converte body ausente em {}', () => {
+      const src = fs.readFileSync('api/asaas-webhook.ts', 'utf8');
+      assert.doesNotMatch(src, /parseBody/);
+      assert.doesNotMatch(src, /if \(!body\) return \{\}/);
+      assert.match(src, /handleWebhook\(req\.body\)/);
+    });
+
+    it('POST sucesso mockado → 200 { received: true }', async () => {
       const { res, state } = mockResponse();
       await handleAsaasWebhookRequest(
         { method: 'POST', body: { event: 'PAYMENT_RECEIVED', payment: { id: 'pay_1' } } },
@@ -247,6 +346,12 @@ describe('P4-NB07-CRIT — rotas Asaas críticas fora do catch-all', () => {
       assert.equal((express.state.body as any).received, true);
       assert.equal((vercel.state.body as any).received, true);
       assert.match(String((vercel.state.body as any).error), /Supabase admin indisponível/);
+    });
+
+    it('core webhook usa includes estrito (array ignorado)', () => {
+      const core = fs.readFileSync('lib/asaasWebhookCore.ts', 'utf8');
+      assert.doesNotMatch(core, /String\(event/);
+      assert.match(core, /\.includes\(event/);
     });
 
     it('não exige ASAAS_PAYMENT_WEBHOOK_TOKEN no handler', () => {

@@ -4,19 +4,6 @@
  */
 import { handleAsaasPaymentWebhook } from '../lib/asaasWebhookCore.js';
 
-function parseBody(body: unknown): Record<string, unknown> {
-  if (!body) return {};
-  if (typeof body === 'string') {
-    try {
-      return JSON.parse(body) as Record<string, unknown>;
-    } catch {
-      return {};
-    }
-  }
-  if (typeof body === 'object') return body as Record<string, unknown>;
-  return {};
-}
-
 type WebhookDeps = {
   handleWebhook?: typeof handleAsaasPaymentWebhook;
 };
@@ -40,8 +27,8 @@ export async function handleAsaasWebhookRequest(
   res.setHeader('Cache-Control', 'no-store');
 
   try {
-    const body = parseBody(req.body);
-    const result = await handleWebhook(body as any);
+    // Paridade Express: repassa req.body sem converter ausente → {}
+    const result = await handleWebhook(req.body);
     res.status(200).json(result);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
