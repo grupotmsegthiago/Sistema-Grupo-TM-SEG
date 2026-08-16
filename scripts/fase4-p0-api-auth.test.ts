@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import express from 'express';
 import fs from 'node:fs';
 import { describe, it } from 'node:test';
 import {
@@ -157,5 +158,52 @@ describe('F4-P0 — autorização fail-closed compartilhada', () => {
       false,
     );
     assert.equal(canAccessF4ClientScope(principal('diretoria'), '99'), true);
+  });
+
+  it('runtime equivalente responde 401/403 rápido e só alcança operação com role correta', async () => {
+    const app = express();
+    let operationCalls = 0;
+    const resolve = async (token: string) => {
+      if (token === 'diretoria-ok') return principal('diretoria');
+      if (token === 'operador-ok') return principal('operador');
+      return null;
+    };
+    app.get('/admin', async (req, res) => {
+      const auth = await authorizeF4ApiRequest(req, F4_ADMIN_ROLES, resolve);
+      if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+      operationCalls += 1;
+      return res.status(200).json({ ok: true });
+    });
+
+    const server = app.listen(0);
+    await new Promise<void>((resolveListen) => server.once('listening', resolveListen));
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const base = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const startedAt = Date.now();
+      const noAuth = await fetch(`${base}/admin`);
+      const invalid = await fetch(`${base}/admin`, {
+        headers: { authorization: 'Bearer token-invalido' },
+      });
+      const wrongRole = await fetch(`${base}/admin`, {
+        headers: { authorization: 'Bearer operador-ok' },
+      });
+      const allowed = await fetch(`${base}/admin`, {
+        headers: { authorization: 'Bearer diretoria-ok' },
+      });
+
+      assert.equal(noAuth.status, 401);
+      assert.equal(invalid.status, 401);
+      assert.equal(wrongRole.status, 403);
+      assert.equal(allowed.status, 200);
+      assert.equal(operationCalls, 1);
+      assert.ok(Date.now() - startedAt < 2_000);
+    } finally {
+      await new Promise<void>((resolveClose, reject) => {
+        server.close((error) => (error ? reject(error) : resolveClose()));
+      });
+    }
   });
 });
