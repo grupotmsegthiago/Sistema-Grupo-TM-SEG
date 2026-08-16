@@ -1,11 +1,218 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **P4-LIMPEZA PUBLICADO — PR #271**
-> **Auditoria + testes. ZERO remoções. ZERO alteração funcional.**
+> Handoff oficial — **SEC-03 ISOLADO — Hardening webhook Asaas**
+> **Implementado/testado em branch. NÃO mergeado / NÃO publicado / ENV não configurada.**
 
 ---
 
-## PUBLICAÇÃO P4-LIMPEZA — PR #271
+## SEC-03 ISOLADO — HARDENING WEBHOOK ASAAS
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **Modelo Cursor** | GPT-5.6 Sol Medium |
+| **Branch** | `cursor/fase3-sec03-webhook-eaa8` |
+| **Base limpa** | `origin/main` @ `dfbfc962` |
+| **Commit implementação** | `3e417e91` |
+| **PR** | [#273](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/273) — draft |
+| **PR #262** | **Congelado; não reutilizado/cherry-picked** |
+| **Produção** | `dfbfc962` — inalterada |
+| **Vercel ENV / painel Asaas** | **Não alterados** |
+| **Banco / schema / migration / RLS** | **Não alterados** |
+
+### PROGRESSO
+
+**Programa geral: 78%**
+
+`████████████████░░░░`
+
+**Fase 3: 94%**
+
+`███████████████████░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+*(Implementação em branch não aumenta a Fase 3. Falta configuração externa, merge, deploy e smoke.)*
+
+### DECISÃO
+
+# 🟡 SEC-03 APTO COM PENDÊNCIA DE CONFIGURAÇÃO EXTERNA
+
+### RESUMO SIMPLES
+
+O webhook de pagamentos aceitava requisições públicas sem provar que vieram do Asaas e podia alcançar escritas financeiras privilegiadas. O SEC-03 adiciona autenticação servidor-servidor no header oficial `asaas-access-token`, comparado com a env backend `ASAAS_PAYMENT_WEBHOOK_TOKEN`. Sem configuração retorna **503**; token ausente/incorreto retorna **401**; somente token correto alcança o core/Supabase. O fluxo de baixa, eventos, matching e respostas financeiras permanece igual. As três contas continuam usando o mesmo endpoint, sem alterar emissora/API keys. **948/948 testes passam e o build está OK.**
+
+---
+
+### RISCO / CAUSA
+
+| Item | Antes | SEC-03 |
+|------|-------|--------|
+| Origem da requisição | Não autenticada | Header Asaas validado |
+| Secret | Nenhum | `ASAAS_PAYMENT_WEBHOOK_TOKEN` somente backend |
+| Falta de configuração | Processava payload | **503** fail-closed |
+| Token ausente/incorreto | Processava payload | **401** antes do core |
+| Token correto | Processava payload | Mesmo fluxo atual |
+| Criação Supabase / matching | Antes da proteção | Somente após auth |
+
+**Causa:** o handler P4-NB07-CRIT retirou a rota do catch-all preservando intencionalmente o contrato legado sem SEC-03. A rota ficou rápida, porém ainda sem validação de origem.
+
+---
+
+### CONTRATO OFICIAL ASAAS
+
+| Campo | Definição |
+|-------|-----------|
+| Configuração Asaas | `authToken` do webhook |
+| Header recebido | `asaas-access-token` |
+| Env backend | `ASAAS_PAYMENT_WEBHOOK_TOKEN` |
+| Formato | 32–255 caracteres, sem espaços, forte |
+| Proibido | Reutilizar API key Asaas |
+| Comparação | SHA-256 + `timingSafeEqual` |
+| Sem env/env inválida | HTTP **503** `{error:"webhook_not_configured"}` |
+| Header ausente/incorreto | HTTP **401** `{error:"unauthorized"}` |
+
+Referência oficial consultada: documentação Asaas “About webhooks” e “Create new webhook”, que define `authToken` → header `asaas-access-token`.
+
+Nenhum valor de secret é logado ou devolvido na resposta.
+
+---
+
+### FLUXO ATUAL MAPEADO (PRESERVADO)
+
+```text
+POST /api/asaas/webhook
+  → api/asaas-webhook.ts (Vercel) OU server/routes.ts (Express)
+  → verifyAsaasPaymentWebhookRequest()                  [NOVO — antes de side effect]
+  → handleAsaasPaymentWebhook()                         [inalterado funcionalmente]
+  → evento PAYMENT_RECEIVED | PAYMENT_CONFIRMED
+  → matching asaas_payment_id e fallback externalReference/número
+  → financial_invoices: status=PAGA, asaas_status=...
+  → financial_transactions: PENDING → PAID
+  → {received:true}
+```
+
+| Cenário autenticado | Resposta/efeito preservado |
+|---------------------|----------------------------|
+| Body inválido | 200 `{received:true,error}` |
+| Evento ignorado | 200 `{received:true}`, zero escrita |
+| Ausência de payment | 200 `{received:true}`, zero escrita |
+| Payment inexistente | 200 `{received:true}`, zero escrita |
+| Erro Supabase | Core lança; handler responde contrato legado 200 com erro |
+| Evento válido | Baixa atual |
+
+### EVENTOS
+
+Lista mantida exatamente:
+
+1. `PAYMENT_RECEIVED`
+2. `PAYMENT_CONFIRMED`
+
+Nenhum evento adicionado/removido.
+
+---
+
+### IDEMPOTÊNCIA
+
+A idempotência existente foi preservada:
+
+- fatura recebe novamente os mesmos valores `PAGA`/`asaas_status`;
+- transação só atualiza se ainda estiver `PENDING`;
+- evento duplicado não encontra a transação já `PAID`;
+- não há `INSERT` no fluxo;
+- teste determinístico entrega o mesmo evento duas vezes e confirma uma única transição da transação.
+
+Nenhuma tabela/coluna de deduplicação foi criada.
+
+---
+
+### TRÊS CONTAS ASAAS
+
+| Conta | Endpoint | Token após configuração |
+|-------|----------|-------------------------|
+| TM Gestão | `/api/asaas/webhook` | Mesmo authToken dedicado |
+| TM Segurança | `/api/asaas/webhook` | Mesmo authToken dedicado |
+| TM Security | `/api/asaas/webhook` | Mesmo authToken dedicado |
+
+O core atual não seleciona credencial/conta: correlaciona pagamentos com registros persistidos por `payment.id`/`externalReference`. SEC-03 não altera `issuer_company`, API keys, saldo, PIX, transferências, cobranças, clientes, emissoras ou sync. Os testes das três contas confirmam que o payload chega intacto ao core sem introduzir mistura de emissora.
+
+---
+
+### ARQUIVOS / DIFF
+
+| Arquivo | Alteração | Motivo | Risco |
+|---------|-----------|--------|-------|
+| `lib/asaasWebhookAuth.ts` | Novo helper backend | Contrato/header/comparação segura | Baixo |
+| `api/asaas-webhook.ts` | Auth antes do core | Fail-closed Vercel | Médio (exige ENV/painel) |
+| `server/routes.ts` | Mesma auth antes do core | Paridade Express | Médio |
+| `lib/asaasWebhookCore.ts` | Injeção de deps para teste + comentário idempotência | Testabilidade; produção mantém defaults | Baixo |
+| `scripts/fase3-sec03-webhook.test.ts` | 19 testes novos | Auth, eventos, idempotência, 3 contas | Nulo |
+| `scripts/p4-nb07-crit.test.ts` | Adapta contrato legado ao SEC-03 | Regressão P4 | Nulo |
+| `scripts/sec-safe-nf-hotfix-guard.test.ts` | Atualiza guarda histórica | NF preservada; PR #262 não reutilizado | Nulo |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Handoff | Continuidade | Nulo |
+
+**Zero diff em:** NF, `FinancialInvoiceControl`, `/api/nf/invoices`, Supabase, Investment, DRE, Diretoria, RH, Ponto, OS, banco, schema, migration, RLS, `vercel.json`, package/dependencies.
+
+---
+
+### TESTES
+
+| Suíte | Resultado |
+|-------|-----------|
+| SEC-03 + P4-NB07 + guarda NF | **62/62 pass** |
+| TS completa | **944/944 pass** |
+| React | **4/4 pass** |
+| `bash scripts/run-tests.sh` | **948/948 pass**, 60s |
+| Baseline anterior | 929/929 |
+| Delta | +19 testes SEC-03 |
+| Cancelled / skipped / hang | **0 / 0 / 0** |
+| `npm run build` | **OK**, 19s |
+| Secret no bundle público | **Não encontrado** |
+| Supabase público injetado | **Confirmado** |
+
+---
+
+### CONFIGURAÇÃO EXTERNA NECESSÁRIA (NÃO EXECUTADA)
+
+Ordem segura recomendada para evitar interrupção:
+
+1. Gerar secret aleatório forte de 32–255 caracteres, sem espaços e diferente das API keys Asaas.
+2. Configurar `ASAAS_PAYMENT_WEBHOOK_TOKEN` no projeto Vercel oficial `sistema-grupo-tm-seg` (ainda sem deploy).
+3. Nas três contas Asaas, manter URL/eventos atuais e configurar o **mesmo** valor no campo `authToken`.
+4. Confirmar filas/webhooks ativos nas três contas.
+5. Só então mergear/deployar PR #273.
+6. Validar 503 sem configuração em ambiente controlado, 401 token incorreto e 200 token correto.
+7. Confirmar baixa real controlada e preservar saldo/PIX/transferências/cobranças/sync/NF.
+
+Como o código atual ignora esse header, configurar ENV/painéis **antes** do deploy SEC-03 não quebra a produção atual. Publicar o código antes da configuração faria o webhook responder 503/401, portanto é proibido.
+
+---
+
+### ROLLBACK
+
+| Item | Valor |
+|------|-------|
+| Base funcional | `dfbfc962` |
+| Produção | `dfbfc962` |
+| Branch SEC-03 | `cursor/fase3-sec03-webhook-eaa8` |
+| Commit implementação | `3e417e91` |
+
+Antes de futura publicação, criar tag própria. Em regressão após deploy, reverter somente o commit SEC-03 e redeployar; não alterar banco. Manter authToken configurado no Asaas/Vercel é inofensivo para o código anterior, que ignora o header.
+
+---
+
+### PENDÊNCIAS / PRÓXIMO PASSO
+
+1. Revisão humana do PR #273.
+2. Execução separada para configurar ENV e três painéis Asaas.
+3. Publicação coordenada + smoke autenticado controlado.
+4. Reexecutar P4-FECHAMENTO.
+
+---
+
+## PUBLICAÇÃO P4-LIMPEZA — PR #271 (histórico publicado)
 
 | Campo | Valor |
 |-------|-------|
@@ -1448,12 +1655,12 @@ A evolução **78%** está documentada por marcos publicados, não por soma item
 | SEC-01 | Investment auth | Fail-closed investment/* | **PUBLICADO** | ~2%* | Baixo | HOTFIX-NF | PR #264 | — |
 | SEC-02 | Supabase auth | requireAuth 6 rotas | **PUBLICADO** | ~2%* | Baixo | SEC-01 | PR #264 | — |
 | NB-07-SUP | 6 rotas `/api/supabase/*` | Handlers dedicados + paridade | **PUBLICADO VALIDADO** | +4% | Baixo | SEC-02 | PR #265 / `d39d0309` | **NÃO REFAZER** |
-| SEC-03 | Webhook Asaas token | Handler dedicado + token 3 contas | **CONGELADO** | ~4% est. | **Alto** | Decisão humana Asaas | PR #262 | Aguardar descongelamento |
+| SEC-03 | Webhook Asaas token | Auth S2S fail-closed nas 3 contas | **IMPLEMENTADO — CONFIG EXTERNA PENDENTE** | ~4% est. | Alto | ENV + 3 painéis Asaas | PR #273 / `3e417e91` | Configurar/revisar; não publicar antes |
 | NB-07-CRIT | Catch-all rotas críticas | Webhook/sync/recalc off catch-all | **PUBLICADO VALIDADO** | ~6% | Alto | NB-07-SUP | PR #267 / `06e0dd88` | **NÃO REFAZER** |
 | P4-SYNC | Sincronismo residual | DRE canônico, fornecedor, receivable desc | **PUBLICADO VALIDADO** | ~4% | Médio | NB-07-CRIT | PR #268+#269 / `2b2e64ce` | **NÃO REFAZER** |
 | P4-TEST | Baseline 5+2 + nb06 hang | CI confiável | **PUBLICADO VALIDADO** | ~3% | Baixo | P4-SYNC | PR #270 / `c5a98d7f` | **NÃO REFAZER** |
 | P4-LIMPEZA | Órfãos / decisões feature | BillingControlCenter, AI Chat, replit restos | **PUBLICADO VALIDADO** | ~3% | Baixo | P4-TEST | PR #271 / `5f39ecfc` | **NÃO REFAZER** |
-| P4-FECHAMENTO | Regressão final + 100% | Build, smoke, handoff fechamento | **PENDENTE** | ~2% est. | Baixo | todos acima | — | Último |
+| P4-FECHAMENTO | Regressão final + 100% | Build, smoke, handoff fechamento | **PENDENTE APÓS SEC-03** | ~2% est. | Baixo | config/deploy SEC-03 | PR #272 (auditoria) | Reexecutar após publicação SEC-03 |
 
 \*% por item = estimativa para explicar 22%; marcos publicados (78%) são a fonte oficial.
 
