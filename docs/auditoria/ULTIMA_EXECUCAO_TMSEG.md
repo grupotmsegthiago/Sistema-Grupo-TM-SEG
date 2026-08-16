@@ -1,11 +1,65 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **SEC-03 ISOLADO — Hardening webhook Asaas**
-> **Implementado/testado em branch. NÃO mergeado / NÃO publicado / ENV não configurada.**
+> Handoff oficial — **SEC-03 — Preparação externa controlada**
+> **Configuração bloqueada antes de qualquer alteração externa. NÃO mergeado / NÃO publicado.**
 
 ---
 
-## SEC-03 ISOLADO — HARDENING WEBHOOK ASAAS
+## SEC-03 — PREPARAÇÃO EXTERNA CONTROLADA
+
+### PROGRESSO
+
+**Programa geral: 78%**
+
+`████████████████░░░░`
+
+**Fase 3: 94%**
+
+`███████████████████░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🔴 CONFIGURAÇÃO BLOQUEADA — NÃO PUBLICAR
+
+### STATUS VERCEL
+
+| Projeto | Variável | Production | Preview | Alterada? |
+|---------|----------|------------|---------|-----------|
+| `sistema-grupo-tm-seg` | `ASAAS_PAYMENT_WEBHOOK_TOKEN` | **Não presente** | **Não presente** | **Não** |
+
+### STATUS DAS CONTAS ASAAS
+
+| Conta | Webhook existente? | URL atual | Eventos atuais | Status | Webhook de pagamento esperado |
+|-------|--------------------|-----------|-----------------|--------|------------------------------|
+| TM Gestão | Sim | `https://sistema.grupotmseg.com.br/api/asaas/transfer-approval` | 111 eventos; inclui `PAYMENT_RECEIVED` e `PAYMENT_CONFIRMED` | Ativo; fila não interrompida | **Ausente** |
+| TM Segurança | Sim | `https://sistema.grupotmseg.com.br/api/asaas/transfer-approval` | 9 eventos de transferência; não inclui os dois eventos de pagamento | Ativo; fila não interrompida | **Ausente** |
+| TM Security | Sim | `https://sistema.grupotmseg.com.br/api/asaas/transfer-approval` | 111 eventos; inclui `PAYMENT_RECEIVED` e `PAYMENT_CONFIRMED` | Ativo; fila não interrompida | **Ausente** |
+
+### URL / EVENTOS / AUTHTOKEN
+
+| Verificação | Resultado |
+|-------------|-----------|
+| URL esperada `https://sistema.grupotmseg.com.br/api/asaas/webhook` | **Não cadastrada nas três contas** |
+| Eventos atuais | **Preservados; zero alteração** |
+| authToken do webhook de pagamento | **Não configurado — webhook correspondente não existe** |
+| Token forte gerado | **Não** — parada ocorreu antes da geração |
+| API keys / regras financeiras | **Não alteradas** |
+
+O inventário encontrou configuração diferente da esperada. Os webhooks existentes atendem `/api/asaas/transfer-approval` e não podem ser reaproveitados ou alterados sem quebrar esse fluxo protegido. Criar novos webhooks de pagamento adicionaria configuração/eventos e exige autorização arquitetural explícita; portanto a execução parou antes de gerar secret ou configurar Vercel/Asaas.
+
+O contrato oficial permanece confirmado: `authToken` configurado no Asaas é enviado no header `asaas-access-token` e deve corresponder à env backend.
+
+### PR #273
+
+**Não liberado para publicação.** Antes do merge, o proprietário deve autorizar explicitamente a criação de um webhook de pagamento dedicado em cada conta (mantendo os três webhooks `transfer-approval` atuais intactos) ou definir outra arquitetura coordenada.
+
+---
+
+## SEC-03 ISOLADO — HARDENING WEBHOOK ASAAS (implementação anterior)
 
 | Campo | Valor |
 |-------|-------|
@@ -1655,7 +1709,7 @@ A evolução **78%** está documentada por marcos publicados, não por soma item
 | SEC-01 | Investment auth | Fail-closed investment/* | **PUBLICADO** | ~2%* | Baixo | HOTFIX-NF | PR #264 | — |
 | SEC-02 | Supabase auth | requireAuth 6 rotas | **PUBLICADO** | ~2%* | Baixo | SEC-01 | PR #264 | — |
 | NB-07-SUP | 6 rotas `/api/supabase/*` | Handlers dedicados + paridade | **PUBLICADO VALIDADO** | +4% | Baixo | SEC-02 | PR #265 / `d39d0309` | **NÃO REFAZER** |
-| SEC-03 | Webhook Asaas token | Auth S2S fail-closed nas 3 contas | **IMPLEMENTADO — CONFIG EXTERNA PENDENTE** | ~4% est. | Alto | ENV + 3 painéis Asaas | PR #273 / `3e417e91` | Configurar/revisar; não publicar antes |
+| SEC-03 | Webhook Asaas token | Auth S2S fail-closed nas 3 contas | **BLOQUEADO — WEBHOOKS DE PAGAMENTO AUSENTES** | ~4% est. | Alto | Autorização para criar 3 webhooks dedicados | PR #273 / `c09fb33e` | Não publicar |
 | NB-07-CRIT | Catch-all rotas críticas | Webhook/sync/recalc off catch-all | **PUBLICADO VALIDADO** | ~6% | Alto | NB-07-SUP | PR #267 / `06e0dd88` | **NÃO REFAZER** |
 | P4-SYNC | Sincronismo residual | DRE canônico, fornecedor, receivable desc | **PUBLICADO VALIDADO** | ~4% | Médio | NB-07-CRIT | PR #268+#269 / `2b2e64ce` | **NÃO REFAZER** |
 | P4-TEST | Baseline 5+2 + nb06 hang | CI confiável | **PUBLICADO VALIDADO** | ~3% | Baixo | P4-SYNC | PR #270 / `c5a98d7f` | **NÃO REFAZER** |
