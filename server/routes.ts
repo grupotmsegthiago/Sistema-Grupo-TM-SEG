@@ -129,6 +129,13 @@ import {
   processPrintImage,
 } from "./printImagePipeline";
 import { isSupportedPrintMime, normalizePrintMime } from "../lib/printPipelineTypes";
+import {
+  authorizeF4ApiRequest,
+  canAccessF4ClientScope,
+  F4_ADMIN_ROLES,
+  F4_OPERATIONAL_REPORT_WRITE_ROLES,
+  isF4InternalClientDataPrincipal,
+} from "../lib/auth/f4ApiAccess";
 
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
@@ -359,6 +366,27 @@ function requireRole(...allowedRoles: string[]) {
     return res.status(403).json({ error: `Permissão negada — requer: ${allowedRoles.join(', ')}` });
   };
 }
+
+function requireF4ApiAccess(...allowedRoles: string[]) {
+  return async (req: Request, res: Response, next: Function) => {
+    const auth = await authorizeF4ApiRequest(req, allowedRoles, resolvePrincipal);
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+
+    (req as any).authToken =
+      String(req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+      || String(req.headers['x-auth-token'] || '');
+    (req as any).userRole = auth.principal.role;
+    (req as any).user = auth.principal;
+    (req as any).auth = auth.principal;
+    return next();
+  };
+}
+
+const requireF4AdminAccess = requireF4ApiAccess(...F4_ADMIN_ROLES);
+const requireF4ActivePrincipal = requireF4ApiAccess('*');
+const requireF4OperationalWriteAccess = requireF4ApiAccess(
+  ...F4_OPERATIONAL_REPORT_WRITE_ROLES,
+);
 
 /** SEC-01: mesma regra dos handlers Vercel investment-* (assertAsaasApiAccess). */
 function requireInvestmentApiAccess() {
@@ -2649,6 +2677,62 @@ export async function registerRoutes(
   const SUPABASE_ANON_KEY = getSupabaseAnonKey();
   const supabaseAdmin = supabase;
 
+  const f4ClientIdsForPrincipal = (principal: ResolvedPrincipal): string[] => {
+    const ids = new Set<string>();
+    if (principal.clientId) ids.add(String(principal.clientId));
+    for (const permission of principal.permissions) {
+      if (permission.startsWith('client_view:')) {
+        const id = permission.slice('client_view:'.length).trim();
+        if (id) ids.add(id);
+      }
+    }
+    return [...ids];
+  };
+
+  const canAccessF4MissionScope = async (
+    principal: ResolvedPrincipal,
+    missionId: unknown,
+    claimedClientId?: unknown,
+  ): Promise<boolean> => {
+    if (isF4InternalClientDataPrincipal(principal)) return true;
+    if (claimedClientId !== undefined && !canAccessF4ClientScope(principal, claimedClientId)) {
+      return false;
+    }
+
+    const clientIds = f4ClientIdsForPrincipal(principal);
+    if (!clientIds.length) return false;
+
+    const [{ data: mission }, { data: clients }] = await Promise.all([
+      supabaseAdmin
+        .from('missions')
+        .select('client')
+        .eq('id', String(missionId || ''))
+        .maybeSingle(),
+      supabaseAdmin
+        .from('clients')
+        .select('name')
+        .in('id', clientIds),
+    ]);
+    if (!mission?.client || !clients?.length) return false;
+
+    const missionClient = String(mission.client).trim().toLocaleUpperCase('pt-BR');
+    return clients.some(
+      (client: { name?: string | null }) =>
+        String(client.name || '').trim().toLocaleUpperCase('pt-BR') === missionClient,
+    );
+  };
+
+  const denyF4ClientScope = (
+    req: Request,
+    res: Response,
+    requestedClientId: unknown,
+  ): boolean => {
+    const principal = (req as any).user as ResolvedPrincipal;
+    if (canAccessF4ClientScope(principal, requestedClientId)) return false;
+    res.status(403).json({ error: 'Acesso negado aos dados deste cliente' });
+    return true;
+  };
+
   // Checks de coluna — também em background (não bloquear boot).
   void (async () => {
     try {
@@ -3339,7 +3423,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/db/capacity", async (_req: Request, res: Response) => {
+  app.get("/api/db/capacity", requireF4AdminAccess, async (_req: Request, res: Response) => {
     try {
       const DB_CAPACITY_GB = Number(process.env.DB_CAPACITY_GB || 8);
 
@@ -3396,7 +3480,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/db/vacuum", async (req: Request, res: Response) => {
+  app.post("/api/db/vacuum", requireF4AdminAccess, async (req: Request, res: Response) => {
     try {
       const { tables } = req.body;
       const allowedTables = ['missions', 'system_logs', 'mission_logs', 'mission_history',
@@ -3430,7 +3514,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/platform/costs", async (_req: Request, res: Response) => {
+  app.get("/api/platform/costs", requireF4AdminAccess, async (req: Request, res: Response) => {
     try {
       let overrides: Record<string, number> = {};
       try {
@@ -3482,7 +3566,12 @@ export async function registerRoutes(
       const DB_CAPACITY_GB = Number(process.env.DB_CAPACITY_GB || 8);
       let dbUsedMb = 0;
       try {
-        const capResp = await fetch(`http://localhost:${process.env.PORT || 5000}/api/db/capacity`);
+        const capResp = await fetch(`http://localhost:${process.env.PORT || 5000}/api/db/capacity`, {
+          headers: {
+            authorization: String(req.headers.authorization || ''),
+            'x-auth-token': String(req.headers['x-auth-token'] || ''),
+          },
+        });
         if (capResp.ok) {
           const capData = await capResp.json();
           dbUsedMb = capData.used_mb || 0;
@@ -3594,7 +3683,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/platform/costs/overrides", async (req: Request, res: Response) => {
+  app.post("/api/platform/costs/overrides", requireF4AdminAccess, async (req: Request, res: Response) => {
     try {
       const { overrides } = req.body;
       if (!overrides || typeof overrides !== 'object') return res.status(400).json({ error: 'overrides inválidos' });
@@ -4453,7 +4542,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/client-registries/init", async (_req: Request, res: Response) => {
+  app.post("/api/client-registries/init", requireF4AdminAccess, async (_req: Request, res: Response) => {
     try {
       const checks = await Promise.allSettled([
         supabaseAdmin.from('client_registries').select('id', { count: 'exact', head: true }),
@@ -5031,8 +5120,12 @@ export async function registerRoutes(
     .then(({ error }) => { if (error) console.warn('[Init] tabela operational_reports pode não existir:', error.message); })
     .catch(() => {});
 
-  app.get("/api/missions/:id/operational-report", async (req: Request, res: Response) => {
+  app.get("/api/missions/:id/operational-report", requireF4ActivePrincipal, async (req: Request, res: Response) => {
     try {
+      const principal = (req as any).user as ResolvedPrincipal;
+      if (!(await canAccessF4MissionScope(principal, req.params.id))) {
+        return res.status(403).json({ error: 'Acesso negado a esta missão' });
+      }
       const { data: row } = await supabaseAdmin.from('operational_reports').select('*').eq('mission_id', req.params.id).maybeSingle();
       if (row) {
         res.json({
@@ -5050,7 +5143,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/missions/:id/operational-report", async (req: Request, res: Response) => {
+  app.patch("/api/missions/:id/operational-report", requireF4OperationalWriteAccess, async (req: Request, res: Response) => {
     try {
       const { operational_report, acionado_por, descritivo, whatsapp_raw, photos } = req.body;
       const payload = {
@@ -5070,9 +5163,10 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/client-registries/:clientId/:type", async (req: Request, res: Response) => {
+  app.get("/api/client-registries/:clientId/:type", requireF4ActivePrincipal, async (req: Request, res: Response) => {
     try {
       const { clientId, type } = req.params;
+      if (denyF4ClientScope(req, res, clientId)) return;
       const { data } = await supabaseAdmin.from('client_registries').select('*').eq('client_id', clientId).eq('type', type).order('name');
       res.json(data || []);
     } catch (e: any) {
@@ -5080,10 +5174,11 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/client-registries", async (req: Request, res: Response) => {
+  app.post("/api/client-registries", requireF4ActivePrincipal, async (req: Request, res: Response) => {
     try {
       const { client_id, type, name } = req.body;
       if (!client_id || !type || !name) return res.status(400).json({ error: "Campos obrigatórios" });
+      if (denyF4ClientScope(req, res, client_id)) return;
       const { data, error } = await supabaseAdmin.from('client_registries').upsert({
         client_id, type, name: name.trim()
       }, { onConflict: 'client_id,type,name' }).select().single();
@@ -5094,7 +5189,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/client-registries/:id", async (req: Request, res: Response) => {
+  app.delete("/api/client-registries/:id", requireF4AdminAccess, async (req: Request, res: Response) => {
     try {
       const { error } = await supabaseAdmin.from('client_registries').delete().eq('id', req.params.id);
       if (error) throw error;
@@ -5104,8 +5199,12 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/client-mission-notes/:missionId", async (req: Request, res: Response) => {
+  app.get("/api/client-mission-notes/:missionId", requireF4ActivePrincipal, async (req: Request, res: Response) => {
     try {
+      const principal = (req as any).user as ResolvedPrincipal;
+      if (!(await canAccessF4MissionScope(principal, req.params.missionId))) {
+        return res.status(403).json({ error: 'Acesso negado a esta missão' });
+      }
       const { data } = await supabaseAdmin.from('client_mission_notes').select('*').eq('mission_id', req.params.missionId).maybeSingle();
       res.json(data || null);
     } catch (e: any) {
@@ -5113,10 +5212,14 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/client-mission-notes", async (req: Request, res: Response) => {
+  app.post("/api/client-mission-notes", requireF4ActivePrincipal, async (req: Request, res: Response) => {
     try {
       const { mission_id, client_id, motivo, contrato, operacao, tsp, responsavel, obs } = req.body;
       if (!mission_id || !client_id) return res.status(400).json({ error: "Campos obrigatórios" });
+      const principal = (req as any).user as ResolvedPrincipal;
+      if (!(await canAccessF4MissionScope(principal, mission_id, client_id))) {
+        return res.status(403).json({ error: 'Acesso negado a esta missão/cliente' });
+      }
       const payload = {
         mission_id, client_id,
         motivo: motivo || '', contrato: contrato || '', operacao: operacao || '',
@@ -5392,8 +5495,9 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/client-mission-notes/bulk/:clientId", async (req: Request, res: Response) => {
+  app.get("/api/client-mission-notes/bulk/:clientId", requireF4ActivePrincipal, async (req: Request, res: Response) => {
     try {
+      if (denyF4ClientScope(req, res, req.params.clientId)) return;
       const { data } = await supabaseAdmin.from('client_mission_notes').select('*').eq('client_id', req.params.clientId);
       res.json(data || []);
     } catch (e: any) {
