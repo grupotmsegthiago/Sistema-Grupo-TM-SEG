@@ -8,6 +8,16 @@ import { Calendar, FileText, Download, Loader2, Printer, TrendingUp, DollarSign,
 import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
 import { resolveStoredClientToll, resolveStoredProviderToll } from '../lib/toll/clientTollBilling';
 
+/**
+ * REGRA OFICIAL (P4-SYNC-DRE): visão financeira REALIZADA / CONSOLIDADA.
+ *
+ * - Somente valores persistidos no banco (revenue_value, cost_value, displacement_*,
+ *   toll_* via resolveStored*). Não usa computeCanonicalRevenueCost nem deriva
+ *   deslocamento a partir de dhl_deslocamento_km.
+ * - Período por end_time (conclusão/realização). Status: Concluída | Faturada.
+ * - Contraste intencional com Dashboard Diretoria (gerencial, start_time, canônico
+ *   com estimated/needs_validation). Não alinhar semânticas entre as telas.
+ */
 const getTodayBR = (): string => {
     const now = new Date();
     const brDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));

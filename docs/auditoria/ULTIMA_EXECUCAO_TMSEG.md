@@ -1,18 +1,92 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **P4-SYNC-DRE — Auditoria canônica financeira**
-> **Investigação only. Não contém segredos. NÃO mergeado / NÃO publicado.**
+> Handoff oficial — **P4-SYNC-DRE — Formalização da regra DRE × Diretoria**
+> **Documentação + testes. NÃO mergeado / NÃO publicado.**
 
 ---
 
-## P4-SYNC-DRE — AUDITORIA CANÔNICA FINANCEIRA
+## P4-SYNC-DRE — FORMALIZAÇÃO DA REGRA OFICIAL
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **Modelo Cursor** | Composer 2.5 |
+| **Branch** | `cursor/p4-sync-dre-eaa8` |
+| **PR investigação** | [#269](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/269) — draft |
+| **PR receivable** | [#268](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/268) — draft (independente) |
+| **Produção** | `06e0dd88` (inalterada) |
+
+### PROGRESSO
+
+**Programa geral: 68%** — `██████████████░░░░░░`
+
+**Fase 3: 84%** — `█████████████████░░░`
+
+**Execução atual: 100%** — `████████████████████`
+
+### DECISÃO OFICIAL DE NEGÓCIO
+
+| Tela | Finalidade | Fonte | Período | Estimativa |
+|------|------------|-------|---------|------------|
+| **FinancialDRE** | Realizado / consolidado | Valores **persistidos** (`revenue_value`, `cost_value`, `displacement_*`, `toll_*`) | **`end_time`** | **Não** — sem derivar KM nem canônico |
+| **Dashboard Diretoria** | Gerencial / operacional | **`computeCanonicalRevenueCost`** | **`start_time`** | **Sim** — `official` / `estimated` / `needs_validation` |
+
+**Diferença intencional.** Não alinhar conjuntos nem semânticas entre telas.
+
+### DECISÃO TÉCNICA
+
+# 🟢 REGRA DRE FORMALIZADA — SEM ALTERAÇÃO FINANCEIRA NECESSÁRIA
+
+O código atual **já respeitava** a regra. Nenhuma violação comprovada. Alterações desta execução: **comentário técnico** em `FinancialDRE.tsx` + **7 testes semânticos** (CASO 1–6) — **zero mudança de comportamento**.
+
+### O QUE FOI FEITO
+
+1. Comentário `REGRA OFICIAL (P4-SYNC-DRE)` em `components/FinancialDRE.tsx`.
+2. Testes CASO 1–6 em `scripts/p4-sync-dre-audit.test.ts` (20 testes totais no arquivo).
+3. Confirmação: DRE **não** importa/chama `computeCanonicalRevenueCost`, `resolveDisplacementFromAuthorizedKm` nem `calculateMissionFinancials`.
+
+### CASOS PROVADOS (testes)
+
+| Caso | Resultado |
+|------|-----------|
+| 1 — OS oficial persistida | DRE usa `revenue_value`/`cost_value`/etc. |
+| 2 — KM sem displacement | Canônico deriva; DRE **não** |
+| 3 — OS Pendente | Fora filtro DRE; canônico `estimated` |
+| 4 — needs_validation | DRE receita 0 se não persistida |
+| 5 — filha same_os | custo/pedágio/desloc. forn. = 0 |
+| 6 — período | `end_time` DRE ≠ `start_time` Diretoria (intencional) |
+
+### TESTES
+
+| Suíte | Resultado |
+|-------|-----------|
+| `p4-sync-dre-audit.test.ts` | **20/20 pass** |
+| Escopo P4-SYNC-DRE + P0–P3 + P4 + NF + SEC + NB07 | **170/170 pass** |
+| `npm run build` | **OK** |
+| Falhas novas | **0** |
+
+### PRs — RECOMENDAÇÃO (sem merge nesta execução)
+
+| PR | Conteúdo | Recomendação |
+|----|----------|--------------|
+| **#268** | Teste `receivable-desc-nf` alinhado ao SSOT quinzena | **Mergeável isoladamente** (só teste + handoff P4-SYNC) |
+| **#269** | Auditoria DRE + formalização regra + comentário + testes | **Mergeável após revisão** — sem alteração financeira funcional |
+| Consolidar? | Não obrigatório | Branches distintas; #268 não depende de #269 |
+
+### ÁREAS PROTEGIDAS
+
+Zero alteração funcional em: Asaas, SEC-03, NF, Supabase, Investment, P4-NB07, motor canônico, schema, ENV.
+
+---
+
+## P4-SYNC-DRE — AUDITORIA CANÔNICA FINANCEIRA (investigação anterior)
 
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-16 (UTC) |
 | **Modelo Cursor** | GPT-5.6 Sol Medium |
 | **Branch** | `cursor/p4-sync-dre-eaa8` |
-| **HEAD desta execução** | _(após commit)_ |
+| **HEAD desta execução** | `bd8f2988` (+ handoff docs) |
 | **PR #268** | Draft — **não alterado** (receivable test isolado) |
 | **Produção funcional** | `06e0dd88` (inalterada) |
 | **SEC-03** | **Congelado** |

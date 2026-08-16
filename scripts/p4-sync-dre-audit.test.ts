@@ -1,5 +1,5 @@
 /**
- * P4-SYNC-DRE — Auditoria canônica: FinancialDRE (espelho) × computeCanonicalRevenueCost
+ * P4-SYNC-DRE — Auditoria + regra oficial: FinancialDRE (realizado) × canônico (gerencial)
  * Somente leitura / comparação determinística. Não altera produção.
  */
 import assert from 'node:assert/strict';
@@ -8,12 +8,31 @@ import { describe, it } from 'node:test';
 import { resolveStoredClientToll, resolveStoredProviderToll } from '../lib/toll/clientTollBilling.js';
 import {
   computeCanonicalRevenueCost,
+  filterMissionsByPeriod,
   sumCanonical,
   type CanonicalRefs,
 } from '../lib/missionFinancialsCanonical.js';
 import { MissionStatus } from '../types.js';
 
 const emptyRefs: CanonicalRefs = { clientTables: [], providerTables: [], clientsData: [] };
+
+/** Espelha filtro SQL do FinancialDRE (end_time + status realizados). */
+function filterMissionsDrePeriod(
+  missions: Array<Record<string, unknown>>,
+  startIso: string,
+  endIso: string,
+): Array<Record<string, unknown>> {
+  const startMs = new Date(`${startIso}T00:00:00`).getTime();
+  const endMs = new Date(`${endIso}T23:59:59`).getTime();
+  return missions.filter((m) => {
+    const st = String(m.status || '');
+    if (st !== MissionStatus.COMPLETED && st !== 'Faturada') return false;
+    const ref = m.end_time as string | undefined;
+    if (!ref) return false;
+    const t = new Date(ref).getTime();
+    return t >= startMs && t <= endMs;
+  });
+}
 
 /** Espelho exato do agregado de missões em components/FinancialDRE.tsx (linhas 104–115). */
 export function aggregateFinancialDreMissionTotals(missions: Array<Record<string, unknown>>) {
@@ -82,7 +101,7 @@ describe('P4-SYNC-DRE — mapeamento FinancialDRE', () => {
     assert.match(src, /resolveStoredClientToll/);
     assert.match(src, /resolveStoredProviderToll/);
     assert.match(src, /m\.displacement_value \|\| 0/);
-    assert.doesNotMatch(src, /computeCanonicalRevenueCost/);
+    assert.doesNotMatch(src, /import.*computeCanonicalRevenueCost|computeCanonicalRevenueCost\s*\(/);
     assert.match(src, /\.in\('status', \['Concluída', 'Faturada'\]\)/);
     assert.match(src, /\.gte\('end_time'/);
   });
@@ -282,5 +301,115 @@ describe('P4-SYNC-DRE — matriz semântica (documentação)', () => {
     const canon = sumCanonical(missions, emptyRefs);
     assert.equal(Math.round(dre.rev * 100) / 100, Math.round(canon.rev * 100) / 100);
     assert.equal(Math.round(dre.cost * 100) / 100, Math.round(canon.cost * 100) / 100);
+  });
+});
+
+describe('P4-SYNC-DRE — regra oficial formalizada (CASO 1–6)', () => {
+  it('CASO 1 — OS concluída com valores oficiais → DRE usa persistidos', () => {
+    const mission = {
+      status: MissionStatus.COMPLETED,
+      revenue_value: 1200,
+      cost_value: 700,
+      toll_value: 48,
+      toll_value_provider: 40,
+      displacement_value: 55,
+      displacement_value_provider: 50,
+      billing_approved: true,
+    };
+    const dre = aggregateFinancialDreMissionTotals([mission]);
+    assert.equal(dre.missionRevenue, 1200);
+    assert.equal(dre.missionCost, 700);
+    assert.equal(dre.missionDisplacementClient, 55);
+    assert.doesNotMatch(
+      fs.readFileSync('components/FinancialDRE.tsx', 'utf8'),
+      /import.*computeCanonicalRevenueCost|computeCanonicalRevenueCost\s*\(|resolveDisplacementFromAuthorizedKm|calculateMissionFinancials/,
+    );
+  });
+
+  it('CASO 2 — KM autorizado sem displacement_value → Diretoria deriva, DRE não', () => {
+    const mission = {
+      status: MissionStatus.COMPLETED,
+      revenue_value: 500,
+      cost_value: 300,
+      billing_approved: true,
+      dhl_deslocamento_km: 50,
+      displacement_value: 0,
+      displacement_value_provider: 0,
+      origin: 'SAO PAULO - SP',
+    };
+    const dre = aggregateFinancialDreMissionTotals([mission]);
+    const canon = computeCanonicalRevenueCost(mission, emptyRefs);
+    assert.equal(dre.missionDisplacementClient, 0);
+    assert.equal(dre.missionDisplacementProvider, 0);
+    assert.ok(canon.dispRev > 0 || canon.dispCost > 0);
+    assert.notEqual(dre.rev, canon.rev);
+  });
+
+  it('CASO 3 — OS estimada (Pendente) → fora do filtro DRE; canônico estimated', () => {
+    const pending = {
+      status: MissionStatus.PENDING,
+      revenue_value: 999,
+      client: 'X',
+      origin: 'A',
+      destination: 'B',
+    };
+    const inDre = filterMissionsDrePeriod([pending], '2026-06-01', '2026-06-30');
+    assert.equal(inDre.length, 0);
+    assert.equal(computeCanonicalRevenueCost(pending, emptyRefs).valueStatus, 'estimated');
+  });
+
+  it('CASO 4 — needs_validation → DRE receita zero se revenue não persistido', () => {
+    const mission = {
+      status: MissionStatus.COMPLETED,
+      cost_value: 400,
+      billing_approved: true,
+    };
+    const dre = aggregateFinancialDreMissionTotals([mission]);
+    const canon = computeCanonicalRevenueCost(mission, emptyRefs);
+    assert.equal(canon.valueStatus, 'needs_validation');
+    assert.equal(dre.missionRevenue, 0);
+    assert.equal(canon.revBase, 0);
+  });
+
+  it('CASO 5 — OS filha same_os → fornecedor custo/pedágio/deslocamento zero no DRE', () => {
+    const mission = {
+      status: MissionStatus.COMPLETED,
+      is_same_os: true,
+      revenue_value: 250,
+      cost_value: 999,
+      toll_value: 60,
+      toll_value_provider: 50,
+      displacement_value_provider: 40,
+      billing_approved: true,
+    };
+    const dre = aggregateFinancialDreMissionTotals([mission]);
+    assert.equal(dre.missionRevenue, 250);
+    assert.equal(dre.missionCost, 0);
+    assert.equal(dre.missionTollProvider, 0);
+    assert.equal(dre.missionDisplacementProvider, 0);
+  });
+
+  it('CASO 6 — período end_time (DRE) vs start_time (Diretoria) — diferença intencional', () => {
+    const mission = {
+      status: MissionStatus.COMPLETED,
+      revenue_value: 100,
+      cost_value: 50,
+      start_time: '2026-06-05T08:00:00',
+      end_time: '2026-06-20T18:00:00',
+    };
+    const periodStart = new Date(2026, 5, 1, 0, 0, 0, 0);
+    const periodEnd = new Date(2026, 5, 15, 23, 59, 59, 999);
+    const inDre = filterMissionsDrePeriod([mission], '2026-06-01', '2026-06-15');
+    const inDir = filterMissionsByPeriod([mission], periodStart, periodEnd);
+    assert.equal(inDre.length, 0, 'end_time 20/jun fora de 1–15 jun');
+    assert.equal(inDir.length, 1, 'start_time 05/jun dentro de 1–15 jun');
+  });
+
+  it('código DRE documenta regra oficial realizada vs gerencial', () => {
+    const src = fs.readFileSync('components/FinancialDRE.tsx', 'utf8');
+    assert.match(src, /REGRA OFICIAL \(P4-SYNC-DRE\)/);
+    assert.match(src, /REALIZADA/);
+    assert.match(src, /end_time/);
+    assert.doesNotMatch(src, /import.*computeCanonicalRevenueCost|computeCanonicalRevenueCost\s*\(/);
   });
 });
