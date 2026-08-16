@@ -1,11 +1,127 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **P4-SYNC-DRE — Formalização da regra DRE × Diretoria**
-> **Documentação + testes. NÃO mergeado / NÃO publicado.**
+> Handoff oficial — **P4-SYNC CONSOLIDADO — PR #268 + PR #269 publicados**
+> **Testes + comentário + docs. Zero alteração funcional financeira.**
 
 ---
 
-## P4-SYNC-DRE — FORMALIZAÇÃO DA REGRA OFICIAL
+## PUBLICAÇÃO P4-SYNC CONSOLIDADO — PR #268 + PR #269
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **Modelo Cursor** | Composer 2.5 |
+| **Relação Git** | **Caso A** — `#269` contém `#268` integralmente |
+| **Base comum** | `563e58b2` (main/dev pós P4-NB07-CRIT) |
+| **HEAD #268** | `c359bb97` (`cursor/p4-sync-eaa8`) |
+| **HEAD #269** | `2b2e64ce` (`cursor/p4-sync-dre-eaa8`) |
+| **Commits extras em #269** | `bd8f2988`, `758e051f`, `2b2e64ce` |
+| **Commits em #268 não em #269** | **nenhum** |
+| **Estratégia merge** | **Somente #269** → `dev` → `main` (evita duplicação) |
+| **PR #268** | [#268](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/268) — incluído via #269 |
+| **PR #269** | [#269](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/269) — branch mergeada |
+| **Tag** | `baseline-fase3-p4-sync-merged-20260816` → commit consolidado |
+| **Produção anterior** | `06e0dd88` (P4-NB07-CRIT) |
+| **Domínio** | `https://sistema.grupotmseg.com.br` |
+| **Projeto Vercel** | `sistema-grupo-tm-seg` |
+| **SEC-03** | **Congelado — não publicado** |
+
+### PROGRESSO
+
+**Programa geral: 72%**
+
+`██████████████░░░░░░` (+4% — marco P4-SYNC publicado; delta proporcional)
+
+**Fase 3: 88%**
+
+`█████████████████░` (+4% — bloco P4-SYNC / P4-SYNC-DRE publicado)
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟢 P4-SYNC CONSOLIDADO E PUBLICADO SEM ALTERAÇÃO FUNCIONAL
+
+### RESUMO SIMPLES
+
+Consolidamos PR #268 (teste receivable-desc-nf alinhado ao SSOT quinzena) e PR #269 (formalização regra DRE × Diretoria + testes semânticos) em **uma única publicação**. A relação Git comprovou que **#269 já contém #268** — mergeamos apenas #269 para não duplicar commits. O teste NF agora reflete a regra real `resolveClientReceivableDescription` (formato quinzena). A regra DRE foi **formalizada por comentário** em `FinancialDRE.tsx`: realizado/consolidado, valores persistidos, `end_time`; Diretoria permanece gerencial com `computeCanonicalRevenueCost` e `start_time`. **Nenhuma mudança funcional financeira** — diff funcional de `FinancialDRE.tsx` = zero (só comentário). NF, Asaas, Supabase, Investment, P4-NB07 e motor canônico **não foram tocados**.
+
+### ANCESTRALIDADE GIT (comprovação caso A)
+
+```
+563e58b2 (main pós NB-07-CRIT)
+    └── 748db7bf test(p4-sync): receivable-desc-nf SSOT quinzena     ← #268
+        └── c359bb97 docs: handoff P4-SYNC                            ← #268 HEAD
+            └── bd8f2988 test(p4-sync-dre): auditoria DRE             ← #269
+                └── 758e051f docs: handoff P4-SYNC-DRE
+                    └── 2b2e64ce docs: formaliza regra DRE            ← #269 HEAD = dev/main
+```
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `#268` ancestral de `#269`? | **Sim** |
+| Commits exclusivos #268 | **0** (todos em #269) |
+| `FinancialDRE.tsx` diff funcional vs main | **Zero** (apenas comentário `REGRA OFICIAL`) |
+| Duplicação de testes/handoff? | **Evitada** (merge único #269) |
+
+### COMMITS INTEGRADOS (5)
+
+| Commit | Conteúdo |
+|--------|----------|
+| `748db7bf` | `receivable-desc-nf.test.ts` alinhado SSOT quinzena |
+| `c359bb97` | Handoff P4-SYNC investigação |
+| `bd8f2988` | `p4-sync-dre-audit.test.ts` (CASO 1–6) |
+| `758e051f` | Handoff P4-SYNC-DRE auditoria |
+| `2b2e64ce` | Comentário regra oficial + handoff formalização |
+
+### MERGE
+
+1. `origin/cursor/p4-sync-dre-eaa8` → `dev` (fast-forward @ `2b2e64ce`)
+2. Handoff consolidação (este documento)
+3. `dev` → `main` (fast-forward)
+4. Push `main` + `dev` + tag `baseline-fase3-p4-sync-merged-20260816`
+
+**PR #268 não mergeado separadamente** — conteúdo já incluído via #269.
+
+### TESTES PRÉ-MERGE (HEAD `2b2e64ce`)
+
+| Suíte | Resultado |
+|-------|-----------|
+| `p4-sync-dre-audit.test.ts` | **20/20 pass** |
+| `receivable-desc-nf.test.ts` | **pass** (SSOT quinzena) |
+| Escopo P4-SYNC + P4-SYNC-DRE + P0–P3 + P4-NB07 + NF + Asaas + SEC + NB07 | **251/251 pass** |
+| `npm run build` | **OK** |
+| Falhas novas | **0** |
+
+### SMOKE PRODUÇÃO (pós-deploy)
+
+| Rota | Esperado | Resultado |
+|------|----------|-----------|
+| `GET /api/health` | 200 | _(preencher após deploy)_ |
+| `GET /` | 200 | _(preencher após deploy)_ |
+| `GET /api/version` | buildId novo | _(preencher após deploy)_ |
+| `GET /api/nf/invoices` (sem auth) | 401 rápido | _(preencher após deploy)_ |
+| `GET /api/supabase/status` (sem auth) | 401 rápido | _(preencher após deploy)_ |
+| `GET /api/asaas/payments` (sem auth) | 401 rápido | _(preencher após deploy)_ |
+| `GET /api/investment/snapshots-all` (sem auth) | 401/403 rápido | _(preencher após deploy)_ |
+
+### ÁREAS PROTEGIDAS (confirmado)
+
+Asaas, webhook, SEC-03, PR #262, NF, Supabase, Investment, P4-NB07, `computeCanonicalRevenueCost`, motor canônico funcional, banco, schema, migration, ENV, RLS — **zero diff funcional**.
+
+### PENDÊNCIAS FORA DO ESCOPO (não iniciadas)
+
+- **P4-TEST** — 5 falhas baseline TS (+ nb06 hang)
+- **SYNC-07** — realtime refresh duplicado (performance)
+- **SYNC-02** — fallback fornecedor (inconclusivo)
+- **SYNC-03** — DRE canônico completo (dívida arquitetural; regra formalizada, sem fix)
+- **SEC-03** — congelado
+
+---
+
+## P4-SYNC-DRE — FORMALIZAÇÃO DA REGRA OFICIAL (pré-publicação — histórico)
 
 | Campo | Valor |
 |-------|-------|
@@ -855,8 +971,8 @@ A evolução **78%** está documentada por marcos publicados, não por soma item
 | SEC-02 | Supabase auth | requireAuth 6 rotas | **PUBLICADO** | ~2%* | Baixo | SEC-01 | PR #264 | — |
 | NB-07-SUP | 6 rotas `/api/supabase/*` | Handlers dedicados + paridade | **PUBLICADO VALIDADO** | +4% | Baixo | SEC-02 | PR #265 / `d39d0309` | **NÃO REFAZER** |
 | SEC-03 | Webhook Asaas token | Handler dedicado + token 3 contas | **CONGELADO** | ~4% est. | **Alto** | Decisão humana Asaas | PR #262 | Aguardar descongelamento |
-| NB-07-CRIT | Catch-all rotas críticas | Webhook/sync/recalc off catch-all | **PENDENTE** | ~6% est. | **Alto** | NB-07-SUP | — | **1º bloco recomendado** |
-| P4-SYNC | Sincronismo residual | DRE canônico, fornecedor, receivable desc | **PENDENTE** | ~4% est. | Médio | P1 backlog | — | Após NB-07-CRIT |
+| NB-07-CRIT | Catch-all rotas críticas | Webhook/sync/recalc off catch-all | **PUBLICADO VALIDADO** | ~6% | Alto | NB-07-SUP | PR #267 / `06e0dd88` | **NÃO REFAZER** |
+| P4-SYNC | Sincronismo residual | DRE canônico, fornecedor, receivable desc | **PUBLICADO VALIDADO** | ~4% | Médio | NB-07-CRIT | PR #268+#269 / `2b2e64ce` | **NÃO REFAZER** |
 | P4-TEST | Baseline 5+2 + nb06 hang | CI confiável | **PENDENTE** | ~3% est. | Baixo | — | — | Pode paralelizar |
 | P4-LIMPEZA | Órfãos / decisões feature | BillingControlCenter, AI Chat, replit restos | **PENDENTE** | ~3% est. | Baixo | P2 decisões | — | Fase 3 ou 4 |
 | P4-FECHAMENTO | Regressão final + 100% | Build, smoke, handoff fechamento | **PENDENTE** | ~2% est. | Baixo | todos acima | — | Último |
