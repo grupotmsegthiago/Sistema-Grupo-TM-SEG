@@ -1,7 +1,174 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **F4-P0 API AUTH PUBLICADO — TIMEOUT CATCH-ALL PENDENTE**
-> **Código/testes verdes; produção em fail-safe por timeout antes do middleware observável.**
+> Handoff oficial — **F4-P1 — HANDLERS DEDICADOS F4-P0**
+> **Implementado/testado em PR draft; não mergeado/não publicado.**
+
+---
+
+## F4-P1 — HANDLERS VERCEL DEDICADOS PARA AS ROTAS F4-P0
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **Branch** | `cursor/fase4-p1-dedicated-handlers-eaa8` |
+| **Base** | `origin/main=origin/dev=d5565321` |
+| **PR** | #276 — draft |
+| **HEAD funcional** | `4433c295` |
+| **HEAD testes** | `5f6ae8b7` antes deste handoff |
+| **Produção** | `buildId=d5565321` — não alterada |
+| **Banco/schema/migrations/RLS/ENV** | **Não alterados** |
+
+### PROGRESSO
+
+**Programa geral: 82%**
+
+`████████████████░░░░`
+
+**Fase 4: 0%**
+
+`░░░░░░░░░░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟢 F4-P1 APTO PARA REVISÃO/MERGE
+
+### RESUMO SIMPLES
+
+As 13 rotas protegidas no F4-P0 deixaram de depender do Express/catch-all na branch. Doze rewrites específicos, posicionados antes de `/api/(.*)`, apontam para quatro handlers Vercel leves. Sem autenticação, cada família retorna 401 diretamente no handler em menos de 1ms no runtime equivalente e não cria cliente Supabase admin.
+
+Express e Vercel agora compartilham as mesmas operações/contratos. Autenticação, roles e client scope do F4-P0 foram preservados. Nenhuma regra financeira ou área protegida foi alterada.
+
+---
+
+### INVENTÁRIO DAS 13 ROTAS
+
+| Domínio | Rota/método | Consumidor | Auth/escopo | Operação/fonte | Antes |
+|---------|-------------|------------|-------------|----------------|-------|
+| DB | `GET /api/db/capacity` | Maintenance/ServerStats | Admin | contagens Supabase | catch-all >90s |
+| DB | `POST /api/db/vacuum` | Maintenance | Admin | count-only | catch-all |
+| Platform | `GET /api/platform/costs` | CostOptimization/ServerStats | Admin | custos + overrides | catch-all |
+| Platform | `POST /api/platform/costs/overrides` | CostOptimization | Admin | upsert `platform_cost_overrides` | catch-all |
+| Report | `GET /api/missions/:id/operational-report` | MissionOperationalReport | principal + missão/cliente | select `operational_reports` | catch-all |
+| Report | `PATCH /api/missions/:id/operational-report` | MissionOperationalReport | roles internas | upsert `operational_reports` | catch-all |
+| Registries | `POST /api/client-registries/init` | ClientReportsTab | Admin | probes read-only | catch-all |
+| Registries | `GET /api/client-registries/:clientId/:type` | ClientReportsTab | client scope | select | catch-all |
+| Registries | `POST /api/client-registries` | ClientReportsTab | client scope | upsert | catch-all |
+| Registries | `DELETE /api/client-registries/:id` | sem consumidor UI localizado | Admin | delete | catch-all |
+| Notes | `GET /api/client-mission-notes/:missionId` | ClientReportsTab | mission scope | select | catch-all |
+| Notes | `POST /api/client-mission-notes` | ClientReportsTab | client + mission scope | upsert | catch-all |
+| Notes | `GET /api/client-mission-notes/bulk/:clientId` | ClientReportsTab | client scope | select lote | catch-all |
+
+---
+
+### ARQUITETURA / SSOT
+
+```text
+Express (fallback) ─┐
+                    ├─ auth F4-P0 → client/mission scope → f4ApiOperations
+Vercel dedicado ────┘
+```
+
+| Peça | Responsabilidade |
+|------|------------------|
+| `lib/f4ApiOperations.ts` | SSOT de DB, platform costs, operational report, registries/notes |
+| `lib/auth/f4ClientScope.ts` | SSOT do escopo missão↔cliente |
+| `lib/f4HandlerUtils.ts` | query/result/405 compartilhados |
+| `api/f4-db.ts` | capacity + vacuum |
+| `api/f4-platform-costs.ts` | costs + overrides |
+| `api/f4-operational-report.ts` | GET/PATCH report |
+| `api/f4-client-data.ts` | registries + notes |
+| `server/routes.ts` | fallback Express delegando às mesmas operações |
+
+O principal é resolvido antes de `createSupabaseAdminClient()`. Query, insert, update e delete só ocorrem após auth e escopo.
+
+---
+
+### REWRITES / LIMITE VERCEL
+
+- `functions{}`: **50 entradas antes e depois**.
+- Novos handlers: auto-discovery; nenhuma entrada adicionada em `functions{}`.
+- Rewrites: 120 → 132.
+- 12 rewrites F4-P1 antes do catch-all.
+- `/api/(.*) → /api/index` preservado, sem refatoração.
+- Rewrites NF, Asaas, Supabase, Investment, SEC-03 e NB-07 intactos.
+
+---
+
+### PARIDADE EXPRESS × VERCEL
+
+| Cenário | Express | Vercel | Igual? |
+|---------|---------|--------|--------|
+| Sem auth | 401 | 401 | Sim |
+| Token inválido/inativo | 401 | 401 | Sim |
+| Role inválida | 403 | 403 | Sim |
+| Client/mission scope inválido | 403 | 403 | Sim |
+| Payload obrigatório ausente | 400 | 400 | Sim |
+| Método incorreto | 405 + `Allow` | 405 + `Allow` | Sim |
+| Erro interno | contrato da operação SSOT | mesmo contrato | Sim |
+| Sucesso mockado | operação 1× | operação 1× | Sim |
+
+---
+
+### RED → GREEN / TESTES
+
+| Marco | Resultado |
+|-------|-----------|
+| RED roteamento | **2/15 pass; 13 fail** |
+| Roteamento GREEN | **15/15 pass** |
+| F4-P0 + F4-P1 (handlers/paridade/contratos) | **52/52 pass** |
+| Segurança ampliada | **144/144 pass** |
+| TS completa | **996/996 pass** |
+| React | **4/4 pass** |
+| **Total** | **1000/1000 pass**, 0 fail/skip/cancel/hang |
+| `npm run build` | **OK** |
+| Bundle isolado handlers | 4/4 OK; ~813–817 kB cada |
+
+### RUNTIME EQUIVALENTE
+
+Chamada direta dos handlers com dependências reais de auth e sem token, sem app/DB:
+
+| Handler | Resultado | Tempo |
+|---------|-----------|-------|
+| DB | 401 | 0,19ms |
+| Platform | 401 | 0,08ms |
+| Operational report | 401 | 0,05ms |
+| Client data | 401 | 0,10ms |
+
+Nenhuma conexão/admin/operação foi criada nessas negações.
+
+---
+
+### DIFF
+
+| Arquivo | Classificação |
+|---------|---------------|
+| `api/f4-{db,platform-costs,operational-report,client-data}.ts` | Handlers Vercel |
+| `lib/f4ApiOperations.ts` | SSOT operações |
+| `lib/auth/f4ClientScope.ts` | Escopo compartilhado |
+| `lib/f4HandlerUtils.ts` | Contrato handler |
+| `server/routes.ts` | Delegação Express à SSOT + 405 |
+| `vercel.json` | 12 rewrites específicos |
+| `scripts/fase4-p1-dedicated-handlers.test.ts` | RED/GREEN/paridade/runtime |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Handoff |
+
+**Zero diff:** RLS, Z-API, NF, Asaas/SEC-03, Investment, Supabase NB-07, DRE, canônico, pedágio, OS mãe/filha, financeiro, banco, schema, migrations e ENV.
+
+---
+
+### ROLLBACK PROPOSTO
+
+Antes de futura publicação, criar tag no estado `d5565321`. Em regressão, reverter commits F4-P1 e redeployar; nenhuma ação de banco/ENV será necessária.
+
+### PENDÊNCIAS
+
+1. Publicação controlada + smoke 401 em produção.
+2. F4-P0-RLS — separado.
+3. F4-P0-ZAPI — separado.
+4. PR documental #274 — reconciliação histórica separada.
 
 ---
 
