@@ -65,6 +65,20 @@ Os 18% restantes não são uma única “limpeza”: incluem segurança residual
 
 ---
 
+### 1.1 EVOLUÇÃO RECONSTRUÍDA — FASES 1 E 2
+
+O handoff monolítico atual foi sendo substituído pelos blocos da Fase 3. A reconstrução histórica foi confirmada pelos snapshots Git:
+
+| Fase | Objetivo | PRs / baseline | Resultado |
+|------|----------|----------------|-----------|
+| **Fase 1** | Auditoria inicial, segurança Resend e governança | PRs #253–#255; `baseline-fase1-final-20260812` → `13c2bd77` | 100%; hardcode Resend removido, regras permanentes registradas |
+| **Fase 2** | Raio-X funcional sem correções: paginação, fallbacks, SSOT, OS mãe/filha, permissões | PR #256; `baseline-fase2-merged-20260812` → `463eebe6` | 100%; backlog P0–P3 que originou a Fase 3 |
+| **Fase 3** | Implementação controlada P0→SEC-03 e fechamento | PRs #257–#273; `baseline-fase3-completa-20260816` → `b9506cb3` | 100%; encerrada e congelada |
+
+Stop list: não reauditar Resend, os 9 limites/6 fallbacks já encaminhados, paridades NB-07/P4-NB07, NF, DRE×Diretoria, SEC-03 ou testes baseline sem nova evidência.
+
+---
+
 ### 2. ÁREAS PROTEGIDAS — K (JÁ CONCLUÍDO, NÃO MEXER)
 
 - NF: `FinancialInvoiceControl`, `/api/nf/invoices`, `transformFinancialInvoicesForControl()`.
@@ -87,7 +101,7 @@ Reabrir somente por bug reproduzível, regressão, incidente ou decisão humana 
 | **C — bug real** | Nenhum bug financeiro homologado reproduzido; há falhas de autorização estáticas classificadas em F |
 | **D — dívida técnica** | SYNC-03; catch-all; cálculos/consultas paralelas; contratos persistidos em `system_logs` |
 | **E — performance** | SYNC-07; rotas catch-all com timeout; bundle principal ~6,4 MB; consultas/listas potencialmente completas no frontend |
-| **F — segurança** | Rotas Express sem `requireAuth` que leem/escrevem via `supabaseAdmin`; detalhe abaixo |
+| **F — segurança** | Rotas Express sem `requireAuth`; RLS permissivo; webhooks condicionais; detalhe abaixo |
 | **G — integração externa** | Control iD inexistente; multas/SERPRO/Senatran/Celcoin não integrados; pedágio depende QualP/Gemini/fallback |
 | **H — UX/UI** | Gestor comercial, termômetro operacional textual e consolidação da frota ainda não existem |
 | **I — módulo futuro** | Jurídico terceirizados; CRM; frota avançada |
@@ -113,8 +127,10 @@ Evidência estática em `server/routes.ts`: handlers abaixo não declaram `requi
 | Express `/api/vendor-verification/:missionId` | Atualiza custo/pedágio/OS sem auth no fallback | **Alto**, porém handler Vercel dedicado exige token | produção retorna 401 rápido |
 | `POST /api/db/vacuum` | Count-only (nome enganoso), sem auth | Médio | não testado |
 | `POST /api/push/test` / subscribe | Ações push sem autenticação explícita | Investigar | não testado |
+| RLS RH/timeclock e tabelas expostas | Políticas `FOR ALL TO anon, authenticated USING (true)` | **Alto** — anon key depende de políticas finas | análise estática; não alterar nesta fase |
+| WhatsApp inbound / Z-API connection | Secret validado somente quando `ZAPI_WEBHOOK_SECRET` existe | **Alto condicional** — fail-open se ENV ausente | confirmar presença sem exibir valor |
 
-**Conclusão:** não reabrir NB-07 em big-bang. Criar F4-P0 com inventário fechado, testes 401/403 e migração de somente rotas sensíveis/ativas. Cada rota deve preservar contrato e paridade Express×Vercel.
+**Conclusão:** não reabrir NB-07 em big-bang. Há aproximadamente 102 rotas Express ainda no catch-all, mas somente rotas sensíveis/ativas devem entrar no F4-P0. Criar inventário fechado, testes 401/403 e migração seletiva. Cada rota deve preservar contrato e paridade Express×Vercel.
 
 ---
 
@@ -135,9 +151,9 @@ Evidência estática em `server/routes.ts`: handlers abaixo não declaram `requi
 
 ### 6. COMERCIAL — B/A (PARCIAL)
 
-**Existe e funciona:** cadastro de clientes; tabelas de preço; rotas; veículos; propostas/cotações; proposta comercial; contratos; perfil `comercial`; filtro de contratos por usuário; faturamento por cliente.
+**Existe e funciona/parcial:** cadastro de clientes; marcação `clients.is_prospect` para prospect; tabelas de preço; rotas; veículos; propostas/cotações; funil simples `Rascunho → Enviada → Aprovada`; proposta comercial; contratos; perfil `comercial`; filtro de contratos por usuário; faturamento por cliente.
 
-**Não encontrado:** entidades/telas de lead, pipeline, prospecção, reunião, agenda, meta comercial, equipe/vendedor, dono do cliente, faturamento por vendedor, comissão comercial e numeração sequencial formal de cliente.
+**Não encontrado:** entidade de vendedor/gestor comercial; ownership formal do cliente; agenda/reuniões/atividades CRM; pipeline Kanban completo; equipe; faturamento por vendedor; comissão comercial e numeração sequencial formal de cliente. A prospecção atual é apenas um flag no cadastro, e o pipeline atual é o status da cotação — não um CRM.
 
 **Gestor Comercial:** **A — inexistente como módulo integrado**. O componente de proposta (“Inteligência Comercial”) não é CRM. Dependências futuras: modelo de dados de lead/oportunidade/atividade, ownership de cliente, ligação com OS/faturamento, comissão aprovada, roles/RLS, dashboards e auditoria.
 
@@ -148,7 +164,7 @@ Evidência estática em `server/routes.ts`: handlers abaixo não declaram `requi
 | Escopo | Estado |
 |--------|--------|
 | Consulta/monitoramento de processos DataJud | Funcional em `LegalDashboard` (consulta, processos monitorados, relatório diário) |
-| Dossiê trabalhista de vigilante terceirizado | **A — inexistente** |
+| Dossiê trabalhista de vigilante terceirizado | **B — parcial/disperso; módulo consolidado inexistente** |
 
 Há dados reutilizáveis: `provider_agents` (CPF/CNV/status), OS/agentes/horários, fornecedor, pagamentos/comprovantes no controle fornecedor. Falta uma SSOT/dossiê que una serviços, viagens, horas/dias, horários, pagamentos, comprovantes e gráficos dia/mês/ano com política de ocultação de cliente.
 
@@ -160,7 +176,7 @@ Há dados reutilizáveis: `provider_agents` (CPF/CNV/status), OS/agentes/horári
 
 **Funcional:** painel de OS, status, filtros, passagem de plantão, relatórios de OS, presença de equipe, alertas, WhatsApp, ranking e indicadores.
 
-**Termômetro histórico para operador:** **A/H — não encontrado no formato solicitado** (`FRACO`/`BOM`/`ÓTIMO`, sem valores). `DailyGoalThermometer` existe, mas é restrito à Diretoria e é financeiro; não deve ser reaproveitado expondo valores. Criar futuramente um agregado operacional independente, baseado em quantidade/status de missões e mensagens motivacionais.
+**Termômetro histórico para operador:** **B/H — parcial**. `DailyGoalThermometer` já possui renderização sem valores quando `canSeeMonetary=false`, mas o gate `canSeeGoalThermometers` restringe todo o componente à Diretoria. Operadores não o veem e não existem os rótulos `FRACO`/`BOM`/`ÓTIMO`. A evolução futura pode reutilizar somente a apresentação sem R$, alimentada por agregado operacional de quantidade/status de missões — nunca pelo valor financeiro.
 
 ---
 
@@ -233,6 +249,7 @@ Não remover nem consolidar relatórios nesta abertura.
 - **SYNC-07:** `refreshMissions` duplicado continua dívida de performance, sem corrupção.
 - Bundle principal ~6,4 MB minificado: candidato a code splitting futuro.
 - Catch-all comprovou timeout >15s nas leituras auditadas.
+- Inventário atual: aproximadamente 116 rewrites dedicados e ~102 rotas Express residuais; migrar apenas com criticidade/timeout comprovados.
 - Limites intencionais de UI (histórico recente/top N) devem ser distinguidos de universo completo.
 - Pontos para investigação: `nfInvoiceControlApi` com `.limit(1000)`, `dhlIntakePublicApi` com 500, OS analysis 300, perfis de investimento 50 e consultas completas em `ReportsDashboard`.
 
