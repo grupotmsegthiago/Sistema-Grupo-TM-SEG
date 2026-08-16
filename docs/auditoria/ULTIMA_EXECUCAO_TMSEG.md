@@ -1,7 +1,7 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **F4-P0 — SEGURANÇA RESIDUAL DAS APIs**
-> **Implementação em branch; não mergeada/não publicada. Fase 3 permanece congelada.**
+> Handoff oficial — **F4-P0 API AUTH PUBLICADO — TIMEOUT CATCH-ALL PENDENTE**
+> **Código/testes verdes; produção em fail-safe por timeout antes do middleware observável.**
 
 ---
 
@@ -11,11 +11,13 @@
 |-------|-------|
 | **Data** | 2026-08-16 (UTC) |
 | **Branch** | `cursor/fase4-p0-api-auth-eaa8` |
-| **Base** | `origin/main=origin/dev=5f7d73b2` |
-| **PR** | #275 — draft |
+| **Base pré-merge** | `origin/main=origin/dev=5f7d73b2` |
+| **PR** | #275 — mergeado por fast-forward |
 | **PR documental Raio-X** | #274 — separado, não incorporado nesta branch |
-| **HEAD funcional** | `86d17b5c` antes deste handoff |
-| **Produção** | `buildId=5f7d73b2` — não alterada |
+| **HEAD funcional/publicado** | `c47cba5a` |
+| **Produção** | `buildId=c47cba5a`, `builtAt=2026-08-16T22:41:13.562Z` |
+| **Rollback pré-P0** | `baseline-fase4-pre-p0-api-auth-20260816` → `5f7d73b2` |
+| **Tag pós-P0** | Não criada — smoke 401 bloqueado pelo timeout |
 | **Banco/schema/migrations/ENV/Asaas** | **Não alterados** |
 
 ### PROGRESSO
@@ -34,15 +36,40 @@
 
 ### DECISÃO
 
-# 🟡 F4-P0 APTO COM PENDÊNCIAS
+# 🟡 F4-P0 PUBLICADO COM PENDÊNCIA NÃO BLOQUEANTE
 
-As vulnerabilidades dos handlers F4-P0 foram corrigidas e testadas. RLS permissivo e fail-open condicional Z-API foram confirmados/auditados, porém exigem sub-blocos separados; nenhum banco, policy ou integração externa foi alterado.
+As vulnerabilidades dos handlers F4-P0 foram corrigidas, testadas, mergeadas e deployadas. Em produção, as rotas ainda excedem 90s no catch-all antes de tornar o 401 observável. Isso é dívida F4-P1 preexistente e falha de forma segura (nenhum handler/escrita alcançado), mas impede tag pós-P0 e avanço percentual. RLS e Z-API continuam separados.
 
 ### RESUMO SIMPLES
 
 Treze caminhos de API que podiam alcançar dados/operações administrativas apenas pela URL agora validam um usuário ativo antes do handler. Rotas administrativas exigem Diretoria/Administrador/CEO; relatórios e dados de cliente validam também o escopo do cliente no backend. Sem token ou com token inválido retornam 401; role/cliente incorreto retorna 403. Nenhuma regra financeira, NF, Asaas, SEC-03, Investment, DRE, pedágio ou OS mãe/filha foi modificada.
 
 O RED inicial provou **13 falhas em 14 testes estruturais**. Depois da correção, a suíte F4-P0 fechou **21/21** e a suíte completa **969/969**.
+
+---
+
+### PUBLICAÇÃO CONTROLADA PR #275
+
+```text
+cursor/fase4-p0-api-auth-eaa8 @ c47cba5a
+  → dev (fast-forward)
+  → main (fast-forward)
+  → Vercel Production @ c47cba5a
+```
+
+| Verificação | Resultado |
+|-------------|-----------|
+| HEAD revalidado | `c47cba5a` — sem commits posteriores |
+| Commits | `b3cb3f3e` funcional; `86d17b5c` teste; `c47cba5a` documentação |
+| Diff | Somente os quatro arquivos F4-P0 documentados |
+| Deploy | 200 `/api/version`; `builtAt=2026-08-16T22:41:13.562Z` |
+| `/api/health` | 200 em 0,11s |
+| `/` | 200 em 0,07s |
+| Rotas F4-P0 sem auth | Timeout >15s; `/api/db/capacity` confirmado >90s |
+| Handler/escrita F4-P0 | Não alcançado durante os timeouts |
+| NF / Asaas / Supabase / Investment | 401 entre 0,09s e 0,13s |
+
+**Conclusão de smoke:** código exato está em produção e a negação é comprovada em runtime isolado; o caminho Vercel catch-all permanece indisponível antes do middleware. Não corrigir aqui — destino F4-P1.
 
 ---
 
@@ -93,7 +120,7 @@ Métodos incorretos continuam no contrato Express existente (404 quando rota nã
 | GREEN estrutural + unidade | **20/20 pass** |
 | Runtime equivalente isolado | 401 sem auth; 401 inválido; 403 role errada; 200 role correta; operação chamada 1× |
 | F4-P0 final | **21/21 pass** |
-| Segurança ampliada | **112/112 pass** |
+| Segurança ampliada | **113/113 pass** (delta +1 runtime isolado) |
 | TS completa | **965/965 pass** |
 | React | **4/4 pass** |
 | **Total** | **969/969 pass**, 0 fail/skip/cancel/hang |
@@ -156,7 +183,7 @@ Há fallbacks `VITE_SUPABASE_SERVICE_ROLE_KEY` em módulos backend legados de au
 ### PERFORMANCE / CATCH-ALL
 
 - O catch-all global não foi modificado.
-- Rotas continuam sujeitas ao cold-start/timeout até F4-P1.
+- Rotas continuam sujeitas ao cold-start/timeout até F4-P1; produção excedeu 90s sem resposta.
 - Runtime equivalente provou negação rápida sem iniciar o app completo.
 - Uma tentativa de subir o app completo foi interrompida porque o startup executa jobs/probes com potenciais efeitos externos; não foi usada como evidência.
 
@@ -177,7 +204,7 @@ Há fallbacks `VITE_SUPABASE_SERVICE_ROLE_KEY` em módulos backend legados de au
 
 ### ROLLBACK FUTURO
 
-Reverter os commits F4-P0 e redeployar restaura os handlers anteriores. Não há rollback de banco/ENV, pois nenhum foi alterado.
+Tag pré-P0: `baseline-fase4-pre-p0-api-auth-20260816` → `5f7d73b2`. Reverter os commits F4-P0 e redeployar restaura os handlers anteriores. Não há rollback de banco/ENV. Nenhum rollback foi necessário porque não houve regressão nova; a indisponibilidade catch-all já existia.
 
 ### PENDÊNCIAS
 
@@ -185,6 +212,7 @@ Reverter os commits F4-P0 e redeployar restaura os handlers anteriores. Não há
 2. F4-P0-ZAPI — hardening fail-closed condicional.
 3. F4-P1 — performance/handlers dedicados após auth.
 4. Merge prévio ou reconciliação documental do PR #274 preservando “ABERTURA FASE 4 — RAIO-X”.
+5. Criar `baseline-fase4-p0-api-auth-merged-20260816` somente após smoke 401 observável.
 
 ---
 
