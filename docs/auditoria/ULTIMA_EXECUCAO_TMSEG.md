@@ -1,11 +1,162 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **P4-TEST PUBLICADO — PR #270**
-> **Somente testes/harness/docs. Zero alteração funcional.**
+> Handoff oficial — **P4-LIMPEZA — Órfãos, legado e funcionalidades inativas**
+> **Auditoria + testes. ZERO remoções. NÃO mergeado / NÃO publicado.**
 
 ---
 
-## PUBLICAÇÃO P4-TEST — PR #270
+## P4-LIMPEZA — ÓRFÃOS, LEGADO E FUNCIONALIDADES INATIVAS
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **Modelo Cursor** | Composer 2.5 |
+| **Branch** | `cursor/p4-limpeza-eaa8` |
+| **Base** | `main` @ `d8119048` (pós P4-TEST publicado) |
+| **HEAD funcional produção** | `c5a98d7f` (inalterado) |
+| **Tag anterior** | `baseline-fase3-p4-test-merged-20260816` |
+| **SEC-03 / PR #262** | **Congelados** |
+
+### PROGRESSO
+
+**Programa geral: 75%**
+
+`███████████████░░░░░`
+
+**Fase 3: 91%**
+
+`██████████████████░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+*(Percentuais inalterados — P4-LIMPEZA é auditoria/classificação; marco ~3% pendente merge futuro.)*
+
+### DECISÃO
+
+# 🟢 P4-LIMPEZA CONCLUÍDO SEM REMOÇÕES NECESSÁRIAS
+
+Itens futuros classificados (12 órfãos + 2 snapshots Replit) — remoção adiada por conservadorismo e preservação de histórico.
+
+### RESUMO SIMPLES
+
+Auditamos o backlog histórico de limpeza (BillingControlCenter, AI Chat, dashboards, rotas, legado Replit). **Nenhum bug funcional** foi encontrado. **12 componentes** na raiz de `components/` são **órfãos comprovados** (zero import no app), mas **não foram removidos** — risco baixo de regressão oculta e snapshots `attached_assets/` preservados como evidência. **AI Chat** permanece **inativo de propósito** (`FeatureInactivePanel`); `/api/chat` **continua ativo** (Investment usa). **CostOptimizationDashboard** e **ExecutiveDashboard** são **ativos**. Criamos `scripts/p4-limpeza-audit.test.ts` (19 testes) documentando provas. **Zero alteração funcional.**
+
+---
+
+### INVENTÁRIO CLASSIFICADO (A–G)
+
+| Item | Classe | Rota | Menu | Consumidor | Ação P4-LIMPEZA |
+|------|--------|------|------|------------|-----------------|
+| **ExecutiveDashboard** | **A** — ativo funcional | via MissionTable | Indireto | MissionTable, e-mail worker | **Manter** |
+| **ClientExecutiveDashboard** | **A** | via MissionTable | Indireto | MissionTable | **Manter** |
+| **CostOptimizationDashboard** | **B** — ativo incompleto | `cost-optimization` | ✅ Configurações | App.tsx, DiretoriaSistemaTab | **Manter** — utilidade Fase 4 |
+| **AI Chat / ai-support** | **C** — inativo intencional | `ai-support` | ❌ | FeatureInactivePanel | **Manter** — P2-01 |
+| **AIChatbot.tsx** | **C** | preservado (`void AIChatbot`) | ❌ | Reativação futura | **Manter** |
+| **FeatureInactivePanel** | **A** | usado em ai-support | — | App.tsx | **Manter** |
+| **`/api/chat`** | **A** | POST requireAuth | — | FinancialAccountManager, AIChatbot | **Manter** |
+| **BillingControlCenter** | **D** — órfão comprovado | ❌ `fin-billing-control` | ❌ | Nenhum (subst. ClientBillingReport) | **Manter** — candidato remoção futura |
+| **11 outros órfãos raiz** | **D** | ❌ | ❌ | Nenhum | **Manter** — ver tabela abaixo |
+| **manual-override-settings** | **B** | ✅ | ❌ menu (banner) | App, ReportsDashboard | **Manter** |
+| **attached_assets/extracted** | **G** — legado Replit | — | — | Zero no build | **Manter** — evidência/rollback |
+| **attached_assets/extracted2** | **G** | — | — | Zero no build | **Manter** |
+| **server/replit_integrations** | removido P3 | — | — | — | **Já limpo** (P3) |
+
+---
+
+### 12 COMPONENTES ÓRFÃOS COMPROVADOS (classe D)
+
+Prova: zero `import ... from './Component'` no app principal (App, components/*, lib/* top-level).
+
+| Arquivo | Importadores | Rota | Menu | Teste | Build | Risco remoção |
+|---------|--------------|------|------|-------|-------|---------------|
+| `BillingControlCenter.tsx` | 0 | ❌ | ❌ | P2-02, p4-limpeza | OK | Baixo — subst. ClientBillingReport |
+| `AIImageGenerator.tsx` | 0 | ❌ | ❌ | p4-limpeza | OK | Baixo — IA experimental |
+| `ApiStatusOverlay.tsx` | 0 | ❌ | ❌ | p4-limpeza | OK | Baixo — return null |
+| `BillingAuditor.tsx` | 0 | ❌ | ❌ | p4-limpeza | OK | Baixo |
+| `BiometricLogin.tsx` | 0 | ❌ | ❌ | p4-limpeza | OK | Médio — auth futura? |
+| `BrandGenerator.tsx` | 0 | ❌ | ❌ | p4-limpeza | OK | Baixo |
+| `ClientPriceList.tsx` | 0 | ❌ | ❌ | p4-limpeza | OK | Baixo — abas ClientForm |
+| `CloudCostManager.tsx` | 0 | ❌ | ❌ | p4-limpeza | OK | Baixo |
+| `CltTimeClockBar.tsx` | 0 | ❌ | ❌ | p4-limpeza | OK | Médio — RH alternativo |
+| `FinancialAuditor.tsx` | 0 | ❌ | ❌ | p4-limpeza | OK | Baixo |
+| `ProviderCostList.tsx` | 0 | ❌ | ❌ | p4-limpeza | OK | Baixo — abas ProviderForm |
+| `UniversalDataImporter.tsx` | 0 | ❌ | ❌ | p4-limpeza | OK | Baixo |
+
+**Decisão:** nenhum removido nesta execução. Remoção em lote exige revisão humana item a item.
+
+---
+
+### AI CHAT — DETALHE (C inativo intencional)
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Menu `constants.ts` | ❌ `ai-support` ausente |
+| Sidebar | ❌ ausente |
+| Rota App | ✅ `FeatureInactivePanel` (não AIChatbot) |
+| AIChatbot preservado | ✅ `import` + `void AIChatbot` |
+| `/api/chat` backend | ✅ `requireAuth` em routes.ts |
+| Outros consumidores API | ✅ `FinancialAccountManager` (Investment) |
+| Gemini em outras áreas | ✅ DHL, conciliação, ponto, etc. (inalterado) |
+
+---
+
+### ROTAS ÓRFÃS UI
+
+| Rota | Classificação | Nota |
+|------|---------------|------|
+| `ai-support` | C — inativo intencional | Sem menu; deep link possível |
+| `manual-override-settings` | B — sub-tela | Acesso via banner/evento |
+| Sub-rotas `-form`, `new-mission` | A — navegação interna | Esperado |
+
+**Rotas backend sem UI:** webhooks, crons, admin — classificadas **ATIVA EXTERNA/ADMIN** — **não investigadas para remoção**.
+
+---
+
+### REMOÇÕES EXECUTADAS
+
+**Nenhuma.** Diff = somente `scripts/p4-limpeza-audit.test.ts` + handoff.
+
+---
+
+### TESTES (@ branch `cursor/p4-limpeza-eaa8`)
+
+| Suíte | Resultado |
+|-------|-----------|
+| `p4-limpeza-audit.test.ts` | **19/19 pass** (novo) |
+| `bash scripts/run-tests.sh` | **929/929 pass** (925 TS + 4 React) |
+| Baseline anterior | 910/910 |
+| Delta | +19 testes auditoria (zero falha nova) |
+| `npm run build` | **OK** |
+
+---
+
+### DIFF FINAL
+
+| Arquivo | Ação | Motivo | Risco |
+|---------|------|--------|-------|
+| `scripts/p4-limpeza-audit.test.ts` | **Criado** | Provas de orfandade/classificação | Nulo |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | **Atualizado** | Handoff P4-LIMPEZA | Nulo |
+
+**Zero diff funcional.**
+
+---
+
+### ITENS FUTUROS (pós-revisão humana)
+
+1. Remover `BillingControlCenter.tsx` (+ atualizar P2-02 test) — prioridade 1
+2. Bloco IA/Replit órfãos (AIImageGenerator, BrandGenerator, UniversalDataImporter, CloudCostManager) — prioridade 2
+3. Avaliar remoção `attached_assets/extracted*` (~220 arquivos) — prioridade 3 (preservar logo `.png` e seeds)
+4. Decisão produto: reativar ou remover definitivamente AI Chat
+
+### PRÓXIMO PASSO
+
+Revisão humana → merge branch → publicação separada. **Não iniciar P4-FECHAMENTO nesta execução.**
+
+---
+
+## PUBLICAÇÃO P4-TEST — PR #270 (histórico publicado)
 
 | Campo | Valor |
 |-------|-------|
@@ -1197,7 +1348,7 @@ A evolução **78%** está documentada por marcos publicados, não por soma item
 | NB-07-CRIT | Catch-all rotas críticas | Webhook/sync/recalc off catch-all | **PUBLICADO VALIDADO** | ~6% | Alto | NB-07-SUP | PR #267 / `06e0dd88` | **NÃO REFAZER** |
 | P4-SYNC | Sincronismo residual | DRE canônico, fornecedor, receivable desc | **PUBLICADO VALIDADO** | ~4% | Médio | NB-07-CRIT | PR #268+#269 / `2b2e64ce` | **NÃO REFAZER** |
 | P4-TEST | Baseline 5+2 + nb06 hang | CI confiável | **PUBLICADO VALIDADO** | ~3% | Baixo | P4-SYNC | PR #270 / `c5a98d7f` | **NÃO REFAZER** |
-| P4-LIMPEZA | Órfãos / decisões feature | BillingControlCenter, AI Chat, replit restos | **PENDENTE** | ~3% est. | Baixo | P2 decisões | — | Fase 3 ou 4 |
+| P4-LIMPEZA | Órfãos / decisões feature | BillingControlCenter, AI Chat, replit restos | **AUDITADO — SEM REMOÇÃO** | ~3% est. | Baixo | P4-TEST | `cursor/p4-limpeza-eaa8` | Merge após revisão |
 | P4-FECHAMENTO | Regressão final + 100% | Build, smoke, handoff fechamento | **PENDENTE** | ~2% est. | Baixo | todos acima | — | Último |
 
 \*% por item = estimativa para explicar 22%; marcos publicados (78%) são a fonte oficial.
