@@ -7,6 +7,12 @@ import { handleF4OperationalReportRequest } from '../api/f4-operational-report.j
 import { handleF4PlatformCostsRequest } from '../api/f4-platform-costs.js';
 import { authorizeF4ApiRequest } from '../lib/auth/f4ApiAccess.js';
 import type { ResolvedPrincipal } from '../lib/auth/resolvePrincipal.js';
+import {
+  runF4ClientDataOperation,
+  runF4DbOperation,
+  runF4OperationalReportOperation,
+  runF4PlatformCostsOperation,
+} from '../lib/f4ApiOperations.js';
 
 const vercel = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));
 const rewrites: Array<{ source: string; destination: string }> = vercel.rewrites || [];
@@ -441,5 +447,191 @@ describe('F4-P1 — SSOT e paridade Express × Vercel', () => {
       const adminIndex = source.indexOf('deps.createAdmin()');
       assert.ok(authIndex >= 0 && adminIndex > authIndex, path);
     }
+  });
+});
+
+type FakeQueryState = {
+  table: string;
+  action: string;
+  payload?: unknown;
+  filters: Record<string, unknown>;
+};
+
+function fakeSupabase(
+  resolve: (state: FakeQueryState) => unknown,
+): any {
+  return {
+    from(table: string) {
+      const state: FakeQueryState = {
+        table,
+        action: '',
+        filters: {},
+      };
+      const query: any = {
+        select() {
+          if (!state.action) state.action = 'select';
+          return query;
+        },
+        upsert(payload: unknown) {
+          state.action = 'upsert';
+          state.payload = payload;
+          return query;
+        },
+        delete() {
+          state.action = 'delete';
+          return query;
+        },
+        eq(key: string, value: unknown) {
+          state.filters[key] = value;
+          return query;
+        },
+        in(key: string, value: unknown) {
+          state.filters[key] = value;
+          return query;
+        },
+        order() {
+          return query;
+        },
+        single() {
+          return Promise.resolve(resolve(state));
+        },
+        maybeSingle() {
+          return Promise.resolve(resolve(state));
+        },
+        then(onFulfilled: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) {
+          return Promise.resolve(resolve(state)).then(onFulfilled, onRejected);
+        },
+      };
+      return query;
+    },
+  };
+}
+
+describe('F4-P1 — contratos das operações compartilhadas', () => {
+  it('capacity preserva shape e vacuum é apenas count-only', async () => {
+    const client = fakeSupabase(() => ({ count: 2, error: null }));
+    const capacity = await runF4DbOperation('capacity', null, client, {
+      DB_CAPACITY_GB: '8',
+    });
+    assert.equal(capacity.status, 200);
+    assert.equal((capacity.body as any).source, 'estimate');
+    assert.equal((capacity.body as any).total_rows, 34);
+    assert.equal(Array.isArray((capacity.body as any).tables), true);
+
+    const vacuum = await runF4DbOperation(
+      'vacuum',
+      { tables: ['missions', 'não_permitida'] },
+      client,
+    );
+    assert.equal(vacuum.status, 200);
+    assert.equal((vacuum.body as any).method, 'supabase-api');
+    assert.deepEqual(
+      (vacuum.body as any).results.map((row: any) => row.table),
+      ['missions'],
+    );
+  });
+
+  it('platform costs preserva fórmulas e overrides não duplicam escrita', async () => {
+    let overrideWrites = 0;
+    const client = fakeSupabase((state) => {
+      if (state.table === 'platform_cost_overrides' && state.action === 'select') {
+        return { data: [{ key: 'usd_to_brl', value: 5 }], error: null };
+      }
+      if (state.table === 'platform_cost_overrides' && state.action === 'upsert') {
+        overrideWrites += 1;
+        return { data: null, error: null };
+      }
+      return { count: 0, error: null };
+    });
+    const costs = await runF4PlatformCostsOperation('costs', null, client, {
+      REPLIT_PLAN: 'Core',
+      SUPABASE_PLAN: 'Pro',
+      DB_CAPACITY_GB: '8',
+    });
+    assert.equal(costs.status, 200);
+    assert.equal((costs.body as any).total_usd, 50);
+    assert.equal((costs.body as any).total_brl, 250);
+
+    const save = await runF4PlatformCostsOperation(
+      'overrides',
+      { overrides: { usd_to_brl: 5, google_maps: 10 } },
+      client,
+    );
+    assert.deepEqual(save, {
+      status: 200,
+      body: { success: true, saved: 2 },
+    });
+    assert.equal(overrideWrites, 2);
+  });
+
+  it('relatório operacional preserva GET, PATCH e erro interno', async () => {
+    const readClient = fakeSupabase(() => ({
+      data: {
+        report_html: '<p>ok</p>',
+        acionado_por: 'Operação',
+        descritivo: 'Texto',
+        whatsapp_raw: 'Raw',
+        photos: ['foto'],
+      },
+      error: null,
+    }));
+    const read = await runF4OperationalReportOperation('GET', 'm1', null, readClient);
+    assert.deepEqual(read, {
+      status: 200,
+      body: {
+        operational_report: '<p>ok</p>',
+        acionado_por: 'Operação',
+        descritivo: 'Texto',
+        whatsapp_raw: 'Raw',
+        photos: ['foto'],
+      },
+    });
+
+    const writeClient = fakeSupabase(() => ({ error: null }));
+    assert.deepEqual(
+      await runF4OperationalReportOperation(
+        'PATCH',
+        'm1',
+        { operational_report: '<p>novo</p>' },
+        writeClient,
+      ),
+      { status: 200, body: { ok: true } },
+    );
+
+    const errorClient = fakeSupabase(() => ({ error: new Error('db_error') }));
+    const error = await runF4OperationalReportOperation(
+      'PATCH',
+      'm1',
+      {},
+      errorClient,
+    );
+    assert.equal(error.status, 500);
+    assert.deepEqual(error.body, { ok: false, error: 'db_error' });
+  });
+
+  it('client data preserva validação, lista vazia e erro de escrita', async () => {
+    const client = fakeSupabase((state) => {
+      if (state.action === 'select') return { data: null, error: null };
+      return { data: null, error: new Error('write_error') };
+    });
+    assert.deepEqual(
+      await runF4ClientDataOperation('registries', { body: {} }, client),
+      { status: 400, body: { error: 'Campos obrigatórios' } },
+    );
+    assert.deepEqual(
+      await runF4ClientDataOperation(
+        'registries-list',
+        { clientId: '10', type: 'contrato' },
+        client,
+      ),
+      { status: 200, body: [] },
+    );
+    const failedDelete = await runF4ClientDataOperation(
+      'registries-item',
+      { id: 'r1' },
+      client,
+    );
+    assert.equal(failedDelete.status, 500);
+    assert.deepEqual(failedDelete.body, { error: 'write_error' });
   });
 });
