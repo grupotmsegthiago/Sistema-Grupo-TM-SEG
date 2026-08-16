@@ -1,7 +1,122 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **Publicação controlada PR #267 — P4-NB07-CRIT**
-> **Publicado e validado em produção. Não contém segredos.**
+> Handoff oficial — **P4-SYNC — Sincronismo residual (investigação)**
+> **Não contém segredos. NÃO mergeado e NÃO publicado nesta execução.**
+
+---
+
+## P4-SYNC — SINCRONISMO RESIDUAL
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **Modelo Cursor** | Composer 2.5 |
+| **Branch** | `cursor/p4-sync-eaa8` |
+| **HEAD desta execução** | `748db7bf` |
+| **Base** | `main` @ `563e58b2` (handoff) / funcional `06e0dd88` |
+| **Tag baseline anterior** | `baseline-fase3-p4-nb07-crit-merged-20260815` |
+| **Produção funcional** | `06e0dd88` (inalterada nesta execução) |
+| **SEC-03** | **Congelado** |
+
+### PROGRESSO
+
+**Programa geral: 68%**
+
+`██████████████░░░░░░`
+
+**Fase 3: 84%**
+
+`█████████████████░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟡 P4-SYNC COM PENDÊNCIAS
+
+Investigação concluída. **Uma correção mínima** (teste `receivable-desc-nf` alinhado ao SSOT quinzena). **DRE canônico completo** e **realtime duplicado** classificados como **dívida futura** — fora do escopo desta execução (sem refatoração de motor). **Não mergeado / não publicado.**
+
+### RESUMO SIMPLES
+
+Revisamos os sincronismos residuais citados no mapa Fase 3. A falha `receivable-desc-nf` **não era bug de produção**: o código já sincroniza Contas a Receber com o formato quinzena (`Ref. a primeira quinzena de …`) via `resolveClientReceivableDescription`; só o teste estava desatualizado e foi corrigido. OS mãe/filha (`is_same_os`), fornecedor, Diretoria e P0–P3 **permanecem corretos** nos testes existentes. O DRE ainda soma `revenue_value` direto (não usa `computeCanonicalRevenueCost` no agregado) — isso é **dívida arquitetural conhecida**, não regressão nova. Realtime dispara `refreshMissions` 2× no flush — **performance**, sem evidência de inconsistência de dados. NF, Asaas, Supabase, Investment e P4-NB07 **não foram tocados**.
+
+---
+
+### BACKLOG SYNC — CLASSIFICAÇÃO
+
+| ID | Problema | Evidência atual | Arquivo(s) | Consumidor | Status | Ainda existe? | Risco |
+|----|----------|-----------------|------------|------------|--------|---------------|-------|
+| SYNC-01 | receivable-desc-nf | Teste esperava texto integral; SSOT quinzena em `receivableDescription.ts` | `lib/persistAsaasChargeInvoice.ts`, `lib/billing/receivableDescription.ts` | persist NF, ClientBillingReport, Asaas charge | **TESTE DESATUALIZADO** → **CORRIGIDO** | Não (teste alinhado) | Baixo |
+| SYNC-02 | P1-07 fallback fornecedor | Backlog Raio-X opaco; `mission-billing-audit` cobre snapshot órfão; `is_same_os` homologado P1/P2 | `lib/financialUtils.ts`, `VendorVerificationControl.tsx` | Controle fornecedor, audit | **INCONCLUSIVO** | Sem bug reproduzível | Médio |
+| SYNC-03 | DRE canônico completo | `FinancialDRE` soma `revenue_value` manual; Diretoria usa `computeCanonicalRevenueCost` | `FinancialDRE.tsx`, `missionFinancialsCanonical.ts` | DRE vs Dashboard Diretoria | **DÍVIDA** | Sim (gap conhecido pré-P0) | Médio |
+| SYNC-04 | OS → faturamento | P0-02 pedágio filha OK; charts usam `calculateMissionFinancials` | `ClientBillingReport.tsx`, `financialUtils.ts` | Faturamento | **RESOLVIDO** (P0/P1) | Parcial vs SSOT canônico | Baixo |
+| SYNC-05 | OS → fornecedor | `is_same_os` custo/pedágio zero em modal, vendor, routes | `MissionFinancialModal`, `VendorVerificationControl` | Fornecedor | **RESOLVIDO** | Não | Baixo |
+| SYNC-06 | Financeiro → Diretoria | KPIs via `dashboardDiretoria/aggregations` + canônico | `lib/dashboardDiretoria/` | Cockpit Diretoria | **RESOLVIDO** | Divergência vs DRE (SYNC-03) | Baixo |
+| SYNC-07 | Realtime refresh duplicado | `RealtimeProvider` flush: `refreshMissions` até 2× | `lib/RealtimeProvider.tsx` | MissionTable, dashboards | **DÍVIDA** (performance) | Sim | Baixo |
+
+---
+
+### ÁRVORE DE SINCRONISMO (validação conceitual)
+
+```
+OS (missions)
+  ↓ campos persistidos: revenue_value, cost_value, toll_*, is_same_os
+Faturamento (ClientBillingReport)
+  ↓ calculateMissionFinancials + resolveStored*Toll
+Contas a Receber
+  ↓ resolveClientReceivableDescription (SSOT quinzena) ← SYNC-01 corrigido no teste
+Contas a Pagar / Fornecedor (VendorVerificationControl)
+  ↓ is_same_os → custo/pedágio 0 (P1/P2 homologado)
+NF (FinancialInvoiceControl — protegida, não tocada)
+DRE (FinancialDRE — soma manual, DÍVIDA SYNC-03)
+Diretoria (computeCanonicalRevenueCost — SSOT canônico)
+```
+
+| Ligação | Fonte da verdade | Campo chave | Evento | Cache/refetch | Risco |
+|---------|------------------|-------------|--------|---------------|-------|
+| OS → recebível | `resolveClientReceivableDescription` | quinzena em notes/serviceDescription | emissão NF/cobrança | persist servidor | Baixo (OK) |
+| OS → KPI Diretoria | `computeCanonicalRevenueCost` | billing_approved, is_same_os | load dashboard | realtime 10 tabelas | Baixo |
+| OS → DRE | `revenue_value` + `resolveStored*Toll` | end_time, status | generateDRE + realtime | refetch manual | Médio (vs Diretoria) |
+| missions UPDATE | RealtimeProvider | flush debounced | refreshMissions 1–2× | duplicado performance | Baixo inconsistência |
+
+---
+
+### CORREÇÃO APLICADA
+
+| Causa | Arquivo | Consumidor | Impacto | Correção |
+|-------|---------|------------|---------|----------|
+| Teste esperava texto integral da NF; produto adotou formato quinzena (documentado em `persistAsaasChargeInvoice`) | `scripts/receivable-desc-nf.test.ts` | CI/regressão | Nenhum em produção | Assert `Ref. a primeira quinzena de Julho/2026` + nega prefixo NF TMSEG |
+
+**Não alterado:** `FinancialInvoiceControl`, `/api/nf/invoices`, `transformFinancialInvoicesForControl()`, Asaas, SEC-03, Supabase, Investment, schema.
+
+---
+
+### TESTES
+
+| Suíte | Resultado | Δ vs baseline |
+|-------|-----------|---------------|
+| P4-SYNC escopo (receivable + fase3 P0–P3 + P4 + NB07 + SEC + NF + Diretoria + audit) | **195/195 pass** | receivable-desc-nf: fail→pass |
+| `npm run build` | **OK** | — |
+| React (`*.test.tsx`) | **4 total / 2 pass / 2 fail** | baseline DHL (inalterado) |
+| TS completa | não reexecutada (hang NB-06 conhecido) | 0 falhas novas no escopo |
+
+**Falhas baseline restantes (4):** investment-accounts, invoice-display, presence-refresh, zapi/cockpit (+ nb06 hang).
+
+---
+
+### PENDÊNCIAS P4-SYNC (não bloqueantes nesta execução)
+
+1. **SYNC-03** — Migrar agregação `FinancialDRE` para `computeCanonicalRevenueCost` / `sumCanonical` (refatoração; requer bloco dedicado).
+2. **SYNC-07** — Deduplicar `refreshMissions` no flush do RealtimeProvider (performance).
+3. **SYNC-02** — Especificar gap P1-07 fornecedor com caso reproduzível ou fechar como resolvido.
+
+---
+
+### ÁREAS PROTEGIDAS (confirmado — zero diff funcional)
+
+Asaas, webhook, SEC-03, NF, Supabase NB-07, Investment, P4-NB07, PIX, transferências, cobranças, banco, schema, RLS.
 
 ---
 
