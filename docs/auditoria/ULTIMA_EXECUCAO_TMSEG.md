@@ -14,7 +14,7 @@
 | **PR** | [#267](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/267) — draft |
 | **Branch** | `cursor/p4-nb07-crit-eaa8` |
 | **HEAD anterior revisado** | `cd579a8c` |
-| **HEAD desta execução** | `dee81101` |
+| **HEAD desta execução** | `b647dfff` |
 | **Base** | `origin/main` @ `2f2a577a96e93f26212025b5b5662747fdbc2f6a` |
 | **Produção** | **NÃO ALTERADA** (`buildId=2f2a577a`) |
 | **Tag baseline** | `baseline-fase3-nb07-supabase-merged-20260815` |
