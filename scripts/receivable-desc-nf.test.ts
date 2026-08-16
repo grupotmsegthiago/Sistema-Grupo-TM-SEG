@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { resolveNfServiceDescription } from '../lib/persistAsaasChargeInvoice.ts';
 
-describe('Contas a Receber — descrição = texto da NF', () => {
-  it('resolveNfServiceDescription usa discriminação, não prefixo NF TMSEG', () => {
+describe('Contas a Receber — descrição sincronizada com SSOT quinzena', () => {
+  it('resolveNfServiceDescription extrai quinzena da discriminação (não prefixo NF TMSEG)', () => {
     const text =
       'Referente aos Serviços de Rastreamento e Monitoramento de Carga - Referente ao 1ª Quinzena de Julho/2026';
     const got = resolveNfServiceDescription({
@@ -13,8 +13,9 @@ describe('Contas a Receber — descrição = texto da NF', () => {
       clientName: 'AMAZON TRANSPORTES LTDA.',
       trackingNumber: 'TMSEG-20260723-184625-ZY7H',
     });
-    assert.equal(got, text);
+    assert.equal(got, 'Ref. a primeira quinzena de Julho/2026');
     assert.doesNotMatch(got, /^NF TMSEG-/);
+    assert.doesNotMatch(got, /^Referente aos Serviços/);
   });
 
   it('persist e frontend usam serviceDescription / notes da NF', () => {
