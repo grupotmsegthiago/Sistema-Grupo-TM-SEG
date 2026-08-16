@@ -134,8 +134,14 @@ import {
   canAccessF4ClientScope,
   F4_ADMIN_ROLES,
   F4_OPERATIONAL_REPORT_WRITE_ROLES,
-  isF4InternalClientDataPrincipal,
 } from "../lib/auth/f4ApiAccess";
+import { canAccessF4MissionScope } from "../lib/auth/f4ClientScope";
+import {
+  runF4ClientDataOperation,
+  runF4DbOperation,
+  runF4OperationalReportOperation,
+  runF4PlatformCostsOperation,
+} from "../lib/f4ApiOperations";
 
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
@@ -387,6 +393,10 @@ const requireF4ActivePrincipal = requireF4ApiAccess('*');
 const requireF4OperationalWriteAccess = requireF4ApiAccess(
   ...F4_OPERATIONAL_REPORT_WRITE_ROLES,
 );
+const f4MethodNotAllowed = (allow: string) => (_req: Request, res: Response) => {
+  res.set('Allow', allow);
+  res.status(405).json({ error: 'Método não permitido' });
+};
 
 /** SEC-01: mesma regra dos handlers Vercel investment-* (assertAsaasApiAccess). */
 function requireInvestmentApiAccess() {
@@ -2677,51 +2687,6 @@ export async function registerRoutes(
   const SUPABASE_ANON_KEY = getSupabaseAnonKey();
   const supabaseAdmin = supabase;
 
-  const f4ClientIdsForPrincipal = (principal: ResolvedPrincipal): string[] => {
-    const ids = new Set<string>();
-    if (principal.clientId) ids.add(String(principal.clientId));
-    for (const permission of principal.permissions) {
-      if (permission.startsWith('client_view:')) {
-        const id = permission.slice('client_view:'.length).trim();
-        if (id) ids.add(id);
-      }
-    }
-    return [...ids];
-  };
-
-  const canAccessF4MissionScope = async (
-    principal: ResolvedPrincipal,
-    missionId: unknown,
-    claimedClientId?: unknown,
-  ): Promise<boolean> => {
-    if (isF4InternalClientDataPrincipal(principal)) return true;
-    if (claimedClientId !== undefined && !canAccessF4ClientScope(principal, claimedClientId)) {
-      return false;
-    }
-
-    const clientIds = f4ClientIdsForPrincipal(principal);
-    if (!clientIds.length) return false;
-
-    const [{ data: mission }, { data: clients }] = await Promise.all([
-      supabaseAdmin
-        .from('missions')
-        .select('client')
-        .eq('id', String(missionId || ''))
-        .maybeSingle(),
-      supabaseAdmin
-        .from('clients')
-        .select('name')
-        .in('id', clientIds),
-    ]);
-    if (!mission?.client || !clients?.length) return false;
-
-    const missionClient = String(mission.client).trim().toLocaleUpperCase('pt-BR');
-    return clients.some(
-      (client: { name?: string | null }) =>
-        String(client.name || '').trim().toLocaleUpperCase('pt-BR') === missionClient,
-    );
-  };
-
   const denyF4ClientScope = (
     req: Request,
     res: Response,
@@ -3424,283 +3389,28 @@ export async function registerRoutes(
   });
 
   app.get("/api/db/capacity", requireF4AdminAccess, async (_req: Request, res: Response) => {
-    try {
-      const DB_CAPACITY_GB = Number(process.env.DB_CAPACITY_GB || 8);
-
-      let used_bytes = 0;
-      let dbSizeSource = 'estimate';
-      let dbSizePretty = '';
-      let topTables: any[] = [];
-      let totalRows = 0;
-      const tableStats: any[] = [];
-
-      {
-        const tables = ['missions', 'clients', 'providers', 'vehicles', 'system_users',
-          'financial_transactions', 'commercial_proposals', 'client_price_tables',
-          'provider_cost_tables', 'system_logs', 'financial_accounts', 'financial_categories',
-          'client_registries', 'client_mission_notes', 'operational_reports',
-          'account_balance_snapshots', 'platform_cost_overrides'];
-
-        for (const table of tables) {
-          try {
-            const { count, error } = await supabaseAdmin.from(table).select('*', { count: 'exact', head: true });
-            if (!error && count !== null) {
-              totalRows += count;
-              const avgRowSizeBytes = ['system_logs', 'mission_logs', 'mission_history'].includes(table) ? 2048 :
-                                       ['missions', 'commercial_proposals', 'operational_reports'].includes(table) ? 4096 : 800;
-              tableStats.push({ table, rows: count, total_bytes: count * avgRowSizeBytes, total_size: `${(count * avgRowSizeBytes / 1024).toFixed(0)} kB`, dead_rows: 0 });
-            }
-          } catch {}
-        }
-        used_bytes = totalRows * 800;
-        dbSizeSource = 'estimate';
-        topTables = tableStats.sort((a, b) => b.total_bytes - a.total_bytes);
-      }
-
-      const limit_bytes = Math.round(DB_CAPACITY_GB * 1024 * 1024 * 1024);
-      const percent_used = limit_bytes > 0 ? used_bytes / limit_bytes : null;
-      const totalDeadRows = topTables.reduce((s, t) => s + (t.dead_rows || 0), 0);
-
-      res.json({
-        used_bytes,
-        limit_bytes,
-        percent_used,
-        used_mb: +(used_bytes / 1024 / 1024).toFixed(2),
-        used_gb: +(used_bytes / 1024 / 1024 / 1024).toFixed(3),
-        limit_gb: DB_CAPACITY_GB,
-        size_pretty: dbSizePretty || `${(used_bytes / 1024 / 1024).toFixed(2)} MB`,
-        total_rows: totalRows,
-        total_dead_rows: totalDeadRows,
-        tables: topTables,
-        source: dbSizeSource,
-        updated_at: new Date().toISOString(),
-      });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
+    const result = await runF4DbOperation('capacity', null, supabaseAdmin);
+    res.status(result.status).json(result.body);
   });
 
   app.post("/api/db/vacuum", requireF4AdminAccess, async (req: Request, res: Response) => {
-    try {
-      const { tables } = req.body;
-      const allowedTables = ['missions', 'system_logs', 'mission_logs', 'mission_history',
-        'financial_transactions', 'clients', 'providers', 'vehicles', 'client_price_tables',
-        'provider_cost_tables', 'client_routes', 'agents', 'provider_agents', 'profiles',
-        'commercial_proposals', 'quotes', 'contracts', 'financial_accounts', 'financial_categories'];
-
-      const targetTables = (tables && Array.isArray(tables) && tables.length > 0)
-        ? tables.filter((t: string) => allowedTables.includes(t))
-        : ['missions', 'system_logs', 'mission_logs', 'financial_transactions'];
-
-      const results: any[] = [];
-      for (const table of targetTables) {
-        try {
-          const { count } = await supabaseAdmin.from(table).select('*', { count: 'exact', head: true });
-          results.push({ table, status: 'ok', rows: count || 0, dead_rows_before: 0, note: 'count-only' });
-        } catch (e: any) {
-          results.push({ table, status: 'error', error: e.message });
-        }
-      }
-
-      res.json({ 
-        success: true, 
-        method: 'supabase-api', 
-        message: 'Use o painel do Supabase para executar VACUUM. Contagens de registros foram atualizadas.',
-        results, 
-        timestamp: new Date().toISOString() 
-      });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
+    const result = await runF4DbOperation('vacuum', req.body, supabaseAdmin);
+    res.status(result.status).json(result.body);
   });
+  app.all("/api/db/capacity", f4MethodNotAllowed('GET'));
+  app.all("/api/db/vacuum", f4MethodNotAllowed('POST'));
 
   app.get("/api/platform/costs", requireF4AdminAccess, async (req: Request, res: Response) => {
-    try {
-      let overrides: Record<string, number> = {};
-      try {
-        const { data: rows } = await supabaseAdmin.from('platform_cost_overrides').select('key, value');
-        if (rows) rows.forEach((r: any) => { overrides[r.key] = Number(r.value) || 0; });
-      } catch (e) { console.error('Erro ao ler overrides:', e); }
-
-      const BRL_RATE = overrides['usd_to_brl'] || Number(process.env.USD_TO_BRL || 5.80);
-
-      const replitPlan = process.env.REPLIT_PLAN || 'Core';
-      const replitPlanCosts: Record<string, { usd: number, label: string }> = {
-        'Free': { usd: 0, label: 'Free' },
-        'Starter': { usd: 9, label: 'Starter ($9/mês)' },
-        'Hacker': { usd: 7, label: 'Hacker ($7/mês)' },
-        'Core': { usd: 25, label: 'Core ($25/mês)' },
-        'Pro': { usd: 20, label: 'Pro ($20/mês)' },
-        'Teams': { usd: 25, label: 'Teams ($25/mês)' },
-      };
-      const replitBase = replitPlanCosts[replitPlan] || replitPlanCosts['Core'];
-
-      const supabasePlan = process.env.SUPABASE_PLAN || 'Pro';
-      const supabasePlanCosts: Record<string, { usd: number, label: string }> = {
-        'Free': { usd: 0, label: 'Free Tier' },
-        'Pro': { usd: 25, label: 'Pro ($25/mês)' },
-        'Team': { usd: 599, label: 'Team ($599/mês)' },
-      };
-      const supabaseBase = supabasePlanCosts[supabasePlan] || supabasePlanCosts['Pro'];
-
-      const replitExtraEgress = overrides['replit_egress'] ?? Number(process.env.REPLIT_EXTRA_EGRESS_USD || 0);
-      const replitExtraCompute = overrides['replit_compute'] ?? Number(process.env.REPLIT_EXTRA_COMPUTE_USD || 0);
-      const replitExtraStorage = overrides['replit_storage'] ?? Number(process.env.REPLIT_EXTRA_STORAGE_USD || 0);
-      const replitExtraAlwaysOn = overrides['replit_always_on'] ?? 0;
-      const replitExtraOther = overrides['replit_other'] ?? 0;
-      const supabaseExtraDb = overrides['supabase_db'] ?? Number(process.env.SUPABASE_EXTRA_DB_USD || 0);
-      const supabaseExtraBandwidth = overrides['supabase_bandwidth'] ?? Number(process.env.SUPABASE_EXTRA_BANDWIDTH_USD || 0);
-      const supabaseExtraStorage = overrides['supabase_storage'] ?? Number(process.env.SUPABASE_EXTRA_STORAGE_USD || 0);
-
-      const googleMapsEstimate = overrides['google_maps'] ?? Number(process.env.GOOGLE_MAPS_MONTHLY_USD || 0);
-      const resendEstimate = overrides['resend'] ?? Number(process.env.RESEND_MONTHLY_USD || 0);
-      const otherCosts = overrides['other_apis'] ?? Number(process.env.OTHER_MONTHLY_COSTS_USD || 0);
-
-      const replitTotalUsd = replitBase.usd + replitExtraEgress + replitExtraCompute + replitExtraStorage + replitExtraAlwaysOn + replitExtraOther;
-      const supabaseTotalUsd = supabaseBase.usd + supabaseExtraDb + supabaseExtraBandwidth + supabaseExtraStorage;
-      const apiTotalUsd = googleMapsEstimate + resendEstimate + otherCosts;
-      const grandTotalUsd = replitTotalUsd + supabaseTotalUsd + apiTotalUsd;
-
-      const toR = (v: number) => +(v * BRL_RATE).toFixed(2);
-
-      const DB_CAPACITY_GB = Number(process.env.DB_CAPACITY_GB || 8);
-      let dbUsedMb = 0;
-      try {
-        const capResp = await fetch(`http://localhost:${process.env.PORT || 5000}/api/db/capacity`, {
-          headers: {
-            authorization: String(req.headers.authorization || ''),
-            'x-auth-token': String(req.headers['x-auth-token'] || ''),
-          },
-        });
-        if (capResp.ok) {
-          const capData = await capResp.json();
-          dbUsedMb = capData.used_mb || 0;
-        }
-      } catch {}
-
-      const savingTips = [];
-
-      if (supabasePlan === 'Free') {
-        savingTips.push({
-          area: 'Supabase',
-          tip: 'Limpe registros antigos de system_logs periodicamente para economizar espaço no banco Free Tier (500MB).',
-          impact: 'Médio',
-          action: 'DELETE FROM system_logs WHERE created_at < NOW() - INTERVAL \'90 days\''
-        });
-        savingTips.push({
-          area: 'Supabase',
-          tip: 'Comprima imagens antes de fazer upload no Storage para reduzir os 1GB gratuitos.',
-          impact: 'Baixo',
-          action: 'Use ferramentas como TinyPNG ou compressão no frontend antes do upload.'
-        });
-      }
-
-      savingTips.push({
-        area: 'Replit',
-        tip: 'Configure o Repl para hibernar após inatividade. O Always-On consome créditos mesmo sem tráfego.',
-        impact: 'Alto',
-        action: 'Desative Always-On se o sistema não precisa estar 24/7 disponível.'
-      });
-
-      savingTips.push({
-        area: 'Google Maps',
-        tip: 'Cache rotas calculadas localmente. Cada chamada de Directions API custa ~$0.005-$0.01.',
-        impact: 'Alto',
-        action: 'Salve totalDistance e estimatedTime na missão ao calcular a rota pela primeira vez.'
-      });
-
-      savingTips.push({
-        area: 'Gemini AI',
-        tip: 'As chamadas AI via Replit Integrations são gratuitas. Aproveite para chatbot, auditoria e análises.',
-        impact: 'Info',
-        action: 'Continue usando o Gemini via Replit AI Integrations (sem custo adicional).'
-      });
-
-      savingTips.push({
-        area: 'Supabase',
-        tip: 'Adicione índices nas colunas mais consultadas (client, status, created_at) para reduzir tempo de query.',
-        impact: 'Médio',
-        action: 'CREATE INDEX idx_missions_client ON missions(client); CREATE INDEX idx_missions_status ON missions(status);'
-      });
-
-      savingTips.push({
-        area: 'Replit',
-        tip: 'Use variáveis de ambiente ao invés de hardcode para trocar de plano sem alterar código.',
-        impact: 'Baixo',
-        action: 'Defina REPLIT_PLAN, SUPABASE_PLAN, DB_CAPACITY_GB no painel de Secrets.'
-      });
-
-      savingTips.push({
-        area: 'Geral',
-        tip: 'Monitore o consumo mensal de bandwidth do Supabase. O Free Tier tem 2GB/mês de transferência.',
-        impact: 'Médio',
-        action: 'Verifique o dashboard do Supabase em Usage > Bandwidth mensalmente.'
-      });
-
-      res.json({
-        currency_rate: BRL_RATE,
-        replit: {
-          plan: replitBase.label,
-          base_usd: replitBase.usd,
-          base_brl: toR(replitBase.usd),
-          extras: {
-            egress: { usd: replitExtraEgress, brl: toR(replitExtraEgress) },
-            compute: { usd: replitExtraCompute, brl: toR(replitExtraCompute) },
-            storage: { usd: replitExtraStorage, brl: toR(replitExtraStorage) },
-            always_on: { usd: replitExtraAlwaysOn, brl: toR(replitExtraAlwaysOn) },
-            other: { usd: replitExtraOther, brl: toR(replitExtraOther) },
-          },
-          total_usd: replitTotalUsd,
-          total_brl: toR(replitTotalUsd),
-        },
-        supabase: {
-          plan: supabaseBase.label,
-          base_usd: supabaseBase.usd,
-          base_brl: toR(supabaseBase.usd),
-          extras: {
-            db: { usd: supabaseExtraDb, brl: toR(supabaseExtraDb) },
-            bandwidth: { usd: supabaseExtraBandwidth, brl: toR(supabaseExtraBandwidth) },
-            storage: { usd: supabaseExtraStorage, brl: toR(supabaseExtraStorage) },
-          },
-          total_usd: supabaseTotalUsd,
-          total_brl: toR(supabaseTotalUsd),
-          db_capacity_gb: DB_CAPACITY_GB,
-        },
-        apis: {
-          google_maps: { usd: googleMapsEstimate, brl: toR(googleMapsEstimate) },
-          resend: { usd: resendEstimate, brl: toR(resendEstimate) },
-          other: { usd: otherCosts, brl: toR(otherCosts) },
-          total_usd: apiTotalUsd,
-          total_brl: toR(apiTotalUsd),
-        },
-        total_usd: grandTotalUsd,
-        total_brl: toR(grandTotalUsd),
-        saving_tips: savingTips,
-        updated_at: new Date().toISOString(),
-      });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
+    const result = await runF4PlatformCostsOperation('costs', null, supabaseAdmin);
+    res.status(result.status).json(result.body);
   });
 
   app.post("/api/platform/costs/overrides", requireF4AdminAccess, async (req: Request, res: Response) => {
-    try {
-      const { overrides } = req.body;
-      if (!overrides || typeof overrides !== 'object') return res.status(400).json({ error: 'overrides inválidos' });
-
-      for (const [key, value] of Object.entries(overrides)) {
-        const numVal = Number(value) || 0;
-        await supabaseAdmin.from('platform_cost_overrides').upsert({
-          key,
-          value: numVal,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'key' });
-      }
-      res.json({ success: true, saved: Object.keys(overrides).length });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
+    const result = await runF4PlatformCostsOperation('overrides', req.body, supabaseAdmin);
+    res.status(result.status).json(result.body);
   });
+  app.all("/api/platform/costs", f4MethodNotAllowed('GET'));
+  app.all("/api/platform/costs/overrides", f4MethodNotAllowed('POST'));
 
   app.get("/api/supabase/billing-links", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), (_req: Request, res: Response) => {
     res.json(getSupabaseBillingLinks());
@@ -4543,24 +4253,10 @@ export async function registerRoutes(
   });
 
   app.post("/api/client-registries/init", requireF4AdminAccess, async (_req: Request, res: Response) => {
-    try {
-      const checks = await Promise.allSettled([
-        supabaseAdmin.from('client_registries').select('id', { count: 'exact', head: true }),
-        supabaseAdmin.from('client_mission_notes').select('id', { count: 'exact', head: true }),
-        supabaseAdmin.from('operational_reports').select('id', { count: 'exact', head: true }),
-        supabaseAdmin.from('financial_invoices').select('id', { count: 'exact', head: true }),
-      ]);
-      const missing = checks.filter(c => c.status === 'rejected' || (c.status === 'fulfilled' && c.value?.error));
-      if (missing.length > 0) {
-        console.warn('[Init] Algumas tabelas podem não existir no Supabase. Crie-as via SQL Editor.');
-      }
-      console.log("Client registries tables verified via Supabase.");
-      res.json({ ok: true });
-    } catch (e: any) {
-      console.error("Error verifying client registries tables:", e.message);
-      res.json({ ok: true, note: e.message });
-    }
+    const result = await runF4ClientDataOperation('registries-init', {}, supabaseAdmin);
+    res.status(result.status).json(result.body);
   });
+  app.all("/api/client-registries/init", f4MethodNotAllowed('POST'));
 
   const runHistoryCleanup = async () => {
       try {
@@ -5121,118 +4817,108 @@ export async function registerRoutes(
     .catch(() => {});
 
   app.get("/api/missions/:id/operational-report", requireF4ActivePrincipal, async (req: Request, res: Response) => {
-    try {
-      const principal = (req as any).user as ResolvedPrincipal;
-      if (!(await canAccessF4MissionScope(principal, req.params.id))) {
-        return res.status(403).json({ error: 'Acesso negado a esta missão' });
-      }
-      const { data: row } = await supabaseAdmin.from('operational_reports').select('*').eq('mission_id', req.params.id).maybeSingle();
-      if (row) {
-        res.json({
-          operational_report: row.report_html,
-          acionado_por: row.acionado_por || '',
-          descritivo: row.descritivo || '',
-          whatsapp_raw: row.whatsapp_raw || '',
-          photos: row.photos || []
-        });
-      } else {
-        res.json({ operational_report: null });
-      }
-    } catch (e: any) {
-      res.json({ operational_report: null, error: e.message });
+    const principal = (req as any).user as ResolvedPrincipal;
+    if (!(await canAccessF4MissionScope(supabaseAdmin, principal, req.params.id))) {
+      return res.status(403).json({ error: 'Acesso negado a esta missão' });
     }
+    const result = await runF4OperationalReportOperation(
+      'GET',
+      req.params.id,
+      null,
+      supabaseAdmin,
+    );
+    res.status(result.status).json(result.body);
   });
 
   app.patch("/api/missions/:id/operational-report", requireF4OperationalWriteAccess, async (req: Request, res: Response) => {
-    try {
-      const { operational_report, acionado_por, descritivo, whatsapp_raw, photos } = req.body;
-      const payload = {
-        mission_id: req.params.id,
-        report_html: operational_report || '',
-        acionado_por: acionado_por || '',
-        descritivo: descritivo || '',
-        whatsapp_raw: whatsapp_raw || '',
-        photos: photos || [],
-        updated_at: new Date().toISOString()
-      };
-      const { error } = await supabaseAdmin.from('operational_reports').upsert(payload, { onConflict: 'mission_id' });
-      if (error) throw error;
-      res.json({ ok: true });
-    } catch (e: any) {
-      res.status(500).json({ ok: false, error: e.message });
-    }
+    const result = await runF4OperationalReportOperation(
+      'PATCH',
+      req.params.id,
+      req.body,
+      supabaseAdmin,
+    );
+    res.status(result.status).json(result.body);
   });
+  app.all(
+    "/api/missions/:id/operational-report",
+    f4MethodNotAllowed('GET, PATCH'),
+  );
 
   app.get("/api/client-registries/:clientId/:type", requireF4ActivePrincipal, async (req: Request, res: Response) => {
-    try {
-      const { clientId, type } = req.params;
-      if (denyF4ClientScope(req, res, clientId)) return;
-      const { data } = await supabaseAdmin.from('client_registries').select('*').eq('client_id', clientId).eq('type', type).order('name');
-      res.json(data || []);
-    } catch (e: any) {
-      res.json([]);
-    }
+    const { clientId, type } = req.params;
+    if (denyF4ClientScope(req, res, clientId)) return;
+    const result = await runF4ClientDataOperation(
+      'registries-list',
+      { clientId, type },
+      supabaseAdmin,
+    );
+    res.status(result.status).json(result.body);
   });
 
   app.post("/api/client-registries", requireF4ActivePrincipal, async (req: Request, res: Response) => {
-    try {
-      const { client_id, type, name } = req.body;
-      if (!client_id || !type || !name) return res.status(400).json({ error: "Campos obrigatórios" });
-      if (denyF4ClientScope(req, res, client_id)) return;
-      const { data, error } = await supabaseAdmin.from('client_registries').upsert({
-        client_id, type, name: name.trim()
-      }, { onConflict: 'client_id,type,name' }).select().single();
-      if (error && error.code !== '23505') throw error;
-      res.json(data || { client_id, type, name: name.trim() });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
+    const { client_id, type, name } = req.body || {};
+    if (!client_id || !type || !name) return res.status(400).json({ error: "Campos obrigatórios" });
+    if (denyF4ClientScope(req, res, client_id)) return;
+    const result = await runF4ClientDataOperation(
+      'registries',
+      { body: req.body },
+      supabaseAdmin,
+    );
+    res.status(result.status).json(result.body);
   });
 
   app.delete("/api/client-registries/:id", requireF4AdminAccess, async (req: Request, res: Response) => {
-    try {
-      const { error } = await supabaseAdmin.from('client_registries').delete().eq('id', req.params.id);
-      if (error) throw error;
-      res.json({ ok: true });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
+    const result = await runF4ClientDataOperation(
+      'registries-item',
+      { id: req.params.id },
+      supabaseAdmin,
+    );
+    res.status(result.status).json(result.body);
   });
+  app.all(
+    "/api/client-registries/:clientId/:type",
+    f4MethodNotAllowed('GET'),
+  );
+  app.all("/api/client-registries/:id", f4MethodNotAllowed('DELETE'));
+  app.all("/api/client-registries", f4MethodNotAllowed('POST'));
 
   app.get("/api/client-mission-notes/:missionId", requireF4ActivePrincipal, async (req: Request, res: Response) => {
-    try {
-      const principal = (req as any).user as ResolvedPrincipal;
-      if (!(await canAccessF4MissionScope(principal, req.params.missionId))) {
-        return res.status(403).json({ error: 'Acesso negado a esta missão' });
-      }
-      const { data } = await supabaseAdmin.from('client_mission_notes').select('*').eq('mission_id', req.params.missionId).maybeSingle();
-      res.json(data || null);
-    } catch (e: any) {
-      res.json(null);
+    const principal = (req as any).user as ResolvedPrincipal;
+    if (!(await canAccessF4MissionScope(supabaseAdmin, principal, req.params.missionId))) {
+      return res.status(403).json({ error: 'Acesso negado a esta missão' });
     }
+    const result = await runF4ClientDataOperation(
+      'notes-item',
+      { missionId: req.params.missionId },
+      supabaseAdmin,
+    );
+    res.status(result.status).json(result.body);
   });
 
   app.post("/api/client-mission-notes", requireF4ActivePrincipal, async (req: Request, res: Response) => {
-    try {
-      const { mission_id, client_id, motivo, contrato, operacao, tsp, responsavel, obs } = req.body;
-      if (!mission_id || !client_id) return res.status(400).json({ error: "Campos obrigatórios" });
-      const principal = (req as any).user as ResolvedPrincipal;
-      if (!(await canAccessF4MissionScope(principal, mission_id, client_id))) {
-        return res.status(403).json({ error: 'Acesso negado a esta missão/cliente' });
-      }
-      const payload = {
-        mission_id, client_id,
-        motivo: motivo || '', contrato: contrato || '', operacao: operacao || '',
-        tsp: tsp || '', responsavel: responsavel || '', obs: obs || '',
-        updated_at: new Date().toISOString()
-      };
-      const { data, error } = await supabaseAdmin.from('client_mission_notes').upsert(payload, { onConflict: 'mission_id' }).select().single();
-      if (error) throw error;
-      res.json(data);
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
+    const { mission_id, client_id } = req.body || {};
+    if (!mission_id || !client_id) return res.status(400).json({ error: "Campos obrigatórios" });
+    const principal = (req as any).user as ResolvedPrincipal;
+    if (!(await canAccessF4MissionScope(
+      supabaseAdmin,
+      principal,
+      mission_id,
+      client_id,
+    ))) {
+      return res.status(403).json({ error: 'Acesso negado a esta missão/cliente' });
     }
+    const result = await runF4ClientDataOperation(
+      'notes',
+      { body: req.body },
+      supabaseAdmin,
+    );
+    res.status(result.status).json(result.body);
   });
+  app.all(
+    "/api/client-mission-notes/:missionId",
+    f4MethodNotAllowed('GET'),
+  );
+  app.all("/api/client-mission-notes", f4MethodNotAllowed('POST'));
 
   const pgPool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 3 });
 
@@ -5496,14 +5182,18 @@ export async function registerRoutes(
   });
 
   app.get("/api/client-mission-notes/bulk/:clientId", requireF4ActivePrincipal, async (req: Request, res: Response) => {
-    try {
-      if (denyF4ClientScope(req, res, req.params.clientId)) return;
-      const { data } = await supabaseAdmin.from('client_mission_notes').select('*').eq('client_id', req.params.clientId);
-      res.json(data || []);
-    } catch (e: any) {
-      res.json([]);
-    }
+    if (denyF4ClientScope(req, res, req.params.clientId)) return;
+    const result = await runF4ClientDataOperation(
+      'notes-bulk',
+      { clientId: req.params.clientId },
+      supabaseAdmin,
+    );
+    res.status(result.status).json(result.body);
   });
+  app.all(
+    "/api/client-mission-notes/bulk/:clientId",
+    f4MethodNotAllowed('GET'),
+  );
 
   app.post("/api/email/send-verification", requireAuth, async (req: Request, res: Response) => {
     try {

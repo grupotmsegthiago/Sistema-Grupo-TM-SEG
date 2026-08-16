@@ -631,6 +631,54 @@
       "destination": "/api/zapi-webhook-message-status"
     },
     {
+      "source": "/api/db/capacity",
+      "destination": "/api/f4-db?op=capacity"
+    },
+    {
+      "source": "/api/db/vacuum",
+      "destination": "/api/f4-db?op=vacuum"
+    },
+    {
+      "source": "/api/platform/costs",
+      "destination": "/api/f4-platform-costs?op=costs"
+    },
+    {
+      "source": "/api/platform/costs/overrides",
+      "destination": "/api/f4-platform-costs?op=overrides"
+    },
+    {
+      "source": "/api/missions/:id/operational-report",
+      "destination": "/api/f4-operational-report?missionId=:id"
+    },
+    {
+      "source": "/api/client-registries/init",
+      "destination": "/api/f4-client-data?op=registries-init"
+    },
+    {
+      "source": "/api/client-registries/:clientId/:type",
+      "destination": "/api/f4-client-data?op=registries-list&clientId=:clientId&type=:type"
+    },
+    {
+      "source": "/api/client-registries/:id",
+      "destination": "/api/f4-client-data?op=registries-item&id=:id"
+    },
+    {
+      "source": "/api/client-registries",
+      "destination": "/api/f4-client-data?op=registries"
+    },
+    {
+      "source": "/api/client-mission-notes/bulk/:clientId",
+      "destination": "/api/f4-client-data?op=notes-bulk&clientId=:clientId"
+    },
+    {
+      "source": "/api/client-mission-notes/:missionId",
+      "destination": "/api/f4-client-data?op=notes-item&missionId=:missionId"
+    },
+    {
+      "source": "/api/client-mission-notes",
+      "destination": "/api/f4-client-data?op=notes"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index"
     },
