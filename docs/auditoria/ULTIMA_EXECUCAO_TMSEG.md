@@ -12,11 +12,12 @@
 | **Data** | 2026-08-16 (UTC) |
 | **Tipo** | Auditoria final — somente leitura/testes/documentação |
 | **Branch** | `cursor/p4-fechamento-eaa8` |
+| **PR** | [#272](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/272) |
 | **Produção** | `buildId=d51e9315` |
 | **Commit produção** | `d51e9315` |
 | **builtAt** | `2026-08-16T14:44:15.247Z` |
 | **Código funcional SEC-03** | `79fae7a6` |
-| **Tag fechamento** | `baseline-fase3-completa-20260816` |
+| **Tag fechamento** | `baseline-fase3-completa-20260816` → `b9506cb3` |
 | **Tag SEC-03** | `baseline-fase3-sec03-merged-20260816` → `79fae7a6` |
 | **Rollback pré-SEC-03** | `baseline-fase3-pre-sec03-20260816` → `dfbfc962` |
 | **Banco/schema/migration/ENV/RLS/Asaas** | **Não alterados nesta execução** |
@@ -113,6 +114,7 @@ Todos os blocos **publicados, testados e validados em produção**, com tags de 
 | SYNC-02 fallback fornecedor | Backlog condicionado |
 | 12 órfãos P4-LIMPEZA | Limpeza futura |
 | AI Chat inativo | Decisão produto |
+| attached_assets | Limpeza futura |
 | Catch-all residual NB-07 | Arquitetura futura |
 
 ---
@@ -128,7 +130,7 @@ Todos os blocos **publicados, testados e validados em produção**, com tags de 
 
 ### NOTA HISTÓRICA
 
-Uma auditoria P4-FECHAMENTO **anterior** (pré-SEC-03, branch `cursor/p4-fechamento-eaa8`) havia classificado SEC-03 como bloqueador e emitido 🔴. Essa conclusão foi **superseded** pela publicação do PR #273 e validação fail-closed em produção. O relatório pré-SEC-03 não foi preservado neste arquivo para evitar contradição; evidências permanecem no histórico Git da branch.
+Uma auditoria P4-FECHAMENTO **anterior** (pré-SEC-03, commit `0cb62557`) havia classificado SEC-03 como bloqueador e emitido 🔴. Essa conclusão foi **superseded** pela publicação do PR #273 e validação fail-closed em produção. Evidências permanecem no histórico Git.
 
 ---
 

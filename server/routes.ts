@@ -91,6 +91,7 @@ import {
   listAsaasPayments,
 } from "../lib/asaasPaymentRoutesCore";
 import { handleAsaasPaymentWebhook } from "../lib/asaasWebhookCore";
+import { verifyAsaasPaymentWebhookRequest } from "../lib/asaasWebhookAuth";
 import { isLongRunningHost } from "./runtime";
 import { registerScheduledTick } from "./scheduledRegistry";
 import { registerMaintenanceTick } from "./maintenanceJobs";
@@ -6712,6 +6713,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   // Webhook do Asaas para baixa automática
   app.post("/api/asaas/webhook", async (req: Request, res: Response) => {
+    const auth = verifyAsaasPaymentWebhookRequest(req);
+    if (!auth.ok) {
+      return res.status(auth.status).json({ error: auth.error });
+    }
+
     try {
       res.json(await handleAsaasPaymentWebhook(req.body));
     } catch (err: any) {

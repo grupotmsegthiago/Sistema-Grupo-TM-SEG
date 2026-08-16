@@ -1,11 +1,13 @@
 /**
  * POST /api/asaas/webhook — handler Vercel leve (P4-NB07-CRIT).
- * Preserva contrato legado: sem requireAuth; SEC-03/token em bloco futuro.
+ * SEC-03: valida o authToken servidor-servidor antes de alcançar o core financeiro.
  */
 import { handleAsaasPaymentWebhook } from '../lib/asaasWebhookCore.js';
+import { verifyAsaasPaymentWebhookRequest } from '../lib/asaasWebhookAuth.js';
 
 type WebhookDeps = {
   handleWebhook?: typeof handleAsaasPaymentWebhook;
+  resolveExpectedToken?: () => string | undefined;
 };
 
 export async function handleAsaasWebhookRequest(
@@ -25,6 +27,15 @@ export async function handleAsaasWebhookRequest(
   }
 
   res.setHeader('Cache-Control', 'no-store');
+
+  const expectedToken = deps.resolveExpectedToken
+    ? deps.resolveExpectedToken()
+    : process.env.ASAAS_PAYMENT_WEBHOOK_TOKEN;
+  const auth = verifyAsaasPaymentWebhookRequest(req, expectedToken);
+  if (!auth.ok) {
+    res.status(auth.status).json({ error: auth.error });
+    return;
+  }
 
   try {
     // Paridade Express: repassa req.body sem converter ausente → {}
