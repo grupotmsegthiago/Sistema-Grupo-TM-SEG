@@ -14,6 +14,7 @@ import { handleAsaasPaymentWebhook } from '../lib/asaasWebhookCore.js';
 import type { ResolvedPrincipal } from '../lib/auth/resolvePrincipal.js';
 
 const ASAAS_FINANCE_ROLES = ['administrador', 'diretoria', 'financeiro'] as const;
+const TEST_WEBHOOK_TOKEN = 'sec03-test-token-32-characters-minimum-value';
 
 const AUTH_ROUTES = [
   {
@@ -127,7 +128,15 @@ async function simulateExpressWebhook(body: unknown): Promise<ResponseState> {
 
 async function simulateVercelWebhook(body: unknown): Promise<ResponseState> {
   const { res, state } = mockResponse();
-  await handleAsaasWebhookRequest({ method: 'POST', body }, res);
+  await handleAsaasWebhookRequest(
+    {
+      method: 'POST',
+      body,
+      headers: { 'asaas-access-token': TEST_WEBHOOK_TOKEN },
+    },
+    res,
+    { resolveExpectedToken: () => TEST_WEBHOOK_TOKEN },
+  );
   return state;
 }
 
@@ -312,9 +321,16 @@ describe('P4-NB07-CRIT — rotas Asaas críticas fora do catch-all', () => {
     it('POST sucesso mockado → 200 { received: true }', async () => {
       const { res, state } = mockResponse();
       await handleAsaasWebhookRequest(
-        { method: 'POST', body: { event: 'PAYMENT_RECEIVED', payment: { id: 'pay_1' } } },
+        {
+          method: 'POST',
+          body: { event: 'PAYMENT_RECEIVED', payment: { id: 'pay_1' } },
+          headers: { 'asaas-access-token': TEST_WEBHOOK_TOKEN },
+        },
         res,
-        { handleWebhook: async () => ({ received: true }) },
+        {
+          handleWebhook: async () => ({ received: true }),
+          resolveExpectedToken: () => TEST_WEBHOOK_TOKEN,
+        },
       );
       assert.equal(state.status, 200);
       assert.deepEqual(state.body, { received: true });
@@ -332,12 +348,17 @@ describe('P4-NB07-CRIT — rotas Asaas críticas fora do catch-all', () => {
 
       const vercel = mockResponse();
       await handleAsaasWebhookRequest(
-        { method: 'POST', body: { event: 'X' } },
+        {
+          method: 'POST',
+          body: { event: 'X' },
+          headers: { 'asaas-access-token': TEST_WEBHOOK_TOKEN },
+        },
         vercel.res,
         {
           handleWebhook: async () => {
             throw new Error('Supabase admin indisponível');
           },
+          resolveExpectedToken: () => TEST_WEBHOOK_TOKEN,
         },
       );
 
@@ -354,10 +375,10 @@ describe('P4-NB07-CRIT — rotas Asaas críticas fora do catch-all', () => {
       assert.match(core, /\.includes\(event/);
     });
 
-    it('não exige ASAAS_PAYMENT_WEBHOOK_TOKEN no handler', () => {
+    it('exige ASAAS_PAYMENT_WEBHOOK_TOKEN somente no handler backend', () => {
       const src = fs.readFileSync('api/asaas-webhook.ts', 'utf8');
       const core = fs.readFileSync('lib/asaasWebhookCore.ts', 'utf8');
-      assert.doesNotMatch(src, /ASAAS_PAYMENT_WEBHOOK_TOKEN/);
+      assert.match(src, /ASAAS_PAYMENT_WEBHOOK_TOKEN/);
       assert.doesNotMatch(core, /ASAAS_PAYMENT_WEBHOOK_TOKEN/);
     });
   });
