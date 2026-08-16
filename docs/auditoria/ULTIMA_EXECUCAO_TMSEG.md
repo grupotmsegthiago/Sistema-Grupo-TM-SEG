@@ -1,11 +1,66 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **SEC-03 — Preparação externa controlada**
-> **Configuração bloqueada antes de qualquer alteração externa. NÃO mergeado / NÃO publicado.**
+> Handoff oficial — **SEC-03 — Três webhooks de pagamento dedicados configurados**
+> **Configuração externa concluída. PR #273 ainda NÃO mergeado / NÃO publicado.**
 
 ---
 
-## SEC-03 — PREPARAÇÃO EXTERNA CONTROLADA
+## SEC-03 — CONFIGURAÇÃO EXTERNA CONCLUÍDA
+
+### PROGRESSO
+
+**Programa geral: 78%**
+
+`████████████████░░░░`
+
+**Fase 3: 94%**
+
+`███████████████████░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟢 3 WEBHOOKS SEC-03 CONFIGURADOS — PR #273 LIBERADO PARA PUBLICAÇÃO
+
+### VERCEL
+
+| Projeto | Variável | Production | Preview | Outras ENV alteradas |
+|---------|----------|------------|---------|----------------------|
+| `sistema-grupo-tm-seg` | `ASAAS_PAYMENT_WEBHOOK_TOKEN` | **Presente** | **Presente** | **Nenhuma** |
+
+### WEBHOOKS DE PAGAMENTO CRIADOS
+
+| Conta | Criado | URL | Eventos | authToken | Status |
+|-------|--------|-----|---------|-----------|--------|
+| TM Gestão | **Sim** | `https://sistema.grupotmseg.com.br/api/asaas/webhook` | `PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED` | Configurado | Ativo; fila não interrompida |
+| TM Segurança | **Sim** | `https://sistema.grupotmseg.com.br/api/asaas/webhook` | `PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED` | Configurado | Ativo; fila não interrompida |
+| TM Security | **Sim** | `https://sistema.grupotmseg.com.br/api/asaas/webhook` | `PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED` | Configurado | Ativo; fila não interrompida |
+
+Existe exatamente **um** webhook dedicado de pagamento por conta. O mesmo authToken dedicado foi aplicado nos quatro pontos (Vercel + três contas), sem registrar seu valor.
+
+### TRANSFER-APPROVAL PRESERVADO
+
+| Conta | URL existente | Preservado | Status |
+|-------|---------------|------------|--------|
+| TM Gestão | `https://sistema.grupotmseg.com.br/api/asaas/transfer-approval` | **Sim** | Ativo; fila não interrompida |
+| TM Segurança | `https://sistema.grupotmseg.com.br/api/asaas/transfer-approval` | **Sim** | Ativo; fila não interrompida |
+| TM Security | `https://sistema.grupotmseg.com.br/api/asaas/transfer-approval` | **Sim** | Ativo; fila não interrompida |
+
+URLs, eventos, estado e filas dos webhooks `transfer-approval` permaneceram intactos.
+
+### PRESERVAÇÃO
+
+- Nenhum evento financeiro foi executado.
+- Nenhuma cobrança, invoice, PIX ou transferência foi criada/alterada.
+- Nenhuma API key, emissora, cliente, NF, Supabase, banco, schema, migration ou RLS foi alterado.
+- Produção continua no código anterior e ignora o header extra até futura publicação do PR #273.
+
+---
+
+## SEC-03 — PREPARAÇÃO EXTERNA CONTROLADA (inventário anterior — histórico)
 
 ### PROGRESSO
 
@@ -1709,7 +1764,7 @@ A evolução **78%** está documentada por marcos publicados, não por soma item
 | SEC-01 | Investment auth | Fail-closed investment/* | **PUBLICADO** | ~2%* | Baixo | HOTFIX-NF | PR #264 | — |
 | SEC-02 | Supabase auth | requireAuth 6 rotas | **PUBLICADO** | ~2%* | Baixo | SEC-01 | PR #264 | — |
 | NB-07-SUP | 6 rotas `/api/supabase/*` | Handlers dedicados + paridade | **PUBLICADO VALIDADO** | +4% | Baixo | SEC-02 | PR #265 / `d39d0309` | **NÃO REFAZER** |
-| SEC-03 | Webhook Asaas token | Auth S2S fail-closed nas 3 contas | **BLOQUEADO — WEBHOOKS DE PAGAMENTO AUSENTES** | ~4% est. | Alto | Autorização para criar 3 webhooks dedicados | PR #273 / `c09fb33e` | Não publicar |
+| SEC-03 | Webhook Asaas token | Auth S2S fail-closed nas 3 contas | **CONFIG EXTERNA CONCLUÍDA — APTO PUBLICAÇÃO** | ~4% est. | Alto | Merge/deploy coordenado | PR #273 / `c09fb33e` | Publicar em execução separada |
 | NB-07-CRIT | Catch-all rotas críticas | Webhook/sync/recalc off catch-all | **PUBLICADO VALIDADO** | ~6% | Alto | NB-07-SUP | PR #267 / `06e0dd88` | **NÃO REFAZER** |
 | P4-SYNC | Sincronismo residual | DRE canônico, fornecedor, receivable desc | **PUBLICADO VALIDADO** | ~4% | Médio | NB-07-CRIT | PR #268+#269 / `2b2e64ce` | **NÃO REFAZER** |
 | P4-TEST | Baseline 5+2 + nb06 hang | CI confiável | **PUBLICADO VALIDADO** | ~3% | Baixo | P4-SYNC | PR #270 / `c5a98d7f` | **NÃO REFAZER** |
