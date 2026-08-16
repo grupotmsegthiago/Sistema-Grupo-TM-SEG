@@ -5,10 +5,11 @@ import fs from 'node:fs';
 describe('Controle de Faturas — limpar fila + Processando + espelhos', () => {
   it('tem limpeza em lote e botões de acompanhamento (sem Limpar UI)', () => {
     const routes = fs.readFileSync('server/routes.ts', 'utf8');
+    const syncCore = fs.readFileSync('lib/asaasSyncOpenPaymentsCore.ts', 'utf8');
     assert.match(routes, /\/api\/nf\/clear-open/);
     assert.match(routes, /ensure-clean-slate/);
-    assert.match(routes, /nfUpdated/);
-    assert.match(routes, /boleto_image_url/);
+    assert.match(syncCore, /nfUpdated/);
+    assert.match(syncCore, /boleto_image_url/);
     const ui = fs.readFileSync('components/FinancialInvoiceControl.tsx', 'utf8');
     assert.doesNotMatch(ui, /btn-clear-all-open/);
     assert.match(ui, /retry-now\?limit=5&reopen=1/);
