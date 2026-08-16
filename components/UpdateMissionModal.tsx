@@ -2888,11 +2888,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const vehiclePlateForEmail = searchVehicle || editData.client_vehicle_plate || '—';
 
             const sendClientEmail = finalStatus === MissionStatus.SCHEDULED && originalStatus !== MissionStatus.SCHEDULED;
-            const pendingClient = mission.email_pending_client === true;
             const hasRequiredDataForClientEmail = !!(editData.agent1 && editData.agent2 && editData.vehicleId && vehiclePlateForEmail && vehiclePlateForEmail !== '—');
 
             let pendingClientPayload: any = null;
-            if ((sendClientEmail || pendingClient) && hasRequiredDataForClientEmail) {
+            // Não dispara e-mail "atrasado" por flag email_pending_* — só no momento
+            // em que a OS muda para Agendada (ação atual do operador).
+            if (sendClientEmail && hasRequiredDataForClientEmail) {
                 pendingClientPayload = {
                     missionId: mission.id,
                     client: mission.client,
@@ -2903,16 +2904,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     vehiclePlate: vehiclePlateForEmail,
                     senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined
                 };
-            } else if ((sendClientEmail || pendingClient) && !hasRequiredDataForClientEmail) {
-                await supabase.from('missions').update({ email_pending_client: true }).eq('id', mission.id);
-                showNotification('E-mail Pendente', 'Confirmação ao cliente será enviada quando agente e veículo estiverem preenchidos.', 'warning');
+            } else if (sendClientEmail && !hasRequiredDataForClientEmail) {
+                showNotification('E-mail não enviado', 'Confirmação ao cliente exige agente e veículo preenchidos. Envie manualmente depois, se necessário.', 'warning');
             }
 
             const providerChanged = editData.provider && editData.provider.trim() !== '' &&
                 (originalStatus === MissionStatus.SOLICITED || !mission.provider || mission.provider !== editData.provider);
-            const pendingProvider = mission.email_pending_provider === true;
             let pendingProviderPayload: any = null;
-            if ((providerChanged && (finalStatus === MissionStatus.DOCUMENTATION || finalStatus === MissionStatus.SOLICITED)) || pendingProvider) {
+            if (providerChanged && (finalStatus === MissionStatus.DOCUMENTATION || finalStatus === MissionStatus.SOLICITED)) {
                 pendingProviderPayload = {
                     missionId: mission.id,
                     provider: editData.provider,

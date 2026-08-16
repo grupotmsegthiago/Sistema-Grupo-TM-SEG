@@ -61,8 +61,15 @@ export async function handleMissionScheduled(body: Record<string, any>) {
   if (!missionData.destination) missingFields.push('Destino');
 
   if (missingFields.length > 0) {
-    await sb.from('missions').update({ email_pending_client: true }).eq('id', missionId);
-    return { status: 200, body: { success: true, queued: true, message: `📋 E-mail do CLIENTE na fila — faltam: ${missingFields.join(', ')}` } };
+    // Sem fila retroativa — só envio na abertura/ação explícita.
+    return {
+      status: 200,
+      body: {
+        success: false,
+        queued: false,
+        message: `E-mail do cliente não enviado — faltam: ${missingFields.join(', ')}. Complete os dados e envie manualmente se necessário.`,
+      },
+    };
   }
 
   await sb.from('missions').update({ email_pending_client: false }).eq('id', missionId);
@@ -127,8 +134,15 @@ export async function handleMissionSolicited(body: Record<string, any>) {
   if (!missionData.destination) missingFields.push('Destino');
 
   if (missingFields.length > 0) {
-    await sb.from('missions').update({ email_pending_provider: true }).eq('id', missionId);
-    return { status: 200, body: { success: true, queued: true, message: `📋 E-mail do FORNECEDOR na fila — faltam: ${missingFields.join(', ')}` } };
+    // Sem fila retroativa — só envio na abertura/ação explícita.
+    return {
+      status: 200,
+      body: {
+        success: false,
+        queued: false,
+        message: `E-mail do fornecedor não enviado — faltam: ${missingFields.join(', ')}. Complete os dados e envie manualmente se necessário.`,
+      },
+    };
   }
 
   await sb.from('missions').update({ email_pending_provider: false }).eq('id', missionId);

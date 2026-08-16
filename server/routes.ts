@@ -2112,9 +2112,13 @@ export async function registerRoutes(
       if (!missionData.destination) missingFields.push('Destino');
 
       if (missingFields.length > 0) {
-        await supabase.from('missions').update({ email_pending_client: true }).eq('id', missionId);
-        console.log(`[Email Fila] Missão ${missionId} → Cliente pendente (faltam: ${missingFields.join(', ')})`);
-        return res.json({ success: true, queued: true, message: `📋 E-mail do CLIENTE na fila — faltam: ${missingFields.join(', ')}` });
+        // Sem fila retroativa: e-mail só na abertura/ação explícita, não enfileira para depois.
+        console.log(`[Email] Missão ${missionId} — e-mail cliente NÃO enviado (faltam: ${missingFields.join(', ')})`);
+        return res.json({
+          success: false,
+          queued: false,
+          message: `E-mail do cliente não enviado — faltam: ${missingFields.join(', ')}. Complete os dados e envie manualmente se necessário.`,
+        });
       }
 
       await supabase.from('missions').update({ email_pending_client: false }).eq('id', missionId);
@@ -2179,9 +2183,13 @@ export async function registerRoutes(
       if (!missionData.destination) missingFields.push('Destino');
 
       if (missingFields.length > 0) {
-        await supabase.from('missions').update({ email_pending_provider: true }).eq('id', missionId);
-        console.log(`[Email Fila] Missão ${missionId} → Fornecedor pendente (faltam: ${missingFields.join(', ')})`);
-        return res.json({ success: true, queued: true, message: `📋 E-mail do FORNECEDOR na fila — faltam: ${missingFields.join(', ')}` });
+        // Sem fila retroativa: e-mail só na abertura/ação explícita.
+        console.log(`[Email] Missão ${missionId} — e-mail fornecedor NÃO enviado (faltam: ${missingFields.join(', ')})`);
+        return res.json({
+          success: false,
+          queued: false,
+          message: `E-mail do fornecedor não enviado — faltam: ${missingFields.join(', ')}. Complete os dados e envie manualmente se necessário.`,
+        });
       }
 
       await supabase.from('missions').update({ email_pending_provider: false }).eq('id', missionId);
