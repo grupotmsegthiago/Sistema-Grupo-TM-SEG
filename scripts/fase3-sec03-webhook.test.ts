@@ -71,6 +71,13 @@ describe('SEC-03 — autenticação dedicada e fail-closed', () => {
       ),
       { ok: false, status: 503, error: 'webhook_not_configured' },
     );
+    assert.deepEqual(
+      verifyAsaasPaymentWebhookRequest(
+        { headers: { [ASAAS_PAYMENT_WEBHOOK_HEADER]: TEST_TOKEN } },
+        `${TEST_TOKEN} com espaço`,
+      ),
+      { ok: false, status: 503, error: 'webhook_not_configured' },
+    );
   });
 
   it('sem header → 401 antes de qualquer escrita', async () => {

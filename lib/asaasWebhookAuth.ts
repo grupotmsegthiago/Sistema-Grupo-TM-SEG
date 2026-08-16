@@ -11,8 +11,8 @@ function readHeaderCaseInsensitive(headers: Record<string, unknown> | undefined,
   if (!headers) return '';
   const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name);
   const raw = entry?.[1];
-  if (Array.isArray(raw)) return String(raw[0] || '').trim();
-  return String(raw || '').trim();
+  if (Array.isArray(raw)) return String(raw[0] || '');
+  return String(raw || '');
 }
 
 function isValidConfiguredToken(token: string): boolean {
@@ -36,7 +36,7 @@ export function verifyAsaasPaymentWebhookRequest(
   req: { headers?: Record<string, unknown> },
   configuredToken = process.env[ASAAS_PAYMENT_WEBHOOK_TOKEN_ENV],
 ): AsaasWebhookAuthResult {
-  const expected = String(configuredToken || '').trim();
+  const expected = String(configuredToken || '');
   if (!isValidConfiguredToken(expected)) {
     return { ok: false, status: 503, error: 'webhook_not_configured' };
   }
