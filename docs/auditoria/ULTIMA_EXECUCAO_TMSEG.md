@@ -1,11 +1,124 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **Correção de paridade PR #267 — P4-NB07-CRIT**
-> **Não contém segredos. Seção de publicação atualizada ao final desta execução.**
+> Handoff oficial — **Publicação controlada PR #267 — P4-NB07-CRIT**
+> **Publicado e validado em produção. Não contém segredos.**
 
 ---
 
-## CORREÇÃO DE PARIDADE PR #267 — P4-NB07-CRIT
+## PUBLICAÇÃO PR #267 — P4-NB07-CRIT
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **Modelo Cursor** | Composer 2.5 |
+| **PR** | [#267](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/267) |
+| **HEAD validado pré-merge** | `1bff03a3` |
+| **Commit publicado (`main`)** | `06e0dd88` |
+| **Commit imediatamente anterior (`main`)** | `2f2a577a` |
+| **`dev` antes** | `58384585` |
+| **`dev` após** | `06e0dd88` |
+| **Tag rollback** | `baseline-fase3-p4-nb07-crit-merged-20260815` → `06e0dd88` |
+| **Produção antes** | `buildId=2f2a577a` (handoff NB-07 funcional: `d39d0309`) |
+| **Produção após** | `buildId=06e0dd88` |
+| **builtAt** | `2026-08-16T00:59:25.758Z` |
+| **Domínio** | `https://sistema.grupotmseg.com.br` |
+| **Projeto Vercel** | `sistema-grupo-tm-seg` |
+| **SEC-03** | **Congelado — não publicado** |
+
+### PROGRESSO
+
+**Programa geral: 68%**
+
+`█████████████░░░░░░░` (+3% — marco P4 publicado; delta proporcional ao +6% Fase 3)
+
+**Fase 3: 84%**
+
+`████████████████░░░░` (+6% — bloco NB-07-CRIT / P4 publicado)
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟢 P4-NB07-CRIT PUBLICADO E VALIDADO
+
+### RESUMO SIMPLES
+
+O sistema publicou handlers Vercel dedicados para as quatro rotas Asaas que antes caíam no catch-all Express (~5 min / 504). Sem autenticação, as rotas privadas passaram de timeout (~35s+) para **401 em &lt;0,22s**. O webhook responde **405** em GET em **~0,14s** (fora do catch-all); POST com body inválido retorna `{received:true}` sem efeito financeiro. NF, Supabase e Investment continuam com **401 rápido**. Nenhuma cobrança, PIX, transferência, sync real ou DELETE real foi executada. **SEC-03 continua pendente** (sem token webhook).
+
+### PONTO DE RETORNO (pré-merge)
+
+| Ref | Commit |
+|-----|--------|
+| `main` | `2f2a577a` |
+| `dev` | `58384585` |
+| Produção (`/api/version`) | `2f2a577a` |
+| Tag anterior | `baseline-fase3-nb07-supabase-merged-20260815` |
+
+**Rollback:** `git revert` ou reset `main` para `2f2a577a` + redeploy Vercel. Sem alteração de banco.
+
+### MERGE
+
+1. `cursor/p4-nb07-crit-eaa8` → `dev` (conflito só em handoff — resolvido preservando histórico)
+2. `dev` → `main` (fast-forward)
+3. Push `main` + `dev` + tag `baseline-fase3-p4-nb07-crit-merged-20260815`
+
+**Código funcional:** commits `2d745324`, `b647dfff`, `1bff03a3` incluídos no histórico publicado.
+
+### TESTES PRÉ-MERGE (HEAD `1bff03a3`)
+
+| Suíte | Resultado |
+|-------|-----------|
+| P4-NB07-CRIT | **36/36 pass** |
+| Escopo ampliado (P4+Asaas+NB07+SEC+P0–P3+faturas) | **242/242 pass** |
+| `npm run build` | **OK** |
+| Falhas novas | **0** |
+
+### SMOKE PRODUÇÃO — ANTES × DEPOIS
+
+| Rota | Antes (`2f2a577a`) | Depois (`06e0dd88`) |
+|------|-------------------|---------------------|
+| `GET /api/asaas/payments` (sem auth) | timeout ~35s | **401** em 0,22s |
+| `GET /api/asaas/payment/test-id` | timeout ~35s | **401** em 0,08s |
+| `POST /api/asaas/sync-open-payments` | timeout ~35s | **401** em 0,10s |
+| `DELETE /api/asaas/payment/test-id` | timeout ~35s | **401** em 0,06s |
+| `GET /api/asaas/webhook` | timeout ~35s | **405** em 0,14s |
+| `POST /api/asaas/webhook` body inválido | — | **200** `{received:true}` em 0,12s |
+| `GET /api/health` | 200 | **200** em 0,07s |
+| `GET /` | — | **200** em 0,08s |
+| `GET /api/nf/invoices` | 401 em 0,09s | **401** em 0,09s |
+| `GET /api/supabase/status` | 401 em 0,06s | **401** em 0,09s |
+| `GET /api/investment/snapshots-all` | 401 em 0,10s | **401** em 0,13s |
+
+### QUATRO ROTAS PUBLICADAS
+
+| Rota | Handler | Auth | Smoke |
+|------|---------|------|-------|
+| `POST /api/asaas/webhook` | `api/asaas-webhook.ts` | Sem auth (legado) | 405 GET / 200 POST seguro |
+| `POST /api/asaas/sync-open-payments` | `api/asaas-sync-open-payments.ts` | financeiro+ | 401 sem token |
+| `GET /api/asaas/payments` | `api/asaas-payments.ts` | financeiro+ | 401 sem token |
+| `GET/DELETE /api/asaas/payment/:id` | `api/asaas-payment.ts` | financeiro+ / admin+ | 401 sem token |
+
+**WEBHOOK FORA DO CATCH-ALL — SEC-03 AINDA PENDENTE**
+
+### ÁREAS PROTEGIDAS (confirmado)
+
+- NF, FinancialInvoiceControl, `/api/nf/invoices` — intactos; 401 rápido
+- Supabase NB-07 — intacto; 401 rápido
+- Investment — intacto; 401 rápido
+- Três contas Asaas — sem alteração ENV/keys/webhooks
+- SEC-03 — congelado; sem `ASAAS_PAYMENT_WEBHOOK_TOKEN`
+
+### SEGURANÇA PÓS-DEPLOY
+
+- Nenhuma ENV nova
+- Nenhuma key exposta em responses testadas
+- Auth fail-closed nas rotas privadas (401 antes de Asaas)
+
+---
+
+## CORREÇÃO DE PARIDADE PR #267 — P4-NB07-CRIT (pré-publicação)
 
 | Campo | Valor |
 |-------|-------|
