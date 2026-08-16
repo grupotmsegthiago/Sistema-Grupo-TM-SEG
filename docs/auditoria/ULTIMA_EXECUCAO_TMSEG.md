@@ -1,11 +1,164 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **SEC-03 — Três webhooks de pagamento dedicados configurados**
-> **Configuração externa concluída. PR #273 ainda NÃO mergeado / NÃO publicado.**
+> Handoff oficial — **SEC-03 publicado — PR #273**
+> **Fail-closed validado em produção. Validação positiva real pendente de evento legítimo.**
 
 ---
 
-## SEC-03 — CONFIGURAÇÃO EXTERNA CONCLUÍDA
+## PUBLICAÇÃO CONTROLADA SEC-03 — PR #273
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **PR** | [#273](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/273) |
+| **Branch** | `cursor/fase3-sec03-webhook-eaa8` |
+| **HEAD validado/mergeado** | `79fae7a6` |
+| **Commit funcional SEC-03** | `3e417e91` |
+| **Commits após `c09fb33e`** | `4634d22d`, `79fae7a6` — documentação/configuração |
+| **Tag rollback** | `baseline-fase3-pre-sec03-20260816` → `dfbfc962` |
+| **Tag SEC-03** | `baseline-fase3-sec03-merged-20260816` → `79fae7a6` |
+| **Produção antes** | `dfbfc962` |
+| **Produção SEC-03** | `buildId=79fae7a6` |
+| **builtAt** | `2026-08-16T14:40:52.218Z` |
+| **Banco/schema/migration/RLS** | Não alterados |
+
+### PROGRESSO
+
+**Programa geral: 80%**
+
+`████████████████░░░░`
+
+**Fase 3: 98%**
+
+`████████████████████`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟡 SEC-03 PUBLICADO — VALIDAÇÃO POSITIVA REAL PENDENTE
+
+### RESUMO SIMPLES
+
+O SEC-03 foi mergeado por fast-forward em `dev` e `main`, sem conflitos. Produção agora exige o header `asaas-access-token` antes de criar Supabase, fazer matching ou escrever dados financeiros. Requisições sem token e com token inválido retornaram **401 rápido** usando payload sintético sem correspondência. Não foi criado/pago/cancelado nenhum título e nenhum evento financeiro real foi forjado. As três contas e os webhooks `transfer-approval` continuam ativos. A confirmação positiva com token correto ficou intencionalmente pendente do próximo evento legítimo do Asaas.
+
+---
+
+### REVALIDAÇÃO DO HEAD / DIFF
+
+| Item | Classificação |
+|------|---------------|
+| `3e417e91` | Funcional — autenticação SEC-03 isolada |
+| `561aad1f` | Teste — token com espaços rejeitado |
+| `c09fb33e` | Documentação — configuração/rollback |
+| `4634d22d` | Documentação — inventário bloqueado |
+| `79fae7a6` | Documentação/configuração externa concluída |
+
+Diff publicado:
+
+- `api/asaas-webhook.ts` — auth Vercel antes do core;
+- `lib/asaasWebhookAuth.ts` — helper específico;
+- `lib/asaasWebhookCore.ts` — injeção para testes, defaults de produção preservados;
+- `server/routes.ts` — paridade Express;
+- três arquivos de teste;
+- handoff.
+
+**Zero diff:** NF, `FinancialInvoiceControl`, `/api/nf/invoices`, balances, PIX, transferências, cobranças, `sync-open-payments`, payments, payment/:id, Supabase, Investment, DRE, Diretoria, RH, Ponto, banco, schema, migration e RLS.
+
+---
+
+### TESTES PRÉ-MERGE
+
+| Suíte | Resultado |
+|-------|-----------|
+| SEC-03/P4/guardas NF | **62/62 pass** |
+| TS completa | **944/944 pass** |
+| React | **4/4 pass** |
+| Total | **948/948 pass**, 60s |
+| Skipped / cancelled / hang | **0 / 0 / 0** |
+| `npm run build` | **OK**, 19s |
+
+Provas determinísticas:
+
+- sem ENV → 503, zero core/escrita;
+- sem token → 401, zero core/escrita;
+- token incorreto → 401, zero core/escrita;
+- token correto → alcança fluxo atual mockado;
+- Vercel/Express autenticam antes de qualquer side effect.
+
+---
+
+### MERGE / DEPLOY
+
+```text
+PR #273 → dev (fast-forward)
+dev → main (fast-forward)
+main @ 79fae7a6 → Vercel Production
+```
+
+Nenhum conflito foi resolvido porque não houve conflito.
+
+---
+
+### SMOKE PRODUÇÃO SEC-03 (SEM EFEITO FINANCEIRO)
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `POST /api/asaas/webhook` sem token | **401** em 0,10s |
+| Mesmo POST com token inválido | **401** em 0,05s |
+| Body | Sintético, ID sem correspondência; auth negou antes do matching |
+| Resposta | `{error:"unauthorized"}` |
+| `GET /api/version` | **200**, `79fae7a6` |
+| `GET /api/health` | **200** em 0,06s |
+| `GET /` | **200** em 0,10s |
+| `GET /api/nf/invoices` | **401** em 0,07s |
+| `GET /api/supabase/status` | **401** em 0,07s |
+| `GET /api/asaas/payments` | **401** em 0,11s |
+| `GET /api/investment/snapshots-all` | **401** em 0,08s |
+
+Nenhum secret foi exibido em comando, log, Git, handoff, PR ou resposta.
+
+---
+
+### TRÊS CONTAS / TRANSFER-APPROVAL
+
+| Conta | Webhook pagamento | authToken | Transfer-approval |
+|-------|-------------------|-----------|-------------------|
+| TM Gestão | Ativo; fila normal | Configurado | Preservado e ativo |
+| TM Segurança | Ativo; fila normal | Configurado | Preservado e ativo |
+| TM Security | Ativo; fila normal | Configurado | Preservado e ativo |
+
+Eventos dos webhooks de pagamento: somente `PAYMENT_CONFIRMED` e `PAYMENT_RECEIVED`.
+
+### VALIDAÇÃO POSITIVA REAL
+
+**Pendente do próximo evento legítimo.** Nenhuma cobrança/pagamento foi criado artificialmente. A pendência não invalida o fail-closed já comprovado, mas deve ser conferida nos logs de entrega Asaas quando ocorrer evento real.
+
+---
+
+### ROLLBACK
+
+Em regressão:
+
+1. reverter somente SEC-03 para `baseline-fase3-pre-sec03-20260816` (`dfbfc962`);
+2. redeploy Vercel;
+3. não alterar banco;
+4. não remover automaticamente ENV nem os novos webhooks;
+5. preservar configurações externas para investigação.
+
+Nenhum rollback foi necessário nesta publicação.
+
+---
+
+### PRÓXIMO PASSO
+
+Revisão humana deste handoff. Depois, executar P4-FECHAMENTO separadamente; não declarar Fase 3 em 100% automaticamente.
+
+---
+
+## SEC-03 — CONFIGURAÇÃO EXTERNA CONCLUÍDA (histórico pré-publicação)
 
 ### PROGRESSO
 
@@ -1764,12 +1917,12 @@ A evolução **78%** está documentada por marcos publicados, não por soma item
 | SEC-01 | Investment auth | Fail-closed investment/* | **PUBLICADO** | ~2%* | Baixo | HOTFIX-NF | PR #264 | — |
 | SEC-02 | Supabase auth | requireAuth 6 rotas | **PUBLICADO** | ~2%* | Baixo | SEC-01 | PR #264 | — |
 | NB-07-SUP | 6 rotas `/api/supabase/*` | Handlers dedicados + paridade | **PUBLICADO VALIDADO** | +4% | Baixo | SEC-02 | PR #265 / `d39d0309` | **NÃO REFAZER** |
-| SEC-03 | Webhook Asaas token | Auth S2S fail-closed nas 3 contas | **CONFIG EXTERNA CONCLUÍDA — APTO PUBLICAÇÃO** | ~4% est. | Alto | Merge/deploy coordenado | PR #273 / `c09fb33e` | Publicar em execução separada |
+| SEC-03 | Webhook Asaas token | Auth S2S fail-closed nas 3 contas | **PUBLICADO — POSITIVO REAL PENDENTE** | ~4% est. | Baixo residual | Próximo evento legítimo | PR #273 / `79fae7a6` | Monitorar entrega real |
 | NB-07-CRIT | Catch-all rotas críticas | Webhook/sync/recalc off catch-all | **PUBLICADO VALIDADO** | ~6% | Alto | NB-07-SUP | PR #267 / `06e0dd88` | **NÃO REFAZER** |
 | P4-SYNC | Sincronismo residual | DRE canônico, fornecedor, receivable desc | **PUBLICADO VALIDADO** | ~4% | Médio | NB-07-CRIT | PR #268+#269 / `2b2e64ce` | **NÃO REFAZER** |
 | P4-TEST | Baseline 5+2 + nb06 hang | CI confiável | **PUBLICADO VALIDADO** | ~3% | Baixo | P4-SYNC | PR #270 / `c5a98d7f` | **NÃO REFAZER** |
 | P4-LIMPEZA | Órfãos / decisões feature | BillingControlCenter, AI Chat, replit restos | **PUBLICADO VALIDADO** | ~3% | Baixo | P4-TEST | PR #271 / `5f39ecfc` | **NÃO REFAZER** |
-| P4-FECHAMENTO | Regressão final + 100% | Build, smoke, handoff fechamento | **PENDENTE APÓS SEC-03** | ~2% est. | Baixo | config/deploy SEC-03 | PR #272 (auditoria) | Reexecutar após publicação SEC-03 |
+| P4-FECHAMENTO | Regressão final + 100% | Build, smoke, handoff fechamento | **PENDENTE** | ~2% est. | Baixo | SEC-03 publicado | PR #272 (auditoria anterior) | Reexecutar separadamente |
 
 \*% por item = estimativa para explicar 22%; marcos publicados (78%) são a fonte oficial.
 
