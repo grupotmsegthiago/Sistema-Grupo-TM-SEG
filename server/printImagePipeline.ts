@@ -13,6 +13,7 @@ import { computeScaledDimensions } from '../lib/imageForAI';
 import {
   removeOverlaysFromBuffer,
   regionAreaRatio,
+  filterOverlayBoxes,
 } from '../lib/printInpainting';
 import type {
   DetectedOverlay,
@@ -21,18 +22,19 @@ import type {
 } from '../lib/printPipelineTypes';
 import { isSupportedPrintMime, normalizePrintMime } from '../lib/printPipelineTypes';
 
-const DETECTION_MAX_DIM = 1600;
-const DETECTION_JPEG_QUALITY = 85;
+const DETECTION_MAX_DIM = 1200;
+const DETECTION_JPEG_QUALITY = 78;
 const MAX_INPUT_BYTES = 20 * 1024 * 1024;
-const GEMINI_DETECTION_TIMEOUT_MS = 25_000;
+const GEMINI_DETECTION_TIMEOUT_MS = 12_000;
 
 const DETECTION_PROMPT =
-  'Detect every digital OVERLAY stamped ON TOP of this photo (not part of the physical scene): ' +
-  '(1) camera date/time and city/location stamps, (2) watermarks and semi-transparent captions, ' +
-  '(3) app UI text or software names, (4) pasted/stamped company logos of ANY brand (including an old TMSEG shield logo if overlaid). ' +
-  'Do NOT include: vehicle license plates, road signs, text physically painted on vehicles or buildings, or logos that are physically part of the truck body paint. ' +
-  'Return a JSON array where each item is {"box_2d":[ymin,xmin,ymax,xmax],"label":string,"kind":"text"|"logo"|"watermark"|"timestamp"|"unknown"} ' +
-  'with coordinates normalized to 0-1000. Return [] if there are no overlays.';
+  'Detect ONLY digital overlays stamped ON TOP of this photo (NOT part of the physical scene): ' +
+  '(1) camera date/time and GPS/city stamps, (2) watermarks and semi-transparent captions, ' +
+  '(3) mobile app UI text or software names, (4) pasted/stamped company logos with timestamp (ANY brand). ' +
+  'NEVER mark as overlay: vehicle license plates (placas), road signs, text painted on trucks/buildings, ' +
+  'hodometer digits inside the dashboard, people, cargo, or logos physically painted on the vehicle body. ' +
+  'Return a JSON array: {"box_2d":[ymin,xmin,ymax,xmax],"label":string,"kind":"text"|"logo"|"watermark"|"timestamp"|"unknown"} ' +
+  'coordinates 0-1000. Return [] if no digital overlays.';
 
 function nowMs(): number {
   return Date.now();
@@ -70,52 +72,60 @@ async function detectOverlays(
   const t0 = nowMs();
   if (!isGeminiConfigured()) return { boxes: [], ms: nowMs() - t0 };
 
-  const payload = await buildDetectionPayload(buffer, mimeType);
-  const boxResp = await withTimeout(
-    generateGeminiContent({
-      model: 'gemini-2.5-flash',
-      contents: [{
-        role: 'user',
-        parts: [
-          { inlineData: { mimeType: payload.mimeType, data: payload.data } },
-          { text: DETECTION_PROMPT },
-        ],
-      }],
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              box_2d: { type: 'array', items: { type: 'integer' } },
-              label: { type: 'string' },
-              kind: { type: 'string' },
-            },
-            required: ['box_2d'],
-          },
-        },
-      },
-    }),
-    GEMINI_DETECTION_TIMEOUT_MS,
-    'Timeout na detecção de overlays do print',
-  );
-
-  let boxes: DetectedOverlay[] = [];
   try {
-    const parsed = JSON.parse(boxResp.text || '[]');
-    boxes = (Array.isArray(parsed) ? parsed : [])
-      .filter((b: any) => Array.isArray(b?.box_2d) && b.box_2d.length === 4)
-      .map((b: any) => ({
-        box_2d: b.box_2d as [number, number, number, number],
-        label: typeof b.label === 'string' ? b.label : undefined,
-        kind: typeof b.kind === 'string' ? b.kind : undefined,
-      }));
-  } catch {
-    boxes = [];
-  }
+    const payload = await buildDetectionPayload(buffer, mimeType);
+    const boxResp = await withTimeout(
+      generateGeminiContent({
+        model: 'gemini-2.5-flash',
+        contents: [{
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType: payload.mimeType, data: payload.data } },
+            { text: DETECTION_PROMPT },
+          ],
+        }],
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                box_2d: { type: 'array', items: { type: 'integer' } },
+                label: { type: 'string' },
+                kind: { type: 'string' },
+              },
+              required: ['box_2d'],
+            },
+          },
+          temperature: 0,
+          maxOutputTokens: 2048,
+        },
+      }),
+      GEMINI_DETECTION_TIMEOUT_MS,
+      'Timeout na detecção de overlays do print',
+    );
 
-  return { boxes, ms: nowMs() - t0 };
+    let boxes: DetectedOverlay[] = [];
+    try {
+      const parsed = JSON.parse(boxResp.text || '[]');
+      boxes = (Array.isArray(parsed) ? parsed : [])
+        .filter((b: any) => Array.isArray(b?.box_2d) && b.box_2d.length === 4)
+        .map((b: any) => ({
+          box_2d: b.box_2d as [number, number, number, number],
+          label: typeof b.label === 'string' ? b.label : undefined,
+          kind: typeof b.kind === 'string' ? b.kind : undefined,
+        }));
+    } catch {
+      boxes = [];
+    }
+
+    boxes = filterOverlayBoxes(boxes, payload.width, payload.height);
+    return { boxes, ms: nowMs() - t0 };
+  } catch (err) {
+    console.warn('[print-pipeline] Detecção Gemini indisponível — segue sem limpeza:', err instanceof Error ? err.message : err);
+    return { boxes: [], ms: nowMs() - t0 };
+  }
 }
 
 /** Fallback: inpainting localizado via Gemini só no recorte (nunca a foto inteira). */
