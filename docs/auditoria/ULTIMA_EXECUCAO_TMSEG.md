@@ -20,8 +20,10 @@
 | **Estratégia merge** | **Somente #269** → `dev` → `main` (evita duplicação) |
 | **PR #268** | [#268](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/268) — incluído via #269 |
 | **PR #269** | [#269](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/269) — branch mergeada |
-| **Tag** | `baseline-fase3-p4-sync-merged-20260816` → commit consolidado |
+| **Tag** | `baseline-fase3-p4-sync-merged-20260816` → `7dc3b059` |
 | **Produção anterior** | `06e0dd88` (P4-NB07-CRIT) |
+| **Produção após** | `buildId=7dc3b059` |
+| **builtAt** | `2026-08-16T01:14:40.582Z` |
 | **Domínio** | `https://sistema.grupotmseg.com.br` |
 | **Projeto Vercel** | `sistema-grupo-tm-seg` |
 | **SEC-03** | **Congelado — não publicado** |
@@ -95,17 +97,19 @@ Consolidamos PR #268 (teste receivable-desc-nf alinhado ao SSOT quinzena) e PR #
 | `npm run build` | **OK** |
 | Falhas novas | **0** |
 
-### SMOKE PRODUÇÃO (pós-deploy)
+### SMOKE PRODUÇÃO (pós-deploy @ `7dc3b059`)
 
 | Rota | Esperado | Resultado |
 |------|----------|-----------|
-| `GET /api/health` | 200 | _(preencher após deploy)_ |
-| `GET /` | 200 | _(preencher após deploy)_ |
-| `GET /api/version` | buildId novo | _(preencher após deploy)_ |
-| `GET /api/nf/invoices` (sem auth) | 401 rápido | _(preencher após deploy)_ |
-| `GET /api/supabase/status` (sem auth) | 401 rápido | _(preencher após deploy)_ |
-| `GET /api/asaas/payments` (sem auth) | 401 rápido | _(preencher após deploy)_ |
-| `GET /api/investment/snapshots-all` (sem auth) | 401/403 rápido | _(preencher após deploy)_ |
+| `GET /api/version` | buildId `7dc3b059` | **200** — `7dc3b059` em 0,10s |
+| `GET /api/health` | 200 | **200** `{"status":"ok"}` em 0,10s |
+| `GET /` | 200 | **200** em 0,10s |
+| `GET /api/nf/invoices` (sem auth) | 401 rápido | **401** em 0,12s |
+| `GET /api/supabase/status` (sem auth) | 401 rápido | **401** em 0,08s |
+| `GET /api/asaas/payments` (sem auth) | 401 rápido | **401** em 0,07s |
+| `GET /api/investment/snapshots-all` (sem auth) | 401/403 rápido | **401** em 0,07s |
+
+**Nenhuma escrita executada.** Rotas protegidas preservadas. Deploy Vercel `sistema-grupo-tm-seg` confirmado.
 
 ### ÁREAS PROTEGIDAS (confirmado)
 
