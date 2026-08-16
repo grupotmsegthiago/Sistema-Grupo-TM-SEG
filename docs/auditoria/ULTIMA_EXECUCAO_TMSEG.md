@@ -17,7 +17,8 @@
 | **Tag** | `baseline-fase3-p4-limpeza-merged-20260816` → `5f39ecfc` |
 | **Produção funcional anterior** | `c5a98d7f` |
 | **Handoff anterior** | `d8119048` |
-| **Produção após deploy** | _(preencher pós-deploy)_ |
+| **Produção após deploy** | `buildId=8c559a8c` |
+| **builtAt** | `2026-08-16T02:14:58.411Z` |
 | **Domínio** | `https://sistema.grupotmseg.com.br` |
 | **Projeto Vercel** | `sistema-grupo-tm-seg` |
 | **SEC-03 / PR #262** | **Congelados** |
@@ -82,17 +83,19 @@ Publicamos o PR #271 com a **auditoria de limpeza** codificada em `scripts/p4-li
 3. `dev` → `main` (fast-forward)
 4. Push + tag `baseline-fase3-p4-limpeza-merged-20260816`
 
-### SMOKE PRODUÇÃO (pós-deploy)
+### SMOKE PRODUÇÃO (pós-deploy @ `8c559a8c`)
 
 | Rota | Esperado | Resultado |
 |------|----------|-----------|
-| `GET /api/version` | buildId deploy | _(preencher)_ |
-| `GET /api/health` | 200 | _(preencher)_ |
-| `GET /` | 200 | _(preencher)_ |
-| `GET /api/nf/invoices` | 401 rápido | _(preencher)_ |
-| `GET /api/supabase/status` | 401 rápido | _(preencher)_ |
-| `GET /api/asaas/payments` | 401 rápido | _(preencher)_ |
-| `GET /api/investment/snapshots-all` | 401/403 rápido | _(preencher)_ |
+| `GET /api/version` | buildId deploy | **200** — `8c559a8c` em 0,05s |
+| `GET /api/health` | 200 | **200** `{"status":"ok"}` em 0,07s |
+| `GET /` | 200 | **200** em 0,08s |
+| `GET /api/nf/invoices` | 401 rápido | **401** em 0,12s |
+| `GET /api/supabase/status` | 401 rápido | **401** em 0,07s |
+| `GET /api/asaas/payments` | 401 rápido | **401** em 0,06s |
+| `GET /api/investment/snapshots-all` | 401/403 rápido | **401** em 0,06s |
+
+**Nenhuma escrita executada.** Código funcional auditado @ `5f39ecfc` (testes/docs). Deploy Vercel `sistema-grupo-tm-seg` confirmado.
 
 ### ÓRFÃOS CLASSIFICADOS (mantidos — remoção futura)
 
