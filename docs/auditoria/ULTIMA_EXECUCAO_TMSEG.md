@@ -13,9 +13,12 @@
 | **Modelo Cursor** | Composer 2.5 |
 | **PR** | [#270](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/270) |
 | **Branch** | `cursor/p4-test-eaa8` |
-| **HEAD validado** | `c5a98d7f` |
-| **Tag** | `baseline-fase3-p4-test-merged-20260816` |
-| **Produção anterior** | `buildId=412bf51c` (handoff P4-SYNC smoke) |
+| **HEAD validado (funcional)** | `c5a98d7f` |
+| **HEAD handoff publicação** | `c48e331b` |
+| **Tag** | `baseline-fase3-p4-test-merged-20260816` → `c5a98d7f` |
+| **Produção anterior** | `buildId=412bf51c` |
+| **Produção após** | `buildId=c48e331b` |
+| **builtAt** | `2026-08-16T01:45:13.366Z` |
 | **Domínio** | `https://sistema.grupotmseg.com.br` |
 | **Projeto Vercel** | `sistema-grupo-tm-seg` |
 | **SEC-03 / PR #262** | **Congelados** |
@@ -81,17 +84,19 @@ Publicamos o PR #270 com correções **somente em testes e harness** — nenhuma
 3. `dev` → `main` (fast-forward)
 4. Push + tag `baseline-fase3-p4-test-merged-20260816`
 
-### SMOKE PRODUÇÃO (pós-deploy)
+### SMOKE PRODUÇÃO (pós-deploy @ `c48e331b`)
 
 | Rota | Esperado | Resultado |
 |------|----------|-----------|
-| `GET /api/version` | buildId novo | _(preencher após deploy)_ |
-| `GET /api/health` | 200 | _(preencher após deploy)_ |
-| `GET /` | 200 | _(preencher após deploy)_ |
-| `GET /api/nf/invoices` | 401 rápido | _(preencher após deploy)_ |
-| `GET /api/supabase/status` | 401 rápido | _(preencher após deploy)_ |
-| `GET /api/asaas/payments` | 401 rápido | _(preencher após deploy)_ |
-| `GET /api/investment/snapshots-all` | 401/403 rápido | _(preencher após deploy)_ |
+| `GET /api/version` | buildId deploy | **200** — `c48e331b` em 0,05s |
+| `GET /api/health` | 200 | **200** `{"status":"ok"}` em 0,07s |
+| `GET /` | 200 | **200** em 0,09s |
+| `GET /api/nf/invoices` | 401 rápido | **401** em 0,13s |
+| `GET /api/supabase/status` | 401 rápido | **401** em 0,07s |
+| `GET /api/asaas/payments` | 401 rápido | **401** em 0,06s |
+| `GET /api/investment/snapshots-all` | 401/403 rápido | **401** em 0,06s |
+
+**Nenhuma escrita executada.** Código funcional publicado @ `c5a98d7f` (testes/harness). Deploy Vercel `sistema-grupo-tm-seg` confirmado.
 
 ### PENDÊNCIAS FORA DO ESCOPO
 
