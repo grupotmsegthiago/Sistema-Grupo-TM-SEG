@@ -1,11 +1,94 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **Validação final PR #267 — P4-NB07-CRIT**
-> **Não contém segredos. PR bloqueado — NÃO mergeado e NÃO publicado.**
+> Handoff oficial — **Correção de paridade PR #267 — P4-NB07-CRIT**
+> **Não contém segredos. NÃO mergeado e NÃO publicado nesta execução.**
 
 ---
 
-## VALIDAÇÃO FINAL PR #267 — P4-NB07-CRIT
+## CORREÇÃO DE PARIDADE PR #267 — P4-NB07-CRIT
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **Modelo Cursor** | Composer 2.5 |
+| **PR** | [#267](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/267) — draft |
+| **Branch** | `cursor/p4-nb07-crit-eaa8` |
+| **HEAD anterior revisado** | `cd579a8c` |
+| **HEAD desta execução** | `dee81101` |
+| **Base** | `origin/main` @ `2f2a577a96e93f26212025b5b5662747fdbc2f6a` |
+| **Produção** | **NÃO ALTERADA** (`buildId=2f2a577a`) |
+| **Tag baseline** | `baseline-fase3-nb07-supabase-merged-20260815` |
+| **PR #262 / SEC-03** | **Congelado** |
+
+### PROGRESSO
+
+**Programa geral: 65%**
+
+`█████████████░░░░░░░`
+
+**Fase 3: 78%**
+
+`████████████████░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟢 PR #267 APTO PARA MERGE
+
+As três divergências bloqueantes foram corrigidas com testes de paridade Express × Vercel. Nenhuma regra Asaas, SEC-03, NF ou Supabase foi alterada. **Não mergeado nesta execução** (aguarda ação humana).
+
+### RESUMO SIMPLES
+
+Corrigidas exclusivamente as três divergências comprovadas na validação `cd579a8c`: (1) removido `limit=20` de `getInvoicesByPayment` para igualar `getInvoiceByPayment` do Express; (2) webhook sem body volta a lançar erro de destructuring capturado como `{received:true,error}`; (3) evento em array volta a ser ignorado via `includes(event)` estrito. Handler Vercel passa `req.body` direto, sem `parseBody` que convertia ausente em `{}`. Testes P4 ampliados (A–H). Build OK. Suíte escopada 167/167. P4 36/36. Falhas novas: zero.
+
+### DIVERGÊNCIAS — CAUSA E CORREÇÃO
+
+| # | Divergência | Causa | Correção | Arquivo |
+|---|-------------|-------|----------|---------|
+| 1 | sync-open-payments com `limit=20` na NF | `getInvoicesByPayment()` adicionou `&limit=20` | Removido parâmetro; URL igual Express `/invoices?payment=<id>` | `lib/asaasChargeApi.ts` |
+| 2 | webhook sem body → sucesso silencioso | `body \|\| {}` no core + `parseBody` no handler | Destructuring direto (lança se ausente); `handleWebhook(req.body)` | `lib/asaasWebhookCore.ts`, `api/asaas-webhook.ts` |
+| 3 | evento em array processado | `includes(String(event))` coerciona array | `includes(event)` estrito como Express legado | `lib/asaasWebhookCore.ts` |
+
+### DIFF INCREMENTAL (`cd579a8c...HEAD`)
+
+Somente:
+
+- `lib/asaasChargeApi.ts` — remove `limit=20`
+- `lib/asaasWebhookCore.ts` — paridade destructuring + includes estrito
+- `api/asaas-webhook.ts` — remove `parseBody`, repassa `req.body`
+- `scripts/p4-nb07-crit.test.ts` — testes A–H de paridade
+- `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` — handoff
+
+### TESTES
+
+| Suíte | Resultado | Δ vs baseline |
+|-------|-----------|---------------|
+| P4-NB07-CRIT (`p4-nb07-crit.test.ts`) | **36/36 pass** | +1 teste (A–H) |
+| Escopo P4+Asaas+NB07+SEC+faturas | **167/167 pass** | 0 falhas novas |
+| `npm run build` | **OK** | — |
+| React (`*.test.tsx`) | **4 total / 2 pass / 2 fail** | baseline DHL (inalterado) |
+| TS completa (`scripts/*.test.ts`) | **parcial até ok 315**; trava após NB-06 `getApp` (baseline: 878/872/5/1) | 0 falhas novas na parte concluída; 2 falhas baseline visíveis (investment-accounts, invoice-display) |
+
+**Falhas baseline preservadas (5):** investment-accounts, invoice-display, presence-refresh, receivable-desc-nf, zapi/cockpit (+ nb06 timeout cancelado).
+
+### PARIDADE PÓS-CORREÇÃO
+
+- **sync-open-payments:** consulta NF sem `limit` adicional; auth/roles/payload inalterados.
+- **webhook:** body ausente/null → `{received:true,error}`; array ignorado; eventos válidos `PAYMENT_RECEIVED`/`PAYMENT_CONFIRMED` preservados; sem SEC-03.
+- **payments / payment/:id:** não modificados; testes de auth/rewrites reexecutados OK.
+
+### ÁREAS PROTEGIDAS
+
+Zero diff em NF frontend, FinancialInvoiceControl, `/api/nf/invoices`, Supabase NB-07, Investment, schema, ENV, SEC-03.
+
+---
+
+## VALIDAÇÃO ANTERIOR PR #267 — P4-NB07-CRIT (bloqueio `cd579a8c`)
+
+> Histórico preservado — decisão anterior: 🔴 NÃO APTO
 
 | Campo | Valor |
 |-------|-------|
