@@ -1,7 +1,319 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **FASE 3 ENCERRADA — 100%**
-> **SEC-03 publicado; fail-closed validado; validação positiva real aguarda próximo evento legítimo do Asaas.**
+> Handoff oficial — **ABERTURA FASE 4 — RAIO-X DOS 18% RESTANTES**
+> **Auditoria e planejamento somente. Fase 3 permanece encerrada e congelada.**
+
+---
+
+## ABERTURA FASE 4 — RAIO-X
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **Tipo** | Auditoria, classificação e planejamento — zero implementação |
+| **Branch** | `cursor/fase4-raio-x-eaa8` (documental) |
+| **Baseline documental Fase 3** | `baseline-fase3-completa-20260816` → `b9506cb3` |
+| **Main / dev auditados** | `5f7d73b2` / `5f7d73b2` |
+| **Produção atual** | `buildId=5f7d73b2`, `builtAt=2026-08-16T22:11:12.308Z` |
+| **Código funcional SEC-03** | `79fae7a6` |
+| **Banco/schema/migrations/ENV/Asaas** | **Não alterados** |
+
+### PROGRESSO
+
+**Programa geral: 82%**
+
+`████████████████░░░░`
+
+**Fase 3: 100% — encerrada e congelada**
+
+`████████████████████`
+
+**Fase 4: 0%**
+
+`░░░░░░░░░░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟡 FASE 4 MAPEADA COM PENDÊNCIAS DE DECISÃO
+
+O plano é executável, mas três decisões humanas precedem desenvolvimento: (1) escopo e responsáveis do Gestor Comercial; (2) política jurídica/LGPD para o dossiê trabalhista de terceirizados; (3) aceite da priorização de segurança residual antes de módulos novos.
+
+### RESUMO SIMPLES
+
+O sistema foi analisado de ponta a ponta para descobrir o que ainda falta após o encerramento da Fase 3. Nenhuma funcionalidade, produção ou configuração foi alterada. A base continua saudável (**948/948 testes**, build OK). As áreas financeiras homologadas permanecem protegidas.
+
+Os 18% restantes não são uma única “limpeza”: incluem segurança residual em rotas do catch-all, módulos estratégicos ainda ausentes (Gestor Comercial e dossiê jurídico de terceirizados), módulos parciais (frota e tendências da Diretoria), sincronismos/dívidas conhecidas e performance/relatórios. A primeira execução recomendada é **F4-P0 — Segurança residual do catch-all**, isolada e sem tocar em regras financeiras.
+
+---
+
+### 1. BASELINE REVALIDADO
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `origin/main` / `origin/dev` | `5f7d73b2` — alinhados |
+| Delta após tag de fechamento | Dois commits documentais de merge/congelamento; nenhum runtime funcional |
+| `GET /api/version` | 200; `buildId=5f7d73b2` em 0,14s |
+| `GET /api/health` | 200; `status=ok` em 0,08s |
+| TS | **944/944 pass**, 0 fail/skip/cancel |
+| React | **4/4 pass**, 0 fail/skip/cancel |
+| Total | **948/948 pass**, sem hang (~60s) |
+| `npm run build` | **OK** (~19s); warnings de chunks/import dinâmico preexistentes |
+
+---
+
+### 1.1 EVOLUÇÃO RECONSTRUÍDA — FASES 1 E 2
+
+O handoff monolítico atual foi sendo substituído pelos blocos da Fase 3. A reconstrução histórica foi confirmada pelos snapshots Git:
+
+| Fase | Objetivo | PRs / baseline | Resultado |
+|------|----------|----------------|-----------|
+| **Fase 1** | Auditoria inicial, segurança Resend e governança | PRs #253–#255; `baseline-fase1-final-20260812` → `13c2bd77` | 100%; hardcode Resend removido, regras permanentes registradas |
+| **Fase 2** | Raio-X funcional sem correções: paginação, fallbacks, SSOT, OS mãe/filha, permissões | PR #256; `baseline-fase2-merged-20260812` → `463eebe6` | 100%; backlog P0–P3 que originou a Fase 3 |
+| **Fase 3** | Implementação controlada P0→SEC-03 e fechamento | PRs #257–#273; `baseline-fase3-completa-20260816` → `b9506cb3` | 100%; encerrada e congelada |
+
+Stop list: não reauditar Resend, os 9 limites/6 fallbacks já encaminhados, paridades NB-07/P4-NB07, NF, DRE×Diretoria, SEC-03 ou testes baseline sem nova evidência.
+
+---
+
+### 2. ÁREAS PROTEGIDAS — K (JÁ CONCLUÍDO, NÃO MEXER)
+
+- NF: `FinancialInvoiceControl`, `/api/nf/invoices`, `transformFinancialInvoicesForControl()`.
+- Asaas: saldo, PIX, transferências, cobranças, sync, payments, SEC-03 e três emissoras.
+- Supabase NB-07, Investment SEC-01 e rotas administrativas SEC-02.
+- P0/P1/P2/P3: `computeCanonicalRevenueCost`, `valueStatus`, OS mãe/filha, `is_same_os`, pedágio/deslocamento homologados.
+- DRE realizado/persistido/`end_time` e Diretoria gerencial/canônica/`start_time` — sem “alinhar” sem regra nova explícita.
+- Recebíveis, faturamento, NF e fornecedor homologados nos handoffs e testes da Fase 3.
+
+Reabrir somente por bug reproduzível, regressão, incidente ou decisão humana explícita.
+
+---
+
+### 3. CLASSIFICAÇÃO A–L — VISÃO CONSOLIDADA
+
+| Classe | Itens encontrados |
+|--------|--------------------|
+| **A — necessária não criada** | Gestor Comercial; dossiê jurídico/trabalhista de terceirizados; visão consolidada de frota/custos |
+| **B — parcial** | Comercial (clientes/propostas/contratos sem CRM); frota cadastral; Diretoria sem tendências comparativas; folha sem fechamento explícito |
+| **C — bug real** | Nenhum bug financeiro homologado reproduzido; há falhas de autorização estáticas classificadas em F |
+| **D — dívida técnica** | SYNC-03; catch-all; cálculos/consultas paralelas; contratos persistidos em `system_logs` |
+| **E — performance** | SYNC-07; rotas catch-all com timeout; bundle principal ~6,4 MB; consultas/listas potencialmente completas no frontend |
+| **F — segurança** | Rotas Express sem `requireAuth`; RLS permissivo; webhooks condicionais; detalhe abaixo |
+| **G — integração externa** | Control iD inexistente; multas/SERPRO/Senatran/Celcoin não integrados; pedágio depende QualP/Gemini/fallback |
+| **H — UX/UI** | Gestor comercial, termômetro operacional textual e consolidação da frota ainda não existem |
+| **I — módulo futuro** | Jurídico terceirizados; CRM; frota avançada |
+| **J — obsoleto/removível** | 12 órfãos e `attached_assets/extracted*`, já classificados — não remover agora |
+| **K — concluído** | Todo o baseline Fase 3 e áreas protegidas |
+| **L — inconclusivo** | SYNC-02 fornecedor; validação positiva real SEC-03; efetividade de APIs externas de frota |
+
+---
+
+### 4. SEGURANÇA RESIDUAL — PRIORIDADE MÁXIMA
+
+Evidência estática em `server/routes.ts`: handlers abaixo não declaram `requireAuth` e usam `supabaseAdmin` ou expõem dados internos. Não foi chamada nenhuma rota de escrita.
+
+| Rota/grupo | Efeito | Risco | Produção read-only |
+|------------|--------|-------|--------------------|
+| `GET /api/db/capacity` | Contagens/tabelas internas com service role | **Alto** — exposição + custo | timeout >15s (catch-all) |
+| `POST /api/platform/costs/overrides` | Upsert em `platform_cost_overrides` | **Alto** — escrita administrativa pública | não testado |
+| `GET /api/platform/costs` | Custos/planos/overrides | Médio | timeout >15s |
+| `PATCH /api/missions/:id/operational-report` | Upsert de relatório operacional | **Alto** — escrita pública | não testado |
+| `GET /api/missions/:id/operational-report` | Relatório, fotos e WhatsApp bruto | **Alto** — confidencialidade | timeout >15s |
+| `/api/client-registries*` | Leitura, upsert e delete via admin | **Alto** | GET timeout >15s |
+| `/api/client-mission-notes*` | Leitura/upsert de notas de cliente/OS | **Alto** | não testado |
+| Express `/api/vendor-verification/:missionId` | Atualiza custo/pedágio/OS sem auth no fallback | **Alto**, porém handler Vercel dedicado exige token | produção retorna 401 rápido |
+| `POST /api/db/vacuum` | Count-only (nome enganoso), sem auth | Médio | não testado |
+| `POST /api/push/test` / subscribe | Ações push sem autenticação explícita | Investigar | não testado |
+| RLS RH/timeclock e tabelas expostas | Políticas `FOR ALL TO anon, authenticated USING (true)` | **Alto** — anon key depende de políticas finas | análise estática; não alterar nesta fase |
+| WhatsApp inbound / Z-API connection | Secret validado somente quando `ZAPI_WEBHOOK_SECRET` existe | **Alto condicional** — fail-open se ENV ausente | confirmar presença sem exibir valor |
+
+**Conclusão:** não reabrir NB-07 em big-bang. Há aproximadamente 102 rotas Express ainda no catch-all, mas somente rotas sensíveis/ativas devem entrar no F4-P0. Criar inventário fechado, testes 401/403 e migração seletiva. Cada rota deve preservar contrato e paridade Express×Vercel.
+
+---
+
+### 5. SINCRONISMOS E FINANCEIRO
+
+| Fluxo | Estado | Gap restante |
+|-------|--------|---------------|
+| OS → Medição → Faturamento → NF → Recebíveis → Asaas → pagamento | **K — homologado** | Monitorar SEC-03 positivo; não alterar |
+| OS → Fornecedor → Validação → Contas a Pagar | Funcional | **L — SYNC-02** fallback fornecedor sem caso reproduzível |
+| OS mãe/filha/mesma OS | **K — homologado** | Confirmar novos módulos consumidores antes de expandir |
+| DRE | Persistido/realizado/`end_time` | **D — SYNC-03**: não usa motor canônico por decisão semântica atual; só evoluir com regra oficial |
+| Diretoria | Canônico/gerencial/`start_time` | Não tem comparação temporal explícita de volume cliente/fornecedor |
+| Comissões | RH por agente/funcionário e OS | Não há comissão comercial por dono/vendedor do cliente |
+
+**Riscos de cálculo paralelo:** `FinancialDRE`, `FinancialReport`, `ReportsDashboard`, `FinancialAuditor` e dashboards possuem agregações próprias. `FinancialAuditor`/`BillingAuditor` são órfãos; este último contém aplicação direta de correção sugerida por IA, portanto deve permanecer fora do runtime até decisão de segurança.
+
+---
+
+### 6. COMERCIAL — B/A (PARCIAL)
+
+**Existe e funciona/parcial:** cadastro de clientes; marcação `clients.is_prospect` para prospect; tabelas de preço; rotas; veículos; propostas/cotações; funil simples `Rascunho → Enviada → Aprovada`; proposta comercial; contratos; perfil `comercial`; filtro de contratos por usuário; faturamento por cliente.
+
+**Não encontrado:** entidade de vendedor/gestor comercial; ownership formal do cliente; agenda/reuniões/atividades CRM; pipeline Kanban completo; equipe; faturamento por vendedor; comissão comercial e numeração sequencial formal de cliente. A prospecção atual é apenas um flag no cadastro, e o pipeline atual é o status da cotação — não um CRM.
+
+**Gestor Comercial:** **A — inexistente como módulo integrado**. O componente de proposta (“Inteligência Comercial”) não é CRM. Dependências futuras: modelo de dados de lead/oportunidade/atividade, ownership de cliente, ligação com OS/faturamento, comissão aprovada, roles/RLS, dashboards e auditoria.
+
+---
+
+### 7. JURÍDICO — DOIS ESCOPO DIFERENTES
+
+| Escopo | Estado |
+|--------|--------|
+| Consulta/monitoramento de processos DataJud | Funcional em `LegalDashboard` (consulta, processos monitorados, relatório diário) |
+| Dossiê trabalhista de vigilante terceirizado | **B — parcial/disperso; módulo consolidado inexistente** |
+
+Há dados reutilizáveis: `provider_agents` (CPF/CNV/status), OS/agentes/horários, fornecedor, pagamentos/comprovantes no controle fornecedor. Falta uma SSOT/dossiê que una serviços, viagens, horas/dias, horários, pagamentos, comprovantes e gráficos dia/mês/ano com política de ocultação de cliente.
+
+**Decisão necessária:** finalidade jurídica, base legal/LGPD, perfis autorizados, retenção e imutabilidade/auditoria antes de criar qualquer tabela ou relatório.
+
+---
+
+### 8. OPERAÇÃO
+
+**Funcional:** painel de OS, status, filtros, passagem de plantão, relatórios de OS, presença de equipe, alertas, WhatsApp, ranking e indicadores.
+
+**Termômetro histórico para operador:** **B/H — parcial**. `DailyGoalThermometer` já possui renderização sem valores quando `canSeeMonetary=false`, mas o gate `canSeeGoalThermometers` restringe todo o componente à Diretoria. Operadores não o veem e não existem os rótulos `FRACO`/`BOM`/`ÓTIMO`. A evolução futura pode reutilizar somente a apresentação sem R$, alimentada por agregado operacional de quantidade/status de missões — nunca pelo valor financeiro.
+
+---
+
+### 9. DIRETORIA
+
+**Existe:** receita/custo/lucro/margem canônicos, caixa, contas operacionais, receber/pagar, RH/comissões, clientes/fornecedores, alertas, investimento e sistema.
+
+**Parcial:** comparação temporal de clientes/fornecedores aumentando ou reduzindo volume; tendências explícitas; drill-down consolidado de frota; comercial por vendedor. Esses itens devem consumir agregações oficiais, sem recalcular o motor canônico.
+
+---
+
+### 10. GESTOR DE DADOS FINANCEIRO
+
+Há peças distribuídas: `ReportsDashboard` (motor automático/manual e divergências), `VendorVerificationControl`, `FinancialReport`, `FinancialDocConferencia`, `MaintenanceDashboard` e auditorias órfãs.
+
+Classificação: **B/D — parcial e fragmentado**, não há uma tela/serviço único que consolide duplicidades, receita/custo/lucro, RH e qualidade financeira em uma SSOT de auditoria. O futuro módulo deve ser **read-only/detector primeiro**. Correção automática, principalmente sugerida por IA, exige aprovação humana, trilha e endpoint server-side autorizado.
+
+---
+
+### 11. RH / PONTO / FOLHA
+
+**Funcional/parcial:** funcionários, documentos, custos, benefícios, comissões, batida facial, histórico, ajustes, jornada, presença, folha e CSV. Comissão de agentes é gerada ao concluir OS com deduplicação por missão/funcionário.
+
+**Gaps:** Control iD não encontrado; folha sem workflow explícito de fechamento/competência imutável; integração externa de folha ausente; validação de horas/pagamento de terceirizados não consolidada no Jurídico.
+
+---
+
+### 12. FROTA
+
+**B — cadastral parcial:** veículos de fornecedor/cliente, placa, marca, modelo, ano, cor, estado, chassi, rastreador, lookup de placa e status/manutenção.
+
+**Ausente:** RENAVAM consistente na frota interna, abastecimentos, ordens de manutenção, multas, custos e pagamento de abastecimento. Não foram encontradas integrações SERPRO/e-Frotas, Senatran ou Celcoin. Não contratar/integrar antes de definir escopo, fonte oficial e custo.
+
+---
+
+### 13. PEDÁGIO AUTOMÁTICO
+
+Classificação: **FUNCIONAL com fallback e casos especiais**. `MissionForm`/`UpdateMissionModal` usam origem+destino, QualP, Gemini e fallback, exigem confirmação do operador e persistem par cliente/fornecedor. Regras de OS filha/cancelada são protegidas por testes.
+
+Gap: `ClientRouteForm` calcula distância, mas pedágio da rota permanece campo manual. Efetividade/contrato da API QualP é **L — integração externa**; não reabrir cálculo homologado sem reprodução.
+
+---
+
+### 14. RELATÓRIOS — INVENTÁRIO
+
+| Relatório | Componente/fonte | Estado |
+|-----------|------------------|--------|
+| Analíticos, logs, timeline, motor, overrides, DHL | `ReportsDashboard` / Supabase | Ativo; grande e com agregações paralelas |
+| Relatório de OS | `MissionReportPage` | Ativo, acesso controlado |
+| Relatório operacional | `MissionOperationalReport` / `operational_reports` | Ativo; API fallback precisa auth |
+| Relatório completo da missão | `MissionFullReportModal` | Ativo |
+| Boletim de medição | `ClientBillingReport` | Ativo/protegido |
+| DRE | `FinancialDRE` | Ativo; semântica persistida oficial |
+| Relatório financeiro geral | `FinancialReport` | Ativo; revisar duplicidade de agregação em fase própria |
+| Divergência fornecedor | `VendorVerificationControl` | Ativo |
+| Ponto/presença RH | `RhTimeclockHub`, `RhPresenceReport` | Ativo |
+| Jurídico DataJud | `LegalDashboard` + relatório diário | Ativo |
+| Ocorrência DHL | `DhlOccurrenceReportModal` | Ativo/protegido |
+| Auditor financeiro IA | `FinancialAuditor` | Órfão |
+| Auditor de faturamento IA | `BillingAuditor` | Órfão e potencialmente perigoso se reativado |
+| Relatórios automáticos (5) | `SystemSettingsPage`/workers | Ativos e auditados |
+
+Não remover nem consolidar relatórios nesta abertura.
+
+---
+
+### 15. PERFORMANCE E PAGINAÇÃO
+
+- Diretoria, busca de OS, OS mãe, pricing e `useSupabaseQuery` já usam paginação exaustiva.
+- **SYNC-07:** `refreshMissions` duplicado continua dívida de performance, sem corrupção.
+- Bundle principal ~6,4 MB minificado: candidato a code splitting futuro.
+- Catch-all comprovou timeout >15s nas leituras auditadas.
+- Inventário atual: aproximadamente 116 rewrites dedicados e ~102 rotas Express residuais; migrar apenas com criticidade/timeout comprovados.
+- Limites intencionais de UI (histórico recente/top N) devem ser distinguidos de universo completo.
+- Pontos para investigação: `nfInvoiceControlApi` com `.limit(1000)`, `dhlIntakePublicApi` com 500, OS analysis 300, perfis de investimento 50 e consultas completas em `ReportsDashboard`.
+
+Regra permanente: nenhuma tela que represente universo completo pode usar primeira página/`.limit()` silencioso.
+
+---
+
+### 16. DÍVIDAS CONHECIDAS — DESTINO
+
+| Item | Destino |
+|------|---------|
+| SYNC-07 realtime duplicado | **Fase 6 — performance** |
+| SYNC-02 fallback fornecedor | **Backlog condicionado** |
+| SYNC-03 DRE canônico completo | **Manter como está** até regra oficial; depois Fase 6 |
+| 12 órfãos | **Fase futura — limpeza** |
+| AI Chat | **Decisão de produto**, manter inativo |
+| `attached_assets/extracted*` | **Fase futura — limpeza/evidência** |
+| Catch-all residual | **Fase 4 somente rotas críticas**, restante backlog |
+| SEC-03 positivo real | **Observação operacional**, não desenvolvimento |
+
+---
+
+### 17. MAPA PROPOSTO DOS 18% RESTANTES
+
+| Fase | Peso programa | Objetivo | Risco/dependências | Modelo recomendado | Critério de conclusão |
+|------|---------------|----------|---------------------|--------------------|-----------------------|
+| **Fase 4 — Segurança residual e integridade de APIs** | **4%** | Auth fail-closed, rotas sensíveis fora do catch-all, uploads/logs/RLS passivos | Alto; preservar contratos e áreas financeiras | GPT-5.6 Sol Medium; modelo forte só em revisão financeira | Rotas priorizadas 401/403; paridade; testes; build; smoke; zero regra financeira |
+| **Fase 5 — Gestor Comercial e comissões** | **5%** | CRM, ownership, pipeline, agenda, metas, faturamento/comissão por vendedor | Alto; exige decisão de negócio e schema/RLS | GPT-5.6 Sol Medium; Composer em telas simples | Fluxo lead→cliente→OS→faturamento→comissão auditável e aprovado |
+| **Fase 6 — Jurídico terceirizados + operação** | **4%** | Dossiê trabalhista, termômetro operacional sem valores, integrações RH necessárias | Alto LGPD; depende de política jurídica e dados existentes | GPT-5.6 Sol Medium/forte para segurança de dados | Dossiê autorizado, auditável, filtros/ocultação e termômetro homologado |
+| **Fase 7 — Frota, Diretoria, performance e consolidação** | **5%** | Frota/custos/multas; tendências; Gestor Financeiro read-only; paginação/performance; limpeza final | Médio/alto; depende de F4–F6 e integrações externas | Composer em inventário/UI; GPT-5.6 Sol Medium em dados | Fontes oficiais, integrações decididas, performance medida, relatórios consolidados, órfãos decididos |
+| **TOTAL** | **18%** | 82% → 100% do programa | — | — | — |
+
+Os pesos são proposta de governança baseada no escopo encontrado; não incrementam o programa até publicação/validação de cada marco.
+
+---
+
+### 18. ORDEM RECOMENDADA
+
+1. **F4-P0 — Inventário fechado e auth das rotas públicas sensíveis** (primeiro bloco).
+2. F4-P1 — handlers dedicados apenas para rotas críticas com timeout.
+3. F4-P2 — revisão passiva de RLS/uploads/logs e regressão.
+4. Workshop humano de regras do Gestor Comercial e Jurídico/LGPD.
+5. Fase 5 Comercial.
+6. Fase 6 Jurídico/Operação.
+7. Fase 7 Frota/Diretoria/Financeiro read-only/performance.
+8. Limpeza somente após consumidores/testes provarem orfandade.
+
+---
+
+### 19. IMPACTO OBRIGATÓRIO PARA FUTURAS IMPLEMENTAÇÕES
+
+Toda mudança deve mapear e testar:
+
+`BANCO → BACKEND → API → FRONTEND → RELATÓRIOS → INTEGRAÇÕES → DIRETORIA`
+
+Nenhum módulo novo pode criar cálculo financeiro paralelo. Escritas privilegiadas devem ficar no backend, com autenticação/role, auditoria e rollback.
+
+---
+
+### 20. PRÓXIMO BLOCO RECOMENDADO
+
+**F4-P0 — Segurança residual do catch-all (somente inventário fechado + testes fail-closed antes de implementar).**
+
+Escopo inicial proposto: `platform/costs/overrides`, relatórios operacionais, client registries/notes e capacidade do banco. Excluir NF, Asaas, Investment, DRE, Supabase NB-07 e cálculos P0. Antes de codar, confirmar consumidores e contrato de cada rota.
 
 ---
 
