@@ -134,6 +134,22 @@ Uma auditoria P4-FECHAMENTO **anterior** (pré-SEC-03, commit `0cb62557`) havia 
 
 ---
 
+### MERGE DOCUMENTAL PR #272
+
+| Campo | Valor |
+|-------|-------|
+| **Data merge** | 2026-08-16 (UTC) |
+| **PR** | [#272](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/272) |
+| **Commit merge** | `e4fd4ea8` |
+| **Diff vs `d51e9315`** | Somente `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` (+131 linhas) |
+| **Código funcional alterado** | **Nenhum** |
+| **Tag fechamento** | `baseline-fase3-completa-20260816` → `b9506cb3` (**preservada, não reescrita**) |
+| **Fase 3** | **ENCERRADA — congelada** |
+
+**Regra de congelamento:** nenhum item da Fase 3 deve ser reaberto sem bug reproduzível, regressão comprovada, incidente de produção ou decisão humana explícita. Dívida futura **não** reabre automaticamente a Fase 3.
+
+---
+
 ## PUBLICAÇÃO CONTROLADA SEC-03 — PR #273
 
 | Campo | Valor |
