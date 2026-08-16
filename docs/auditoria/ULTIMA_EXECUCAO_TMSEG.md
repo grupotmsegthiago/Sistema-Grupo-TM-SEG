@@ -1,7 +1,190 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **FASE 3 ENCERRADA — 100%**
-> **SEC-03 publicado; fail-closed validado; validação positiva real aguarda próximo evento legítimo do Asaas.**
+> Handoff oficial — **F4-P0 — SEGURANÇA RESIDUAL DAS APIs**
+> **Implementação em branch; não mergeada/não publicada. Fase 3 permanece congelada.**
+
+---
+
+## F4-P0 — SEGURANÇA RESIDUAL DAS APIs E ACESSOS ADMINISTRATIVOS
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **Branch** | `cursor/fase4-p0-api-auth-eaa8` |
+| **Base** | `origin/main=origin/dev=5f7d73b2` |
+| **PR** | #275 — draft |
+| **PR documental Raio-X** | #274 — separado, não incorporado nesta branch |
+| **HEAD funcional** | `86d17b5c` antes deste handoff |
+| **Produção** | `buildId=5f7d73b2` — não alterada |
+| **Banco/schema/migrations/ENV/Asaas** | **Não alterados** |
+
+### PROGRESSO
+
+**Programa geral: 82%**
+
+`████████████████░░░░`
+
+**Fase 4: 0%**
+
+`░░░░░░░░░░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟡 F4-P0 APTO COM PENDÊNCIAS
+
+As vulnerabilidades dos handlers F4-P0 foram corrigidas e testadas. RLS permissivo e fail-open condicional Z-API foram confirmados/auditados, porém exigem sub-blocos separados; nenhum banco, policy ou integração externa foi alterado.
+
+### RESUMO SIMPLES
+
+Treze caminhos de API que podiam alcançar dados/operações administrativas apenas pela URL agora validam um usuário ativo antes do handler. Rotas administrativas exigem Diretoria/Administrador/CEO; relatórios e dados de cliente validam também o escopo do cliente no backend. Sem token ou com token inválido retornam 401; role/cliente incorreto retorna 403. Nenhuma regra financeira, NF, Asaas, SEC-03, Investment, DRE, pedágio ou OS mãe/filha foi modificada.
+
+O RED inicial provou **13 falhas em 14 testes estruturais**. Depois da correção, a suíte F4-P0 fechou **21/21** e a suíte completa **969/969**.
+
+---
+
+### FLUXO E INFRAESTRUTURA REUTILIZADA
+
+```text
+Vercel /api/(.*)
+  → api/index
+  → Express
+  → authorizeF4ApiRequest
+  → resolvePrincipal existente (system_users)
+  → role / permission / client scope
+  → handler
+  → supabaseAdmin
+```
+
+Não foi criado segundo mecanismo de identidade. `lib/auth/f4ApiAccess.ts` é um adaptador fail-closed sobre o resolver homologado.
+
+---
+
+### ROTAS — ANTES / DEPOIS
+
+| Rota | Tipo/consumidor | Antes | Depois | Roles/escopo | Status |
+|------|-----------------|-------|--------|--------------|--------|
+| `GET /api/db/capacity` | Diagnóstico; Maintenance/ServerStats | Público; service role; timeout | 401/403 antes da consulta | Diretoria, Administrador, CEO ou `*` | Corrigido |
+| `POST /api/db/vacuum` | Admin count-only; Maintenance | Público | Fail-closed | mesmas roles admin | Corrigido |
+| `GET /api/platform/costs` | Diagnóstico/custos; CostOptimization | Público | Fail-closed; auth propagada à leitura interna de capacidade | mesmas roles admin | Corrigido |
+| `POST /api/platform/costs/overrides` | Escrita `platform_cost_overrides` | Público; upsert admin | Fail-closed | mesmas roles admin | Corrigido |
+| `POST /api/client-registries/init` | Probe administrativo de tabelas | Público | Fail-closed | mesmas roles admin | Corrigido |
+| `DELETE /api/client-registries/:id` | Escrita destrutiva sem consumidor UI localizado | Público | Fail-closed | mesmas roles admin | Corrigido |
+| `GET /api/missions/:id/operational-report` | Leitura relatório/fotos/WhatsApp | Público | Principal ativo + missão no escopo do cliente | Internos; cliente somente sua OS | Corrigido |
+| `PATCH /api/missions/:id/operational-report` | Upsert `operational_reports` | Público | Role interna antes do upsert | Diretoria/Admin/CEO/Controller/Avançado/Operador/Financeiro/Comercial | Corrigido |
+| `GET /api/client-registries/:clientId/:type` | Leitura relatório cliente | Público | Principal + client scope | Internos ou próprio `client_id`/`client_view` | Corrigido |
+| `POST /api/client-registries` | Upsert cadastro cliente | Público | Principal + client scope | mesmo escopo | Corrigido |
+| `GET /api/client-mission-notes/:missionId` | Leitura nota operacional | Público | Principal + missão no escopo | mesmo escopo | Corrigido |
+| `POST /api/client-mission-notes` | Upsert nota operacional | Público | Client ID e missão validados | mesmo escopo | Corrigido |
+| `GET /api/client-mission-notes/bulk/:clientId` | Leitura em lote | Público | Principal + client scope | mesmo escopo | Corrigido |
+
+Métodos incorretos continuam no contrato Express existente (404 quando rota não registrada); não foi adicionado comportamento 405 artificial.
+
+---
+
+### RED → FIX → GREEN
+
+| Marco | Resultado |
+|-------|-----------|
+| RED — antes do middleware | **1/14 pass, 13 fail** |
+| GREEN estrutural + unidade | **20/20 pass** |
+| Runtime equivalente isolado | 401 sem auth; 401 inválido; 403 role errada; 200 role correta; operação chamada 1× |
+| F4-P0 final | **21/21 pass** |
+| Segurança ampliada | **112/112 pass** |
+| TS completa | **965/965 pass** |
+| React | **4/4 pass** |
+| **Total** | **969/969 pass**, 0 fail/skip/cancel/hang |
+| `npm run build` | **OK** |
+
+O runtime equivalente usa Express efêmero + resolver fake, sem conectar/escrever no banco.
+
+---
+
+### RLS — AUDITORIA SEPARADA (NENHUMA ALTERAÇÃO)
+
+As migrations declaram `FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)`. Uma consulta `head/count` anon, sem retornar linhas, confirmou SELECT permitido nas amostras:
+
+| Tabela/grupo | Policy observada | Consumidor | Classificação |
+|--------------|------------------|-----------|---------------|
+| `financial_transaction_payments` | Allow all anon/authenticated | Financeiro parcial | **Permissivo indevido — crítico** |
+| `billing_usage` | Allow all anon/authenticated | Cockpit/custos IA | **Permissivo indevido — alto** |
+| `account_balance_snapshots` | Allow all anon/authenticated | Investment/Diretoria | **Permissivo indevido — alto** |
+| `time_clock` | Allow all anon/authenticated | Ponto | **Permissivo indevido — alto** |
+| `rh_employees`, bank accounts, salary configs, commissions, payroll items | Policy dinâmica Allow all | Frontend RH direto | **Permissivo indevido — alto; impacto amplo** |
+
+**Plano obrigatório F4-P0-RLS (PR separado):**
+
+1. Inventariar policies efetivas e todos os consumidores por tabela/operação.
+2. Definir modelo de roles/RLS ou mover writes sensíveis para backend.
+3. Criar testes anon/authenticated/admin e rollback de policies.
+4. Migrar progressivamente por domínio: Financeiro → Investment → RH/Ponto.
+5. Não misturar com este PR nem alterar NF/Asaas.
+
+---
+
+### Z-API — AUDITORIA SEPARADA
+
+| Item | Resultado |
+|------|-----------|
+| Endpoints | `/api/whatsapp/webhook/inbound`, `/api/zapi/webhook/connection` (Vercel + Express) |
+| Validação | `x-zapi-secret`, `x-webhook-secret` ou query token |
+| ENV ausente | **Fail-open** no código |
+| ENV produção | `ZAPI_WEBHOOK_SECRET` **PRESENTE** em Production e Preview (valor não lido/exibido) |
+| Estado atual | Protegido operacionalmente; risco latente de configuração |
+
+Destino: **F4-P0-ZAPI** separado para avaliar fail-closed coordenado. Nenhum endpoint/configuração Z-API foi alterado.
+
+---
+
+### SERVICE ROLE
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `SUPABASE_SERVICE_ROLE_KEY` Vercel | Presente em Production/Preview |
+| `VITE_SUPABASE_SERVICE_ROLE_KEY` Vercel | Ausente |
+| Valor/fingerprint/hash | Não lido nem registrado |
+| Bundle frontend | Nenhum valor/JWT service_role localizado |
+| Nome em UI | Existe apenas mensagem operacional textual — não segredo |
+
+Há fallbacks `VITE_SUPABASE_SERVICE_ROLE_KEY` em módulos backend legados de auth. Como a ENV está ausente e Asaas é área protegida, não foram alterados; revisar em bloco próprio.
+
+---
+
+### PERFORMANCE / CATCH-ALL
+
+- O catch-all global não foi modificado.
+- Rotas continuam sujeitas ao cold-start/timeout até F4-P1.
+- Runtime equivalente provou negação rápida sem iniciar o app completo.
+- Uma tentativa de subir o app completo foi interrompida porque o startup executa jobs/probes com potenciais efeitos externos; não foi usada como evidência.
+
+---
+
+### ARQUIVOS MODIFICADOS
+
+| Arquivo | Motivo | Risco |
+|---------|--------|-------|
+| `lib/auth/f4ApiAccess.ts` | Gate compartilhado, roles e client scope | Baixo/médio |
+| `server/routes.ts` | Aplicar gates antes de `supabaseAdmin` | Médio |
+| `scripts/fase4-p0-api-auth.test.ts` | RED/GREEN, auth, roles, client scope, runtime fake | Nulo |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Handoff | Nulo |
+
+**Zero diff:** `api/asaas-webhook.ts`, `asaasWebhookCore`, NF, Investment, DRE, canônico, pedágio, OS mãe/filha, banco, schema, migrations, RLS e ENV.
+
+---
+
+### ROLLBACK FUTURO
+
+Reverter os commits F4-P0 e redeployar restaura os handlers anteriores. Não há rollback de banco/ENV, pois nenhum foi alterado.
+
+### PENDÊNCIAS
+
+1. F4-P0-RLS — crítico, separado.
+2. F4-P0-ZAPI — hardening fail-closed condicional.
+3. F4-P1 — performance/handlers dedicados após auth.
+4. Merge prévio ou reconciliação documental do PR #274 preservando “ABERTURA FASE 4 — RAIO-X”.
 
 ---
 
