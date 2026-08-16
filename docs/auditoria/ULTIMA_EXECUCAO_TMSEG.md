@@ -1,7 +1,123 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **P4-SYNC — Sincronismo residual (investigação)**
-> **Não contém segredos. NÃO mergeado e NÃO publicado nesta execução.**
+> Handoff oficial — **P4-SYNC-DRE — Auditoria canônica financeira**
+> **Investigação only. Não contém segredos. NÃO mergeado / NÃO publicado.**
+
+---
+
+## P4-SYNC-DRE — AUDITORIA CANÔNICA FINANCEIRA
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-16 (UTC) |
+| **Modelo Cursor** | GPT-5.6 Sol Medium |
+| **Branch** | `cursor/p4-sync-dre-eaa8` |
+| **HEAD desta execução** | _(após commit)_ |
+| **PR #268** | Draft — **não alterado** (receivable test isolado) |
+| **Produção funcional** | `06e0dd88` (inalterada) |
+| **SEC-03** | **Congelado** |
+
+### PROGRESSO
+
+**Programa geral: 68%** — `██████████████░░░░░░`
+
+**Fase 3: 84%** — `█████████████████░░░`
+
+**Execução atual: 100%** — `████████████████████`
+
+### DECISÃO
+
+# 🟡 DIVERGÊNCIA CONFIRMADA — REQUER DECISÃO DE REGRA
+
+**Nenhum código financeiro alterado.** Para OS **oficiais aprovadas com valores persistidos**, DRE e canônico **coincidem**. Divergências reais existem em **deslocamento derivado por KM**, **eixo de período** (`end_time` vs `start_time`), **filtro de status** e **semântica de estimativa** — exigem decisão humana antes de corrigir `FinancialDRE`.
+
+### RESUMO SIMPLES
+
+O DRE soma hoje `revenue_value`, pedágio via `resolveStored*Toll` e deslocamento **bruto** do banco, filtrando missões por `end_time` e status Concluída/Faturada. A Diretoria usa `computeCanonicalRevenueCost`, que aplica `valueStatus` (official/estimated/needs_validation), pode **derivar deslocamento** de KM autorizado e filtra por `start_time`. Quando a OS já está aprovada com tudo salvo, os números batem. Quando há KM sem displacement salvo, o canônico inclui deslocamento e o DRE não. Quando a OS não está oficial, o canônico marca `estimated` e o DRE só mostra o que está persistido (ou zero). **Nada foi alterado em produção.**
+
+---
+
+### COMO O FINANCIALDRE CALCULA (mapeamento)
+
+| Conceito | Função/campo | Tabela | Filtro |
+|----------|--------------|--------|--------|
+| Receita missões | `Σ revenue_value` | `missions` | status ∈ Concluída/Faturada; `end_time` no período |
+| Pedágio cliente | `Σ resolveStoredClientToll(toll_value, toll_value_provider)` | `missions` | idem |
+| Deslocamento cliente | `Σ displacement_value` | `missions` | idem |
+| Custo fornecedor | `Σ cost_value` onde `is_same_os ≠ true` | `missions` | idem |
+| Pedágio fornecedor | `Σ resolveStoredProviderToll(..., is_same_os)` | `missions` | idem |
+| Deslocamento fornecedor | `Σ displacement_value_provider` (0 se filha) | `missions` | idem |
+| Lucro/margem | receita bruta − deduções − custos variáveis − fixas | + `financial_transactions` PAID | `due_date` no período |
+| **Não usa** | `computeCanonicalRevenueCost` | — | — |
+
+### COMO A DIRETORIA CALCULA
+
+| Conceito | Função | Filtro |
+|----------|--------|--------|
+| Receita/custo/lucro missões | `sumCanonical` → `computeCanonicalRevenueCost` por OS | `filterMissionsByPeriod` por **start_time** |
+| valueStatus | `official` / `estimated` / `needs_validation` | fail-closed em aprovada sem oficial |
+| Deslocamento | `resolveDisplacementFromAuthorizedKm` | deriva de `dhl_deslocamento_km` se R$ não salvo |
+
+---
+
+### MATRIZ SEMÂNTICA DRE × DIRETORIA
+
+| Conceito | FinancialDRE | Diretoria | Fonte oficial | Diverge? | Risco |
+|----------|--------------|-----------|---------------|----------|-------|
+| Receita base oficial | `revenue_value` | `revBase` | Persistido + aprovado | **Não** (oficial) | Baixo |
+| Pedágio cliente | `resolveStoredClientToll` | `tollRev` (mesma fn) | Persistido | **Não** | Baixo |
+| Pedágio fornecedor / filha | `resolveStoredProviderToll` + zera filha | `tollCost` (mesma regra) | P0 homologado | **Não** | Baixo |
+| Deslocamento | `displacement_value` bruto | `resolveDisplacementFromAuthorizedKm` | Canônico deriva KM | **Sim** (KM sem R$ salvo) | Médio |
+| OS não aprovada | Só persistido (0 se vazio) | `estimated` / estimativa | Canônico | **Semântico** | Médio |
+| Aprovada sem receita | receita 0 | `needs_validation`, rev 0 | Canônico fail-closed | **Não** (números) | Baixo |
+| Período | `end_time` | `start_time` | Convenção distinta | **Sim** (conjunto OS) | Médio |
+| Status | Concluída/Faturada | Todos (REFUSED→0) | Filtro distinto | **Sim** | Baixo |
+| OS filha same_os | custo/pedágio forn. 0 | idem | P0/P1 | **Não** | Baixo |
+| OS cancelada | Excluída do DRE | Estimativa se incluída | Regra publicada | **Escopo** | Baixo |
+
+---
+
+### CASOS TESTADOS (`scripts/p4-sync-dre-audit.test.ts`)
+
+| Caso | DRE | Canônico | Diferença | Causa |
+|------|-----|----------|-----------|-------|
+| Normal aprovada oficial | rev/cost OK | official | 0 | Valores persistidos |
+| Filha is_same_os | rev 350, cost 0 | official, cost 0 | 0 | P0 preservado |
+| Aprovada sem receita | rev 0 | needs_validation | 0 | Fail-closed |
+| KM 50 sem displacement | disp 0 | dispRev/dispCost > 0 | **rev diverge** | Derivação KM só no canônico |
+| Não aprovada parcial rev 500 | rev 500 | estimated/mixed | 0 numérico | Semântica valueStatus |
+| Lote misto oficial | sum DRE | sumCanonical | 0 | — |
+
+---
+
+### CLASSIFICAÇÃO INTERNA (A/B/C/D)
+
+| Item | Decisão |
+|------|---------|
+| OS oficial persistida | **A** — consistente, sem correção |
+| Deslocamento KM | **D** — regra ambígua: DRE contábil (só salvo) vs canônico operacional (deriva) |
+| Estimativa não aprovada | **D** — DRE gerencial vs preview Diretoria |
+| Eixo end_time/start_time | **D** — convenção de período distinta |
+| Motor canônico | **A** — P0 validado; **não alterar** |
+
+**Não é caso C** (motor canônico). **Correção B** (FinancialDRE → `computeCanonicalRevenueCost`) **não aplicada** — aguarda decisão se DRE deve incluir estimativas e deslocamento derivado.
+
+---
+
+### TESTES
+
+| Suíte | Resultado |
+|-------|-----------|
+| `p4-sync-dre-audit.test.ts` | **13/13 pass** (novo) |
+| P0 + P4 + receivable | **68/68 pass** |
+| `npm run build` | **OK** |
+| Falhas novas | **0** |
+
+---
+
+### ÁREAS PROTEGIDAS
+
+Zero alteração em: Asaas, webhook, SEC-03, NF, Supabase, Investment, P4-NB07, schema, ENV, `FinancialDRE.tsx`, `missionFinancialsCanonical.ts`.
 
 ---
 
