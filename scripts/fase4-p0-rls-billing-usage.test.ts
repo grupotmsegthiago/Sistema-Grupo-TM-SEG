@@ -7,6 +7,23 @@ function isBillingUsagePolicyStatement(statement: string): boolean {
   return /\b(create|drop)\s+policy\b/i.test(statement) && /billing_usage/i.test(statement);
 }
 
+function splitStatements(sql: string): string[] {
+  return sql
+    .split(';')
+    .map((block) =>
+      block
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('--'))
+        .join('\n')
+        .trim(),
+    )
+    .filter(Boolean);
+}
+
+function selectBillingUsageBootstrapStatements(sql: string): string[] {
+  return splitStatements(sql).filter((statement) => !isBillingUsagePolicyStatement(statement));
+}
+
 const FORWARD = 'migrations/2026_08_17_fase4_p0_rls_billing_usage.sql';
 const ROLLBACK = 'migrations/rollback/2026_08_17_fase4_p0_rls_billing_usage.sql';
 const HISTORICAL = 'migrations/2026_07_12_billing_usage.sql';
@@ -53,8 +70,16 @@ describe('F4-P0-RLS piloto billing_usage', () => {
   it('bootstrap histórico deixa de reaplicar CREATE/DROP POLICY de billing_usage', () => {
     const historical = read(HISTORICAL);
     assert.match(historical, /CREATE POLICY "Allow all for billing_usage"/);
+    const raw = splitStatements(historical);
+    const filtered = selectBillingUsageBootstrapStatements(historical);
+    assert.equal(raw.some((statement) => /CREATE POLICY/i.test(statement)), true);
+    assert.equal(filtered.some((statement) => /\b(create|drop)\s+policy\b/i.test(statement)), false);
+    assert.equal(filtered.some((statement) => /CREATE TABLE IF NOT EXISTS public\.billing_usage/i.test(statement)), true);
     const runner = read('lib/billing/usageMigrations.ts');
-    assert.match(runner, /isBillingUsagePolicyStatement/);
+    assert.match(runner, /selectBillingUsageBootstrapStatements/);
+    const cli = read('scripts/apply-billing-usage-migration.mjs');
+    assert.match(cli, /isBillingUsagePolicyStatement/);
+    assert.match(cli, /filter\(\(statement\) => !isBillingUsagePolicyStatement\(statement\)\)/);
     assert.equal(isBillingUsagePolicyStatement('CREATE POLICY "Allow all for billing_usage" ON public.billing_usage'), true);
     assert.equal(isBillingUsagePolicyStatement('CREATE INDEX IF NOT EXISTS idx_billing_usage_month ON public.billing_usage (reference_month)'), false);
   });

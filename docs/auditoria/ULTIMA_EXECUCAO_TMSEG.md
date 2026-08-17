@@ -1,7 +1,97 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **F4-P0-RLS PILOTO `billing_usage` APLICADO**
-> **Policy ampla removida; ANON/authenticated SELECT = 0; service_role = 137 linhas.**
+> Handoff oficial — **F4-P0-RLS PILOTO `billing_usage` — REVISÃO PR #277**
+> **Live fechado; bootstrap não reabre policy; publicação controlada em andamento.**
+
+---
+
+## F4-P0-RLS — REVISÃO FINAL PR #277 + PUBLICAÇÃO
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-17 (UTC) |
+| **PR** | [#277](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/277) → `main` |
+| **Branch** | `cursor/fase4-rls-billing-usage-eaa8` |
+| **Produção funcional pré-merge** | `28ae11d8` |
+| **main/dev pré-merge** | `5ce02aff` |
+| **Tag pré-publicação** | `baseline-fase4-pre-rls-billing-usage-20260817` → `5ce02aff` |
+| **Projeto oficial** | Grupo TMSEG `ajhmmjuewdsukecaimik` |
+| **Migration MCP** | `20260817175715` e `20260817175827` / `fase4_p0_rls_billing_usage` (segunda entrada idempotente; **não reaplicar**) |
+| **Migration Git** | `migrations/2026_08_17_fase4_p0_rls_billing_usage.sql` |
+| **Rollback Git** | `migrations/rollback/2026_08_17_fase4_p0_rls_billing_usage.sql` |
+
+### PROGRESSO (pré-homologação de código)
+
+**Programa geral: 83,8%**
+
+`█████████████████░░░`
+
+**Fase 4: 45%**
+
+`█████████░░░░░░░░░░░`
+
+**Execução atual: 70%**
+
+`██████████████░░░░░░`
+
+### DECISÃO PRÉ-MERGE
+
+# 🟡 PR #277 APTO COM FALHA BASELINE NÃO RELACIONADA
+
+### LIVE REVALIDADO (somente contagens)
+
+| Check | Resultado |
+|-------|-----------|
+| RLS enabled | **true** |
+| Policy `Allow all for billing_usage` | **AUSENTE** (0 policies) |
+| anon SELECT | **0** |
+| authenticated SELECT | **0** |
+| service_role | **137** |
+| owner | **137** |
+| Drift | **Não** |
+
+### DIFF `origin/main...HEAD`
+
+| Arquivo | Motivo | Risco | Necessário |
+|---------|--------|-------|------------|
+| `migrations/2026_08_17_fase4_p0_rls_billing_usage.sql` | Forward exclusivo | Baixo | Sim |
+| `migrations/rollback/2026_08_17_fase4_p0_rls_billing_usage.sql` | Rollback exato | Baixo | Sim |
+| `lib/billing/usageMigrations.ts` | Filtra CREATE/DROP POLICY no bootstrap | Médio (positivo) | Sim |
+| `scripts/apply-billing-usage-migration.mjs` | Mesmo filtro no CLI manual | Baixo | Sim |
+| `scripts/fase4-p0-rls-billing-usage.test.ts` | Exclusividade + bootstrap | Nulo | Sim |
+| `docs/auditoria/*` | Plano + handoff | Nulo | Sim |
+
+**Zero diff:** NF, Asaas, SEC-03, Investment, DRE, Diretoria, OS, pedágio, RH, ponto, `financial_transaction_payments`, `account_balance_snapshots`, `time_clock`, Z-API, ENV, Vercel, `2026_07_12_billing_usage.sql`.
+
+Migration Git ≡ SQL MCP: `ENABLE ROW LEVEL SECURITY` + `DROP POLICY IF EXISTS "Allow all for billing_usage"`. Sem INSERT/UPDATE/DELETE. Sem validação de drift no SQL (não estava no auditado; não foi acrescentada).
+
+### BOOTSTRAP
+
+`runBillingUsageMigrations()` e o CLI `apply-billing-usage-migration.mjs` **ignoram** statements `CREATE/DROP POLICY` de `billing_usage`. O SQL histórico continua imutável e ainda contém a policy ampla, mas **não é reaplicada**.
+
+### invoice-control-loading
+
+| Ambiente | Resultado |
+|----------|-----------|
+| Working tree Windows (CRLF) | 1 fail no needle `\n` |
+| Blob `origin/main` (LF) | asserção **OK** |
+| Blob `HEAD` (LF) | asserção **OK** |
+| `git diff origin/main HEAD -- server/routes.ts` | **vazio** |
+
+Classificação: **BASELINE / line endings do checkout**. Não é regressão do PR. `routes.ts` não foi alterado.
+
+### TESTES / BUILD / SMOKE PRÉ-MERGE
+
+| Suíte | Total | Pass | Fail |
+|-------|-------|------|------|
+| TS `scripts/*.test.ts` | 1000 | 999 | 1 baseline CRLF |
+| React `*.test.tsx` | 4 | 4 | 0 |
+| **Geral** | **1004** | **1003** | **1 baseline** |
+| skip/cancel/hang | 0 / 0 / 0 | | |
+| `npm run build` | OK | | |
+| `/api/health` | 200 | | |
+| `/api/version` | 200 `buildId=28ae11d8` | | |
+| `/api/billing/dashboard` | 401 | | |
 
 ---
 
