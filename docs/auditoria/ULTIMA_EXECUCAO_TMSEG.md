@@ -1,7 +1,7 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **F4-P0-RLS PILOTO `billing_usage` — REVISÃO PR #277**
-> **Live fechado; bootstrap não reabre policy; publicação controlada em andamento.**
+> Handoff oficial — **F4-P0-RLS PILOTO `billing_usage` PUBLICADO E HOMOLOGADO**
+> **Código `2636a8e2` em produção; policy ampla continua AUSENTE após bootstrap.**
 
 ---
 
@@ -14,13 +14,16 @@
 | **Branch** | `cursor/fase4-rls-billing-usage-eaa8` |
 | **Produção funcional pré-merge** | `28ae11d8` |
 | **main/dev pré-merge** | `5ce02aff` |
+| **HEAD publicado** | `2636a8e2` |
+| **Produção** | `buildId=2636a8e2`, `builtAt=2026-08-17T18:39:09.580Z` |
 | **Tag pré-publicação** | `baseline-fase4-pre-rls-billing-usage-20260817` → `5ce02aff` |
+| **Tag homologada** | `baseline-fase4-rls-billing-usage-merged-20260817` → `2636a8e2` |
 | **Projeto oficial** | Grupo TMSEG `ajhmmjuewdsukecaimik` |
 | **Migration MCP** | `20260817175715` e `20260817175827` / `fase4_p0_rls_billing_usage` (segunda entrada idempotente; **não reaplicar**) |
 | **Migration Git** | `migrations/2026_08_17_fase4_p0_rls_billing_usage.sql` |
 | **Rollback Git** | `migrations/rollback/2026_08_17_fase4_p0_rls_billing_usage.sql` |
 
-### PROGRESSO (pré-homologação de código)
+### PROGRESSO
 
 **Programa geral: 83,8%**
 
@@ -30,11 +33,15 @@
 
 `█████████░░░░░░░░░░░`
 
-**Execução atual: 70%**
+**Execução atual: 100%**
 
-`██████████████░░░░░░`
+`████████████████████`
 
-### DECISÃO PRÉ-MERGE
+### DECISÃO FINAL
+
+# 🟢 RLS billing_usage PUBLICADO E HOMOLOGADO
+
+### DECISÃO PRÉ-MERGE (histórico)
 
 # 🟡 PR #277 APTO COM FALHA BASELINE NÃO RELACIONADA
 
@@ -92,6 +99,48 @@ Classificação: **BASELINE / line endings do checkout**. Não é regressão do 
 | `/api/health` | 200 | | |
 | `/api/version` | 200 `buildId=28ae11d8` | | |
 | `/api/billing/dashboard` | 401 | | |
+
+### PUBLICAÇÃO
+
+```text
+PR #277 merge → main 2636a8e2
+  → origin/dev fast-forward 2636a8e2
+  → Vercel Production buildId=2636a8e2
+```
+
+Migration Supabase **não reaplicada**.
+
+### PÓS-DEPLOY — CRITÉRIO OBRIGATÓRIO
+
+Após o código novo (startup/bootstrap possível):
+
+| Check | Resultado |
+|-------|-----------|
+| Policy ampla | **AUSENTE** (0) |
+| anon SELECT | **0** |
+| service_role | **137** |
+| `/api/health` `/` `/api/version` | 200 |
+| `/api/billing/dashboard` | 401 |
+| `/api/db/capacity` (F4-P0) | 401 |
+| `/api/nf/invoices` | 401 |
+| `/api/asaas/payments` | 401 |
+| `/api/supabase/status` | 401 |
+| `/api/investment/snapshots-all` | 401 |
+
+`runBillingUsageMigrations()` **não reabriu** a exposição.
+
+### ROLLBACK (independentes)
+
+| Tipo | Como |
+|------|------|
+| Código | `baseline-fase4-pre-rls-billing-usage-20260817` → `5ce02aff` + redeploy |
+| Policy | `migrations/rollback/2026_08_17_fase4_p0_rls_billing_usage.sql` — **não executado** |
+
+### PENDÊNCIAS
+
+1. **NÃO** iniciar segunda tabela RLS.
+2. Backlog: `financial_transaction_payments`, `account_balance_snapshots`, RH, `time_clock`.
+3. F4-P0-ZAPI — separado.
 
 ---
 
