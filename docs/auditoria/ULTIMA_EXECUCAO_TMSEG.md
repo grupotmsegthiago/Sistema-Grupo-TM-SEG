@@ -1,7 +1,125 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **F4-P0 + F4-P1 PUBLICADOS E HOMOLOGADOS**
-> **13 rotas com 401 observável em produção; timeouts catch-all eliminados.**
+> Handoff oficial — **F4-P0-RLS PILOTO `billing_usage` APLICADO**
+> **Policy ampla removida; ANON/authenticated SELECT = 0; service_role = 137 linhas.**
+
+---
+
+## F4-P0-RLS — PILOTO `billing_usage`
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-17 (UTC) |
+| **Branch** | `cursor/fase4-rls-billing-usage-eaa8` |
+| **Base** | `origin/dev=origin/main=5ce02aff` |
+| **Projeto oficial** | Grupo TMSEG `ajhmmjuewdsukecaimik` |
+| **Migration MCP** | `20260817175715 / fase4_p0_rls_billing_usage` |
+| **SQL** | auditado em `docs/auditoria/F4_P0_RLS_PLANO_SQL_NAO_EXECUTAR.md` (Fase RLS-0) — sem alteração |
+| **Banco** | Somente `public.billing_usage` |
+| **ENV / Vercel / outras tabelas** | **Não alterados** |
+
+### PROGRESSO
+
+**Programa geral: 83,8%**
+
+`█████████████████░░░`
+
+**Fase 4: 45%**
+
+`█████████░░░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟢 PILOTO `billing_usage` APLICADO — SEM LOCKOUT
+
+### PRÉ-CHECKS (antes do apply)
+
+| # | Check | Resultado |
+|---|-------|-----------|
+| 1 | Supabase MCP `needsAuth` | **Não.** Server `ready`. |
+| 2 | Projeto oficial | **Grupo TMSEG** `ajhmmjuewdsukecaimik` (não Torres). |
+| 3 | Policy atual | `Allow all for billing_usage` / `FOR ALL TO anon, authenticated` / `USING true` — **sem drift**. |
+| 4 | ANON SELECT | **137 linhas visíveis** (aberto, como na auditoria). |
+| 5 | Migration exclusiva | Só `billing_usage`. Sem GRANT/REVOKE/DROP TABLE. |
+| 6 | Rollback exato | Recria a mesma policy ampla. |
+| 7 | Consumidor frontend direto novo | **Nenhum.** `billingService` usa `createSupabaseAdminClient`. |
+
+HEAD informado `2b906cd8` **não estava no origin**. SQL usado = SSOT da auditoria F4-P0-RLS, sem reescrever o desenho.
+
+### DRY-RUN
+
+`BEGIN; DROP POLICY; SET LOCAL ROLE anon; SELECT count; ROLLBACK;`
+
+- Após DROP: anon = **0**
+- Após ROLLBACK: policy restaurada; 137 linhas intactas
+
+### APPLY
+
+```sql
+ALTER TABLE public.billing_usage ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for billing_usage" ON public.billing_usage;
+```
+
+### COMPROVAÇÃO LIVE
+
+| Principal | Resultado |
+|-----------|-----------|
+| Policies em `billing_usage` | **0** |
+| RLS enabled | **true** |
+| ANON SELECT | **0** (antes 137) |
+| authenticated SELECT | **0** |
+| service_role SELECT | **137** |
+| owner/postgres SELECT | **137** |
+| `financial_transaction_payments` | policy ampla **intacta** |
+| `account_balance_snapshots` | policy ampla **intacta** |
+| `time_clock` | policy ampla **intacta** |
+
+### COMPANION OBRIGATÓRIO
+
+`runBillingUsageMigrations()` reaplicava `CREATE POLICY "Allow all..."` no startup e em `/api/billing/ensure-schema`. O bootstrap agora **ignora** statements `CREATE/DROP POLICY` de `billing_usage`. O SQL histórico `2026_07_12_billing_usage.sql` **não foi editado**.
+
+### TESTES / BUILD / SMOKE
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `scripts/fase4-p0-rls-billing-usage.test.ts` | **4/4** |
+| Suíte `scripts/*.test.ts` | **999/1000** — 1 fail pré-existente CRLF em `invoice-control-loading.test.ts` (`registerRoutes não await migrations`); `routes.ts` não foi alterado |
+| React `*.test.tsx` | **4/4** |
+| `npm run build` | **OK** |
+| `/api/health` | 200 |
+| `/api/version` | 200; `buildId=28ae11d8` (código ainda o publicado F4-P1) |
+| `/api/billing/dashboard` sem auth | **401** |
+
+### ROLLBACK
+
+```bash
+psql "$SUPABASE_DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/rollback/2026_08_17_fase4_p0_rls_billing_usage.sql
+```
+
+Não executado. Restaura `Allow all for billing_usage`.
+
+### PENDÊNCIAS
+
+1. Merge/PR desta branch — **não publicar** até revisão.
+2. F4-P0-RLS restante: pagamentos parciais, snapshots, RH, `time_clock` — **não iniciar** sem APIs preparatórias (RLS-1).
+3. F4-P0-ZAPI — separado.
+4. Segurança residual/finalização.
+
+### ARQUIVOS
+
+| Arquivo | Motivo |
+|---------|--------|
+| `migrations/2026_08_17_fase4_p0_rls_billing_usage.sql` | Forward exclusivo |
+| `migrations/rollback/2026_08_17_fase4_p0_rls_billing_usage.sql` | Rollback exato |
+| `lib/billing/usageMigrations.ts` | Impede reabrir policy no bootstrap |
+| `scripts/fase4-p0-rls-billing-usage.test.ts` | Exclusividade, rollback, consumidores, guard |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Handoff |
+
+**Zero diff:** NF, Asaas, SEC-03, Investment, DRE, Z-API, outras tabelas, ENV.
 
 ---
 
