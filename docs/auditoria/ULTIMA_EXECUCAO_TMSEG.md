@@ -1,7 +1,203 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **lockdown RLS de `financial_transaction_payments` PUBLICADO E HOMOLOGADO**
-> **PR #279 mergeado. Policy permissiva AUSENTE após startup. Rollback pronto e não executado. Nenhuma outra tabela iniciada.**
+> Handoff oficial — **auditoria GO/NO-GO de `account_balance_snapshots`: NO-GO (consumidores anon)**
+> **`billing_usage` e `financial_transaction_payments` NÃO TOCADOS. RLS de snapshots NÃO aplicado. Sem migration de lockdown.**
+
+---
+
+## FASE 4 — RLS `account_balance_snapshots`
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-17 (UTC-3) |
+| **Tipo** | Auditoria GO/NO-GO — **sem apply** |
+| **Branch** | `cursor/fase4-rls-account-balance-snapshots-audit-eaa8` |
+| **Base GitHub `main`/`dev`** | `d893e386` |
+| **HEAD desta auditoria** | branch `cursor/fase4-rls-account-balance-snapshots-audit-eaa8` sobre `f0bcd58e` |
+| **Handoff documental anterior** | `f0bcd58e` (incluído na branch; ainda não estava em `origin/main`) |
+| **Projeto oficial** | Grupo TMSEG `ajhmmjuewdsukecaimik` |
+| **Tabela** | `public.account_balance_snapshots` |
+| **Apply / DROP / DML** | **Não executados** |
+
+### PROGRESSO
+
+Auditoria ≠ lockdown. Percentuais de programa e Fase 4 **não** aumentam.
+
+**Programa geral: 84,0%**
+
+`█████████████████░░░`
+
+**Fase 4: 50%**
+
+`██████████░░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+Acumulado F4-P0-RLS permanece **10/35** (`billing_usage` + `financial_transaction_payments`). Este piloto não entra no percentual.
+
+### DECISÃO
+
+# 🟡 NO-GO — CONSUMIDORES ANON PRECISAM SER MIGRADOS
+
+Não preparar e não aplicar migration RLS nesta execução.
+
+### LIVE — SOMENTE LEITURA
+
+Nenhuma linha foi exibida. Sem INSERT/UPDATE/DELETE.
+
+| Check | Resultado |
+|-------|-----------|
+| Tabela existe | **sim** |
+| RLS | **ATIVO** |
+| Policy | `Allow all for account_balance_snapshots` |
+| Tipo | `PERMISSIVE` |
+| Roles | `{anon, authenticated}` |
+| Command | `ALL` |
+| USING / WITH CHECK | `true` / `true` |
+| policies | **1** |
+| anon SELECT | **129** |
+| authenticated SELECT | **129** |
+| owner SELECT | **129** |
+| service_role SELECT | **129** |
+| Drift vs migration histórica | **Não** (nome, roles, comando e predicados batem) |
+
+Colunas (metadados): `id` serial PK, `account_id` text NOT NULL, `balance` numeric(18,2) NOT NULL default 0, `notes` text, `created_by` text, `recorded_at` timestamptz NOT NULL default now(). Índice: `(account_id, recorded_at DESC)`.
+
+### REGRA DO SNAPSHOT (não alterada)
+
+- **Quem cria:** usuário no Painel de Investimentos (`FinancialAccountManager`) — atualização de saldo, criação/edição de conta (saldo inicial / ajuste).
+- **Quando:** manual, no ato do save. Sem cron de snapshot e sem realtime da tabela.
+- **Campos gravados:** `account_id`, `balance`, `notes`, `created_by` (nome do `userData` local); `recorded_at` default `now()`.
+- **Vínculo:** `account_id` → `financial_accounts.id` (conta/empresa financeira de investimento).
+- **Ordenação:** `recorded_at ASC` na listagem; latest = último da série por conta.
+- **Latest:** `latestBalanceByAccount` / último item após sort; se não houver histórico, usa `financial_accounts.initial_balance`.
+- **Histórico:** todos os snapshots no período filtrado (Investment: `periodFilter` ou 3650 dias; Diretoria/Contas a Pagar: 3650 dias).
+- **Filtros:** `recorded_at >= since`; Investment também filtra por conta na UI.
+- **Retenção:** sem purge automático. DELETE pontual no histórico da conta; DELETE em cascata ao excluir/desativar conta (`deleteSnapshotsForAccount`).
+- **Atualização:** INSERT de novo snapshot (não UPDATE do anterior).
+- **Dashboard:** Diretoria e Contas a Pagar usam o latest por conta nos cards de saldo operacional.
+
+### CONSUMIDORES
+
+| Recurso | Classificação | Operações | Notas |
+|---------|---------------|-----------|-------|
+| `lib/investment/snapshotClient.ts` | **B / D** | SELECT, INSERT, DELETE | Client `supabase` **anon**. Helper direto. |
+| `lib/dashboardDiretoria/useDashboardDiretoriaData.ts` | **B** | SELECT | **Só** `listBalanceSnapshotsDirect(3650)`. Sem API. |
+| `components/FinancialTransactionList.tsx` | **B** | SELECT | **Só** direto. Cards de saldo operacional. |
+| `components/FinancialAccountManager.tsx` | **C + D** | SELECT, INSERT | API autenticada primeiro; fallback anon se falha **ou** se a API devolve `[]`. INSERT também tem fallback. |
+| `api/investment-snapshots-all.ts` | **A/C** | SELECT | Auth TM SEG (`assertAsaasApiAccess`). Em erro devolve `200 []` (dispara fallback). |
+| `api/investment-snapshots.ts` | **A/C** | INSERT | Auth TM SEG. |
+| `api/investment-snapshot-delete.ts` | **A/C** | DELETE | Auth TM SEG. Sem fallback frontend. |
+| `api/investment-init.ts` | **A** | DDL condicional | `ensureSnapshotsTable`. |
+| `lib/investment/accountBalanceSnapshots.ts` | **A** (com degradê) | SELECT/INSERT/DELETE + ensure | REST. Usa `service_role` se for do projeto TM SEG; **senão chave anon**. |
+| `lib/investment/investmentAccountsApi.ts` | **A** | DELETE por conta | Após excluir/desativar conta. |
+| `server/routes.ts` `/api/investment/*` | **A** | SELECT/INSERT/DELETE + CREATE TABLE | `pgPool` + `requireAuth`. Init **não** cria policy. |
+| `lib/f4ApiOperations.ts` `getF4DbCapacity` | **A** | COUNT | Capacidade F4; não é fluxo de saldo. |
+| `scripts/apply-account-balance-snapshots-migration.mjs` | **A / CLI** | DDL histórica | Recria policy permissiva. |
+| `components/ServerStats.tsx` | — | — | **Não consome** esta tabela. |
+| Realtime / cron | — | — | **Não** há subscribe nem job desta tabela. |
+| `deleteBalanceSnapshotDirect` | morto no UI | DELETE | Exportado; nenhum componente chama. |
+
+Testes que **congelam** o fallback atual: `scripts/investment-snapshots.test.ts`, `scripts/dashboard-diretoria.test.ts`, `scripts/financial-transaction-operational-balance.test.ts`.
+
+### FLUXOS
+
+```text
+Diretoria
+  usuário → Dashboard Diretoria → listBalanceSnapshotsDirect
+         → supabase anon → account_balance_snapshots (SELECT)
+
+Contas a Pagar / Receber
+  usuário → FinancialTransactionList → listBalanceSnapshotsDirect
+         → supabase anon → account_balance_snapshots (SELECT)
+
+Investimento (leitura)
+  usuário → FinancialAccountManager
+         → authFetch /api/investment/snapshots-all  (C)
+         → se !ok ou array vazio
+         → listBalanceSnapshotsDirect (D / anon SELECT)
+
+Investimento (gravação de saldo)
+  usuário → POST /api/investment/snapshots  (C, auth TM SEG)
+         → insertSnapshot (service_role ou anon key)
+         → se API falha: insertBalanceSnapshotDirect (D / anon INSERT)
+
+Investimento (exclusão de histórico)
+  usuário → DELETE /api/investment/snapshots/:id  (C)
+         → sem fallback anon
+```
+
+Identidade: TM SEG customizada (`authFetch` / `assertAsaasApiAccess`). **Não** usar `auth.uid()`.
+
+### BOOTSTRAP / INIT
+
+| Caminho | Recria policy permissiva? |
+|---------|---------------------------|
+| `ensureSnapshotsTable` via `exec_sql` se a tabela **não existir** | **Sim** (`CREATE POLICY "Allow all..."`) |
+| `ensureSnapshotsTable` se a tabela **já existe** | Não (só probe REST) |
+| `POST /api/investment-init` | Chama ensure |
+| `server/routes.ts` POST `/api/investment/init` | Cria tabela via `pgPool`; **não** cria policy |
+| CLI `apply-account-balance-snapshots-migration.mjs` | **Sim** (SQL histórico completo) |
+| Migration histórica `2026_07_08_...sql` | **Sim** (imutável nesta execução) |
+| Cron / seed automático | Não encontrado |
+
+### RISCO DE LOCKOUT
+
+**Alto e imediato** se DROP da policy agora:
+
+1. Diretoria e Contas a Pagar deixam de ver o último saldo (anon SELECT → 0) e caem em `initial_balance`.
+2. Investment, se a API devolver `[]`, usa o mesmo fallback anon — saldo some em silêncio.
+3. Gravação de saldo ainda funciona pela API se `service_role` estiver presente; o fallback INSERT anon quebraria.
+4. `ensureSnapshotsTable` **recriaria** a policy se alguém recriasse a tabela.
+
+### PLANO DE MIGRAÇÃO (não executar agora)
+
+```text
+Frontend
+  → API autenticada (authFetch)
+  → auth TM SEG / role (assertAsaasApiAccess)
+  → service_role fail-closed
+  → account_balance_snapshots
+```
+
+Ordem futura (execução separada):
+
+1. Diretoria e Contas a Pagar passam a usar `/api/investment/snapshots-all` **sem** `listBalanceSnapshotsDirect`.
+2. Investment remove fallbacks `listBalanceSnapshotsDirect` / `insertBalanceSnapshotDirect`; tratar `[]` como conjunto vazio, não como falha.
+3. `accountBalanceSnapshots.ts`: fail-closed sem `service_role` (não degradar para anon).
+4. `ensureSnapshotsTable` / CLI: **não** recriar `CREATE POLICY Allow all` (mesmo padrão de `billing_usage`).
+5. Só então preparar migration `DROP POLICY` + rollback. **Não aplicar nesta execução.**
+
+### RED
+
+`scripts/fase4-p0-rls-account-balance-snapshots.test.ts` — **8/8 pass**.
+
+Comprova no código: policy histórica permissiva; `supabase.from` no client; Diretoria/Contas a Pagar sem API; fallback Investment; ensure recria policy; APIs autenticadas existem mas degradam para anon; **zero** arquivo de migration de lockdown.
+
+### TESTES / BUILD
+
+| Suíte | Total | Pass | Fail |
+|-------|------:|-----:|-----:|
+| Direcionados (snapshots/Investment/Diretoria/segurança/F4) | 102 | 102 | 0 |
+| TS completo | 1039 | 1038 | 1 baseline CRLF |
+| React (com loader de assets) | 4 | 4 | 0 |
+
+- RED desta auditoria: **+8** testes (1031 → 1039).
+- Falha única: `invoice-control-loading.test.ts` — **BASELINE** Windows/CRLF, igual à `main`.
+- Cancelled / skipped / hang: 0 / 0 / 0.
+- `npm run build`: **OK** (Supabase `ajhmmjuewdsukecaimik`).
+
+### ÁREAS PROTEGIDAS
+
+Zero alteração em: `billing_usage`, `financial_transaction_payments`, RH, `time_clock`, Z-API, NF, Asaas, SEC-03, DRE, pedágio, OS, ENV, Vercel, Investment **funcional**.
+
+Diff desta execução: teste RED + este handoff.
+
+### PRÓXIMO PASSO
+
+Migrar consumidores anon para a API autenticada. **Não** aplicar RLS. **Não** iniciar RH / `time_clock` / Z-API.
 
 ---
 
