@@ -47,6 +47,25 @@ function restHeaders(key: string, extra?: Record<string, string>): Record<string
   };
 }
 
+/** Bootstrap não pode recriar policy ampla após o futuro lockdown F4-P0-RLS. */
+export function isFinancialPaymentsPolicyStatement(statement: string): boolean {
+  return /\b(create|drop)\s+policy\b/i.test(statement) && /financial_transaction_payments/i.test(statement);
+}
+
+export function selectFinancialPaymentsBootstrapStatements(sql: string): string[] {
+  return sql
+    .split(';')
+    .map((block) =>
+      block
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('--'))
+        .join('\n')
+        .trim(),
+    )
+    .filter(Boolean)
+    .filter((statement) => !isFinancialPaymentsPolicyStatement(statement));
+}
+
 export function financialPaymentsMigrationSql(): string {
   return `
 CREATE TABLE IF NOT EXISTS public.financial_transaction_payments (
@@ -61,9 +80,6 @@ CREATE TABLE IF NOT EXISTS public.financial_transaction_payments (
 CREATE INDEX IF NOT EXISTS idx_ft_payments_tx
   ON public.financial_transaction_payments (transaction_id, payment_date DESC);
 ALTER TABLE public.financial_transaction_payments ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for financial_transaction_payments" ON public.financial_transaction_payments;
-CREATE POLICY "Allow all for financial_transaction_payments" ON public.financial_transaction_payments
-  FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
 ALTER TABLE public.financial_transactions
   ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(14,2) DEFAULT 0,
@@ -116,7 +132,7 @@ ALTER TABLE public.financial_transactions
 `.trim());
     return { ok: true, exists: true };
   }
-  const sql = financialPaymentsMigrationSql();
+  const sql = selectFinancialPaymentsBootstrapStatements(financialPaymentsMigrationSql()).join(';\n') + ';';
   const ran = await tryExecSql(sql);
   if (ran && (await probePaymentsTable())) {
     ensured = true;
