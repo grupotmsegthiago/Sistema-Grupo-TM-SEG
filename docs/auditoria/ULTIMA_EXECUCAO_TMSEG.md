@@ -1,7 +1,159 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **consumidores `financial_transaction_payments` PUBLICADOS E HOMOLOGADOS**
-> **API autenticada em produção. RLS desta tabela continua ABERTA por decisão explícita.**
+> Handoff oficial — **lockdown RLS de `financial_transaction_payments` PREPARADO, NÃO APLICADO**
+> **Migration + rollback em branch draft. Policy live permanece permissiva e intacta.**
+
+---
+
+## F4-P0-RLS — AUDITORIA FINAL + PREPARAÇÃO SEM APPLY
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-17 (UTC) |
+| **Branch** | `cursor/fase4-rls-financial-payments-lockdown-eaa8` |
+| **Base** | `origin/main=origin/dev=4d2710ab` |
+| **Código funcional** | `c305e147` |
+| **Tag funcional** | `baseline-fase4-financial-payments-api-merged-20260817` |
+| **Migration preparada** | `migrations/2026_08_17_fase4_p0_rls_financial_transaction_payments.sql` |
+| **Rollback preparado** | `migrations/rollback/2026_08_17_fase4_p0_rls_financial_transaction_payments.sql` |
+| **Apply / DROP live / dados** | **Não executados** |
+
+### PROGRESSO
+
+**Programa geral: 83,8%**
+
+`█████████████████░░░`
+
+**Fase 4: 45%**
+
+`█████████░░░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+Preparation ≠ lockdown aplicado; os percentuais de programa e Fase 4 não foram
+aumentados.
+
+### DECISÃO
+
+# 🟡 REQUER DRY-RUN TRANSACIONAL ANTES DO LOCKDOWN
+
+Migration e rollback estão aptos para revisão. O dry-run DDL live, mesmo
+envolvido por `BEGIN/ROLLBACK`, não foi executado porque a autorização foi
+recusada. Não houve tentativa de contorno. `docker`, Supabase CLI e `psql` não
+estão disponíveis para uma simulação Postgres local.
+
+### REAUDITORIA DE CONSUMIDORES
+
+| Classificação | Ocorrências |
+|---------------|-------------|
+| Frontend runtime direto | **ZERO** |
+| Backend SSOT | `lib/financial/receivablePaymentsApiCore.ts` |
+| Client autenticado | `lib/financial/receivablePaymentsClient.ts` → `authFetch` |
+| Testes | `scripts/fase4-financial-payments-api.test.ts` + teste RLS novo |
+| Docs | plano e handoffs |
+| Migration histórica | `2026_07_20_financial_transaction_payments.sql` (imutável) |
+
+Fluxo preservado:
+
+```text
+Frontend → API autenticada → auth TM SEG → role/escopo
+         → service_role fail-closed → SSOT → financial_transaction_payments
+```
+
+GET, POST e DELETE continuam no handler publicado. Sem `service_role`, a API
+retorna 503 e não degrada para anon.
+
+### POLICY LIVE / RED SOMENTE LEITURA
+
+Projeto oficial: `ajhmmjuewdsukecaimik`. Nenhuma linha foi exibida.
+
+| Check | Resultado |
+|-------|-----------|
+| RLS enabled | true |
+| Policy | `Allow all for financial_transaction_payments` |
+| Tipo | `PERMISSIVE` |
+| Roles | `anon`, `authenticated` |
+| Command | `ALL` |
+| USING / WITH CHECK | `true` / `true` |
+| anon SELECT | 35 |
+| authenticated SELECT | 35 |
+| owner SELECT | 35 |
+| service_role SELECT | 35 |
+| Drift | **Não** |
+
+### MIGRATION
+
+A migration:
+
+- toca somente `public.financial_transaction_payments`;
+- exige RLS já habilitado;
+- exige exatamente uma policy e valida nome, permissividade, roles, comando,
+  `USING` e `WITH CHECK`;
+- aborta antes do `DROP POLICY` em qualquer drift;
+- remove somente `Allow all for financial_transaction_payments`;
+- não cria policy para anon/authenticated;
+- não contém DML nem altera dados.
+
+### ROLLBACK
+
+O rollback exige RLS ativo e zero policies antes de restaurar exatamente:
+
+```text
+Allow all for financial_transaction_payments
+FOR ALL TO anon, authenticated
+USING (true)
+WITH CHECK (true)
+```
+
+Rollback não executado.
+
+### BOOTSTRAP
+
+- `financial-payments-init` permanece autenticado e fail-closed.
+- `ensurePaymentTables` não contém `CREATE/DROP POLICY`.
+- O seletor de statements remove policy da migration histórica.
+- Nenhum CLI adicional referencia/executa a migration histórica.
+- Teste determinístico comprova que startup/init futuro não reabre a policy.
+
+### RED/GREEN / DRY-RUN
+
+- Modelo determinístico local: antes 35/35/35; lockdown 0/0/35;
+  rollback 35/35/35 — **PASS**.
+- Testes SQL validam exclusividade, drift guard, ausência de DML e rollback.
+- Dry-run DDL no projeto live: **NÃO EXECUTADO (autorização recusada)**.
+- Estado live final revalidado por leitura: policy permissiva intacta.
+
+### TESTES / BUILD
+
+| Suíte | Total | Pass | Fail |
+|-------|------:|-----:|-----:|
+| RLS novo | 8 | 8 | 0 |
+| Direcionados RLS/financeiro/F4/auth | 84 | 84 | 0 |
+| TS completo | 1031 | 1030 | 1 baseline CRLF |
+| React | 4 | 4 | 0 |
+| **Geral** | **1035** | **1034** | **1 baseline** |
+
+- Falha única: `invoice-control-loading.test.ts`, baseline Windows/CRLF já
+  reproduzida na main.
+- `bash scripts/run-tests.sh`: bash indisponível; comandos internos executados
+  separadamente.
+- Cancelled / skipped / hang: 0 / 0 / 0.
+- `npm run build`: **OK**.
+
+### ESCOPO / PRÓXIMO GATE
+
+Diff ideal: migration, rollback, teste e handoff; zero código funcional.
+
+Antes de qualquer apply:
+
+1. revisar o PR draft;
+2. autorizar e executar dry-run transacional;
+3. revalidar estado live intacto;
+4. emitir novo GO/NO-GO específico para aplicação.
+
+Não iniciar snapshots, RH, `time_clock` ou Z-API.
 
 ---
 
