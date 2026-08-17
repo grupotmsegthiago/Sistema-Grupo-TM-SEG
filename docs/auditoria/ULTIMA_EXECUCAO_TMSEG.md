@@ -11,6 +11,8 @@
 |-------|-------|
 | **Data** | 2026-08-17 (UTC) |
 | **Branch** | `cursor/fase4-rls-billing-usage-eaa8` |
+| **HEAD** | `0b427366` |
+| **PR** | [#277](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/277) — aberto, não mergeado |
 | **Base** | `origin/dev=origin/main=5ce02aff` |
 | **Projeto oficial** | Grupo TMSEG `ajhmmjuewdsukecaimik` |
 | **Migration MCP** | `20260817175715 / fase4_p0_rls_billing_usage` |
@@ -104,7 +106,7 @@ Não executado. Restaura `Allow all for billing_usage`.
 
 ### PENDÊNCIAS
 
-1. Merge/PR desta branch — **não publicar** até revisão.
+1. Revisar e mergear [PR #277](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/277) — **não publicar** até revisão.
 2. F4-P0-RLS restante: pagamentos parciais, snapshots, RH, `time_clock` — **não iniciar** sem APIs preparatórias (RLS-1).
 3. F4-P0-ZAPI — separado.
 4. Segurança residual/finalização.
