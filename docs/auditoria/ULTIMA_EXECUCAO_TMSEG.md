@@ -14,6 +14,8 @@
 | **Base main/dev/handoff** | `5ce02aff` |
 | **Produção funcional** | `buildId=28ae11d8` |
 | **Tag homologada anterior** | `baseline-fase4-p1-dedicated-handlers-merged-20260817` |
+| **HEAD auditoria** | `6dfcf54a` |
+| **PR draft** | Não criado — ferramenta de PR retornou `unauthenticated` |
 | **SQL executado** | **Nenhum** |
 | **Banco/policy/migration/produção** | **Não alterados** |
 
@@ -244,6 +246,16 @@ Novo teste: `scripts/fase4-p0-rls-audit.test.ts`
 - prova consumidores frontend diretos;
 - prova `billing_usage` backend-only;
 - verifica plano/rollback e ausência de migration aplicada.
+
+| Suíte | Resultado |
+|-------|-----------|
+| Auditoria RLS | **8/8 pass** |
+| TS completa | **1004/1004 pass** |
+| React | **4/4 pass** |
+| **Total** | **1008/1008 pass**, 0 fail/skip/cancel/hang |
+| `npm run build` | **OK** |
+
+Delta frente ao baseline 1000/1000: +8 testes documentais RLS.
 
 Casos obrigatórios pós-implementação futura:
 
