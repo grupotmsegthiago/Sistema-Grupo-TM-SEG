@@ -1,7 +1,109 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **lockdown RLS de `financial_transaction_payments` PREPARADO, NÃO APLICADO**
-> **Migration + rollback em branch draft. Policy live permanece permissiva e intacta.**
+> Handoff oficial — **lockdown RLS de `financial_transaction_payments` APLICADO; fechamento PR #279 em andamento**
+> **Policy permissiva AUSENTE. Rollback pronto e não executado. Nenhuma outra tabela iniciada.**
+
+---
+
+## F4-P0-RLS — FECHAMENTO PÓS-APPLY `financial_transaction_payments`
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-17 (UTC-3) |
+| **PR** | [#279](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/279) |
+| **Branch** | `cursor/fase4-rls-financial-payments-lockdown-eaa8` |
+| **Base / main / dev pré-merge** | `4d2710ab` |
+| **Commit preparação** | `d62f9e17` |
+| **Código funcional** | `c305e147` |
+| **Projeto oficial** | Grupo TMSEG `ajhmmjuewdsukecaimik` |
+| **Migration Git** | `migrations/2026_08_17_fase4_p0_rls_financial_transaction_payments.sql` |
+| **Rollback Git** | `migrations/rollback/2026_08_17_fase4_p0_rls_financial_transaction_payments.sql` |
+| **Reapply / rollback live** | **Não executados nesta execução** |
+
+### PROGRESSO
+
+Atualizado somente após homologação completa (merge + deploy + startup + RLS ainda fechado). Até lá os percentuais de programa e Fase 4 permanecem os da preparação.
+
+**Programa geral: 83,8%** *(provisório até o fechamento)*
+
+`█████████████████░░░`
+
+**Fase 4: 45%** *(provisório até o fechamento)*
+
+`█████████░░░░░░░░░░░`
+
+**Execução atual: em andamento**
+
+Parcela prevista deste marco, se homologado: **+5 pp da Fase 4** (mesmo peso do piloto `billing_usage`). Bloco F4-P0-RLS total = 35% da Fase 4; acumulado RLS passaria a **10/35**. Restante 25 pp: snapshots, RH, `time_clock` e demais. Fase 4 = 4% do programa → +5 pp da Fase 4 = **+0,2 pp** no geral (`83,8% → 84,0%`; Fase 4 `45% → 50%`).
+
+### DECISÃO
+
+Pendente merge/deploy/startup. Live pós-apply já conferido.
+
+### TESTES / BUILD
+
+| Suíte | Total | Pass | Fail |
+|-------|------:|-----:|-----:|
+| Direcionados RLS/pagamentos/receivables/segurança/F4 | 195 | 195 | 0 |
+| TS completo | 1031 | 1030 | 1 baseline CRLF |
+| React | 4 | 4 | 0 |
+
+- Falha única: `invoice-control-loading.test.ts` — **BASELINE** Windows/CRLF, igual à main.
+- Cancelled / skipped / hang: 0 / 0 / 0.
+- `npm run build`: **OK** (Supabase `ajhmmjuewdsukecaimik`).
+
+### LIVE — ANTES DO APPLY
+
+| Check | Resultado |
+|-------|-----------|
+| RLS | ATIVO |
+| Policy `Allow all for financial_transaction_payments` | presente |
+| anon | 35 |
+| authenticated | 35 |
+| owner | 35 |
+| service_role | 35 |
+
+### APPLY
+
+Autorização humana explícita. Executado **somente** o SQL do PR #279 no projeto `ajhmmjuewdsukecaimik`, via `execute_sql`. Sem `apply_migration`. Sem DML. Sem `billing_usage`, snapshots, RH, `time_clock`, Z-API, NF, Asaas, Investment.
+
+Efeito: `DROP POLICY "Allow all for financial_transaction_payments"` após guard de drift. RLS permaneceu ativo. Nenhuma policy substituta.
+
+### LIVE — DEPOIS DO APPLY (e revalidado nesta execução)
+
+| Check | Resultado |
+|-------|-----------|
+| RLS | **ATIVO** |
+| Policy `Allow all for financial_transaction_payments` | **AUSENTE** |
+| policies | **0** |
+| anon | **0** |
+| authenticated | **0** |
+| owner | **35** |
+| service_role | **35** |
+| Drift | **Não** |
+
+Rollback: pronto e **não executado**.
+
+### DIFF `origin/main...d62f9e17`
+
+| Arquivo | Motivo |
+|---------|--------|
+| `migrations/2026_08_17_fase4_p0_rls_financial_transaction_payments.sql` | Forward exclusivo |
+| `migrations/rollback/2026_08_17_fase4_p0_rls_financial_transaction_payments.sql` | Rollback exato |
+| `scripts/fase4-p0-rls-financial-payments.test.ts` | RED/GREEN + bootstrap |
+| `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Handoff |
+
+Zero código funcional. Um commit (`d62f9e17`) sobre `4d2710ab`. Sem commit funcional posterior.
+
+### ÁREAS PROTEGIDAS
+
+Sem SQL e sem diff em: `billing_usage`, NF, Asaas, Supabase NB-07, Investment, F4-P0/F4-P1 handlers, snapshots, RH, `time_clock`, Z-API.
+
+`billing_usage` permanece o piloto já homologado (não reaberto nesta execução).
+
+---
+
+## F4-P0-RLS — AUDITORIA FINAL + PREPARAÇÃO SEM APPLY
 
 ---
 
