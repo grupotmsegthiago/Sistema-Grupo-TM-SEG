@@ -1,7 +1,266 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **F4-P0 + F4-P1 PUBLICADOS E HOMOLOGADOS**
-> **13 rotas com 401 observável em produção; timeouts catch-all eliminados.**
+> Handoff oficial — **F4-P0-RLS — AUDITORIA E PLANO**
+> **Nenhum SQL/policy/migration aplicado; plano aguarda decisões humanas.**
+
+---
+
+## F4-P0-RLS — AUDITORIA PROFUNDA E PLANO DE HARDENING
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-17 (UTC) |
+| **Branch** | `cursor/fase4-p0-rls-audit-eaa8` |
+| **Base main/dev/handoff** | `5ce02aff` |
+| **Produção funcional** | `buildId=28ae11d8` |
+| **Tag homologada anterior** | `baseline-fase4-p1-dedicated-handlers-merged-20260817` |
+| **SQL executado** | **Nenhum** |
+| **Banco/policy/migration/produção** | **Não alterados** |
+
+### PROGRESSO
+
+**Programa geral: 83,6%**
+
+`█████████████████░░░`
+
+**Fase 4: 40%**
+
+`████████░░░░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟡 RLS REQUER DECISÕES DE ACESSO ANTES DE IMPLEMENTAR
+
+### RESUMO SIMPLES
+
+A exposição RLS é real: 30 de 31 tabelas auditadas permitiram SELECT anon via `HEAD/count`, sem retorno de linhas. O app usa login TM SEG customizado, mas o browser acessa Supabase com a anon key; portanto `authenticated`/`auth.uid()` não representa o usuário atual.
+
+`billing_usage` pode ser endurecida primeiro porque seus consumidores legítimos já usam APIs/service_role. Pagamentos parciais, snapshots de saldo e RH/Ponto dependem de acesso frontend anon; fechar suas policies agora quebraria Contas a Receber, Investment, Diretoria, folha e ponto. Primeiro é necessário migrar consumidores para APIs autenticadas.
+
+---
+
+### METODOLOGIA / LIMITES DA EVIDÊNCIA
+
+- Leitura live: apenas `select('id', { head:true, count:'exact' })`; nenhum row/valor retornado.
+- INSERT/UPDATE/DELETE não foram testados em produção.
+- `authenticated` não foi testado live porque criar sessão/usuário alteraria estado; resultado é derivado da policy versionada quando existente.
+- Supabase MCP estava sem autenticação; nenhum SQL, painel ou Management API de policies foi utilizado.
+- `service_role` é esperado no backend e bypassa RLS; não justifica policy pública.
+
+---
+
+### INVENTÁRIO LIVE — 31 TABELAS
+
+Legenda policy:
+
+- **ALL versionado**: `FOR ALL TO anon, authenticated USING(true) WITH CHECK(true)`.
+- **Sem policy correspondente**: migration não cobre o nome real; estado live exato exige inspeção futura de `pg_policies`.
+- **Drift**: arquivo prevê acesso, mas comportamento live bloqueou.
+
+| Tabela | Finalidade / sensibilidade | Policy versionada | Anon SELECT live | Authenticated | Consumidor principal |
+|--------|---------------------------|-------------------|------------------|---------------|---------------------|
+| `financial_transaction_payments` | Pagamentos parciais — financeiro | ALL versionado | Permitido | Permitido pela policy | Frontend direto |
+| `billing_usage` | Custos IA/telemetria — financeiro | ALL versionado | Permitido | Permitido pela policy | Backend/service_role |
+| `account_balance_snapshots` | Histórico de saldos — financeiro | ALL versionado | Permitido | Permitido pela policy | API + frontend fallback |
+| `time_clock` | Ponto, geo/foto — trabalhista | ALL versionado | Permitido | Permitido pela policy | API + frontend fallback |
+| `rh_departments` | Catálogo RH | ALL versionado | Permitido | Permitido pela policy | Frontend direto |
+| `rh_positions` | Cargos/base — RH | ALL versionado | Permitido | Permitido pela policy | Frontend direto |
+| `rh_employees` | CPF/endereço/face/assinatura — PII crítica | ALL versionado | Permitido | Permitido pela policy | Frontend + API |
+| `rh_employee_bank_accounts` | Conta/PIX — bancário crítico | ALL versionado | Permitido | Permitido pela policy | Frontend direto |
+| `rh_employee_documents` | Documentos — PII alta | ALL versionado | Permitido | Permitido pela policy | Frontend direto |
+| `rh_employee_dependents` | Dependentes/CPF — PII alta | ALL versionado | Permitido | Permitido pela policy | Sem consumidor atual |
+| `rh_employee_emergency_contacts` | Contatos — PII | Sem policy correspondente | Permitido | Inconclusivo | Sem consumidor atual |
+| `rh_salary_configs` | Salário — financeiro crítico | ALL versionado | Permitido | Permitido pela policy | Frontend + API |
+| `rh_tax_brackets` | Faixas tributárias — catálogo | ALL versionado | Permitido | Permitido pela policy | Frontend + API |
+| `rh_benefits` | Catálogo benefícios | Nome legado na policy | Permitido | Inconclusivo | Frontend direto |
+| `rh_employee_benefits` | Benefícios por funcionário | ALL versionado | Permitido | Permitido pela policy | Sem consumidor direto |
+| `rh_commission_rules` | Regras de comissão — financeiro | Sem policy correspondente | Permitido | Inconclusivo | Frontend + backend |
+| `rh_commissions` | Comissões — financeiro | ALL versionado | Permitido | Permitido pela policy | Frontend + backend |
+| `rh_awards` | Premiações — financeiro | ALL versionado | Permitido | Permitido pela policy | Frontend + backend |
+| `rh_bonuses` | Bonificações — financeiro | ALL versionado | Permitido | Permitido pela policy | Frontend + backend |
+| `rh_work_schedules` | Jornada — trabalhista | Sem policy correspondente | Permitido | Inconclusivo | Sem consumidor atual |
+| `rh_vacations` | Férias — trabalhista | Nome legado na policy | Permitido | Inconclusivo | Frontend direto |
+| `rh_leaves` | Afastamentos — trabalhista/saúde | Nome legado na policy | Permitido | Inconclusivo | Frontend direto |
+| `rh_warnings` | Advertências — trabalhista | ALL versionado | Permitido | Permitido pela policy | Frontend direto |
+| `rh_medical_exams` | Exames — saúde crítica | ALL versionado | Permitido | Permitido pela policy | Frontend direto |
+| `rh_admissions` | Admissões — trabalhista | Sem policy correspondente | Permitido | Inconclusivo | Sem consumidor atual |
+| `rh_payroll_runs` | Folha — financeiro crítico | ALL versionado | Permitido | Permitido pela policy | Frontend + API |
+| `rh_payroll_items` | Itens folha — financeiro crítico | ALL versionado | Permitido | Permitido pela policy | Frontend + API |
+| `rh_payslips` | Holerites — financeiro/PII | Sem policy correspondente | Permitido | Inconclusivo | Frontend direto |
+| `rh_lgpd_consents` | Consentimentos — PII | Sem policy correspondente | Permitido | Inconclusivo | Sem consumidor atual |
+| `rh_audit_logs` | Auditoria RH | ALL versionado | Permitido | Permitido pela policy | Frontend direto |
+| `rh_settings` | Configuração RH | ALL versionado | **Bloqueado** | Não testado | Sem consumidor atual |
+
+Resultado: **30 permitidas / 1 bloqueada** para SELECT anon. Escrita live não testada; policies `ALL` versionadas autorizam CRUD em seu desenho.
+
+---
+
+### DRIFT DE NOMES RH
+
+| Nome versionado na policy | Tabela real |
+|---------------------------|-------------|
+| `rh_timeclock` | `time_clock` |
+| `rh_vacation_requests` | `rh_vacations` |
+| `rh_leave_records` | `rh_leaves` |
+| `rh_benefit_types` | `rh_benefits` |
+
+Tabelas reais ausentes do inventário RLS versionado: `rh_commission_rules`,
+`rh_payslips`, `rh_employee_emergency_contacts`, `rh_work_schedules`,
+`rh_admissions` e `rh_lgpd_consents`.
+
+---
+
+### CONSUMIDORES / PADRÕES A–I
+
+| Domínio | Classe | Acesso atual | Operações | Risco lockdown |
+|---------|--------|--------------|-----------|----------------|
+| `billing_usage` | **A/D/H** — backend/admin/cron | service_role via billing APIs | CRUD | Baixo |
+| `financial_transaction_payments` | **B/F** — frontend + financeiro restrito | browser anon | SELECT/INSERT/DELETE | Alto |
+| `account_balance_snapshots` | **B/D/F** — frontend + admin | API service_role + fallback anon | SELECT/INSERT/DELETE | Alto |
+| RH catálogos | **B/E** | browser anon | CRUD | Alto para UI |
+| RH PII/banco/salário/folha | **E/F** | browser anon + APIs | CRUD | Crítico |
+| `time_clock` | **C/E** — próprio funcionário + RH | API + fallback anon | SELECT/INSERT/UPDATE/DELETE | Crítico |
+| RH sem consumidor | **H** | nenhum legítimo localizado | — | Baixo, mas exposição permanece |
+
+#### Consumidores críticos
+
+- Pagamentos: `receivablePaymentsClient.ts`, modais de pagamento e `FinancialTransactionList`.
+- Billing: `billingService.ts`, cron billing-sync, Gemini logging e APIs do Cockpit; nenhum component acessa tabela diretamente.
+- Snapshots: `snapshotClient.ts`, `FinancialAccountManager`, Diretoria e `FinancialTransactionList`.
+- RH: `components/rh/*`, `lib/rh/*`, `server/rhRoutes`, handlers `api/rh-*`, Realtime.
+- Ponto: `registerPunch`, `history`, `adjustEntriesDirect`, APIs e serviços backend.
+
+---
+
+### MODELO DE IDENTIDADE / ROLES
+
+O browser não possui Supabase Auth JWT; todas as consultas diretas são role
+Postgres `anon`. Roles TM SEG existem apenas na aplicação/token customizado.
+
+| Domínio | Roles legítimas existentes | Escopo futuro |
+|---------|-----------------------------|---------------|
+| Billing usage | Diretoria, Administrador, CEO | API-only |
+| Pagamentos parciais | Diretoria, Administrador, Financeiro, CEO/Controller e permissões financeiras | API-only |
+| Snapshots/contas | Diretoria, Administrador, Financeiro, CEO e permissões `fin-*` | API-only |
+| RH administrativo | RH e Diretoria; Administrador requer decisão (gate inconsistente) | API-only |
+| Salário/folha/banco | RH e Diretoria; Financeiro não possui módulo RH hoje | API-only |
+| Ponto próprio | Funcionário vinculado | API filtrada por `user_id` |
+| Ponto geral/ajuste | RH e Diretoria | API-only |
+| Cliente/operador | Nenhum acesso RH/financeiro | Deny |
+
+**Decisões humanas necessárias:**
+
+1. Administrador deve ou não entrar no módulo RH completo?
+2. Financeiro pode ver salário/folha ou apenas custos agregados?
+3. Manter identidade custom API-only ou emitir JWT Supabase custom no futuro?
+4. Quais catálogos RH podem permanecer SELECT anon temporariamente?
+
+---
+
+### POLICIES PROPOSTAS
+
+| Grupo | Problema atual | Policy alvo | Pré-requisito | Impacto |
+|-------|----------------|-------------|---------------|---------|
+| `billing_usage` | ALL sem consumidor anon | Sem policy anon/authenticated; service_role bypass | smoke dashboard/cron | Baixo |
+| Pagamentos parciais | CRUD anon financeiro | Deny anon; API service_role | criar API e migrar modais | Alto se antecipado |
+| Snapshots | ALL + fallbacks diretos | Deny anon; API service_role | migrar 3 consumidores/fallback | Alto se antecipado |
+| RH sem consumidor | SELECT anon desnecessário | Deny anon | confirmar ausência runtime | Baixo/médio |
+| RH PII/banco/salário/folha | ALL anon | Deny anon; APIs RH/Diretoria | migrar CRUD frontend | Crítico se antecipado |
+| Catálogos RH | ALL CRUD | SELECT temporário somente; writes API | migrar CRUD admin | Médio |
+| `time_clock` | ALL anon | API-only no auth atual; self-row somente com JWT futuro | remover fallbacks | Crítico |
+
+Não usar policy genérica `USING(true)` em tabela sensível. Não criar policy
+`authenticated` baseada em `auth.uid()` enquanto a identidade do app não estiver
+integrada ao Supabase Auth.
+
+---
+
+### MIGRATION / ROLLBACK PLANEJADOS
+
+Plano SQL completo e rollback, ambos marcados **NÃO EXECUTAR**:
+
+`docs/auditoria/F4_P0_RLS_PLANO_SQL_NAO_EXECUTAR.md`
+
+Não foi criado arquivo em `migrations/`.
+
+Fases planejadas:
+
+1. RLS-0: piloto `billing_usage`.
+2. RLS-1: APIs preparatórias sem policy.
+3. RLS-2: pagamentos parciais e snapshots.
+4. RLS-3: RH administrativo/PII em pequenos grupos.
+5. RLS-4: ponto/self-service por último.
+
+Rollback restaura exatamente as policies `Allow all` atuais por tabela. A
+restauração reabre a exposição e deve ser usada apenas em lockout.
+
+---
+
+### MATRIZ DE NÃO REGRESSÃO
+
+| Fluxo | Tabela | Depois esperado | Risco |
+|-------|--------|-----------------|-------|
+| Contas a Receber parcial | payments + transactions | CRUD via API e settlement preservado | Alto |
+| Cockpit Sistema | billing_usage | dashboard/cron/Gemini via service_role | Baixo |
+| Investment/Diretoria | snapshots + accounts | leitura/gravação via APIs | Alto |
+| RH cadastro | employees/banco/salário | CRUD via API RH/Diretoria | Crítico |
+| Folha | payroll/commissions | geração/leitura via API | Crítico |
+| Ponto | time_clock | self punch/read + RH all via API | Crítico |
+| NF/Asaas/DRE | indireto | zero mudança | Protegido |
+| Realtime RH | tabelas RH/time_clock | eventos compatíveis com novo modelo | Alto |
+
+---
+
+### RISCO DE LOCKOUT / ORDEM FUTURA
+
+| Ordem | Bloco | Risco |
+|-------|-------|-------|
+| 1 | `billing_usage` isolada | Baixo |
+| 2 | proteger init payments + criar API payments | Médio |
+| 3 | migrar snapshots/Diretoria para API | Alto |
+| 4 | fechar payments | Alto |
+| 5 | fechar snapshots | Alto |
+| 6 | RH tabelas sem consumidor | Baixo/médio |
+| 7 | RH catálogos writes | Médio |
+| 8 | RH PII/banco/salário/folha em lotes | Crítico |
+| 9 | `time_clock` após remover fallbacks | Crítico |
+| 10 | auditoria final anon/authenticated/service_role/realtime | — |
+
+Proibido big-bang. Cada bloco exige tag, deploy, smoke e decisão antes do próximo.
+
+---
+
+### TESTES DA AUDITORIA
+
+Novo teste: `scripts/fase4-p0-rls-audit.test.ts`
+
+- detecta quatro policies amplas prioritárias;
+- confirma 27 tabelas RH reais;
+- detecta drift de nomes/policies;
+- prova consumidores frontend diretos;
+- prova `billing_usage` backend-only;
+- verifica plano/rollback e ausência de migration aplicada.
+
+Casos obrigatórios pós-implementação futura:
+
+- anon bloqueado;
+- role inadequada bloqueada;
+- role legítima/escopo próprio via API;
+- service_role/jobs preservados;
+- cliente externo sem RH/financeiro;
+- realtime e UI sem lockout.
+
+---
+
+### PENDÊNCIAS / PRÓXIMO PASSO
+
+Primeiro bloco recomendado: **RLS-0 `billing_usage`**, em execução separada,
+somente após decisão humana sobre ordem e rollback. Não iniciar pagamentos,
+Investment ou RH no mesmo PR.
 
 ---
 
