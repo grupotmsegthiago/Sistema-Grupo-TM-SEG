@@ -1,7 +1,114 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **F4-P0-RLS PILOTO `billing_usage` PUBLICADO E HOMOLOGADO**
-> **Código `2636a8e2` em produção; policy ampla continua AUSENTE após bootstrap.**
+> Handoff oficial — **F4-P0-RLS `billing_usage` ENCERRADO**
+> **`financial_transaction_payments`: consumidores migrados para API autenticada. RLS ainda NÃO fechada.**
+
+---
+
+## F4-P0-RLS — MIGRAÇÃO PARA API AUTENTICADA (`financial_transaction_payments`)
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-17 (UTC) |
+| **Branch** | `cursor/fase4-financial-payments-api-eaa8` |
+| **Base** | `origin/main` = `deecde73` |
+| **Código funcional anterior** | `2636a8e2` |
+| **RLS desta tabela** | **NÃO aplicada** |
+| **SQL / policy / dados** | **Não alterados** |
+| **billing_usage / snapshots / RH / ponto / Z-API** | **Não tocados** |
+
+### PROGRESSO
+
+**Programa geral: 83,8%**
+
+`█████████████████░░░`
+
+**Fase 4: 45%**
+
+`█████████░░░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟢 CONSUMIDORES MIGRADOS — APTO PARA REVISÃO/MERGE
+
+RLS continua aberta. Este bloco só remove o consumidor anon e protege o bootstrap.
+
+### ESTADO ANTES
+
+| Check | Valor |
+|-------|-------|
+| Policy | `Allow all for financial_transaction_payments` / ALL / anon+authenticated / true |
+| anon / authenticated / owner | 35 / 35 / 35 |
+| Frontend direto | `receivablePaymentsClient` via `lib/supabase` (anon) |
+| Init | `/api/financial-payments-init` sem auth |
+| Bootstrap | SQL recriava a policy ampla |
+
+### CONSUMIDORES (auditoria NO-GO confirmada)
+
+| Antes | Depois |
+|-------|--------|
+| `receivablePaymentsClient.ts` → `supabase.from('financial_transaction_payments')` | `authFetch` → `/api/financial-transaction-payments` |
+| `ReceivablePaymentsModal` list/add/delete | mesma interface pública |
+| `confirmReceivablePayClient` → `addPaymentToTransaction` (1×) | mesmo caminho, agora API |
+| `FinancialTransactionList` | monta os fluxos; init autenticado |
+| `api/` / `server/` CRUD | inexistente → SSOT backend novo |
+
+### API
+
+| Método | Rota | Operação |
+|--------|------|----------|
+| GET | `/api/financial-transaction-payments?transactionId=` | list |
+| POST | `/api/financial-transaction-payments` | add + settlement idêntico |
+| DELETE | `/api/financial-transaction-payments?id=&transactionId=` | delete + settlement idêntico |
+
+SSOT: `lib/financial/receivablePaymentsApiCore.ts` (`createReceivablePaymentsOps`).
+Handler leve: `api/financial-transaction-payments.ts` — **sem** entrada em `functions{}` (continua 50).
+Rewrites antes do catch-all.
+
+### AUTH / ROLES
+
+Reutiliza `assertAsaasApiAccess` (não inventa papéis):
+
+- Roles: `administrador`, `diretoria`, `financeiro`, `ceo`
+- Permissões: `*`, `fin-transactions`, `finance-group`, `fin-*`
+- Sem token / token inválido → **401**
+- Role/escopo inválido → **403**
+- Identidade: token TM SEG customizado (não JWT Supabase `authenticated`)
+
+Sem regra nova por empresa/filial — o módulo não tinha escopo por transação além do acesso à tela.
+
+### BOOTSTRAP / INIT
+
+- `api/financial-payments-init.ts`: fail-closed (401/403). Testes não executam init real.
+- `ensurePaymentTables`: SQL de estrutura **sem** `CREATE/DROP POLICY`. Filtro `selectFinancialPaymentsBootstrapStatements` bloqueia recriação da policy ampla.
+- Migration histórica `2026_07_20_financial_transaction_payments.sql` **não editada**.
+
+### TESTES
+
+| Suíte | Total | Pass | Fail |
+|-------|------:|-----:|-----:|
+| TS `scripts/*.test.ts` | 1020 | 1019 | 1 baseline CRLF (`invoice-control-loading`) |
+| React | 4 | 4 | 0 |
+| **Geral** | **1024** | **1023** | **1 baseline** |
+| Novos deste bloco | 20 | 20 | 0 |
+
+Diferença vs baseline anterior (1000 TS): +20 testes do bloco. A falha CRLF é a mesma da main.
+
+### DIFF PERMITIDO
+
+API/handler, core SSOT, client, init, ensurePaymentTables, vercel rewrites, testes, handoff.
+
+### PRÓXIMO PASSO (outro bloco)
+
+1. Reauditoria final: zero consumidor anon.
+2. Preparar migration + rollback RLS.
+3. **Ainda sem aplicar** até nova autorização.
+
+Não iniciar snapshots / RH / `time_clock` / Z-API.
 
 ---
 

@@ -679,6 +679,18 @@
       "destination": "/api/f4-client-data?op=notes"
     },
     {
+      "source": "/api/financial-transaction-payments/:id",
+      "destination": "/api/financial-transaction-payments?id=:id"
+    },
+    {
+      "source": "/api/financial-transaction-payments",
+      "destination": "/api/financial-transaction-payments"
+    },
+    {
+      "source": "/api/financial-payments-init",
+      "destination": "/api/financial-payments-init"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index"
     },

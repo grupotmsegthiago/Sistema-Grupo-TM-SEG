@@ -5,8 +5,6 @@
 
 const DEFAULT_SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
 const TMSEG_REF = 'ajhmmjuewdsukecaimik';
-const DEFAULT_SUPABASE_ANON_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
 
 let ensured = false;
 
@@ -32,9 +30,8 @@ function getSupabaseConfig(): { url: string; key: string } {
   const rawUrl = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).replace(/\/$/, '');
   const url = isTmSegUrl(rawUrl) ? rawUrl : DEFAULT_SUPABASE_URL;
   const serviceKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '').trim();
-  const rawAnon = String(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim();
-  const anonKey = decodeRef(rawAnon) === TMSEG_REF ? rawAnon : DEFAULT_SUPABASE_ANON_KEY;
-  const key = serviceKey && decodeRef(serviceKey) === TMSEG_REF ? serviceKey : anonKey;
+  // Init administrativo deve falhar fechado; nunca executar DDL/RPC com anon.
+  const key = serviceKey && decodeRef(serviceKey) === TMSEG_REF ? serviceKey : '';
   return { url, key };
 }
 
@@ -45,6 +42,25 @@ function restHeaders(key: string, extra?: Record<string, string>): Record<string
     'Content-Type': 'application/json',
     ...extra,
   };
+}
+
+/** Bootstrap não pode recriar policy ampla após o futuro lockdown F4-P0-RLS. */
+export function isFinancialPaymentsPolicyStatement(statement: string): boolean {
+  return /\b(create|drop)\s+policy\b/i.test(statement) && /financial_transaction_payments/i.test(statement);
+}
+
+export function selectFinancialPaymentsBootstrapStatements(sql: string): string[] {
+  return sql
+    .split(';')
+    .map((block) =>
+      block
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('--'))
+        .join('\n')
+        .trim(),
+    )
+    .filter(Boolean)
+    .filter((statement) => !isFinancialPaymentsPolicyStatement(statement));
 }
 
 export function financialPaymentsMigrationSql(): string {
@@ -61,9 +77,6 @@ CREATE TABLE IF NOT EXISTS public.financial_transaction_payments (
 CREATE INDEX IF NOT EXISTS idx_ft_payments_tx
   ON public.financial_transaction_payments (transaction_id, payment_date DESC);
 ALTER TABLE public.financial_transaction_payments ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for financial_transaction_payments" ON public.financial_transaction_payments;
-CREATE POLICY "Allow all for financial_transaction_payments" ON public.financial_transaction_payments
-  FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
 ALTER TABLE public.financial_transactions
   ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(14,2) DEFAULT 0,
@@ -73,6 +86,7 @@ ALTER TABLE public.financial_transactions
 
 async function probePaymentsTable(): Promise<boolean> {
   const { url, key } = getSupabaseConfig();
+  if (!key) return false;
   try {
     const res = await fetch(`${url}/rest/v1/financial_transaction_payments?select=id&limit=1`, {
       method: 'GET',
@@ -91,6 +105,7 @@ async function probePaymentsTable(): Promise<boolean> {
 
 async function tryExecSql(sql: string): Promise<boolean> {
   const { url, key } = getSupabaseConfig();
+  if (!key) return false;
   try {
     const res = await fetch(`${url}/rest/v1/rpc/exec_sql`, {
       method: 'POST',
@@ -116,7 +131,7 @@ ALTER TABLE public.financial_transactions
 `.trim());
     return { ok: true, exists: true };
   }
-  const sql = financialPaymentsMigrationSql();
+  const sql = selectFinancialPaymentsBootstrapStatements(financialPaymentsMigrationSql()).join(';\n') + ';';
   const ran = await tryExecSql(sql);
   if (ran && (await probePaymentsTable())) {
     ensured = true;
