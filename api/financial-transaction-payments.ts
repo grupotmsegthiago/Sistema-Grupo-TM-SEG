@@ -3,7 +3,10 @@
  * GET/POST/DELETE /api/financial-transaction-payments
  * Sem entrada em vercel.json functions{} (limite 50).
  */
-import { createSupabaseAdminClient } from '../lib/supabaseAdmin.js';
+import {
+  createSupabaseAdminClient,
+  getSupabaseServiceRoleKey,
+} from '../lib/supabaseAdmin.js';
 import {
   denyFinancialPaymentsApiUnlessAuthorized,
   financialPaymentsApiDeniedStatus,
@@ -20,7 +23,11 @@ export type FinancialPaymentsHandlerDeps = {
 function parseBody(body: unknown): Record<string, any> {
   if (typeof body !== 'string') return (body as Record<string, any>) || {};
   if (!body.trim()) return {};
-  return JSON.parse(body);
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error('payload_inválido');
+  }
 }
 
 function queryValue(req: any, key: string): string {
@@ -51,6 +58,9 @@ export async function handleFinancialTransactionPaymentsRequest(
     const ops = deps.createOps
       ? deps.createOps()
       : (() => {
+          // createSupabaseAdminClient possui fallback legado para anon.
+          // Esta rota financeira deve falhar fechada sem service_role.
+          if (!getSupabaseServiceRoleKey()) return null;
           const sb = createSupabaseAdminClient();
           return sb ? createReceivablePaymentsOps(sb) : null;
         })();
@@ -111,6 +121,10 @@ export async function handleFinancialTransactionPaymentsRequest(
     res.status(200).json({ ok: true, ...result });
   } catch (e: any) {
     const message = e?.message || 'Falha ao operar pagamentos do título';
+    if (message === 'payload_inválido') {
+      res.status(400).json({ error: message });
+      return;
+    }
     const missing = /foreign key|violates|not found|PGRST116/i.test(message);
     console.error('[financial-transaction-payments]', message);
     res.status(missing ? 404 : 500).json({ error: message });

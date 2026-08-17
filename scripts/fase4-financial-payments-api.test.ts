@@ -11,6 +11,7 @@ import {
 } from '../lib/financial/ensurePaymentTables.ts';
 import { createReceivablePaymentsOps } from '../lib/financial/receivablePaymentsApiCore.ts';
 import { financialPaymentsApiDeniedStatus } from '../lib/financial/financialPaymentsApiAuth.ts';
+import { runFinancialPaymentSingleFlight } from '../lib/financial/receivablePaymentsClient.ts';
 
 const read = (file: string) => fs.readFileSync(file, 'utf8');
 
@@ -156,6 +157,27 @@ CREATE TABLE IF NOT EXISTS public.financial_transaction_payments (id uuid);
     assert.equal(filtered.some((s) => /CREATE TABLE/i.test(s)), true);
     const runner = read('lib/financial/ensurePaymentTables.ts');
     assert.match(runner, /selectFinancialPaymentsBootstrapStatements/);
+    assert.doesNotMatch(runner, /DEFAULT_SUPABASE_ANON_KEY/);
+    assert.match(runner, /if \(!key\) return false/);
+  });
+
+  it('double-submit idêntico executa uma única operação lógica', async () => {
+    let calls = 0;
+    let release!: (value: string) => void;
+    const pending = new Promise<string>((resolve) => {
+      release = resolve;
+    });
+    const operation = async () => {
+      calls += 1;
+      return pending;
+    };
+
+    const first = runFinancialPaymentSingleFlight('confirm:tx-1', operation);
+    const second = runFinancialPaymentSingleFlight('confirm:tx-1', operation);
+    assert.equal(calls, 1);
+    release('ok');
+    assert.equal(await first, 'ok');
+    assert.equal(await second, 'ok');
   });
 
   it('nenhum frontend de runtime usa supabase.from na tabela de pagamentos', () => {
@@ -236,6 +258,20 @@ describe('API financial-transaction-payments', () => {
       { authorize: async () => null, createOps: () => createReceivablePaymentsOps({ from() {} }) },
     );
     assert.equal(state.status, 400);
+  });
+
+  it('JSON malformado → 400', async () => {
+    const { res, state } = mockResponse();
+    await handleFinancialTransactionPaymentsRequest(
+      { method: 'POST', body: '{' },
+      res,
+      {
+        authorize: async () => null,
+        createOps: () => createReceivablePaymentsOps({ from() {} }),
+      },
+    );
+    assert.equal(state.status, 400);
+    assert.deepEqual(state.body, { error: 'payload_inválido' });
   });
 
   it('GET sem transactionId → 400', async () => {
@@ -328,6 +364,12 @@ describe('API financial-transaction-payments', () => {
     );
     assert.equal(state.status, 500);
     assert.deepEqual(state.body, { error: 'boom' });
+  });
+
+  it('handler exige service_role e não aceita fallback anon', () => {
+    const src = read('api/financial-transaction-payments.ts');
+    assert.match(src, /getSupabaseServiceRoleKey/);
+    assert.match(src, /if \(!getSupabaseServiceRoleKey\(\)\) return null/);
   });
 
   it('transação inexistente (FK) preserva erro do backend', async () => {

@@ -10,6 +10,24 @@ export { PAYMENTS_NOTES_MARKER, mergeTitleNotes, splitTitleNotes };
 export type { FinancialTransactionPayment };
 
 const API_PATH = '/api/financial-transaction-payments';
+const inFlightRequests = new Map<string, Promise<unknown>>();
+
+/** Evita double-submit sem bloquear operações financeiras diferentes. */
+export function runFinancialPaymentSingleFlight<T>(
+  key: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const current = inFlightRequests.get(key) as Promise<T> | undefined;
+  if (current) return current;
+
+  const request = operation();
+  inFlightRequests.set(key, request);
+  const clear = () => {
+    if (inFlightRequests.get(key) === request) inFlightRequests.delete(key);
+  };
+  void request.then(clear, clear);
+  return request;
+}
 
 async function readApiError(res: Response): Promise<string> {
   try {
@@ -32,7 +50,7 @@ export async function listPaymentsForTransaction(
   return (body.payments || []) as FinancialTransactionPayment[];
 }
 
-export async function addPaymentToTransaction(params: {
+export function addPaymentToTransaction(params: {
   transactionId: string;
   titleAmount: number;
   titleNotes?: string | null;
@@ -48,19 +66,22 @@ export async function addPaymentToTransaction(params: {
   status: string;
   notes?: string;
 }> {
-  const res = await authFetch(API_PATH, {
-    method: 'POST',
-    body: JSON.stringify(params),
+  const key = `add:${JSON.stringify(params)}`;
+  return runFinancialPaymentSingleFlight(key, async () => {
+    const res = await authFetch(API_PATH, {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) throw new Error(await readApiError(res));
+    const body = await res.json();
+    return {
+      payment: body.payment,
+      paid: body.paid,
+      open: body.open,
+      status: body.status,
+      notes: body.notes,
+    };
   });
-  if (!res.ok) throw new Error(await readApiError(res));
-  const body = await res.json();
-  return {
-    payment: body.payment,
-    paid: body.paid,
-    open: body.open,
-    status: body.status,
-    notes: body.notes,
-  };
 }
 
 export async function deletePaymentFromTransaction(params: {
