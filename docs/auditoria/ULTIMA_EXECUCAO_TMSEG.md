@@ -1,44 +1,49 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **lockdown RLS de `financial_transaction_payments` APLICADO; fechamento PR #279 em andamento**
-> **Policy permissiva AUSENTE. Rollback pronto e não executado. Nenhuma outra tabela iniciada.**
+> Handoff oficial — **lockdown RLS de `financial_transaction_payments` PUBLICADO E HOMOLOGADO**
+> **PR #279 mergeado. Policy permissiva AUSENTE após startup. Rollback pronto e não executado. Nenhuma outra tabela iniciada.**
 
 ---
 
-## F4-P0-RLS — FECHAMENTO PÓS-APPLY `financial_transaction_payments`
+## F4-P0-RLS — HOMOLOGAÇÃO `financial_transaction_payments`
 
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-17 (UTC-3) |
-| **PR** | [#279](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/279) |
+| **PR** | [#279](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/279) — **MERGED** `dev` + `main` |
 | **Branch** | `cursor/fase4-rls-financial-payments-lockdown-eaa8` |
 | **Base / main / dev pré-merge** | `4d2710ab` |
 | **Commit preparação** | `d62f9e17` |
-| **Código funcional** | `c305e147` |
+| **HEAD publicado** | `d893e386` |
+| **Código funcional** | `c305e147` (não alterado neste PR) |
+| **Tag** | `baseline-fase4-rls-financial-payments-merged-20260817` → `d893e386` |
 | **Projeto oficial** | Grupo TMSEG `ajhmmjuewdsukecaimik` |
+| **Produção** | `https://sistema.grupotmseg.com.br` |
 | **Migration Git** | `migrations/2026_08_17_fase4_p0_rls_financial_transaction_payments.sql` |
 | **Rollback Git** | `migrations/rollback/2026_08_17_fase4_p0_rls_financial_transaction_payments.sql` |
 | **Reapply / rollback live** | **Não executados nesta execução** |
 
 ### PROGRESSO
 
-Atualizado somente após homologação completa (merge + deploy + startup + RLS ainda fechado). Até lá os percentuais de programa e Fase 4 permanecem os da preparação.
+Homologação completa (merge + deploy + startup + RLS ainda fechado + `service_role` 35).
 
-**Programa geral: 83,8%** *(provisório até o fechamento)*
+**Programa geral: 84,0%**
 
 `█████████████████░░░`
 
-**Fase 4: 45%** *(provisório até o fechamento)*
+**Fase 4: 50%**
 
-`█████████░░░░░░░░░░░`
+`██████████░░░░░░░░░░`
 
-**Execução atual: em andamento**
+**Execução atual: 100%**
 
-Parcela prevista deste marco, se homologado: **+5 pp da Fase 4** (mesmo peso do piloto `billing_usage`). Bloco F4-P0-RLS total = 35% da Fase 4; acumulado RLS passaria a **10/35**. Restante 25 pp: snapshots, RH, `time_clock` e demais. Fase 4 = 4% do programa → +5 pp da Fase 4 = **+0,2 pp** no geral (`83,8% → 84,0%`; Fase 4 `45% → 50%`).
+`████████████████████`
+
+Parcela deste marco: **+5 pp da Fase 4** (mesmo peso do piloto `billing_usage`). **Não** contabiliza os 35% inteiros do bloco F4-P0-RLS. Acumulado RLS: **10/35**. Restante 25 pp: `account_balance_snapshots`, RH, `time_clock` e demais. Fase 4 = 4% do programa → +5 pp da Fase 4 = **+0,2 pp** no geral (`83,8% → 84,0%`; Fase 4 `45% → 50%`).
 
 ### DECISÃO
 
-Pendente merge/deploy/startup. Live pós-apply já conferido.
+# 🟢 RLS financial_transaction_payments PUBLICADO E HOMOLOGADO
 
 ### TESTES / BUILD
 
@@ -51,6 +56,48 @@ Pendente merge/deploy/startup. Live pós-apply já conferido.
 - Falha única: `invoice-control-loading.test.ts` — **BASELINE** Windows/CRLF, igual à main.
 - Cancelled / skipped / hang: 0 / 0 / 0.
 - `npm run build`: **OK** (Supabase `ajhmmjuewdsukecaimik`).
+
+### MERGE / DEPLOY
+
+| Campo | Valor |
+|-------|-------|
+| **PR #279** | merged `2026-08-17T23:23:54Z` → `main` e `dev` |
+| **merge_commit** | `d893e386` (fast-forward; 2 commits: `d62f9e17` + `d893e386`) |
+| **Diff permitido** | migration + rollback + teste + handoff. Zero código funcional. |
+| **Migration no merge/deploy** | **não reaplicada** |
+| **version** | `3.7.60` |
+| **buildId** | `d893e386dd8056cdecf6892d6c4e27b59b50bfeb` |
+| **builtAt** | `2026-08-17T23:24:11.584Z` |
+
+### LIVE — PÓS-STARTUP (critério principal)
+
+Revalidado depois do deploy real. `ensurePaymentTables` / `financial-payments-init` / bootstrap **não** recriaram a policy.
+
+| Check | Resultado |
+|-------|-----------|
+| RLS | **ATIVO** |
+| Policy `Allow all for financial_transaction_payments` | **AUSENTE** |
+| policies | **0** |
+| anon | **0** |
+| authenticated | **0** |
+| owner | **35** |
+| service_role | **35** |
+
+ANTES: anon 35 / authenticated 35 / service_role 35. DEPOIS: anon 0 / authenticated 0 / service_role 35. RLS continua ativo.
+
+### SMOKE API (sem autenticação, sem escrita)
+
+| Endpoint | Resultado |
+|----------|-----------|
+| `GET /` | **200** |
+| `GET /api/health` | **200** |
+| `GET /api/version` | **200** / `buildId=d893e386` |
+| `GET /api/financial-transaction-payments?transactionId=fake` | **401** `Não autorizado` |
+| `DELETE /api/financial-transaction-payments?id=fake&transactionId=fake` | **401** `Não autorizado` |
+| `POST /api/financial-payments-init` | **401** `Não autorizado` |
+| `POST /api/financial-transaction-payments` | **não enviado** — aprovação local recusada; o JSON de cliente falhou antes de sair. Count owner permanece **35** (zero escrita). |
+
+Nenhum pagamento artificial criado.
 
 ### LIVE — ANTES DO APPLY
 
@@ -93,13 +140,13 @@ Rollback: pronto e **não executado**.
 | `scripts/fase4-p0-rls-financial-payments.test.ts` | RED/GREEN + bootstrap |
 | `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Handoff |
 
-Zero código funcional. Um commit (`d62f9e17`) sobre `4d2710ab`. Sem commit funcional posterior.
+Zero código funcional. Commits do PR: `d62f9e17` (preparação) + `d893e386` (handoff pós-apply). Sem commit funcional posterior. Tag de homologação aponta para `d893e386`.
 
 ### ÁREAS PROTEGIDAS
 
 Sem SQL e sem diff em: `billing_usage`, NF, Asaas, Supabase NB-07, Investment, F4-P0/F4-P1 handlers, snapshots, RH, `time_clock`, Z-API.
 
-`billing_usage` permanece o piloto já homologado (não reaberto nesta execução).
+`billing_usage` permanece o piloto já homologado (não reaberto nesta execução). Nenhuma outra tabela RLS foi iniciada.
 
 ---
 
