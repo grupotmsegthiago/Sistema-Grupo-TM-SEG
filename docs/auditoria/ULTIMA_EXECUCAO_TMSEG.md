@@ -1,7 +1,169 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **F4-P0-RLS `billing_usage` ENCERRADO**
-> **`financial_transaction_payments`: consumidores migrados para API autenticada. RLS ainda NÃO fechada.**
+> Handoff oficial — **consumidores `financial_transaction_payments` PUBLICADOS E HOMOLOGADOS**
+> **API autenticada em produção. RLS desta tabela continua ABERTA por decisão explícita.**
+
+---
+
+## F4-P0-RLS — REVISÃO FINAL + PUBLICAÇÃO PR #278
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-17 (UTC) |
+| **PR** | [#278](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/278) |
+| **Branch** | `cursor/fase4-financial-payments-api-eaa8` |
+| **Base / main / dev pré-merge** | `deecde73` |
+| **HEAD funcional homologado** | `c305e147` |
+| **Produção** | `buildId=c305e147`, `builtAt=2026-08-17T19:49:08.319Z` |
+| **Tag pré-publicação** | `baseline-fase4-pre-financial-payments-api-20260817` → `deecde73` |
+| **Tag pós-homologação** | `baseline-fase4-financial-payments-api-merged-20260817` → `c305e147` |
+| **RLS / migration / dados** | **Não alterados** |
+
+### PROGRESSO
+
+**Programa geral: 83,8%**
+
+`█████████████████░░░`
+
+**Fase 4: 45%**
+
+`█████████░░░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+O peso do bloco RLS não foi contabilizado: somente a migração dos consumidores
+foi publicada; a policy ainda não foi fechada.
+
+### DECISÃO FINAL
+
+# 🟢 CONSUMIDORES `financial_transaction_payments` PUBLICADOS E HOMOLOGADOS
+
+### DIFF REVISADO
+
+Nove arquivos, todos dentro do escopo:
+
+- handler `api/financial-transaction-payments.ts`;
+- SSOT `lib/financial/receivablePaymentsApiCore.ts`;
+- client `lib/financial/receivablePaymentsClient.ts`;
+- auth `lib/financial/financialPaymentsApiAuth.ts`;
+- init `api/financial-payments-init.ts`;
+- bootstrap `lib/financial/ensurePaymentTables.ts`;
+- rewrites `vercel.json`;
+- testes;
+- este handoff.
+
+Zero diff em migrations, `billing_usage`, snapshots, NF, Asaas, SEC-03,
+Investment, DRE, receita canônica, pedágio, OS, RH, ponto, Z-API e ENV.
+A migration histórica `2026_07_20_financial_transaction_payments.sql`
+permaneceu imutável.
+
+### API / SSOT / REGRA FINANCEIRA
+
+Fluxo publicado:
+
+```text
+Frontend → authFetch → handler autenticado → service_role → SSOT
+```
+
+| Método | Rota | Operação |
+|--------|------|----------|
+| GET | `/api/financial-transaction-payments?transactionId=` | listar |
+| POST | `/api/financial-transaction-payments` | adicionar + settlement |
+| DELETE | `/api/financial-transaction-payments?id=&transactionId=` | excluir + settlement |
+
+Listagem, campos, filtros, ordenação, datas, descrição, vínculo
+`transaction_id`, total recebido, saldo restante, status e fallback histórico
+foram transportados sem nova fórmula. `computePaymentSettlement` continua sendo
+a fonte do cálculo. Não existe implementação Express paralela nem query
+financeira duplicada.
+
+Confirmação idempotente:
+
+```text
+1 confirmação → 1 addPaymentToTransaction → 1 POST → 1 INSERT lógico
+```
+
+O client usa single-flight para bloquear double-submit idêntico. Teste
+determinístico confirma uma única execução.
+
+### AUTH / INIT / BOOTSTRAP
+
+- Identidade TM SEG customizada; não usa Supabase `authenticated` como usuário.
+- Roles homologadas: `administrador`, `diretoria`, `financeiro`, `ceo`.
+- Permissões homologadas: `*`, `fin-transactions`, `finance-group`, `fin-*`.
+- Sem token / token inválido: **401**.
+- Role/escopo inválido: **403**.
+- Handler financeiro exige `service_role`; sem ela retorna **503** e não degrada
+  para anon.
+- `/api/financial-payments-init` está fail-closed (**401/403**).
+- `ensurePaymentTables` não usa anon para DDL/RPC e não contém/recria
+  `Allow all for financial_transaction_payments`.
+- Nenhum init real foi chamado no smoke de produção.
+
+### TESTES / BASELINE
+
+| Estado | TS total | Pass | Fail | React |
+|--------|---------:|-----:|-----:|------:|
+| main `deecde73` | 1000 | 999 | 1 baseline CRLF | 4/4 |
+| PR final | 1023 | 1022 | 1 baseline CRLF | 4/4 |
+
+- Novos testes no PR: **23**, todos verdes.
+- Regressões direcionadas de financeiro/F4/auth: verdes.
+- `invoice-control-loading.test.ts` falha tanto na main quanto no PR no checkout
+  Windows CRLF: **BASELINE**, não regressão.
+- `bash scripts/run-tests.sh`: bash indisponível neste Windows; os dois comandos
+  internos foram executados separadamente e integralmente.
+- Cancelled / skipped / hang: **0 / 0 / 0**.
+- `npm run build`: **OK**.
+- Supabase injetado em `dist/public/index.html`: **OK**.
+
+### DEPLOY / SMOKE
+
+```text
+PR #278 → main c305e147 → dev c305e147 → Vercel Production
+```
+
+| Smoke sem autenticação | Resultado |
+|------------------------|-----------|
+| `/` | 200 |
+| `/api/health` | 200 |
+| `/api/version` | 200 / `c305e147` |
+| GET nova API | 401 |
+| POST nova API | 401 / nenhuma escrita |
+| DELETE nova API | 401 / nenhuma exclusão |
+| POST `/api/financial-payments-init` | 401 / init não executado |
+
+Bundle publicado:
+
+- contém `/api/financial-transaction-payments`;
+- não contém `supabase.from('financial_transaction_payments')`;
+- consumidores anon de runtime: **ZERO**.
+
+### RLS (AINDA ABERTA)
+
+| Check | Resultado |
+|-------|-----------|
+| RLS enabled | true |
+| Policy `Allow all for financial_transaction_payments` | presente (1) |
+| anon SELECT | 35 |
+| authenticated SELECT | 35 |
+| owner | 35 |
+
+Nenhuma policy foi criada, removida ou alterada nesta execução.
+
+### ROLLBACK
+
+- Código: tag `baseline-fase4-pre-financial-payments-api-20260817`
+  (`deecde73`) + redeploy.
+- Policy: não requer rollback, pois permaneceu intacta.
+
+### PRÓXIMO PASSO (OUTRO BLOCO)
+
+Auditoria final de zero consumidor anon e preparação da migration + rollback
+RLS, **ainda sem aplicar** até nova autorização. Não iniciar snapshots, RH,
+`time_clock` ou Z-API.
 
 ---
 
