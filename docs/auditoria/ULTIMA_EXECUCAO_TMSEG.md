@@ -1,7 +1,7 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **F4-P1 — HANDLERS DEDICADOS F4-P0**
-> **Implementado/testado em PR draft; não mergeado/não publicado.**
+> Handoff oficial — **F4-P0 + F4-P1 PUBLICADOS E HOMOLOGADOS**
+> **13 rotas com 401 observável em produção; timeouts catch-all eliminados.**
 
 ---
 
@@ -9,24 +9,27 @@
 
 | Campo | Valor |
 |-------|-------|
-| **Data** | 2026-08-16 (UTC) |
+| **Data** | 2026-08-17 (UTC) |
 | **Branch** | `cursor/fase4-p1-dedicated-handlers-eaa8` |
-| **Base** | `origin/main=origin/dev=d5565321` |
-| **PR** | #276 — draft |
+| **Base pré-merge** | `origin/main=origin/dev=d5565321` |
+| **PR** | #276 — mergeado por fast-forward |
 | **HEAD funcional** | `4433c295` |
-| **HEAD testes** | `5f6ae8b7` antes deste handoff |
-| **Produção** | `buildId=d5565321` — não alterada |
+| **HEAD testes** | `5f6ae8b7` |
+| **HEAD publicado** | `28ae11d8` |
+| **Produção** | `buildId=28ae11d8`, `builtAt=2026-08-17T13:47:42.771Z` |
+| **Rollback pré-P1** | `baseline-fase4-pre-p1-dedicated-handlers-20260817` → `d5565321` |
+| **Tag homologada** | `baseline-fase4-p1-dedicated-handlers-merged-20260817` → `28ae11d8` |
 | **Banco/schema/migrations/RLS/ENV** | **Não alterados** |
 
 ### PROGRESSO
 
-**Programa geral: 82%**
+**Programa geral: 83,6%**
 
-`████████████████░░░░`
+`█████████████████░░░`
 
-**Fase 4: 0%**
+**Fase 4: 40%**
 
-`░░░░░░░░░░░░░░░░░░`
+`████████░░░░░░░░░░░░`
 
 **Execução atual: 100%**
 
@@ -34,13 +37,61 @@
 
 ### DECISÃO
 
-# 🟢 F4-P1 APTO PARA REVISÃO/MERGE
+# 🟢 F4-P0 + F4-P1 PUBLICADOS E HOMOLOGADOS
 
 ### RESUMO SIMPLES
 
-As 13 rotas protegidas no F4-P0 deixaram de depender do Express/catch-all na branch. Doze rewrites específicos, posicionados antes de `/api/(.*)`, apontam para quatro handlers Vercel leves. Sem autenticação, cada família retorna 401 diretamente no handler em menos de 1ms no runtime equivalente e não cria cliente Supabase admin.
+As 13 rotas protegidas no F4-P0 deixaram de depender do Express/catch-all em produção. Doze rewrites específicos, posicionados antes de `/api/(.*)`, apontam para quatro handlers Vercel leves. Sem autenticação, todas responderam 401 entre 0,05s e 0,49s, sem timeout/504 e sem criar cliente Supabase admin.
 
 Express e Vercel agora compartilham as mesmas operações/contratos. Autenticação, roles e client scope do F4-P0 foram preservados. Nenhuma regra financeira ou área protegida foi alterada.
+
+---
+
+### PUBLICAÇÃO / HOMOLOGAÇÃO
+
+```text
+PR #276 @ 28ae11d8
+  → dev (fast-forward)
+  → main (fast-forward)
+  → Vercel Production (projeto sistema-grupo-tm-seg)
+```
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `/api/version` | 200; `buildId=28ae11d8` |
+| `/api/health` | 200 em 0,08s |
+| `/` | 200 em 0,08s |
+| Deploy Production | Ready; `builtAt=2026-08-17T13:47:42.771Z` |
+| Banco/ENV | Nenhuma alteração |
+
+### SMOKE REAL — 13 CAMINHOS F4-P0
+
+| Rota | Resultado | Tempo |
+|------|-----------|-------|
+| `GET /api/db/capacity` | 401 | 0,47s |
+| `POST /api/db/vacuum` | 401 | 0,09s |
+| `GET /api/platform/costs` | 401 | 0,07s |
+| `POST /api/platform/costs/overrides` | 401 | 0,08s |
+| Relatório operacional GET | 401 | 0,44s |
+| Relatório operacional PATCH | 401 | 0,06s |
+| Registries init POST | 401 | 0,47s |
+| Registries list GET | 401 | 0,06s |
+| Registries POST | 401 | 0,06s |
+| Registries DELETE | 401 | 0,23s |
+| Mission note GET | 401 | 0,49s |
+| Mission note POST | 401 | 0,05s |
+| Mission notes bulk GET | 401 | 0,06s |
+
+Payloads vazios/sentinelas sem correspondência foram negados antes da operação. Nenhum dado foi escrito/removido.
+
+### SMOKE ÁREAS PROTEGIDAS
+
+| Rota | Resultado |
+|------|-----------|
+| `/api/nf/invoices` | 401 em 0,08s |
+| `/api/asaas/payments` | 401 em 0,06s |
+| `/api/supabase/status` | 401 em 0,12s |
+| `/api/investment/snapshots-all` | 401 em 0,07s |
 
 ---
 
@@ -161,13 +212,24 @@ Nenhuma conexão/admin/operação foi criada nessas negações.
 
 ### ROLLBACK PROPOSTO
 
-Antes de futura publicação, criar tag no estado `d5565321`. Em regressão, reverter commits F4-P1 e redeployar; nenhuma ação de banco/ENV será necessária.
+Rollback: `baseline-fase4-pre-p1-dedicated-handlers-20260817` → `d5565321`. Nenhum rollback foi necessário. Em regressão futura, reverter os commits F4-P1 e redeployar; nenhuma ação de banco/ENV será necessária.
+
+### COMPOSIÇÃO DO PROGRESSO FASE 4
+
+| Sub-bloco | Peso interno | Estado |
+|-----------|--------------|--------|
+| API Auth F4-P0 + handlers F4-P1 | **40%** | Publicado/homologado |
+| F4-P0-RLS | **35%** | Pendente separado |
+| F4-P0-ZAPI | **15%** | Pendente separado |
+| Segurança residual/finalização | **10%** | Pendente |
+
+Como a Fase 4 representa 4% do programa, 40% concluídos contribuem **1,6 ponto percentual**: programa geral `82% → 83,6%`.
 
 ### PENDÊNCIAS
 
-1. Publicação controlada + smoke 401 em produção.
-2. F4-P0-RLS — separado.
-3. F4-P0-ZAPI — separado.
+1. F4-P0-RLS — separado.
+2. F4-P0-ZAPI — separado.
+3. Segurança residual/finalização.
 4. PR documental #274 — reconciliação histórica separada.
 
 ---
