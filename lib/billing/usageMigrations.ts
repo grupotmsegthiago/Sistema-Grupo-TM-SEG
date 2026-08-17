@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 
 const MIGRATION_FILES = ['2026_07_12_billing_usage.sql', '2026_07_13_billing_cursor_source.sql'];
 
-function splitStatements(sql: string): string[] {
+export function splitStatements(sql: string): string[] {
   return sql
     .split(';')
     .map((block) =>
@@ -15,6 +15,15 @@ function splitStatements(sql: string): string[] {
         .trim(),
     )
     .filter(Boolean);
+}
+
+/** Bootstrap histórico não pode recriar policy ampla após F4-P0-RLS. */
+export function isBillingUsagePolicyStatement(statement: string): boolean {
+  return /\b(create|drop)\s+policy\b/i.test(statement) && /billing_usage/i.test(statement);
+}
+
+export function selectBillingUsageBootstrapStatements(sql: string): string[] {
+  return splitStatements(sql).filter((statement) => !isBillingUsagePolicyStatement(statement));
 }
 
 /** Cria/atualiza tabela billing_usage (monitoramento custos IA). Idempotente. */
@@ -34,7 +43,7 @@ export async function runBillingUsageMigrations(): Promise<{ ok: boolean; messag
     }
 
     const sql = fs.readFileSync(sqlPath, 'utf8');
-    const statements = splitStatements(sql);
+    const statements = selectBillingUsageBootstrapStatements(sql);
 
     for (const statement of statements) {
       try {

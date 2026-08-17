@@ -30,6 +30,10 @@ function splitStatements(sql) {
     .filter(Boolean);
 }
 
+function isBillingUsagePolicyStatement(statement) {
+  return /\b(create|drop)\s+policy\b/i.test(statement) && /billing_usage/i.test(statement);
+}
+
 function getPgPool() {
   const connectionString = String(
     process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.SUPABASE_DB_URL || '',
@@ -79,7 +83,7 @@ async function verifyTable() {
 
 async function main() {
   const sql = fs.readFileSync(SQL_PATH, 'utf8');
-  const statements = splitStatements(sql);
+  const statements = splitStatements(sql).filter((statement) => !isBillingUsagePolicyStatement(statement));
 
   const ok =
     (await applyViaPg(statements).catch((e) => {
