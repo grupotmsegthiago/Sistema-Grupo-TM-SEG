@@ -210,6 +210,8 @@ export interface ProviderData {
   whatsapp_group_id?: string;
   dhl_channel_preference?: 'email' | 'whatsapp' | 'both' | null;
   dhl_solicitation_email?: string | null;
+  /** Estados de atuação (sede + filiais) e valor 100 km por UF. */
+  operating_coverage?: Array<{ uf: string; city?: string; cost100km?: number; isHq?: boolean }> | null;
 }
 
 export interface Agent {

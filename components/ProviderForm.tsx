@@ -8,6 +8,13 @@ import ImportProviderCostModal from './ImportProviderCostModal';
 import { AUTO_MASTER_OP_TYPE, generateAutoBands, suggestAutoMasterFromManualTables, isAutoMasterRow, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
 import { useNotification } from '../lib/NotificationContext';
 import ClientContractTab from './ClientContractTab';
+import ProviderOperatingCoverageEditor from './ProviderOperatingCoverageEditor';
+import {
+  hasExplicitOperatingCoverage,
+  parseOperatingCoverage,
+  serializeOperatingCoverage,
+  type ProviderOperatingCoverageRow,
+} from '../lib/providerOperatingCoverage';
 
 interface ProviderFormProps {
   onBack: () => void;
@@ -45,6 +52,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
     alvaraUrl: '',
     dhl_channel_preference: 'both' as 'email' | 'whatsapp' | 'both'
   });
+  const [operatingCoverage, setOperatingCoverage] = useState<ProviderOperatingCoverageRow[]>([]);
+  const [coverageTouched, setCoverageTouched] = useState(false);
 
   const [isSearchingCnpj, setIsSearchingCnpj] = useState(false);
   const [isSearchingCep, setIsSearchingCep] = useState(false);
@@ -196,6 +205,9 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     alvaraUrl: data.alvara_url || '',
                     dhl_channel_preference: (data.dhl_channel_preference === 'email' || data.dhl_channel_preference === 'whatsapp' || data.dhl_channel_preference === 'both') ? data.dhl_channel_preference : 'both'
                 });
+                const coverage = parseOperatingCoverage(data.operating_coverage);
+                setOperatingCoverage(coverage);
+                setCoverageTouched(hasExplicitOperatingCoverage(coverage));
                 // Task #58: carrega motor automático das colunas dedicadas em providers.
                 if (data.auto_calc_enabled) {
                     setAutoMasterEnabled(true);
@@ -621,27 +633,39 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
             alvara_url: formData.alvaraUrl,
             dhl_channel_preference: formData.dhl_channel_preference || 'both'
        };
+       if (coverageTouched) {
+           payload.operating_coverage = serializeOperatingCoverage(operatingCoverage, formData.state, formData.city);
+       }
+       let coverageColumnMissing = false;
        const retryWithoutMissingCols = async (op: 'update' | 'insert', errMsg: string) => {
            const fallback = { ...payload };
            if (/dhl_channel_preference/i.test(errMsg)) delete (fallback as any).dhl_channel_preference;
            if (/dhl_solicitation_email/i.test(errMsg)) delete (fallback as any).dhl_solicitation_email;
            if (/whatsapp_group_id/i.test(errMsg)) delete (fallback as any).whatsapp_group_id;
+           if (/operating_coverage/i.test(errMsg)) {
+               delete (fallback as any).operating_coverage;
+               coverageColumnMissing = true;
+           }
            if (op === 'update') return await supabase.from('providers').update(fallback).eq('id', id);
            return await supabase.from('providers').insert([fallback]);
        };
        if (id) {
            let { error } = await supabase.from('providers').update(payload).eq('id', id);
-           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('update', error.message));
+           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|operating_coverage)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('update', error.message));
            if (error) throw new Error('Erro ao salvar fornecedor: ' + error.message);
            await logAction('UPDATE', 'Provider', id, `Fornecedor atualizado: ${formData.name}`);
        } else {
            payload.created_by = currentUser?.name || 'SISTEMA';
            let { error } = await supabase.from('providers').insert([payload]);
-           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('insert', error.message));
+           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|operating_coverage)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('insert', error.message));
            if (error) throw error;
            await logAction('CREATE', 'Provider', 'NEW', `Fornecedor cadastrado: ${formData.name}`);
        }
-       showNotification('Sucesso', 'Fornecedor salvo com sucesso!', 'success');
+       if (coverageColumnMissing && coverageTouched) {
+           showNotification('Atenção', 'Fornecedor salvo, mas os estados/filiais ainda não puderam ser gravados. Rode a migration 2026_08_18_providers_operating_coverage.sql no Supabase.', 'warning');
+       } else {
+           showNotification('Sucesso', 'Fornecedor salvo com sucesso!', 'success');
+       }
        onBack();
     } catch (err) {
         const msg = err instanceof Error ? err.message : 'Erro desconhecido';
@@ -956,6 +980,16 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         <input type="text" className={INPUT_CLASS} value={formData.city} onChange={e => setFormData({...formData, city: e.target.value.toUpperCase()})} />
                     </div>
                 </div>
+
+                <ProviderOperatingCoverageEditor
+                    hqUf={formData.state}
+                    hqCity={formData.city}
+                    value={operatingCoverage}
+                    onChange={(next) => {
+                        setOperatingCoverage(next);
+                        setCoverageTouched(true);
+                    }}
+                />
                 
                 <div className="pt-6 border-t border-gray-100 flex justify-end gap-3">
                     <button type="button" onClick={onBack} className="px-8 py-3 border border-gray-300 rounded-xl text-sm font-bold text-gray-600 uppercase hover:bg-gray-50 transition-colors">Cancelar</button>

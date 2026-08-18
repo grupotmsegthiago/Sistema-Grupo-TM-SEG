@@ -9,7 +9,6 @@ import {
   REGION_ORDER,
   UF_LABEL,
   buildActivationOffers,
-  formatActivationCost,
   rankByHomeCity,
   rankByUf,
   shortProviderName,
@@ -54,8 +53,15 @@ const ProviderActivationMap: React.FC = () => {
       const [providers, tables] = await Promise.all([
         fetchAllRows<RankingProviderInput>(
           'providers',
-          'id, name, trading_name, city, state, status, phone, contact_name, auto_calc_enabled, auto_base_value, auto_base_km, auto_region',
-        ),
+          'id, name, trading_name, city, state, status, phone, contact_name, auto_calc_enabled, auto_base_value, auto_base_km, auto_region, operating_coverage',
+        ).catch(async (err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!/operating_coverage/i.test(msg)) throw err;
+          return fetchAllRows<RankingProviderInput>(
+            'providers',
+            'id, name, trading_name, city, state, status, phone, contact_name, auto_calc_enabled, auto_base_value, auto_base_km, auto_region',
+          );
+        }),
         fetchAllRows<RankingTableInput>(
           'provider_cost_tables',
           'provider, operation_type, activation_cost, franchise_km',
@@ -118,7 +124,7 @@ const ProviderActivationMap: React.FC = () => {
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-600">Monitoramento · Fornecedor</p>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Mapa de acionamento 100 km</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Passe o mouse no estado para ver a ordem de acionamento. Prioridade 0 = mais em conta.
+            Passe o mouse no estado para ver a ordem de acionamento. Prioridade 0 = mais em conta; em seguida 1, 2, 3…
           </p>
         </div>
         <div className="flex items-center gap-2 w-full lg:w-auto">
@@ -264,13 +270,18 @@ const ProviderActivationMap: React.FC = () => {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-bold text-slate-900 truncate">{row.provider}</p>
                         <p className="text-[11px] text-slate-500 truncate">
-                          {row.city || '—'} · {row.source}
+                          {row.city || '—'}{row.fromCoverage ? ` · ${row.source}` : ''}
                         </p>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-sm font-black text-slate-900">{formatActivationCost(row.cost)}</p>
+                        <p className="text-xs font-black uppercase tracking-wide text-slate-700">
+                          Prioridade {row.priority}
+                        </p>
+                        {row.priority === 0 && (
+                          <p className="text-[10px] font-bold text-red-600">Mais em conta</p>
+                        )}
                         {row.phone && (
-                          <p className="text-[10px] text-slate-500 flex items-center justify-end gap-1">
+                          <p className="text-[10px] text-slate-500 flex items-center justify-end gap-1 mt-0.5">
                             <Phone size={10} /> {row.phone}
                           </p>
                         )}

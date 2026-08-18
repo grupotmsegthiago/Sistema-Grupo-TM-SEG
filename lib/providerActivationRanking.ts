@@ -2,6 +2,11 @@
 // Prioridade 0 = fornecedor mais em conta naquele recorte.
 
 import { UF_TO_REGION } from './financialUtils';
+import {
+  hasExplicitOperatingCoverage,
+  parseOperatingCoverage,
+  type ProviderOperatingCoverageRow,
+} from './providerOperatingCoverage';
 
 export const REGION_ORDER = ['SUDESTE', 'SUL', 'CENTRO-OESTE', 'NORDESTE', 'NORTE'] as const;
 export type MacroRegion = (typeof REGION_ORDER)[number];
@@ -67,6 +72,7 @@ export interface RankingProviderInput {
   auto_base_value?: number | null;
   auto_base_km?: number | null;
   auto_region?: string | null;
+  operating_coverage?: ProviderOperatingCoverageRow[] | string | null;
 }
 
 export interface RankingTableInput {
@@ -88,6 +94,7 @@ export interface ActivationOffer {
   phone?: string;
   contactName?: string;
   tradingName?: string;
+  fromCoverage?: boolean;
 }
 
 export interface RankedActivationRow extends ActivationOffer {
@@ -330,6 +337,72 @@ export function buildActivationOffers(
     const prev = best.get(key);
     if (!prev || offer.cost < prev.cost) best.set(key, offer);
   }
+  return applyOperatingCoverage([...best.values()], active);
+}
+
+export function applyOperatingCoverage(
+  offers: ActivationOffer[],
+  providers: RankingProviderInput[],
+): ActivationOffer[] {
+  const cheapestByProvider = new Map<string, number>();
+  const cheapestByProviderUf = new Map<string, number>();
+  for (const offer of offers) {
+    const nameKey = normKey(offer.provider);
+    const prev = cheapestByProvider.get(nameKey);
+    if (prev == null || offer.cost < prev) cheapestByProvider.set(nameKey, offer.cost);
+    const ufKey = `${nameKey}|${offer.marketUf}`;
+    const prevUf = cheapestByProviderUf.get(ufKey);
+    if (prevUf == null || offer.cost < prevUf) cheapestByProviderUf.set(ufKey, offer.cost);
+  }
+
+  const coveredNames = new Set<string>();
+  const coverageOffers: ActivationOffer[] = [];
+
+  for (const provider of providers) {
+    const coverage = parseOperatingCoverage(provider.operating_coverage);
+    if (!hasExplicitOperatingCoverage(coverage)) continue;
+    const name = (provider.name || '').trim();
+    if (!name) continue;
+    const nameKey = normKey(name);
+    coveredNames.add(nameKey);
+    const hqUf = (provider.state || '').toUpperCase();
+    const fallbackCost = cheapestByProvider.get(nameKey);
+
+    for (const row of coverage) {
+      const uf = (row.uf || '').toUpperCase();
+      if (!UF_TO_REGION[uf]) continue;
+      const explicitCost = Number(row.cost100km);
+      const cost = (Number.isFinite(explicitCost) && explicitCost > 0)
+        ? explicitCost
+        : (cheapestByProviderUf.get(`${nameKey}|${uf}`) ?? fallbackCost ?? 0);
+      if (!Number.isFinite(cost) || cost <= 0) continue;
+      const isHq = Boolean(row.isHq) || uf === hqUf;
+      const city = titleCity(row.city || (isHq ? (provider.city || '') : '') || UF_LABEL[uf] || uf);
+      coverageOffers.push({
+        provider: name,
+        providerId: provider.id != null ? String(provider.id) : undefined,
+        city,
+        hqUf,
+        marketUf: uf,
+        region: (UF_TO_REGION[uf] || '') as MacroRegion | '',
+        cost,
+        source: isHq ? `SEDE ${uf}` : `FILIAL ${uf}`,
+        phone: provider.phone || undefined,
+        contactName: provider.contact_name || undefined,
+        tradingName: provider.trading_name || undefined,
+        fromCoverage: true,
+      });
+    }
+  }
+
+  const kept = offers.filter((offer) => !coveredNames.has(normKey(offer.provider)));
+  const merged = [...kept, ...coverageOffers];
+  const best = new Map<string, ActivationOffer>();
+  for (const offer of merged) {
+    const key = `${offer.provider}|${offer.marketUf}`;
+    const prev = best.get(key);
+    if (!prev || offer.cost < prev.cost) best.set(key, offer);
+  }
   return [...best.values()];
 }
 
@@ -362,7 +435,7 @@ export interface CityRankGroup {
 export function rankByHomeCity(offers: ActivationOffer[]): CityRankGroup[] {
   const grouped = new Map<string, ActivationOffer[]>();
   for (const offer of offers) {
-    if (offer.marketUf !== offer.hqUf && normKey(offer.provider) !== 'COLISEU PE') continue;
+    if (offer.marketUf !== offer.hqUf && !offer.fromCoverage && normKey(offer.provider) !== 'COLISEU PE') continue;
     const key = `${offer.region}|${offer.city}|${offer.marketUf}`;
     const list = grouped.get(key) || [];
     list.push(offer);

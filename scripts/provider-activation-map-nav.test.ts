@@ -22,4 +22,16 @@ test('menu Monitoramento e Fornecedor apontam para o mapa de acionamento', () =>
   assert.match(page, /svg-brazil-activation-map/);
   assert.match(page, /input-provider-activation-search/);
   assert.match(page, /region-columns/);
+  assert.match(page, /Prioridade \{row\.priority\}/);
+  assert.doesNotMatch(page, /formatActivationCost/);
+
+  const form = fs.readFileSync('components/ProviderForm.tsx', 'utf8');
+  assert.match(form, /from 'react'/);
+  assert.match(form, /ProviderOperatingCoverageEditor/);
+  assert.match(form, /operating_coverage/);
+
+  const editor = fs.readFileSync('components/ProviderOperatingCoverageEditor.tsx', 'utf8');
+  assert.match(editor, /from 'react'/);
+  assert.match(editor, /provider-operating-coverage/);
+  assert.match(editor, /coverage-cost-/);
 });

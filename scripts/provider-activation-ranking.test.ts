@@ -92,3 +92,77 @@ test('shortProviderName enxuga razão social para o mapa', () => {
   assert.equal(shortProviderName('GAIA SEGURANCA E VIGILANCIA'), 'GAIA');
   assert.ok(shortProviderName('COLISEU PE').includes('COLISEU'));
 });
+
+test('cobertura explícita define UFs e valor da filial; prioridade 0 é o mais barato', () => {
+  const providers = [
+    {
+      name: 'ALPHA SEG',
+      city: 'SAO PAULO',
+      state: 'SP',
+      status: 'Ativo',
+      operating_coverage: [
+        { uf: 'SP', city: 'São Paulo', cost100km: 500, isHq: true },
+        { uf: 'RJ', city: 'Rio de Janeiro', cost100km: 380, isHq: false },
+      ],
+    },
+    {
+      name: 'BETA SEG',
+      city: 'RIO DE JANEIRO',
+      state: 'RJ',
+      status: 'Ativo',
+      operating_coverage: [
+        { uf: 'RJ', cost100km: 420, isHq: true },
+      ],
+    },
+  ];
+  const tables = [
+    { provider: 'ALPHA SEG', operation_type: '100KM', activation_cost: 500, franchise_km: 100 },
+    { provider: 'BETA SEG', operation_type: '100KM', activation_cost: 420, franchise_km: 100 },
+  ];
+  const ranked = rankByUf(buildActivationOffers(providers, tables));
+  assert.equal(ranked.RJ[0].provider, 'ALPHA SEG');
+  assert.equal(ranked.RJ[0].priority, 0);
+  assert.equal(ranked.RJ[0].cost, 380);
+  assert.equal(ranked.RJ[0].fromCoverage, true);
+  assert.equal(ranked.RJ[0].city, 'Rio de Janeiro');
+  assert.equal(ranked.RJ[1].provider, 'BETA SEG');
+  assert.equal(ranked.RJ[1].priority, 1);
+  assert.equal(ranked.SP.length, 1);
+  assert.equal(ranked.SP[0].provider, 'ALPHA SEG');
+});
+
+test('cobertura restringe o fornecedor às UFs marcadas mesmo com tabela genérica', () => {
+  const offers = buildActivationOffers(
+    [{
+      name: 'SUL ONLY',
+      city: 'CURITIBA',
+      state: 'PR',
+      status: 'Ativo',
+      operating_coverage: [{ uf: 'PR', cost100km: 400, isHq: true }],
+    }],
+    [{ provider: 'SUL ONLY', operation_type: 'SUDESTE - 100KM', activation_cost: 400, franchise_km: 100 }],
+  );
+  assert.deepEqual(offers.map((o) => o.marketUf).sort(), ['PR']);
+});
+
+test('filial sem valor usa o 100 km da sede para entrar no ranking', () => {
+  const offers = buildActivationOffers(
+    [{
+      name: 'FILIAL PE',
+      city: 'SAO PAULO',
+      state: 'SP',
+      status: 'Ativo',
+      operating_coverage: [
+        { uf: 'SP', cost100km: 430, isHq: true },
+        { uf: 'PE', city: 'Recife', isHq: false },
+      ],
+    }],
+    [{ provider: 'FILIAL PE', operation_type: '100KM', activation_cost: 430, franchise_km: 100 }],
+  );
+  const pe = offers.find((o) => o.marketUf === 'PE');
+  assert.ok(pe);
+  assert.equal(pe?.cost, 430);
+  assert.equal(pe?.city, 'Recife');
+  assert.match(pe?.source || '', /FILIAL PE/);
+});
+
