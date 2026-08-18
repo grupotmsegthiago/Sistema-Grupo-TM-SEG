@@ -104,6 +104,7 @@ export const NAV_ITEMS: NavItem[] = [
       { name: 'Passagem de Plantão', id: 'shift-handover' },
       { name: 'Relatório de OS', id: 'mission-report' },
       { name: 'Ranking DHL', id: 'ranking-dhl' },
+      { name: 'Fornecedor', id: 'provider-activation-map' },
     ]
   },
   { name: 'Rede de Apoio (QRF)', icon: 'Map', id: 'support-network' },
@@ -143,6 +144,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: 'Briefcase', 
     id: 'providers-group',
     children: [
+      { name: 'Mapa de Acionamento', id: 'provider-activation-map' },
       { name: 'Cadastro de Fornecedor', id: 'providers' },
       { name: 'Gestão de Alvarás', id: 'alvara-control' },
       { name: 'Cadastro de Usuário', id: 'provider-users' },

@@ -166,6 +166,19 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
       return role === 'avançado' || role === 'avancado' || role === 'diretoria' || role === 'administrador';
     }
 
+    if (itemId === 'provider-activation-map') {
+      if (currentUser?.clientId || (currentUser?.permissions && currentUser.permissions.some((p: string) => p.startsWith('client_view:')))) {
+        return false;
+      }
+      return (
+        role === 'avançado' || role === 'avancado' || role === 'diretoria' ||
+        role === 'administrador' || role === 'financeiro' ||
+        userPermissions.includes('provider-activation-map') ||
+        userPermissions.includes('providers') ||
+        userPermissions.includes('providers-group')
+      );
+    }
+
     if (itemId === 'mission-report') {
       return canAccessMissionReport(currentUser);
     }
@@ -231,7 +244,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         const avancadoAllowed = [
             'dashboard', 'missions', 'clients-group', 'clients', 'client-routes',
             'client-vehicles', 'quotes', 'providers-group', 'providers', 'provider-agents',
-            'alvara-control', 'support-network', 'reports'
+            'alvara-control', 'support-network', 'reports', 'provider-activation-map'
         ];
         return avancadoAllowed.includes(itemId) || userPermissions.includes(itemId);
     }
