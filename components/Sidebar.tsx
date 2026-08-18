@@ -166,17 +166,24 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
       return role === 'avançado' || role === 'avancado' || role === 'diretoria' || role === 'administrador';
     }
 
-    if (itemId === 'provider-activation-map') {
-      if (currentUser?.clientId || (currentUser?.permissions && currentUser.permissions.some((p: string) => p.startsWith('client_view:')))) {
-        return false;
-      }
-      return (
-        role === 'avançado' || role === 'avancado' || role === 'diretoria' ||
-        role === 'administrador' || role === 'financeiro' ||
-        userPermissions.includes('provider-activation-map') ||
-        userPermissions.includes('providers') ||
-        userPermissions.includes('providers-group')
+    // Menu Fornecedor (grupo + cadastros + mapa) para todos os usuários internos.
+    // Usuário-cliente do portal continua bloqueado.
+    const providerMenuIds = new Set([
+      'providers-group',
+      'providers',
+      'provider-form',
+      'provider-activation-map',
+      'provider-users',
+      'provider-vehicles',
+      'provider-agents',
+      'provider-technologies',
+    ]);
+    if (providerMenuIds.has(itemId)) {
+      const isClientUser = Boolean(
+        currentUser?.clientId ||
+        (currentUser?.permissions && currentUser.permissions.some((p: string) => p.startsWith('client_view:')))
       );
+      return !isClientUser;
     }
 
     if (itemId === 'mission-report') {
