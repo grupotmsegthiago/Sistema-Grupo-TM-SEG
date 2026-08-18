@@ -1,6 +1,6 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **consumidores de `account_balance_snapshots` migrados para API autenticada**
+> Handoff oficial — **consumidores de `account_balance_snapshots` PUBLICADOS E HOMOLOGADOS**
 > **RLS/policy live não alteradas. Sem migration. `billing_usage` e `financial_transaction_payments` não tocados.**
 
 ---
@@ -13,8 +13,14 @@
 | **Branch** | `cursor/fase4-account-balance-snapshots-api-eaa8` |
 | **Base `origin/main` / `origin/dev`** | `d893e386` |
 | **Handoff anterior incorporado** | conteúdo de `f0bcd58e` (homologação do PR #279) |
-| **HEAD funcional desta execução** | `ef5d3897` |
-| **PR** | draft não criado: GitHub CLI ausente e instalação não autorizada; branch publicada |
+| **Commit funcional** | `ef5d3897` |
+| **HEAD mergeado em `dev` / `main`** | `c4aaab81` |
+| **Merge concorrente posterior** | `99a563e2` — mapa de acionamento de fornecedores; contém `c4aaab81` como ancestral |
+| **`origin/main` / `origin/dev` no fechamento documental** | `947b8235` — avanços posteriores de fornecedores, sem alteração em snapshots |
+| **Produção observada no fechamento** | `99a563e2` |
+| **PR** | draft não criado; branch integrada diretamente por fast-forward no fluxo autorizado |
+| **Tag pré-publicação** | `baseline-fase4-pre-account-balance-snapshots-api-20260817` → `d893e386` |
+| **Tag pós-homologação** | `baseline-fase4-account-balance-snapshots-api-merged-20260817` → `c4aaab81` |
 | **Projeto oficial** | Grupo TMSEG `ajhmmjuewdsukecaimik` |
 | **Apply / migration / DML live** | **NÃO executados** |
 
@@ -36,7 +42,29 @@ Migração de consumidores em branch ≠ lockdown homologado. Programa e Fase 4 
 
 ### DECISÃO
 
-# 🟢 CONSUMIDORES account_balance_snapshots MIGRADOS — APTO PARA REVISÃO/MERGE
+# 🟢 CONSUMIDORES account_balance_snapshots PUBLICADOS E HOMOLOGADOS
+
+### MERGE / DEPLOY / SMOKE
+
+| Check | Resultado |
+|-------|-----------|
+| Integração branch → `dev` | **fast-forward** para `c4aaab81` |
+| Integração `dev` → `main` | **fast-forward** via `publicar.ps1` |
+| Push da publicação de snapshots | **OK**, `main` / `dev` avançaram para `c4aaab81` |
+| Merge concorrente posterior | `99a563e2`, não relacionado; preserva `c4aaab81` no histórico |
+| `main` / `dev` mais atuais | `947b8235`, mudanças exclusivas de fornecedores após `99a563e2` |
+| Retorno local | branch `dev` |
+| Projeto/domínio oficial | `sistema-grupo-tm-seg` / `https://sistema.grupotmseg.com.br` |
+| Version | `3.7.60` |
+| Build funcional homologado | `c4aaab81188f83e37236fd08d0ab2bafb949e2e8` (`2026-08-18T00:14:48.868Z`) |
+| Build atual observado | `99a563e24aa73b5fa802a85308226da71a6b5905` |
+| BuiltAt atual | `2026-08-18T00:16:35.502Z` |
+| `GET /api/version` | **200** |
+| `GET /api/health` | **200** |
+| `GET /` | **200** |
+| `GET /api/investment/snapshots-all?days=3650` sem auth | **401** em 0,275 s |
+
+Smoke sem INSERT/UPDATE/DELETE e sem snapshot artificial.
 
 ### ESTADO LIVE — PRESERVADO
 
@@ -48,10 +76,11 @@ Somente leitura; nenhuma linha exibida.
 | Policy | `Allow all for account_balance_snapshots` |
 | Tipo / roles / comando | `PERMISSIVE` / `{anon, authenticated}` / `ALL` |
 | USING / WITH CHECK | `true` / `true` |
-| anon / authenticated | **129 / 129** |
-| owner / service_role | **129 / 129** |
+| anon / authenticated | **132 / 132** |
+| owner / service_role | **132 / 132** |
 
-A policy permanece aberta deliberadamente. O fechamento RLS exige execução separada após revisão/merge desta migração.
+A policy permanece aberta deliberadamente. O fechamento RLS exige execução separada após esta homologação.
+O aumento de 129 para 132 ocorreu por atividade externa durante a homologação; o smoke foi somente leitura.
 
 ### REGRA FINANCEIRA PRESERVADA
 
@@ -90,7 +119,7 @@ Identidade continua TM SEG customizada (`authFetch` / `assertAsaasApiAccess`). S
 | Investment — INSERT | API + fallback anon | somente `createBalanceSnapshot` |
 | Investment — DELETE | API direta no componente | client autenticado compartilhado |
 
-Reauditoria pós-GREEN:
+Reauditoria pós-deploy:
 
 - `components/**`: zero `supabase.from('account_balance_snapshots')`.
 - `lib/**` frontend: zero acesso direto.
@@ -134,9 +163,8 @@ Handlers Vercel e rotas Express reutilizam essa SSOT. `requireSnapshotsAdminClie
 
 ### RISCOS / PRÓXIMO PASSO
 
-- RLS live continua aberta; anon/authenticated ainda enxergam 129 linhas até o lockdown separado.
-- Antes do DROP, revisar o diff, mergear/publicar esta migração e comprovar em produção que as três telas carregam pela API.
-- Depois, preparar migration + rollback RLS em PR separado e validar que o bootstrap não recria a policy.
+- RLS live continua aberta; anon/authenticated ainda enxergam 132 linhas até o lockdown separado.
+- Próximo passo: preparar migration + rollback RLS em execução separada e validar novamente que o bootstrap não recria a policy.
 - Não iniciar RH, `time_clock` ou Z-API nesta execução.
 
 ### ÁREAS PROTEGIDAS
