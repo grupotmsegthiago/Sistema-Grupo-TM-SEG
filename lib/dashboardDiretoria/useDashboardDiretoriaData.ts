@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { authFetch } from '../authFetch';
 import { useRealtimeRefresh } from '../RealtimeProvider';
-import { listBalanceSnapshotsDirect } from '../investment/snapshotClient';
+import { listBalanceSnapshots } from '../investment/snapshotClient';
 import { fetchAllPages } from '../supabasePaging';
 import { fetchEmployeeCostSummary } from '../rh/fetchEmployeeCostSummary';
 import type { Client, ClientPriceTable, FinancialCategory, FinancialTransaction, Mission, ProviderCostTable } from '../../types';
@@ -196,9 +196,9 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
           10_000,
         ).then((r) => ({ data: r.rows, truncated: r.truncated, error: null })),
         supabase.from('financial_accounts').select('id, name, bank_name, initial_balance, status').eq('status', 'Ativo'),
-        listBalanceSnapshotsDirect(3650).catch((e) => {
+        listBalanceSnapshots(3650).catch((e) => {
           console.warn('[DashboardDiretoria] snapshots de saldo indisponíveis:', e);
-          return [] as Awaited<ReturnType<typeof listBalanceSnapshotsDirect>>;
+          return [] as Awaited<ReturnType<typeof listBalanceSnapshots>>;
         }),
         supabase.from('rh_employees').select('status').is('deleted_at', null),
         fetchEmployeeCostSummary(monthRef),

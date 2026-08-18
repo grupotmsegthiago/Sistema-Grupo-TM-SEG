@@ -6,7 +6,11 @@ import { logAction } from '../lib/logger';
 import { parseAmountBR } from '../lib/utils';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
-import { insertBalanceSnapshotDirect, listBalanceSnapshotsDirect } from '../lib/investment/snapshotClient';
+import {
+    createBalanceSnapshot,
+    deleteBalanceSnapshot,
+    listBalanceSnapshots,
+} from '../lib/investment/snapshotClient';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
@@ -138,25 +142,10 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
 
     const fetchSnapshotsSafe = async (days: number): Promise<BalanceSnapshot[]> => {
         try {
-            const res = await authFetch(`/api/investment/snapshots-all?days=${days}&_t=${Date.now()}`);
-            if (res.ok) {
-                const contentType = res.headers.get('content-type') || '';
-                if (contentType.includes('application/json')) {
-                    const data = await res.json();
-                    if (Array.isArray(data) && data.length > 0) {
-                        return data.map((s: any) => ({ ...s, balance: parseFloat(s.balance) }));
-                    }
-                }
-            }
-        } catch (e) {
-            console.warn('[Investment] API snapshots-all falhou — usando fallback Supabase:', e);
-        }
-
-        try {
-            const rows = await listBalanceSnapshotsDirect(days);
+            const rows = await listBalanceSnapshots(days);
             return rows.map((s) => ({ ...s, balance: Number(s.balance) }));
         } catch (e) {
-            console.warn('[Investment] Fallback Supabase de snapshots falhou:', e);
+            console.warn('[Investment] API autenticada de snapshots falhou:', e);
             return [];
         }
     };
@@ -234,38 +223,12 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
         setIsProcessingUpdate(true);
         try {
             const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || '';
-            let snapshotSaved = false;
-
-            try {
-                const res = await authFetch('/api/investment/snapshots', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ account_id: updateAccountId, balance: newBal, notes: '', created_by: userName }),
-                });
-                const payload = await parseJsonResponse(res);
-                if (!res.ok) {
-                    throw new Error(payload?.error || `Erro ao registrar saldo (${res.status})`);
-                }
-                snapshotSaved = true;
-            } catch (apiErr) {
-                try {
-                    await insertBalanceSnapshotDirect({
-                        account_id: updateAccountId,
-                        balance: newBal,
-                        notes: '',
-                        created_by: userName,
-                    });
-                    snapshotSaved = true;
-                } catch (directErr) {
-                    const apiMsg = apiErr instanceof Error ? apiErr.message : 'Falha na API';
-                    const directMsg = directErr instanceof Error ? directErr.message : 'Falha no Supabase';
-                    throw new Error(directMsg || apiMsg);
-                }
-            }
-
-            if (!snapshotSaved) {
-                throw new Error('Falha ao gravar snapshot de saldo. Tente novamente ou contate o suporte.');
-            }
+            await createBalanceSnapshot({
+                account_id: updateAccountId,
+                balance: newBal,
+                notes: '',
+                created_by: userName,
+            });
 
             const account = accounts.find(a => a.id === updateAccountId);
             if (account) {
@@ -329,11 +292,7 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
     const handleDeleteSnapshot = async (id: number) => {
         if (!confirm('Excluir este registro de saldo?')) return;
         try {
-            const res = await authFetch(`/api/investment/snapshots/${id}`, { method: 'DELETE' });
-            const payload = await parseJsonResponse(res);
-            if (!res.ok) {
-                throw new Error(payload?.error || `Erro ao excluir (${res.status})`);
-            }
+            await deleteBalanceSnapshot(id);
             showNotification('Registro excluído', 'O histórico de saldo foi removido.', 'success');
             fetchData();
         } catch (e) {
@@ -384,35 +343,14 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
             if (savedId && (previousBalance == null || Math.abs(previousBalance - val) >= 0.01)) {
                 const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || '';
                 try {
-                    const snapRes = await authFetch('/api/investment/snapshots', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            account_id: savedId,
-                            balance: val,
-                            notes: wasEditing ? 'Ajuste via edição de conta' : 'Saldo inicial',
-                            created_by: userName,
-                        }),
+                    await createBalanceSnapshot({
+                        account_id: savedId,
+                        balance: val,
+                        notes: wasEditing ? 'Ajuste via edição de conta' : 'Saldo inicial',
+                        created_by: userName,
                     });
-                    if (!snapRes.ok) {
-                        await insertBalanceSnapshotDirect({
-                            account_id: savedId,
-                            balance: val,
-                            notes: wasEditing ? 'Ajuste via edição de conta' : 'Saldo inicial',
-                            created_by: userName,
-                        });
-                    }
-                } catch {
-                    try {
-                        await insertBalanceSnapshotDirect({
-                            account_id: savedId,
-                            balance: val,
-                            notes: wasEditing ? 'Ajuste via edição de conta' : 'Saldo inicial',
-                            created_by: userName,
-                        });
-                    } catch (snapErr) {
-                        console.warn('[Investment] Conta salva, mas snapshot não gravou:', snapErr);
-                    }
+                } catch (snapErr) {
+                    console.warn('[Investment] Conta salva, mas snapshot não gravou:', snapErr);
                 }
             }
 

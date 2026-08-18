@@ -27,7 +27,7 @@ import AsaasPixTransferModal from './AsaasPixTransferModal';
 import { calcMaxPixTransfer } from '../lib/asaasPixTransfer';
 import { matchesFinancialStatusFilter, type FinancialStatusFilter } from '../lib/financialStatusFilter';
 import { computeAccountBalanceOverview } from '../lib/dashboardDiretoria/aggregations';
-import { listBalanceSnapshotsDirect } from '../lib/investment/snapshotClient';
+import { listBalanceSnapshots } from '../lib/investment/snapshotClient';
 import {
   getTransactionOpenAmount,
   getTransactionPaidAmount,
@@ -188,9 +188,9 @@ const FinancialTransactionList: React.FC = () => {
         try {
             const [accRes, snapshots] = await Promise.all([
                 supabase.from('financial_accounts').select('id, name, bank_name, initial_balance, status').eq('status', 'Ativo'),
-                listBalanceSnapshotsDirect(3650).catch((e) => {
+                listBalanceSnapshots(3650).catch((e) => {
                     console.warn('[Contas a Pagar] snapshots de saldo indisponíveis:', e);
-                    return [] as Awaited<ReturnType<typeof listBalanceSnapshotsDirect>>;
+                    return [] as Awaited<ReturnType<typeof listBalanceSnapshots>>;
                 }),
             ]);
             if (accRes.data) setAccounts(accRes.data as any);

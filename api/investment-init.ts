@@ -20,6 +20,6 @@ export default async function handler(req: any, res: any) {
     await ensureSnapshotsTable();
     res.status(200).json({ ok: true });
   } catch (e: any) {
-    res.status(200).json({ ok: true, note: e?.message || 'init_fail_soft' });
+    res.status(503).json({ error: e?.message || 'Supabase admin indisponível' });
   }
 }

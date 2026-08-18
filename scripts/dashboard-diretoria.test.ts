@@ -550,7 +550,8 @@ describe('Cockpit Atualizar → recalcula OS', () => {
       `ordem inválida em renderGeral: cards=${idxCards} op=${idxOp} prov=${idxProv} fat=${idxFat} caixa=${idxCaixa} detalhe=${idxDetalhe}`,
     );
     assert.match(ui, /from 'react'/);
-    assert.match(hook, /listBalanceSnapshotsDirect/);
+    assert.match(hook, /listBalanceSnapshots/);
+    assert.doesNotMatch(hook, /listBalanceSnapshotsDirect/);
     assert.match(hook, /latestAccountBalances/);
     assert.match(hook, /name, bank_name, initial_balance/);
   });

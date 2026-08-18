@@ -25,7 +25,8 @@ describe("card saldo operacional em Contas a Pagar", () => {
   it("FinancialTransactionList usa computeAccountBalanceOverview e mostra o card", () => {
     const src = readFileSync(join(root, "components/FinancialTransactionList.tsx"), "utf8");
     assert.match(src, /computeAccountBalanceOverview/);
-    assert.match(src, /listBalanceSnapshotsDirect/);
+    assert.match(src, /listBalanceSnapshots/);
+    assert.doesNotMatch(src, /listBalanceSnapshotsDirect/);
     assert.match(src, /card-total-contas-operacionais/);
     assert.match(src, /Sem XP \/ investimentos/);
     assert.match(src, /from 'react'/);

@@ -10,13 +10,27 @@ function parseBody(body: unknown): Record<string, any> {
   return JSON.parse(body);
 }
 
-export default async function handler(req: any, res: any) {
+export type InvestmentSnapshotsCreateDeps = {
+  authorize?: (req: any) => Promise<string | null>;
+  create?: (input: {
+    account_id: string;
+    balance: number;
+    notes?: string;
+    created_by?: string;
+  }) => Promise<unknown>;
+};
+
+export async function handleInvestmentSnapshotsCreateRequest(
+  req: any,
+  res: any,
+  deps: InvestmentSnapshotsCreateDeps = {},
+) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'method_not_allowed' });
     return;
   }
 
-  const denied = await denyInvestmentApiUnlessAuthorized(req);
+  const denied = await (deps.authorize || denyInvestmentApiUnlessAuthorized)(req);
   if (denied) {
     res.status(investmentApiDeniedStatus(denied)).json({ error: denied });
     return;
@@ -30,7 +44,7 @@ export default async function handler(req: any, res: any) {
       res.status(400).json({ error: 'account_id e balance são obrigatórios' });
       return;
     }
-    const row = await insertSnapshot({
+    const row = await (deps.create || insertSnapshot)({
       account_id,
       balance,
       notes: String(body.notes || ''),
@@ -40,6 +54,11 @@ export default async function handler(req: any, res: any) {
   } catch (e: any) {
     const message = e?.message || 'Falha ao gravar snapshot de saldo';
     console.error('[investment/snapshots POST]', message);
-    res.status(500).json({ error: message });
+    const status = /Supabase admin indisponível|service_role/i.test(message) ? 503 : 500;
+    res.status(status).json({ error: message });
   }
+}
+
+export default async function handler(req: any, res: any) {
+  await handleInvestmentSnapshotsCreateRequest(req, res);
 }

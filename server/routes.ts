@@ -142,6 +142,14 @@ import {
   runF4OperationalReportOperation,
   runF4PlatformCostsOperation,
 } from "../lib/f4ApiOperations";
+import {
+  deleteSnapshot,
+  deleteSnapshotsForAccount,
+  ensureSnapshotsTable,
+  insertSnapshot,
+  listAllSnapshots,
+  listSnapshotsForAccount,
+} from "../lib/investment/accountBalanceSnapshots";
 
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
@@ -4987,17 +4995,10 @@ export async function registerRoutes(
 
   app.post("/api/investment/init", requireAuth, requireInvestmentApiAccess(), async (_req: Request, res: Response) => {
     try {
-      await pgPool.query(`CREATE TABLE IF NOT EXISTS public.account_balance_snapshots (
-        id serial PRIMARY KEY,
-        account_id text NOT NULL,
-        balance numeric(18,2) NOT NULL DEFAULT 0,
-        notes text DEFAULT '',
-        created_by text DEFAULT '',
-        recorded_at timestamptz DEFAULT now()
-      )`);
+      await ensureSnapshotsTable();
       res.json({ ok: true });
     } catch (e: any) {
-      res.json({ ok: true, note: e.message });
+      res.status(503).json({ error: e?.message || 'Supabase admin indisponível' });
     }
   });
 
@@ -5005,14 +5006,9 @@ export async function registerRoutes(
     try {
       const { accountId } = req.params;
       const days = parseInt(req.query.days as string) || 365;
-      const since = new Date(Date.now() - days * 86400000).toISOString();
-      const { rows } = await pgPool.query(
-        'SELECT * FROM account_balance_snapshots WHERE account_id = $1 AND recorded_at >= $2 ORDER BY recorded_at ASC',
-        [accountId, since]
-      );
-      res.json(rows);
+      res.json(await listSnapshotsForAccount(accountId, days));
     } catch (e: any) {
-      res.json([]);
+      res.status(500).json({ error: e?.message || 'Falha ao listar snapshots' });
     }
   });
 
@@ -5022,25 +5018,21 @@ export async function registerRoutes(
     res.set('Expires', '0');
     try {
       const days = parseInt(req.query.days as string) || 365;
-      const since = new Date(Date.now() - days * 86400000).toISOString();
-      const { rows } = await pgPool.query(
-        'SELECT * FROM account_balance_snapshots WHERE recorded_at >= $1 ORDER BY recorded_at ASC',
-        [since]
-      );
-      res.json(rows);
+      res.json(await listAllSnapshots(days));
     } catch (e: any) {
-      res.json([]);
+      res.status(500).json({ error: e?.message || 'Falha ao listar snapshots' });
     }
   });
 
   app.post("/api/investment/snapshots", requireAuth, requireInvestmentApiAccess(), async (req: Request, res: Response) => {
     try {
       const { account_id, balance, notes, created_by } = req.body;
-      const { rows } = await pgPool.query(
-        'INSERT INTO account_balance_snapshots (account_id, balance, notes, created_by) VALUES ($1, $2, $3, $4) RETURNING *',
-        [account_id, balance, notes || '', created_by || '']
-      );
-      res.json(rows[0]);
+      res.json(await insertSnapshot({
+        account_id,
+        balance: Number(balance),
+        notes: notes || '',
+        created_by: created_by || '',
+      }));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -5048,7 +5040,7 @@ export async function registerRoutes(
 
   app.delete("/api/investment/snapshots/:id", requireAuth, requireInvestmentApiAccess(), async (req: Request, res: Response) => {
     try {
-      await pgPool.query('DELETE FROM account_balance_snapshots WHERE id = $1', [req.params.id]);
+      await deleteSnapshot(Number(req.params.id));
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -5151,7 +5143,7 @@ export async function registerRoutes(
           return;
         }
         try {
-          await pgPool.query('DELETE FROM account_balance_snapshots WHERE account_id = $1', [id]);
+          await deleteSnapshotsForAccount(id);
         } catch {
           // histórico opcional — não bloqueia desativação
         }
@@ -5165,7 +5157,7 @@ export async function registerRoutes(
       }
 
       try {
-        await pgPool.query('DELETE FROM account_balance_snapshots WHERE account_id = $1', [id]);
+        await deleteSnapshotsForAccount(id);
       } catch {
         // ignora se tabela/histórico ausente
       }

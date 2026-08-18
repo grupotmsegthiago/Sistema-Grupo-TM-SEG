@@ -25,7 +25,9 @@ export default async function handler(req: any, res: any) {
     await deleteSnapshot(id);
     res.status(200).json({ ok: true });
   } catch (e: any) {
-    console.error('[investment/snapshots DELETE]', e?.message);
-    res.status(500).json({ error: e?.message || 'erro' });
+    const message = e?.message || 'erro';
+    console.error('[investment/snapshots DELETE]', message);
+    const status = /Supabase admin indisponível|service_role/i.test(message) ? 503 : 500;
+    res.status(status).json({ error: message });
   }
 }

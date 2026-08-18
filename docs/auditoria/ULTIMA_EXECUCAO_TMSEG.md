@@ -1,44 +1,189 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **lockdown RLS de `financial_transaction_payments` APLICADO; fechamento PR #279 em andamento**
-> **Policy permissiva AUSENTE. Rollback pronto e não executado. Nenhuma outra tabela iniciada.**
+> Handoff oficial — **consumidores de `account_balance_snapshots` migrados para API autenticada**
+> **RLS/policy live não alteradas. Sem migration. `billing_usage` e `financial_transaction_payments` não tocados.**
 
 ---
 
-## F4-P0-RLS — FECHAMENTO PÓS-APPLY `financial_transaction_payments`
+## FASE 4 — API AUTENTICADA `account_balance_snapshots`
 
 | Campo | Valor |
 |-------|-------|
 | **Data** | 2026-08-17 (UTC-3) |
-| **PR** | [#279](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/279) |
+| **Branch** | `cursor/fase4-account-balance-snapshots-api-eaa8` |
+| **Base `origin/main` / `origin/dev`** | `d893e386` |
+| **Handoff anterior incorporado** | conteúdo de `f0bcd58e` (homologação do PR #279) |
+| **HEAD desta execução** | registrar após commit |
+| **PR** | draft exclusivo a registrar |
+| **Projeto oficial** | Grupo TMSEG `ajhmmjuewdsukecaimik` |
+| **Apply / migration / DML live** | **NÃO executados** |
+
+### PROGRESSO
+
+Migração de consumidores em branch ≠ lockdown homologado. Programa e Fase 4 não aumentam.
+
+**Programa geral: 84,0%**
+
+`█████████████████░░░`
+
+**Fase 4: 50%**
+
+`██████████░░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟢 CONSUMIDORES account_balance_snapshots MIGRADOS — APTO PARA REVISÃO/MERGE
+
+### ESTADO LIVE — PRESERVADO
+
+Somente leitura; nenhuma linha exibida.
+
+| Check | Resultado |
+|-------|-----------|
+| RLS | **ATIVO** |
+| Policy | `Allow all for account_balance_snapshots` |
+| Tipo / roles / comando | `PERMISSIVE` / `{anon, authenticated}` / `ALL` |
+| USING / WITH CHECK | `true` / `true` |
+| anon / authenticated | **129 / 129** |
+| owner / service_role | **129 / 129** |
+
+A policy permanece aberta deliberadamente. O fechamento RLS exige execução separada após revisão/merge desta migração.
+
+### REGRA FINANCEIRA PRESERVADA
+
+- Campos: `account_id`, `balance`, `notes`, `created_by`, `recorded_at`.
+- Criação continua manual no Painel de Investimentos ao atualizar saldo ou criar/editar conta.
+- Períodos preservados: Investment usa o filtro atual (`3650` para “todos”); Diretoria e Contas a Pagar usam `3650` dias.
+- Ordenação preservada: `recorded_at ASC`.
+- Latest preservado: último snapshot cronológico por conta.
+- Ausência legítima de snapshots continua usando `financial_accounts.initial_balance`.
+- `[]` da API é conjunto vazio válido; não dispara segunda consulta.
+- Histórico continua append-only por INSERT; não foi introduzido UPDATE.
+- Exclusão pontual e limpeza ao excluir/desativar conta foram preservadas.
+- Nenhum cálculo, filtro financeiro, vínculo de conta ou lançamento de ajuste foi alterado.
+
+### FLUXO APÓS A MIGRAÇÃO
+
+```text
+Dashboard Diretoria ─┐
+Contas a Pagar ──────┼→ snapshotClient → authFetch
+Investment ──────────┘  → /api/investment/snapshots*
+                         → auth TM SEG / role e escopo
+                         → SSOT accountBalanceSnapshots
+                         → service_role obrigatória
+                         → account_balance_snapshots
+```
+
+Identidade continua TM SEG customizada (`authFetch` / `assertAsaasApiAccess`). Sem `auth.uid()` e sem Supabase Auth como fonte de identidade.
+
+### CONSUMIDORES MIGRADOS
+
+| Consumidor | Antes | Depois |
+|------------|-------|--------|
+| Dashboard Diretoria | `listBalanceSnapshotsDirect` / anon | `listBalanceSnapshots` / API autenticada |
+| Contas a Pagar | Supabase anon direto | API autenticada |
+| Investment — SELECT | API + fallback anon em erro ou `[]` | somente API; `[]` permanece legítimo |
+| Investment — INSERT | API + fallback anon | somente `createBalanceSnapshot` |
+| Investment — DELETE | API direta no componente | client autenticado compartilhado |
+
+Reauditoria pós-GREEN:
+
+- `components/**`: zero `supabase.from('account_balance_snapshots')`.
+- `lib/**` frontend: zero acesso direto.
+- Ocorrências permitidas: SSOT backend, migration histórica imutável, testes e documentação.
+
+### SSOT BACKEND / FAIL-CLOSED
+
+`lib/investment/accountBalanceSnapshots.ts` é a única operação backend compartilhada:
+
+- `listAllSnapshots`;
+- `listSnapshotsForAccount` (rota Express já existente);
+- `insertSnapshot`;
+- `deleteSnapshot`;
+- `deleteSnapshotsForAccount`;
+- `ensureSnapshotsTable`.
+
+Handlers Vercel e rotas Express reutilizam essa SSOT. `requireSnapshotsAdminClient` valida `getSupabaseServiceRoleKey()` **antes** de criar cliente. Sem service role, a operação falha fechada; não existe fallback anon.
+
+### BOOTSTRAP / INIT
+
+- `ensureSnapshotsTable`: mantém CREATE TABLE/INDEX/COMMENT/RLS, mas não contém `CREATE POLICY` ou `DROP POLICY`.
+- `/api/investment/init`: auth obrigatória e erro fail-closed (`503` sem admin).
+- Express `/api/investment/init`: reutiliza o mesmo ensure.
+- CLI `apply-account-balance-snapshots-migration.mjs`: exige service role e filtra CREATE/DROP POLICY da migration histórica.
+- `migrations/2026_07_08_account_balance_snapshots.sql`: **não editada**.
+- Nenhum caminho runtime atual recria `Allow all for account_balance_snapshots`.
+
+### RED → GREEN / TESTES
+
+| Suíte | Total | Pass | Fail |
+|-------|------:|-----:|-----:|
+| Novo RED/GREEN `fase4-account-balance-snapshots-api` | 9 | 9 | 0 |
+| Direcionados snapshots/Investment/Diretoria/segurança/F4 | 106 | 106 | 0 |
+| TS completo | 1040 | 1039 | 1 baseline CRLF |
+| React com loader | 4 | 4 | 0 |
+
+- Falha única: `invoice-control-loading.test.ts` — **BASELINE** Windows/CRLF, igual à `main`.
+- Cancelled / skipped / hang: 0 / 0 / 0.
+- `npm run build`: **OK**, Supabase `ajhmmjuewdsukecaimik` injetado em `dist/public/index.html`.
+- Smoke local: `/api/health` **200**; list/create/init sem auth **401**; zero escrita.
+
+### RISCOS / PRÓXIMO PASSO
+
+- RLS live continua aberta; anon/authenticated ainda enxergam 129 linhas até o lockdown separado.
+- Antes do DROP, revisar o diff, mergear/publicar esta migração e comprovar em produção que as três telas carregam pela API.
+- Depois, preparar migration + rollback RLS em PR separado e validar que o bootstrap não recria a policy.
+- Não iniciar RH, `time_clock` ou Z-API nesta execução.
+
+### ÁREAS PROTEGIDAS
+
+Zero alteração em `billing_usage`, `financial_transaction_payments`, RH, `time_clock`, Z-API, NF, Asaas, SEC-03, DRE, pedágio, OS mãe/filha, ENV e Vercel.
+
+---
+
+## F4-P0-RLS — HOMOLOGAÇÃO `financial_transaction_payments`
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-17 (UTC-3) |
+| **PR** | [#279](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/279) — **MERGED** `dev` + `main` |
 | **Branch** | `cursor/fase4-rls-financial-payments-lockdown-eaa8` |
 | **Base / main / dev pré-merge** | `4d2710ab` |
 | **Commit preparação** | `d62f9e17` |
-| **Código funcional** | `c305e147` |
+| **HEAD publicado** | `d893e386` |
+| **Código funcional** | `c305e147` (não alterado neste PR) |
+| **Tag** | `baseline-fase4-rls-financial-payments-merged-20260817` → `d893e386` |
 | **Projeto oficial** | Grupo TMSEG `ajhmmjuewdsukecaimik` |
+| **Produção** | `https://sistema.grupotmseg.com.br` |
 | **Migration Git** | `migrations/2026_08_17_fase4_p0_rls_financial_transaction_payments.sql` |
 | **Rollback Git** | `migrations/rollback/2026_08_17_fase4_p0_rls_financial_transaction_payments.sql` |
 | **Reapply / rollback live** | **Não executados nesta execução** |
 
 ### PROGRESSO
 
-Atualizado somente após homologação completa (merge + deploy + startup + RLS ainda fechado). Até lá os percentuais de programa e Fase 4 permanecem os da preparação.
+Homologação completa (merge + deploy + startup + RLS ainda fechado + `service_role` 35).
 
-**Programa geral: 83,8%** *(provisório até o fechamento)*
+**Programa geral: 84,0%**
 
 `█████████████████░░░`
 
-**Fase 4: 45%** *(provisório até o fechamento)*
+**Fase 4: 50%**
 
-`█████████░░░░░░░░░░░`
+`██████████░░░░░░░░░░`
 
-**Execução atual: em andamento**
+**Execução atual: 100%**
 
-Parcela prevista deste marco, se homologado: **+5 pp da Fase 4** (mesmo peso do piloto `billing_usage`). Bloco F4-P0-RLS total = 35% da Fase 4; acumulado RLS passaria a **10/35**. Restante 25 pp: snapshots, RH, `time_clock` e demais. Fase 4 = 4% do programa → +5 pp da Fase 4 = **+0,2 pp** no geral (`83,8% → 84,0%`; Fase 4 `45% → 50%`).
+`████████████████████`
+
+Parcela deste marco: **+5 pp da Fase 4** (mesmo peso do piloto `billing_usage`). **Não** contabiliza os 35% inteiros do bloco F4-P0-RLS. Acumulado RLS: **10/35**. Restante 25 pp: `account_balance_snapshots`, RH, `time_clock` e demais. Fase 4 = 4% do programa → +5 pp da Fase 4 = **+0,2 pp** no geral (`83,8% → 84,0%`; Fase 4 `45% → 50%`).
 
 ### DECISÃO
 
-Pendente merge/deploy/startup. Live pós-apply já conferido.
+# 🟢 RLS financial_transaction_payments PUBLICADO E HOMOLOGADO
 
 ### TESTES / BUILD
 
@@ -51,6 +196,48 @@ Pendente merge/deploy/startup. Live pós-apply já conferido.
 - Falha única: `invoice-control-loading.test.ts` — **BASELINE** Windows/CRLF, igual à main.
 - Cancelled / skipped / hang: 0 / 0 / 0.
 - `npm run build`: **OK** (Supabase `ajhmmjuewdsukecaimik`).
+
+### MERGE / DEPLOY
+
+| Campo | Valor |
+|-------|-------|
+| **PR #279** | merged `2026-08-17T23:23:54Z` → `main` e `dev` |
+| **merge_commit** | `d893e386` (fast-forward; 2 commits: `d62f9e17` + `d893e386`) |
+| **Diff permitido** | migration + rollback + teste + handoff. Zero código funcional. |
+| **Migration no merge/deploy** | **não reaplicada** |
+| **version** | `3.7.60` |
+| **buildId** | `d893e386dd8056cdecf6892d6c4e27b59b50bfeb` |
+| **builtAt** | `2026-08-17T23:24:11.584Z` |
+
+### LIVE — PÓS-STARTUP (critério principal)
+
+Revalidado depois do deploy real. `ensurePaymentTables` / `financial-payments-init` / bootstrap **não** recriaram a policy.
+
+| Check | Resultado |
+|-------|-----------|
+| RLS | **ATIVO** |
+| Policy `Allow all for financial_transaction_payments` | **AUSENTE** |
+| policies | **0** |
+| anon | **0** |
+| authenticated | **0** |
+| owner | **35** |
+| service_role | **35** |
+
+ANTES: anon 35 / authenticated 35 / service_role 35. DEPOIS: anon 0 / authenticated 0 / service_role 35. RLS continua ativo.
+
+### SMOKE API (sem autenticação, sem escrita)
+
+| Endpoint | Resultado |
+|----------|-----------|
+| `GET /` | **200** |
+| `GET /api/health` | **200** |
+| `GET /api/version` | **200** / `buildId=d893e386` |
+| `GET /api/financial-transaction-payments?transactionId=fake` | **401** `Não autorizado` |
+| `DELETE /api/financial-transaction-payments?id=fake&transactionId=fake` | **401** `Não autorizado` |
+| `POST /api/financial-payments-init` | **401** `Não autorizado` |
+| `POST /api/financial-transaction-payments` | **não enviado** — aprovação local recusada; o JSON de cliente falhou antes de sair. Count owner permanece **35** (zero escrita). |
+
+Nenhum pagamento artificial criado.
 
 ### LIVE — ANTES DO APPLY
 
@@ -93,13 +280,13 @@ Rollback: pronto e **não executado**.
 | `scripts/fase4-p0-rls-financial-payments.test.ts` | RED/GREEN + bootstrap |
 | `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md` | Handoff |
 
-Zero código funcional. Um commit (`d62f9e17`) sobre `4d2710ab`. Sem commit funcional posterior.
+Zero código funcional. Commits do PR: `d62f9e17` (preparação) + `d893e386` (handoff pós-apply). Sem commit funcional posterior. Tag de homologação aponta para `d893e386`.
 
 ### ÁREAS PROTEGIDAS
 
 Sem SQL e sem diff em: `billing_usage`, NF, Asaas, Supabase NB-07, Investment, F4-P0/F4-P1 handlers, snapshots, RH, `time_clock`, Z-API.
 
-`billing_usage` permanece o piloto já homologado (não reaberto nesta execução).
+`billing_usage` permanece o piloto já homologado (não reaberto nesta execução). Nenhuma outra tabela RLS foi iniciada.
 
 ---
 
