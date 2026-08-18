@@ -13,8 +13,14 @@ test('menu Monitoramento e Fornecedor apontam para o mapa de acionamento', () =>
   assert.match(app, /ProviderActivationMap/);
 
   const sidebar = fs.readFileSync('components/Sidebar.tsx', 'utf8');
-  assert.match(sidebar, /provider-activation-map/);
   assert.match(sidebar, /from 'react'/);
+  assert.match(sidebar, /useState/);
+  assert.match(sidebar, /providerMenuIds/);
+  assert.match(sidebar, /'providers-group'/);
+  assert.match(sidebar, /'providers'/);
+  assert.match(sidebar, /'provider-activation-map'/);
+  assert.match(sidebar, /return !isClientUser/);
+  assert.match(sidebar, /todos os usuários internos/);
 
   const page = fs.readFileSync('components/ProviderActivationMap.tsx', 'utf8');
   assert.match(page, /from 'react'/);
