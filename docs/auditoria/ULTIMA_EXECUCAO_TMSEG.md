@@ -13,8 +13,8 @@
 | **Branch** | `cursor/fase4-account-balance-snapshots-api-eaa8` |
 | **Base `origin/main` / `origin/dev`** | `d893e386` |
 | **Handoff anterior incorporado** | conteúdo de `f0bcd58e` (homologação do PR #279) |
-| **HEAD desta execução** | registrar após commit |
-| **PR** | draft exclusivo a registrar |
+| **HEAD funcional desta execução** | `ef5d3897` |
+| **PR** | draft não criado: GitHub CLI ausente e instalação não autorizada; branch publicada |
 | **Projeto oficial** | Grupo TMSEG `ajhmmjuewdsukecaimik` |
 | **Apply / migration / DML live** | **NÃO executados** |
 
