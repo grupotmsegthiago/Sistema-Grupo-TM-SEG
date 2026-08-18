@@ -51,6 +51,7 @@ import SystemLogs from './components/SystemLogs';
 import ReportsDashboard from './components/ReportsDashboard';
 import MissionReportPage from './components/MissionReportPage';
 import RankingDHL from './components/RankingDHL';
+import ProviderActivationMap from './components/ProviderActivationMap';
 import ShiftHandover from './components/ShiftHandover';
 import QuoteList from './components/QuoteList';
 import QuoteForm from './components/QuoteForm';
@@ -470,6 +471,7 @@ const App: React.FC = () => {
       case 'client-route-form': return <ClientRouteForm id={selectedId} onSuccess={() => navigateTo('client-routes')} />;
       case 'quotes': return <QuoteList onAdd={() => navigateTo('quote-form')} onEdit={(id) => handleEdit('quote-form', id)} />;
       case 'quote-form': return <QuoteForm id={selectedId} onBack={() => navigateTo('quotes')} />;
+      case 'provider-activation-map': return <ProviderActivationMap />;
       case 'providers': return <ProviderList onAddProvider={() => navigateTo('provider-form')} onEdit={(id) => handleEdit('provider-form', id)} />;
       case 'provider-form': return <ProviderForm id={selectedId} onBack={() => navigateTo('providers')} onNavigateToVehicles={() => navigateTo('provider-vehicles')} />;
       case 'alvara-control': return <AlvaraControl />;

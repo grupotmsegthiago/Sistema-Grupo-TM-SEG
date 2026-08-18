@@ -1,0 +1,94 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  buildActivationOffers,
+  isGeneric100KmTable,
+  rankByHomeCity,
+  rankByUf,
+  shortProviderName,
+} from '../lib/providerActivationRanking.ts';
+
+test('isGeneric100KmTable aceita faixa 100/110 e rejeita rota específica', () => {
+  assert.equal(isGeneric100KmTable({ provider: 'A', operation_type: '100KM', franchise_km: 100 }), true);
+  assert.equal(isGeneric100KmTable({ provider: 'A', operation_type: 'SUDESTE - ATÉ 110 KM', franchise_km: 110 }), true);
+  assert.equal(isGeneric100KmTable({ provider: 'A', operation_type: '02 ARMADOS PRONTA RESPOSTA', franchise_km: 50 }), false);
+  assert.equal(isGeneric100KmTable({ provider: 'A', operation_type: 'FLORIANÓPOLIS X PALHOÇA', franchise_km: 100 }), false);
+  assert.equal(isGeneric100KmTable({ provider: 'A', operation_type: '__AUTO_MASTER__', franchise_km: 100 }), false);
+});
+
+test('buildActivationOffers — Prioridade 0 é o 100 km mais em conta na UF', () => {
+  const providers = [
+    { name: 'DEMARK SERVICOS', city: 'SAO PAULO', state: 'SP', status: 'Ativo' },
+    { name: 'BAZISUL SEGURANCA PRIVADA LTDA', city: 'PAULINIA', state: 'SP', status: 'Ativo' },
+    { name: 'CONSEGUR VIGILANCIA', city: 'BELO HORIZONTE', state: 'MG', status: 'Ativo' },
+    { name: 'BLOQUEADO X', city: 'SAO PAULO', state: 'SP', status: 'Bloqueado' },
+  ];
+  const tables = [
+    { provider: 'DEMARK SERVICOS', operation_type: 'ORIGEM - ATÉ 110 KM', activation_cost: 430, franchise_km: 110 },
+    { provider: 'BAZISUL SEGURANCA PRIVADA LTDA', operation_type: 'FAIXA SP: 110 KM', activation_cost: 400, franchise_km: 110 },
+    { provider: 'CONSEGUR VIGILANCIA', operation_type: 'URBANA MG', activation_cost: 450, franchise_km: 100 },
+    { provider: 'BLOQUEADO X', operation_type: '100KM', activation_cost: 10, franchise_km: 100 },
+  ];
+  const ranked = rankByUf(buildActivationOffers(providers, tables));
+  assert.equal(ranked.SP[0].provider, 'BAZISUL SEGURANCA PRIVADA LTDA');
+  assert.equal(ranked.SP[0].priority, 0);
+  assert.equal(ranked.SP[0].city, 'Paulínia');
+  assert.equal(ranked.SP[1].provider, 'DEMARK SERVICOS');
+  assert.equal(ranked.SP[1].priority, 1);
+  assert.equal(ranked.MG[0].provider, 'CONSEGUR VIGILANCIA');
+  assert.equal(ranked.SP.some((r) => r.provider === 'BLOQUEADO X'), false);
+});
+
+test('COLISEU PE entra em Pernambuco mesmo com sede cadastrada em SP', () => {
+  const offers = buildActivationOffers(
+    [{ name: 'COLISEU PE', city: 'SÃO PAULO', state: 'SP', status: 'Ativo' }],
+    [{ provider: 'COLISEU PE', operation_type: '100KM', activation_cost: 450, franchise_km: 100 }],
+  );
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].marketUf, 'PE');
+  assert.equal(offers[0].city, 'Recife');
+  assert.equal(offers[0].region, 'NORDESTE');
+});
+
+test('motor automático preenche 100 km quando não há tabela manual', () => {
+  const offers = buildActivationOffers(
+    [{
+      name: 'UP VIGILANCIA LTDA',
+      city: 'SAO JOAO DE MERITI',
+      state: 'RJ',
+      status: 'Ativo',
+      auto_calc_enabled: true,
+      auto_base_value: 380,
+      auto_base_km: 100,
+    }],
+    [],
+  );
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].marketUf, 'RJ');
+  assert.equal(offers[0].cost, 380);
+  assert.match(offers[0].source, /MOTOR AUTO/);
+});
+
+test('rankByHomeCity agrupa sede e ordena prioridade na cidade', () => {
+  const offers = buildActivationOffers(
+    [
+      { name: 'GAIA', city: 'NOVA IGUAÇU', state: 'RJ', status: 'Ativo' },
+      { name: 'IMPETUS', city: 'RIO DE JANEIRO', state: 'RJ', status: 'Ativo' },
+    ],
+    [
+      { provider: 'GAIA', operation_type: 'SUDESTE - 100KM', activation_cost: 380, franchise_km: 100 },
+      { provider: 'IMPETUS', operation_type: 'ATÉ 100KM', activation_cost: 430, franchise_km: 100 },
+    ],
+  );
+  const groups = rankByHomeCity(offers);
+  const novaIguacu = groups.find((g) => g.city === 'Nova Iguaçu');
+  const rio = groups.find((g) => g.city === 'Rio de Janeiro');
+  assert.equal(novaIguacu?.rows[0].priority, 0);
+  assert.equal(novaIguacu?.rows[0].provider, 'GAIA');
+  assert.equal(rio?.rows[0].provider, 'IMPETUS');
+});
+
+test('shortProviderName enxuga razão social para o mapa', () => {
+  assert.equal(shortProviderName('GAIA SEGURANCA E VIGILANCIA'), 'GAIA');
+  assert.ok(shortProviderName('COLISEU PE').includes('COLISEU'));
+});
