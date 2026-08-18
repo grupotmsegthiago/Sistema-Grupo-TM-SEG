@@ -1,7 +1,146 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **consumidores de `account_balance_snapshots` PUBLICADOS E HOMOLOGADOS**
-> **RLS/policy live não alteradas. Sem migration. `billing_usage` e `financial_transaction_payments` não tocados.**
+> Handoff oficial — **RLS `account_balance_snapshots` PREPARADO — APTO PARA REVISÃO**
+> **Migration + rollback versionados. Nenhum SQL executado. Supabase Production preservado.**
+
+---
+
+## FASE 4 — F4-P0-RLS `account_balance_snapshots` (PREPARAÇÃO LOCKDOWN)
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-18 (UTC-3) |
+| **Branch** | `cursor/fase4-rls-account-balance-snapshots-lockdown-eaa8` |
+| **Base `origin/main` / `origin/dev`** | `4f6d004c` |
+| **Commit funcional consumidores** | `c4aaab81` |
+| **Projeto oficial** | Grupo TMSEG `ajhmmjuewdsukecaimik` |
+| **Apply / migration / DML live** | **NÃO executados** |
+| **Migration forward** | `migrations/2026_08_18_fase4_p0_rls_account_balance_snapshots.sql` |
+| **Rollback** | `migrations/rollback/2026_08_18_fase4_p0_rls_account_balance_snapshots.sql` |
+| **Teste RLS** | `scripts/fase4-p0-rls-account-balance-snapshots.test.ts` |
+
+### PROGRESSO
+
+Preparação de lockdown ≠ lockdown aplicado. **Fase 4 permanece 50%.**
+
+**Programa geral: 84,0%**
+
+`█████████████████░░░`
+
+**Fase 4: 50%**
+
+`██████████░░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟢 RLS account_balance_snapshots PREPARADO — APTO PARA REVISÃO
+
+### REAUDITORIA DE CONSUMIDORES
+
+| Classificação | Ocorrências |
+|---------------|-------------|
+| **FRONTEND RUNTIME DIRETO** | **ZERO** |
+| BACKEND (SSOT) | `lib/investment/accountBalanceSnapshots.ts`, handlers `api/investment-snapshots*`, `server/routes.ts` |
+| TESTE | `scripts/fase4-account-balance-snapshots-api.test.ts`, `scripts/fase4-p0-rls-account-balance-snapshots.test.ts`, demais testes snapshots/Diretoria |
+| DOC | `docs/auditoria/*`, `MAPA_ENGENHARIA_REVERSA_TMSEG.md` |
+| MIGRATION HISTÓRICA | `migrations/2026_07_08_account_balance_snapshots.sql` (**imutável**) |
+
+Verificados: Dashboard Diretoria (`useDashboardDiretoriaData`), Contas a Pagar (`FinancialTransactionList`), Investment (`FinancialAccountManager`), `snapshotClient.ts` — todos via `authFetch` → API autenticada. Zero fallback anon.
+
+### BACKEND — FAIL-CLOSED
+
+```
+Frontend → authFetch → API TM SEG → denyInvestmentApiUnlessAuthorized
+         → requireSnapshotsAdminClient → service_role → account_balance_snapshots
+```
+
+- `service_role` ausente → **503 / erro fail-closed** (sem fallback anon).
+- Nenhuma chave `service_role` no frontend, bundle ou testes.
+
+### BOOTSTRAP / CLI
+
+| Caminho | Recria policy permissiva? |
+|---------|---------------------------|
+| `ensureSnapshotsTable` / `snapshotsStructuralSql()` | **NÃO** — somente estrutura + `ENABLE RLS` |
+| `api/investment-init.ts` | **NÃO** |
+| `scripts/apply-account-balance-snapshots-migration.mjs` | **NÃO** — filtra `CREATE/DROP POLICY` |
+
+### ESTADO LIVE — SOMENTE LEITURA
+
+Projeto `ajhmmjuewdsukecaimik`. Nenhuma linha exibida. Nenhum DML.
+
+| Check | Resultado |
+|-------|-----------|
+| Tabela | `public.account_balance_snapshots` — **existe** |
+| RLS | **ATIVO** |
+| Policies | **exatamente 1** |
+| Policy | `Allow all for account_balance_snapshots` |
+| Tipo / roles / comando | `PERMISSIVE` / `{anon, authenticated}` / `ALL` |
+| USING / WITH CHECK | `true` / `true` |
+| Total registros (service_role) | **132** |
+| Paridade pré-lockdown | anon = authenticated = owner = service_role (**132**) |
+
+Contagem pode crescer por operação legítima; migration **não** valida quantidade de registros.
+
+### DRIFT GUARD (forward)
+
+Aborta antes do `DROP POLICY` se:
+
+- tabela ausente ou RLS inativo;
+- total de policies ≠ 1;
+- nome/roles/cmd/USING/WITH CHECK divergirem do esperado.
+
+### MIGRATION FORWARD
+
+- `BEGIN` → validação `pg_class` / `pg_policies` → `ENABLE ROW LEVEL SECURITY` → `DROP POLICY "Allow all for account_balance_snapshots"` → `COMMIT`.
+- Zero DML. Zero policy substituta. Zero outras tabelas. Zero `auth.uid()`.
+
+### ROLLBACK
+
+- Valida tabela + RLS + zero policies → recria exatamente a policy permissiva anterior.
+- **NÃO executado.**
+
+### SERVICE_ROLE
+
+`service_role` bypassa RLS por privilégio Postgres — **não requer policy dedicada**. Lockdown fecha anon/authenticated; backend TM SEG preserva acesso via API + `service_role`.
+
+### TESTES
+
+| Suíte | Resultado |
+|-------|-----------|
+| `fase4-p0-rls-account-balance-snapshots.test.ts` | **9/9 OK** |
+| `fase4-account-balance-snapshots-api.test.ts` | **9/9 OK** |
+| `investment-snapshots.test.ts` | **4/4 OK** |
+| `dashboard-diretoria.test.ts` | **28/28 OK** |
+| `financial-transaction-operational-balance.test.ts` | incluído em dashboard suite |
+| `fase4-p0-rls-billing-usage.test.ts` | **4/4 OK** |
+| `fase4-p0-rls-financial-payments.test.ts` | **8/8 OK** |
+| TS completo `scripts/*.test.ts` | **1039/1040** — 1 **BASELINE** (`invoice-control-loading.test.ts`, CRLF Windows) |
+| React `scripts/*.test.tsx` | **4/4 OK** |
+| `npm run build` | **OK** |
+
+### ÁREAS PROTEGIDAS
+
+**Zero diff funcional:** billing_usage, financial_transaction_payments, RH, time_clock, Z-API, NF, Asaas, SEC-03, DRE, pedágio, OS, ENV, Vercel.
+
+### PRÓXIMO PASSO (FORA DESTA EXECUÇÃO)
+
+1. Revisão humana do SQL forward + rollback.
+2. Apply autorizado em janela controlada.
+3. Smoke pós-apply: anon/authenticated → 0; service_role → preservado; API autenticada → OK.
+
+### ENCERRAMENTO
+
+**PARAR.** Não aplicar migration. Não iniciar RH, `time_clock` ou Z-API.
+
+---
+
+> Handoff anterior — **consumidores de `account_balance_snapshots` PUBLICADOS E HOMOLOGADOS**
+> **RLS/policy live não alteradas naquela execução. Sem migration naquela fase.**
 
 ---
 
