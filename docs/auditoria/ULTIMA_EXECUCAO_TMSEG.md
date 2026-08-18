@@ -1,5 +1,176 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff oficial — **F4-P0-RLS RH LOTE 1 MAPEADO**
+> **Auditoria somente leitura. Nenhuma migration/policy/dado alterado. `time_clock` excluída.**
+
+---
+
+## FASE 4 — F4-P0-RLS RH LOTE 1 (AUDITORIA GO/NO-GO)
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-18 (UTC-3) |
+| **Branch** | `cursor/fase4-rls-rh-lote1-audit-eaa8` |
+| **Base `origin/main` / `origin/dev`** | `5faf8b45` |
+| **Projeto oficial** | `ajhmmjuewdsukecaimik` |
+| **Tabelas RH reais** | **27** (`time_clock` fora do lote) |
+| **Apply / DDL / DML live** | **NÃO executados** |
+| **Teste arquitetural** | `scripts/fase4-p0-rls-rh-lote1-audit.test.ts` |
+
+### PROGRESSO
+
+Auditoria não representa lockdown aplicado. Programa e Fase 4 permanecem inalterados.
+
+**Programa geral: 84,2%**
+
+`█████████████████░░░`
+
+**Fase 4: 55%**
+
+`███████████░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟢 RH LOTE 1 MAPEADO — PRÓXIMO PILOTO DEFINIDO
+
+### INVENTÁRIO REAL × POLICIES LIVE
+
+Todas as 27 tabelas abaixo existem em `public`, estão com RLS ativo, pertencem a `postgres`, não usam `FORCE RLS` e concedem `SELECT` a `anon`, `authenticated` e `service_role`. A visibilidade efetiva é definida pelas policies:
+
+- **18 tabelas:** uma policy `Allow all for <tabela>`, `PERMISSIVE`, `ALL`, `TO anon, authenticated`, `USING true`, `WITH CHECK true`.
+- **9 tabelas:** quatro policies `tmp_auth_{select,insert,update,delete}_all`, somente `authenticated`, todas permissivas e abertas.
+- Como o frontend TM SEG usa a chave pública sem sessão Supabase, acesso direto do browser atua como `anon`; policy somente para `authenticated` não atende esse frontend.
+
+| Tabela | Linhas owner/service_role | Policy live | Anon SELECT |
+|--------|---------------------------:|-------------|------------:|
+| `rh_admissions` | 0 | 4× `tmp_auth_*` | 0 |
+| `rh_audit_logs` | 24 | 1× Allow all anon/auth | 24 |
+| `rh_awards` | 5 | 1× Allow all anon/auth | 5 |
+| `rh_benefits` | 0 | 4× `tmp_auth_*` | 0 |
+| `rh_bonuses` | 0 | 1× Allow all anon/auth | 0 |
+| `rh_commission_rules` | 0 | 4× `tmp_auth_*` | 0 |
+| `rh_commissions` | 0 | 1× Allow all anon/auth | 0 |
+| `rh_departments` | 1 | 1× Allow all anon/auth | 1 |
+| `rh_employee_bank_accounts` | 4 | 1× Allow all anon/auth | 4 |
+| `rh_employee_benefits` | 0 | 1× Allow all anon/auth | 0 |
+| `rh_employee_dependents` | 0 | 1× Allow all anon/auth | 0 |
+| `rh_employee_documents` | 0 | 1× Allow all anon/auth | 0 |
+| `rh_employee_emergency_contacts` | 0 | 4× `tmp_auth_*` | 0 |
+| `rh_employees` | 15 | 1× Allow all anon/auth | 15 |
+| `rh_leaves` | 0 | 4× `tmp_auth_*` | 0 |
+| `rh_lgpd_consents` | 0 | 4× `tmp_auth_*` | 0 |
+| `rh_medical_exams` | 0 | 1× Allow all anon/auth | 0 |
+| `rh_payroll_items` | 0 | 1× Allow all anon/auth | 0 |
+| `rh_payroll_runs` | 0 | 1× Allow all anon/auth | 0 |
+| `rh_payslips` | 0 | 4× `tmp_auth_*` | 0 |
+| `rh_positions` | 7 | 1× Allow all anon/auth | 7 |
+| `rh_salary_configs` | 14 | 1× Allow all anon/auth | 14 |
+| `rh_settings` | 0 | 1× Allow all anon/auth | 0 |
+| `rh_tax_brackets` | 9 | 1× Allow all anon/auth | 9 |
+| `rh_vacations` | 0 | 4× `tmp_auth_*` | 0 |
+| `rh_warnings` | 0 | 1× Allow all anon/auth | 0 |
+| `rh_work_schedules` | 0 | 4× `tmp_auth_*` | 0 |
+
+`authenticated` enxerga a mesma contagem de owner/service_role em todas as tabelas, pois cada tabela possui policy `true` aplicável a esse role. Nenhuma linha ou PII foi exibida.
+
+### DRIFT DE NOMES CONFIRMADO
+
+| Nome histórico/inexistente | Estado live | Nome real |
+|----------------------------|-------------|-----------|
+| `rh_timeclock` | não existe | `time_clock` — **fora deste lote** |
+| `rh_vacation_requests` | não existe | `rh_vacations` |
+| `rh_leave_records` | não existe | `rh_leaves` |
+| `rh_benefit_types` | não existe | `rh_benefits` |
+| `rh_holidays` | não existe | sem substituto real identificado |
+
+Os nomes antigos permanecem em `migrations/2026_07_07_rh_rls_policies.sql` e em `scripts/rh-rls-policies.sql`. Não foram corrigidos nesta auditoria.
+
+### BOOTSTRAP / REABERTURA
+
+- `ensureRhTables()` executa somente `migrations/2026_07_07_rh_module.sql`; não lê a migration de policies e não contém `CREATE POLICY`.
+- `api/rh-init.ts` chama `ensureRhTables()` e também não recria policies.
+- A migration histórica e seu espelho manual ainda podem recriar policy ampla para **18 tabelas reais** se forem executados manualmente.
+- `rh_work_schedules` não consta nesses scripts históricos, portanto não possui caminho atual identificado que recrie sua policy.
+
+### CONSUMIDORES E MATRIZ DE LOCKDOWN
+
+Legenda: **A** backend/service_role; **B** frontend Supabase direto; **C** frontend via API autenticada; **D** fallback anon; **E** nenhum consumidor; **F** inconclusivo.
+
+| Tabela | Sensibilidade | Consumidor | API autenticada | Risco de lockout | Próxima ação |
+|--------|---------------|------------|-----------------|------------------|--------------|
+| `rh_admissions` | CRÍTICO | E | não | inconclusivo/futuro workflow | **NO-GO INCONCLUSIVO** |
+| `rh_audit_logs` | CRÍTICO | B + A | parcial | alto | **NO-GO API** |
+| `rh_awards` | ALTO | B + A | parcial | alto | **NO-GO API** |
+| `rh_benefits` | MÉDIO (catálogo) | B | não | alto | **NO-GO API** |
+| `rh_bonuses` | ALTO | B + A | parcial | alto | **NO-GO API** |
+| `rh_commission_rules` | ALTO | B + A | parcial | alto | **NO-GO API** |
+| `rh_commissions` | ALTO | B + A | parcial | alto | **NO-GO API** |
+| `rh_departments` | MÉDIO | B + A | somente leitura parcial | alto | **NO-GO API** |
+| `rh_employee_bank_accounts` | CRÍTICO | B | não | crítico | **NO-GO API** |
+| `rh_employee_benefits` | ALTO | E | não | script histórico reabre | **NO-GO BOOTSTRAP** |
+| `rh_employee_dependents` | CRÍTICO | E | não | script histórico reabre | **NO-GO BOOTSTRAP** |
+| `rh_employee_documents` | CRÍTICO | B | não | crítico | **NO-GO API** |
+| `rh_employee_emergency_contacts` | CRÍTICO | E | não | uso futuro inconclusivo | **NO-GO INCONCLUSIVO** |
+| `rh_employees` | CRÍTICO | **D + B + C** | sim, com fallback direto | crítico | **NO-GO API** |
+| `rh_leaves` | ALTO | B | não | alto | **NO-GO API** |
+| `rh_lgpd_consents` | CRÍTICO | E | não | uso futuro inconclusivo | **NO-GO INCONCLUSIVO** |
+| `rh_medical_exams` | CRÍTICO | B | não | crítico | **NO-GO API** |
+| `rh_payroll_items` | CRÍTICO | B + A | sim, parcial | crítico | **NO-GO API** |
+| `rh_payroll_runs` | CRÍTICO | B + A | sim, parcial | crítico | **NO-GO API** |
+| `rh_payslips` | ALTO | B | não | alto | **NO-GO API** |
+| `rh_positions` | MÉDIO | B + A | somente leitura parcial | alto | **NO-GO API** |
+| `rh_salary_configs` | CRÍTICO | B + A | sim, parcial | crítico | **NO-GO API** |
+| `rh_settings` | MÉDIO | E | não | script histórico reabre | **NO-GO BOOTSTRAP** |
+| `rh_tax_brackets` | MÉDIO | B + A | sim, parcial | alto | **NO-GO API** |
+| `rh_vacations` | ALTO | B | não | alto | **NO-GO API** |
+| `rh_warnings` | ALTO | B | não | alto | **NO-GO API** |
+| `rh_work_schedules` | MÉDIO | **E** | não necessária hoje | baixo | **GO DIRETO** |
+
+### PRÓXIMO PILOTO RECOMENDADO
+
+**`public.rh_work_schedules` — único piloto do próximo passo.**
+
+Motivos:
+
+1. zero consumidor frontend/backend identificado;
+2. zero registros no momento da auditoria;
+3. sensibilidade média e sem regra financeira complexa;
+4. RLS já ativo;
+5. quatro policies live conhecidas e isoláveis;
+6. ausente da migration/script histórico que recria `Allow all`;
+7. migration e rollback podem permanecer exclusivos dessa tabela.
+
+Antes de qualquer apply futuro: reauditar consumidores e contagem, preparar drift guard para as quatro policies `tmp_auth_*`, rollback exato e obter nova aprovação humana.
+
+### TESTES
+
+| Suíte | Resultado |
+|-------|-----------|
+| Novo teste arquitetural RH | **8/8 OK** |
+| RH + segurança + F4-P0/F4-P1 dirigidos | **119/119 OK** |
+| TypeScript completa | **1071/1072** — única falha **BASELINE CRLF Windows** em `invoice-control-loading.test.ts` |
+| React | **4/4 OK** |
+| `npm run build` | **OK** |
+
+Nenhuma falha nova foi introduzida.
+
+### INTEGRIDADE DE CONJUNTO DE DADOS
+
+- Inventário obtido do schema live completo; não foi usada primeira página/`.limit(N)` como universo.
+- Contagens anon foram obtidas por `HEAD` com `count=exact`, sem retornar linhas.
+- Contagens owner/service_role vieram do inventário live; nenhum conteúdo de registro foi consultado ou exibido.
+- Tabelas vazias foram registradas como **0**, não confundidas com tabela ausente.
+
+### ÁREAS PROTEGIDAS
+
+Zero alteração em `billing_usage`, `financial_transaction_payments`, `account_balance_snapshots`, `time_clock`, Z-API, NF, Asaas, Investment, DRE, pedágio, OS e ENV.
+
+---
+
 > Handoff oficial — **LOCKDOWN RLS `account_balance_snapshots` APLICADO COM SUCESSO**
 > **Apply controlado concluído no projeto oficial. Sem merge, push ou publicação.**
 
