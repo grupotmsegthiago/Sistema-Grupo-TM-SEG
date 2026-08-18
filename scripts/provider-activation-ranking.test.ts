@@ -166,3 +166,42 @@ test('filial sem valor usa o 100 km da sede para entrar no ranking', () => {
   assert.match(pe?.source || '', /FILIAL PE/);
 });
 
+test('em São Paulo a TORRES fica sempre na prioridade 0, mesmo mais cara', () => {
+  const ranked = rankByUf(buildActivationOffers(
+    [
+      { name: 'BAZISUL SEGURANCA PRIVADA LTDA', city: 'PAULINIA', state: 'SP', status: 'Ativo' },
+      { name: 'TORRES VIGILANCIA PATRIMONIAL LTDA', city: 'SAO PAULO', state: 'SP', status: 'Ativo' },
+      { name: 'CONSEGUR VIGILANCIA', city: 'BELO HORIZONTE', state: 'MG', status: 'Ativo' },
+    ],
+    [
+      { provider: 'BAZISUL SEGURANCA PRIVADA LTDA', operation_type: '100KM', activation_cost: 400, franchise_km: 100 },
+      { provider: 'TORRES VIGILANCIA PATRIMONIAL LTDA', operation_type: '100KM', activation_cost: 900, franchise_km: 100 },
+      { provider: 'CONSEGUR VIGILANCIA', operation_type: '100KM', activation_cost: 450, franchise_km: 100 },
+    ],
+  ));
+  assert.equal(ranked.SP[0].provider, 'TORRES VIGILANCIA PATRIMONIAL LTDA');
+  assert.equal(ranked.SP[0].priority, 0);
+  assert.equal(ranked.SP[0].pinned, true);
+  assert.equal(ranked.SP[1].provider, 'BAZISUL SEGURANCA PRIVADA LTDA');
+  assert.equal(ranked.SP[1].priority, 1);
+  assert.equal(ranked.MG[0].provider, 'CONSEGUR VIGILANCIA');
+  assert.equal(ranked.MG[0].pinned, false);
+});
+
+test('TORRES fora de SP segue a ordem de custo', () => {
+  const ranked = rankByUf(buildActivationOffers(
+    [
+      { name: 'TORRES VIGILANCIA PATRIMONIAL LTDA', city: 'RIO DE JANEIRO', state: 'RJ', status: 'Ativo' },
+      { name: 'GAIA', city: 'NOVA IGUAÇU', state: 'RJ', status: 'Ativo' },
+    ],
+    [
+      { provider: 'TORRES VIGILANCIA PATRIMONIAL LTDA', operation_type: '100KM', activation_cost: 900, franchise_km: 100 },
+      { provider: 'GAIA', operation_type: '100KM', activation_cost: 380, franchise_km: 100 },
+    ],
+  ));
+  assert.equal(ranked.RJ[0].provider, 'GAIA');
+  assert.equal(ranked.RJ[0].priority, 0);
+  assert.equal(ranked.RJ[1].provider, 'TORRES VIGILANCIA PATRIMONIAL LTDA');
+});
+
+

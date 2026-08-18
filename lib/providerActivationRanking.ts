@@ -1,5 +1,6 @@
 // Ranking de acionamento 100 km por região/cidade/UF.
 // Prioridade 0 = fornecedor mais em conta naquele recorte.
+// Exceção operacional: em São Paulo (SP) a TORRES fica sempre em primeiro.
 
 import { UF_TO_REGION } from './financialUtils';
 import {
@@ -99,6 +100,17 @@ export interface ActivationOffer {
 
 export interface RankedActivationRow extends ActivationOffer {
   priority: number;
+  /** Preferência operacional (ex.: TORRES sempre primeiro em SP). */
+  pinned?: boolean;
+}
+
+/** TORRES Vigilância — identificada pelo nome, sem confundir com outros cadastros. */
+export function isTorresProvider(name: string, tradingName?: string | null): boolean {
+  return /\bTORRES\b/.test(normKey(name)) || /\bTORRES\b/.test(normKey(tradingName || ''));
+}
+
+function isPinnedFirstInUf(offer: ActivationOffer, marketUf?: string): boolean {
+  return (marketUf || '').toUpperCase() === 'SP' && isTorresProvider(offer.provider, offer.tradingName);
 }
 
 export function stripAccents(value: string): string {
@@ -406,10 +418,19 @@ export function applyOperatingCoverage(
   return [...best.values()];
 }
 
-export function rankOffers(offers: ActivationOffer[]): RankedActivationRow[] {
+export function rankOffers(offers: ActivationOffer[], marketUf?: string): RankedActivationRow[] {
   return [...offers]
-    .sort((a, b) => a.cost - b.cost || a.provider.localeCompare(b.provider, 'pt-BR'))
-    .map((offer, index) => ({ ...offer, priority: index }));
+    .sort((a, b) => {
+      const pinA = isPinnedFirstInUf(a, marketUf) ? 0 : 1;
+      const pinB = isPinnedFirstInUf(b, marketUf) ? 0 : 1;
+      if (pinA !== pinB) return pinA - pinB;
+      return a.cost - b.cost || a.provider.localeCompare(b.provider, 'pt-BR');
+    })
+    .map((offer, index) => ({
+      ...offer,
+      priority: index,
+      pinned: isPinnedFirstInUf(offer, marketUf),
+    }));
 }
 
 export function rankByUf(offers: ActivationOffer[]): Record<string, RankedActivationRow[]> {
@@ -420,7 +441,7 @@ export function rankByUf(offers: ActivationOffer[]): Record<string, RankedActiva
   }
   const ranked: Record<string, RankedActivationRow[]> = {};
   for (const [uf, list] of Object.entries(grouped)) {
-    ranked[uf] = rankOffers(list);
+    ranked[uf] = rankOffers(list, uf);
   }
   return ranked;
 }
@@ -449,7 +470,7 @@ export function rankByHomeCity(offers: ActivationOffer[]): CityRankGroup[] {
       region: (region || '') as MacroRegion | '',
       city,
       uf,
-      rows: rankOffers(list),
+      rows: rankOffers(list, uf),
     });
   }
 

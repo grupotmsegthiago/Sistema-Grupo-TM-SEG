@@ -23,6 +23,7 @@ test('menu Monitoramento e Fornecedor apontam para o mapa de acionamento', () =>
   assert.match(page, /input-provider-activation-search/);
   assert.match(page, /region-columns/);
   assert.match(page, /Prioridade \{row\.priority\}/);
+  assert.match(page, /Fixo em SP/);
   assert.doesNotMatch(page, /formatActivationCost/);
 
   const form = fs.readFileSync('components/ProviderForm.tsx', 'utf8');

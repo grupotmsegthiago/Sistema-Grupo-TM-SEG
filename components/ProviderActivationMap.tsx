@@ -124,7 +124,7 @@ const ProviderActivationMap: React.FC = () => {
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-600">Monitoramento · Fornecedor</p>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Mapa de acionamento 100 km</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Passe o mouse no estado para ver a ordem de acionamento. Prioridade 0 = mais em conta; em seguida 1, 2, 3…
+            Passe o mouse no estado para ver a ordem de acionamento. Prioridade 0 = primeiro a acionar (em São Paulo a TORRES fica sempre em primeiro).
           </p>
         </div>
         <div className="flex items-center gap-2 w-full lg:w-auto">
@@ -278,7 +278,9 @@ const ProviderActivationMap: React.FC = () => {
                           Prioridade {row.priority}
                         </p>
                         {row.priority === 0 && (
-                          <p className="text-[10px] font-bold text-red-600">Mais em conta</p>
+                          <p className="text-[10px] font-bold text-red-600">
+                            {row.pinned ? 'Fixo em SP' : 'Mais em conta'}
+                          </p>
                         )}
                         {row.phone && (
                           <p className="text-[10px] text-slate-500 flex items-center justify-end gap-1 mt-0.5">
