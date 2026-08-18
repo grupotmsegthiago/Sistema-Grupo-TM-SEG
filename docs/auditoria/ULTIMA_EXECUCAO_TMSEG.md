@@ -1,7 +1,130 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **RLS `account_balance_snapshots` PREPARADO — APTO PARA REVISÃO**
-> **Migration + rollback versionados. Nenhum SQL executado. Supabase Production preservado.**
+> Handoff oficial — **LOCKDOWN RLS `account_balance_snapshots` APLICADO COM SUCESSO**
+> **Apply controlado concluído no projeto oficial. Sem merge, push ou publicação.**
+
+---
+
+## FASE 4 — APPLY CONTROLADO `account_balance_snapshots`
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-18 (UTC-3) |
+| **Branch / HEAD** | `cursor/fase4-rls-account-balance-snapshots-lockdown-eaa8` / `496cbf7e` |
+| **`origin/main` / `origin/dev` no apply** | `67e9e5ff` — avanço concorrente somente em menu/teste de fornecedor, sem impacto em snapshots |
+| **Projeto oficial** | `ajhmmjuewdsukecaimik` |
+| **Migration aplicada** | `migrations/2026_08_18_fase4_p0_rls_account_balance_snapshots.sql` |
+| **Rollback** | pronto e **NÃO executado** |
+| **Outras tabelas/migrations** | **NÃO tocadas** |
+
+### PROGRESSO
+
+**Programa geral: 84,0%**
+
+`█████████████████░░░`
+
+**Fase 4: 50%**
+
+`██████████░░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### DECISÃO
+
+# 🟢 LOCKDOWN account_balance_snapshots APLICADO COM SUCESSO
+
+### LIVE — ANTES DO APPLY
+
+| Check | Resultado |
+|-------|-----------|
+| RLS | ativo |
+| Policy | `Allow all for account_balance_snapshots` |
+| Policies | 1 (exatamente a esperada) |
+| anon / authenticated | 132 / 132 |
+| owner / service_role | 132 / 132 |
+| Drift guard | aprovado |
+
+### LIVE — APÓS COMMIT E RECHECK FINAL
+
+| Check | Resultado |
+|-------|-----------|
+| RLS | **ATIVO** |
+| Policy permissiva | **AUSENTE** |
+| Policies | **0** |
+| anon / authenticated | **0 / 0** |
+| owner / service_role | **132 / 132** |
+| Registros preservados | **132** |
+| Rollback | **NÃO executado** |
+
+Sem INSERT, UPDATE, DELETE ou snapshot artificial. A contagem permaneceu íntegra.
+
+### API / BACKEND
+
+- `GET /api/investment/snapshots-all?days=3650` sem autenticação: **401**.
+- Nenhum POST de teste e nenhuma alteração de saldo.
+- Backend permanece auth TM SEG → `service_role` fail-closed.
+
+### BOOTSTRAP PÓS-APPLY
+
+- Regressões estáticas confirmam que `ensureSnapshotsTable`, `snapshotsStructuralSql`, `investment-init` e CLI não recriam policy.
+- Recheck live final após testes/build: policies continuam **0**.
+- Após qualquer deploy/startup futuro, repetir o smoke; reaparecimento da policy é regressão crítica.
+
+### TESTES PÓS-APPLY
+
+| Suíte | Resultado |
+|-------|-----------|
+| Teste RLS | **9/9 OK** |
+| API snapshots | **9/9 OK** |
+| Regressão dirigida | **139/139 OK** |
+| TypeScript completa | **1063/1064** — única falha **BASELINE CRLF Windows** em `invoice-control-loading.test.ts` |
+| React | **4/4 OK** |
+| `npm run build` | **OK** |
+
+### CONTROLE GIT / ESCOPO
+
+- Nenhum merge, commit, push ou publicação após o apply.
+- Arquivos `.cjs` regenerados pelo build permanecem somente locais e **não devem ser adicionados**.
+- `billing_usage`, `financial_transaction_payments`, RH, `time_clock`, Z-API, NF, Asaas, SEC-03, DRE, pedágio, OS, ENV e Vercel não foram alterados.
+
+---
+
+## FASE 4 — REVISÃO INDEPENDENTE PRÉ-APLICAÇÃO
+
+| Campo | Valor |
+|-------|-------|
+| **Data** | 2026-08-18 (UTC-3) |
+| **Branch** | `cursor/fase4-rls-account-balance-snapshots-lockdown-eaa8` |
+| **HEAD revisado** | `496cbf7e` |
+| **Base `origin/main` / `origin/dev`** | `4f6d004c` |
+| **Diff revisado** | migration forward + rollback + teste RLS + handoff; **zero código funcional** |
+| **SQL/DDL/DML no Supabase oficial nesta revisão** | **NÃO executado** |
+
+### DECISÃO DA REVISÃO
+
+# 🟢 account_balance_snapshots APTO PARA APLICAÇÃO CONTROLADA
+
+### EVIDÊNCIAS
+
+- **Forward — SEGURO:** toca somente `public.account_balance_snapshots`; exige tabela existente, RLS ativo e exatamente a policy permissiva esperada; valida nome, roles, comando, `USING` e `WITH CHECK` antes do `DROP`; não usa contagem de registros; não cria policy substituta; zero DML e zero `auth.uid()`.
+- **Rollback — SEGURO:** exige tabela existente, RLS ativo e zero policies; aborta em estado inesperado; restaura exatamente `FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)`; zero DML.
+- **Live read-only:** `list_tables` confirmou tabela existente, RLS ativo e **132** registros. A definição da única policy permanece a evidência read-only imediatamente anterior: `Allow all for account_balance_snapshots`, `PERMISSIVE`, `{anon, authenticated}`, `ALL`, `true` / `true`. Nenhuma linha foi exibida.
+- **Consumidores:** frontend runtime direto = **ZERO**. Diretoria, Contas a Pagar e Investment usam `snapshotClient` → `authFetch` → API autenticada.
+- **Backend:** auth TM SEG → SSOT backend → `requireSnapshotsAdminClient`; ausência de `service_role` falha fechado. Sem fallback anon no caminho de snapshots.
+- **Bootstrap:** `ensureSnapshotsTable`, `snapshotsStructuralSql`, `investment-init` e CLI filtrada não recriam a policy permissiva.
+- **Segredos:** build frontend contém configuração pública Supabase e não contém `service_role`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SERVICE_KEY` ou `sb_secret_`.
+- **Regressão dirigida:** **139/139 OK**.
+- **Suíte TS completa:** **1063/1064**; única falha = **BASELINE CRLF Windows** em `invoice-control-loading.test.ts`.
+- **React:** **4/4 OK**.
+- **Build:** **OK**, Supabase oficial injetado.
+
+### RISCO RESIDUAL / CONTROLE DE APPLY
+
+- Não houve dry-run live com DDL, conforme proibição.
+- Aplicar somente em janela controlada, sem alteração concorrente de schema/policies, e executar imediatamente os smokes anon/authenticated/service_role previstos.
+- A contagem de registros é evidência operacional variável e não participa do drift guard.
 
 ---
 
@@ -119,7 +242,7 @@ Aborta antes do `DROP POLICY` se:
 | `financial-transaction-operational-balance.test.ts` | incluído em dashboard suite |
 | `fase4-p0-rls-billing-usage.test.ts` | **4/4 OK** |
 | `fase4-p0-rls-financial-payments.test.ts` | **8/8 OK** |
-| TS completo `scripts/*.test.ts` | **1039/1040** — 1 **BASELINE** (`invoice-control-loading.test.ts`, CRLF Windows) |
+| TS completo `scripts/*.test.ts` | **1063/1064** — 1 **BASELINE** (`invoice-control-loading.test.ts`, CRLF Windows) |
 | React `scripts/*.test.tsx` | **4/4 OK** |
 | `npm run build` | **OK** |
 
