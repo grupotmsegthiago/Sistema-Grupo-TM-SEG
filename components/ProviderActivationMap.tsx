@@ -309,17 +309,18 @@ const ProviderActivationMap: React.FC = () => {
               ) : (
                 <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
                   {groups.map((group) => (
-                    <div key={`${group.uf}-${group.city}`}>
+                    <div key={group.uf}>
                       <button
                         type="button"
                         onClick={() => setPinnedUf(group.uf)}
                         className="text-[11px] font-black uppercase tracking-wide text-slate-500 hover:text-red-700"
+                        data-testid={`region-uf-${group.uf}`}
                       >
-                        {group.city} ({group.uf})
+                        {UF_LABEL[group.uf] || group.city} ({group.uf})
                       </button>
                       <ul className="mt-1 space-y-1">
                         {group.rows.map((row) => (
-                          <li key={`${group.city}-${row.provider}`} className="text-[12px] text-slate-700 flex items-baseline gap-1.5">
+                          <li key={`${group.uf}-${row.provider}`} className="text-[12px] text-slate-700 flex items-baseline gap-1.5">
                             <span className={`font-black ${row.priority === 0 ? 'text-red-600' : 'text-slate-400'}`}>{row.priority}</span>
                             <span className="truncate" title={row.provider}>{shortProviderName(row.provider)}</span>
                           </li>

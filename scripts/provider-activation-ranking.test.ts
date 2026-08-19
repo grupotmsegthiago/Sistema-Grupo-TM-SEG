@@ -69,23 +69,34 @@ test('motor automático preenche 100 km quando não há tabela manual', () => {
   assert.match(offers[0].source, /MOTOR AUTO/);
 });
 
-test('rankByHomeCity agrupa sede e ordena prioridade na cidade', () => {
+test('rankByHomeCity agrupa por estado, não por cidade', () => {
   const offers = buildActivationOffers(
     [
       { name: 'GAIA', city: 'NOVA IGUAÇU', state: 'RJ', status: 'Ativo' },
       { name: 'IMPETUS', city: 'RIO DE JANEIRO', state: 'RJ', status: 'Ativo' },
+      { name: 'BAZISUL SEGURANCA PRIVADA LTDA', city: 'PAULINIA', state: 'SP', status: 'Ativo' },
+      { name: 'DEMARK SERVICOS', city: 'SAO PAULO', state: 'SP', status: 'Ativo' },
     ],
     [
       { provider: 'GAIA', operation_type: 'SUDESTE - 100KM', activation_cost: 380, franchise_km: 100 },
       { provider: 'IMPETUS', operation_type: 'ATÉ 100KM', activation_cost: 430, franchise_km: 100 },
+      { provider: 'BAZISUL SEGURANCA PRIVADA LTDA', operation_type: '100KM', activation_cost: 400, franchise_km: 100 },
+      { provider: 'DEMARK SERVICOS', operation_type: '100KM', activation_cost: 430, franchise_km: 100 },
     ],
   );
   const groups = rankByHomeCity(offers);
-  const novaIguacu = groups.find((g) => g.city === 'Nova Iguaçu');
-  const rio = groups.find((g) => g.city === 'Rio de Janeiro');
-  assert.equal(novaIguacu?.rows[0].priority, 0);
-  assert.equal(novaIguacu?.rows[0].provider, 'GAIA');
-  assert.equal(rio?.rows[0].provider, 'IMPETUS');
+  assert.equal(groups.filter((g) => g.uf === 'RJ').length, 1);
+  assert.equal(groups.filter((g) => g.uf === 'SP').length, 1);
+  const rj = groups.find((g) => g.uf === 'RJ');
+  const sp = groups.find((g) => g.uf === 'SP');
+  assert.equal(rj?.city, 'Rio de Janeiro');
+  assert.equal(rj?.rows[0].provider, 'GAIA');
+  assert.equal(rj?.rows[0].priority, 0);
+  assert.equal(rj?.rows[1].provider, 'IMPETUS');
+  assert.equal(sp?.city, 'São Paulo');
+  assert.equal(sp?.rows.map((r) => r.provider).includes('BAZISUL SEGURANCA PRIVADA LTDA'), true);
+  assert.equal(sp?.rows.map((r) => r.provider).includes('DEMARK SERVICOS'), true);
+  assert.equal(groups.some((g) => g.city === 'Nova Iguaçu' || g.city === 'Paulínia'), false);
 });
 
 test('shortProviderName enxuga razão social para o mapa', () => {

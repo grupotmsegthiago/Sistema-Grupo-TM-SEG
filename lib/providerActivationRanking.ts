@@ -448,6 +448,7 @@ export function rankByUf(offers: ActivationOffer[]): Record<string, RankedActiva
 
 export interface CityRankGroup {
   region: MacroRegion | '';
+  /** Rótulo do estado (não da cidade). */
   city: string;
   uf: string;
   rows: RankedActivationRow[];
@@ -456,8 +457,8 @@ export interface CityRankGroup {
 export function rankByHomeCity(offers: ActivationOffer[]): CityRankGroup[] {
   const grouped = new Map<string, ActivationOffer[]>();
   for (const offer of offers) {
-    if (offer.marketUf !== offer.hqUf && !offer.fromCoverage && normKey(offer.provider) !== 'COLISEU PE') continue;
-    const key = `${offer.region}|${offer.city}|${offer.marketUf}`;
+    if (!offer.marketUf) continue;
+    const key = `${offer.region}|${offer.marketUf}`;
     const list = grouped.get(key) || [];
     list.push(offer);
     grouped.set(key, list);
@@ -465,10 +466,10 @@ export function rankByHomeCity(offers: ActivationOffer[]): CityRankGroup[] {
 
   const groups: CityRankGroup[] = [];
   for (const [key, list] of grouped) {
-    const [region, city, uf] = key.split('|');
+    const [region, uf] = key.split('|');
     groups.push({
       region: (region || '') as MacroRegion | '',
-      city,
+      city: UF_LABEL[uf] || uf,
       uf,
       rows: rankOffers(list, uf),
     });
@@ -478,8 +479,7 @@ export function rankByHomeCity(offers: ActivationOffer[]): CityRankGroup[] {
     const ra = REGION_ORDER.indexOf(a.region as MacroRegion);
     const rb = REGION_ORDER.indexOf(b.region as MacroRegion);
     if (ra !== rb) return (ra < 0 ? 99 : ra) - (rb < 0 ? 99 : rb);
-    if (a.uf !== b.uf) return a.uf.localeCompare(b.uf);
-    return a.city.localeCompare(b.city, 'pt-BR');
+    return a.uf.localeCompare(b.uf);
   });
 }
 

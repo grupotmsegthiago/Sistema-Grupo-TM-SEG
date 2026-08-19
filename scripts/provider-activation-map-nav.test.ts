@@ -28,6 +28,8 @@ test('menu Monitoramento e Fornecedor apontam para o mapa de acionamento', () =>
   assert.match(page, /svg-brazil-activation-map/);
   assert.match(page, /input-provider-activation-search/);
   assert.match(page, /region-columns/);
+  assert.match(page, /region-uf-/);
+  assert.match(page, /UF_LABEL\[group\.uf\]/);
   assert.match(page, /Prioridade \{row\.priority\}/);
   assert.match(page, /Fixo em SP/);
   assert.doesNotMatch(page, /formatActivationCost/);
