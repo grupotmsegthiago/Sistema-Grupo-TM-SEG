@@ -34,7 +34,7 @@ homologação futuros podem alterá-los.
 | Alinhamento | main = dev |
 | Branch | `cursor/fase4-rh-api-foundation-eaa8` |
 | Base | criada diretamente de `origin/main` |
-| PR | draft a criar após commit/push |
+| PR | [#284](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/284) — draft |
 
 O working tree histórico `tmseg-pr278-main-baseline` não foi usado como base e
 permanece com o handoff local do inventário anterior. Nenhum stash foi aplicado,
