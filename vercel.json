@@ -335,6 +335,10 @@
       "destination": "/api/rh-seed-employees"
     },
     {
+      "source": "/api/rh/employees/documents",
+      "destination": "/api/rh-employee-documents"
+    },
+    {
       "source": "/api/rh/employees/cost-summary",
       "destination": "/api/rh-employee-costs"
     },
