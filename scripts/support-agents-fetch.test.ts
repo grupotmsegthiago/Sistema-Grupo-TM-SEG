@@ -5,6 +5,7 @@ import {
   SUPPORT_AGENTS_PAGE_SIZE,
 } from '../lib/supportAgents/fetchAllSupportAgents';
 import { canReadSupportAgents, isRestrictedClientUser } from '../lib/supportAgents/supportAgentsAccess';
+import { handleSupportAgentsList } from '../lib/supportAgents/handleSupportAgentsList';
 import type { SupportAgent } from '../types';
 
 function fakeAgent(id: string): SupportAgent {
@@ -41,6 +42,13 @@ describe('supportAgentsAccess', () => {
   it('bloqueia principal ausente', () => {
     assert.equal(canReadSupportAgents(null), false);
     assert.equal(canReadSupportAgents(undefined), false);
+  });
+
+  it('handleSupportAgentsList sem token retorna 401', async () => {
+    const result = await handleSupportAgentsList('');
+    assert.equal(result.status, 401);
+    assert.equal(result.body.ok, false);
+    assert.equal(result.body.completeness, 'ERRO');
   });
 });
 

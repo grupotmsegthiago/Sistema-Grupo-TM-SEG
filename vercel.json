@@ -691,6 +691,10 @@
       "destination": "/api/financial-payments-init"
     },
     {
+      "source": "/api/support-agents",
+      "destination": "/api/support-agents"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index"
     },
