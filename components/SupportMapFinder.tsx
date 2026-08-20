@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
 import { SupportAgent } from '../types';
+import { loadSupportAgentsFromApi } from '../lib/supportAgents/loadSupportAgentsFromApi';
+import type { SupportAgentsCompleteness } from '../lib/supportAgents/fetchAllSupportAgents';
 import { useLoadScript, GoogleMap, Marker, InfoWindow, Circle, Autocomplete } from '@react-google-maps/api';
 import { googleMapsApiKey, libraries, googleMapsLoadConfig } from '../lib/maps';
 import { extractCoordinates } from '../lib/utils';
@@ -63,6 +64,8 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
     const [searchTerm, setSearchTerm] = useState('');
     const [mapInstance, setMapInstance] = useState<any | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [completeness, setCompleteness] = useState<SupportAgentsCompleteness>('ERRO');
 
     const [radiusCenter, setRadiusCenter] = useState<{lat: number, lng: number} | null>(null);
     const [radiusCityName, setRadiusCityName] = useState('');
@@ -77,35 +80,23 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
 
     const fetchAgents = async () => {
         setIsLoading(true);
+        setLoadError(null);
         try {
-            let allData: SupportAgent[] = [];
-            let from = 0;
-            let to = 999;
-            let hasMore = true;
-
-            while (hasMore) {
-                const { data, error } = await supabase
-                    .from('support_agents')
-                    .select('*')
-                    .range(from, to);
-                
-                if (error) throw error;
-                
-                if (data && data.length > 0) {
-                    allData = [...allData, ...(data as SupportAgent[])];
-                    if (data.length < 1000) {
-                        hasMore = false;
-                    } else {
-                        from += 1000;
-                        to += 1000;
-                    }
-                } else {
-                    hasMore = false;
-                }
+            const result = await loadSupportAgentsFromApi();
+            if (!result.ok) {
+                setAgents([]);
+                setCompleteness(result.completeness || 'ERRO');
+                setLoadError(result.error || 'Falha ao carregar a Rede de Apoio');
+                return;
             }
-            setAgents(allData);
-        } catch (e) { 
-            console.error("Erro na carga total da base:", e); 
+            setAgents(result.agents || []);
+            setCompleteness(result.completeness || 'ENCONTRADO');
+            setLoadError(null);
+        } catch (e) {
+            console.error("Erro na carga total da base:", e);
+            setAgents([]);
+            setCompleteness('ERRO');
+            setLoadError(e instanceof Error ? e.message : 'Falha ao carregar a Rede de Apoio');
         } finally {
             setIsLoading(false);
         }
@@ -232,6 +223,11 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
                         <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tighter leading-none">Rede de Apoio Nacional</h2>
                         <div className="flex items-center gap-2 mt-2">
                             <span className="text-[10px] font-black text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200 uppercase tracking-widest">{agents.length} AGENTES CARREGADOS (ILIMITADO)</span>
+                            {loadError && (
+                                <span className="text-[10px] font-black text-red-700 bg-red-50 px-2 py-0.5 rounded-full border border-red-200 uppercase tracking-widest">
+                                    {completeness === 'CONSULTA INCOMPLETA' ? 'Consulta incompleta' : 'Falha na carga'}
+                                </span>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -330,13 +326,30 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
                         <div className="flex-1 overflow-y-auto divide-y divide-gray-100 scrollbar-thin bg-gray-50/30">
                             {isLoading ? (
                                 <div className="p-20 text-center flex flex-col items-center"><Loader2 className="animate-spin text-red-600 mb-4" size={32}/><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Sincronizando Base...</p></div>
+                            ) : loadError ? (
+                                <div className="p-12 text-center flex flex-col items-center gap-3">
+                                    <AlertTriangle size={32} className="text-red-500" />
+                                    <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">
+                                        Não foi possível carregar a Rede de Apoio
+                                    </p>
+                                    <p className="text-[10px] text-gray-500 max-w-xs">{loadError}</p>
+                                    <button onClick={fetchAgents} className="mt-2 px-3 py-1.5 text-[10px] font-black uppercase bg-red-700 text-white rounded-lg">
+                                        Tentar novamente
+                                    </button>
+                                </div>
                             ) : filteredAgents.length === 0 ? (
                                 <div className="p-12 text-center flex flex-col items-center gap-3">
                                     <Target size={32} className="text-gray-300" />
                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                                        {radiusActive ? 'Nenhum agente encontrado neste raio' : 'Nenhum agente encontrado'}
+                                        {completeness === 'NÃO EXISTE'
+                                            ? 'Base da Rede de Apoio vazia'
+                                            : radiusActive
+                                                ? 'Nenhum agente encontrado neste raio'
+                                                : 'Nenhum agente encontrado'}
                                     </p>
-                                    {radiusActive && <p className="text-[10px] text-gray-400">Tente aumentar o raio de busca</p>}
+                                    {radiusActive && completeness !== 'NÃO EXISTE' && (
+                                        <p className="text-[10px] text-gray-400">Tente aumentar o raio de busca</p>
+                                    )}
                                 </div>
                             ) : (
                                 filteredAgents.map((agent: any) => (

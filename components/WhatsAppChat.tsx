@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
 import { authFetch } from '../lib/authFetch';
+import { loadSupportAgentsFromApi } from '../lib/supportAgents/loadSupportAgentsFromApi';
 import { Search, Send, Loader2, MessageCircle, User, Phone, CheckCheck, RefreshCw, AlertTriangle, ShieldCheck, Shield, Users } from 'lucide-react';
 
 interface ChatMessage {
@@ -110,15 +111,10 @@ const WhatsAppChat: React.FC = () => {
         const combinedContacts: ChatContact[] = [];
 
         try {
-            // 1. Buscar Agentes do Banco de Dados (Supabase)
-            const { data: agentsData } = await supabase
-                .from('support_agents')
-                .select('*')
-                .eq('status', 'Ativo')
-                .order('name');
-            
-            if (agentsData) {
-                const mappedAgents: ChatContact[] = agentsData.map((a: any) => ({
+            // 1. Buscar Agentes do Banco de Dados via API autenticada (service_role)
+            const agentsResult = await loadSupportAgentsFromApi({ status: 'Ativo' });
+            if (agentsResult.ok) {
+                const mappedAgents: ChatContact[] = (agentsResult.agents || []).map((a) => ({
                     id: a.id,
                     name: a.name,
                     phone: a.phone,
@@ -127,6 +123,8 @@ const WhatsAppChat: React.FC = () => {
                     type: 'agent'
                 }));
                 combinedContacts.push(...mappedAgents);
+            } else {
+                console.error('Erro ao carregar agentes da Rede de Apoio:', agentsResult.error);
             }
 
             // 2. Buscar Grupos via proxy do backend (não expor credenciais Z-API ao browser)

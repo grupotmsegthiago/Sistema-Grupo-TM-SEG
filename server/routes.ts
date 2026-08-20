@@ -15,6 +15,7 @@ import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIn
 import { registerRhRoutes } from "./rhRoutes";
 import { registerOsAnalysisRoutes } from "./osAnalysisRequests";
 import { registerGestaoInvestimentoRoutes } from "./gestaoInvestimentoRoutes";
+import { registerSupportAgentsRoutes } from "./supportAgentsRoutes";
 import { runRhMigrations } from "./rhMigrations";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances, transferPixFromCompany } from "./asaasService";
 import {
@@ -802,6 +803,7 @@ export async function registerRoutes(
   // NÃO usar await import aqui: trava getApp se o chunk falhar no bundle.
   registerOsAnalysisRoutes(app, requireAuth);
   registerGestaoInvestimentoRoutes(app, requireAuth);
+  registerSupportAgentsRoutes(app, requireAuth, requireRole);
 
   app.post('/api/missions/:id/loss-alert-email', requireAuth, async (req: Request, res: Response) => {
     try {
