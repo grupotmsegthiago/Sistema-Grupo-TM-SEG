@@ -12,8 +12,12 @@ export function registerSupportAgentsRoutes(
   app.get('/api/support-agents', requireAuth, requireRole('*'), async (req: Request, res: Response) => {
     try {
       const token = String((req as any).authToken || '');
-      const status = String(req.query.status || '');
-      const result = await handleSupportAgentsList(token, status);
+      const result = await handleSupportAgentsList(
+        token,
+        req.query.status,
+        req.query.from,
+        req.query.to,
+      );
       res.status(result.status).json(result.body);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Falha ao listar agentes da Rede de Apoio';

@@ -1,5 +1,8 @@
 import { createSupabaseAdminClient } from '../supabaseAdmin.js';
-import { fetchAllSupportAgents } from './fetchAllSupportAgents';
+import {
+  parseSupportAgentsPageRange,
+  SUPPORT_AGENTS_SELECT,
+} from './fetchAllSupportAgents';
 import { canReadSupportAgents } from './supportAgentsAccess';
 import { resolvePrincipalFromToken } from '../auth/resolvePrincipal.js';
 
@@ -8,62 +11,67 @@ export type SupportAgentsListResponse = {
   body: Record<string, unknown>;
 };
 
-function rangeQuery(status?: string) {
-  const sb = createSupabaseAdminClient();
-  if (!sb) return null;
-  return {
-    async range(from: number, to: number) {
-      let query = sb.from('support_agents').select('*').order('id', { ascending: true });
-      if (status) query = query.eq('status', status);
-      return query.range(from, to);
-    },
-  };
+function errorBody(error: string, statusHint: 'ERRO' | 'CONSULTA INCOMPLETA' = 'ERRO') {
+  return { ok: false, agents: [], total: 0, hasMore: false, completeness: statusHint, error };
 }
 
-/** Lista a Rede de Apoio com service_role. Fail-closed se auth/consulta falhar. */
+/** Uma página da Rede de Apoio com service_role. O browser pagina o universo. */
 export async function handleSupportAgentsList(
   token: string,
   statusFilter?: string,
+  fromRaw?: unknown,
+  toRaw?: unknown,
 ): Promise<SupportAgentsListResponse> {
   if (!token) {
-    return {
-      status: 401,
-      body: { ok: false, agents: [], total: 0, completeness: 'ERRO', error: 'Não autorizado' },
-    };
+    return { status: 401, body: errorBody('Não autorizado') };
   }
 
   const principal = await resolvePrincipalFromToken(token);
   if (!principal || !canReadSupportAgents(principal)) {
     return {
-      status: principal ? 403 : 403,
-      body: {
-        ok: false,
-        agents: [],
-        total: 0,
-        completeness: 'ERRO',
-        error: principal
+      status: 403,
+      body: errorBody(
+        principal
           ? 'Permissão negada — Rede de Apoio é restrita a usuários internos'
           : 'Permissão negada — usuário inativo ou não encontrado',
-      },
+      ),
     };
   }
 
-  const status = String(statusFilter || '').trim();
-  const query = rangeQuery(status || undefined);
-  if (!query) {
+  const sb = createSupabaseAdminClient();
+  if (!sb) {
     return {
       status: 503,
-      body: {
-        ok: false,
-        agents: [],
-        total: 0,
-        completeness: 'ERRO',
-        error: 'Supabase admin indisponível — não é possível carregar a Rede de Apoio',
-      },
+      body: errorBody('Supabase admin indisponível — não é possível carregar a Rede de Apoio'),
     };
   }
 
-  const result = await fetchAllSupportAgents(query);
-  const statusCode = result.ok ? 200 : result.completeness === 'CONSULTA INCOMPLETA' ? 206 : 500;
-  return { status: statusCode, body: result };
+  const { from, to } = parseSupportAgentsPageRange(fromRaw, toRaw);
+  const status = String(statusFilter || '').trim();
+  let query = sb.from('support_agents').select(SUPPORT_AGENTS_SELECT);
+  if (status) query = query.eq('status', status);
+  const { data, error } = await query.order('id', { ascending: true }).range(from, to);
+
+  if (error) {
+    return {
+      status: 500,
+      body: errorBody(error.message || 'Falha ao consultar support_agents'),
+    };
+  }
+
+  const agents = Array.isArray(data) ? data : [];
+  const requested = to - from + 1;
+  const hasMore = agents.length >= requested;
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      agents,
+      total: agents.length,
+      from,
+      to,
+      hasMore,
+      completeness: agents.length > 0 || from > 0 ? 'ENCONTRADO' : 'NÃO EXISTE',
+    },
+  };
 }

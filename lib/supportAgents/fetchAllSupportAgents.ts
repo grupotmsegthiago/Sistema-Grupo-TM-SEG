@@ -1,6 +1,24 @@
 export const SUPPORT_AGENTS_PAGE_SIZE = 1000;
 export const SUPPORT_AGENTS_MAX_PAGES = 50;
 
+/** Colunas usadas pelo mapa/chat — evita select(*) inchado. */
+export const SUPPORT_AGENTS_SELECT =
+  'id,name,cpf,phone,is_armed,is_24h,base_address,latitude,longitude,service_cities,status,cost_value,pix_key,is_virtual,parent_agent_id,created_at';
+
+export function parseSupportAgentsPageRange(
+  fromRaw: unknown,
+  toRaw: unknown,
+): { from: number; to: number } {
+  let from = Number.parseInt(String(fromRaw ?? '0'), 10);
+  let to = Number.parseInt(String(toRaw ?? String(SUPPORT_AGENTS_PAGE_SIZE - 1)), 10);
+  if (!Number.isFinite(from) || from < 0) from = 0;
+  if (!Number.isFinite(to) || to < from) to = from + SUPPORT_AGENTS_PAGE_SIZE - 1;
+  if (to - from + 1 > SUPPORT_AGENTS_PAGE_SIZE) {
+    to = from + SUPPORT_AGENTS_PAGE_SIZE - 1;
+  }
+  return { from, to };
+}
+
 type SupportAgent = Record<string, unknown> & { id?: string };
 
 export type SupportAgentsCompleteness =

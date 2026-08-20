@@ -2,8 +2,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   fetchAllSupportAgents,
+  parseSupportAgentsPageRange,
   SUPPORT_AGENTS_PAGE_SIZE,
 } from '../lib/supportAgents/fetchAllSupportAgents';
+import { parseSupportAgentsResponse } from '../lib/supportAgents/parseSupportAgentsResponse';
 import { canReadSupportAgents, isRestrictedClientUser } from '../lib/supportAgents/supportAgentsAccess';
 import { handleSupportAgentsList } from '../lib/supportAgents/handleSupportAgentsList';
 import type { SupportAgent } from '../types';
@@ -118,5 +120,39 @@ describe('fetchAllSupportAgents', () => {
     assert.equal(result.ok, false);
     assert.equal(result.completeness, 'CONSULTA INCOMPLETA');
     assert.equal(result.total, 6);
+  });
+});
+
+describe('parseSupportAgentsResponse', () => {
+  it('não trata HTML/texto como base vazia', () => {
+    const result = parseSupportAgentsResponse(
+      500,
+      'A server error has occurred\n\nFUNCTION_INVOCATION_FAILED',
+      'text/plain',
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.completeness, 'ERRO');
+    assert.match(result.error || '', /HTTP 500/);
+    assert.match(result.error || '', /FUNCTION_INVOCATION_FAILED/);
+  });
+
+  it('trata corpo vazio como ERRO', () => {
+    const result = parseSupportAgentsResponse(200, '', 'application/json');
+    assert.equal(result.ok, false);
+    assert.match(result.error || '', /vazia/);
+  });
+
+  it('repassa JSON válido', () => {
+    const result = parseSupportAgentsResponse(200, '{"ok":true,"agents":[]}');
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.agents, []);
+  });
+});
+
+describe('parseSupportAgentsPageRange', () => {
+  it('limita a página a 1000 registros', () => {
+    const range = parseSupportAgentsPageRange('0', '5000');
+    assert.equal(range.from, 0);
+    assert.equal(range.to, SUPPORT_AGENTS_PAGE_SIZE - 1);
   });
 });
