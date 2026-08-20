@@ -1,7 +1,7 @@
-import type { SupportAgent } from '../../types';
-
 export const SUPPORT_AGENTS_PAGE_SIZE = 1000;
 export const SUPPORT_AGENTS_MAX_PAGES = 50;
+
+type SupportAgent = Record<string, unknown> & { id?: string };
 
 export type SupportAgentsCompleteness =
   | 'ENCONTRADO'
