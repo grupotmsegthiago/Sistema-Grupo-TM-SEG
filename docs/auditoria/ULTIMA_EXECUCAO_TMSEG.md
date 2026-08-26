@@ -1,17 +1,46 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff local — **F4 SEGUNDO PILOTO RH: DADOS BANCÁRIOS IMPLEMENTADO**
-> **Sem commit, push, PR, deploy, SQL, alteração de banco ou fechamento RLS.**
+> Handoff oficial — **F4 SEGUNDO PILOTO RH BANCÁRIO PUBLICADO E HOMOLOGADO**
+> **PR #286 em produção; RLS e banco preservados.**
 
 ---
 
-## F4 — SEGUNDO PILOTO RH `rh_employee_bank_accounts`
+## F4 — SEGUNDO PILOTO RH `rh_employee_bank_accounts` — HOMOLOGAÇÃO
+
+### PROGRESSO CONSERVADOR
+
+**Programa geral: 84,0%**
+
+`█████████████████░░░`
+
+**Fase 4: 50%**
+
+`██████████░░░░░░░░░░`
+
+**Execução: 100%**
+
+`████████████████████`
+
+Fórmula: base pré-Fase 4 de 82% + `4 × 0,50 = 2,00`, totalizando
+84,0%. A Fase 4 avançou conservadoramente de 48% para 50% pela publicação e
+homologação de um segundo consumidor RH sensível. O lockdown RLS não foi
+contabilizado porque continua pendente.
 
 ### ESTADO
 
 - Data: 2026-08-26 (UTC-3).
-- Base reconciliada: `origin/main = origin/dev = 1a094ab6`.
-- Branch local: `cursor/fase4-rh-bank-accounts-api-eaa8`.
+- [PR #286](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/286)
+  revisado no HEAD funcional `07389efed75cce6a809ab97ac088cb70e9b364ec`.
+- Base pré-merge: `origin/main = origin/dev = 1a094ab6`.
+- Merge em `dev` e build homologado:
+  `8b299e6a3db5101e8e6e354287c570de0d7d0cab`.
+- `main` e `dev` publicados pelo fluxo oficial `publicar.ps1`.
+- Produção oficial: projeto Vercel `sistema-grupo-tm-seg`.
+- `builtAt`: `2026-08-26T16:29:13.916Z`.
+- Tag pré-publicação:
+  `baseline-fase4-pre-rh-bank-accounts-api-20260826` → `1a094ab6`.
+- Tag pós-homologação:
+  `baseline-fase4-rh-bank-accounts-api-merged-20260826` → `8b299e6a`.
 - A RH API Foundation homologada foi reutilizada: `authFetch`, endpoint
   autenticado, autorização exclusiva de Diretoria/RH, `service_role` somente no
   backend, fail-closed e SSOT backend.
@@ -32,12 +61,15 @@
 - `npm run build`: **OK**.
 - Supabase público presente em `dist/public/index.html`: **OK**.
 - Import React/hooks em `RhEmployeeForm.tsx`: **OK**.
-- `tsc --noEmit`: não executou a análise por `TS6305` preexistente em
-  `vite.config.d.ts`. A checagem focada encontrou somente erros preexistentes em
-  `RhEmployeeForm.tsx:112` (`created_by`) e `apiEmployeesAuth.ts`
-  (`EnvHeaders`); nenhum erro novo foi reportado. O build oficial concluiu.
-- Smoke local em browser/API não executado porque a autorização nativa para
-  iniciar o servidor local foi ignorada.
+- `git diff --check`: **OK**.
+- `/api/version`, `/api/health` e `/`: **200**.
+- Nova API sem autenticação: GET público e handler direto **401**; POST **401**;
+  PATCH **401**; DELETE **405**. Nenhuma escrita foi executada.
+- Bundle publicado: zero `.from('rh_employee_bank_accounts')`; endpoint
+  autenticado e mensagem genérica de escrita presentes.
+- RH documentos, NF, Asaas Payments, Supabase NB-07, Investment, DB Capacity,
+  Platform Costs, Client Registries e relatório operacional permaneceram
+  protegidos sem autenticação.
 
 ### SEGURANÇA, RLS E INTEGRIDADE
 
@@ -48,18 +80,22 @@
 - Nenhuma migration, policy, schema, SQL ou banco foi alterado.
 - RLS de `rh_employee_bank_accounts` permanece exatamente no estado anterior;
   esta execução não é lockdown.
-- Não houve commit, push, PR, merge ou publicação.
+- O primeiro `publicar.ps1` encontrou o clone local atrasado e teve os pushes
+  rejeitados sem alterar remotos. Após fast-forward seguro de `dev` e `main`, a
+  segunda execução concluiu merge e push sem force.
 - Mudanças externas de OS foram preservadas e não integram este diff.
+- Rollback de código: republicar o estado marcado por
+  `baseline-fase4-pre-rh-bank-accounts-api-20260826`. Não existe rollback SQL.
 
 ### PRÓXIMO PASSO
 
-Mediante solicitação explícita, criar commit/PR draft. O fechamento RLS deve
-permanecer em execução separada e posterior à homologação funcional deste
-consumidor.
+Planejar o lockdown RLS de `rh_employee_bank_accounts` em execução separada,
+com inventário live e rollback próprios. Não iniciar terceiro piloto RH,
+`time_clock`, Z-API ou qualquer alteração financeira neste handoff.
 
 ### DECISÃO
 
-# 🟢 SEGUNDO PILOTO RH APTO PARA COMMIT/PR DRAFT
+# 🟢 SEGUNDO PILOTO RH PUBLICADO E HOMOLOGADO
 
 ---
 
