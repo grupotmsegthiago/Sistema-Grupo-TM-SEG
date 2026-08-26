@@ -31,6 +31,7 @@ aplicação e homologação live separadas.
   92df6a0d41f428b62afaaccc0906a20fe25873b6`.
 - Branch: `cursor/fase4-rls-rh-bank-accounts-eaa8`, atualizada exclusivamente
   por fast-forward da `main`.
+- PR draft: [#288](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/288).
 - Produção: `/api/version` no build `92df6a0d`, versão `3.7.60`;
   `/api/health` com status `ok`.
 - Handoff anterior confirma o PR #287 publicado e o script operacional RH
