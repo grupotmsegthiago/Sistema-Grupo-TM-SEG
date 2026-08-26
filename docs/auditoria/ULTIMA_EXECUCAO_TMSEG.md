@@ -1,7 +1,7 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff local — **F4 RH RLS: SCRIPT OPERACIONAL LEGADO NEUTRALIZADO**
-> **Sem SQL, alteração live, migration de lockdown, merge ou publicação.**
+> Handoff oficial — **F4 RH RLS: SCRIPT LEGADO PUBLICADO E HOMOLOGADO**
+> **PR #287 em produção; sem SQL, migration ou alteração de RLS live.**
 
 ---
 
@@ -25,9 +25,10 @@ Preparação não aumenta percentual e não contabiliza lockdown RLS.
 
 ### AUDITORIA DO SCRIPT
 
-- Base: `origin/main = origin/dev = 0f468aaa`.
+- Base inicial: `origin/main = origin/dev = 0f468aaa`.
 - Branch: `cursor/fase4-rh-rls-script-hardening-eaa8`.
-- PR draft: [#287](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/287).
+- [PR #287](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/287)
+  mergeado em `dev` pelo commit `14e0a3bf`.
 - O script operacional abrangia 23 tabelas:
   `rh_departments`, `rh_positions`, `rh_employees`,
   `rh_employee_bank_accounts`, `rh_employee_documents`,
@@ -68,6 +69,21 @@ Preparação não aumenta percentual e não contabiliza lockdown RLS.
 - `npm run build`: **OK**.
 - `git diff --check`: **OK**.
 - Bundles gerados pelo build foram removidos do diff.
+
+### PUBLICAÇÃO E HOMOLOGAÇÃO
+
+- Publicação controlada em 2026-08-26 (UTC-3).
+- Fluxo oficial `publicar.ps1`: merge fast-forward `dev` → `main`, push de
+  ambas as branches e retorno para `dev`: **OK**.
+- Primeiro commit efetivamente servido:
+  `14e0a3bf0176168e56e6771382df79e3feafba2a`.
+- Produção oficial: `https://sistema.grupotmseg.com.br`.
+- `/api/version`: buildId `14e0a3bf0176168e56e6771382df79e3feafba2a`,
+  versão `3.7.60`, builtAt `2026-08-26T19:10:16.842Z`.
+- `/api/health`: HTTP 200 e `{"status":"ok","source":"api/health"}`.
+- `/`: HTTP 200, HTML carregado e configuração Supabase pública injetada.
+- Zero execução de `scripts/rh-rls-policies.sql`, SQL Editor, `execute_sql`,
+  migration, leitura/escrita de dado live ou alteração de policy/RLS.
 
 ### ESCOPO E PRÓXIMO PASSO
 
