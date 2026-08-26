@@ -1,11 +1,11 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff local — **F4 RH RLS `rh_employee_bank_accounts` PREPARADO**
-> **Sem apply, SQL live, migration executada, alteração de banco, merge ou publicação.**
+> Handoff local — **F4 RH RLS `rh_employee_bank_accounts` APLICADO**
+> **Lockdown live verde; aguardando merge, deploy e revalidação de startup.**
 
 ---
 
-## RLS — `rh_employee_bank_accounts` — PREPARAÇÃO
+## RLS — `rh_employee_bank_accounts` — APLICAÇÃO CONTROLADA
 
 ### PROGRESSO CONSERVADOR
 
@@ -17,12 +17,12 @@
 
 `██████████░░░░░░░░░░`
 
-**Execução desta preparação: 100%**
+**Execução do apply: 100%**
 
 `████████████████████`
 
-Preparação não contabiliza lockdown. Os percentuais permanecem inalterados até
-aplicação e homologação live separadas.
+O apply isolado ainda não aumenta o percentual. O avanço só será contabilizado
+após merge, deploy e revalidação live do startup.
 
 ### RECONCILIAÇÃO
 
@@ -32,28 +32,32 @@ aplicação e homologação live separadas.
 - Branch: `cursor/fase4-rls-rh-bank-accounts-eaa8`, atualizada exclusivamente
   por fast-forward da `main`.
 - PR draft: [#288](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/288).
+- Tag pré-aplicação:
+  `baseline-fase4-pre-rls-rh-bank-accounts-20260826` → `92df6a0d`.
 - Produção: `/api/version` no build `92df6a0d`, versão `3.7.60`;
   `/api/health` com status `ok`.
 - Handoff anterior confirma o PR #287 publicado e o script operacional RH
   neutralizado.
 
-### ESTADO LIVE — SOMENTE METADADOS
+### APPLY E ESTADO LIVE
 
 - Projeto oficial: Grupo TMSEG `ajhmmjuewdsukecaimik`.
-- `list_tables` confirmou `public.rh_employee_bank_accounts` existente, RLS
-  habilitado e 4 registros; somente a contagem de catálogo foi recebida.
-- O advisor de segurança não classificou a tabela como `rls_enabled_no_policy`,
-  confirmando que ainda há policy associada.
-- Último fingerprint exato auditado, sem mutação live posterior:
+- Pré-check exato:
   - policy `Allow all for rh_employee_bank_accounts`;
   - `PERMISSIVE`;
   - comando `ALL`;
   - roles exatas `anon` e `authenticated`;
   - `USING (true)`;
   - `WITH CHECK (true)`.
-- A revalidação atual não usou `execute_sql`; por isso o forward valida esse
-  fingerprint novamente no momento da aplicação e aborta antes do `DROP` se
-  existir qualquer drift.
+- Forward aplicado pelo Supabase MCP:
+  `20260826201427 / fase4_rls_rh_employee_bank_accounts`.
+- Horário do apply: 2026-08-26 17:14:27 (UTC-3).
+- Resultado pós-apply:
+  - RLS habilitado;
+  - policies: **0**;
+  - `anon SELECT`: **0**;
+  - `authenticated SELECT`: **0**;
+  - `service_role`: **4 registros visíveis**, confirmando bypass preservado.
 - Nenhum valor bancário, PIX, agência, conta, favorecido ou `employee_id` foi
   consultado ou exibido.
 
@@ -99,6 +103,7 @@ aplicação e homologação live separadas.
   `Allow all for rh_employee_bank_accounts`.
 - Não contém DML nem cria policy substituta para `anon`, `authenticated` ou
   `service_role`.
+- Aplicação concluída sem drift e restrita à tabela alvo.
 
 ### ROLLBACK
 
@@ -115,36 +120,35 @@ aplicação e homologação live separadas.
 - Testes novos da preparação: **9/9**.
 - Baseline RH/F4 + script hardening + RLS anteriores: **68/68**.
 - Total dirigido: **77/77 PASS**.
-- `npm run build`: **OK**.
+- Testes reexecutados após o apply: **77/77 PASS**.
+- `npm run build` pós-apply: **OK**.
 - Avisos de chunks/importação permanecem no baseline, sem falha.
 - `git diff --check`: **OK**.
 - Bundles gerados pelo build foram removidos do diff.
 
-### PLANO DE APLICAÇÃO E ROLLBACK
+### API, ROLLBACK E PRÓXIMOS GATES
 
-1. Reconciliar novamente `main`, `dev`, produção e policy live exata.
-2. Aplicar somente o forward autorizado.
-3. Confirmar RLS ativo, zero policies e zero acesso direto de
-   `anon`/`authenticated`, sem exibir dados.
-4. Validar GET/POST/PATCH reais pela API com sessão RH/Diretoria e confirmar
-   bloqueio das demais roles.
-5. Confirmar `service_role` backend e formulário; observar Realtime sem exigir
-   eventos públicos da tabela.
-6. Executar rollback somente se a homologação funcional falhar, seguido de nova
-   comprovação do fingerprint anterior.
+- API sem autenticação após o apply: GET **401**, POST **401**, PATCH **401** e
+  DELETE **405**; nenhuma escrita real foi executada.
+- Arquitetura autenticada e `service_role` permanecem cobertas pelos testes; a
+  contagem com `service_role` confirmou acesso backend sem expor conteúdo.
+- Nenhum critério de rollback ocorreu. Rollback **não executado**.
+- Próximos gates: merge do PR #288 em `dev`, fluxo oficial `dev` → `main`,
+  Vercel Production e revalidação live pós-startup.
 
 ### ESCOPO, RISCOS E DECISÃO
 
-- Diff exclusivo: forward não aplicado, rollback, teste e este handoff.
+- Diff exclusivo: forward aplicado live, rollback não executado, teste e este
+  handoff.
 - Zero alteração funcional em frontend/API/Realtime e zero mudança em outras
   tabelas ou policies.
 - Folha, salário, ponto, documentos, exames, advertências, demais tabelas RH,
   financeiro, NF, Asaas, Investment, DRE, Z-API, pedágio e OS foram preservados.
-- Risco residual controlado: drift entre preparação e apply; mitigado pela
-  validação transacional exata que aborta antes do `DROP`.
-- Nenhum SQL, migration, rollback, DDL, DML ou policy foi executado live.
+- Nenhuma outra tabela/policy foi referenciada pelo forward.
+- Nenhum DML foi executado. A única escrita live foi o DDL versionado do
+  forward exclusivo.
 
-# 🟢 RLS `rh_employee_bank_accounts` PREPARADO — APTO PARA REVISÃO
+# 🟢 APPLY VERDE — APTO PARA MERGE E PUBLICAÇÃO CONTROLADA
 
 ---
 
