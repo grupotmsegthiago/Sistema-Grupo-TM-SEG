@@ -1,5 +1,157 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff local — **F4 RH RLS `rh_employee_bank_accounts` APLICADO**
+> **Lockdown live verde; aguardando merge, deploy e revalidação de startup.**
+
+---
+
+## RLS — `rh_employee_bank_accounts` — APLICAÇÃO CONTROLADA
+
+### PROGRESSO CONSERVADOR
+
+**Programa geral: 84,0%**
+
+`█████████████████░░░`
+
+**Fase 4: 50%**
+
+`██████████░░░░░░░░░░`
+
+**Execução do apply: 100%**
+
+`████████████████████`
+
+O apply isolado ainda não aumenta o percentual. O avanço só será contabilizado
+após merge, deploy e revalidação live do startup.
+
+### RECONCILIAÇÃO
+
+- Data: 2026-08-26 (UTC-3).
+- Base: `origin/main = origin/dev = produção =
+  92df6a0d41f428b62afaaccc0906a20fe25873b6`.
+- Branch: `cursor/fase4-rls-rh-bank-accounts-eaa8`, atualizada exclusivamente
+  por fast-forward da `main`.
+- PR draft: [#288](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/288).
+- Tag pré-aplicação:
+  `baseline-fase4-pre-rls-rh-bank-accounts-20260826` → `92df6a0d`.
+- Produção: `/api/version` no build `92df6a0d`, versão `3.7.60`;
+  `/api/health` com status `ok`.
+- Handoff anterior confirma o PR #287 publicado e o script operacional RH
+  neutralizado.
+
+### APPLY E ESTADO LIVE
+
+- Projeto oficial: Grupo TMSEG `ajhmmjuewdsukecaimik`.
+- Pré-check exato:
+  - policy `Allow all for rh_employee_bank_accounts`;
+  - `PERMISSIVE`;
+  - comando `ALL`;
+  - roles exatas `anon` e `authenticated`;
+  - `USING (true)`;
+  - `WITH CHECK (true)`.
+- Forward aplicado pelo Supabase MCP:
+  `20260826201427 / fase4_rls_rh_employee_bank_accounts`.
+- Horário do apply: 2026-08-26 17:14:27 (UTC-3).
+- Resultado pós-apply:
+  - RLS habilitado;
+  - policies: **0**;
+  - `anon SELECT`: **0**;
+  - `authenticated SELECT`: **0**;
+  - `service_role`: **4 registros visíveis**, confirmando bypass preservado.
+- Nenhum valor bancário, PIX, agência, conta, favorecido ou `employee_id` foi
+  consultado ou exibido.
+
+### CONSUMIDORES E SERVICE ROLE
+
+- Frontend runtime direto: **ZERO**.
+- Única ocorrência runtime de `.from('rh_employee_bank_accounts')`:
+  `lib/rh/employeeBankAccountsApiCore.ts`, SSOT backend.
+- Fluxo preservado:
+  `RhEmployeeForm` → `employeeBankAccountsClient` → `authFetch` →
+  API RH autenticada → `authorizeRhApiRequest` → backend →
+  `createRhServiceRoleClient` → tabela.
+- Contrato preservado: GET por `employeeId`, POST e PATCH; sem DELETE.
+- RH e Diretoria permanecem autorizados. Administrador, CEO, Gestor,
+  Financeiro e Operador permanecem bloqueados.
+- Ausência de chave `service_role` continua fail-closed com HTTP 503.
+- Não foi criada policy para `service_role`; o backend mantém o bypass RLS
+  nativo e a chave não é exposta ao frontend.
+
+### REALTIME
+
+- A tabela permanece no cadastro global de `RealtimeProvider` e na migration
+  histórica de publicação.
+- `TABLE_TO_QUERY_KEYS` está vazio para a tabela e não existe listener de
+  `supabase:rh_employee_bank_accounts` no runtime.
+- O formulário não depende de evento Realtime: carregamento e gravação passam
+  pela API autenticada.
+- Conforme a documentação atual do Supabase, quando RLS não permite SELECT a
+  assinatura conecta, mas os eventos ficam silenciosos. Logo, o lockdown elimina
+  eventos públicos sem remover comportamento necessário do formulário.
+- Nenhuma configuração Realtime foi alterada.
+
+### MIGRATION FORWARD
+
+- Arquivo:
+  `migrations/2026_08_26_fase4_rls_rh_employee_bank_accounts.sql`.
+- Exclusiva da tabela alvo, transacional, idempotente e fail-closed.
+- Exige tabela existente, RLS já habilitado e estado com zero policies
+  (já aplicado) ou exatamente a única policy permissiva auditada.
+- Qualquer policy adicional ou alteração de nome, roles, comando, `USING` ou
+  `WITH CHECK` aborta antes do `DROP`.
+- Mantém RLS habilitado e remove somente
+  `Allow all for rh_employee_bank_accounts`.
+- Não contém DML nem cria policy substituta para `anon`, `authenticated` ou
+  `service_role`.
+- Aplicação concluída sem drift e restrita à tabela alvo.
+
+### ROLLBACK
+
+- Arquivo:
+  `migrations/rollback/2026_08_26_fase4_rls_rh_employee_bank_accounts.sql`.
+- Exclusivo, transacional, idempotente e somente para emergência.
+- Aceita apenas zero policies ou a policy anterior já restaurada.
+- Restaura exatamente nome, modo permissivo, `ALL`, roles
+  `anon/authenticated`, `USING (true)` e `WITH CHECK (true)`.
+- Qualquer estado diferente aborta sem tentar corrigir drift.
+
+### TESTES E BUILD
+
+- Testes novos da preparação: **9/9**.
+- Baseline RH/F4 + script hardening + RLS anteriores: **68/68**.
+- Total dirigido: **77/77 PASS**.
+- Testes reexecutados após o apply: **77/77 PASS**.
+- `npm run build` pós-apply: **OK**.
+- Avisos de chunks/importação permanecem no baseline, sem falha.
+- `git diff --check`: **OK**.
+- Bundles gerados pelo build foram removidos do diff.
+
+### API, ROLLBACK E PRÓXIMOS GATES
+
+- API sem autenticação após o apply: GET **401**, POST **401**, PATCH **401** e
+  DELETE **405**; nenhuma escrita real foi executada.
+- Arquitetura autenticada e `service_role` permanecem cobertas pelos testes; a
+  contagem com `service_role` confirmou acesso backend sem expor conteúdo.
+- Nenhum critério de rollback ocorreu. Rollback **não executado**.
+- Próximos gates: merge do PR #288 em `dev`, fluxo oficial `dev` → `main`,
+  Vercel Production e revalidação live pós-startup.
+
+### ESCOPO, RISCOS E DECISÃO
+
+- Diff exclusivo: forward aplicado live, rollback não executado, teste e este
+  handoff.
+- Zero alteração funcional em frontend/API/Realtime e zero mudança em outras
+  tabelas ou policies.
+- Folha, salário, ponto, documentos, exames, advertências, demais tabelas RH,
+  financeiro, NF, Asaas, Investment, DRE, Z-API, pedágio e OS foram preservados.
+- Nenhuma outra tabela/policy foi referenciada pelo forward.
+- Nenhum DML foi executado. A única escrita live foi o DDL versionado do
+  forward exclusivo.
+
+# 🟢 APPLY VERDE — APTO PARA MERGE E PUBLICAÇÃO CONTROLADA
+
+---
+
 > Handoff oficial — **F4 RH RLS: SCRIPT LEGADO PUBLICADO E HOMOLOGADO**
 > **PR #287 em produção; sem SQL, migration ou alteração de RLS live.**
 
