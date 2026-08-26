@@ -1,7 +1,7 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff local — **F4 RH RLS `rh_employee_bank_accounts` APLICADO**
-> **Lockdown live verde; aguardando merge, deploy e revalidação de startup.**
+> Handoff oficial — **F4 RH RLS `rh_employee_bank_accounts` HOMOLOGADO**
+> **PR #288 em produção; lockdown persistiu após startup e rollback não foi necessário.**
 
 ---
 
@@ -9,11 +9,11 @@
 
 ### PROGRESSO CONSERVADOR
 
-**Programa geral: 84,0%**
+**Programa geral: 84,1%**
 
 `█████████████████░░░`
 
-**Fase 4: 50%**
+**Fase 4: 52%**
 
 `██████████░░░░░░░░░░`
 
@@ -21,21 +21,27 @@
 
 `████████████████████`
 
-O apply isolado ainda não aumenta o percentual. O avanço só será contabilizado
-após merge, deploy e revalidação live do startup.
+Fórmula conservadora: base pré-Fase 4 de 82% + `4 × 0,52 = 2,08`,
+totalizando 84,08%, arredondado para 84,1%. A Fase 4 avançou de 50% para 52%
+somente após apply, merge, deploy e revalidação live pós-startup.
 
 ### RECONCILIAÇÃO
 
 - Data: 2026-08-26 (UTC-3).
-- Base: `origin/main = origin/dev = produção =
+- Base pré-aplicação: `origin/main = origin/dev = produção =
   92df6a0d41f428b62afaaccc0906a20fe25873b6`.
 - Branch: `cursor/fase4-rls-rh-bank-accounts-eaa8`, atualizada exclusivamente
   por fast-forward da `main`.
-- PR draft: [#288](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/288).
+- [PR #288](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/288)
+  mergeado em `dev` pelo commit `3007a46a45f5d9ce709aff9b512bbbc4e9532619`.
 - Tag pré-aplicação:
   `baseline-fase4-pre-rls-rh-bank-accounts-20260826` → `92df6a0d`.
-- Produção: `/api/version` no build `92df6a0d`, versão `3.7.60`;
-  `/api/health` com status `ok`.
+- Tag pós-homologação:
+  `baseline-fase4-rls-rh-bank-accounts-merged-20260826` → `3007a46a`.
+- `main = dev = produção =
+  3007a46a45f5d9ce709aff9b512bbbc4e9532619`.
+- Produção: `/api/version` no build `3007a46a`, versão `3.7.60`,
+  builtAt `2026-08-26T20:25:30.223Z`; `/api/health` e `/` HTTP 200.
 - Handoff anterior confirma o PR #287 publicado e o script operacional RH
   neutralizado.
 
@@ -133,8 +139,11 @@ após merge, deploy e revalidação live do startup.
 - Arquitetura autenticada e `service_role` permanecem cobertas pelos testes; a
   contagem com `service_role` confirmou acesso backend sem expor conteúdo.
 - Nenhum critério de rollback ocorreu. Rollback **não executado**.
-- Próximos gates: merge do PR #288 em `dev`, fluxo oficial `dev` → `main`,
-  Vercel Production e revalidação live pós-startup.
+- Após o deploy/startup: RLS habilitado, policies **0**, `anon=0`,
+  `authenticated=0` e `service_role=4`; o script operacional não recriou
+  policy.
+- Fluxo oficial `publicar.ps1` concluiu `dev` → `main`, pushes e retorno para
+  `dev` sem force.
 
 ### ESCOPO, RISCOS E DECISÃO
 
@@ -148,7 +157,7 @@ após merge, deploy e revalidação live do startup.
 - Nenhum DML foi executado. A única escrita live foi o DDL versionado do
   forward exclusivo.
 
-# 🟢 APPLY VERDE — APTO PARA MERGE E PUBLICAÇÃO CONTROLADA
+# 🟢 RLS `rh_employee_bank_accounts` APLICADO E HOMOLOGADO
 
 ---
 
