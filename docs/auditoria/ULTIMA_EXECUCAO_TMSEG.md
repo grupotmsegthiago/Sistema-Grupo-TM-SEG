@@ -1,7 +1,308 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **LOCKDOWN RLS `account_balance_snapshots` APLICADO COM SUCESSO**
-> **Apply controlado concluído no projeto oficial. Sem merge, push ou publicação.**
+> Handoff oficial — **F4-RH-API-FOUNDATION + PILOTO DOCUMENTOS PUBLICADO**
+> **PR #284 homologado em produção; RLS e banco preservados.**
+
+---
+
+## F4-RH-API-FOUNDATION — PUBLICAÇÃO E HOMOLOGAÇÃO
+
+### PROGRESSO CONSERVADOR
+
+**Programa geral: 83,9%**
+
+`█████████████████░░░`
+
+**Fase 4: 48%**
+
+`██████████░░░░░░░░░░`
+
+**Execução: 100%**
+
+`████████████████████`
+
+Fórmula: base pré-Fase 4 de 82% + `4 × 0,48 = 1,92`, totalizando
+83,92%, reportado como 83,9%. O avanço da Fase 4 foi limitado a 2 pontos pela
+publicação da fundação API e de um único consumidor piloto. O lockdown RLS de
+`rh_employee_documents` não foi contabilizado porque continua pendente.
+
+### RESULTADO CONTROLADO
+
+- Data: 2026-08-26 (UTC-3).
+- [PR #284](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/284)
+  revisado no HEAD `0f285b51` e mergeado em `dev`.
+- Merge `dev`: `06ff0b17e82aba8f1d54face22552f132817d777`.
+- `main` e `dev` publicados pelo fluxo oficial `publicar.ps1`.
+- Preview Vercel do PR: `SUCCESS`.
+- Produção oficial: projeto `sistema-grupo-tm-seg`.
+- Build homologado: `06ff0b17e82aba8f1d54face22552f132817d777`.
+- `builtAt`: `2026-08-26T13:32:20.817Z`.
+- Tag de retorno:
+  `baseline-fase4-pre-rh-api-foundation-20260826` → `dc72f824`.
+- Tag pós-homologação solicitada:
+  `baseline-fase4-rh-api-foundation-merged-20260826` **não criada** porque a
+  aprovação nativa da escrita remota foi ignorada; não houve nova tentativa.
+
+### TESTES E SMOKES
+
+- Piloto/auth/API: **21/21**.
+- Componente: **3/3**.
+- RH + segurança + F4: **220/220**.
+- React: **7/7**.
+- TypeScript: **1084/1085**; única falha
+  `invoice-control-loading.test.ts`, idêntica ao baseline da main.
+- `npm run build`: **OK**; Supabase público injetado.
+- `GET /api/version`: **200**, build `06ff0b17`.
+- `GET /api/health`: **200**.
+- `GET /`: **200**.
+- API RH sem auth, GET/POST/DELETE: **401**; nenhuma escrita executada.
+- NF, Asaas, Supabase NB-07, Investment, DB Capacity, Platform Costs,
+  Client Registries e relatório operacional: proteções **401** preservadas.
+
+### SEGURANÇA, RLS E ROLLBACK
+
+- `employeeId` e `id` inválidos são rejeitados com 400 antes do Supabase.
+- Erro HTTP 500 não devolve detalhes internos.
+- `fileUrl` exige HTTPS, origem Supabase TM SEG, bucket `mission-evidence` e
+  path `rh/{employeeId}/`.
+- `service_role` permanece somente backend, fail-closed e sem fallback anon.
+- Frontend runtime permanece sem acesso direto a `rh_employee_documents`.
+- Soft delete continua alterando somente `deleted_at`, sem `updated_by` e sem
+  hard delete.
+- RLS de `rh_employee_documents` permanece no estado anterior. O diff não
+  contém policy, migration, SQL, schema ou bootstrap RLS; esta publicação não
+  é lockdown.
+- Não houve alteração de banco, portanto não existe rollback SQL. Rollback de
+  código: retornar/republicar `dc72f824`, marcado pela tag pré-publicação.
+- Oito stashes preexistentes foram preservados; nenhum `pop/apply/drop`.
+
+### PRÓXIMO PASSO
+
+Registrar a tag pós-homologação somente com autorização explícita de escrita
+remota. Não fechar RLS, não iniciar segundo piloto RH, `time_clock`, Z-API ou
+qualquer alteração financeira neste handoff.
+
+### DECISÃO
+
+# 🟡 PUBLICADO COM PENDÊNCIA — TAG PÓS-HOMOLOGAÇÃO NÃO CRIADA
+
+---
+
+## F4-RH-API-FOUNDATION
+
+### PROGRESSO
+
+**Programa geral: 83,8%**
+
+`█████████████████░░░`
+
+**Fase 4: 46%**
+
+`█████████░░░░░░░░░░░`
+
+**Execução desta branch: 100%**
+
+`████████████████████`
+
+A implementação em branch não aumenta os percentuais. Somente merge, deploy e
+homologação futuros podem alterá-los.
+
+### BASE LIMPA E PRESERVAÇÃO
+
+| Campo | Valor |
+|-------|-------|
+| Data | 2026-08-19 (UTC-3) |
+| `origin/main` | `5faf8b452daf6207dcaa8fdf92ebf2b3fbb5423c` |
+| `origin/dev` | `5faf8b452daf6207dcaa8fdf92ebf2b3fbb5423c` |
+| Alinhamento | main = dev |
+| Branch | `cursor/fase4-rh-api-foundation-eaa8` |
+| Base | criada diretamente de `origin/main` |
+| PR | [#284](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/284) — draft |
+
+O working tree histórico `tmseg-pr278-main-baseline` não foi usado como base e
+permanece com o handoff local do inventário anterior. Nenhum stash foi aplicado,
+restaurado ou removido. Em especial, `stash@{0}` permanece intocado.
+
+### INVENTÁRIO RH REVALIDADO NA MAIN
+
+| Domínio | Tabelas reais | Estado relevante |
+|---------|---------------|------------------|
+| Cadastro/identidade | `rh_employees`, `rh_departments`, `rh_positions` | muitos consumidores, API parcial, alto lockout |
+| Dados bancários | `rh_employee_bank_accounts` | um consumidor direto; PII crítica |
+| Documentos | `rh_employee_documents` | um componente runtime direto; sem API anterior |
+| Dependentes | `rh_employee_dependents` | sem consumidor runtime |
+| Emergência | `rh_employee_emergency_contacts` | sem consumidor runtime |
+| Salários/remuneração | `rh_salary_configs`, `rh_awards`, `rh_bonuses` | folha/cockpit; bloqueado para piloto |
+| Folha | `rh_payroll_runs`, `rh_payroll_items`, `rh_tax_brackets` | crítico; client e server paralelos |
+| Holerites | `rh_payslips` | consumidor genérico; não escolhido |
+| Comissões | `rh_commission_rules`, `rh_commissions` | acoplado a OS e folha |
+| Férias | `rh_vacations` | não escolhido por potencial dependência de folha |
+| Afastamentos | `rh_leaves` | não escolhido por potencial dependência de folha |
+| Advertências | `rh_warnings` | consumidor direto |
+| Saúde/exames | `rh_medical_exams` | consumidor direto; dado sensível |
+| Admissões | `rh_admissions` | sem consumidor runtime |
+| LGPD | `rh_lgpd_consents` | sem consumidor runtime |
+| Escalas | `rh_work_schedules` | sem consumidor runtime |
+| Benefícios/configuração | `rh_benefits`, `rh_employee_benefits`, `rh_settings` | misto; fora do piloto |
+| Auditoria | `rh_audit_logs` | writer direto legado e writers backend |
+| Ponto | `time_clock` | bloqueado por fallback/realtime; não tocado |
+| Presença | `user_presence` live + Broadcast `tmseg-user-presence-v2` | não tocado |
+
+O inventário detalhado anterior permanece no working tree histórico. Esta
+branch revalidou os consumidores necessários diretamente contra a main atual.
+
+### PILOTO ESCOLHIDO — `rh_employee_documents`
+
+Preferência e eliminação:
+
+1. `rh_employee_emergency_contacts`: não possui consumidor runtime; não havia
+   fluxo frontend para migrar e validar.
+2. `rh_employee_dependents`: mesma ausência de consumidor.
+3. `rh_employee_documents`: exatamente um componente, baixo acoplamento, sem
+   folha/ponto, sem publicação Realtime live e com ganho real sobre PII/URLs.
+
+Operações reais preservadas: **list**, **create de metadados** e
+**soft delete**. Não foram inventados `get` individual nem `update`.
+
+O upload do arquivo continua no bucket `mission-evidence`, sem alteração de
+Storage, path, `upsert`, content type ou URL. Somente os metadados da tabela
+foram migrados para API autenticada.
+
+### DEFEITO PREEXISTENTE E DECISÃO AUTORIZADA
+
+O helper genérico anterior enviava `updated_by` no soft delete, mas essa coluna
+não existe em `rh_employee_documents` no schema live. A correção mínima foi
+explicitamente autorizada:
+
+- update somente de `deleted_at`;
+- auditoria backend preservada;
+- nenhuma coluna/schema/regra organizacional criada.
+
+### AUTH RH REUTILIZÁVEL
+
+Arquivo: `lib/rh/rhApiAccess.ts`.
+
+Fluxo:
+
+```text
+authFetch
+→ token TM SEG válido
+→ service_role obrigatória
+→ principal ativo em system_users
+→ role real do profile
+→ Diretoria ou RH
+→ SSOT backend
+```
+
+- Reutiliza `extractAuthToken`, `extractUserIdFromToken`,
+  `roleCanAccessEmployees` e `resolvePrincipalFromToken`.
+- Não usa `auth.uid()` nem Supabase Auth.
+- Não confia em `x-tmseg-role`, `x-tmseg-permissions` ou dados de role do browser.
+- Falha fechado: sem service role retorna 503; token ausente/inválido 401; role
+  incompatível 403.
+
+### ROLES E ESCOPO
+
+| Papel | Estado no piloto |
+|-------|------------------|
+| Diretoria | permitido |
+| RH | permitido |
+| Administrador | negado — módulo RH atual já o bloqueia |
+| CEO | negado — sem acesso atual ao módulo |
+| Financeiro | negado |
+| Gestor | negado |
+| Self-service | inexistente no fluxo atual |
+
+O acesso atual permite Diretoria/RH operar documentos de qualquer funcionário.
+Não existe regra comprovada por empresa, filial, departamento, gestor ou
+self-service. Nenhuma nova segmentação foi inventada; a lacuna fica registrada
+para revisão LGPD futura.
+
+### SSOT, HANDLER E PARIDADE LOCAL
+
+| Camada | Arquivo | Responsabilidade |
+|--------|---------|------------------|
+| Auth | `lib/rh/rhApiAccess.ts` | principal ativo + role + fail-closed |
+| SSOT | `lib/rh/employeeDocumentsApiCore.ts` | list/create/soft delete + auditoria |
+| Handler Vercel | `api/rh-employee-documents.ts` | HTTP, validação e status |
+| Client | `lib/rh/employeeDocumentsClient.ts` | somente `authFetch`, sem fallback |
+| Frontend | `components/rh/RhEmployeeDocuments.tsx` | UX/upload preservados |
+| Express local | `server/rhRoutes.ts` | delega ao mesmo handler/SSOT |
+| Vercel | `vercel.json` | um rewrite específico antes do catch-all |
+
+`functions{}` permanece com 50 entradas; o novo handler usa auto-discovery e
+não aumenta esse bloco.
+
+### RED / GREEN E REAUDITORIA
+
+RED registrado antes da implementação:
+
+```text
+ERR_MODULE_NOT_FOUND: api/rh-employee-documents
+0 pass / 1 fail
+```
+
+GREEN do piloto:
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Auth + handler + arquitetura | **21/21** |
+| Componente real | **3/3** |
+| RH + segurança + F4 dirigidos | main **199/199**; branch **220/220** |
+| Frontend runtime `.from('rh_employee_documents')` | **zero** |
+| Runtime permitido | somente `lib/rh/employeeDocumentsApiCore.ts` |
+| RealtimeProvider | referência histórica preservada; tabela não publicada live |
+
+O componente cobre abertura/listagem, create, soft delete, loading, refresh,
+erro de API e permissão. O handler cobre 401/401/403/400/503/405+Allow e
+operação legítima exatamente uma vez.
+
+Correções finais da revisão independente em 2026-08-26:
+
+- `employeeId` e `id` são validados como UUID antes do core;
+- erro HTTP 500 usa mensagem genérica, mantendo o detalhe somente no log backend;
+- `fileUrl` exige HTTPS e o padrão já existente do projeto TM SEG:
+  bucket `mission-evidence`, path `rh/{employeeId}/...`;
+- auth, roles, service role, SSOT e soft delete permaneceram inalterados.
+
+### REGRESSÃO MAIN × BRANCH
+
+| Suíte | Main `5faf8b45` | Branch |
+|-------|-----------------|--------|
+| TypeScript completa | 1063/1064 | 1084/1085 |
+| Falha | `invoice-control-loading.test.ts` | a mesma, mesma asserção |
+| React completa | 4/4 | 7/7 |
+| `npm run build` | OK | OK |
+| Supabase injetado no build | OK | OK |
+
+A única falha TS é baseline reproduzida na main e na branch; não é regressão.
+Bundles gerados pelo build foram restaurados ao HEAD e estão fora do diff.
+
+### RLS E ÁREAS PRESERVADAS
+
+- RLS de `rh_employee_documents` continua aberta; nenhuma policy foi alterada.
+- Zero migration, SQL, schema ou chamada mutable live.
+- `time_clock` não foi alterado.
+- `user_presence` e Realtime Broadcast não foram alterados.
+- Zero alteração em financeiro, billing, pagamentos, snapshots, NF, Asaas,
+  Investment, DRE, custos, pedágio, OS mãe/filha, Z-API e WhatsApp.
+
+### RISCOS E PRÓXIMO PASSO
+
+- A tabela piloto continua exposta enquanto o RLS não for fechado em execução
+  futura separada.
+- O arquivo continua em bucket/URL pública como antes; Storage não pertenceu a
+  este piloto e exige auditoria LGPD própria.
+- Auditoria do documento é best-effort para preservar o contrato legado.
+- Não há escopo organizacional row-level além da role de módulo.
+
+Próximo passo único: merge/publicação controlada do PR após decisão do
+proprietário. O lockdown RLS de `rh_employee_documents` permanece em execução
+futura separada; não foi preparada migration nesta branch.
+
+### DECISÃO
+
+# 🟢 PR #284 CORRIGIDO — APTO PARA MERGE/PUBLICAÇÃO CONTROLADA
 
 ---
 
