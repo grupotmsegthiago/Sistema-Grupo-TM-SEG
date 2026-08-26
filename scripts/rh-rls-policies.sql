@@ -1,5 +1,7 @@
--- Espelho: migrations/2026_07_07_rh_rls_policies.sql
--- Execute no Supabase SQL Editor se a lista de Funcionários aparecer vazia
+-- Script operacional legado neutralizado após a migração dos consumidores RH.
+-- Mantém somente RLS habilitado nas tabelas existentes.
+-- Não cria, remove ou restaura policies. Lockdowns e rollbacks devem usar
+-- migrations novas, exclusivas e revisadas para cada tabela.
 
 DO $$
 DECLARE
@@ -16,11 +18,6 @@ BEGIN
   LOOP
     IF to_regclass('public.' || t) IS NOT NULL THEN
       EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
-      EXECUTE format('DROP POLICY IF EXISTS "Allow all for %I" ON public.%I', t, t);
-      EXECUTE format(
-        'CREATE POLICY "Allow all for %I" ON public.%I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)',
-        t, t
-      );
     END IF;
   END LOOP;
 END $$;

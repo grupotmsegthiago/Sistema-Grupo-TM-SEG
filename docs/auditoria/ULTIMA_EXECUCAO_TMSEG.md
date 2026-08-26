@@ -1,5 +1,88 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff local — **F4 RH RLS: SCRIPT OPERACIONAL LEGADO NEUTRALIZADO**
+> **Sem SQL, alteração live, migration de lockdown, merge ou publicação.**
+
+---
+
+## F4 RH RLS — NEUTRALIZAÇÃO DE `scripts/rh-rls-policies.sql`
+
+### PROGRESSO
+
+**Programa geral: 84,0%**
+
+`█████████████████░░░`
+
+**Fase 4: 50%**
+
+`██████████░░░░░░░░░░`
+
+**Execução: 100%**
+
+`████████████████████`
+
+Preparação não aumenta percentual e não contabiliza lockdown RLS.
+
+### AUDITORIA DO SCRIPT
+
+- Base: `origin/main = origin/dev = 0f468aaa`.
+- Branch: `cursor/fase4-rh-rls-script-hardening-eaa8`.
+- PR draft: [#287](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/287).
+- O script operacional abrangia 23 tabelas:
+  `rh_departments`, `rh_positions`, `rh_employees`,
+  `rh_employee_bank_accounts`, `rh_employee_documents`,
+  `rh_employee_dependents`, `rh_salary_configs`, `rh_commissions`,
+  `rh_awards`, `rh_bonuses`, `rh_vacation_requests`, `rh_leave_records`,
+  `rh_warnings`, `rh_medical_exams`, `rh_timeclock`, `rh_payroll_runs`,
+  `rh_payroll_items`, `rh_holidays`, `rh_benefit_types`,
+  `rh_employee_benefits`, `rh_tax_brackets`, `rh_audit_logs` e
+  `rh_settings`.
+- Para todas as 23 tabelas, o comportamento anterior era policy ampla
+  classe A: `DROP POLICY IF EXISTS`, seguido de `CREATE POLICY "Allow all"`
+  `FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)`.
+- Não havia policy restrita classe B nem tabela já endurecida classe C nessa
+  lista. As tabelas permanecem classe D; `rh_employee_bank_accounts` e
+  `rh_employee_documents` possuem consumidor API migrado, mas RLS ainda aberta.
+- `billing_usage`, `financial_transaction_payments` e
+  `account_balance_snapshots` não constavam no script, portanto não podiam ser
+  reabertas diretamente por ele.
+
+### NEUTRALIZAÇÃO
+
+- A lista estrutural das 23 tabelas foi preservada.
+- O script agora executa somente `ENABLE ROW LEVEL SECURITY` quando a tabela
+  existe.
+- Foram removidos todos os caminhos de `CREATE`, `DROP` e `ALTER POLICY`.
+- Não existe `FOR ALL`, concessão para `anon`/`authenticated`, `USING (true)`,
+  `WITH CHECK (true)`, DML, grant, revoke ou alteração de schema.
+- A migration histórica `2026_07_07_rh_rls_policies.sql` permaneceu imutável.
+- O script não foi executado localmente nem no Supabase; zero `execute_sql`,
+  SQL Editor, dry-run live ou alteração de banco.
+
+### TESTES
+
+- Hardening novo: **6/6**.
+- Segundo piloto RH + Foundation + auth + Realtime: **41/41**.
+- Regressões RLS de billing, pagamentos e snapshots: **21/21**.
+- Total dirigido: **68/68**.
+- `npm run build`: **OK**.
+- `git diff --check`: **OK**.
+- Bundles gerados pelo build foram removidos do diff.
+
+### ESCOPO E PRÓXIMO PASSO
+
+- Diff exclusivo: script operacional, teste estático e este handoff.
+- Zero alteração em frontend, API, Realtime, migrations, schema, RLS live,
+  financeiro, NF, Asaas, Investment, DRE, Z-API, ponto ou OS.
+- Repreparar o lockdown de `rh_employee_bank_accounts` em execução e PR
+  separados, com nova revalidação live, forward e rollback exclusivos.
+
+### DECISÃO
+
+# 🟢 SCRIPT RLS LEGADO NEUTRALIZADO — LOCKDOWN PODE SER REPREPARADO
+
+---
+
 > Handoff oficial — **F4 SEGUNDO PILOTO RH BANCÁRIO PUBLICADO E HOMOLOGADO**
 > **PR #286 em produção; RLS e banco preservados.**
 
