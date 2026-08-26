@@ -5,6 +5,7 @@ import { loadEmployeeCostSummary } from '../lib/rh/loadEmployeeCostSummary';
 import { calculateCommissionForEmployee } from '../lib/rh/commissionAuto';
 import { seedTmsegEmployees } from '../lib/rh/seedTmsegEmployeesRunner';
 import { handleRhEmployeeDocumentsRequest } from '../api/rh-employee-documents';
+import { handleRhEmployeeBankAccountRequest } from '../api/rh-employee-bank-account';
 import type { RhSalaryConfig, RhTaxBracket } from '../types/rh';
 
 function sb() {
@@ -64,6 +65,14 @@ export function registerRhRoutes(
     requireAuth,
     async (req: Request, res: Response) => {
       await handleRhEmployeeDocumentsRequest(req, res);
+    },
+  );
+
+  app.all(
+    '/api/rh/employees/bank-account',
+    requireAuth,
+    async (req: Request, res: Response) => {
+      await handleRhEmployeeBankAccountRequest(req, res);
     },
   );
 

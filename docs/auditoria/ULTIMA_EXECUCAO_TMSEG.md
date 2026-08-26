@@ -1,5 +1,68 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff local — **F4 SEGUNDO PILOTO RH: DADOS BANCÁRIOS IMPLEMENTADO**
+> **Sem commit, push, PR, deploy, SQL, alteração de banco ou fechamento RLS.**
+
+---
+
+## F4 — SEGUNDO PILOTO RH `rh_employee_bank_accounts`
+
+### ESTADO
+
+- Data: 2026-08-26 (UTC-3).
+- Base reconciliada: `origin/main = origin/dev = 1a094ab6`.
+- Branch local: `cursor/fase4-rh-bank-accounts-api-eaa8`.
+- A RH API Foundation homologada foi reutilizada: `authFetch`, endpoint
+  autenticado, autorização exclusiva de Diretoria/RH, `service_role` somente no
+  backend, fail-closed e SSOT backend.
+- O único consumidor CRUD, `RhEmployeeForm`, não acessa mais
+  `rh_employee_bank_accounts` diretamente.
+- Leitura, criação e edição mantêm filtro de `deleted_at`, associação ao
+  funcionário, campos bancários existentes e `is_primary = true`.
+- Não foi criada exclusão porque o fluxo legado não possuía essa operação.
+- Falha de criação ou edição bancária agora interrompe o salvamento antes da
+  notificação de sucesso e exibe somente `Falha ao salvar dados bancários`.
+- Nenhuma regra de funcionário, salário, folha, ponto, documentos, exames ou
+  advertências foi alterada.
+
+### TESTES
+
+- Segundo piloto bancário: **11/11**.
+- Regressão Foundation/documentos + acesso RH + Realtime: **30/30**.
+- `npm run build`: **OK**.
+- Supabase público presente em `dist/public/index.html`: **OK**.
+- Import React/hooks em `RhEmployeeForm.tsx`: **OK**.
+- `tsc --noEmit`: não executou a análise por `TS6305` preexistente em
+  `vite.config.d.ts`. A checagem focada encontrou somente erros preexistentes em
+  `RhEmployeeForm.tsx:112` (`created_by`) e `apiEmployeesAuth.ts`
+  (`EnvHeaders`); nenhum erro novo foi reportado. O build oficial concluiu.
+- Smoke local em browser/API não executado porque a autorização nativa para
+  iniciar o servidor local foi ignorada.
+
+### SEGURANÇA, RLS E INTEGRIDADE
+
+- API exige autenticação e role RH/Diretoria.
+- UUIDs são validados antes da operação.
+- Erros 5xx e erros propagados ao formulário não expõem detalhes internos.
+- Ausência de `service_role` falha fechado; não existe fallback anon.
+- Nenhuma migration, policy, schema, SQL ou banco foi alterado.
+- RLS de `rh_employee_bank_accounts` permanece exatamente no estado anterior;
+  esta execução não é lockdown.
+- Não houve commit, push, PR, merge ou publicação.
+- Mudanças externas de OS foram preservadas e não integram este diff.
+
+### PRÓXIMO PASSO
+
+Mediante solicitação explícita, criar commit/PR draft. O fechamento RLS deve
+permanecer em execução separada e posterior à homologação funcional deste
+consumidor.
+
+### DECISÃO
+
+# 🟢 SEGUNDO PILOTO RH APTO PARA COMMIT/PR DRAFT
+
+---
+
 > Handoff oficial — **F4-RH-API-FOUNDATION + PILOTO DOCUMENTOS PUBLICADO**
 > **PR #284 homologado em produção; RLS e banco preservados.**
 
