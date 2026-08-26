@@ -542,7 +542,7 @@ const App: React.FC = () => {
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />
             <WhatsAppStatusBanner />
             <WhatsAppOfflineModal />
-            <OsAnalysisDiretoriaModal />
+            <OsAnalysisDiretoriaModal onOpenMission={handleOpenBillingMission} />
             <IdlePresenceGuard />
             <main className="flex-1 overflow-x-auto overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="w-full mx-auto relative">

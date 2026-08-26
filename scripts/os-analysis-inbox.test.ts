@@ -18,6 +18,11 @@ describe('Recado da Diretoria — inbox e claim', () => {
     assert.match(modal, /button-open-diretoria-message/);
     assert.match(modal, /button-claim-diretoria-message/);
     assert.match(modal, /banner-os-analysis-diretoria/);
+    assert.match(modal, /button-os-analysis-close-banner/);
+    assert.match(modal, /button-os-analysis-go-mission/);
+    assert.match(modal, /buildOsAuditDeepLink/);
+    assert.match(modal, /onOpenMission/);
+    assert.match(fs.readFileSync('App.tsx', 'utf8'), /OsAnalysisDiretoriaModal onOpenMission=\{handleOpenBillingMission\}/);
     assert.match(modal, /op=inbox/);
     assert.match(modal, /op=claim/);
     assert.match(modal, /O que precisa ser feito/);

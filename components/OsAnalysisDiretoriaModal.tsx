@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, MailOpen, MessageSquareWarning, ExternalLink } from 'lucide-react';
+import { Loader2, MailOpen, MessageSquareWarning, ExternalLink, X } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { supabase } from '../lib/supabase';
 import type { OsAnalysisRequest } from '../lib/osAnalysisTypes';
 import { OS_ANALYSIS_BROADCAST_CHANNEL } from '../lib/osAnalysisTypes';
+import { buildOsAuditDeepLink } from '../lib/osAnalysisAccess';
 
 type LocalUser = { id?: string; name?: string };
 
@@ -35,7 +36,9 @@ const fmt = (n: number) =>
  * 1) Abrir mensagem → vê o que fazer
  * 2) Assumir → libera os demais; responsável fica com faixa até responder a OS
  */
-const OsAnalysisDiretoriaModal: React.FC = () => {
+const OsAnalysisDiretoriaModal: React.FC<{ onOpenMission?: (missionId: string) => void }> = ({
+  onOpenMission,
+}) => {
   const user = useMemo(() => readUser(), []);
   const userId = String(user?.id || '');
   const [items, setItems] = useState<OsAnalysisRequest[]>([]);
@@ -43,6 +46,7 @@ const OsAnalysisDiretoriaModal: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   const load = useCallback(async () => {
     if (!userId) {
@@ -100,9 +104,19 @@ const OsAnalysisDiretoriaModal: React.FC = () => {
   useEffect(() => {
     setRevealed(false);
     setMessage(null);
+    setBannerDismissed(false);
   }, [activeId]);
 
   const isClaimer = !!(active && String(active.claimed_by_id || '') === userId);
+
+  const goToMission = (missionId: string) => {
+    setBannerDismissed(true);
+    if (onOpenMission) {
+      onOpenMission(missionId);
+      return;
+    }
+    window.location.href = buildOsAuditDeepLink(missionId);
+  };
 
   const claim = async (req: OsAnalysisRequest) => {
     setBusy(true);
@@ -122,6 +136,7 @@ const OsAnalysisDiretoriaModal: React.FC = () => {
       if (!res.ok) throw new Error(data.error || data.reason || 'Falha ao assumir');
       broadcastInboxChanged();
       await load();
+      goToMission(req.mission_id);
     } catch (e: any) {
       setMessage(e?.message || 'Não foi possível assumir o recado');
     } finally {
@@ -129,18 +144,14 @@ const OsAnalysisDiretoriaModal: React.FC = () => {
     }
   };
 
-  const goToMission = (missionId: string) => {
-    localStorage.setItem('openMissionOnLoad', missionId);
-    window.dispatchEvent(new CustomEvent('tmseg:navigate', { detail: 'missions' }));
-  };
-
   if (!userId || loading) return null;
   if (!active) return null;
+  if (bannerDismissed) return null;
 
   if (isClaimer) {
     return (
       <div
-        className="fixed top-0 inset-x-0 z-[190] bg-slate-900 text-white shadow-xl border-b-4 border-amber-400"
+        className="fixed top-0 inset-x-0 z-[80] bg-slate-900 text-white shadow-xl border-b-4 border-amber-400"
         data-testid="banner-os-analysis-diretoria"
       >
         <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -154,14 +165,26 @@ const OsAnalysisDiretoriaModal: React.FC = () => {
               <p className="text-xs text-slate-300 line-clamp-3 mt-0.5 whitespace-pre-wrap">{active.request_note}</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => goToMission(active.mission_id)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-900 text-sm font-black shrink-0"
-            data-testid="button-os-analysis-go-mission"
-          >
-            Abrir Auditoria <ExternalLink size={14} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => goToMission(active.mission_id)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-900 text-sm font-black"
+              data-testid="button-os-analysis-go-mission"
+            >
+              Abrir Auditoria <ExternalLink size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setBannerDismissed(true)}
+              className="p-2 rounded-xl hover:bg-white/10 text-white"
+              aria-label="Fechar recado"
+              title="Fechar recado para ver a auditoria da OS"
+              data-testid="button-os-analysis-close-banner"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
       </div>
     );
