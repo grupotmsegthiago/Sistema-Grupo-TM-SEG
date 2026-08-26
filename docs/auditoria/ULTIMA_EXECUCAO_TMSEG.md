@@ -1,7 +1,90 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff de branch — **F4-RH-API-FOUNDATION + PILOTO DOCUMENTOS CADASTRAIS**
-> **Sem RLS, SQL live, migration, merge, deploy ou alteração de produção.**
+> Handoff oficial — **F4-RH-API-FOUNDATION + PILOTO DOCUMENTOS PUBLICADO**
+> **PR #284 homologado em produção; RLS e banco preservados.**
+
+---
+
+## F4-RH-API-FOUNDATION — PUBLICAÇÃO E HOMOLOGAÇÃO
+
+### PROGRESSO CONSERVADOR
+
+**Programa geral: 83,9%**
+
+`█████████████████░░░`
+
+**Fase 4: 48%**
+
+`██████████░░░░░░░░░░`
+
+**Execução: 100%**
+
+`████████████████████`
+
+Fórmula: base pré-Fase 4 de 82% + `4 × 0,48 = 1,92`, totalizando
+83,92%, reportado como 83,9%. O avanço da Fase 4 foi limitado a 2 pontos pela
+publicação da fundação API e de um único consumidor piloto. O lockdown RLS de
+`rh_employee_documents` não foi contabilizado porque continua pendente.
+
+### RESULTADO CONTROLADO
+
+- Data: 2026-08-26 (UTC-3).
+- [PR #284](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/284)
+  revisado no HEAD `0f285b51` e mergeado em `dev`.
+- Merge `dev`: `06ff0b17e82aba8f1d54face22552f132817d777`.
+- `main` e `dev` publicados pelo fluxo oficial `publicar.ps1`.
+- Preview Vercel do PR: `SUCCESS`.
+- Produção oficial: projeto `sistema-grupo-tm-seg`.
+- Build homologado: `06ff0b17e82aba8f1d54face22552f132817d777`.
+- `builtAt`: `2026-08-26T13:32:20.817Z`.
+- Tag de retorno:
+  `baseline-fase4-pre-rh-api-foundation-20260826` → `dc72f824`.
+- Tag pós-homologação solicitada:
+  `baseline-fase4-rh-api-foundation-merged-20260826` **não criada** porque a
+  aprovação nativa da escrita remota foi ignorada; não houve nova tentativa.
+
+### TESTES E SMOKES
+
+- Piloto/auth/API: **21/21**.
+- Componente: **3/3**.
+- RH + segurança + F4: **220/220**.
+- React: **7/7**.
+- TypeScript: **1084/1085**; única falha
+  `invoice-control-loading.test.ts`, idêntica ao baseline da main.
+- `npm run build`: **OK**; Supabase público injetado.
+- `GET /api/version`: **200**, build `06ff0b17`.
+- `GET /api/health`: **200**.
+- `GET /`: **200**.
+- API RH sem auth, GET/POST/DELETE: **401**; nenhuma escrita executada.
+- NF, Asaas, Supabase NB-07, Investment, DB Capacity, Platform Costs,
+  Client Registries e relatório operacional: proteções **401** preservadas.
+
+### SEGURANÇA, RLS E ROLLBACK
+
+- `employeeId` e `id` inválidos são rejeitados com 400 antes do Supabase.
+- Erro HTTP 500 não devolve detalhes internos.
+- `fileUrl` exige HTTPS, origem Supabase TM SEG, bucket `mission-evidence` e
+  path `rh/{employeeId}/`.
+- `service_role` permanece somente backend, fail-closed e sem fallback anon.
+- Frontend runtime permanece sem acesso direto a `rh_employee_documents`.
+- Soft delete continua alterando somente `deleted_at`, sem `updated_by` e sem
+  hard delete.
+- RLS de `rh_employee_documents` permanece no estado anterior. O diff não
+  contém policy, migration, SQL, schema ou bootstrap RLS; esta publicação não
+  é lockdown.
+- Não houve alteração de banco, portanto não existe rollback SQL. Rollback de
+  código: retornar/republicar `dc72f824`, marcado pela tag pré-publicação.
+- Oito stashes preexistentes foram preservados; nenhum `pop/apply/drop`.
+
+### PRÓXIMO PASSO
+
+Registrar a tag pós-homologação somente com autorização explícita de escrita
+remota. Não fechar RLS, não iniciar segundo piloto RH, `time_clock`, Z-API ou
+qualquer alteração financeira neste handoff.
+
+### DECISÃO
+
+# 🟡 PUBLICADO COM PENDÊNCIA — TAG PÓS-HOMOLOGAÇÃO NÃO CRIADA
 
 ---
 
