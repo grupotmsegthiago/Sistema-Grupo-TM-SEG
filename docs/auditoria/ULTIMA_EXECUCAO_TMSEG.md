@@ -27,7 +27,7 @@ Preparação não aumenta percentual e não contabiliza lockdown RLS.
 
 - Base: `origin/main = origin/dev = 0f468aaa`.
 - Branch: `cursor/fase4-rh-rls-script-hardening-eaa8`.
-- PR draft: pendente de criação após commit e push desta preparação.
+- PR draft: [#287](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/287).
 - O script operacional abrangia 23 tabelas:
   `rh_departments`, `rh_positions`, `rh_employees`,
   `rh_employee_bank_accounts`, `rh_employee_documents`,
