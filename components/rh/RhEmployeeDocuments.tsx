@@ -3,63 +3,83 @@ import { Upload, Trash2, ExternalLink, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useNotification } from '../../lib/NotificationContext';
 import { RH_DOC_TYPES, RH_INPUT_CLASS, RH_LABEL_CLASS, RH_SELECT_CLASS } from '../../lib/rh/constants';
-import { logRhAudit, softDelete } from '../../lib/rh/audit';
+import { employeeDocumentsClient } from '../../lib/rh/employeeDocumentsClient';
+import type {
+  CreateRhEmployeeDocumentInput,
+  RhEmployeeDocument,
+} from '../../lib/rh/employeeDocumentsApiCore';
 import { canEditRh } from '../../lib/rh/permissions';
 import { formatDateBR } from '../../lib/dateUtils';
 
 interface Props {
   employeeId: string;
+  services?: RhEmployeeDocumentsServices;
+  notify?: (title: string, message: string) => void;
 }
 
-const RhEmployeeDocuments: React.FC<Props> = ({ employeeId }) => {
-  const { showNotification } = useNotification();
+export interface RhEmployeeDocumentsServices {
+  list: (employeeId: string) => Promise<RhEmployeeDocument[]>;
+  create: (input: CreateRhEmployeeDocumentInput) => Promise<RhEmployeeDocument>;
+  remove: (id: string) => Promise<void>;
+  uploadFile: (employeeId: string, file: File) => Promise<string>;
+}
+
+export const defaultRhEmployeeDocumentsServices: RhEmployeeDocumentsServices = {
+  ...employeeDocumentsClient,
+  async uploadFile(employeeId: string, file: File): Promise<string> {
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = `rh/${employeeId}/${Date.now()}_${safeName}`;
+    const { error } = await supabase.storage.from('mission-evidence').upload(path, file, {
+      upsert: true,
+      contentType: file.type || 'application/octet-stream',
+    });
+    if (error) throw error;
+    return supabase.storage.from('mission-evidence').getPublicUrl(path).data.publicUrl;
+  },
+};
+
+const RhEmployeeDocuments: React.FC<Props> = ({
+  employeeId,
+  services = defaultRhEmployeeDocumentsServices,
+  notify,
+}) => {
+  const { showNotification: contextNotification } = useNotification();
+  const showNotification = notify || contextNotification;
   const fileRef = useRef<HTMLInputElement>(null);
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<RhEmployeeDocument[]>([]);
   const [docType, setDocType] = useState('Contrato');
   const [notes, setNotes] = useState('');
   const [uploading, setUploading] = useState(false);
   const editable = canEditRh();
 
   const load = async () => {
-    const { data } = await supabase
-      .from('rh_employee_documents')
-      .select('*')
-      .eq('employee_id', employeeId)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
-    setRows(data || []);
+    try {
+      setRows(await services.list(employeeId));
+    } catch {
+      // Comportamento anterior: falha de listagem resultava em lista vazia.
+      setRows([]);
+    }
   };
 
-  useEffect(() => { if (employeeId) load(); }, [employeeId]);
+  useEffect(() => { if (employeeId) void load(); }, [employeeId, services]);
 
   const upload = async (file: File) => {
     if (!editable) return;
     setUploading(true);
     try {
-      const user = JSON.parse(localStorage.getItem('userData') || '{}');
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const path = `rh/${employeeId}/${Date.now()}_${safeName}`;
-      const { error: upErr } = await supabase.storage.from('mission-evidence').upload(path, file, {
-        upsert: true,
-        contentType: file.type || 'application/octet-stream',
-      });
-      if (upErr) throw upErr;
-      const { data: pub } = supabase.storage.from('mission-evidence').getPublicUrl(path);
-      const { error } = await supabase.from('rh_employee_documents').insert([{
-        employee_id: employeeId,
-        doc_type: docType,
-        file_name: file.name,
-        file_url: pub.publicUrl,
-        mime_type: file.type,
+      const fileUrl = await services.uploadFile(employeeId, file);
+      await services.create({
+        employeeId,
+        docType,
+        fileName: file.name,
+        fileUrl,
+        mimeType: file.type,
         notes: notes.trim() || null,
-        uploaded_by: user.name,
-      }]);
-      if (error) throw error;
-      await logRhAudit('rh_employee_documents', employeeId, 'upload', { docType, file: file.name });
+      });
       showNotification('success', 'Arquivo enviado!');
       setNotes('');
       if (fileRef.current) fileRef.current.value = '';
-      load();
+      await load();
     } catch (e: any) {
       showNotification('error', e.message || 'Falha no upload');
     } finally {
@@ -70,9 +90,9 @@ const RhEmployeeDocuments: React.FC<Props> = ({ employeeId }) => {
   const remove = async (id: string) => {
     if (!confirm('Remover este documento?')) return;
     try {
-      await softDelete('rh_employee_documents', id);
+      await services.remove(id);
       showNotification('success', 'Documento removido');
-      load();
+      await load();
     } catch (e: any) {
       showNotification('error', e.message);
     }
