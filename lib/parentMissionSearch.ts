@@ -20,10 +20,26 @@ export const PARENT_MISSION_MAX_RESULTS = 200;
 
 const SELECT_FIELDS = 'id, client, provider, origin, destination, start_time, status, parent_mission_id';
 
-function normalizeGtmId(term: string): string {
+export function normalizeGtmId(term: string): string {
   const t = term.trim().toUpperCase();
   if (!t) return '';
   return t.startsWith('GTM-') ? t : `GTM-${t.replace(/^GTM-?/i, '')}`;
+}
+
+/** Busca uma OS por ID (qualquer cliente) para vínculo mãe/filha na auditoria. */
+export async function fetchMissionById(
+  supabase: SupabaseClient,
+  missionId: string,
+): Promise<(ParentMissionRow & { is_same_os?: boolean }) | null> {
+  const id = normalizeGtmId(missionId);
+  if (!id) return null;
+  const { data, error } = await supabase
+    .from('missions')
+    .select(`${SELECT_FIELDS}, is_same_os`)
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as ParentMissionRow & { is_same_os?: boolean }) || null;
 }
 
 export type ParentMissionSearchOptions = {

@@ -115,11 +115,17 @@ describe('P2-03 — Gestão Investimento mapeada (sem ativação de cálculos)',
 });
 
 describe('P2-04 — busca OS mãe paginada (sem limit 50/10)', () => {
-  it('MissionForm e UpdateMissionModal usam fetchParentMissionCandidates', () => {
+  it('MissionForm, UpdateMissionModal e Auditoria usam fetchParentMissionCandidates', () => {
     const form = fs.readFileSync('components/MissionForm.tsx', 'utf8');
     const modal = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
+    const audit = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
     assert.match(form, /fetchParentMissionCandidates/);
     assert.match(modal, /fetchParentMissionCandidates/);
+    assert.match(audit, /fetchParentMissionCandidates/);
+    assert.match(audit, /panel-link-same-os/);
+    assert.match(audit, /button-os-link-role-mother/);
+    assert.match(audit, /button-os-link-role-daughter/);
+    assert.match(audit, /from 'react'/);
     assert.doesNotMatch(form, /\.limit\(50\)/);
     assert.doesNotMatch(modal, /\.limit\(50\)/);
     assert.doesNotMatch(modal, /\.limit\(10\)/);

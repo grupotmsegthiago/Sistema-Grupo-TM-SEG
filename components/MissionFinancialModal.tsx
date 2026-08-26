@@ -16,7 +16,7 @@ import {
   findDhlCorrectionSource,
   type DhlCorrectionRecord,
 } from '../lib/dhlAutoTableSelector';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History, Settings2, FileText, Copy, MailWarning } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History, Settings2, FileText, Copy, MailWarning, Search } from 'lucide-react';
 import { canRequestOsAnalysis } from '../lib/osAnalysisAccess';
 import RequestOsAnalysisModal, { type RequestOsAnalysisPayload } from './RequestOsAnalysisModal';
 import type { OsAnalysisRequest } from '../lib/osAnalysisTypes';
@@ -40,6 +40,8 @@ import {
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import html2canvas from 'html2canvas';
 import FilterableSelect, { type FilterableSelectOption } from './FilterableSelect';
+import { fetchMissionById, fetchParentMissionCandidates, type ParentMissionRow } from '../lib/parentMissionSearch';
+import { resolveSameOsLink, type SameOsLinkRole } from '../lib/missionLinkage';
 
 interface Props {
   isOpen: boolean;
@@ -385,7 +387,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     originUF: string;
   } | null>(null);
   const [iblEnabled, setIblEnabled] = useState(false);
-  const [linkedMissions, setLinkedMissions] = useState<Array<{id: string; origin: string; destination: string; status: string; is_same_os: boolean; revenue_value: number; cost_value: number; start_time: string}>>([]);
+  const [linkedMissions, setLinkedMissions] = useState<Array<{id: string; origin: string; destination: string; status: string; is_same_os: boolean; revenue_value: number; cost_value: number; start_time: string; parent_mission_id?: string}>>([]);
+  const [showOsLinkPanel, setShowOsLinkPanel] = useState(false);
+  const [osLinkRole, setOsLinkRole] = useState<SameOsLinkRole>('daughter');
+  const [osLinkSearch, setOsLinkSearch] = useState('');
+  const [osLinkSuggestions, setOsLinkSuggestions] = useState<ParentMissionRow[]>([]);
+  const [osLinkTruncated, setOsLinkTruncated] = useState(false);
+  const [osLinkBusy, setOsLinkBusy] = useState(false);
+  const [osLinkSelectedId, setOsLinkSelectedId] = useState('');
 
   const [aiMaturity, setAiMaturity] = useState(0);
   const [suggestedToll, setSuggestedToll] = useState<number | null>(null);
@@ -1451,6 +1460,166 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (ptRes.data) setProviderTables(ptRes.data as any);
           
       } catch (e) { console.error(e); } finally { setIsLoading(false); }
+  };
+
+  useEffect(() => {
+    if (!mission?.id) return;
+    let cancelled = false;
+    const t = window.setTimeout(async () => {
+      const term = osLinkSearch.trim();
+      if (term.length < 2) {
+        setOsLinkSuggestions([]);
+        setOsLinkTruncated(false);
+        return;
+      }
+      try {
+        const exact = await fetchMissionById(supabase, term);
+        if (cancelled) return;
+        if (exact && exact.id !== mission.id) {
+          setOsLinkSuggestions([exact]);
+          setOsLinkTruncated(false);
+          return;
+        }
+        if (!mission.client) {
+          setOsLinkSuggestions([]);
+          setOsLinkTruncated(false);
+          return;
+        }
+        const { rows, truncated } = await fetchParentMissionCandidates(supabase, {
+          client: mission.client,
+          excludeMissionId: mission.id,
+          onlyRootMothers: true,
+          searchTerm: term,
+        });
+        if (!cancelled) {
+          setOsLinkSuggestions(rows.filter((r) => r.id !== mission.id));
+          setOsLinkTruncated(truncated);
+        }
+      } catch {
+        if (!cancelled) {
+          setOsLinkSuggestions([]);
+          setOsLinkTruncated(false);
+        }
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [mission?.id, mission?.client, osLinkSearch]);
+
+  const applySameOsLink = async () => {
+    if (!mission?.id || osLinkBusy) return;
+    const targetId = osLinkSelectedId || osLinkSearch;
+    setOsLinkBusy(true);
+    try {
+      const other = await fetchMissionById(supabase, targetId);
+      const currentChildCount = linkedMissions.filter((lm) => lm.is_same_os && lm.id !== mission.parent_mission_id).length;
+      const resolved = resolveSameOsLink({
+        currentId: mission.id,
+        other,
+        role: osLinkRole,
+        currentIsChild: !!(mission.is_same_os && mission.parent_mission_id),
+        currentChildCount,
+      });
+      if (!resolved.ok) {
+        showNotification('Vínculo', resolved.reason, 'error');
+        return;
+      }
+      if (!other) {
+        showNotification('Vínculo', `OS ${targetId} não encontrada.`, 'error');
+        return;
+      }
+      if (!confirm(`Vincular ${resolved.childId} como FILHA de ${resolved.motherId}?\nO custo do fornecedor da filha será zerado.`)) return;
+
+      const payload: Record<string, unknown> = {
+        is_same_os: true,
+        parent_mission_id: resolved.motherId,
+        cost_value: 0,
+        last_update: new Date().toISOString(),
+      };
+      let { error } = await supabase.from('missions').update({
+        ...payload,
+        toll_value_provider: 0,
+        displacement_value_provider: 0,
+      }).eq('id', resolved.childId);
+      if (error?.message?.includes('does not exist')) {
+        ({ error } = await supabase.from('missions').update(payload).eq('id', resolved.childId));
+      }
+      if (error) throw error;
+      await zeroSameOsProviderCostInDb(resolved.childId);
+
+      try {
+        const userData = JSON.parse(localStorage.getItem('userData') || localStorage.getItem('user') || '{}');
+        await supabase.from('system_logs').insert([{
+          user_name: userData.name || 'Sistema',
+          action_type: 'UPDATE',
+          entity: 'Mission',
+          entity_id: resolved.childId,
+          details: JSON.stringify({
+            field: 'same_os_link',
+            childId: resolved.childId,
+            motherId: resolved.motherId,
+            role: osLinkRole,
+          }),
+        }]);
+      } catch { /* log não bloqueia o vínculo */ }
+
+      if (resolved.childId === mission.id) {
+        mission.is_same_os = true;
+        mission.parent_mission_id = resolved.motherId;
+        mission.cost_value = 0;
+        (mission as any).toll_value_provider = 0;
+        (mission as any).displacement_value_provider = 0;
+        setCostInput('0,00');
+        setTollProviderInput('0,00');
+      }
+      setOsLinkSearch('');
+      setOsLinkSelectedId('');
+      broadcastMissionRefresh();
+      showNotification('OS vinculada', `${resolved.childId} é filha de ${resolved.motherId}.`, 'success');
+      onUpdate?.();
+      await loadData();
+    } catch (e: any) {
+      showNotification('Erro', e?.message || 'Falha ao vincular OS', 'error');
+    } finally {
+      setOsLinkBusy(false);
+    }
+  };
+
+  const unlinkSameOsChild = async (childId: string) => {
+    if (!childId || osLinkBusy) return;
+    if (!confirm(`Desvincular ${childId}?\nO custo do fornecedor será recalculado.`)) return;
+    setOsLinkBusy(true);
+    try {
+      const { error } = await supabase.from('missions').update({
+        is_same_os: false,
+        parent_mission_id: null,
+      }).eq('id', childId);
+      if (error) throw error;
+      try {
+        const userData = JSON.parse(localStorage.getItem('userData') || localStorage.getItem('user') || '{}');
+        await supabase.from('system_logs').insert([{
+          user_name: userData.name || 'Sistema',
+          action_type: 'UPDATE',
+          entity: 'Mission',
+          entity_id: childId,
+          details: JSON.stringify({ field: 'same_os_unlink', childId }),
+        }]);
+      } catch { /* log não bloqueia */ }
+      if (childId === mission?.id) {
+        mission.is_same_os = false;
+        mission.parent_mission_id = undefined;
+      }
+      broadcastMissionRefresh();
+      showNotification('OS desvinculada', `${childId} deixou de ser Mesma OS.`, 'success');
+      onUpdate?.();
+      await loadData();
+    } catch (e: any) {
+      showNotification('Erro', e?.message || 'Falha ao desvincular OS', 'error');
+    } finally {
+      setOsLinkBusy(false);
+    }
   };
 
   const loadFinancialHistory = async () => {
@@ -3508,53 +3677,25 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             })()}
             <button
               data-testid="btn-toggle-same-os"
-              onClick={async () => {
-                const newVal = !mission.is_same_os;
-                if (newVal && !confirm('Marcar como MESMA OS? O custo do fornecedor será zerado.')) return;
-                if (!newVal && !confirm('Desmarcar MESMA OS? O custo do fornecedor será recalculado.')) return;
-                try {
-                  const updateData: any = { is_same_os: newVal };
-                  if (!newVal) updateData.parent_mission_id = null;
-                  if (newVal) {
-                    updateData.cost_value = 0;
-                    updateData.toll_value_provider = 0;
-                    updateData.displacement_value_provider = 0;
-                  }
-                  await supabase.from('missions').update(updateData).eq('id', mission.id);
-                  const userData = JSON.parse(localStorage.getItem('user') || '{}');
-                  await supabase.from('system_logs').insert([{
-                    user_name: userData.name || 'Sistema',
-                    action_type: 'UPDATE',
-                    entity: 'Mission',
-                    entity_id: mission.id,
-                    details: JSON.stringify({ field: 'is_same_os', oldValue: mission.is_same_os, newValue: newVal })
-                  }]);
-                  mission.is_same_os = newVal;
-                  if (!newVal) mission.parent_mission_id = undefined;
-                  if (newVal) {
-                    mission.cost_value = 0;
-                    (mission as any).toll_value_provider = 0;
-                    (mission as any).displacement_value_provider = 0;
-                    setCostInput('0,00');
-                    setTollProviderInput('0,00');
-                  }
-                  broadcastMissionRefresh();
-                  showNotification(newVal ? 'MESMA OS Ativada' : 'MESMA OS Desativada', newVal ? 'Custo do fornecedor zerado.' : 'Custo será recalculado.', 'success');
-                  onUpdate();
-                  await loadData();
-                } catch (err: any) {
-                  showNotification('Erro', err.message, 'error');
+              onClick={() => {
+                if (mission.is_same_os && mission.parent_mission_id) {
+                  void unlinkSameOsChild(mission.id);
+                  return;
                 }
+                setShowOsLinkPanel(true);
+                window.setTimeout(() => {
+                  document.getElementById('panel-link-same-os')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }, 50);
               }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-md active:scale-95 ${
                 mission.is_same_os 
                   ? 'bg-black text-white hover:bg-gray-800' 
                   : 'bg-white/10 text-gray-300 hover:bg-white/20 border border-white/20'
               }`}
-              title={mission.is_same_os ? 'Missão marcada como Mesma OS (custo zero)' : 'Clique para marcar como Mesma OS'}
+              title={mission.is_same_os ? 'Clique para desvincular esta OS filha' : 'Vincular outra OS como mãe ou filha'}
             >
               <Layers size={12} />
-              {mission.is_same_os ? 'MESMA OS ✓' : 'MESMA OS'}
+              {mission.is_same_os ? 'MESMA OS ✓' : 'VINCULAR OS'}
             </button>
             {canActivateFullEdit && (
               <button
@@ -3938,7 +4079,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             )}
             <BillingPeriodOverridePanel mission={mission} setMission={setMission} showNotification={showNotification} />
 
-            {linkedMissions.length > 0 && (() => {
+            {(() => {
                 const isCurrentParent = !mission.is_same_os && !mission.parent_mission_id && linkedMissions.some(lm => lm.is_same_os);
                 const isCurrentChild = mission.is_same_os && !!mission.parent_mission_id;
                 const children = linkedMissions.filter(lm => lm.is_same_os && lm.id !== mission.parent_mission_id);
@@ -3965,10 +4106,107 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         <div className="flex items-center gap-2 mb-3">
                             <div className="bg-indigo-600 p-1.5 rounded-lg"><Layers size={14} className="text-white" /></div>
                             <p className="font-black text-indigo-900 text-xs uppercase tracking-wider">
-                                OS Vinculadas ({linkedMissions.length})
+                                Vínculo Mesma OS
                             </p>
                         </div>
                     )}
+                    <div id="panel-link-same-os" data-testid="panel-link-same-os" className={`mb-3 rounded-xl border border-slate-200 bg-white p-3 space-y-3 ${showOsLinkPanel ? 'ring-2 ring-amber-400' : ''}`}>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Vincular outra OS — marque quem é mãe e quem é filha</p>
+                        {isCurrentChild ? (
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-xs text-slate-600">Esta OS já é <strong>filha</strong> de <strong>{mission.parent_mission_id}</strong>.</p>
+                                <button
+                                    type="button"
+                                    disabled={osLinkBusy}
+                                    onClick={() => void unlinkSameOsChild(mission.id)}
+                                    className="text-[10px] font-black uppercase text-red-600 hover:bg-red-50 px-2 py-1 rounded"
+                                    data-testid="button-unlink-current-os"
+                                >
+                                    Desvincular
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="grid grid-cols-2 gap-2" data-testid="os-link-role-toggle">
+                                    <button
+                                        type="button"
+                                        onClick={() => setOsLinkRole('daughter')}
+                                        className={`px-3 py-2 rounded-lg text-[10px] font-black uppercase border-2 ${osLinkRole === 'daughter' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-slate-500 border-slate-200'}`}
+                                        data-testid="button-os-link-role-daughter"
+                                    >
+                                        Esta OS é FILHA
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setOsLinkRole('mother')}
+                                        className={`px-3 py-2 rounded-lg text-[10px] font-black uppercase border-2 ${osLinkRole === 'mother' ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                                        data-testid="button-os-link-role-mother"
+                                    >
+                                        Esta OS é MÃE
+                                    </button>
+                                </div>
+                                <p className="text-[11px] text-slate-500">
+                                    {osLinkRole === 'daughter'
+                                        ? 'Busque a OS mãe. Esta OS passará a ser filha (custo do fornecedor zerado).'
+                                        : 'Busque a OS que será filha desta. A outra OS terá o custo do fornecedor zerado.'}
+                                </p>
+                                <div className="relative">
+                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg"
+                                        placeholder={osLinkRole === 'daughter' ? 'Nº da OS mãe (ex: GTM-1234)' : 'Nº da OS filha (ex: GTM-1234)'}
+                                        value={osLinkSearch}
+                                        onChange={(e) => { setOsLinkSearch(e.target.value); setOsLinkSelectedId(''); }}
+                                        data-testid="input-os-link-search"
+                                    />
+                                </div>
+                                {osLinkSelectedId && (
+                                    <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <Link2 size={12} className="text-blue-600" />
+                                        <span className="text-[10px] font-black text-blue-700 uppercase">Selecionada: {osLinkSelectedId}</span>
+                                    </div>
+                                )}
+                                {osLinkSearch.trim().length >= 2 && (
+                                    <div className="border border-gray-200 rounded-lg shadow-sm max-h-40 overflow-y-auto" data-testid="list-os-link-suggestions">
+                                        {osLinkSuggestions.map((s) => (
+                                            <button
+                                                key={s.id}
+                                                type="button"
+                                                className={`w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-50 ${osLinkSelectedId === s.id ? 'bg-blue-50' : ''}`}
+                                                onClick={() => { setOsLinkSelectedId(s.id); setOsLinkSearch(s.id); }}
+                                                data-testid={`option-os-link-${s.id}`}
+                                            >
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs font-black text-gray-900">{s.id}</span>
+                                                    <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{s.status}</span>
+                                                </div>
+                                                <div className="text-[9px] text-gray-500 mt-0.5">{s.origin?.split(',')[0]} → {s.destination?.split(',')[0]}</div>
+                                            </button>
+                                        ))}
+                                        {osLinkSuggestions.length === 0 && (
+                                            <p className="px-3 py-2 text-[11px] text-slate-500">Nenhuma OS encontrada. Digite o ID completo (GTM-xxxx).</p>
+                                        )}
+                                        {osLinkTruncated && (
+                                            <p className="px-3 py-2 text-[10px] font-semibold text-amber-800 bg-amber-50">Lista parcial — refine o ID.</p>
+                                        )}
+                                    </div>
+                                )}
+                                <button
+                                    type="button"
+                                    disabled={osLinkBusy || !(osLinkSelectedId || osLinkSearch.trim())}
+                                    onClick={() => void applySameOsLink()}
+                                    className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white text-[11px] font-black uppercase disabled:opacity-50"
+                                    data-testid="button-confirm-os-link"
+                                >
+                                    {osLinkBusy ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
+                                    Vincular
+                                </button>
+                            </>
+                        )}
+                    </div>
+                    {linkedMissions.length > 0 && (
+                    <>
                     <div className="space-y-2 max-h-[250px] overflow-y-auto">
                         {linkedMissions.map((lm) => {
                             const isParent = lm.id === mission.parent_mission_id;
@@ -3981,10 +4219,22 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <div className="flex items-center gap-2 min-w-0 flex-1">
                                         <span className="font-black text-gray-800 shrink-0">{lm.id}</span>
                                         {isParent && <span className="text-[8px] font-black bg-amber-600 text-white px-1.5 py-0.5 rounded uppercase shrink-0">MÃE</span>}
-                                        {lm.is_same_os && !isParent && <span className="text-[8px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase shrink-0">MESMA OS</span>}
+                                        {lm.is_same_os && !isParent && <span className="text-[8px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase shrink-0">FILHA</span>}
                                         <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase shrink-0 ${lm.status === 'Concluída' ? 'bg-green-100 text-green-700' : lm.status === 'Cancelada' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{lm.status}</span>
                                     </div>
-                                    <span className="text-gray-400 text-[9px] shrink-0">{lm.start_time ? formatTimeBR(lm.start_time, '--:--') : '--:--'}</span>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <span className="text-gray-400 text-[9px]">{lm.start_time ? formatTimeBR(lm.start_time, '--:--') : '--:--'}</span>
+                                        {lm.is_same_os && (
+                                            <button
+                                                type="button"
+                                                onClick={() => void unlinkSameOsChild(lm.id)}
+                                                className="text-[9px] font-black uppercase text-red-600 hover:bg-red-50 px-1.5 py-0.5 rounded"
+                                                data-testid={`button-unlink-os-${lm.id}`}
+                                            >
+                                                Desvincular
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="flex items-center justify-between mt-1.5">
                                     <span className="text-gray-500 truncate text-[10px]" title={`${lm.origin} → ${lm.destination}`}>
@@ -4029,6 +4279,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </div>
                             </div>
                         </div>
+                    )}
+                    </>
                     )}
                 </div>
                 );

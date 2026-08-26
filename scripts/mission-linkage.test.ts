@@ -5,6 +5,7 @@ import {
   collectLinkedFamilyIds,
   isLinkedChildMission,
   missingLinkedMissionIds,
+  resolveSameOsLink,
 } from '../lib/missionLinkage';
 
 describe('missionLinkage — OS vinculada independente do cliente', () => {
@@ -47,5 +48,51 @@ describe('missionLinkage — OS vinculada independente do cliente', () => {
     const miss = missingLinkedMissionIds(partial, ['GTM-101']);
     assert.ok(miss.missingParentIds.includes('GTM-100'));
     assert.ok(miss.missingChildParentIds.includes('GTM-100'));
+  });
+
+  it('resolveSameOsLink marca filha e mãe sem aninhar', () => {
+    const asDaughter = resolveSameOsLink({
+      currentId: 'GTM-7410',
+      other: { id: 'GTM-100', parent_mission_id: null },
+      role: 'daughter',
+      currentIsChild: false,
+      currentChildCount: 0,
+    });
+    assert.equal(asDaughter.ok, true);
+    if (asDaughter.ok) {
+      assert.equal(asDaughter.childId, 'GTM-7410');
+      assert.equal(asDaughter.motherId, 'GTM-100');
+    }
+
+    const asMother = resolveSameOsLink({
+      currentId: 'GTM-7410',
+      other: { id: 'GTM-200', parent_mission_id: null },
+      role: 'mother',
+      currentIsChild: false,
+      currentChildCount: 0,
+    });
+    assert.equal(asMother.ok, true);
+    if (asMother.ok) {
+      assert.equal(asMother.childId, 'GTM-200');
+      assert.equal(asMother.motherId, 'GTM-7410');
+    }
+
+    const self = resolveSameOsLink({
+      currentId: 'GTM-7410',
+      other: { id: 'GTM-7410' },
+      role: 'daughter',
+      currentIsChild: false,
+      currentChildCount: 0,
+    });
+    assert.equal(self.ok, false);
+
+    const nested = resolveSameOsLink({
+      currentId: 'GTM-7410',
+      other: { id: 'GTM-101', parent_mission_id: 'GTM-100' },
+      role: 'daughter',
+      currentIsChild: false,
+      currentChildCount: 0,
+    });
+    assert.equal(nested.ok, false);
   });
 });

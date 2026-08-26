@@ -104,3 +104,49 @@ export function missingLinkedMissionIds(
     missingChildParentIds: [...missingChildParentIds],
   };
 }
+
+export type SameOsLinkRole = 'mother' | 'daughter';
+
+export type SameOsLinkTarget = {
+  id: string;
+  parent_mission_id?: string | null;
+  is_same_os?: boolean | null;
+};
+
+/**
+ * Resolve quem vira filha e quem vira mãe. Não altera valores financeiros —
+ * só valida o par. Filha = is_same_os + parent_mission_id na gravação.
+ */
+export function resolveSameOsLink(params: {
+  currentId: string;
+  other: SameOsLinkTarget | null | undefined;
+  role: SameOsLinkRole;
+  currentIsChild: boolean;
+  currentChildCount: number;
+}): { ok: true; childId: string; motherId: string } | { ok: false; reason: string } {
+  const currentId = String(params.currentId || '').trim();
+  const otherId = String(params.other?.id || '').trim();
+  if (!currentId) return { ok: false, reason: 'OS atual não identificada.' };
+  if (!otherId) return { ok: false, reason: 'Informe a OS para vincular.' };
+  if (otherId === currentId) return { ok: false, reason: 'Não é possível vincular a OS a ela mesma.' };
+
+  const otherParent = String(params.other?.parent_mission_id || '').trim();
+
+  if (params.role === 'daughter') {
+    if (otherParent) {
+      return { ok: false, reason: `A OS ${otherId} já é filha de ${otherParent}. Vincule à mãe ${otherParent}.` };
+    }
+    if (params.currentChildCount > 0 && !params.currentIsChild) {
+      return { ok: false, reason: 'Desvincule as filhas desta OS antes de transformá-la em filha.' };
+    }
+    return { ok: true, childId: currentId, motherId: otherId };
+  }
+
+  if (params.currentIsChild) {
+    return { ok: false, reason: 'Esta OS já é filha. Desvincule antes de usá-la como mãe.' };
+  }
+  if (otherParent && otherParent !== currentId) {
+    return { ok: false, reason: `A OS ${otherId} já é filha de ${otherParent}.` };
+  }
+  return { ok: true, childId: otherId, motherId: currentId };
+}
