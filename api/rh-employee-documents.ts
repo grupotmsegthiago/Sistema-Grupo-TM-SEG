@@ -11,8 +11,11 @@ import {
   createRhServiceRoleClient,
   type RhApiAccessResult,
 } from '../lib/rh/rhApiAccess.js';
+import { getSupabaseUrl } from '../lib/supabaseAdmin.js';
 
 type DocumentsOps = ReturnType<typeof createRhEmployeeDocumentsOps>;
+const GENERIC_OPERATION_ERROR = 'Falha ao operar documentos do funcionário';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type RhEmployeeDocumentsHandlerDeps = {
   authorize?: (req: any) => Promise<RhApiAccessResult>;
@@ -32,6 +35,26 @@ function parseBody(body: unknown): Record<string, unknown> {
     return JSON.parse(body) as Record<string, unknown>;
   } catch {
     throw new Error('payload_inválido');
+  }
+}
+
+function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
+function isOfficialRhDocumentUrl(value: string, employeeId: string): boolean {
+  try {
+    const url = new URL(value);
+    const supabaseUrl = new URL(getSupabaseUrl());
+    const pathPrefix = `/storage/v1/object/public/mission-evidence/rh/${employeeId}/`;
+    return url.protocol === 'https:'
+      && url.origin === supabaseUrl.origin
+      && url.pathname.startsWith(pathPrefix)
+      && url.pathname.length > pathPrefix.length
+      && !url.username
+      && !url.password;
+  } catch {
+    return false;
   }
 }
 
@@ -72,6 +95,10 @@ export async function handleRhEmployeeDocumentsRequest(
         res.status(400).json({ error: 'employeeId é obrigatório' });
         return;
       }
+      if (!isUuid(employeeId)) {
+        res.status(400).json({ error: 'employeeId inválido' });
+        return;
+      }
       const documents = await ops.list(employeeId);
       res.status(200).json({ ok: true, documents });
       return;
@@ -93,6 +120,14 @@ export async function handleRhEmployeeDocumentsRequest(
         });
         return;
       }
+      if (!isUuid(input.employeeId)) {
+        res.status(400).json({ error: 'employeeId inválido' });
+        return;
+      }
+      if (!isOfficialRhDocumentUrl(input.fileUrl, input.employeeId)) {
+        res.status(400).json({ error: 'fileUrl inválida' });
+        return;
+      }
       const document = await ops.create(input, authorization.principal);
       res.status(201).json({ ok: true, document });
       return;
@@ -104,16 +139,19 @@ export async function handleRhEmployeeDocumentsRequest(
       res.status(400).json({ error: 'id é obrigatório' });
       return;
     }
+    if (!isUuid(id)) {
+      res.status(400).json({ error: 'id inválido' });
+      return;
+    }
     await ops.remove(id, authorization.principal);
     res.status(200).json({ ok: true });
   } catch (error: any) {
-    const message = error?.message || 'Falha ao operar documentos do funcionário';
-    if (message === 'payload_inválido') {
-      res.status(400).json({ error: message });
+    if (error?.message === 'payload_inválido') {
+      res.status(400).json({ error: 'payload_inválido' });
       return;
     }
-    console.error('[rh-employee-documents]', message);
-    res.status(500).json({ error: message });
+    console.error('[rh-employee-documents]', error);
+    res.status(500).json({ error: GENERIC_OPERATION_ERROR });
   }
 }
 

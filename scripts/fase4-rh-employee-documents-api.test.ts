@@ -7,8 +7,13 @@ import {
   type RhEmployeeDocumentsHandlerDeps,
 } from '../api/rh-employee-documents';
 import { authorizeRhApiRequest } from '../lib/rh/rhApiAccess';
+import { getSupabaseUrl } from '../lib/supabaseAdmin';
 
 const root = process.cwd();
+const EMPLOYEE_ID = '11111111-1111-4111-8111-111111111111';
+const DOCUMENT_ID = '22222222-2222-4222-8222-222222222222';
+const OFFICIAL_FILE_URL =
+  `${getSupabaseUrl()}/storage/v1/object/public/mission-evidence/rh/${EMPLOYEE_ID}/contrato.pdf`;
 
 function responseMock() {
   return {
@@ -158,23 +163,39 @@ describe('F4-RH-API-FOUNDATION — handler do piloto documentos', () => {
     assert.equal(creates, 0);
   });
 
+  it('employeeId ausente ou inválido retorna 400 antes da listagem', async () => {
+    let calls = 0;
+    const ops = allowedDeps({
+      list: async () => {
+        calls += 1;
+        return [];
+      },
+    });
+    for (const query of [{}, { employeeId: 'not-a-uuid' }]) {
+      const res = responseMock();
+      await handleRhEmployeeDocumentsRequest({ method: 'GET', query }, res, ops);
+      assert.equal(res.statusCode, 400);
+    }
+    assert.equal(calls, 0);
+  });
+
   it('GET legítimo executa exatamente uma listagem', async () => {
     let calls = 0;
     const res = responseMock();
     await handleRhEmployeeDocumentsRequest(
-      { method: 'GET', query: { employeeId: 'emp-1' } },
+      { method: 'GET', query: { employeeId: EMPLOYEE_ID } },
       res,
       allowedDeps({
         list: async (employeeId: string) => {
           calls += 1;
-          assert.equal(employeeId, 'emp-1');
-          return [{ id: 'doc-1' }];
+          assert.equal(employeeId, EMPLOYEE_ID);
+          return [{ id: DOCUMENT_ID }];
         },
       }),
     );
     assert.equal(calls, 1);
     assert.equal(res.statusCode, 200);
-    assert.deepEqual(res.body.documents, [{ id: 'doc-1' }]);
+    assert.deepEqual(res.body.documents, [{ id: DOCUMENT_ID }]);
   });
 
   it('POST preserva payload e usa identidade autenticada', async () => {
@@ -184,10 +205,10 @@ describe('F4-RH-API-FOUNDATION — handler do piloto documentos', () => {
       {
         method: 'POST',
         body: {
-          employeeId: 'emp-1',
+          employeeId: EMPLOYEE_ID,
           docType: 'Contrato',
           fileName: 'contrato.pdf',
-          fileUrl: 'https://files/contrato.pdf',
+          fileUrl: OFFICIAL_FILE_URL,
           mimeType: 'application/pdf',
           notes: 'Assinado',
           uploadedBy: 'Nome não confiável do browser',
@@ -197,38 +218,133 @@ describe('F4-RH-API-FOUNDATION — handler do piloto documentos', () => {
       allowedDeps({
         create: async (payload: any, actor: any) => {
           received = { payload, actor };
-          return { id: 'doc-1', ...payload, uploaded_by: actor.name };
+          return { id: DOCUMENT_ID, ...payload, uploaded_by: actor.name };
         },
       }),
     );
     assert.equal(res.statusCode, 201);
     assert.equal(received.actor.name, 'Pessoa RH');
     assert.deepEqual(received.payload, {
-      employeeId: 'emp-1',
+      employeeId: EMPLOYEE_ID,
       docType: 'Contrato',
       fileName: 'contrato.pdf',
-      fileUrl: 'https://files/contrato.pdf',
+      fileUrl: OFFICIAL_FILE_URL,
       mimeType: 'application/pdf',
       notes: 'Assinado',
     });
+  });
+
+  it('POST rejeita employeeId inválido antes da criação', async () => {
+    let creates = 0;
+    const res = responseMock();
+    await handleRhEmployeeDocumentsRequest(
+      {
+        method: 'POST',
+        body: {
+          employeeId: 'not-a-uuid',
+          docType: 'Contrato',
+          fileName: 'contrato.pdf',
+          fileUrl: OFFICIAL_FILE_URL,
+        },
+      },
+      res,
+      allowedDeps({
+        create: async () => {
+          creates += 1;
+        },
+      }),
+    );
+    assert.equal(res.statusCode, 400);
+    assert.equal(creates, 0);
+  });
+
+  it('fileUrl exige HTTPS, origem, bucket e path oficial do funcionário', async () => {
+    let creates = 0;
+    const deps = allowedDeps({
+      create: async () => {
+        creates += 1;
+        return { id: DOCUMENT_ID };
+      },
+    });
+    const baseBody = {
+      employeeId: EMPLOYEE_ID,
+      docType: 'Contrato',
+      fileName: 'contrato.pdf',
+    };
+    const invalidUrls = [
+      OFFICIAL_FILE_URL.replace('https://', 'http://'),
+      'https://example.com/storage/v1/object/public/mission-evidence/rh/arquivo.pdf',
+      `${getSupabaseUrl()}/storage/v1/object/public/outro-bucket/rh/${EMPLOYEE_ID}/contrato.pdf`,
+      `${getSupabaseUrl()}/storage/v1/object/public/mission-evidence/rh/33333333-3333-4333-8333-333333333333/contrato.pdf`,
+    ];
+    for (const fileUrl of invalidUrls) {
+      const res = responseMock();
+      await handleRhEmployeeDocumentsRequest(
+        { method: 'POST', body: { ...baseBody, fileUrl } },
+        res,
+        deps,
+      );
+      assert.equal(res.statusCode, 400, fileUrl);
+    }
+    const valid = responseMock();
+    await handleRhEmployeeDocumentsRequest(
+      { method: 'POST', body: { ...baseBody, fileUrl: OFFICIAL_FILE_URL } },
+      valid,
+      deps,
+    );
+    assert.equal(valid.statusCode, 201);
+    assert.equal(creates, 1);
   });
 
   it('DELETE legítimo executa exatamente uma exclusão lógica', async () => {
     let calls = 0;
     const res = responseMock();
     await handleRhEmployeeDocumentsRequest(
-      { method: 'DELETE', query: { id: 'doc-1' } },
+      { method: 'DELETE', query: { id: DOCUMENT_ID } },
       res,
       allowedDeps({
         remove: async (id: string, actor: any) => {
           calls += 1;
-          assert.equal(id, 'doc-1');
+          assert.equal(id, DOCUMENT_ID);
           assert.equal(actor.id, 'user-rh-1');
         },
       }),
     );
     assert.equal(calls, 1);
     assert.equal(res.statusCode, 200);
+  });
+
+  it('id ausente ou inválido retorna 400 antes da exclusão', async () => {
+    let calls = 0;
+    const deps = allowedDeps({
+      remove: async () => {
+        calls += 1;
+      },
+    });
+    for (const query of [{}, { id: 'not-a-uuid' }]) {
+      const res = responseMock();
+      await handleRhEmployeeDocumentsRequest({ method: 'DELETE', query }, res, deps);
+      assert.equal(res.statusCode, 400);
+    }
+    assert.equal(calls, 0);
+  });
+
+  it('erro interno sensível retorna HTTP 500 genérico', async () => {
+    const res = responseMock();
+    await handleRhEmployeeDocumentsRequest(
+      { method: 'GET', query: { employeeId: EMPLOYEE_ID } },
+      res,
+      allowedDeps({
+        list: async () => {
+          throw new Error('SENSITIVE_DB_DETAIL');
+        },
+      }),
+    );
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, {
+      error: 'Falha ao operar documentos do funcionário',
+    });
+    assert.doesNotMatch(JSON.stringify(res.body), /SENSITIVE_DB_DETAIL/);
   });
 
   it('service_role ausente falha fechado', async () => {

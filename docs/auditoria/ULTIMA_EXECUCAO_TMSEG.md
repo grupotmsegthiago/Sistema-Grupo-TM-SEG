@@ -163,9 +163,9 @@ GREEN do piloto:
 
 | Verificação | Resultado |
 |-------------|-----------|
-| Auth + handler + arquitetura | **16/16** |
+| Auth + handler + arquitetura | **21/21** |
 | Componente real | **3/3** |
-| RH + segurança + F4 dirigidos | main **199/199**; branch **215/215** |
+| RH + segurança + F4 dirigidos | main **199/199**; branch **220/220** |
 | Frontend runtime `.from('rh_employee_documents')` | **zero** |
 | Runtime permitido | somente `lib/rh/employeeDocumentsApiCore.ts` |
 | RealtimeProvider | referência histórica preservada; tabela não publicada live |
@@ -174,11 +174,19 @@ O componente cobre abertura/listagem, create, soft delete, loading, refresh,
 erro de API e permissão. O handler cobre 401/401/403/400/503/405+Allow e
 operação legítima exatamente uma vez.
 
+Correções finais da revisão independente em 2026-08-26:
+
+- `employeeId` e `id` são validados como UUID antes do core;
+- erro HTTP 500 usa mensagem genérica, mantendo o detalhe somente no log backend;
+- `fileUrl` exige HTTPS e o padrão já existente do projeto TM SEG:
+  bucket `mission-evidence`, path `rh/{employeeId}/...`;
+- auth, roles, service role, SSOT e soft delete permaneceram inalterados.
+
 ### REGRESSÃO MAIN × BRANCH
 
 | Suíte | Main `5faf8b45` | Branch |
 |-------|-----------------|--------|
-| TypeScript completa | 1063/1064 | 1079/1080 |
+| TypeScript completa | 1063/1064 | 1084/1085 |
 | Falha | `invoice-control-loading.test.ts` | a mesma, mesma asserção |
 | React completa | 4/4 | 7/7 |
 | `npm run build` | OK | OK |
@@ -205,13 +213,13 @@ Bundles gerados pelo build foram restaurados ao HEAD e estão fora do diff.
 - Auditoria do documento é best-effort para preservar o contrato legado.
 - Não há escopo organizacional row-level além da role de módulo.
 
-Próximo passo único: revisão independente do PR draft. Somente depois, em outra
-execução controlada, avaliar lockdown RLS exclusivo de
-`rh_employee_documents`; não preparar migration nesta branch.
+Próximo passo único: merge/publicação controlada do PR após decisão do
+proprietário. O lockdown RLS de `rh_employee_documents` permanece em execução
+futura separada; não foi preparada migration nesta branch.
 
 ### DECISÃO
 
-# 🟢 RH API FOUNDATION + PILOTO APTO PARA REVISÃO
+# 🟢 PR #284 CORRIGIDO — APTO PARA MERGE/PUBLICAÇÃO CONTROLADA
 
 ---
 
