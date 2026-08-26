@@ -7,6 +7,8 @@ import { RH_INPUT_CLASS, RH_SELECT_CLASS, RH_LABEL_CLASS, RH_CONTRACT_TYPES, RH_
 import { maskCpf, maskPhone, maskCep, maskCurrency, parseCurrencyInput } from '../../lib/rh/masks';
 import { calcSalary } from '../../lib/rh/payroll';
 import { logRhAudit } from '../../lib/rh/audit';
+import { employeeBankAccountsClient } from '../../lib/rh/employeeBankAccountsClient';
+import { saveEmployeeBankAccount } from '../../lib/rh/employeeBankAccountFormFlow';
 import type { RhEmployee, RhSalaryConfig, RhTaxBracket } from '../../types/rh';
 
 type Tab = 'pessoal' | 'empresa' | 'salario' | 'banco' | 'documentos';
@@ -78,8 +80,12 @@ const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved, embedded, initia
     }
     const { data: sal } = await supabase.from('rh_salary_configs').select('*').eq('employee_id', empId).is('deleted_at', null).order('effective_from', { ascending: false }).limit(1).maybeSingle();
     if (sal) setSalary(sal);
-    const { data: bnk } = await supabase.from('rh_employee_bank_accounts').select('*').eq('employee_id', empId).is('deleted_at', null).limit(1).maybeSingle();
-    if (bnk) setBank(bnk);
+    try {
+      const bankAccount = await employeeBankAccountsClient.get(empId);
+      if (bankAccount) setBank(bankAccount);
+    } catch {
+      // O baseline não exibia mensagem quando a leitura bancária falhava.
+    }
     setLoading(false);
   };
 
@@ -117,9 +123,7 @@ const RhEmployeeForm: React.FC<Props> = ({ id, onBack, onSaved, embedded, initia
       }
 
       if (employeeId && (bank.bank_name || bank.pix_key)) {
-        const bankPayload = { ...bank, employee_id: employeeId, is_primary: true };
-        if (bank.id) await supabase.from('rh_employee_bank_accounts').update(bankPayload).eq('id', bank.id);
-        else await supabase.from('rh_employee_bank_accounts').insert([bankPayload]);
+        await saveEmployeeBankAccount(employeeId, bank);
       }
 
       showNotification('success', 'Funcionário salvo com sucesso!');

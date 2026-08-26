@@ -339,6 +339,10 @@
       "destination": "/api/rh-employee-documents"
     },
     {
+      "source": "/api/rh/employees/bank-account",
+      "destination": "/api/rh-employee-bank-account"
+    },
+    {
       "source": "/api/rh/employees/cost-summary",
       "destination": "/api/rh-employee-costs"
     },
