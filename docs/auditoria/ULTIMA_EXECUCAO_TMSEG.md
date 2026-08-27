@@ -1,5 +1,53 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff local — **RECONCILIAÇÃO FINAL DO TERCEIRO PILOTO RH**
+> **PR #289 encerrado; código funcional já incorporado na dev, sem duplicação.**
+
+---
+
+## FASE 4 — RECONCILIAÇÃO FINAL `rh_medical_exams`
+
+### ESTADO E PROGRESSO
+
+- Data: 2026-09-01 (UTC-3).
+- Base da nova branch:
+  `origin/dev = 5e45f6f1166b59c5fe66a24515501061b91a32c7`.
+- Branch:
+  `cursor/fase4-rh-medical-exams-reconcile-final-eaa8`.
+- PR histórico #289, HEAD `f8cafa52`, fechado sem merge.
+- Percentuais atuais preservados: programa geral **84,7%**, Fase 4 **66%**.
+- Esta reconciliação documental não aumenta progresso.
+
+### CHERRY-PICK CONTROLADO
+
+- O commit funcional `f8cafa52` foi aplicado sobre a `dev` atual.
+- Todo o código funcional, rotas, client, core, componente e testes API já
+  estavam incorporados pela reconciliação posterior do PR #293.
+- O cherry-pick produziu somente dois conflitos:
+  - `scripts/rh-medical-exams-render.test.tsx`;
+  - este handoff.
+- O teste manteve integralmente a versão atual da `dev`, incluindo limpeza dos
+  globals JSDOM e liberação de `MessagePort`.
+- O handoff anterior da `dev` foi preservado; esta seção registra a absorção
+  histórica sem reintroduzir o estado obsoleto do PR #289.
+- Nenhuma diferença funcional foi fabricada para criar novo PR.
+
+### ESCOPO NEGATIVO
+
+- Nenhuma alteração em RLS, policy, migration, schema ou banco.
+- Nenhum SQL, DDL ou DML executado.
+- Nenhuma alteração em produção.
+- Nenhuma mudança funcional em RH, documentos, dados bancários, folha, ponto,
+  financeiro, NF, Asaas, Investment, DRE, Z-API, OS ou pedágio.
+
+### GATES
+
+Pendente nesta etapa do handoff: reexecutar 14/14 API/core, 3/3 componente,
+55/55 regressões RH, 6/6 React e `npm run build`, exigindo encerramento normal
+do JSDOM.
+
+---
+
 > Handoff oficial — **CORREÇÃO TOCTOU REVISADA NOS ARTEFATOS DE `rh_employee_documents`**
 > **Live permanece protegido; nenhum SQL adicional e rollback não executado.**
 
