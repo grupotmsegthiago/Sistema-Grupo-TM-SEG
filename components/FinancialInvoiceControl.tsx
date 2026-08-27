@@ -9,6 +9,7 @@ import {
   nfStatusBucket,
   nfBucketLabel,
   nfBucketDetail,
+  nfErrorGuidance,
 } from '../lib/invoiceDisplay';
 import {
   clearInvoiceWatch,
@@ -975,7 +976,8 @@ const FinancialInvoiceControl: React.FC = () => {
                           const paused = !!inv.nf_retry_paused;
                           const bucket = nfStatusBucket(ns, { stuckByAge: isStuckSync, paused });
                           const shortLabel = nfBucketLabel(bucket);
-                          const detail = nfBucketDetail(ns, { stuckByAge: isStuckSync, provider: invProvider, ageHours: ageH, paused });
+                          const detail = nfBucketDetail(ns, { stuckByAge: isStuckSync, provider: invProvider, ageHours: ageH, paused, lastError: inv.nf_last_error, issuerCompany: inv.issuer_company });
+                          const guidance = (bucket === 'falha') ? nfErrorGuidance(inv.nf_last_error, { issuerCompany: inv.issuer_company }) : null;
                           const nfColor = bucket === 'emitida' ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
                             : bucket === 'aguardando' ? 'text-blue-700 bg-blue-50 border-blue-200'
                             : bucket === 'falha' ? 'text-white bg-red-600 border-red-700 animate-pulse'
@@ -987,11 +989,11 @@ const FinancialInvoiceControl: React.FC = () => {
                             : Clock;
                           return (
                             <div className="flex flex-col items-center gap-0.5" data-testid={`nf-status-${inv.id}`}>
-                              <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full border ${nfColor}`} title={inv.nf_last_error || detail || ''}>
+                              <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full border ${nfColor}`} title={[inv.nf_last_error, guidance?.howToFix].filter(Boolean).join('\n\n') || detail || ''}>
                                 {bucket === 'aguardando' ? <Loader2 size={9} className="animate-spin" /> : <NfIcon size={9} />} {shortLabel}
                               </span>
                               {detail && bucket !== 'emitida' && (
-                                <span className={`text-[8px] font-bold max-w-[140px] leading-tight ${bucket === 'falha' ? 'text-red-600' : 'text-gray-500'}`}>{detail}</span>
+                                <span className={`text-[8px] font-bold max-w-[180px] leading-tight ${bucket === 'falha' ? 'text-red-600' : 'text-gray-500'}`}>{detail}</span>
                               )}
                               {inv.nf_number && <span className="text-[8px] text-gray-400 font-mono">Nº {inv.nf_number}</span>}
                             </div>
@@ -1117,7 +1119,10 @@ const FinancialInvoiceControl: React.FC = () => {
                   provider: inv.nf_provider || (inv.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS'),
                   ageHours: ageH,
                   paused,
+                  lastError: inv.nf_last_error,
+                  issuerCompany: inv.issuer_company,
                 });
+                const nfGuidance = nfBucket === 'falha' ? nfErrorGuidance(inv.nf_last_error, { issuerCompany: inv.issuer_company }) : null;
                 return (
                   <>
                     <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1131,13 +1136,28 @@ const FinancialInvoiceControl: React.FC = () => {
                               : nfBucket === 'falha' ? 'text-red-700 bg-red-50 border-red-200'
                               : nfBucket === 'aguardando' ? 'text-blue-700 bg-blue-50 border-blue-200'
                               : 'text-gray-600 bg-gray-50 border-gray-200'
-                          }`} title={inv.nf_last_error || nfDetail || ''}>
+                          }`} title={[inv.nf_last_error, nfGuidance?.howToFix].filter(Boolean).join('\n\n') || nfDetail || ''}>
                             NF: {nfShort}{nfDetail && nfBucket !== 'emitida' ? ` — ${nfDetail}` : ''}
                           </span>
                         )}
                       </div>
                       <span className="text-2xl font-black text-gray-900">{fmtBRL(inv.amount)}</span>
                     </div>
+
+                    {inv.nf_last_error && nfBucket === 'falha' && (
+                      <div className="border border-red-300 bg-red-50 rounded-xl p-4 space-y-2" data-testid="nf-error-guidance">
+                        <p className="text-[9px] font-black text-red-700 uppercase tracking-widest flex items-center gap-1.5">
+                          <AlertCircle size={10} /> Erro da Prefeitura / Asaas
+                        </p>
+                        <p className="text-xs text-red-800 font-semibold leading-snug">{inv.nf_last_error}</p>
+                        {nfGuidance?.howToFix && (
+                          <>
+                            <p className="text-[9px] font-black text-red-600 uppercase tracking-widest pt-1">Como corrigir</p>
+                            <p className="text-xs text-red-900 leading-snug">{nfGuidance.howToFix}</p>
+                          </>
+                        )}
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-3">

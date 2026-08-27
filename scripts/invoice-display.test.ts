@@ -6,7 +6,9 @@ import {
   nfStatusBucket,
   nfBucketLabel,
   nfBucketDetail,
+  nfErrorGuidance,
 } from '../lib/invoiceDisplay';
+import { isNonRetryable } from '../lib/nfRetryGuards';
 
 describe('invoiceDisplay — status cobrança e NF', () => {
   const now = new Date('2026-07-23T12:00:00-03:00');
@@ -39,6 +41,30 @@ describe('invoiceDisplay — status cobrança e NF', () => {
     assert.equal(nfBucketLabel('aguardando'), 'Processando');
     assert.equal(nfBucketLabel('falha'), 'Falha');
     assert.match(nfBucketDetail('STUCK', { provider: 'ASAAS', ageHours: 465, paused: true }) || '', /TRAVADA/);
+    assert.equal(
+      nfBucketDetail('ERROR', { paused: true, lastError: 'Retorno da prefeitura de São Paulo-SP: Falha na autenticação, verifique suas credenciais em Notas Fiscais -> Informações Fiscais.' }),
+      'Credencial Prefeitura',
+    );
+  });
+
+  it('nfErrorGuidance aponta caminho de correção para falha de autenticação SP', () => {
+    const g = nfErrorGuidance(
+      'Retorno da prefeitura de São Paulo-SP: Falha na autenticação, verifique suas credenciais em Notas Fiscais -> Informações Fiscais.',
+      { issuerCompany: 'TM SEGURANÇA' },
+    );
+    assert.ok(g);
+    assert.equal(g!.shortLabel, 'Credencial Prefeitura');
+    assert.match(g!.howToFix, /Informações Fiscais/);
+    assert.match(g!.howToFix, /TM SEGURANÇA/);
+    assert.match(g!.howToFix, /Reemitir NF/);
+  });
+
+  it('isNonRetryable trata falha de autenticação da Prefeitura como permanente', () => {
+    assert.equal(
+      isNonRetryable('Retorno da prefeitura de São Paulo-SP: Falha na autenticação, verifique suas credenciais em Notas Fiscais -> Informações Fiscais.'),
+      true,
+    );
+    assert.equal(isNonRetryable('NF isolada — será agendada pelo Controle/worker'), false);
   });
 });
 
@@ -54,6 +80,9 @@ describe('FinancialInvoiceControl — auto sync e labels', () => {
     assert.match(src, /\/api\/nf\/retry-now\?limit=(5|10)&reopen=1/);
     assert.match(src, /paymentStatusLabel/);
     assert.match(src, /nfStatusBucket/);
+    assert.match(src, /nfErrorGuidance/);
+    assert.match(src, /nf-error-guidance/);
+    assert.match(src, /Como corrigir/);
     assert.match(src, /VENCIDO/);
   });
 });

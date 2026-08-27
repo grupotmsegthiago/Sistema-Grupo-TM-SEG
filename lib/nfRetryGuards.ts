@@ -19,6 +19,10 @@ const NON_RETRYABLE_PATTERNS = [
   /CEP.*inv[aá]lido/i,
   /inscri[cç][aã]o municipal/i,
   /tomador.*n[aã]o.*habilitad/i,
+  // Credencial da Prefeitura no Asaas (Notas Fiscais → Informações Fiscais).
+  // Retry/reopen automático não resolve — precisa atualizar login/senha CCM.
+  /falha na autentica/i,
+  /verifique suas credenciais/i,
 ];
 
 /** Erros transitórios da Prefeitura/Asaas — vale cancelar+reagendar. */

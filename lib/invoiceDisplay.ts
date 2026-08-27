@@ -77,10 +77,72 @@ export function nfBucketLabel(bucket: NfBucket): string {
   }
 }
 
+export type NfErrorGuidance = {
+  shortLabel: string;
+  howToFix: string;
+};
+
+/** Classifica o erro gravado em nf_last_error e devolve rótulo curto + caminho de correção. */
+export function nfErrorGuidance(
+  lastError?: string | null,
+  opts?: { issuerCompany?: string | null },
+): NfErrorGuidance | null {
+  const err = String(lastError || '').trim();
+  if (!err) return null;
+  const issuer = String(opts?.issuerCompany || '').trim() || 'empresa emissora';
+  if (/falha na autentica|verifique suas credenciais|informa[cç][oõ]es fiscais/i.test(err)) {
+    return {
+      shortLabel: 'Credencial Prefeitura',
+      howToFix: `No Asaas da ${issuer}, abra Notas Fiscais → Informações Fiscais e atualize o login/senha (CCM) da Prefeitura. Depois volte nesta tela e clique em Reemitir NF.`,
+    };
+  }
+  if (/inscri[cç][aã]o municipal/i.test(err)) {
+    return {
+      shortLabel: 'Inscrição municipal',
+      howToFix: `Confira a Inscrição Municipal da ${issuer} no Asaas (Notas Fiscais → Informações Fiscais) e o CCM/IM do tomador no cadastro do cliente. Depois clique em Reemitir NF.`,
+    };
+  }
+  if (/NFe003|descri[cç][aã]o (do servi[cç]o|municipal)/i.test(err)) {
+    return {
+      shortLabel: 'Descrição municipal',
+      howToFix: 'Ajuste a descrição municipal / CNAE do serviço no cadastro do cliente (aba fiscal) para o texto aceito pela Prefeitura. Depois clique em Reemitir NF.',
+    };
+  }
+  if (/CNPJ inv[aá]lido/i.test(err)) {
+    return {
+      shortLabel: 'CNPJ inválido',
+      howToFix: 'Corrija o CNPJ do cliente no cadastro e sincronize o cliente no Asaas. Depois clique em Reemitir NF.',
+    };
+  }
+  if (/endere[cç]o.*incompleto|CEP.*inv[aá]lido/i.test(err)) {
+    return {
+      shortLabel: 'Endereço incompleto',
+      howToFix: 'Complete CEP, logradouro, número, cidade e UF no cadastro do cliente. Depois clique em Reemitir NF.',
+    };
+  }
+  if (/tomador.*n[aã]o.*habilitad/i.test(err)) {
+    return {
+      shortLabel: 'Tomador não habilitado',
+      howToFix: 'O tomador precisa estar habilitado na Prefeitura para receber NFS-e. Confira o cadastro municipal do cliente e depois clique em Reemitir NF.',
+    };
+  }
+  return {
+    shortLabel: 'Erro na emissão',
+    howToFix: 'Corrija a pendência informada pelo Asaas/Prefeitura e clique em Reemitir NF (Asaas) ou Reemitir via PlugNotas.',
+  };
+}
+
 /** Detalhe opcional sob o rótulo curto (ex.: "Em fila Prefeitura", "TRAVADA — Asaas"). */
 export function nfBucketDetail(
   nfStatus?: string | null,
-  opts?: { stuckByAge?: boolean; provider?: string | null; ageHours?: number | null; paused?: boolean },
+  opts?: {
+    stuckByAge?: boolean;
+    provider?: string | null;
+    ageHours?: number | null;
+    paused?: boolean;
+    lastError?: string | null;
+    issuerCompany?: string | null;
+  },
 ): string | null {
   const ns = (nfStatus || '').toUpperCase();
   const provider = String(opts?.provider || '').toUpperCase() === 'PLUGNOTAS' ? 'PlugNotas' : 'Asaas';
@@ -88,7 +150,9 @@ export function nfBucketDetail(
     const age = opts?.ageHours != null && opts.ageHours >= 1 ? ` há ${opts.ageHours}h` : '';
     return `TRAVADA — verificar ${provider}${age}`;
   }
-  if (opts?.paused && (ns === 'ERROR' || ns === 'FAILED')) return 'Erro na emissão';
+  if (opts?.paused && (ns === 'ERROR' || ns === 'FAILED')) {
+    return nfErrorGuidance(opts.lastError, { issuerCompany: opts.issuerCompany })?.shortLabel || 'Erro na emissão';
+  }
   if (ns === 'AUTHORIZED') return null;
   if (ns === 'SYNCHRONIZED') return 'Em fila Prefeitura';
   if (ns === 'SCHEDULED') return 'Agendada no Asaas';
