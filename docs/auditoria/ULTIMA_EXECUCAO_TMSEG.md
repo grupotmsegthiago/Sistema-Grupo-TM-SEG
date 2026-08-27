@@ -1,5 +1,123 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff local — **F4 TERCEIRO PILOTO RH `rh_medical_exams` IMPLEMENTADO**
+> **Migração do consumidor para API autenticada; sem SQL, migration, RLS, merge ou publicação.**
+
+---
+
+## F4 RH API — TERCEIRO PILOTO `rh_medical_exams`
+
+### PROGRESSO CONSERVADOR
+
+**Programa geral: 84,1%**
+
+`█████████████████░░░`
+
+**Fase 4: 52%**
+
+`██████████░░░░░░░░░░`
+
+**Execução: 100%**
+
+`████████████████████`
+
+A implementação local sem homologação não altera os percentuais.
+
+### RECONCILIAÇÃO E ESCOPO
+
+- Data: 2026-08-26 (UTC-3).
+- Base limpa: `origin/main = origin/dev = produção = 6cc3a8f3`.
+- Branch: `cursor/fase4-rh-medical-exams-api-eaa8`.
+- Entre o funcional `3007a46a` e `6cc3a8f3` havia somente este handoff.
+- Nenhum stash foi aplicado, removido ou alterado.
+- Diff restrito ao terceiro piloto: core, client, handler, componente dedicado,
+  rota Express, rewrite Vercel, testes e este handoff.
+- Zero alteração em `RhEmployeeScopedCrud`, outras tabelas RH, folha, salário,
+  ponto, financeiro, NF, Asaas, Investment, DRE, Z-API, OS, pedágio ou ENV.
+
+### ARQUITETURA E CONTRATO
+
+Fluxo implementado:
+
+`RhEmployeeWorkspace` → `RhMedicalExams` → `medicalExamsClient` → `authFetch`
+→ `/api/rh/employees/medical-exams` → `authorizeRhApiRequest` →
+`medicalExamsApiCore` → `createRhServiceRoleClient` →
+`rh_medical_exams`.
+
+- GET lista somente exames do `employeeId`, com `deleted_at IS NULL` e
+  `exam_date DESC`.
+- POST cria; PATCH edita; DELETE executa somente soft delete.
+- IDs `employeeId` e `id` são validados como UUID antes do core.
+- Roles preservadas: somente RH e Diretoria.
+- Ausência de `service_role` falha fechado com HTTP 503 genérico, sem fallback
+  anon.
+- Respostas 5xx não retornam SQL, Postgres, Supabase, stack, ENV ou detalhes
+  internos.
+
+### CORREÇÕES MÍNIMAS AUTORIZADAS
+
+1. `updated_by` não é enviado em INSERT, UPDATE nem soft delete porque não
+   existe no schema de `rh_medical_exams`.
+2. `exam_type` passou a ser obrigatório, refletindo exclusivamente o `NOT NULL`
+   existente.
+3. INSERT, UPDATE e soft DELETE só exibem sucesso após confirmação; qualquer
+   erro interrompe o fluxo e produz `Falha ao operar exames médicos`.
+
+Os campos legados foram preservados: tipo, data, validade, clínica, resultado e
+`document_url`. A URL documental existente é mantida durante edição, sem nova
+UI de anexos.
+
+### FRONTEND E AUDITORIA
+
+- A aba Exames permanece no mesmo workspace.
+- `RhDataTable`, pesquisa local, ordenação backend inicial, refresh pós-sucesso,
+  confirmação de exclusão e `canEditRh` foram preservados.
+- Falha de leitura continua visualmente como lista vazia e não cria
+  notificação nova.
+- Não foi adicionado loading nem Realtime.
+- O acesso frontend direto a `rh_medical_exams` foi eliminado.
+- A auditoria best-effort foi movida para o core backend e mantém ações
+  `create`, `update` e `soft_delete`.
+- `rh_audit_logs` e suas policies não foram alteradas.
+
+### TESTES E CLASSIFICAÇÃO
+
+- Testes novos API/core/arquitetura: **14/14 PASS**.
+- Testes novos do componente: **3/3 PASS**.
+- Regressão dirigida RH Foundation, documentos, banco, acesso e Realtime:
+  **55/55 PASS**.
+- Regressão React de documentos + exames: **6/6 PASS**.
+- `npm run build`: **OK**.
+- Supabase público oficial presente no HTML: **OK**.
+- Bundle frontend: zero ocorrência de `rh_medical_exams`; consumo somente pelo
+  endpoint autenticado.
+- Import React/hooks no novo componente: **OK**.
+- Smoke local: `/api/health` **200**, `/` **200**, GET e POST da nova rota sem
+  autenticação **401**; nenhuma escrita foi executada.
+- `git diff --check`: **OK**.
+- `package-lock.json`: sem diff.
+- Bundles gerados pelo build foram restaurados e não integram o escopo.
+- TypeScript global: **BASELINE/CONFIGURAÇÃO**. `tsc -b` continua encontrando
+  erros preexistentes amplos; após corrigir três avisos do teste novo, a
+  checagem dirigida não apresentou erro nos arquivos novos e reportou somente
+  baselines em `RhEmployeeForm.tsx`, `apiEmployeesAuth.ts` e `permissions.ts`.
+
+### RLS, BANCO E RISCO RESIDUAL
+
+- Nenhum SQL foi executado.
+- Nenhuma migration, policy, schema ou dado foi alterado.
+- RLS de `rh_medical_exams` permanece exatamente no estado anterior.
+- A tabela continua aberta até uma preparação de lockdown futura, que deve ser
+  separada e possuir inventário, rollback e aplicação controlada próprios.
+- Esta etapa ainda requer revisão independente e homologação antes de qualquer
+  merge/publicação.
+
+### DECISÃO
+
+# 🟢 TERCEIRO PILOTO RH IMPLEMENTADO — APTO PARA REVISÃO
+
+---
+
 > Handoff oficial — **F4 RH RLS `rh_employee_bank_accounts` HOMOLOGADO**
 > **PR #288 em produção; lockdown persistiu após startup e rollback não foi necessário.**
 
