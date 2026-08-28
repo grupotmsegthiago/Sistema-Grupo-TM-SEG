@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { fetchAllPages } from '../lib/supabasePaging';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { Plus, Search, MoreVertical, Truck, Ban, CheckCircle2, Trash2, Loader2, RefreshCw, Database, AlertTriangle, Pencil, Check } from 'lucide-react';
 
@@ -20,6 +21,7 @@ const ClientVehicleList: React.FC<Props> = ({ onAddVehicle, onEdit, onSelect, cl
   const [isCommercial, setIsCommercial] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [dbStatus, setDbStatus] = useState<'ok' | 'error' | null>(null);
+  const [listTruncated, setListTruncated] = useState(false);
   const [lockedClientId, setLockedClientId] = useState<number | null>(null);
   const [isInitializing, setIsInitializing] = useState(true); 
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -58,35 +60,42 @@ const ClientVehicleList: React.FC<Props> = ({ onAddVehicle, onEdit, onSelect, cl
 
     setIsLoading(true);
     setDbStatus(null);
+    setListTruncated(false);
     try {
-      let query = supabase
-        .from('client_vehicles')
-        .select(`
-            *,
-            clients!inner(id, name, trading_name, created_by)
-        `)
-        .order('created_at', { ascending: false });
-      
-      // FILTRO DE SEGURANÇA E COMERCIAL
-      if (lockedClientId) {
-          query = query.eq('client_id', lockedClientId);
-      } else if (clientId) {
-          query = query.eq('client_id', clientId);
-      } else if (isCommercial) {
-          const allowedIds = user?.permissions?.filter((p: string) => p.startsWith('client_view:')).map((p: string) => p.split(':')[1]) || [];
-          if (allowedIds.length > 0) {
-              // Filtra veículos de clientes que o comercial cadastrou OU foi vinculado
-              query = query.or(`clients.created_by.eq."${user?.name}",client_id.in.(${allowedIds.join(',')})`);
-          } else {
-              query = query.eq('clients.created_by', user?.name);
-          }
-      }
+      // 1711+ veículos: sem paginação o PostgREST corta em 1000 e placas antigas
+      // (ex.: GIJ9D88) somem da lista e da busca client-side.
+      const { rows, truncated } = await fetchAllPages(async (from, size) => {
+        let query = supabase
+          .from('client_vehicles')
+          .select(`
+              *,
+              clients!inner(id, name, trading_name, created_by)
+          `)
+          .order('created_at', { ascending: false })
+          .range(from, from + size - 1);
 
-      const { data, error } = await query;
-      
-      if (error) throw error;
+        // FILTRO DE SEGURANÇA E COMERCIAL
+        if (lockedClientId) {
+            query = query.eq('client_id', lockedClientId);
+        } else if (clientId) {
+            query = query.eq('client_id', clientId);
+        } else if (isCommercial) {
+            const allowedIds = user?.permissions?.filter((p: string) => p.startsWith('client_view:')).map((p: string) => p.split(':')[1]) || [];
+            if (allowedIds.length > 0) {
+                // Filtra veículos de clientes que o comercial cadastrou OU foi vinculado
+                query = query.or(`clients.created_by.eq."${user?.name}",client_id.in.(${allowedIds.join(',')})`);
+            } else {
+                query = query.eq('clients.created_by', user?.name);
+            }
+        }
+
+        const { data, error } = await query;
+        return { data, error };
+      });
+
+      setListTruncated(truncated);
       setDbStatus('ok');
-      if (data) setVehicles(data);
+      setVehicles(rows);
     } catch (e) {
       console.error(e);
       setDbStatus('error');
@@ -125,8 +134,15 @@ const ClientVehicleList: React.FC<Props> = ({ onAddVehicle, onEdit, onSelect, cl
                 Veículos de Carga {lockedClientId ? '(Meus Veículos)' : '(Clientes)'}
               </h2>
               {dbStatus === 'ok' && (
-                  <div className="mt-2 flex items-center gap-2 text-[10px] font-bold text-green-700 bg-green-50 px-2 py-1 rounded w-fit border border-green-200">
-                      <Database size={12} /> Sincronizado
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2 text-[10px] font-bold text-green-700 bg-green-50 px-2 py-1 rounded w-fit border border-green-200">
+                        <Database size={12} /> Sincronizado ({vehicles.length})
+                    </div>
+                    {listTruncated && (
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-1 rounded w-fit border border-amber-200">
+                          <AlertTriangle size={12} /> CONSULTA INCOMPLETA — refine o filtro
+                      </div>
+                    )}
                   </div>
               )}
             </div>

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { supabase, MISSION_UPDATES_BROADCAST_CHANNEL } from '../lib/supabase';
+import { fetchAllPages } from '../lib/supabasePaging';
 import { fetchParentMissionCandidates } from '../lib/parentMissionSearch';
 import { logAction } from '../lib/logger';
 import { calculateMissionFinancials, clientFuzzyFilter, extractCityFromAddress, resolveDisplacementFromAuthorizedKm } from '../lib/financialUtils';
@@ -1564,13 +1565,23 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     };
 
     const refreshAuxData = async (clientName: string, providerName: string, vId?: string, cId?: number) => {
-        const [pRes, vRes, activeAgents, allAgents, ctRes, cvRes, dRes] = await Promise.all([
+        const [pRes, vRes, activeAgents, allAgents, ctRes, cvRows, dRes] = await Promise.all([
             supabase.from('providers').select('*').eq('status', 'Ativo').order('name'),
             supabase.from('vehicles').select('*').eq('status', 'Ativo'),
             fetchAllAgents('Ativo'),
             fetchAllAgents(),
             supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(clientName)),
-            cId ? supabase.from('client_vehicles').select('*').eq('client_id', cId).order('plate') : { data: [] },
+            cId
+              ? fetchAllPages(async (from, size) => {
+                  const { data, error } = await supabase
+                    .from('client_vehicles')
+                    .select('*')
+                    .eq('client_id', cId)
+                    .order('plate')
+                    .range(from, from + size - 1);
+                  return { data, error };
+                }).then(({ rows }) => rows)
+              : Promise.resolve([] as any[]),
             supabase.from('missions').select('driver_name, driver_phone').not('driver_name', 'is', null).order('created_at', { ascending: false }).limit(200)
         ]);
         
@@ -1579,7 +1590,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         setAgentsList(activeAgents);
         setAllAgentsList(allAgents);
         if (ctRes.data) setClientTables(ctRes.data);
-        if (cvRes.data) setClientVehiclesList(cvRes.data as any);
+        setClientVehiclesList(cvRows as any);
         
         if (dRes.data) {
             const unique = Array.from(new Set(dRes.data.map(d => (d.driver_name as string)?.toUpperCase().trim())))

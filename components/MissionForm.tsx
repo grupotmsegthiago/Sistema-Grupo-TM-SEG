@@ -5,6 +5,7 @@ import { ArrowLeft, Save, MapPin, Flag, FileText, Building2, Ruler, Loader2, Plu
 import { MissionStatus, Client, ClientRoute, ClientPriceTable, ProviderData, ProviderCostTable, ClientVehicleDB } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
+import { fetchAllPages } from '../lib/supabasePaging';
 import { fetchParentMissionCandidates } from '../lib/parentMissionSearch';
 import { logAction } from '../lib/logger';
 import { useNotification } from '../lib/NotificationContext';
@@ -783,8 +784,16 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       try {
           const { data: clientObj } = await supabase.from('clients').select('id').eq('name', clientName).maybeSingle();
           if (clientObj) {
-              const { data: vehicles } = await supabase.from('client_vehicles').select('*').eq('client_id', clientObj.id).order('plate');
-              if (vehicles) setDbClientVehicles(vehicles as any);
+              const { rows: vehicles } = await fetchAllPages(async (from, size) => {
+                  const { data, error } = await supabase
+                      .from('client_vehicles')
+                      .select('*')
+                      .eq('client_id', clientObj.id)
+                      .order('plate')
+                      .range(from, from + size - 1);
+                  return { data, error };
+              });
+              setDbClientVehicles(vehicles as any);
           }
       } catch (e) { console.error(e); }
   };
