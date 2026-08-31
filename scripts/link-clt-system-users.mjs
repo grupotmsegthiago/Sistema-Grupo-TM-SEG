@@ -5,7 +5,8 @@
  *
  * Uso:
  *   node scripts/link-clt-system-users.mjs
- *   node scripts/link-clt-system-users.mjs --api https://sistema.grupotmseg.com.br
+ *   node scripts/link-clt-system-users.mjs --api https://sistema.grupotmseg.com.br --token <token-tmseg>
+ *   TMSEG_AUTH_TOKEN=<token-tmseg> node scripts/link-clt-system-users.mjs --api https://sistema.grupotmseg.com.br
  */
 import { createClient } from '@supabase/supabase-js';
 import pg from 'pg';
@@ -14,8 +15,6 @@ import path from 'path';
 
 const TMSEG_REF = 'ajhmmjuewdsukecaimik';
 const DEFAULT_URL = `https://${TMSEG_REF}.supabase.co`;
-const DEFAULT_ANON =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
 
 function decodeRef(key) {
   try {
@@ -54,8 +53,7 @@ function createSb() {
     console.log('[link-clt] Usando SUPABASE_SERVICE_ROLE_KEY');
     return createClient(url, serviceKey);
   }
-  console.log('[link-clt] Usando chave anon (RLS deve permitir update em rh_employees)');
-  return createClient(url, DEFAULT_ANON);
+  throw new Error('SUPABASE_SERVICE_ROLE_KEY indisponível ou pertence a outro projeto');
 }
 
 function getPgPool() {
@@ -74,8 +72,10 @@ async function applySchemaFixViaExecSql() {
   const url = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_URL);
   const serviceKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
-  const key = serviceKey && decodeRef(serviceKey) === TMSEG_REF ? serviceKey : DEFAULT_ANON;
-  const sb = createClient(url, key);
+  if (!serviceKey || decodeRef(serviceKey) !== TMSEG_REF) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY indisponível ou pertence a outro projeto');
+  }
+  const sb = createClient(url, serviceKey);
   const sqlPath = path.join(process.cwd(), 'migrations', '2026_07_08_timeclock_fix_user_id.sql');
   const sql = fs.readFileSync(sqlPath, 'utf8');
   console.log('[link-clt] Aplicando schema fix via exec_sql...');
@@ -97,10 +97,17 @@ async function applySchemaFixViaPg() {
   return true;
 }
 
-async function callRemoteInit(apiBase) {
+async function callRemoteInit(apiBase, token) {
   const base = String(apiBase || '').replace(/\/$/, '');
+  const authToken = String(token || '').trim();
+  if (!authToken) {
+    throw new Error('Informe --token ou TMSEG_AUTH_TOKEN para chamar o init remoto');
+  }
   console.log(`[link-clt] Chamando POST ${base}/api/rh-timeclock-init ...`);
-  const res = await fetch(`${base}/api/rh-timeclock-init`, { method: 'POST' });
+  const res = await fetch(`${base}/api/rh-timeclock-init`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body.ok) {
     throw new Error(body.error || `HTTP ${res.status}`);
@@ -112,9 +119,13 @@ async function callRemoteInit(apiBase) {
 async function main() {
   const apiArg = process.argv.find((a) => a.startsWith('--api='))?.split('=')[1]
     || (process.argv.includes('--api') ? process.argv[process.argv.indexOf('--api') + 1] : null);
+  const tokenArg = process.argv.find((a) => a.startsWith('--token='))?.split('=')[1]
+    || (process.argv.includes('--token') ? process.argv[process.argv.indexOf('--token') + 1] : null)
+    || process.env.TMSEG_AUTH_TOKEN
+    || '';
 
   if (apiArg) {
-    await callRemoteInit(apiArg);
+    await callRemoteInit(apiArg, tokenArg);
     process.exit(0);
   }
 

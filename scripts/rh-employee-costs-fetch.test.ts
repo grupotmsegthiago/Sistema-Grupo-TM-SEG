@@ -12,19 +12,21 @@ describe('RH employee costs — carga estável', () => {
     assert.doesNotMatch(src, /await import\(['"]\.\/loadEmployeeCostSummary/);
   });
 
-  it('handlers RH usam createSupabaseAdminClient (sem decodeRef estrito)', () => {
+  it('handlers RH sensíveis reutilizam a RH API Foundation', () => {
     for (const file of ['api/rh-employee-costs.ts', 'api/rh-employee-list.ts']) {
       const src = readFileSync(join(root, file), 'utf8');
-      assert.match(src, /createSupabaseAdminClient/);
+      assert.match(src, /authorizeRhApiRequest/);
+      assert.match(src, /createRhServiceRoleClient/);
+      assert.doesNotMatch(src, /assertEmployeesApiAccess\([^)]*req/);
       assert.doesNotMatch(src, /decodeRef\(key\) !== TMSEG_REF/);
     }
   });
 
-  it('auth RH aceita fallback de headers x-tmseg-role', () => {
-    const src = readFileSync(join(root, 'lib/rh/apiEmployeesAuth.ts'), 'utf8');
-    assert.match(src, /x-tmseg-role/);
-    assert.match(src, /safeResolveUserRoleFromToken/);
-    assert.match(src, /extractAuthToken/);
+  it('foundation resolve principal server-side e não lê x-tmseg-role', () => {
+    const src = readFileSync(join(root, 'lib/rh/rhApiAccess.ts'), 'utf8');
+    assert.match(src, /resolvePrincipalFromToken/);
+    assert.match(src, /roleCanAccessEmployees\(principal\.role\)/);
+    assert.doesNotMatch(src, /x-tmseg-role/);
   });
 
   it('lista de funcionários trata ok:false do summary', () => {

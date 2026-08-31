@@ -1,56 +1,74 @@
 /**
  * GET /api/rh/employees — handler leve (rewrite vercel.json).
  */
-import { createSupabaseAdminClient } from '../lib/supabaseAdmin.js';
 import {
-  assertEmployeesApiAccess,
-  extractAuthToken,
-} from '../lib/rh/apiEmployeesAuth.js';
+  authorizeRhApiRequest,
+  createRhServiceRoleClient,
+  type RhApiAccessDeps,
+  type RhApiAccessResult,
+} from '../lib/rh/rhApiAccess.js';
 
-export default async function handler(req: any, res: any) {
+export type RhEmployeeListDeps = {
+  authorize?: (req: any) => Promise<RhApiAccessResult>;
+  accessDeps?: RhApiAccessDeps;
+  list?: () => Promise<unknown[]>;
+};
+
+export async function handleRhEmployeeListRequest(
+  req: any,
+  res: any,
+  deps: RhEmployeeListDeps = {},
+) {
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'method_not_allowed' });
     return;
   }
 
-  const token = extractAuthToken(req);
-  if (!token) {
-    res.status(401).json({ error: 'Não autorizado' });
+  const authorization = await (
+    deps.authorize
+    || ((request: any) => authorizeRhApiRequest(request, deps.accessDeps))
+  )(req);
+  if (!authorization.ok) {
+    res.status(authorization.status).json({ ok: false, error: authorization.error });
     return;
   }
 
   try {
-    const denied = await assertEmployeesApiAccess(token, req);
-    if (denied) {
-      res.status(403).json({ ok: false, error: denied });
-      return;
-    }
-
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
-    const sb = createSupabaseAdminClient();
-    if (!sb) {
-      res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
-      return;
+    let employees: unknown[];
+    if (deps.list) {
+      employees = await deps.list();
+    } else {
+      const sb = createRhServiceRoleClient();
+      if (!sb) {
+        res.status(503).json({ ok: false, error: 'Supabase admin indisponível' });
+        return;
+      }
+
+      const { data, error } = await sb
+        .from('rh_employees')
+        .select('*, rh_positions(name), rh_departments(name)')
+        .is('deleted_at', null)
+        .order('full_name');
+
+      if (error) throw error;
+      employees = data || [];
     }
-
-    const { data, error } = await sb
-      .from('rh_employees')
-      .select('*, rh_positions(name), rh_departments(name)')
-      .is('deleted_at', null)
-      .order('full_name');
-
-    if (error) throw error;
 
     res.status(200).json({
       ok: true,
-      employees: data || [],
-      total: data?.length || 0,
+      employees,
+      total: employees.length,
     });
   } catch (e: any) {
     console.error('[rh-employees]', e?.message);
     res.status(500).json({ ok: false, error: e?.message || 'Falha ao listar funcionários' });
   }
+}
+
+export default async function handler(req: any, res: any) {
+  await handleRhEmployeeListRequest(req, res);
 }
 
 export const config = { maxDuration: 60 };

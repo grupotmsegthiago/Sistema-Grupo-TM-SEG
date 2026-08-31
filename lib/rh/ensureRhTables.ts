@@ -1,9 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import pg from 'pg';
-import { createClient } from '@supabase/supabase-js';
-
-const DEFAULT_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { createRhServiceRoleClient } from './rhApiAccess.js';
 
 let pool: pg.Pool | null = null;
 
@@ -55,20 +54,17 @@ BEGIN EXECUTE sql; END; $$;`);
   await p.query(sql);
 }
 
-async function runViaExecSql(sql: string): Promise<void> {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_URL;
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    '';
-  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY não configurada');
-
-  const sb = createClient(url, key);
-  const { error } = await sb.rpc('exec_sql', { sql });
+async function runViaExecSql(sql: string, client: SupabaseClient): Promise<void> {
+  const { error } = await client.rpc('exec_sql', { sql });
   if (error) throw error;
 }
 
 export async function ensureRhTables(): Promise<{ method: string; tables: string[] }> {
+  const adminClient = createRhServiceRoleClient();
+  if (!adminClient) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY indisponível neste ambiente');
+  }
+
   const sql = readMigrationSql();
 
   let method = 'pg';
@@ -77,12 +73,12 @@ export async function ensureRhTables(): Promise<{ method: string; tables: string
       await runViaPg(sql);
     } else {
       method = 'exec_sql';
-      await runViaExecSql(sql);
+      await runViaExecSql(sql, adminClient);
     }
   } catch (e: any) {
     if (method === 'pg') {
       method = 'exec_sql';
-      await runViaExecSql(sql);
+      await runViaExecSql(sql, adminClient);
     } else {
       throw new Error(
         `${e?.message || e}. Configure POSTGRES_URL na Vercel (integração Supabase) ou execute migrations/2026_07_07_rh_module.sql no SQL Editor.`,
@@ -90,18 +86,10 @@ export async function ensureRhTables(): Promise<{ method: string; tables: string
     }
   }
 
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_URL;
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.VITE_SUPABASE_ANON_KEY ||
-    '';
-  const sb = createClient(url, key);
   const checks = await Promise.all([
-    sb.from('rh_employees').select('id', { count: 'exact', head: true }),
-    sb.from('rh_departments').select('id', { count: 'exact', head: true }),
-    sb.from('rh_tax_brackets').select('id', { count: 'exact', head: true }),
+    adminClient.from('rh_employees').select('id', { count: 'exact', head: true }),
+    adminClient.from('rh_departments').select('id', { count: 'exact', head: true }),
+    adminClient.from('rh_tax_brackets').select('id', { count: 'exact', head: true }),
   ]);
 
   const missing = ['rh_employees', 'rh_departments', 'rh_tax_brackets'].filter((_, i) => checks[i].error);
