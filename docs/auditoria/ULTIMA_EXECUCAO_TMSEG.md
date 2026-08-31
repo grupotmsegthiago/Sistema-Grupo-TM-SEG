@@ -1,5 +1,99 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff oficial — **PR #294 MERGEADO E HOMOLOGADO EM DEV**
+> **Lockdown de exames persistiu após o merge; SQL não reaplicado e rollback não executado.**
+
+---
+
+## FASE 4 — RLS RH_MEDICAL_EXAMS — HOMOLOGAÇÃO PÓS-MERGE
+
+### PROGRESSO
+
+**Programa geral: 84,6%**
+
+`█████████████████░░░`
+
+**Fase 4: 63%**
+
+`█████████████░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### GIT / PR
+
+- PR: [#294](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/294).
+- Feature:
+  `c2cf74ff6b23fb42b645ba0229af2da907641473`.
+- Merge real em `dev`:
+  `fd807edf853162eb218e593493817507e40b6aa8`.
+- `origin/dev`:
+  `fd807edf853162eb218e593493817507e40b6aa8`.
+- `origin/main` preservado:
+  `ea18e74734d7db574a3ecf6b33ec185b7e50f8ce`.
+- O merge possui pais exatos `ea18e747` e `c2cf74ff`.
+- Não houve commit posterior inesperado em `dev`.
+- Branches dos PRs #289, #293 e #294 não foram apagadas.
+
+### CHECKS DO PR
+
+- 4 checks aprovados, conforme evidência do GitHub.
+- Vercel Preview concluída.
+- Supabase Preview skipped por ausência de alteração na pasta Supabase; estado
+  esperado e não classificado como falha.
+
+### ESCOPO INCORPORADO
+
+- Exatamente quatro arquivos:
+  - forward RLS de `rh_medical_exams`;
+  - rollback exato;
+  - teste arquitetural RLS;
+  - handoff.
+- `+559`, sem `.cjs` ou código funcional.
+- `rhApiAccess.ts` e `RhEmployeeScopedCrud.tsx`: zero diff.
+- Zero mudança em financeiro, Asaas, folha, ponto, Investment, Z-API ou OS.
+
+### LIVE READ-ONLY PÓS-MERGE
+
+| Campo | Resultado |
+|-------|-----------|
+| RLS | habilitado |
+| FORCE RLS | false |
+| Policies | 0 |
+| Anon | 0 |
+| Authenticated | 0 |
+| Service role | SELECT + BYPASSRLS preservados |
+| Row count | 0 |
+
+- Nenhuma linha, funcionário ou PII médica foi consultada/retornada.
+- Forward **não reaplicado** nesta homologação.
+- Rollback **não executado**.
+
+### REGRESSÕES NO HEAD REAL DE DEV
+
+| Check | Resultado |
+|-------|-----------|
+| RLS exames | **9/9 PASS** |
+| RH/RLS/Foundation/F4 dirigidos | **158/158 PASS** |
+| React proporcional | **3/3 PASS** |
+| Build | **OK** |
+| `git diff --check` | **OK** |
+
+### ROLLBACK / PRÓXIMO PASSO
+
+- Rollback permanece disponível em
+  `migrations/rollback/2026_08_31_fase4_rls_rh_medical_exams.sql`.
+- Nenhum critério de rollback foi observado.
+- Próximo gate: versionar este handoff em commit documental separado e preparar
+  publicação controlada `dev → main` somente após autorização explícita.
+
+### DECISÃO
+
+# 🟢 PR #294 HOMOLOGADO EM DEV — APTO PARA PUBLICAÇÃO CONTROLADA
+
+---
+
 > Handoff oficial — **RLS `rh_medical_exams` APLICADO E VALIDADO**
 > **Policy permissiva removida; zero PII, zero dados alterados e rollback não executado.**
 
