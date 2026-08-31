@@ -1,5 +1,134 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff oficial — **BOOTSTRAPS RH + BYPASS RECONCILIADOS COM A RH API FOUNDATION**
+> **Nova worktree em `origin/dev`; staged antigo preservado e nenhum commit/push/SQL/RLS executado.**
+
+---
+
+## FASE 4 — RECONCILIAÇÃO DOS BOOTSTRAPS RH
+
+### PROGRESSO DA EXECUÇÃO
+
+**Programa geral: 84,2%**
+
+`█████████████████░░░`
+
+**Fase 4: 55%**
+
+`███████████░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+Percentuais mantidos conforme escopo desta execução; nenhum avanço foi
+contabilizado antes de revisão, merge, deploy e homologação.
+
+### PRESERVAÇÃO E BASE
+
+- Base reconciliada: `origin/dev = origin/main =
+  0f50b03f150691bd18f8b6bd5012e38199038456`.
+- Nova branch/worktree:
+  `cursor/fase4-rh-bootstrap-reconcile-eaa8`.
+- A branch antiga `cursor/fase4-rls-rh-lote1-audit-eaa8` permanece intacta em
+  `473b4d40`, com seus 12 arquivos staged e quatro `.cjs` unstaged.
+- Nenhum reset destrutivo, `stash pop/apply/drop`, commit, push, PR, merge ou
+  deploy foi executado.
+
+### SSOT ATUAL DE AUTH RH
+
+`lib/rh/rhApiAccess.ts` é a foundation homologada e a fonte única para APIs RH
+sensíveis:
+
+1. extrai e valida o token TM SEG;
+2. exige `service_role`;
+3. resolve server-side o principal ativo em `system_users` e seu perfil;
+4. permite somente RH e Diretoria;
+5. ignora `x-tmseg-role`, body e querystring como fonte de autorização;
+6. cria cliente administrativo exclusivamente via
+   `createRhServiceRoleClient()`.
+
+`lib/rh/apiEmployeesAuth.ts` continua necessário para parsing de token,
+normalização de roles e consumidores legacy, mas não é mais o SSOT de
+autorização dos quatro handlers reconciliados. O wrapper estrito proposto na
+branch antiga foi descartado para evitar arquitetura paralela.
+
+### CLASSIFICAÇÃO DAS MUDANÇAS ANTIGAS
+
+| Artefato antigo | Classificação | Reconciliação |
+|-----------------|---------------|---------------|
+| `api/rh-init.ts` | C — adaptar | Foundation + single-flight |
+| `api/rh-timeclock-init.ts` | C — adaptar | Foundation + single-flight |
+| `api/rh-employee-list.ts` | C — adaptar | Foundation + service-role client |
+| `api/rh-employee-costs.ts` | C — adaptar | Foundation + service-role client |
+| `lib/rh/apiEmployeesAuth.ts` | D — wrapper obsoleto | removido do diff |
+| `lib/rh/ensureRhTables.ts` | A — necessária | fail-closed via Foundation |
+| `scripts/link-clt-system-users.mjs` | A — necessária | token remoto + sem anon |
+| teste arquitetural antigo | D — obsoleto | não reaplicado |
+| três testes de segurança | C — adaptar | Foundation real nos testes |
+| handoff antigo | C — adaptar | novo marco no topo, histórico preservado |
+
+### CONTRATOS PRESERVADOS
+
+- `/api/rh/init`: POST RH/Diretoria preservado; sem auth/token inválido = 401;
+  role indevida = 403; sem service role = 503; GET autenticado = 405.
+- `/api/rh/timeclock/init`: mesmo contrato de segurança; retorno
+  `unavailable` e mensagens operacionais preservados.
+- `/api/rh/employees`: mesmos campos, filtro `deleted_at`, joins, ordenação e
+  payload `{ ok, employees, total }`.
+- `/api/rh/employees/cost-summary`: mesmo período, loader, agregações, salários,
+  benefícios, folha e payload.
+- `ensureTimeClockAndLinkCltUsers()`, `runRhMigrations()`, ponto, batidas,
+  entrada/saída, Control iD e migrations permaneceram inalterados.
+
+### BOOTSTRAP / CLI
+
+- `ensureRhTables()` continua aplicando exatamente a migration estrutural
+  existente, sem policy ou DDL novo.
+- A execução e a verificação agora exigem
+  `createRhServiceRoleClient()`; não há fallback anon.
+- Os dois endpoints de init usam single-flight por processo, limpando estado
+  em sucesso e erro e permitindo tentativa posterior.
+- O caller remoto `link-clt-system-users.mjs --api` exige `--token` ou
+  `TMSEG_AUTH_TOKEN` e envia o segredo somente no header `Authorization`.
+- O caminho CLI local também falha fechado sem service role; nenhum token/chave
+  é impresso ou persistido.
+
+### TESTES PÓS-RECONCILIAÇÃO
+
+| Check | Resultado |
+|-------|-----------|
+| Bootstraps + bypass real | **32/32 PASS** |
+| RH/Foundation/RLS/F4 dirigidos | **190/190 PASS** |
+| Baseline TS de `origin/dev` | **1131/1132** |
+| TS pós-reconciliação | **1163/1164** |
+| Falha TS | mesma baseline CRLF em `invoice-control-loading.test.ts` |
+| React pós-reconciliação | **7/7 PASS** |
+| Build | **OK** |
+
+O runner React sem `--test-force-exit` concluiu as asserções iniciais, mas
+permaneceu aberto por handle do ambiente. A reexecução com a opção oficial do
+Node terminou em 7/7; classificado como **AMBIENTE**, sem regressão.
+
+### DIFF RECONCILIADO
+
+- Quatro handlers RH.
+- `lib/rh/ensureRhTables.ts`.
+- Caller CLI.
+- Teste arquitetural existente atualizado para a Foundation.
+- Três testes novos de segurança.
+- Este handoff.
+- Zero alteração em `lib/rh/apiEmployeesAuth.ts`, migrations, policies,
+  cálculos, folha, ponto, financeiro, NF, Asaas, Investment, DRE, Z-API ou OS.
+- Bundles `.cjs` gerados foram removidos apenas da worktree nova; os quatro
+  arquivos unstaged da árvore antiga permanecem intocados.
+
+### DECISÃO
+
+# 🟢 RECONCILIAÇÃO CONCLUÍDA — DIFF ATUALIZADO APTO PARA COMMIT/PR
+
+---
+
 > Handoff oficial — **F4 RH RLS `rh_employee_bank_accounts` HOMOLOGADO**
 > **PR #288 em produção; lockdown persistiu após startup e rollback não foi necessário.**
 
