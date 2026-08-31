@@ -30,6 +30,7 @@ function referencedPublicTables(sql: string): string[] {
 
 function assertNoDataOrSchemaChanges(sql: string): void {
   assert.doesNotMatch(sql, /\b(?:INSERT|UPDATE|DELETE|TRUNCATE)\b/i);
+  assert.doesNotMatch(sql, /\b(?:GRANT|REVOKE)\b/i);
   assert.doesNotMatch(
     sql,
     /\b(?:CREATE|ALTER|DROP)\s+(?:TABLE|COLUMN|SCHEMA|INDEX|FUNCTION|TRIGGER)\b/i,
@@ -38,6 +39,27 @@ function assertNoDataOrSchemaChanges(sql: string): void {
     sql,
     /ALTER\s+TABLE[\s\S]*?\b(?:NO\s+)?FORCE\s+ROW\s+LEVEL\s+SECURITY\b/i,
   );
+}
+
+function assertPolicyDdlIsSerialized(sql: string, policyDdl: string): void {
+  const begin = sql.indexOf('BEGIN;');
+  const existenceGuard = sql.indexOf("to_regclass('public.rh_employee_documents')");
+  const lock = sql.indexOf(
+    'LOCK TABLE public.rh_employee_documents IN ACCESS EXCLUSIVE MODE;',
+  );
+  const policyInspection = sql.indexOf('FROM pg_policies', lock);
+  const alteration = sql.indexOf(policyDdl, lock);
+  const commit = sql.lastIndexOf('COMMIT;');
+  const locks = sql.match(
+    /LOCK TABLE public\.rh_employee_documents IN ACCESS EXCLUSIVE MODE;/g,
+  ) || [];
+
+  assert.equal(locks.length, 1);
+  assert.ok(begin >= 0 && existenceGuard > begin);
+  assert.ok(lock > existenceGuard);
+  assert.ok(policyInspection > lock);
+  assert.ok(alteration > policyInspection);
+  assert.ok(commit > alteration);
 }
 
 const principal = {
@@ -139,6 +161,17 @@ describe('Fase 4 RH RLS — preparação rh_employee_documents', () => {
     assert.match(sql, /roles <@ ARRAY\['anon', 'authenticated'\]::name\[\]/);
     assert.match(sql, /qual = 'true'/);
     assert.match(sql, /with_check = 'true'/);
+  });
+
+  it('serializa inspeção e DDL de policy contra regressão TOCTOU', () => {
+    assertPolicyDdlIsSerialized(
+      read(FORWARD),
+      `DROP POLICY IF EXISTS "${POLICY}"`,
+    );
+    assertPolicyDdlIsSerialized(
+      read(ROLLBACK),
+      `CREATE POLICY "${POLICY}"`,
+    );
   });
 
   it('rollback é exclusivo, idempotente e restaura exatamente a policy anterior', () => {

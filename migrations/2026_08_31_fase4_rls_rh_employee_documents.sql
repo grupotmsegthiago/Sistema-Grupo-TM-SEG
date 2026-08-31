@@ -4,6 +4,18 @@
 BEGIN;
 
 DO $$
+BEGIN
+  IF to_regclass('public.rh_employee_documents') IS NULL THEN
+    RAISE EXCEPTION
+      'Drift em public.rh_employee_documents: tabela ausente';
+  END IF;
+END
+$$;
+
+-- Serializa inspeção e DDL de policy até o COMMIT, eliminando TOCTOU.
+LOCK TABLE public.rh_employee_documents IN ACCESS EXCLUSIVE MODE;
+
+DO $$
 DECLARE
   rls_enabled boolean;
   force_rls boolean;

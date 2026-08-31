@@ -1,5 +1,73 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff oficial — **CORREÇÃO TOCTOU PREPARADA NOS ARTEFATOS DE `rh_employee_documents`**
+> **Live permanece protegido; nenhum SQL adicional e rollback não executado.**
+
+---
+
+## FASE 4 — RLS RH_EMPLOYEE_DOCUMENTS — CORREÇÃO DO FINDING TOCTOU
+
+### ORIGEM / CAUSA
+
+- Data: 2026-08-31 (UTC-3).
+- Base:
+  `origin/main = origin/dev =
+  8d850fb0aba52b4ff58627f888a2325ef0634b93`.
+- Branch:
+  `cursor/fase4-rh-employee-documents-rls-eaa8`.
+- Commit já publicado na branch:
+  `002e14bbc63b5719a705110f9aa81fbdbb020de5`.
+- Finding independente: **MEDIUM** por janela TOCTOU.
+- Causa: forward e rollback liam `pg_policies` e somente depois executavam
+  `DROP POLICY`/`CREATE POLICY`; sem lock explícito, DDL privilegiado concorrente
+  poderia alterar policies entre validação e mudança.
+
+### CORREÇÃO ADOTADA
+
+- Forward e rollback validam primeiro a existência da relação.
+- Em seguida adquirem exatamente:
+  `LOCK TABLE public.rh_employee_documents IN ACCESS EXCLUSIVE MODE`.
+- Toda inspeção definitiva de RLS, FORCE RLS e `pg_policies` ocorre somente
+  depois do lock.
+- O DDL de policy ocorre depois da inspeção e antes do `COMMIT`.
+- Conforme PostgreSQL, `ACCESS EXCLUSIVE` conflita com todos os modos de lock e
+  é mantido até o fim da transação; isso serializa acessos e DDL concorrentes na
+  relação durante a janela crítica.
+- O lock é restrito a uma tabela e à transação curta. Não há prompt humano,
+  chamada externa ou segunda relação dentro da transação.
+- Idempotência, guardas fail-closed, policy exata e ausência de alteração em
+  dados, grants, FORCE RLS ou schema funcional foram preservadas.
+
+### LIVE / ESCOPO NEGATIVO
+
+- Revalidação somente leitura:
+  RLS habilitado, FORCE RLS false, policies 0, anon/authenticated 0,
+  `service_role` com SELECT/BYPASSRLS e row count 0.
+- O forward **não foi reaplicado**.
+- Nenhum SQL live mutável foi executado nesta correção.
+- Rollback **NÃO executado**.
+- Nenhuma policy live, dado, código funcional, API, componente ou script global
+  foi alterado.
+- Nenhum merge, deploy ou publicação.
+
+### TESTE / VERSIONAMENTO
+
+- O teste dedicado agora exige um único `ACCESS EXCLUSIVE`, depois do guard de
+  existência e antes da leitura de policies e do DDL, tanto no forward quanto
+  no rollback.
+- O teste também rejeita `GRANT`/`REVOKE`, DML, FORCE RLS e alterações de schema
+  funcional.
+- Correção destinada a segundo commit normal, sem amend e sem force push.
+- Nova revisão independente deve provar HEAD, base, diff e `git show --stat`.
+- Resultado da revisão e SHA do segundo commit serão registrados em handoff
+  posterior somente após autorização para um terceiro commit documental.
+
+### DECISÃO DESTE MARCO
+
+# 🟡 CORREÇÃO TOCTOU EM TESTE — REVISÃO INDEPENDENTE PENDENTE
+
+---
+
 > Handoff oficial — **RLS `rh_employee_documents` APLICADO E VALIDADO**
 > **Policy permissiva removida; zero PII, zero dados alterados e rollback não executado.**
 
