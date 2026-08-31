@@ -1,5 +1,248 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff oficial — **RLS `rh_medical_exams` APLICADO E VALIDADO**
+> **Policy permissiva removida; zero PII, zero dados alterados e rollback não executado.**
+
+---
+
+## FASE 4 — RLS RH_MEDICAL_EXAMS — APPLY CONTROLADO
+
+### PROGRESSO
+
+**Programa geral: 84,5%**
+
+`█████████████████░░░`
+
+**Fase 4: 61%**
+
+`████████████░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### MARCO / BASE
+
+- Data/hora do pós-check: 2026-08-31 14:18:39 (UTC-3).
+- Baseline funcional:
+  `main = dev = ea18e74734d7db574a3ecf6b33ec185b7e50f8ce`.
+- Branch de trabalho:
+  `cursor/fase4-rh-medical-exams-rls-eaa8`.
+- Tag pré-apply:
+  `baseline-fase4-pre-rls-rh-medical-exams-20260831` → `ea18e747`.
+- Migration aplicada exatamente uma vez:
+  `migrations/2026_08_31_fase4_rls_rh_medical_exams.sql`.
+- Nenhuma outra tabela ou migration foi executada.
+
+### PRÉ-CHECK LIVE
+
+| Campo | Estado |
+|-------|--------|
+| Tabela | `public.rh_medical_exams` |
+| RLS | habilitado |
+| FORCE RLS | não |
+| Policies | 1/1 esperada |
+| Policy | `Allow all for rh_medical_exams` |
+| Tipo / comando | `PERMISSIVE` / `ALL` |
+| Roles | anon, authenticated |
+| USING / WITH CHECK | `true` / `true` |
+| Row count | 0 |
+| service_role | SELECT + BYPASSRLS |
+
+O drift guard aprovou o estado exato antes do `DROP`.
+
+### APPLY / PÓS-CHECK
+
+- Transação concluída sem erro.
+- RLS permanece **habilitado**.
+- FORCE RLS permanece **false**.
+- Policies finais: **0**.
+- Anon: **0** acesso direto.
+- Authenticated: **0** acesso direto.
+- Service role: acesso técnico preservado por `BYPASSRLS`; contagem atual 0.
+- Row count permanece **0**.
+- Nenhuma linha, funcionário, tipo, data, resultado, clínica, documento ou PII
+  foi retornado.
+- Nenhum INSERT, UPDATE ou DELETE de dados foi executado.
+
+### API / REGRESSÕES
+
+- Rota de exames sem autenticação:
+  GET 401, POST 401, PATCH 401 e DELETE 401.
+- Nenhuma operação autenticada real ou escrita sintética foi executada.
+- Teste RLS: **9/9 PASS**.
+- RH/RLS/Foundation/F4 proporcionais: **158/158 PASS**.
+- React proporcional: **3/3 PASS**.
+- Build: **OK**.
+
+### ROLLBACK
+
+- Disponível em:
+  `migrations/rollback/2026_08_31_fase4_rls_rh_medical_exams.sql`.
+- Compatível com o estado pré-apply e restaura exatamente a policy anterior.
+- Rollback **NÃO executado**, pois API, service role, RLS e regressões
+  permaneceram verdes.
+- Qualquer execução futura exige nova decisão explícita.
+
+### ESCOPO NEGATIVO
+
+- Zero alteração em outras tabelas, policies, schema ou dados.
+- Zero mudança funcional em frontend, Foundation, CRUD genérico, folha, ponto,
+  financeiro, Asaas, Investment, Z-API ou OS.
+- Nenhum merge, deploy ou publicação Git nesta execução.
+
+### DECISÃO
+
+# 🟢 RLS RH_MEDICAL_EXAMS APLICADO E VALIDADO
+
+---
+
+> Handoff oficial — **RLS `rh_medical_exams` AUDITADO E PREPARADO**
+> **Forward/rollback locais; nenhuma migration aplicada e nenhum dado médico consultado.**
+
+---
+
+## FASE 4 — RLS RH_MEDICAL_EXAMS — PREPARAÇÃO PRÉ-APPLY
+
+### PROGRESSO
+
+**Programa geral: 84,5%**
+
+`█████████████████░░░`
+
+**Fase 4: 61%**
+
+`████████████░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+Preparação não representa apply, merge ou homologação de lockdown.
+
+### BASE / ESCOPO
+
+- Baseline homologado:
+  `origin/dev = origin/main =
+  ea18e74734d7db574a3ecf6b33ec185b7e50f8ce`.
+- PR funcional: [#293](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/293).
+- Feature funcional:
+  `02f34955e360bf9d1e00efc00df67a015a1fb571`.
+- Branch desta preparação:
+  `cursor/fase4-rh-medical-exams-rls-eaa8`.
+- Tabela exclusiva: `public.rh_medical_exams`.
+- Nenhum SQL/DDL/DML live foi executado.
+
+### CONSUMIDORES
+
+- Frontend runtime direto: **ZERO**.
+- Únicas chamadas runtime `.from('rh_medical_exams')`:
+  `lib/rh/medicalExamsApiCore.ts`, SSOT backend.
+- Fluxo preservado:
+  `RhMedicalExams` → `medicalExamsClient` → `authFetch` → handler →
+  `authorizeRhApiRequest` → core → `createRhServiceRoleClient` → tabela.
+- Ocorrências restantes: migration/schema histórico, scripts/testes e
+  documentação.
+- `lib/rh/rhApiAccess.ts` e `RhEmployeeScopedCrud.tsx`: **zero diff**.
+
+### ESTADO LIVE — SOMENTE METADADOS/COUNT
+
+Projeto oficial: `ajhmmjuewdsukecaimik`.
+
+| Campo | Estado observado |
+|-------|------------------|
+| Tabela | existe |
+| RLS | habilitado |
+| FORCE RLS | não |
+| Owner | `postgres` |
+| Policies | 1 |
+| Nome | `Allow all for rh_medical_exams` |
+| Tipo | `PERMISSIVE` |
+| Comando | `ALL` |
+| Roles | `anon`, `authenticated` |
+| USING / WITH CHECK | `true` / `true` |
+| Grants SELECT | anon, authenticated e service_role |
+| service_role | `BYPASSRLS` ativo |
+| Contagem | 0 |
+
+Nenhuma coluna, linha, funcionário ou dado médico foi retornado. A policy atual
+permite acesso direto amplo e deve ser removida após aprovação controlada.
+
+### LOCKDOWN ALVO
+
+- RLS permanece habilitado.
+- Policies permissivas para anon/authenticated: zero.
+- Grants podem permanecer; com RLS ativo e zero policies, anon/authenticated
+  ficam em deny-by-default.
+- Service role mantém acesso backend via `BYPASSRLS`.
+- A autorização RH/Diretoria continua na aplicação; RLS não a substitui.
+
+### FORWARD
+
+- Arquivo:
+  `migrations/2026_08_31_fase4_rls_rh_medical_exams.sql`.
+- Exclusivo, transacional, idempotente e fail-closed.
+- Aceita somente zero policies ou exatamente a policy live observada.
+- Valida tabela, RLS, nome, modo, comando, roles, `USING` e `WITH CHECK` antes
+  do `DROP`.
+- Remove somente `Allow all for rh_medical_exams`.
+- Não cria policy substituta, não altera colunas e não contém DML.
+- **NÃO aplicado.**
+
+### ROLLBACK
+
+- Arquivo:
+  `migrations/rollback/2026_08_31_fase4_rls_rh_medical_exams.sql`.
+- Aceita somente zero policies ou a policy exata já restaurada.
+- Restaura exatamente:
+  `PERMISSIVE`, `ALL`, `TO anon, authenticated`, `USING (true)` e
+  `WITH CHECK (true)`.
+- Qualquer estado diferente aborta sem tentar corrigir drift.
+- **NÃO executado.**
+
+### SCRIPTS GLOBAIS / REALTIME
+
+- `scripts/rh-rls-policies.sql` permanece structure-only: somente habilita RLS
+  e não cria/remove/altera policies.
+- `scripts/rh-bootstrap-full.sql` não cria policy.
+- Migration histórica permanece imutável.
+- Nenhum listener ou dependência funcional Realtime existe para a tabela.
+
+### TESTES
+
+| Check | Resultado |
+|-------|-----------|
+| Preparação RLS específica | **9/9 PASS** |
+| RH/RLS/Foundation/F4 proporcionais | **158/158 PASS** |
+| Componente exames proporcional | **3/3 PASS** |
+| Build | **OK** |
+| `git diff --check` | **OK** |
+
+### PLANO DE APPLY / ROLLBACK FUTURO
+
+1. Atualizar refs e reauditar consumidor frontend.
+2. Pré-check live somente leitura: RLS ativo e policy exatamente igual à
+   registrada acima; contagem apenas como evidência variável.
+3. Mostrar o SQL forward completo e aguardar aprovação humana.
+4. Aplicar somente a migration de `rh_medical_exams`.
+5. Pós-check: policies 0; anon/authenticated 0; service role preservado; API sem
+   auth 401; nenhuma escrita sintética.
+6. Executar rollback imediatamente apenas se API/service role sofrer regressão
+   causada pelo lockdown.
+7. Após deploy/startup futuro, confirmar novamente policies 0 para provar que
+   nenhum bootstrap reabriu acesso.
+
+### ÁREAS PRESERVADAS
+
+Zero alteração em frontend funcional, Foundation, CRUD genérico, folha, ponto,
+financeiro, Asaas, Investment, Z-API, OS, outras tabelas, schemas ou policies.
+
+### DECISÃO
+
+# 🟢 RLS RH_MEDICAL_EXAMS PREPARADO — APTO PARA REVISÃO PRÉ-APPLY
+
+---
+
 > Handoff oficial — **PR #293 MERGEADO E HOMOLOGADO EM DEV**
 > **Terceiro piloto RH validado no HEAD real de `dev`; `main` e banco preservados.**
 
