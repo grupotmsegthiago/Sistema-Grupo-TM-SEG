@@ -1,5 +1,108 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff oficial — **PR #293 MERGEADO E HOMOLOGADO EM DEV**
+> **Terceiro piloto RH validado no HEAD real de `dev`; `main` e banco preservados.**
+
+---
+
+## FASE 4 — EXAMES MÉDICOS — HOMOLOGAÇÃO PÓS-MERGE
+
+### PROGRESSO
+
+**Programa geral: 84,3%**
+
+`█████████████████░░░`
+
+**Fase 4: 57%**
+
+`███████████░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+O merge em `dev` não altera o progresso de programa/Fase 4 antes da publicação
+e homologação em produção.
+
+### GIT / PR
+
+- PR: [#293](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/293).
+- Feature:
+  `02f34955e360bf9d1e00efc00df67a015a1fb571`.
+- Merge real em `dev`:
+  `c560f078678d11f865619756156815acd64eecfd`.
+- `origin/dev`:
+  `c560f078678d11f865619756156815acd64eecfd`.
+- `origin/main` preservado:
+  `c3bd847c53fb9d385c48d2da9cd657b619fd6f3d`.
+- `02f34955` e `c560f078` são ancestrais de `origin/dev`.
+- Não houve avanço posterior ao merge.
+- Branch feature e PR antigo #289 permanecem intactos.
+
+### CHECKS INFORMADOS PELO GITHUB
+
+- 4 checks aplicáveis aprovados.
+- Vercel Preview concluída.
+- Vercel Agent Review aprovado.
+- Vercel Preview Comments sem pendências.
+- Supabase Preview skipped por ausência de alteração Supabase.
+- Sem conflitos com `dev`.
+
+### ESCOPO INCORPORADO
+
+- 10 arquivos, `+1389/-19`.
+- Componente dedicado, client, core, handler, integração da aba Exames, rota
+  Express, rewrite Vercel, testes e handoff.
+- `RhEmployeeScopedCrud.tsx`: **zero diff**.
+- `lib/rh/rhApiAccess.ts`: **zero diff**.
+- Zero `.cjs`, migration, SQL, policy, RLS ou schema.
+- Zero alteração funcional em folha, ponto, financeiro, Asaas, Investment,
+  Z-API ou OS.
+
+### ARQUITETURA E CONTRATOS REVALIDADOS
+
+`RhEmployeeWorkspace` → `RhMedicalExams` → `medicalExamsClient` → `authFetch`
+→ handler → `authorizeRhApiRequest` → core → `createRhServiceRoleClient` →
+`rh_medical_exams`.
+
+- Frontend Supabase direto para `rh_medical_exams`: **zero**.
+- GET: `employee_id`, `deleted_at IS NULL`, `exam_date DESC`.
+- POST/PATCH: UUIDs e allowlist; `exam_type` obrigatório; zero `updated_by`.
+- DELETE: somente soft delete por `deleted_at`; nunca hard delete.
+- Falha de escrita não retorna/exibe sucesso.
+- Auditoria somente backend, best-effort e sem duplicidade.
+- Nenhum listener ou dependência Realtime foi adicionado.
+- Sem token/token inválido: 401; role inválida: 403; sem service role: 503.
+- Nenhum registro ou PII de exame foi consultado/exibido na homologação.
+
+### TESTES NO HEAD REAL DE DEV
+
+| Check | Resultado |
+|-------|-----------|
+| API/core exames | **14/14 PASS** |
+| Componente isolado | **3/3 PASS** |
+| RH/Foundation/RLS/F4 dirigidos | **153/153 PASS** |
+| TypeScript | **1177/1178** |
+| Falha TS | mesma baseline CRLF em `invoice-control-loading.test.ts` |
+| React completo | **10/10 PASS** |
+| Build completo | **OK** |
+| `git diff --check` | **OK** |
+
+### HANDOFF / ROLLBACK / PRÓXIMO PASSO
+
+- Este marco é somente documental, preparado localmente e ainda sem commit.
+- Nenhum rollback foi necessário; não houve alteração de banco/RLS.
+- Rollback de código, se necessário antes da publicação, é o revert controlado
+  do merge/feature; não foi executado.
+- Próximo gate: apresentar este resultado, depois versionar o handoff
+  separadamente e preparar `dev → main` somente mediante nova autorização.
+
+### DECISÃO
+
+# 🟢 PR #293 MERGEADO E HOMOLOGADO EM DEV
+
+---
+
 > Handoff oficial — **PR #289 RECONCILIADO NO BASELINE ATUAL**
 > **Consumidor de `rh_medical_exams` migrado localmente para a RH API Foundation; sem commit/push/SQL/RLS.**
 
