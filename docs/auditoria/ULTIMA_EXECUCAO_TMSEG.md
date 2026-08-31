@@ -1,6 +1,6 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff oficial — **CORREÇÃO TOCTOU PREPARADA NOS ARTEFATOS DE `rh_employee_documents`**
+> Handoff oficial — **CORREÇÃO TOCTOU REVISADA NOS ARTEFATOS DE `rh_employee_documents`**
 > **Live permanece protegido; nenhum SQL adicional e rollback não executado.**
 
 ---
@@ -15,8 +15,9 @@
   8d850fb0aba52b4ff58627f888a2325ef0634b93`.
 - Branch:
   `cursor/fase4-rh-employee-documents-rls-eaa8`.
-- Commit já publicado na branch:
-  `002e14bbc63b5719a705110f9aa81fbdbb020de5`.
+- Commits publicados na branch:
+  - lockdown: `002e14bbc63b5719a705110f9aa81fbdbb020de5`;
+  - correção TOCTOU: `ba8f808d44a4ca278217daff171063ff7c5f8b8b`.
 - Finding independente: **MEDIUM** por janela TOCTOU.
 - Causa: forward e rollback liam `pg_policies` e somente depois executavam
   `DROP POLICY`/`CREATE POLICY`; sem lock explícito, DDL privilegiado concorrente
@@ -57,14 +58,21 @@
   no rollback.
 - O teste também rejeita `GRANT`/`REVOKE`, DML, FORCE RLS e alterações de schema
   funcional.
-- Correção destinada a segundo commit normal, sem amend e sem force push.
-- Nova revisão independente deve provar HEAD, base, diff e `git show --stat`.
-- Resultado da revisão e SHA do segundo commit serão registrados em handoff
-  posterior somente após autorização para um terceiro commit documental.
+- Correção versionada em segundo commit normal, sem amend e sem force push.
+- Testes: RLS **10/10**, regressões RH **114/114**, React **3/3** e build OK.
+- Revisão independente válida comprovou:
+  - HEAD `ba8f808d44a4ca278217daff171063ff7c5f8b8b`;
+  - pai direto `002e14bbc63b5719a705110f9aa81fbdbb020de5`;
+  - base/merge-base `8d850fb0aba52b4ff58627f888a2325ef0634b93`;
+  - diff completo e `git show --stat HEAD`.
+- Resultado: TOCTOU eliminado; zero findings CRITICAL/HIGH/MEDIUM.
+- INFO residual: rollback recria deliberadamente a policy permissiva original.
+- Esta atualização pós-review integra o terceiro commit documental autorizado.
+- Próximo passo: criar PR Draft da branch para `dev`, sem merge ou publicação.
 
 ### DECISÃO DESTE MARCO
 
-# 🟡 CORREÇÃO TOCTOU EM TESTE — REVISÃO INDEPENDENTE PENDENTE
+# 🟢 CORREÇÃO TOCTOU APROVADA — HANDOFF FINAL PARA PR DRAFT
 
 ---
 
