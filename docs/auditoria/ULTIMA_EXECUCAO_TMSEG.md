@@ -1,5 +1,102 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff oficial — **PR #292 MERGEADO EM DEV E HOMOLOGADO LOCALMENTE**
+> **Vercel do HEAD de dev pendente de evidência; `main` e produção não foram alteradas.**
+
+---
+
+## FASE 4 — PR #292 — HOMOLOGAÇÃO PÓS-MERGE EM DEV
+
+### PROGRESSO
+
+**Programa geral: 84,3%**
+
+`█████████████████░░░`
+
+**Fase 4: 57%**
+
+`███████████░░░░░░░░░`
+
+**Execução atual: 90%**
+
+`██████████████████░░`
+
+O merge e o código foram homologados no estado real de `dev`; o fechamento em
+100% depende somente da confirmação externa do deploy/check Vercel do merge.
+
+### GIT / PR
+
+- PR: [#292](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/292).
+- Feature commit:
+  `693ff2c109fce0716cfa60fd51e70158bddce6e3`.
+- Merge commit:
+  `38d945e917c014544b28dc84b6f5db6e14af3184`.
+- `origin/dev`:
+  `38d945e917c014544b28dc84b6f5db6e14af3184`.
+- `origin/main`:
+  `0f50b03f150691bd18f8b6bd5012e38199038456`.
+- `693ff2c1` é ancestral de `origin/dev`.
+- Não houve commit posterior ao merge em `dev`.
+- A branch feature não foi apagada.
+
+### ESCOPO DO MERGE
+
+- 11 arquivos: quatro handlers RH, `ensureRhTables`, caller CLI, quatro testes
+  e este handoff.
+- `+927/-97`.
+- Nenhum `.cjs`, migration, SQL, policy ou alteração RLS.
+- Nenhuma mudança funcional em folha, ponto, Control iD, cálculos RH ou
+  financeiro.
+- `ensureTimeClockAndLinkCltUsers()` e startup interno permaneceram
+  inalterados.
+
+### TESTES NO HEAD REAL DE DEV
+
+| Check | Resultado |
+|-------|-----------|
+| Bootstraps + bypass | **32/32 PASS** |
+| RH/Foundation/RLS/F4 dirigidos | **190/190 PASS** |
+| TypeScript | **1163/1164** |
+| Falha TS | mesma baseline CRLF em `invoice-control-loading.test.ts` |
+| React | **7/7 PASS** |
+| Build completo | **OK** |
+
+### SMOKES SEGUROS
+
+- Os testes de handler confirmaram, sem escrita:
+  - `/api/rh/init` sem auth → 401;
+  - `/api/rh/timeclock/init` sem auth → 401;
+  - `/api/rh/employees` sem auth → 401;
+  - `/api/rh/employees/cost-summary` sem auth → 401.
+- Nenhuma operação estrutural, consulta de PII, salário ou custo foi alcançada.
+- Controle de produção:
+  - `/api/version` → build `0f50b03f`, versão `3.7.60`,
+    builtAt `2026-08-28T18:47:54.233Z`;
+  - `/api/health` → 200;
+  - `/` → 200.
+- O controle confirma que `main`/produção não receberam o PR #292.
+
+### VERCEL
+
+- CLI Vercel: indisponível.
+- Integração dinâmica Vercel: indisponível.
+- URL da Preview/check do merge `38d945e9`: não fornecida.
+- Portanto, o status do deploy correspondente ao **HEAD pós-merge de dev**
+  permanece **NÃO VALIDADO**, sem inferência a partir da Preview da feature.
+
+### HANDOFF / ROLLBACK / PRÓXIMO PASSO
+
+- Este é um ajuste exclusivamente documental, ainda local e sem commit.
+- Nenhum rollback foi necessário; não houve SQL/RLS nem publicação em `main`.
+- Próximo gate: obter evidência Vercel do commit `38d945e9`. Se verde, preparar
+  publicação controlada `dev → main` somente mediante nova autorização.
+
+### DECISÃO
+
+# 🟡 PR #292 HOMOLOGADO EM DEV — VERCEL DO MERGE PENDENTE
+
+---
+
 > Handoff oficial — **BOOTSTRAPS RH + BYPASS RECONCILIADOS COM A RH API FOUNDATION**
 > **Nova worktree em `origin/dev`; staged antigo preservado e nenhum commit/push/SQL/RLS executado.**
 
