@@ -7,9 +7,10 @@ import RhPageHeader from './shared/RhPageHeader';
 import RhEmployeeForm from './RhEmployeeForm';
 import RhEmployeeScopedCrud from './RhEmployeeScopedCrud';
 import RhEmployeeDocuments from './RhEmployeeDocuments';
+import RhMedicalExams from './RhMedicalExams';
 import { maskCurrency } from '../../lib/rh/masks';
 import {
-  RH_BONUS_TYPES, RH_COMMISSION_TYPES, RH_EXAM_TYPES, RH_LEAVE_TYPES,
+  RH_BONUS_TYPES, RH_COMMISSION_TYPES, RH_LEAVE_TYPES,
   RH_PAYMENT_STATUS, RH_WARNING_TYPES,
 } from '../../lib/rh/constants';
 
@@ -266,24 +267,7 @@ const RhEmployeeWorkspace: React.FC<Props> = ({ id, onBack, onSaved }) => {
         )}
 
         {activeId && tab === 'exames' && (
-          <RhEmployeeScopedCrud
-            employeeId={activeId}
-            title="Exames médicos"
-            table="rh_medical_exams"
-            orderBy={{ column: 'exam_date', ascending: false }}
-            fields={[
-              { key: 'exam_type', label: 'Tipo', type: 'select', options: RH_EXAM_TYPES.map((t) => ({ value: t, label: t })) },
-              { key: 'exam_date', label: 'Data exame', type: 'date', required: true },
-              { key: 'expiry_date', label: 'Validade', type: 'date' },
-              { key: 'clinic_name', label: 'Clínica' },
-              { key: 'result', label: 'Resultado' },
-            ]}
-            columns={[
-              { key: 'exam_type', label: 'Tipo' },
-              { key: 'exam_date', label: 'Data' },
-              { key: 'expiry_date', label: 'Validade' },
-            ]}
-          />
+          <RhMedicalExams employeeId={activeId} />
         )}
       </div>
     </div>

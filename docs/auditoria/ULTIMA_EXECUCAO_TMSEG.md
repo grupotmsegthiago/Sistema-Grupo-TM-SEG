@@ -1,5 +1,142 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff oficial — **PR #289 RECONCILIADO NO BASELINE ATUAL**
+> **Consumidor de `rh_medical_exams` migrado localmente para a RH API Foundation; sem commit/push/SQL/RLS.**
+
+---
+
+## FASE 4 — TERCEIRO PILOTO RH — EXAMES MÉDICOS
+
+### PROGRESSO
+
+**Programa geral: 84,3%**
+
+`█████████████████░░░`
+
+**Fase 4: 57%**
+
+`███████████░░░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+Reconciliação local não aumenta programa ou Fase 4 antes de revisão, merge e
+homologação.
+
+### BASE E PRESERVAÇÃO
+
+- Baseline: `origin/dev = origin/main =
+  c3bd847c53fb9d385c48d2da9cd657b619fd6f3d`.
+- Produção: versão `3.7.60`, build `c3bd847c`.
+- PR antigo: [#289](https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/289),
+  draft, não mergeado.
+- Branch antiga preservada:
+  `cursor/fase4-rh-medical-exams-api-eaa8` →
+  `f8cafa524dc31134159f22b7999780927624f960`.
+- Base histórica informada do PR: `9a634793`; pai direto real do feature commit:
+  `6cc3a8f3`.
+- Nova branch/worktree:
+  `cursor/fase4-rh-medical-exams-reconcile-eaa8`.
+- O gate Vercel pendente no marco anterior foi posteriormente resolvido:
+  `c3bd847c` foi publicado e homologado antes desta reconciliação.
+
+### CLASSIFICAÇÃO DO PR ANTIGO
+
+| Arquivo antigo | Classe | Resultado |
+|----------------|--------|-----------|
+| `api/rh-employee-medical-exams.ts` | C | adaptado à Foundation atual |
+| `components/rh/RhEmployeeWorkspace.tsx` | C | somente aba Exames substituída |
+| `components/rh/RhMedicalExams.tsx` | A | reaplicado com teardown JSDOM corrigido no teste |
+| handoff antigo | D | substituído por este marco, sem sobrescrever histórico |
+| `lib/rh/medicalExamsApiCore.ts` | A | SSOT backend preservado |
+| `lib/rh/medicalExamsClient.ts` | A | `authFetch` preservado |
+| teste API/core antigo | C | reconciliado com a Foundation atual |
+| teste React antigo | C | reconciliado e sem hang isolado |
+| `server/rhRoutes.ts` | C | rota mínima sobre handler comum |
+| `vercel.json` | C | rewrite mínimo antes do catch-all |
+
+Nenhuma mudança foi classificada como B (já implementada integralmente) ou E
+(inconclusiva).
+
+### ARQUITETURA FINAL
+
+`RhEmployeeWorkspace` → `RhMedicalExams` → `medicalExamsClient` → `authFetch`
+→ handler autenticado → `authorizeRhApiRequest` → `medicalExamsApiCore` →
+`createRhServiceRoleClient` → `rh_medical_exams`.
+
+- `lib/rh/rhApiAccess.ts` permanece SSOT e tem **zero diff**.
+- `RhEmployeeScopedCrud.tsx` permanece com **zero diff**.
+- Frontend runtime direto para `rh_medical_exams`: **zero**.
+- Nenhum fallback anon ou chave `service_role` no frontend.
+- Nenhum listener/dependência Realtime foi adicionado.
+
+### CONTRATOS PRESERVADOS
+
+- GET: `employee_id`, `deleted_at IS NULL`, `exam_date DESC`.
+- POST: `exam_type` e `exam_date` obrigatórios; sem `updated_by`.
+- PATCH: `id`/`employeeId` UUID, allowlist explícita e sem mass assignment.
+- DELETE: somente soft delete em `deleted_at`; nunca hard delete.
+- INSERT/UPDATE/DELETE com erro não retornam nem exibem sucesso.
+- Erro de leitura mantém a equivalência visual baseline: lista vazia, sem nova
+  notificação.
+- Layout, tabela, busca, ordenação, permissões, mensagens e refresh preservados.
+
+### AUTH / SERVICE ROLE
+
+- Fundação atual valida token TM SEG e principal ativo server-side.
+- Somente RH e Diretoria são autorizados.
+- Sem token/token inválido: 401.
+- Role inválida: 403.
+- `service_role` ausente: 503.
+- Headers, body e query não elevam role.
+- Handler usa `createRhServiceRoleClient()`; erros internos retornam mensagem
+  genérica.
+
+### AUDITORIA
+
+- Auditoria é escrita somente pelo core backend em `rh_audit_logs`.
+- Não existe chamada de auditoria no novo componente/client.
+- Falha da auditoria é best-effort e não desfaz operação principal já concluída.
+- Nenhuma API genérica, policy ou RLS de `rh_audit_logs` foi alterada.
+
+### TESTES
+
+| Check | Resultado |
+|-------|-----------|
+| API/core exames | **14/14 PASS** |
+| Componente exames isolado, sem `--test-force-exit` | **3/3 PASS** |
+| RH/Foundation/RLS/F4 dirigidos | **153/153 PASS** |
+| Baseline TS `c3bd847c` | **1163/1164** |
+| TS pós-reconciliação | **1177/1178** |
+| Falha TS | mesma baseline CRLF em `invoice-control-loading.test.ts` |
+| React completo | **10/10 PASS** |
+| Build completo | **OK** |
+| `git diff --check` | **OK** |
+
+O runner React completo sem `--test-force-exit` permanece aberto em um arquivo
+baseline anterior aos exames. O teste novo de exames encerra normalmente sem
+force; a suíte completa foi executada com a opção oficial do Node e passou
+10/10. Classificação: **AMBIENTE/BASELINE**, não regressão do piloto.
+
+### ESCOPO / ROLLBACK / PRÓXIMO PASSO
+
+- Diff restrito aos arquivos do consumidor de exames e este handoff.
+- Zero `.cjs`, bundle, temporário, migration, SQL, policy ou RLS.
+- Folha, ponto, Control iD, financeiro, NF, Asaas, Investment, DRE, Z-API e OS
+  permanecem inalterados.
+- Nenhum SQL/DDL/DML live foi executado.
+- Rollback de banco não se aplica; antes de merge, o retorno é descartar/reverter
+  somente este diff Git local.
+- Próximo passo: revisão independente do novo diff; depois, mediante nova
+  autorização, commit/push e novo PR. O PR #289 antigo permanece intacto.
+
+### DECISÃO
+
+# 🟢 PR #289 RECONCILIADO — NOVO DIFF APTO PARA REVISÃO
+
+---
+
 > Handoff oficial — **PR #292 MERGEADO EM DEV E HOMOLOGADO LOCALMENTE**
 > **Vercel do HEAD de dev pendente de evidência; `main` e produção não foram alteradas.**
 

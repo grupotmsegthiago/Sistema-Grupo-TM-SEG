@@ -343,6 +343,10 @@
       "destination": "/api/rh-employee-bank-account"
     },
     {
+      "source": "/api/rh/employees/medical-exams",
+      "destination": "/api/rh-employee-medical-exams"
+    },
+    {
       "source": "/api/rh/employees/cost-summary",
       "destination": "/api/rh-employee-costs"
     },
