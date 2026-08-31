@@ -18,6 +18,7 @@ import MissionRouteProgressBar, { type FallbackProgress } from './MissionRoutePr
 import MissionTimer from './MissionTimer';
 import { useNotification } from '../lib/NotificationContext';
 import { applyRegionSuffix, calculateMissionFinancials, auditMissionFinancials } from '../lib/financialUtils';
+import { resolveOfficialMissionFinancials } from '../lib/resolveOfficialMissionFinancials';
 import { formatProviderName, resolveLocationDisplay, extractCoordinates } from '../lib/utils';
 import { isMissionOpsIncomplete, getMissionOpsMissingFields, isOpsAlertRecipient } from '../lib/missionOpsIncomplete';
 
@@ -366,44 +367,18 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         return auditMissionFinancials(mission, clientTables, providerTables, client);
     }, [mission, clientTables, providerTables, clientsData, isDirector, isTerminal]);
 
-    const displayRevenue = useMemo(() => {
-        const dbToll = Math.max(0, mission.toll_value || 0);
-        const dbDisp = Math.max(0, (mission as any).displacement_value || 0);
-        const storedValue = (mission.revenue_value || 0) + dbToll + dbDisp;
-        const hasStoredRevenue = (mission.revenue_value != null && mission.revenue_value > 0);
-        
-        if (hasStoredRevenue) {
-            return storedValue;
-        }
-        
-        if (financials && mission.status === MissionStatus.IN_TRANSIT) {
-            return financials.client.total;
-        }
+    /** Totais oficiais — mesma recomposição da Auditoria (sem fórmula paralela no card). */
+    const officialFinancials = useMemo(() => {
+        return resolveOfficialMissionFinancials(mission, {
+            projectedClientTotal: financials?.client?.total,
+            projectedProviderTotal: financials?.provider?.total,
+        });
+    }, [mission, financials]);
 
-        return storedValue;
-    }, [mission.revenue_value, mission.toll_value, (mission as any).displacement_value, mission.status, financials]);
-
-    const displayCost = useMemo(() => {
-        const tollProv = Math.max(0, mission.toll_value_provider != null ? mission.toll_value_provider : (mission.toll_value || 0));
-        const dispProv = (mission as any).is_same_os === true ? 0 : Math.max(0, (mission as any).displacement_value_provider || 0);
-        const storedValue = (mission.cost_value || 0) + tollProv + dispProv;
-        const hasStoredCost = (mission.cost_value != null && mission.cost_value > 0);
-        
-        if (hasStoredCost) {
-            return storedValue;
-        }
-
-        if (financials && mission.status === MissionStatus.IN_TRANSIT) {
-            return financials.provider.total;
-        }
-        
-        return storedValue;
-    }, [mission.cost_value, mission.toll_value, mission.toll_value_provider, (mission as any).displacement_value, (mission as any).displacement_value_provider, (mission as any).is_same_os, mission.status, financials]);
-
-    const profitMargin = useMemo(() => {
-        return displayRevenue > 0 ? ((displayRevenue - displayCost) / displayRevenue) * 100 : 0;
-    }, [displayRevenue, displayCost]);
-    const isNegativeProfit = profitMargin < 0;
+    const displayRevenue = officialFinancials.valorCliente ?? 0;
+    const displayCost = officialFinancials.valorFornecedor ?? 0;
+    const profitMargin = officialFinancials.margemPercentual;
+    const isNegativeProfit = profitMargin != null && profitMargin < 0;
 
     const isActive = !isTerminal;
 
@@ -496,8 +471,15 @@ Qualquer dúvida, estamos a disposição.
         };
     }, [mission.currentLocation]);
 
-    const isAdjustedRevenue = mission.billing_approved || hasBeenVerified || (mission.revenue_value != null && mission.revenue_value > 0);
-    const isAdjustedCost = mission.billing_approved || hasBeenVerified || (mission.cost_value != null && mission.cost_value > 0);
+    // Origem tipada do resolver (não usar só revenue_value > 0 como “Salvo”).
+    const isAdjustedRevenue =
+        officialFinancials.origemCliente === 'aprovado' ||
+        officialFinancials.origemCliente === 'salvo' ||
+        officialFinancials.origemCliente === 'persistido';
+    const isAdjustedCost =
+        officialFinancials.origemFornecedor === 'aprovado' ||
+        officialFinancials.origemFornecedor === 'salvo' ||
+        officialFinancials.origemFornecedor === 'persistido';
 
     const pendingApproval = useMemo(() => {
         if (mission.billing_approved) return null;
@@ -660,7 +642,7 @@ Qualquer dúvida, estamos a disposição.
                 <div className="relative overflow-hidden rounded-t-xl" style={{ background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 50%, #991b1b 100%)', boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.2), 0 4px 12px rgba(220,38,38,0.3)' }}>
                     <div className="flex items-center justify-center gap-2 py-1.5 px-3 relative z-10">
                         <AlertTriangle size={13} className="text-white drop-shadow-md animate-pulse" strokeWidth={3} />
-                        <span className="text-[12px] font-black text-white uppercase tracking-widest drop-shadow-md">PREJUÍZO — {profitMargin.toFixed(1)}%</span>
+                        <span className="text-[12px] font-black text-white uppercase tracking-widest drop-shadow-md">PREJUÍZO — {(profitMargin as number).toFixed(1)}%</span>
                     </div>
                 </div>
             )}
@@ -1023,12 +1005,16 @@ Qualquer dúvida, estamos a disposição.
                     {isDirector && !hideProviderInfo && (
                         <div className="flex flex-col gap-1">
                            <div className="bg-white border border-green-200 rounded-lg p-1 shadow-sm">
-                               <p className="text-[9px] font-black text-green-500 uppercase tracking-tighter leading-none mb-0.5">Faturamento {mission.billing_approved ? '(Auditado)' : isAdjustedRevenue ? '(Salvo)' : '(Projetado)'}</p>
+                               <p className="text-[9px] font-black text-green-500 uppercase tracking-tighter leading-none mb-0.5">
+                                   Faturamento {officialFinancials.labelFaturamento || (isAdjustedRevenue ? '' : '(Projetado)')}
+                               </p>
                                <p className="text-[12px] font-black text-green-700 font-mono leading-none tracking-tighter">{formatCurrency(displayRevenue)}</p>
                            </div>
 
                            <div className="bg-white border border-red-200 rounded-lg p-1 shadow-sm">
-                               <p className="text-[9px] font-black text-red-400 uppercase tracking-tighter leading-none mb-0.5">Fornecedor {mission.billing_approved ? '(Auditado)' : isAdjustedCost ? '(Salvo)' : '(Projetado)'}</p>
+                               <p className="text-[9px] font-black text-red-400 uppercase tracking-tighter leading-none mb-0.5">
+                                   Fornecedor {officialFinancials.labelFornecedor || (isAdjustedCost ? '' : '(Projetado)')}
+                               </p>
                                {(mission as any).is_same_os && displayCost === 0 ? (
                                    <p className="text-[10px] font-black uppercase tracking-wider text-amber-600 leading-none" title="Custo zerado: missão compartilha OS principal (reaproveitamento)">MESMA OS</p>
                                ) : (
@@ -1037,29 +1023,98 @@ Qualquer dúvida, estamos a disposição.
                            </div>
 
                            {(() => {
-                               const margin = displayRevenue > 0 ? ((displayRevenue - displayCost) / displayRevenue) * 100 : 0;
-                               const isNegative = margin < 0;
-                               const isLow = margin >= 0 && margin < 20;
+                               const margin = profitMargin;
+                               const isNegative = margin != null && margin < 0;
+                               const isLow = margin != null && margin >= 0 && margin < 20;
+                               const incomplete = margin == null;
                                return (
-                                   <div className={`w-full rounded-lg border p-1 flex items-center justify-center gap-1 shadow-sm transition-all ${isNegative ? 'bg-red-100 border-red-300 animate-pulse' : isLow ? 'bg-amber-50 border-amber-300' : 'bg-emerald-50 border-emerald-200'}`}>
-                                       {isNegative ? <TrendingDown size={10} className="text-red-600" /> : isLow ? <AlertOctagon size={10} className="text-amber-600" /> : <TrendingUp size={10} className="text-emerald-600" />}
-                                       <span className={`text-[11px] font-black font-mono leading-none ${isNegative ? 'text-red-700' : isLow ? 'text-amber-700' : 'text-emerald-700'}`}>
-                                           {margin.toFixed(1)}%
+                                   <div
+                                       className={`w-full rounded-lg border p-1 flex items-center justify-center gap-1 shadow-sm transition-all ${
+                                           incomplete
+                                               ? 'bg-gray-50 border-gray-200'
+                                               : isNegative
+                                                 ? 'bg-red-100 border-red-300 animate-pulse'
+                                                 : isLow
+                                                   ? 'bg-amber-50 border-amber-300'
+                                                   : 'bg-emerald-50 border-emerald-200'
+                                       }`}
+                                       title={
+                                           officialFinancials.inconsistencias.length
+                                               ? officialFinancials.inconsistencias.join('; ')
+                                               : undefined
+                                       }
+                                   >
+                                       {incomplete ? (
+                                           <Clock size={10} className="text-gray-400" />
+                                       ) : isNegative ? (
+                                           <TrendingDown size={10} className="text-red-600" />
+                                       ) : isLow ? (
+                                           <AlertOctagon size={10} className="text-amber-600" />
+                                       ) : (
+                                           <TrendingUp size={10} className="text-emerald-600" />
+                                       )}
+                                       <span
+                                           className={`text-[11px] font-black font-mono leading-none ${
+                                               incomplete
+                                                   ? 'text-gray-500'
+                                                   : isNegative
+                                                     ? 'text-red-700'
+                                                     : isLow
+                                                       ? 'text-amber-700'
+                                                       : 'text-emerald-700'
+                                           }`}
+                                       >
+                                           {incomplete ? '—' : `${(margin as number).toFixed(1)}%`}
                                        </span>
-                                       <span className={`text-[8px] font-black uppercase leading-none ${isNegative ? 'text-red-500' : isLow ? 'text-amber-500' : 'text-emerald-500'}`}>
-                                           {isNegative ? 'PREJUÍZO' : 'MARGEM'}
+                                       <span
+                                           className={`text-[8px] font-black uppercase leading-none ${
+                                               incomplete
+                                                   ? 'text-gray-400'
+                                                   : isNegative
+                                                     ? 'text-red-500'
+                                                     : isLow
+                                                       ? 'text-amber-500'
+                                                       : 'text-emerald-500'
+                                           }`}
+                                       >
+                                           {incomplete ? 'MARGEM' : isNegative ? 'PREJUÍZO' : 'MARGEM'}
                                        </span>
                                    </div>
                                );
                            })()}
 
-                           <div className={`w-full rounded-lg border p-1 flex flex-col items-center justify-center gap-0.5 shadow-sm transition-all ${auditResult?.isInconsistent ? 'bg-amber-50 border-amber-400 ring-1 ring-amber-300' : mission.billing_approved ? 'bg-blue-50 border-blue-200' : pendingApproval?.hasPartial ? 'bg-gray-100 border-gray-300' : hasBeenVerified ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`} title={auditResult?.isInconsistent ? auditResult.reason : pendingApproval ? `Aguardando: ${pendingApproval.missing.join(', ')}` : ''}>
-                              {auditResult?.isInconsistent ? (
+                           <div
+                               className={`w-full rounded-lg border p-1 flex flex-col items-center justify-center gap-0.5 shadow-sm transition-all ${
+                                   auditResult?.isInconsistent || officialFinancials.statusFinanceiro === 'revisao'
+                                       ? 'bg-amber-50 border-amber-400 ring-1 ring-amber-300'
+                                       : officialFinancials.statusFinanceiro === 'aprovado'
+                                         ? 'bg-blue-50 border-blue-200'
+                                         : pendingApproval?.hasPartial
+                                           ? 'bg-gray-100 border-gray-300'
+                                           : officialFinancials.statusFinanceiro === 'salvo'
+                                             ? 'bg-green-50 border-green-200'
+                                             : officialFinancials.statusFinanceiro === 'calculado'
+                                               ? 'bg-sky-50 border-sky-200'
+                                               : 'bg-orange-50 border-orange-200'
+                               }`}
+                               title={
+                                   auditResult?.isInconsistent
+                                       ? auditResult.reason
+                                       : officialFinancials.inconsistencias.length
+                                         ? officialFinancials.inconsistencias.join('; ')
+                                         : pendingApproval
+                                           ? `Aguardando: ${pendingApproval.missing.join(', ')}`
+                                           : ''
+                               }
+                           >
+                              {auditResult?.isInconsistent || officialFinancials.statusFinanceiro === 'revisao' ? (
                                   <>
                                       <AlertOctagon size={12} className="text-amber-600 animate-pulse" />
-                                      <span className="text-[9px] font-black text-amber-700 uppercase leading-none">Divergente</span>
+                                      <span className="text-[9px] font-black text-amber-700 uppercase leading-none">
+                                          {auditResult?.isInconsistent ? 'Divergente' : 'Revisão'}
+                                      </span>
                                   </>
-                              ) : mission.billing_approved ? (
+                              ) : officialFinancials.statusFinanceiro === 'aprovado' ? (
                                   <>
                                       <ShieldCheck size={12} className="text-blue-600" />
                                       <span className="text-[9px] font-black text-blue-700 uppercase leading-none">Auditado</span>
@@ -1070,10 +1125,15 @@ Qualquer dúvida, estamos a disposição.
                                       <span className="text-[9px] font-black text-gray-600 uppercase leading-none truncate w-full text-center">Falta: {pendingApproval.missing.join(', ')}</span>
                                       <span className="text-[9px] font-bold text-gray-400 leading-none">({pendingApproval.waitingDays}d)</span>
                                   </>
-                              ) : hasBeenVerified ? (
+                              ) : officialFinancials.statusFinanceiro === 'salvo' ? (
                                   <>
                                       <ShieldCheck size={12} className="text-green-600" />
                                       <span className="text-[9px] font-black text-green-700 uppercase leading-none">Salvo</span>
+                                  </>
+                              ) : officialFinancials.statusFinanceiro === 'calculado' ? (
+                                  <>
+                                      <Calculator size={12} className="text-sky-600" />
+                                      <span className="text-[9px] font-black text-sky-700 uppercase leading-none">Projetado</span>
                                   </>
                               ) : (
                                   <>
