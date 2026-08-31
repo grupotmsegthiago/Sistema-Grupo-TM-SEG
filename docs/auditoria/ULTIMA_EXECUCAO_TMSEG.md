@@ -1,5 +1,306 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff oficial — **RLS `rh_employee_documents` APLICADO E VALIDADO**
+> **Policy permissiva removida; zero PII, zero dados alterados e rollback não executado.**
+
+---
+
+## FASE 4 — RLS RH_EMPLOYEE_DOCUMENTS — APPLY CONTROLADO
+
+### PROGRESSO
+
+**Programa geral: 84,7%**
+
+`█████████████████░░░`
+
+**Fase 4: 66%**
+
+`█████████████░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+### MARCO / BASE
+
+- Apply registrado pelo Supabase em 2026-08-31 16:53:10 (UTC-3).
+- Pós-validação concluída em 2026-08-31 17:15:27 (UTC-3).
+- Baseline preservado:
+  `origin/main = origin/dev =
+  8d850fb0aba52b4ff58627f888a2325ef0634b93`.
+- Branch local:
+  `cursor/fase4-rh-employee-documents-rls-eaa8`.
+- Tag local/remota pré-apply:
+  `baseline-fase4-pre-rls-rh-employee-documents-20260831` →
+  `8d850fb0aba52b4ff58627f888a2325ef0634b93`.
+- Migration executada exatamente uma vez:
+  `migrations/2026_08_31_fase4_rls_rh_employee_documents.sql`.
+- Histórico remoto confirma uma única entrada
+  `20260831195310_fase4_rls_rh_employee_documents`.
+- Nenhum outro SQL de escrita, script global ou migration foi executado.
+
+### PRÉ-CHECK LIVE — SOMENTE METADADOS/COUNT
+
+| Campo | Estado |
+|-------|--------|
+| Tabela / owner | `public.rh_employee_documents` / `postgres` |
+| RLS | habilitado |
+| FORCE RLS | `false` |
+| Policies | 1/1 esperada |
+| Policy | `Allow all for rh_employee_documents` |
+| Tipo / comando | `PERMISSIVE` / `ALL` |
+| Roles | `anon`, `authenticated` |
+| USING / WITH CHECK | `true` / `true` |
+| service_role | SELECT + `BYPASSRLS=true` |
+| Row count | 0 |
+
+O guard confirmou o estado exato antes do `DROP`. Nenhuma coluna, linha, URL,
+nome de arquivo, funcionário ou PII foi retornado.
+
+### APPLY / PÓS-CHECK IMEDIATO
+
+- Forward específico concluído com sucesso uma única vez.
+- RLS permanece **habilitado**.
+- FORCE RLS permanece **false**.
+- Policies finais: **0**.
+- Policies aplicáveis a anon: **0**.
+- Policies aplicáveis a authenticated: **0**.
+- `service_role`: SELECT e `BYPASSRLS=true` preservados.
+- Row count permanece **0**.
+- Nenhum INSERT, UPDATE, DELETE, TRUNCATE ou alteração de dados foi executado.
+- Grants e schema funcional permaneceram inalterados.
+
+### SMOKES / REGRESSÕES
+
+| Check | Resultado |
+|-------|-----------|
+| Endpoint documentos sem autenticação | **401** `Não autorizado` |
+| Preparação RLS dedicada | **9/9 PASS** |
+| RH API Foundation + documentos + pilotos relacionados | **113/113 PASS** |
+| React proporcional de documentos | **3/3 PASS** |
+| `npm run build` | **OK** |
+| `git diff --check` | **OK** |
+
+Nenhum documento foi criado, editado ou excluído nos smokes. O build confirmou
+a URL Supabase oficial; seis bundles `.cjs` regenerados foram restaurados ao
+baseline e permanecem fora do diff.
+
+### INTEGRIDADE DE CONJUNTO DE DADOS
+
+- Foi utilizada somente contagem SQL exata, sem paginação, limite ou fallback.
+- Estado pré e pós-apply: zero linhas.
+- Ausência de linhas não foi usada isoladamente para validar segurança; o
+  resultado foi combinado com metadata RLS, policies, grants e BYPASSRLS.
+
+### ROLLBACK / RISCOS
+
+- Rollback disponível em
+  `migrations/rollback/2026_08_31_fase4_rls_rh_employee_documents.sql`.
+- Rollback **NÃO executado**, pois todos os critérios pós-apply permaneceram
+  exatamente no estado esperado.
+- Executar o rollback reabriria deliberadamente a policy ampla para
+  anon/authenticated; qualquer uso futuro exige autorização explícita.
+- O registro global de Realtime fica sem eventos dessa tabela para clientes
+  comuns, mas não há listener, query key ou dependência funcional atual.
+
+### ESCOPO NEGATIVO / PRÓXIMO PASSO
+
+- Nenhum commit, push de branch, PR, merge, deploy ou publicação.
+- `main` e `dev` não foram alteradas.
+- A única escrita remota Git foi a tag de segurança autorizada.
+- Zero mudança funcional em frontend, Foundation, componentes, folha, ponto,
+  financeiro, Asaas, Investment, Z-API, OS ou scripts globais de RLS.
+- Próximo passo: revisar/versionar os quatro arquivos locais e abrir PR somente
+  após autorização específica.
+
+### DECISÃO
+
+# 🟢 LOCKDOWN RLS DE RH_EMPLOYEE_DOCUMENTS APLICADO COM SUCESSO — AGUARDANDO VERSIONAMENTO E PR
+
+---
+
+> Handoff oficial — **RLS `rh_employee_documents` AUDITADO E PREPARADO**
+> **Forward/rollback somente locais; nenhuma migration aplicada e nenhum dado de documento consultado.**
+
+---
+
+## FASE 4 — RLS RH_EMPLOYEE_DOCUMENTS — PREPARAÇÃO PRÉ-APPLY
+
+### PROGRESSO
+
+**Programa geral: 84,7%**
+
+`█████████████████░░░`
+
+**Fase 4: 65%**
+
+`█████████████░░░░░░░`
+
+**Execução atual: 100%**
+
+`████████████████████`
+
+Preparação não representa apply, merge, publicação ou homologação do lockdown.
+
+### BASE / ESCOPO
+
+- Data: 2026-08-31 (UTC-3).
+- Baseline homologado:
+  `origin/dev = origin/main =
+  8d850fb0aba52b4ff58627f888a2325ef0634b93`.
+- Branch/worktree isolada:
+  `cursor/fase4-rh-employee-documents-rls-eaa8`.
+- Tabela exclusiva: `public.rh_employee_documents`.
+- Estado inicial da worktree: limpo.
+- Nenhum SQL/DDL/DML live foi executado.
+- Nenhum commit, push, PR ou deploy foi realizado.
+
+### ARQUITETURA FUNCIONAL REVALIDADA
+
+- Frontend funcional direto na tabela: **ZERO**.
+- Cadeia de leitura/escrita:
+  `components/rh/RhEmployeeDocuments.tsx` →
+  `lib/rh/employeeDocumentsClient.ts` → `authFetch` →
+  `api/rh-employee-documents.ts` → `authorizeRhApiRequest` →
+  `lib/rh/employeeDocumentsApiCore.ts` →
+  `createRhServiceRoleClient` → tabela.
+- `lib/rh/employeeDocumentsApiCore.ts` é a única ocorrência runtime de
+  `.from('rh_employee_documents')` em `components/` + `lib/`.
+- `lib/rh/rhApiAccess.ts` exige service role e resolve RH/Diretoria no backend;
+  não aceita role enviada pelo browser.
+- O upload do arquivo continua usando Supabase Storage no componente, mas os
+  metadados de `rh_employee_documents` são persistidos exclusivamente pela API.
+  Storage não faz parte deste lockdown de policy da tabela.
+- `lib/RealtimeProvider.tsx` ainda registra `rh_employee_documents` no canal
+  global, porém a tabela possui lista de query keys vazia.
+- Não existe listener `supabase:rh_employee_documents`, hook de refresh ou
+  consumidor funcional dependente desse evento. Após create/delete, o componente
+  chama `load()` explicitamente pela API.
+- Consumidor legítimo direto como `anon`/`authenticated`: **nenhum encontrado**.
+
+### ESTADO LIVE EXATO — SOMENTE METADADOS/COUNT
+
+Projeto oficial: `ajhmmjuewdsukecaimik`.
+
+| Campo | Estado observado |
+|-------|------------------|
+| Tabela / owner | `public.rh_employee_documents` / `postgres` |
+| RLS | habilitado |
+| FORCE RLS | `false` |
+| Policies | 1 |
+| Nome | `Allow all for rh_employee_documents` |
+| Tipo | `PERMISSIVE` |
+| Comando | `ALL` |
+| Roles | `anon`, `authenticated` |
+| USING / WITH CHECK | `true` / `true` |
+| Grants anon | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE |
+| Grants authenticated | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE |
+| Grants service_role | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE |
+| service_role | `BYPASSRLS=true`; demais flags privilegiadas consultadas = false |
+| Row count | 0 |
+
+Todos os grants de `anon`, `authenticated` e `service_role` têm
+`is_grantable=NO`; os do owner `postgres`, `YES`. Nenhuma coluna, linha, URL,
+nome de arquivo, funcionário ou PII foi retornado. A policy permissiva ampla é a
+única exposição a remover; os grants ficam inalterados e passam a ser limitados
+pelo deny-by-default do RLS sem policies.
+
+### FORWARD PREPARADO
+
+- Arquivo:
+  `migrations/2026_08_31_fase4_rls_rh_employee_documents.sql`.
+- Transacional, idempotente, exclusivo e fail-closed.
+- Antes do `DROP`, valida tabela regular existente, RLS habilitado,
+  `FORCE RLS=false`, total de policies e todos os atributos da policy observada.
+- Aceita somente:
+  1. exatamente a policy permissiva observada; ou
+  2. zero policies, como estado pós-apply idempotente.
+- Qualquer policy adicional ou divergente aborta antes de alterar.
+- Remove somente `Allow all for rh_employee_documents`.
+- Não cria policy substituta, não altera FORCE RLS, grants, dados, tabela,
+  colunas, índices, funções ou triggers.
+- **NÃO aplicado.**
+
+### ROLLBACK PREPARADO
+
+- Arquivo:
+  `migrations/rollback/2026_08_31_fase4_rls_rh_employee_documents.sql`.
+- Transacional, idempotente, exclusivo e fail-closed.
+- Aceita somente:
+  1. zero policies, quando restaura a policy original; ou
+  2. exatamente a policy original já restaurada.
+- Restaura exatamente:
+  `PERMISSIVE`, `ALL`, `TO anon, authenticated`, `USING (true)` e
+  `WITH CHECK (true)`.
+- Qualquer policy adicional ou divergente aborta.
+- Não altera FORCE RLS, grants, dados ou schema fora da policy.
+- **NÃO executado.**
+
+### TESTES / REGRESSÕES
+
+| Check | Resultado |
+|-------|-----------|
+| Preparação RLS dedicada | **9/9 PASS** |
+| RH API Foundation + documentos + pilotos RLS relacionados | **113/113 PASS** |
+| React proporcional de documentos | **3/3 PASS** |
+| `npm run build` | **OK** |
+| `git diff --check` | **OK** |
+
+O primeiro processo React concluiu os três asserts, mas permaneceu aberto por
+handle JSDOM preexistente; a mesma suíte foi repetida com
+`--test-force-exit` e encerrou com **3/3 PASS**. Não houve alteração no teste
+legado para ampliar o escopo.
+
+O build confirmou a URL Supabase oficial injetada. Bundles `.cjs` e a mudança
+de plataforma no `package-lock.json`, gerados localmente pelo build/install,
+foram restaurados exatamente ao baseline e não integram o diff.
+
+### DIFF FINAL PREVISTO
+
+Exatamente quatro arquivos locais:
+
+1. `migrations/2026_08_31_fase4_rls_rh_employee_documents.sql`;
+2. `migrations/rollback/2026_08_31_fase4_rls_rh_employee_documents.sql`;
+3. `scripts/fase4-rls-rh-employee-documents.test.ts`;
+4. `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md`.
+
+Zero código funcional, `.cjs`, `rhApiAccess`, componentes, folha, ponto,
+financeiro, Asaas, Investment, Z-API, OS ou script global de RLS no diff.
+
+### RISCOS / GATES
+
+- O rollback restaura deliberadamente a policy ampla anterior e, portanto,
+  reabre acesso direto de `anon`/`authenticated`; usar somente por decisão
+  emergencial explícita.
+- O registro global de Realtime deixará de receber eventos da tabela para
+  clientes comuns após o lockdown, mas hoje não há listener nem query key
+  funcional. Revalidar esse inventário imediatamente antes do apply.
+- Como a tabela está vazia, o pós-check deve combinar metadata RLS com smoke da
+  API autenticada; uma lista vazia isolada não prova acesso técnico.
+- Mudança de policy, FORCE RLS, consumidor direto, listener ou base Git antes
+  do apply constitui drift e exige nova auditoria.
+
+### PLANO DE APPLY / ROLLBACK FUTURO
+
+1. Atualizar refs e confirmar `main=dev` na base autorizada.
+2. Reauditar frontend, backend, Realtime e metadata live sem retornar PII.
+3. Confirmar policy exata e criar tag Git pré-apply.
+4. Mostrar o forward completo e obter autorização humana explícita.
+5. Executar somente o forward específico uma vez.
+6. Pós-check: RLS ligado, FORCE RLS false, zero policies, grants preservados,
+   service role com BYPASSRLS e row count apenas numérico.
+7. Executar smokes API e regressões proporcionais.
+8. Se houver lockout funcional comprovado causado pelo bloco, mostrar o
+   rollback, obter autorização explícita, executá-lo uma vez e revalidar.
+9. Sem falha, manter rollback não executado e seguir para revisão/PR em etapa
+   separada.
+
+### DECISÃO
+
+# 🟡 LOCKDOWN RLS DE RH_EMPLOYEE_DOCUMENTS PREPARADO — AGUARDANDO REVISÃO E AUTORIZAÇÃO PARA APPLY
+
+---
+
 > Handoff oficial — **PR #294 MERGEADO E HOMOLOGADO EM DEV**
 > **Lockdown de exames persistiu após o merge; SQL não reaplicado e rollback não executado.**
 
