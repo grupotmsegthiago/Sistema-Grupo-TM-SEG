@@ -883,6 +883,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 border-top: 2px solid #7f1d1d;
             }
             tfoot td { font-size: 8pt; font-weight: 900; padding: 3px 5px; }
+            .no-print,
+            [data-testid="boletim-pending-header"],
+            [data-testid="include-os-bar"],
+            [data-testid="boletim-dhl-band-warning"] { display: none !important; }
         `;
 
         const wrapper = printWindow.document.createElement('div');
@@ -1737,11 +1741,28 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             fromDateIso: new Date().toISOString().slice(0, 10),
         });
 
+        const periodShort = startDate && endDate
+            ? `${startDate.replace(/-/g, '')}_${endDate.replace(/-/g, '')}`
+            : 'PERIODO';
+        const refNumber = `MED-${periodShort}-${selectedClient}`;
+        const { data: existingTx } = await supabase
+            .from('financial_transactions')
+            .select('id')
+            .eq('entity_id', selectedClient)
+            .ilike('notes', `%Ref ${refNumber}%`)
+            .limit(1);
+        const isResend = !!(existingTx && existingTx.length > 0);
+
         const ok = window.confirm(
-            `Enviar medição para ${clientName}?\n\n` +
-            `E-mail: ${email}\n` +
-            `Anexos: Excel + PDF\n` +
-            `Contas a Receber: R$ ${grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} · venc. ${dueDate.split('-').reverse().join('/')} (${days} dias${days === 70 ? ' — CEVA' : ''})`,
+            isResend
+                ? `Reenviar medição para ${clientName}?\n\n` +
+                  `E-mail: ${email}\n` +
+                  `Anexos: Excel + PDF (layout corrigido)\n` +
+                  `Não cria novo Contas a Receber (já existe Ref ${refNumber}).`
+                : `Enviar medição para ${clientName}?\n\n` +
+                  `E-mail: ${email}\n` +
+                  `Anexos: Excel + PDF\n` +
+                  `Contas a Receber: R$ ${grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} · venc. ${dueDate.split('-').reverse().join('/')} (${days} dias${days === 70 ? ' — CEVA' : ''})`,
         );
         if (!ok) return;
 
@@ -1755,16 +1776,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             setAiStatus('Gerando PDF da medição...');
             const pdfBlob = await generateMedicaoPdfBlob('print-area');
 
-            const periodShort = startDate && endDate
-                ? `${startDate.replace(/-/g, '')}_${endDate.replace(/-/g, '')}`
-                : 'PERIODO';
             const safeClient = clientName.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 24);
             const excelName = `Boletim_${safeClient}_${periodShort}.xlsx`;
             const pdfName = `Boletim_${safeClient}_${periodShort}.pdf`;
             const periodLabel = getPeriodLabel();
             const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
-            const refNumber = `MED-${periodShort}-${selectedClient}`;
 
+            if (!isResend) {
             setAiStatus('Criando Contas a Receber...');
             const txNotes = `Boletim de Medição enviado ao cliente | Vencimento ${days} dias | Ref ${refNumber} | ${periodLabel}`;
             const { error: txErr } = await supabase.from('financial_transactions').insert({
@@ -1815,6 +1833,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             } catch (e) {
                 console.warn('[Medição] Fatura local não criada (não bloqueia envio):', e);
             }
+            } else {
+                setAiStatus('Reenvio: título já existe — só o e-mail será enviado...');
+            }
 
             setAiStatus('Enviando e-mail com anexos...');
             const excelB64 = await blobToBase64(excelBlob);
@@ -1850,8 +1871,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 throw new Error(json?.error || `Falha no envio do e-mail (HTTP ${res.status})`);
             }
 
-            setAiStatus(`Medição enviada para ${email}. Contas a Receber criado (venc. ${dueDate.split('-').reverse().join('/')} · ${days} dias).`);
-            alert(`Medição enviada com sucesso!\n\nE-mail: ${email}\nContas a Receber: R$ ${grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\nVencimento: ${dueDate.split('-').reverse().join('/')} (${days} dias)`);
+            setAiStatus(
+                isResend
+                    ? `Medição reenviada para ${email} (sem novo Contas a Receber).`
+                    : `Medição enviada para ${email}. Contas a Receber criado (venc. ${dueDate.split('-').reverse().join('/')} · ${days} dias).`,
+            );
+            alert(
+                isResend
+                    ? `Medição reenviada com sucesso!\n\nE-mail: ${email}\nNenhum título novo foi criado.`
+                    : `Medição enviada com sucesso!\n\nE-mail: ${email}\nContas a Receber: R$ ${grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\nVencimento: ${dueDate.split('-').reverse().join('/')} (${days} dias)`,
+            );
         } catch (e: any) {
             console.error('[Enviar Medição]', e);
             setAiStatus('');
@@ -4910,7 +4939,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             </div>
                         )}
                         {rowsData.length > 0 && (
-                            <div data-testid="boletim-pending-header" style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <div data-testid="boletim-pending-header" className="no-print" style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                 {rowsData.some(r => !r.isApproved) && (
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#fce4e4', border: '1px solid #dc2626', borderRadius: '6px', padding: '4px 12px' }}>
                                     <span style={{ fontSize: '10px', fontWeight: 900, color: '#fff', backgroundColor: '#dc2626', borderRadius: '3px', padding: '0 4px' }}>!</span>
