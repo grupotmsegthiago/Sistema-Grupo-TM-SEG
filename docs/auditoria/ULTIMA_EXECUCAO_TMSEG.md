@@ -1,5 +1,85 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff local — **QUARTO PILOTO RH `rh_warnings` — BLOCO 1B PUBLICADO**
+> **PR #297 mergeado e produção sincronizada em 2026-09-01 (UTC-3).**
+
+---
+
+## FASE 4 — QUARTO PILOTO `rh_warnings` — BLOCO 1B (MERGE + PUBLICAÇÃO)
+
+### MERGE PR #297
+
+- PR #297: **MERGED** em `dev` em 2026-09-01T22:28:16Z.
+- Merge commit: `fc08b0e89caf94853f1a37a23e14256b9c5d9134`.
+- Head da branch: `ab1244cc` (squash/merge sobre base `be3c3763`).
+- Review independente: **🟢 APROVADO PARA HOMOLOGAÇÃO FUNCIONAL**.
+
+### PUBLICAÇÃO OFICIAL
+
+- Fluxo: `publicar.ps1` (merge `dev` → `main`, push).
+- `origin/main = origin/dev =
+  fc08b0e89caf94853f1a37a23e14256b9c5d9134`.
+- Produção servida: `fc08b0e89caf94853f1a37a23e14256b9c5d9134`
+  (`/api/version`, 2026-09-01T22:33:38Z).
+- **main = dev = produção** confirmado.
+
+### SMOKES PÓS-PUBLICAÇÃO (NÃO DESTRUTIVOS)
+
+- `GET /api/version` → `buildId = fc08b0e8`.
+- `GET /api/health` → **200** (`{"status":"ok"}`).
+- `GET /` → **200**.
+- `GET /api/rh/employees/warnings` sem token → **401**
+  (`{"error":"Não autorizado"}`).
+- **Zero write live** (nenhum POST/PATCH/DELETE autenticado executado).
+
+### GET AUTENTICADO
+
+- **Pendente de validação manual** pela interface RH → funcionário → Advertências.
+
+### VALIDAÇÃO MANUAL RECOMENDADA
+
+1. Abrir RH → selecionar funcionário → aba **Advertências**.
+2. Confirmar listagem carrega e ordenação `warning_date DESC`.
+3. Confirmar `warning_type` obrigatório no formulário.
+4. Dashboard RH com filtro por funcionário: contagem de advertências correta.
+5. **Não criar dado de teste** sem autorização humana.
+
+### TESTES PRÉ-PUBLICAÇÃO (INALTERADOS)
+
+- API/core warnings: **15/15 PASS**.
+- Componente: **3/3 PASS**.
+- Regressões pilotos 1–3: **46/46 PASS**.
+- Total: **64/64 PASS**; build **PASS**; JSDOM hang **0**.
+
+### ESCOPO NEGATIVO PÓS-MERGE
+
+- Zero SQL executado.
+- Zero alteração em RLS, policy, grants, migration ou schema.
+- Zero write live em produção.
+- Pilotos 1–3 protegidos — sem alteração.
+
+### ACHADOS LOW (DÍVIDA TÉCNICA — NÃO CORRIGIDOS)
+
+- Dashboard usa `warningsClient.list()` para contagem (over-fetch).
+- Dashboard `.catch(() => [])` silencia erro da API como 0.
+- `RhEmployeeProfile` órfão com SELECT direto.
+- PATCH/DELETE por `id` sem revalidação de `employee_id` (paridade pilotos).
+
+### ROLLBACK
+
+- Reverter `main`/`dev` para `be3c3763` via fluxo Git controlado.
+- RLS permissiva permanece até Bloco 2 — rollback de código não exige SQL.
+
+### PRÓXIMO PASSO
+
+**Bloco 2:** lockdown RLS versionado de `rh_warnings` + validação live.
+
+### DECISÃO
+
+# 🟡 QUARTO PILOTO RH — BLOCO 1 PUBLICADO COM HOMOLOGAÇÃO MANUAL PENDENTE
+
+---
+
 > Handoff local — **QUARTO PILOTO RH `rh_warnings` — BLOCO 1 API**
 > **Implementação concluída; PR DRAFT pendente de review; deploy NÃO realizado.**
 
