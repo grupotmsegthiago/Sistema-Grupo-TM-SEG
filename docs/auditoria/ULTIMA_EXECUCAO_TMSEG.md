@@ -7,69 +7,93 @@
 
 ## FASE 4 — RECONCILIAÇÃO FINAL `rh_medical_exams`
 
-### ESTADO E PROGRESSO
+### ESTADO GIT / RECONCILIAÇÃO
 
-- Data: 2026-09-01 (UTC-3).
-- Base da nova branch:
-  `origin/dev = 5e45f6f1166b59c5fe66a24515501061b91a32c7`.
-- Branch:
+- Data do fechamento documental: 2026-09-01 (UTC-3).
+- Branch exclusivamente documental:
   `cursor/fase4-rh-medical-exams-reconcile-final-eaa8`.
-- PR histórico #289, HEAD `f8cafa52`, fechado sem merge.
-- Percentuais atuais preservados: programa geral **84,7%**, Fase 4 **66%**.
-- Esta reconciliação documental não aumenta progresso.
+- PR #289, HEAD histórico `f8cafa52`, fechado sem merge.
+- `f8cafa52` não é ancestral de `origin/dev`.
+- Implementação válida integrada:
+  `02f34955e360bf9d1e00efc00df67a015a1fb571`.
+- O PR #293 integrou o terceiro piloto e incorporou no mesmo commit a correção
+  JSDOM do teste médico.
+- O PR #294 integrou os artefatos e o registro do lockdown RLS.
+- Estado comprovado na auditoria:
+  - `origin/main = produção =
+    8d850fb0aba52b4ff58627f888a2325ef0634b93`;
+  - `origin/dev =
+    5e45f6f1166b59c5fe66a24515501061b91a32c7`.
+- O PR #296 contém exclusivamente este handoff. Nenhum código funcional do
+  piloto foi duplicado ou reintroduzido.
 
-### CHERRY-PICK CONTROLADO
+### PROGRESSO
 
-- O commit funcional `f8cafa52` foi aplicado sobre a `dev` atual.
-- Todo o código funcional, rotas, client, core, componente e testes API já
-  estavam incorporados pela reconciliação posterior do PR #293.
-- O cherry-pick produziu somente dois conflitos:
-  - `scripts/rh-medical-exams-render.test.tsx`;
-  - este handoff.
-- O teste manteve integralmente a versão atual da `dev`, incluindo limpeza dos
-  globals JSDOM e liberação de `MessagePort`.
-- O handoff anterior da `dev` foi preservado; esta seção registra a absorção
-  histórica sem reintroduzir o estado obsoleto do PR #289.
-- Nenhuma diferença funcional foi fabricada para criar novo PR.
+**Progresso geral: 84,1%**
 
-### ESCOPO NEGATIVO
+`█████████████████░░░`
 
-- Nenhuma alteração em RLS, policy, migration, schema ou banco.
-- Nenhum SQL, DDL ou DML executado.
-- Nenhuma alteração em produção.
-- Nenhuma mudança funcional em RH, documentos, dados bancários, folha, ponto,
+**Fase 4: 52%**
+
+`██████████░░░░░░░░░░`
+
+**Execução: 100%**
+
+`████████████████████`
+
+Este fechamento documental não aumenta os percentuais.
+
+### HOMOLOGAÇÃO RLS LIVE
+
+- Projeto Supabase confirmado:
+  `ajhmmjuewdsukecaimik` — Grupo TMSEG.
+- Tabela: `public.rh_medical_exams`.
+- Validação exclusivamente por catálogos/metadados PostgreSQL:
+  - `relrowsecurity = true`;
+  - `relforcerowsecurity = false`;
+  - policies atuais: **0**;
+  - `Allow all for rh_medical_exams`: **AUSENTE**;
+  - `anon`: `BYPASSRLS=false`, `superuser=false`;
+  - `authenticated`: `BYPASSRLS=false`, `superuser=false`;
+  - `service_role`: `BYPASSRLS=true`, `superuser=false`.
+- Grants base permanecem existentes, mas `anon` e `authenticated` continuam
+  bloqueados por RLS ativo sem policies.
+- A API médica publicada respondeu HTTP **401** sem token.
+- O estado live corresponde ao forward do PR #294: policy ampla removida,
+  nenhuma policy substituta e `service_role` preservado.
+- Nenhuma linha ou dado médico foi consultado durante a validação.
+
+**LOCKDOWN LIVE COMPROVADO E HOMOLOGADO.**
+
+### GATES COMPROVADOS
+
+- API/core `rh_medical_exams`: **14/14 PASS**.
+- Componente médico isolado: **3/3 PASS**.
+- JSDOM médico sem `--test-force-exit`: **PASS**, encerramento natural e
+  `hang = 0`.
+- Regressões RH dirigidas: **55/55 PASS**.
+- React proporcional: **6/6 PASS** após classificação do baseline.
+- Build completo: **PASS**.
+- `git diff --check`: **PASS**.
+- Teste de documentos:
+  - hang reproduzido no HEAD atual e no baseline `6cc3a8f3`;
+  - o arquivo possui o mesmo blob nos dois estados;
+  - classificação: **BASELINE**;
+  - nenhuma correção aplicada neste fechamento.
+
+### SEGURANÇA / ESCOPO NEGATIVO
+
+- Zero SQL executado neste fechamento documental.
+- Zero alteração em RLS, policy, grants, migration, schema ou banco.
+- Zero dado médico acessado neste fechamento.
+- Zero alteração em código funcional, testes ou API.
+- Zero merge, deploy ou publicação.
+- Nenhuma mudança em RH funcional, documentos, dados bancários, folha, ponto,
   financeiro, NF, Asaas, Investment, DRE, Z-API, OS ou pedágio.
-
-### GATES
-
-- API/core `rh_medical_exams`: **14/14 PASS**, 0 falhas, 0 cancelados,
-  0 ignorados.
-- Componente `rh_medical_exams` isolado: **3/3 PASS** e término normal.
-- Regressões RH dirigidas: **55/55 PASS**, 0 falhas, 0 cancelados,
-  0 ignorados.
-- React conjunto com `--test-force-exit`: **6/6 PASS**, 0 falhas,
-  0 cancelados, 0 ignorados.
-- Build completo: **PASS**; configuração pública Supabase injetada em
-  `dist/public/index.html`.
-- Código do piloto, seus testes e os testes JSDOM permanecem com **zero diff**
-  contra `origin/dev`.
-
-### BASELINE JSDOM IDENTIFICADO
-
-- Sem `--test-force-exit`, o comando React conjunto concluiu as três asserções
-  de documentos, mas não encerrou após 180 segundos.
-- O arquivo `scripts/rh-employee-documents-render.test.tsx`, executado sozinho,
-  também concluiu **3/3 PASS**, mas não encerrou após 90 segundos.
-- O hang é reproduzível na base e está fora do terceiro piloto:
-  esse arquivo tem zero diff contra `origin/dev`.
-- A correção vigente de `scripts/rh-medical-exams-render.test.tsx` foi
-  preservada e o teste médico isolado encerrou normalmente.
-- Nenhuma correção fora do escopo foi aplicada. O PR draft deve registrar esse
-  baseline e não pode ser tratado como homologação de `hang = 0` global.
 
 ### DECISÃO
 
-# 🟡 RECONCILIAÇÃO CONCLUÍDA — PR DRAFT DOCUMENTAL COM BASELINE JSDOM
+# 🟢 PR #296 DOCUMENTAÇÃO FINAL CORRETA — APTO PARA MERGE
 
 ---
 
