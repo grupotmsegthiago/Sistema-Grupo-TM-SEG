@@ -1,5 +1,102 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff local — **RECONCILIAÇÃO FINAL DO TERCEIRO PILOTO RH**
+> **PR #289 encerrado; código funcional já incorporado na dev, sem duplicação.**
+
+---
+
+## FASE 4 — RECONCILIAÇÃO FINAL `rh_medical_exams`
+
+### ESTADO GIT / RECONCILIAÇÃO
+
+- Data do fechamento documental: 2026-09-01 (UTC-3).
+- Branch exclusivamente documental:
+  `cursor/fase4-rh-medical-exams-reconcile-final-eaa8`.
+- PR #289, HEAD histórico `f8cafa52`, fechado sem merge.
+- `f8cafa52` não é ancestral de `origin/dev`.
+- Implementação válida integrada:
+  `02f34955e360bf9d1e00efc00df67a015a1fb571`.
+- O PR #293 integrou o terceiro piloto e incorporou no mesmo commit a correção
+  JSDOM do teste médico.
+- O PR #294 integrou os artefatos e o registro do lockdown RLS.
+- Estado comprovado na auditoria:
+  - `origin/main = produção =
+    8d850fb0aba52b4ff58627f888a2325ef0634b93`;
+  - `origin/dev =
+    5e45f6f1166b59c5fe66a24515501061b91a32c7`.
+- O PR #296 contém exclusivamente este handoff. Nenhum código funcional do
+  piloto foi duplicado ou reintroduzido.
+
+### PROGRESSO
+
+**Progresso geral: 84,1%**
+
+`█████████████████░░░`
+
+**Fase 4: 52%**
+
+`██████████░░░░░░░░░░`
+
+**Execução: 100%**
+
+`████████████████████`
+
+Este fechamento documental não aumenta os percentuais.
+
+### HOMOLOGAÇÃO RLS LIVE
+
+- Projeto Supabase confirmado:
+  `ajhmmjuewdsukecaimik` — Grupo TMSEG.
+- Tabela: `public.rh_medical_exams`.
+- Validação exclusivamente por catálogos/metadados PostgreSQL:
+  - `relrowsecurity = true`;
+  - `relforcerowsecurity = false`;
+  - policies atuais: **0**;
+  - `Allow all for rh_medical_exams`: **AUSENTE**;
+  - `anon`: `BYPASSRLS=false`, `superuser=false`;
+  - `authenticated`: `BYPASSRLS=false`, `superuser=false`;
+  - `service_role`: `BYPASSRLS=true`, `superuser=false`.
+- Grants base permanecem existentes, mas `anon` e `authenticated` continuam
+  bloqueados por RLS ativo sem policies.
+- A API médica publicada respondeu HTTP **401** sem token.
+- O estado live corresponde ao forward do PR #294: policy ampla removida,
+  nenhuma policy substituta e `service_role` preservado.
+- Nenhuma linha ou dado médico foi consultado durante a validação.
+
+**LOCKDOWN LIVE COMPROVADO E HOMOLOGADO.**
+
+### GATES COMPROVADOS
+
+- API/core `rh_medical_exams`: **14/14 PASS**.
+- Componente médico isolado: **3/3 PASS**.
+- JSDOM médico sem `--test-force-exit`: **PASS**, encerramento natural e
+  `hang = 0`.
+- Regressões RH dirigidas: **55/55 PASS**.
+- React proporcional: **6/6 PASS** após classificação do baseline.
+- Build completo: **PASS**.
+- `git diff --check`: **PASS**.
+- Teste de documentos:
+  - hang reproduzido no HEAD atual e no baseline `6cc3a8f3`;
+  - o arquivo possui o mesmo blob nos dois estados;
+  - classificação: **BASELINE**;
+  - nenhuma correção aplicada neste fechamento.
+
+### SEGURANÇA / ESCOPO NEGATIVO
+
+- Zero SQL executado neste fechamento documental.
+- Zero alteração em RLS, policy, grants, migration, schema ou banco.
+- Zero dado médico acessado neste fechamento.
+- Zero alteração em código funcional, testes ou API.
+- Zero merge, deploy ou publicação.
+- Nenhuma mudança em RH funcional, documentos, dados bancários, folha, ponto,
+  financeiro, NF, Asaas, Investment, DRE, Z-API, OS ou pedágio.
+
+### DECISÃO
+
+# 🟢 PR #296 DOCUMENTAÇÃO FINAL CORRETA — APTO PARA MERGE
+
+---
+
 > Handoff oficial — **CORREÇÃO TOCTOU REVISADA NOS ARTEFATOS DE `rh_employee_documents`**
 > **Live permanece protegido; nenhum SQL adicional e rollback não executado.**
 
