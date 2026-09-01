@@ -42,9 +42,34 @@
 
 ### GATES
 
-Pendente nesta etapa do handoff: reexecutar 14/14 API/core, 3/3 componente,
-55/55 regressões RH, 6/6 React e `npm run build`, exigindo encerramento normal
-do JSDOM.
+- API/core `rh_medical_exams`: **14/14 PASS**, 0 falhas, 0 cancelados,
+  0 ignorados.
+- Componente `rh_medical_exams` isolado: **3/3 PASS** e término normal.
+- Regressões RH dirigidas: **55/55 PASS**, 0 falhas, 0 cancelados,
+  0 ignorados.
+- React conjunto com `--test-force-exit`: **6/6 PASS**, 0 falhas,
+  0 cancelados, 0 ignorados.
+- Build completo: **PASS**; configuração pública Supabase injetada em
+  `dist/public/index.html`.
+- Código do piloto, seus testes e os testes JSDOM permanecem com **zero diff**
+  contra `origin/dev`.
+
+### BASELINE JSDOM IDENTIFICADO
+
+- Sem `--test-force-exit`, o comando React conjunto concluiu as três asserções
+  de documentos, mas não encerrou após 180 segundos.
+- O arquivo `scripts/rh-employee-documents-render.test.tsx`, executado sozinho,
+  também concluiu **3/3 PASS**, mas não encerrou após 90 segundos.
+- O hang é reproduzível na base e está fora do terceiro piloto:
+  esse arquivo tem zero diff contra `origin/dev`.
+- A correção vigente de `scripts/rh-medical-exams-render.test.tsx` foi
+  preservada e o teste médico isolado encerrou normalmente.
+- Nenhuma correção fora do escopo foi aplicada. O PR draft deve registrar esse
+  baseline e não pode ser tratado como homologação de `hang = 0` global.
+
+### DECISÃO
+
+# 🟡 RECONCILIAÇÃO CONCLUÍDA — PR DRAFT DOCUMENTAL COM BASELINE JSDOM
 
 ---
 
