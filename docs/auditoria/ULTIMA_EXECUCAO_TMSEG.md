@@ -1,5 +1,49 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff local — **TERCEIRO PILOTO RH `rh_medical_exams` ENCERRADO**
+> **PR #296 mergeado e publicação concluída em 2026-09-01 (UTC-3).**
+
+---
+
+## FASE 4 — FECHAMENTO FINAL `rh_medical_exams` (PÓS-MERGE / PÓS-PUBLICAÇÃO)
+
+### MERGE PR #296
+
+- PR #296: **MERGED** em `dev` em 2026-09-01T17:24:57Z.
+- Merge commit: `b1ac765ecc6138b1f6c2ac8e9e56649ad7ec9d5f`.
+- Diff exclusivamente documental: `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md`.
+- Nenhum arquivo funcional alterado pelo PR #296.
+
+### PUBLICAÇÃO OFICIAL
+
+- Fluxo: `publicar.ps1` (merge `dev` → `main`, push).
+- `origin/main = origin/dev =
+  b1ac765ecc6138b1f6c2ac8e9e56649ad7ec9d5f`.
+- Produção servida: `b1ac765ecc6138b1f6c2ac8e9e56649ad7ec9d5f`
+  (`/api/version`, 2026-09-01T17:33:09Z).
+- **main = dev = produção** confirmado.
+
+### SMOKES PÓS-PUBLICAÇÃO (NÃO DESTRUTIVOS)
+
+- `GET /api/health` → **200** (`{"status":"ok"}`).
+- `GET /` → **200**.
+- `GET /api/rh/employees/medical-exams` sem token → **401**
+  (`{"error":"Não autorizado"}`).
+- Nenhum GET autenticado, criação, edição ou exclusão de exame executado.
+
+### ESCOPO NEGATIVO PÓS-MERGE
+
+- Zero SQL executado.
+- Zero alteração em RLS, policy, grants, migration ou schema.
+- Zero reaplicação do forward RLS / lockdown.
+- Nenhuma reaplicação dos PRs #293 ou #294.
+
+### DECISÃO FINAL
+
+# 🟢 TERCEIRO PILOTO RH HOMOLOGADO E ENCERRADO
+
+---
+
 > Handoff local — **RECONCILIAÇÃO FINAL DO TERCEIRO PILOTO RH**
 > **PR #289 encerrado; código funcional já incorporado na dev, sem duplicação.**
 
@@ -19,11 +63,14 @@
 - O PR #293 integrou o terceiro piloto e incorporou no mesmo commit a correção
   JSDOM do teste médico.
 - O PR #294 integrou os artefatos e o registro do lockdown RLS.
-- Estado comprovado na auditoria:
+- Estado histórico pré-merge (auditoria):
   - `origin/main = produção =
     8d850fb0aba52b4ff58627f888a2325ef0634b93`;
   - `origin/dev =
     5e45f6f1166b59c5fe66a24515501061b91a32c7`.
+- Estado final pós-publicação:
+  - `origin/main = origin/dev = produção =
+    b1ac765ecc6138b1f6c2ac8e9e56649ad7ec9d5f`.
 - O PR #296 contém exclusivamente este handoff. Nenhum código funcional do
   piloto foi duplicado ou reintroduzido.
 
@@ -87,13 +134,13 @@ Este fechamento documental não aumenta os percentuais.
 - Zero alteração em RLS, policy, grants, migration, schema ou banco.
 - Zero dado médico acessado neste fechamento.
 - Zero alteração em código funcional, testes ou API.
-- Zero merge, deploy ou publicação.
+- Merge PR #296 e publicação oficial concluídos (ver seção pós-merge acima).
 - Nenhuma mudança em RH funcional, documentos, dados bancários, folha, ponto,
   financeiro, NF, Asaas, Investment, DRE, Z-API, OS ou pedágio.
 
 ### DECISÃO
 
-# 🟢 PR #296 DOCUMENTAÇÃO FINAL CORRETA — APTO PARA MERGE
+# 🟢 TERCEIRO PILOTO RH HOMOLOGADO E ENCERRADO
 
 ---
 
