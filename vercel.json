@@ -347,6 +347,10 @@
       "destination": "/api/rh-employee-medical-exams"
     },
     {
+      "source": "/api/rh/employees/warnings",
+      "destination": "/api/rh-employee-warnings"
+    },
+    {
       "source": "/api/rh/employees/cost-summary",
       "destination": "/api/rh-employee-costs"
     },

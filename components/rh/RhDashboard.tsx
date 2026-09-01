@@ -6,6 +6,7 @@ import RhStatCard from './shared/RhStatCard';
 import RhAdminSettings from './RhAdminSettings';
 import RhPresenceJourneyBoard from './RhPresenceJourneyBoard';
 import { fetchRhEmployees } from '../../lib/rh/fetchRhEmployees';
+import { warningsClient } from '../../lib/rh/warningsClient';
 import { supabase } from '../../lib/supabase';
 import { RH_SELECT_CLASS, RH_LABEL_CLASS } from '../../lib/rh/constants';
 import { canEditRh } from '../../lib/rh/permissions';
@@ -54,13 +55,13 @@ const RhDashboard: React.FC = () => {
       const monthStart = `${month}-01`;
 
       if (filterId) {
-        const [{ data: emp }, { data: sal }, { data: comm }, { data: aw }, { data: bon }, { data: warn }] = await Promise.all([
+        const [{ data: emp }, { data: sal }, { data: comm }, { data: aw }, { data: bon }, warnRows] = await Promise.all([
           supabase.from('rh_employees').select('*, rh_positions(name), rh_departments(name)').eq('id', filterId).single(),
           supabase.from('rh_salary_configs').select('base_salary').eq('employee_id', filterId).is('deleted_at', null).order('effective_from', { ascending: false }).limit(1),
           supabase.from('rh_commissions').select('commission_amount').eq('employee_id', filterId).eq('reference_month', month).is('deleted_at', null),
           supabase.from('rh_awards').select('amount').eq('employee_id', filterId).is('deleted_at', null),
           supabase.from('rh_bonuses').select('amount').eq('employee_id', filterId).eq('reference_month', month).is('deleted_at', null),
-          supabase.from('rh_warnings').select('id').eq('employee_id', filterId).is('deleted_at', null),
+          warningsClient.list(filterId).catch(() => []),
         ]);
         setEmployeeDetail(emp);
         setStats({
@@ -70,7 +71,7 @@ const RhDashboard: React.FC = () => {
           commissions: (comm || []).reduce((s, r) => s + Number(r.commission_amount || 0), 0),
           awards: (aw || []).reduce((s, r) => s + Number(r.amount || 0), 0),
           bonuses: (bon || []).reduce((s, r) => s + Number(r.amount || 0), 0),
-          warnings: warn?.length || 0,
+          warnings: warnRows.length,
           filtered: true,
         });
       } else {

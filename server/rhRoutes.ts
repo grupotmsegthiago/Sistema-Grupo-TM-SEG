@@ -7,6 +7,7 @@ import { seedTmsegEmployees } from '../lib/rh/seedTmsegEmployeesRunner';
 import { handleRhEmployeeDocumentsRequest } from '../api/rh-employee-documents';
 import { handleRhEmployeeBankAccountRequest } from '../api/rh-employee-bank-account';
 import { handleRhEmployeeMedicalExamsRequest } from '../api/rh-employee-medical-exams';
+import { handleRhEmployeeWarningsRequest } from '../api/rh-employee-warnings';
 import type { RhSalaryConfig, RhTaxBracket } from '../types/rh';
 
 function sb() {
@@ -82,6 +83,14 @@ export function registerRhRoutes(
     requireAuth,
     async (req: Request, res: Response) => {
       await handleRhEmployeeMedicalExamsRequest(req, res);
+    },
+  );
+
+  app.all(
+    '/api/rh/employees/warnings',
+    requireAuth,
+    async (req: Request, res: Response) => {
+      await handleRhEmployeeWarningsRequest(req, res);
     },
   );
 
