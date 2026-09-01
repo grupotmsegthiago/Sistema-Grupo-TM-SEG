@@ -8,10 +8,11 @@ import RhEmployeeForm from './RhEmployeeForm';
 import RhEmployeeScopedCrud from './RhEmployeeScopedCrud';
 import RhEmployeeDocuments from './RhEmployeeDocuments';
 import RhMedicalExams from './RhMedicalExams';
+import RhWarnings from './RhWarnings';
 import { maskCurrency } from '../../lib/rh/masks';
 import {
   RH_BONUS_TYPES, RH_COMMISSION_TYPES, RH_LEAVE_TYPES,
-  RH_PAYMENT_STATUS, RH_WARNING_TYPES,
+  RH_PAYMENT_STATUS,
 } from '../../lib/rh/constants';
 
 export type RhEmployeeTab =
@@ -247,23 +248,7 @@ const RhEmployeeWorkspace: React.FC<Props> = ({ id, onBack, onSaved }) => {
         )}
 
         {activeId && tab === 'advertencias' && (
-          <RhEmployeeScopedCrud
-            employeeId={activeId}
-            title="Advertências"
-            table="rh_warnings"
-            orderBy={{ column: 'warning_date', ascending: false }}
-            fields={[
-              { key: 'warning_date', label: 'Data', type: 'date' },
-              { key: 'warning_type', label: 'Tipo', type: 'select', options: RH_WARNING_TYPES.map((t) => ({ value: t, label: t })) },
-              { key: 'reason', label: 'Motivo', required: true, type: 'textarea' },
-              { key: 'responsible', label: 'Responsável' },
-            ]}
-            columns={[
-              { key: 'warning_date', label: 'Data' },
-              { key: 'warning_type', label: 'Tipo' },
-              { key: 'reason', label: 'Motivo' },
-            ]}
-          />
+          <RhWarnings employeeId={activeId} />
         )}
 
         {activeId && tab === 'exames' && (

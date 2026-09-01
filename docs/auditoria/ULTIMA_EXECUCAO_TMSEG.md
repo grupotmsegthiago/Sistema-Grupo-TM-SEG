@@ -1,5 +1,90 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff local — **QUARTO PILOTO RH `rh_warnings` — BLOCO 1 API**
+> **Implementação concluída; PR DRAFT pendente de review; deploy NÃO realizado.**
+
+---
+
+## FASE 4 — QUARTO PILOTO `rh_warnings` — BLOCO 1 (API FOUNDATION)
+
+### BASELINE / BRANCH
+
+- Baseline homologado: `be3c37635ddb45da1365d2ec16ba540e8103b188`.
+- Branch: `fase4/rh-warnings-api`.
+- Worktree: `tmseg-f4-rh-warnings-api`.
+- Produção permanece em `be3c3763` — **deploy não executado**.
+
+### OBJETIVO
+
+Migrar CRUD frontend direto de `rh_warnings` para RH API Foundation,
+replicando padrão homologado de `rh_medical_exams`.
+
+### ARQUITETURA ALVO
+
+`RhEmployeeWorkspace → RhWarnings → warningsClient → authFetch
+→ /api/rh/employees/warnings → authorizeRhApiRequest
+→ warningsApiCore → createRhServiceRoleClient → rh_warnings`
+
+### ANTES / DEPOIS
+
+| Aspecto | Antes | Depois |
+|---------|-------|--------|
+| Aba Advertências | `RhEmployeeScopedCrud` + Supabase direto | `RhWarnings` + API |
+| Dashboard (contagem) | `supabase.from('rh_warnings')` | `warningsClient.list()` |
+| `warning_type` | opcional na UI | **obrigatório** (frontend + API + core) |
+| `attachment_url` | ausente na UI | **inalterado** (fora do escopo) |
+| RLS | policy permissiva legada | **não alterado neste bloco** |
+
+### ARQUIVOS ALTERADOS / CRIADOS
+
+- `lib/rh/warningsApiCore.ts` (novo)
+- `lib/rh/warningsClient.ts` (novo)
+- `api/rh-employee-warnings.ts` (novo)
+- `components/rh/RhWarnings.tsx` (novo)
+- `components/rh/RhEmployeeWorkspace.tsx`
+- `components/rh/RhDashboard.tsx`
+- `server/rhRoutes.ts`
+- `vercel.json`
+- `scripts/fase4-rh-warnings-api.test.ts` (novo)
+- `scripts/rh-warnings-render.test.tsx` (novo)
+
+### CONSUMIDORES MIGRADOS
+
+- `RhEmployeeWorkspace` (aba advertências) — **migrado**.
+- `RhDashboard` (contagem filtrada) — **migrado**.
+- `RhEmployeeProfile` — **código morto** (não roteado em `RhModule`); mantido sem alteração.
+
+### ACESSO DIRETO RESTANTE
+
+- `RhEmployeeProfile.tsx`: SELECT direto — **código morto comprovado**.
+- `warningsApiCore.ts`: backend service_role — **esperado**.
+
+### REALTIME
+
+- `RealtimeProvider` / `useRealtimeRefresh` preservados.
+- Realtime continua apenas invalidação de cache; CRUD via API.
+
+### RLS
+
+- **NÃO alterado** neste bloco.
+- Lockdown será bloco separado após homologação funcional.
+
+### PILOTOS PROTEGIDOS
+
+- `rh_employee_documents`, `rh_employee_bank_accounts`, `rh_medical_exams` — **sem alteração**.
+
+### PENDÊNCIAS / PRÓXIMO PASSO
+
+1. Review do PR DRAFT.
+2. Homologação funcional pós-merge.
+3. Bloco 2: lockdown RLS versionado + validação live.
+
+### DECISÃO
+
+# 🟢 QUARTO PILOTO RH — API IMPLEMENTADA / PR DRAFT PRONTO PARA REVIEW
+
+---
+
 > Handoff local — **TERCEIRO PILOTO RH `rh_medical_exams` ENCERRADO**
 > **PR #296 mergeado e publicação concluída em 2026-09-01 (UTC-3).**
 
