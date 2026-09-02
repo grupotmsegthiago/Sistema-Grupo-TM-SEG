@@ -134,12 +134,21 @@ export async function registerTimeClockPunch(
     throw new Error(`Próxima batida esperada: ${expected}.`);
   }
 
-  if (input.user.facePhotoUrl) {
-    await validateFaceAgainstRegistered(input.user.facePhotoUrl, input.photoBase64);
-  } else {
-    const aiVerified = await verifySelfieForTimeClock(input.photoBase64);
-    if (!aiVerified) {
-      console.warn('[timeclock] Selfie sem validação IA (primeiro cadastro ou IA indisponível)');
+  try {
+    if (input.user.facePhotoUrl) {
+      await validateFaceAgainstRegistered(input.user.facePhotoUrl, input.photoBase64);
+    } else {
+      const aiVerified = await verifySelfieForTimeClock(input.photoBase64);
+      if (!aiVerified) {
+        console.warn('[timeclock] Selfie sem validação IA (primeiro cadastro ou IA indisponível)');
+      }
+    }
+  } catch (faceErr) {
+    const msg = faceErr instanceof Error ? faceErr.message : String(faceErr);
+    if (isGeminiUnavailableError(msg)) {
+      console.warn('[timeclock] Validação facial ignorada — IA indisponível:', msg);
+    } else {
+      throw faceErr;
     }
   }
 

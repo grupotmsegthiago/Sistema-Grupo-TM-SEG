@@ -20,8 +20,11 @@ export function classifyGeminiError(error: unknown): { code: GeminiErrorCode; me
   if (/quota|rate.?limit|resource.?exhausted|429/.test(msg)) {
     return { code: 'QUOTA', message: 'Cota ou limite de requisições da API Gemini excedido.' };
   }
-  if (/billing|payment|faturamento|enable billing|credit/.test(msg)) {
-    return { code: 'BILLING', message: 'Faturamento do Google AI Studio inativo ou sem créditos.' };
+  if (/billing|payment|faturamento|enable billing|credit|dunning|lightning/.test(msg)) {
+    return {
+      code: 'BILLING',
+      message: 'Faturamento do Google AI Studio inativo ou sem créditos. Regularize o projeto no Google Cloud.',
+    };
   }
   if (/not found|404|invalid model|is not supported|model.*unavailable/.test(msg)) {
     return { code: 'MODEL', message: 'Modelo Gemini indisponível para esta chave/região.' };
@@ -42,6 +45,14 @@ export function isGeminiUnavailableError(message: string): boolean {
     /permission.?denied|forbidden|403/.test(msg) ||
     /chave gemini|não configurada|not configured|api key/.test(msg) ||
     /quota|rate.?limit|unavailable|internal server/.test(msg) ||
-    /não autorizado|unauthorized|401/.test(msg)
+    /não autorizado|unauthorized|401/.test(msg) ||
+    /dunning|lightning dunning|billing|payment|faturamento|credit/.test(msg)
   );
+}
+
+/** Mensagem amigável quando erro bruto da API Gemini vaza para a UI. */
+export function sanitizeGeminiErrorForUser(message: string): string {
+  if (!isGeminiUnavailableError(message)) return message;
+  const { message: friendly } = classifyGeminiError(message);
+  return friendly;
 }

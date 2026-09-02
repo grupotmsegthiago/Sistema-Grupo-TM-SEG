@@ -18,3 +18,8 @@ test('isGeminiUnavailableError não trata erro de validação facial do usuário
   assert.equal(isGeminiUnavailableError('Remova os óculos para validação facial.'), false);
   assert.equal(isGeminiUnavailableError('Rosto não confere com o cadastro facial.'), false);
 });
+
+test('isGeminiUnavailableError detecta billing/dunning do Google Cloud', () => {
+  const msg = 'Lightning dunning decision is deny for project: projects/779291370874';
+  assert.equal(isGeminiUnavailableError(msg), true);
+});

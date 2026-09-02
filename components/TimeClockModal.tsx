@@ -27,6 +27,7 @@ import {
   fetchTodayTimeClockEntries,
   registerTimeClockPunch,
 } from '../lib/timeclock/registerPunch';
+import { sanitizeGeminiErrorForUser } from '../lib/geminiUnavailable';
 
 type Step = 'face' | 'signature' | 'processing';
 
@@ -165,7 +166,8 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
       onRegistered?.();
       onClose();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Erro ao registrar ponto.';
+      const raw = e instanceof Error ? e.message : 'Erro ao registrar ponto.';
+      const msg = sanitizeGeminiErrorForUser(raw);
       setError(msg);
       setStep('signature');
       showNotification('Erro no ponto', msg, 'error');
