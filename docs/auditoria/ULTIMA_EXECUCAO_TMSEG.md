@@ -1,5 +1,158 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff local — **FINANCEIRO FASE 1A — INTEGRIDADE DO UNIVERSO DE FATURAMENTO**
+> **Implementação concluída em branch; PR Draft a abrir; deploy NÃO realizado.**
+
+---
+
+## FINANCEIRO — FASE 1 — BLOCO 1A (PAGINAÇÃO INTEGRAL DO BOLETIM)
+
+### BASELINE / BRANCH
+
+- Baseline reconciliado:
+  `origin/main = origin/dev = produção = da93ccbf3eb121b3ffd4f0c27e29324b73bf51f9`.
+- Branch: `financeiro/fase1a-billing-pagination`.
+- Worktree: `tmseg-financeiro-fase1a-billing-pagination`.
+- Produção permaneceu em `da93ccbf` — **deploy não executado**.
+
+### PROBLEMA P0
+
+`ClientBillingReport.handleGenerate()` fazia duas consultas diretas a `missions`
+sem `range`: período normal por `start_time` e inclusões manuais por
+`billing_period_override`. Cada consulta estava sujeita ao teto padrão de 1000
+registros do PostgREST, sem sinalizar conjunto parcial.
+
+O array mesclado alimentava a tabela, seleção/conferência, Excel, PDF, medição,
+cobrança/NF, Contas a Receber e totais como se fosse o universo completo.
+
+### COMPORTAMENTO NOVO
+
+- As duas consultas reutilizam `fetchAllPages()` por meio do loader específico
+  `fetchBillingMissionUniverse()`.
+- Filtros preservados:
+  - igualdade por nomes canônicos em `client` ou `provider`;
+  - `status != Recusada`;
+  - período por `start_time`;
+  - inclusões por `billing_period_override`;
+  - `exclude_from_billing` continua aplicado após a carga.
+- Ordem determinística por data + `id`.
+- Primeira página obtém `count: exact`; a paginação valida quantidade carregada.
+- IDs repetidos entre ranges paginados são detectados como erro de integridade.
+- A sobreposição legítima entre consulta base e override é deduplicada por `id`.
+- Teto de 50.000 por consulta é explícito: acima dele o conjunto é classificado
+  como incompleto, nunca como sucesso.
+- Qualquer erro na primeira ou em página intermediária descarta todo o resultado.
+- Estado explícito no componente:
+  `idle | loading | complete | incomplete`.
+- `complete` com zero OS continua sendo sucesso vazio.
+- Mudança de cliente, fornecedor ou período invalida o dataset anterior.
+
+### FAIL-CLOSED / BLOQUEIOS
+
+Quando a integralidade não pode ser comprovada:
+
+- `missions` é esvaziado;
+- o relatório não é marcado como gerado;
+- uma mensagem não técnica informa que o faturamento foi bloqueado;
+- ficam bloqueados:
+  - geração de fatura;
+  - cobrança/NF Asaas;
+  - salvamento de fatura;
+  - envio de medição e criação do recebível;
+  - Excel;
+  - PDF/impressão;
+  - relatório DHL derivado do boletim.
+
+Nenhum erro interno, stack ou detalhe do banco é exibido ao usuário.
+
+### INTEGRIDADE DE CONJUNTO DE DADOS
+
+- Antes: no máximo 1000 registros por consulta; combinação potencial de até
+  2000 registros não comprovava completude e podia conter sobreposição.
+- Depois: todas as páginas são carregadas até a contagem esperada; erro,
+  truncamento, mudança/incompatibilidade de contagem ou duplicidade interrompe
+  a operação.
+- Metadados internos: `recordsLoaded`, `pagesLoaded`, `expectedRows` e
+  `complete`.
+- Excel usa `rowsData`; PDF usa o mesmo `print-area`; nenhum dos dois abre nova
+  consulta de OS.
+
+### GRANDTOTAL — FORA DE ESCOPO
+
+- Linhas visuais e Excel: `rowsData`.
+- Faturamento, medição e recebível: `grandTotal`.
+- `grandTotal` continua derivado de `missions`, enquanto as linhas usam
+  `rowsData`; ambos agora recebem o mesmo universo integral, porém as fórmulas
+  continuam diferentes.
+- A divergência de fórmula **não foi corrigida neste bloco**.
+
+### ARQUIVOS ALTERADOS
+
+- `components/ClientBillingReport.tsx`
+- `lib/supabasePaging.ts`
+- `lib/billing/fetchBillingMissionUniverse.ts` (novo)
+- `scripts/financial-billing-pagination.test.ts` (novo)
+- `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md`
+
+### TESTES / EVIDÊNCIAS
+
+- Teste específico Financeiro Fase 1A: **16/16 PASS**.
+- Casos de volume: **999, 1000, 1001, 2001 e 2505** — todos retornados.
+- Zero registros: sucesso vazio.
+- Última página menor que o page size: encerramento correto.
+- Erro na primeira página: fail-closed.
+- Erro em página intermediária/override: fail-closed, sem parcial.
+- Sobreposição entre ranges: duplicidade detectada.
+- Contagem esperada diferente da carga: erro de integridade.
+- Suíte final consolidada de paginação, canônico e faturamento: **125/125 PASS**.
+- `invoice-control-loading.test.ts`: **1 falha preexistente**, reproduzida sem
+  alterações no baseline limpo `da93ccbf`; fora do escopo.
+- Build completo: **PASS**.
+- Smoke visual do build: login carregou sem erro JS visível.
+- Import React preservado em `ClientBillingReport.tsx`.
+- Tipagem dos helpers e testes novos: **PASS**.
+- Typecheck global: permanece com erros preexistentes de configuração/tipagem
+  em arquivos fora do escopo; nenhum erro novo nos helpers/teste desta fase.
+- `git diff --check`: **PASS**.
+
+### ESCOPO NEGATIVO
+
+- Fórmulas comerciais: **não alteradas**.
+- `financialUtils.ts`: **não alterado**.
+- `missionFinancialsCanonical.ts`: **não alterado**.
+- `resolveMissionDisplacement.ts`: **não alterado**.
+- Asaas, PlugNotas, `financial_transactions`, `financial_invoices`, comissão,
+  contas a pagar e DRE: **não alterados**.
+- Zero SQL, migration, RLS, schema ou write financeiro live.
+- Zero merge e zero deploy.
+
+### RISCOS / PENDÊNCIAS
+
+- A paginação REST não cria snapshot transacional do período; a contagem inicial,
+  ordem estável e detecção de duplicidade reduzem e tornam explícita eventual
+  inconsistência durante uma carga concorrente.
+- O teto de segurança de 50.000 OS por fonte bloqueia o boletim em vez de
+  devolver parcial.
+- O P0 de `grandTotal` divergente permanece para bloco próprio.
+- Permanecem fora deste PR: `paid_date` vs `payment_date`, vínculo textual
+  fatura→recebível, modelos de parcial, OS→pagar e fórmulas simplificadas.
+
+### ROLLBACK
+
+- Reverter o commit deste bloco na branch.
+- Não há rollback de banco, RLS ou produção.
+
+### PRÓXIMO BLOCO
+
+Após review independente e homologação funcional da Fase 1A:
+**Financeiro Fase 1B — paridade entre linhas do boletim e `grandTotal`**.
+
+### DECISÃO
+
+# 🟢 FINANCEIRO FASE 1A — PAGINAÇÃO INTEGRAL IMPLEMENTADA / PR DRAFT
+
+---
+
 > Handoff local — **QUARTO PILOTO RH `rh_warnings` — BLOCO 1B PUBLICADO**
 > **PR #297 mergeado e produção sincronizada em 2026-09-01 (UTC-3).**
 
