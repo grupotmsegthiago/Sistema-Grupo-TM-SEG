@@ -1,17 +1,50 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff local — **INCIDENTE NF / ASAAS — HOTFIX DE DISCRIMINAÇÃO**
-> **Branch `hotfix/nf-discriminacao-asaas`, baseada em produção `6d4aa8c8`.**
+> Handoff local — **INCIDENTE NF / ASAAS — HOTFIX DE DISCRIMINAÇÃO PUBLICADO**
+> **PR #301 mergeado; produção em `bc8916bb`.**
 
 ---
 
 ## INCIDENTE NF / ASAAS — NORMALIZAÇÃO DA DISCRIMINAÇÃO
 
 **Data:** 2026-09-02 (UTC-3)
-**Base:** `6d4aa8c89f1f3978a2037afa313bb9254c4de598`
-**Branch:** `hotfix/nf-discriminacao-asaas`
-**Status:** hotfix validado localmente; PR Draft pendente
-**Produção/SQL/RLS/schema/dados:** nenhuma alteração
+**Base pré-hotfix:** `6d4aa8c89f1f3978a2037afa313bb9254c4de598`
+**Hotfix commit:** `4d63ce732e8b96b3dff240e4c0bc72cf7586a55c`
+**PR:** **#301 — MERGED**
+**Merge commit:** `bc8916bb0c6191b53d6427644a9b3dbf68a1d6a3`
+**Publicação:** `origin/main = origin/dev = produção = bc8916bb`
+**Status:** hotfix publicado; smoke fiscal real **PENDENTE DE VALIDAÇÃO HUMANA**
+**Produção/SQL/RLS/schema/dados:** hotfix de código apenas; nenhuma migration/RLS executada
+
+### PUBLICAÇÃO CONTROLADA (2026-09-02)
+
+1. PR #301 mergeado em `main` (merge commit `bc8916bb`).
+2. `dev` sincronizada com `main`; `publicar.ps1` executado (push confirmado).
+3. Vercel Production **Ready** — deploy `bc8916bb` concluído.
+4. `/api/version` → `buildId: bc8916bb`, `/api/health` → `{"status":"ok"}`.
+5. Bundle produção contém `normalizeAsaasNfDiscrimination`, deduplicação, CR/LF→`|`,
+   fail-closed 250/2000; `07930` e `/payments` intactos.
+6. PR #300 (`financeiro/fase1b-official-total`) permanece **OPEN**, intocado.
+
+### SMOKE FISCAL REAL
+
+**Não reemitido automaticamente** — requisitos de segurança não comprováveis sem
+sessão humana autenticada no Controle de Faturas.
+
+Candidatas identificadas (erro `Discriminacao`, cobrança Asaas existente):
+
+| Fatura | Cliente | Valor | `asaas_payment_id` | `nf_retry_paused` |
+|--------|---------|-------|--------------------|-------------------|
+| `TMSEG-20260902-103359-6OJ3` | LOGGO SOLUCOES LOGISTICA | 9912.65 | `pay_0oct1zpus7q1y2kd` | **true** |
+| `TMSEG-20260902-100055-KTQ5` | GRUPO VELOZTER | 886.27 | `pay_knbkp8tnzox58ywh` | **true** |
+
+**Próximo passo humano:** despausar **uma** fatura, acionar retry manual no Controle
+de Faturas, confirmar payload normalizado e ausência de cobrança duplicada.
+
+### ROLLBACK
+
+Reverter merge `bc8916bb` em `main`/`dev` para `6d4aa8c8` via revert commit;
+redeploy Vercel. Sem alteração de dados no Supabase necessária para rollback de código.
 
 ### CAUSA CORRIGIDA
 
