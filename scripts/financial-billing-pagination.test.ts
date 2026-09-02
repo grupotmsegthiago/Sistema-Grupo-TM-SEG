@@ -8,6 +8,7 @@ import {
 } from '../lib/billing/fetchBillingMissionUniverse.ts';
 import {
   SupabasePagingIntegrityError,
+  fetchAllKeysetPages,
   fetchAllPages,
 } from '../lib/supabasePaging.ts';
 
@@ -18,6 +19,7 @@ type Row = {
   status: string;
   start_time: string | null;
   billing_period_override: string | null;
+  financial_value?: number;
 };
 
 function makeRows(total: number): Row[] {
@@ -33,14 +35,25 @@ function makeRows(total: number): Row[] {
 
 function createSupabaseMock(
   sourceRows: Row[],
-  fail?: { column: 'start_time' | 'billing_period_override'; from: number },
+  fail?: { column: 'start_time' | 'billing_period_override'; afterId: string | null },
+  mutateAfterQuery?: (
+    context: {
+      periodColumn: 'start_time' | 'billing_period_override';
+      afterId: string | null;
+      selectColumns: string;
+      head: boolean;
+    },
+    rows: Row[],
+  ) => void,
 ) {
   const calls: Array<{
     table: string;
     filterColumns: string[];
     orderColumns: string[];
-    from: number;
-    to: number;
+    afterId: string | null;
+    limit: number;
+    selectColumns: string;
+    head: boolean;
   }> = [];
 
   return {
@@ -48,11 +61,15 @@ function createSupabaseMock(
     from(table: string) {
       const filters: Array<{ op: string; column: string; value: any }> = [];
       const orderColumns: string[] = [];
-      let range = { from: 0, to: sourceRows.length - 1 };
+      let limitValue = sourceRows.length;
       let exactCount = false;
+      let head = false;
+      let selectColumns = '*';
       const chain: any = {
-        select(_columns: string, options?: { count?: string }) {
+        select(columns: string, options?: { count?: string; head?: boolean }) {
+          selectColumns = columns;
           exactCount = options?.count === 'exact';
+          head = options?.head === true;
           return chain;
         },
         in(column: string, value: unknown[]) {
@@ -79,23 +96,34 @@ function createSupabaseMock(
           orderColumns.push(column);
           return chain;
         },
+        gt(column: string, value: unknown) {
+          filters.push({ op: 'gt', column, value });
+          return chain;
+        },
+        limit(value: number) {
+          limitValue = value;
+          return chain;
+        },
         range(from: number, to: number) {
-          range = { from, to };
+          filters.push({ op: 'range', column: '', value: { from, to } });
           return chain;
         },
         then(resolve: (result: { data: Row[] | null; error: Error | null; count?: number | null }) => void) {
           const periodColumn = filters.some((item) => item.column === 'billing_period_override')
             ? 'billing_period_override'
             : 'start_time';
+          const afterId = (filters.find((item) => item.op === 'gt' && item.column === 'id')?.value as string | undefined) ?? null;
           calls.push({
             table,
             filterColumns: filters.map((item) => item.column),
             orderColumns: [...orderColumns],
-            from: range.from,
-            to: range.to,
+            afterId,
+            limit: limitValue,
+            selectColumns,
+            head,
           });
-          if (fail?.column === periodColumn && fail.from === range.from) {
-            resolve({ data: null, error: new Error(`falha ${periodColumn} ${range.from}`) });
+          if (fail?.column === periodColumn && fail.afterId === afterId) {
+            resolve({ data: null, error: new Error(`falha ${periodColumn} ${afterId || 'início'}`) });
             return;
           }
 
@@ -111,6 +139,8 @@ function createSupabaseMock(
               rows = rows.filter((row) => String((row as any)[filter.column]) >= String(filter.value));
             } else if (filter.op === 'lte') {
               rows = rows.filter((row) => String((row as any)[filter.column]) <= String(filter.value));
+            } else if (filter.op === 'gt') {
+              rows = rows.filter((row) => String((row as any)[filter.column]) > String(filter.value));
             }
           }
           rows.sort((a, b) => {
@@ -120,11 +150,18 @@ function createSupabaseMock(
             }
             return 0;
           });
-          resolve({
-            data: rows.slice(range.from, range.to + 1),
+          const data = head
+            ? []
+            : rows.slice(0, limitValue).map((row) =>
+                selectColumns === 'id' ? ({ id: row.id } as Row) : row,
+              );
+          const result = {
+            data,
             error: null,
             count: exactCount ? rows.length : null,
-          });
+          };
+          mutateAfterQuery?.({ periodColumn, afterId, selectColumns, head }, sourceRows);
+          resolve(result);
         },
       };
       return chain;
@@ -216,6 +253,39 @@ describe('Financeiro Fase 1A — helper de paginação integral', () => {
   });
 });
 
+describe('Financeiro Fase 1A — paginação keyset estável', () => {
+  async function load(total: number) {
+    const rows = makeRows(total);
+    return fetchAllKeysetPages(
+      async (afterId, size) => ({
+        data: rows.filter((row) => afterId === null || row.id > afterId).slice(0, size),
+        error: null,
+        count: afterId === null ? rows.length : null,
+      }),
+      1000,
+      10_000,
+      { getRowKey: (row) => row.id },
+    );
+  }
+
+  for (const total of [999, 1000, 1001, 2001, 2505]) {
+    it(`${total} registros → keyset retorna o universo integral`, async () => {
+      const result = await load(total);
+      assert.equal(result.rows.length, total);
+      assert.equal(result.complete, true);
+      assert.equal(result.expectedRows, total);
+      assert.equal(new Set(result.rows.map((row) => row.id)).size, total);
+    });
+  }
+
+  it('zero registros → keyset completo e vazio', async () => {
+    const result = await load(0);
+    assert.deepEqual(result.rows, []);
+    assert.equal(result.complete, true);
+    assert.equal(result.expectedRows, 0);
+  });
+});
+
 describe('Financeiro Fase 1A — consumidor do boletim', () => {
   const params = {
     filterColumn: 'client' as const,
@@ -245,9 +315,9 @@ describe('Financeiro Fase 1A — consumidor do boletim', () => {
     assert.ok(mock.calls.every((call) => call.table === 'missions'));
     assert.ok(mock.calls.every((call) => call.filterColumns.includes('status')));
     assert.ok(mock.calls.every((call) => call.filterColumns.includes('client')));
-    assert.ok(mock.calls.every((call) => call.orderColumns[call.orderColumns.length - 1] === 'id'));
-    assert.ok(mock.calls.some((call) => call.from === 1000));
-    assert.equal(result.pagesLoaded, 3);
+    assert.ok(mock.calls.filter((call) => !call.head).every((call) => call.orderColumns[call.orderColumns.length - 1] === 'id'));
+    assert.ok(mock.calls.some((call) => call.afterId === 'GTM-001000'));
+    assert.equal(result.pagesLoaded, 6);
   });
 
   it('erro na paginação de override → não devolve universo base parcial', async () => {
@@ -258,11 +328,11 @@ describe('Financeiro Fase 1A — consumidor do boletim', () => {
     }));
     const mock = createSupabaseMock(overrides, {
       column: 'billing_period_override',
-      from: 1000,
+      afterId: 'GTM-001000',
     });
     await assert.rejects(
       () => fetchBillingMissionUniverse<Row>(mock as any, params),
-      /falha billing_period_override 1000/,
+      /falha billing_period_override GTM-001000/,
     );
   });
 
@@ -275,6 +345,121 @@ describe('Financeiro Fase 1A — consumidor do boletim', () => {
       }),
       (error: unknown) => error instanceof BillingDatasetIncompleteError,
     );
+  });
+
+  it('concorrência A — INSERT no meio nunca omite OS com complete=true', async () => {
+    const rows = makeRows(2000);
+    let mutated = false;
+    const mock = createSupabaseMock(rows, undefined, (context, source) => {
+      if (!mutated && context.periodColumn === 'start_time' && context.selectColumns.startsWith('*') && context.afterId === null) {
+        mutated = true;
+        source.push({ ...makeRows(1)[0], id: 'GTM-001500A' });
+      }
+    });
+
+    await assert.rejects(
+      () => fetchBillingMissionUniverse<Row>(mock as any, params),
+      (error: unknown) =>
+        error instanceof SupabasePagingIntegrityError ||
+        error instanceof BillingDatasetIncompleteError,
+    );
+  });
+
+  it('concorrência B — INSERT no final não contamina snapshot silenciosamente', async () => {
+    const rows = makeRows(2000);
+    let mutated = false;
+    const mock = createSupabaseMock(rows, undefined, (context, source) => {
+      if (!mutated && context.periodColumn === 'start_time' && context.selectColumns.startsWith('*') && context.afterId === null) {
+        mutated = true;
+        source.push({ ...makeRows(1)[0], id: 'GTM-999999' });
+      }
+    });
+
+    await assert.rejects(
+      () => fetchBillingMissionUniverse<Row>(mock as any, params),
+      (error: unknown) =>
+        error instanceof SupabasePagingIntegrityError ||
+        error instanceof BillingDatasetIncompleteError,
+    );
+  });
+
+  it('concorrência C — cancelamento de OS ainda não lida falha fechado', async () => {
+    const rows = makeRows(2000);
+    let mutated = false;
+    const mock = createSupabaseMock(rows, undefined, (context, source) => {
+      if (!mutated && context.periodColumn === 'start_time' && context.selectColumns.startsWith('*') && context.afterId === null) {
+        mutated = true;
+        const index = source.findIndex((row) => row.id === 'GTM-001500');
+        source[index] = { ...source[index], status: 'Recusada' };
+      }
+    });
+
+    await assert.rejects(
+      () => fetchBillingMissionUniverse<Row>(mock as any, params),
+      (error: unknown) =>
+        error instanceof SupabasePagingIntegrityError ||
+        error instanceof BillingDatasetIncompleteError,
+    );
+  });
+
+  it('concorrência D — mudança de start_time que retira OS do período falha fechado', async () => {
+    const rows = makeRows(2000);
+    let mutated = false;
+    const mock = createSupabaseMock(rows, undefined, (context, source) => {
+      if (!mutated && context.periodColumn === 'start_time' && context.selectColumns.startsWith('*') && context.afterId === null) {
+        mutated = true;
+        const index = source.findIndex((row) => row.id === 'GTM-001500');
+        source[index] = { ...source[index], start_time: '2026-07-15T12:00:00.000Z' };
+      }
+    });
+
+    await assert.rejects(
+      () => fetchBillingMissionUniverse<Row>(mock as any, params),
+      (error: unknown) =>
+        error instanceof SupabasePagingIntegrityError ||
+        error instanceof BillingDatasetIncompleteError,
+    );
+  });
+
+  it('concorrência D — mudança de billing_period_override falha fechado na segunda fonte', async () => {
+    const rows = makeRows(2000).map((row) => ({
+      ...row,
+      start_time: '2026-07-15T12:00:00.000Z',
+      billing_period_override: '2026-08-15T12:00:00.000Z',
+    }));
+    let mutated = false;
+    const mock = createSupabaseMock(rows, undefined, (context, source) => {
+      if (!mutated && context.periodColumn === 'billing_period_override' && context.selectColumns.startsWith('*') && context.afterId === null) {
+        mutated = true;
+        const index = source.findIndex((row) => row.id === 'GTM-001500');
+        source[index] = { ...source[index], billing_period_override: '2026-07-15T12:00:00.000Z' };
+      }
+    });
+
+    await assert.rejects(
+      () => fetchBillingMissionUniverse<Row>(mock as any, params),
+      (error: unknown) =>
+        error instanceof SupabasePagingIntegrityError ||
+        error instanceof BillingDatasetIncompleteError,
+    );
+  });
+
+  it('concorrência E — update financeiro preserva identidade do snapshot', async () => {
+    const rows = makeRows(1001);
+    rows[499] = { ...rows[499], financial_value: 10 };
+    let mutated = false;
+    const mock = createSupabaseMock(rows, undefined, (context, source) => {
+      if (!mutated && context.periodColumn === 'start_time' && context.selectColumns.startsWith('*') && context.afterId === null) {
+        mutated = true;
+        const index = source.findIndex((row) => row.id === 'GTM-000500');
+        source[index] = { ...source[index], financial_value: 99 };
+      }
+    });
+
+    const result = await fetchBillingMissionUniverse<Row>(mock as any, params);
+    assert.equal(result.complete, true);
+    assert.equal(result.rows.length, 1001);
+    assert.equal(result.rows.find((row) => row.id === 'GTM-000500')?.financial_value, 10);
   });
 
   it('ClientBillingReport usa o universo paginado e bloqueia consolidação incompleta', () => {

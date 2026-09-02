@@ -1,11 +1,11 @@
-import { fetchAllPages } from '../supabasePaging';
+import { fetchAllKeysetPages } from '../supabasePaging';
 
 export const BILLING_DATASET_INCOMPLETE_MESSAGE =
   'Não foi possível carregar todas as OS do período. O faturamento foi bloqueado para evitar valores incompletos.';
 
 export class BillingDatasetIncompleteError extends Error {
   constructor(
-    public readonly reason: 'ROW_CAP_EXCEEDED',
+    public readonly reason: 'ROW_CAP_EXCEEDED' | 'UNSTABLE_SNAPSHOT' | 'COUNT_UNAVAILABLE',
   ) {
     super(BILLING_DATASET_INCOMPLETE_MESSAGE);
     this.name = 'BillingDatasetIncompleteError';
@@ -45,51 +45,97 @@ export async function fetchBillingMissionUniverse<T extends { id: string; start_
 ): Promise<BillingMissionUniverseResult<T>> {
   const pageSize = params.pageSize ?? 1000;
   const maxRows = params.maxRows ?? 50_000;
-  const commonQuery = (withExactCount: boolean) =>
+  type PeriodColumn = 'start_time' | 'billing_period_override';
+
+  const buildSourceQuery = (
+    periodColumn: PeriodColumn,
+    selectColumns: string,
+    withExactCount: boolean,
+    head = false,
+  ) =>
     supabase
       .from('missions')
-      .select(
-        '*, company_vehicle:vehicles(*)',
-        withExactCount ? { count: 'exact' } : undefined,
-      )
+      .select(selectColumns, withExactCount ? { count: 'exact', head } : undefined)
       .in(params.filterColumn, params.canonicalNames)
-      .neq('status', 'Recusada');
+      .neq('status', 'Recusada')
+      .not(periodColumn, 'is', null)
+      .gte(periodColumn, params.rangeStart)
+      .lte(periodColumn, params.rangeEnd);
 
-  const base = await fetchAllPages<T>(
-    async (from, size) => {
-      const { data, error, count } = await commonQuery(from === 0)
-        .not('start_time', 'is', null)
-        .gte('start_time', params.rangeStart)
-        .lte('start_time', params.rangeEnd)
-        .order('start_time', { ascending: true })
-        .order('id', { ascending: true })
-        .range(from, from + size - 1);
-      return { data: data as T[] | null, error, count };
-    },
-    pageSize,
-    maxRows,
-    { getRowKey: (row) => row.id },
-  );
+  const loadStableSource = async (periodColumn: PeriodColumn) => {
+    const rows = await fetchAllKeysetPages<T, string>(
+      async (afterId, size) => {
+        let query = buildSourceQuery(
+          periodColumn,
+          '*, company_vehicle:vehicles(*)',
+          afterId === null,
+        )
+          .order('id', { ascending: true })
+          .limit(size);
+        if (afterId !== null) query = query.gt('id', afterId);
+        const { data, error, count } = await query;
+        return { data: data as T[] | null, error, count };
+      },
+      pageSize,
+      maxRows,
+      { getRowKey: (row) => row.id },
+    );
 
-  const overrides = await fetchAllPages<T>(
-    async (from, size) => {
-      const { data, error, count } = await commonQuery(from === 0)
-        .not('billing_period_override', 'is', null)
-        .gte('billing_period_override', params.rangeStart)
-        .lte('billing_period_override', params.rangeEnd)
-        .order('billing_period_override', { ascending: true })
-        .order('id', { ascending: true })
-        .range(from, from + size - 1);
-      return { data: data as T[] | null, error, count };
-    },
-    pageSize,
-    maxRows,
-    { getRowKey: (row) => row.id },
-  );
+    if (rows.truncated) {
+      throw new BillingDatasetIncompleteError('ROW_CAP_EXCEEDED');
+    }
 
-  if (base.truncated || overrides.truncated) {
-    throw new BillingDatasetIncompleteError('ROW_CAP_EXCEEDED');
-  }
+    const identities = await fetchAllKeysetPages<{ id: string }, string>(
+      async (afterId, size) => {
+        let query = buildSourceQuery(periodColumn, 'id', afterId === null)
+          .order('id', { ascending: true })
+          .limit(size);
+        if (afterId !== null) query = query.gt('id', afterId);
+        const { data, error, count } = await query;
+        return { data: data as { id: string }[] | null, error, count };
+      },
+      pageSize,
+      maxRows,
+      { getRowKey: (row) => row.id },
+    );
+
+    if (identities.truncated) {
+      throw new BillingDatasetIncompleteError('ROW_CAP_EXCEEDED');
+    }
+
+    const finalCountQuery = buildSourceQuery(periodColumn, 'id', true, true);
+    const { error: finalCountError, count: finalCount } = await finalCountQuery;
+    if (finalCountError) throw finalCountError;
+    if (
+      rows.expectedRows === null ||
+      identities.expectedRows === null ||
+      typeof finalCount !== 'number'
+    ) {
+      throw new BillingDatasetIncompleteError('COUNT_UNAVAILABLE');
+    }
+
+    const rowIds = rows.rows.map((row) => row.id);
+    const identityIds = identities.rows.map((row) => row.id);
+    const sameIdentities =
+      rowIds.length === identityIds.length &&
+      rowIds.every((id, index) => id === identityIds[index]);
+    const sameCounts =
+      rows.expectedRows === identities.expectedRows &&
+      identities.expectedRows === finalCount &&
+      rowIds.length === finalCount;
+
+    if (!sameIdentities || !sameCounts) {
+      throw new BillingDatasetIncompleteError('UNSTABLE_SNAPSHOT');
+    }
+
+    return {
+      rows: rows.rows,
+      pagesLoaded: rows.pagesLoaded + identities.pagesLoaded,
+    };
+  };
+
+  const base = await loadStableSource('start_time');
+  const overrides = await loadStableSource('billing_period_override');
 
   const seen = new Set(base.rows.map((mission) => mission.id));
   const rows = [
