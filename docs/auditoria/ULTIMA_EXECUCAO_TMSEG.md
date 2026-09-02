@@ -1,7 +1,82 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff local — **FINANCEIRO FASE 1A — INTEGRIDADE DO UNIVERSO DE FATURAMENTO**
-> **PR #299 mergeado e publicado em produção em 2026-09-02 (UTC-3).**
+> Handoff local — **INCIDENTE NF / ASAAS — HOTFIX DE DISCRIMINAÇÃO**
+> **Branch `hotfix/nf-discriminacao-asaas`, baseada em produção `6d4aa8c8`.**
+
+---
+
+## INCIDENTE NF / ASAAS — NORMALIZAÇÃO DA DISCRIMINAÇÃO
+
+**Data:** 2026-09-02 (UTC-3)
+**Base:** `6d4aa8c89f1f3978a2037afa313bb9254c4de598`
+**Branch:** `hotfix/nf-discriminacao-asaas`
+**Status:** hotfix validado localmente; PR Draft pendente
+**Produção/SQL/RLS/schema/dados:** nenhuma alteração
+
+### CAUSA CORRIGIDA
+
+O worker reconstruía a NF com a primeira linha de `financial_invoices.notes`
+como `serviceDescription` e simultaneamente enviava todas as `notes` como
+`observations`. Como as notas começavam pela mesma descrição principal, o
+payload fiscal entregue ao Asaas continha conteúdo sobreposto. O Asaas gera o
+XML municipal fora do repositório, e a Prefeitura rejeitava o elemento
+`Discriminacao`.
+
+### CORREÇÃO ISOLADA
+
+- Criado `lib/nfDiscrimination.ts` como normalizador fiscal único.
+- `server/asaasService.scheduleInvoice()` aplica a normalização imediatamente
+  antes do `POST /invoices`, cobrindo primeira emissão e retries.
+- `api/_nf-retry-core.cjs` foi regenerado pelo build com a mesma normalização
+  para o handler serverless publicado pela Vercel.
+- Se `observations` começa pela mesma `serviceDescription`, somente o prefixo
+  duplicado é removido; período, rastreio e observações adicionais permanecem.
+- CR/LF são convertidos para `|`, conforme o layout NFS-e de São Paulo.
+- Acentos e caracteres reservados XML permanecem texto normal no JSON; o Asaas
+  continua responsável pela serialização/escape XML.
+- Limites são fail-closed: 250 caracteres para `serviceDescription` (contrato
+  Asaas já aplicado anteriormente) e 2.000 para a discriminação combinada.
+  Excesso bloqueia a emissão com erro explícito, sem truncamento silencioso.
+
+### PAYLOAD MASCARADO
+
+Antes:
+
+```text
+serviceDescription: "CONTRATAÇÃO E INTERMEDIAÇÃO..."
+observations: "CONTRATAÇÃO E INTERMEDIAÇÃO... - Referente ao Mês Completo de Agosto/2026\r\nRef. rastreio: TMSEG-MASCARADO\r\nCNAE/Serviço municipal: 07930..."
+```
+
+Depois:
+
+```text
+serviceDescription: "CONTRATAÇÃO E INTERMEDIAÇÃO..."
+observations: "Referente ao Mês Completo de Agosto/2026|Ref. rastreio: TMSEG-MASCARADO|CNAE/Serviço municipal: 07930..."
+```
+
+### ESCOPO NEGATIVO COMPROVADO
+
+Permanecem idênticos ao baseline:
+
+- `lib/asaasCreateChargeCore.ts` e `lib/asaasChargeApi.ts`;
+- criação da cobrança `/payments`, `billingType`, vencimento e boleto;
+- `municipalServiceCode: 07930`;
+- `server/nfRetryWorker.ts`;
+- `ClientBillingReport`, `grandTotal`, Fases 1A/1B e regras comerciais.
+
+### TESTES E GATES
+
+- T01–T11 em `scripts/nf-discrimination-normalization.test.ts`: **11/11 OK**.
+- Suíte fiscal/Asaas diretamente relacionada: **40/40 OK**.
+- Regressão fiscal/Asaas selecionada: **42/43 OK**.
+- Única falha: `scripts/invoice-control-loading.test.ts`, validação preexistente
+  de ordem do boot Express; `server/routes.ts` e o teste estão sem diff contra
+  `6d4aa8c8` e não foram alterados por ser fora do escopo do hotfix.
+- `npm run build`: **OK**.
+- `git diff --check`: **OK**.
+- Injeção Supabase em `dist/public/index.html`: **OK**.
+- Bundle `dist/vercelApp.cjs` contém o normalizador: **OK**.
+- Nenhuma chamada real de cobrança, boleto ou emissão de NF foi executada.
 
 ---
 

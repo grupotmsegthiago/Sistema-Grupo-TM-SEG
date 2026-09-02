@@ -324,6 +324,50 @@ var MEMORY_TTL_MS = 20 * 60 * 1e3;
 // lib/services/asaasPendingTransferService.ts
 var MEMORY_TTL_MS2 = 20 * 60 * 1e3;
 
+// lib/nfDiscrimination.ts
+var ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH = 250;
+var NFSE_DISCRIMINATION_MAX_LENGTH = 2e3;
+function normalizeLineBreaks(value) {
+  return value.replace(/\r\n?|\n/g, "|").trim();
+}
+function assertXmlTextCompatible(value, field) {
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(value)) {
+    throw new Error(`${field} cont\xE9m caractere de controle incompat\xEDvel com XML.`);
+  }
+}
+function removeDuplicatedDescription(serviceDescription, observations) {
+  if (observations === serviceDescription) return "";
+  if (!observations.startsWith(serviceDescription)) return observations;
+  const suffix = observations.slice(serviceDescription.length);
+  if (suffix && !/^[\s|:;,\-–—]/.test(suffix)) return observations;
+  return suffix.replace(/^[\s|:;,\-–—]+/, "");
+}
+function normalizeAsaasNfDiscrimination(input) {
+  const serviceDescription = normalizeLineBreaks(String(input.serviceDescription || ""));
+  if (!serviceDescription) {
+    throw new Error("Descri\xE7\xE3o do servi\xE7o ausente para emiss\xE3o da NFS-e.");
+  }
+  assertXmlTextCompatible(serviceDescription, "Descri\xE7\xE3o do servi\xE7o");
+  if (serviceDescription.length > ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH) {
+    throw new Error(
+      `Descri\xE7\xE3o do servi\xE7o excede ${ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH} caracteres; a emiss\xE3o foi bloqueada para evitar truncamento fiscal.`
+    );
+  }
+  const normalizedObservations = normalizeLineBreaks(String(input.observations || ""));
+  assertXmlTextCompatible(normalizedObservations, "Observa\xE7\xF5es da NFS-e");
+  const observations = removeDuplicatedDescription(
+    serviceDescription,
+    normalizedObservations
+  );
+  const combinedLength = serviceDescription.length + (observations ? 1 + observations.length : 0);
+  if (combinedLength > NFSE_DISCRIMINATION_MAX_LENGTH) {
+    throw new Error(
+      `Discrimina\xE7\xE3o fiscal excede ${NFSE_DISCRIMINATION_MAX_LENGTH} caracteres; a emiss\xE3o foi bloqueada sem truncar informa\xE7\xF5es.`
+    );
+  }
+  return observations ? { serviceDescription, observations } : { serviceDescription };
+}
+
 // server/asaasService.ts
 function asaasCompanies() {
   return {
@@ -592,9 +636,13 @@ async function scheduleInvoice(params) {
     console.log(`[Asaas NF] Descri\xE7\xE3o mal formatada detectada ("${rawDesc.substring(0, 60)}..."). Substituindo por padr\xE3o da empresa para evitar NFe003.`);
     rawDesc = nfConfig.serviceDescription;
   }
+  const normalizedDiscrimination = normalizeAsaasNfDiscrimination({
+    serviceDescription: rawDesc,
+    observations: params.observations
+  });
   const body = {
     payment: params.paymentId,
-    serviceDescription: rawDesc.length > 250 ? rawDesc.substring(0, 247) + "..." : rawDesc,
+    ...normalizedDiscrimination,
     taxes,
     effectiveDatePeriod: "ON_PAYMENT_CREATION"
   };
@@ -634,7 +682,6 @@ async function scheduleInvoice(params) {
       );
     }
   }
-  if (params.observations) body.observations = params.observations;
   if (params.externalReference) body.externalReference = params.externalReference;
   console.log(
     `[Asaas NF] POST /invoices payment=${params.paymentId} company=${companyEntry.name} code=${body.municipalServiceCode || body.municipalServiceId || "-"}`

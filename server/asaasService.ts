@@ -7,6 +7,7 @@ import {
   transferPixFromCompanyCore,
 } from '../lib/asaasTransferPixCore';
 import { getAsaasApiKeyTmGestao, getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity } from '../lib/asaasEnvKeys';
+import { normalizeAsaasNfDiscrimination } from '../lib/nfDiscrimination';
 
 export const GRUPO_TMSEG_WALLET_ID = '6641fec4-8476-48e3-90a8-3db6b14f538c';
 
@@ -598,11 +599,15 @@ export async function scheduleInvoice(params: {
     console.log(`[Asaas NF] Descrição mal formatada detectada ("${rawDesc.substring(0, 60)}..."). Substituindo por padrão da empresa para evitar NFe003.`);
     rawDesc = nfConfig.serviceDescription;
   }
+  const normalizedDiscrimination = normalizeAsaasNfDiscrimination({
+    serviceDescription: rawDesc,
+    observations: params.observations,
+  });
   // Payload V3 Asaas: payment + serviceDescription + taxes + serviço municipal.
   // effectiveDatePeriod ON_PAYMENT_CONFIRMATION/ON_PAYMENT_CREATION evita effectiveDate manual.
   const body: any = {
     payment: params.paymentId,
-    serviceDescription: rawDesc.length > 250 ? rawDesc.substring(0, 247) + '...' : rawDesc,
+    ...normalizedDiscrimination,
     taxes,
     effectiveDatePeriod: 'ON_PAYMENT_CREATION',
   };
@@ -647,7 +652,6 @@ export async function scheduleInvoice(params: {
       );
     }
   }
-  if (params.observations) body.observations = params.observations;
   if (params.externalReference) body.externalReference = params.externalReference;
   console.log(
     `[Asaas NF] POST /invoices payment=${params.paymentId} company=${companyEntry.name} ` +
