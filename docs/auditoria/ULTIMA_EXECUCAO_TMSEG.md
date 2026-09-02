@@ -1,7 +1,7 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
 > Handoff local — **FINANCEIRO FASE 1A — INTEGRIDADE DO UNIVERSO DE FATURAMENTO**
-> **PR #299 Draft corrigido após bloqueio P0 de concorrência; deploy NÃO realizado.**
+> **PR #299 Draft com consistência global da união validada; deploy NÃO realizado.**
 
 ---
 
@@ -16,6 +16,7 @@
 - PR: **#299 — DRAFT**.
 - Commit inicial: `1c036abe`.
 - Correção concorrente: `a3ac5e89`.
+- Correção global da união: `10f89820`.
 - Produção permaneceu em `da93ccbf` — **deploy não executado**.
 
 ### PROBLEMA P0
@@ -30,7 +31,7 @@ cobrança/NF, Contas a Receber e totais como se fosse o universo completo.
 
 ### COMPORTAMENTO NOVO
 
-- As duas consultas reutilizam paginação central por meio do loader específico
+- As duas regras de período formam uma única consulta lógica no loader
   `fetchBillingMissionUniverse()`.
 - Filtros preservados:
   - igualdade por nomes canônicos em `client` ou `provider`;
@@ -39,13 +40,14 @@ cobrança/NF, Contas a Receber e totais como se fosse o universo completo.
   - inclusões por `billing_period_override`;
   - `exclude_from_billing` continua aplicado após a carga.
 - A leitura usa keyset pela chave primária estável `id`, sem offset/range.
-- Cada fonte executa uma varredura dos registros e outra das identidades; uma
-  contagem exata final precisa coincidir com as duas varreduras.
+- A união global executa uma varredura dos registros e outra das identidades;
+  uma contagem exata final precisa coincidir com as duas varreduras.
 - O `count` inicial permanece como evidência auxiliar, nunca como prova única.
 - A ordenação visual por data + `id` é preservada depois da carga integral.
 - IDs repetidos entre ranges paginados são detectados como erro de integridade.
-- A sobreposição legítima entre consulta base e override é deduplicada por `id`.
-- Teto de 50.000 por consulta é explícito: acima dele o conjunto é classificado
+- A sobreposição legítima entre `start_time` e override retorna uma única linha
+  pela semântica do `OR`.
+- Teto de 50.000 para a união é explícito: acima dele o conjunto é classificado
   como incompleto, nunca como sucesso.
 - Qualquer erro na primeira ou em página intermediária descarta todo o resultado.
 - Estado explícito no componente:
@@ -80,6 +82,26 @@ UPDATE de campo financeiro sem alterar identidade ou pertencimento ao período
 não é snapshot transacional de valores: o conjunto permanece íntegro e a
 varredura carregada é utilizada. Snapshot transacional de todos os campos
 exigiria suporte de banco/RPC e está fora deste bloco.
+
+### CORREÇÃO FINAL — CONSISTÊNCIA GLOBAL DA UNIÃO
+
+O review final do commit `8974e133` reproduziu uma segunda janela P0: uma OS
+pertencente somente ao `billing_period_override` podia perder o override depois
+da validação de `start_time` e antes da leitura da segunda fonte. O resultado
+observado foi `initialUniverse = ["GTM-OVERRIDE"]`, `returned = []` e
+`complete = true`.
+
+Correção em `10f89820`:
+
+- substituição das duas consultas sequenciais por uma única condição global:
+  `start_time no período OR billing_period_override no período`;
+- keyset único por `id` sobre o universo combinado;
+- segunda varredura global de identidades com exatamente o mesmo `OR`;
+- `count` global final e comparação integral dos IDs;
+- override removido/adicionado resulta em fail-closed quando muda a identidade;
+- migração de `start_time` para override, ou no sentido inverso, preserva a OS
+  quando o ID continua pertencendo à união;
+- OS pertencente às duas regras aparece uma única vez.
 
 ### FAIL-CLOSED / BLOQUEIOS
 
@@ -130,17 +152,19 @@ Nenhum erro interno, stack ou detalhe do banco é exibido ao usuário.
 
 ### TESTES / EVIDÊNCIAS
 
-- Teste específico Financeiro Fase 1A: **28/28 PASS**.
+- Teste específico Financeiro Fase 1A: **34/34 PASS**.
 - Casos de volume: **999, 1000, 1001, 2001 e 2505** — todos retornados.
 - Zero registros: sucesso vazio.
 - Última página menor que o page size: encerramento correto.
 - Erro na primeira página: fail-closed.
-- Erro em página intermediária/override: fail-closed, sem parcial.
+- Erro em página intermediária global: fail-closed, sem parcial.
 - Sobreposição entre ranges: duplicidade detectada.
 - Contagem esperada diferente da carga: erro de integridade.
 - Concorrência: INSERT no meio, INSERT no final, cancelamento, mudança de
   `start_time`, mudança de `billing_period_override` e UPDATE financeiro.
-- Suíte final consolidada de paginação, canônico e faturamento: **137/137 PASS**.
+- União global: override removido/adicionado, migração nos dois sentidos,
+  sobreposição sem duplicidade e universo estável.
+- Suíte final consolidada de paginação, canônico e faturamento: **143/143 PASS**.
 - `invoice-control-loading.test.ts`: **1 falha preexistente**, reproduzida sem
   alterações no baseline limpo `da93ccbf`; fora do escopo.
 - Build completo: **PASS**.
@@ -168,7 +192,7 @@ Nenhum erro interno, stack ou detalhe do banco é exibido ao usuário.
   deste bloco é da identidade integral do conjunto, validada por keyset, dupla
   varredura e contagem final; mudanças apenas de valores podem refletir o momento
   em que cada linha foi lida.
-- O teto de segurança de 50.000 OS por fonte bloqueia o boletim em vez de
+- O teto de segurança de 50.000 OS na união bloqueia o boletim em vez de
   devolver parcial.
 - O P0 de `grandTotal` divergente permanece para bloco próprio.
 - Permanecem fora deste PR: `paid_date` vs `payment_date`, vínculo textual
@@ -186,7 +210,7 @@ Após review independente e homologação funcional da Fase 1A:
 
 ### DECISÃO
 
-# 🟢 PR #299 CORRIGIDO — CONCORRÊNCIA FAIL-CLOSED / PRONTO PARA NOVO REVIEW
+# 🟢 PR #299 CORRIGIDO — CONSISTÊNCIA GLOBAL VALIDADA / PRONTO PARA REVIEW
 
 ---
 
