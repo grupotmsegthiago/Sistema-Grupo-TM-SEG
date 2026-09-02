@@ -35,6 +35,11 @@ export type RetryOneResult = {
   action?: string;
 };
 
+export type RetryOneFn = (
+  inv: ManualRetryInvoiceRow,
+  opts?: { manualRetry?: boolean },
+) => Promise<RetryOneResult>;
+
 const INVOICE_SELECT =
   'id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_provider, plugnotas_invoice_id, plugnotas_protocol, due_date, description, notes, created_at';
 
@@ -100,7 +105,7 @@ export async function unpauseManualRetryInvoice(inv: ManualRetryInvoiceRow): Pro
 
 export async function executeManualInvoiceRetry(
   invoiceId: string,
-  retryOneFn: (inv: ManualRetryInvoiceRow) => Promise<RetryOneResult>,
+  retryOneFn: RetryOneFn,
   opts?: { listPendingNfs?: () => Promise<ManualRetryInvoiceRow[]> },
 ): Promise<
   | { httpStatus: 404; body: { success: false; error: string } }
@@ -119,7 +124,9 @@ export async function executeManualInvoiceRetry(
 
   const wasPaused = !!inv.nf_retry_paused;
   const ready = await unpauseManualRetryInvoice(inv);
-  const result = await retryOneFn(ready);
+  // Contexto explícito: somente esta rota autenticada pode ultrapassar o limite
+  // do ciclo automático e chegar ao cancelamento seguro + nova emissão.
+  const result = await retryOneFn(ready, { manualRetry: true });
 
   return {
     httpStatus: 200,

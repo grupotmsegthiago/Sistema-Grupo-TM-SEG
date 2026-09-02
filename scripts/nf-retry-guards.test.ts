@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { isNfSchedulePendingMessage, isNonRetryable } from '../lib/nfRetryGuards';
+import {
+  isNfSchedulePendingMessage,
+  isNonRetryable,
+  shouldEnforceAutomaticRetryLimit,
+} from '../lib/nfRetryGuards';
 
 describe('nfRetryGuards — placeholder NF isolada vs erro fiscal real', () => {
   const placeholderLegado =
@@ -27,5 +31,10 @@ describe('nfRetryGuards — placeholder NF isolada vs erro fiscal real', () => {
   it('NFe003 e erros transitórios da prefeitura', () => {
     assert.equal(isNonRetryable('NFe003: descrição do serviço inválida'), true);
     assert.equal(isNonRetryable('Prefeitura sobrecarregada, tente novamente'), false);
+  });
+
+  it('limite continua bloqueando automático, não converte retry manual em polling', () => {
+    assert.equal(shouldEnforceAutomaticRetryLimit(3, 3), true);
+    assert.equal(shouldEnforceAutomaticRetryLimit(3, 3, { manualRetry: true }), false);
   });
 });
