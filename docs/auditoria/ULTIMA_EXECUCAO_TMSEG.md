@@ -1,11 +1,44 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff local — **INCIDENTE NF — TOOLTIP ERRO STALE EM PROCESSING (DRAFT PR)**
-> **Produção atual: `f1604692` / código retry `46774d89`. Branch: `fix/nf-processing-stale-error-tooltip`.**
+> Handoff local — **INCIDENTE NF — TOOLTIP STALE PUBLICADO (PR #303)**
+> **Produção: `5af2cca7`. PR #302 + PR #301 preservados.**
 
 ---
 
-## INCIDENTE NF — TOOLTIP ERRO STALE EM "PROCESSANDO"
+## INCIDENTE NF — TOOLTIP STALE — PUBLICAÇÃO PR #303
+
+**Data:** 2026-09-02 (UTC-3)
+**PR:** **#303 — MERGED**
+**Merge commit:** `5af2cca76c776274b123b17c664b5a82d7087ae8`
+**HEAD feature:** `d5c5d8f634b72320696c872a0771e0e32eba4077`
+**Publicação:** `origin/main = origin/dev = produção = 5af2cca7`
+**Status:** publicado; homologação tooltip OK (lógica + bundle prod); **nenhuma NF reemitida neste turno**
+
+### HOMOLOGAÇÃO PRODUÇÃO
+
+| Check | Resultado |
+|-------|-----------|
+| `/api/version` | `buildId: 5af2cca7` |
+| `/api/health` | `{"status":"ok"}` |
+| Frontend | HTTP 200 |
+| Bundle prod | contém `Erro da tentativa anterior` |
+| PROCESSING-like (ERROR+!paused) | tooltip aguardando + erro como tentativa anterior |
+| ERROR pausado | erro atual exibido |
+| AUTHORIZED | erro anterior não como atual |
+| `/payments` / `07930` | intactos (fora do diff) |
+| PR #300 | intocado |
+
+### TESTES PRÉ-MERGE
+
+42/42 PASS · npm run build OK
+
+### ROLLBACK
+
+Revert merge `5af2cca7` em main/dev; redeploy Vercel. Sem migration/dados.
+
+---
+
+## INCIDENTE NF — TOOLTIP ERRO STALE EM "PROCESSANDO" (implementação PR #303)
 
 **Data:** 2026-09-02 (UTC-3)
 **Branch:** `fix/nf-processing-stale-error-tooltip`
