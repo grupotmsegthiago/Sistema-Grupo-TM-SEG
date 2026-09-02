@@ -1,7 +1,7 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
 > Handoff local — **FINANCEIRO FASE 1A — INTEGRIDADE DO UNIVERSO DE FATURAMENTO**
-> **Implementação concluída em branch; PR Draft a abrir; deploy NÃO realizado.**
+> **PR #299 Draft corrigido após bloqueio P0 de concorrência; deploy NÃO realizado.**
 
 ---
 
@@ -13,6 +13,9 @@
   `origin/main = origin/dev = produção = da93ccbf3eb121b3ffd4f0c27e29324b73bf51f9`.
 - Branch: `financeiro/fase1a-billing-pagination`.
 - Worktree: `tmseg-financeiro-fase1a-billing-pagination`.
+- PR: **#299 — DRAFT**.
+- Commit inicial: `1c036abe`.
+- Correção concorrente: `a3ac5e89`.
 - Produção permaneceu em `da93ccbf` — **deploy não executado**.
 
 ### PROBLEMA P0
@@ -27,7 +30,7 @@ cobrança/NF, Contas a Receber e totais como se fosse o universo completo.
 
 ### COMPORTAMENTO NOVO
 
-- As duas consultas reutilizam `fetchAllPages()` por meio do loader específico
+- As duas consultas reutilizam paginação central por meio do loader específico
   `fetchBillingMissionUniverse()`.
 - Filtros preservados:
   - igualdade por nomes canônicos em `client` ou `provider`;
@@ -35,8 +38,11 @@ cobrança/NF, Contas a Receber e totais como se fosse o universo completo.
   - período por `start_time`;
   - inclusões por `billing_period_override`;
   - `exclude_from_billing` continua aplicado após a carga.
-- Ordem determinística por data + `id`.
-- Primeira página obtém `count: exact`; a paginação valida quantidade carregada.
+- A leitura usa keyset pela chave primária estável `id`, sem offset/range.
+- Cada fonte executa uma varredura dos registros e outra das identidades; uma
+  contagem exata final precisa coincidir com as duas varreduras.
+- O `count` inicial permanece como evidência auxiliar, nunca como prova única.
+- A ordenação visual por data + `id` é preservada depois da carga integral.
 - IDs repetidos entre ranges paginados são detectados como erro de integridade.
 - A sobreposição legítima entre consulta base e override é deduplicada por `id`.
 - Teto de 50.000 por consulta é explícito: acima dele o conjunto é classificado
@@ -46,6 +52,34 @@ cobrança/NF, Contas a Receber e totais como se fosse o universo completo.
   `idle | loading | complete | incomplete`.
 - `complete` com zero OS continua sendo sucesso vazio.
 - Mudança de cliente, fornecedor ou período invalida o dataset anterior.
+
+### CORREÇÃO BLOQUEADORA — CONSISTÊNCIA CONCORRENTE
+
+O review independente reproduziu um P0 no commit `1c036abe`: com 2.000 OS,
+uma inserção no meio após a primeira página podia produzir
+`expected = returned = 2000` e `complete = true`, mas incluir a OS nova e
+omitir uma OS original.
+
+Causa: paginação por offset/range sobre conjunto mutável, encerrada quando a
+quantidade carregada alcançava o `count` inicial. Igualdade de quantidade não
+comprovava igualdade de identidade.
+
+Correção em `a3ac5e89`:
+
+- keyset por `id` estável em ambas as fontes;
+- nenhuma parada antecipada somente por alcançar o `count`;
+- segunda varredura apenas dos IDs com os mesmos filtros;
+- contagem final após a validação;
+- divergência de IDs, contagem indisponível, mudança de quantidade, duplicidade
+  ou teto excedido resultam em erro fail-closed;
+- INSERT no meio/final, cancelamento e mudança de `start_time` ou
+  `billing_period_override` durante a paginação não podem resultar em
+  `complete = true` com perda silenciosa.
+
+UPDATE de campo financeiro sem alterar identidade ou pertencimento ao período
+não é snapshot transacional de valores: o conjunto permanece íntegro e a
+varredura carregada é utilizada. Snapshot transacional de todos os campos
+exigiria suporte de banco/RPC e está fora deste bloco.
 
 ### FAIL-CLOSED / BLOQUEIOS
 
@@ -96,7 +130,7 @@ Nenhum erro interno, stack ou detalhe do banco é exibido ao usuário.
 
 ### TESTES / EVIDÊNCIAS
 
-- Teste específico Financeiro Fase 1A: **16/16 PASS**.
+- Teste específico Financeiro Fase 1A: **28/28 PASS**.
 - Casos de volume: **999, 1000, 1001, 2001 e 2505** — todos retornados.
 - Zero registros: sucesso vazio.
 - Última página menor que o page size: encerramento correto.
@@ -104,7 +138,9 @@ Nenhum erro interno, stack ou detalhe do banco é exibido ao usuário.
 - Erro em página intermediária/override: fail-closed, sem parcial.
 - Sobreposição entre ranges: duplicidade detectada.
 - Contagem esperada diferente da carga: erro de integridade.
-- Suíte final consolidada de paginação, canônico e faturamento: **125/125 PASS**.
+- Concorrência: INSERT no meio, INSERT no final, cancelamento, mudança de
+  `start_time`, mudança de `billing_period_override` e UPDATE financeiro.
+- Suíte final consolidada de paginação, canônico e faturamento: **137/137 PASS**.
 - `invoice-control-loading.test.ts`: **1 falha preexistente**, reproduzida sem
   alterações no baseline limpo `da93ccbf`; fora do escopo.
 - Build completo: **PASS**.
@@ -128,9 +164,10 @@ Nenhum erro interno, stack ou detalhe do banco é exibido ao usuário.
 
 ### RISCOS / PENDÊNCIAS
 
-- A paginação REST não cria snapshot transacional do período; a contagem inicial,
-  ordem estável e detecção de duplicidade reduzem e tornam explícita eventual
-  inconsistência durante uma carga concorrente.
+- A paginação REST não cria snapshot transacional de todos os campos. A garantia
+  deste bloco é da identidade integral do conjunto, validada por keyset, dupla
+  varredura e contagem final; mudanças apenas de valores podem refletir o momento
+  em que cada linha foi lida.
 - O teto de segurança de 50.000 OS por fonte bloqueia o boletim em vez de
   devolver parcial.
 - O P0 de `grandTotal` divergente permanece para bloco próprio.
@@ -149,7 +186,7 @@ Após review independente e homologação funcional da Fase 1A:
 
 ### DECISÃO
 
-# 🟢 FINANCEIRO FASE 1A — PAGINAÇÃO INTEGRAL IMPLEMENTADA / PR DRAFT
+# 🟢 PR #299 CORRIGIDO — CONCORRÊNCIA FAIL-CLOSED / PRONTO PARA NOVO REVIEW
 
 ---
 
