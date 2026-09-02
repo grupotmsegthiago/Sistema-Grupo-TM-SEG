@@ -113,6 +113,7 @@ describe('Retry manual individual — core SSOT', () => {
     let unpaused = false;
     const retryOneFn = async (inv: ManualRetryInvoiceRow) => {
       assert.equal(inv.nf_retry_paused, false);
+      assert.equal(inv.nf_last_error, null);
       unpaused = true;
       return { ok: true, status: 'SCHEDULED', action: 'scheduled' };
     };

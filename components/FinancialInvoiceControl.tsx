@@ -10,6 +10,8 @@ import {
   nfBucketLabel,
   nfBucketDetail,
   nfErrorGuidance,
+  nfStatusTooltip,
+  shouldShowCurrentNfError,
 } from '../lib/invoiceDisplay';
 import {
   clearInvoiceWatch,
@@ -998,6 +1000,7 @@ const FinancialInvoiceControl: React.FC = () => {
                           const shortLabel = nfBucketLabel(bucket);
                           const detail = nfBucketDetail(ns, { stuckByAge: isStuckSync, provider: invProvider, ageHours: ageH, paused, lastError: inv.nf_last_error, issuerCompany: inv.issuer_company });
                           const guidance = (bucket === 'falha') ? nfErrorGuidance(inv.nf_last_error, { issuerCompany: inv.issuer_company }) : null;
+                          const nfTooltip = nfStatusTooltip({ bucket, lastError: inv.nf_last_error, detail, guidance });
                           const nfColor = bucket === 'emitida' ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
                             : bucket === 'aguardando' ? 'text-blue-700 bg-blue-50 border-blue-200'
                             : bucket === 'falha' ? 'text-white bg-red-600 border-red-700 animate-pulse'
@@ -1009,7 +1012,7 @@ const FinancialInvoiceControl: React.FC = () => {
                             : Clock;
                           return (
                             <div className="flex flex-col items-center gap-0.5" data-testid={`nf-status-${inv.id}`}>
-                              <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full border ${nfColor}`} title={[inv.nf_last_error, guidance?.howToFix].filter(Boolean).join('\n\n') || detail || ''}>
+                              <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full border ${nfColor}`} title={nfTooltip}>
                                 {bucket === 'aguardando' ? <Loader2 size={9} className="animate-spin" /> : <NfIcon size={9} />} {shortLabel}
                               </span>
                               {detail && bucket !== 'emitida' && (
@@ -1145,6 +1148,12 @@ const FinancialInvoiceControl: React.FC = () => {
                   issuerCompany: inv.issuer_company,
                 });
                 const nfGuidance = nfBucket === 'falha' ? nfErrorGuidance(inv.nf_last_error, { issuerCompany: inv.issuer_company }) : null;
+                const nfTooltip = nfStatusTooltip({
+                  bucket: nfBucket,
+                  lastError: inv.nf_last_error,
+                  detail: nfDetail,
+                  guidance: nfGuidance,
+                });
                 return (
                   <>
                     <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1158,7 +1167,7 @@ const FinancialInvoiceControl: React.FC = () => {
                               : nfBucket === 'falha' ? 'text-red-700 bg-red-50 border-red-200'
                               : nfBucket === 'aguardando' ? 'text-blue-700 bg-blue-50 border-blue-200'
                               : 'text-gray-600 bg-gray-50 border-gray-200'
-                          }`} title={[inv.nf_last_error, nfGuidance?.howToFix].filter(Boolean).join('\n\n') || nfDetail || ''}>
+                          }`} title={nfTooltip}>
                             NF: {nfShort}{nfDetail && nfBucket !== 'emitida' ? ` — ${nfDetail}` : ''}
                           </span>
                         )}
@@ -1166,7 +1175,7 @@ const FinancialInvoiceControl: React.FC = () => {
                       <span className="text-2xl font-black text-gray-900">{fmtBRL(inv.amount)}</span>
                     </div>
 
-                    {inv.nf_last_error && nfBucket === 'falha' && (
+                    {shouldShowCurrentNfError(nfBucket, inv.nf_last_error) && (
                       <div className="border border-red-300 bg-red-50 rounded-xl p-4 space-y-2" data-testid="nf-error-guidance">
                         <p className="text-[9px] font-black text-red-700 uppercase tracking-widest flex items-center gap-1.5">
                           <AlertCircle size={10} /> Erro da Prefeitura / Asaas

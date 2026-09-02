@@ -162,3 +162,40 @@ export function nfBucketDetail(
   if (ns === 'WAITING_CUSTOMER_ACCEPTANCE') return 'Aguardando aceite';
   return ns || null;
 }
+
+/**
+ * Tooltip do badge de status NF — distingue erro ATUAL (falha) de erro histórico
+ * (tentativa anterior) quando a NF está em fila/processamento.
+ */
+export function nfStatusTooltip(opts: {
+  bucket: NfBucket;
+  lastError?: string | null;
+  detail?: string | null;
+  guidance?: NfErrorGuidance | null;
+}): string {
+  const err = String(opts.lastError || '').trim();
+  const detail = String(opts.detail || '').trim();
+
+  if (opts.bucket === 'falha') {
+    return [err, opts.guidance?.howToFix].filter(Boolean).join('\n\n') || detail || 'Falha na emissão da NF.';
+  }
+  if (opts.bucket === 'emitida') {
+    return detail || 'NF autorizada.';
+  }
+  if (opts.bucket === 'cancelada') {
+    return detail || 'NF cancelada.';
+  }
+
+  const waiting =
+    detail ||
+    'NF enviada. Aguardando autorização da Prefeitura.';
+  if (err) {
+    return `${waiting}\n\nErro da tentativa anterior:\n${err}`;
+  }
+  return waiting;
+}
+
+/** Exibe bloco de erro como rejeição ATUAL (somente falha confirmada). */
+export function shouldShowCurrentNfError(bucket: NfBucket, lastError?: string | null): boolean {
+  return bucket === 'falha' && !!String(lastError || '').trim();
+}
