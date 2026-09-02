@@ -551,6 +551,10 @@
       "destination": "/api/nf-control?op=retry-now"
     },
     {
+      "source": "/api/nf/retry/:invoiceId",
+      "destination": "/api/nf-control?op=retry-invoice&invoiceId=:invoiceId"
+    },
+    {
       "source": "/api/nf/sync-status",
       "destination": "/api/nf-control?op=sync-nf"
     },

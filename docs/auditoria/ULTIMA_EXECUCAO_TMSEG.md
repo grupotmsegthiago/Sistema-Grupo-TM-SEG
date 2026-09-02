@@ -1,7 +1,92 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff local — **INCIDENTE NF / ASAAS — HOTFIX DE DISCRIMINAÇÃO PUBLICADO**
-> **PR #301 mergeado; produção em `bc8916bb`.**
+> Handoff local — **INCIDENTE NF — RETRY MANUAL INDIVIDUAL (DRAFT PR)**
+> **Base: `9e40689c` (pós PR #301). Branch: `fix/nf-retry-individual`. NÃO publicado.**
+
+---
+
+## INCIDENTE NF — RETRY MANUAL INDIVIDUAL
+
+**Data:** 2026-09-02 (UTC-3)
+**Base:** `9e40689c3e2add140b130b2e43fcc4093f7bbd15` (`origin/main` pós handoff PR #301)
+**Branch:** `fix/nf-retry-individual`
+**PR:** Draft (aberto ao final desta execução)
+**Status:** implementação + testes locais OK; **aguardando review humano — NÃO mergear/publicar**
+**Produção/SQL/RLS/schema/dados:** nenhuma alteração; **zero NF real reemitida**
+
+### CAUSA
+
+Operadores confundiam o botão azul (`RefreshCw` / sync) com reemissão de NF. O retry
+manual individual (`POST /api/nf/retry/:invoiceId`) dependia do catch-all Express na
+Vercel, enquanto o bulk já usava handler leve. O modal **Detalhes** não tinha ação de
+reemissão Asaas. Havia `return` silencioso quando `asaas_payment_id` estava ausente.
+
+### ANTES
+
+| Ação | Comportamento |
+|------|---------------|
+| Botão azul | Sync — tooltip genérico; confundido com reemissão |
+| Botão âmbar | Reemitir — só ícone na linha; ausente no modal Detalhes |
+| Sem `asaas_payment_id` | Clique sem feedback |
+| Retry individual Vercel | Catch-all Express |
+| `nf_retry_paused=true` | Backend despausava; UI não explicava fluxo manual |
+
+### DEPOIS
+
+| Ação | Comportamento |
+|------|---------------|
+| Botão azul | Tooltip **"Sincronizar status — não reemite a NF"** + label "Sync" |
+| Reemitir NF (Asaas) | Texto claro na linha **e** no modal Detalhes |
+| Sem `asaas_payment_id` | Alert explícito via `missingAsaasPaymentFeedback` |
+| Retry individual Vercel | Rewrite → `api/nf-control?op=retry-invoice` (handler leve) |
+| `nf_retry_paused=true` | Retry manual autenticado despausa → `retryOne` (SSOT compartilhada) |
+
+### ARQUIVOS ALTERADOS
+
+| Arquivo | Mudança |
+|---------|---------|
+| `lib/nfRetryInvoiceApiCore.ts` | **NOVO** — SSOT `executeManualInvoiceRetry`, despausa, validação |
+| `lib/nfRetryInvoiceFeedback.ts` | **NOVO** — confirmação, feedback, elegibilidade UI |
+| `api/nf-control.ts` | Handler `op=retry-invoice` (bulk `retry-now` intacto) |
+| `server/routes.ts` | Express delega para mesma SSOT |
+| `vercel.json` | Rewrite `/api/nf/retry/:invoiceId` → nf-control |
+| `components/FinancialInvoiceControl.tsx` | UX sync/reemitir, modal Detalhes, anti-duplo-clique |
+| `scripts/nf-retry-individual.test.ts` | **NOVO** — T01–T16 (mocks, fixture LOGGO) |
+
+**Preservados intocados:** `lib/nfDiscrimination.ts`, hotfix PR #301, `/payments`,
+`07930`, bulk retry, emissão automática, PR #300, SQL/RLS/schema.
+
+### TESTES (2026-09-02)
+
+```text
+npx tsx --test scripts/nf-retry-individual.test.ts \
+  scripts/nf-discrimination-normalization.test.ts \
+  scripts/nf-retry-guards.test.ts
+→ 32/32 pass (T01–T16 + regressão PR #301 + nfRetryGuards)
+npm run build → OK
+git diff --check → OK
+```
+
+Fixture principal (mock, sem POST Asaas): `TMSEG-20260902-103359-6OJ3` (LOGGO).
+
+### CONFIRMAÇÕES DE ESCOPO NEGATIVO
+
+- Nenhuma NF real reemitida neste turno
+- Nenhum `POST /payments` criado
+- Nenhuma cobrança/boleto nova
+- PR #300 intocada
+- Hotfix PR #301 preservado integralmente
+
+### ROLLBACK
+
+Reverter branch/PR; sem migration nem alteração de dados. Produção permanece em
+`bc8916bb` até merge explícito desta correção.
+
+### PRÓXIMO PASSO HUMANO
+
+1. Revisar PR Draft
+2. Validar UI no Controle de Faturas (sessão financeiro/diretoria)
+3. Reemitir **uma** NF pausada (ex. LOGGO) após merge/publicação controlada
 
 ---
 

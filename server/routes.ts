@@ -5762,44 +5762,12 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   app.post("/api/nf/retry/:invoiceId", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const { invoiceId } = req.params;
+      const { executeManualInvoiceRetry } = await import('../lib/nfRetryInvoiceApiCore.js');
       const { listPendingNfs, retryOne } = await import('./nfRetryWorker');
-      const all = await listPendingNfs();
-      type InvoiceRow = typeof all[number];
-      let inv: InvoiceRow | undefined = all.find(i => i.id === invoiceId);
-      if (!inv) {
-        const sb = createSupabaseAdminClient();
-        if (sb) {
-          const { data } = await sb.from('financial_invoices')
-            .select('id, client, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_provider, plugnotas_invoice_id, plugnotas_protocol, number, amount, due_date, description, notes')
-            .eq('id', invoiceId).maybeSingle();
-          if (data) inv = data as unknown as InvoiceRow;
-        }
-      }
-      if (!inv) return res.status(404).json({ error: 'Fatura não encontrada' });
-      // Aceita retry para Asaas (precisa de asaas_payment_id) OU PlugNotas
-      // (precisa de plugnotas_invoice_id). Sem nenhum dos dois IDs, a fatura
-      // não tem como ser reemitida.
-      // Inferência: nf_provider pode estar nulo em faturas antigas; se houver
-      // plugnotas_invoice_id, tratamos como PLUGNOTAS para a validação prévia
-      // (mesma regra usada por retryOne no worker).
-      const rawProvider = String(inv.nf_provider || '').toUpperCase();
-      const inferredProvider = rawProvider === 'PLUGNOTAS' || (!rawProvider && inv.plugnotas_invoice_id) ? 'PLUGNOTAS' : 'ASAAS';
-      if (inferredProvider === 'PLUGNOTAS') {
-        if (!inv.plugnotas_invoice_id) return res.status(400).json({ error: 'Fatura PlugNotas sem ID de integração — não pode reemitir.' });
-      } else {
-        if (!inv.asaas_payment_id) return res.status(400).json({ error: 'Fatura sem ID Asaas — não pode reemitir.' });
-      }
-      if (inv.nf_retry_paused) {
-        const sb = createSupabaseAdminClient();
-        if (sb) {
-          await sb.from('financial_invoices').update({ nf_retry_paused: false }).eq('id', inv.id);
-          inv.nf_retry_paused = false;
-        }
-      }
-      const result = await retryOne(inv);
-      res.json({ success: result.ok, ...result });
+      const outcome = await executeManualInvoiceRetry(invoiceId, retryOne, { listPendingNfs });
+      res.status(outcome.httpStatus).json(outcome.body);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
