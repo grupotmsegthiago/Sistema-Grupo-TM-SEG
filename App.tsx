@@ -66,6 +66,8 @@ import DhlNonCompliantTables from './components/DhlNonCompliantTables';
 import EquipmentManager from './components/EquipmentManager';
 import ManualOverrideAlertSettings from './components/ManualOverrideAlertSettings';
 import SystemSettingsPage from './components/SystemSettingsPage';
+import GestorDesenvolvimento from './components/gestaoTi/GestorDesenvolvimento';
+import { canAccessGestorDesenvolvimento } from './lib/gestaoTi';
 
 // INTELIGÊNCIA ARTIFICIAL
 import AIChatbot from './components/AIChatbot';
@@ -488,6 +490,12 @@ const App: React.FC = () => {
       case 'profiles': return <ProfileList onAdd={() => navigateTo('profile-form')} onEdit={(id) => handleEdit('profile-form', id)} />;
       case 'profile-form': return <ProfileForm id={selectedId} onBack={() => navigateTo('profiles')} />;
       case 'server-stats': return <ServerStats />;
+      case 'gestor-desenvolvimento': {
+        const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+        return canAccessGestorDesenvolvimento({ role: u.role, permissions: u.permissions })
+          ? <GestorDesenvolvimento />
+          : <Dashboard />;
+      }
       case 'equipment-manager': return <EquipmentManager />;
       case 'system-logs': return <SystemLogs />;
       case 'manual-override-settings': return <ManualOverrideAlertSettings />;

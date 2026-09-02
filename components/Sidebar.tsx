@@ -260,7 +260,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
     const settingsScreens = new Set([
       'settings-group', 'db-maintenance', 'cost-optimization', 'internal-users',
       'equipment-manager', 'profiles', 'system-settings', 'system-logs', 'server-stats',
-      'manual-override-settings',
+      'manual-override-settings', 'gestor-desenvolvimento',
     ]);
     if (settingsScreens.has(itemId) && (role === 'diretoria' || role === 'administrador')) {
       return true;
