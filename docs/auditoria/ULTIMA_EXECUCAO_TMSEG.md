@@ -1,18 +1,74 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff local — **INCIDENTE NF — RETRY MANUAL INDIVIDUAL (DRAFT PR)**
-> **Base: `9e40689c` (pós PR #301). Branch: `fix/nf-retry-individual`. NÃO publicado.**
+> Handoff local — **INCIDENTE NF — RETRY MANUAL INDIVIDUAL PUBLICADO (PR #302)**
+> **Produção: `46774d89`. Smoke fiscal LOGGO pendente de operador autenticado.**
 
 ---
 
-## INCIDENTE NF — RETRY MANUAL INDIVIDUAL
+## INCIDENTE NF — RETRY MANUAL INDIVIDUAL — PUBLICAÇÃO PR #302
 
 **Data:** 2026-09-02 (UTC-3)
-**Base:** `9e40689c3e2add140b130b2e43fcc4093f7bbd15` (`origin/main` pós handoff PR #301)
-**Branch:** `fix/nf-retry-individual`
-**PR:** Draft (aberto ao final desta execução)
-**Status:** implementação + testes locais OK; **aguardando review humano — NÃO mergear/publicar**
-**Produção/SQL/RLS/schema/dados:** nenhuma alteração; **zero NF real reemitida**
+**PR:** **#302 — MERGED**
+**Merge commit:** `46774d89224573c71880fd29b38a275e167477b5`
+**HEAD feature:** `25e529d1cd3dbd805c866655e6ee4739eaec4c0a`
+**Base pré-merge:** `9e40689c3e2add140b130b2e43fcc4093f7bbd15`
+**Publicação:** `origin/main = origin/dev = produção = 46774d89`
+**Status:** código publicado; **smoke fiscal real LOGGO PENDENTE** (sem sessão autenticada no agente)
+
+### PRÉ-PUBLICAÇÃO (2026-09-02)
+
+- PR #302 MERGEABLE / CLEAN · HEAD `25e529d1` · 8 arquivos
+- Testes **32/32 PASS** · `npm run build` OK · `git diff --check` OK
+- Vercel Preview SUCCESS
+
+### MERGE + SINCRONIZAÇÃO
+
+1. PR #302 marcado ready e mergeado (merge commit `46774d89`).
+2. `dev` fast-forward para `main`; `publicar.ps1` executado.
+3. `origin/dev = origin/main = 46774d89`.
+
+### HOMOLOGAÇÃO PRODUÇÃO
+
+| Check | Resultado |
+|-------|-----------|
+| `/api/version` | `buildId: 46774d89` |
+| `/api/health` | `{"status":"ok"}` |
+| Frontend | HTTP 200 |
+| Bundle | `executeManualInvoiceRetry` presente em `dist/vercelApp.cjs` |
+| Auth sem token | `POST /api/nf/retry/:id` → **401** |
+| `/payments` | Intacto (sem alteração no diff) |
+| `07930` | Intacto |
+| PR #300 | Intocado (OPEN) |
+| PR #301 | Preservado |
+
+### TESTE REAL CONTROLADO — LOGGO (PENDENTE)
+
+**Fatura:** `TMSEG-20260902-103359-6OJ3` · LOGGO SOLUCOES LOGISTICA
+**ID:** `94d2775d-a0ab-4dfe-a9c4-230eb3ac8346`
+**Payment existente:** `pay_0oct1zpus7q1y2kd` · valor **R$ 9.912,65**
+**Estado pré-teste (Supabase):** `nf_status=ERROR`, `nf_retry_paused=true`, `asaas_invoice_id=inv_000022511195`
+
+**Não executado pelo agente:** browser em produção exige login (sem credenciais na sessão).
+**Próximo passo humano:** Controle de Faturas → **Reemitir NF (Asaas)** somente nesta fatura
+(não usar "Reemitir TODAS"). Confirmar feedback, ausência de cobrança duplicada e status Asaas/Prefeitura.
+
+### RESULTADO FINAL PUBLICAÇÃO
+
+| Item | Valor |
+|------|-------|
+| PR #302 mergeado | **SIM** |
+| SHA merge/produção | `46774d89` |
+| dev=main=produção | **SIM** |
+| Vercel Ready | **SIM** (`buildId` confere) |
+| `/health` | **SIM** |
+| LOGGO reemitida | **NÃO** (pendente operador) |
+| Cobrança duplicada | **NÃO** (nenhum retry disparado) |
+| `/payments` chamado | **NÃO** |
+| Git limpo | **SIM** |
+
+---
+
+## INCIDENTE NF — RETRY MANUAL INDIVIDUAL (implementação PR #302)
 
 ### CAUSA
 
