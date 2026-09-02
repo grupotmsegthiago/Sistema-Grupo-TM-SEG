@@ -35,10 +35,10 @@ function makeRows(total: number): Row[] {
 
 function createSupabaseMock(
   sourceRows: Row[],
-  fail?: { column: 'start_time' | 'billing_period_override'; afterId: string | null },
+  fail?: { column: 'global'; afterId: string | null },
   mutateAfterQuery?: (
     context: {
-      periodColumn: 'start_time' | 'billing_period_override';
+      periodColumn: 'global';
       afterId: string | null;
       selectColumns: string;
       head: boolean;
@@ -80,6 +80,12 @@ function createSupabaseMock(
           filters.push({ op: 'neq', column, value });
           return chain;
         },
+        or(value: string) {
+          const start = value.match(/start_time\.gte\.([^,)]+)/)?.[1] || '';
+          const end = value.match(/start_time\.lte\.([^,)]+)/)?.[1] || '';
+          filters.push({ op: 'period-union', column: 'period_union', value: { start, end } });
+          return chain;
+        },
         not(column: string) {
           filters.push({ op: 'not-null', column, value: null });
           return chain;
@@ -109,9 +115,7 @@ function createSupabaseMock(
           return chain;
         },
         then(resolve: (result: { data: Row[] | null; error: Error | null; count?: number | null }) => void) {
-          const periodColumn = filters.some((item) => item.column === 'billing_period_override')
-            ? 'billing_period_override'
-            : 'start_time';
+          const periodColumn = 'global' as const;
           const afterId = (filters.find((item) => item.op === 'gt' && item.column === 'id')?.value as string | undefined) ?? null;
           calls.push({
             table,
@@ -141,6 +145,19 @@ function createSupabaseMock(
               rows = rows.filter((row) => String((row as any)[filter.column]) <= String(filter.value));
             } else if (filter.op === 'gt') {
               rows = rows.filter((row) => String((row as any)[filter.column]) > String(filter.value));
+            } else if (filter.op === 'period-union') {
+              const { start, end } = filter.value as { start: string; end: string };
+              rows = rows.filter((row) => {
+                const startTimeMatches =
+                  row.start_time !== null &&
+                  row.start_time >= start &&
+                  row.start_time <= end;
+                const overrideMatches =
+                  row.billing_period_override !== null &&
+                  row.billing_period_override >= start &&
+                  row.billing_period_override <= end;
+                return startTimeMatches || overrideMatches;
+              });
             }
           }
           rows.sort((a, b) => {
@@ -315,24 +332,25 @@ describe('Financeiro Fase 1A — consumidor do boletim', () => {
     assert.ok(mock.calls.every((call) => call.table === 'missions'));
     assert.ok(mock.calls.every((call) => call.filterColumns.includes('status')));
     assert.ok(mock.calls.every((call) => call.filterColumns.includes('client')));
+    assert.ok(mock.calls.every((call) => call.filterColumns.includes('period_union')));
     assert.ok(mock.calls.filter((call) => !call.head).every((call) => call.orderColumns[call.orderColumns.length - 1] === 'id'));
     assert.ok(mock.calls.some((call) => call.afterId === 'GTM-001000'));
-    assert.equal(result.pagesLoaded, 6);
+    assert.equal(result.pagesLoaded, 4);
   });
 
-  it('erro na paginação de override → não devolve universo base parcial', async () => {
+  it('erro na paginação global → não devolve universo parcial', async () => {
     const overrides = makeRows(1500).map((row) => ({
       ...row,
       start_time: '2026-07-15T12:00:00.000Z',
       billing_period_override: '2026-08-15T12:00:00.000Z',
     }));
     const mock = createSupabaseMock(overrides, {
-      column: 'billing_period_override',
+      column: 'global',
       afterId: 'GTM-001000',
     });
     await assert.rejects(
       () => fetchBillingMissionUniverse<Row>(mock as any, params),
-      /falha billing_period_override GTM-001000/,
+      /falha global GTM-001000/,
     );
   });
 
@@ -351,7 +369,7 @@ describe('Financeiro Fase 1A — consumidor do boletim', () => {
     const rows = makeRows(2000);
     let mutated = false;
     const mock = createSupabaseMock(rows, undefined, (context, source) => {
-      if (!mutated && context.periodColumn === 'start_time' && context.selectColumns.startsWith('*') && context.afterId === null) {
+      if (!mutated && context.periodColumn === 'global' && context.selectColumns.startsWith('*') && context.afterId === null) {
         mutated = true;
         source.push({ ...makeRows(1)[0], id: 'GTM-001500A' });
       }
@@ -369,7 +387,7 @@ describe('Financeiro Fase 1A — consumidor do boletim', () => {
     const rows = makeRows(2000);
     let mutated = false;
     const mock = createSupabaseMock(rows, undefined, (context, source) => {
-      if (!mutated && context.periodColumn === 'start_time' && context.selectColumns.startsWith('*') && context.afterId === null) {
+      if (!mutated && context.periodColumn === 'global' && context.selectColumns.startsWith('*') && context.afterId === null) {
         mutated = true;
         source.push({ ...makeRows(1)[0], id: 'GTM-999999' });
       }
@@ -387,7 +405,7 @@ describe('Financeiro Fase 1A — consumidor do boletim', () => {
     const rows = makeRows(2000);
     let mutated = false;
     const mock = createSupabaseMock(rows, undefined, (context, source) => {
-      if (!mutated && context.periodColumn === 'start_time' && context.selectColumns.startsWith('*') && context.afterId === null) {
+      if (!mutated && context.periodColumn === 'global' && context.selectColumns.startsWith('*') && context.afterId === null) {
         mutated = true;
         const index = source.findIndex((row) => row.id === 'GTM-001500');
         source[index] = { ...source[index], status: 'Recusada' };
@@ -406,7 +424,7 @@ describe('Financeiro Fase 1A — consumidor do boletim', () => {
     const rows = makeRows(2000);
     let mutated = false;
     const mock = createSupabaseMock(rows, undefined, (context, source) => {
-      if (!mutated && context.periodColumn === 'start_time' && context.selectColumns.startsWith('*') && context.afterId === null) {
+      if (!mutated && context.periodColumn === 'global' && context.selectColumns.startsWith('*') && context.afterId === null) {
         mutated = true;
         const index = source.findIndex((row) => row.id === 'GTM-001500');
         source[index] = { ...source[index], start_time: '2026-07-15T12:00:00.000Z' };
@@ -429,7 +447,7 @@ describe('Financeiro Fase 1A — consumidor do boletim', () => {
     }));
     let mutated = false;
     const mock = createSupabaseMock(rows, undefined, (context, source) => {
-      if (!mutated && context.periodColumn === 'billing_period_override' && context.selectColumns.startsWith('*') && context.afterId === null) {
+      if (!mutated && context.periodColumn === 'global' && context.selectColumns.startsWith('*') && context.afterId === null) {
         mutated = true;
         const index = source.findIndex((row) => row.id === 'GTM-001500');
         source[index] = { ...source[index], billing_period_override: '2026-07-15T12:00:00.000Z' };
@@ -449,7 +467,7 @@ describe('Financeiro Fase 1A — consumidor do boletim', () => {
     rows[499] = { ...rows[499], financial_value: 10 };
     let mutated = false;
     const mock = createSupabaseMock(rows, undefined, (context, source) => {
-      if (!mutated && context.periodColumn === 'start_time' && context.selectColumns.startsWith('*') && context.afterId === null) {
+      if (!mutated && context.periodColumn === 'global' && context.selectColumns.startsWith('*') && context.afterId === null) {
         mutated = true;
         const index = source.findIndex((row) => row.id === 'GTM-000500');
         source[index] = { ...source[index], financial_value: 99 };
@@ -460,6 +478,124 @@ describe('Financeiro Fase 1A — consumidor do boletim', () => {
     assert.equal(result.complete, true);
     assert.equal(result.rows.length, 1001);
     assert.equal(result.rows.find((row) => row.id === 'GTM-000500')?.financial_value, 10);
+  });
+
+  it('união A — override removido após a carga global falha fechado', async () => {
+    const rows: Row[] = [{
+      ...makeRows(1)[0],
+      id: 'GTM-OVERRIDE',
+      start_time: '2026-07-15T12:00:00.000Z',
+      billing_period_override: '2026-08-15T12:00:00.000Z',
+    }];
+    let mutated = false;
+    const mock = createSupabaseMock(rows, undefined, (context, source) => {
+      if (!mutated && context.selectColumns.startsWith('*') && context.afterId === null) {
+        mutated = true;
+        source[0] = { ...source[0], billing_period_override: '2026-07-15T12:00:00.000Z' };
+      }
+    });
+
+    await assert.rejects(
+      () => fetchBillingMissionUniverse<Row>(mock as any, params),
+      (error: unknown) => error instanceof BillingDatasetIncompleteError,
+    );
+  });
+
+  it('união B — override adicionado após a carga global falha fechado', async () => {
+    const rows: Row[] = [{
+      ...makeRows(1)[0],
+      id: 'GTM-OVERRIDE',
+      start_time: '2026-07-15T12:00:00.000Z',
+      billing_period_override: null,
+    }];
+    let mutated = false;
+    const mock = createSupabaseMock(rows, undefined, (context, source) => {
+      if (!mutated && context.selectColumns.startsWith('*') && context.afterId === null) {
+        mutated = true;
+        source[0] = { ...source[0], billing_period_override: '2026-08-15T12:00:00.000Z' };
+      }
+    });
+
+    await assert.rejects(
+      () => fetchBillingMissionUniverse<Row>(mock as any, params),
+      (error: unknown) => error instanceof BillingDatasetIncompleteError,
+    );
+  });
+
+  it('união C — migração start_time para override preserva a identidade', async () => {
+    const rows = makeRows(1);
+    let mutated = false;
+    const mock = createSupabaseMock(rows, undefined, (context, source) => {
+      if (!mutated && context.selectColumns.startsWith('*') && context.afterId === null) {
+        mutated = true;
+        source[0] = {
+          ...source[0],
+          start_time: '2026-07-15T12:00:00.000Z',
+          billing_period_override: '2026-08-15T12:00:00.000Z',
+        };
+      }
+    });
+
+    const result = await fetchBillingMissionUniverse<Row>(mock as any, params);
+    assert.equal(result.complete, true);
+    assert.deepEqual(result.rows.map((row) => row.id), ['GTM-000001']);
+  });
+
+  it('união D — migração override para start_time preserva a identidade', async () => {
+    const rows: Row[] = [{
+      ...makeRows(1)[0],
+      start_time: '2026-07-15T12:00:00.000Z',
+      billing_period_override: '2026-08-15T12:00:00.000Z',
+    }];
+    let mutated = false;
+    const mock = createSupabaseMock(rows, undefined, (context, source) => {
+      if (!mutated && context.selectColumns.startsWith('*') && context.afterId === null) {
+        mutated = true;
+        source[0] = {
+          ...source[0],
+          start_time: '2026-08-15T12:00:00.000Z',
+          billing_period_override: null,
+        };
+      }
+    });
+
+    const result = await fetchBillingMissionUniverse<Row>(mock as any, params);
+    assert.equal(result.complete, true);
+    assert.deepEqual(result.rows.map((row) => row.id), ['GTM-000001']);
+  });
+
+  it('união E — OS pertencente às duas regras aparece uma única vez', async () => {
+    const rows: Row[] = [{
+      ...makeRows(1)[0],
+      billing_period_override: '2026-08-15T12:00:00.000Z',
+    }];
+    const result = await fetchBillingMissionUniverse<Row>(
+      createSupabaseMock(rows) as any,
+      params,
+    );
+
+    assert.equal(result.complete, true);
+    assert.deepEqual(result.rows.map((row) => row.id), ['GTM-000001']);
+  });
+
+  it('união F — universo sem mudança permanece completo', async () => {
+    const rows = [
+      ...makeRows(3),
+      {
+        ...makeRows(1)[0],
+        id: 'GTM-OVERRIDE',
+        start_time: '2026-07-15T12:00:00.000Z',
+        billing_period_override: '2026-08-15T12:00:00.000Z',
+      },
+    ];
+    const result = await fetchBillingMissionUniverse<Row>(
+      createSupabaseMock(rows) as any,
+      params,
+    );
+
+    assert.equal(result.complete, true);
+    assert.equal(result.rows.length, 4);
+    assert.equal(new Set(result.rows.map((row) => row.id)).size, 4);
   });
 
   it('ClientBillingReport usa o universo paginado e bloqueia consolidação incompleta', () => {
