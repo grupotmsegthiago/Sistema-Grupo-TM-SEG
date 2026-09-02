@@ -90,8 +90,12 @@ export async function unpauseManualRetryInvoice(inv: ManualRetryInvoiceRow): Pro
   if (!inv.nf_retry_paused) return inv;
   const sb = createSupabaseAdminClient();
   if (!sb) return inv;
-  await sb.from('financial_invoices').update({ nf_retry_paused: false }).eq('id', inv.id);
-  return { ...inv, nf_retry_paused: false };
+  // Limpa erro corrente ao iniciar nova tentativa manual; retryOne/sync gravam erro novo se houver.
+  await sb
+    .from('financial_invoices')
+    .update({ nf_retry_paused: false, nf_last_error: null })
+    .eq('id', inv.id);
+  return { ...inv, nf_retry_paused: false, nf_last_error: null };
 }
 
 export async function executeManualInvoiceRetry(

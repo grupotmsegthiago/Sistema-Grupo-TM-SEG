@@ -1,7 +1,69 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-> Handoff local — **INCIDENTE NF — RETRY MANUAL INDIVIDUAL PUBLICADO (PR #302)**
-> **Produção: `46774d89`. Smoke fiscal LOGGO pendente de operador autenticado.**
+> Handoff local — **INCIDENTE NF — TOOLTIP ERRO STALE EM PROCESSING (DRAFT PR)**
+> **Produção atual: `f1604692` / código retry `46774d89`. Branch: `fix/nf-processing-stale-error-tooltip`.**
+
+---
+
+## INCIDENTE NF — TOOLTIP ERRO STALE EM "PROCESSANDO"
+
+**Data:** 2026-09-02 (UTC-3)
+**Branch:** `fix/nf-processing-stale-error-tooltip`
+**PR:** Draft (ao final desta execução)
+**Status:** correção implementada + testes locais OK; **NÃO mergeado/publicado**
+**Operação fiscal real:** **NENHUMA**
+
+### CAUSA RAIZ
+
+O badge NF em `FinancialInvoiceControl.tsx` montava o `title` (tooltip) assim:
+
+```tsx
+title={[inv.nf_last_error, guidance?.howToFix].filter(Boolean).join('\n\n') || detail}
+```
+
+Ou seja, **`nf_last_error` tinha prioridade absoluta**, mesmo quando `nfStatusBucket` classificava a NF como **`aguardando`** (rótulo "Processando" / detalhe "Aguardando autorização"). O campo `nf_last_error` permanecia preenchido com a rejeição da tentativa anterior enquanto uma nova tentativa estava ativa (`PROCESSING`, `SCHEDULED`, `ERROR` com `nf_retry_paused=false`, etc.).
+
+**Campo origem do tooltip:** `financial_invoices.nf_last_error`
+
+**Quando gravado:** retry worker / sync Asaas / retry manual em falha (`retryOne`, `asaasNfStatusSync`, etc.)
+
+**Quando limpo:** em sucesso (`scheduleInvoice` → `nf_last_error: null`), sync quando NF ativa no Asaas, SYNCHRONIZED legítimo — mas **janela possível** entre retry manual e persistência completa.
+
+**Erro exibido na LOGGO (Supabase 2026-09-02):** **HISTÓRICO/STALE** durante processamento — status real após retry humano pode ser ERROR pausado novamente (`nf_retry_count=3`, Discriminacao).
+
+### CORREÇÃO
+
+1. **`lib/invoiceDisplay.ts`** — `nfStatusTooltip()` distingue erro **atual** (bucket `falha`) vs **tentativa anterior** (bucket `aguardando`).
+2. **`components/FinancialInvoiceControl.tsx`** — tooltip usa `nfStatusTooltip`; bloco vermelho só com `shouldShowCurrentNfError`.
+3. **`lib/nfRetryInvoiceApiCore.ts`** — ao despausar retry manual, limpa `nf_last_error` corrente (retryOne/sync gravam erro novo se houver).
+
+### ARQUIVOS
+
+- `lib/invoiceDisplay.ts`
+- `components/FinancialInvoiceControl.tsx`
+- `lib/nfRetryInvoiceApiCore.ts`
+- `scripts/nf-processing-stale-error-tooltip.test.ts` (novo)
+- `scripts/nf-retry-individual.test.ts` (T06 despausa + limpa erro)
+
+### TESTES
+
+```text
+npx tsx --test scripts/nf-processing-stale-error-tooltip.test.ts \
+  scripts/nf-retry-individual.test.ts \
+  scripts/nf-discrimination-normalization.test.ts \
+  scripts/nf-retry-guards.test.ts
+→ 42/42 PASS
+npm run build → OK
+```
+
+### RISCOS
+
+- Baixo: somente exibição + limpeza de erro **corrente** ao iniciar retry manual.
+- Erro real continua visível quando bucket=`falha` (pausado / STUCK / ERROR definitivo).
+
+### ROLLBACK
+
+Reverter PR; sem migration/dados.
 
 ---
 
