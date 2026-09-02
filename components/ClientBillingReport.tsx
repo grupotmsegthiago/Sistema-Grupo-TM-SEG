@@ -28,6 +28,10 @@ import {
     CLIENT_RECEIVABLE_CATEGORY,
     resolveClientReceivableDescription,
 } from '../lib/billing/receivableDescription';
+import {
+    BILLING_DATASET_INCOMPLETE_MESSAGE,
+    fetchBillingMissionUniverse,
+} from '../lib/billing/fetchBillingMissionUniverse';
 import { stashInvoiceWatch } from '../lib/invoiceCleanSlate';
 import { kickNfScheduleForInvoices } from '../lib/kickNfSchedule';
 import {
@@ -70,6 +74,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [providerTables, setProviderTables] = useState<ProviderCostTable[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [reportGenerated, setReportGenerated] = useState(false);
+    const [billingDataset, setBillingDataset] = useState<{
+        status: 'idle' | 'loading' | 'complete' | 'incomplete';
+        recordsLoaded: number;
+        pagesLoaded: number;
+    }>({ status: 'idle', recordsLoaded: 0, pagesLoaded: 0 });
     const [allPeriodMissions, setAllPeriodMissions] = useState<any[]>([]);
     const [allClientTables, setAllClientTables] = useState<ClientPriceTable[]>([]);
     const [allProviderTables, setAllProviderTables] = useState<ProviderCostTable[]>([]);
@@ -119,6 +128,22 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [sendMedicaoLoading, setSendMedicaoLoading] = useState(false);
     const [isRecalculating, setIsRecalculating] = useState(false);
     const [recalcResult, setRecalcResult] = useState<{ total: number; updated: number; skipped: number; errors: number } | null>(null);
+
+    const billingDatasetComplete = reportGenerated && billingDataset.status === 'complete';
+    const assertBillingDatasetComplete = useCallback(() => {
+        if (billingDatasetComplete) return true;
+        alert(BILLING_DATASET_INCOMPLETE_MESSAGE);
+        return false;
+    }, [billingDatasetComplete]);
+
+    // Qualquer mudança de escopo invalida o universo anterior. Isso impede usar
+    // um boletim completo de outro cliente/período como base para faturamento.
+    useEffect(() => {
+        setReportGenerated(false);
+        setBillingDataset({ status: 'idle', recordsLoaded: 0, pagesLoaded: 0 });
+        setMissions([]);
+        setShowInvoiceModal(false);
+    }, [reportMode, selectedClient, selectedProvider, startDate, endDate]);
 
     useEffect(() => {
         let cancelled = false;
@@ -319,6 +344,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         if (reportMode === 'fornecedor' && !selectedProvider) { alert("Selecione um fornecedor."); return; }
         setIsLoading(true);
         setReportGenerated(false);
+        setShowInvoiceModal(false);
+        setMissions([]);
+        setBillingDataset({ status: 'loading', recordsLoaded: 0, pagesLoaded: 0 });
         try {
             const isProviderMode = reportMode === 'fornecedor';
             const clientObj = clients.find(c => c.id.toString() === selectedClient);
@@ -342,7 +370,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     return arr;
                 })();
             if (canonicalNames.length === 0) {
-                setIsLoading(false);
+                setBillingDataset({ status: 'idle', recordsLoaded: 0, pagesLoaded: 0 });
                 alert(isProviderMode ? 'Fornecedor sem nome cadastrado. Não é possível gerar o boletim.' : 'Cliente sem nome cadastrado. Não é possível gerar o boletim.');
                 return;
             }
@@ -352,42 +380,20 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             // o usuário pode preencher manualmente `billing_period_override`
             // na auditoria — essa OS será incluída pela data override.
             // Já `exclude_from_billing = true` esconde a OS de TODOS os boletins.
-            const { data: missionDataRaw, error } = await supabase
-                .from('missions')
-                .select('*, company_vehicle:vehicles(*)')
-                .in(filterCol, canonicalNames)
-                .neq('status', 'Recusada')
-                .not('start_time', 'is', null)
-                .gte('start_time', rangeStart)
-                .lte('start_time', rangeEnd)
-                .order('start_time', { ascending: true });
-
-            if (error) throw error;
-
-            // Busca extra: OS com billing_period_override caindo no período.
-            // Se a coluna ainda não existir no banco (migração não rodada),
-            // a query falha silenciosamente e o boletim segue normal.
-            let overrideExtras: any[] = [];
-            try {
-                const { data: overrideRaw, error: ovErr } = await supabase
-                    .from('missions')
-                    .select('*, company_vehicle:vehicles(*)')
-                    .in(filterCol, canonicalNames)
-                    .neq('status', 'Recusada')
-                    .not('billing_period_override', 'is', null)
-                    .gte('billing_period_override', rangeStart)
-                    .lte('billing_period_override', rangeEnd);
-                if (!ovErr && overrideRaw) overrideExtras = overrideRaw;
-            } catch {}
-
-            const baseList: any[] = missionDataRaw || [];
-            const seen = new Set(baseList.map(m => m.id));
-            const merged = [...baseList, ...overrideExtras.filter(m => !seen.has(m.id))];
+            const billingUniverse = await fetchBillingMissionUniverse<any>(supabase, {
+                filterColumn: filterCol,
+                canonicalNames,
+                rangeStart,
+                rangeEnd,
+            });
 
             // Aplica exclude_from_billing (se a coluna existir).
-            const missionData: any[] = merged
+            const missionData: any[] = billingUniverse.rows
                 .filter(m => m.exclude_from_billing !== true)
-                .sort((a, b) => new Date(a.start_time || 0).getTime() - new Date(b.start_time || 0).getTime());
+                .sort((a, b) => {
+                    const dateDiff = new Date(a.start_time || 0).getTime() - new Date(b.start_time || 0).getTime();
+                    return dateDiff || String(a.id).localeCompare(String(b.id));
+                });
 
             const clientVehicleIds = [...new Set((missionData || []).map((m: any) => m.client_vehicle).filter((id: any) => id))];
             let clientVehiclesMap: Record<string, any> = {};
@@ -474,11 +480,19 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 setMissions(enrichedMissions);
             }
 
+            setBillingDataset({
+                status: 'complete',
+                recordsLoaded: billingUniverse.recordsLoaded,
+                pagesLoaded: billingUniverse.pagesLoaded,
+            });
             setReportGenerated(true);
             setBoletimFilter('todas');
         } catch (err) {
             console.error(err);
-            alert("Erro ao gerar relatório.");
+            setMissions([]);
+            setReportGenerated(false);
+            setBillingDataset({ status: 'incomplete', recordsLoaded: 0, pagesLoaded: 0 });
+            alert(BILLING_DATASET_INCOMPLETE_MESSAGE);
         } finally {
             setIsLoading(false);
         }
@@ -739,6 +753,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     };
 
     const handlePrint = () => {
+        if (!assertBillingDatasetComplete()) return;
         const printArea = document.getElementById('print-area');
         if (!printArea) return;
         const printWindow = window.open('', '_blank', 'width=1400,height=900');
@@ -1580,6 +1595,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const fmtBRLExcel = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
     const buildMedicaoExcelBlob = useCallback(async (autoDownload = true): Promise<Blob | null> => {
+        if (!billingDatasetComplete) return null;
         if (rowsData.length === 0) return null;
 
         const { exportFormattedExcel } = await import('../exports/excel-export-template');
@@ -1694,17 +1710,19 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             footerRight: reportMode === 'fornecedor' ? 'ASSINATURA / CARIMBO FORNECEDOR' : 'ASSINATURA / CARIMBO CLIENTE',
             autoDownload,
         });
-    }, [rowsData, grandTotal, displayName, reportMode, startDate, endDate, isCeslogBilling, isCevaBilling, isDhlBilling, isIntermodalBilling]);
+    }, [billingDatasetComplete, rowsData, grandTotal, displayName, reportMode, startDate, endDate, isCeslogBilling, isCevaBilling, isDhlBilling, isIntermodalBilling]);
 
     const handleExportExcel = useCallback(async () => {
+        if (!assertBillingDatasetComplete()) return;
         await buildMedicaoExcelBlob(true);
-    }, [buildMedicaoExcelBlob]);
+    }, [assertBillingDatasetComplete, buildMedicaoExcelBlob]);
 
     /**
      * Envia boletim (Excel + PDF) ao e-mail de medição do cliente e cria
      * Contas a Receber com vencimento 30 dias (70 se CEVA).
      */
     const handleSendMedicaoToClient = useCallback(async () => {
+        if (!assertBillingDatasetComplete()) return;
         if (reportMode !== 'cliente') {
             alert('Envio de medição disponível apenas no boletim de Cliente.');
             return;
@@ -1890,10 +1908,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         }
     }, [
         reportMode, selectedClient, rowsData, reportGenerated, clients, displayName,
-        grandTotal, startDate, endDate, buildMedicaoExcelBlob,
+        grandTotal, startDate, endDate, buildMedicaoExcelBlob, assertBillingDatasetComplete,
     ]);
 
     const handleExportDhlFaturamento = useCallback(async () => {
+        if (!assertBillingDatasetComplete()) return;
         if (rowsData.length === 0) return;
         const { exportDhlFaturamento, downloadBlob } = await import('../exports/dhl-faturamento-export');
 
@@ -1985,7 +2004,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         const fileName = `RELATORIO_DHL_FATURAMENTO_${periodShort}.xlsx`;
         const blob = await exportDhlFaturamento({ periodLabel: periodoLabel, rows, fileName });
         downloadBlob(blob, fileName);
-    }, [rowsData, startDate, endDate, displayClientName]);
+    }, [assertBillingDatasetComplete, rowsData, startDate, endDate, displayClientName]);
 
     // =====================================================================
     // PREENCHIMENTO DE PLANILHA-MODELO DHL POR Nº SE
@@ -3335,6 +3354,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
     };
 
     const handleGenerateAsaasCharge = async () => {
+        if (!assertBillingDatasetComplete()) return;
         if (!invoiceForm.amount || !invoiceForm.boleto_due_date) {
             alert('Preencha o Valor e o Vencimento antes de gerar a cobrança.');
             return;
@@ -3667,6 +3687,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
     };
 
     const openInvoiceModal = () => {
+        if (!assertBillingDatasetComplete()) return;
         // Bloqueio: não permite gerar fatura se houver OS sem aprovação no período.
         const pendentes = rowsData.filter(r => !r.isApproved);
         if (pendentes.length > 0) {
@@ -3751,6 +3772,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
     };
 
     const handleSaveInvoice = async () => {
+        if (!assertBillingDatasetComplete()) return;
         const nfNumber = invoiceForm.number || (asaasResult?.payment?.id ? `ASAAS-${asaasResult.payment.id}` : '');
         if (!invoiceForm.client || !invoiceForm.amount) { alert('Preencha Cliente e Valor.'); return; }
         if (!asaasResult?.payment?.id && !asaasResult?.persisted?.invoiceId) {
@@ -3872,6 +3894,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         const addressMissing = missingClientAddressFields(invoiceClient || null);
         const addressReady = addressMissing.length === 0;
         const canSubmitInvoice =
+            billingDatasetComplete &&
             Boolean(invoiceForm.amount) &&
             Boolean(invoiceForm.boleto_due_date) &&
             Boolean(invoiceForm.notes?.trim()) &&
@@ -4527,6 +4550,15 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     </div>
                 </div>
                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    {billingDataset.status === 'incomplete' && (
+                        <div
+                            className="mb-4 rounded-lg border-2 border-red-300 bg-red-50 px-4 py-3 text-sm font-bold text-red-800 flex items-start gap-2"
+                            data-testid="billing-dataset-incomplete"
+                        >
+                            <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                            <span>{BILLING_DATASET_INCOMPLETE_MESSAGE}</span>
+                        </div>
+                    )}
                     <div className="flex items-center gap-2 mb-4">
                         <span className="text-xs font-bold text-gray-500 uppercase">Boletim de:</span>
                         <div className="inline-flex bg-white border border-gray-300 rounded-lg p-0.5">
@@ -4574,7 +4606,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             </button>
                             {reportGenerated && (() => {
                                 const pendCount = rowsData.filter(r => !r.isApproved).length;
-                                const blocked = pendCount > 0;
+                                const blocked = !billingDatasetComplete || pendCount > 0;
                                 return (
                                 <>
                                     {reportMode === 'cliente' && (

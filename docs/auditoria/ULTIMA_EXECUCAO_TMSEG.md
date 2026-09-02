@@ -1,5 +1,219 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+> Handoff local — **FINANCEIRO FASE 1A — INTEGRIDADE DO UNIVERSO DE FATURAMENTO**
+> **PR #299 Draft com consistência global da união validada; deploy NÃO realizado.**
+
+---
+
+## FINANCEIRO — FASE 1 — BLOCO 1A (PAGINAÇÃO INTEGRAL DO BOLETIM)
+
+### BASELINE / BRANCH
+
+- Baseline reconciliado:
+  `origin/main = origin/dev = produção = da93ccbf3eb121b3ffd4f0c27e29324b73bf51f9`.
+- Branch: `financeiro/fase1a-billing-pagination`.
+- Worktree: `tmseg-financeiro-fase1a-billing-pagination`.
+- PR: **#299 — DRAFT**.
+- Commit inicial: `1c036abe`.
+- Correção concorrente: `a3ac5e89`.
+- Correção global da união: `10f89820`.
+- Produção permaneceu em `da93ccbf` — **deploy não executado**.
+
+### PROBLEMA P0
+
+`ClientBillingReport.handleGenerate()` fazia duas consultas diretas a `missions`
+sem `range`: período normal por `start_time` e inclusões manuais por
+`billing_period_override`. Cada consulta estava sujeita ao teto padrão de 1000
+registros do PostgREST, sem sinalizar conjunto parcial.
+
+O array mesclado alimentava a tabela, seleção/conferência, Excel, PDF, medição,
+cobrança/NF, Contas a Receber e totais como se fosse o universo completo.
+
+### COMPORTAMENTO NOVO
+
+- As duas regras de período formam uma única consulta lógica no loader
+  `fetchBillingMissionUniverse()`.
+- Filtros preservados:
+  - igualdade por nomes canônicos em `client` ou `provider`;
+  - `status != Recusada`;
+  - período por `start_time`;
+  - inclusões por `billing_period_override`;
+  - `exclude_from_billing` continua aplicado após a carga.
+- A leitura usa keyset pela chave primária estável `id`, sem offset/range.
+- A união global executa uma varredura dos registros e outra das identidades;
+  uma contagem exata final precisa coincidir com as duas varreduras.
+- O `count` inicial permanece como evidência auxiliar, nunca como prova única.
+- A ordenação visual por data + `id` é preservada depois da carga integral.
+- IDs repetidos entre ranges paginados são detectados como erro de integridade.
+- A sobreposição legítima entre `start_time` e override retorna uma única linha
+  pela semântica do `OR`.
+- Teto de 50.000 para a união é explícito: acima dele o conjunto é classificado
+  como incompleto, nunca como sucesso.
+- Qualquer erro na primeira ou em página intermediária descarta todo o resultado.
+- Estado explícito no componente:
+  `idle | loading | complete | incomplete`.
+- `complete` com zero OS continua sendo sucesso vazio.
+- Mudança de cliente, fornecedor ou período invalida o dataset anterior.
+
+### CORREÇÃO BLOQUEADORA — CONSISTÊNCIA CONCORRENTE
+
+O review independente reproduziu um P0 no commit `1c036abe`: com 2.000 OS,
+uma inserção no meio após a primeira página podia produzir
+`expected = returned = 2000` e `complete = true`, mas incluir a OS nova e
+omitir uma OS original.
+
+Causa: paginação por offset/range sobre conjunto mutável, encerrada quando a
+quantidade carregada alcançava o `count` inicial. Igualdade de quantidade não
+comprovava igualdade de identidade.
+
+Correção em `a3ac5e89`:
+
+- keyset por `id` estável em ambas as fontes;
+- nenhuma parada antecipada somente por alcançar o `count`;
+- segunda varredura apenas dos IDs com os mesmos filtros;
+- contagem final após a validação;
+- divergência de IDs, contagem indisponível, mudança de quantidade, duplicidade
+  ou teto excedido resultam em erro fail-closed;
+- INSERT no meio/final, cancelamento e mudança de `start_time` ou
+  `billing_period_override` durante a paginação não podem resultar em
+  `complete = true` com perda silenciosa.
+
+UPDATE de campo financeiro sem alterar identidade ou pertencimento ao período
+não é snapshot transacional de valores: o conjunto permanece íntegro e a
+varredura carregada é utilizada. Snapshot transacional de todos os campos
+exigiria suporte de banco/RPC e está fora deste bloco.
+
+### CORREÇÃO FINAL — CONSISTÊNCIA GLOBAL DA UNIÃO
+
+O review final do commit `8974e133` reproduziu uma segunda janela P0: uma OS
+pertencente somente ao `billing_period_override` podia perder o override depois
+da validação de `start_time` e antes da leitura da segunda fonte. O resultado
+observado foi `initialUniverse = ["GTM-OVERRIDE"]`, `returned = []` e
+`complete = true`.
+
+Correção em `10f89820`:
+
+- substituição das duas consultas sequenciais por uma única condição global:
+  `start_time no período OR billing_period_override no período`;
+- keyset único por `id` sobre o universo combinado;
+- segunda varredura global de identidades com exatamente o mesmo `OR`;
+- `count` global final e comparação integral dos IDs;
+- override removido/adicionado resulta em fail-closed quando muda a identidade;
+- migração de `start_time` para override, ou no sentido inverso, preserva a OS
+  quando o ID continua pertencendo à união;
+- OS pertencente às duas regras aparece uma única vez.
+
+### FAIL-CLOSED / BLOQUEIOS
+
+Quando a integralidade não pode ser comprovada:
+
+- `missions` é esvaziado;
+- o relatório não é marcado como gerado;
+- uma mensagem não técnica informa que o faturamento foi bloqueado;
+- ficam bloqueados:
+  - geração de fatura;
+  - cobrança/NF Asaas;
+  - salvamento de fatura;
+  - envio de medição e criação do recebível;
+  - Excel;
+  - PDF/impressão;
+  - relatório DHL derivado do boletim.
+
+Nenhum erro interno, stack ou detalhe do banco é exibido ao usuário.
+
+### INTEGRIDADE DE CONJUNTO DE DADOS
+
+- Antes: no máximo 1000 registros por consulta; combinação potencial de até
+  2000 registros não comprovava completude e podia conter sobreposição.
+- Depois: todas as páginas são carregadas até a contagem esperada; erro,
+  truncamento, mudança/incompatibilidade de contagem ou duplicidade interrompe
+  a operação.
+- Metadados internos: `recordsLoaded`, `pagesLoaded`, `expectedRows` e
+  `complete`.
+- Excel usa `rowsData`; PDF usa o mesmo `print-area`; nenhum dos dois abre nova
+  consulta de OS.
+
+### GRANDTOTAL — FORA DE ESCOPO
+
+- Linhas visuais e Excel: `rowsData`.
+- Faturamento, medição e recebível: `grandTotal`.
+- `grandTotal` continua derivado de `missions`, enquanto as linhas usam
+  `rowsData`; ambos agora recebem o mesmo universo integral, porém as fórmulas
+  continuam diferentes.
+- A divergência de fórmula **não foi corrigida neste bloco**.
+
+### ARQUIVOS ALTERADOS
+
+- `components/ClientBillingReport.tsx`
+- `lib/supabasePaging.ts`
+- `lib/billing/fetchBillingMissionUniverse.ts` (novo)
+- `scripts/financial-billing-pagination.test.ts` (novo)
+- `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md`
+
+### TESTES / EVIDÊNCIAS
+
+- Teste específico Financeiro Fase 1A: **34/34 PASS**.
+- Casos de volume: **999, 1000, 1001, 2001 e 2505** — todos retornados.
+- Zero registros: sucesso vazio.
+- Última página menor que o page size: encerramento correto.
+- Erro na primeira página: fail-closed.
+- Erro em página intermediária global: fail-closed, sem parcial.
+- Sobreposição entre ranges: duplicidade detectada.
+- Contagem esperada diferente da carga: erro de integridade.
+- Concorrência: INSERT no meio, INSERT no final, cancelamento, mudança de
+  `start_time`, mudança de `billing_period_override` e UPDATE financeiro.
+- União global: override removido/adicionado, migração nos dois sentidos,
+  sobreposição sem duplicidade e universo estável.
+- Suíte final consolidada de paginação, canônico e faturamento: **143/143 PASS**.
+- `invoice-control-loading.test.ts`: **1 falha preexistente**, reproduzida sem
+  alterações no baseline limpo `da93ccbf`; fora do escopo.
+- Build completo: **PASS**.
+- Smoke visual do build: login carregou sem erro JS visível.
+- Import React preservado em `ClientBillingReport.tsx`.
+- Tipagem dos helpers e testes novos: **PASS**.
+- Typecheck global: permanece com erros preexistentes de configuração/tipagem
+  em arquivos fora do escopo; nenhum erro novo nos helpers/teste desta fase.
+- `git diff --check`: **PASS**.
+
+### ESCOPO NEGATIVO
+
+- Fórmulas comerciais: **não alteradas**.
+- `financialUtils.ts`: **não alterado**.
+- `missionFinancialsCanonical.ts`: **não alterado**.
+- `resolveMissionDisplacement.ts`: **não alterado**.
+- Asaas, PlugNotas, `financial_transactions`, `financial_invoices`, comissão,
+  contas a pagar e DRE: **não alterados**.
+- Zero SQL, migration, RLS, schema ou write financeiro live.
+- Zero merge e zero deploy.
+
+### RISCOS / PENDÊNCIAS
+
+- A paginação REST não cria snapshot transacional de todos os campos. A garantia
+  deste bloco é da identidade integral do conjunto, validada por keyset, dupla
+  varredura e contagem final; mudanças apenas de valores podem refletir o momento
+  em que cada linha foi lida.
+- O teto de segurança de 50.000 OS na união bloqueia o boletim em vez de
+  devolver parcial.
+- O P0 de `grandTotal` divergente permanece para bloco próprio.
+- Permanecem fora deste PR: `paid_date` vs `payment_date`, vínculo textual
+  fatura→recebível, modelos de parcial, OS→pagar e fórmulas simplificadas.
+
+### ROLLBACK
+
+- Reverter o commit deste bloco na branch.
+- Não há rollback de banco, RLS ou produção.
+
+### PRÓXIMO BLOCO
+
+Após review independente e homologação funcional da Fase 1A:
+**Financeiro Fase 1B — paridade entre linhas do boletim e `grandTotal`**.
+
+### DECISÃO
+
+# 🟢 PR #299 CORRIGIDO — CONSISTÊNCIA GLOBAL VALIDADA / PRONTO PARA REVIEW
+
+---
+
 > Handoff local — **QUARTO PILOTO RH `rh_warnings` — BLOCO 1B PUBLICADO**
 > **PR #297 mergeado e produção sincronizada em 2026-09-01 (UTC-3).**
 
