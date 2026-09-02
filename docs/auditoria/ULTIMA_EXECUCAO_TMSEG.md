@@ -1,7 +1,7 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
 > Handoff local — **FINANCEIRO FASE 1A — INTEGRIDADE DO UNIVERSO DE FATURAMENTO**
-> **PR #299 Draft com consistência global da união validada; deploy NÃO realizado.**
+> **PR #299 mergeado e publicado em produção em 2026-09-02 (UTC-3).**
 
 ---
 
@@ -13,11 +13,13 @@
   `origin/main = origin/dev = produção = da93ccbf3eb121b3ffd4f0c27e29324b73bf51f9`.
 - Branch: `financeiro/fase1a-billing-pagination`.
 - Worktree: `tmseg-financeiro-fase1a-billing-pagination`.
-- PR: **#299 — DRAFT**.
+- PR: **#299 — MERGED**.
 - Commit inicial: `1c036abe`.
 - Correção concorrente: `a3ac5e89`.
 - Correção global da união: `10f89820`.
-- Produção permaneceu em `da93ccbf` — **deploy não executado**.
+- Head aprovado do PR: `799f03d76574b876f792ffdd2735823959d6e180`.
+- Merge commit em `dev`: `3a2d8f10d016080248bd25118b5cec3f024661d7`.
+- Publicação funcional: `origin/main = origin/dev = produção = 3a2d8f10`.
 
 ### PROBLEMA P0
 
@@ -175,6 +177,20 @@ Nenhum erro interno, stack ou detalhe do banco é exibido ao usuário.
   em arquivos fora do escopo; nenhum erro novo nos helpers/teste desta fase.
 - `git diff --check`: **PASS**.
 
+### PUBLICAÇÃO / SMOKES DE PRODUÇÃO
+
+- Fluxo oficial executado: `publicar.ps1`.
+- Push real confirmado em `main` e `dev`.
+- `/api/version`: `3a2d8f10d016080248bd25118b5cec3f024661d7`.
+- `/api/health`: HTTP 200, `status = ok`.
+- `/`: HTTP 200.
+- Tela de login: carregou em produção sem erro visual.
+- Nenhuma cobrança, NF, recebível ou OS foi criada/alterada nos smokes.
+- O estado vazio, os seis cenários concorrentes e o bloqueio de ações quando o
+  dataset está incompleto foram validados por testes automatizados.
+- A abertura autenticada do `ClientBillingReport` em produção permanece como
+  smoke manual pendente porque não foi utilizada nem inventada credencial.
+
 ### ESCOPO NEGATIVO
 
 - Fórmulas comerciais: **não alteradas**.
@@ -184,7 +200,7 @@ Nenhum erro interno, stack ou detalhe do banco é exibido ao usuário.
 - Asaas, PlugNotas, `financial_transactions`, `financial_invoices`, comissão,
   contas a pagar e DRE: **não alterados**.
 - Zero SQL, migration, RLS, schema ou write financeiro live.
-- Zero merge e zero deploy.
+- Merge e deploy restritos ao PR #299 e ao handoff documental deste bloco.
 
 ### RISCOS / PENDÊNCIAS
 
@@ -195,13 +211,15 @@ Nenhum erro interno, stack ou detalhe do banco é exibido ao usuário.
 - O teto de segurança de 50.000 OS na união bloqueia o boletim em vez de
   devolver parcial.
 - O P0 de `grandTotal` divergente permanece para bloco próprio.
+- Os gráficos com consulta independente não paginada permanecem fora do escopo.
 - Permanecem fora deste PR: `paid_date` vs `payment_date`, vínculo textual
   fatura→recebível, modelos de parcial, OS→pagar e fórmulas simplificadas.
 
 ### ROLLBACK
 
-- Reverter o commit deste bloco na branch.
-- Não há rollback de banco, RLS ou produção.
+- Criar revert do merge commit `3a2d8f10` em `dev` e publicar novamente pelo
+  fluxo oficial, sem reset/force push.
+- Não há rollback de banco ou RLS.
 
 ### PRÓXIMO BLOCO
 
@@ -210,7 +228,7 @@ Após review independente e homologação funcional da Fase 1A:
 
 ### DECISÃO
 
-# 🟢 PR #299 CORRIGIDO — CONSISTÊNCIA GLOBAL VALIDADA / PRONTO PARA REVIEW
+# 🟢 FASE 1A PUBLICADA — SMOKE AUTENTICADO MANUAL PENDENTE
 
 ---
 
