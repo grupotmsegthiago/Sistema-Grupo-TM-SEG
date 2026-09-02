@@ -24,7 +24,7 @@ import { suggestPriceTable } from '../lib/gemini';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
-import { billableClientToll, tollPersistencePair } from '../lib/toll/clientTollBilling';
+import { billableClientToll, resolveTollUiPair, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import { formatProviderName } from '../lib/utils';
 import { copyTextAsync } from '../lib/clipboard';
 import { buildAuditSummaryData, type AuditSummaryData } from '../lib/auditSummaryBuilder';
@@ -941,26 +941,26 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (!currentMission.client || !currentMission.origin || isSavingRef.current) return;
       try {
           const dbToll = Math.max(0, currentMission.toll_value ?? 0);
-          // Pedágio do FORNECEDOR vem ESTRITAMENTE de toll_value_provider; se nulo, é 0.
-          // NUNCA herda dbToll (pedágio do cliente) — isso gerava o "pedágio fantasma"
-          // que inflava o custo do fornecedor ao reabrir a auditoria.
-          const dbTollProv = Math.max(0, currentMission.toll_value_provider != null ? currentMission.toll_value_provider : 0);
+          const dbTollProvRaw = currentMission.toll_value_provider;
+          // Aplica regra de pedágio na leitura (legado: cliente=fornecedor → +20% no cliente).
+          const tollUi = resolveTollUiPair(dbToll, dbTollProvRaw, !!currentMission.is_same_os);
+          const fmtToll = (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           const hasRevenue = currentMission.revenue_value != null && currentMission.revenue_value > 0;
           const hasCost = currentMission.cost_value != null && currentMission.cost_value > 0;
           const hasVerifiedBy = !!currentMission.billing_verified_by;
           const hasApproved = !!currentMission.billing_approved;
           const hasSavedData = hasRevenue || hasCost || hasVerifiedBy || hasApproved;
           if (currentMission.billing_approved && currentMission.toll_value !== null && currentMission.toll_value !== undefined) {
-             setSuggestedToll(dbToll);
-             setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
-             setTollInput(dbToll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-             setTollProviderInput(dbTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+             setSuggestedToll(tollUi.client);
+             setTollSource(tollUi.client === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
+             setTollInput(fmtToll(tollUi.client));
+             setTollProviderInput(fmtToll(tollUi.provider));
              setTollConfirmed(true);
           } else if (dbToll > 0 || hasSavedData) {
-             setSuggestedToll(dbToll);
-             setTollSource(dbToll === 0 ? 'VALOR SALVO (R$ 0,00)' : 'VALOR SALVO');
-             setTollInput(dbToll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-             setTollProviderInput(dbTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+             setSuggestedToll(tollUi.client);
+             setTollSource(tollUi.client === 0 ? 'VALOR SALVO (R$ 0,00)' : 'VALOR SALVO');
+             setTollInput(fmtToll(tollUi.client));
+             setTollProviderInput(fmtToll(tollUi.provider));
              // Não marca como confirmado automaticamente: a confirmação explícita
              // (TOLL_CONFIRMATION em system_logs) é carregada em useEffect próprio.
           } else {
@@ -1263,10 +1263,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setShowCostReasonInput(false);
 
               const dbToll = Math.max(0, mRes.data.toll_value || 0);
-              // Pedágio do FORNECEDOR vem ESTRITAMENTE de toll_value_provider; se nulo, é 0.
-              // NUNCA herda dbToll (pedágio do cliente) — era o "pedágio fantasma" que
-              // inflava o custo do fornecedor (savedCost + dbTollProvider) ao abrir a OS.
-              const dbTollProvider = Math.max(0, mRes.data.toll_value_provider != null ? mRes.data.toll_value_provider : 0);
+              const dbTollProvRaw = mRes.data.toll_value_provider;
+              // Regra: se cliente e fornecedor foram gravados iguais (legado),
+              // cliente recebe +20% (base > R$ 10) e fornecedor permanece no valor real.
+              const tollUi = resolveTollUiPair(dbToll, dbTollProvRaw, !!mRes.data.is_same_os);
+              const dbTollClient = tollUi.client;
+              const dbTollProvider = tollUi.provider;
+              const fmtToll = (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
               const dbDisp = Math.max(0, mRes.data.displacement_value || 0);
               const dbDispProvider = Math.max(0, mRes.data.displacement_value_provider || 0);
               setDisplacementInput(dbDisp.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
@@ -1278,20 +1281,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const savedCost = safeNumber(mRes.data.cost_value);
               const hasSavedData = mRes.data.billing_approved || mRes.data.billing_verified_by || savedRev > 0 || savedCost > 0;
               if (mRes.data.is_same_os) {
-                  setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                  setTollInput(fmtToll(dbTollClient));
                   setTollProviderInput('0,00');
-                  setTollSource(dbToll === 0 ? 'MESMA OS (R$ 0,00) — confirmar' : 'MESMA OS — confirmar');
+                  setTollSource(dbTollClient === 0 ? 'MESMA OS (R$ 0,00) — confirmar' : 'MESMA OS — confirmar');
               } else if (mRes.data.billing_approved) {
-                  setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-                  setTollProviderInput(dbTollProvider.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                  setTollInput(fmtToll(dbTollClient));
+                  setTollProviderInput(fmtToll(dbTollProvider));
                   setTollConfirmed(true);
-                  setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
+                  setTollSource(dbTollClient === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
               } else if (hasSavedData || dbToll > 0) {
-                  setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-                  setTollProviderInput(dbTollProvider.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                  setTollInput(fmtToll(dbTollClient));
+                  setTollProviderInput(fmtToll(dbTollProvider));
                   // Não marca confirmado automaticamente: depende de TOLL_CONFIRMATION
                   // explícito em system_logs (carregado abaixo) ou nova confirmação via dialog.
-                  setTollSource(dbToll === 0 ? 'VALOR SALVO (R$ 0,00) — confirmação pendente' : 'VALOR SALVO — confirmação pendente');
+                  setTollSource(dbTollClient === 0 ? 'VALOR SALVO (R$ 0,00) — confirmação pendente' : 'VALOR SALVO — confirmação pendente');
               } else {
                   setTollInput('0,00');
                   setTollProviderInput('0,00');
@@ -1316,7 +1319,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   }
                   const hasVerifiedOrApproved = !!(mRes.data.billing_verified_by || mRes.data.billing_approved);
                   if (savedRev > 0 || (savedRev === 0 && hasVerifiedOrApproved)) {
-                      const revTotal = savedRev + dbToll + dbDisp;
+                      const revTotal = savedRev + dbTollClient + dbDisp;
                       setRevenueInput(revTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                   }
                   if (isSameOsMission) {
@@ -1326,6 +1329,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       setCostInput(costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                   }
                   dbValuesLoadedRef.current = true;
+              }
+              // Cura legado no banco (OS não aprovada): cliente e fornecedor
+              // iguais com base > R$ 10 → grava cliente com +20%.
+              if (!mRes.data.billing_approved && Math.abs(dbTollClient - dbToll) > 0.009) {
+                  try {
+                      const healPayload: any = {
+                          toll_value: dbTollClient,
+                          toll_value_provider: mRes.data.is_same_os ? 0 : dbTollProvider,
+                          last_update: new Date().toISOString(),
+                      };
+                      const { error: healErr } = await supabase.from('missions').update(healPayload).eq('id', initialMission.id);
+                      if (!healErr) {
+                          fullMission.toll_value = dbTollClient;
+                          (fullMission as any).toll_value_provider = healPayload.toll_value_provider;
+                          try { window.dispatchEvent(new Event('refreshMissions')); } catch { /* ignore */ }
+                      } else {
+                          console.warn('[Toll] cura legado falhou:', healErr.message);
+                      }
+                  } catch (healEx: any) {
+                      console.warn('[Toll] cura legado exceção:', healEx?.message || healEx);
+                  }
               }
               if (mRes.data.billing_verified_by) {
                   setSavedByInfo(`Salvo por ${mRes.data.billing_verified_by}`);
@@ -1351,8 +1375,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       try {
                           const parsed = typeof tollLog.details === 'string' ? JSON.parse(tollLog.details) : tollLog.details;
                           const loggedValue = Number(parsed?.value ?? 0);
-                          const dbValue = Number(mRes.data.toll_value ?? 0);
-                          if (Math.abs(loggedValue - dbValue) < 0.01) {
+                          const dbClientVal = Number(fullMission.toll_value ?? mRes.data.toll_value ?? 0);
+                          const dbProvVal = Number((fullMission as any).toll_value_provider ?? mRes.data.toll_value_provider ?? dbClientVal);
+                          // O log guarda o valor REAL digitado; o banco pode ter
+                          // cliente com +20%. Aceita match no real ou no cliente com regra.
+                          const matches =
+                              Math.abs(loggedValue - dbProvVal) < 0.01 ||
+                              Math.abs(billableClientToll(loggedValue) - dbClientVal) < 0.01 ||
+                              Math.abs(loggedValue - dbClientVal) < 0.01;
+                          if (matches) {
                               setTollConfirmed(true);
                               setTollSource(`CONFIRMADO por ${tollLog.user_name || parsed?.user || 'usuário'}`);
                           }
@@ -1855,7 +1886,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const financialData = useMemo(() => {
       if (!mission) return null;
       const currentToll = parseNumber(tollInput);
-      const missionWithToll = { ...mission, toll_value: currentToll };
+      const currentTollProv = mission.is_same_os ? 0 : parseNumber(tollProviderInput);
+      const missionWithToll = {
+        ...mission,
+        toll_value: currentToll,
+        toll_value_provider: currentTollProv,
+      };
 
       return calculateMissionFinancials(missionWithToll, clientTables, providerTables, clientData, currentTime, {
           clientTableId: manualClientTableId || undefined,
@@ -2631,7 +2667,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               if (log) {
                   const parsed = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
                   const loggedValue = Number(parsed?.value ?? 0);
-                  if (Math.abs(loggedValue - inputToll) < 0.01) matched = true;
+                  const inputTollProv = parseNumber(tollProviderInput);
+                  // Log = valor real; input cliente pode estar com +20%.
+                  if (
+                      Math.abs(loggedValue - inputTollProv) < 0.01 ||
+                      Math.abs(billableClientToll(loggedValue) - inputToll) < 0.01 ||
+                      Math.abs(loggedValue - inputToll) < 0.01
+                  ) {
+                      matched = true;
+                  }
               }
               if (!matched) {
                   setTollConfirmed(false);
