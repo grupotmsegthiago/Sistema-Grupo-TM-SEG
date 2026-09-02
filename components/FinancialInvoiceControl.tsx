@@ -17,6 +17,12 @@ import {
 } from '../lib/invoiceCleanSlate';
 import { kickNfRetryCycle } from '../lib/kickNfSchedule';
 import {
+  buildManualRetryConfirmMessage,
+  canShowAsaasManualRetry,
+  formatManualRetryFeedback,
+  missingAsaasPaymentFeedback,
+} from '../lib/nfRetryInvoiceFeedback';
+import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
   AlertCircle, Clock, XCircle, DollarSign, Receipt, Eye, Loader2,
   Calendar, Building2, Hash, ArrowUpDown, ChevronDown, ChevronUp,
@@ -415,7 +421,10 @@ const FinancialInvoiceControl: React.FC = () => {
   }, [fetchInvoices, fetchIssuerSummary]);
 
   const handleSyncStatus = async (inv: Invoice) => {
-    if (!inv.asaas_payment_id) return;
+    if (!inv.asaas_payment_id) {
+      alert(missingAsaasPaymentFeedback(inv.number));
+      return;
+    }
     setSyncingId(inv.id);
     try {
       const res = await authFetch('/api/asaas/sync-payment-status', {
@@ -490,22 +499,33 @@ const FinancialInvoiceControl: React.FC = () => {
   };
 
   const handleRetryNf = async (inv: Invoice) => {
-    if (!inv.asaas_payment_id) return;
-    if (!confirm(`Reemitir Nota Fiscal da fatura ${inv.number}?`)) return;
+    if (!inv.asaas_payment_id) {
+      alert(missingAsaasPaymentFeedback(inv.number));
+      return;
+    }
+    if (!canShowAsaasManualRetry(inv)) {
+      alert('Esta fatura não está elegível para reemissão manual pelo Asaas.');
+      return;
+    }
+    if (!confirm(buildManualRetryConfirmMessage(inv.number))) return;
+    if (retryingNfId) return;
     setRetryingNfId(inv.id);
     try {
       const res = await authFetch(`/api/nf/retry/${inv.id}`, { method: 'POST' });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        alert(`NF reagendada com sucesso. Status atual: ${data.status || 'pendente — aguarde o ciclo de retry'}.`);
-      } else if (data.paused) {
-        alert(`NF pausada por erro permanente: ${data.error || 'verifique a descrição do serviço cadastrada para o cliente'}.`);
-      } else {
-        alert(`Não foi possível reemitir agora: ${data.error || data.status || 'erro desconhecido'}.`);
+      let data: any = {};
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error(`Resposta inválida do servidor (HTTP ${res.status}).`);
       }
+      if (!res.ok && !data?.error) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const prefix = data.success ? 'Reemissão solicitada' : 'Reemissão não concluída';
+      alert(`${prefix}:\n${formatManualRetryFeedback(data)}`);
       await fetchInvoices();
     } catch (e: any) {
-      alert('Erro ao reemitir NF: ' + e.message);
+      alert(`Erro ao reemitir NF: ${e.message || 'falha de rede/API'}`);
     } finally {
       setRetryingNfId(null);
     }
@@ -1035,19 +1055,21 @@ const FinancialInvoiceControl: React.FC = () => {
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={() => openDetail(inv)} className="bg-gray-100 hover:bg-gray-200 text-gray-600 p-1.5 rounded-lg" title="Detalhes" data-testid={`btn-detail-${inv.id}`}><Eye size={13} /></button>
                           {inv.asaas_payment_id && (
-                            <button onClick={() => handleSyncStatus(inv)} disabled={syncingId === inv.id} className="bg-blue-50 hover:bg-blue-100 text-blue-600 p-1.5 rounded-lg" title="Sincronizar status" data-testid={`btn-sync-${inv.id}`}>
+                            <button onClick={() => handleSyncStatus(inv)} disabled={syncingId === inv.id} className="bg-blue-50 hover:bg-blue-100 text-blue-600 px-2 py-1.5 rounded-lg flex items-center gap-1" title="Sincronizar status — não reemite a NF" data-testid={`btn-sync-${inv.id}`}>
                               {syncingId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                              <span className="hidden lg:inline text-[9px] font-bold">Sync</span>
                             </button>
                           )}
-                          {inv.asaas_payment_id && (inv.nf_provider || 'ASAAS').toUpperCase() !== 'PLUGNOTAS' && (inv.nf_status?.toUpperCase() === 'ERROR' || (!inv.nf_image_url && inv.nf_status?.toUpperCase() !== 'AUTHORIZED')) && (
+                          {canShowAsaasManualRetry(inv) && (
                             <button
                               onClick={() => handleRetryNf(inv)}
                               disabled={retryingNfId === inv.id}
-                              className="bg-amber-50 hover:bg-amber-100 text-amber-700 p-1.5 rounded-lg"
-                              title="Reemitir NF (Asaas)"
+                              className="bg-amber-50 hover:bg-amber-100 text-amber-800 px-2 py-1.5 rounded-lg flex items-center gap-1"
+                              title="Reemitir NF (Asaas) — reutiliza a cobrança existente"
                               data-testid={`btn-retry-nf-${inv.id}`}
                             >
                               {retryingNfId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                              <span className="hidden lg:inline text-[9px] font-bold">Reemitir NF</span>
                             </button>
                           )}
                           {(() => {
@@ -1269,8 +1291,20 @@ const FinancialInvoiceControl: React.FC = () => {
                         </button>
                       )}
                       {inv.asaas_payment_id && inv.status !== 'PAGA' && inv.status !== 'CANCELADA' && (
-                        <button onClick={() => handleSyncStatus(inv)} disabled={syncingId === inv.id} className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200 hover:bg-blue-100">
+                        <button onClick={() => handleSyncStatus(inv)} disabled={syncingId === inv.id} className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200 hover:bg-blue-100" title="Sincronizar status — não reemite a NF">
                           {syncingId === inv.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Sincronizar Status
+                        </button>
+                      )}
+                      {canShowAsaasManualRetry(inv) && (
+                        <button
+                          onClick={() => handleRetryNf(inv)}
+                          disabled={retryingNfId === inv.id}
+                          className="flex items-center gap-1.5 text-[10px] font-bold text-amber-800 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 hover:bg-amber-100"
+                          title="Reemitir NF (Asaas) — reutiliza a cobrança existente"
+                          data-testid={`btn-retry-nf-detail-${inv.id}`}
+                        >
+                          {retryingNfId === inv.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                          Reemitir NF (Asaas)
                         </button>
                       )}
                       {inv.asaas_payment_id && inv.status !== 'CANCELADA' && inv.status !== 'PAGA' && (

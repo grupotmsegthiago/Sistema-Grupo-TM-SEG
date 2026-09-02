@@ -9,8 +9,9 @@
  *   PUT  /api/nf/provider-preferences     → ?op=preferences
  *   POST /api/nf/ensure-clean-slate       → ?op=clean-slate
  *   POST /api/nf/retry-now                → ?op=retry-now
+ *   POST /api/nf/retry/:invoiceId         → ?op=retry-invoice&invoiceId=:invoiceId
  *
- * retry-now usa bundle CJS gerado no build (`api/_nf-retry-core.cjs`).
+ * retry-now / retry-invoice usam bundle CJS gerado no build (`api/_nf-retry-core.cjs`).
  * Não importar server/nfRetryWorker direto — a Vercel não empacota esse path.
  */
 import { createRequire } from 'node:module';
@@ -29,6 +30,7 @@ import {
   wipeOpenInvoicesCleanSlate,
 } from '../lib/nfInvoiceControlApi.js';
 import { syncPendingAsaasNfStatuses } from '../lib/asaasNfStatusSync.js';
+import { executeManualInvoiceRetry } from '../lib/nfRetryInvoiceApiCore.js';
 
 const require = createRequire(import.meta.url);
 
@@ -42,6 +44,10 @@ const nfRetryCore = require('./_nf-retry-core.cjs') as {
     stuck: number;
   }>;
   reopenPausedNfs: (limit?: number) => Promise<{ reopened: number }>;
+  listPendingNfs: () => Promise<import('../lib/nfRetryInvoiceApiCore.js').ManualRetryInvoiceRow[]>;
+  retryOne: (
+    inv: import('../lib/nfRetryInvoiceApiCore.js').ManualRetryInvoiceRow,
+  ) => Promise<import('../lib/nfRetryInvoiceApiCore.js').RetryOneResult>;
 };
 
 type LiteReq = {
@@ -133,8 +139,22 @@ export default async function handler(req: LiteReq, res: LiteRes) {
       return;
     }
 
+    // Retry manual individual — handler leve (evita catch-all Express).
+    if (method === 'POST' && op === 'retry-invoice') {
+      const invoiceId = String(req.query?.invoiceId || parseBody(req.body).invoiceId || '').trim();
+      if (!invoiceId) {
+        res.status(400).json({ ok: false, success: false, error: 'invoiceId é obrigatório' });
+        return;
+      }
+      const outcome = await executeManualInvoiceRetry(invoiceId, nfRetryCore.retryOne, {
+        listPendingNfs: nfRetryCore.listPendingNfs,
+      });
+      res.status(outcome.httpStatus).json({ ...outcome.body, liteHandler: true });
+      return;
+    }
+
     // Reemitir NFs pendentes — bundle CJS (não Express / não import server/).
-    if (method === 'POST' && (op === 'retry-now' || op === 'retry')) {
+    if (method === 'POST' && op === 'retry-now') {
       const qLimit = Number(req.query?.limit);
       const body = parseBody(req.body);
       const bodyLimit = Number(body.limit);
