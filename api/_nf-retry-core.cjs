@@ -1016,6 +1016,9 @@ function isNonRetryable(errorMessage) {
   if (RETRYABLE_PREFEITURA_PATTERNS.some((rx) => rx.test(errorMessage))) return false;
   return NON_RETRYABLE_PATTERNS.some((rx) => rx.test(errorMessage));
 }
+function shouldEnforceAutomaticRetryLimit(retryCount, maxRetries, context) {
+  return !context?.manualRetry && retryCount >= maxRetries;
+}
 
 // server/nfRetryWorker.ts
 var RETRY_INTERVAL_MS = 15 * 60 * 1e3;
@@ -1453,7 +1456,7 @@ async function retryOne(inv, opts) {
       console.log(`[NF Retry] ERROR permanente em ${currentInvoice.id} \u2014 pausada. Motivo: ${asaasErr.substring(0, 120)}`);
       return { ok: false, paused: true, status: "ERROR", action: "paused-validation" };
     }
-    if (errorRetries >= MAX_SYNC_RETRIES) {
+    if (shouldEnforceAutomaticRetryLimit(errorRetries, MAX_SYNC_RETRIES, opts)) {
       await markInvoice(inv.id, {
         nf_status: "STUCK",
         asaas_invoice_id: currentInvoice.id,

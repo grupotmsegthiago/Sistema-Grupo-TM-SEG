@@ -111,9 +111,13 @@ describe('Retry manual individual — core SSOT', () => {
 
   it('T06 — retry despausa antes de retryOne', async () => {
     let unpaused = false;
-    const retryOneFn = async (inv: ManualRetryInvoiceRow) => {
+    const retryOneFn = async (
+      inv: ManualRetryInvoiceRow,
+      opts?: { manualRetry?: boolean },
+    ) => {
       assert.equal(inv.nf_retry_paused, false);
       assert.equal(inv.nf_last_error, null);
+      assert.equal(opts?.manualRetry, true);
       unpaused = true;
       return { ok: true, status: 'SCHEDULED', action: 'scheduled' };
     };
@@ -145,6 +149,14 @@ describe('Retry manual individual — core SSOT', () => {
     const err = validateManualRetryInvoice({ ...LOGGO_FIXTURE, asaas_payment_id: null });
     assert.match(err || '', /sem ID Asaas/i);
     assert.equal(validateManualRetryInvoice(LOGGO_FIXTURE), null);
+  });
+
+  it('T17 — limite automático é preservado e só o contexto manual o ultrapassa', () => {
+    const worker = fs.readFileSync('server/nfRetryWorker.ts', 'utf8');
+    const core = fs.readFileSync('lib/nfRetryInvoiceApiCore.ts', 'utf8');
+    assert.match(worker, /shouldEnforceAutomaticRetryLimit\(errorRetries, MAX_SYNC_RETRIES, opts\)/);
+    assert.match(core, /retryOneFn\(ready, \{ manualRetry: true \}\)/);
+    assert.match(worker, /if \(isNonRetryable\(asaasErr\)\)/);
   });
 });
 

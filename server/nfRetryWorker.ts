@@ -10,7 +10,12 @@ import {
   isPlugNotasConfigured,
   getNfsePdfUrl as plugGetPdfUrl,
 } from './plugnotasService';
-import { isNfSchedulePendingMessage, isNonRetryable } from '../lib/nfRetryGuards';
+import {
+  isNfSchedulePendingMessage,
+  isNonRetryable,
+  shouldEnforceAutomaticRetryLimit,
+  type NfRetryContext,
+} from '../lib/nfRetryGuards';
 
 const RETRY_INTERVAL_MS = 15 * 60 * 1000;
 const MAX_RETRIES = 30;
@@ -381,7 +386,10 @@ async function retryOnePlugNotas(inv: PendingInvoice): Promise<{ ok: boolean; st
   return { ok: false, status, action: 'wait' };
 }
 
-export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string; serviceDescription?: string }): Promise<{ ok: boolean; status?: string; pdfUrl?: string; number?: string; error?: string; paused?: boolean; action?: string }> {
+export async function retryOne(
+  inv: PendingInvoice,
+  opts?: { clientCnpj?: string; serviceDescription?: string } & NfRetryContext,
+): Promise<{ ok: boolean; status?: string; pdfUrl?: string; number?: string; error?: string; paused?: boolean; action?: string }> {
   // Inferência de provider: usa nf_provider explícito; caso esteja vazio mas
   // exista plugnotas_invoice_id, assume PlugNotas (cobre faturas legadas
   // criadas antes do roteador, que ficaram com nf_provider null).
@@ -577,7 +585,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
       console.log(`[NF Retry] ERROR permanente em ${currentInvoice.id} — pausada. Motivo: ${asaasErr.substring(0,120)}`);
       return { ok: false, paused: true, status: 'ERROR', action: 'paused-validation' };
     }
-    if (errorRetries >= MAX_SYNC_RETRIES) {
+    if (shouldEnforceAutomaticRetryLimit(errorRetries, MAX_SYNC_RETRIES, opts)) {
       await markInvoice(inv.id, {
         nf_status: 'STUCK',
         asaas_invoice_id: currentInvoice.id,

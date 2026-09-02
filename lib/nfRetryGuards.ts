@@ -49,3 +49,17 @@ export function isNonRetryable(errorMessage: string): boolean {
   if (RETRYABLE_PREFEITURA_PATTERNS.some((rx) => rx.test(errorMessage))) return false;
   return NON_RETRYABLE_PATTERNS.some((rx) => rx.test(errorMessage));
 }
+
+export type NfRetryContext = {
+  /** Ação individual confirmada por usuário autenticado; nunca usada pelo ciclo automático. */
+  manualRetry?: boolean;
+};
+
+/** O limite automático não transforma uma ação manual confirmada em polling sem efeito. */
+export function shouldEnforceAutomaticRetryLimit(
+  retryCount: number,
+  maxRetries: number,
+  context?: NfRetryContext,
+): boolean {
+  return !context?.manualRetry && retryCount >= maxRetries;
+}

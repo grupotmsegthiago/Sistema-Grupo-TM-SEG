@@ -45,9 +45,7 @@ const nfRetryCore = require('./_nf-retry-core.cjs') as {
   }>;
   reopenPausedNfs: (limit?: number) => Promise<{ reopened: number }>;
   listPendingNfs: () => Promise<import('../lib/nfRetryInvoiceApiCore.js').ManualRetryInvoiceRow[]>;
-  retryOne: (
-    inv: import('../lib/nfRetryInvoiceApiCore.js').ManualRetryInvoiceRow,
-  ) => Promise<import('../lib/nfRetryInvoiceApiCore.js').RetryOneResult>;
+  retryOne: import('../lib/nfRetryInvoiceApiCore.js').RetryOneFn;
 };
 
 type LiteReq = {
