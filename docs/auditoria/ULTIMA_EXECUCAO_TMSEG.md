@@ -1,5 +1,30 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## FINANCEIRO — EXCLUSÃO SEGURA DE CATEGORIA + DÉBITO AUTOMÁTICO
+
+**Data:** 2026-09-03 (UTC-3)
+
+**Alterações:**
+- “Déb. Automático” (`DEBITO_AUTOMATICO`) incluído no formulário de lançamento,
+  edição em linha, filtro e contrato TypeScript, com opções centralizadas em uma
+  única fonte (`lib/financial/paymentMethods.ts`).
+- Botão de exclusão incluído ao lado da categoria no formulário.
+- Exclusão centralizada e segura: consulta todos os vínculos por `category_id` e
+  somente exclui categoria sem lançamentos; quando estiver em uso, informa a
+  quantidade e orienta a reclassificação.
+- Gerenciador de categorias existente passou a reutilizar a mesma proteção.
+- Import duplicado de `Wallet`, não detectado pelo build e identificado no smoke
+  do navegador, foi removido.
+
+**Banco:** `payment_method` confirmado como `text`, sem enum/check; nenhuma migration.
+**Testes:** 14/14 PASS; `npm run build` PASS; `git diff --check` PASS.
+**Frontend:** login local carregou sem overlay/erro JavaScript; modal interno exige
+sessão autenticada e foi coberto por teste estrutural e build.
+**Risco:** categoria em uso não pode ser excluída, preservando DRE e histórico.
+**Rollback:** reverter o commit; nenhuma alteração de schema ou dados.
+
+---
+
 ## INCIDENTE NF — RETRY MANUAL NÃO ALCANÇAVA PAYLOAD CORRIGIDO
 
 **Data:** 2026-09-03 (UTC-3)
@@ -7290,3 +7315,69 @@ Código: `FinancialInvoiceControl` → `authFetch('/api/nf/invoices')`; `transfo
 ---
 
 *Publicação SEC-01/02 — Cloud Agent — 2026-08-14 — PR #262 não iniciado*
+
+---
+
+## PERMISSÕES PLÍNIO + DESTINATÁRIOS TRANSAMAZON — 2026-09-03
+
+### Diagnóstico confirmado
+
+- `system_users.id=9`, `plinio@grupotmseg.com.br`, perfil `Controller`.
+- O modal financeiro promovia Plínio a estágio `diretoria` e permitia
+  aprovação/reaprovação por nome.
+- O pedágio do cliente já possuía trava visual, mas o pedágio/tabela do
+  fornecedor ainda podia ser alterado antes da aprovação superior.
+- A revisão final encontrou um segundo writer em `UpdateMissionModal`: ao concluir
+  uma OS, Plínio ainda integrava o gate de pedágio e podia disparar o recálculo IA
+  que grava `toll_value`.
+- `clients.id=16` (AMAZON TRANSPORTES LTDA) já contém
+  `aparecida.borges@transamazon.com.br` em `medicao_email`.
+- Vercel oficial `sistema-grupo-tm-seg` possui `EMAIL_USER`, `EMAIL_PASS` e
+  `SMTP_PASSWORD` em Production (somente presença verificada; valores não lidos).
+- O envio de cobrança (boleto + NF) abria o destinatário vazio e não reutilizava
+  `medicao_email`; também não verificava `accepted/rejected` retornado pelo SMTP.
+- Produção registrou quatro chamadas a `/api/billing-send-medicao` nas últimas
+  24 horas, sem resposta HTTP 5xx. Isso comprova aceitação da rota, não entrega
+  na caixa postal.
+
+### Correções
+
+- Identidade de Plínio centralizada por ID/e-mail, com fallback pelo nome completo.
+- Plínio não pode aprovar nem reaprovar OS e não é mais classificado como Diretoria.
+- Antes de aprovação registrada por `diretoria` ou `administrador`, salvar e
+  editar fornecedor ficam bloqueados para Plínio.
+- Após essa aprovação, Plínio pode destravar e salvar somente o lado fornecedor;
+  cliente/pedágio cliente continuam bloqueados.
+- O `UPDATE` financeiro de Plínio omite explicitamente `revenue_value`,
+  `toll_value`, `displacement_value`, aprovação e metadados do lado cliente.
+- Plínio foi removido do gate operacional de pedágio e do recálculo IA de pedágio
+  na conclusão da OS; a confirmação possui ainda uma guarda defensiva no handler.
+- Recálculo e troca de tabela do fornecedor não limpam aprovação, verificação nem
+  justificativas do cliente quando executados por Plínio.
+- Cobrança passa a sugerir a lista `medicao_email` cadastrada do cliente.
+- Listas de e-mail são normalizadas/deduplicadas, e medição/cobrança falham
+  explicitamente se o SMTP rejeitar algum destinatário solicitado.
+- Retorno ao operador inclui quantidade de destinatários e `Message-ID`.
+
+### Testes
+
+- `scripts/plinio-email-restrictions.test.ts`: **10/10**.
+- Restrições Plínio + regressões P3 executadas após revisão final: **16/16**.
+- Regressões P3/medição: **24/24** no conjunto executado.
+- `npm run build`: **OK**.
+- React hooks/imports nos dois componentes alterados: **OK**.
+- `GET http://localhost:5001/api/health`: **200**, `status=ok`.
+- `POST /api/asaas/send-billing-email` sem autenticação: **401**.
+- Supabase injetado em `dist/public/index.html`: **OK**.
+
+### Riscos e pendências
+
+- Nenhum e-mail real foi disparado nesta execução; SMTP local não possui senha.
+- A restrição está fechada nos writers da aplicação usados por esse fluxo. Uma
+  proteção contra chamadas maliciosas diretas ao Supabase exigirá migrar a gravação
+  financeira para endpoint server-side/RPC com autorização fail-closed.
+- `accepted` confirma que o servidor SMTP recebeu o destinatário, mas não garante
+  caixa de entrada. Se Aparecida continuar sem receber após publicação/reenvio,
+  o `Message-ID` deverá ser rastreado no Microsoft 365/servidor da Transamazon
+  para identificar quarentena, antispam ou rejeição posterior.
+- Alterações ainda **não publicadas**.

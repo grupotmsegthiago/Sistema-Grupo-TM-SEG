@@ -2,6 +2,10 @@ import nodemailer from 'nodemailer';
 import path from 'path';
 import fs from 'fs';
 import { generateMissionReportPDF, formatOSForFilename } from './pdfReportService';
+import {
+  parseEmailRecipients,
+  rejectedRequestedRecipients,
+} from '../lib/email/recipientList';
 
 const EMAIL_USER = process.env.EMAIL_USER || 'adm@grupotmseg.com.br';
 const EMAIL_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || '';
@@ -989,7 +993,13 @@ export async function sendMedicaoEmail(data: MedicaoEmailData): Promise<{ succes
   }
 }
 
-export async function sendBillingEmail(data: BillingEmailData): Promise<{ success: boolean; messageId?: string }> {
+export async function sendBillingEmail(data: BillingEmailData): Promise<{
+  success: boolean;
+  messageId?: string;
+  recipients?: string[];
+  rejected?: string[];
+  error?: string;
+}> {
   const boletoBlock = data.boletoUrl ? `
     <div style="background:#f0fdf4; border:2px solid #16a34a; border-radius:8px; padding:16px; margin:16px 0; text-align:center;">
       <p style="margin:0 0 8px; font-size:14px; font-weight:700; color:#16a34a;">📄 BOLETO BANCÁRIO</p>
@@ -1039,9 +1049,13 @@ export async function sendBillingEmail(data: BillingEmailData): Promise<{ succes
   `);
 
   try {
+    const recipients = parseEmailRecipients(data.clientEmail);
+    if (recipients.length === 0) {
+      return { success: false, error: 'Nenhum destinatário válido informado.' };
+    }
     const mailOptions: any = {
       from: SMTP_FROM,
-      to: data.clientEmail,
+      to: recipients,
       cc: ['financeiro@grupotmseg.com.br'],
       bcc: ['thiago@grupotmseg.com.br'],
       subject: `Cobrança ${data.invoiceNumber ? `NF ${data.invoiceNumber} — ` : ''}${formatCurrency(data.value)} — Venc. ${formatDueDate(data.dueDate)} — ${data.issuerCompany}`,
@@ -1050,11 +1064,24 @@ export async function sendBillingEmail(data: BillingEmailData): Promise<{ succes
 
     const info = await transporter.sendMail(mailOptions);
     const messageId = info.messageId || '';
-    console.log(`[Email] Cobrança enviada → ${data.clientEmail} | ${data.clientName} | R$ ${data.value} | Venc: ${data.dueDate} | Message-ID: ${messageId}`);
-    return { success: true, messageId };
+    const rejected = (Array.isArray(info.accepted) || Array.isArray(info.rejected))
+      ? rejectedRequestedRecipients(recipients, info.accepted, info.rejected)
+      : [];
+    if (rejected.length > 0) {
+      console.error(`[Email] Cobrança rejeitada para: ${rejected.join(', ')} | Message-ID: ${messageId}`);
+      return {
+        success: false,
+        messageId,
+        recipients,
+        rejected,
+        error: `Servidor SMTP não aceitou: ${rejected.join(', ')}`,
+      };
+    }
+    console.log(`[Email] Cobrança enviada → ${recipients.join(', ')} | ${data.clientName} | R$ ${data.value} | Venc: ${data.dueDate} | Message-ID: ${messageId}`);
+    return { success: true, messageId, recipients, rejected: [] };
   } catch (err: any) {
     console.error(`[Email] Erro ao enviar cobrança para ${data.clientEmail}:`, err.message);
-    return { success: false };
+    return { success: false, error: err.message };
   }
 }
 

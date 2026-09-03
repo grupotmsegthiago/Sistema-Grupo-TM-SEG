@@ -42,6 +42,10 @@ import html2canvas from 'html2canvas';
 import FilterableSelect, { type FilterableSelectOption } from './FilterableSelect';
 import { fetchMissionById, fetchParentMissionCandidates, type ParentMissionRow } from '../lib/parentMissionSearch';
 import { resolveSameOsLink, type SameOsLinkRole } from '../lib/missionLinkage';
+import {
+  hasAdminOrDirectorApproval,
+  isRestrictedPlinioUser,
+} from '../lib/plinioMissionRestrictions';
 
 interface Props {
   isOpen: boolean;
@@ -533,6 +537,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const userNameLower = useMemo(() => {
     try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); return ((u.name || u.username || '') as string).toLowerCase(); } catch { return ''; }
   }, []);
+  const currentUserIdentity = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+  }, []);
   const opsMissingFields = useMemo(
     () => (mission ? getMissionOpsMissingFields(mission) : []),
     [mission],
@@ -570,7 +577,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // MODO EDIÇÃO TOTAL: Barbara e Thiago podem destravar TODOS os campos da OS
   // (operacional, cliente, fornecedor, financeiro), inclusive em OS aprovadas.
   // O acionamento é registrado em system_logs (MissionEditHistory).
-  const isPlinio = userNameLower.includes('plinio') || userNameLower.includes('plínio');
+  const isPlinio = useMemo(
+    () => isRestrictedPlinioUser(currentUserIdentity),
+    [currentUserIdentity],
+  );
+  const plinioHasAuthorizedApproval = useMemo(
+    () => hasAdminOrDirectorApproval(approvalLog),
+    [approvalLog],
+  );
+  const plinioProviderEditBlocked = isPlinio && !plinioHasAuthorizedApproval;
   const canActivateFullEdit = useMemo(() => {
     if (isPlinio) return false;
     return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
@@ -596,7 +611,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // sobrescreve valores por conta própria (os snapshots de OS aprovadas seguem
   // protegidos no fluxo de salvar/aprovar).
   const canEditClientTablesEvenIfLocked = canOverrideAutoProvider && !isPlinio;
-  const canEditProviderTablesEvenIfLocked = canOverrideAutoProvider || isPlinio;
+  const canEditProviderTablesEvenIfLocked = !plinioProviderEditBlocked
+    && (canOverrideAutoProvider || isPlinio);
   const canEditTablesEvenIfLocked = canEditClientTablesEvenIfLocked || canEditProviderTablesEvenIfLocked;
   const [fullEditMode, setFullEditMode] = useState(false);
   // isController: identifica o cargo Controller para travas de edição.
@@ -619,13 +635,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Plinio: somente fornecedor — bloqueio explícito do lado cliente (P3).
   const canEditClientData = !isPlinio && ((canEditOpsData && !isController) || fullEditMode);
   // Controller pode ajustar o valor total do fornecedor mesmo após verificação.
-  const canEditProviderCostTotal = canEditOpsData && (fullEditMode || !isProviderTotalLockedByController || isControllerRole);
+  const canEditProviderCostTotal = canEditOpsData
+    && !plinioProviderEditBlocked
+    && (fullEditMode || !isProviderTotalLockedByController || isControllerRole);
 
   // TRAVA PÓS-SALVAMENTO: assim que alguém salva ou aprova um faturamento,
   // todos os campos editáveis são bloqueados em todas as telas. Diretoria,
   // administrador e CEO podem destravar manualmente para corrigir algo.
   const isBillingLocked = !!(mission?.billing_verified_by || mission?.billing_approved || mission?.snapshot_approved_by);
-  const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower) || isPlinio || isBarbaraFinance;
+  const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower)
+    || (isPlinio && plinioHasAuthorizedApproval)
+    || isBarbaraFinance;
   // ADMINISTRADOR (ex: Barbara) tem liberação permanente: pode editar OS aprovada
   // a qualquer momento. O sistema registra cada alteração no histórico permanente.
   const isAdminFullAccess = (userRoleLower === 'administrador' || fullEditMode || isBarbaraFinance) && !isPlinio;
@@ -688,6 +708,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   }, [isOpen, mission?.id, mission?.status, tollConfirmed, tollConfirmAutoOpened, showTollConfirmDialog, isCalculatingToll, isController, isEffectivelyLocked, mission?.billing_approved, mission?.toll_value]);
 
   const applyTollConfirmation = async (result: { hasToll: boolean; value: number }) => {
+    if (isPlinio) {
+        showNotification('Sem Permissão', 'Plínio não pode alterar o pedágio do cliente.', 'error');
+        return;
+    }
     const v = result.hasToll ? result.value : 0;
     const isSameOs = mission?.is_same_os === true;
     const pair = tollPersistencePair(v, isSameOs);
@@ -2318,6 +2342,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   };
 
   const handleRecalculateProvider = async () => {
+      if (plinioProviderEditBlocked) {
+          showNotification('Bloqueado', 'Aguardando aprovação da Diretoria ou Administrador.', 'error');
+          return;
+      }
       // Regra: faturamento salvo/aprovado nunca pode ser sobrescrito por recálculo.
       // Só permite recalcular após destravamento manual (diretoria/admin/CEO).
       if (isEffectivelyLocked) {
@@ -2330,7 +2358,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setUseSavedValues(false);
       userManuallyEditedRef.current = false;
       dbValuesLoadedRef.current = false;
-      setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
+      setMission(prev => prev ? (
+          isPlinio
+              ? { ...prev, cost_edit_reason: '' }
+              : { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }
+      ) : prev);
       if (financialData && mission) {
           const isSameOs = mission.is_same_os === true;
           const tollProv = isSameOs ? 0 : parseNumber(tollProviderInput);
@@ -2345,15 +2377,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const recalcProvPayload: any = {
                   cost_value: r2(costServiceOnly),
                   toll_value_provider: r2(tollProv),
-                  billing_verified_by: null,
                   last_update: new Date().toISOString()
               };
+              if (!isPlinio) recalcProvPayload.billing_verified_by = null;
               if (r2(costServiceOnly) === 0) {
                   recalcProvPayload.cost_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] Recalculado pelo sistema (valor zero)`;
               } else {
                   recalcProvPayload.cost_edit_reason = '';
               }
-              recalcProvPayload.revenue_edit_reason = '';
+              if (!isPlinio) recalcProvPayload.revenue_edit_reason = '';
               const { data: currentProv, error: fetchProvErr } = await supabase.from('missions').select('last_update').eq('id', mission.id).single();
               if (fetchProvErr) throw fetchProvErr;
               if (currentProv?.last_update && mission.last_update && currentProv.last_update !== mission.last_update) {
@@ -2444,6 +2476,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Troca rápida da TABELA DE CUSTO do fornecedor (campo Custo). Mesma lógica do
   // cliente, aplicada aos parâmetros do fornecedor.
   const swapProviderTable = (id: string) => {
+      if (plinioProviderEditBlocked) {
+          showNotification('Bloqueado', 'Aguardando aprovação da Diretoria ou Administrador.', 'error');
+          return;
+      }
       setManualProviderTableId(id);
       setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
       setUseSavedValues(false);
@@ -2510,9 +2546,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // Usuários com poder permanente de editar e re-aprovar a qualquer momento.
           isPrivilegedReapprover = uName.includes('daniel') || uName.includes('michelle')
               || isFinanceSupervisorName(u.name)
-              || uName.includes('thiago') || uName.includes('plinio') || uName.includes('plínio');
-          if (uName.includes('plinio') || uName.includes('plínio')) currentUserStage = 'diretoria';
-          else if (uName.includes('daniel') || uName.includes('michelle')) currentUserStage = 'auditor';
+              || uName.includes('thiago');
+          if (uName.includes('daniel') || uName.includes('michelle')) currentUserStage = 'auditor';
           else if (uRole === 'administrador' || isFinanceSupervisorName(u.name)) currentUserStage = 'financeiro';
           else if (uRole === 'diretoria' || uName.includes('thiago')) currentUserStage = 'diretoria';
           else if (uRole === 'controller') currentUserStage = 'controller';
@@ -2529,6 +2564,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const applyOfficialTableToDb = async () => {
       if (!mission || !financialData) return;
+      if (isPlinio) {
+          showNotification('Sem Permissão', 'A tabela oficial altera dados do cliente e não está disponível para Plínio.', 'error');
+          return;
+      }
       setIsUpdating(true);
       isSavingRef.current = true;
       try {
@@ -2587,6 +2626,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleUpdate = async (approve: boolean) => {
       if (!mission) return;
+      if (isPlinio && approve) {
+          showNotification('Sem Permissão', 'Plínio não pode aprovar OS. Utilize somente Salvar.', 'error');
+          return;
+      }
+      if (plinioProviderEditBlocked) {
+          showNotification(
+              'Bloqueado',
+              'A Diretoria ou um Administrador precisa aprovar a OS antes de Plínio ajustar os dados do fornecedor.',
+              'error',
+          );
+          return;
+      }
       if (isSnapshotFrozen && !isController && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro' && currentApprovalStatus.currentUserStage !== 'controller') {
           showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro, Controller ou Diretoria podem editar.`, 'error');
           return;
@@ -2738,11 +2789,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
           const newLog = [...approvalLog];
           if (approve) {
-              // Re-aprovação permitida para usuários privilegiados (Plinio, Barbara, Daniel, Thiago):
+              // Re-aprovação permitida para usuários privilegiados (Barbara, Daniel, Thiago):
               // atualiza o carimbo do estágio com o nome e a data mais recente.
               const uNameLow = (userName || '').toLowerCase();
-              const allowReapprove = uNameLow.includes('plinio') || uNameLow.includes('plínio')
-                  || isFinanceSupervisorName(userName)
+              const allowReapprove = isFinanceSupervisorName(userName)
                   || uNameLow.includes('daniel') || uNameLow.includes('michelle')
                   || uNameLow.includes('thiago');
               const existingIdx = newLog.findIndex(l => l.stage === stage);
@@ -2872,7 +2922,24 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
 
-          const fullPayload = { ...basePayload, toll_value_provider: isSameOs ? 0 : r2(tollProv), displacement_value_provider: isSameOs ? 0 : r2(dispProv), ...reasonFields };
+          // Plínio persiste estritamente o lado fornecedor. Campos do cliente,
+          // aprovação e snapshot nunca entram no UPDATE originado por ele.
+          const fullPayload = isPlinio
+              ? {
+                  cost_value: isSameOs ? 0 : r2(costServiceOnly),
+                  toll_value_provider: isSameOs ? 0 : r2(tollProv),
+                  displacement_value_provider: isSameOs ? 0 : r2(dispProv),
+                  last_update: basePayload.last_update,
+                  ...(reasonFields.cost_edit_reason
+                      ? { cost_edit_reason: reasonFields.cost_edit_reason }
+                      : {}),
+              }
+              : {
+                  ...basePayload,
+                  toll_value_provider: isSameOs ? 0 : r2(tollProv),
+                  displacement_value_provider: isSameOs ? 0 : r2(dispProv),
+                  ...reasonFields,
+              };
           let result = await supabase.from('missions').update(fullPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
           if (!result.error && shouldSnapshot && basePayload.snapshot_data) {
               await supabase.from('system_logs').insert([{
@@ -2999,8 +3066,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   r2(existingSnap.hrExtraTotal || 0) !== r2(newHrExtraTotal)
               );
 
-              if (revenueChanged || costChanged || tollChanged || tollProvChanged || dispChanged || dispProvChanged || tableChanged || providerTableChanged || breakdownChanged) {
-                  const updatedSnap = {
+              const shouldResyncSnapshot = isPlinio
+                  ? costChanged || tollProvChanged || dispProvChanged || providerTableChanged
+                  : revenueChanged || costChanged || tollChanged || tollProvChanged
+                      || dispChanged || dispProvChanged || tableChanged
+                      || providerTableChanged || breakdownChanged;
+              if (shouldResyncSnapshot) {
+                  const updatedSnap = isPlinio ? {
+                      ...existingSnap,
+                      costServiceOnly: r2(costServiceOnly),
+                      tollProvider: r2(tollProv),
+                      displacementProvider: r2(dispProv),
+                      providerTableId: newProviderTableId,
+                      snapshot_resynced_at: new Date().toISOString(),
+                      snapshot_resynced_by: userName,
+                  } : {
                       ...existingSnap,
                       // valores financeiros
                       revenueServiceOnly: r2(revServiceOnly),
@@ -3037,7 +3117,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
           
-          if (isFullyApproved && manualClientTableId) {
+          if (!isPlinio && isFullyApproved && manualClientTableId) {
               const missionProvNorm = (mission.provider || '').toUpperCase().trim();
               const routeKeyFull = `${mission.client}|${missionProvNorm}|${mission.origin}|${mission.destination}`.toUpperCase();
               const routeKeyBase = `${mission.client}|${mission.origin}|${mission.destination}`.toUpperCase();
@@ -5139,7 +5219,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <h4 className="text-sm font-black text-red-700 uppercase tracking-widest flex items-center gap-2">
                                     [ {formatProviderName(mission.provider)} ]
                                 </h4>
-                                {!mission.is_same_os && !isEffectivelyLocked && (
+                                {!mission.is_same_os && !isEffectivelyLocked && !plinioProviderEditBlocked && (
                                     <button
                                         data-testid="btn-recalculate-provider"
                                         onClick={() => setShowRecalcProviderDialog(true)}
@@ -5159,6 +5239,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 <button
                                                     data-testid="btn-recalc-and-reset"
                                                     onClick={async () => {
+                                                        if (plinioProviderEditBlocked) {
+                                                            showNotification('Bloqueado', 'Aguardando aprovação da Diretoria ou Administrador.', 'error');
+                                                            return;
+                                                        }
                                                         setShowRecalcProviderDialog(false);
                                                         const currentTableId = manualProviderTableId;
                                                         setCustomProviderBase('');
@@ -5166,11 +5250,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                         setCustomProviderHour('');
                                                         setUseSavedValues(false);
                                                         userManuallyEditedRef.current = false;
-                                                        setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
+                                                        setMission(prev => prev ? (
+                                                            isPlinio
+                                                                ? { ...prev, cost_edit_reason: '' }
+                                                                : { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }
+                                                        ) : prev);
                                                         setManualProviderTableId('');
                                                         if (mission) {
-                                                            await supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id);
-                                                            await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
+                                                            const resetPayload = isPlinio
+                                                                ? { cost_edit_reason: '' }
+                                                                : { revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null };
+                                                            await supabase.from('missions').update(resetPayload).eq('id', mission.id);
+                                                            if (!isPlinio) {
+                                                                await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
+                                                            }
                                                         }
                                                         setTimeout(() => {
                                                             setManualProviderTableId(currentTableId);
@@ -5229,6 +5322,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 : []),
                                         ];
                                         const handleChange = (val: string) => {
+                                            if (plinioProviderEditBlocked) return;
                                             if (isEffectivelyLocked && !fullEditMode && !canEditTablesEvenIfLocked) return;
                                             if (financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider) return;
                                             setManualProviderTableId(val);
@@ -5239,8 +5333,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             // tabela de custo pela auditoria fica apenas em estado local até o
                                             // Salvar/Aprovar explícito (preserva snapshots imutáveis).
                                             if (!(isBillingLocked && canEditTablesEvenIfLocked)) {
-                                                setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
-                                                if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id);
+                                                const resetPayload = isPlinio
+                                                    ? { cost_edit_reason: '' }
+                                                    : { revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null };
+                                                setMission(prev => prev ? { ...prev, ...resetPayload } : prev);
+                                                if (mission) supabase.from('missions').update(resetPayload).eq('id', mission.id);
                                             }
                                             recalcBigNumbersOnTableSwap({ providerTableId: val });
                                         };
@@ -5249,7 +5346,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         // OS 5046: a auditoria (canOverrideAutoProvider) também pode trocar a
                                         // tabela com o motor auto ATIVO, sem precisar de EDIÇÃO TOTAL.
                                         const autoBlocksSelector = !!financialData.autoEngine?.active && !canOverrideAutoProvider;
-                                        const providerSelectorDisabled = !fullEditMode && (mission.is_same_os || (isEffectivelyLocked && !canEditTablesEvenIfLocked) || autoBlocksSelector);
+                                        const providerSelectorDisabled = plinioProviderEditBlocked
+                                            || (!fullEditMode && (mission.is_same_os || (isEffectivelyLocked && !canEditTablesEvenIfLocked) || autoBlocksSelector));
                                         return (
                                             <FilterableSelect
                                                 value={(!fullEditMode && financialData.autoEngine?.active) ? '' : (manualProviderTableId || '')}
@@ -5578,9 +5676,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="text-sm font-bold text-blue-500 mr-2">R$</span>
                                     <input 
                                         type="text" 
-                                        className="flex-1 bg-transparent border-none outline-none font-black text-xl text-blue-900" 
+                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-blue-900 ${plinioProviderEditBlocked ? 'pointer-events-none opacity-60' : ''}`}
                                         value={tollProviderInput} 
-                                        onChange={e => handleTollProviderChange(e.target.value)}
+                                        onChange={e => { if (!plinioProviderEditBlocked) handleTollProviderChange(e.target.value); }}
+                                        readOnly={plinioProviderEditBlocked}
+                                        title={plinioProviderEditBlocked ? 'Aguardando aprovação da Diretoria ou Administrador' : undefined}
                                         data-testid="input-toll-provider"
                                     />
                                     <Briefcase size={16} className="text-blue-300 ml-2" />
@@ -6257,22 +6357,24 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="truncate">Pedir Análise</span>
                                   </button>
                                 )}
-                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={isEffectivelyLocked ? 'Faturamento travado — destrave para editar' : ''} data-testid="button-save-adjustments">
+                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || plinioProviderEditBlocked || (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked || plinioProviderEditBlocked) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={plinioProviderEditBlocked ? 'Aguardando aprovação da Diretoria ou Administrador' : isEffectivelyLocked ? 'Faturamento travado — destrave para editar' : ''} data-testid="button-save-adjustments">
                                     {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? <Lock size={14} className="shrink-0" /> : <Save size={14} className="shrink-0" />}
-                                    <span className="truncate">{(currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado' : 'Salvar'}</span>
+                                    <span className="truncate">{(plinioProviderEditBlocked || (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance)) ? 'Bloqueado' : 'Salvar'}</span>
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 
-                                    disabled={isUpdating || opsIncomplete || (requiresTollGate && !tollConfirmed && !isBarbaraFinance) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))} 
-                                    className={`flex-[1.2] sm:flex-none px-2 sm:px-6 py-2 rounded-lg sm:rounded-xl font-black uppercase text-[9px] sm:text-xs shadow-md flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 h-9 sm:h-10 ${opsIncomplete ? 'bg-gray-400 cursor-not-allowed text-gray-200' : requiresTollGate && !tollConfirmed && !isBarbaraFinance ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
-                                    title={opsIncomplete ? `Preencha: ${opsMissingFields.join(', ')}` : undefined}
+                                    disabled={isPlinio || isUpdating || opsIncomplete || (requiresTollGate && !tollConfirmed && !isBarbaraFinance) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))}
+                                    className={`flex-[1.2] sm:flex-none px-2 sm:px-6 py-2 rounded-lg sm:rounded-xl font-black uppercase text-[9px] sm:text-xs shadow-md flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 h-9 sm:h-10 ${isPlinio ? 'bg-gray-400 cursor-not-allowed text-gray-200' : opsIncomplete ? 'bg-gray-400 cursor-not-allowed text-gray-200' : requiresTollGate && !tollConfirmed && !isBarbaraFinance ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    title={isPlinio ? 'Plínio pode somente salvar; aprovação exclusiva da Diretoria ou Administrador' : opsIncomplete ? `Preencha: ${opsMissingFields.join(', ')}` : undefined}
                                     data-testid="button-approve-billing"
                                 >
                                     <span className="flex items-center gap-1 sm:gap-2">
-                                        {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : opsIncomplete ? <AlertTriangle size={14} className="shrink-0" /> : (!currentApprovalStatus.isPrivilegedReapprover && (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria)) ? <Lock size={14} className="text-amber-600 shrink-0" /> : <CheckCircle2 size={14} className="shrink-0" />} 
+                                        {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : isPlinio ? <Lock size={14} className="shrink-0" /> : opsIncomplete ? <AlertTriangle size={14} className="shrink-0" /> : (!currentApprovalStatus.isPrivilegedReapprover && (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria)) ? <Lock size={14} className="text-amber-600 shrink-0" /> : <CheckCircle2 size={14} className="shrink-0" />}
                                         <span className="truncate">
-                                        {opsIncomplete
-                                            ? 'Dados pendentes'
+                                        {isPlinio
+                                            ? 'Sem permissão'
+                                            : opsIncomplete
+                                                ? 'Dados pendentes'
                                             : currentApprovalStatus.isPrivilegedReapprover && currentApprovalStatus.isFullyApproved
                                             ? 'Re-Aprovar'
                                             : (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')

@@ -4,6 +4,7 @@
  */
 import { authToken, parseJsonBody } from '../lib/email/missionEmailHelpers.js';
 import { sendMedicaoEmailLite } from '../lib/billing/sendMedicaoEmailServer.js';
+import { parseEmailRecipients } from '../lib/email/recipientList.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader?.('Cache-Control', 'no-store');
@@ -18,7 +19,8 @@ export default async function handler(req: any, res: any) {
 
   try {
     const body = parseJsonBody(req.body);
-    const clientEmail = String(body.clientEmail || '').trim();
+    const recipients = parseEmailRecipients(body.clientEmail);
+    const clientEmail = recipients.join(', ');
     const clientName = String(body.clientName || '').trim();
     const periodLabel = String(body.periodLabel || '').trim();
     const dueDate = String(body.dueDate || '').slice(0, 10);
@@ -28,7 +30,7 @@ export default async function handler(req: any, res: any) {
     const senderName = String(body.senderName || '').trim() || undefined;
     const attachments = Array.isArray(body.attachments) ? body.attachments : [];
 
-    if (!clientEmail.includes('@')) {
+    if (recipients.length === 0) {
       res.status(400).json({ ok: false, error: 'E-mail do cliente inválido' });
       return;
     }
@@ -58,10 +60,21 @@ export default async function handler(req: any, res: any) {
     });
 
     if (!result.success) {
-      res.status(502).json({ ok: false, error: result.error || 'Falha ao enviar e-mail' });
+      res.status(502).json({
+        ok: false,
+        error: result.error || 'Falha ao enviar e-mail',
+        messageId: result.messageId,
+        recipients: result.recipients || recipients,
+        rejected: result.rejected || [],
+      });
       return;
     }
-    res.status(200).json({ ok: true, messageId: result.messageId });
+    res.status(200).json({
+      ok: true,
+      messageId: result.messageId,
+      recipients: result.recipients || recipients,
+      rejected: result.rejected || [],
+    });
   } catch (e: any) {
     console.error('[billing-send-medicao]', e?.message || e);
     res.status(500).json({ ok: false, error: e?.message || 'Erro ao enviar medição' });

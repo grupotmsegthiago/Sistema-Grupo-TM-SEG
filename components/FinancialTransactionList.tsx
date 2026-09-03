@@ -8,7 +8,8 @@ import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
 import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
-import { FinancialTransaction, TransactionType, TransactionStatus, FinancialAccount, FinancialCategory } from '../types';
+import { FinancialTransaction, TransactionType, TransactionStatus, FinancialAccount, FinancialCategory, FinancialPaymentMethod } from '../types';
+import { FINANCIAL_PAYMENT_METHODS } from '../lib/financial/paymentMethods';
 import { 
   Plus, Search, Edit, Trash2, RefreshCw, 
   FileText, Calendar, Wallet, ArrowUpCircle, ArrowDownCircle, 
@@ -17,7 +18,7 @@ import {
   ArrowRight, AlertCircle, ClipboardCheck, Receipt, 
   FileCheck, BarChart3, Lock, ChevronRight, Eye,
   Building2, Truck, CircleDollarSign, Clock, Filter,
-  Upload, Send, Wallet
+  Upload, Send
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import FinancialTransactionForm from './FinancialTransactionForm';
@@ -74,7 +75,7 @@ const FinancialTransactionList: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
-    const [paymentMethodFilter, setPaymentMethodFilter] = useState<'ALL' | 'PIX' | 'BOLETO' | 'TRANSFERENCIA'>('ALL');
+    const [paymentMethodFilter, setPaymentMethodFilter] = useState<'ALL' | FinancialPaymentMethod>('ALL');
     const [viewPeriod, setViewPeriod] = useState<'DAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL'>('MONTH');
     const [customStartDate, setCustomStartDate] = useState(getTodayBR());
     const [customEndDate, setCustomEndDate] = useState(getTodayBR());
@@ -928,13 +929,17 @@ const FinancialTransactionList: React.FC = () => {
                 <div>
                     <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block tracking-widest">Forma de Pagamento</label>
                     <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-                        {([['ALL', 'Tudo'], ['PIX', 'PIX'], ['BOLETO', 'Boleto'], ['TRANSFERENCIA', 'Transferência']] as [typeof paymentMethodFilter, string][]).map(([id, label]) => (
+                        {([
+                            { value: 'ALL', label: 'Tudo' },
+                            ...FINANCIAL_PAYMENT_METHODS,
+                        ] as const).map(({ value: id, label }) => (
                             <button key={id} onClick={() => setPaymentMethodFilter(id)}
                                 className={`flex-1 py-1.5 text-[10px] font-black uppercase rounded transition-all ${
                                     paymentMethodFilter === id 
                                         ? id === 'PIX' ? 'bg-teal-500 text-white shadow-sm' 
                                         : id === 'BOLETO' ? 'bg-orange-500 text-white shadow-sm' 
                                         : id === 'TRANSFERENCIA' ? 'bg-indigo-500 text-white shadow-sm'
+                                        : id === 'DEBITO_AUTOMATICO' ? 'bg-cyan-600 text-white shadow-sm'
                                         : 'bg-white text-gray-900 shadow-sm'
                                         : 'text-gray-500'
                                 }`}
@@ -1111,14 +1116,15 @@ const FinancialTransactionList: React.FC = () => {
                                                 t.payment_method === 'PIX' ? 'bg-teal-50 text-teal-700 border-teal-200' :
                                                 t.payment_method === 'BOLETO' ? 'bg-orange-50 text-orange-700 border-orange-200' :
                                                 t.payment_method === 'TRANSFERENCIA' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                                t.payment_method === 'DEBITO_AUTOMATICO' ? 'bg-cyan-50 text-cyan-700 border-cyan-200' :
                                                 'bg-gray-50 text-gray-400 border-gray-200'
                                             }`}
                                             data-testid={`select-payment-method-${t.id}`}
                                         >
                                             <option value="">—</option>
-                                            <option value="PIX">PIX</option>
-                                            <option value="BOLETO">Boleto</option>
-                                            <option value="TRANSFERENCIA">Transferência</option>
+                                            {FINANCIAL_PAYMENT_METHODS.map(method => (
+                                                <option key={method.value} value={method.value}>{method.label}</option>
+                                            ))}
                                         </select>
                                     </td>
                                     <td className="px-4 py-3 text-center">

@@ -1,4 +1,7 @@
 
+import type { FinancialPaymentMethod } from './lib/financial/paymentMethods';
+export type { FinancialPaymentMethod } from './lib/financial/paymentMethods';
+
 export enum MissionStatus {
   SOLICITED = 'Solicitada',
   DOCUMENTATION = 'Documentação',
@@ -371,7 +374,7 @@ export interface FinancialTransaction {
   updated_by?: string; 
   notes?: string;
   status_conciliacao?: 'PENDENTE' | 'CONCILIADO' | 'DIVERGENTE';
-  payment_method?: 'PIX' | 'BOLETO' | 'TRANSFERENCIA' | null;
+  payment_method?: FinancialPaymentMethod | null;
   /** Soma dos pagamentos recebidos (Contas a Receber). */
   amount_paid?: number | null;
   /** Saldo em aberto (amount - amount_paid). */

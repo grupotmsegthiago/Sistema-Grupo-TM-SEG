@@ -3,6 +3,10 @@
  * Módulo leve para API serverless — não importa pdfReportService.
  */
 import nodemailer from 'nodemailer';
+import {
+  parseEmailRecipients,
+  rejectedRequestedRecipients,
+} from '../email/recipientList.js';
 
 const EMAIL_USER = process.env.EMAIL_USER || 'adm@grupotmseg.com.br';
 const EMAIL_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || '';
@@ -53,7 +57,13 @@ export type MedicaoEmailData = {
 
 export async function sendMedicaoEmailLite(
   data: MedicaoEmailData,
-): Promise<{ success: boolean; messageId?: string; error?: string }> {
+): Promise<{
+  success: boolean;
+  messageId?: string;
+  recipients?: string[];
+  rejected?: string[];
+  error?: string;
+}> {
   const html = baseTemplate(`
     <h2 style="margin:0 0 12px;font-size:18px;">Boletim de Medição — ${data.clientName}</h2>
     <p>Prezado(a) Cliente,</p>
@@ -70,6 +80,10 @@ export async function sendMedicaoEmailLite(
   `, data.senderName);
 
   try {
+    const recipients = parseEmailRecipients(data.clientEmail);
+    if (recipients.length === 0) {
+      return { success: false, error: 'Nenhum destinatário válido informado.' };
+    }
     const transporter = nodemailer.createTransport({
       host: 'smtp.office365.com',
       port: 587,
@@ -81,7 +95,7 @@ export async function sendMedicaoEmailLite(
 
     const info = await transporter.sendMail({
       from: SMTP_FROM,
-      to: data.clientEmail,
+      to: recipients,
       cc: ['financeiro@grupotmseg.com.br'],
       bcc: ['thiago@grupotmseg.com.br'],
       replyTo: 'financeiro@grupotmseg.com.br',
@@ -93,7 +107,21 @@ export async function sendMedicaoEmailLite(
         contentType: a.contentType,
       })),
     });
-    return { success: true, messageId: info.messageId || '' };
+    const messageId = info.messageId || '';
+    const rejected = (Array.isArray(info.accepted) || Array.isArray(info.rejected))
+      ? rejectedRequestedRecipients(recipients, info.accepted, info.rejected)
+      : [];
+    if (rejected.length > 0) {
+      return {
+        success: false,
+        messageId,
+        recipients,
+        rejected,
+        error: `Servidor SMTP não aceitou: ${rejected.join(', ')}`,
+      };
+    }
+    console.log(`[Email] Medição aceita para ${recipients.join(', ')} | Message-ID: ${messageId}`);
+    return { success: true, messageId, recipients, rejected: [] };
   } catch (err: any) {
     console.error('[Email] Medição falhou:', err?.message);
     return { success: false, error: err?.message || 'smtp_error' };

@@ -50,6 +50,7 @@ import { fetchRouteProgress, normalizeProgressDestination, resolveRouteProgressP
 import DhlIntakeTimeline from './DhlIntakeTimeline';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import { tollPersistencePair } from '../lib/toll/clientTollBilling';
+import { isRestrictedPlinioUser } from '../lib/plinioMissionRestrictions';
 
 // Importação dos formulários para modo modal/cadastro rápido
 import ProviderForm from './ProviderForm';
@@ -885,7 +886,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         return role === 'comercial';
     }, [currentUser]);
 
-    // Apenas Plinio, Barbara e Simone preenchem o pedágio ao finalizar.
+    const isPlinio = useMemo(
+        () => isRestrictedPlinioUser(currentUser),
+        [currentUser],
+    );
+
+    // Apenas Barbara e Simone preenchem o pedágio do cliente ao finalizar.
+    // Plínio atua somente no lado fornecedor, após aprovação superior.
     // Operadores (Michele, Beatriz, Lucas, Daniel, etc.) finalizam a OS
     // sem o gate de pedágio — o valor é cobrado depois, no fluxo financeiro.
     const isTollResponsibleUser = useMemo(() => {
@@ -895,7 +902,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             .toLowerCase().trim();
         const name = norm(currentUser.name || currentUser.username || '');
         if (!name) return false;
-        const allowedFirstNames = ['plinio', 'barbara', 'simone'];
+        const allowedFirstNames = ['barbara', 'simone'];
         const firstName = name.split(/\s+/)[0];
         return allowedFirstNames.includes(firstName) || allowedFirstNames.some(n => name.includes(n));
     }, [currentUser]);
@@ -931,7 +938,6 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         if (role === 'diretoria') return true;
         if (name.includes('thiago moreira')) return true;
         if (name.includes('thiago') && !name.includes('arruda')) return true;
-        if (name.includes('plinio') || name.includes('plínio')) return true;
         return false;
     }, [currentUser]);
     const canEditApproved = hasPrivilegedOsEdit;
@@ -3052,6 +3058,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const handleTollConfirmedAfterCompletion = async (result: { hasToll: boolean; value: number }) => {
         if (!mission) return;
+        if (isPlinio) {
+            showNotification('Sem Permissão', 'Plínio não pode alterar o pedágio do cliente.', 'error');
+            return;
+        }
         const v = result.hasToll ? result.value : 0;
         // Persistência é OBRIGATÓRIA: se falhar, propaga o erro para o
         // dialog (mantém aberto). Em sucesso, re-dispara o submit que
@@ -3088,7 +3098,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         // Salva direto em toll_value (e toll_value_provider = 0 quando é a mesma
         // OS) sem pedir confirmação manual. OS aprovada NUNCA é tocada. Em
         // falha, mantém o gate manual de pedágio (tollConfirmedRef permanece false).
-        if (mission && kind === 'completed' && !mission.billing_approved) {
+        if (mission && kind === 'completed' && !mission.billing_approved && !isPlinio) {
             try {
                 const r = await withTimeout(
                     authFetch('/api/toll/gemini-estimate', {

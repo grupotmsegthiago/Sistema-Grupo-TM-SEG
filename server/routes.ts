@@ -6291,7 +6291,17 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         nfNumber: invoiceData?.number || undefined,
       });
 
-      res.json({ success: result.success, messageId: result.messageId || null, nfIncluded: hasNf, boletoIncluded: hasBoleto, pixIncluded: !!pixData });
+      const responseBody = {
+        success: result.success,
+        messageId: result.messageId || null,
+        recipients: result.recipients || [],
+        rejected: result.rejected || [],
+        error: result.error || undefined,
+        nfIncluded: hasNf,
+        boletoIncluded: hasBoleto,
+        pixIncluded: !!pixData,
+      };
+      res.status(result.success ? 200 : 502).json(responseBody);
     } catch (err: any) {
       console.error('[Email] Erro ao enviar email de cobrança:', err.message);
       res.status(500).json({ error: err.message });

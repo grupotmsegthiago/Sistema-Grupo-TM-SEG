@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { X, Save, Loader2, DollarSign, Calendar, Tag, Wallet, Layers, Plus, ArrowRightLeft } from 'lucide-react';
-import { FinancialCategory, TransactionType, FinancialAccount, TransactionStatus } from '../types';
+import { X, Save, Loader2, DollarSign, Calendar, Tag, Wallet, Layers, Plus, ArrowRightLeft, Trash2 } from 'lucide-react';
+import { FinancialCategory, TransactionType, FinancialAccount, TransactionStatus, FinancialPaymentMethod } from '../types';
 import QuickCategoryModal from './QuickCategoryModal';
 import FinancialAccountManager from './FinancialAccountManager';
 import { INTERNAL_TRANSFER_NOTE_TAG, isInternalGroupTransfer } from '../lib/financialInternalTransfer';
+import { deleteFinancialCategorySafely } from '../lib/financialCategories';
+import { logAction } from '../lib/logger';
+import { FINANCIAL_PAYMENT_METHODS } from '../lib/financial/paymentMethods';
 
 interface Props {
   onClose: () => void;
@@ -35,7 +38,7 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
   const [entityType, setEntityType] = useState<'Client' | 'Provider' | 'Other' | 'Personal'>('Other');
   const [entityId, setEntityId] = useState('');
   const [notes, setNotes] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'BOLETO' | 'TRANSFERENCIA' | ''>('');
+  const [paymentMethod, setPaymentMethod] = useState<FinancialPaymentMethod | ''>('');
 
   const [recurrence, setRecurrence] = useState<'SINGLE' | 'INSTALLMENT' | 'FIXED'>('SINGLE');
   const [recurrenceCount, setRecurrenceCount] = useState<number>(2);
@@ -44,6 +47,7 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
   const [entities, setEntities] = useState<{id: string, name: string}[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeletingCategory, setIsDeletingCategory] = useState(false);
 
   const [showQuickCategory, setShowQuickCategory] = useState(false);
   const [showAccountManager, setShowAccountManager] = useState(false);
@@ -317,6 +321,40 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
       setCategoryId(newCat.id);
   };
 
+  const handleDeleteSelectedCategory = async () => {
+      const category = categories.find(c => c.id === categoryId);
+      if (!category) {
+          alert('Selecione a categoria que deseja excluir.');
+          return;
+      }
+      if (!confirm(`Excluir a categoria "${category.name}"?\n\nA exclusão só será permitida se nenhum lançamento estiver usando esta categoria.`)) return;
+
+      setIsDeletingCategory(true);
+      try {
+          const result = await deleteFinancialCategorySafely(supabase, category.id);
+          if (!result.deleted) {
+              alert(
+                  `Não é possível excluir "${category.name}": ` +
+                  `${result.inUseCount} lançamento(s) ainda usam esta categoria.\n\n` +
+                  'Altere a categoria desses lançamentos antes de excluir.',
+              );
+              return;
+          }
+          await logAction(
+              'DELETE',
+              'FinancialCategory',
+              category.id,
+              `Categoria financeira excluída: ${category.name} (${category.type})`,
+          );
+          setCategories(prev => prev.filter(c => c.id !== category.id));
+          setCategoryId('');
+      } catch (error: any) {
+          alert('Erro ao excluir categoria: ' + (error?.message || 'Erro desconhecido'));
+      } finally {
+          setIsDeletingCategory(false);
+      }
+  };
+
   const selectEntryKind = (kind: EntryKind) => {
       setEntryKind(kind);
       if (kind === 'TRANSFER') {
@@ -430,7 +468,17 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
                                     <option value="">Selecione...</option>
                                     {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                 </select>
-                                <button type="button" onClick={() => setShowQuickCategory(true)} className="p-2 bg-gray-100 text-gray-600 rounded-lg"><Plus size={16} /></button>
+                                <button type="button" onClick={() => setShowQuickCategory(true)} className="p-2 bg-gray-100 text-gray-600 rounded-lg" title="Criar categoria"><Plus size={16} /></button>
+                                <button
+                                    type="button"
+                                    onClick={handleDeleteSelectedCategory}
+                                    disabled={!categoryId || isDeletingCategory}
+                                    className="p-2 bg-red-50 text-red-600 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title={categoryId ? 'Excluir categoria selecionada' : 'Selecione uma categoria para excluir'}
+                                    data-testid="btn-delete-category"
+                                >
+                                    {isDeletingCategory ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                                </button>
                             </div>
                         </div>
                         <div>
@@ -462,11 +510,11 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
                 </div>
                 <div>
                     <label className="text-[10px] font-black text-gray-400 uppercase mb-1 flex items-center gap-1"><Wallet size={12}/> Forma de Pagamento</label>
-                    <select className="w-full p-2.5 border rounded-lg text-sm bg-white uppercase font-bold" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value as any)} data-testid="select-payment-method">
+                    <select className="w-full p-2.5 border rounded-lg text-sm bg-white uppercase font-bold" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value as FinancialPaymentMethod | '')} data-testid="select-payment-method">
                         <option value="">Não informado</option>
-                        <option value="PIX">PIX</option>
-                        <option value="BOLETO">Boleto</option>
-                        <option value="TRANSFERENCIA">Transferência</option>
+                        {FINANCIAL_PAYMENT_METHODS.map(method => (
+                            <option key={method.value} value={method.value}>{method.label}</option>
+                        ))}
                     </select>
                 </div>
             </div>

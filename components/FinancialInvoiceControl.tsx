@@ -24,6 +24,7 @@ import {
   formatManualRetryFeedback,
   missingAsaasPaymentFeedback,
 } from '../lib/nfRetryInvoiceFeedback';
+import { formatEmailRecipients, parseEmailRecipients } from '../lib/email/recipientList';
 import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
   AlertCircle, Clock, XCircle, DollarSign, Receipt, Eye, Loader2,
@@ -534,11 +535,39 @@ const FinancialInvoiceControl: React.FC = () => {
   };
 
   const handleSendEmail = async (inv: Invoice) => {
-    const clientEmail = prompt('E-mail do cliente para envio da cobrança:');
-    if (!clientEmail || !clientEmail.includes('@')) {
-      if (clientEmail !== null) alert('E-mail inválido.');
+    let registeredRecipients = '';
+    try {
+      let { data: clientRows } = await supabase
+        .from('clients')
+        .select('medicao_email, email, operational_email')
+        .eq('name', inv.client)
+        .limit(1);
+      if (!clientRows?.length) {
+        ({ data: clientRows } = await supabase
+          .from('clients')
+          .select('medicao_email, email, operational_email')
+          .eq('trading_name', inv.client)
+          .limit(1));
+      }
+      const client = clientRows?.[0] as any;
+      registeredRecipients = formatEmailRecipients(
+        client?.medicao_email || client?.email || client?.operational_email || '',
+      );
+    } catch (error) {
+      console.warn('[Email] Não foi possível carregar destinatários cadastrados:', error);
+    }
+
+    const typedRecipients = prompt(
+      'E-mails do cliente para envio da medição, boleto e faturamento:',
+      registeredRecipients,
+    );
+    if (typedRecipients === null) return;
+    const recipients = parseEmailRecipients(typedRecipients);
+    if (recipients.length === 0) {
+      alert('Informe ao menos um e-mail válido.');
       return;
     }
+    const clientEmail = recipients.join(', ');
     if (!confirm(`Enviar email de cobrança para:\n${clientEmail}\n\nFatura: NF ${inv.number}\nValor: ${fmtBRL(inv.amount)}\nCliente: ${inv.client}`)) return;
     setSendingEmailId(inv.id);
     try {
@@ -558,10 +587,14 @@ const FinancialInvoiceControl: React.FC = () => {
       });
       const result = await res.json();
       if (result.error) throw new Error(result.error);
-      const details: string[] = ['Email enviado com sucesso!'];
+      if (!res.ok || result.success !== true) {
+        throw new Error(result.error || `Falha no envio (HTTP ${res.status})`);
+      }
+      const details: string[] = [`E-mail aceito pelo servidor para ${recipients.length} destinatário(s).`];
       if (result.boletoIncluded) details.push('✓ Boleto incluído');
       if (result.nfIncluded) details.push('✓ Nota Fiscal incluída');
       if (result.pixIncluded) details.push('✓ PIX incluído');
+      if (result.messageId) details.push(`Rastreio: ${result.messageId}`);
       alert(details.join('\n'));
     } catch (e: any) {
       alert('Erro ao enviar email: ' + e.message);

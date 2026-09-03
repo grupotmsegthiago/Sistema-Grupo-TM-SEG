@@ -41,7 +41,12 @@ export function isPureMedicaoReceivable(t: MedicaoReceivableLike | null | undefi
 
   // Já tem cobrança real → pode aparecer
   if (notes.includes('Asaas:') || /Fatura\s+TMSEG-/i.test(notes)) return false;
-  if (method === 'BOLETO' || method === 'PIX' || method === 'CREDIT_CARD') return false;
+  if (
+    method === 'BOLETO'
+    || method === 'PIX'
+    || method === 'CREDIT_CARD'
+    || method === 'DEBITO_AUTOMATICO'
+  ) return false;
 
   if (notes.includes('Boletim de Medição enviado')) return true;
   if (/Ref\s*MED-/i.test(notes)) return true;

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { FinancialCategory } from '../types';
 import { Plus, Trash2, Tag, Save, X, Loader2, ArrowUpCircle, ArrowDownCircle, Building2, User, Pencil } from 'lucide-react';
+import { deleteFinancialCategorySafely } from '../lib/financialCategories';
 
 interface Props {
     onClose?: () => void;
@@ -51,8 +52,14 @@ const FinancialCategoryManager: React.FC<Props> = ({ onClose }) => {
         if (!confirm("Excluir esta categoria?")) return;
         try {
             const cat = categories.find(c => c.id === id);
-            const { error } = await supabase.from('financial_categories').delete().eq('id', id);
-            if (error) throw error;
+            const result = await deleteFinancialCategorySafely(supabase, id);
+            if (!result.deleted) {
+                alert(
+                    `Não é possível excluir "${cat?.name || 'esta categoria'}": ` +
+                    `${result.inUseCount} lançamento(s) ainda usam esta categoria.`,
+                );
+                return;
+            }
             await logAction('DELETE', 'FinancialCategory', id, `Categoria financeira excluída: ${cat?.name || 'N/A'} (${cat?.type || 'N/A'})`);
             fetchCategories();
         } catch (e: any) {

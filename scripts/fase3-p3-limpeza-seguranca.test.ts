@@ -22,10 +22,10 @@ describe('P3 — billing-override exige auth', () => {
 describe('P3 — Plinio somente fornecedor', () => {
   it('MissionFinancialModal bloqueia cliente para Plinio', () => {
     const src = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
-    assert.match(src, /const isPlinio = userNameLower\.includes\('plinio'\)/);
+    assert.match(src, /isRestrictedPlinioUser\(currentUserIdentity\)/);
     assert.match(src, /canEditClientData = !isPlinio/);
     assert.match(src, /canEditClientTablesEvenIfLocked = canOverrideAutoProvider && !isPlinio/);
-    assert.match(src, /canEditProviderTablesEvenIfLocked = canOverrideAutoProvider \|\| isPlinio/);
+    assert.match(src, /canEditProviderTablesEvenIfLocked = !plinioProviderEditBlocked/);
     assert.doesNotMatch(src, /isAdminFullAccess = userRoleLower === 'administrador' \|\| fullEditMode \|\| isPlinio/);
   });
 
@@ -48,11 +48,12 @@ describe('P3 — Plinio somente fornecedor', () => {
       assert.match(slice, /readOnly=\{clientFinanceInputLocked\}/, `${testId} deve ter readOnly ligado ao gate`);
     }
 
-    // Fornecedor permanece editável (pedágio fornecedor não usa clientFinanceInputLocked)
+    // Fornecedor não usa o gate do cliente, mas aguarda aprovação Diretoria/Admin.
     const provIdx = src.indexOf('data-testid="input-toll-provider"');
     assert.ok(provIdx > 0);
-    const provSlice = src.slice(Math.max(0, provIdx - 400), provIdx + 120);
+    const provSlice = src.slice(Math.max(0, provIdx - 600), provIdx + 120);
     assert.doesNotMatch(provSlice, /clientFinanceInputLocked/);
+    assert.match(provSlice, /readOnly=\{plinioProviderEditBlocked\}/);
 
     // Destravar billing não contorna: gate inclui !canEditClientData (false para Plinio)
     assert.match(src, /canUnlockBilling[\s\S]{0,200}isPlinio/);
