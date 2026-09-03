@@ -7,6 +7,10 @@ import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw, Send } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, resolveCancelledWindow } from '../lib/financialUtils';
 import { resolveMissionDisplacement } from '../lib/billing/resolveMissionDisplacement';
+import {
+    resolveOfficialMissionTotal,
+    resolveOfficialProviderTotal,
+} from '../lib/billing/resolveOfficialMissionTotal';
 import { resolveStoredClientToll, resolveStoredProviderToll } from '../lib/toll/clientTollBilling';
 import { computeDhlBand, findDhlAutoClient, selectDhlClientTable, DHL_CLIENT_NAME } from '../lib/dhlAutoTableSelector';
 import MissionFinancialModal from './MissionFinancialModal';
@@ -83,6 +87,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [allClientTables, setAllClientTables] = useState<ClientPriceTable[]>([]);
     const [allProviderTables, setAllProviderTables] = useState<ProviderCostTable[]>([]);
     const [billingAdjustments, setBillingAdjustments] = useState<Record<string, any>>({});
+    const [billingAdjustmentTimestamps, setBillingAdjustmentTimestamps] = useState<Record<string, number>>({});
     const [chartsLoading, setChartsLoading] = useState(false);
     const [chartsGenerated, setChartsGenerated] = useState(false);
 
@@ -452,14 +457,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             setProviderTables(pctRes.data as any || []);
 
             const adjMap: Record<string, any> = {};
+            const adjTsMap: Record<string, number> = {};
             if (adjRes.data) {
                 for (const row of adjRes.data) {
                     if (!adjMap[row.entity_id]) {
                         try { adjMap[row.entity_id] = JSON.parse(row.details); } catch {}
+                        adjTsMap[row.entity_id] = new Date(row.created_at).getTime() || 0;
                     }
                 }
             }
             setBillingAdjustments(adjMap);
+            setBillingAdjustmentTimestamps(adjTsMap);
 
             if (snapRes.data) {
                 const snapMap: Record<string, any> = {};
@@ -1018,6 +1026,26 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const hasFrozenMissions = useMemo(() => missions.some(m => m.snapshot_approved_by), [missions]);
 
+    const canonicalRefs = useMemo(() => ({
+        clientTables: priceTables,
+        providerTables,
+        clientsData: clientData ? [clientData] : clients,
+    }), [priceTables, providerTables, clientData, clients]);
+
+    const resolveOfficialForMission = useCallback((m: any) => {
+        const snapAt = m.snapshot_approved_at ? new Date(m.snapshot_approved_at).getTime() : undefined;
+        const opts = {
+            clientData,
+            billingAdjustment: billingAdjustments[m.id] ?? null,
+            billingAdjustmentAt: billingAdjustmentTimestamps[m.id],
+            snapshotAt: snapAt,
+        };
+        if (reportMode === 'fornecedor') {
+            return resolveOfficialProviderTotal(m, canonicalRefs, opts);
+        }
+        return resolveOfficialMissionTotal(m, canonicalRefs, opts);
+    }, [canonicalRefs, clientData, billingAdjustments, billingAdjustmentTimestamps, reportMode]);
+
     const rowsData = useMemo(() => {
         return missions.map(m => {
             if (reportMode === 'fornecedor') {
@@ -1030,12 +1058,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 } : undefined;
                 const finP = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overridesP);
                 const prov = finP.provider;
-                const tollProv = Math.max(0, ((m.toll_value_provider != null ? m.toll_value_provider : m.toll_value)) || 0);
-                const dispProvP = resolveMissionDisplacement(m as any, {
-                    clientUnitPriceKm: finP.client.unitPriceKm,
-                    providerUnitPriceKm: prov.unitCostKm,
-                }).provider;
-                const savedCost = m.cost_value || 0;
+                const officialP = resolveOfficialForMission(m) as ReturnType<typeof resolveOfficialProviderTotal>;
+                const tollProv = officialP.toll;
+                const dispProvP = officialP.disp;
 
                 const isCancelledP = (m.status || '').toString().toLowerCase().includes('cancel');
                 const cancelWindowP = isCancelledP ? resolveCancelledWindow(m.start_time, m._cancelStatusAt) : null;
@@ -1084,7 +1109,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     escoltaVal: prov.base ?? 0,
                     tollVal: tollProv,
                     displacementVal: dispProvP,
-                    totalGeral: savedCost + tollProv + dispProvP,
+                    totalGeral: officialP.total,
                     franchiseHoursFmt: fmtFranchiseHr(prov.franchiseHours ?? 0),
                     frozen: false,
                     frozenBy: null as string | null,
@@ -1105,40 +1130,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
             const snap = m.snapshot_data;
             const hasValidSnapshot = !!(m.snapshot_approved_by && snap);
+            const official = resolveOfficialForMission(m) as ReturnType<typeof resolveOfficialMissionTotal>;
 
             if (hasValidSnapshot && snap) {
-                const useBase = snap.activationFee ?? 0;
-                const useKmEx = snap.kmExtraTotal ?? 0;
-                const useHrEx = snap.hrExtraTotal ?? 0;
-                const useToll = resolveStoredClientToll(m.toll_value ?? snap.tollVal ?? 0, m.toll_value_provider);
-                // Snapshot pode ter DESL zerado mesmo com KM autorizado — alinha ao Relatório.
-                let snapClientUnitKm = Number(snap.unitKm) || 0;
-                let snapProviderUnitKm = 0;
-                try {
-                    const finSnapRates = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date());
-                    if (snapClientUnitKm <= 0) snapClientUnitKm = finSnapRates.client.unitPriceKm || 0;
-                    snapProviderUnitKm = finSnapRates.provider.unitCostKm || 0;
-                } catch { /* fallback UF */ }
-                const useDisp = resolveMissionDisplacement({
-                    dhl_deslocamento_km: (m as any).dhl_deslocamento_km,
-                    displacement_value: m.displacement_value ?? snap.displacementVal ?? 0,
-                    displacement_value_provider: m.displacement_value_provider,
-                    origin: m.origin,
-                    is_same_os: (m as any).is_same_os,
-                }, {
-                    clientUnitPriceKm: snapClientUnitKm,
-                    providerUnitPriceKm: snapProviderUnitKm,
-                }).client;
-                const dbRevenue = m.revenue_value ?? 0;
-                const dbTotal = dbRevenue + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider) + useDisp;
-                const wasManuallyEdited = !!(m.billing_verified_by || m.revenue_edit_reason);
-                const snapTotal = snap.totalGeral ?? 0;
-                const snapDispStored = Math.max(0, Number(snap.displacementVal) || 0);
-                // Se o snapshot não tinha DESL mas o KM autoriza, soma o DESL derivado ao total.
-                const snapTotalWithDisp = snapTotal > 0 && snapDispStored <= 0 && useDisp > 0
-                    ? snapTotal + useDisp
-                    : snapTotal;
-                const useTotal = wasManuallyEdited ? dbTotal : (snapTotalWithDisp > 0 ? snapTotalWithDisp : (useBase + useKmEx + useHrEx + useToll + useDisp));
+                const useBase = official.base;
+                const useKmEx = official.kmEx;
+                const useHrEx = official.hrEx;
+                const useToll = official.toll;
+                const useDisp = official.disp;
+                const useTotal = official.total;
 
                 // FALLBACK p/ snapshots legados: se franquia zerada mas há cálculo possível,
                 // busca os dados da tabela real para exibição (totais financeiros permanecem congelados)
@@ -1222,6 +1222,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     tollVal: useToll,
                     displacementVal: useDisp,
                     totalGeral: useTotal,
+                    isSimulation: official.isSimulation,
+                    officialSource: official.source,
                     franchiseHoursFmt: fmtFranchiseHr(snapFranchiseHours),
                     frozen: true,
                     frozenBy: m.snapshot_approved_by,
@@ -1241,12 +1243,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 };
             }
 
-            const tollVal = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
-            const savedRevenue = m.revenue_value || 0;
-            const hasSavedRevenue = savedRevenue > 0;
-
+            const officialN = resolveOfficialForMission(m) as ReturnType<typeof resolveOfficialMissionTotal>;
+            const tollVal = officialN.toll;
+            const dispValN = officialN.disp;
+            const totalGeral = officialN.total;
             const adj = billingAdjustments[m.id];
-            const overrides = adj ? {
+            const overrides = adj && !officialN.isSimulation ? {
                 clientTableId: adj.clientTableId || undefined,
                 providerTableId: (adj.providerTableId && !String(adj.providerTableId).startsWith('auto-')) ? adj.providerTableId : undefined,
                 customClientBase: adj.customClientBase ? Number(adj.customClientBase) : undefined,
@@ -1259,13 +1261,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overrides);
             const usedTable = priceTables.find(t => t.id.toString() === fin.client.tableId);
             const franchiseHours = usedTable?.franchise_hours ?? 0;
-            const activationFee = usedTable?.activation_fee ?? 0;
+            const activationFee = officialN.isSimulation ? officialN.base : (usedTable?.activation_fee ?? officialN.base);
             const unitKm = usedTable?.price_per_extra_km ?? 0;
             const unitHr = usedTable?.price_per_extra_hour ?? 0;
-            const dispValN = resolveMissionDisplacement(m as any, {
-                clientUnitPriceKm: fin.client.unitPriceKm,
-                providerUnitPriceKm: fin.provider.unitCostKm,
-            }).client;
 
             // OS Cancelada: KM = 0 (regra do negócio).
             const isCancelled = (m.status || '').toString().toLowerCase().includes('cancel');
@@ -1287,12 +1285,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 ? computeDhlBand(kmTotal)
                 : tableFranchise;
             const kmExtraQtd = fin.client.excessKm;
-            const kmExtraTotal = fin.client.extraKmVal;
+            const kmExtraTotal = officialN.isSimulation ? officialN.kmEx : fin.client.extraKmVal;
             const hrExtraQtd = fin.client.excessHours;
-            const hrExtraTotal = fin.client.extraHrVal;
+            const hrExtraTotal = officialN.isSimulation ? officialN.hrEx : fin.client.extraHrVal;
             const durationHours = fin.durationHours;
-
-            const totalGeral = savedRevenue + tollVal + dispValN;
 
             const cargoPlate = m._clientVehicle?.plate || '-';
 
@@ -1337,6 +1333,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 tollVal,
                 displacementVal: dispValN,
                 totalGeral,
+                isSimulation: officialN.isSimulation,
+                officialSource: officialN.source,
                 franchiseHoursFmt: fmtFranchiseHr(franchiseHours),
                 frozen: false,
                 frozenBy: null as string | null,
@@ -1355,7 +1353,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 rawEndTime: effEndTime
             };
         });
-    }, [missions, priceTables, providerTables, clientData, displayClientName, billingAdjustments, reportMode, selectedProviderName]);
+    }, [missions, priceTables, providerTables, clientData, displayClientName, billingAdjustments, billingAdjustmentTimestamps, reportMode, selectedProviderName, canonicalRefs, resolveOfficialForMission, isDhlBilling]);
 
     // DHL: diagnóstico de banda — verifica se a tabela aplicada corresponde
     // à faixa de KM real da OS. computeDhlBand(km) define a banda esperada
@@ -1382,28 +1380,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     }, [dhlBandWarnings]);
 
     const grandTotal = useMemo(() => {
-        return missions.reduce((s: number, m: any) => {
-            let clientUnitKm = 0;
-            let providerUnitKm = 0;
-            try {
-                const finG = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date());
-                clientUnitKm = finG.client.unitPriceKm || 0;
-                providerUnitKm = finG.provider.unitCostKm || 0;
-            } catch { /* fallback UF */ }
-            const dispG = resolveMissionDisplacement(m, {
-                clientUnitPriceKm: clientUnitKm,
-                providerUnitPriceKm: providerUnitKm,
-            });
-            if (reportMode === 'fornecedor') {
-                const cost = m.cost_value ?? 0;
-                const tollP = Math.max(0, (m.toll_value_provider != null ? m.toll_value_provider : m.toll_value) || 0);
-                return s + cost + tollP + dispG.provider;
-            }
-            const rev = m.revenue_value ?? 0;
-            const toll = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
-            return s + rev + toll + dispG.client;
-        }, 0);
-    }, [missions, reportMode, priceTables, providerTables, clientData]);
+        return rowsData.reduce((s, r) => s + (Number(r.totalGeral) || 0), 0);
+    }, [rowsData]);
 
     const [pendingRecompare, setPendingRecompare] = useState(false);
 
@@ -1430,7 +1408,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             return false;
         };
 
-        let colMap = { os: 0, franquiaKm: 8, kmTotal: 24, kmExtraRs: 32, hrExtra: 37, valorBase: 38, pedagio: 39, total: 42 };
+        let colMap = { os: 0, franquiaKm: 8, kmTotal: 24, kmExtraRs: 32, hrExtra: 37, valorBase: 38, pedagio: 39, deslocamento: -1, total: 42 };
 
         for (const cols of lines) {
             if (isHeader(cols)) {
@@ -1438,6 +1416,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
                 upper.forEach((h, i) => {
                     if (h === 'PEDÁGIO' || h === 'PEDAGIO') colMap.pedagio = i;
+                    if (h === 'DESLOCAMENTO' || h === 'DESL' || h.includes('DESLOC')) colMap.deslocamento = i;
                     if (h === 'KM TOTAL' || h === 'KM_TOTAL' || h === 'KM RODADO' || h === 'KM PERCORRIDO') colMap.kmTotal = i;
                     if (h === 'KM EXTRA' || h === 'KM_EXTRA' || h === 'EXCEDENTE KM' || h === 'TOTAL KM EXTRA') colMap.kmExtraRs = i;
                     if (h === 'TOTAL' && upper[i-1]?.includes('VALOR')) colMap.hrExtra = i;
@@ -1503,6 +1482,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const kmExtraTotal = (kmTotal > 0 && franquiaKmSheet > 0 && kmTotal <= franquiaKmSheet) ? 0 : kmExtraRaw;
             const hrExtraTotal = parseBRLNumber(cols[colMap.hrExtra] || '');
             const tollCol = parseBRLNumber(cols[colMap.pedagio] || '');
+            const dispColMissing = colMap.deslocamento < 0;
+            const dispCol = dispColMissing ? null : parseBRLNumber(cols[colMap.deslocamento] || '');
             const totalCol = parseBRLNumber(cols[colMap.total] || cols[cols.length - 1] || '');
 
             if (id === '4233') {
@@ -1512,28 +1493,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 console.log('[DEBUG OS 4233] group rows:', group.length);
             }
 
-            sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: cols });
+            sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, dispCol, dispColMissing, totalCol, raw: cols });
         }
 
         console.log('[ClientBillingReport] Parsing completo:', { totalLinhas: lines.length, gruposMissao: missionGroups.length, osExtraidas: sheetRows.length, osIds: sheetRows.map(r => r.id) });
 
-        const missionDbMap = new window.Map<string, any>();
-        missions.forEach((m: any) => {
-            const numId = (m.id || '').replace(/\D/g, '');
-            const rev = m.revenue_value ?? 0;
-            const toll = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
-            const disp = Math.max(0, m.displacement_value || 0);
-            const isVerified = !!(m.billing_verified_by || m.billing_approved);
-            const hasDbValue = rev > 0 || (rev === 0 && isVerified);
-            missionDbMap.set(numId, { rev, toll, dbTotal: hasDbValue ? rev + toll + disp : 0, hasDbValue });
-        });
-
         const systemMap = new window.Map<string, any>();
         rowsData.forEach(r => {
             const numId = r.id.replace(/\D/g, '');
-            const db = missionDbMap.get(numId);
-            const correctedTotal = (db && db.hasDbValue) ? db.dbTotal : r.totalGeral;
-            systemMap.set(numId, { ...r, totalGeral: correctedTotal });
+            systemMap.set(numId, { ...r });
         });
         console.log('[v048] Sistema IDs:', Array.from(systemMap.keys()));
         const sheetMap = new window.Map<string, any>();
@@ -1572,6 +1540,18 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             addField('KM Total', sys.kmTotal, sheet.kmTotal, false, 1);
             addField('KM Extra R$', sys.kmExtraTotal, sheet.kmExtraTotal, true, 0.02);
             addField('Hr Extra R$', sys.hrExtraTotal, sheet.hrExtraTotal, true, 0.02);
+            if (sheet.dispColMissing) {
+                fields.push({
+                    label: 'Deslocamento',
+                    sysVal: sys.displacementVal ?? 0,
+                    sheetVal: 0,
+                    isCurrency: true,
+                    isDivergent: false,
+                });
+                diffs.push(`Deslocamento: DESL_NÃO_NA_PLANILHA (Sistema R$ ${(sys.displacementVal ?? 0).toFixed(2)})`);
+            } else {
+                addField('Deslocamento', sys.displacementVal ?? 0, sheet.dispCol ?? 0, true, 0.02);
+            }
             addField('Total', sys.totalGeral, sheet.totalCol, true, 0.02);
             divergences.push({ id, diffs, fields, sysTot: sys.totalGeral, sheetTot: sheet.totalCol, sys, sheet });
         });

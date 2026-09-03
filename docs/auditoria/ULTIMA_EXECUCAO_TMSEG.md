@@ -7290,3 +7290,71 @@ Código: `FinancialInvoiceControl` → `authFetch('/api/nf/invoices')`; `transfo
 ---
 
 *Publicação SEC-01/02 — Cloud Agent — 2026-08-14 — PR #262 não iniciado*
+
+---
+
+## FINANCEIRO — FASE 1B.2 — TOTAL OFICIAL ÚNICO POR OS
+
+**Data:** 2026-09-02 (UTC-3)
+**Branch:** `financeiro/fase1b-official-total`
+**Status:** PR Draft — **NÃO mergeado, NÃO publicado**
+**SQL/RLS/schema:** nenhum
+
+### Objetivo
+
+Unificar total por OS no boletim: linha = `grandTotal` = medição = cobrança = NF = recebível = comparador.
+
+### Função criada
+
+- `lib/billing/resolveOfficialMissionTotal.ts`
+  - `resolveOfficialMissionTotal()` — receita cliente
+  - `resolveOfficialProviderTotal()` — custo fornecedor
+  - `sumOfficialMissionTotals()` — agregação
+  - `hasManualEditOverride()` — precedência manual
+
+**Precedência revBase:** edição manual > snapshot (`revenueServiceOnly`) > `revenue_value` > motor (`serviceTotal`).
+**Pedágio/DESL:** sempre aditivos via `resolveStoredClientToll` + `resolveMissionDisplacement`.
+
+### Fórmulas removidas (ClientBillingReport)
+
+1. `snapTotalWithDisp` ad-hoc
+2. `useBase + useKmEx + useHrEx + useToll + useDisp` fallback
+3. `savedRevenue + toll + disp` duplicado no rodapé
+4. `dbTotal` / `missionDbMap` no comparador
+5. `grandTotal` independente de `rowsData`
+6. Comparador com `displacement_value` cru
+
+**Novo contrato:** `grandTotal = Σ rowsData[].totalGeral`.
+
+### billingAdjustments
+
+- Pós-snapshot não persistido → `isSimulation=true`; total permanece snapshot; overrides não aplicados ao motor oficial.
+
+### Comparador
+
+- Usa totais de `rowsData` (resolvedor oficial).
+- Campo Deslocamento incluído; planilha sem coluna → `DESL_NÃO_NA_PLANILHA`.
+- Tolerância ±R$5 mantida.
+
+### Exemplo corrigido (150 vs 100)
+
+OS com `revenue_value=100`, snapshot `revenueServiceOnly=100`, ped+desl=50 → **total oficial 150** (antes rodapé podia somar só 100).
+
+### Testes
+
+| Suite | Resultado |
+|-------|-----------|
+| `scripts/financial-official-total.test.ts` (T01–T12) | **15/15 PASS** |
+| `fase3-p0-financial-integrity` + P1 + P4-sync-dre | **59/59 PASS** |
+| `npm run build` | **OK** |
+
+### Fase 1A
+
+Nenhum arquivo de paginação/universo alterado neste bloco (`fetchBillingMissionUniverse` ausente neste baseline — regressão 1A não reexecutável aqui).
+
+### Arquivos alterados
+
+- `lib/billing/resolveOfficialMissionTotal.ts` (novo)
+- `components/ClientBillingReport.tsx`
+- `scripts/financial-official-total.test.ts` (novo)
+- `docs/auditoria/ULTIMA_EXECUCAO_TMSEG.md`
