@@ -1,5 +1,30 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## INCIDENTE NF — RETRY MANUAL NÃO ALCANÇAVA PAYLOAD CORRIGIDO
+
+**Data:** 2026-09-03 (UTC-3)
+**Causa comprovada:** ao abrir o Controle de Faturas, o ciclo automático reabria as
+NFs com erro de `Discriminacao` e as pausava novamente pelo limite. O retry manual
+também não possuía uma regra explícita para superar erro permanente depois da
+correção do payload. Os IDs Asaas permaneceram inalterados e o histórico registrou
+somente `reopen-processing`, sem `cancel-and-reschedule`.
+
+**Correção:** `Discriminacao` passa a ser permanente para o ciclo automático, que
+não a reabre repetidamente. Somente o retry individual autenticado e confirmado
+pode superar essa guarda, cancelar com segurança a NF `ERROR` anterior e convergir
+para `scheduleInvoice` com a normalização vigente.
+
+**Preservado:** cobrança/payment existente, `/payments`, valor, serviço municipal
+`07930`, proteção que impede reagendamento quando o cancelamento falha e histórico.
+
+**Testes:** 46/46 PASS; `npm run build` PASS; `git diff --check` PASS.
+**Operação fiscal real:** nenhuma durante implementação e testes.
+**Risco residual:** a próxima tentativa manual pode revelar nova resposta da
+Prefeitura; não repetir automaticamente se houver outra rejeição.
+**Rollback:** reverter o commit deste hotfix; nenhuma migration ou alteração de dados.
+
+---
+
 > Handoff local — **INCIDENTE NF — TOOLTIP STALE PUBLICADO (PR #303)**
 > **Produção: `5af2cca7`. PR #302 + PR #301 preservados.**
 

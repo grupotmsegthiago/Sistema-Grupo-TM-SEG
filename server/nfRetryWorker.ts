@@ -14,6 +14,7 @@ import {
   isNfSchedulePendingMessage,
   isNonRetryable,
   shouldEnforceAutomaticRetryLimit,
+  shouldPauseNonRetryableError,
   type NfRetryContext,
 } from '../lib/nfRetryGuards';
 
@@ -574,7 +575,7 @@ export async function retryOne(
   if (currentInvoice && currentInvoice.status === 'ERROR') {
     const asaasErr = extractAsaasErrorText(currentInvoice) || inv.nf_last_error || '';
     const errorRetries = inv.nf_retry_count || 0;
-    if (isNonRetryable(asaasErr)) {
+    if (shouldPauseNonRetryableError(asaasErr, opts)) {
       await markInvoice(inv.id, {
         nf_status: 'ERROR',
         asaas_invoice_id: currentInvoice.id,

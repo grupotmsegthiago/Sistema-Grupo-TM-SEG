@@ -12,6 +12,7 @@ const NF_SCHEDULE_PENDING_PATTERNS = [
 /** Erros permanentes — worker pausa (não tenta de novo). */
 const NON_RETRYABLE_PATTERNS = [
   /NFe003/i,
+  /Discriminacao|Discrimina[cç][aã]o/i,
   /descri[cç][aã]o do servi[cç]o/i,
   /descri[cç][aã]o municipal/i,
   /CNPJ inv[aá]lido/i,
@@ -54,6 +55,17 @@ export type NfRetryContext = {
   /** Ação individual confirmada por usuário autenticado; nunca usada pelo ciclo automático. */
   manualRetry?: boolean;
 };
+
+/**
+ * Erro de validação pausa o ciclo automático, mas não pode impedir uma ação
+ * manual confirmada depois que o payload fiscal foi corrigido.
+ */
+export function shouldPauseNonRetryableError(
+  errorMessage: string,
+  context?: NfRetryContext,
+): boolean {
+  return !context?.manualRetry && isNonRetryable(errorMessage);
+}
 
 /** O limite automático não transforma uma ação manual confirmada em polling sem efeito. */
 export function shouldEnforceAutomaticRetryLimit(

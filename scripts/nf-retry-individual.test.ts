@@ -156,7 +156,7 @@ describe('Retry manual individual — core SSOT', () => {
     const core = fs.readFileSync('lib/nfRetryInvoiceApiCore.ts', 'utf8');
     assert.match(worker, /shouldEnforceAutomaticRetryLimit\(errorRetries, MAX_SYNC_RETRIES, opts\)/);
     assert.match(core, /retryOneFn\(ready, \{ manualRetry: true \}\)/);
-    assert.match(worker, /if \(isNonRetryable\(asaasErr\)\)/);
+    assert.match(worker, /if \(shouldPauseNonRetryableError\(asaasErr, opts\)\)/);
   });
 });
 

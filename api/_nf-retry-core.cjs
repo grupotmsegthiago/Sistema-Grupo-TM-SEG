@@ -988,6 +988,7 @@ var NF_SCHEDULE_PENDING_PATTERNS = [
 ];
 var NON_RETRYABLE_PATTERNS = [
   /NFe003/i,
+  /Discriminacao|Discrimina[cç][aã]o/i,
   /descri[cç][aã]o do servi[cç]o/i,
   /descri[cç][aã]o municipal/i,
   /CNPJ inv[aá]lido/i,
@@ -1017,6 +1018,9 @@ function isNonRetryable(errorMessage) {
   if (isNfSchedulePendingMessage(errorMessage)) return false;
   if (RETRYABLE_PREFEITURA_PATTERNS.some((rx) => rx.test(errorMessage))) return false;
   return NON_RETRYABLE_PATTERNS.some((rx) => rx.test(errorMessage));
+}
+function shouldPauseNonRetryableError(errorMessage, context) {
+  return !context?.manualRetry && isNonRetryable(errorMessage);
 }
 function shouldEnforceAutomaticRetryLimit(retryCount, maxRetries, context) {
   return !context?.manualRetry && retryCount >= maxRetries;
@@ -1447,7 +1451,7 @@ async function retryOne(inv, opts) {
   if (currentInvoice && currentInvoice.status === "ERROR") {
     const asaasErr = extractAsaasErrorText(currentInvoice) || inv.nf_last_error || "";
     const errorRetries = inv.nf_retry_count || 0;
-    if (isNonRetryable(asaasErr)) {
+    if (shouldPauseNonRetryableError(asaasErr, opts)) {
       await markInvoice(inv.id, {
         nf_status: "ERROR",
         asaas_invoice_id: currentInvoice.id,

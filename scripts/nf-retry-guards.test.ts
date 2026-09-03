@@ -4,6 +4,7 @@ import {
   isNfSchedulePendingMessage,
   isNonRetryable,
   shouldEnforceAutomaticRetryLimit,
+  shouldPauseNonRetryableError,
 } from '../lib/nfRetryGuards';
 
 describe('nfRetryGuards — placeholder NF isolada vs erro fiscal real', () => {
@@ -36,5 +37,15 @@ describe('nfRetryGuards — placeholder NF isolada vs erro fiscal real', () => {
   it('limite continua bloqueando automático, não converte retry manual em polling', () => {
     assert.equal(shouldEnforceAutomaticRetryLimit(3, 3), true);
     assert.equal(shouldEnforceAutomaticRetryLimit(3, 3, { manualRetry: true }), false);
+  });
+
+  it('erro permanente bloqueia automático, mas permite retry manual após correção', () => {
+    const discriminacao =
+      "XML não compatível com Schema. The 'Discriminacao' element is invalid";
+    assert.equal(shouldPauseNonRetryableError(discriminacao), true);
+    assert.equal(
+      shouldPauseNonRetryableError(discriminacao, { manualRetry: true }),
+      false,
+    );
   });
 });
