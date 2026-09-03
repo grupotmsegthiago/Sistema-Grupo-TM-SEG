@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH,
-  NFSE_DISCRIMINATION_MAX_LENGTH,
   normalizeAsaasNfDiscrimination,
 } from '../lib/nfDiscrimination.ts';
 
@@ -42,18 +41,23 @@ describe('Hotfix NFS-e — discriminação Asaas', () => {
         'Ref. rastreio: TMSEG-MASCARADO\nObservação necessária',
     });
     assert.equal(
-      result.observations,
-      'Referente ao mês de Agosto/2026|Ref. rastreio: TMSEG-MASCARADO|Observação necessária',
+      result.serviceDescription,
+      `${description}|Referente ao mês de Agosto/2026|` +
+        'Ref. rastreio: TMSEG-MASCARADO|Observação necessária',
     );
+    assert.equal(result.observations, undefined);
   });
 
-  it('T04 — converte CR/LF em pipe conforme schema fiscal', () => {
+  it('T04 — consolida tudo em serviceDescription e impede CR/LF inserido pelo Asaas', () => {
     const result = normalizeAsaasNfDiscrimination({
       serviceDescription: 'Linha 1\r\nLinha 2',
       observations: 'Complemento 1\rComplemento 2\nComplemento 3',
     });
-    assert.equal(result.serviceDescription, 'Linha 1|Linha 2');
-    assert.equal(result.observations, 'Complemento 1|Complemento 2|Complemento 3');
+    assert.equal(
+      result.serviceDescription,
+      'Linha 1|Linha 2|Complemento 1|Complemento 2|Complemento 3',
+    );
+    assert.equal(result.observations, undefined);
     assert.doesNotMatch(combined(result), /[\r\n]/);
   });
 
@@ -75,23 +79,21 @@ describe('Hotfix NFS-e — discriminação Asaas', () => {
     );
   });
 
-  it('T07 — aceita o limite e bloqueia excesso sem truncar', () => {
-    const description = 'D'.repeat(ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH);
-    const observations = 'O'.repeat(
-      NFSE_DISCRIMINATION_MAX_LENGTH - description.length - 1,
-    );
+  it('T07 — aceita o limite final Asaas e bloqueia excesso sem truncar', () => {
+    const description = 'D'.repeat(100);
+    const observations = 'O'.repeat(ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH - 101);
     const result = normalizeAsaasNfDiscrimination({
       serviceDescription: description,
       observations,
     });
-    assert.equal(combined(result).length, NFSE_DISCRIMINATION_MAX_LENGTH);
+    assert.equal(result.serviceDescription.length, ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH);
     assert.throws(
       () =>
         normalizeAsaasNfDiscrimination({
           serviceDescription: description,
           observations: `${observations}X`,
         }),
-      /excede 2000 caracteres/,
+      /excede 250 caracteres/,
     );
     assert.throws(
       () =>
@@ -142,10 +144,28 @@ describe('Hotfix NFS-e — discriminação Asaas', () => {
     const after = normalizeAsaasNfDiscrimination(before);
     assert.equal(occurrences(combined(after), description), 1);
     assert.equal(
-      after.observations,
-      'Referente ao Mês Completo de Agosto/2026|' +
-        'Ref. rastreio: TMSEG-MASCARADO|' +
-        'CNAE/Serviço municipal: 07930 — Monitoramento e rastreamento',
+      after.serviceDescription,
+      `${description}|Referente ao Mês Completo de Agosto/2026|` +
+        'Ref. rastreio: TMSEG-MASCARADO',
     );
+    assert.equal(after.observations, undefined);
+    assert.doesNotMatch(after.serviceDescription, /CNAE\/Serviço municipal|[\r\n\u2013\u2014]/);
+  });
+
+  it('T12 — payload real pós-rejeição cabe em 250 e não permite separador Asaas', () => {
+    const result = normalizeAsaasNfDiscrimination({
+      serviceDescription:
+        'CONTRATAÇÃO E INTERMEDIAÇÃO DE CONTRATOS E AGENCIAMENTO DE VENDAS - Referente ao 2ª Quinzena de Agosto/2026',
+      observations:
+        'Ref. rastreio: TMSEG-20260902-172347-JP4T|' +
+        'CNAE/Serviço municipal: 07930 — 07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
+    });
+
+    assert.deepEqual(result, {
+      serviceDescription:
+        'CONTRATAÇÃO E INTERMEDIAÇÃO DE CONTRATOS E AGENCIAMENTO DE VENDAS - Referente ao 2ª Quinzena de Agosto/2026|' +
+        'Ref. rastreio: TMSEG-20260902-172347-JP4T',
+    });
+    assert.ok(result.serviceDescription.length <= ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH);
   });
 });
