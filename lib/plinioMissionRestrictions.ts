@@ -36,7 +36,7 @@ export function isRestrictedPlinioUser(user: MissionUserIdentity | null | undefi
   return id === PLINIO_USER_ID || email === PLINIO_EMAIL || name === PLINIO_FULL_NAME;
 }
 
-/** Plínio só pode atuar depois de aprovação registrada por Diretoria/Administração. */
+/** Detecta se a OS já tem carimbo de Diretoria/Administrador no log de aprovação. */
 export function hasAdminOrDirectorApproval(
   approvals: BillingApprovalIdentity[] | null | undefined,
 ): boolean {

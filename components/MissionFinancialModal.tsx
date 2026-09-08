@@ -43,7 +43,6 @@ import FilterableSelect, { type FilterableSelectOption } from './FilterableSelec
 import { fetchMissionById, fetchParentMissionCandidates, type ParentMissionRow } from '../lib/parentMissionSearch';
 import { resolveSameOsLink, type SameOsLinkRole } from '../lib/missionLinkage';
 import {
-  hasAdminOrDirectorApproval,
   isRestrictedPlinioUser,
 } from '../lib/plinioMissionRestrictions';
 
@@ -581,11 +580,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     () => isRestrictedPlinioUser(currentUserIdentity),
     [currentUserIdentity],
   );
-  const plinioHasAuthorizedApproval = useMemo(
-    () => hasAdminOrDirectorApproval(approvalLog),
-    [approvalLog],
-  );
-  const plinioProviderEditBlocked = isPlinio && !plinioHasAuthorizedApproval;
+  // Plínio pode ajustar e salvar o FORNECEDOR a qualquer momento, inclusive em OS
+  // já salva/aprovada. Cliente e o botão Aprovar continuam bloqueados.
+  const plinioProviderEditBlocked = false;
   const canActivateFullEdit = useMemo(() => {
     if (isPlinio) return false;
     return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
@@ -611,8 +608,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // sobrescreve valores por conta própria (os snapshots de OS aprovadas seguem
   // protegidos no fluxo de salvar/aprovar).
   const canEditClientTablesEvenIfLocked = canOverrideAutoProvider && !isPlinio;
-  const canEditProviderTablesEvenIfLocked = !plinioProviderEditBlocked
-    && (canOverrideAutoProvider || isPlinio);
+  const canEditProviderTablesEvenIfLocked = canOverrideAutoProvider || isPlinio;
   const canEditTablesEvenIfLocked = canEditClientTablesEvenIfLocked || canEditProviderTablesEvenIfLocked;
   const [fullEditMode, setFullEditMode] = useState(false);
   // isController: identifica o cargo Controller para travas de edição.
@@ -636,15 +632,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const canEditClientData = !isPlinio && ((canEditOpsData && !isController) || fullEditMode);
   // Controller pode ajustar o valor total do fornecedor mesmo após verificação.
   const canEditProviderCostTotal = canEditOpsData
-    && !plinioProviderEditBlocked
-    && (fullEditMode || !isProviderTotalLockedByController || isControllerRole);
+    && (fullEditMode || !isProviderTotalLockedByController || isControllerRole || isPlinio);
 
   // TRAVA PÓS-SALVAMENTO: assim que alguém salva ou aprova um faturamento,
   // todos os campos editáveis são bloqueados em todas as telas. Diretoria,
   // administrador e CEO podem destravar manualmente para corrigir algo.
   const isBillingLocked = !!(mission?.billing_verified_by || mission?.billing_approved || mission?.snapshot_approved_by);
   const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower)
-    || (isPlinio && plinioHasAuthorizedApproval)
     || isBarbaraFinance;
   // ADMINISTRADOR (ex: Barbara) tem liberação permanente: pode editar OS aprovada
   // a qualquer momento. O sistema registra cada alteração no histórico permanente.
@@ -669,6 +663,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     return () => { cancelled = true; };
   }, [isOpen, mission?.id]);
   const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
+  // Plínio salva só o fornecedor: os campos de custo ficam editáveis mesmo com a OS travada.
+  const providerFinanceInputLocked = isEffectivelyLocked && !isPlinio;
+  const canSaveProviderAdjustments = isPlinio;
   // Gate unificado: nenhum input financeiro/comercial do CLIENTE editável sem canEditClientData
   // (inclui OS destravada — unlock não contorna a regra do Plinio).
   const clientFinanceInputLocked = isController || isEffectivelyLocked || !canEditClientData;
@@ -2342,13 +2339,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   };
 
   const handleRecalculateProvider = async () => {
-      if (plinioProviderEditBlocked) {
-          showNotification('Bloqueado', 'Aguardando aprovação da Diretoria ou Administrador.', 'error');
-          return;
-      }
-      // Regra: faturamento salvo/aprovado nunca pode ser sobrescrito por recálculo.
-      // Só permite recalcular após destravamento manual (diretoria/admin/CEO).
-      if (isEffectivelyLocked) {
+      // Regra: faturamento salvo/aprovado nunca pode ser sobrescrito por recálculo,
+      // exceto Plínio no lado do fornecedor (ele persiste só custo via Salvar).
+      if (isEffectivelyLocked && !isPlinio) {
           showNotification('Faturamento travado', 'Destrave o faturamento antes de recalcular os valores do fornecedor.', 'error');
           return;
       }
@@ -2476,10 +2469,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Troca rápida da TABELA DE CUSTO do fornecedor (campo Custo). Mesma lógica do
   // cliente, aplicada aos parâmetros do fornecedor.
   const swapProviderTable = (id: string) => {
-      if (plinioProviderEditBlocked) {
-          showNotification('Bloqueado', 'Aguardando aprovação da Diretoria ou Administrador.', 'error');
-          return;
-      }
       setManualProviderTableId(id);
       setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
       setUseSavedValues(false);
@@ -2630,19 +2619,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           showNotification('Sem Permissão', 'Plínio não pode aprovar OS. Utilize somente Salvar.', 'error');
           return;
       }
-      if (plinioProviderEditBlocked) {
-          showNotification(
-              'Bloqueado',
-              'A Diretoria ou um Administrador precisa aprovar a OS antes de Plínio ajustar os dados do fornecedor.',
-              'error',
-          );
-          return;
-      }
-      if (isSnapshotFrozen && !isController && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro' && currentApprovalStatus.currentUserStage !== 'controller') {
+      if (isSnapshotFrozen && !isController && !isPlinio && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro' && currentApprovalStatus.currentUserStage !== 'controller') {
           showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro, Controller ou Diretoria podem editar.`, 'error');
           return;
       }
-      if (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) {
+      if (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance && !isPlinio) {
           showNotification('Bloqueado', 'Esta OS foi aprovada pela Diretoria. Somente a Diretoria pode editar.', 'error');
           return;
       }
@@ -5219,7 +5200,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <h4 className="text-sm font-black text-red-700 uppercase tracking-widest flex items-center gap-2">
                                     [ {formatProviderName(mission.provider)} ]
                                 </h4>
-                                {!mission.is_same_os && !isEffectivelyLocked && !plinioProviderEditBlocked && (
+                                {!mission.is_same_os && !providerFinanceInputLocked && (
                                     <button
                                         data-testid="btn-recalculate-provider"
                                         onClick={() => setShowRecalcProviderDialog(true)}
@@ -5239,10 +5220,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 <button
                                                     data-testid="btn-recalc-and-reset"
                                                     onClick={async () => {
-                                                        if (plinioProviderEditBlocked) {
-                                                            showNotification('Bloqueado', 'Aguardando aprovação da Diretoria ou Administrador.', 'error');
-                                                            return;
-                                                        }
                                                         setShowRecalcProviderDialog(false);
                                                         const currentTableId = manualProviderTableId;
                                                         setCustomProviderBase('');
@@ -5322,9 +5299,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 : []),
                                         ];
                                         const handleChange = (val: string) => {
-                                            if (plinioProviderEditBlocked) return;
                                             if (isEffectivelyLocked && !fullEditMode && !canEditTablesEvenIfLocked) return;
-                                            if (financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider) return;
+                                            if (financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider && !isPlinio) return;
                                             setManualProviderTableId(val);
                                             setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
                                             setUseSavedValues(false);
@@ -5345,9 +5321,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         // seletor mesmo em MESMA OS, motor auto ativo ou faturamento travado.
                                         // OS 5046: a auditoria (canOverrideAutoProvider) também pode trocar a
                                         // tabela com o motor auto ATIVO, sem precisar de EDIÇÃO TOTAL.
-                                        const autoBlocksSelector = !!financialData.autoEngine?.active && !canOverrideAutoProvider;
-                                        const providerSelectorDisabled = plinioProviderEditBlocked
-                                            || (!fullEditMode && (mission.is_same_os || (isEffectivelyLocked && !canEditTablesEvenIfLocked) || autoBlocksSelector));
+                                        const autoBlocksSelector = !!financialData.autoEngine?.active && !canOverrideAutoProvider && !isPlinio;
+                                        const providerSelectorDisabled = !fullEditMode && (mission.is_same_os || (isEffectivelyLocked && !canEditTablesEvenIfLocked) || autoBlocksSelector);
                                         return (
                                             <FilterableSelect
                                                 value={(!fullEditMode && financialData.autoEngine?.active) ? '' : (manualProviderTableId || '')}
@@ -5516,7 +5491,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${isEffectivelyLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.base.toFixed(2)} value={customProviderBase} onChange={e => { if (!isEffectivelyLocked) handleManualInput(setCustomProviderBase, e.target.value); }} readOnly={isEffectivelyLocked} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${providerFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.base.toFixed(2)} value={customProviderBase} onChange={e => { if (!providerFinanceInputLocked) handleManualInput(setCustomProviderBase, e.target.value); }} readOnly={providerFinanceInputLocked} />
                                         {customProviderBase && <span className="text-[8px] text-red-600 font-bold bg-red-50 px-1 py-0.5 rounded shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -5532,7 +5507,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${isEffectivelyLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.unitCostKm.toFixed(2)} value={customProviderKm} onChange={e => { if (!isEffectivelyLocked) handleManualInput(setCustomProviderKm, e.target.value); }} readOnly={isEffectivelyLocked} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${providerFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.unitCostKm.toFixed(2)} value={customProviderKm} onChange={e => { if (!providerFinanceInputLocked) handleManualInput(setCustomProviderKm, e.target.value); }} readOnly={providerFinanceInputLocked} />
                                         {customProviderKm && <span className="text-[8px] text-red-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -5554,7 +5529,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${isEffectivelyLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.unitCostHour.toFixed(2)} value={customProviderHour} onChange={e => { if (!isEffectivelyLocked) handleManualInput(setCustomProviderHour, e.target.value); }} readOnly={isEffectivelyLocked} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${providerFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.unitCostHour.toFixed(2)} value={customProviderHour} onChange={e => { if (!providerFinanceInputLocked) handleManualInput(setCustomProviderHour, e.target.value); }} readOnly={providerFinanceInputLocked} />
                                         {customProviderHour && <span className="text-[8px] text-red-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -5870,8 +5845,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     const calcCostBtn = financialData ? (financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput)) : 0;
                                     const inputCostBtn = parseNumber(costInput);
                                     const isManualCostBtn = inputCostBtn > 0 && calcCostBtn > 0 && Math.abs(inputCostBtn - calcCostBtn) > 1;
-                                    // Faturamento travado (salvo/aprovado): nunca oferecer "Restaurar Auto".
-                                    if (isEffectivelyLocked) return (
+                                    // Faturamento travado: Plínio continua podendo ajustar o fornecedor.
+                                    if (providerFinanceInputLocked) return (
                                         <span className="text-[9px] font-bold text-gray-600 bg-gray-200 px-2 py-0.5 rounded flex items-center gap-1" title="Faturamento salvo/aprovado — valores travados">
                                             <Lock size={10} /> Travado
                                         </span>
@@ -6262,7 +6237,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                     )}
 
                     {/* Observação obrigatória ao alterar OS já aprovada */}
-                    {isBillingLocked && !isEffectivelyLocked && (
+                    {isBillingLocked && (!isEffectivelyLocked || canSaveProviderAdjustments) && (
                         <div className="mx-4 mb-4 p-3 bg-amber-50 rounded-xl border-2 border-amber-300" data-testid="panel-edit-observation">
                             <label className="text-[10px] font-black text-amber-800 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
                                 <AlertCircle size={12} /> Observação da Alteração (obrigatória ao salvar mudança em OS aprovada)
@@ -6357,9 +6332,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="truncate">Pedir Análise</span>
                                   </button>
                                 )}
-                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || plinioProviderEditBlocked || (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked || plinioProviderEditBlocked) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={plinioProviderEditBlocked ? 'Aguardando aprovação da Diretoria ou Administrador' : isEffectivelyLocked ? 'Faturamento travado — destrave para editar' : ''} data-testid="button-save-adjustments">
-                                    {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? <Lock size={14} className="shrink-0" /> : <Save size={14} className="shrink-0" />}
-                                    <span className="truncate">{(plinioProviderEditBlocked || (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance)) ? 'Bloqueado' : 'Salvar'}</span>
+                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || (!canSaveProviderAdjustments && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${(!canSaveProviderAdjustments && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked)) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={isEffectivelyLocked && !canSaveProviderAdjustments ? 'Faturamento travado — destrave para editar' : canSaveProviderAdjustments ? 'Salvar somente o valor do fornecedor' : ''} data-testid="button-save-adjustments">
+                                    {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? <Lock size={14} className="shrink-0" /> : <Save size={14} className="shrink-0" />}
+                                    <span className="truncate">{(!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado' : 'Salvar'}</span>
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 

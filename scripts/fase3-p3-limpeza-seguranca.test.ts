@@ -25,7 +25,7 @@ describe('P3 — Plinio somente fornecedor', () => {
     assert.match(src, /isRestrictedPlinioUser\(currentUserIdentity\)/);
     assert.match(src, /canEditClientData = !isPlinio/);
     assert.match(src, /canEditClientTablesEvenIfLocked = canOverrideAutoProvider && !isPlinio/);
-    assert.match(src, /canEditProviderTablesEvenIfLocked = !plinioProviderEditBlocked/);
+    assert.match(src, /canEditProviderTablesEvenIfLocked = canOverrideAutoProvider \|\| isPlinio/);
     assert.doesNotMatch(src, /isAdminFullAccess = userRoleLower === 'administrador' \|\| fullEditMode \|\| isPlinio/);
   });
 
@@ -48,15 +48,14 @@ describe('P3 — Plinio somente fornecedor', () => {
       assert.match(slice, /readOnly=\{clientFinanceInputLocked\}/, `${testId} deve ter readOnly ligado ao gate`);
     }
 
-    // Fornecedor não usa o gate do cliente, mas aguarda aprovação Diretoria/Admin.
+    // Fornecedor não usa o gate do cliente — Plínio pode ajustar e salvar o custo.
     const provIdx = src.indexOf('data-testid="input-toll-provider"');
     assert.ok(provIdx > 0);
     const provSlice = src.slice(Math.max(0, provIdx - 600), provIdx + 120);
     assert.doesNotMatch(provSlice, /clientFinanceInputLocked/);
-    assert.match(provSlice, /readOnly=\{plinioProviderEditBlocked\}/);
 
     // Destravar billing não contorna: gate inclui !canEditClientData (false para Plinio)
-    assert.match(src, /canUnlockBilling[\s\S]{0,200}isPlinio/);
+    assert.match(src, /canSaveProviderAdjustments = isPlinio/);
     assert.match(src, /if \(!canEditClientData\) return;/);
   });
 });

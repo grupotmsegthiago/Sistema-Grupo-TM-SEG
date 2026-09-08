@@ -18,20 +18,21 @@ describe('Permissões financeiras do Plínio', () => {
     assert.equal(isRestrictedPlinioUser({ name: 'Plinio Silva' }), false);
   });
 
-  it('T02 libera atuação somente após Diretoria ou Administrador', () => {
+  it('T02 identifica aprovação de Diretoria ou Administrador (histórico)', () => {
     assert.equal(hasAdminOrDirectorApproval([{ role: 'controller', stage: 'controller' }]), false);
     assert.equal(hasAdminOrDirectorApproval([{ role: 'financeiro', stage: 'financeiro' }]), false);
     assert.equal(hasAdminOrDirectorApproval([{ role: 'administrador', stage: 'financeiro' }]), true);
     assert.equal(hasAdminOrDirectorApproval([{ role: 'diretoria', stage: 'diretoria' }]), true);
   });
 
-  it('T03 bloqueia aprovação e pedágio cliente também no handler', () => {
+  it('T03 bloqueia aprovação e libera Salvar só no fornecedor', () => {
     const source = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
     assert.match(source, /if \(isPlinio && approve\)/);
     assert.match(source, /disabled=\{isPlinio \|\| isUpdating/);
     assert.match(source, /readOnly=\{clientFinanceInputLocked\}/);
-    assert.match(source, /readOnly=\{plinioProviderEditBlocked\}/);
-    assert.match(source, /isPlinio && plinioHasAuthorizedApproval/);
+    assert.match(source, /canSaveProviderAdjustments = isPlinio/);
+    assert.match(source, /providerFinanceInputLocked = isEffectivelyLocked && !isPlinio/);
+    assert.match(source, /disabled=\{isUpdating \|\| \(!canSaveProviderAdjustments/);
   });
 
   it('T04 não classifica mais Plínio como Diretoria ou re-aprovador', () => {
@@ -65,7 +66,7 @@ describe('Permissões financeiras do Plínio', () => {
     assert.doesNotMatch(payloadBlock, /\n\s+toll_value:/);
     assert.doesNotMatch(payloadBlock, /\n\s+revenue_value:/);
     assert.doesNotMatch(payloadBlock, /\n\s+billing_approved:/);
-    assert.match(source, /const providerSelectorDisabled = plinioProviderEditBlocked/);
+    assert.match(source, /const providerSelectorDisabled = !fullEditMode && \(mission.is_same_os/);
   });
 });
 
