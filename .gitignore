@@ -29,3 +29,6 @@ client/public/build-meta.json
 .env.local
 .env.vercel.pull
 .vercel
+secrets/
+*.pfx
+*.p12

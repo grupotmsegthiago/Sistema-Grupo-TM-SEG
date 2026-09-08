@@ -4,6 +4,7 @@
  * Vercel/Express antes de esta função criar o cliente Supabase.
  */
 import { createSupabaseAdminClient } from './supabaseAdmin.js';
+import { atualizarStatusAposBaixaCliente } from './comissao/comissaoCore.js';
 
 export type AsaasWebhookPayload = {
   event?: string;
@@ -71,6 +72,15 @@ export async function handleAsaasPaymentWebhook(
           .eq('status', 'PENDING');
 
         log(`[Asaas Webhook] Baixa automática: NF ${inv.number} — ${inv.client}`);
+        try {
+          await atualizarStatusAposBaixaCliente(
+            supabase,
+            String(inv.id),
+            deps.today ? deps.today() : new Date().toISOString().split('T')[0],
+          );
+        } catch (e) {
+          log(`[Asaas Webhook] Comissão (baixa) ignorada: ${e instanceof Error ? e.message : e}`);
+        }
       }
     } else {
       log(

@@ -190,6 +190,8 @@ describe('P4-NB07-CRIT — rotas Asaas críticas fora do catch-all', () => {
       checked: 2,
       markedPaid: 1,
       markedOverdue: 0,
+      markedCancelled: 0,
+      dueDateUpdated: 0,
       nfUpdated: 0,
       errors: 0,
       paidIds: ['inv-1'],

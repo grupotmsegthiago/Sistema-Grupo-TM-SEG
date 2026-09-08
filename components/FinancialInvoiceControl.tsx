@@ -12,6 +12,7 @@ import {
   nfErrorGuidance,
   nfStatusTooltip,
   shouldShowCurrentNfError,
+  invoiceControlChargeStatus,
 } from '../lib/invoiceDisplay';
 import {
   clearInvoiceWatch,
@@ -325,7 +326,7 @@ const FinancialInvoiceControl: React.FC = () => {
       if (cancelled) return;
 
       // 2) Sync + retry — o que o usuário espera ver como Processando→Emitida.
-      await syncOpen(20);
+      await syncOpen(30);
       if (cancelled) return;
       const retryT = withTimeout(40_000);
       try {
@@ -372,7 +373,8 @@ const FinancialInvoiceControl: React.FC = () => {
       ticks += 1;
       const watch = readInvoiceWatch();
       const hasProcessing = invoicesRef.current.some((i) => {
-        if (i.status === 'CANCELADA' || i.status === 'PAGA') return false;
+        const st = invoiceControlChargeStatus(i.status, i.nf_status, i.boleto_due_date);
+        if (st === 'CANCELADA' || st === 'PAGA') return false;
         return nfStatusBucket(i.nf_status, { paused: !!i.nf_retry_paused }) === 'aguardando';
       });
       const activeWatch = !!watch || hasProcessing;
@@ -384,7 +386,8 @@ const FinancialInvoiceControl: React.FC = () => {
       // a cada ~30s — não depende só do cron nem do botão "Reemitir TODAS".
       if (activeWatch && ticks % 2 === 0) {
         const needsSchedule = invoicesRef.current.some((i) => {
-          if (i.status === 'CANCELADA' || i.status === 'PAGA') return false;
+          const st = invoiceControlChargeStatus(i.status, i.nf_status, i.boleto_due_date);
+          if (st === 'CANCELADA' || st === 'PAGA') return false;
           if ((i.nf_provider || 'ASAAS').toUpperCase() === 'PLUGNOTAS') return false;
           if (!i.asaas_payment_id) return false;
           if (i.asaas_invoice_id) return false;
@@ -612,10 +615,11 @@ const FinancialInvoiceControl: React.FC = () => {
   const stats = useMemo(() => {
     const s = { total: invoices.length, emitida: 0, paga: 0, vencida: 0, cancelada: 0, totalEmitida: 0, totalPaga: 0, totalVencida: 0 };
     invoices.forEach(inv => {
-      if (inv.status === 'EMITIDA') { s.emitida++; s.totalEmitida += inv.amount; }
-      else if (inv.status === 'PAGA') { s.paga++; s.totalPaga += inv.amount; }
-      else if (inv.status === 'VENCIDA') { s.vencida++; s.totalVencida += inv.amount; }
-      else if (inv.status === 'CANCELADA') { s.cancelada++; }
+      const st = invoiceControlChargeStatus(inv.status, inv.nf_status, inv.boleto_due_date);
+      if (st === 'EMITIDA') { s.emitida++; s.totalEmitida += inv.amount; }
+      else if (st === 'PAGA') { s.paga++; s.totalPaga += inv.amount; }
+      else if (st === 'VENCIDA') { s.vencida++; s.totalVencida += inv.amount; }
+      else if (st === 'CANCELADA') { s.cancelada++; }
     });
     return s;
   }, [invoices]);
@@ -623,8 +627,11 @@ const FinancialInvoiceControl: React.FC = () => {
   const filtered = useMemo(() => {
     let list = [...invoices];
     // "Todas" = fila ativa (não mostra CANCELADA). Canceladas só no filtro específico.
-    if (statusFilter === 'ALL') list = list.filter(i => i.status !== 'CANCELADA');
-    else list = list.filter(i => i.status === statusFilter);
+    if (statusFilter === 'ALL') {
+      list = list.filter(i => invoiceControlChargeStatus(i.status, i.nf_status, i.boleto_due_date) !== 'CANCELADA');
+    } else {
+      list = list.filter(i => invoiceControlChargeStatus(i.status, i.nf_status, i.boleto_due_date) === statusFilter);
+    }
     if (issuerFilter) {
       list = list.filter(i => (i.issuer_company || '(sem emissora)') === issuerFilter);
     }
@@ -983,11 +990,12 @@ const FinancialInvoiceControl: React.FC = () => {
               </thead>
               <tbody>
                 {filtered.map((inv, idx) => {
-                  const cfg = STATUS_CONFIG[inv.status] || STATUS_CONFIG['EMITIDA'];
+                  const chargeStatus = invoiceControlChargeStatus(inv.status, inv.nf_status, inv.boleto_due_date);
+                  const cfg = STATUS_CONFIG[chargeStatus] || STATUS_CONFIG['EMITIDA'];
                   const StatusIcon = cfg.icon;
                   const daysOverdue = overdueDays(inv.boleto_due_date);
-                  const isOverdue = inv.status === 'VENCIDA' || (inv.status === 'EMITIDA' && !!daysOverdue && daysOverdue > 0);
-                  const payLabel = paymentStatusLabel(inv.status, inv.boleto_due_date);
+                  const isOverdue = chargeStatus === 'VENCIDA';
+                  const payLabel = paymentStatusLabel(inv.status, inv.boleto_due_date, new Date(), inv.nf_status);
                   return (
                     <tr key={inv.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${isOverdue && inv.status !== 'PAGA' ? 'bg-red-50/30' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`} data-testid={`invoice-row-${inv.id}`}>
                       <td className="px-4 py-3">
@@ -1161,9 +1169,10 @@ const FinancialInvoiceControl: React.FC = () => {
             <div className="p-6 max-h-[80vh] overflow-y-auto space-y-5">
               {(() => {
                 const inv = selectedInvoice;
-                const cfg = STATUS_CONFIG[inv.status] || STATUS_CONFIG['EMITIDA'];
+                const chargeStatus = invoiceControlChargeStatus(inv.status, inv.nf_status, inv.boleto_due_date);
+                const cfg = STATUS_CONFIG[chargeStatus] || STATUS_CONFIG['EMITIDA'];
                 const StatusIcon = cfg.icon;
-                const payLabel = paymentStatusLabel(inv.status, inv.boleto_due_date);
+                const payLabel = paymentStatusLabel(inv.status, inv.boleto_due_date, new Date(), inv.nf_status);
                 const ns = inv.nf_status?.toUpperCase();
                 const ageH = (inv.nf_retry_at || inv.created_at)
                   ? Math.floor((Date.now() - new Date((inv.nf_retry_at || inv.created_at)!).getTime()) / 3600_000)
@@ -1234,10 +1243,10 @@ const FinancialInvoiceControl: React.FC = () => {
                         <div><p className="text-[9px] font-black text-gray-400 uppercase">Fornecedor / Prestador</p><p className="text-sm font-bold text-gray-700 uppercase">{inv.provider || '-'}</p></div>
                         <div>
                           <p className="text-[9px] font-black text-gray-400 uppercase">Vencimento Boleto</p>
-                          <p className={`text-sm font-bold ${inv.status === 'VENCIDA' || (inv.status === 'EMITIDA' && (overdueDays(inv.boleto_due_date) || 0) > 0) ? 'text-red-600' : 'text-gray-700'}`}>
+                          <p className={`text-sm font-bold ${chargeStatus === 'VENCIDA' ? 'text-red-600' : 'text-gray-700'}`}>
                             {inv.boleto_due_date ? fmtDate(inv.boleto_due_date) : '-'}
-                            {inv.status !== 'PAGA' && inv.status !== 'CANCELADA' && (overdueDays(inv.boleto_due_date) || 0) > 0 && (
-                              <span className="ml-2 text-xs">· {paymentStatusLabel(inv.status === 'EMITIDA' ? 'VENCIDA' : inv.status, inv.boleto_due_date)}</span>
+                            {chargeStatus !== 'PAGA' && chargeStatus !== 'CANCELADA' && (overdueDays(inv.boleto_due_date) || 0) > 0 && (
+                              <span className="ml-2 text-xs">· {paymentStatusLabel(inv.status, inv.boleto_due_date, new Date(), inv.nf_status)}</span>
                             )}
                           </p>
                         </div>

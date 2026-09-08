@@ -8,6 +8,7 @@ import {
   CLIENT_RECEIVABLE_CATEGORY,
   resolveClientReceivableDescription,
 } from './billing/receivableDescription.js';
+import { gerarComissaoAoFaturar } from './comissao/comissaoCore.js';
 
 export type PersistAsaasChargeInput = {
   paymentId: string;
@@ -255,6 +256,21 @@ export async function persistAsaasChargeInvoice(
           if (signal) rxUp = rxUp.abortSignal(signal);
           await rxUp;
         }
+      }
+    }
+
+    if (created && invoiceId) {
+      try {
+        await gerarComissaoAoFaturar(sb, {
+          faturaId: invoiceId,
+          clienteId: input.entityId ?? null,
+          clienteNome: input.clientName,
+          valorFaturamento: Number(input.amount) || 0,
+          dataFaturamento: date,
+          faturaNumero: number,
+        });
+      } catch (e) {
+        console.warn('[comissao] geração na emissão falhou (fatura persistida):', e);
       }
     }
 

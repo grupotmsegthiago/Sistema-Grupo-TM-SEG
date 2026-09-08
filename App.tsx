@@ -89,6 +89,7 @@ import FinancialAccountManager from './components/FinancialAccountManager';
 import FinancialCategoryManager from './components/FinancialCategoryManager';
 import FinancialReport from './components/FinancialReport';
 import DashboardDiretoria from './components/dashboard/DashboardDiretoria';
+import ComissoesComerciaisPage from './components/ComissoesComerciaisPage';
 import GestaoInvestimento from './components/investimentos/GestaoInvestimento'; 
 import ClientBillingReport from './components/ClientBillingReport';
 import DailyCashMovement from './components/DailyCashMovement';
@@ -103,7 +104,7 @@ import { wireUserActivityTracker, touchUserActivity } from './lib/userActivityTr
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { canAccessMissionReport } from './lib/missionReportAccess';
-import { canAccessDiretoriaMenu } from './lib/diretoriaAccess';
+import { canAccessDiretoriaMenu, canAccessComissoesComerciais } from './lib/diretoriaAccess';
 import { canViewOsAnalysisPendencies } from './lib/osAnalysisAccess';
 import OsAnalysisPendingPage from './components/OsAnalysisPendingPage';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
@@ -413,6 +414,12 @@ const App: React.FC = () => {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
         return canAccessDiretoriaMenu(u)
           ? <DashboardDiretoria onNavigate={navigateTo} />
+          : <Dashboard onOpenMission={handleOpenBillingMission} />;
+      }
+      case 'comissoes-comerciais': {
+        const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+        return canAccessComissoesComerciais(u)
+          ? <ComissoesComerciaisPage />
           : <Dashboard onOpenMission={handleOpenBillingMission} />;
       }
       case 'gestao-investimento': {

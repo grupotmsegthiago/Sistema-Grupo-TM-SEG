@@ -8,7 +8,7 @@ import { NAV_ITEMS, APP_VERSION } from '../constants';
 import { NavItem } from '../constants'; // Explicit import to avoid TS error if NAV_ITEMS interface isn't exported correctly
 import { logAction } from '../lib/logger';
 import { canAccessMissionReport } from '../lib/missionReportAccess';
-import { canAccessDiretoriaMenu, DIRETORIA_MENU_SCREEN_IDS } from '../lib/diretoriaAccess';
+import { canAccessDiretoriaMenu, canAccessComissoesComerciais, DIRETORIA_MENU_SCREEN_IDS } from '../lib/diretoriaAccess';
 import { canRequestOsAnalysis } from '../lib/osAnalysisAccess';
 
 interface SidebarProps {
@@ -197,6 +197,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
     // Grupo Diretoria: Cockpit (Thiagos) ou Pendências de OS (Diretoria)
     if (itemId === 'diretoria-group') {
       return canAccessDiretoriaMenu(currentUser) || canRequestOsAnalysis(currentUser);
+    }
+
+    if (itemId === 'comissoes-comerciais') {
+      return canAccessComissoesComerciais(currentUser);
     }
 
     // Menu Diretoria / Cockpit — SOMENTE Thiago Moreira ou Thiago Santos

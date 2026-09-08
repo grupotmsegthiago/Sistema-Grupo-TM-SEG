@@ -68,6 +68,32 @@ describe('Controle de Faturas — listagem via API autenticada', () => {
     assert.equal(transformed.find((row) => row.id === '3')?.issuer_company, 'TM GESTÃO');
     assert.equal(transformed.filter((row) => row.issuer_company === 'TM GESTÃO').length, 2);
     assert.equal(transformFinancialInvoicesForControl([], now).length, 0);
+
+    const canceledNf = transformFinancialInvoicesForControl([
+      {
+        id: 'ceslog-old',
+        number: 'TMSEG-CESLOG',
+        status: 'EMITIDA',
+        nf_status: 'CANCELED',
+        created_at: '2026-08-18T00:00:00.000Z',
+        boleto_due_date: '2026-09-02',
+        asaas_payment_id: 'pay_sv8toislddjwxt71',
+      },
+    ], now);
+    assert.equal(canceledNf[0]?.status, 'CANCELADA');
+
+    const prorrogada = transformFinancialInvoicesForControl([
+      {
+        id: 'luft-337',
+        number: 'TMSEG-LUFT-337',
+        status: 'VENCIDA',
+        nf_status: 'AUTHORIZED',
+        created_at: '2026-08-14T00:00:00.000Z',
+        boleto_due_date: '2026-09-09',
+        asaas_payment_id: 'pay_cp741dto0iwkbbl4',
+      },
+    ], new Date('2026-09-08T15:00:00-03:00'));
+    assert.equal(prorrogada[0]?.status, 'EMITIDA');
   });
 
   it('frontend mantém busca, filtro de status e emissora', () => {

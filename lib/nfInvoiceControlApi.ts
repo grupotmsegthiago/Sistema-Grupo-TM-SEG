@@ -5,6 +5,7 @@
 import { createSupabaseAdminClient } from './supabaseAdmin.js';
 import { isPureMedicaoInvoice } from './billing/medicaoVisibility.js';
 import { INVOICE_CONTROL_EPOCH, isAfterInvoiceControlEpoch } from './invoiceCleanSlate.js';
+import { invoiceControlChargeStatus, isCanceledNfStatus } from './invoiceDisplay.js';
 
 export type NfProvider = 'ASAAS' | 'PLUGNOTAS';
 export const VALID_NF_PROVIDERS: NfProvider[] = ['ASAAS', 'PLUGNOTAS'];
@@ -70,7 +71,7 @@ export async function buildNfIssuerSummary(): Promise<{
   for (const r of data || []) {
     // Saúde da fila = só faturas ativas (não canceladas / não pagas) e pós-marco limpo
     const invStatus = String((r as any).status || '').toUpperCase();
-    if (invStatus === 'CANCELADA' || invStatus === 'PAGA') continue;
+    if (invStatus === 'CANCELADA' || invStatus === 'PAGA' || isCanceledNfStatus((r as any).nf_status)) continue;
     if (!isAfterInvoiceControlEpoch((r as any).created_at, (r as any).date)) continue;
     if (!r.asaas_payment_id && !r.plugnotas_invoice_id) continue;
     const c = r.issuer_company || '(sem emissora)';
@@ -144,10 +145,13 @@ export function transformFinancialInvoicesForControl(
     .filter((inv) => isAfterInvoiceControlEpoch(inv.created_at))
     .filter((inv) => !isPureMedicaoInvoice(inv))
     .map((inv) => {
-      if (inv.status === 'EMITIDA' && inv.boleto_due_date) {
-        const due = new Date(`${inv.boleto_due_date}T23:59:59`);
-        if (now > due) return { ...inv, status: 'VENCIDA' };
-      }
+      const chargeStatus = invoiceControlChargeStatus(
+        inv.status,
+        inv.nf_status,
+        inv.boleto_due_date,
+        now,
+      );
+      if (chargeStatus !== inv.status) return { ...inv, status: chargeStatus };
       return inv;
     });
 }

@@ -94,9 +94,9 @@ const ClientForm: React.FC<ClientFormProps> = ({
     issuer_company: '',
     nf_service_description: '',
     nf_municipal_service_code: '',
-    nf_municipal_service_name: ''
-  });
-  
+    nf_municipal_service_name: '',
+    responsavel_comercial_id: '',
+  }); 
   const [osEmailInput, setOsEmailInput] = useState('');
   const [medicaoEmailInput, setMedicaoEmailInput] = useState('');
   const [isSearchingCep, setIsSearchingCep] = useState(false);
@@ -182,6 +182,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
   
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [clients, setClientsList] = useState<Client[]>([]);
+  const [comerciais, setComerciais] = useState<Array<{ id: string; nome: string }>>([]);
   const [copySourceClientId, setCopySourceClientId] = useState('');
 
   // Motor de Precificação Automática (cópia da lógica de ProviderForm, com REGIÃO)
@@ -239,7 +240,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     issuer_company: data.issuer_company || '',
                     nf_service_description: data.nf_service_description || '',
                     nf_municipal_service_code: data.nf_municipal_service_code || '',
-                    nf_municipal_service_name: data.nf_municipal_service_name || ''
+                    nf_municipal_service_name: data.nf_municipal_service_name || '',
+                    responsavel_comercial_id: data.responsavel_comercial_id || '',
                 });
                 fetchPriceTables(data.name);
             }
@@ -259,6 +261,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
     fetchClientData();
     supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name')
         .then(({ data }) => data && setClientsList(data as any));
+    supabase.from('comerciais').select('id, nome').eq('ativo', true).order('nome')
+        .then(({ data }) => data && setComerciais(data as any));
   }, [id]);
 
   useEffect(() => {
@@ -668,7 +672,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
         issuer_company: formData.issuer_company || null,
         nf_service_description: formData.nf_service_description?.trim() || null,
         nf_municipal_service_code: formData.nf_municipal_service_code?.trim() || null,
-        nf_municipal_service_name: formData.nf_municipal_service_name?.trim() || null
+        nf_municipal_service_name: formData.nf_municipal_service_name?.trim() || null,
+        responsavel_comercial_id: formData.responsavel_comercial_id || null,
       };
 
       let savedClientId: string | null = id ? String(id) : null;
@@ -1060,6 +1065,21 @@ const ClientForm: React.FC<ClientFormProps> = ({
                             <input type="text" className={`${INPUT_CLASS} pl-10`} required value={formData.contact} onChange={e => setFormData({...formData, contact: e.target.value})} />
                             <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         </div>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>Responsável Comercial</label>
+                        <select
+                          className={INPUT_CLASS}
+                          value={formData.responsavel_comercial_id}
+                          onChange={e => setFormData({...formData, responsavel_comercial_id: e.target.value})}
+                          data-testid="select-responsavel-comercial"
+                        >
+                            <option value="">— Sem comercial (não gera comissão) —</option>
+                            {comerciais.map((c) => (
+                              <option key={c.id} value={c.id}>{c.nome}</option>
+                            ))}
+                        </select>
+                        <p className="text-[10px] text-gray-400">Define quem recebe comissão quando este cliente for faturado.</p>
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Status Operacional</label>

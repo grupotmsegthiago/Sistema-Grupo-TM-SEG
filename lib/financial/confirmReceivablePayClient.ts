@@ -9,6 +9,10 @@ import {
   type ConfirmReceivablePayPlan,
 } from './confirmReceivablePay';
 import { addPaymentToTransaction } from './receivablePaymentsClient';
+import {
+  atualizarStatusAposBaixaPorNumeroFatura,
+  extractFaturaNumeroFromNotes,
+} from '../comissao/comissaoCore';
 
 function isMissingColumnError(err: { code?: string; message?: string } | null | undefined): boolean {
   if (!err) return false;
@@ -141,6 +145,17 @@ export async function confirmReceivablePayment(
     }
     if (ins.error) throw ins.error;
     residual = ins.data as FinancialTransaction;
+  }
+
+  if (!plan.isPartial) {
+    try {
+      const numero = extractFaturaNumeroFromNotes(t.notes, t.description);
+      if (numero) {
+        await atualizarStatusAposBaixaPorNumeroFatura(supabase, numero, params.paymentDate);
+      }
+    } catch (e) {
+      console.warn('[confirmReceivablePayment] comissão:', e);
+    }
   }
 
   return {

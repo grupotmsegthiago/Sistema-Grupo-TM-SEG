@@ -3,12 +3,19 @@ import assert from 'node:assert/strict';
 import {
   overdueDays,
   paymentStatusLabel,
+  invoiceControlChargeStatus,
   nfStatusBucket,
   nfBucketLabel,
   nfBucketDetail,
   nfErrorGuidance,
 } from '../lib/invoiceDisplay';
 import { isNonRetryable } from '../lib/nfRetryGuards';
+import {
+  isAsaasGoneError,
+  isAsaasPaymentCancelled,
+  isAsaasPaymentPaid,
+  preferLaterDueDate,
+} from '../lib/asaasSyncOpenPaymentsCore';
 
 describe('invoiceDisplay — status cobrança e NF', () => {
   const now = new Date('2026-07-23T12:00:00-03:00');
@@ -26,6 +33,19 @@ describe('invoiceDisplay — status cobrança e NF', () => {
     assert.equal(paymentStatusLabel('EMITIDA', '2026-07-22', now), 'VENCIDO (1 dia)');
     assert.equal(paymentStatusLabel('EMITIDA', '2026-07-30', now), 'Em Aberto');
     assert.equal(paymentStatusLabel('CANCELADA', null, now), 'Cancelada');
+    assert.equal(paymentStatusLabel('VENCIDA', '2026-07-30', now), 'Em Aberto');
+  });
+
+  it('prorrogação: VENCIDA com vencimento futuro volta para Em Aberto', () => {
+    assert.equal(invoiceControlChargeStatus('VENCIDA', 'AUTHORIZED', '2026-09-09', new Date('2026-09-08T15:00:00-03:00')), 'EMITIDA');
+    assert.equal(invoiceControlChargeStatus('VENCIDA', 'AUTHORIZED', '2026-08-25', new Date('2026-09-08T15:00:00-03:00')), 'VENCIDA');
+    assert.equal(invoiceControlChargeStatus('EMITIDA', 'AUTHORIZED', '2026-09-04', new Date('2026-09-08T15:00:00-03:00')), 'VENCIDA');
+  });
+
+  it('NF cancelada não aparece como VENCIDO mesmo com boleto atrasado', () => {
+    assert.equal(paymentStatusLabel('EMITIDA', '2026-07-08', now, 'CANCELED'), 'Cancelada');
+    assert.equal(paymentStatusLabel('VENCIDA', '2026-07-08', now, 'CANCELLED'), 'Cancelada');
+    assert.equal(paymentStatusLabel('PAGA', '2026-07-08', now, 'CANCELED'), 'PAGO');
   });
 
   it('nfStatusBucket agrupa Emitida / Processando / Falha', () => {
@@ -68,6 +88,20 @@ describe('invoiceDisplay — status cobrança e NF', () => {
   });
 });
 
+describe('Asaas sync — cobrança cancelada / prorrogada', () => {
+  it('detecta cobrança excluída ou estornada no Asaas', () => {
+    assert.equal(isAsaasPaymentCancelled({ deleted: true, status: 'PENDING' }), true);
+    assert.equal(isAsaasPaymentCancelled({ status: 'REFUNDED' }), true);
+    assert.equal(isAsaasPaymentCancelled({ status: 'CANCELLED' }), true);
+    assert.equal(isAsaasPaymentCancelled({ status: 'PENDING' }), false);
+    assert.equal(preferLaterDueDate('2026-08-25', '2026-08-25', '2026-09-09'), '2026-09-09');
+    assert.equal(preferLaterDueDate('2026-09-09', '2026-08-25'), '2026-09-09');
+    assert.equal(isAsaasPaymentPaid({ status: 'RECEIVED' }), true);
+    assert.equal(isAsaasGoneError(new Error('Asaas API Error (404): Not found')), true);
+    assert.equal(isAsaasGoneError(new Error('Asaas API Error (400): vencimento inválido')), false);
+  });
+});
+
 describe('FinancialInvoiceControl — auto sync e labels', () => {
   it('tela dispara sync de pagamentos e retry NF sem remover import React', async () => {
     const fs = await import('node:fs');
@@ -79,6 +113,7 @@ describe('FinancialInvoiceControl — auto sync e labels', () => {
     assert.match(src, /syncOpen = async \(limit = 15\)/);
     assert.match(src, /\/api\/nf\/retry-now\?limit=(5|10)&reopen=1/);
     assert.match(src, /paymentStatusLabel/);
+    assert.match(src, /invoiceControlChargeStatus/);
     assert.match(src, /nfStatusBucket/);
     assert.match(src, /nfErrorGuidance/);
     assert.match(src, /nf-error-guidance/);

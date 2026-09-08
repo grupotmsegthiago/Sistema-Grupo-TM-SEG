@@ -30,3 +30,10 @@ export const DIRETORIA_MENU_SCREEN_IDS = new Set([
   'diretoria-cockpit',
   'gestao-investimento',
 ]);
+
+/** Comissões comerciais: Thiagos + Diretoria/Administrador. */
+export function canAccessComissoesComerciais(user: DiretoriaAccessUser | null | undefined): boolean {
+  if (canAccessDiretoriaMenu(user)) return true;
+  const role = String(user?.role || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return role === 'diretoria' || role === 'administrador';
+}

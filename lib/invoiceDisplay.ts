@@ -23,18 +23,54 @@ export function overdueDays(dueDate: string | null | undefined, now: Date = new 
   return diff > 0 ? diff : 0;
 }
 
+export function isCanceledNfStatus(nfStatus?: string | null): boolean {
+  const ns = String(nfStatus || '').toUpperCase();
+  return ns === 'CANCELED' || ns === 'CANCELLED';
+}
+
+/**
+ * Status de cobrança efetivo na tela: NF cancelada não permanece VENCIDA/Em Aberto.
+ * Pago prevalece se a cobrança já foi baixada.
+ */
+export function effectiveInvoiceChargeStatus(
+  status?: string | null,
+  nfStatus?: string | null,
+): string {
+  const s = String(status || '').toUpperCase();
+  if (s === 'PAGA') return 'PAGA';
+  if (s === 'CANCELADA' || isCanceledNfStatus(nfStatus)) return 'CANCELADA';
+  return s || 'EMITIDA';
+}
+
+/**
+ * Bucket do Controle de Faturas: NF cancelada some de VENCIDO;
+ * VENCIDA com vencimento futuro (prorrogação) volta para Em Aberto.
+ */
+export function invoiceControlChargeStatus(
+  status?: string | null,
+  nfStatus?: string | null,
+  dueDate?: string | null,
+  now: Date = new Date(),
+): string {
+  const base = effectiveInvoiceChargeStatus(status, nfStatus);
+  if (base === 'PAGA' || base === 'CANCELADA') return base;
+  const days = overdueDays(dueDate, now);
+  if (days !== null && days > 0) return 'VENCIDA';
+  return 'EMITIDA';
+}
+
 /** Rótulo do status de cobrança na linha da tabela. */
 export function paymentStatusLabel(
   status: string,
   dueDate?: string | null,
   now: Date = new Date(),
+  nfStatus?: string | null,
 ): string {
-  const s = (status || '').toUpperCase();
+  const s = invoiceControlChargeStatus(status, nfStatus, dueDate, now);
   if (s === 'PAGA') return 'PAGO';
   if (s === 'CANCELADA') return 'Cancelada';
-  const days = overdueDays(dueDate, now);
-  const isOverdue = s === 'VENCIDA' || (s === 'EMITIDA' && days !== null && days > 0);
-  if (isOverdue) {
+  if (s === 'VENCIDA') {
+    const days = overdueDays(dueDate, now);
     const n = days && days > 0 ? days : 0;
     if (n <= 0) return 'VENCIDO';
     return `VENCIDO (${n} ${n === 1 ? 'dia' : 'dias'})`;
