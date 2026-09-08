@@ -81,3 +81,18 @@ export function resolveStoredProviderToll(
   }
   return normalizeTollAmount(tollValue);
 }
+
+/**
+ * Par cliente/fornecedor para exibir na Auditoria de Faturamento.
+ * Corrige legado em que ambos foram gravados com o valor real (sem +20% no cliente).
+ */
+export function resolveTollUiPair(
+  tollValue: unknown,
+  tollValueProvider?: unknown | null,
+  isSameOs = false,
+): { client: number; provider: number } {
+  return {
+    client: resolveStoredClientToll(tollValue, tollValueProvider),
+    provider: resolveStoredProviderToll(tollValue, tollValueProvider, isSameOs),
+  };
+}

@@ -6,6 +6,7 @@ import {
   normalizeTollAmount,
   resolveStoredClientToll,
   resolveStoredProviderToll,
+  resolveTollUiPair,
   tollPersistencePair,
 } from '../lib/toll/clientTollBilling';
 import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
@@ -51,6 +52,13 @@ describe('clientTollBilling', () => {
     assert.equal(resolveStoredProviderToll(50, 50), 50);
     assert.equal(resolveStoredProviderToll(50, null), 50);
     assert.equal(resolveStoredProviderToll(60, 0, true), 0);
+  });
+
+  it('resolveTollUiPair aplica +20% no cliente quando legado igual', () => {
+    assert.deepEqual(resolveTollUiPair(32.45, 32.45, false), { client: 38.94, provider: 32.45 });
+    assert.deepEqual(resolveTollUiPair(38.94, 32.45, false), { client: 38.94, provider: 32.45 });
+    assert.deepEqual(resolveTollUiPair(32.45, 32.45, true), { client: 38.94, provider: 0 });
+    assert.deepEqual(resolveTollUiPair(8, 8, false), { client: 8, provider: 8 });
   });
 });
 
