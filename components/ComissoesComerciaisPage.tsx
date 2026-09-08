@@ -15,11 +15,15 @@ import { registrarPagamentoComissao } from '../lib/comissao/comissaoService';
 
 type Comercial = { id: string; nome: string; email?: string | null; telefone?: string | null; pix_chave?: string | null; ativo?: boolean };
 
+type EmpresaOrigem = 'TM_SEG' | 'TORRES';
+
 type ComissaoRow = {
   id: string;
   fatura_id: string | null;
   fatura_numero: string | null;
+  empresa_origem?: EmpresaOrigem | string | null;
   cliente_id: number | null;
+  cliente_origem_id?: number | null;
   cliente_nome: string | null;
   comercial_id: string;
   valor_faturamento: number;
@@ -34,6 +38,10 @@ type ComissaoRow = {
   comprovante_url: string | null;
   comerciais?: { nome?: string | null; pix_chave?: string | null } | null;
 };
+
+function empresaLabel(empresa?: string | null): string {
+  return String(empresa || '').toUpperCase() === 'TORRES' ? 'TORRES' : 'TM SEG';
+}
 
 function fmtBRL(n: number): string {
   return (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -61,6 +69,7 @@ const ComissoesComerciaisPage: React.FC = () => {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [comercialId, setComercialId] = useState('');
   const [statusFilter, setStatusFilter] = useState<'' | ComissaoStatus>('');
+  const [empresaFilter, setEmpresaFilter] = useState<'' | EmpresaOrigem>('');
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ComissaoRow[]>([]);
   const [comerciais, setComerciais] = useState<Comercial[]>([]);
@@ -96,6 +105,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           .range(from, from + size - 1);
         if (comercialId) q = q.eq('comercial_id', comercialId);
         if (statusFilter) q = q.eq('status', statusFilter);
+        if (empresaFilter) q = q.eq('empresa_origem', empresaFilter);
         const { data, error, count } = await q;
         return { data: data as ComissaoRow[] | null, error, count };
       });
@@ -109,7 +119,7 @@ const ComissoesComerciaisPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [periodStart, periodEnd, comercialId, statusFilter, loadComerciais, showNotification]);
+  }, [periodStart, periodEnd, comercialId, statusFilter, empresaFilter, loadComerciais, showNotification]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -119,7 +129,23 @@ const ComissoesComerciaisPage: React.FC = () => {
     const base = rows.reduce((s, r) => s + Number(r.valor_base_liquida || 0), 0);
     const lib = rows.filter((r) => r.status === 'LIBERADO_PARA_PAGAMENTO').reduce((s, r) => s + Number(r.valor_comissao || 0), 0);
     const pago = rows.filter((r) => r.status === 'PAGO').reduce((s, r) => s + Number(r.valor_comissao || 0), 0);
-    return { fat, imposto, base, lib, pago, qtd: rows.length };
+    const porEmpresa = {
+      TM_SEG: rows.filter((r) => empresaLabel(r.empresa_origem) === 'TM SEG').reduce((s, r) => s + Number(r.valor_comissao || 0), 0),
+      TORRES: rows.filter((r) => empresaLabel(r.empresa_origem) === 'TORRES').reduce((s, r) => s + Number(r.valor_comissao || 0), 0),
+    };
+    const porClienteMap = new Map<string, { cliente: string; empresa: string; fat: number; comissao: number; qtd: number }>();
+    for (const r of rows) {
+      const empresa = empresaLabel(r.empresa_origem);
+      const cliente = String(r.cliente_nome || '—').toUpperCase();
+      const key = `${empresa}|${cliente}`;
+      const prev = porClienteMap.get(key) || { cliente, empresa, fat: 0, comissao: 0, qtd: 0 };
+      prev.fat += Number(r.valor_faturamento || 0);
+      prev.comissao += Number(r.valor_comissao || 0);
+      prev.qtd += 1;
+      porClienteMap.set(key, prev);
+    }
+    const porCliente = Array.from(porClienteMap.values()).sort((a, b) => b.comissao - a.comissao);
+    return { fat, imposto, base, lib, pago, qtd: rows.length, porEmpresa, porCliente };
   }, [rows]);
 
   const confirmarPagamento = async () => {
@@ -175,7 +201,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           <h1 className="text-lg font-black text-gray-900 uppercase tracking-tight flex items-center gap-2">
             <BadgeDollarSign className="text-red-600" size={22} /> Comissões Comerciais
           </h1>
-          <p className="text-xs text-gray-500 font-medium">Faturamento → baixa do cliente → pagamento ao comercial (16% imposto / 3% sobre o líquido, salvo regra específica).</p>
+          <p className="text-xs text-gray-500 font-medium">Controle único na TM SEG: TM SEG + TORRES. Faturamento → baixa do cliente → pagamento ao comercial (16% imposto / 3% sobre o líquido, salvo regra específica).</p>
         </div>
         <button
           type="button"
@@ -221,6 +247,13 @@ const ComissoesComerciaisPage: React.FC = () => {
             ))}
           </select>
         </label>
+        <label className="text-[10px] font-black text-gray-400 uppercase">Empresa
+          <select className="block mt-1 border rounded-lg px-3 py-2 text-sm font-bold" value={empresaFilter} onChange={(e) => setEmpresaFilter(e.target.value as EmpresaOrigem | '')} data-testid="filter-empresa-comissao">
+            <option value="">Todas</option>
+            <option value="TM_SEG">TM SEG</option>
+            <option value="TORRES">TORRES</option>
+          </select>
+        </label>
         <label className="text-[10px] font-black text-gray-400 uppercase">Status
           <select className="block mt-1 border rounded-lg px-3 py-2 text-sm font-bold" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as ComissaoStatus | '')} data-testid="filter-status-comissao">
             <option value="">Todos</option>
@@ -235,7 +268,7 @@ const ComissoesComerciaisPage: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         <div className="bg-white border rounded-xl p-4">
           <p className="text-[10px] font-black text-gray-400 uppercase">Faturamento acumulado</p>
           <p className="text-lg font-black text-gray-900">{fmtBRL(stats.fat)}</p>
@@ -254,18 +287,59 @@ const ComissoesComerciaisPage: React.FC = () => {
           <p className="text-sm font-black text-blue-700">{fmtBRL(stats.lib)}</p>
           <p className="text-sm font-black text-green-700">{fmtBRL(stats.pago)}</p>
         </div>
+        <div className="bg-white border rounded-xl p-4">
+          <p className="text-[10px] font-black text-gray-400 uppercase">Comissão TM SEG</p>
+          <p className="text-lg font-black text-gray-900">{fmtBRL(stats.porEmpresa.TM_SEG)}</p>
+        </div>
+        <div className="bg-white border rounded-xl p-4">
+          <p className="text-[10px] font-black text-gray-400 uppercase">Comissão TORRES</p>
+          <p className="text-lg font-black text-gray-900">{fmtBRL(stats.porEmpresa.TORRES)}</p>
+        </div>
       </div>
+
+      {stats.porCliente.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="comissoes-por-cliente">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <p className="text-[10px] font-black text-gray-400 uppercase">Somatório por cliente e empresa</p>
+          </div>
+          <div className="overflow-x-auto max-h-64">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase">
+                  <th className="text-left px-3 py-2">Empresa</th>
+                  <th className="text-left px-3 py-2">Cliente</th>
+                  <th className="text-right px-3 py-2">Faturas</th>
+                  <th className="text-right px-3 py-2">Faturamento</th>
+                  <th className="text-right px-3 py-2">Comissão</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.porCliente.map((c) => (
+                  <tr key={`${c.empresa}-${c.cliente}`} className="border-t border-gray-50">
+                    <td className="px-3 py-2 text-xs font-black">{c.empresa}</td>
+                    <td className="px-3 py-2 text-xs font-bold uppercase">{c.cliente}</td>
+                    <td className="px-3 py-2 text-right font-mono">{c.qtd}</td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.fat)}</td>
+                    <td className="px-3 py-2 text-right font-black">{fmtBRL(c.comissao)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         {loading ? (
           <div className="p-10 flex items-center justify-center gap-2 text-gray-500 text-sm"><Loader2 className="animate-spin" size={16} /> Carregando comissões…</div>
         ) : rows.length === 0 ? (
-          <div className="p-10 text-center text-sm text-gray-500">Nenhuma comissão neste filtro. Vincule um comercial no cadastro do cliente e emita a NF.</div>
+          <div className="p-10 text-center text-sm text-gray-500">Nenhuma comissão neste filtro. Na TM SEG e na TORRES, vincule o comercial no cadastro do cliente e emita a NF.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase">
+                  <th className="text-left px-3 py-2">Empresa</th>
                   <th className="text-left px-3 py-2">Cliente</th>
                   <th className="text-left px-3 py-2">NF / OS</th>
                   <th className="text-right px-3 py-2">Faturamento</th>
@@ -280,6 +354,7 @@ const ComissoesComerciaisPage: React.FC = () => {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className="border-t border-gray-50" data-testid={`comissao-row-${r.id}`}>
+                    <td className="px-3 py-2 text-[10px] font-black text-gray-500">{empresaLabel(r.empresa_origem)}</td>
                     <td className="px-3 py-2">
                       <div className="font-bold text-gray-900 uppercase text-xs">{r.cliente_nome || '—'}</div>
                       <div className="text-[10px] text-gray-400">{r.comerciais?.nome || '—'}</div>

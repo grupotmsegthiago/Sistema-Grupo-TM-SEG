@@ -519,6 +519,10 @@
       "destination": "/api/asaas-webhook"
     },
     {
+      "source": "/api/comissoes/ingest",
+      "destination": "/api/comissoes-ingest"
+    },
+    {
       "source": "/api/asaas/sync-open-payments",
       "destination": "/api/asaas-sync-open-payments"
     },

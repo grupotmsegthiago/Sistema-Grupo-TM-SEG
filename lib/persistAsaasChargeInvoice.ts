@@ -263,6 +263,8 @@ export async function persistAsaasChargeInvoice(
       try {
         await gerarComissaoAoFaturar(sb, {
           faturaId: invoiceId,
+          origemFaturaId: invoiceId,
+          empresaOrigem: 'TM_SEG',
           clienteId: input.entityId ?? null,
           clienteNome: input.clientName,
           valorFaturamento: Number(input.amount) || 0,

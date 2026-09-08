@@ -60,9 +60,47 @@ describe('comissao comercial — integração preservada', () => {
     const nav = fs.readFileSync('constants.ts', 'utf8');
     assert.match(form, /select-responsavel-comercial/);
     assert.match(form, /from 'react'/);
+    assert.match(page, /filter-empresa-comissao/);
+    assert.match(page, /comissoes-por-cliente/);
     assert.match(page, /from 'react'/);
     assert.match(page, /import React,/);
     assert.match(app, /comissoes-comerciais/);
     assert.match(nav, /Comissões Comerciais/);
+  });
+});
+
+describe('comissao comercial — TORRES ingest', () => {
+  it('parseia evento de faturamento TORRES', async () => {
+    const { parseComissaoIngestPayload } = await import('../lib/comissao/comissaoIngest');
+    const parsed = parseComissaoIngestPayload({
+      empresa: 'TORRES',
+      evento: 'FATURADO',
+      origemFaturaId: 44,
+      clienteOrigemId: 12,
+      clienteNome: 'CLIENTE TORRES',
+      comercialId: 'e2fe3779-0b03-47cf-95a2-0c01a35e3e32',
+      valorFaturamento: 10000,
+    });
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) return;
+    assert.equal(parsed.data.empresa, 'TORRES');
+    assert.equal(parsed.data.origemFaturaId, '44');
+    assert.equal(parsed.data.valorFaturamento, 10000);
+  });
+
+  it('recusa evento inválido', async () => {
+    const { parseComissaoIngestPayload } = await import('../lib/comissao/comissaoIngest');
+    const parsed = parseComissaoIngestPayload({ evento: 'X', origemFaturaId: '1' });
+    assert.equal(parsed.ok, false);
+  });
+
+  it('endpoint de ingest e rewrite existem', () => {
+    const ingest = fs.readFileSync('api/comissoes-ingest.ts', 'utf8');
+    const vercel = fs.readFileSync('vercel.json', 'utf8');
+    const core = fs.readFileSync('lib/comissao/comissaoCore.ts', 'utf8');
+    assert.match(ingest, /handleComissoesIngest/);
+    assert.match(vercel, /\/api\/comissoes\/ingest/);
+    assert.match(core, /empresaOrigem/);
+    assert.match(core, /atualizarStatusAposBaixaPorOrigem/);
   });
 });
