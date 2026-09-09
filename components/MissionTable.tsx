@@ -35,6 +35,10 @@ import DhlSolicitationModal from './DhlSolicitationModal';
 import LossesDialog from './LossesDialog';
 import MissingTableDialog, { computeMissingTableRows, type MissingTableRow } from './MissingTableDialog';
 import {
+  fetchBillingAdjustmentsForMissionIds,
+  type BillingAdjustmentRecord,
+} from '../lib/missionBillingAudit';
+import {
   computeCanonicalRevenueCost as computeCanonicalRC,
   getCanonicalDateRange as getCanonicalDR,
   filterMissionsByPeriod as filterByPeriodCanonical,
@@ -353,8 +357,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   // direto do banco — independente da paginação/período da tela (que pode não ter
   // carregado, p.ex., canceladas fora do período). Só roda para quem vê o alerta.
   const [missingTableExtra, setMissingTableExtra] = useState<any[]>([]);
+  const [missingTableAdj, setMissingTableAdj] = useState<Map<string, BillingAdjustmentRecord>>(new Map());
   const fetchMissingTableExtra = useCallback(async () => {
-    if (!canSeeMissingTableAlert) { setMissingTableExtra([]); return; }
+    if (!canSeeMissingTableAlert) { setMissingTableExtra([]); setMissingTableAdj(new Map()); return; }
     try {
       const floorIso = new Date(2026, 4, 1, 0, 0, 0, 0).toISOString(); // 01/05/2026
       const dateOr = `start_time.gte.${floorIso},and(start_time.is.null,created_at.gte.${floorIso})`;
@@ -370,6 +375,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         from += pageSize;
       }
       setMissingTableExtra(all);
+      const ids = [...new Set(all.map((m: any) => String(m.id || '')).filter(Boolean))];
+      if (ids.length === 0) {
+        setMissingTableAdj(new Map());
+        return;
+      }
+      try {
+        const adj = await fetchBillingAdjustmentsForMissionIds(supabase, ids);
+        setMissingTableAdj(adj);
+      } catch {
+        setMissingTableAdj(new Map());
+      }
     } catch {
       // mantém o último conjunto conhecido em caso de falha de rede
     }
@@ -390,11 +406,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
       for (const m of fromMay2026) byId.set(String(m.id), m);
       for (const m of (missingTableExtra || [])) { const k = String(m.id); if (!byId.has(k)) byId.set(k, m); }
       const union = Array.from(byId.values());
-      return computeMissingTableRows(union, clientTables, providerTables, clientsData, 'ALL', undefined, undefined, true);
+      return computeMissingTableRows(union, clientTables, providerTables, clientsData, 'ALL', undefined, undefined, true, missingTableAdj);
     } catch {
       return [];
     }
-  }, [canSeeMissingTableAlert, allMissions, missingTableExtra, clientTables, providerTables, clientsData]);
+  }, [canSeeMissingTableAlert, allMissions, missingTableExtra, missingTableAdj, clientTables, providerTables, clientsData]);
   const missingTableCount = missingTableRows.length;
 
   // FORÇA administrador/avançado a tratar OS sem tabela: o alerta abre sozinho a

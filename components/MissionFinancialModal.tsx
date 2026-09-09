@@ -1476,15 +1476,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   try {
                       const details = JSON.parse(adj.details);
                       if (details.clientTableId) {
-                          const adjClientTable = (ctRes.data || []).find((t: any) => t.id.toString() === details.clientTableId);
-                          const adjTableOp = (adjClientTable?.operation_type || '').toUpperCase();
-                          const adjOriginUF = extractUF(fullMission.origin || '');
-                          const adjOriginRegion = (UF_TO_REGION[adjOriginUF] || '').toUpperCase();
-                          const adjTableRegions = ['SUDESTE', 'SUL', 'CENTRO-OESTE', 'NORDESTE', 'NORTE'];
-                          const adjTableRegion = adjTableRegions.find(r => adjTableOp.includes(r)) || '';
-                          if (!adjTableRegion || !adjOriginRegion || adjTableRegion === adjOriginRegion) {
-                              setManualClientTableId(details.clientTableId);
-                          }
+                          // Ajuste salvo pelo auditor sempre restaura a tabela escolhida.
+                          // Filtro de região aqui descartava GTM-7714 (PA + NÍVEL BRASIL).
+                          setManualClientTableId(String(details.clientTableId));
                       }
                       if (details.providerTableId && !String(details.providerTableId).startsWith('auto-')) setManualProviderTableId(details.providerTableId);
                       if (details.customClientBase) setCustomClientBase(details.customClientBase);
@@ -4571,7 +4565,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             ) : financialData && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
                     
-                    {!financialData.hasClientTable && (
+                    {(!financialData.hasClientTable && !manualClientTableId) && (
                         <div className="bg-red-50 border-2 border-red-400 rounded-xl p-4 shadow-md" data-testid="alert-no-client-table">
                             <div className="flex items-start gap-3">
                                 <div className="p-2 bg-red-100 rounded-lg shrink-0"><AlertTriangle size={20} className="text-red-700" /></div>

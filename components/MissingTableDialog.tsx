@@ -5,6 +5,10 @@ import { canRequestOsAnalysis } from '../lib/osAnalysisAccess';
 import RequestOsAnalysisModal, { type RequestOsAnalysisPayload } from './RequestOsAnalysisModal';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import {
+  buildAuditTableOverrides,
+  type BillingAdjustmentRecord,
+} from '../lib/missionBillingAudit';
+import {
   getCanonicalDateRange,
   filterMissionsByPeriod,
   type CanonicalPeriod,
@@ -44,6 +48,7 @@ export const computeMissingTableRows = (
   // Quando true, `missions` já vem filtrada pelo período canônico (evita varrer
   // a lista inteira duas vezes quando o chamador já fez esse filtro).
   alreadyFiltered = false,
+  billingAdjustments?: Map<string, BillingAdjustmentRecord>,
 ): Row[] => {
   let inPeriod: any[];
   if (alreadyFiltered) {
@@ -79,7 +84,16 @@ export const computeMissingTableRows = (
         lastUpdate: m.lastUpdate ?? m.last_update,
         totalDistance: m.totalDistance ?? m.total_distance,
       } as Mission;
-      const fin = calculateMissionFinancials(missionObj, clientTables, providerTables, matchedClient, now);
+      const adj = billingAdjustments?.get(String(m.id));
+      const overrides = buildAuditTableOverrides(missionObj, clientTables, providerTables, adj);
+      const fin = calculateMissionFinancials(
+        missionObj,
+        clientTables,
+        providerTables,
+        matchedClient,
+        now,
+        overrides as any,
+      );
       const missingClient = !fin.hasClientTable;
       const missingProvider = !fin.hasProviderTable;
       if (missingClient || missingProvider) {

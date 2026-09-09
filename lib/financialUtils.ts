@@ -1006,12 +1006,12 @@ export const calculateMissionFinancials = (
 
     let isManualOverride = false;
     if (manualTableOverrides?.clientTableId) {
-        const manualTable = clientTables.find(t => t.id.toString() === manualTableOverrides.clientTableId);
-        const manualTableOp = (manualTable?.operation_type || '').toUpperCase();
-        const regionNames = ['SUDESTE', 'SUL', 'CENTRO-OESTE', 'NORDESTE', 'NORTE'];
-        const manualTableRegion = regionNames.find(r => manualTableOp.includes(r)) || '';
-        const regionOk = !manualTableRegion || !detectedRegion || manualTableRegion === detectedRegion.toUpperCase();
-        if (regionOk) {
+        const wantedId = String(manualTableOverrides.clientTableId);
+        const manualTable = clientTables.find(t => String(t.id) === wantedId);
+        // Seleção explícita do auditor (dropdown / BillingAdjustment) sempre vence.
+        // O filtro de região vale só para memória evolutiva de OUTRAS OS, não aqui —
+        // senão a GTM-7714 (PA) ficava "sem tabela" mesmo com NÍVEL BRASIL escolhida.
+        if (manualTable) {
             appliedClientTable = manualTable;
             clientLog = 'Seleção Manual / Memória';
             isManualOverride = true;
