@@ -1,5 +1,26 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## FATURAMENTO DHL — PLANILHA SÓ COM OS APROVADA/APROVADO
+
+**Data:** 2026-09-09 (UTC-3)
+**Pedido:** gerar planilha do período somente se todas as OS estiverem
+APROVADA/APROVADO (`billing_approved === true`).
+
+**Regra:** Relatório DHL e Preencher Planilha (SE) bloqueiam se existir OS do
+universo do boletim (exceto Recusada / `exclude_from_billing`) sem aprovação.
+Fail-closed: ausência de flag = PENDENTE. Botões desabilitados com contagem.
+
+**Agosto/2026 (consulta):** 198/199 OS DHL aprovadas; pendente **GTM-7342**
+SE **186956**, Concluída 21/08, R$ 696,90.
+
+**Arquivo Excel do usuário** (`PLANILHA_DHL_PREENCHIDA_20260909 (1)000.xlsx`):
+não chegou neste ambiente (caminho local Windows). Comparativo célula a célula
+fica pendente do upload.
+
+**Não alterado:** motor financeiro, OS, Asaas, eNotas, Torres.
+
+---
+
 ## FATURAMENTO DHL — PLANILHA INCLUIA SÓ SE DO ARQUIVO ENVIADO
 
 **Data:** 2026-09-09 (UTC-3)

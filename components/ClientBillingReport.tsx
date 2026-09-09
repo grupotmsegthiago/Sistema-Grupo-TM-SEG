@@ -33,7 +33,9 @@ import {
     fetchBillingMissionUniverse,
 } from '../lib/billing/fetchBillingMissionUniverse';
 import {
+    formatDhlPeriodApprovalBlockMessage,
     listSystemSesMissingFromSheet,
+    listUnapprovedDhlPeriodMissions,
     sortSystemSesForDhlSheet,
 } from '../lib/billing/dhlSheetSeCoverage';
 import {
@@ -1943,6 +1945,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const handleExportDhlFaturamento = useCallback(async () => {
         if (!assertBillingDatasetComplete()) return;
         if (rowsData.length === 0) return;
+        const unapproved = listUnapprovedDhlPeriodMissions(rowsData);
+        if (unapproved.length > 0) {
+            alert(formatDhlPeriodApprovalBlockMessage(unapproved));
+            return;
+        }
         const { exportDhlFaturamento, downloadBlob } = await import('../exports/dhl-faturamento-export');
 
         const periodoLabel = (() => {
@@ -2048,6 +2055,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const handleFillDhlSheet = useCallback(() => {
         if (!startDate || !endDate) { alert('Selecione o período antes de preencher a planilha.'); return; }
+        if (reportGenerated && rowsData.length > 0) {
+            const unapprovedOnScreen = listUnapprovedDhlPeriodMissions(rowsData);
+            if (unapprovedOnScreen.length > 0) {
+                alert(formatDhlPeriodApprovalBlockMessage(unapprovedOnScreen));
+                return;
+            }
+        }
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.xlsx,.xlsb,.xls,.csv';
@@ -2188,6 +2202,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 foundMissions = foundMissions.filter(
                     m => !(m.status || '').toString().toLowerCase().includes('recus')
                 );
+
+                const unapprovedPeriod = listUnapprovedDhlPeriodMissions(foundMissions);
+                if (unapprovedPeriod.length > 0) {
+                    alert(formatDhlPeriodApprovalBlockMessage(unapprovedPeriod));
+                    return;
+                }
 
                 // Enriquece com veiculo do cliente.
                 const cvIds = [...new Set(foundMissions.map(m => m.client_vehicle).filter(Boolean))];
@@ -2663,7 +2683,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
         };
         input.click();
-    }, [clients, clientData, priceTables, providerTables, startDate, endDate, selectedClient]);
+    }, [clients, clientData, priceTables, providerTables, startDate, endDate, selectedClient, reportGenerated, rowsData]);
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #e5c4c4',
@@ -4711,22 +4731,23 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     {isDhlBilling && (
                                         <button
                                             onClick={handleExportDhlFaturamento}
-                                            className="px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2"
-                                            style={{ background: 'linear-gradient(135deg, #D40511 0%, #B30410 100%)', color: '#FFCC00' }}
+                                            disabled={blocked}
+                                            className="px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2 disabled:opacity-60"
+                                            style={{ background: blocked ? '#9ca3af' : 'linear-gradient(135deg, #D40511 0%, #B30410 100%)', color: blocked ? '#fff' : '#FFCC00' }}
                                             data-testid="btn-export-dhl-faturamento"
-                                            title="Exporta planilha-padrão DHL de faturamento (layout oficial)"
+                                            title={blocked ? `Há ${pendCount} OS sem APROVADA/APROVADO. Aprove todas antes de gerar a planilha.` : 'Exporta planilha-padrão DHL de faturamento (layout oficial)'}
                                         >
-                                            <FileSpreadsheet size={18} /> Relatório DHL
+                                            <FileSpreadsheet size={18} /> Relatório DHL{blocked && pendCount > 0 ? ` (${pendCount} pendente${pendCount > 1 ? 's' : ''})` : ''}
                                         </button>
                                     )}
                                     {isDhlBilling && canFillDhlSheet && (
                                         <button
                                             onClick={handleFillDhlSheet}
-                                            disabled={fillingSheet}
+                                            disabled={fillingSheet || blocked}
                                             className="px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2 disabled:opacity-60"
-                                            style={{ background: 'linear-gradient(135deg, #FFCC00 0%, #E6B800 100%)', color: '#7A0009' }}
+                                            style={{ background: blocked ? '#d1d5db' : 'linear-gradient(135deg, #FFCC00 0%, #E6B800 100%)', color: '#7A0009' }}
                                             data-testid="btn-fill-dhl-sheet"
-                                            title="Sobe a planilha DHL e preenche as SE. Também inclui automaticamente as SE do período que existem no sistema e não estavam no arquivo."
+                                            title={blocked ? `Há ${pendCount} OS sem APROVADA/APROVADO. Aprove todas antes de gerar a planilha.` : 'Sobe a planilha DHL e preenche as SE. Também inclui automaticamente as SE do período que existem no sistema e não estavam no arquivo.'}
                                         >
                                             {fillingSheet ? <Loader2 size={18} className="animate-spin" /> : <FileSpreadsheet size={18} />} {fillingSheet ? 'Preenchendo...' : 'Preencher Planilha (SE)'}
                                         </button>
