@@ -9,6 +9,8 @@ import {
   ArrowUpCircle, ArrowDownCircle,   BarChart3,
 } from 'lucide-react';
 import DiretoriaSistemaTab from './DiretoriaSistemaTab';
+import InvoiceDivergenceAuditPanel from '../InvoiceDivergenceAuditPanel';
+import InvoiceDivergenceAuditPanel from '../InvoiceDivergenceAuditPanel';
 import { useDashboardDiretoriaData } from '../../lib/dashboardDiretoria/useDashboardDiretoriaData';
 import {
   buildArApByMonth,
@@ -837,6 +839,9 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
   const renderFinanceiro = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="lg:col-span-12">
+        <InvoiceDivergenceAuditPanel />
+      </div>
       <div className="lg:col-span-12 space-y-3">
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Dívidas · Contas · Receita</p>
         {liquidezResumoSection}

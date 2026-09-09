@@ -13,6 +13,7 @@ import {
   findRecentDuplicateOpenCharge,
   persistAsaasChargeInvoice,
 } from './persistAsaasChargeInvoice.js';
+import { parseMissionIdsFromBody } from './billing/vincularOSFatura.js';
 import {
   cpfCnpjLookupVariants,
   formatClientAddressIncompleteError,
@@ -166,6 +167,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
     const nfMunicipalCode = String(municipalServiceCode || '').replace(/\D/g, '') || undefined;
     const nfMunicipalName = String(municipalServiceName || '').trim() || undefined;
     const createdBy = String(input.createdBy || 'Sistema');
+    const missionIds = parseMissionIdsFromBody(body.missionIds);
 
     const lookupCnpj = clientCpfCnpj || (charges?.[0]?.cpfCnpj) || '';
     const cleanLookup = String(lookupCnpj).replace(/\D/g, '');
@@ -273,8 +275,9 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
             nfStatus: 'PROCESSING',
             nfProvider: 'ASAAS',
               nfLastError:
-                'NF isolada — será agendada pelo Controle/worker (fora desta requisição).',
+              'NF isolada — será agendada pelo Controle/worker (fora desta requisição).',
             signal: splitCtrl.signal,
+            missionIds: missionIds.length ? missionIds : undefined,
           });
           if (!persistSplit.ok) {
             console.warn(`[Asaas] Persistência local falhou (split ${payment.id}): ${persistSplit.error}`);
@@ -531,6 +534,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
             nfLastError:
               'NF isolada — agendada pelo Controle/worker (fora desta requisição).',
             signal,
+            missionIds: missionIds.length ? missionIds : undefined,
           }),
         );
       } catch (e: any) {

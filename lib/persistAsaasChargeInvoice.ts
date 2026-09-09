@@ -9,6 +9,7 @@ import {
   resolveClientReceivableDescription,
 } from './billing/receivableDescription.js';
 import { gerarComissaoAoFaturar } from './comissao/comissaoCore.js';
+import { vincularMissionsAFatura } from './billing/vincularOSFatura.js';
 
 export type PersistAsaasChargeInput = {
   paymentId: string;
@@ -41,6 +42,8 @@ export type PersistAsaasChargeInput = {
   plugnotasProtocol?: string | null;
   skipReceivable?: boolean;
   entityId?: string | number | null;
+  /** OS do boletim que compõem esta fatura (vínculo auditável). Opcional. */
+  missionIds?: string[] | null;
   /** Cancela queries Supabase se o passo estourar (evita hang na Vercel). */
   signal?: AbortSignal;
 };
@@ -256,6 +259,14 @@ export async function persistAsaasChargeInvoice(
           if (signal) rxUp = rxUp.abortSignal(signal);
           await rxUp;
         }
+      }
+    }
+
+    if (invoiceId && input.missionIds?.length) {
+      try {
+        await vincularMissionsAFatura(sb, invoiceId, input.missionIds);
+      } catch (e) {
+        console.warn('[invoice-os] vínculo OS↔fatura falhou (fatura persistida):', e);
       }
     }
 

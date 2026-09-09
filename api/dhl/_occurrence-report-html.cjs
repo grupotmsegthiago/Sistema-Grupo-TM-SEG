@@ -552,6 +552,11 @@ function extractSupabaseProjectRef(url) {
   const match = cleanEnv(url).match(/^https?:\/\/([^.]+)\.supabase\.co/i);
   return match?.[1]?.toLowerCase() ?? null;
 }
+function normalizeSupabaseProjectUrl(url) {
+  const cleaned = cleanEnv(url);
+  if (!cleaned) return "";
+  return cleaned.replace(/\/rest\/v1\/?$/i, "").replace(/\/+$/, "");
+}
 function decodeJwtProjectRef(key) {
   try {
     const part = cleanEnv(key).split(".")[1];
@@ -597,7 +602,7 @@ function pickServerUrl() {
     process.env.TMSEG_SUPABASE_URL
   ];
   for (const candidate of candidates) {
-    const value = cleanEnv(candidate);
+    const value = normalizeSupabaseProjectUrl(candidate);
     if (isValidHttpUrl(value) && isTmSegSupabaseUrl(value)) return value;
     if (isValidHttpUrl(value)) warnForeignProjectOnce();
   }
@@ -627,6 +632,17 @@ function decodeJwtRole(key) {
     return null;
   }
 }
+function isTmSegServiceRoleKey(key, expectedRef = TMSEG_SUPABASE_PROJECT_REF) {
+  const cleaned = cleanEnv(key);
+  if (!cleaned) return { ok: false, reason: "empty" };
+  if (cleaned.startsWith("sb_")) return { ok: false, reason: "not_jwt" };
+  const ref = decodeJwtProjectRef(cleaned);
+  const role = decodeJwtRole(cleaned);
+  if (!ref || !role) return { ok: false, reason: "not_jwt" };
+  if (ref !== expectedRef) return { ok: false, reason: "foreign_project" };
+  if (role !== "service_role") return { ok: false, reason: "anon_role" };
+  return { ok: true };
+}
 function getSupabaseUrl() {
   return pickServerUrl();
 }
@@ -639,19 +655,23 @@ function getSupabaseServiceRoleKey() {
     process.env.SUPABASE_SERVICE_KEY,
     process.env.TMSEG_SUPABASE_SERVICE_ROLE_KEY
   ];
+  const expectedRef = extractSupabaseProjectRef(getSupabaseUrl()) || TMSEG_SUPABASE_PROJECT_REF;
   for (const candidate of candidates) {
     const key = cleanEnv(candidate);
     if (!key) continue;
-    const ref = decodeJwtProjectRef(key);
-    if (ref && ref !== decodeJwtProjectRef(getSupabaseUrl())) {
-      warnForeignProjectOnce();
-      continue;
-    }
-    if (decodeJwtRole(key) === "anon") {
-      if (!warnedAnonKeyAsService) {
+    const check = isTmSegServiceRoleKey(key, expectedRef);
+    if (!check.ok) {
+      if (check.reason === "foreign_project") warnForeignProjectOnce();
+      if (check.reason === "anon_role" && !warnedAnonKeyAsService) {
         warnedAnonKeyAsService = true;
         console.error(
-          '[Supabase] SUPABASE_SERVICE_KEY cont\xE9m a chave ANON, n\xE3o service_role. Substitua pelo valor "service_role" no .env (Settings \u2192 API no Supabase).'
+          '[Supabase] SUPABASE_SERVICE_KEY cont\xE9m a chave ANON, n\xE3o service_role. Substitua pelo valor "service_role" LEGACY (eyJ...) no .env (Settings \u2192 API no Supabase).'
+        );
+      }
+      if (check.reason === "not_jwt" && !warnedAnonKeyAsService) {
+        warnedAnonKeyAsService = true;
+        console.error(
+          '[Supabase] SUPABASE_SERVICE_ROLE_KEY n\xE3o \xE9 JWT service_role LEGACY. Use a chave "service_role (LEGACY)" (eyJ...), n\xE3o sb_secret_/sb_publishable_.'
         );
       }
       continue;

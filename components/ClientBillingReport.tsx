@@ -32,6 +32,10 @@ import {
     BILLING_DATASET_INCOMPLETE_MESSAGE,
     fetchBillingMissionUniverse,
 } from '../lib/billing/fetchBillingMissionUniverse';
+import {
+    collectApprovedMissionIdsFromBulletin,
+    vincularMissionsAFatura,
+} from '../lib/billing/vincularOSFatura';
 import { stashInvoiceWatch } from '../lib/invoiceCleanSlate';
 import { kickNfScheduleForInvoices } from '../lib/kickNfSchedule';
 import {
@@ -1409,6 +1413,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         }, 0);
     }, [missions, reportMode, priceTables, providerTables, clientData]);
 
+    const bulletinMissionIds = useMemo(
+        () => collectApprovedMissionIdsFromBulletin(missions),
+        [missions],
+    );
+
     const [pendingRecompare, setPendingRecompare] = useState(false);
 
     const handlePasteCompare = useCallback(() => {
@@ -1855,7 +1864,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     created_by: userName,
                     boleto_due_date: dueDate,
                 };
-                await supabase.from('financial_invoices').insert(invPayload);
+                const { data: invRow, error: invErr } = await supabase.from('financial_invoices').insert(invPayload).select('id');
+                if (invErr) {
+                    console.warn('[Medição] Fatura local não criada:', invErr.message);
+                } else {
+                    const invId = invRow?.[0]?.id ? String(invRow[0].id) : '';
+                    if (invId) {
+                        await vincularMissionsAFatura(supabase, invId, bulletinMissionIds);
+                    }
+                }
             } catch (e) {
                 console.warn('[Medição] Fatura local não criada (não bloqueia envio):', e);
             }
@@ -3046,6 +3063,9 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         console.error(`[AutoSave Invoice ${i + 1}]`, error);
                         continue;
                     }
+                    if (savedId) {
+                        await vincularMissionsAFatura(supabase, savedId, bulletinMissionIds);
+                    }
 
                     let receivableOk = false;
                     try {
@@ -3226,6 +3246,9 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 console.error('[AutoSave Invoice]', error);
                 setAiStatus('Cobrança Asaas gerada, mas erro ao salvar fatura: ' + error.message);
                 return { ok: false, savedCount: 0, invoiceId: null as string | null, invoiceIds: [] as string[], paymentIds: [] as string[] };
+            }
+            if (savedInvoiceId) {
+                await vincularMissionsAFatura(supabase, savedInvoiceId, bulletinMissionIds);
             }
 
             let receivableOk = false;
@@ -3431,6 +3454,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         skipBoleto,
                         municipalServiceCode: municipalOpt.code,
                         municipalServiceName: municipalOpt.name,
+                        missionIds: bulletinMissionIds,
                         charges: validCharges.map(c => ({
                             name: c.name || clientObj?.trading_name || clientObj?.name || 'Cliente',
                             cpfCnpj: c.cpfCnpj.replace(/\D/g, ''),
@@ -3571,6 +3595,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     skipBoleto,
                     municipalServiceCode: municipalOpt.code,
                     municipalServiceName: municipalOpt.name,
+                    missionIds: bulletinMissionIds,
                 }),
             });
             const data = await res.json();
@@ -3829,13 +3854,18 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 if (asaasResult.bankSlip?.digitableLine) invoicePayload.asaas_barcode = asaasResult.bankSlip.digitableLine;
             }
 
-            let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
+            let { data: savedManual, error } = await supabase.from('financial_invoices').insert(invoicePayload).select('id');
             if (error && error.code === '42703') {
                 const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, ...basicPayload } = invoicePayload;
-                const retry = await supabase.from('financial_invoices').insert(basicPayload).select();
+                const retry = await supabase.from('financial_invoices').insert(basicPayload).select('id');
                 error = retry.error;
+                savedManual = retry.data;
             }
             if (error) { alert('Erro ao salvar fatura: ' + (error.message || 'Erro desconhecido')); return; }
+            const manualInvoiceId = savedManual?.[0]?.id ? String(savedManual[0].id) : '';
+            if (manualInvoiceId) {
+                await vincularMissionsAFatura(supabase, manualInvoiceId, bulletinMissionIds);
+            }
 
             const dueDate = invoiceForm.boleto_due_date || invoiceForm.date;
             const quinzenaDesc = getQuinzenaRef(invoiceForm.date, clientName);

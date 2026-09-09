@@ -119,9 +119,11 @@ describe('comissao comercial — escala da planilha', () => {
     const p50 = calcularApuracaoComissao({ valorBruto: 50_000 });
     assert.equal(p50.notaFiscal, 8000);
     assert.equal(p50.resultadoLiquido, 42_000);
+    assert.equal(p50.resultadoLiquido, p50.valorBruto - p50.notaFiscal);
     assert.equal(p50.comissaoPercentual, 1260);
     assert.equal(p50.bonusAcumulado, 0);
     assert.equal(p50.totalAPagar, 1260);
+    assert.notEqual(p50.totalAPagar, p50.valorBruto + p50.notaFiscal);
 
     const abaixo = calcularApuracaoComissao({ valorBruto: 49_999, valorFixo: 2000 });
     assert.equal(abaixo.abaixoDoPiso, true);

@@ -49,6 +49,7 @@ import {
   verificarTravaSegurancaOS,
   type StatusTravaOS,
 } from '../lib/billing/verificarTravaOS';
+import { dispararSyncFaturaPorOS } from '../lib/billing/sincronizarFaturaAberta';
 import PaidInvoiceLockPanel from './PaidInvoiceLockPanel';
 import html2canvas from 'html2canvas';
 import FilterableSelect, { type FilterableSelectOption } from './FilterableSelect';
@@ -1831,6 +1832,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setProvEditEndTime(updatePayload.end_time ? editEndTime : provEditEndTime);
           }
           showNotification('Salvo', updatePayload.status === 'Concluída' ? 'Dados salvos e missão concluída automaticamente.' : 'Dados do cliente atualizados com sucesso.', 'success');
+          dispararSyncFaturaPorOS(mission.id);
           if (onUpdate) onUpdate();
       } catch (e: any) {
           showNotification('Erro', e.message || 'Falha ao salvar dados operacionais.', 'error');
@@ -2379,6 +2381,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   })
               }]);
               showNotification('Recalculado e Salvo', 'Valores do cliente atualizados na tabela e salvos no banco.', 'success');
+              dispararSyncFaturaPorOS(mission.id);
           } catch (e) {
               console.error('Erro ao salvar recálculo cliente:', e);
               showNotification('Recalculado', 'Valores restaurados na tela, mas houve erro ao salvar no banco.', 'error');
@@ -2655,6 +2658,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
           dbValuesLoadedRef.current = true;
           showNotification('Tabela Aplicada', 'Valores gravados conforme tabela oficial de franquia.', 'success');
+          dispararSyncFaturaPorOS(mission.id);
           broadcastMissionRefresh();
           onUpdate?.();
           await loadData();
@@ -3457,6 +3461,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
 
+          dispararSyncFaturaPorOS(mission.id, userName);
           if (onUpdate) onUpdate();
           window.dispatchEvent(new CustomEvent('refreshMissions'));
           if (!approve || isFullyApproved) onClose();

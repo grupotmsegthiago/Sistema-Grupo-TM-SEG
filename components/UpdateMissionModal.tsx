@@ -35,6 +35,16 @@ import { useNotification } from '../lib/NotificationContext';
 import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import { refusedOsClearSnapshotFields } from '../lib/missionSnapshot';
+import {
+  canUnlockPaidInvoiceLock,
+  kmHorasValoresSnapshotMudou,
+  registrarDesbloqueioAjusteOS,
+  verificarTravaSegurancaOS,
+  type KmHorasValoresSnapshot,
+  type StatusTravaOS,
+} from '../lib/billing/verificarTravaOS';
+import { dispararSyncFaturaPorOS } from '../lib/billing/sincronizarFaturaAberta';
+import PaidInvoiceLockPanel from './PaidInvoiceLockPanel';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
   Layers, Navigation, History, 
@@ -832,6 +842,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     
     const [isLoadingData, setIsLoadingData] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
+    const [paidInvoiceLock, setPaidInvoiceLock] = useState<StatusTravaOS>({ bloqueado: false });
+    const [paidUnlockOverride, setPaidUnlockOverride] = useState(false);
+    const [paidUnlockReason, setPaidUnlockReason] = useState('');
+    const [paidUnlocking, setPaidUnlocking] = useState(false);
+    const originalKmHoursRef = useRef<KmHorasValoresSnapshot | null>(null);
     const [pendingTollConfirm, setPendingTollConfirm] = useState<{ kind: 'pre-save' } | null>(null);
     const resumeSubmitRef = useRef<(() => void) | null>(null);
     const tollConfirmedRef = useRef(false);
@@ -875,7 +890,22 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         // Print de atualização é estritamente da sessão: limpa ao abrir/trocar OS
         updatePrintBlobRef.current = null;
         setUpdatePrintPreview('');
+        setPaidInvoiceLock({ bloqueado: false });
+        setPaidUnlockOverride(false);
+        setPaidUnlockReason('');
+        originalKmHoursRef.current = null;
     }, [mission?.id, isOpen]);
+
+    useEffect(() => {
+        if (!isOpen || !mission?.id) return;
+        let cancelled = false;
+        verificarTravaSegurancaOS(mission.id).then((lock) => {
+            if (!cancelled) setPaidInvoiceLock(lock);
+        }).catch(() => {
+            if (!cancelled) setPaidInvoiceLock({ bloqueado: false });
+        });
+        return () => { cancelled = true; };
+    }, [isOpen, mission?.id]);
     
     // Controle de Relógio em Tempo Real
     const [isEndTimeLocked, setIsEndTimeLocked] = useState(false);
@@ -922,6 +952,30 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             || (currentUser.permissions && currentUser.permissions.includes('*'))
             || isBarbaraFinance;
     }, [currentUser, isBarbaraFinance]);
+
+    const canUnlockPaidLock = canUnlockPaidInvoiceLock(currentUser);
+
+    const handlePaidInvoiceUnlock = async () => {
+        if (!mission?.id || !currentUser) return;
+        setPaidUnlocking(true);
+        try {
+            const res = await registrarDesbloqueioAjusteOS(supabase, {
+                missionId: mission.id,
+                invoiceId: paidInvoiceLock.invoiceId,
+                faturaNumero: paidInvoiceLock.faturaNumero,
+                justificativa: paidUnlockReason,
+                userName: currentUser.name || 'Diretoria',
+            });
+            if (!res.ok) {
+                showNotification('Justificativa', res.error || 'Informe a justificativa.', 'error');
+                return;
+            }
+            setPaidUnlockOverride(true);
+            showNotification('Desbloqueado', 'Ajuste liberado nesta sessão. KM, horas e valores podem ser editados.', 'warning');
+        } finally {
+            setPaidUnlocking(false);
+        }
+    };
 
     const canEditRoute = useMemo(() => {
         if (!currentUser) return false;
@@ -1492,6 +1546,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 dhl_sm_number: (m as any).dhl_sm_number || '',
                 dhl_deslocamento_km: (m as any).dhl_deslocamento_km != null ? String((m as any).dhl_deslocamento_km) : ''
             });
+            originalKmHoursRef.current = {
+                startKm: m.start_km?.toString() || '',
+                endKm: m.end_km?.toString() || '',
+                startDate: startDT.date,
+                startTime: startDT.time,
+                endDate: endDT.date,
+                endTime: endDT.time,
+                revenueValue: m.revenue_value?.toString() || '',
+                costValue: m.cost_value?.toString() || '',
+                tollValue: m.toll_value?.toString() || '',
+                dhlDeslocamentoKm: (m as any).dhl_deslocamento_km != null ? String((m as any).dhl_deslocamento_km) : '',
+            };
             setDeslocExistingUrl((m as any).dhl_deslocamento_approval_url || '');
 
             setSearchTerm(m.provider || '');
@@ -1971,6 +2037,26 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         e.preventDefault();
         if (!mission || !currentUser) return;
 
+        const paidLocked = paidInvoiceLock.bloqueado && !paidUnlockOverride;
+        if (paidLocked) {
+            const changingKmHours = kmHorasValoresSnapshotMudou(originalKmHoursRef.current, {
+                startKm: editData.startKm || '',
+                endKm: editData.endKm || '',
+                startDate: editData.startDate || '',
+                startTime: editData.startTime || '',
+                endDate: editData.endDate || '',
+                endTime: editData.endTime || '',
+                revenueValue: editData.revenueValue || '',
+                costValue: editData.costValue || '',
+                tollValue: editData.tollValue || '',
+                dhlDeslocamentoKm: editData.dhl_deslocamento_km || '',
+            });
+            if (changingKmHours) {
+                showNotification('Bloqueado', paidInvoiceLock.motivo || 'OS vinculada a fatura PAGA — KM, horas e valores não podem ser alterados.', 'error');
+                return;
+            }
+        }
+
         if (isCompletedMission && isBillingApproved && !canEditApproved) {
             // OS aprovada: não altera serviço/pedágio/snapshot. Mas se o KM autorizado
             // foi informado e o DESL em R$ ainda está zerado, materializa o aditivo
@@ -1979,7 +2065,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const approvedPayload: Record<string, unknown> = { dhl_deslocamento_km: deslocKmValue };
             const curDisp = Math.max(0, Number((mission as any).displacement_value) || 0);
             const curDispProv = Math.max(0, Number((mission as any).displacement_value_provider) || 0);
-            if ((deslocKmValue || 0) > 0 && (curDisp <= 0 || (curDispProv <= 0 && !mission.is_same_os))) {
+            if ((deslocKmValue || 0) > 0 && (curDisp <= 0 || (curDispProv <= 0 && !mission.is_same_os)) && !paidLocked) {
                 try {
                     const [{ data: pct }, { data: clientsRow }] = await Promise.all([
                         supabase.from('provider_cost_tables').select('*'),
@@ -2024,6 +2110,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     : 'KM de deslocamento atualizado. Os demais campos estão travados porque a OS já foi aprovada.',
                 'success',
             );
+            dispararSyncFaturaPorOS(mission.id, currentUser?.name);
             return;
         }
 
@@ -2550,6 +2637,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     console.warn('[CANCEL RECALC] Falha no recálculo automático:', e);
                 }
             }
+
+            dispararSyncFaturaPorOS(mission.id, currentUser?.name);
 
             // Comissão RH automática ao concluir OS (fire-and-forget).
             if (finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED) {
@@ -3454,6 +3543,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 </div>
                 <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X size={20}/></button>
             </div>
+
+            <PaidInvoiceLockPanel
+                lock={paidInvoiceLock}
+                unlocked={paidUnlockOverride}
+                canUnlock={canUnlockPaidLock}
+                reason={paidUnlockReason}
+                unlocking={paidUnlocking}
+                onReasonChange={setPaidUnlockReason}
+                onUnlock={handlePaidInvoiceUnlock}
+                onRelock={() => setPaidUnlockOverride(false)}
+            />
 
             {isLoadingData ? (
                 <div className="flex justify-center p-20 flex-1"><Loader2 className="animate-spin text-red-600" size={40} /></div>

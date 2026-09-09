@@ -3,11 +3,12 @@
  * Não altera geração por NF: a apuração do período aplica piso, bônus e salário fixo.
  *
  * Regras homologadas:
- * - Imposto 16% sobre o bruto; comissão 3% sobre o líquido.
+ * - Os 16% da NF são DEDUZIDOS do bruto (nunca somados ao pagamento).
+ * - Líquido = bruto − 16%. Comissão = 3% sobre o líquido.
  * - Abaixo de R$ 50.000: só o valor fixo do funcionário (sem comissão %).
- * - A partir de R$ 50.000: entra a escala (3% do líquido do faturamento do período).
+ * - A partir de R$ 50.000: entra a escala (3% do líquido).
  * - Bônus acumulado: R$ 5.000 a partir de R$ 500.000; R$ 10.000 a partir de R$ 1.000.000.
- * - Total a pagar = Fixo + Comissão + Bônus.
+ * - Total a pagar = Fixo + Comissão (+ bônus da faixa, se houver).
  * - Bruto do período = TM SEG + TORRES dos clientes daquele comercial.
  */
 

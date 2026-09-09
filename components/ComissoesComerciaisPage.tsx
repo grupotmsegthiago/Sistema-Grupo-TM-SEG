@@ -13,6 +13,7 @@ import {
 } from '../lib/comissao/comissaoCalc';
 import { registrarPagamentoComissao } from '../lib/comissao/comissaoService';
 import { sincronizarComerciaisDeUsuarios } from '../lib/comissao/comissaoUsuarios';
+import InvoiceDivergenceAuditPanel from './InvoiceDivergenceAuditPanel';
 import {
   calcularApuracaoComissao,
   gerarLinhasTabelaReferencia,
@@ -287,7 +288,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           <h1 className="text-lg font-black text-gray-900 uppercase tracking-tight flex items-center gap-2">
             <BadgeDollarSign className="text-red-600" size={22} /> Comissões Comerciais
           </h1>
-          <p className="text-xs text-gray-500 font-medium">Controle único TM SEG + TORRES. Vínculo pelo usuário COMERCIAL. Piso R$ 50 mil, bônus a partir de R$ 500 mil / R$ 1 milhão. Total = fixo + comissão + bônus.</p>
+          <p className="text-xs text-gray-500 font-medium">Controle único TM SEG + TORRES. Vínculo pelo usuário COMERCIAL. Fórmula: bruto − 16% da NF = líquido; 3% sobre o líquido. Total a pagar = fixo + comissão.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -318,18 +319,20 @@ const ComissoesComerciaisPage: React.FC = () => {
         </div>
       </div>
 
+      <InvoiceDivergenceAuditPanel onSynced={() => { void load(); }} />
+
       {showTabela && (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="tabela-comissao-padrao">
           <div className="px-4 py-3 border-b border-gray-100">
             <p className="text-[10px] font-black text-gray-400 uppercase">{TABELA_COMISSAO_PADRAO.nome}</p>
-            <p className="text-[11px] text-gray-500">Até R$ 50 mil: só o valor fixo. Depois: 16% NF + 3% sobre o líquido. Bônus R$ 5.000 a partir de R$ 500 mil e R$ 10.000 a partir de R$ 1 milhão. Valores abaixo são a escala sem o salário fixo.</p>
+            <p className="text-[11px] text-gray-500">Até R$ 50 mil: só o valor fixo. Depois: bruto − 16% da NF = líquido, e 3% sobre esse líquido. Os 16% não entram no pagamento. Bônus R$ 5.000 a partir de R$ 500 mil e R$ 10.000 a partir de R$ 1 milhão.</p>
           </div>
           <div className="overflow-x-auto max-h-80">
             <table className="min-w-full text-xs">
               <thead>
                 <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase">
                   <th className="text-right px-3 py-2">Valor bruto</th>
-                  <th className="text-right px-3 py-2">NF 16%</th>
+                  <th className="text-right px-3 py-2">NF (−16%)</th>
                   <th className="text-right px-3 py-2">Líquido</th>
                   <th className="text-right px-3 py-2">Comissão 3%</th>
                   <th className="text-right px-3 py-2">Bônus</th>
@@ -340,7 +343,7 @@ const ComissoesComerciaisPage: React.FC = () => {
                 {gerarLinhasTabelaReferencia().map((l) => (
                   <tr key={l.valorBruto} className="border-t border-gray-50">
                     <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(l.valorBruto)}</td>
-                    <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(l.notaFiscal)}</td>
+                    <td className="px-3 py-1.5 text-right font-mono text-red-700">− {fmtBRL(l.notaFiscal)}</td>
                     <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(l.resultadoLiquido)}</td>
                     <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(l.comissao)}</td>
                     <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(l.bonusAcumulado)}</td>
@@ -483,7 +486,7 @@ const ComissoesComerciaisPage: React.FC = () => {
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="apuracao-escala-comercial">
           <div className="px-4 py-3 border-b border-gray-100">
             <p className="text-[10px] font-black text-gray-400 uppercase">Apuração do período (TM SEG + TORRES)</p>
-            <p className="text-[11px] text-gray-500">Bruto do comercial no filtro. Abaixo de R$ 50 mil paga só o fixo. Total a pagar = fixo + comissão da escala + bônus.</p>
+            <p className="text-[11px] text-gray-500">Bruto TM SEG + TORRES. Imposto de 16% é abatido do bruto (não é pago ao comercial). Comissão = 3% do líquido. Total a pagar = fixo + comissão.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -493,8 +496,9 @@ const ComissoesComerciaisPage: React.FC = () => {
                   <th className="text-right px-3 py-2">Bruto TM SEG</th>
                   <th className="text-right px-3 py-2">Bruto TORRES</th>
                   <th className="text-right px-3 py-2">Bruto total</th>
+                  <th className="text-right px-3 py-2">Líquido (−16%)</th>
                   <th className="text-right px-3 py-2">Fixo</th>
-                  <th className="text-right px-3 py-2">Comissão escala</th>
+                  <th className="text-right px-3 py-2">Comissão 3%</th>
                   <th className="text-right px-3 py-2">Bônus</th>
                   <th className="text-right px-3 py-2">Total a pagar</th>
                 </tr>
@@ -509,6 +513,7 @@ const ComissoesComerciaisPage: React.FC = () => {
                     <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.tm)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.torres)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.fat)}</td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.apuracao.resultadoLiquido)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.apuracao.valorFixo)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.apuracao.comissaoPercentual)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.apuracao.bonusAcumulado)}</td>
