@@ -43,8 +43,12 @@ import FilterableSelect, { type FilterableSelectOption } from './FilterableSelec
 import { fetchMissionById, fetchParentMissionCandidates, type ParentMissionRow } from '../lib/parentMissionSearch';
 import { resolveSameOsLink, type SameOsLinkRole } from '../lib/missionLinkage';
 import {
-  isRestrictedPlinioUser,
+  isProviderOnlyControllerUser,
 } from '../lib/plinioMissionRestrictions';
+import {
+  buildProviderOnlyMissionPayload,
+  resolveProviderSaveObservation,
+} from '../lib/controllerProviderScope';
 
 interface Props {
   isOpen: boolean;
@@ -576,19 +580,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // MODO EDIÇÃO TOTAL: Barbara e Thiago podem destravar TODOS os campos da OS
   // (operacional, cliente, fornecedor, financeiro), inclusive em OS aprovadas.
   // O acionamento é registrado em system_logs (MissionEditHistory).
-  const isPlinio = useMemo(
-    () => isRestrictedPlinioUser(currentUserIdentity),
-    [currentUserIdentity],
+  // Controller (cargo) + Plínio: escopo somente fornecedor.
+  const isProviderOnlyUser = useMemo(
+    () => isProviderOnlyControllerUser({ ...currentUserIdentity, role: userRoleLower }),
+    [currentUserIdentity, userRoleLower],
   );
-  // Plínio pode ajustar e salvar o FORNECEDOR a qualquer momento, inclusive em OS
-  // já salva/aprovada. Cliente e o botão Aprovar continuam bloqueados.
+  // Plínio/controller pode ajustar e salvar o FORNECEDOR a qualquer momento.
+  // Cliente e o botão Aprovar (Plínio) continuam bloqueados.
   const plinioProviderEditBlocked = false;
   const canActivateFullEdit = useMemo(() => {
-    if (isPlinio) return false;
+    if (isProviderOnlyUser) return false;
     return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
       || isFinanceSupervisorName(userNameLower) || userNameLower.includes('thiago')
       || userNameLower.includes('simone');
-  }, [userRoleLower, userNameLower, isPlinio]);
+  }, [userRoleLower, userNameLower, isProviderOnlyUser]);
   // OS 5046: libera a troca da TABELA DE CUSTO mesmo com o Motor Automático ativo
   // para os responsáveis pela auditoria (Thiago Moreira, Simone, Barbara) e
   // diretoria/admin. Ao selecionar uma tabela, o motor é desligado para esta
@@ -607,8 +612,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // ligar a EDIÇÃO TOTAL. Isso apenas destrava o campo; NÃO recalcula nem
   // sobrescreve valores por conta própria (os snapshots de OS aprovadas seguem
   // protegidos no fluxo de salvar/aprovar).
-  const canEditClientTablesEvenIfLocked = canOverrideAutoProvider && !isPlinio;
-  const canEditProviderTablesEvenIfLocked = canOverrideAutoProvider || isPlinio;
+  const canEditClientTablesEvenIfLocked = canOverrideAutoProvider && !isProviderOnlyUser;
+  const canEditProviderTablesEvenIfLocked = canOverrideAutoProvider || isProviderOnlyUser;
   const canEditTablesEvenIfLocked = canEditClientTablesEvenIfLocked || canEditProviderTablesEvenIfLocked;
   const [fullEditMode, setFullEditMode] = useState(false);
   // isController: identifica o cargo Controller para travas de edição.
@@ -628,21 +633,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const canEditEndTimeOnly = useMemo(() => {
     return canEditOpsData || ['operacional', 'operador'].includes(userRoleLower) || fullEditMode;
   }, [canEditOpsData, userRoleLower, fullEditMode]);
-  // Plinio: somente fornecedor — bloqueio explícito do lado cliente (P3).
-  const canEditClientData = !isPlinio && ((canEditOpsData && !isController) || fullEditMode);
+  // Controller/Plínio: somente fornecedor — bloqueio explícito do lado cliente.
+  const canEditClientData = !isProviderOnlyUser && ((canEditOpsData && !isController) || fullEditMode);
   // Controller pode ajustar o valor total do fornecedor mesmo após verificação.
   const canEditProviderCostTotal = canEditOpsData
-    && (fullEditMode || !isProviderTotalLockedByController || isControllerRole || isPlinio);
+    && (fullEditMode || !isProviderTotalLockedByController || isControllerRole || isProviderOnlyUser);
 
-  // TRAVA PÓS-SALVAMENTO: assim que alguém salva ou aprova um faturamento,
-  // todos os campos editáveis são bloqueados em todas as telas. Diretoria,
-  // administrador e CEO podem destravar manualmente para corrigir algo.
+  // TRAVA PÓS-APROVAÇÃO: após Aprovar (billing_verified_by / billing_approved /
+  // snapshot), campos editáveis ficam bloqueados. Salvar (rascunho) NÃO trava.
+  // Diretoria, administrador e CEO podem destravar manualmente para corrigir.
   const isBillingLocked = !!(mission?.billing_verified_by || mission?.billing_approved || mission?.snapshot_approved_by);
   const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower)
     || isBarbaraFinance;
   // ADMINISTRADOR (ex: Barbara) tem liberação permanente: pode editar OS aprovada
   // a qualquer momento. O sistema registra cada alteração no histórico permanente.
-  const isAdminFullAccess = (userRoleLower === 'administrador' || fullEditMode || isBarbaraFinance) && !isPlinio;
+  const isAdminFullAccess = (userRoleLower === 'administrador' || fullEditMode || isBarbaraFinance) && !isProviderOnlyUser;
   const isDirectorAccess = userRoleLower === 'diretoria' || userRoleLower === 'administrador';
   const [unlockOverride, setUnlockOverride] = useState(false);
   useEffect(() => { setUnlockOverride(false); setEditObservation(''); setAnalysisReason(''); setOpenAnalysisRequest(null); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); staleAutoResyncDoneRef.current = null; }, [mission?.id]);
@@ -663,9 +668,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     return () => { cancelled = true; };
   }, [isOpen, mission?.id]);
   const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
-  // Plínio salva só o fornecedor: os campos de custo ficam editáveis mesmo com a OS travada.
-  const providerFinanceInputLocked = isEffectivelyLocked && !isPlinio;
-  const canSaveProviderAdjustments = isPlinio;
+  // Controller/Plínio salva só o fornecedor: custo editável mesmo com a OS travada.
+  const providerFinanceInputLocked = isEffectivelyLocked && !isProviderOnlyUser;
+  const canSaveProviderAdjustments = isProviderOnlyUser;
   // Gate unificado: nenhum input financeiro/comercial do CLIENTE editável sem canEditClientData
   // (inclui OS destravada — unlock não contorna a regra do Plinio).
   const clientFinanceInputLocked = isController || isEffectivelyLocked || !canEditClientData;
@@ -705,8 +710,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   }, [isOpen, mission?.id, mission?.status, tollConfirmed, tollConfirmAutoOpened, showTollConfirmDialog, isCalculatingToll, isController, isEffectivelyLocked, mission?.billing_approved, mission?.toll_value]);
 
   const applyTollConfirmation = async (result: { hasToll: boolean; value: number }) => {
-    if (isPlinio) {
-        showNotification('Sem Permissão', 'Plínio não pode alterar o pedágio do cliente.', 'error');
+    if (isProviderOnlyUser) {
+        showNotification('Sem Permissão', 'Perfil controller/fornecedor não pode alterar o pedágio do cliente.', 'error');
         return;
     }
     const v = result.hasToll ? result.value : 0;
@@ -1944,20 +1949,29 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // ficou defasado. Overrides intencionais (edição manual divergente) são
           // preservados via isIntentionalBillingOverride — ver bloco canResyncSaved.
           // Task #133 + auto-resync: alinha o número grande ao cálculo quando o valor
-          // salvo ficou defasado (ex.: motor evoluiu após "Salvamento manual confirmado").
-          // Preserva overrides INTENCIONAIS (edição manual divergente, desconto, etc.).
+          // salvo ficou defasado — SOMENTE se não houver override/salvamento manual
+          // e a OS não estiver conferida/aprovada/congelada. Precedência absoluta
+          // de valores manuais e snapshots aprovados.
           const revIntentional = isIntentionalBillingOverride(mission.revenue_edit_reason);
           const costIntentional = isIntentionalBillingOverride(mission.cost_edit_reason);
-          const canResyncSaved = dbValuesLoadedRef.current && !isSavingRef.current && lockAllowsRecalc && !isEffectivelyLocked;
+          const hasFrozenOrApproved = !!(mission.billing_approved || mission.snapshot_approved_by || mission.billing_verified_by);
+          const canResyncSaved = dbValuesLoadedRef.current
+              && !isSavingRef.current
+              && lockAllowsRecalc
+              && !isEffectivelyLocked
+              && !hasFrozenOrApproved
+              && !revIntentional
+              && !costIntentional
+              && !userManuallyEditedRef.current;
 
           if (canResyncSaved) {
               const currentRev = parseNumber(revenueInput);
-              const needRev = !revIntentional && autoClientTotal > 0 && Math.abs(currentRev - autoClientTotal) > 1;
+              const needRev = autoClientTotal > 0 && Math.abs(currentRev - autoClientTotal) > 1;
               if (needRev) {
                   setRevenueInput(fmtBR(autoClientTotal));
               }
               const currentCost = parseNumber(costInput);
-              const needCost = !mission.is_same_os && !costIntentional && !userManuallyEditedRef.current && !isControllerRole
+              const needCost = !mission.is_same_os && !isControllerRole
                   && autoProviderTotal > 0 && Math.abs(currentCost - autoProviderTotal) > 1;
               if (needCost) {
                   setCostInput(fmtBR(autoProviderTotal));
@@ -1968,6 +1982,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               // Persiste automaticamente no banco (uma vez por abertura) para não exigir
               // clique em "Restaurar Auto" nem novo Salvar só por regra de cálculo atualizada.
               // Também materializa deslocamento (KM autorizado → R$ cliente/fornecedor).
+              // NUNCA altera snapshot_data aqui — snapshot aprovado é imutável.
               const dispResolve = resolveDisplacementFromAuthorizedKm({
                   dhlDeslocamentoKm: dhlDeslocKmRef.current,
                   displacementValue: parseNumber(displacementInput),
@@ -1990,10 +2005,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   const costServiceOnly = mission.is_same_os ? 0 : financialData.provider.serviceTotal;
                   const toll = parseNumber(tollInput);
                   const tollProv = mission.is_same_os ? 0 : parseNumber(tollProviderInput);
-                  const dispClient = needDispClient ? dispResolve.client : parseNumber(displacementInput);
-                  const dispProv = needDispProvider
-                      ? dispResolve.provider
-                      : (mission.is_same_os ? 0 : parseNumber(displacementProviderInput));
                   const payload: Record<string, unknown> = {
                       last_update: new Date().toISOString(),
                   };
@@ -2007,33 +2018,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   }
                   if (needDispClient) payload.displacement_value = r2(dispResolve.client);
                   if (needDispProvider) payload.displacement_value_provider = r2(dispResolve.provider);
-                  // Snapshot aprovado também precisa acompanhar (ex.: hora extra fantasma
-                  // em Cancelada executada). Sem isso a auditoria reabre com valores velhos.
-                  const existingSnap = (mission.snapshot_data && typeof mission.snapshot_data === 'object')
-                      ? (mission.snapshot_data as Record<string, unknown>)
-                      : null;
-                  if (existingSnap && (needRev || needCost || needDispClient || needDispProvider)) {
-                      payload.snapshot_data = {
-                          ...existingSnap,
-                          durationHours: financialData.durationHours,
-                          hrExtraQtd: financialData.client.excessHours,
-                          hrExtraTotal: r2(financialData.client.extraHrVal),
-                          kmExtraQtd: financialData.client.excessKm,
-                          kmExtraTotal: r2(financialData.client.extraKmVal),
-                          revenueServiceOnly: r2(revServiceOnly),
-                          costServiceOnly: r2(costServiceOnly),
-                          displacementValue: r2(dispClient),
-                          displacementValueProvider: r2(dispProv),
-                          totalGeral: r2(revServiceOnly + toll + dispClient),
-                          systemCalculatedRevenue: r2(revServiceOnly + toll + dispClient),
-                          systemCalculatedCost: r2(costServiceOnly + tollProv + dispProv),
-                          snapshot_resynced_at: new Date().toISOString(),
-                          snapshot_resynced_by: 'AUTO_RESYNC_BILLING',
-                      };
-                  }
-                  if (!mission.billing_verified_by && (needRev || needCost || needDispClient || needDispProvider)) {
-                      payload.billing_verified_by = null;
-                  }
                   (async () => {
                       try {
                           const { error } = await supabase.from('missions').update(payload).eq('id', mission.id);
@@ -2044,7 +2028,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                               ...(needCost ? { cost_value: payload.cost_value as number, cost_edit_reason: String(payload.cost_edit_reason || '') } : {}),
                               ...(needDispClient ? { displacement_value: payload.displacement_value as number } : {}),
                               ...(needDispProvider ? { displacement_value_provider: payload.displacement_value_provider as number } : {}),
-                              ...(payload.snapshot_data ? { snapshot_data: payload.snapshot_data as any } : {}),
                           } : prev);
                           await supabase.from('system_logs').insert([{
                               user_name: 'Sistema',
@@ -2062,7 +2045,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                   clientExtraKmVal: r2(financialData.client.extraKmVal),
                                   clientExcessHours: financialData.client.excessHours,
                                   durationHours: financialData.durationHours,
-                                  snapshotUpdated: !!payload.snapshot_data,
+                                  snapshotUpdated: false,
                               }),
                           }]);
                           showNotification(
@@ -2079,15 +2062,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
 
-          // Motor automático é fonte oficial: se está ativo e o valor salvo
-          // no banco diverge do calculado, sobrescreve o costInput para
-          // refletir o cálculo correto na tela (R$ 533 + R$ 367,24 + pedágio).
-          // Roda mesmo com a OS travada — o operador continua precisando
-          // destravar/usar EDIÇÃO TOTAL para salvar, mas o valor exibido
-          // passa a ser o do motor, evitando o "R$ 0,00" remanescente de
-          // gravações antigas (anteriores ao motor).
-          // Só não roda durante salvamento ou logo após edição manual.
-          if (financialData.autoEngine?.active && !mission.is_same_os && !userManuallyEditedRef.current && !isSavingRef.current && !isControllerRole) {
+          // Motor automático é fonte oficial na TELA apenas quando não há
+          // override/salvamento manual nem OS conferida/aprovada.
+          if (financialData.autoEngine?.active && !mission.is_same_os && !userManuallyEditedRef.current && !isSavingRef.current && !isControllerRole
+              && !isIntentionalBillingOverride(mission.cost_edit_reason)
+              && !(mission.billing_approved || mission.snapshot_approved_by || mission.billing_verified_by)) {
               const engineCostTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
               const currentCostInput = parseNumber(costInput);
               if (engineCostTotal > 0 && Math.abs(currentCostInput - engineCostTotal) > 1) {
@@ -2096,9 +2075,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
 
           const isCevaLogitech = financialData.client?.detectionLog?.includes('LOGITECH SOBERANA');
-          // Regra: depois de salvo/aprovado, NUNCA sobrescrever valores do banco
-          // por recálculo automático (mesmo no caso especial CEVA/Logitech).
-          if (isCevaLogitech && dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && lockAllowsRecalc) {
+          // Regra: depois de salvo/aprovado ou com override intencional, NUNCA
+          // sobrescrever valores do banco por recálculo automático.
+          if (isCevaLogitech && dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && lockAllowsRecalc
+              && !isIntentionalBillingOverride(mission.revenue_edit_reason)
+              && !isIntentionalBillingOverride(mission.cost_edit_reason)
+              && !(mission.billing_approved || mission.snapshot_approved_by || mission.billing_verified_by)) {
               const fmt = (v: number) => v.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               const calcRevTotal = financialData.client.total + parseNumber(displacementInput);
               const currentInput = parseNumber(revenueInput);
@@ -2341,7 +2323,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const handleRecalculateProvider = async () => {
       // Regra: faturamento salvo/aprovado nunca pode ser sobrescrito por recálculo,
       // exceto Plínio no lado do fornecedor (ele persiste só custo via Salvar).
-      if (isEffectivelyLocked && !isPlinio) {
+      if (isEffectivelyLocked && !isProviderOnlyUser) {
           showNotification('Faturamento travado', 'Destrave o faturamento antes de recalcular os valores do fornecedor.', 'error');
           return;
       }
@@ -2352,7 +2334,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       userManuallyEditedRef.current = false;
       dbValuesLoadedRef.current = false;
       setMission(prev => prev ? (
-          isPlinio
+          isProviderOnlyUser
               ? { ...prev, cost_edit_reason: '' }
               : { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }
       ) : prev);
@@ -2372,13 +2354,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   toll_value_provider: r2(tollProv),
                   last_update: new Date().toISOString()
               };
-              if (!isPlinio) recalcProvPayload.billing_verified_by = null;
+              if (!isProviderOnlyUser) recalcProvPayload.billing_verified_by = null;
               if (r2(costServiceOnly) === 0) {
                   recalcProvPayload.cost_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] Recalculado pelo sistema (valor zero)`;
               } else {
                   recalcProvPayload.cost_edit_reason = '';
               }
-              if (!isPlinio) recalcProvPayload.revenue_edit_reason = '';
+              if (!isProviderOnlyUser) recalcProvPayload.revenue_edit_reason = '';
               const { data: currentProv, error: fetchProvErr } = await supabase.from('missions').select('last_update').eq('id', mission.id).single();
               if (fetchProvErr) throw fetchProvErr;
               if (currentProv?.last_update && mission.last_update && currentProv.last_update !== mission.last_update) {
@@ -2553,8 +2535,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const applyOfficialTableToDb = async () => {
       if (!mission || !financialData) return;
-      if (isPlinio) {
-          showNotification('Sem Permissão', 'A tabela oficial altera dados do cliente e não está disponível para Plínio.', 'error');
+      if (isProviderOnlyUser) {
+          showNotification('Sem Permissão', 'A tabela oficial altera dados do cliente e não está disponível para o perfil controller/fornecedor.', 'error');
           return;
       }
       setIsUpdating(true);
@@ -2578,6 +2560,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const userData = JSON.parse(localStorage.getItem('userData') || '{}');
           const userName = userData.name || 'Sistema';
           const stamp = `[${userName} - ${formatNowDateTimeBR()}]`;
+          // Aplica valores da tabela oficial SEM marcar conferência/aprovação.
+          // billing_verified_by / billing_approved ficam exclusivos do fluxo Aprovar
+          // (Salvar ≠ Aprovar — rascunho não trava nem entra no boletim consolidado).
           const payload: Record<string, unknown> = {
               revenue_value: revService,
               cost_value: costService,
@@ -2587,7 +2572,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               displacement_value_provider: r2money(dispProv),
               revenue_edit_reason: `${stamp} Tabela oficial aplicada automaticamente`,
               last_update: new Date().toISOString(),
-              billing_verified_by: userName,
           };
           if (!mission.is_same_os) {
               payload.cost_edit_reason = `${stamp} Tabela oficial aplicada automaticamente`;
@@ -2615,15 +2599,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleUpdate = async (approve: boolean) => {
       if (!mission) return;
-      if (isPlinio && approve) {
-          showNotification('Sem Permissão', 'Plínio não pode aprovar OS. Utilize somente Salvar.', 'error');
+      if (isProviderOnlyUser && approve) {
+          showNotification('Sem Permissão', 'Perfil controller/fornecedor não pode aprovar OS. Utilize somente Salvar.', 'error');
           return;
       }
-      if (isSnapshotFrozen && !isController && !isPlinio && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro' && currentApprovalStatus.currentUserStage !== 'controller') {
+      if (isSnapshotFrozen && !isController && !isProviderOnlyUser && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro' && currentApprovalStatus.currentUserStage !== 'controller') {
           showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro, Controller ou Diretoria podem editar.`, 'error');
           return;
       }
-      if (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance && !isPlinio) {
+      if (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance && !isProviderOnlyUser) {
           showNotification('Bloqueado', 'Esta OS foi aprovada pela Diretoria. Somente a Diretoria pode editar.', 'error');
           return;
       }
@@ -2739,12 +2723,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (Math.abs(origDisp - displacement) > 0.01) detectedChanges.push(`Deslocamento Cliente: R$ ${origDisp.toFixed(2)} → R$ ${displacement.toFixed(2)}`);
       if (Math.abs(origDispProv - dispProv) > 0.01) detectedChanges.push(`Deslocamento Fornecedor: R$ ${origDispProv.toFixed(2)} → R$ ${dispProv.toFixed(2)}`);
       const requiresPostApprovalNote = wasAlreadyApproved && detectedChanges.length > 0 && !approve;
-      if (requiresPostApprovalNote && !editObservation.trim()) {
+      // Controller/Plínio: o motivo do ajuste de fornecedor JÁ é a justificativa
+      // oficial — não exigir um segundo campo de observação além do motivo.
+      const providerSaveObservation = resolveProviderSaveObservation({
+          editObservation,
+          costEditReason,
+          providerOnlySave: isProviderOnlyUser,
+      });
+      if (requiresPostApprovalNote && !providerSaveObservation.ok) {
           showNotification('Observação Obrigatória', 'OS já aprovada. Descreva brevemente o motivo da alteração para registrar no histórico.', 'error');
           return;
       }
       // Pedido de análise da Diretoria pendente: exige motivo do ajuste (Bárbara/Giovanna)
-      if (openAnalysisRequest && detectedChanges.length > 0 && !analysisReason.trim() && !editObservation.trim()) {
+      if (openAnalysisRequest && detectedChanges.length > 0 && !analysisReason.trim() && !providerSaveObservation.observation) {
           showNotification(
             'Motivo obrigatório',
             'Esta OS tem pedido de análise da Diretoria. Informe o motivo do ajuste (campo Motivo da análise).',
@@ -2803,7 +2794,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const hasFinanceiro = updatedStages.includes('financeiro');
           const hasDiretoria = updatedStages.includes('diretoria');
           const hasController = updatedStages.includes('controller');
-          const isApprovedForBilling = hasFinanceiro || hasDiretoria || hasController || (mission.billing_approved === true);
+          // Aprovar (estágios financeiros) libera boletim; Salvar NUNCA aprova.
+          // Preserva billing_approved já existente quando o operador só salva ajustes.
+          const isApprovedForBilling = approve
+              ? (hasFinanceiro || hasDiretoria || hasController || (mission.billing_approved === true))
+              : (mission.billing_approved === true);
           const isFullyApproved = hasDiretoria;
           
           const canReleaseBilling = stage === 'financeiro' || stage === 'diretoria' || stage === 'controller';
@@ -2820,10 +2815,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               billing_approved: isApprovedForBilling,
               last_update: new Date().toISOString(),
           };
-          if (approve && canReleaseBilling) {
-              basePayload.billing_verified_by = userName;
-          }
-          if (!basePayload.billing_verified_by) {
+          // Salvar = rascunho (sem travar nem marcar conferência / boletim).
+          // Aprovar = marca verificação; estágios financeiros liberam boletim.
+          // Controller/Plínio (provider-only) não chega aqui com approve=true.
+          if (approve) {
               basePayload.billing_verified_by = userName;
           }
 
@@ -2864,7 +2859,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               basePayload.snapshot_approved_at = snapshotNow;
           }
           const reasonFields: any = {};
-          if (revDivergent && revenueEditReason.trim()) {
+          // Controller/Plínio nunca grava motivo de receita (lado cliente).
+          if (!isProviderOnlyUser && revDivergent && revenueEditReason.trim()) {
               reasonFields.revenue_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] ${revenueEditReason.trim()}`;
           }
           if ((costDivergent || autoEngineDivergent) && costEditReason.trim()) {
@@ -2873,7 +2869,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   : `[${userName} - ${formatNowDateTimeBR()}]`;
               reasonFields.cost_edit_reason = `${prefix} ${costEditReason.trim()}`;
           }
-          if (r2(revServiceOnly) === 0 && !reasonFields.revenue_edit_reason) {
+          if (!isProviderOnlyUser && r2(revServiceOnly) === 0 && !reasonFields.revenue_edit_reason) {
               reasonFields.revenue_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] Valor zero confirmado`;
           }
           if (r2(costServiceOnly) === 0 && !reasonFields.cost_edit_reason) {
@@ -2887,7 +2883,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // que abrir a tela de Missões novamente NUNCA reverta o valor.
           const brl = (v: number) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
           const stamp = `[${userName} - ${formatNowDateTimeBR()}]`;
-          if (!reasonFields.revenue_edit_reason) {
+          if (!isProviderOnlyUser && !reasonFields.revenue_edit_reason) {
               reasonFields.revenue_edit_reason = revDivergent
                   ? `${stamp} Edição manual (sem justificativa) — receita salva: ${brl(r2(revServiceOnly))} | sistema sugeria: ${brl(r2(calcRevTotal))}`
                   : `${stamp} Salvamento manual confirmado — receita: ${brl(r2(revServiceOnly))}`;
@@ -2903,18 +2899,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
 
-          // Plínio persiste estritamente o lado fornecedor. Campos do cliente,
-          // aprovação e snapshot nunca entram no UPDATE originado por ele.
-          const fullPayload = isPlinio
-              ? {
-                  cost_value: isSameOs ? 0 : r2(costServiceOnly),
-                  toll_value_provider: isSameOs ? 0 : r2(tollProv),
-                  displacement_value_provider: isSameOs ? 0 : r2(dispProv),
-                  last_update: basePayload.last_update,
-                  ...(reasonFields.cost_edit_reason
-                      ? { cost_edit_reason: reasonFields.cost_edit_reason }
-                      : {}),
-              }
+          // Controller/Plínio: payload somente fornecedor (helper centralizado).
+          // Campos do cliente, aprovação e snapshot nunca entram no UPDATE.
+          const fullPayload = isProviderOnlyUser
+              ? buildProviderOnlyMissionPayload({
+                  costValue: isSameOs ? 0 : r2(costServiceOnly),
+                  tollValueProvider: isSameOs ? 0 : r2(tollProv),
+                  displacementValueProvider: isSameOs ? 0 : r2(dispProv),
+                  costEditReason: reasonFields.cost_edit_reason || null,
+                  lastUpdate: basePayload.last_update,
+              })
               : {
                   ...basePayload,
                   toll_value_provider: isSameOs ? 0 : r2(tollProv),
@@ -2932,13 +2926,29 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }]);
           }
           if (result.error && (result.error.message?.includes('does not exist') || result.error.message?.includes('check_snapshot_not_empty'))) {
-              const { snapshot_data, snapshot_approved_by, snapshot_approved_at, ...payloadWithoutSnapshot } = fullPayload;
+              const { snapshot_data, snapshot_approved_by, snapshot_approved_at, ...payloadWithoutSnapshot } = fullPayload as any;
               delete payloadWithoutSnapshot.snapshot_data;
               result = await supabase.from('missions').update(payloadWithoutSnapshot).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
               if (result.error && (result.error.message?.includes('does not exist') || result.error.message?.includes('check_snapshot_not_empty'))) {
-                  const { toll_value_provider, displacement_value, displacement_value_provider, snapshot_data: _sd, ...payloadMin } = payloadWithoutSnapshot;
+                  // Mantém cost_edit_reason no payload mínimo — é o campo crítico
+                  // do override do controller. Remove só colunas opcionais/legado.
+                  const {
+                      toll_value_provider,
+                      displacement_value,
+                      displacement_value_provider,
+                      snapshot_data: _sd,
+                      ...payloadMin
+                  } = payloadWithoutSnapshot;
                   delete payloadMin.snapshot_data;
                   result = await supabase.from('missions').update(payloadMin).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+              }
+              // Último recurso: só custo + motivo (sem pedágio/deslocamento provider)
+              if (result.error && isProviderOnlyUser && reasonFields.cost_edit_reason) {
+                  result = await supabase.from('missions').update({
+                      cost_value: isSameOs ? 0 : r2(costServiceOnly),
+                      cost_edit_reason: reasonFields.cost_edit_reason,
+                      last_update: basePayload.last_update,
+                  }).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
               }
               if (snapshot_data && !result.error) {
                   await supabase.from('system_logs').insert([{
@@ -2958,18 +2968,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // "Edições Manuais" sempre tenha o motivo registrado.
           if (Object.keys(reasonFields).length > 0) {
               try {
-                  await supabase.from('system_logs').insert([{
-                      user_name: userName,
-                      action_type: 'VALUE_EDIT_REASON',
-                      entity: 'Mission',
-                      entity_id: mission.id,
-                      details: JSON.stringify({
+                  const logDetails = isProviderOnlyUser
+                      ? {
+                          cost_edit_reason: reasonFields.cost_edit_reason || null,
+                          autoEngineActive,
+                          autoEngineSuggestedCost,
+                          savedCostServiceOnly: r2(costServiceOnly),
+                          autoEngineDivergent,
+                      }
+                      : {
                           ...reasonFields,
                           autoEngineActive,
                           autoEngineSuggestedCost,
                           savedCostServiceOnly: r2(costServiceOnly),
                           autoEngineDivergent,
-                      })
+                      };
+                  await supabase.from('system_logs').insert([{
+                      user_name: userName,
+                      action_type: 'VALUE_EDIT_REASON',
+                      entity: 'Mission',
+                      entity_id: mission.id,
+                      details: JSON.stringify(logDetails)
                   }]);
               } catch (logErr) {
                   console.warn('[Task #66] Falha ao gravar VALUE_EDIT_REASON', logErr);
@@ -3047,13 +3066,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   r2(existingSnap.hrExtraTotal || 0) !== r2(newHrExtraTotal)
               );
 
-              const shouldResyncSnapshot = isPlinio
+              const shouldResyncSnapshot = isProviderOnlyUser
                   ? costChanged || tollProvChanged || dispProvChanged || providerTableChanged
                   : revenueChanged || costChanged || tollChanged || tollProvChanged
                       || dispChanged || dispProvChanged || tableChanged
                       || providerTableChanged || breakdownChanged;
               if (shouldResyncSnapshot) {
-                  const updatedSnap = isPlinio ? {
+                  const updatedSnap = isProviderOnlyUser ? {
                       ...existingSnap,
                       costServiceOnly: r2(costServiceOnly),
                       tollProvider: r2(tollProv),
@@ -3098,7 +3117,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
           
-          if (!isPlinio && isFullyApproved && manualClientTableId) {
+          if (!isProviderOnlyUser && isFullyApproved && manualClientTableId) {
               const missionProvNorm = (mission.provider || '').toUpperCase().trim();
               const routeKeyFull = `${mission.client}|${missionProvNorm}|${mission.origin}|${mission.destination}`.toUpperCase();
               const routeKeyBase = `${mission.client}|${mission.origin}|${mission.destination}`.toUpperCase();
@@ -3182,7 +3201,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   role: userRole,
                   date: nowIso,
                   changes: detectedChanges,
-                  note: editObservation.trim() || (approve ? 'Reaprovação' : ''),
+                  note: providerSaveObservation.observation || editObservation.trim() || (approve ? 'Reaprovação' : ''),
                   approve
               };
               const histRes = await supabase.from('system_logs').insert([{
@@ -3217,7 +3236,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               toll_value: toll,
               toll_value_provider: tollProv,
               billing_approved: isApprovedForBilling,
-              billing_verified_by: userName,
+              ...(approve ? { billing_verified_by: userName } : {}),
               ...(shouldSnapshot ? { snapshot_data: basePayload.snapshot_data, snapshot_approved_by: userName, snapshot_approved_at: basePayload.snapshot_approved_at } : {}),
               last_update: basePayload.last_update,
               ...(reasonFields.revenue_edit_reason ? { revenue_edit_reason: reasonFields.revenue_edit_reason } : {}),
@@ -5228,17 +5247,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                         setUseSavedValues(false);
                                                         userManuallyEditedRef.current = false;
                                                         setMission(prev => prev ? (
-                                                            isPlinio
+                                                            isProviderOnlyUser
                                                                 ? { ...prev, cost_edit_reason: '' }
                                                                 : { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }
                                                         ) : prev);
                                                         setManualProviderTableId('');
                                                         if (mission) {
-                                                            const resetPayload = isPlinio
+                                                            const resetPayload = isProviderOnlyUser
                                                                 ? { cost_edit_reason: '' }
                                                                 : { revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null };
                                                             await supabase.from('missions').update(resetPayload).eq('id', mission.id);
-                                                            if (!isPlinio) {
+                                                            if (!isProviderOnlyUser) {
                                                                 await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
                                                             }
                                                         }
@@ -5300,7 +5319,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         ];
                                         const handleChange = (val: string) => {
                                             if (isEffectivelyLocked && !fullEditMode && !canEditTablesEvenIfLocked) return;
-                                            if (financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider && !isPlinio) return;
+                                            if (financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider && !isProviderOnlyUser) return;
                                             setManualProviderTableId(val);
                                             setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
                                             setUseSavedValues(false);
@@ -5309,7 +5328,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             // tabela de custo pela auditoria fica apenas em estado local até o
                                             // Salvar/Aprovar explícito (preserva snapshots imutáveis).
                                             if (!(isBillingLocked && canEditTablesEvenIfLocked)) {
-                                                const resetPayload = isPlinio
+                                                const resetPayload = isProviderOnlyUser
                                                     ? { cost_edit_reason: '' }
                                                     : { revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null };
                                                 setMission(prev => prev ? { ...prev, ...resetPayload } : prev);
@@ -5321,7 +5340,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         // seletor mesmo em MESMA OS, motor auto ativo ou faturamento travado.
                                         // OS 5046: a auditoria (canOverrideAutoProvider) também pode trocar a
                                         // tabela com o motor auto ATIVO, sem precisar de EDIÇÃO TOTAL.
-                                        const autoBlocksSelector = !!financialData.autoEngine?.active && !canOverrideAutoProvider && !isPlinio;
+                                        const autoBlocksSelector = !!financialData.autoEngine?.active && !canOverrideAutoProvider && !isProviderOnlyUser;
                                         const providerSelectorDisabled = !fullEditMode && (mission.is_same_os || (isEffectivelyLocked && !canEditTablesEvenIfLocked) || autoBlocksSelector);
                                         return (
                                             <FilterableSelect
@@ -5878,7 +5897,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             value={manualProviderTableId || ''}
                                             onSelect={swapProviderTable}
                                             onApply={() => handleUpdate(false)}
-                                            disabled={(isEffectivelyLocked && !fullEditMode && !canEditProviderTablesEvenIfLocked) || (!!financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider && !isPlinio)}
+                                            disabled={(isEffectivelyLocked && !fullEditMode && !canEditProviderTablesEvenIfLocked) || (!!financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider && !isProviderOnlyUser)}
                                             isApplying={isUpdating}
                                             previewTotal={financialData ? (financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput)) : 0}
                                         />
@@ -6338,15 +6357,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 
-                                    disabled={isPlinio || isUpdating || opsIncomplete || (requiresTollGate && !tollConfirmed && !isBarbaraFinance) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))}
-                                    className={`flex-[1.2] sm:flex-none px-2 sm:px-6 py-2 rounded-lg sm:rounded-xl font-black uppercase text-[9px] sm:text-xs shadow-md flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 h-9 sm:h-10 ${isPlinio ? 'bg-gray-400 cursor-not-allowed text-gray-200' : opsIncomplete ? 'bg-gray-400 cursor-not-allowed text-gray-200' : requiresTollGate && !tollConfirmed && !isBarbaraFinance ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
-                                    title={isPlinio ? 'Plínio pode somente salvar; aprovação exclusiva da Diretoria ou Administrador' : opsIncomplete ? `Preencha: ${opsMissingFields.join(', ')}` : undefined}
+                                    disabled={isProviderOnlyUser || isUpdating || opsIncomplete || (requiresTollGate && !tollConfirmed && !isBarbaraFinance) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))}
+                                    className={`flex-[1.2] sm:flex-none px-2 sm:px-6 py-2 rounded-lg sm:rounded-xl font-black uppercase text-[9px] sm:text-xs shadow-md flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 h-9 sm:h-10 ${isProviderOnlyUser ? 'bg-gray-400 cursor-not-allowed text-gray-200' : opsIncomplete ? 'bg-gray-400 cursor-not-allowed text-gray-200' : requiresTollGate && !tollConfirmed && !isBarbaraFinance ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    title={isProviderOnlyUser ? 'Controller/fornecedor pode somente salvar; aprovação exclusiva da Diretoria ou Administrador' : opsIncomplete ? `Preencha: ${opsMissingFields.join(', ')}` : undefined}
                                     data-testid="button-approve-billing"
                                 >
                                     <span className="flex items-center gap-1 sm:gap-2">
-                                        {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : isPlinio ? <Lock size={14} className="shrink-0" /> : opsIncomplete ? <AlertTriangle size={14} className="shrink-0" /> : (!currentApprovalStatus.isPrivilegedReapprover && (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria)) ? <Lock size={14} className="text-amber-600 shrink-0" /> : <CheckCircle2 size={14} className="shrink-0" />}
+                                        {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : isProviderOnlyUser ? <Lock size={14} className="shrink-0" /> : opsIncomplete ? <AlertTriangle size={14} className="shrink-0" /> : (!currentApprovalStatus.isPrivilegedReapprover && (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria)) ? <Lock size={14} className="text-amber-600 shrink-0" /> : <CheckCircle2 size={14} className="shrink-0" />}
                                         <span className="truncate">
-                                        {isPlinio
+                                        {isProviderOnlyUser
                                             ? 'Sem permissão'
                                             : opsIncomplete
                                                 ? 'Dados pendentes'

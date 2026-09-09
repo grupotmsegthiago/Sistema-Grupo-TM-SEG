@@ -27,11 +27,11 @@ describe('Permissões financeiras do Plínio', () => {
 
   it('T03 bloqueia aprovação e libera Salvar só no fornecedor', () => {
     const source = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
-    assert.match(source, /if \(isPlinio && approve\)/);
-    assert.match(source, /disabled=\{isPlinio \|\| isUpdating/);
+    assert.match(source, /if \(isProviderOnlyUser && approve\)/);
+    assert.match(source, /disabled=\{isProviderOnlyUser \|\| isUpdating/);
     assert.match(source, /readOnly=\{clientFinanceInputLocked\}/);
-    assert.match(source, /canSaveProviderAdjustments = isPlinio/);
-    assert.match(source, /providerFinanceInputLocked = isEffectivelyLocked && !isPlinio/);
+    assert.match(source, /canSaveProviderAdjustments = isProviderOnlyUser/);
+    assert.match(source, /providerFinanceInputLocked = isEffectivelyLocked && !isProviderOnlyUser/);
     assert.match(source, /disabled=\{isUpdating \|\| \(!canSaveProviderAdjustments/);
   });
 
@@ -44,29 +44,30 @@ describe('Permissões financeiras do Plínio', () => {
     assert.doesNotMatch(approvalStatus, /uName\.includes\('plinio'\)/);
   });
 
-  it('T05 exclui Plínio do gate operacional que grava pedágio do cliente', () => {
+  it('T05 exclui controller/Plínio do gate operacional que grava pedágio do cliente', () => {
     const source = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
-    assert.match(source, /isRestrictedPlinioUser\(currentUser\)/);
+    assert.match(source, /isProviderOnlyControllerUser\(currentUser\)/);
     assert.match(source, /const allowedFirstNames = \['barbara', 'simone'\]/);
-    assert.match(source, /if \(isPlinio\) \{\s*showNotification\('Sem Permissão'/);
-    assert.match(source, /kind === 'completed' && !mission\.billing_approved && !isPlinio/);
+    assert.match(source, /if \(isProviderOnlyUser\) \{\s*showNotification\('Sem Permissão'/);
+    assert.match(source, /kind === 'completed' && !mission\.billing_approved && !isProviderOnlyUser/);
     assert.doesNotMatch(source, /name\.includes\('plinio'\) \|\| name\.includes\('plínio'\)/);
   });
 
-  it('T06 restringe o UPDATE de Plínio aos campos do fornecedor', () => {
+  it('T06 restringe o UPDATE de controller/Plínio aos campos do fornecedor', () => {
     const source = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
-    const start = source.indexOf('const fullPayload = isPlinio');
+    const start = source.indexOf('const fullPayload = isProviderOnlyUser');
     const end = source.indexOf('let result = await supabase', start);
     const payloadBlock = source.slice(start, end);
 
     assert.ok(start >= 0 && end > start);
-    assert.match(payloadBlock, /cost_value:/);
-    assert.match(payloadBlock, /toll_value_provider:/);
-    assert.match(payloadBlock, /displacement_value_provider:/);
+    assert.match(payloadBlock, /buildProviderOnlyMissionPayload\(/);
+    assert.match(payloadBlock, /costValue:/);
+    assert.match(payloadBlock, /tollValueProvider:/);
+    assert.match(payloadBlock, /displacementValueProvider:/);
     assert.doesNotMatch(payloadBlock, /\n\s+toll_value:/);
     assert.doesNotMatch(payloadBlock, /\n\s+revenue_value:/);
     assert.doesNotMatch(payloadBlock, /\n\s+billing_approved:/);
-    assert.match(source, /const providerSelectorDisabled = !fullEditMode && \(mission.is_same_os/);
+    assert.match(source, /const providerSelectorDisabled = !fullEditMode && \(mission\.is_same_os/);
   });
 });
 

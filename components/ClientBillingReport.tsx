@@ -1381,8 +1381,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         return m;
     }, [dhlBandWarnings]);
 
+    // TOTAL consolidado do boletim: apenas OS APROVADAS (billing_approved).
+    // Salvar/rascunho e conferência parcial NÃO entram no consolidado — evita
+    // misturar overrides/rascunhos do controller com o faturamento oficial.
     const grandTotal = useMemo(() => {
         return missions.reduce((s: number, m: any) => {
+            if (m.billing_approved !== true) return s;
             let clientUnitKm = 0;
             let providerUnitKm = 0;
             try {
@@ -1602,7 +1606,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         const extraColOffset = (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0) + (isIntermodalBilling ? 1 : 0);
 
-        const dataRows = rowsData.map(r => {
+        // Medição oficial / Excel: somente OS aprovadas (Salvar/rascunho fora do consolidado).
+        const exportRows = rowsData.filter(r => r.isApproved);
+        if (exportRows.length === 0) return null;
+
+        const dataRows = exportRows.map(r => {
             const row: (string | number)[] = [r.id];
             if (isCeslogBilling) row.push(r.referenceNumber || '-');
             if (isDhlBilling) row.push(r.seNumber || '-');

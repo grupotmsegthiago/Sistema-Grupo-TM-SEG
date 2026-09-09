@@ -50,7 +50,7 @@ import { fetchRouteProgress, normalizeProgressDestination, resolveRouteProgressP
 import DhlIntakeTimeline from './DhlIntakeTimeline';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import { tollPersistencePair } from '../lib/toll/clientTollBilling';
-import { isRestrictedPlinioUser } from '../lib/plinioMissionRestrictions';
+import { isProviderOnlyControllerUser } from '../lib/plinioMissionRestrictions';
 
 // Importação dos formulários para modo modal/cadastro rápido
 import ProviderForm from './ProviderForm';
@@ -886,8 +886,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         return role === 'comercial';
     }, [currentUser]);
 
-    const isPlinio = useMemo(
-        () => isRestrictedPlinioUser(currentUser),
+    const isProviderOnlyUser = useMemo(
+        () => isProviderOnlyControllerUser(currentUser),
         [currentUser],
     );
 
@@ -3058,8 +3058,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const handleTollConfirmedAfterCompletion = async (result: { hasToll: boolean; value: number }) => {
         if (!mission) return;
-        if (isPlinio) {
-            showNotification('Sem Permissão', 'Plínio não pode alterar o pedágio do cliente.', 'error');
+        if (isProviderOnlyUser) {
+            showNotification('Sem Permissão', 'Perfil controller/fornecedor não pode alterar o pedágio do cliente.', 'error');
             return;
         }
         const v = result.hasToll ? result.value : 0;
@@ -3098,7 +3098,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         // Salva direto em toll_value (e toll_value_provider = 0 quando é a mesma
         // OS) sem pedir confirmação manual. OS aprovada NUNCA é tocada. Em
         // falha, mantém o gate manual de pedágio (tollConfirmedRef permanece false).
-        if (mission && kind === 'completed' && !mission.billing_approved && !isPlinio) {
+        if (mission && kind === 'completed' && !mission.billing_approved && !isProviderOnlyUser) {
             try {
                 const r = await withTimeout(
                     authFetch('/api/toll/gemini-estimate', {
