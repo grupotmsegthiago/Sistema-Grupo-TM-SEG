@@ -24,6 +24,37 @@ Generative Language API; redeploy em `sistema-grupo-tm-seg`.
 
 ---
 
+## FATURAMENTO DHL — PLANILHA SÓ COM OS APROVADA/APROVADO
+
+**Data:** 2026-09-09 (UTC-3)
+**Pedido:** gerar planilha do período somente se todas as OS estiverem
+APROVADA/APROVADO (`billing_approved === true`).
+
+**Regra:** Relatório DHL e Preencher Planilha (SE) bloqueiam se existir OS do
+universo do boletim (exceto Recusada / `exclude_from_billing`) sem aprovação.
+Fail-closed: ausência de flag = PENDENTE. Botões desabilitados com contagem.
+
+**Agosto/2026 (consulta):** 198/199 OS DHL aprovadas; pendente **GTM-7342**
+SE **186956**, Concluída 21/08, R$ 696,90.
+
+**Não alterado:** motor financeiro, OS, Asaas, eNotas, Torres.
+
+---
+
+## FATURAMENTO DHL — PLANILHA INCLUIA SÓ SE DO ARQUIVO ENVIADO
+
+**Data:** 2026-09-09 (UTC-3)
+**Sintoma:** cliente CLP 24–31/08: 5 SE FINALIZADA (187374, 187654, 187673, 187689, 187690)
+existiam no sistema (GTM-7437/7512/7514/7524/7523, R$ 83.398,77) e não saíam na
+planilha gerada. O botão “Preencher Planilha (SE)” só preenchia SE do arquivo.
+
+**Correção:** o preenchimento usa `fetchBillingMissionUniverse` e inclui todas as
+SE do período. SE omitidas no arquivo entram automaticamente.
+
+**Não alterado:** motor financeiro, OS, Asaas, eNotas, Torres.
+
+---
+
 ## HOTFIX NF — DESCRIÇÃO FISCAL LIMITADA A 250 (SEM BLOQUEAR)
 
 **Data:** 2026-09-09 (UTC-3)
