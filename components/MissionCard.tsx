@@ -17,7 +17,7 @@ const WhatsAppIcon = ({ size = 14 }: { size?: number }) => (
 import MissionRouteProgressBar, { type FallbackProgress } from './MissionRouteProgressBar';
 import MissionTimer from './MissionTimer';
 import { useNotification } from '../lib/NotificationContext';
-import { applyRegionSuffix, calculateMissionFinancials, auditMissionFinancials } from '../lib/financialUtils';
+import { applyRegionSuffix, calculateMissionFinancials, auditMissionFinancials, hasPersistedProviderCost, resolveDisplayedProviderCost } from '../lib/financialUtils';
 import { formatProviderName, resolveLocationDisplay, extractCoordinates } from '../lib/utils';
 import { isMissionOpsIncomplete, getMissionOpsMissingFields, isOpsAlertRecipient } from '../lib/missionOpsIncomplete';
 
@@ -384,21 +384,19 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     }, [mission.revenue_value, mission.toll_value, (mission as any).displacement_value, mission.status, financials]);
 
     const displayCost = useMemo(() => {
-        const tollProv = Math.max(0, mission.toll_value_provider != null ? mission.toll_value_provider : (mission.toll_value || 0));
-        const dispProv = (mission as any).is_same_os === true ? 0 : Math.max(0, (mission as any).displacement_value_provider || 0);
-        const storedValue = (mission.cost_value || 0) + tollProv + dispProv;
-        const hasStoredCost = (mission.cost_value != null && mission.cost_value > 0);
-        
-        if (hasStoredCost) {
-            return storedValue;
-        }
-
-        if (financials && mission.status === MissionStatus.IN_TRANSIT) {
-            return financials.provider.total;
-        }
-        
-        return storedValue;
-    }, [mission.cost_value, mission.toll_value, mission.toll_value_provider, (mission as any).displacement_value, (mission as any).displacement_value_provider, (mission as any).is_same_os, mission.status, financials]);
+        return resolveDisplayedProviderCost({
+            costValue: mission.cost_value,
+            tollValueProvider: mission.toll_value_provider,
+            tollValue: mission.toll_value,
+            displacementValueProvider: (mission as any).displacement_value_provider,
+            isSameOs: (mission as any).is_same_os === true,
+            billingApproved: mission.billing_approved,
+            billingVerifiedBy: (mission as any).billing_verified_by,
+            costEditReason: (mission as any).cost_edit_reason,
+            status: mission.status,
+            projectedProviderTotal: financials?.provider?.total,
+        });
+    }, [mission.cost_value, mission.toll_value, mission.toll_value_provider, (mission as any).displacement_value_provider, (mission as any).is_same_os, mission.billing_approved, (mission as any).billing_verified_by, (mission as any).cost_edit_reason, mission.status, financials]);
 
     const profitMargin = useMemo(() => {
         return displayRevenue > 0 ? ((displayRevenue - displayCost) / displayRevenue) * 100 : 0;
@@ -497,7 +495,7 @@ Qualquer dúvida, estamos a disposição.
     }, [mission.currentLocation]);
 
     const isAdjustedRevenue = mission.billing_approved || hasBeenVerified || (mission.revenue_value != null && mission.revenue_value > 0);
-    const isAdjustedCost = mission.billing_approved || hasBeenVerified || (mission.cost_value != null && mission.cost_value > 0);
+    const isAdjustedCost = hasPersistedProviderCost(mission);
 
     const pendingApproval = useMemo(() => {
         if (mission.billing_approved) return null;

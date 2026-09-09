@@ -152,7 +152,51 @@ export function isIntentionalBillingOverride(editReason: string | null | undefin
     return true;
 }
 
-/** Busca todas as tabelas de preço do cliente (paginado — evita corte em 1000 linhas). */
+/** Custo do fornecedor já persistido na auditoria — inclusive R$ 0,00 com motivo. */
+export function hasPersistedProviderCost(mission: {
+    billing_approved?: boolean | null;
+    billing_verified_by?: string | null;
+    cost_value?: number | null;
+    cost_edit_reason?: string | null;
+}): boolean {
+    if (mission.billing_approved) return true;
+    if (mission.billing_verified_by) return true;
+    if (isIntentionalBillingOverride(mission.cost_edit_reason)) return true;
+    return mission.cost_value != null && Number(mission.cost_value) > 0;
+}
+
+/**
+ * Valor do card Monitoramento (Fornecedor Salvo/Projetado).
+ * Override/zeramento da auditoria vence o recálculo em OS Em Viagem.
+ */
+export function resolveDisplayedProviderCost(opts: {
+    costValue?: number | null;
+    tollValueProvider?: number | null;
+    tollValue?: number | null;
+    displacementValueProvider?: number | null;
+    isSameOs?: boolean;
+    billingApproved?: boolean | null;
+    billingVerifiedBy?: string | null;
+    costEditReason?: string | null;
+    status?: string;
+    projectedProviderTotal?: number | null;
+}): number {
+    const tollProv = Math.max(0, opts.tollValueProvider != null ? Number(opts.tollValueProvider) : Number(opts.tollValue || 0));
+    const dispProv = opts.isSameOs ? 0 : Math.max(0, Number(opts.displacementValueProvider || 0));
+    const storedValue = Number(opts.costValue || 0) + tollProv + dispProv;
+    const persisted = hasPersistedProviderCost({
+        billing_approved: opts.billingApproved,
+        billing_verified_by: opts.billingVerifiedBy,
+        cost_value: opts.costValue,
+        cost_edit_reason: opts.costEditReason,
+    });
+    if (persisted) return storedValue;
+    if (opts.projectedProviderTotal != null && opts.status === 'Em Viagem') {
+        return Number(opts.projectedProviderTotal) || 0;
+    }
+    return storedValue;
+}
+
 export async function fetchClientPriceTables(
     supabase: { from: (table: string) => { select: (cols: string) => any } },
     clientName: string,
