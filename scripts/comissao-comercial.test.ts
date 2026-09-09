@@ -61,7 +61,15 @@ describe('comissao comercial — integração preservada', () => {
     assert.match(form, /select-responsavel-comercial/);
     assert.match(form, /from 'react'/);
     assert.match(page, /filter-empresa-comissao/);
-    assert.match(page, /comissoes-por-cliente/);
+    assert.match(page, /filter-quinzena-comissao/);
+    assert.match(page, /btn-exportar-relatorio-comissao/);
+    assert.match(page, /apuracao-escala-comercial/);
+    assert.match(page, /btn-sync-usuarios-comercial/);
+    assert.match(page, /tabela-comissao-padrao/);
+    assert.match(form, /sincronizarComerciaisDeUsuarios/);
+    const userForm = fs.readFileSync('components/UserForm.tsx', 'utf8');
+    assert.match(userForm, /upsertComercialDoUsuario/);
+    assert.match(userForm, /from 'react'/);
     assert.match(page, /from 'react'/);
     assert.match(page, /import React,/);
     assert.match(app, /comissoes-comerciais/);
@@ -102,5 +110,44 @@ describe('comissao comercial — TORRES ingest', () => {
     assert.match(vercel, /\/api\/comissoes\/ingest/);
     assert.match(core, /empresaOrigem/);
     assert.match(core, /atualizarStatusAposBaixaPorOrigem/);
+  });
+});
+
+describe('comissao comercial — escala da planilha', () => {
+  it('espelha o print: 50k / 500k / 1M', async () => {
+    const { calcularApuracaoComissao, gerarLinhasTabelaReferencia } = await import('../lib/comissao/tabelaComissaoPadrao');
+    const p50 = calcularApuracaoComissao({ valorBruto: 50_000 });
+    assert.equal(p50.notaFiscal, 8000);
+    assert.equal(p50.resultadoLiquido, 42_000);
+    assert.equal(p50.comissaoPercentual, 1260);
+    assert.equal(p50.bonusAcumulado, 0);
+    assert.equal(p50.totalAPagar, 1260);
+
+    const abaixo = calcularApuracaoComissao({ valorBruto: 49_999, valorFixo: 2000 });
+    assert.equal(abaixo.abaixoDoPiso, true);
+    assert.equal(abaixo.comissaoPercentual, 0);
+    assert.equal(abaixo.bonusAcumulado, 0);
+    assert.equal(abaixo.totalAPagar, 2000);
+
+    const p500 = calcularApuracaoComissao({ valorBruto: 500_000, valorFixo: 0 });
+    assert.equal(p500.comissaoPercentual, 12_600);
+    assert.equal(p500.bonusAcumulado, 5_000);
+    assert.equal(p500.totalAPagar, 17_600);
+
+    const p1m = calcularApuracaoComissao({ valorBruto: 1_000_000 });
+    assert.equal(p1m.comissaoPercentual, 25_200);
+    assert.equal(p1m.bonusAcumulado, 10_000);
+    assert.equal(p1m.totalAPagar, 35_200);
+
+    const linhas = gerarLinhasTabelaReferencia();
+    assert.equal(linhas.length, 20);
+    assert.equal(linhas[0].totalAPagar, 1260);
+    assert.equal(linhas[linhas.length - 1].totalAPagar, 35_200);
+  });
+
+  it('reconhece perfil COMERCIAL pelo nome', async () => {
+    const { perfilEhComercial } = await import('../lib/comissao/tabelaComissaoPadrao');
+    assert.equal(perfilEhComercial('COMERCIAL'), true);
+    assert.equal(perfilEhComercial('Diretoria'), false);
   });
 });

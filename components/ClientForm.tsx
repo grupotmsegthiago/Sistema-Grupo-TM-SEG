@@ -19,6 +19,7 @@ import CommercialProposalModal from './CommercialProposalModal';
 import ClientPriceCalculator from './ClientPriceCalculator';
 import QuotePrintModal from './QuotePrintModal';
 import ClientContractTab from './ClientContractTab';
+import { sincronizarComerciaisDeUsuarios } from '../lib/comissao/comissaoUsuarios';
 
 interface ClientFormProps {
   onBack: () => void;
@@ -261,8 +262,16 @@ const ClientForm: React.FC<ClientFormProps> = ({
     fetchClientData();
     supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name')
         .then(({ data }) => data && setClientsList(data as any));
-    supabase.from('comerciais').select('id, nome').eq('ativo', true).order('nome')
-        .then(({ data }) => data && setComerciais(data as any));
+    void (async () => {
+      await sincronizarComerciaisDeUsuarios(supabase);
+      const { data } = await supabase
+        .from('comerciais')
+        .select('id, nome, usuario_id')
+        .eq('ativo', true)
+        .not('usuario_id', 'is', null)
+        .order('nome');
+      if (data) setComerciais(data as any);
+    })();
   }, [id]);
 
   useEffect(() => {
@@ -1079,7 +1088,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                               <option key={c.id} value={c.id}>{c.nome}</option>
                             ))}
                         </select>
-                        <p className="text-[10px] text-gray-400">Define quem recebe comissão quando este cliente for faturado.</p>
+                        <p className="text-[10px] text-gray-400">Vínculo com usuário interno de perfil COMERCIAL. Não digite nome avulso — cadastre o usuário em Configurações.</p>
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Status Operacional</label>
@@ -1753,7 +1762,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
           />
       )}
       {activeTab === 'routes' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><ClientRouteList onAdd={onAddRoute} onEdit={onEditRoute} clientName={formData.name} embedded={true} /></div>}
-      {activeTab === 'quotes' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><QuoteList onAdd={onAddQuote} onEdit={onEditQuote} clientName={formData.name} embedded={true} /></div>}
+      {activeTab === 'quotes' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><QuoteList onAdd={onAddQuote} onEdit={onEditQuote} clientName={formData.name} clientId={id} embedded={true} /></div>}
     </div>
   );
 };

@@ -308,6 +308,8 @@ export interface Quote {
   status: 'Rascunho' | 'Enviada' | 'Aprovada';
   items?: QuoteItem[]; 
   contract_details?: string;
+  quote_source?: 'ROTA' | 'RAPIDA_REGIONAL';
+  closed_price_table_id?: string | null;
 }
 
 export interface MissionLog {

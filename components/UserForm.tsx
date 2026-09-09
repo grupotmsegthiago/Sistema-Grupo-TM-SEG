@@ -7,6 +7,8 @@ import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { useNotification } from '../lib/NotificationContext';
+import { perfilEhComercial } from '../lib/comissao/tabelaComissaoPadrao';
+import { upsertComercialDoUsuario } from '../lib/comissao/comissaoUsuarios';
 
 interface EquipmentItem {
   id: string;
@@ -288,10 +290,24 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
           if (userType === 'client' && isClientUser) {
               payload.permissions = selectedPermissions;
           }
+          const vincularComercial = async (userId: string | number) => {
+              if (userType !== 'internal') return;
+              const profile = profiles.find((p) => String(p.id) === String(formData.profileId));
+              if (!perfilEhComercial(profile?.name)) return;
+              const res = await upsertComercialDoUsuario(supabase, {
+                  id: userId,
+                  name: payload.name,
+                  email: payload.email,
+              });
+              if (!res.ok) {
+                  showNotification('Comissão', res.error || 'Usuário salvo, mas o vínculo da tabela de comissão falhou.', 'warning');
+              }
+          };
           if (id) {
               const { error: updErr } = await supabase.from('system_users').update(payload).eq('id', id);
               if (updErr) throw new Error('Erro ao salvar usuário: ' + updErr.message);
               if (userType === 'internal') await saveEquipmentData(id);
+              await vincularComercial(id);
               await logAction('UPDATE', 'User', id, `Usuário atualizado: ${payload.name}`);
               showNotification('Sucesso', 'Usuário atualizado.', 'success');
           } else {
@@ -302,6 +318,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   if (userType === 'internal' && (equipments.length > 0 || chips.length > 0)) {
                     await saveEquipmentData(data[0].id);
                   }
+                  await vincularComercial(data[0].id);
               }
               showNotification('Sucesso', 'Usuário criado com sucesso.', 'success');
               setCreatedCredentials({
@@ -322,7 +339,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                           email: payload.email,
                           password: payload.password,
                           userType: userType,
-                          profileName: profiles.find(p => p.id === selectedProfileId)?.name || '',
+                          profileName: profiles.find(p => String(p.id) === String(formData.profileId))?.name || '',
                           verificationCode: verCode,
                       }),
                   });

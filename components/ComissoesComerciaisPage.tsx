@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BadgeDollarSign, Filter, Loader2, Receipt,
-  Wallet, X, UserPlus, Landmark,
+  Wallet, X, Landmark, FileSpreadsheet, RefreshCw, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
@@ -12,8 +12,32 @@ import {
   type ComissaoStatus,
 } from '../lib/comissao/comissaoCalc';
 import { registrarPagamentoComissao } from '../lib/comissao/comissaoService';
+import { sincronizarComerciaisDeUsuarios } from '../lib/comissao/comissaoUsuarios';
+import {
+  calcularApuracaoComissao,
+  gerarLinhasTabelaReferencia,
+  TABELA_COMISSAO_PADRAO,
+} from '../lib/comissao/tabelaComissaoPadrao';
+import {
+  intervaloQuinzena,
+  labelQuinzena,
+  montarCsvRelatorioComissoes,
+  nomeArquivoRelatorioComissoes,
+  quinzenaDeDataFaturamento,
+  type QuinzenaFiltro,
+} from '../lib/comercial/tabelaPrecosRegionais';
 
-type Comercial = { id: string; nome: string; email?: string | null; telefone?: string | null; pix_chave?: string | null; ativo?: boolean };
+type Comercial = {
+  id: string;
+  nome: string;
+  email?: string | null;
+  telefone?: string | null;
+  pix_chave?: string | null;
+  ativo?: boolean;
+  usuario_id?: number | null;
+  valor_fixo?: number | null;
+  tabela_comissao_codigo?: string | null;
+};
 
 type EmpresaOrigem = 'TM_SEG' | 'TORRES';
 
@@ -67,6 +91,7 @@ const ComissoesComerciaisPage: React.FC = () => {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const [quinzenaFiltro, setQuinzenaFiltro] = useState<QuinzenaFiltro>('todas');
   const [comercialId, setComercialId] = useState('');
   const [statusFilter, setStatusFilter] = useState<'' | ComissaoStatus>('');
   const [empresaFilter, setEmpresaFilter] = useState<'' | EmpresaOrigem>('');
@@ -77,16 +102,16 @@ const ComissoesComerciaisPage: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [savingPay, setSavingPay] = useState(false);
   const [showCadastro, setShowCadastro] = useState(false);
-  const [novoNome, setNovoNome] = useState('');
-  const [novoEmail, setNovoEmail] = useState('');
+  const [syncingUsers, setSyncingUsers] = useState(false);
+  const [showTabela, setShowTabela] = useState(false);
   const [novoPix, setNovoPix] = useState('');
+  const [novoFixo, setNovoFixo] = useState('');
   const [savingComercial, setSavingComercial] = useState(false);
 
-  const periodStart = `${year}-${String(month).padStart(2, '0')}-01`;
-  const periodEnd = new Date(year, month, 0).toISOString().slice(0, 10);
+  const { start: periodStart, end: periodEnd } = intervaloQuinzena(year, month, quinzenaFiltro);
 
   const loadComerciais = useCallback(async () => {
-    const { data, error } = await supabase.from('comerciais').select('id, nome, email, telefone, pix_chave, ativo').order('nome');
+    const { data, error } = await supabase.from('comerciais').select('id, nome, email, telefone, pix_chave, ativo, usuario_id, valor_fixo, tabela_comissao_codigo').order('nome');
     if (error) throw new Error(error.message);
     setComerciais((data || []) as Comercial[]);
   }, []);
@@ -119,9 +144,15 @@ const ComissoesComerciaisPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [periodStart, periodEnd, comercialId, statusFilter, empresaFilter, loadComerciais, showNotification]);
+  }, [periodStart, periodEnd, comercialId, statusFilter, empresaFilter, quinzenaFiltro, loadComerciais, showNotification]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const c = comerciais.find((x) => x.id === comercialId);
+    setNovoPix(c?.pix_chave || '');
+    setNovoFixo(c?.valor_fixo != null ? String(c.valor_fixo) : '');
+  }, [comercialId, comerciais]);
 
   const stats = useMemo(() => {
     const fat = rows.reduce((s, r) => s + Number(r.valor_faturamento || 0), 0);
@@ -144,9 +175,28 @@ const ComissoesComerciaisPage: React.FC = () => {
       prev.qtd += 1;
       porClienteMap.set(key, prev);
     }
+    const porComercialMap = new Map<string, { comercial: string; fat: number; comissaoLinhas: number; tm: number; torres: number }>();
+    for (const r of rows) {
+      const key = r.comercial_id || r.comerciais?.nome || '—';
+      const nome = String(r.comerciais?.nome || '—');
+      const prev = porComercialMap.get(key) || { comercial: nome, fat: 0, comissaoLinhas: 0, tm: 0, torres: 0 };
+      prev.fat += Number(r.valor_faturamento || 0);
+      prev.comissaoLinhas += Number(r.valor_comissao || 0);
+      if (empresaLabel(r.empresa_origem) === 'TORRES') prev.torres += Number(r.valor_faturamento || 0);
+      else prev.tm += Number(r.valor_faturamento || 0);
+      porComercialMap.set(key, prev);
+    }
+    const porComercial = Array.from(porComercialMap.entries()).map(([id, v]) => {
+      const cadastro = comerciais.find((c) => c.id === id);
+      const apuracao = calcularApuracaoComissao({
+        valorBruto: v.fat,
+        valorFixo: Number(cadastro?.valor_fixo || 0),
+      });
+      return { id, ...v, apuracao, usuarioVinculado: !!cadastro?.usuario_id };
+    }).sort((a, b) => b.fat - a.fat);
     const porCliente = Array.from(porClienteMap.values()).sort((a, b) => b.comissao - a.comissao);
-    return { fat, imposto, base, lib, pago, qtd: rows.length, porEmpresa, porCliente };
-  }, [rows]);
+    return { fat, imposto, base, lib, pago, qtd: rows.length, porEmpresa, porCliente, porComercial };
+  }, [rows, comerciais]);
 
   const confirmarPagamento = async () => {
     if (!paying || !file) {
@@ -168,27 +218,63 @@ const ComissoesComerciaisPage: React.FC = () => {
     }
   };
 
-  const salvarComercial = async () => {
-    if (!novoNome.trim()) {
-      showNotification('Nome', 'Informe o nome do comercial.', 'warning');
+  const exportarRelatorio = () => {
+    if (rows.length === 0) {
+      showNotification('Relatório', 'Não há comissões neste filtro para exportar.', 'warning');
+      return;
+    }
+    const comercialNome = comerciais.find((c) => c.id === comercialId)?.nome || 'Todos';
+    const csv = montarCsvRelatorioComissoes(
+      rows.map((r) => ({
+        empresa: empresaLabel(r.empresa_origem),
+        cliente_nome: r.cliente_nome,
+        comercial_nome: r.comerciais?.nome || comercialNome,
+        fatura_numero: r.fatura_numero,
+        data_faturamento: r.data_faturamento,
+        valor_faturamento: Number(r.valor_faturamento),
+        valor_comissao: Number(r.valor_comissao),
+        status: COMISSAO_STATUS_LABEL[r.status] || r.status,
+      })),
+      { year, month, quinzena: quinzenaFiltro, comercialNome },
+    );
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = nomeArquivoRelatorioComissoes({ year, month, quinzena: quinzenaFiltro, comercialNome });
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  const sincronizarUsuarios = async () => {
+    setSyncingUsers(true);
+    try {
+      const res = await sincronizarComerciaisDeUsuarios(supabase);
+      if (!res.ok) throw new Error(res.error || 'Falha ao sincronizar');
+      showNotification('Usuários', `${res.linked} comercial(is) vinculado(s) à tabela padrão.`, 'success');
+      await loadComerciais();
+    } catch (e: any) {
+      showNotification('Erro', e?.message || 'Falha ao sincronizar usuários Comercial.', 'error');
+    } finally {
+      setSyncingUsers(false);
+    }
+  };
+
+  const salvarDadosComercial = async () => {
+    if (!comercialId) {
+      showNotification('Comercial', 'Selecione o comercial no filtro para gravar PIX e valor fixo.', 'warning');
       return;
     }
     setSavingComercial(true);
     try {
-      const { error } = await supabase.from('comerciais').insert({
-        nome: novoNome.trim(),
-        email: novoEmail.trim() || null,
+      const { error } = await supabase.from('comerciais').update({
         pix_chave: novoPix.trim() || null,
-        ativo: true,
-      });
+        valor_fixo: Number(novoFixo) || 0,
+      }).eq('id', comercialId);
       if (error) throw error;
-      showNotification('Salvo', 'Comercial cadastrado.', 'success');
-      setNovoNome('');
-      setNovoEmail('');
-      setNovoPix('');
+      showNotification('Salvo', 'PIX e valor fixo atualizados.', 'success');
       await loadComerciais();
     } catch (e: any) {
-      showNotification('Erro', e?.message || 'Falha ao cadastrar comercial', 'error');
+      showNotification('Erro', e?.message || 'Falha ao salvar dados do comercial', 'error');
     } finally {
       setSavingComercial(false);
     }
@@ -201,25 +287,79 @@ const ComissoesComerciaisPage: React.FC = () => {
           <h1 className="text-lg font-black text-gray-900 uppercase tracking-tight flex items-center gap-2">
             <BadgeDollarSign className="text-red-600" size={22} /> Comissões Comerciais
           </h1>
-          <p className="text-xs text-gray-500 font-medium">Controle único na TM SEG: TM SEG + TORRES. Faturamento → baixa do cliente → pagamento ao comercial (16% imposto / 3% sobre o líquido, salvo regra específica).</p>
+          <p className="text-xs text-gray-500 font-medium">Controle único TM SEG + TORRES. Vínculo pelo usuário COMERCIAL. Piso R$ 50 mil, bônus a partir de R$ 500 mil / R$ 1 milhão. Total = fixo + comissão + bônus.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowCadastro((v) => !v)}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs font-black uppercase text-gray-700 hover:bg-gray-50"
-          data-testid="btn-toggle-cadastro-comercial"
-        >
-          <UserPlus size={14} /> {showCadastro ? 'Fechar cadastro' : 'Cadastrar comercial'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setShowTabela((v) => !v)}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs font-black uppercase text-gray-700 hover:bg-gray-50"
+            data-testid="btn-toggle-tabela-comissao"
+          >
+            {showTabela ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Tabela padrão
+          </button>
+          <button
+            type="button"
+            disabled={syncingUsers}
+            onClick={() => void sincronizarUsuarios()}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs font-black uppercase text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            data-testid="btn-sync-usuarios-comercial"
+          >
+            {syncingUsers ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sincronizar usuários
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCadastro((v) => !v)}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs font-black uppercase text-gray-700 hover:bg-gray-50"
+            data-testid="btn-toggle-cadastro-comercial"
+          >
+            {showCadastro ? 'Fechar PIX/fixo' : 'PIX e valor fixo'}
+          </button>
+        </div>
       </div>
+
+      {showTabela && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="tabela-comissao-padrao">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <p className="text-[10px] font-black text-gray-400 uppercase">{TABELA_COMISSAO_PADRAO.nome}</p>
+            <p className="text-[11px] text-gray-500">Até R$ 50 mil: só o valor fixo. Depois: 16% NF + 3% sobre o líquido. Bônus R$ 5.000 a partir de R$ 500 mil e R$ 10.000 a partir de R$ 1 milhão. Valores abaixo são a escala sem o salário fixo.</p>
+          </div>
+          <div className="overflow-x-auto max-h-80">
+            <table className="min-w-full text-xs">
+              <thead>
+                <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase">
+                  <th className="text-right px-3 py-2">Valor bruto</th>
+                  <th className="text-right px-3 py-2">NF 16%</th>
+                  <th className="text-right px-3 py-2">Líquido</th>
+                  <th className="text-right px-3 py-2">Comissão 3%</th>
+                  <th className="text-right px-3 py-2">Bônus</th>
+                  <th className="text-right px-3 py-2">Total escala</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gerarLinhasTabelaReferencia().map((l) => (
+                  <tr key={l.valorBruto} className="border-t border-gray-50">
+                    <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(l.valorBruto)}</td>
+                    <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(l.notaFiscal)}</td>
+                    <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(l.resultadoLiquido)}</td>
+                    <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(l.comissao)}</td>
+                    <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(l.bonusAcumulado)}</td>
+                    <td className="px-3 py-1.5 text-right font-black">{fmtBRL(l.totalAPagar)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {showCadastro && (
         <div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-4 gap-3" data-testid="cadastro-comercial">
-          <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Nome *" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} data-testid="input-comercial-nome" />
-          <input className="border rounded-lg px-3 py-2 text-sm" placeholder="E-mail" value={novoEmail} onChange={(e) => setNovoEmail(e.target.value)} />
+          <p className="md:col-span-4 text-[11px] text-gray-500">Cadastre o vendedor em Configurações → Usuários internos com perfil COMERCIAL, depois sincronize. Aqui só grava PIX e o salário fixo do selecionado no filtro.</p>
           <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Chave PIX" value={novoPix} onChange={(e) => setNovoPix(e.target.value)} />
-          <button type="button" disabled={savingComercial} onClick={() => void salvarComercial()} className="bg-black text-white rounded-lg px-3 py-2 text-xs font-black uppercase disabled:opacity-50">
-            {savingComercial ? 'Salvando…' : 'Salvar comercial'}
+          <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Valor fixo (R$)" type="number" min="0" step="0.01" value={novoFixo} onChange={(e) => setNovoFixo(e.target.value)} data-testid="input-comercial-valor-fixo" />
+          <button type="button" disabled={savingComercial} onClick={() => void salvarDadosComercial()} className="bg-black text-white rounded-lg px-3 py-2 text-xs font-black uppercase disabled:opacity-50">
+            {savingComercial ? 'Salvando…' : 'Salvar PIX e fixo'}
           </button>
         </div>
       )}
@@ -237,6 +377,13 @@ const ComissoesComerciaisPage: React.FC = () => {
             {[now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map((y) => (
               <option key={y} value={y}>{y}</option>
             ))}
+          </select>
+        </label>
+        <label className="text-[10px] font-black text-gray-400 uppercase">Quinzena
+          <select className="block mt-1 border rounded-lg px-3 py-2 text-sm font-bold" value={quinzenaFiltro} onChange={(e) => setQuinzenaFiltro(e.target.value as QuinzenaFiltro)} data-testid="filter-quinzena-comissao">
+            <option value="todas">Mês completo</option>
+            <option value="q1">1ª Quinzena (01 a 15)</option>
+            <option value="q2">2ª Quinzena (16 ao fim)</option>
           </select>
         </label>
         <label className="text-[10px] font-black text-gray-400 uppercase">Comercial
@@ -265,6 +412,9 @@ const ComissoesComerciaisPage: React.FC = () => {
         </label>
         <button type="button" onClick={() => void load()} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-black uppercase">
           <Filter size={12} /> Atualizar
+        </button>
+        <button type="button" onClick={exportarRelatorio} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs font-black uppercase text-gray-700 hover:bg-gray-50" data-testid="btn-exportar-relatorio-comissao">
+          <FileSpreadsheet size={12} /> Exportar relatório
         </button>
       </div>
 
@@ -329,6 +479,48 @@ const ComissoesComerciaisPage: React.FC = () => {
         </div>
       )}
 
+      {stats.porComercial.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="apuracao-escala-comercial">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <p className="text-[10px] font-black text-gray-400 uppercase">Apuração do período (TM SEG + TORRES)</p>
+            <p className="text-[11px] text-gray-500">Bruto do comercial no filtro. Abaixo de R$ 50 mil paga só o fixo. Total a pagar = fixo + comissão da escala + bônus.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase">
+                  <th className="text-left px-3 py-2">Comercial</th>
+                  <th className="text-right px-3 py-2">Bruto TM SEG</th>
+                  <th className="text-right px-3 py-2">Bruto TORRES</th>
+                  <th className="text-right px-3 py-2">Bruto total</th>
+                  <th className="text-right px-3 py-2">Fixo</th>
+                  <th className="text-right px-3 py-2">Comissão escala</th>
+                  <th className="text-right px-3 py-2">Bônus</th>
+                  <th className="text-right px-3 py-2">Total a pagar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.porComercial.map((c) => (
+                  <tr key={c.id} className="border-t border-gray-50">
+                    <td className="px-3 py-2 text-xs font-black uppercase">
+                      {c.comercial}
+                      {c.apuracao.abaixoDoPiso && <span className="ml-2 text-[9px] font-bold text-amber-700">Abaixo do piso</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.tm)}</td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.torres)}</td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.fat)}</td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.apuracao.valorFixo)}</td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.apuracao.comissaoPercentual)}</td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.apuracao.bonusAcumulado)}</td>
+                    <td className="px-3 py-2 text-right font-black">{fmtBRL(c.apuracao.totalAPagar)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         {loading ? (
           <div className="p-10 flex items-center justify-center gap-2 text-gray-500 text-sm"><Loader2 className="animate-spin" size={16} /> Carregando comissões…</div>
@@ -342,6 +534,7 @@ const ComissoesComerciaisPage: React.FC = () => {
                   <th className="text-left px-3 py-2">Empresa</th>
                   <th className="text-left px-3 py-2">Cliente</th>
                   <th className="text-left px-3 py-2">NF / OS</th>
+                  <th className="text-left px-3 py-2">Fechamento</th>
                   <th className="text-right px-3 py-2">Faturamento</th>
                   <th className="text-right px-3 py-2">Imposto %</th>
                   <th className="text-right px-3 py-2">Lucro base</th>
@@ -360,6 +553,10 @@ const ComissoesComerciaisPage: React.FC = () => {
                       <div className="text-[10px] text-gray-400">{r.comerciais?.nome || '—'}</div>
                     </td>
                     <td className="px-3 py-2 font-mono text-xs">{r.fatura_numero || r.fatura_id?.slice(0, 8) || '—'}</td>
+                    <td className="px-3 py-2 text-[10px] font-bold text-gray-600">
+                      <div>{fmtDate(r.data_faturamento)}</div>
+                      <div className="text-gray-400 uppercase">{labelQuinzena(quinzenaDeDataFaturamento(r.data_faturamento))}</div>
+                    </td>
                     <td className="px-3 py-2 text-right font-mono">{fmtBRL(Number(r.valor_faturamento))}</td>
                     <td className="px-3 py-2 text-right">{Number(r.percentual_imposto_aplicado).toFixed(2)}%</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtBRL(Number(r.valor_base_liquida))}</td>

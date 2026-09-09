@@ -3,12 +3,19 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { Quote } from '../types';
-import { Plus, Search, FileText, Calendar, DollarSign, MapPin, RefreshCw, Loader2, Trash2, Pencil, Database, AlertTriangle, Lock } from 'lucide-react';
+import { Plus, Search, DollarSign, MapPin, RefreshCw, Loader2, Trash2, Pencil, Lock, CheckCircle2 } from 'lucide-react';
+import { useNotification } from '../lib/NotificationContext';
+import CotacaoRapidaRegional from './CotacaoRapidaRegional';
+import {
+  montarPayloadTabelaCliente,
+  resultadoFromQuoteItems,
+} from '../lib/comercial/tabelaPrecosRegionais';
 
 interface Props {
   onAdd: () => void;
   onEdit: (id: string) => void;
   clientName?: string;
+  clientId?: string | number | null;
   embedded?: boolean;
 }
 
@@ -17,11 +24,13 @@ const formatCurrency = (val: number | null | undefined) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
-const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded = false }) => {
+const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embedded = false }) => {
+  const { showNotification } = useNotification();
   const [searchTerm, setSearchTerm] = useState('');
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
   const [isDirector, setIsDirector] = useState(false);
   const [isCommercial, setIsCommercial] = useState(false);
   const [canViewValues, setCanViewValues] = useState(false);
@@ -117,6 +126,38 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded = fals
     finally { setIsDeleting(null) }
   };
 
+  const handleFecharProposta = async (quote: Quote) => {
+    const resultado = resultadoFromQuoteItems(quote);
+    const cliente = String(quote.client_name || clientName || '').trim();
+    if (!resultado || !cliente) {
+      showNotification('Fechar proposta', 'Informe o cliente na cotação antes de gerar a tabela real.', 'warning');
+      return;
+    }
+    if (quote.closed_price_table_id) {
+      showNotification('Já fechada', 'Esta cotação já gerou tabela de preço do cliente.', 'info');
+      return;
+    }
+    const tabela = montarPayloadTabelaCliente({ clienteNome: cliente, resultado });
+    if (!confirm(`Fechar proposta e gerar tabela real do cliente?\n\n${tabela.operation_type}\nAcionamento: ${tabela.activation_fee}\nKM extra: ${tabela.price_per_extra_km}\nHora extra: ${tabela.price_per_extra_hour}\n\nIsso NÃO altera OS/NF já faturadas.`)) return;
+    setClosingId(quote.id);
+    try {
+      const { data, error } = await supabase.from('client_price_tables').insert([tabela]).select('id').single();
+      if (error) throw error;
+      const { error: updErr } = await supabase.from('quotes').update({
+        status: 'Aprovada',
+        closed_price_table_id: data?.id || null,
+        client_name: cliente,
+      }).eq('id', quote.id);
+      if (updErr) throw updErr;
+      showNotification('Proposta fechada', 'Tabela de custo real do cliente gerada.', 'success');
+      fetchQuotes();
+    } catch (e: any) {
+      showNotification('Erro', e?.message || 'Falha ao fechar proposta.', 'error');
+    } finally {
+      setClosingId(null);
+    }
+  };
+
   const filtered = quotes.filter(q => {
     const clientDisplay = clientMap[q.client_name] || q.client_name;
     return (clientDisplay?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
@@ -135,6 +176,7 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded = fals
             </div>
           </div>
       )}
+      <CotacaoRapidaRegional clientName={clientName} clientId={clientId} onSaved={fetchQuotes} />
       <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${embedded ? 'border-t' : ''}`}>
         <div className="p-5 border-b border-gray-100 bg-gray-50/50">
            <div className="relative max-w-md w-full">
@@ -157,11 +199,16 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded = fals
                  filtered.length === 0 ? (<tr><td colSpan={5} className="text-center p-4 text-gray-500">Nenhuma cotação encontrada na sua carteira.</td></tr>) :
                  filtered.map((item) => (
                     <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                      {!embedded && (<td className="pl-10 px-6 py-4"><span className="font-bold text-sm text-gray-900 uppercase">{clientMap[item.client_name] || item.client_name}</span></td>)}
+                      {!embedded && (<td className="pl-10 px-6 py-4"><span className="font-bold text-sm text-gray-900 uppercase">{clientMap[item.client_name] || item.client_name || 'Prospect'}</span>{item.quote_source === 'RAPIDA_REGIONAL' && <span className="ml-2 text-[9px] font-black uppercase text-red-700 bg-red-50 px-1.5 py-0.5 rounded">Rápida</span>}</td>)}
                       <td className="pl-10 px-6 py-4"><div className="flex flex-col gap-1 text-xs text-gray-600"><div className="flex items-center gap-1.5"><MapPin size={12} className="text-blue-500"/> {item.origin}</div><div className="flex items-center gap-1.5"><MapPin size={12} className="text-red-500"/> {item.destination}</div></div></td>
                       <td className="pl-10 px-6 py-4"><div className="flex flex-col gap-1 text-xs font-bold"><div className="flex items-center gap-1.5 text-gray-700">KM: {item.total_km}</div>{canViewValues ? (<div className="flex items-center gap-1.5 text-green-700 bg-green-50 px-2 py-0.5 rounded w-fit"><DollarSign size={12}/> {formatCurrency(item.total_value)}</div>) : (<div className="flex items-center gap-1 text-gray-400 font-normal italic"><Lock size={10} /> Restrito</div>)}</div></td>
                       <td className="pl-10 px-6 py-4 text-right">
                         <div className="flex justify-end gap-2">
+                           {item.quote_source === 'RAPIDA_REGIONAL' && !item.closed_price_table_id && (
+                             <button type="button" onClick={() => void handleFecharProposta(item)} disabled={closingId === item.id} className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-black uppercase text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg disabled:opacity-50" data-testid={`btn-fechar-proposta-${item.id}`}>
+                               {closingId === item.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Fechar proposta
+                             </button>
+                           )}
                            <button onClick={() => onEdit(item.id)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"><Pencil size={18} /></button>
                            {(isDirector || isCommercial) && (<button onClick={() => handleDelete(item.id)} disabled={isDeleting === item.id} className="p-2 text-red-400 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all">{isDeleting === item.id ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}</button>)}
                         </div>
