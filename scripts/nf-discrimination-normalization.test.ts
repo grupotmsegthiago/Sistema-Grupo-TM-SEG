@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import {
   ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH,
   normalizeAsaasNfDiscrimination,
+  truncateAsaasServiceDescription,
 } from '../lib/nfDiscrimination.ts';
 
 function combined(result: ReturnType<typeof normalizeAsaasNfDiscrimination>): string {
@@ -79,7 +80,7 @@ describe('Hotfix NFS-e — discriminação Asaas', () => {
     );
   });
 
-  it('T07 — aceita o limite final Asaas e bloqueia excesso sem truncar', () => {
+  it('T07 — aceita o limite Asaas e corta o excesso em 250 sem bloquear', () => {
     const description = 'D'.repeat(100);
     const observations = 'O'.repeat(ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH - 101);
     const result = normalizeAsaasNfDiscrimination({
@@ -87,20 +88,22 @@ describe('Hotfix NFS-e — discriminação Asaas', () => {
       observations,
     });
     assert.equal(result.serviceDescription.length, ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH);
-    assert.throws(
-      () =>
-        normalizeAsaasNfDiscrimination({
-          serviceDescription: description,
-          observations: `${observations}X`,
-        }),
-      /excede 250 caracteres/,
-    );
-    assert.throws(
-      () =>
-        normalizeAsaasNfDiscrimination({
-          serviceDescription: 'D'.repeat(ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH + 1),
-        }),
-      /bloqueada para evitar truncamento fiscal/,
+
+    const overflowCombined = normalizeAsaasNfDiscrimination({
+      serviceDescription: description,
+      observations: `${observations}X`,
+    });
+    assert.ok(overflowCombined.serviceDescription.length <= ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH);
+    assert.match(overflowCombined.serviceDescription, /^D{100}/);
+
+    const overflowSingle = normalizeAsaasNfDiscrimination({
+      serviceDescription: 'D'.repeat(ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH + 1),
+    });
+    assert.equal(overflowSingle.serviceDescription.length, ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH);
+    assert.equal(overflowSingle.serviceDescription, 'D'.repeat(ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH));
+    assert.equal(
+      truncateAsaasServiceDescription('A'.repeat(300)).length,
+      ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH,
     );
   });
 
@@ -167,5 +170,24 @@ describe('Hotfix NFS-e — discriminação Asaas', () => {
         'Ref. rastreio: TMSEG-20260902-172347-JP4T',
     });
     assert.ok(result.serviceDescription.length <= ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH);
+  });
+
+  it('T13 — texto longo com período e rastreio cabe em 250 e preserva o núcleo', () => {
+    const description =
+      'CONTRATAÇÃO E INTERMEDIAÇÃO DE CONTRATOS E AGENCIAMENTO DE VENDAS - Referente ao 2ª Quinzena de Agosto/2026';
+    const result = normalizeAsaasNfDiscrimination({
+      serviceDescription: description,
+      observations:
+        'Ref. rastreio: TMSEG-20260908-163400-ILG1|' +
+        'Observação complementar do faturamento ILG LOGISTICA E TRANSPORTE LTDA referente à operação de escolta|' +
+        'CNAE/Serviço municipal: 07930 — Monitoramento e rastreamento',
+    });
+    assert.ok(result.serviceDescription.length <= ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH);
+    assert.match(result.serviceDescription, /^CONTRATAÇÃO E INTERMEDIAÇÃO/);
+    assert.doesNotMatch(result.serviceDescription, /CNAE\/Serviço municipal/);
+    assert.doesNotMatch(
+      fs.readFileSync('lib/nfDiscrimination.ts', 'utf8'),
+      /bloqueada para evitar truncamento fiscal/,
+    );
   });
 });

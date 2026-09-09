@@ -52,6 +52,31 @@ function removeRedundantMunicipalServiceLine(observations: string): string {
     .join('|');
 }
 
+/**
+ * Teto do campo `serviceDescription` no Asaas (250). Corta sem bloquear a
+ * emissão: prefere o último `|` ou espaço para não partir um segmento no meio.
+ */
+export function truncateAsaasServiceDescription(
+  value: string,
+  maxLength = ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH,
+): string {
+  const text = String(value || '').trimEnd();
+  if (text.length <= maxLength) return text;
+
+  const slice = text.slice(0, maxLength);
+  const lastPipe = slice.lastIndexOf('|');
+  const lastSpace = slice.lastIndexOf(' ');
+  const minKeep = Math.min(80, Math.max(1, Math.floor(maxLength * 0.4)));
+
+  if (lastPipe >= minKeep) {
+    return slice.slice(0, lastPipe).replace(/[\s|]+$/g, '');
+  }
+  if (lastSpace >= minKeep) {
+    return slice.slice(0, lastSpace).trimEnd();
+  }
+  return slice.trimEnd();
+}
+
 export function normalizeAsaasNfDiscrimination(input: {
   serviceDescription: string;
   observations?: string | null;
@@ -77,12 +102,8 @@ export function normalizeAsaasNfDiscrimination(input: {
         'a emissão foi bloqueada sem truncar informações.',
     );
   }
-  if (discrimination.length > ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH) {
-    throw new Error(
-      `Descrição fiscal final excede ${ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH} caracteres; ` +
-        'a emissão foi bloqueada para evitar truncamento fiscal.',
-    );
-  }
 
-  return { serviceDescription: discrimination };
+  // Contrato Asaas: serviceDescription cabe em 250. Excesso deixa de bloquear
+  // a NFS-e — o texto fiscal enviado é cortado no teto do campo.
+  return { serviceDescription: truncateAsaasServiceDescription(discrimination) };
 }

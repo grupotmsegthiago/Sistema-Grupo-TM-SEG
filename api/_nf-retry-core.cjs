@@ -345,6 +345,21 @@ function removeDuplicatedDescription(serviceDescription, observations) {
 function removeRedundantMunicipalServiceLine(observations) {
   return observations.split("|").map((part) => part.trim()).filter(Boolean).filter((part) => !/^CNAE\/Servi[cç]o municipal:/i.test(part)).join("|");
 }
+function truncateAsaasServiceDescription(value, maxLength = ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH) {
+  const text = String(value || "").trimEnd();
+  if (text.length <= maxLength) return text;
+  const slice = text.slice(0, maxLength);
+  const lastPipe = slice.lastIndexOf("|");
+  const lastSpace = slice.lastIndexOf(" ");
+  const minKeep = Math.min(80, Math.max(1, Math.floor(maxLength * 0.4)));
+  if (lastPipe >= minKeep) {
+    return slice.slice(0, lastPipe).replace(/[\s|]+$/g, "");
+  }
+  if (lastSpace >= minKeep) {
+    return slice.slice(0, lastSpace).trimEnd();
+  }
+  return slice.trimEnd();
+}
 function normalizeAsaasNfDiscrimination(input) {
   const serviceDescription = normalizeLineBreaks(String(input.serviceDescription || ""));
   if (!serviceDescription) {
@@ -362,12 +377,7 @@ function normalizeAsaasNfDiscrimination(input) {
       `Discrimina\xE7\xE3o fiscal excede ${NFSE_DISCRIMINATION_MAX_LENGTH} caracteres; a emiss\xE3o foi bloqueada sem truncar informa\xE7\xF5es.`
     );
   }
-  if (discrimination.length > ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH) {
-    throw new Error(
-      `Descri\xE7\xE3o fiscal final excede ${ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH} caracteres; a emiss\xE3o foi bloqueada para evitar truncamento fiscal.`
-    );
-  }
-  return { serviceDescription: discrimination };
+  return { serviceDescription: truncateAsaasServiceDescription(discrimination) };
 }
 
 // server/asaasService.ts

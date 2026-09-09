@@ -1,5 +1,25 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## HOTFIX NF — DESCRIÇÃO FISCAL LIMITADA A 250 (SEM BLOQUEAR)
+
+**Data:** 2026-09-09 (UTC-3)
+**Sintoma:** Controle de NF — ILG LOGISTICA E TRANSPORTE LTDA, R$ 15.600,00,
+TH SEGURANÇA. Tooltip: `Descrição fiscal final excede 250 caracteres; a emissão
+foi bloqueada para evitar truncamento fiscal.`
+
+**Causa:** `normalizeAsaasNfDiscrimination` juntava descrição + observações/rastreio
+e **lançava erro** acima de 250 (teto Asaas). A descrição padrão do cliente já
+tinha `maxLength={250}`; o estouro vinha do texto **combinado**.
+
+**Correção:** o campo enviado ao Asaas passa a ser **cortado em 250** (preferindo
+último `|` ou espaço). O teto municipal de 2.000 continua fail-closed.
+
+**Arquivos:** `lib/nfDiscrimination.ts`, `scripts/nf-discrimination-normalization.test.ts`,
+`api/_nf-retry-core.cjs` (bundle do retry).
+**Não alterado:** OS, Asaas `/payments`, código municipal `07930`, eNotas, valores.
+
+---
+
 ## AUDITORIA OS — SALVAR RODAPÉ + APROVAR ZERADA (check_snapshot_not_empty)
 
 **Data:** 2026-09-09 (UTC-3)
