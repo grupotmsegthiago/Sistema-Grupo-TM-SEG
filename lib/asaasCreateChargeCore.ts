@@ -278,6 +278,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
               'NF isolada — será agendada pelo Controle/worker (fora desta requisição).',
             signal: splitCtrl.signal,
             missionIds: missionIds.length ? missionIds : undefined,
+            entityId: bodyClientId || clientAddressLookup.clientId || null,
           });
           if (!persistSplit.ok) {
             console.warn(`[Asaas] Persistência local falhou (split ${payment.id}): ${persistSplit.error}`);
@@ -535,6 +536,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
               'NF isolada — agendada pelo Controle/worker (fora desta requisição).',
             signal,
             missionIds: missionIds.length ? missionIds : undefined,
+            entityId: bodyClientId || clientAddressLookup.clientId || null,
           }),
         );
       } catch (e: any) {

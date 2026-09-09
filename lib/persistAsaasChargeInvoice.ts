@@ -270,7 +270,7 @@ export async function persistAsaasChargeInvoice(
       }
     }
 
-    if (created && invoiceId) {
+    if (invoiceId) {
       try {
         await gerarComissaoAoFaturar(sb, {
           faturaId: invoiceId,

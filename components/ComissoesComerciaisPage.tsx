@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BadgeDollarSign, Filter, Loader2, Receipt,
-  Wallet, X, Landmark, FileSpreadsheet, RefreshCw, ChevronDown, ChevronUp,
+  Wallet, X, Landmark, FileSpreadsheet, RefreshCw, ChevronDown, ChevronUp, AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
@@ -13,6 +13,7 @@ import {
 } from '../lib/comissao/comissaoCalc';
 import { registrarPagamentoComissao } from '../lib/comissao/comissaoService';
 import { sincronizarComerciaisDeUsuarios } from '../lib/comissao/comissaoUsuarios';
+import { sincronizarComissoesFaturasExistentes, carregarPendenciasComissao, type PendenciaComissaoCliente } from '../lib/comissao/sincronizarComissoesFaturas';
 import InvoiceDivergenceAuditPanel from './InvoiceDivergenceAuditPanel';
 import {
   calcularApuracaoComissao,
@@ -108,6 +109,8 @@ const ComissoesComerciaisPage: React.FC = () => {
   const [novoPix, setNovoPix] = useState('');
   const [novoFixo, setNovoFixo] = useState('');
   const [savingComercial, setSavingComercial] = useState(false);
+  const [syncingFaturas, setSyncingFaturas] = useState(false);
+  const [pendencias, setPendencias] = useState<PendenciaComissaoCliente[]>([]);
 
   const { start: periodStart, end: periodEnd } = intervaloQuinzena(year, month, quinzenaFiltro);
 
@@ -136,6 +139,12 @@ const ComissoesComerciaisPage: React.FC = () => {
         return { data: data as ComissaoRow[] | null, error, count };
       });
       setRows(result.rows);
+      try {
+        const pend = await carregarPendenciasComissao(supabase);
+        setPendencias(pend.ok ? pend.pendencias : []);
+      } catch {
+        setPendencias([]);
+      }
       if (!result.complete) {
         showNotification('Consulta incompleta', 'Nem todas as comissões do período foram carregadas.', 'warning');
       }
@@ -246,6 +255,25 @@ const ComissoesComerciaisPage: React.FC = () => {
     URL.revokeObjectURL(link.href);
   };
 
+  const sincronizarFaturasExistentes = async () => {
+    setSyncingFaturas(true);
+    try {
+      const res = await sincronizarComissoesFaturasExistentes(supabase);
+      if (!res.ok) throw new Error(res.error || 'Falha ao sincronizar faturas');
+      setPendencias(res.pendencias || []);
+      showNotification(
+        'Comissões',
+        `${res.generated} gerada(s). Sem comercial: ${res.skippedSemComercial}. Já existiam: ${res.skippedJaExiste}.`,
+        res.generated > 0 ? 'success' : 'warning',
+      );
+      await load();
+    } catch (e: any) {
+      showNotification('Erro', e?.message || 'Falha ao gerar comissões das faturas existentes.', 'error');
+    } finally {
+      setSyncingFaturas(false);
+    }
+  };
+
   const sincronizarUsuarios = async () => {
     setSyncingUsers(true);
     try {
@@ -310,6 +338,15 @@ const ComissoesComerciaisPage: React.FC = () => {
           </button>
           <button
             type="button"
+            disabled={syncingFaturas}
+            onClick={() => void sincronizarFaturasExistentes()}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-xs font-black uppercase text-red-800 hover:bg-red-100 disabled:opacity-50"
+            data-testid="btn-sync-comissoes-faturas"
+          >
+            {syncingFaturas ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Gerar comissões das faturas
+          </button>
+          <button
+            type="button"
             onClick={() => setShowCadastro((v) => !v)}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs font-black uppercase text-gray-700 hover:bg-gray-50"
             data-testid="btn-toggle-cadastro-comercial"
@@ -320,6 +357,44 @@ const ComissoesComerciaisPage: React.FC = () => {
       </div>
 
       <InvoiceDivergenceAuditPanel onSynced={() => { void load(); }} />
+
+      {pendencias.length > 0 && (
+        <div className="border-2 border-amber-400 bg-amber-50 rounded-xl p-4" data-testid="comissao-pendencias-banner">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-amber-500 shrink-0"><AlertTriangle size={18} className="text-white" /></div>
+            <div className="flex-1 min-w-0">
+              <p className="font-black text-sm uppercase text-amber-900">Faturamento sem comissão</p>
+              <p className="text-[11px] text-amber-800 mt-1">
+                A tela só soma linhas da tabela <strong>comissoes</strong>. Fatura existe, mas a comissão só nasce se o cliente tiver <strong>Responsável Comercial</strong> no cadastro (Clientes). TORRES entra por ingest no faturamento da TORRES — não pelo cadastro de cliente da TM SEG.
+              </p>
+              <div className="overflow-x-auto mt-3 max-h-48">
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="text-[10px] font-black text-amber-800 uppercase">
+                      <th className="text-left py-1 pr-3">Cliente na fatura</th>
+                      <th className="text-left py-1 pr-3">Motivo</th>
+                      <th className="text-right py-1 pr-3">Faturas</th>
+                      <th className="text-right py-1">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendencias.slice(0, 20).map((p) => (
+                      <tr key={`${p.motivo}-${p.cliente}`} className="border-t border-amber-200">
+                        <td className="py-1 pr-3 font-bold uppercase">{p.cliente}</td>
+                        <td className="py-1 pr-3">
+                          {p.motivo === 'sem_comercial' ? 'Sem comercial no cadastro' : p.motivo === 'cadastro_ambiguo' ? 'Cadastro duplicado' : 'Nome da fatura não achou o cliente'}
+                        </td>
+                        <td className="py-1 pr-3 text-right font-mono">{p.faturas}</td>
+                        <td className="py-1 text-right font-mono">{fmtBRL(p.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showTabela && (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="tabela-comissao-padrao">

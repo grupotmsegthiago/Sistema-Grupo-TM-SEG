@@ -102,3 +102,22 @@ export function isComissaoIngestAuthorized(token: string | undefined, expectedTo
   if (!received) return false;
   return expectedTokens.some((t) => String(t || '').trim() && t === received);
 }
+
+export type ComercialIngestListItem = { id: string; nome: string };
+
+export async function listarComerciaisParaIngest(
+  sb: ComissaoDbClient,
+): Promise<{ ok: boolean; comerciais: ComercialIngestListItem[]; error?: string }> {
+  const { data, error } = await sb
+    .from('comerciais')
+    .select('id, nome, ativo')
+    .order('nome', { ascending: true });
+  if (error) return { ok: false, comerciais: [], error: error.message };
+  const comerciais = (data || [])
+    .filter((row: { ativo?: boolean | null }) => row.ativo !== false)
+    .map((row: { id: string; nome?: string | null }) => ({
+      id: String(row.id),
+      nome: String(row.nome || '').trim() || String(row.id),
+    }));
+  return { ok: true, comerciais };
+}

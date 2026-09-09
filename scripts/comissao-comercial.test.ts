@@ -65,6 +65,8 @@ describe('comissao comercial — integração preservada', () => {
     assert.match(page, /btn-exportar-relatorio-comissao/);
     assert.match(page, /apuracao-escala-comercial/);
     assert.match(page, /btn-sync-usuarios-comercial/);
+    assert.match(page, /btn-sync-comissoes-faturas/);
+    assert.match(page, /comissao-pendencias-banner/);
     assert.match(page, /tabela-comissao-padrao/);
     assert.match(form, /sincronizarComerciaisDeUsuarios/);
     const userForm = fs.readFileSync('components/UserForm.tsx', 'utf8');
@@ -107,9 +109,36 @@ describe('comissao comercial — TORRES ingest', () => {
     const vercel = fs.readFileSync('vercel.json', 'utf8');
     const core = fs.readFileSync('lib/comissao/comissaoCore.ts', 'utf8');
     assert.match(ingest, /handleComissoesIngest/);
+    assert.match(ingest, /listarComerciaisParaIngest/);
+    assert.match(ingest, /req.method === 'GET'/);
     assert.match(vercel, /\/api\/comissoes\/ingest/);
     assert.match(core, /empresaOrigem/);
     assert.match(core, /atualizarStatusAposBaixaPorOrigem/);
+  });
+
+  it('lista só comerciais ativos para o select da TORRES', async () => {
+    const { listarComerciaisParaIngest } = await import('../lib/comissao/comissaoIngest');
+    const res = await listarComerciaisParaIngest({
+      from() {
+        return {
+          select() {
+            return this;
+          },
+          order() {
+            return Promise.resolve({
+              data: [
+                { id: 'a', nome: 'Cassiane Garcia', ativo: true },
+                { id: 'b', nome: 'Inativo', ativo: false },
+                { id: 'c', nome: 'MIGUEL MOTA', ativo: null },
+              ],
+              error: null,
+            });
+          },
+        };
+      },
+    } as any);
+    assert.equal(res.ok, true);
+    assert.deepEqual(res.comerciais.map((c) => c.nome), ['Cassiane Garcia', 'MIGUEL MOTA']);
   });
 });
 
@@ -151,5 +180,38 @@ describe('comissao comercial — escala da planilha', () => {
     const { perfilEhComercial } = await import('../lib/comissao/tabelaComissaoPadrao');
     assert.equal(perfilEhComercial('COMERCIAL'), true);
     assert.equal(perfilEhComercial('Diretoria'), false);
+  });
+});
+
+describe('comissao comercial — faturas históricas', () => {
+  it('casa fatura pelo nome, não por client_id (coluna inexistente)', async () => {
+    const { casarClienteDaFatura, montarPendenciasComissao } = await import('../lib/comissao/sincronizarComissoesFaturas');
+    const clients = [
+      { id: 1, name: 'CEVA LOGISTICS LTDA', trading_name: 'CEVA', responsavel_comercial_id: null },
+      { id: 37, name: 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', trading_name: 'TECHTRANS TRANSPORTES', responsavel_comercial_id: 'abc' },
+      { id: 86, name: 'LUFT LOGISTICS LTDA', trading_name: 'LUFT', responsavel_comercial_id: null },
+      { id: 91, name: 'LUFT LOGISTICS LTDA', trading_name: 'LUFT LOGISTICS LTDA', responsavel_comercial_id: null },
+    ];
+    assert.equal(casarClienteDaFatura('CEVA', clients).status, 'ok');
+    assert.equal(casarClienteDaFatura('CEVA', clients).client?.id, 1);
+    assert.equal(casarClienteDaFatura('TECHTRANS TRANSPORTES', clients).status, 'ok');
+    assert.equal(casarClienteDaFatura('LUFT LOGISTICS LTDA', clients).status, 'ambiguous');
+    const pend = montarPendenciasComissao(
+      [
+        { id: '1', client: 'CEVA', amount: 100, status: 'EMITIDA' },
+        { id: '2', client: 'TECHTRANS TRANSPORTES', amount: 50, status: 'EMITIDA' },
+        { id: '3', client: 'DESCONHECIDO', amount: 10, status: 'EMITIDA' },
+      ],
+      clients,
+    );
+    assert.ok(pend.some((p) => p.motivo === 'sem_comercial' && p.cliente === 'CEVA'));
+    assert.equal(pend.some((p) => p.cliente === 'TECHTRANS TRANSPORTES'), false);
+    const helper = fs.readFileSync('lib/comissao/sincronizarComissoesFaturas.ts', 'utf8');
+    assert.match(helper, /Não usa client_id na fatura/);
+    const persist = fs.readFileSync('lib/persistAsaasChargeInvoice.ts', 'utf8');
+    assert.match(persist, /if \(invoiceId\)/);
+    assert.doesNotMatch(persist, /if \(created && invoiceId\)/);
+    const asaas = fs.readFileSync('lib/asaasCreateChargeCore.ts', 'utf8');
+    assert.match(asaas, /entityId: bodyClientId/);
   });
 });
