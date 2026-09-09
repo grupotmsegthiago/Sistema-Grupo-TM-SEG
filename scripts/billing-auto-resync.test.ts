@@ -2,16 +2,30 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isIntentionalBillingOverride } from '../lib/financialUtils';
 
-test('isIntentionalBillingOverride — salvamento confirmado permite auto-resync', () => {
+test('isIntentionalBillingOverride — salvamento confirmado BLOQUEIA auto-resync', () => {
   assert.equal(
     isIntentionalBillingOverride('[THIAGO - 03/07/2026, 14:43:00] Salvamento manual confirmado — receita: R$ 2.718,60'),
-    false,
+    true,
+  );
+});
+
+test('isIntentionalBillingOverride — tabela oficial aplicada BLOQUEIA auto-resync', () => {
+  assert.equal(
+    isIntentionalBillingOverride('[USER] Tabela oficial aplicada automaticamente'),
+    true,
   );
 });
 
 test('isIntentionalBillingOverride — motivo vazio permite auto-resync', () => {
   assert.equal(isIntentionalBillingOverride(''), false);
   assert.equal(isIntentionalBillingOverride(null), false);
+});
+
+test('isIntentionalBillingOverride — carimbo do próprio sistema permite realinhar', () => {
+  assert.equal(
+    isIntentionalBillingOverride('[Sistema] Recalculado pelo sistema — alinhado ao motor'),
+    false,
+  );
 });
 
 test('isIntentionalBillingOverride — edição manual divergente bloqueia auto-resync', () => {
