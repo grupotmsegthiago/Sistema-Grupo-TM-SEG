@@ -33,6 +33,10 @@ import {
     fetchBillingMissionUniverse,
 } from '../lib/billing/fetchBillingMissionUniverse';
 import {
+    listSystemSesMissingFromSheet,
+    sortSystemSesForDhlSheet,
+} from '../lib/billing/dhlSheetSeCoverage';
+import {
     collectApprovedMissionIdsFromBulletin,
     vincularMissionsAFatura,
 } from '../lib/billing/vincularOSFatura';
@@ -2034,11 +2038,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     // =====================================================================
     // PREENCHIMENTO DE PLANILHA-MODELO DHL POR Nº SE
     // ---------------------------------------------------------------------
-    // O usuario sobe uma planilha (virgem) contendo os numeros de SE. Para
-    // cada SE, buscamos a OS DENTRO DO PERÍODO selecionado no filtro (start_time
-    // entre startDate e endDate), calculamos os valores com o mesmo motor
-    // financeiro e geramos a planilha preenchida no mesmo formato do modelo,
-    // porem sem cores e com as formulas do cliente.
+    // O usuario sobe a planilha DHL. O sistema carrega o UNIVERSO de OS do
+    // período (mesmo do boletim) e gera uma linha para CADA SE do sistema.
+    // SE omitida no arquivo do cliente (ex. FINALIZADA 187374) entra mesmo
+    // assim — é por esta planilha que faturamos. SE só no arquivo e sem OS
+    // (canceladas nunca cadastradas) ficam no aviso, sem virar cobrança.
     // =====================================================================
     const [fillingSheet, setFillingSheet] = useState(false);
 
@@ -2136,9 +2140,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     return;
                 }
 
-                // Busca as OS por dhl_se_number, RESTRINGINDO ao PERÍODO do filtro
-                // (start_time entre startDate e endDate). SE da planilha que estiver
-                // fora do período não entra (fica em branco p/ tratamento).
+                // Universo do boletim no período: a planilha de faturamento DHL
+                // precisa trazer TODAS as SE do sistema, mesmo que o arquivo
+                // enviado as tenha omitido (ex.: 187374/187654/187673/187689/187690).
                 const rangeStart = `${startDate}T03:00:00.000Z`;
                 const rangeEnd = new Date(new Date(`${endDate}T03:00:00.000Z`).getTime() + 86400000 - 1).toISOString();
                 const chunk = <T,>(arr: T[], size: number) => {
@@ -2146,17 +2150,36 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
                     return out;
                 };
-                let foundMissions: any[] = [];
-                for (const batch of chunk(seList, 100)) {
-                    const { data, error } = await supabase
-                        .from('missions')
-                        .select('*, company_vehicle:vehicles(*)')
-                        .in('dhl_se_number', batch)
-                        .gte('start_time', rangeStart)
-                        .lte('start_time', rangeEnd);
-                    if (error) throw error;
-                    if (data) foundMissions = foundMissions.concat(data);
+                const selectedObj = clients.find(c => c.id.toString() === selectedClient);
+                const dhlUniverseClient =
+                    (selectedObj && (
+                        (selectedObj.name || '').toUpperCase().includes('DHL') ||
+                        (selectedObj.trading_name || '').toUpperCase().includes('DHL')
+                    ))
+                        ? selectedObj
+                        : clients.find(c =>
+                            (c.name || '').toUpperCase().includes('DHL SUPPLY') ||
+                            (c.trading_name || '').toUpperCase().includes('DHL SUPPLY')
+                        ) || clientData;
+                const canonicalNames = [
+                    dhlUniverseClient?.name,
+                    dhlUniverseClient?.trading_name,
+                    DHL_CLIENT_NAME,
+                ].map(v => String(v || '').trim()).filter(Boolean)
+                    .filter((v, i, a) => a.indexOf(v) === i);
+                if (canonicalNames.length === 0) {
+                    alert('Cliente DHL sem nome cadastrado. Não é possível preencher a planilha.');
+                    return;
                 }
+                const billingUniverse = await fetchBillingMissionUniverse<any>(supabase, {
+                    filterColumn: 'client',
+                    canonicalNames,
+                    rangeStart,
+                    rangeEnd,
+                });
+                let foundMissions: any[] = billingUniverse.rows.filter(
+                    m => m.exclude_from_billing !== true,
+                );
 
                 // Regra: OS "Recusada" NÃO entra no boletim. Se uma SE tiver uma OS
                 // recusada e outra concluída/cancelada, sobra apenas a não-recusada
@@ -2330,8 +2353,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 };
 
                 const rows: any[] = [];
-                const notFound: string[] = [];
-                for (const se of seList) {
+                const notFound: string[] = seList.filter(se => !bySe.has(se));
+                const systemSes = sortSystemSesForDhlSheet(bySe);
+                const omittedFromSheet = listSystemSesMissingFromSheet(seList, systemSes);
+                for (const se of systemSes) {
                     const m = bySe.get(se);
                     if (!m) { notFound.push(se); continue; }
                     const isCancel = (m.status || '').toString().toLowerCase().includes('cancel');
@@ -2606,7 +2631,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 }
 
                 if (rows.length === 0) {
-                    alert(`Nenhuma das ${seList.length} SE(s) da planilha foi encontrada no sistema.`);
+                    alert(`Nenhuma SE do período foi encontrada no sistema (planilha com ${seList.length} SE).`);
                     return;
                 }
 
@@ -2615,14 +2640,19 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const fileName = `PLANILHA_DHL_PREENCHIDA_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`;
                 downloadBlob(blob, fileName);
 
-                const avisos: string[] = [`Planilha preenchida com ${rows.length} SE(s).`];
+                const avisos: string[] = [`Planilha preenchida com ${rows.length} SE(s) do sistema no período.`];
+                if (omittedFromSheet.length > 0) {
+                    avisos.push(
+                        `\n${omittedFromSheet.length} SE(s) existiam no sistema e NÃO estavam na planilha enviada — incluídas automaticamente:\n${omittedFromSheet.join(', ')}`,
+                    );
+                }
                 if (notFound.length > 0) {
-                    avisos.push(`\n${notFound.length} SE(s) não encontrada(s) no sistema:\n${notFound.join(', ')}`);
+                    avisos.push(`\n${notFound.length} SE(s) da planilha enviada não encontradas no sistema:\n${notFound.join(', ')}`);
                 }
                 if (duplicatedSe.size > 0) {
                     avisos.push(`\nAtenção: ${duplicatedSe.size} SE(s) com mais de uma OS no sistema (usei a finalizada/mais recente):\n${Array.from(duplicatedSe).join(', ')}`);
                 }
-                if (notFound.length > 0 || duplicatedSe.size > 0) {
+                if (omittedFromSheet.length > 0 || notFound.length > 0 || duplicatedSe.size > 0) {
                     alert(avisos.join('\n'));
                 }
             } catch (err: any) {
@@ -2633,7 +2663,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
         };
         input.click();
-    }, [clients, clientData, priceTables, providerTables, startDate, endDate]);
+    }, [clients, clientData, priceTables, providerTables, startDate, endDate, selectedClient]);
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #e5c4c4',
@@ -4696,7 +4726,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             className="px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2 disabled:opacity-60"
                                             style={{ background: 'linear-gradient(135deg, #FFCC00 0%, #E6B800 100%)', color: '#7A0009' }}
                                             data-testid="btn-fill-dhl-sheet"
-                                            title="Sobe uma planilha com os números de SE e o sistema preenche todos os dados (busca em todas as OS, qualquer data)"
+                                            title="Sobe a planilha DHL e preenche as SE. Também inclui automaticamente as SE do período que existem no sistema e não estavam no arquivo."
                                         >
                                             {fillingSheet ? <Loader2 size={18} className="animate-spin" /> : <FileSpreadsheet size={18} />} {fillingSheet ? 'Preenchendo...' : 'Preencher Planilha (SE)'}
                                         </button>
