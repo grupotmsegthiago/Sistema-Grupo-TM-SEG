@@ -118,6 +118,38 @@ export function buildBrazilTimestampFromHm(isoDate: string, timeHm: string): str
   return new Date(`${isoDate.trim()}T${hh}:${mm}:00-03:00`).toISOString();
 }
 
+/** Valor `datetime-local` (yyyy-mm-ddTHH:MM) no fuso de Brasília — sem locale ambíguo. */
+export function toDatetimeLocalValueBR(date: string | Date | null | undefined): string {
+  const d = toDate(date);
+  if (!d) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value || '';
+  const hour = get('hour');
+  const minute = get('minute');
+  if (!get('year') || !hour || !minute) return '';
+  return `${get('year')}-${get('month')}-${get('day')}T${hour}:${minute}`;
+}
+
+/** Converte `datetime-local` (Brasília) em ISO UTC. */
+export function datetimeLocalToIsoBR(value: string | null | undefined): string | null {
+  const raw = String(value || '').trim();
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/.exec(raw);
+  if (!m) return null;
+  try {
+    return buildBrazilTimestampFromHm(m[1], `${m[2]}:${m[3]}`);
+  } catch {
+    return null;
+  }
+}
+
 /** Agora formatado para rodapés e logs visíveis. */
 export const formatNowDateTimeBR = (): string => formatDateTimeBR(new Date());
 

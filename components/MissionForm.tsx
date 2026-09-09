@@ -1560,7 +1560,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 driver_name_2: formData.driver_name_2 ? (formData.driver_name_2 || '').toUpperCase() : null,
                 driver_phone_2: formData.driver_phone_2 || null,
                 start_km: parseFloat(formData.startKm) || null,
-                snapshot_data: '', snapshot_approved_by: null, snapshot_approved_at: null,
+                snapshot_data: null, snapshot_approved_by: null, snapshot_approved_at: null,
                 reference_number: formData.reference_number || null,
                 dhl_se_number: formData.dhl_se_number ? formData.dhl_se_number.trim().toUpperCase() : null,
                 dhl_sm_number: formData.dhl_sm_number ? formData.dhl_sm_number.trim().toUpperCase() : null,

@@ -20,6 +20,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { refusedOsClearSnapshotFields } from '../lib/missionSnapshot.ts';
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
 const key =
@@ -113,8 +114,7 @@ const fmtBR = (n: number) =>
       cost_value: 0,
       toll_value: 0,
       toll_value_provider: 0,
-      snapshot_data: null,
-      billing_approved: false,
+      ...refusedOsClearSnapshotFields(),
       revenue_edit_reason: 'OS Recusada — zerado automaticamente',
       cost_edit_reason: 'OS Recusada — zerado automaticamente',
       last_update: new Date().toISOString(),

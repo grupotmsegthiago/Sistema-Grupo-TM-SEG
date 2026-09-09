@@ -1,5 +1,24 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## AUDITORIA OS — SALVAR RODAPÉ + APROVAR ZERADA (check_snapshot_not_empty)
+
+**Data:** 2026-09-09 (UTC-3)
+
+**Diagnóstico:**
+- GTM-7186 (DHL, Recusada): `snapshot_approved_by` da Giovanna permanecia preenchido após zeragem, com `snapshot_data` NULL. Aprovar (financeiro) gravava `billing_approved=true` sem snapshot e violava `CHECK ((snapshot_data IS NOT NULL) OR (billing_approved = false))`. A cobrança voltava porque a aprovação não persistia.
+- GTM-7714 (CESLOG): o carimbo “SALVO POR” era financeiro; horário/rota em edição no modal **não** iam no SALVAR do rodapé. Recalcular fornecedor apagava o lock de receita. Cliente SEM TABELA para Mãe do Rio/PA (tabelas Norte CESLOG são Manaus).
+
+**Alterações:**
+- `lib/missionSnapshot.ts` — grava snapshot sempre que `billing_approved` fica true e o snapshot atual está vazio; retry da constraint **não** remove snapshot.
+- Recusa zera também `snapshot_approved_by` / `snapshot_approved_at`.
+- SALVAR do rodapé persiste ops/rota se estiverem em edição; datetime-local em Brasília.
+- Recalcular fornecedor não limpa `revenue_edit_reason`.
+
+**Testes:** 23/23 PASS (`mission-snapshot-approve` + e2e financeiro + controller); `npm run build` PASS.
+**Pendência:** publicar quando o Thiago pedir. Giovanna deve Aprovar de novo a 7186 após o deploy. CESLOG 7714 continua sem tabela de Mãe do Rio — escolher tabela ou cadastrar.
+
+---
+
 ## FINANCEIRO — EXCLUSÃO SEGURA DE CATEGORIA + DÉBITO AUTOMÁTICO
 
 **Data:** 2026-09-03 (UTC-3)

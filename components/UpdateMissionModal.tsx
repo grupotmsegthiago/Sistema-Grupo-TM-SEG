@@ -34,6 +34,7 @@ import DhlOccurrenceReportModal from './DhlOccurrenceReportModal';
 import { useNotification } from '../lib/NotificationContext';
 import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { refusedOsClearSnapshotFields } from '../lib/missionSnapshot';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
   Layers, Navigation, History, 
@@ -2483,8 +2484,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 updateData.toll_value_provider = 0;
                 updateData.displacement_value = 0;
                 updateData.displacement_value_provider = 0;
-                updateData.snapshot_data = null;
-                updateData.billing_approved = false;
+                Object.assign(updateData, refusedOsClearSnapshotFields());
                 updateData.valor_zero_motivo = 'OS Recusada — zerado automaticamente';
                 // Constraint check_valor_zero_motivo exige edit_reason quando valor = 0.
                 updateData.revenue_edit_reason = 'OS Recusada — zerado automaticamente';
