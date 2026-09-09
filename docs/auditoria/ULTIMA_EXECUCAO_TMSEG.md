@@ -1,5 +1,29 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## PONTO — GEMINI "denied access" BLOQUEAVA A BATIDA
+
+**Data:** 2026-09-09 (UTC-3)
+**Sintoma:** Bater ponto mostra `Your project has been denied access. Please contact support.`
+e não registra. Antes a selfie/IA indisponível **não** bloqueava.
+
+**Causa (infra, não regra do ponto):** produção `GET /api/gemini/health` devolve
+exatamente essa mensagem (Google 403 no projeto/chave). A validação facial chama
+Gemini; `isGeminiUnavailableError` não reconhecia "denied access" (só
+permission denied / 403 / blocked), então o fail-open não disparava e o inglês
+vazava na tela.
+
+**Correção de código:** classificar "denied access" / PERMISSION_DENIED como
+Gemini indisponível — o ponto volta a registrar sem validação automática.
+
+**Ação no Google (obrigatória para IA voltar):** no AI Studio / Cloud Console do
+projeto da chave, ver banner de bloqueio; conferir precedência
+`AI_INTEGRATIONS_GEMINI_API_KEY` > `GEMINI_API_KEY` na Vercel; restringir a
+Generative Language API; redeploy em `sistema-grupo-tm-seg`.
+
+**Não alterado:** OS, Financeiro, Asaas, eNotas, regra de jornada do ponto.
+
+---
+
 ## HOTFIX NF — DESCRIÇÃO FISCAL LIMITADA A 250 (SEM BLOQUEAR)
 
 **Data:** 2026-09-09 (UTC-3)

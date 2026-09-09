@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isGeminiUnavailableError } from '../lib/geminiUnavailable';
+import { isGeminiUnavailableError, sanitizeGeminiErrorForUser } from '../lib/geminiUnavailable';
 
 test('isGeminiUnavailableError detecta API Gemini bloqueada', () => {
   const msg =
@@ -22,4 +22,20 @@ test('isGeminiUnavailableError não trata erro de validação facial do usuário
 test('isGeminiUnavailableError detecta billing/dunning do Google Cloud', () => {
   const msg = 'Lightning dunning decision is deny for project: projects/779291370874';
   assert.equal(isGeminiUnavailableError(msg), true);
+});
+
+test('isGeminiUnavailableError detecta projeto Gemini com acesso negado', () => {
+  const msg = 'Your project has been denied access. Please contact support.';
+  assert.equal(isGeminiUnavailableError(msg), true);
+});
+
+test('isGeminiUnavailableError detecta PERMISSION_DENIED do GenerateContent', () => {
+  assert.equal(isGeminiUnavailableError('403 PERMISSION_DENIED'), true);
+});
+
+test('sanitizeGeminiErrorForUser traduz denied access e não vaza inglês cru', () => {
+  const raw = 'Your project has been denied access. Please contact support.';
+  const msg = sanitizeGeminiErrorForUser(raw);
+  assert.match(msg, /projeto Gemini/i);
+  assert.doesNotMatch(msg, /Please contact support/i);
 });

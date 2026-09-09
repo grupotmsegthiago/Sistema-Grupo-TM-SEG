@@ -20,6 +20,13 @@ export function classifyGeminiError(error: unknown): { code: GeminiErrorCode; me
   if (/quota|rate.?limit|resource.?exhausted|429/.test(msg)) {
     return { code: 'QUOTA', message: 'Cota ou limite de requisições da API Gemini excedido.' };
   }
+  if (/denied access|permission.?denied|permission_denied/.test(msg)) {
+    return {
+      code: 'BILLING',
+      message:
+        'O projeto Gemini no Google foi bloqueado (acesso negado). Regularize a chave no Google AI Studio / Cloud Console e faça redeploy na Vercel.',
+    };
+  }
   if (/billing|payment|faturamento|enable billing|credit|dunning|lightning/.test(msg)) {
     return {
       code: 'BILLING',
@@ -42,7 +49,7 @@ export function isGeminiUnavailableError(message: string): boolean {
   return (
     /timeout|fetch|network|503|502|504|429/.test(msg) ||
     /blocked|generativelanguage|generatecontent/.test(msg) ||
-    /permission.?denied|forbidden|403/.test(msg) ||
+    /permission.?denied|permission_denied|denied access|forbidden|403/.test(msg) ||
     /chave gemini|não configurada|not configured|api key/.test(msg) ||
     /quota|rate.?limit|unavailable|internal server/.test(msg) ||
     /não autorizado|unauthorized|401/.test(msg) ||
