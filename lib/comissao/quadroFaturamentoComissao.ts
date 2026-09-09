@@ -145,7 +145,6 @@ export async function carregarQuadroTmSeg(
   const invRes = await fetchAllRows(sb, 'financial_invoices', 'id, client, number, amount, date, status');
   if (invRes.error) return { linhas: [], meses: [], error: invRes.error };
   const cliRes = await fetchAllRows(sb, 'clients', 'id, name, trading_name, responsavel_comercial_id');
-  if (cliRes.error) return { linhas: [], meses: [], error: cliRes.error };
   const invoices = (invRes.rows || []) as InvoiceComissaoMatch[];
   const faturas: FaturaQuadro[] = invoices.map((inv) => ({
     empresa: 'TM_SEG',
@@ -157,6 +156,7 @@ export async function carregarQuadroTmSeg(
   return {
     linhas: montarQuadroClientes(faturas, (cliRes.rows || []) as ClienteComissaoMatch[], comerciais, periodStart, periodEnd),
     meses: mesesComFatura(invoices),
+    error: cliRes.error,
   };
 }
 

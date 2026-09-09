@@ -523,6 +523,14 @@
       "destination": "/api/comissoes-ingest"
     },
     {
+      "source": "/api/comissoes/quadro",
+      "destination": "/api/comissoes-ingest?op=quadro"
+    },
+    {
+      "source": "/api/comissoes/sync-faturas",
+      "destination": "/api/comissoes-ingest?op=sync-faturas"
+    },
+    {
       "source": "/api/asaas/sync-open-payments",
       "destination": "/api/asaas-sync-open-payments"
     },

@@ -1,6 +1,8 @@
 /**
  * POST /api/comissoes/ingest — TORRES (e outros) enviam faturamento/baixa/cancelamento.
  * GET  /api/comissoes/ingest — lista comerciais ativos da TM SEG para o select da TORRES.
+ * GET  /api/comissoes/quadro — quadro TM SEG (faturas) + TORRES (ingest), service_role.
+ * POST /api/comissoes/sync-faturas — gera comissões das faturas TM SEG, service_role.
  * Fail-soft no chamador: este endpoint não altera cálculo de OS/Asaas da TM SEG.
  */
 import { createSupabaseAdminClient } from '../lib/supabaseAdmin.js';
@@ -11,6 +13,8 @@ import {
   parseComissaoIngestPayload,
   processarComissaoIngest,
 } from '../lib/comissao/comissaoIngest.js';
+import { assertComissoesQuadroAccess } from '../lib/comissao/comissaoQuadroAuth.js';
+import { montarQuadroComissoesApi, sincronizarComissoesViaAdmin } from '../lib/comissao/comissaoQuadroApi.js';
 
 function extractToken(req: { headers?: Record<string, unknown> }): string {
   const headers = req.headers || {};
@@ -24,11 +28,81 @@ function extractToken(req: { headers?: Record<string, unknown> }): string {
   ).trim();
 }
 
+function queryOp(req: { query?: Record<string, unknown>; url?: string }): string {
+  const fromQuery = String(req.query?.op || req.query?.OP || '').trim().toLowerCase();
+  if (fromQuery) return fromQuery;
+  const url = String(req.url || '');
+  if (url.includes('/comissoes/quadro')) return 'quadro';
+  if (url.includes('/comissoes/sync-faturas')) return 'sync-faturas';
+  return '';
+}
+
+function searchParam(req: { query?: Record<string, unknown>; url?: string }, key: string): string {
+  const fromQuery = String(req.query?.[key] || '').trim();
+  if (fromQuery) return fromQuery;
+  try {
+    return new URL(String(req.url || ''), 'http://local').searchParams.get(key) || '';
+  } catch {
+    return '';
+  }
+}
+
+function queryDate(req: { query?: Record<string, unknown>; url?: string }, key: string): string {
+  return searchParam(req, key).slice(0, 10);
+}
+
+async function handleQuadroOps(req: any, res: any, op: string) {
+  const access = await assertComissoesQuadroAccess(req);
+  if (!access.ok) {
+    res.status(access.status).json({ ok: false, error: access.error });
+    return;
+  }
+  const sb = createSupabaseAdminClient();
+  if (!sb) {
+    res.status(500).json({ ok: false, error: 'supabase_unavailable' });
+    return;
+  }
+  if (op === 'quadro') {
+    const start = queryDate(req, 'start');
+    const end = queryDate(req, 'end');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+      res.status(400).json({ ok: false, error: 'periodo inválido' });
+      return;
+    }
+    const result = await montarQuadroComissoesApi(sb, start, end);
+    res.status(200).json(result);
+    return;
+  }
+  const result = await sincronizarComissoesViaAdmin(sb);
+  res.status(200).json(result);
+}
+
 export async function handleComissoesIngest(req: any, res: any) {
   if (req.method === 'OPTIONS') {
     res.status(200).json({ ok: true });
     return;
   }
+
+  const op = queryOp(req);
+  if (op === 'quadro' || op === 'sync-faturas') {
+    if (op === 'quadro' && req.method !== 'GET') {
+      res.status(405).json({ error: 'method_not_allowed' });
+      return;
+    }
+    if (op === 'sync-faturas' && req.method !== 'POST' && req.method !== 'GET') {
+      res.status(405).json({ error: 'method_not_allowed' });
+      return;
+    }
+    try {
+      await handleQuadroOps(req, res, op);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('[comissao-quadro]', message);
+      res.status(200).json({ ok: false, error: message, linhasTm: [], linhasTorres: [], meses: [], pendencias: [] });
+    }
+    return;
+  }
+
   if (req.method !== 'POST' && req.method !== 'GET') {
     res.status(405).json({ error: 'method_not_allowed' });
     return;
@@ -82,4 +156,4 @@ export default async function handler(req: any, res: any) {
   return handleComissoesIngest(req, res);
 }
 
-export const config = { maxDuration: 30 };
+export const config = { maxDuration: 60 };

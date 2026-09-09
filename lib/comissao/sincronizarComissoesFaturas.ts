@@ -98,12 +98,14 @@ export async function fetchAllRows(
   sb: ComissaoDbClient,
   table: string,
   columns: string,
+  configure?: (q: any) => any,
 ): Promise<{ rows: any[]; error?: string }> {
   const rows: any[] = [];
   let from = 0;
   const page = 1000;
   while (true) {
     let q = sb.from(table).select(columns);
+    if (configure) q = configure(q);
     if (typeof q.range === 'function') q = q.range(from, from + page - 1);
     const { data, error } = await q;
     if (error) return { rows: [], error: error.message };

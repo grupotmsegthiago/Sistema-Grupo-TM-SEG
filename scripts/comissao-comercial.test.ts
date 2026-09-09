@@ -71,6 +71,9 @@ describe('comissao comercial — integração preservada', () => {
     assert.match(page, /quadro-torres/);
     assert.match(page, /meses-com-fatura/);
     assert.match(page, /tabela-comissao-padrao/);
+    assert.match(page, /\/api\/comissoes\/quadro/);
+    assert.match(page, /\/api\/comissoes\/sync-faturas/);
+    assert.match(page, /authFetch/);
     assert.match(form, /sincronizarComerciaisDeUsuarios/);
     const userForm = fs.readFileSync('components/UserForm.tsx', 'utf8');
     assert.match(userForm, /upsertComercialDoUsuario/);
@@ -114,7 +117,11 @@ describe('comissao comercial — TORRES ingest', () => {
     assert.match(ingest, /handleComissoesIngest/);
     assert.match(ingest, /listarComerciaisParaIngest/);
     assert.match(ingest, /req.method === 'GET'/);
+    assert.match(ingest, /op === 'quadro'/);
+    assert.match(ingest, /assertComissoesQuadroAccess/);
     assert.match(vercel, /\/api\/comissoes\/ingest/);
+    assert.match(vercel, /\/api\/comissoes\/quadro/);
+    assert.match(vercel, /\/api\/comissoes\/sync-faturas/);
     assert.match(core, /empresaOrigem/);
     assert.match(core, /atualizarStatusAposBaixaPorOrigem/);
   });
@@ -244,5 +251,28 @@ describe('comissao comercial — quadro por cliente', () => {
     assert.equal(tot.comissao, 378);
     assert.equal(faturaNoPeriodo('2026-09-08', '2026-09-01', '2026-09-30'), true);
     assert.ok(anosFiltroComissao(2024).includes(2026));
+  });
+
+  it('não zera o quadro se a consulta de clientes falhar', async () => {
+    const { carregarQuadroTmSeg } = await import('../lib/comissao/quadroFaturamentoComissao');
+    const sb = {
+      from(table: string) {
+        const rows = table === 'financial_invoices'
+          ? [{ id: '1', client: 'CEVA', number: 'NF-1', amount: 10000, date: '2026-09-08', status: 'EMITIDA' }]
+          : null;
+        const chain: any = {
+          select() { return chain; },
+          range() {
+            if (table === 'clients') return Promise.resolve({ data: null, error: { message: 'column missing' } });
+            return Promise.resolve({ data: rows, error: null });
+          },
+        };
+        return chain;
+      },
+    };
+    const quadro = await carregarQuadroTmSeg(sb as any, '2026-09-01', '2026-09-30', []);
+    assert.equal(quadro.linhas.length, 1);
+    assert.equal(quadro.linhas[0].faturamento, 10000);
+    assert.match(String(quadro.error || ''), /column missing/);
   });
 });

@@ -4,6 +4,7 @@ import {
   Wallet, X, Landmark, FileSpreadsheet, RefreshCw, ChevronDown, ChevronUp, AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { fetchAllPages } from '../lib/supabasePaging';
 import {
@@ -13,7 +14,7 @@ import {
 } from '../lib/comissao/comissaoCalc';
 import { registrarPagamentoComissao } from '../lib/comissao/comissaoService';
 import { sincronizarComerciaisDeUsuarios } from '../lib/comissao/comissaoUsuarios';
-import { sincronizarComissoesFaturasExistentes, carregarPendenciasComissao, type PendenciaComissaoCliente } from '../lib/comissao/sincronizarComissoesFaturas';
+import { carregarPendenciasComissao, type PendenciaComissaoCliente } from '../lib/comissao/sincronizarComissoesFaturas';
 import {
   anosFiltroComissao,
   carregarQuadroTmSeg,
@@ -212,7 +213,8 @@ const ComissoesComerciaisPage: React.FC = () => {
         autoSyncRef.current = true;
         setSyncingFaturas(true);
         try {
-          const sync = await sincronizarComissoesFaturasExistentes(supabase);
+          const syncRes = await authFetch('/api/comissoes/sync-faturas', { method: 'POST', body: '{}' });
+          const sync = await syncRes.json().catch(() => ({}));
           if (sync.pendencias) setPendencias(sync.pendencias);
         } catch {
           /* fail-soft: quadro das faturas continua */
@@ -236,21 +238,42 @@ const ComissoesComerciaisPage: React.FC = () => {
       });
       setRows(result.rows);
       try {
-        const quadro = await carregarQuadroTmSeg(supabase, periodStart, periodEnd, listaComerciais);
-        setQuadroTm(quadro.linhas);
-        setMesesDisponiveis(quadro.meses);
-        if (quadro.error) {
-          showNotification('Quadro', quadro.error, 'warning');
+        const quadroRes = await authFetch(`/api/comissoes/quadro?start=${encodeURIComponent(periodStart)}&end=${encodeURIComponent(periodEnd)}`);
+        const quadroJson = await quadroRes.json().catch(() => ({}));
+        if (quadroRes.ok && (quadroJson.ok || (quadroJson.linhasTm || []).length > 0 || (quadroJson.meses || []).length > 0)) {
+          setQuadroTm(quadroJson.linhasTm || []);
+          setQuadroTorres(quadroJson.linhasTorres || []);
+          setMesesDisponiveis(quadroJson.meses || []);
+          if (Array.isArray(quadroJson.pendencias)) setPendencias(quadroJson.pendencias);
+          if (quadroJson.error && !(quadroJson.linhasTm || []).length) {
+            showNotification('Quadro', quadroJson.error, 'warning');
+          }
+        } else {
+          const quadro = await carregarQuadroTmSeg(supabase, periodStart, periodEnd, listaComerciais);
+          setQuadroTm(quadro.linhas);
+          setQuadroTorres(quadroDeComissoesTorres(result.rows));
+          setMesesDisponiveis(quadro.meses);
+          if (quadro.error || quadroJson.error) {
+            showNotification('Quadro', quadroJson.error || quadro.error || 'Falha ao carregar faturamento', 'warning');
+          }
         }
-      } catch {
-        setQuadroTm([]);
+      } catch (e: any) {
+        try {
+          const quadro = await carregarQuadroTmSeg(supabase, periodStart, periodEnd, listaComerciais);
+          setQuadroTm(quadro.linhas);
+          setQuadroTorres(quadroDeComissoesTorres(result.rows));
+          setMesesDisponiveis(quadro.meses);
+        } catch {
+          setQuadroTm([]);
+          setQuadroTorres(quadroDeComissoesTorres(result.rows));
+        }
+        showNotification('Quadro', e?.message || 'Falha ao carregar faturamento', 'warning');
       }
-      setQuadroTorres(quadroDeComissoesTorres(result.rows));
       try {
         const pend = await carregarPendenciasComissao(supabase);
-        setPendencias(pend.ok ? pend.pendencias : []);
+        if (pend.ok && pend.pendencias.length) setPendencias(pend.pendencias);
       } catch {
-        setPendencias([]);
+        /* pendências já podem ter vindo da API */
       }
       if (!result.complete) {
         showNotification('Consulta incompleta', 'Nem todas as comissões do período foram carregadas.', 'warning');
@@ -391,12 +414,13 @@ const ComissoesComerciaisPage: React.FC = () => {
   const sincronizarFaturasExistentes = async () => {
     setSyncingFaturas(true);
     try {
-      const res = await sincronizarComissoesFaturasExistentes(supabase);
-      if (!res.ok) throw new Error(res.error || 'Falha ao sincronizar faturas');
+      const syncRes = await authFetch('/api/comissoes/sync-faturas', { method: 'POST', body: '{}' });
+      const res = await syncRes.json().catch(() => ({}));
+      if (!syncRes.ok || res.ok === false) throw new Error(res.error || 'Falha ao sincronizar faturas');
       setPendencias(res.pendencias || []);
       showNotification(
         'Comissões',
-        `${res.generated} gerada(s). Sem comercial: ${res.skippedSemComercial}. Já existiam: ${res.skippedJaExiste}.`,
+        `${res.generated || 0} gerada(s). Sem comercial: ${res.skippedSemComercial || 0}. Já existiam: ${res.skippedJaExiste || 0}.`,
         res.generated > 0 ? 'success' : 'warning',
       );
       await load();
@@ -498,7 +522,7 @@ const ComissoesComerciaisPage: React.FC = () => {
             <div className="flex-1 min-w-0">
               <p className="font-black text-sm uppercase text-amber-900">Faturamento sem comissão</p>
               <p className="text-[11px] text-amber-800 mt-1">
-                A tela só soma linhas da tabela <strong>comissoes</strong>. Fatura existe, mas a comissão só nasce se o cliente tiver <strong>Responsável Comercial</strong> no cadastro (Clientes). TORRES entra por ingest no faturamento da TORRES — não pelo cadastro de cliente da TM SEG.
+                O quadro acima lista o faturamento das faturas mesmo sem comercial. A comissão só entra para pagamento se o cliente tiver <strong>Responsável Comercial</strong> no cadastro (Clientes). TORRES entra por ingest no faturamento da TORRES — não pelo cadastro de cliente da TM SEG.
               </p>
               <div className="overflow-x-auto mt-3 max-h-48">
                 <table className="min-w-full text-xs">
