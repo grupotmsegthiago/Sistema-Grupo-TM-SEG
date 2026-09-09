@@ -71,6 +71,10 @@ describe('comissao comercial — integração preservada', () => {
     assert.match(page, /quadro-torres/);
     assert.match(page, /meses-com-fatura/);
     assert.match(page, /tabela-comissao-padrao/);
+    assert.match(page, /btn-expand-cliente/);
+    assert.match(page, /mesclarLinhasQuadro/);
+    assert.match(page, /aplicarPisoComissaoQuadro/);
+    assert.match(page, /50 mil/);
     assert.match(page, /\/api\/comissoes\/quadro/);
     assert.match(page, /\/api\/comissoes\/sync-faturas/);
     assert.match(page, /authFetch/);
@@ -228,29 +232,37 @@ describe('comissao comercial — faturas históricas', () => {
 });
 
 describe('comissao comercial — quadro por cliente', () => {
-  it('monta tabela de faturamento e comissão sem exigir comercial', async () => {
-    const { montarQuadroClientes, anosFiltroComissao, somarQuadro, faturaNoPeriodo } = await import('../lib/comissao/quadroFaturamentoComissao');
+  it('lista só faturas com comercial e detalha pago/em aberto', async () => {
+    const { montarQuadroClientes, anosFiltroComissao, somarQuadro, faturaNoPeriodo, faturaClienteEstaPaga } = await import('../lib/comissao/quadroFaturamentoComissao');
     const linhas = montarQuadroClientes(
       [
         { empresa: 'TM_SEG', cliente: 'CEVA', amount: 10000, date: '2026-09-08', status: 'EMITIDA' },
-        { empresa: 'TM_SEG', cliente: 'CEVA', amount: 5000, date: '2026-09-01', status: 'PAGA' },
-        { empresa: 'TM_SEG', cliente: 'CEVA', amount: 9000, date: '2026-08-10', status: 'EMITIDA' },
+        { empresa: 'TM_SEG', cliente: 'TECHTRANS TRANSPORTES', amount: 5000, date: '2026-09-01', status: 'PAGA', osIds: ['GTM-1'] },
+        { empresa: 'TM_SEG', cliente: 'TECHTRANS TRANSPORTES', amount: 2000, date: '2026-09-08', status: 'EMITIDA' },
         { empresa: 'TM_SEG', cliente: 'X', amount: 1000, date: '2026-09-02', status: 'CANCELADA' },
       ],
-      [{ id: 1, name: 'CEVA LOGISTICS LTDA', trading_name: 'CEVA', responsavel_comercial_id: null }],
-      [],
+      [
+        { id: 1, name: 'CEVA LOGISTICS LTDA', trading_name: 'CEVA', responsavel_comercial_id: null },
+        { id: 37, name: 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', trading_name: 'TECHTRANS TRANSPORTES', responsavel_comercial_id: 'abc' },
+      ],
+      [{ id: 'abc', nome: 'MIGUEL MOTA' }],
       '2026-09-01',
       '2026-09-30',
     );
     assert.equal(linhas.length, 1);
-    assert.equal(linhas[0].cliente, 'CEVA');
+    assert.equal(linhas[0].cliente, 'TECHTRANS TRANSPORTES');
+    assert.equal(linhas[0].comercialNome, 'MIGUEL MOTA');
     assert.equal(linhas[0].faturas, 2);
-    assert.equal(linhas[0].faturamento, 15000);
-    assert.equal(linhas[0].comissao, 378);
-    assert.equal(linhas[0].comercialNome, null);
+    assert.equal(linhas[0].faturamento, 7000);
+    assert.equal(linhas[0].detalhes.length, 2);
+    assert.equal(linhas[0].detalhes.some((d) => d.pago && d.osIds.includes('GTM-1')), true);
+    assert.equal(linhas[0].detalhes.some((d) => !d.pago), true);
     const tot = somarQuadro(linhas);
-    assert.equal(tot.comissao, 378);
+    assert.equal(tot.faturas, 2);
     assert.equal(faturaNoPeriodo('2026-09-08', '2026-09-01', '2026-09-30'), true);
+    assert.equal(faturaClienteEstaPaga({ status: 'PAGA' }), true);
+    assert.equal(faturaClienteEstaPaga({ receivableStatus: 'PAID' }), true);
+    assert.equal(faturaClienteEstaPaga({ status: 'EMITIDA' }), false);
     assert.ok(anosFiltroComissao(2024).includes(2026));
   });
 
@@ -260,9 +272,11 @@ describe('comissao comercial — quadro por cliente', () => {
       from(table: string) {
         const rows = table === 'financial_invoices'
           ? [{ id: '1', client: 'CEVA', number: 'NF-1', amount: 10000, date: '2026-09-08', status: 'EMITIDA' }]
-          : null;
+          : [];
         const chain: any = {
           select() { return chain; },
+          eq() { return chain; },
+          ilike() { return chain; },
           range() {
             if (table === 'clients') return Promise.resolve({ data: null, error: { message: 'column missing' } });
             return Promise.resolve({ data: rows, error: null });
@@ -272,8 +286,185 @@ describe('comissao comercial — quadro por cliente', () => {
       },
     };
     const quadro = await carregarQuadroTmSeg(sb as any, '2026-09-01', '2026-09-30', []);
-    assert.equal(quadro.linhas.length, 1);
-    assert.equal(quadro.linhas[0].faturamento, 10000);
+    assert.equal(quadro.linhas.length, 0);
     assert.match(String(quadro.error || ''), /column missing/);
+  });
+
+  it('monta TORRES só com comercial e mescla ingest sem duplicar', async () => {
+    const {
+      quadroDeComissoesTorres,
+      mesclarLinhasQuadro,
+      faturaClienteEstaPaga,
+    } = await import('../lib/comissao/quadroFaturamentoComissao');
+    const linhas = quadroDeComissoesTorres(
+      [
+        {
+          id: '67dfcf35',
+          origem_fatura_id: '1ba27c7a-8451-45c0-b274-7df40bc3495d',
+          empresa_origem: 'TORRES',
+          cliente_nome: 'TVM LOG',
+          valor_faturamento: 3299.67,
+          data_faturamento: '2026-09-09',
+          status: 'AGUARDANDO_PAGAMENTO_CLIENTE',
+          comercial_id: 'e2fe3779-0b03-47cf-95a2-0c01a35e3e32',
+          ordem_servico_id: '1188',
+        },
+        {
+          empresa_origem: 'TORRES',
+          cliente_nome: 'SEM COMERCIAL',
+          valor_faturamento: 10000,
+          data_faturamento: '2026-09-09',
+          comercial_id: null,
+        },
+      ],
+      [{ id: 'e2fe3779-0b03-47cf-95a2-0c01a35e3e32', nome: 'MIGUEL MOTA' }],
+    );
+    assert.equal(linhas.length, 1);
+    assert.equal(linhas[0].cliente, 'TVM LOG');
+    assert.equal(linhas[0].comercialNome, 'MIGUEL MOTA');
+    assert.equal(linhas[0].detalhes[0].osIds.includes('1188'), true);
+    assert.equal(linhas[0].detalhes[0].pago, false);
+    const live = quadroDeComissoesTorres(
+      [{
+        id: '1ba27c7a-8451-45c0-b274-7df40bc3495d',
+        origem_fatura_id: '1ba27c7a-8451-45c0-b274-7df40bc3495d',
+        empresa_origem: 'TORRES',
+        cliente_nome: 'TVM LOG',
+        valor_faturamento: 3299.67,
+        data_faturamento: '2026-09-09',
+        status: 'PENDING',
+        comercial_id: 'e2fe3779-0b03-47cf-95a2-0c01a35e3e32',
+        ordem_servico_id: '1188',
+      }],
+      [{ id: 'e2fe3779-0b03-47cf-95a2-0c01a35e3e32', nome: 'MIGUEL MOTA' }],
+    );
+    const mesclado = mesclarLinhasQuadro(live, linhas);
+    assert.equal(mesclado.length, 1);
+    assert.equal(mesclado[0].detalhes.length, 1);
+    assert.equal(faturaClienteEstaPaga({ status: 'RECEIVED', paymentDate: null }), true);
+    assert.equal(faturaClienteEstaPaga({ status: 'PENDING' }), false);
+  });
+
+  it('só libera comissão % depois de R$ 50 mil do comercial no período', async () => {
+    const { aplicarPisoComissaoQuadro, PISO_FATURAMENTO_COMISSAO } = await import('../lib/comissao/quadroFaturamentoComissao');
+    const { TABELA_COMISSAO_PADRAO } = await import('../lib/comissao/tabelaComissaoPadrao');
+    assert.equal(PISO_FATURAMENTO_COMISSAO, TABELA_COMISSAO_PADRAO.pisoComissao);
+    const abaixo = aplicarPisoComissaoQuadro(
+      [{
+        empresa: 'TM SEG', cliente: 'TECHTRANS', faturas: 1, faturamento: 40_000, imposto: 6400, baseLiquida: 33600,
+        comissao: 1008, comercialId: 'abc', comercialNome: 'MIGUEL',
+        detalhes: [{ id: '1', numero: 'NF-1', date: '2026-09-01', faturamento: 40000, imposto: 6400, valorAPagar: 1008, pago: false, osIds: [] }],
+      }],
+      [{
+        empresa: 'TORRES', cliente: 'TVM LOG', faturas: 1, faturamento: 3299.67, imposto: 527.95, baseLiquida: 2771.72,
+        comissao: 83.15, comercialId: 'abc', comercialNome: 'MIGUEL',
+        detalhes: [{ id: '2', numero: '1188', date: '2026-09-09', faturamento: 3299.67, imposto: 527.95, valorAPagar: 83.15, pago: false, osIds: ['1188'] }],
+      }],
+    );
+    assert.equal(abaixo.linhasTm[0].comissao, 0);
+    assert.equal(abaixo.linhasTorres[0].comissao, 0);
+    assert.equal(abaixo.linhasTm[0].abaixoDoPiso, true);
+    assert.equal(abaixo.linhasTm[0].detalhes[0].valorAPagar, 0);
+    assert.equal(abaixo.linhasTm[0].faturamento, 40_000);
+
+    const acima = aplicarPisoComissaoQuadro(
+      [{
+        empresa: 'TM SEG', cliente: 'TECHTRANS', faturas: 1, faturamento: 50_000, imposto: 8000, baseLiquida: 42000,
+        comissao: 1260, comercialId: 'abc', comercialNome: 'MIGUEL',
+        detalhes: [{ id: '1', numero: 'NF-1', date: '2026-09-01', faturamento: 50000, imposto: 8000, valorAPagar: 1260, pago: false, osIds: [] }],
+      }],
+      [],
+    );
+    assert.equal(acima.linhasTm[0].comissao, 1260);
+    assert.equal(acima.linhasTm[0].abaixoDoPiso, false);
+
+    const doisComerciais = aplicarPisoComissaoQuadro(
+      [{
+        empresa: 'TM SEG', cliente: 'A', faturas: 1, faturamento: 60_000, imposto: 9600, baseLiquida: 50400,
+        comissao: 1512, comercialId: 'miguel', comercialNome: 'MIGUEL',
+        detalhes: [{ id: 'a', numero: '1', date: '2026-09-01', faturamento: 60000, imposto: 9600, valorAPagar: 1512, pago: false, osIds: [] }],
+      }],
+      [{
+        empresa: 'TORRES', cliente: 'B', faturas: 1, faturamento: 10_000, imposto: 1600, baseLiquida: 8400,
+        comissao: 252, comercialId: 'cassi', comercialNome: 'CASSIANE',
+        detalhes: [{ id: 'b', numero: '2', date: '2026-09-01', faturamento: 10000, imposto: 1600, valorAPagar: 252, pago: false, osIds: [] }],
+      }],
+    );
+    assert.equal(doisComerciais.linhasTm[0].comissao, 1512);
+    assert.equal(doisComerciais.linhasTorres[0].comissao, 0);
+
+    const somaEmpresas = aplicarPisoComissaoQuadro(
+      [{
+        empresa: 'TM SEG', cliente: 'A', faturas: 1, faturamento: 40_000, imposto: 6400, baseLiquida: 33600,
+        comissao: 1008, comercialId: 'abc', comercialNome: 'MIGUEL',
+        detalhes: [{ id: '1', numero: 'NF-1', date: '2026-09-01', faturamento: 40000, imposto: 6400, valorAPagar: 1008, pago: false, osIds: [] }],
+      }],
+      [{
+        empresa: 'TORRES', cliente: 'B', faturas: 1, faturamento: 15_000, imposto: 2400, baseLiquida: 12600,
+        comissao: 378, comercialId: 'abc', comercialNome: 'MIGUEL',
+        detalhes: [{ id: '2', numero: 'T-1', date: '2026-09-09', faturamento: 15000, imposto: 2400, valorAPagar: 378, pago: false, osIds: [] }],
+      }],
+    );
+    assert.equal(somaEmpresas.linhasTm[0].comissao, 1008);
+    assert.equal(somaEmpresas.linhasTorres[0].comissao, 378);
+    assert.equal(somaEmpresas.linhasTm[0].abaixoDoPiso, false);
+  });
+});
+
+describe('comissao comercial — quadro TORRES ao vivo', () => {
+  it('lê receita TORRES com comercial e ignora fatura sem responsável', async () => {
+    const { carregarFaturasQuadroTorresLive, carregarQuadroTorres } = await import('../lib/comissao/quadroTorres');
+    const tables: Record<string, any[]> = {
+      clients: [{ id: 62, name: 'TVM LOG', nome_fantasia: 'TVM LOG', responsavel_comercial_id: 'abc' }],
+      invoices: [{
+        id: 161, client_id: 6, client_name: 'TM SEGURANCA', value: 100000, status: 'PENDING', due_date: '2026-09-04',
+      }],
+      financial_transactions: [{
+        id: '1ba27c7a-8451-45c0-b274-7df40bc3495d',
+        entity_name: 'TVM LOG',
+        entity_id: '62',
+        amount: 3299.67,
+        status: 'PENDING',
+        due_date: '2026-09-09',
+        origin_type: 'service_order',
+        origin_id: '1188',
+        type: 'INCOME',
+      }],
+      escort_billings: [],
+    };
+    const sb = {
+      from(table: string) {
+        const chain: any = {
+          select() { return chain; },
+          eq() { return chain; },
+          range() { return Promise.resolve({ data: tables[table] || [], error: null }); },
+        };
+        return chain;
+      },
+    };
+    const live = await carregarFaturasQuadroTorresLive(sb as any, '2026-09-01', '2026-09-30');
+    assert.equal(live.faturas.length, 1);
+    assert.equal(live.faturas[0].cliente, 'TVM LOG');
+    assert.equal(live.faturas[0].osIds.includes('1188'), true);
+    const quadro = await carregarQuadroTorres(
+      {
+        from() {
+          const chain: any = {
+            select() { return chain; },
+            eq() { return chain; },
+            gte() { return chain; },
+            lte() { return chain; },
+            range() { return Promise.resolve({ data: [], error: null }); },
+          };
+          return chain;
+        },
+      } as any,
+      '2026-09-01',
+      '2026-09-30',
+      [{ id: 'abc', nome: 'MIGUEL MOTA' }],
+      sb as any,
+    );
+    assert.equal(quadro.linhas.length, 1);
+    assert.equal(quadro.linhas[0].comercialNome, 'MIGUEL MOTA');
   });
 });

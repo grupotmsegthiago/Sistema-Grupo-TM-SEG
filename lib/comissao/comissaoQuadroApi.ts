@@ -5,14 +5,14 @@
  */
 import {
   carregarPendenciasComissao,
-  fetchAllRows,
   sincronizarComissoesFaturasExistentes,
 } from './sincronizarComissoesFaturas.js';
 import {
+  aplicarPisoComissaoQuadro,
   carregarQuadroTmSeg,
-  quadroDeComissoesTorres,
   type LinhaQuadroCliente,
 } from './quadroFaturamentoComissao.js';
+import { carregarQuadroTorres } from './quadroTorres.js';
 import type { ComissaoDbClient } from './comissaoCore.js';
 
 export type QuadroComissoesApiResult = {
@@ -42,30 +42,16 @@ export async function montarQuadroComissoesApi(
   }
   const lista = (comerciais || []) as Array<{ id: string; nome?: string | null }>;
   const quadro = await carregarQuadroTmSeg(sb, periodStart, periodEnd, lista);
-  const torresCols =
-    'empresa_origem, cliente_nome, valor_faturamento, valor_comissao, percentual_imposto_aplicado, valor_base_liquida, comerciais(nome)';
-  let torresRes = await fetchAllRows(
-    sb,
-    'comissoes',
-    torresCols,
-    (q) => q.eq('empresa_origem', 'TORRES').gte('data_faturamento', periodStart).lte('data_faturamento', periodEnd),
-  );
-  if (torresRes.error) {
-    torresRes = await fetchAllRows(
-      sb,
-      'comissoes',
-      'empresa_origem, cliente_nome, valor_faturamento, valor_comissao, percentual_imposto_aplicado, valor_base_liquida',
-      (q) => q.eq('empresa_origem', 'TORRES').gte('data_faturamento', periodStart).lte('data_faturamento', periodEnd),
-    );
-  }
+  const torres = await carregarQuadroTorres(sb, periodStart, periodEnd, lista);
+  const comPiso = aplicarPisoComissaoQuadro(quadro.linhas, torres.linhas);
   const pend = await carregarPendenciasComissao(sb);
   return {
-    ok: !quadro.error || quadro.linhas.length > 0 || quadro.meses.length > 0,
-    linhasTm: quadro.linhas,
-    linhasTorres: quadroDeComissoesTorres(torresRes.rows || []),
+    ok: !quadro.error || quadro.linhas.length > 0 || quadro.meses.length > 0 || torres.linhas.length > 0,
+    linhasTm: comPiso.linhasTm,
+    linhasTorres: comPiso.linhasTorres,
     meses: quadro.meses,
     pendencias: pend.ok ? pend.pendencias : [],
-    error: quadro.error || torresRes.error || (!pend.ok ? pend.error : undefined),
+    error: quadro.error || torres.error || (!pend.ok ? pend.error : undefined),
   };
 }
 
