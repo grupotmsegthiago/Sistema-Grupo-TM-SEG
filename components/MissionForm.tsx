@@ -19,7 +19,7 @@ import ProviderForm from './ProviderForm';
 import ClientRouteForm from './ClientRouteForm';
 import ClientVehicleForm from './ClientVehicleForm';
 import { formatProviderName } from '../lib/utils';
-import { extractUF, UF_TO_REGION, clientFuzzyFilter } from '../lib/financialUtils';
+import { extractUF, UF_TO_REGION, clientFuzzyFilter, extractCityFromAddress, evaluateRegionalTableConstraint } from '../lib/financialUtils';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
@@ -878,6 +878,19 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           let score = 0;
           let reasons: string[] = [];
 
+          // Mesma regra do motor financeiro: tabela regional/cidade específica
+          // só se a origem da OS corresponder; senão cai para tabela padrão (KM).
+          const regionalGate = evaluateRegionalTableConstraint(t.normOp, {
+              originCity,
+              destCity: '',
+              originRegion,
+              originUF,
+              originAddress,
+          });
+          if (regionalGate.blocked) {
+              return { ...t, score: -9999, reason: regionalGate.reason, allReasons: [regionalGate.reason] };
+          }
+
           const isArmadoTable = t.normOp.includes('ARMADO') || t.normOp.includes('ARMADOS') || t.normOp.includes('PRONTA RESPOSTA');
           const isFranchiseTable = t.normOp.includes('ATE ') || t.normOp.includes('ATE') || t.normOp.includes('FAIXA');
           const franchiseKm = parseFloat(t.franchise_km) || 0;
@@ -971,8 +984,21 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
       const valid = scored.filter(t => t.score > -1000).sort((a, b) => b.score - a.score);
       if (valid.length === 0) {
-          const fallback = normalizedTables.sort((a, b) => a.franchise_km - b.franchise_km);
+          // Fallback só entre tabelas sem bloqueio regional/cidade.
+          // Sem isso, Palhoça/Florianópolis voltavam a vencer só por franquia KM.
+          const pool = normalizedTables.filter(t => {
+              const gate = evaluateRegionalTableConstraint(t.normOp, {
+                  originCity,
+                  destCity: '',
+                  originRegion,
+                  originUF,
+                  originAddress,
+              });
+              return !gate.blocked;
+          });
+          const fallback = [...pool].sort((a, b) => a.franchise_km - b.franchise_km);
           const best = fallback.find(t => t.franchise_km >= dist) || fallback[fallback.length - 1];
+          if (!best) return null;
           return { table: best, reason: "FAIXA KM (FALLBACK)" };
       }
 
@@ -1015,9 +1041,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           }
       }
       const originUpper = normalizeStr(route.origin);
-      const originCity = originUpper.split(',')[0].trim();
+      const originCity = normalizeStr(extractCityFromAddress(route.origin) || originUpper.split(',')[0].trim());
       const geoInfo = CITY_MAP[originCity] || { uf: '', region: '' };
-      const locationKeywords = [originCity, geoInfo.uf, geoInfo.region];
+      const locationKeywords = [originCity, geoInfo.uf || extractUF(route.origin) || '', geoInfo.region || UF_TO_REGION[extractUF(route.origin) || ''] || ''];
       const activeProvider = providerOverride !== undefined ? providerOverride : formData.provider;
       const currentFlags = flags || { ceva200km: formData.applyCeva200km, vtc02h: formData.applyVtc02h, isSameOs: formData.isSameOs, raioKm: formData.raioKm };
       const radius = currentFlags.raioKm && currentFlags.raioKm > 0 ? currentFlags.raioKm : (currentFlags.ceva200km ? 200 : 0);

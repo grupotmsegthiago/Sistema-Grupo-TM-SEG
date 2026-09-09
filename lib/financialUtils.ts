@@ -123,23 +123,21 @@ export function clientTableMatchesMission(tableClient: string, missionClientName
 }
 
 /**
- * Indica se o motivo gravado na OS representa divergência INTENCIONAL do operador
- * (desconto, ajuste manual, valor zero confirmado, etc.). Nesses casos o sistema
- * NÃO re-sincroniza automaticamente ao reabrir a auditoria.
- * Retorna false para "Salvamento manual confirmado" e motivos vazios — permite
- * alinhar ao motor quando a regra de cálculo evoluiu desde o último save.
+ * Indica se o motivo gravado na OS representa valor INTENCIONAL do operador
+ * (salvar, desconto, ajuste manual, valor zero, tabela oficial aplicada, etc.).
+ * Nesses casos o sistema NÃO re-sincroniza automaticamente ao reabrir a auditoria:
+ * overrides e salvamentos manuais têm precedência absoluta sobre autosave/recálculo.
+ * Retorna false apenas para motivo vazio ou carimbo gerado pelo próprio auto-resync.
  */
 export function isIntentionalBillingOverride(editReason: string | null | undefined): boolean {
     const raw = String(editReason || '').trim();
     if (!raw) return false;
     const r = raw.toLowerCase();
-    const allowAutoResync = [
-        'salvamento manual confirmado',
-        'recalculado pelo sistema',
-        'tabela oficial aplicada',
-    ];
-    if (allowAutoResync.some((p) => r.includes(p))) return false;
+    // Único caso em que o sistema pode realinhar: ele mesmo gravou o carimbo antes.
+    if (r.includes('recalculado pelo sistema')) return false;
     const blockAutoResync = [
+        'salvamento manual confirmado',
+        'tabela oficial aplicada',
         'edição manual',
         'edicao manual',
         'ajuste manual',
@@ -398,7 +396,7 @@ export const extractUF = (address: string): string => {
         'CUIABA': 'MT', 'VARZEA GRANDE': 'MT', 'RONDONOPOLIS': 'MT', 'SINOP': 'MT',
         'CAMPO GRANDE': 'MS', 'DOURADOS': 'MS', 'TRES LAGOAS': 'MS',
         'CURITIBA': 'PR', 'LONDRINA': 'PR', 'MARINGA': 'PR', 'PONTA GROSSA': 'PR', 'CASCAVEL': 'PR', 'SAO JOSE DOS PINHAIS': 'PR', 'FOZ DO IGUACU': 'PR', 'COLOMBO': 'PR', 'PARANAGUA': 'PR',
-        'FLORIANOPOLIS': 'SC', 'JOINVILLE': 'SC', 'BLUMENAU': 'SC', 'ITAJAI': 'SC', 'CHAPECO': 'SC', 'CRICIUMA': 'SC', 'NAVEGANTES': 'SC',
+        'FLORIANOPOLIS': 'SC', 'PALHOCA': 'SC', 'JOINVILLE': 'SC', 'BLUMENAU': 'SC', 'ITAJAI': 'SC', 'CHAPECO': 'SC', 'CRICIUMA': 'SC', 'NAVEGANTES': 'SC',
         'PORTO ALEGRE': 'RS', 'CAXIAS DO SUL': 'RS', 'CANOAS': 'RS', 'PELOTAS': 'RS', 'SANTA MARIA': 'RS', 'GRAVATAI': 'RS', 'NOVO HAMBURGO': 'RS', 'SAO LEOPOLDO': 'RS',
         'BRASILIA': 'DF', 'TAGUATINGA': 'DF', 'CEILANDIA': 'DF', 'SAMAMBAIA': 'DF',
         'BELO HORIZONTE': 'MG', 'UBERLANDIA': 'MG', 'CONTAGEM': 'MG', 'JUIZ DE FORA': 'MG', 'BETIM': 'MG', 'MONTES CLAROS': 'MG', 'UBERABA': 'MG', 'GOVERNADOR VALADARES': 'MG', 'IPATINGA': 'MG', 'POUSO ALEGRE': 'MG', 'EXTREMA': 'MG',
@@ -452,6 +450,84 @@ export const extractCityFromAddress = (address: string): string => {
     }
     return parts[0].trim();
 };
+
+/**
+ * Cidades que, se aparecerem no `operation_type` da tabela, só podem ser
+ * aplicadas quando a origem (ou destino) da OS corresponder a essa cidade.
+ * Evita selecionar "PALHOÇA / FLORIANÓPOLIS" para OS com origem em São Paulo
+ * só porque a franquia de KM coincide.
+ */
+export const TABLE_SPECIFIC_CITY_KEYWORDS: readonly string[] = [
+    'PALHOCA', 'FLORIANOPOLIS', 'JOINVILLE', 'BLUMENAU', 'ITAJAI', 'CHAPECO', 'CRICIUMA', 'NAVEGANTES',
+    'CUBATAO', 'SANTOS', 'GUARULHOS', 'JUNDIAI', 'CAMPINAS', 'BARUERI', 'CAJAMAR', 'OSASCO',
+    'MANAUS', 'BELEM', 'FORTALEZA', 'RECIFE', 'SALVADOR', 'CURITIBA', 'PORTO ALEGRE',
+    'BELO HORIZONTE', 'BRASILIA', 'GOIANIA', 'VITORIA', 'NITEROI',
+    'SAO JOSE DOS PINHAIS', 'EXTREMA', 'SUAPE', 'PECEM',
+];
+
+export type RegionalTableConstraint = {
+    blocked: boolean;
+    reason: string;
+    matchedCity?: string;
+};
+
+/**
+ * Fail-closed: tabela com cidade/região específica só vale se a origem da OS
+ * corresponder. Tabelas genéricas (só faixa KM / sem cidade-região) passam.
+ */
+export function evaluateRegionalTableConstraint(
+    operationType: string,
+    opts: {
+        originCity?: string;
+        destCity?: string;
+        originRegion?: string;
+        originUF?: string;
+        originAddress?: string;
+    },
+): RegionalTableConstraint {
+    const tableOp = normalize(operationType || '');
+    if (!tableOp) return { blocked: false, reason: '' };
+
+    const originCity = normalize(opts.originCity || '');
+    const destCity = normalize(opts.destCity || '');
+    const originAddr = normalize(opts.originAddress || '');
+    const originRegion = normalize(opts.originRegion || '');
+    const missionText = `${originCity} ${destCity} ${originAddr}`;
+
+    const citiesInTable = TABLE_SPECIFIC_CITY_KEYWORDS.filter((c) => tableOp.includes(c));
+    if (citiesInTable.length > 0) {
+        const matchedCity = citiesInTable.find((c) => missionText.includes(c));
+        if (!matchedCity) {
+            return { blocked: true, reason: `BLOQUEIO CIDADE (${citiesInTable[0]})` };
+        }
+        return { blocked: false, reason: '', matchedCity };
+    }
+
+    // Macro-região no nome exige match com a região da origem.
+    // Ordem importa: SUDESTE antes de SUL; NORDESTE antes de NORTE.
+    const isNivelBrasil = tableOp.includes('NIVEL BRASIL')
+        || (tableOp.includes('BRASIL') && !tableOp.includes('CENTRO') && !tableOp.includes('SUDESTE') && !tableOp.includes('SUL') && !tableOp.includes('NORTE'));
+    if (!isNivelBrasil && originRegion) {
+        const tableRegions: string[] = [];
+        if (tableOp.includes('SUDESTE')) tableRegions.push('SUDESTE');
+        else if (tableOp.includes('SUL')) tableRegions.push('SUL');
+        if (tableOp.includes('NORDESTE')) tableRegions.push('NORDESTE');
+        else if (tableOp.includes('NORTE')) tableRegions.push('NORTE');
+        if (tableOp.includes('CENTRO')) tableRegions.push('CENTRO-OESTE');
+
+        if (tableRegions.length > 0) {
+            const matches = tableRegions.some((r) => {
+                const rn = normalize(r);
+                return originRegion === rn || originRegion.includes(rn) || rn.includes(originRegion);
+            });
+            if (!matches) {
+                return { blocked: true, reason: `BLOQUEIO REGIONAL (${tableRegions.join('/')})` };
+            }
+        }
+    }
+
+    return { blocked: false, reason: '' };
+}
 
 export const identifyRegionFromText = (text: string): string => {
     if (!text) return '';
@@ -727,6 +803,20 @@ export const calculateMissionFinancials = (
             const tableOp = normalize(t.operation_type || '');
             let score = 0;
             let matchType = 'Genérico';
+
+            // Tabelas regionais/cidade específica só valem se a origem da OS corresponder.
+            // Sem isso, "PALHOÇA / FLORIANÓPOLIS / SUL" competem por franquia KM
+            // mesmo com origem em São Paulo e vencem a tabela padrão.
+            const regionalGate = evaluateRegionalTableConstraint(tableOp, {
+                originCity: city,
+                destCity,
+                originRegion: region,
+                originUF: ufCode,
+                originAddress,
+            });
+            if (regionalGate.blocked) {
+                return { ...t, score: -9999, matchType: regionalGate.reason };
+            }
 
             const isArmadoTable = tableOp.includes('ARMADO') || tableOp.includes('ARMADOS') || tableOp.includes('PRONTA RESPOSTA');
             const isFranchiseKmTableName = tableOp.includes('ATE ') || tableOp.includes('ATE') || tableOp.includes('FAIXA');

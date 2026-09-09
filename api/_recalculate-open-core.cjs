@@ -20,6 +20,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // lib/financialUtils.ts
 var financialUtils_exports = {};
 __export(financialUtils_exports, {
+  TABLE_SPECIFIC_CITY_KEYWORDS: () => TABLE_SPECIFIC_CITY_KEYWORDS,
   UF_TO_REGION: () => UF_TO_REGION,
   applyRegionSuffix: () => applyRegionSuffix,
   auditMissionFinancials: () => auditMissionFinancials,
@@ -28,6 +29,7 @@ __export(financialUtils_exports, {
   clientNameShort: () => clientNameShort,
   clientTableMatchesMission: () => clientTableMatchesMission,
   dhlDefaultUnitKmExcess: () => dhlDefaultUnitKmExcess,
+  evaluateRegionalTableConstraint: () => evaluateRegionalTableConstraint,
   extractCityFromAddress: () => extractCityFromAddress,
   extractUF: () => extractUF,
   fetchClientPriceTables: () => fetchClientPriceTables,
@@ -35,7 +37,8 @@ __export(financialUtils_exports, {
   isIntentionalBillingOverride: () => isIntentionalBillingOverride,
   isSameClientName: () => isSameClientName,
   resolveCancelledTime: () => resolveCancelledTime,
-  resolveCancelledWindow: () => resolveCancelledWindow
+  resolveCancelledWindow: () => resolveCancelledWindow,
+  resolveDisplacementFromAuthorizedKm: () => resolveDisplacementFromAuthorizedKm
 });
 module.exports = __toCommonJS(financialUtils_exports);
 
@@ -416,6 +419,40 @@ var selectDhlClientTable = (tables, mission, googleKm, options) => {
   };
 };
 
+// lib/toll/clientTollBilling.ts
+var TOLL_MARKUP_THRESHOLD_BRL = 10;
+var TOLL_MARKUP_FACTOR = 1.2;
+function normalizeTollAmount(value) {
+  const n = typeof value === "number" ? value : parseFloat(String(value ?? "").replace(",", "."));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.round(n * 100) / 100;
+}
+function billableClientToll(baseOrEntered) {
+  const base = normalizeTollAmount(baseOrEntered);
+  if (base > TOLL_MARKUP_THRESHOLD_BRL) {
+    return Math.round(base * TOLL_MARKUP_FACTOR * 100) / 100;
+  }
+  return base;
+}
+function resolveStoredClientToll(tollValue, tollValueProvider) {
+  const client = normalizeTollAmount(tollValue);
+  if (tollValueProvider === void 0 || tollValueProvider === null) {
+    return billableClientToll(client);
+  }
+  const provider = normalizeTollAmount(tollValueProvider);
+  if (Math.abs(client - provider) < 9e-3) {
+    return billableClientToll(client);
+  }
+  return client;
+}
+function resolveStoredProviderToll(tollValue, tollValueProvider, isSameOs = false) {
+  if (isSameOs) return 0;
+  if (tollValueProvider !== void 0 && tollValueProvider !== null) {
+    return normalizeTollAmount(tollValueProvider);
+  }
+  return normalizeTollAmount(tollValue);
+}
+
 // lib/financialUtils.ts
 var STOP_WORDS = ["LTDA", "LTDA.", "S.A.", "S.A", "SA", "S/A", "S/A.", "DO", "DE", "DA", "E", "DAS", "DOS"];
 function quoteForOr(v) {
@@ -456,6 +493,25 @@ function dhlDefaultUnitKmExcess(originUF) {
   const uf = String(originUF || "").toUpperCase().trim();
   return uf === "SC" || uf === "RS" ? 7.35 : 6.9;
 }
+function resolveDisplacementFromAuthorizedKm(opts) {
+  const km = Math.max(0, Number(opts.dhlDeslocamentoKm) || 0);
+  const storedClient = Math.max(0, Number(opts.displacementValue) || 0);
+  const storedProvider = Math.max(0, Number(opts.displacementValueProvider) || 0);
+  let clientRate = Math.max(0, Number(opts.clientUnitPriceKm) || 0);
+  if (km > 0 && clientRate <= 0) {
+    clientRate = dhlDefaultUnitKmExcess(extractUF(opts.origin || ""));
+  }
+  const providerRate = opts.isSameOs ? 0 : Math.max(0, Number(opts.providerUnitPriceKm) || 0);
+  const derivedClient = km > 0 && clientRate > 0 ? Math.round(km * clientRate * 100) / 100 : 0;
+  const derivedProvider = km > 0 && providerRate > 0 ? Math.round(km * providerRate * 100) / 100 : 0;
+  return {
+    km,
+    clientRate,
+    providerRate,
+    client: storedClient > 0 ? Math.round(storedClient * 100) / 100 : derivedClient,
+    provider: opts.isSameOs ? 0 : storedProvider > 0 ? Math.round(storedProvider * 100) / 100 : derivedProvider
+  };
+}
 function clientTableMatchesMission(tableClient, missionClientName) {
   const mission = String(missionClientName || "").trim();
   const tc = String(tableClient || "").trim();
@@ -470,13 +526,10 @@ function isIntentionalBillingOverride(editReason) {
   const raw = String(editReason || "").trim();
   if (!raw) return false;
   const r = raw.toLowerCase();
-  const allowAutoResync = [
-    "salvamento manual confirmado",
-    "recalculado pelo sistema",
-    "tabela oficial aplicada"
-  ];
-  if (allowAutoResync.some((p) => r.includes(p))) return false;
+  if (r.includes("recalculado pelo sistema")) return false;
   const blockAutoResync = [
+    "salvamento manual confirmado",
+    "tabela oficial aplicada",
     "edi\xE7\xE3o manual",
     "edicao manual",
     "ajuste manual",
@@ -717,6 +770,7 @@ var extractUF = (address) => {
     "COLOMBO": "PR",
     "PARANAGUA": "PR",
     "FLORIANOPOLIS": "SC",
+    "PALHOCA": "SC",
     "JOINVILLE": "SC",
     "BLUMENAU": "SC",
     "ITAJAI": "SC",
@@ -833,6 +887,76 @@ var extractCityFromAddress = (address) => {
   }
   return parts[0].trim();
 };
+var TABLE_SPECIFIC_CITY_KEYWORDS = [
+  "PALHOCA",
+  "FLORIANOPOLIS",
+  "JOINVILLE",
+  "BLUMENAU",
+  "ITAJAI",
+  "CHAPECO",
+  "CRICIUMA",
+  "NAVEGANTES",
+  "CUBATAO",
+  "SANTOS",
+  "GUARULHOS",
+  "JUNDIAI",
+  "CAMPINAS",
+  "BARUERI",
+  "CAJAMAR",
+  "OSASCO",
+  "MANAUS",
+  "BELEM",
+  "FORTALEZA",
+  "RECIFE",
+  "SALVADOR",
+  "CURITIBA",
+  "PORTO ALEGRE",
+  "BELO HORIZONTE",
+  "BRASILIA",
+  "GOIANIA",
+  "VITORIA",
+  "NITEROI",
+  "SAO JOSE DOS PINHAIS",
+  "EXTREMA",
+  "SUAPE",
+  "PECEM"
+];
+function evaluateRegionalTableConstraint(operationType, opts) {
+  const tableOp = normalize2(operationType || "");
+  if (!tableOp) return { blocked: false, reason: "" };
+  const originCity = normalize2(opts.originCity || "");
+  const destCity = normalize2(opts.destCity || "");
+  const originAddr = normalize2(opts.originAddress || "");
+  const originRegion = normalize2(opts.originRegion || "");
+  const missionText = `${originCity} ${destCity} ${originAddr}`;
+  const citiesInTable = TABLE_SPECIFIC_CITY_KEYWORDS.filter((c) => tableOp.includes(c));
+  if (citiesInTable.length > 0) {
+    const matchedCity = citiesInTable.find((c) => missionText.includes(c));
+    if (!matchedCity) {
+      return { blocked: true, reason: `BLOQUEIO CIDADE (${citiesInTable[0]})` };
+    }
+    return { blocked: false, reason: "", matchedCity };
+  }
+  const isNivelBrasil = tableOp.includes("NIVEL BRASIL") || tableOp.includes("BRASIL") && !tableOp.includes("CENTRO") && !tableOp.includes("SUDESTE") && !tableOp.includes("SUL") && !tableOp.includes("NORTE");
+  if (!isNivelBrasil && originRegion) {
+    const tableRegions = [];
+    if (tableOp.includes("SUDESTE")) tableRegions.push("SUDESTE");
+    else if (tableOp.includes("SUL")) tableRegions.push("SUL");
+    if (tableOp.includes("NORDESTE")) tableRegions.push("NORDESTE");
+    else if (tableOp.includes("NORTE")) tableRegions.push("NORTE");
+    if (tableOp.includes("CENTRO")) tableRegions.push("CENTRO-OESTE");
+    if (tableRegions.length > 0) {
+      const matches = tableRegions.some((r) => {
+        const rn = normalize2(r);
+        return originRegion === rn || originRegion.includes(rn) || rn.includes(originRegion);
+      });
+      if (!matches) {
+        return { blocked: true, reason: `BLOQUEIO REGIONAL (${tableRegions.join("/")})` };
+      }
+    }
+  }
+  return { blocked: false, reason: "" };
+}
 var identifyRegionFromText = (text) => {
   if (!text) return "";
   const upper = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
@@ -917,12 +1041,14 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
     }
     return Math.max(totalDistance, distanceForCalculation);
   };
+  const cancelledExecuted = isCancelled && hasValidKms && realTraveledKm > 0;
   const scheduledDate = parseSafeDate(mission.startTime || mission.start_time);
   const creationDate = parseSafeDate(mission.createdAt);
   let effectiveStartDate = scheduledDate || creationDate || currentTime;
   let startLabel = scheduledDate ? "Agendamento" : "Cria\xE7\xE3o";
   let endDateObj = currentTime;
   const dbEndTime = parseSafeDate(mission.endTime || mission.end_time);
+  const hasOperationalWindow = !!(scheduledDate && dbEndTime && dbEndTime.getTime() > scheduledDate.getTime());
   if (dbEndTime) {
     endDateObj = dbEndTime;
   } else if (isTerminalStatus) {
@@ -935,13 +1061,28 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
     endDateObj = currentTime;
   }
   const cancelStatusAt = parseSafeDate(mission.cancelStatusAt || mission._cancelStatusAt);
+  let usedOperationalWindow = false;
   if (isCancelled) {
-    endDateObj = cancelStatusAt && cancelStatusAt.getTime() > effectiveStartDate.getTime() ? cancelStatusAt : effectiveStartDate;
+    const cancelEnd = cancelStatusAt && cancelStatusAt.getTime() > effectiveStartDate.getTime() ? cancelStatusAt : effectiveStartDate;
+    if (hasOperationalWindow) {
+      const opMs = dbEndTime.getTime() - scheduledDate.getTime();
+      const cancelMs = cancelEnd.getTime() - effectiveStartDate.getTime();
+      if (opMs > 0 && (cancelMs <= 0 || opMs <= cancelMs)) {
+        effectiveStartDate = scheduledDate;
+        endDateObj = dbEndTime;
+        startLabel = "Execu\xE7\xE3o";
+        usedOperationalWindow = true;
+      } else {
+        endDateObj = cancelEnd;
+      }
+    } else {
+      endDateObj = cancelEnd;
+    }
   }
   const diffMs = endDateObj.getTime() - effectiveStartDate.getTime();
   let durationHours = Math.max(0, diffMs / (1e3 * 60 * 60));
   durationHours = Math.floor(durationHours * 60) / 60;
-  const cancelledWithHours = isCancelled && !!cancelStatusAt && cancelStatusAt.getTime() > effectiveStartDate.getTime();
+  const cancelledWithHours = isCancelled && (usedOperationalWindow || cancelledExecuted && hasOperationalWindow || !!cancelStatusAt && cancelStatusAt.getTime() > effectiveStartDate.getTime());
   const cancelledBeforeExecution = isCancelled && !cancelledWithHours;
   if (isZeroValueMission && !cancelledWithHours) {
     durationHours = 0;
@@ -950,6 +1091,7 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
     durationHours = 0;
   }
   let tollValue = isZeroValueMission ? 0 : Math.max(0, safeNumber(mission.toll_value));
+  let providerTollValue = isZeroValueMission ? 0 : resolveStoredProviderToll(mission.toll_value, mission.toll_value_provider, !!mission.is_same_os);
   const validAgents = [mission.agent1, mission.agent2].map((a) => a ? String(a).trim() : "").filter((n) => n && n !== "---" && n.toUpperCase() !== "N/A");
   const agentCount = validAgents.length || 1;
   const missionTypeRaw = (mission.mission_type || "").toUpperCase();
@@ -975,6 +1117,16 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
       const tableOp = normalize2(t.operation_type || "");
       let score = 0;
       let matchType = "Gen\xE9rico";
+      const regionalGate = evaluateRegionalTableConstraint(tableOp, {
+        originCity: city,
+        destCity: destCity2,
+        originRegion: region,
+        originUF: ufCode,
+        originAddress
+      });
+      if (regionalGate.blocked) {
+        return { ...t, score: -9999, matchType: regionalGate.reason };
+      }
       const isArmadoTable = tableOp.includes("ARMADO") || tableOp.includes("ARMADOS") || tableOp.includes("PRONTA RESPOSTA");
       const isFranchiseKmTableName = tableOp.includes("ATE ") || tableOp.includes("ATE") || tableOp.includes("FAIXA");
       if (isVeladaMission) {
@@ -1584,7 +1736,6 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
     pExcessKm = 0;
     pExcessHr = 0;
   }
-  const cancelledExecuted = isCancelled && hasValidKms && realTraveledKm > 0;
   if (cancelledBeforeExecution) {
     cExcessHr = 0;
     pExcessHr = 0;
@@ -1600,6 +1751,7 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
   const isLogitechTable = appliedTableName.includes("LOGITECH");
   if (isLogitechTable && !isZeroValueMission) {
     tollValue = 35;
+    providerTollValue = 35;
   }
   const serviceSubtotal = round2(cBase + cExtraKmVal + cExtraHrVal);
   let iblFee = 0;
@@ -1607,9 +1759,11 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
     iblFee = round2(serviceSubtotal * 0.12);
   }
   const clientServiceTotal = round2(serviceSubtotal + iblFee);
-  const totalRevenue = round2(clientServiceTotal + tollValue);
+  const clientTollBillable = isZeroValueMission ? 0 : isLogitechTable ? resolveStoredClientToll(tollValue, providerTollValue) : resolveStoredClientToll(mission.toll_value, mission.toll_value_provider);
+  const totalRevenue = round2(clientServiceTotal + clientTollBillable);
   const providerServiceTotal = round2(pBase + pExtraKmVal + pExtraHrVal);
-  const totalCost = round2(providerServiceTotal + tollValue);
+  const totalCost = round2(providerServiceTotal + providerTollValue);
+  tollValue = providerTollValue;
   return {
     autoEngine: autoBreakdown ? {
       active: true,
@@ -1698,8 +1852,8 @@ var auditMissionFinancials = (mission, clientTables, providerTables, clientData,
   const dispProvVal = safeNumber(m.displacement_value_provider);
   const hasManualOverride = !!m.revenue_edit_reason || !!m.cost_edit_reason || !!m.snapshot_approved_by;
   if (hasManualOverride) {
-    const storedRev = safeNumber(mission.revenue_value) + safeNumber(mission.toll_value) + dispVal;
-    const storedCst = safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value) + dispProvVal;
+    const storedRev = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, mission.toll_value_provider) + dispVal;
+    const storedCst = safeNumber(mission.cost_value) + resolveStoredProviderToll(mission.toll_value, mission.toll_value_provider, !!mission.is_same_os) + dispProvVal;
     return {
       missionId: mission.id || "",
       client: mission.client || "",
@@ -1715,8 +1869,8 @@ var auditMissionFinancials = (mission, clientTables, providerTables, clientData,
   }
   const fin = calculateMissionFinancials(mission, clientTables, providerTables, clientData, /* @__PURE__ */ new Date(), void 0, providers);
   const isSameOs = !!mission.is_same_os;
-  const storedRevenue = safeNumber(mission.revenue_value) + safeNumber(mission.toll_value) + dispVal;
-  const storedCost = isSameOs ? 0 : safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value) + dispProvVal;
+  const storedRevenue = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, mission.toll_value_provider) + dispVal;
+  const storedCost = isSameOs ? 0 : safeNumber(mission.cost_value) + resolveStoredProviderToll(mission.toll_value, mission.toll_value_provider, isSameOs) + dispProvVal;
   const calculatedRevenue = fin.client.total + dispVal;
   const calculatedCost = isSameOs ? 0 : fin.provider.total + dispProvVal;
   const revenueDiff = Math.abs(storedRevenue - calculatedRevenue);
@@ -1746,6 +1900,7 @@ var auditMissionFinancials = (mission, clientTables, providerTables, clientData,
 };
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  TABLE_SPECIFIC_CITY_KEYWORDS,
   UF_TO_REGION,
   applyRegionSuffix,
   auditMissionFinancials,
@@ -1754,6 +1909,7 @@ var auditMissionFinancials = (mission, clientTables, providerTables, clientData,
   clientNameShort,
   clientTableMatchesMission,
   dhlDefaultUnitKmExcess,
+  evaluateRegionalTableConstraint,
   extractCityFromAddress,
   extractUF,
   fetchClientPriceTables,
@@ -1761,5 +1917,6 @@ var auditMissionFinancials = (mission, clientTables, providerTables, clientData,
   isIntentionalBillingOverride,
   isSameClientName,
   resolveCancelledTime,
-  resolveCancelledWindow
+  resolveCancelledWindow,
+  resolveDisplacementFromAuthorizedKm
 });

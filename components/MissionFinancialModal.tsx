@@ -634,9 +634,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const canEditProviderCostTotal = canEditOpsData
     && (fullEditMode || !isProviderTotalLockedByController || isControllerRole || isPlinio);
 
-  // TRAVA PÓS-SALVAMENTO: assim que alguém salva ou aprova um faturamento,
-  // todos os campos editáveis são bloqueados em todas as telas. Diretoria,
-  // administrador e CEO podem destravar manualmente para corrigir algo.
+  // TRAVA PÓS-APROVAÇÃO: após Aprovar (billing_verified_by / billing_approved /
+  // snapshot), campos editáveis ficam bloqueados. Salvar (rascunho) NÃO trava.
+  // Diretoria, administrador e CEO podem destravar manualmente para corrigir.
   const isBillingLocked = !!(mission?.billing_verified_by || mission?.billing_approved || mission?.snapshot_approved_by);
   const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower)
     || isBarbaraFinance;
@@ -1944,20 +1944,29 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // ficou defasado. Overrides intencionais (edição manual divergente) são
           // preservados via isIntentionalBillingOverride — ver bloco canResyncSaved.
           // Task #133 + auto-resync: alinha o número grande ao cálculo quando o valor
-          // salvo ficou defasado (ex.: motor evoluiu após "Salvamento manual confirmado").
-          // Preserva overrides INTENCIONAIS (edição manual divergente, desconto, etc.).
+          // salvo ficou defasado — SOMENTE se não houver override/salvamento manual
+          // e a OS não estiver conferida/aprovada/congelada. Precedência absoluta
+          // de valores manuais e snapshots aprovados.
           const revIntentional = isIntentionalBillingOverride(mission.revenue_edit_reason);
           const costIntentional = isIntentionalBillingOverride(mission.cost_edit_reason);
-          const canResyncSaved = dbValuesLoadedRef.current && !isSavingRef.current && lockAllowsRecalc && !isEffectivelyLocked;
+          const hasFrozenOrApproved = !!(mission.billing_approved || mission.snapshot_approved_by || mission.billing_verified_by);
+          const canResyncSaved = dbValuesLoadedRef.current
+              && !isSavingRef.current
+              && lockAllowsRecalc
+              && !isEffectivelyLocked
+              && !hasFrozenOrApproved
+              && !revIntentional
+              && !costIntentional
+              && !userManuallyEditedRef.current;
 
           if (canResyncSaved) {
               const currentRev = parseNumber(revenueInput);
-              const needRev = !revIntentional && autoClientTotal > 0 && Math.abs(currentRev - autoClientTotal) > 1;
+              const needRev = autoClientTotal > 0 && Math.abs(currentRev - autoClientTotal) > 1;
               if (needRev) {
                   setRevenueInput(fmtBR(autoClientTotal));
               }
               const currentCost = parseNumber(costInput);
-              const needCost = !mission.is_same_os && !costIntentional && !userManuallyEditedRef.current && !isControllerRole
+              const needCost = !mission.is_same_os && !isControllerRole
                   && autoProviderTotal > 0 && Math.abs(currentCost - autoProviderTotal) > 1;
               if (needCost) {
                   setCostInput(fmtBR(autoProviderTotal));
@@ -1968,6 +1977,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               // Persiste automaticamente no banco (uma vez por abertura) para não exigir
               // clique em "Restaurar Auto" nem novo Salvar só por regra de cálculo atualizada.
               // Também materializa deslocamento (KM autorizado → R$ cliente/fornecedor).
+              // NUNCA altera snapshot_data aqui — snapshot aprovado é imutável.
               const dispResolve = resolveDisplacementFromAuthorizedKm({
                   dhlDeslocamentoKm: dhlDeslocKmRef.current,
                   displacementValue: parseNumber(displacementInput),
@@ -1990,10 +2000,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   const costServiceOnly = mission.is_same_os ? 0 : financialData.provider.serviceTotal;
                   const toll = parseNumber(tollInput);
                   const tollProv = mission.is_same_os ? 0 : parseNumber(tollProviderInput);
-                  const dispClient = needDispClient ? dispResolve.client : parseNumber(displacementInput);
-                  const dispProv = needDispProvider
-                      ? dispResolve.provider
-                      : (mission.is_same_os ? 0 : parseNumber(displacementProviderInput));
                   const payload: Record<string, unknown> = {
                       last_update: new Date().toISOString(),
                   };
@@ -2007,33 +2013,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   }
                   if (needDispClient) payload.displacement_value = r2(dispResolve.client);
                   if (needDispProvider) payload.displacement_value_provider = r2(dispResolve.provider);
-                  // Snapshot aprovado também precisa acompanhar (ex.: hora extra fantasma
-                  // em Cancelada executada). Sem isso a auditoria reabre com valores velhos.
-                  const existingSnap = (mission.snapshot_data && typeof mission.snapshot_data === 'object')
-                      ? (mission.snapshot_data as Record<string, unknown>)
-                      : null;
-                  if (existingSnap && (needRev || needCost || needDispClient || needDispProvider)) {
-                      payload.snapshot_data = {
-                          ...existingSnap,
-                          durationHours: financialData.durationHours,
-                          hrExtraQtd: financialData.client.excessHours,
-                          hrExtraTotal: r2(financialData.client.extraHrVal),
-                          kmExtraQtd: financialData.client.excessKm,
-                          kmExtraTotal: r2(financialData.client.extraKmVal),
-                          revenueServiceOnly: r2(revServiceOnly),
-                          costServiceOnly: r2(costServiceOnly),
-                          displacementValue: r2(dispClient),
-                          displacementValueProvider: r2(dispProv),
-                          totalGeral: r2(revServiceOnly + toll + dispClient),
-                          systemCalculatedRevenue: r2(revServiceOnly + toll + dispClient),
-                          systemCalculatedCost: r2(costServiceOnly + tollProv + dispProv),
-                          snapshot_resynced_at: new Date().toISOString(),
-                          snapshot_resynced_by: 'AUTO_RESYNC_BILLING',
-                      };
-                  }
-                  if (!mission.billing_verified_by && (needRev || needCost || needDispClient || needDispProvider)) {
-                      payload.billing_verified_by = null;
-                  }
                   (async () => {
                       try {
                           const { error } = await supabase.from('missions').update(payload).eq('id', mission.id);
@@ -2044,7 +2023,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                               ...(needCost ? { cost_value: payload.cost_value as number, cost_edit_reason: String(payload.cost_edit_reason || '') } : {}),
                               ...(needDispClient ? { displacement_value: payload.displacement_value as number } : {}),
                               ...(needDispProvider ? { displacement_value_provider: payload.displacement_value_provider as number } : {}),
-                              ...(payload.snapshot_data ? { snapshot_data: payload.snapshot_data as any } : {}),
                           } : prev);
                           await supabase.from('system_logs').insert([{
                               user_name: 'Sistema',
@@ -2062,7 +2040,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                   clientExtraKmVal: r2(financialData.client.extraKmVal),
                                   clientExcessHours: financialData.client.excessHours,
                                   durationHours: financialData.durationHours,
-                                  snapshotUpdated: !!payload.snapshot_data,
+                                  snapshotUpdated: false,
                               }),
                           }]);
                           showNotification(
@@ -2079,15 +2057,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
 
-          // Motor automático é fonte oficial: se está ativo e o valor salvo
-          // no banco diverge do calculado, sobrescreve o costInput para
-          // refletir o cálculo correto na tela (R$ 533 + R$ 367,24 + pedágio).
-          // Roda mesmo com a OS travada — o operador continua precisando
-          // destravar/usar EDIÇÃO TOTAL para salvar, mas o valor exibido
-          // passa a ser o do motor, evitando o "R$ 0,00" remanescente de
-          // gravações antigas (anteriores ao motor).
-          // Só não roda durante salvamento ou logo após edição manual.
-          if (financialData.autoEngine?.active && !mission.is_same_os && !userManuallyEditedRef.current && !isSavingRef.current && !isControllerRole) {
+          // Motor automático é fonte oficial na TELA apenas quando não há
+          // override/salvamento manual nem OS conferida/aprovada.
+          if (financialData.autoEngine?.active && !mission.is_same_os && !userManuallyEditedRef.current && !isSavingRef.current && !isControllerRole
+              && !isIntentionalBillingOverride(mission.cost_edit_reason)
+              && !(mission.billing_approved || mission.snapshot_approved_by || mission.billing_verified_by)) {
               const engineCostTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
               const currentCostInput = parseNumber(costInput);
               if (engineCostTotal > 0 && Math.abs(currentCostInput - engineCostTotal) > 1) {
@@ -2096,9 +2070,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
 
           const isCevaLogitech = financialData.client?.detectionLog?.includes('LOGITECH SOBERANA');
-          // Regra: depois de salvo/aprovado, NUNCA sobrescrever valores do banco
-          // por recálculo automático (mesmo no caso especial CEVA/Logitech).
-          if (isCevaLogitech && dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && lockAllowsRecalc) {
+          // Regra: depois de salvo/aprovado ou com override intencional, NUNCA
+          // sobrescrever valores do banco por recálculo automático.
+          if (isCevaLogitech && dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && lockAllowsRecalc
+              && !isIntentionalBillingOverride(mission.revenue_edit_reason)
+              && !isIntentionalBillingOverride(mission.cost_edit_reason)
+              && !(mission.billing_approved || mission.snapshot_approved_by || mission.billing_verified_by)) {
               const fmt = (v: number) => v.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               const calcRevTotal = financialData.client.total + parseNumber(displacementInput);
               const currentInput = parseNumber(revenueInput);
@@ -2803,7 +2780,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const hasFinanceiro = updatedStages.includes('financeiro');
           const hasDiretoria = updatedStages.includes('diretoria');
           const hasController = updatedStages.includes('controller');
-          const isApprovedForBilling = hasFinanceiro || hasDiretoria || hasController || (mission.billing_approved === true);
+          // Aprovar (estágios financeiros) libera boletim; Salvar NUNCA aprova.
+          // Preserva billing_approved já existente quando o operador só salva ajustes.
+          const isApprovedForBilling = approve
+              ? (hasFinanceiro || hasDiretoria || hasController || (mission.billing_approved === true))
+              : (mission.billing_approved === true);
           const isFullyApproved = hasDiretoria;
           
           const canReleaseBilling = stage === 'financeiro' || stage === 'diretoria' || stage === 'controller';
@@ -2820,10 +2801,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               billing_approved: isApprovedForBilling,
               last_update: new Date().toISOString(),
           };
-          if (approve && canReleaseBilling) {
-              basePayload.billing_verified_by = userName;
-          }
-          if (!basePayload.billing_verified_by) {
+          // Salvar = rascunho/pendente (sem travar nem marcar conferência).
+          // Aprovar = marca verificação e, nos estágios financeiros, libera boletim.
+          if (approve) {
               basePayload.billing_verified_by = userName;
           }
 
@@ -3217,7 +3197,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               toll_value: toll,
               toll_value_provider: tollProv,
               billing_approved: isApprovedForBilling,
-              billing_verified_by: userName,
+              ...(approve ? { billing_verified_by: userName } : {}),
               ...(shouldSnapshot ? { snapshot_data: basePayload.snapshot_data, snapshot_approved_by: userName, snapshot_approved_at: basePayload.snapshot_approved_at } : {}),
               last_update: basePayload.last_update,
               ...(reasonFields.revenue_edit_reason ? { revenue_edit_reason: reasonFields.revenue_edit_reason } : {}),
