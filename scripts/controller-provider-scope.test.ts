@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
   assertProviderOnlyPayload,
   buildProviderOnlyMissionPayload,
+  providerTollToPersist,
   resolveProviderSaveObservation,
 } from '../lib/controllerProviderScope';
 import {
@@ -39,6 +40,9 @@ describe('Escopo controller/fornecedor', () => {
     assert.equal('revenue_value' in payload, false);
     assert.equal('billing_approved' in payload, false);
     assert.equal('billing_verified_by' in payload, false);
+    assert.equal(providerTollToPersist(0, false), 0);
+    assert.equal(providerTollToPersist(50.129, false), 50.13);
+    assert.equal(providerTollToPersist(80, true), 0);
   });
 
   it('T03 não envia cost_edit_reason vazio (evita constraint)', () => {
@@ -81,7 +85,7 @@ describe('Escopo controller/fornecedor', () => {
     assert.match(source, /buildProviderOnlyMissionPayload\(/);
     assert.match(source, /resolveProviderSaveObservation\(/);
     assert.match(source, /canSaveProviderAdjustments = isProviderOnlyUser/);
-    assert.match(source, /providerFinanceInputLocked = isEffectivelyLocked && !isProviderOnlyUser/);
+    assert.match(source, /providerFinanceInputLocked = \(?isEffectivelyLocked && !isProviderOnlyUser/);
     assert.match(source, /if \(isProviderOnlyUser && approve\)/);
     assert.match(source, /disabled=\{isProviderOnlyUser \|\| isUpdating/);
     assert.doesNotMatch(source, /canSaveProviderAdjustments = isPlinio/);
@@ -91,5 +95,20 @@ describe('Escopo controller/fornecedor', () => {
     const source = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
     assert.match(source, /isProviderOnlyControllerUser\(currentUser\)/);
     assert.match(source, /if \(isProviderOnlyUser\) \{\s*showNotification\('Sem Permissão'/);
+  });
+
+  it('T07 pedágio do fornecedor não herda o do cliente e o retry do Plínio não descarta o campo', () => {
+    const source = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
+    assert.match(source, /providerTollToPersist\(parseNumber\(tollProviderInput\)/);
+    assert.doesNotMatch(source, /parseNumber\(tollProviderInput\) \|\| toll/);
+    const handleStart = source.indexOf('const handleUpdate = async');
+    const handleEnd = source.indexOf('const filteredProviderTables', handleStart);
+    const block = source.slice(handleStart, handleEnd);
+    assert.match(block, /toll_value_provider: isSameOs \? 0 : r2\(tollProv\)/);
+    assert.match(block, /select\('id, revenue_value, cost_value, toll_value, toll_value_provider, last_update'\)/);
+    assert.match(block, /if \(!isProviderOnlyUser\) \{\s*delete payloadMin\.toll_value_provider/);
+    const histStart = source.indexOf('const fetchHistoricalPatterns');
+    const histSlice = source.slice(histStart, histStart + 2500);
+    assert.match(histSlice, /hasSavedData = hasRevenue \|\| hasCost \|\| hasVerifiedBy \|\| hasApproved \|\| dbTollProv > 0 \|\| dbDispProv > 0/);
   });
 });

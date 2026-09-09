@@ -12,6 +12,14 @@ export type ProviderOnlySaveInput = {
   lastUpdate?: string;
 };
 
+/** Pedágio do fornecedor a persistir — nunca herda o pedágio do cliente. */
+export function providerTollToPersist(parsedProviderInput: number, isSameOs: boolean): number {
+  if (isSameOs) return 0;
+  const n = Number(parsedProviderInput);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.round(n * 100) / 100;
+}
+
 /** Payload mínimo e seguro para UPDATE de missions pelo controller/Plínio. */
 export function buildProviderOnlyMissionPayload(input: ProviderOnlySaveInput): Record<string, unknown> {
   const payload: Record<string, unknown> = {

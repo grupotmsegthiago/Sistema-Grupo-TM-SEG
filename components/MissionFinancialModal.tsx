@@ -60,6 +60,7 @@ import {
 } from '../lib/plinioMissionRestrictions';
 import {
   buildProviderOnlyMissionPayload,
+  providerTollToPersist,
   resolveProviderSaveObservation,
 } from '../lib/controllerProviderScope';
 
@@ -1024,11 +1025,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // NUNCA herda dbToll (pedágio do cliente) — isso gerava o "pedágio fantasma"
           // que inflava o custo do fornecedor ao reabrir a auditoria.
           const dbTollProv = Math.max(0, currentMission.toll_value_provider != null ? currentMission.toll_value_provider : 0);
+          const dbDispProv = Math.max(0, currentMission.displacement_value_provider != null ? currentMission.displacement_value_provider : 0);
           const hasRevenue = currentMission.revenue_value != null && currentMission.revenue_value > 0;
           const hasCost = currentMission.cost_value != null && currentMission.cost_value > 0;
           const hasVerifiedBy = !!currentMission.billing_verified_by;
           const hasApproved = !!currentMission.billing_approved;
-          const hasSavedData = hasRevenue || hasCost || hasVerifiedBy || hasApproved;
+          // Pedágio/deslocamento do fornecedor também contam como dado salvo —
+          // senão o autoCalculateToll zera o campo do Plínio ao reabrir a OS.
+          const hasSavedData = hasRevenue || hasCost || hasVerifiedBy || hasApproved || dbTollProv > 0 || dbDispProv > 0;
           if (currentMission.billing_approved && currentMission.toll_value !== null && currentMission.toll_value !== undefined) {
              setSuggestedToll(dbToll);
              setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
@@ -1355,7 +1359,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setDhlDeslocInfo(null);
               const savedRev = safeNumber(mRes.data.revenue_value);
               const savedCost = safeNumber(mRes.data.cost_value);
-              const hasSavedData = mRes.data.billing_approved || mRes.data.billing_verified_by || savedRev > 0 || savedCost > 0;
+              const hasSavedData = mRes.data.billing_approved || mRes.data.billing_verified_by || savedRev > 0 || savedCost > 0
+                  || dbTollProvider > 0 || dbDispProvider > 0
+                  || isIntentionalBillingOverride(loadedCostReason);
               if (mRes.data.is_same_os) {
                   setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
                   setTollProviderInput('0,00');
@@ -1400,7 +1406,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   }
                   if (isSameOsMission) {
                       setCostInput('0,00');
-                  } else if (savedCost > 0 || (savedCost === 0 && hasVerifiedOrApproved)) {
+                  } else if (savedCost > 0 || dbTollProvider > 0 || dbDispProvider > 0 || (savedCost === 0 && hasVerifiedOrApproved)) {
                       const costTotal = savedCost + dbTollProvider + dbDispProvider;
                       setCostInput(costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                   }
@@ -2282,6 +2288,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const updatedCost = currentCost - oldTollProv + newTollProv;
       setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
       setUseSavedValues(true);
+      userManuallyEditedRef.current = true;
   };
 
   // Deslocamento Aprovado (Cobrado): valor aditivo que espelha o comportamento
@@ -2615,7 +2622,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       isSavingRef.current = true;
       try {
           const toll = parseNumber(tollInput);
-          const tollProv = mission.is_same_os ? 0 : (parseNumber(tollProviderInput) || toll);
+          const tollProv = providerTollToPersist(parseNumber(tollProviderInput), !!mission.is_same_os);
           const displacement = parseNumber(displacementInput);
           const dispProv = mission.is_same_os ? 0 : parseNumber(displacementProviderInput);
           const revService = r2money(financialData.client.serviceTotal);
@@ -2744,7 +2751,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const revTotal = isController ? originalRevenue : parseNumber(revenueInput);
       const costTotal = isSameOs ? 0 : parseNumber(costInput);
       const toll = isController ? (mission.toll_value || 0) : parseNumber(tollInput);
-      const tollProv = isSameOs ? 0 : (parseNumber(tollProviderInput) || toll);
+      const tollProv = providerTollToPersist(parseNumber(tollProviderInput), isSameOs);
       const displacement = isController ? ((mission as any).displacement_value || 0) : parseNumber(displacementInput);
       const dispProv = isSameOs ? 0 : parseNumber(displacementProviderInput);
       const calcRevTotal = financialData ? (financialData.client.serviceTotal + toll + displacement) : 0;
@@ -3042,7 +3049,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   ...reasonFields,
                   ...opsSaveFields,
               };
-          let result = await supabase.from('missions').update(fullPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+          let result = await supabase.from('missions').update(fullPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, toll_value_provider, last_update').single();
           if (!result.error && shouldSnapshot && basePayload.snapshot_data) {
               await supabase.from('system_logs').insert([{
                   user_name: userName,
@@ -3073,30 +3080,35 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       void snapshot_data; void snapshot_approved_by; void snapshot_approved_at;
                       return rest;
                   })();
-              result = await supabase.from('missions').update(retryPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+              result = await supabase.from('missions').update(retryPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, toll_value_provider, last_update').single();
               if (result.error && (result.error.message?.includes('does not exist') || result.error.message?.includes('check_snapshot_not_empty'))) {
                   // Mantém cost_edit_reason no payload mínimo — é o campo crítico
                   // do override do controller. Remove só colunas opcionais/legado.
+                  // Pedágio/deslocamento do FORNECEDOR não podem ser descartados no save do Plínio.
                   const {
-                      toll_value_provider,
                       displacement_value,
-                      displacement_value_provider,
                       ...payloadMin
                   } = retryPayload as any;
+                  if (!isProviderOnlyUser) {
+                      delete payloadMin.toll_value_provider;
+                      delete payloadMin.displacement_value_provider;
+                  }
                   if (snapshotConstraint && isApprovedForBilling && !payloadMin.snapshot_data) {
                       payloadMin.snapshot_data = retryPayload.snapshot_data;
                       payloadMin.snapshot_approved_by = retryPayload.snapshot_approved_by;
                       payloadMin.snapshot_approved_at = retryPayload.snapshot_approved_at;
                   }
-                  result = await supabase.from('missions').update(payloadMin).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+                  result = await supabase.from('missions').update(payloadMin).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, toll_value_provider, last_update').single();
               }
-              // Último recurso: só custo + motivo (sem pedágio/deslocamento provider)
+              // Último recurso do controller: custo + pedágio + deslocamento + motivo
               if (result.error && isProviderOnlyUser && reasonFields.cost_edit_reason) {
                   result = await supabase.from('missions').update({
                       cost_value: isSameOs ? 0 : r2(costServiceOnly),
+                      toll_value_provider: isSameOs ? 0 : r2(tollProv),
+                      displacement_value_provider: isSameOs ? 0 : r2(dispProv),
                       cost_edit_reason: reasonFields.cost_edit_reason,
                       last_update: basePayload.last_update,
-                  }).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+                  }).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, toll_value_provider, last_update').single();
               }
               if (basePayload.snapshot_data && !result.error) {
                   await supabase.from('system_logs').insert([{
@@ -3110,6 +3122,25 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           if (result.error) throw result.error;
           if (!result.data) throw new Error('Falha na persistência: registro não retornado após UPDATE');
+
+          if (isProviderOnlyUser && !isSameOs) {
+              const wantedToll = r2(tollProv);
+              let savedTollProv = Number((result.data as any).toll_value_provider);
+              if (Math.abs(savedTollProv - wantedToll) > 0.01) {
+                  const retryToll = await supabase.from('missions').update({
+                      cost_value: r2(costServiceOnly),
+                      toll_value_provider: wantedToll,
+                      displacement_value_provider: r2(dispProv),
+                      cost_edit_reason: reasonFields.cost_edit_reason,
+                      last_update: basePayload.last_update,
+                  }).eq('id', mission.id).select('id, toll_value_provider').single();
+                  if (retryToll.error) throw retryToll.error;
+                  savedTollProv = Number(retryToll.data?.toll_value_provider);
+                  if (Math.abs(savedTollProv - wantedToll) > 0.01) {
+                      throw new Error('O pedágio do fornecedor não foi gravado. Tente salvar novamente.');
+                  }
+              }
+          }
 
           // Task #66 — VALUE_EDIT_REASON sempre é gravado quando há divergência
           // (do motor automático ou da tabela manual), garantindo que a aba
