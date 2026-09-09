@@ -94,7 +94,7 @@ export type SyncComissoesFaturasResult = {
   error?: string;
 };
 
-async function fetchAllRows(
+export async function fetchAllRows(
   sb: ComissaoDbClient,
   table: string,
   columns: string,

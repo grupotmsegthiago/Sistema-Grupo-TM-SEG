@@ -67,6 +67,9 @@ describe('comissao comercial — integração preservada', () => {
     assert.match(page, /btn-sync-usuarios-comercial/);
     assert.match(page, /btn-sync-comissoes-faturas/);
     assert.match(page, /comissao-pendencias-banner/);
+    assert.match(page, /quadro-tm-seg/);
+    assert.match(page, /quadro-torres/);
+    assert.match(page, /meses-com-fatura/);
     assert.match(page, /tabela-comissao-padrao/);
     assert.match(form, /sincronizarComerciaisDeUsuarios/);
     const userForm = fs.readFileSync('components/UserForm.tsx', 'utf8');
@@ -213,5 +216,33 @@ describe('comissao comercial — faturas históricas', () => {
     assert.doesNotMatch(persist, /if \(created && invoiceId\)/);
     const asaas = fs.readFileSync('lib/asaasCreateChargeCore.ts', 'utf8');
     assert.match(asaas, /entityId: bodyClientId/);
+  });
+});
+
+describe('comissao comercial — quadro por cliente', () => {
+  it('monta tabela de faturamento e comissão sem exigir comercial', async () => {
+    const { montarQuadroClientes, anosFiltroComissao, somarQuadro, faturaNoPeriodo } = await import('../lib/comissao/quadroFaturamentoComissao');
+    const linhas = montarQuadroClientes(
+      [
+        { empresa: 'TM_SEG', cliente: 'CEVA', amount: 10000, date: '2026-09-08', status: 'EMITIDA' },
+        { empresa: 'TM_SEG', cliente: 'CEVA', amount: 5000, date: '2026-09-01', status: 'PAGA' },
+        { empresa: 'TM_SEG', cliente: 'CEVA', amount: 9000, date: '2026-08-10', status: 'EMITIDA' },
+        { empresa: 'TM_SEG', cliente: 'X', amount: 1000, date: '2026-09-02', status: 'CANCELADA' },
+      ],
+      [{ id: 1, name: 'CEVA LOGISTICS LTDA', trading_name: 'CEVA', responsavel_comercial_id: null }],
+      [],
+      '2026-09-01',
+      '2026-09-30',
+    );
+    assert.equal(linhas.length, 1);
+    assert.equal(linhas[0].cliente, 'CEVA');
+    assert.equal(linhas[0].faturas, 2);
+    assert.equal(linhas[0].faturamento, 15000);
+    assert.equal(linhas[0].comissao, 378);
+    assert.equal(linhas[0].comercialNome, null);
+    const tot = somarQuadro(linhas);
+    assert.equal(tot.comissao, 378);
+    assert.equal(faturaNoPeriodo('2026-09-08', '2026-09-01', '2026-09-30'), true);
+    assert.ok(anosFiltroComissao(2024).includes(2026));
   });
 });
