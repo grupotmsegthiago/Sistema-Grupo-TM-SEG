@@ -218,6 +218,7 @@ describe('comissao comercial — faturas históricas', () => {
     assert.equal(pend.some((p) => p.cliente === 'TECHTRANS TRANSPORTES'), false);
     const helper = fs.readFileSync('lib/comissao/sincronizarComissoesFaturas.ts', 'utf8');
     assert.match(helper, /Não usa client_id na fatura/);
+    assert.match(helper, /from '\.\/comissaoCore\.js'/);
     const persist = fs.readFileSync('lib/persistAsaasChargeInvoice.ts', 'utf8');
     assert.match(persist, /if \(invoiceId\)/);
     assert.doesNotMatch(persist, /if \(created && invoiceId\)/);

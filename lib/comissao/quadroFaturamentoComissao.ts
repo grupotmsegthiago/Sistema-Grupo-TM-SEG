@@ -2,15 +2,15 @@
  * Quadro gerencial: cliente × faturamento × comissão prevista (16% / 3%).
  * Lê faturas reais. Não atribui comercial. Não grava comissão pagável.
  */
-import { calcularComissao } from './comissaoCalc';
+import { calcularComissao } from './comissaoCalc.js';
 import {
   casarClienteDaFatura,
   fetchAllRows,
   normalizeClienteNome,
   type ClienteComissaoMatch,
   type InvoiceComissaoMatch,
-} from './sincronizarComissoesFaturas';
-import type { ComissaoDbClient } from './comissaoCore';
+} from './sincronizarComissoesFaturas.js';
+import type { ComissaoDbClient } from './comissaoCore.js';
 
 export type LinhaQuadroCliente = {
   empresa: 'TM SEG' | 'TORRES';

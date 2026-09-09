@@ -3,7 +3,7 @@
  * Não usa client_id na fatura (não existe): casa pelo nome/fantasia do cliente.
  * Sem responsável comercial = não inventa comissão.
  */
-import { gerarComissaoAoFaturar, atualizarStatusAposBaixaCliente, type ComissaoDbClient } from './comissaoCore';
+import { gerarComissaoAoFaturar, atualizarStatusAposBaixaCliente, type ComissaoDbClient } from './comissaoCore.js';
 
 export type ClienteComissaoMatch = {
   id: number;
