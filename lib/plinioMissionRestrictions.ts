@@ -3,12 +3,34 @@ export type MissionUserIdentity = {
   email?: string | null;
   name?: string | null;
   username?: string | null;
+  role?: string | null;
 };
 
 export type BillingApprovalIdentity = {
   role?: string | null;
   stage?: string | null;
 };
+
+/** Perfil controller (cargo) — escopo exclusivo de fornecedor. */
+export function isControllerRole(role: string | null | undefined): boolean {
+  return String(role || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim() === 'controller';
+}
+
+/**
+ * Usuário com escopo somente-fornecedor: Plínio homologado OU qualquer
+ * sessão com role `controller`.
+ */
+export function isProviderOnlyControllerUser(
+  user: MissionUserIdentity | null | undefined,
+): boolean {
+  if (!user) return false;
+  if (isRestrictedPlinioUser(user)) return true;
+  return isControllerRole(user.role);
+}
 
 const PLINIO_USER_ID = '9';
 const PLINIO_EMAIL = 'plinio@grupotmseg.com.br';
