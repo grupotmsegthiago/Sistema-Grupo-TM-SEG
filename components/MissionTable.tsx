@@ -784,18 +784,18 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           return Array.from(byId.values());
       };
 
-      const [missionsData, clientTablesRes, providerTablesRes, clientsRes, providersRes] = await Promise.all([
+      const [missionsData, clientTablesRows, providerTablesRows, clientsRes, providersRes] = await Promise.all([
           fetchScoped(),
-          supabase.from('client_price_tables').select('*'),
-          supabase.from('provider_cost_tables').select('*'),
+          fetchAllPagesOf(supabase.from('client_price_tables').select('*')),
+          fetchAllPagesOf(supabase.from('provider_cost_tables').select('*')),
           supabase.from('clients').select('*'),
           supabase.from('providers').select('name, trading_name')
       ]);
 
       setDbStatus('ok');
 
-      if (clientTablesRes.data) setClientTables(clientTablesRes.data as any);
-      if (providerTablesRes.data) setProviderTables(providerTablesRes.data as any);
+      if (clientTablesRows) setClientTables(clientTablesRows as any);
+      if (providerTablesRows) setProviderTables(providerTablesRows as any);
       if (clientsRes.data) setClientsData(clientsRes.data as any);
 
       if (missionsData) {

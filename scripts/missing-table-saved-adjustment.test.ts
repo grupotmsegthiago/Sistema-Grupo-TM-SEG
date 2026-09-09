@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import fs from 'node:fs';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import { computeMissingTableRows } from '../components/MissingTableDialog';
 import { MissionStatus } from '../types';
@@ -96,5 +97,22 @@ describe('OS sem tabela — tabela salva na auditoria', () => {
     ]);
     const withAdj = computeMissingTableRows(missions, clientTables, [], [], 'ALL', undefined, undefined, true, adj);
     assert.equal(withAdj.some((r) => r.missingClient), false);
+  });
+
+  it('alerta some mesmo quando o catálogo em memória não contém a tabela salva', () => {
+    const missions = [maeDoRioMission()];
+    const incompleteCatalog = [norteManaus, sudesteSantos] as any[];
+    const adj = new Map<string, BillingAdjustmentRecord>([
+      ['GTM-7714', { clientTableId: String(nivelBrasil.id) }],
+    ]);
+    const rows = computeMissingTableRows(missions, incompleteCatalog, [], [], 'ALL', undefined, undefined, true, adj);
+    assert.equal(rows.some((r) => r.missingClient), false);
+  });
+
+  it('MissionTable pagina o catálogo de tabelas (não corta em 1000)', () => {
+    const source = fs.readFileSync('components/MissionTable.tsx', 'utf8');
+    assert.match(source, /fetchAllPagesOf\(supabase\.from\('client_price_tables'\)\.select\('\*'\)\)/);
+    assert.match(source, /fetchAllPagesOf\(supabase\.from\('provider_cost_tables'\)\.select\('\*'\)\)/);
+    assert.doesNotMatch(source, /supabase\.from\('client_price_tables'\)\.select\('\*'\)\s*,/);
   });
 });

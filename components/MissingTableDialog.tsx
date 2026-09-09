@@ -37,6 +37,20 @@ const PERIOD_LABEL: Record<string, string> = {
 
 type Row = MissingTableRow;
 
+function assignedTableId(
+  adjId: string | undefined,
+  mission: any,
+  side: 'client' | 'provider',
+): boolean {
+  const fromAdj = String(adjId || '').trim();
+  if (fromAdj && !fromAdj.startsWith('auto-')) return true;
+  const snap = mission?.snapshot_data;
+  if (!snap || typeof snap !== 'object') return false;
+  const key = side === 'client' ? 'clientTableId' : 'providerTableId';
+  const fromSnap = String((snap as Record<string, unknown>)[key] || '').trim();
+  return !!fromSnap && !fromSnap.startsWith('auto-');
+}
+
 export const computeMissingTableRows = (
   missions: any[],
   clientTables: ClientPriceTable[],
@@ -94,8 +108,11 @@ export const computeMissingTableRows = (
         now,
         overrides as any,
       );
-      const missingClient = !fin.hasClientTable;
-      const missingProvider = !fin.hasProviderTable;
+      // Tabela ATRIBUÍDA na auditoria conta mesmo se o catálogo em memória
+      // estiver incompleto (client_price_tables > 1000 linhas). Sem isso a
+      // GTM-7714 ficava "SEM TABELA" com NÍVEL BRASIL já salva.
+      const missingClient = !fin.hasClientTable && !assignedTableId(adj?.clientTableId, missionObj, 'client');
+      const missingProvider = !fin.hasProviderTable && !assignedTableId(adj?.providerTableId, missionObj, 'provider');
       if (missingClient || missingProvider) {
         out.push({ m, missingClient, missingProvider });
       }
