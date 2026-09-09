@@ -174,6 +174,16 @@ describe('comissao comercial — escala da planilha', () => {
     assert.equal(abaixo.bonusAcumulado, 0);
     assert.equal(abaixo.totalAPagar, 2000);
 
+    const { valorComissaoLinhaAposPiso } = await import('../lib/comissao/tabelaComissaoPadrao');
+    const tvm = valorComissaoLinhaAposPiso({ valorComissao: 83.15, brutoComercialNoPeriodo: 3299.67 });
+    assert.equal(tvm.abaixoDoPiso, true);
+    assert.equal(tvm.valor, 0);
+    assert.equal(tvm.percentual, 0);
+    const liberada = valorComissaoLinhaAposPiso({ valorComissao: 83.15, brutoComercialNoPeriodo: 50_000 });
+    assert.equal(liberada.abaixoDoPiso, false);
+    assert.equal(liberada.valor, 83.15);
+    assert.equal(liberada.percentual, 3);
+
     const p500 = calcularApuracaoComissao({ valorBruto: 500_000, valorFixo: 0 });
     assert.equal(p500.comissaoPercentual, 12_600);
     assert.equal(p500.bonusAcumulado, 5_000);

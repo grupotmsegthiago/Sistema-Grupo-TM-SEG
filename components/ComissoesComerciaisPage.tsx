@@ -30,6 +30,8 @@ import {
   calcularApuracaoComissao,
   gerarLinhasTabelaReferencia,
   TABELA_COMISSAO_PADRAO,
+  valorComissaoLinhaAposPiso,
+  brutoPorComercialNasLinhas,
 } from '../lib/comissao/tabelaComissaoPadrao';
 import {
   intervaloQuinzena,
@@ -384,15 +386,23 @@ const ComissoesComerciaisPage: React.FC = () => {
     setNovoFixo(c?.valor_fixo != null ? String(c.valor_fixo) : '');
   }, [comercialId, comerciais]);
 
+  const brutoComercialPeriodo = useMemo(() => brutoPorComercialNasLinhas(rows), [rows]);
+
+  const comissaoLinha = useCallback((r: ComissaoRow) => valorComissaoLinhaAposPiso({
+    valorComissao: Number(r.valor_comissao),
+    brutoComercialNoPeriodo: brutoComercialPeriodo.get(String(r.comercial_id || '').trim()) || 0,
+    percentual: Number(r.percentual_comissao_aplicado),
+  }), [brutoComercialPeriodo]);
+
   const stats = useMemo(() => {
     const fat = rows.reduce((s, r) => s + Number(r.valor_faturamento || 0), 0);
     const imposto = rows.reduce((s, r) => s + calcularComissao(Number(r.valor_faturamento), Number(r.percentual_imposto_aplicado), 0).valorImposto, 0);
     const base = rows.reduce((s, r) => s + Number(r.valor_base_liquida || 0), 0);
-    const lib = rows.filter((r) => r.status === 'LIBERADO_PARA_PAGAMENTO').reduce((s, r) => s + Number(r.valor_comissao || 0), 0);
-    const pago = rows.filter((r) => r.status === 'PAGO').reduce((s, r) => s + Number(r.valor_comissao || 0), 0);
+    const lib = rows.filter((r) => r.status === 'LIBERADO_PARA_PAGAMENTO').reduce((s, r) => s + comissaoLinha(r).valor, 0);
+    const pago = rows.filter((r) => r.status === 'PAGO').reduce((s, r) => s + comissaoLinha(r).valor, 0);
     const porEmpresa = {
-      TM_SEG: rows.filter((r) => empresaLabel(r.empresa_origem) === 'TM SEG').reduce((s, r) => s + Number(r.valor_comissao || 0), 0),
-      TORRES: rows.filter((r) => empresaLabel(r.empresa_origem) === 'TORRES').reduce((s, r) => s + Number(r.valor_comissao || 0), 0),
+      TM_SEG: rows.filter((r) => empresaLabel(r.empresa_origem) === 'TM SEG').reduce((s, r) => s + comissaoLinha(r).valor, 0),
+      TORRES: rows.filter((r) => empresaLabel(r.empresa_origem) === 'TORRES').reduce((s, r) => s + comissaoLinha(r).valor, 0),
     };
     const porClienteMap = new Map<string, { cliente: string; empresa: string; fat: number; comissao: number; qtd: number }>();
     for (const r of rows) {
@@ -401,7 +411,7 @@ const ComissoesComerciaisPage: React.FC = () => {
       const key = `${empresa}|${cliente}`;
       const prev = porClienteMap.get(key) || { cliente, empresa, fat: 0, comissao: 0, qtd: 0 };
       prev.fat += Number(r.valor_faturamento || 0);
-      prev.comissao += Number(r.valor_comissao || 0);
+      prev.comissao += comissaoLinha(r).valor;
       prev.qtd += 1;
       porClienteMap.set(key, prev);
     }
@@ -426,7 +436,7 @@ const ComissoesComerciaisPage: React.FC = () => {
     }).sort((a, b) => b.fat - a.fat);
     const porCliente = Array.from(porClienteMap.values()).sort((a, b) => b.comissao - a.comissao);
     return { fat, imposto, base, lib, pago, qtd: rows.length, porEmpresa, porCliente, porComercial };
-  }, [rows, comerciais]);
+  }, [rows, comerciais, comissaoLinha]);
 
   const quadroVisivel = useMemo(() => {
     const { linhasTm: tmPiso, linhasTorres: torresPiso } = aplicarPisoComissaoQuadro(quadroTm, quadroTorres);
@@ -477,7 +487,7 @@ const ComissoesComerciaisPage: React.FC = () => {
         fatura_numero: r.fatura_numero,
         data_faturamento: r.data_faturamento,
         valor_faturamento: Number(r.valor_faturamento),
-        valor_comissao: Number(r.valor_comissao),
+        valor_comissao: comissaoLinha(r).valor,
         status: COMISSAO_STATUS_LABEL[r.status] || r.status,
       })),
       { year, month, quinzena: quinzenaFiltro, comercialNome },
@@ -879,7 +889,9 @@ const ComissoesComerciaisPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {rows.map((r) => {
+                  const linhaPiso = comissaoLinha(r);
+                  return (
                   <tr key={r.id} className="border-t border-gray-50" data-testid={`comissao-row-${r.id}`}>
                     <td className="px-3 py-2 text-[10px] font-black text-gray-500">{empresaLabel(r.empresa_origem)}</td>
                     <td className="px-3 py-2">
@@ -894,15 +906,20 @@ const ComissoesComerciaisPage: React.FC = () => {
                     <td className="px-3 py-2 text-right font-mono">{fmtBRL(Number(r.valor_faturamento))}</td>
                     <td className="px-3 py-2 text-right">{Number(r.percentual_imposto_aplicado).toFixed(2)}%</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtBRL(Number(r.valor_base_liquida))}</td>
-                    <td className="px-3 py-2 text-right">{Number(r.percentual_comissao_aplicado).toFixed(2)}%</td>
-                    <td className="px-3 py-2 text-right font-black">{fmtBRL(Number(r.valor_comissao))}</td>
+                    <td className="px-3 py-2 text-right">{linhaPiso.percentual.toFixed(2)}%</td>
+                    <td className="px-3 py-2 text-right font-black">
+                      {fmtBRL(linhaPiso.valor)}
+                      {linhaPiso.abaixoDoPiso && (
+                        <div className="text-[9px] font-bold text-amber-700 uppercase">Abaixo do piso</div>
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border ${STATUS_BADGE[r.status]}`}>
                         {COMISSAO_STATUS_LABEL[r.status]}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-center">
-                      {r.status === 'LIBERADO_PARA_PAGAMENTO' && (
+                      {r.status === 'LIBERADO_PARA_PAGAMENTO' && !linhaPiso.abaixoDoPiso && (
                         <button type="button" onClick={() => { setPaying(r); setFile(null); }} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-red-600 text-white text-[10px] font-black uppercase" data-testid={`btn-pagar-${r.id}`}>
                           <Wallet size={12} /> Pagar comissão
                         </button>
@@ -914,7 +931,8 @@ const ComissoesComerciaisPage: React.FC = () => {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -928,7 +946,7 @@ const ComissoesComerciaisPage: React.FC = () => {
               <h3 className="font-black text-sm uppercase">Pagar comissão</h3>
               <button type="button" onClick={() => setPaying(null)}><X size={18} /></button>
             </div>
-            <p className="text-sm text-gray-700">{paying.cliente_nome} · {fmtBRL(Number(paying.valor_comissao))}</p>
+            <p className="text-sm text-gray-700">{paying.cliente_nome} · {fmtBRL(comissaoLinha(paying).valor)}</p>
             {paying.comerciais?.pix_chave && (
               <p className="text-xs text-gray-500 flex items-center gap-1"><Landmark size={12} /> PIX: {paying.comerciais.pix_chave}</p>
             )}

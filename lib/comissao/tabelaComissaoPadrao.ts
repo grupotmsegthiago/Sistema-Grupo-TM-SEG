@@ -91,6 +91,38 @@ export function calcularApuracaoComissao(params: {
   };
 }
 
+/**
+ * Valor da linha só é pagável depois do piso do comercial no período.
+ * Abaixo de R$ 50 mil a comissão da NF fica R$ 0,00 (igual à apuração).
+ */
+export function valorComissaoLinhaAposPiso(opts: {
+  valorComissao: number;
+  brutoComercialNoPeriodo: number;
+  percentual?: number;
+  tabela?: TabelaComissaoPadrao;
+}): { valor: number; percentual: number; abaixoDoPiso: boolean } {
+  const tabela = opts.tabela || TABELA_COMISSAO_PADRAO;
+  const abaixoDoPiso = roundMoney(Math.max(0, Number(opts.brutoComercialNoPeriodo) || 0)) < tabela.pisoComissao;
+  if (abaixoDoPiso) return { valor: 0, percentual: 0, abaixoDoPiso: true };
+  return {
+    valor: roundMoney(Math.max(0, Number(opts.valorComissao) || 0)),
+    percentual: Number(opts.percentual ?? tabela.percentualComissao) || 0,
+    abaixoDoPiso: false,
+  };
+}
+
+export function brutoPorComercialNasLinhas(
+  rows: Array<{ comercial_id?: string | null; valor_faturamento?: number | null }>,
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const r of rows) {
+    const id = String(r.comercial_id || '').trim();
+    if (!id) continue;
+    map.set(id, roundMoney((map.get(id) || 0) + (Number(r.valor_faturamento) || 0)));
+  }
+  return map;
+}
+
 export type LinhaTabelaComissao = {
   valorBruto: number;
   notaFiscal: number;
