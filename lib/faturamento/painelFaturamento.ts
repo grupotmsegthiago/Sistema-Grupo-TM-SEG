@@ -110,7 +110,7 @@ export type LinhaRelatorioFaturamento = {
   dataPagamento: string | null;
   vencimento: string | null;
   diasAtraso: number | null;
-  statusPagamento: 'PAGO' | 'EM ABERTO' | 'ATRASADO' | 'CANCELADA';
+  statusPagamento: 'PAGO' | 'EM ABERTO' | 'ATRASADO' | 'CANCELADA' | 'A COBRAR';
   valor: number;
   osVinculadas: number;
   osPeriodo: number | null;
@@ -350,12 +350,14 @@ export function montarPainelFaturamento(args: {
     const id = String(m.id || '').trim();
     if (!id) continue;
     const cliente = matchCliente(String(m.client || ''), ativos.length ? ativos : args.clients);
+    const competencia = competenciaOs(m);
+    if (competencia && competencia < args.lookbackStart) continue;
     osNorm.push({
       id,
       clienteNome: displayCliente(cliente, String(m.client || '—')),
       cliente,
       ciclo: parseCicloFaturamento(cliente?.ciclo_faturamento),
-      competencia: competenciaOs(m),
+      competencia,
       aprovada: osAprovada(m),
       faturada: osFaturada({ invoiceNumber: m.invoice_number, missionId: id, idsVinculados }),
       aberta: osAbertaOperacional(m.status),
@@ -407,18 +409,24 @@ export function montarPainelFaturamento(args: {
     }
   }
 
+  const cobrancasPendentes: Array<{
+    cliente: string;
+    clienteId: string | null;
+    chave: string;
+    periodo: string;
+    osTotal: number;
+    osFaturadas: number;
+  }> = [];
+
   for (const group of byCliente.values()) {
     const ciclo = group.ciclo;
     const nome = displayCliente(group.client, group.os[0]?.clienteNome || '—');
     const cid = clientIdOf(group.client);
 
-    if (!ciclo) {
-      // Sem ciclo no cadastro não dá para saber o prazo. Não inventa atraso.
-      continue;
-    }
-
-    const vigentes = periodoVigente(ciclo, today);
-    const fechados = periodosFechadosNoIntervalo(ciclo, args.lookbackStart, today, today);
+    const cicloCobertura = ciclo || 'mensal';
+    const cicloLabel = ciclo ? labelCicloFaturamento(ciclo) : 'Sem cadastro';
+    const vigentes = periodoVigente(cicloCobertura, today);
+    const fechados = periodosFechadosNoIntervalo(cicloCobertura, args.lookbackStart, today, today);
 
     for (const periodo of fechados) {
       const noPeriodo = group.os.filter((o) => o.competencia && isoInRange(o.competencia, periodo.start, periodo.end));
@@ -439,7 +447,7 @@ export function montarPainelFaturamento(args: {
           cliente: nome,
           clienteId: cid,
           ciclo,
-          cicloLabel: labelCicloFaturamento(ciclo),
+          cicloLabel,
           periodo: periodo.label,
           osTotal: noPeriodo.length,
           osFaturadas: noPeriodo.length - semFatura.length,
@@ -452,6 +460,14 @@ export function montarPainelFaturamento(args: {
       }
 
       if (semFatura.length) {
+        cobrancasPendentes.push({
+          cliente: nome,
+          clienteId: cid,
+          chave: periodo.chave,
+          periodo: periodo.label,
+          osTotal: noPeriodo.length,
+          osFaturadas: noPeriodo.length - semFatura.length,
+        });
         alertas.push({
           severidade: 'critico',
           tipo: 'OS_SEM_FATURA',
@@ -499,6 +515,11 @@ export function montarPainelFaturamento(args: {
 
   for (const inv of args.invoices || []) {
     if (faturaCancelada(inv.status)) continue;
+    const dataInv = isoDate(inv.date);
+    const ps = isoDate(inv.period_start);
+    const pe = isoDate(inv.period_end);
+    const refPeriodo = pe || ps || dataInv;
+    if (refPeriodo && refPeriodo < args.lookbackStart) continue;
     const cliente = matchCliente(String(inv.client || ''), ativos.length ? ativos : args.clients);
     const ciclo = parseCicloFaturamento(cliente?.ciclo_faturamento);
     const ids = osPorFatura.get(String(inv.id || '')) || [];
@@ -567,7 +588,31 @@ export function montarPainelFaturamento(args: {
     });
   }
 
-  relatorio.sort((a, b) => String(b.dataFaturamento).localeCompare(String(a.dataFaturamento)) || a.cliente.localeCompare(b.cliente, 'pt-BR'));
+  for (const buraco of cobrancasPendentes) {
+    relatorio.push({
+      faturaId: `cobrar:${buraco.clienteId || buraco.cliente}:${buraco.chave}`,
+      cliente: buraco.cliente,
+      periodo: buraco.periodo,
+      periodoEstado: 'ENCONTRADO',
+      dataFaturamento: '—',
+      dataPagamento: null,
+      vencimento: null,
+      diasAtraso: null,
+      statusPagamento: 'A COBRAR',
+      valor: 0,
+      osVinculadas: buraco.osFaturadas,
+      osPeriodo: buraco.osTotal,
+      coberturaOk: false,
+      coberturaEstado: 'ENCONTRADO',
+    });
+  }
+
+  relatorio.sort((a, b) => {
+    const rank = (s: LinhaRelatorioFaturamento['statusPagamento']) => (s === 'A COBRAR' ? 0 : s === 'ATRASADO' ? 1 : 2);
+    return rank(a.statusPagamento) - rank(b.statusPagamento)
+      || String(b.dataFaturamento).localeCompare(String(a.dataFaturamento))
+      || a.cliente.localeCompare(b.cliente, 'pt-BR');
+  });
 
   const fila = [...filaMap.values()].sort((a, b) => {
     const rank = (s: SemaforoFaturamento) => (s === 'critico' ? 0 : s === 'alerta' ? 1 : 2);

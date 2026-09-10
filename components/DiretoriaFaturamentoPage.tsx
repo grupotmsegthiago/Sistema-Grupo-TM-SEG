@@ -88,17 +88,19 @@ const DiretoriaFaturamentoPage: React.FC<Props> = ({ onNavigate, onEditClient })
       if (filtro === 'aberto') return r.statusPagamento === 'EM ABERTO';
       if (filtro === 'pago') return r.statusPagamento === 'PAGO';
       if (filtro === 'atraso') return r.statusPagamento === 'ATRASADO' || (r.diasAtraso != null && r.diasAtraso > 0 && r.statusPagamento !== 'PAGO');
-      if (filtro === 'os_faltando') return r.coberturaOk === false;
+      if (filtro === 'os_faltando') return r.statusPagamento === 'A COBRAR' || r.coberturaOk === false;
       return true;
     });
   }, [painel, filtro, busca]);
 
   const hero =
-    semaforo === 'ok'
-      ? { bg: 'from-emerald-600 to-emerald-700', titulo: 'Faturamento em dia', sub: 'Toda OS dos ciclos fechados está faturada e aprovada.' }
+    painel?.consultaIncompleta
+      ? { bg: 'from-amber-500 to-amber-600', titulo: 'Consulta incompleta', sub: 'Não dá para afirmar que toda OS foi faturada até a carga fechar.' }
+      : semaforo === 'ok'
+      ? { bg: 'from-emerald-600 to-emerald-700', titulo: 'Toda OS dos ciclos fechados foi faturada', sub: 'O que ainda está no prazo (quinzena/mês/dia em curso) não aparece. Se faltar OS, entra como A COBRAR.' }
       : semaforo === 'alerta'
-        ? { bg: 'from-amber-500 to-amber-600', titulo: 'Ciclos fechados em dia', sub: 'OS do período em curso ficam de fora até o prazo fechar. Cadastre o ciclo nos clientes que ainda não têm.' }
-        : { bg: 'from-red-600 to-red-700', titulo: 'Há OS ou fatura em atraso', sub: 'Não feche boletim enquanto restar OS sem fatura ou sem APROVADA.' };
+        ? { bg: 'from-amber-500 to-amber-600', titulo: 'Ciclos fechados em dia', sub: 'Cadastre o ciclo nos clientes que ainda não têm. OS no prazo não entram na fila.' }
+        : { bg: 'from-red-600 to-red-700', titulo: 'Há OS para cobrar', sub: 'Ciclo já fechou e a OS não entrou em fatura/boletim. Precisa faturar.' };
 
   return (
     <div className="space-y-4 pb-10" data-testid="diretoria-faturamento-page">
@@ -287,7 +289,15 @@ const DiretoriaFaturamentoPage: React.FC<Props> = ({ onNavigate, onEditClient })
                   <tbody>
                     {relatorio.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-2 py-8 text-center text-gray-400">Nenhuma fatura neste filtro.</td>
+                        <td colSpan={7} className="px-2 py-8 text-center text-sm font-bold text-gray-500">
+                          {painel?.consultaIncompleta
+                            ? 'Consulta incompleta — não dá para afirmar que todas as OS foram faturadas.'
+                            : (kpis?.osSemFaturaFechado || 0) > 0
+                              ? 'Há OS de ciclo fechado sem fatura. Use o filtro OS faltando.'
+                              : (kpis?.osCicloFechado || 0) > 0
+                                ? 'Todas as OS dos ciclos já fechados estão no faturamento. Nenhuma fatura neste recorte de filtro.'
+                                : 'Nenhuma OS de ciclo fechado neste recorte. Missão ainda no prazo (ex.: 09/09 na quinzena 01–15) não entra aqui.'}
+                        </td>
                       </tr>
                     ) : (
                       relatorio.map((r) => (
@@ -360,7 +370,7 @@ const DiretoriaFaturamentoPage: React.FC<Props> = ({ onNavigate, onEditClient })
         <span className="inline-flex items-center gap-1"><Receipt size={12} /> Boletim só sai com 100% APROVADA</span>
         <span className="inline-flex items-center gap-1"><Wallet size={12} /> Quinzenal = 1–15 e 16–fim · Mensal = mês cheio · Diário = o dia</span>
         <span className="inline-flex items-center gap-1"><FileSpreadsheet size={12} /> Ciclo vem do cadastro do cliente</span>
-        <span className="inline-flex items-center gap-1"><Clock size={12} /> Dias = atraso contra o vencimento</span>
+        <span className="inline-flex items-center gap-1"><Clock size={12} /> Recorte: agosto/2026 em diante</span>
       </div>
     </div>
   );
@@ -370,7 +380,7 @@ function RelatorioRow({ row }: { row: LinhaRelatorioFaturamento }) {
   const st =
     row.statusPagamento === 'PAGO'
       ? 'bg-emerald-50 text-emerald-800'
-      : row.statusPagamento === 'ATRASADO'
+      : row.statusPagamento === 'ATRASADO' || row.statusPagamento === 'A COBRAR'
         ? 'bg-red-50 text-red-700'
         : 'bg-amber-50 text-amber-800';
   const dias =

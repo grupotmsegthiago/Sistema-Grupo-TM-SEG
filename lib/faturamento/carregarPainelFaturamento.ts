@@ -4,7 +4,7 @@
  */
 import { formatIsoDateBR } from '../dateUtils.js';
 import { fetchAllPages, SupabasePagingIntegrityError } from '../supabasePaging.js';
-import { addDaysIso } from './cicloFaturamento.js';
+import { FATURAMENTO_PAINEL_INICIO } from './cicloFaturamento.js';
 import {
   montarPainelFaturamento,
   painelVazio,
@@ -22,7 +22,6 @@ export type FaturamentoDbClient = {
 
 const PAGE = 1000;
 const MAX = 50_000;
-const LOOKBACK_DAYS = 366;
 
 async function loadAll<T extends { id?: string | number | null }>(
   sb: FaturamentoDbClient,
@@ -61,7 +60,7 @@ export async function carregarPainelFaturamento(
   todayIso = formatIsoDateBR(),
 ): Promise<PainelFaturamento> {
   const today = String(todayIso || formatIsoDateBR()).slice(0, 10);
-  const lookbackStart = addDaysIso(today, -LOOKBACK_DAYS);
+  const lookbackStart = FATURAMENTO_PAINEL_INICIO;
   const lookbackTs = `${lookbackStart}T00:00:00`;
 
   const [cliRes, missRes, invRes, vincRes, rxRes] = await Promise.all([
@@ -84,6 +83,7 @@ export async function carregarPainelFaturamento(
       sb,
       'financial_invoices',
       'id, client, number, amount, date, status, boleto_due_date, notes, period_start, period_end',
+      (q) => q.gte('date', lookbackStart),
     ),
     loadAll<VinculoPainel & { id?: string }>(sb, 'financial_invoice_missions', 'id, invoice_id, mission_id'),
     loadAll<ReceberPainel & { id?: string }>(
@@ -103,14 +103,16 @@ export async function carregarPainelFaturamento(
   }
 
   let invoices = invRes.rows;
-  if (invRes.error && /period_start|period_end|does not exist/i.test(invRes.error)) {
+  if (invRes.error) {
     const retry = await loadAll<FaturaPainel>(
       sb,
       'financial_invoices',
       'id, client, number, amount, date, status, boleto_due_date, notes',
+      (q) => q.gte('date', lookbackStart),
     );
     invoices = retry.rows;
     if (retry.error) errors.push(retry.error);
+    else errors.push(invRes.error);
   }
 
   let missions = missRes.rows;
