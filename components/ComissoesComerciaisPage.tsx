@@ -736,15 +736,15 @@ const ComissoesComerciaisPage: React.FC = () => {
       setPendencias(json.tm?.pendencias || []);
       setSyncTorresInfo({
         clientes: json.torres?.clientesComComercial || [],
-        live: !!json.torres?.liveDisponivel,
+        live: !!json.torres?.liveDisponivel || !!json.torres?.pushed,
         error: json.torres?.error,
       });
       const nCli = json.torres?.clientesComComercial?.length || 0;
-      const liveOff = !json.torres?.liveDisponivel;
+      const torresOk = json.torres?.ok !== false && !json.torres?.error;
       showNotification(
         'Sincronismo TM SEG + TORRES',
         `TM SEG: ${json.tm?.generated || 0} comissão(ões) gerada(s). TORRES: ${nCli} cliente(s) com comercial, ${json.torres?.faturasLidas || 0} lançamento(s) lido(s), ${json.torres?.generated || 0} novo(s).${json.torres?.error ? ` ${json.torres.error}` : ''}`,
-        liveOff || json.torres?.error ? 'warning' : 'success',
+        torresOk ? 'success' : 'warning',
       );
       await load();
     } catch (e: any) {
@@ -858,9 +858,9 @@ const ComissoesComerciaisPage: React.FC = () => {
             TORRES · clientes com responsável comercial ({syncTorresInfo.clientes.length})
           </p>
           <p className="mt-1 text-[11px] text-gray-600">
-            {syncTorresInfo.live
-              ? 'Leitura ao vivo do cadastro TORRES. Só entra no quadro quem tem comercial e faturamento/OS no período.'
-              : syncTorresInfo.error || 'Live da TORRES indisponível neste ambiente — o quadro usa o ingest já gravado.'}
+            {syncTorresInfo.error
+              ? syncTorresInfo.error
+              : 'Só entra no quadro quem tem responsável comercial e faturamento/OS no período.'}
           </p>
           {syncTorresInfo.clientes.length > 0 ? (
             <p className="mt-2 text-[11px] font-bold text-gray-800">
