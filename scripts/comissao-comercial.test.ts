@@ -72,6 +72,11 @@ describe('comissao comercial — integração preservada', () => {
     assert.match(page, /meses-com-fatura/);
     assert.match(page, /tabela-comissao-padrao/);
     assert.match(page, /btn-expand-cliente/);
+    assert.match(page, /dashboard-comissoes-kpis/);
+    assert.match(page, /cobertura-os-periodo/);
+    assert.match(page, /card-funcionario-/);
+    assert.match(page, /quadros-funcionarios/);
+    assert.match(page, /Fatura cliente/);
     assert.match(page, /mesclarLinhasQuadro/);
     assert.match(page, /aplicarPisoComissaoQuadro/);
     assert.match(page, /50 mil/);
@@ -123,6 +128,7 @@ describe('comissao comercial — TORRES ingest', () => {
     assert.match(ingest, /req.method === 'GET'/);
     assert.match(ingest, /op === 'quadro'/);
     assert.match(ingest, /assertComissoesQuadroAccess/);
+    assert.match(ingest, /cobertura/);
     assert.match(vercel, /\/api\/comissoes\/ingest/);
     assert.match(vercel, /\/api\/comissoes\/quadro/);
     assert.match(vercel, /\/api\/comissoes\/sync-faturas/);
@@ -476,5 +482,120 @@ describe('comissao comercial — quadro TORRES ao vivo', () => {
     );
     assert.equal(quadro.linhas.length, 1);
     assert.equal(quadro.linhas[0].comercialNome, 'MIGUEL MOTA');
+  });
+});
+
+describe('comissao comercial — cobertura OS e dashboard', () => {
+  it('marca OS faturada por NF ou vínculo e não inventa faturada só com auditoria', async () => {
+    const { osEstaFaturada, montarCoberturaOsPeriodo } = await import('../lib/comissao/coberturaOsPeriodo');
+    assert.equal(osEstaFaturada({ invoiceNumber: 'NF-1', missionId: 'GTM-1', idsVinculados: new Set() }), true);
+    assert.equal(osEstaFaturada({ invoiceNumber: '0', missionId: 'GTM-2', idsVinculados: new Set(['GTM-2']) }), true);
+    assert.equal(osEstaFaturada({ invoiceNumber: null, missionId: 'GTM-3', idsVinculados: new Set() }), false);
+
+    const cob = montarCoberturaOsPeriodo({
+      missions: [
+        { id: 'GTM-1', client: 'TECHTRANS TRANSPORTES', status: 'Concluída', end_time: '2026-09-08T12:00:00', invoice_number: 'NF-1', revenue_value: 1000, cost_value: 400, is_same_os: false },
+        { id: 'GTM-2', client: 'TECHTRANS TRANSPORTES', status: 'Concluída', end_time: '2026-09-09T12:00:00', invoice_number: null, revenue_value: 500, cost_value: 200, is_same_os: false },
+        { id: 'GTM-3', client: 'TECHTRANS TRANSPORTES', status: 'Em Viagem', end_time: '2026-09-09T12:00:00', invoice_number: null, revenue_value: 900, cost_value: 100 },
+      ],
+      clients: [{ id: 37, name: 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', trading_name: 'TECHTRANS TRANSPORTES', responsavel_comercial_id: 'abc' }],
+      comerciais: [{ id: 'abc', nome: 'MIGUEL MOTA' }],
+      idsVinculados: new Set(),
+      periodStart: '2026-09-01',
+      periodEnd: '2026-09-30',
+    });
+    assert.equal(cob.estado, 'ENCONTRADO');
+    assert.equal(cob.totais.missoes, 2);
+    assert.equal(cob.totais.faturadas, 1);
+    assert.equal(cob.totais.semFatura, 1);
+    assert.equal(cob.porCliente[0].comercialNome, 'MIGUEL MOTA');
+    assert.equal(cob.porCliente[0].osSemFaturaIds.includes('GTM-2'), true);
+    assert.equal(cob.porCliente[0].margemPct != null, true);
+  });
+
+  it('não declara OS sem fatura quando o vínculo não carregou', async () => {
+    const { montarCoberturaOsPeriodo } = await import('../lib/comissao/coberturaOsPeriodo');
+    const cob = montarCoberturaOsPeriodo({
+      missions: [
+        { id: 'GTM-9', client: 'TECHTRANS TRANSPORTES', status: 'Faturada', end_time: '2026-09-08', invoice_number: null, revenue_value: 100, cost_value: 40 },
+      ],
+      clients: [{ id: 37, name: 'TECHTRANS TRANSPORTES', trading_name: 'TECHTRANS TRANSPORTES', responsavel_comercial_id: 'abc' }],
+      comerciais: [{ id: 'abc', nome: 'MIGUEL' }],
+      idsVinculados: new Set(),
+      periodStart: '2026-09-01',
+      periodEnd: '2026-09-30',
+      consultaIncompleta: true,
+      error: 'financial_invoice_missions indisponível',
+    });
+    assert.equal(cob.estado, 'CONSULTA INCOMPLETA');
+    assert.equal(cob.totais.missoes, 1);
+    assert.equal(cob.totais.semFatura, 0);
+    assert.equal(cob.porCliente[0].estado, 'CONSULTA INCOMPLETA');
+  });
+
+  it('monta quadro do funcionário com bruto, imposto, 3% e pagamento fatura×comissão', async () => {
+    const { montarQuadrosFuncionarios, acharComissaoDaFatura, montarKpisDashboard } = await import('../lib/comissao/dashboardComissoes');
+    const linhas = [{
+      empresa: 'TM SEG' as const,
+      cliente: 'TECHTRANS TRANSPORTES',
+      faturas: 1,
+      faturamento: 50_000,
+      imposto: 8000,
+      baseLiquida: 42_000,
+      comissao: 1260,
+      comercialId: 'abc',
+      comercialNome: 'MIGUEL MOTA',
+      abaixoDoPiso: false,
+      detalhes: [{ id: 'inv-1', numero: 'NF-1', date: '2026-09-01', faturamento: 50000, imposto: 8000, valorAPagar: 1260, pago: true, osIds: ['GTM-1'] }],
+    }];
+    const cobertura = {
+      estado: 'ENCONTRADO' as const,
+      consultaIncompleta: false,
+      itens: [],
+      porCliente: [{
+        cliente: 'TECHTRANS TRANSPORTES',
+        comercialId: 'abc',
+        comercialNome: 'MIGUEL MOTA',
+        missoes: 3,
+        faturadas: 3,
+        semFatura: 0,
+        osSemFaturaIds: [],
+        receita: 50000,
+        custo: 30000,
+        lucro: 20000,
+        margemPct: 40,
+        estado: 'ENCONTRADO' as const,
+      }],
+      totais: { missoes: 3, faturadas: 3, semFatura: 0, receita: 50000, custo: 30000, lucro: 20000 },
+    };
+    const rows = [{
+      id: 'c1',
+      fatura_id: 'inv-1',
+      fatura_numero: 'NF-1',
+      comercial_id: 'abc',
+      valor_faturamento: 50000,
+      valor_comissao: 1260,
+      percentual_comissao_aplicado: 3,
+      status: 'LIBERADO_PARA_PAGAMENTO' as const,
+    }];
+    const funcionarios = montarQuadrosFuncionarios({
+      comerciais: [{ id: 'abc', nome: 'MIGUEL MOTA', valor_fixo: 0, usuario_id: 1 }],
+      linhas,
+      rows,
+      cobertura,
+    });
+    assert.equal(funcionarios.length, 1);
+    assert.equal(funcionarios[0].missoes, 3);
+    assert.equal(funcionarios[0].faturamentoBruto, 50000);
+    assert.equal(funcionarios[0].imposto, 8000);
+    assert.equal(funcionarios[0].comissao3, 1260);
+    assert.equal(funcionarios[0].clientes[0].margemPct, 40);
+    assert.equal(funcionarios[0].clientes[0].statusFatura, 'PAGO');
+    assert.equal(funcionarios[0].clientes[0].statusComissao, 'EM_ABERTO');
+    assert.equal(acharComissaoDaFatura(rows, { id: 'inv-1', numero: 'NF-1' })?.id, 'c1');
+    const kpis = montarKpisDashboard({ linhas, funcionarios, cobertura });
+    assert.equal(kpis.comissao3, 1260);
+    assert.equal(kpis.missoes, 3);
+    assert.equal(kpis.margemOperacionalPct, 40);
   });
 });

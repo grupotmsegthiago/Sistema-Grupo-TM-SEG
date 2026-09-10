@@ -23,7 +23,7 @@ export function registerComissaoQuadroRoutes(app: Express, requireAuth: any): vo
       return res.json(result);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      return res.status(200).json({ ok: false, error: message, linhasTm: [], linhasTorres: [], meses: [], pendencias: [] });
+      return res.status(200).json({ ok: false, error: message, linhasTm: [], linhasTorres: [], meses: [], pendencias: [], cobertura: { estado: 'ERRO', consultaIncompleta: true, itens: [], porCliente: [], totais: { missoes: 0, faturadas: 0, semFatura: 0, receita: 0, custo: 0, lucro: 0 } } });
     }
   });
 

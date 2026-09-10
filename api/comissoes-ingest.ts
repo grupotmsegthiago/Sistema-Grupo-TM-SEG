@@ -98,7 +98,7 @@ export async function handleComissoesIngest(req: any, res: any) {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn('[comissao-quadro]', message);
-      res.status(200).json({ ok: false, error: message, linhasTm: [], linhasTorres: [], meses: [], pendencias: [] });
+      res.status(200).json({ ok: false, error: message, linhasTm: [], linhasTorres: [], meses: [], pendencias: [], cobertura: { estado: 'ERRO', consultaIncompleta: true, itens: [], porCliente: [], totais: { missoes: 0, faturadas: 0, semFatura: 0, receita: 0, custo: 0, lucro: 0 } } });
     }
     return;
   }

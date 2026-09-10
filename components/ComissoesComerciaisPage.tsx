@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BadgeDollarSign, Filter, Loader2, Receipt,
   Wallet, X, Landmark, FileSpreadsheet, RefreshCw, ChevronDown, ChevronUp, ChevronRight, AlertTriangle,
+  TrendingUp, Percent, Briefcase, CircleDollarSign, Gift, ClipboardList,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { authFetch } from '../lib/authFetch';
@@ -25,6 +26,14 @@ import {
   somarQuadro,
   type LinhaQuadroCliente,
 } from '../lib/comissao/quadroFaturamentoComissao';
+import { coberturaVazia, type CoberturaOsPeriodo } from '../lib/comissao/coberturaOsPeriodo';
+import {
+  acharComissaoDaFatura,
+  montarKpisDashboard,
+  montarQuadrosFuncionarios,
+  type QuadroFuncionario,
+  type StatusPagamentoPar,
+} from '../lib/comissao/dashboardComissoes';
 import InvoiceDivergenceAuditPanel from './InvoiceDivergenceAuditPanel';
 import {
   calcularApuracaoComissao,
@@ -59,6 +68,7 @@ type EmpresaOrigem = 'TM_SEG' | 'TORRES';
 type ComissaoRow = {
   id: string;
   fatura_id: string | null;
+  origem_fatura_id?: string | null;
   fatura_numero: string | null;
   empresa_origem?: EmpresaOrigem | string | null;
   cliente_id: number | null;
@@ -101,6 +111,12 @@ function labelMesAno(ym: string): string {
   return `${nomes[i] || m}/${y}`;
 }
 
+function labelPagamento(status: StatusPagamentoPar): { texto: string; cls: string } {
+  if (status === 'PAGO') return { texto: 'Fechado', cls: 'bg-green-50 text-green-800 border-green-200' };
+  if (status === 'PARCIAL') return { texto: 'Parcial', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
+  return { texto: 'Em aberto', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
+}
+
 const STATUS_BADGE: Record<ComissaoStatus, string> = {
   AGUARDANDO_PAGAMENTO_CLIENTE: 'bg-amber-50 text-amber-800 border-amber-200',
   LIBERADO_PARA_PAGAMENTO: 'bg-blue-50 text-blue-800 border-blue-200',
@@ -108,14 +124,59 @@ const STATUS_BADGE: Record<ComissaoStatus, string> = {
   CANCELADO: 'bg-gray-100 text-gray-500 border-gray-200',
 };
 
+function Sparkline({ tone }: { tone: 'white' | 'muted' }) {
+  const stroke = tone === 'white' ? 'rgba(255,255,255,0.55)' : 'rgba(15,23,42,0.18)';
+  return (
+    <svg className="absolute right-2 bottom-2 w-24 h-10 pointer-events-none" viewBox="0 0 96 40" fill="none" aria-hidden>
+      <path d="M0 28 C12 28 14 12 24 16 C34 20 38 8 48 12 C58 16 62 6 72 10 C82 14 86 22 96 18" stroke={stroke} strokeWidth="2" />
+    </svg>
+  );
+}
+
+function KpiTile({
+  label, value, sub, tone, icon: Icon, testid,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone: 'blue' | 'amber' | 'green' | 'rose' | 'sky' | 'lime' | 'emerald' | 'peach';
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  testid?: string;
+}) {
+  const solid = tone === 'blue' || tone === 'amber' || tone === 'green' || tone === 'rose';
+  const box: Record<string, string> = {
+    blue: 'bg-gradient-to-br from-blue-500 to-blue-600 text-white',
+    amber: 'bg-gradient-to-br from-amber-400 to-yellow-500 text-white',
+    green: 'bg-gradient-to-br from-emerald-400 to-green-500 text-white',
+    rose: 'bg-gradient-to-br from-rose-400 to-rose-500 text-white',
+    sky: 'bg-gradient-to-br from-sky-50 to-blue-50 text-slate-800 border border-sky-100',
+    lime: 'bg-gradient-to-br from-lime-50 to-green-50 text-slate-800 border border-lime-100',
+    emerald: 'bg-gradient-to-br from-emerald-50 to-teal-50 text-slate-800 border border-emerald-100',
+    peach: 'bg-gradient-to-br from-orange-50 to-rose-50 text-slate-800 border border-orange-100',
+  };
+  return (
+    <div className={`relative overflow-hidden rounded-2xl p-4 min-h-[104px] ${box[tone]}`} data-testid={testid}>
+      <Sparkline tone={solid ? 'white' : 'muted'} />
+      <div className="flex items-start justify-between gap-2 relative z-10">
+        <p className={`text-[10px] font-black uppercase tracking-wide ${solid ? 'text-white/80' : 'text-slate-500'}`}>{label}</p>
+        <Icon size={16} className={solid ? 'opacity-80' : 'text-slate-400'} />
+      </div>
+      <p className="text-xl font-black mt-2 relative z-10 tracking-tight">{value}</p>
+      {sub ? <p className={`text-[10px] font-bold mt-1 relative z-10 ${solid ? 'text-white/75' : 'text-slate-500'}`}>{sub}</p> : null}
+    </div>
+  );
+}
+
 function TabelaQuadroEmpresa({
   titulo,
   linhas,
+  rows,
   vazio,
   testid,
 }: {
   titulo: string;
   linhas: LinhaQuadroCliente[];
+  rows: ComissaoRow[];
   vazio: string;
   testid: string;
 }) {
@@ -126,7 +187,7 @@ function TabelaQuadroEmpresa({
       <div className="px-4 py-3 border-b border-gray-100 flex items-end justify-between gap-2">
         <div>
           <p className="text-[10px] font-black text-gray-400 uppercase">{titulo}</p>
-          <p className="text-[11px] text-gray-500">Só clientes com comercial. Comissão 3% só a partir de R$ 50 mil de faturamento do comercial no período. Clique na seta para ver cada fatura.</p>
+          <p className="text-[11px] text-gray-500">Fatura do cliente e pagamento da comissão lado a lado. Clique na seta para cada NF/OS.</p>
         </div>
         <p className="text-[11px] font-black text-gray-700 whitespace-nowrap">{fmtBRL(tot.faturamento)}</p>
       </div>
@@ -193,11 +254,15 @@ function TabelaQuadroEmpresa({
                                 <th className="text-right py-1 pr-3">Faturamento</th>
                                 <th className="text-right py-1 pr-3">Imposto</th>
                                 <th className="text-right py-1 pr-3">Valor a pagar</th>
-                                <th className="text-left py-1">Status</th>
+                                <th className="text-left py-1 pr-3">Fatura cliente</th>
+                                <th className="text-left py-1">Comissão</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {(c.detalhes || []).map((d) => (
+                              {(c.detalhes || []).map((d) => {
+                                const com = acharComissaoDaFatura(rows, d);
+                                const comissaoPaga = String(com?.status || '') === 'PAGO';
+                                return (
                                 <tr key={d.id} className="border-t border-gray-200">
                                   <td className="py-1.5 pr-3 font-mono">
                                     {d.numero || d.id.slice(0, 8)}
@@ -209,7 +274,7 @@ function TabelaQuadroEmpresa({
                                   <td className="py-1.5 pr-3 text-right font-mono">{fmtBRL(d.faturamento)}</td>
                                   <td className="py-1.5 pr-3 text-right font-mono">{fmtBRL(d.imposto)}</td>
                                   <td className="py-1.5 pr-3 text-right font-black">{fmtBRL(d.valorAPagar)}</td>
-                                  <td className="py-1.5">
+                                  <td className="py-1.5 pr-3">
                                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border ${
                                       d.pago
                                         ? 'bg-green-50 text-green-800 border-green-200'
@@ -218,8 +283,18 @@ function TabelaQuadroEmpresa({
                                       {d.pago ? 'Pago' : 'Em aberto'}
                                     </span>
                                   </td>
+                                  <td className="py-1.5">
+                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                                      comissaoPaga
+                                        ? 'bg-green-50 text-green-800 border-green-200'
+                                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                                    }`}>
+                                      {comissaoPaga ? 'Fechado' : (COMISSAO_STATUS_LABEL[(com?.status as ComissaoStatus)] || 'Em aberto')}
+                                    </span>
+                                  </td>
                                 </tr>
-                              ))}
+                                );
+                              })}
                             </tbody>
                           </table>
                         </td>
@@ -238,6 +313,108 @@ function TabelaQuadroEmpresa({
               </tr>
             </tfoot>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CardFuncionario({
+  quadro,
+  aberto,
+  onToggle,
+}: {
+  quadro: QuadroFuncionario;
+  aberto: boolean;
+  onToggle: () => void;
+}) {
+  const fat = labelPagamento(quadro.statusPagamento);
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden" data-testid={`card-funcionario-${quadro.id}`}>
+      <button type="button" onClick={onToggle} className="w-full text-left px-4 py-3 hover:bg-slate-50">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-black uppercase text-slate-900">{quadro.nome}</p>
+            <p className="text-[10px] text-slate-500 font-bold">
+              {quadro.missoes} missão(ões) · {quadro.osFaturadas} faturada(s)
+              {quadro.osSemFatura > 0 ? ` · ${quadro.osSemFatura} sem fatura` : ''}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border ${fat.cls}`}>{fat.texto}</span>
+            {aberto ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+          <div>
+            <p className="text-[9px] font-black text-slate-400 uppercase">Bruto faturado</p>
+            <p className="text-sm font-black">{fmtBRL(quadro.faturamentoBruto)}</p>
+          </div>
+          <div>
+            <p className="text-[9px] font-black text-slate-400 uppercase">Imposto 16%</p>
+            <p className="text-sm font-black text-rose-700">{fmtBRL(quadro.imposto)}</p>
+          </div>
+          <div>
+            <p className="text-[9px] font-black text-slate-400 uppercase">Comissão 3% líquido</p>
+            <p className="text-sm font-black text-emerald-700">{fmtBRL(quadro.comissao3)}</p>
+          </div>
+          <div>
+            <p className="text-[9px] font-black text-slate-400 uppercase">Total a pagar</p>
+            <p className="text-sm font-black">{fmtBRL(quadro.totalAPagar)}</p>
+          </div>
+        </div>
+      </button>
+      {aberto && (
+        <div className="px-4 pb-4 border-t border-gray-100 space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-3 text-[11px]">
+            <p>Líquido: <strong>{fmtBRL(quadro.liquido)}</strong></p>
+            <p>Fixo: <strong>{fmtBRL(quadro.valorFixo)}</strong></p>
+            <p>Bônus: <strong>{fmtBRL(quadro.bonus)}</strong></p>
+            <p>PIX: <strong>{quadro.pix || '—'}</strong></p>
+          </div>
+          {quadro.abaixoDoPiso && (
+            <p className="text-[11px] font-bold text-amber-800">Abaixo do piso de R$ 50 mil — comissão % zerada; permanece o valor fixo.</p>
+          )}
+          <p className="text-[10px] font-black uppercase text-slate-400">
+            Fatura cliente {quadro.faturasPagas} paga(s) / {quadro.faturasAbertas} em aberto · Comissão {fmtBRL(quadro.comissaoPaga)} paga · {fmtBRL(quadro.comissaoLiberada)} liberada · {fmtBRL(quadro.comissaoAguardando)} aguardando cliente
+          </p>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead>
+                <tr className="text-[10px] font-black text-gray-400 uppercase">
+                  <th className="text-left py-1 pr-3">Cliente</th>
+                  <th className="text-right py-1 pr-3">OS</th>
+                  <th className="text-right py-1 pr-3">Sem fatura</th>
+                  <th className="text-right py-1 pr-3">Bruto</th>
+                  <th className="text-right py-1 pr-3">Margem OS</th>
+                  <th className="text-left py-1 pr-3">Fatura</th>
+                  <th className="text-left py-1">Comissão</th>
+                </tr>
+              </thead>
+              <tbody>
+                {quadro.clientes.map((c) => {
+                  const fatStatus = labelPagamento(c.statusFatura);
+                  const comStatus = labelPagamento(c.statusComissao);
+                  return (
+                    <tr key={c.key} className="border-t border-gray-100" data-testid={`margem-cliente-${c.cliente}`}>
+                      <td className="py-1.5 pr-3 font-bold uppercase">{c.cliente}</td>
+                      <td className="py-1.5 pr-3 text-right font-mono">{c.missoes || '—'}</td>
+                      <td className="py-1.5 pr-3 text-right font-mono">{c.coberturaEstado === 'CONSULTA INCOMPLETA' ? 'NÃO VALIDADO' : c.osSemFatura}</td>
+                      <td className="py-1.5 pr-3 text-right font-mono">{fmtBRL(c.faturamento)}</td>
+                      <td className="py-1.5 pr-3 text-right font-black">
+                        {c.margemPct == null ? 'NÃO VALIDADO' : `${c.margemPct.toFixed(1)}%`}
+                        {c.margemPct != null && (
+                          <div className="text-[9px] text-slate-500 font-bold">{fmtBRL(c.lucroOs)}</div>
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border ${fatStatus.cls}`}>{fatStatus.texto}</span></td>
+                      <td className="py-1.5"><span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border ${comStatus.cls}`}>{comStatus.texto}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -271,6 +448,8 @@ const ComissoesComerciaisPage: React.FC = () => {
   const [quadroTm, setQuadroTm] = useState<LinhaQuadroCliente[]>([]);
   const [quadroTorres, setQuadroTorres] = useState<LinhaQuadroCliente[]>([]);
   const [mesesDisponiveis, setMesesDisponiveis] = useState<string[]>([]);
+  const [cobertura, setCobertura] = useState<CoberturaOsPeriodo>(coberturaVazia());
+  const [funcionarioAberto, setFuncionarioAberto] = useState<string | null>(null);
   const autoSyncRef = useRef(false);
 
   const { start: periodStart, end: periodEnd } = intervaloQuinzena(year, month, quinzenaFiltro);
@@ -324,6 +503,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           setQuadroTorres(mesclarLinhasQuadro(quadroJson.linhasTorres || [], quadroDeComissoesTorres(result.rows, listaComerciais)));
           setMesesDisponiveis(quadroJson.meses || []);
           if (Array.isArray(quadroJson.pendencias)) setPendencias(quadroJson.pendencias);
+          setCobertura(quadroJson.cobertura || coberturaVazia('CONSULTA INCOMPLETA', 'API sem cobertura de OS.', true));
           if (quadroJson.error && !(quadroJson.linhasTm || []).length && !(quadroJson.linhasTorres || []).length) {
             showNotification('Quadro', quadroJson.error, 'warning');
           }
@@ -332,6 +512,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           setQuadroTm(quadro.linhas);
           setQuadroTorres(quadroDeComissoesTorres(result.rows, listaComerciais));
           setMesesDisponiveis(quadro.meses);
+          setCobertura(coberturaVazia('CONSULTA INCOMPLETA', 'Cobertura de OS só via API autenticada.', true));
           if (quadro.error || quadroJson.error) {
             showNotification('Quadro', quadroJson.error || quadro.error || 'Falha ao carregar faturamento', 'warning');
           }
@@ -346,6 +527,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           setQuadroTm([]);
           setQuadroTorres(quadroDeComissoesTorres(result.rows, listaComerciais));
         }
+        setCobertura(coberturaVazia('ERRO', e?.message || 'Falha ao carregar cobertura de OS', true));
         showNotification('Quadro', e?.message || 'Falha ao carregar faturamento', 'warning');
       }
       try {
@@ -447,11 +629,28 @@ const ComissoesComerciaisPage: React.FC = () => {
     return {
       tm,
       torres,
+      all,
       totais: somarQuadro(all),
       totTm: somarQuadro(tm),
       totTorres: somarQuadro(torres),
     };
   }, [quadroTm, quadroTorres, empresaFilter, comercialId]);
+
+  const funcionarios = useMemo(() => {
+    const lista = montarQuadrosFuncionarios({
+      comerciais,
+      linhas: quadroVisivel.all,
+      rows,
+      cobertura,
+    });
+    return comercialId ? lista.filter((f) => f.id === comercialId) : lista;
+  }, [comerciais, quadroVisivel.all, rows, cobertura, comercialId]);
+
+  const kpis = useMemo(() => montarKpisDashboard({
+    linhas: quadroVisivel.all,
+    funcionarios,
+    cobertura,
+  }), [quadroVisivel.all, funcionarios, cobertura]);
 
   const confirmarPagamento = async () => {
     if (!paying || !file) {
@@ -555,6 +754,8 @@ const ComissoesComerciaisPage: React.FC = () => {
     }
   };
 
+  const osSemFatura = cobertura.consultaIncompleta ? [] : cobertura.porCliente.filter((c) => c.semFatura > 0);
+
   return (
     <div className="space-y-5 p-2" data-testid="comissoes-comerciais-page">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -641,6 +842,49 @@ const ComissoesComerciaisPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <div className="border border-slate-200 bg-white rounded-xl p-4" data-testid="cobertura-os-periodo">
+        <p className="font-black text-sm uppercase text-slate-800">OS do período × faturamento</p>
+        {cobertura.consultaIncompleta ? (
+          <p className="text-[11px] text-amber-800 font-bold mt-1">CONSULTA INCOMPLETA — não dá para afirmar que todas as OS foram faturadas.</p>
+        ) : cobertura.estado === 'NÃO EXISTE' ? (
+          <p className="text-[11px] text-slate-500 mt-1">Nenhuma OS concluída/faturada neste período (end_time).</p>
+        ) : osSemFatura.length === 0 ? (
+          <p className="text-[11px] text-emerald-700 font-bold mt-1">
+            {cobertura.totais.missoes} OS do período rastreadas e todas com fatura/vínculo.
+          </p>
+        ) : (
+          <div className="mt-2">
+            <p className="text-[11px] text-amber-800 font-bold">
+              {cobertura.totais.semFatura} OS concluída(s) no período sem fatura (invoice_number ou vínculo financial_invoice_missions).
+            </p>
+            <div className="overflow-x-auto mt-2 max-h-40">
+              <table className="min-w-full text-xs">
+                <thead>
+                  <tr className="text-[10px] font-black text-slate-400 uppercase">
+                    <th className="text-left py-1 pr-3">Cliente</th>
+                    <th className="text-left py-1 pr-3">Comercial</th>
+                    <th className="text-right py-1 pr-3">OS</th>
+                    <th className="text-right py-1 pr-3">Sem fatura</th>
+                    <th className="text-left py-1">IDs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {osSemFatura.map((c) => (
+                    <tr key={`${c.comercialId}|${c.cliente}`} className="border-t border-slate-100">
+                      <td className="py-1 pr-3 font-bold uppercase">{c.cliente}</td>
+                      <td className="py-1 pr-3 uppercase">{c.comercialNome || '—'}</td>
+                      <td className="py-1 pr-3 text-right font-mono">{c.missoes}</td>
+                      <td className="py-1 pr-3 text-right font-mono">{c.semFatura}</td>
+                      <td className="py-1 font-mono text-[10px]">{c.osSemFaturaIds.slice(0, 8).join(', ')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
 
       {showTabela && (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="tabela-comissao-padrao">
@@ -767,39 +1011,36 @@ const ComissoesComerciaisPage: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-        <div className="bg-white border rounded-xl p-4">
-          <p className="text-[10px] font-black text-gray-400 uppercase">Faturamento acumulado</p>
-          <p className="text-lg font-black text-gray-900">{fmtBRL(quadroVisivel.totais.faturamento)}</p>
-          <p className="text-[10px] text-gray-400">{quadroVisivel.totais.faturas} fatura(s)</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3" data-testid="dashboard-comissoes-kpis">
+        <KpiTile tone="blue" icon={TrendingUp} label="Faturamento bruto" value={fmtBRL(kpis.faturamento)} sub={`${quadroVisivel.totais.faturas} fatura(s)`} testid="kpi-faturamento" />
+        <KpiTile tone="amber" icon={Percent} label="Imposto 16% (NF)" value={fmtBRL(kpis.imposto)} sub="Abatido do bruto, não pago ao comercial" testid="kpi-imposto" />
+        <KpiTile tone="green" icon={CircleDollarSign} label="Líquido (lucro base)" value={fmtBRL(kpis.lucroBase)} sub="Bruto − 16%" testid="kpi-liquido" />
+        <KpiTile tone="rose" icon={BadgeDollarSign} label="Comissão 3% líquido" value={fmtBRL(kpis.comissao3)} sub="Após piso de R$ 50 mil" testid="kpi-comissao" />
+        <KpiTile tone="sky" icon={Briefcase} label="Missões do período" value={kpis.consultaIncompleta ? 'NÃO VALIDADO' : String(kpis.missoes)} sub={kpis.consultaIncompleta ? 'Consulta incompleta' : 'Concluída / Faturada'} testid="kpi-missoes" />
+        <KpiTile tone="lime" icon={ClipboardList} label="OS sem fatura" value={kpis.consultaIncompleta ? 'NÃO VALIDADO' : String(kpis.osSemFatura)} sub={kpis.consultaIncompleta ? kpis.coberturaEstado : 'Rastreio por cliente'} testid="kpi-os-sem-fatura" />
+        <KpiTile tone="emerald" icon={TrendingUp} label="Margem operacional OS" value={kpis.margemOperacionalPct == null ? 'NÃO VALIDADO' : `${kpis.margemOperacionalPct.toFixed(1)}%`} sub="Receita OS − custo persistido" testid="kpi-margem-os" />
+        <KpiTile tone="peach" icon={Gift} label="Bônus da escala" value={fmtBRL(kpis.bonus)} sub={`Liberadas ${fmtBRL(stats.lib)} · Pagas ${fmtBRL(stats.pago)}`} testid="kpi-bonus" />
+      </div>
+
+      <div className="space-y-3" data-testid="quadros-funcionarios">
+        <div className="flex items-end justify-between gap-2">
+          <div>
+            <p className="text-[10px] font-black text-gray-400 uppercase">Quadro por funcionário comissionado</p>
+            <p className="text-[11px] text-gray-500">Missões, bruto, imposto, 3% do líquido, margem do cliente e pagamento da fatura × comissão.</p>
+          </div>
         </div>
-        <div className="bg-white border rounded-xl p-4">
-          <p className="text-[10px] font-black text-gray-400 uppercase">Impostos retidos</p>
-          <p className="text-lg font-black text-gray-900">{fmtBRL(quadroVisivel.totais.imposto)}</p>
-        </div>
-        <div className="bg-white border rounded-xl p-4">
-          <p className="text-[10px] font-black text-gray-400 uppercase">Margem líquida (lucro base)</p>
-          <p className="text-lg font-black text-gray-900">{fmtBRL(quadroVisivel.totais.baseLiquida)}</p>
-        </div>
-        <div className="bg-white border rounded-xl p-4">
-          <p className="text-[10px] font-black text-gray-400 uppercase">Liberadas × pagas</p>
-          <p className="text-sm font-black text-blue-700">{fmtBRL(stats.lib)}</p>
-          <p className="text-sm font-black text-green-700">{fmtBRL(stats.pago)}</p>
-        </div>
-        <div className="bg-white border rounded-xl p-4">
-          <p className="text-[10px] font-black text-gray-400 uppercase">Comissão TM SEG</p>
-          <p className="text-lg font-black text-gray-900">{fmtBRL(quadroVisivel.totTm.comissao)}</p>
-          {quadroVisivel.totTm.faturamento > 0 && quadroVisivel.totTm.comissao === 0 && (
-            <p className="text-[10px] font-bold text-amber-700">Abaixo do piso de R$ 50 mil</p>
-          )}
-        </div>
-        <div className="bg-white border rounded-xl p-4">
-          <p className="text-[10px] font-black text-gray-400 uppercase">Comissão TORRES</p>
-          <p className="text-lg font-black text-gray-900">{fmtBRL(quadroVisivel.totTorres.comissao)}</p>
-          {quadroVisivel.totTorres.faturamento > 0 && quadroVisivel.totTorres.comissao === 0 && (
-            <p className="text-[10px] font-bold text-amber-700">Abaixo do piso de R$ 50 mil</p>
-          )}
-        </div>
+        {loading && funcionarios.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-500 flex items-center justify-center gap-2"><Loader2 className="animate-spin" size={16} /> Carregando quadros…</div>
+        ) : funcionarios.length === 0 ? (
+          <div className="bg-white border rounded-xl p-6 text-center text-sm text-gray-500">Nenhum comercial com faturamento ou OS neste filtro.</div>
+        ) : funcionarios.map((f) => (
+          <CardFuncionario
+            key={f.id}
+            quadro={f}
+            aberto={funcionarioAberto === f.id}
+            onToggle={() => setFuncionarioAberto((prev) => prev === f.id ? null : f.id)}
+          />
+        ))}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
@@ -807,6 +1048,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           <TabelaQuadroEmpresa
             titulo="TM SEG — por cliente"
             linhas={quadroVisivel.tm}
+            rows={rows}
             vazio={loading ? 'Carregando faturamento…' : 'Sem faturas TM SEG com comercial neste filtro. Vincule o responsável no cadastro do cliente.'}
             testid="quadro-tm-seg"
           />
@@ -815,6 +1057,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           <TabelaQuadroEmpresa
             titulo="TORRES — por cliente"
             linhas={quadroVisivel.torres}
+            rows={rows}
             vazio={loading ? 'Carregando faturamento…' : 'Sem faturamento TORRES com comercial neste filtro. A TORRES entra pelo ingest quando o cliente tem responsável comercial.'}
             testid="quadro-torres"
           />
