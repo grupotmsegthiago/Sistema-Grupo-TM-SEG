@@ -168,6 +168,8 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
     const nfMunicipalName = String(municipalServiceName || '').trim() || undefined;
     const createdBy = String(input.createdBy || 'Sistema');
     const missionIds = parseMissionIdsFromBody(body.missionIds);
+    const periodStart = body.periodStart ? String(body.periodStart).slice(0, 10) : '';
+    const periodEnd = body.periodEnd ? String(body.periodEnd).slice(0, 10) : '';
 
     const lookupCnpj = clientCpfCnpj || (charges?.[0]?.cpfCnpj) || '';
     const cleanLookup = String(lookupCnpj).replace(/\D/g, '');
@@ -279,6 +281,8 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
             signal: splitCtrl.signal,
             missionIds: missionIds.length ? missionIds : undefined,
             entityId: bodyClientId || clientAddressLookup.clientId || null,
+            periodStart: periodStart || undefined,
+            periodEnd: periodEnd || undefined,
           });
           if (!persistSplit.ok) {
             console.warn(`[Asaas] Persistência local falhou (split ${payment.id}): ${persistSplit.error}`);
@@ -537,6 +541,8 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
             signal,
             missionIds: missionIds.length ? missionIds : undefined,
             entityId: bodyClientId || clientAddressLookup.clientId || null,
+            periodStart: periodStart || undefined,
+            periodEnd: periodEnd || undefined,
           }),
         );
       } catch (e: any) {

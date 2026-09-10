@@ -30,6 +30,7 @@ import { copyTextAsync } from '../lib/clipboard';
 import { buildAuditSummaryData, type AuditSummaryData } from '../lib/auditSummaryBuilder';
 import AuditSummaryPanel from './AuditSummaryPanel';
 import DhlOccurrenceReportModal from './DhlOccurrenceReportModal';
+import MissionAnalyticalReportModal from './MissionAnalyticalReportModal';
 import { formatDateTimeBR, formatNowDateTimeBR, formatDateBR, formatTimeBR, toDatetimeLocalValueBR, datetimeLocalToIsoBR } from '../lib/dateUtils';
 import {
   buildMinimalBillingSnapshot,
@@ -465,6 +466,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [auditSummaryView, setAuditSummaryView] = useState<'visual' | 'text'>('visual');
   const [auditSummaryLoading, setAuditSummaryLoading] = useState(false);
   const [dhlOccurrenceReportOpen, setDhlOccurrenceReportOpen] = useState(false);
+  const [analyticalReportOpen, setAnalyticalReportOpen] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<{
     clientSuggestion: { tableId: string; tableName: string; reason: string } | null;
     providerSuggestion: { tableId: string; tableName: string; reason: string } | null;
@@ -4004,6 +4006,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               {auditSummaryLoading ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
               Resumo
             </button>
+            <button
+              type="button"
+              data-testid="button-analytical-report-audit"
+              onClick={() => setAnalyticalReportOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-md active:scale-95 bg-white/10 text-white hover:bg-white/20 border border-white/25"
+              title="Relatório analítico completo da viagem (PDF com layout TM SEG)"
+            >
+              <Navigation size={12} />
+              Relatório OS
+            </button>
             {showDhlOccurrenceReportBtn && (
               <button
                 type="button"
@@ -4288,6 +4300,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               )}
           </div>
         </header>
+
+        <div
+          className="shrink-0 px-3 py-2.5 sm:px-5 bg-gradient-to-r from-[#111827] to-[#991b1b] border-b border-red-950/30"
+          data-testid="bar-analytical-os-report"
+        >
+          <button
+            type="button"
+            onClick={() => setAnalyticalReportOpen(true)}
+            className="w-full flex items-center justify-center gap-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-[0.99] text-white px-4 py-3 text-xs sm:text-sm font-black uppercase tracking-wide border border-white/25 shadow-lg"
+            data-testid="button-analytical-report-banner"
+          >
+            <Navigation size={18} className="shrink-0" />
+            Gerar Relatório Analítico da Viagem (PDF)
+          </button>
+        </div>
 
         {showDhlOccurrenceReportBtn && (
           <div
@@ -6509,6 +6536,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 )}
                                 <div className="flex gap-1.5 sm:gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setAnalyticalReportOpen(true)}
+                                  className="flex-1 sm:flex-none px-2 sm:px-4 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 bg-[#111827] text-white hover:bg-[#991b1b] border border-red-900/30"
+                                  data-testid="button-analytical-report-footer"
+                                >
+                                  <Navigation size={14} className="shrink-0" />
+                                  <span className="truncate">Relatório OS</span>
+                                </button>
                                 {showDhlOccurrenceReportBtn && (
                                   <button
                                     type="button"
@@ -6607,6 +6643,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           mission={{ ...mission, dhl_se_number: dhlSeNumber }}
           isOpen={dhlOccurrenceReportOpen}
           onClose={() => setDhlOccurrenceReportOpen(false)}
+        />
+      )}
+      {mission && analyticalReportOpen && (
+        <MissionAnalyticalReportModal
+          mission={mission}
+          isOpen={analyticalReportOpen}
+          onClose={() => setAnalyticalReportOpen(false)}
+          omitFinancials={isProviderOnlyUser}
         />
       )}
       <RequestOsAnalysisModal

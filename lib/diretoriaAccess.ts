@@ -37,3 +37,10 @@ export function canAccessComissoesComerciais(user: DiretoriaAccessUser | null | 
   const role = String(user?.role || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   return role === 'diretoria' || role === 'administrador';
 }
+
+/** Painel Diretoria > Faturamento: Thiagos + Diretoria + Administrador + Financeiro. */
+export function canAccessFaturamentoDiretoria(user: DiretoriaAccessUser | null | undefined): boolean {
+  if (canAccessComissoesComerciais(user)) return true;
+  const role = String(user?.role || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return role === 'financeiro';
+}

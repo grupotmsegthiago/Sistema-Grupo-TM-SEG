@@ -97,6 +97,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
     nf_municipal_service_code: '',
     nf_municipal_service_name: '',
     responsavel_comercial_id: '',
+    ciclo_faturamento: '' as '' | 'diario' | 'quinzenal' | 'mensal',
   }); 
   const [osEmailInput, setOsEmailInput] = useState('');
   const [medicaoEmailInput, setMedicaoEmailInput] = useState('');
@@ -243,6 +244,9 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     nf_municipal_service_code: data.nf_municipal_service_code || '',
                     nf_municipal_service_name: data.nf_municipal_service_name || '',
                     responsavel_comercial_id: data.responsavel_comercial_id || '',
+                    ciclo_faturamento: (data.ciclo_faturamento === 'diario' || data.ciclo_faturamento === 'quinzenal' || data.ciclo_faturamento === 'mensal')
+                      ? data.ciclo_faturamento
+                      : '',
                 });
                 fetchPriceTables(data.name);
             }
@@ -683,13 +687,14 @@ const ClientForm: React.FC<ClientFormProps> = ({
         nf_municipal_service_code: formData.nf_municipal_service_code?.trim() || null,
         nf_municipal_service_name: formData.nf_municipal_service_name?.trim() || null,
         responsavel_comercial_id: formData.responsavel_comercial_id || null,
+        ciclo_faturamento: formData.ciclo_faturamento || null,
       };
 
       let savedClientId: string | null = id ? String(id) : null;
       if (id) {
           let { error: updErr } = await supabase.from('clients').update(payload).eq('id', id);
           if (updErr && updErr.code === '42703') {
-            const { operational_email, ...safePayload } = payload;
+            const { operational_email, ciclo_faturamento, ...safePayload } = payload;
             const res2 = await supabase.from('clients').update(safePayload).eq('id', id);
             updErr = res2.error;
           }
@@ -699,7 +704,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
           payload.created_by = currentUser?.name || 'SISTEMA';
           let { data: inserted, error: insErr } = await supabase.from('clients').insert([payload]).select('id').single();
           if (insErr && insErr.code === '42703') {
-            const { operational_email, ...safePayload } = payload;
+            const { operational_email, ciclo_faturamento, ...safePayload } = payload;
             safePayload.created_by = currentUser?.name || 'SISTEMA';
             const res2 = await supabase.from('clients').insert([safePayload]).select('id').single();
             insErr = res2.error;
@@ -1096,6 +1101,21 @@ const ClientForm: React.FC<ClientFormProps> = ({
                             <option value="Ativo">Ativo</option>
                             <option value="Inativo">Inativo</option>
                         </select>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>Ciclo de faturamento</label>
+                        <select
+                          className={INPUT_CLASS}
+                          value={formData.ciclo_faturamento}
+                          onChange={e => setFormData({ ...formData, ciclo_faturamento: e.target.value as typeof formData.ciclo_faturamento })}
+                          data-testid="select-ciclo-faturamento"
+                        >
+                            <option value="">— Selecione (obrigatório para alertas) —</option>
+                            <option value="diario">Diário — cada dia civil</option>
+                            <option value="quinzenal">Quinzenal — dia 1 a 15 e 16 ao último</option>
+                            <option value="mensal">Mensal — dia 1 ao último do mês</option>
+                        </select>
+                        <p className="text-[10px] text-gray-400">Define o boletim e os alertas do Financeiro. Sem ciclo cadastrado o painel trata como não validado.</p>
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
                         <label className={LABEL_CLASS}>Grupo de WhatsApp do Cliente (envio automático de atualizações de OS)</label>

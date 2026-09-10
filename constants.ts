@@ -90,6 +90,7 @@ export const NAV_ITEMS: NavItem[] = [
     id: 'diretoria-group',
     children: [
       { name: 'Cockpit Executivo', id: 'diretoria-cockpit' },
+      { name: 'Faturamento', id: 'diretoria-faturamento' },
       { name: 'Comissões Comerciais', id: 'comissoes-comerciais' },
       { name: 'Gestão Investimento', id: 'gestao-investimento' },
       { name: 'Pendências de OS', id: 'os-analysis-pending' },

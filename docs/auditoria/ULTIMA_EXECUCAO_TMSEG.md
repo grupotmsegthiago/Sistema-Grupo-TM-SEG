@@ -1,5 +1,26 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## DIRETORIA — CONTROLE DE FATURAMENTO (TODA OS)
+
+**Data:** 2026-09-10 (UTC-3)
+**Pedido:** garantir que nenhuma OS fique sem faturar; ciclo vem do cadastro do cliente
+(diário / quinzenal 1–15 e 16–fim / mensal 1–último); alertas para Financeiro;
+relatório Cliente / Período / Data faturamento / Data pagamento / Dias; KPI em
+MENU > Diretoria > FATURAMENTO.
+
+**Fonte da verdade:** `missions` (universo do boletim: não Recusada, não
+`exclude_from_billing`) × `financial_invoice_missions` / `invoice_number` ×
+`financial_invoices` × `clients.ciclo_faturamento`. Fail-closed: ciclo NULL =
+não cadastrado; `billing_approved !== true` = não aprovada; consulta incompleta
+não vira “tudo faturado”.
+
+**Trava já existente preservada:** Gerar Fatura / Enviar Medição / planilha DHL
+continuam bloqueados se houver OS sem APROVADA.
+
+**Não alterado:** motor de OS, Asaas `/payments`, eNotas, valores, Torres.
+
+---
+
 ## PONTO — GEMINI "denied access" BLOQUEAVA A BATIDA
 
 **Data:** 2026-09-09 (UTC-3)

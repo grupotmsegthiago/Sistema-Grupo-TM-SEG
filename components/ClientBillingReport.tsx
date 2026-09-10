@@ -1,4 +1,4 @@
-import { formatNowDateTimeBR } from '../lib/dateUtils';
+import { formatNowDateTimeBR, formatIsoDateBR } from '../lib/dateUtils';
 // BUILD v048 - 2026-04-07 17:40 BRT
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { authFetch } from '../lib/authFetch';
@@ -38,6 +38,12 @@ import {
     listUnapprovedDhlPeriodMissions,
     sortSystemSesForDhlSheet,
 } from '../lib/billing/dhlSheetSeCoverage';
+import {
+    labelCicloFaturamento,
+    parseCicloFaturamento,
+    periodoVigente,
+} from '../lib/faturamento/cicloFaturamento';
+import FaturamentoAlertBanner from './FaturamentoAlertBanner';
 import {
     collectApprovedMissionIdsFromBulletin,
     vincularMissionsAFatura,
@@ -307,6 +313,19 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         const { data } = await supabase.from('providers').select('id, name, trading_name').eq('status', 'Ativo').order('name');
         if (data) setProviders(data as any);
     };
+
+    useEffect(() => {
+        if (reportMode !== 'cliente' || !selectedClient) return;
+        const clientObj = clients.find(c => c.id.toString() === selectedClient);
+        const ciclo = parseCicloFaturamento((clientObj as any)?.ciclo_faturamento);
+        if (!ciclo) return;
+        const vigente = periodoVigente(ciclo, formatIsoDateBR());
+        if (!vigente) return;
+        setStartDate(vigente.start);
+        setEndDate(vigente.end);
+        const p = vigente.start.slice(0, 7);
+        if (p) setSelectedMonth(p);
+    }, [selectedClient, reportMode, clients]);
 
     const handleSetFortnight = (period: 1 | 2) => {
         const refDate = startDate ? new Date(startDate + 'T12:00:00') : new Date();
@@ -1869,6 +1888,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     notes: `Medição enviada por e-mail com Excel/PDF | Contas a Receber venc. ${dueDate} (${days}d)`,
                     created_by: userName,
                     boleto_due_date: dueDate,
+                    period_start: startDate || null,
+                    period_end: endDate || null,
                 };
                 const { data: invRow, error: invErr } = await supabase.from('financial_invoices').insert(invPayload).select('id');
                 if (invErr) {
@@ -3044,6 +3065,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         notes: `${invoiceForm.notes || ''} | CNPJ: ${ch.customer?.cpfCnpj || '-'}`.trim(),
                         created_by: userName,
                         created_at: new Date().toISOString(),
+                        period_start: startDate || null,
+                        period_end: endDate || null,
                     };
                     if (invoiceForm.provider) invoicePayload.provider = invoiceForm.provider;
                     if (invoiceForm.issuer_company) invoicePayload.issuer_company = invoiceForm.issuer_company;
@@ -3210,6 +3233,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 notes: invoiceForm.notes || '',
                 created_by: userName,
                 created_at: new Date().toISOString(),
+                period_start: startDate || null,
+                period_end: endDate || null,
             };
 
             if (invoiceForm.provider) invoicePayload.provider = invoiceForm.provider;
@@ -3505,6 +3530,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         municipalServiceCode: municipalOpt.code,
                         municipalServiceName: municipalOpt.name,
                         missionIds: bulletinMissionIds,
+                        periodStart: startDate || undefined,
+                        periodEnd: endDate || undefined,
                         charges: validCharges.map(c => ({
                             name: c.name || clientObj?.trading_name || clientObj?.name || 'Cliente',
                             cpfCnpj: c.cpfCnpj.replace(/\D/g, ''),
@@ -3646,6 +3673,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     municipalServiceCode: municipalOpt.code,
                     municipalServiceName: municipalOpt.name,
                     missionIds: bulletinMissionIds,
+                    periodStart: startDate || undefined,
+                    periodEnd: endDate || undefined,
                 }),
             });
             const data = await res.json();
@@ -3887,6 +3916,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 amount: parsedAmt, date: invoiceForm.date,
                 status: 'EMITIDA', notes: invoiceForm.notes || '',
                 created_by: userName,
+                period_start: startDate || null,
+                period_end: endDate || null,
             };
             if (nfImageUrl) invoicePayload.nf_image_url = nfImageUrl;
             if (boletoImageUrl) invoicePayload.boleto_image_url = boletoImageUrl;
@@ -4628,6 +4659,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 }
             `}</style>
 
+            <div className="no-print">
+                <FaturamentoAlertBanner onOpenPainel={() => onNavigate?.('diretoria-faturamento')} />
+            </div>
+
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 no-print">
                 <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
                     <div>
@@ -4663,10 +4698,21 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     {providers.map(p => <option key={p.id} value={p.id}>{p.trading_name || p.name}</option>)}
                                 </select>
                             ) : (
+                                <>
                                 <select className="w-full p-2.5 border border-gray-300 rounded-lg text-sm outline-none focus:border-blue-500 bg-white uppercase font-bold" value={selectedClient} onChange={e => setSelectedClient(e.target.value)}>
                                     <option value="">Selecione...</option>
                                     {clients.map(c => <option key={c.id} value={c.id}>{c.trading_name || c.name}</option>)}
                                 </select>
+                                {selectedClient && (() => {
+                                    const c = clients.find(x => x.id.toString() === selectedClient);
+                                    const ciclo = parseCicloFaturamento((c as any)?.ciclo_faturamento);
+                                    return (
+                                        <p className={`mt-1 text-[10px] font-black uppercase ${ciclo ? 'text-blue-700' : 'text-amber-700'}`} data-testid="label-ciclo-cliente">
+                                            Ciclo: {labelCicloFaturamento(ciclo)}{ciclo === 'quinzenal' ? ' (1–15 / 16–fim)' : ciclo === 'mensal' ? ' (mês cheio)' : ''}
+                                        </p>
+                                    );
+                                })()}
+                                </>
                             )}
                         </div>
                         <div className="md:col-span-2">

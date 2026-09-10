@@ -26,6 +26,7 @@ import {
   missingAsaasPaymentFeedback,
 } from '../lib/nfRetryInvoiceFeedback';
 import { formatEmailRecipients, parseEmailRecipients } from '../lib/email/recipientList';
+import FaturamentoAlertBanner from './FaturamentoAlertBanner';
 import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
   AlertCircle, Clock, XCircle, DollarSign, Receipt, Eye, Loader2,
@@ -111,7 +112,7 @@ const fmtDate = (d: string) => {
   return dt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 };
 
-const FinancialInvoiceControl: React.FC = () => {
+const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void }> = ({ onNavigate }) => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const invoicesRef = useRef<Invoice[]>([]);
   invoicesRef.current = invoices;
@@ -741,6 +742,7 @@ const FinancialInvoiceControl: React.FC = () => {
 
   return (
     <div className="p-4 max-w-[1600px] mx-auto" data-testid="financial-invoice-control">
+      <FaturamentoAlertBanner onOpenPainel={() => onNavigate?.('diretoria-faturamento')} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-black text-gray-900 uppercase tracking-wide flex items-center gap-2">

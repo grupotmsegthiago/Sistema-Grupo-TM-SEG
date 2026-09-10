@@ -18,6 +18,8 @@ export type PersistAsaasChargeInput = {
   dueDate: string;
   /** Data de competência / emissão local (YYYY-MM-DD). Default = hoje UTC. */
   date?: string;
+  periodStart?: string | null;
+  periodEnd?: string | null;
   /** Ref. interna de rastreio (ex. TMSEG-…). Preferida em `number` se informada. */
   trackingNumber?: string | null;
   /**
@@ -139,6 +141,8 @@ export async function persistAsaasChargeInvoice(
     plugnotas_protocol: input.plugnotasProtocol || null,
     created_at: new Date().toISOString(),
   };
+  if (input.periodStart) baseRow.period_start = String(input.periodStart).slice(0, 10);
+  if (input.periodEnd) baseRow.period_end = String(input.periodEnd).slice(0, 10);
 
   try {
     let existingQuery = sb

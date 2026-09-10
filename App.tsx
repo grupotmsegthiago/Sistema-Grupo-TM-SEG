@@ -90,6 +90,7 @@ import FinancialCategoryManager from './components/FinancialCategoryManager';
 import FinancialReport from './components/FinancialReport';
 import DashboardDiretoria from './components/dashboard/DashboardDiretoria';
 import ComissoesComerciaisPage from './components/ComissoesComerciaisPage';
+import DiretoriaFaturamentoPage from './components/DiretoriaFaturamentoPage';
 import GestaoInvestimento from './components/investimentos/GestaoInvestimento'; 
 import ClientBillingReport from './components/ClientBillingReport';
 import DailyCashMovement from './components/DailyCashMovement';
@@ -104,7 +105,7 @@ import { wireUserActivityTracker, touchUserActivity } from './lib/userActivityTr
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { canAccessMissionReport } from './lib/missionReportAccess';
-import { canAccessDiretoriaMenu, canAccessComissoesComerciais } from './lib/diretoriaAccess';
+import { canAccessDiretoriaMenu, canAccessComissoesComerciais, canAccessFaturamentoDiretoria } from './lib/diretoriaAccess';
 import { canViewOsAnalysisPendencies } from './lib/osAnalysisAccess';
 import OsAnalysisPendingPage from './components/OsAnalysisPendingPage';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
@@ -404,7 +405,7 @@ const App: React.FC = () => {
         );
       case 'cost-optimization': return <CostOptimizationDashboard />;
       case 'db-maintenance': return <MaintenanceDashboard />;
-      case 'fin-dashboard': return <FinancialDashboard />;
+      case 'fin-dashboard': return <FinancialDashboard onNavigate={navigateTo} />;
       case 'fin-transactions': return <FinancialTransactionList />;
       case 'fin-dre': return <FinancialDRE />;
       case 'fin-accounts': return <FinancialAccountManager />;
@@ -420,6 +421,20 @@ const App: React.FC = () => {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
         return canAccessComissoesComerciais(u)
           ? <ComissoesComerciaisPage />
+          : <Dashboard onOpenMission={handleOpenBillingMission} />;
+      }
+      case 'diretoria-faturamento': {
+        const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+        return canAccessFaturamentoDiretoria(u)
+          ? (
+            <DiretoriaFaturamentoPage
+              onNavigate={navigateTo}
+              onEditClient={(id) => {
+                setClientFormReturnTo('diretoria-faturamento');
+                handleEdit('client-form', id);
+              }}
+            />
+          )
           : <Dashboard onOpenMission={handleOpenBillingMission} />;
       }
       case 'gestao-investimento': {
@@ -447,7 +462,7 @@ const App: React.FC = () => {
       );
       case 'fin-daily-movement': return <DailyCashMovement />;
       case 'fin-vendor-verification': return <VendorVerificationControl onNavigate={navigateTo} onOpenMission={handleOpenBillingMission} />;
-      case 'fin-invoices': return <FinancialInvoiceControl />;
+      case 'fin-invoices': return <FinancialInvoiceControl onNavigate={navigateTo} />;
       case 'fin-dhl-noncompliant': return <DhlNonCompliantTables onBack={() => navigateTo('fin-billing')} />;
       case 'clients': return <ClientList onAddClient={() => navigateTo('client-form')} onEdit={(id) => handleEdit('client-form', id)} />;
       case 'client-form': return (

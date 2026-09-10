@@ -11,6 +11,7 @@ import {
 import { FinancialTransaction, FinancialAccount, FinancialCategory } from '../types';
 import { useQuery } from '@tanstack/react-query';
 import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
+import FaturamentoAlertBanner from './FaturamentoAlertBanner';
 
 const isInvestmentMovement = (t: FinancialTransaction, categories: FinancialCategory[]) => {
     if (categories.some(c => c.id === t.category_id && c.group === 'INVESTIMENTOS')) return true;
@@ -25,7 +26,7 @@ const formatCurrency = (val: number | null | undefined) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
-const FinancialDashboard: React.FC = () => {
+const FinancialDashboard: React.FC<{ onNavigate?: (screen: string) => void }> = ({ onNavigate }) => {
   const [period, setPeriod] = useState<'MONTH' | 'YEAR' | 'ALL' | 'CUSTOM'>('MONTH');
   const [customStartDate, setCustomStartDate] = useState(() => formatIsoDateBR());
   const [customEndDate, setCustomEndDate] = useState(() => formatIsoDateBR());
@@ -122,6 +123,7 @@ const FinancialDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in pb-12 bg-gray-50/50 p-2 rounded-2xl">
+      <FaturamentoAlertBanner onOpenPainel={() => onNavigate?.('diretoria-faturamento')} />
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-2">
         <div>

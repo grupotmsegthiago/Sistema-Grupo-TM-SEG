@@ -192,6 +192,8 @@ export interface Client {
   created_at?: string;
   created_by?: string;
   is_prospect?: boolean;
+  /** diario | quinzenal | mensal — NULL = não cadastrado (fail-closed). */
+  ciclo_faturamento?: 'diario' | 'quinzenal' | 'mensal' | null;
 }
 
 export interface ProviderData {
