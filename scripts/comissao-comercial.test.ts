@@ -736,12 +736,31 @@ describe('comissao comercial — sincronismo TM SEG + TORRES', () => {
     assert.equal(inserts[0].comercial_id, 'e2fe3779-0b03-47cf-95a2-0c01a35e3e32');
   });
 
-  it('fail-closed se a TM SEG não tiver chave de leitura da TORRES', async () => {
+  it('pede à TORRES o envio quando não há leitura ao vivo', async () => {
     const { sincronizarComissoesTorres } = await import('../lib/comissao/sincronizarComissoesTorres');
-    const r = await sincronizarComissoesTorres({ from() { return {}; } } as any, { sbTorres: null });
+    const r = await sincronizarComissoesTorres({ from() { return {}; } } as any, {
+      sbTorres: null,
+      env: { COMISSAO_INGEST_TOKEN: 'tok' },
+      fetchFn: (async () =>
+        new Response(JSON.stringify({
+          ok: true,
+          clientes: [{ id: 63, nome: 'TECHTRANS TRANSPORTES', comercialId: 'e2fe3779-0b03-47cf-95a2-0c01a35e3e32' }],
+          faturados: 1,
+          pagos: 0,
+        }), { status: 200 })) as typeof fetch,
+    });
+    assert.equal(r.ok, true);
+    assert.equal(r.pushed, true);
+    assert.equal(r.generated, 1);
+    assert.match(r.clientesComComercial[0].nome, /TECHTRANS/);
+  });
+
+  it('não inventa faturamento se o envio da TORRES não estiver autorizado', async () => {
+    const { sincronizarComissoesTorres } = await import('../lib/comissao/sincronizarComissoesTorres');
+    const r = await sincronizarComissoesTorres({ from() { return {}; } } as any, { sbTorres: null, env: {} });
     assert.equal(r.ok, false);
     assert.equal(r.liveDisponivel, false);
-    assert.match(String(r.error || ''), /TORRES_SUPABASE_SERVICE_ROLE_KEY/);
+    assert.doesNotMatch(String(r.error || ''), /TORRES_SUPABASE_SERVICE_ROLE_KEY/);
   });
 
   it('botão, rota, rewrite e cron de 6 horas existem', () => {
@@ -758,6 +777,7 @@ describe('comissao comercial — sincronismo TM SEG + TORRES', () => {
     assert.match(vercel, /\/api\/comissoes\/sync-tm-torres/);
     assert.match(vercel, /"schedule": "0 \*\/6 \* \* \*"/);
     assert.match(cron, /sincronizarComissoesTmETorres/);
+    assert.match(sync, /dispararPushTorres/);
     assert.doesNotMatch(sync, /trading_name, responsavel_comercial_id/);
   });
 });

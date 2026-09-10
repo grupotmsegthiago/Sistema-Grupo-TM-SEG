@@ -27,6 +27,7 @@ export type ClienteTorresComercial = {
 export type SyncTorresResult = {
   ok: boolean;
   liveDisponivel: boolean;
+  pushed?: boolean;
   clientesComComercial: ClienteTorresComercial[];
   faturasLidas: number;
   generated: number;
@@ -36,6 +37,76 @@ export type SyncTorresResult = {
   errors: number;
   error?: string;
 };
+
+export const TORRES_PUSH_DEFAULT_URL = 'https://torresseguranca.vercel.app/api/comissoes/push-tm-seg';
+export const TORRES_PUSH_TIMEOUT_MS = 90_000;
+
+export async function dispararPushTorres(opts?: {
+  fetchFn?: typeof fetch;
+  env?: NodeJS.ProcessEnv;
+}): Promise<{
+  ok: boolean;
+  clientes: ClienteTorresComercial[];
+  faturados: number;
+  pagos: number;
+  error?: string;
+}> {
+  const env = opts?.env || process.env;
+  const token = String(env.COMISSAO_INGEST_TOKEN || env.CRON_SECRET || '').trim();
+  const url = String(env.TORRES_COMISSAO_PUSH_URL || '').trim() || TORRES_PUSH_DEFAULT_URL;
+  if (!token) {
+    return { ok: false, clientes: [], faturados: 0, pagos: 0, error: 'A TORRES ainda não enviou o cadastro. Tente de novo em instantes.' };
+  }
+  const fetchFn = opts?.fetchFn || fetch;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), TORRES_PUSH_TIMEOUT_MS);
+  try {
+    const res = await fetchFn(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'x-comissao-ingest-token': token,
+      },
+      body: '{}',
+      signal: ac.signal,
+    });
+    const json = await res.json().catch(() => ({})) as {
+      ok?: boolean;
+      error?: string;
+      clientes?: ClienteTorresComercial[];
+      faturados?: number;
+      pagos?: number;
+    };
+    if (!res.ok) {
+      return {
+        ok: false,
+        clientes: [],
+        faturados: 0,
+        pagos: 0,
+        error: json.error || `A TORRES recusou o envio (${res.status})`,
+      };
+    }
+    return {
+      ok: json.ok !== false,
+      clientes: Array.isArray(json.clientes) ? json.clientes : [],
+      faturados: Number(json.faturados) || 0,
+      pagos: Number(json.pagos) || 0,
+      error: json.error,
+    };
+  } catch (err: unknown) {
+    const aborted = err instanceof Error && (err.name === 'AbortError' || /aborted/i.test(err.message));
+    return {
+      ok: false,
+      clientes: [],
+      faturados: 0,
+      pagos: 0,
+      error: aborted ? 'A TORRES demorou para responder.' : err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export type SyncTmTorresResult = {
   ok: boolean;
@@ -150,6 +221,8 @@ export async function sincronizarComissoesTorres(
     periodEnd?: string;
     todayIso?: string;
     sbTorres?: ComissaoDbClient | null;
+    fetchFn?: typeof fetch;
+    env?: NodeJS.ProcessEnv;
   },
 ): Promise<SyncTorresResult> {
   const empty: SyncTorresResult = {
@@ -169,9 +242,16 @@ export async function sincronizarComissoesTorres(
   const end = opts?.periodEnd || periodo.end;
   const live = opts?.sbTorres === undefined ? createTorresAdminClient() : opts.sbTorres;
   if (!live) {
+    const push = await dispararPushTorres({ fetchFn: opts?.fetchFn, env: opts?.env });
     return {
       ...empty,
-      error: 'TORRES_SUPABASE_SERVICE_ROLE_KEY ausente — a TM SEG não lê o cadastro/OS da TORRES neste ambiente.',
+      ok: push.ok,
+      pushed: true,
+      clientesComComercial: push.clientes,
+      faturasLidas: push.faturados,
+      generated: push.faturados,
+      paidUpdated: push.pagos,
+      error: push.error,
     };
   }
   const clientes = await listarClientesTorresComComercial(live);
@@ -206,12 +286,14 @@ export async function sincronizarComissoesTmETorres(
     periodEnd?: string;
     todayIso?: string;
     sbTorres?: ComissaoDbClient | null;
+    fetchFn?: typeof fetch;
+    env?: NodeJS.ProcessEnv;
   },
 ): Promise<SyncTmTorresResult> {
   const tm = await sincronizarComissoesFaturasExistentes(sbTm);
   const torres = await sincronizarComissoesTorres(sbTm, opts);
   return {
-    ok: tm.ok && (torres.ok || !torres.liveDisponivel),
+    ok: tm.ok && torres.ok,
     tm,
     torres,
     syncedAt: new Date().toISOString(),
