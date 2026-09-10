@@ -30,21 +30,48 @@ export function normalizeClienteNome(value: unknown): string {
     .toUpperCase();
 }
 
+const MIN_PREFIXO_CLIENTE = 8;
+
+function nomesDoCadastroCliente(c: ClienteComissaoMatch): string[] {
+  return [normalizeClienteNome(c.name), normalizeClienteNome(c.trading_name)].filter(Boolean);
+}
+
+function nomeClienteEquivale(needle: string, nome: string): boolean {
+  if (!nome) return false;
+  if (needle === nome) return true;
+  if (nome.length < MIN_PREFIXO_CLIENTE) return false;
+  return needle.startsWith(nome) || nome.startsWith(needle);
+}
+
+function uniqueClientsPorId(hits: ClienteComissaoMatch[]): ClienteComissaoMatch[] {
+  const seen = new Set<number>();
+  const out: ClienteComissaoMatch[] = [];
+  for (const c of hits) {
+    const id = Number(c.id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(c);
+  }
+  return out;
+}
+
 export function casarClienteDaFatura(
   invoiceClient: string | null | undefined,
   clients: ClienteComissaoMatch[],
 ): { status: 'ok' | 'none' | 'ambiguous'; client?: ClienteComissaoMatch } {
   const needle = normalizeClienteNome(invoiceClient);
   if (!needle) return { status: 'none' };
-  const hits = clients.filter((c) => {
-    const name = normalizeClienteNome(c.name);
-    const trading = normalizeClienteNome(c.trading_name);
-    return needle === name || (trading && needle === trading);
-  });
-  const uniqueIds = [...new Set(hits.map((c) => Number(c.id)))];
-  if (uniqueIds.length === 0) return { status: 'none' };
-  if (uniqueIds.length > 1) return { status: 'ambiguous' };
-  return { status: 'ok', client: hits[0] };
+  const exact = uniqueClientsPorId(
+    clients.filter((c) => nomesDoCadastroCliente(c).includes(needle)),
+  );
+  if (exact.length === 1) return { status: 'ok', client: exact[0] };
+  if (exact.length > 1) return { status: 'ambiguous' };
+  const flex = uniqueClientsPorId(
+    clients.filter((c) => nomesDoCadastroCliente(c).some((nome) => nomeClienteEquivale(needle, nome))),
+  );
+  if (flex.length === 1) return { status: 'ok', client: flex[0] };
+  if (flex.length > 1) return { status: 'ambiguous' };
+  return { status: 'none' };
 }
 
 export type PendenciaComissaoCliente = {

@@ -309,7 +309,6 @@ export async function carregarQuadroTmSeg(
   if (invRes.error) return { linhas: [], meses: [], error: invRes.error };
   const cliRes = await fetchAllRows(sb, 'clients', 'id, name, trading_name, responsavel_comercial_id');
   const vinculosRes = await fetchAllRows(sb, 'financial_invoice_missions', 'invoice_id, mission_id');
-  const missRes = await fetchAllRows(sb, 'missions', 'id, invoice_number');
   const recRes = await fetchAllRows(
     sb,
     'financial_transactions',
@@ -324,15 +323,6 @@ export async function carregarQuadroTmSeg(
     const prev = osPorFatura.get(invoiceId) || [];
     prev.push(missionId);
     osPorFatura.set(invoiceId, prev);
-  }
-  const osPorNumero = new Map<string, string[]>();
-  for (const row of missRes.rows || []) {
-    const numero = String(row.invoice_number || '').trim();
-    const missionId = String(row.id || '').trim();
-    if (!numero || numero === '0' || !missionId) continue;
-    const prev = osPorNumero.get(numero) || [];
-    prev.push(missionId);
-    osPorNumero.set(numero, prev);
   }
   const recebidoPorNumero = new Map<string, string>();
   for (const row of recRes.rows || []) {
@@ -350,10 +340,7 @@ export async function carregarQuadroTmSeg(
     date: inv.date || null,
     status: inv.status || null,
     asaasStatus: inv.asaas_status || null,
-    osIds: unirOsIds(
-      osPorFatura.get(String(inv.id)),
-      inv.number ? osPorNumero.get(String(inv.number)) : [],
-    ),
+    osIds: unirOsIds(osPorFatura.get(String(inv.id))),
     receivableStatus: inv.number ? recebidoPorNumero.get(String(inv.number)) || null : null,
   }));
   const linhas = montarQuadroClientes(
@@ -366,8 +353,39 @@ export async function carregarQuadroTmSeg(
   return {
     linhas,
     meses: mesesComFatura(invoices),
-    error: cliRes.error || vinculosRes.error || missRes.error || recRes.error,
+    error: cliRes.error || vinculosRes.error || recRes.error,
   };
+}
+
+/** OS concluída com comercial e sem NF vira linha no quadro (ex.: TECHTRANS do Miguel). */
+export function faturasDeOsParaQuadro(
+  os: Array<{
+    id: string;
+    cliente: string;
+    comercialId: string | null;
+    receita: number;
+    faturada: boolean;
+    date?: string | null;
+  }>,
+): FaturaQuadro[] {
+  const faturas: FaturaQuadro[] = [];
+  for (const item of os) {
+    const comercialId = String(item.comercialId || '').trim() || null;
+    if (!comercialId || item.faturada) continue;
+    if (!(Number(item.receita) > 0)) continue;
+    faturas.push({
+      id: item.id,
+      empresa: 'TM_SEG',
+      cliente: item.cliente,
+      number: item.id,
+      amount: Number(item.receita) || 0,
+      date: item.date || null,
+      status: 'EMITIDA',
+      comercialId,
+      osIds: [item.id],
+    });
+  }
+  return faturas;
 }
 
 export function quadroDeComissoesTorres(

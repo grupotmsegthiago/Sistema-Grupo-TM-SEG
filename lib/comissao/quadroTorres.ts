@@ -74,7 +74,7 @@ export async function carregarFaturasQuadroTorresLive(
   const billRes = await fetchAllRows(
     sbTorres,
     'escort_billings',
-    'invoice_id, os_number, service_order_id, pago_em',
+    'invoice_id, os_number, service_order_id, pago_em, fat_total, data_missao, faturado_em, created_at, status, client_id, client_name',
   );
   const clients = ((cliRes.rows || []) as ClienteTorres[]).map(clienteTorresMatch);
   const byId = new Map<number, ClienteComissaoMatch>();
@@ -153,6 +153,38 @@ export async function carregarFaturasQuadroTorresLive(
       comercialId,
       osIds: String(tx.origin_type || '') === 'service_order' && originId ? [originId] : [],
       paymentDate: tx.payment_date || null,
+    });
+  }
+  const osJaContada = new Set<string>();
+  for (const fat of faturas) {
+    for (const os of fat.osIds || []) osJaContada.add(String(os));
+  }
+  for (const bill of billRes.rows || []) {
+    const status = String(bill.status || '').toUpperCase();
+    if (status === 'CANCELADO' || /CANCEL/.test(status)) continue;
+    const valor = Number(bill.fat_total) || 0;
+    if (valor <= 0) continue;
+    const date = String(bill.data_missao || bill.faturado_em || bill.created_at || '').slice(0, 10);
+    if (!faturaNoPeriodo(date, periodStart, periodEnd)) continue;
+    const invoiceId = String(bill.invoice_id || '').trim();
+    if (invoiceId && idsContados.has(invoiceId)) continue;
+    const osId = String(bill.os_number || bill.service_order_id || '').trim();
+    if (osId && osJaContada.has(osId)) continue;
+    const cli = acharClienteTorres(bill.client_id, bill.client_name, byId, byNome);
+    const comercialId = String(cli?.responsavel_comercial_id || '').trim() || null;
+    if (!comercialId) continue;
+    if (osId) osJaContada.add(osId);
+    faturas.push({
+      id: `os:${osId || bill.service_order_id || date}`,
+      empresa: 'TORRES',
+      cliente: String(bill.client_name || cli?.name || '').trim() || null,
+      number: osId || null,
+      amount: valor,
+      date,
+      status: bill.pago_em ? 'PAGA' : 'EMITIDA',
+      comercialId,
+      osIds: osId ? [osId] : [],
+      paymentDate: bill.pago_em || null,
     });
   }
   return {

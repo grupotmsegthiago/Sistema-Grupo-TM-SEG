@@ -225,6 +225,11 @@ describe('comissao comercial — faturas históricas', () => {
     assert.equal(casarClienteDaFatura('CEVA', clients).status, 'ok');
     assert.equal(casarClienteDaFatura('CEVA', clients).client?.id, 1);
     assert.equal(casarClienteDaFatura('TECHTRANS TRANSPORTES', clients).status, 'ok');
+    assert.equal(
+      casarClienteDaFatura('TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', clients).status,
+      'ok',
+    );
+    assert.equal(casarClienteDaFatura('TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', clients).client?.id, 37);
     assert.equal(casarClienteDaFatura('LUFT LOGISTICS LTDA', clients).status, 'ambiguous');
     const pend = montarPendenciasComissao(
       [
@@ -431,7 +436,10 @@ describe('comissao comercial — quadro TORRES ao vivo', () => {
   it('lê receita TORRES com comercial e ignora fatura sem responsável', async () => {
     const { carregarFaturasQuadroTorresLive, carregarQuadroTorres } = await import('../lib/comissao/quadroTorres');
     const tables: Record<string, any[]> = {
-      clients: [{ id: 62, name: 'TVM LOG', nome_fantasia: 'TVM LOG', responsavel_comercial_id: 'abc' }],
+      clients: [
+        { id: 62, name: 'TVM LOG', nome_fantasia: 'TVM LOG', responsavel_comercial_id: 'abc' },
+        { id: 63, name: 'TECHTRANS TRANSPORTES', nome_fantasia: 'TECHTRANS TRANSPORTES', razao_social: 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', responsavel_comercial_id: 'abc' },
+      ],
       invoices: [{
         id: 161, client_id: 6, client_name: 'TM SEGURANCA', value: 100000, status: 'PENDING', due_date: '2026-09-04',
       }],
@@ -446,7 +454,26 @@ describe('comissao comercial — quadro TORRES ao vivo', () => {
         origin_id: '1188',
         type: 'INCOME',
       }],
-      escort_billings: [],
+      escort_billings: [
+        {
+          service_order_id: 1191,
+          client_id: 63,
+          client_name: 'TECHTRANS TRANSPORTES',
+          fat_total: 4447.51,
+          status: 'A_VERIFICAR',
+          data_missao: '2026-09-09',
+          invoice_id: null,
+          pago_em: null,
+        },
+        {
+          service_order_id: 1190,
+          client_id: 63,
+          client_name: 'TECHTRANS TRANSPORTES',
+          fat_total: 0,
+          status: 'CANCELADO',
+          data_missao: '2026-09-08',
+        },
+      ],
     };
     const sb = {
       from(table: string) {
@@ -459,9 +486,9 @@ describe('comissao comercial — quadro TORRES ao vivo', () => {
       },
     };
     const live = await carregarFaturasQuadroTorresLive(sb as any, '2026-09-01', '2026-09-30');
-    assert.equal(live.faturas.length, 1);
-    assert.equal(live.faturas[0].cliente, 'TVM LOG');
-    assert.equal(live.faturas[0].osIds.includes('1188'), true);
+    assert.equal(live.faturas.length, 2);
+    assert.ok(live.faturas.some((f) => f.cliente === 'TVM LOG' && f.osIds.includes('1188')));
+    assert.ok(live.faturas.some((f) => String(f.cliente || '').includes('TECHTRANS') && f.osIds.includes('1191')));
     const quadro = await carregarQuadroTorres(
       {
         from() {
@@ -480,7 +507,9 @@ describe('comissao comercial — quadro TORRES ao vivo', () => {
       [{ id: 'abc', nome: 'MIGUEL MOTA' }],
       sb as any,
     );
-    assert.equal(quadro.linhas.length, 1);
+    assert.equal(quadro.linhas.length, 2);
+    assert.ok(quadro.linhas.some((l) => l.cliente.includes('TVM')));
+    assert.ok(quadro.linhas.some((l) => l.cliente.includes('TECHTRANS')));
     assert.equal(quadro.linhas[0].comercialNome, 'MIGUEL MOTA');
   });
 });
@@ -511,6 +540,35 @@ describe('comissao comercial — cobertura OS e dashboard', () => {
     assert.equal(cob.porCliente[0].comercialNome, 'MIGUEL MOTA');
     assert.equal(cob.porCliente[0].osSemFaturaIds.includes('GTM-2'), true);
     assert.equal(cob.porCliente[0].margemPct != null, true);
+    assert.equal(cob.itens.some((os) => os.date === '2026-09-09'), true);
+  });
+
+  it('coloca OS TECHTRANS sem NF no quadro TM SEG do comercial', async () => {
+    const { faturasDeOsParaQuadro, montarQuadroClientes } = await import('../lib/comissao/quadroFaturamentoComissao');
+    const { montarCoberturaOsPeriodo } = await import('../lib/comissao/coberturaOsPeriodo');
+    const cob = montarCoberturaOsPeriodo({
+      missions: [
+        { id: 'GTM-7704', client: 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', status: 'Concluída', end_time: '2026-09-09', invoice_number: null, revenue_value: 1311.88, cost_value: 400 },
+        { id: 'GTM-7705', client: 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', status: 'Concluída', end_time: '2026-09-09', invoice_number: null, revenue_value: 732.24, cost_value: 200 },
+        { id: 'GTM-7749', client: 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', status: 'Agendada', end_time: null, revenue_value: 3389.04 },
+      ],
+      clients: [{ id: 37, name: 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', trading_name: 'TECHTRANS TRANSPORTES', responsavel_comercial_id: 'abc' }],
+      comerciais: [{ id: 'abc', nome: 'MIGUEL MOTA' }],
+      idsVinculados: new Set(),
+      periodStart: '2026-09-01',
+      periodEnd: '2026-09-30',
+    });
+    const linhas = montarQuadroClientes(
+      faturasDeOsParaQuadro(cob.itens),
+      [],
+      [{ id: 'abc', nome: 'MIGUEL MOTA' }],
+      '2026-09-01',
+      '2026-09-30',
+    );
+    assert.equal(linhas.length, 1);
+    assert.equal(linhas[0].comercialNome, 'MIGUEL MOTA');
+    assert.equal(linhas[0].faturas, 2);
+    assert.ok(linhas[0].detalhes.some((d) => d.osIds.includes('GTM-7704')));
   });
 
   it('não declara OS sem fatura quando o vínculo não carregou', async () => {

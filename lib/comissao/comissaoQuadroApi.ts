@@ -10,6 +10,10 @@ import {
 import {
   aplicarPisoComissaoQuadro,
   carregarQuadroTmSeg,
+  faturasDeOsParaQuadro,
+  mesclarLinhasQuadro,
+  mesesComFatura,
+  montarQuadroClientes,
   type LinhaQuadroCliente,
 } from './quadroFaturamentoComissao.js';
 import { carregarQuadroTorres } from './quadroTorres.js';
@@ -50,12 +54,23 @@ export async function montarQuadroComissoesApi(
     carregarCoberturaOsPeriodo(sb, periodStart, periodEnd, lista),
     carregarPendenciasComissao(sb),
   ]);
-  const comPiso = aplicarPisoComissaoQuadro(quadro.linhas, torres.linhas);
+  const linhasOs = montarQuadroClientes(
+    faturasDeOsParaQuadro(cobertura.itens),
+    [],
+    lista,
+    periodStart,
+    periodEnd,
+  );
+  const linhasTm = mesclarLinhasQuadro(quadro.linhas, linhasOs);
+  const comPiso = aplicarPisoComissaoQuadro(linhasTm, torres.linhas);
+  const mesesOs = mesesComFatura(
+    cobertura.itens.map((os) => ({ date: os.date, status: os.faturada ? 'PAGA' : 'EMITIDA' })),
+  );
   return {
-    ok: !quadro.error || quadro.linhas.length > 0 || quadro.meses.length > 0 || torres.linhas.length > 0,
+    ok: !quadro.error || quadro.linhas.length > 0 || linhasTm.length > 0 || quadro.meses.length > 0 || torres.linhas.length > 0,
     linhasTm: comPiso.linhasTm,
     linhasTorres: comPiso.linhasTorres,
-    meses: quadro.meses,
+    meses: [...new Set([...quadro.meses, ...mesesOs])].sort().reverse(),
     pendencias: pend.ok ? pend.pendencias : [],
     cobertura,
     error: quadro.error || torres.error || (!pend.ok ? pend.error : undefined) || cobertura.error,

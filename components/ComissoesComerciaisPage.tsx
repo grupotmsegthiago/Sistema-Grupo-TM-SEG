@@ -495,6 +495,7 @@ const ComissoesComerciaisPage: React.FC = () => {
         return { data: data as ComissaoRow[] | null, error, count };
       });
       setRows(result.rows);
+      setQuadroTorres(quadroDeComissoesTorres(result.rows, listaComerciais));
       try {
         const quadroRes = await authFetch(`/api/comissoes/quadro?start=${encodeURIComponent(periodStart)}&end=${encodeURIComponent(periodEnd)}`);
         const quadroJson = await quadroRes.json().catch(() => ({}));

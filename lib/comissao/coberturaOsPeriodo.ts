@@ -37,6 +37,7 @@ export type OsPeriodoItem = {
   receita: number;
   custo: number;
   lucro: number;
+  date: string | null;
 };
 
 export type CoberturaCliente = {
@@ -148,6 +149,7 @@ export function montarCoberturaOsPeriodo(args: {
       receita,
       custo,
       lucro: roundMoney(receita - custo),
+      date: String(m.end_time || '').slice(0, 10) || null,
     });
   }
 
