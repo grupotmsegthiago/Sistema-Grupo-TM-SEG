@@ -531,6 +531,10 @@
       "destination": "/api/comissoes-ingest?op=sync-faturas"
     },
     {
+      "source": "/api/comissoes/sync-tm-torres",
+      "destination": "/api/comissoes-ingest?op=sync-tm-torres"
+    },
+    {
       "source": "/api/asaas/sync-open-payments",
       "destination": "/api/asaas-sync-open-payments"
     },

@@ -4,7 +4,7 @@
  * Fonte 2: leitura ao vivo no Supabase TORRES, se TORRES_SUPABASE_SERVICE_ROLE_KEY existir.
  * Só entra cliente com responsável comercial.
  */
-import { fetchAllRows, type ClienteComissaoMatch } from './sincronizarComissoesFaturas.js';
+import { casarClienteDaFatura, fetchAllRows, type ClienteComissaoMatch } from './sincronizarComissoesFaturas.js';
 import type { ComissaoDbClient } from './comissaoCore.js';
 import {
   faturaCancelada,
@@ -47,7 +47,8 @@ function acharClienteTorres(
     .trim()
     .toUpperCase();
   if (nome && byNome.has(nome)) return byNome.get(nome) || null;
-  return null;
+  const match = casarClienteDaFatura(entityName, [...byId.values()]);
+  return match.status === 'ok' ? match.client || null : null;
 }
 
 export async function carregarFaturasQuadroTorresLive(
@@ -76,12 +77,12 @@ export async function carregarFaturasQuadroTorresLive(
     'escort_billings',
     'invoice_id, os_number, service_order_id, pago_em, fat_total, data_missao, faturado_em, created_at, status, client_id, client_name',
   );
-  const clients = ((cliRes.rows || []) as ClienteTorres[]).map(clienteTorresMatch);
   const byId = new Map<number, ClienteComissaoMatch>();
   const byNome = new Map<string, ClienteComissaoMatch>();
-  for (const cli of clients) {
+  for (const row of (cliRes.rows || []) as ClienteTorres[]) {
+    const cli = clienteTorresMatch(row);
     byId.set(Number(cli.id), cli);
-    for (const raw of [cli.name, cli.trading_name]) {
+    for (const raw of [cli.name, cli.trading_name, row.nome_fantasia, row.razao_social]) {
       const nome = String(raw || '')
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')

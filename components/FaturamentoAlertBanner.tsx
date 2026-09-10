@@ -51,8 +51,7 @@ const FaturamentoAlertBanner: React.FC<Props> = ({ onOpenPainel }) => {
   if (k.osSemFaturaFechado) partes.push(`${k.osSemFaturaFechado} OS sem fatura`);
   if (k.osSemAprovacaoFechado) partes.push(`${k.osSemAprovacaoFechado} sem APROVADA`);
   if (k.faturasAtrasadas) partes.push(`${k.faturasAtrasadas} fatura(s) atrasada(s)`);
-  if (k.osPendentesAberto) partes.push(`${k.osPendentesAberto} para aprovar no ciclo atual`);
-  if (k.clientesSemCiclo) partes.push(`${k.clientesSemCiclo} cliente(s) sem ciclo`);
+  if (k.clientesSemCiclo) partes.push(`${k.clientesSemCiclo} cliente(s) sem ciclo cadastrado`);
 
   const critico = k.semaforo === 'critico';
   return (

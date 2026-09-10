@@ -6,6 +6,7 @@ import type { Express, Request, Response } from 'express';
 import { createSupabaseAdminClient } from './supabaseConfig';
 import { assertComissoesQuadroAccess } from '../lib/comissao/comissaoQuadroAuth';
 import { montarQuadroComissoesApi, sincronizarComissoesViaAdmin } from '../lib/comissao/comissaoQuadroApi';
+import { sincronizarComissoesTmETorres } from '../lib/comissao/sincronizarComissoesTorres';
 
 export function registerComissaoQuadroRoutes(app: Express, requireAuth: any): void {
   app.get('/api/comissoes/quadro', requireAuth, async (req: Request, res: Response) => {
@@ -34,6 +35,25 @@ export function registerComissaoQuadroRoutes(app: Express, requireAuth: any): vo
     if (!sb) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
     try {
       const result = await sincronizarComissoesViaAdmin(sb);
+      return res.json(result);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      return res.status(200).json({ ok: false, error: message });
+    }
+  });
+
+  app.post('/api/comissoes/sync-tm-torres', requireAuth, async (req: Request, res: Response) => {
+    const access = await assertComissoesQuadroAccess(req);
+    if (!access.ok) return res.status(access.status).json({ ok: false, error: access.error });
+    const sb = createSupabaseAdminClient();
+    if (!sb) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
+    const start = String(req.query.start || req.body?.start || '').slice(0, 10);
+    const end = String(req.query.end || req.body?.end || '').slice(0, 10);
+    try {
+      const result = await sincronizarComissoesTmETorres(sb, {
+        periodStart: /^\d{4}-\d{2}-\d{2}$/.test(start) ? start : undefined,
+        periodEnd: /^\d{4}-\d{2}-\d{2}$/.test(end) ? end : undefined,
+      });
       return res.json(result);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);

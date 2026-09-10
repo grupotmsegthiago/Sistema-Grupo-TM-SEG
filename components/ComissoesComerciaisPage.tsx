@@ -444,6 +444,12 @@ const ComissoesComerciaisPage: React.FC = () => {
   const [novoFixo, setNovoFixo] = useState('');
   const [savingComercial, setSavingComercial] = useState(false);
   const [syncingFaturas, setSyncingFaturas] = useState(false);
+  const [syncingTmTorres, setSyncingTmTorres] = useState(false);
+  const [syncTorresInfo, setSyncTorresInfo] = useState<{
+    clientes: Array<{ id: number; nome: string; comercialId: string }>;
+    live: boolean;
+    error?: string;
+  } | null>(null);
   const [pendencias, setPendencias] = useState<PendenciaComissaoCliente[]>([]);
   const [quadroTm, setQuadroTm] = useState<LinhaQuadroCliente[]>([]);
   const [quadroTorres, setQuadroTorres] = useState<LinhaQuadroCliente[]>([]);
@@ -720,6 +726,34 @@ const ComissoesComerciaisPage: React.FC = () => {
     }
   };
 
+  const sincronizarTmETorres = async () => {
+    setSyncingTmTorres(true);
+    try {
+      const qs = `start=${encodeURIComponent(periodStart)}&end=${encodeURIComponent(periodEnd)}`;
+      const syncRes = await authFetch(`/api/comissoes/sync-tm-torres?${qs}`, { method: 'POST', body: '{}' });
+      const json = await syncRes.json().catch(() => ({}));
+      if (!syncRes.ok) throw new Error(json.error || 'Falha no sincronismo');
+      setPendencias(json.tm?.pendencias || []);
+      setSyncTorresInfo({
+        clientes: json.torres?.clientesComComercial || [],
+        live: !!json.torres?.liveDisponivel,
+        error: json.torres?.error,
+      });
+      const nCli = json.torres?.clientesComComercial?.length || 0;
+      const liveOff = !json.torres?.liveDisponivel;
+      showNotification(
+        'Sincronismo TM SEG + TORRES',
+        `TM SEG: ${json.tm?.generated || 0} comissão(ões) gerada(s). TORRES: ${nCli} cliente(s) com comercial, ${json.torres?.faturasLidas || 0} lançamento(s) lido(s), ${json.torres?.generated || 0} novo(s).${json.torres?.error ? ` ${json.torres.error}` : ''}`,
+        liveOff || json.torres?.error ? 'warning' : 'success',
+      );
+      await load();
+    } catch (e: any) {
+      showNotification('Erro', e?.message || 'Falha ao sincronizar TM SEG e TORRES.', 'error');
+    } finally {
+      setSyncingTmTorres(false);
+    }
+  };
+
   const sincronizarUsuarios = async () => {
     setSyncingUsers(true);
     try {
@@ -764,7 +798,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           <h1 className="text-lg font-black text-gray-900 uppercase tracking-tight flex items-center gap-2">
             <BadgeDollarSign className="text-red-600" size={22} /> Comissões Comerciais
           </h1>
-          <p className="text-xs text-gray-500 font-medium">Controle único TM SEG + TORRES. Vínculo pelo usuário COMERCIAL. Fórmula: bruto − 16% da NF = líquido; 3% sobre o líquido. Comissão % só a partir de R$ 50 mil de faturamento do comercial no período. Abaixo disso: só o valor fixo. Total a pagar = fixo + comissão.</p>
+          <p className="text-xs text-gray-500 font-medium">Controle único TM SEG + TORRES. Vínculo pelo usuário COMERCIAL. Fórmula: bruto − 16% da NF = líquido; 3% sobre o líquido. Comissão % só a partir de R$ 50 mil de faturamento do comercial no período. Abaixo disso: só o valor fixo. Total a pagar = fixo + comissão. Sincronismo automático a cada 6 horas (botão também dispara na hora).</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -783,6 +817,15 @@ const ComissoesComerciaisPage: React.FC = () => {
             data-testid="btn-sync-usuarios-comercial"
           >
             {syncingUsers ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sincronizar usuários
+          </button>
+          <button
+            type="button"
+            disabled={syncingTmTorres}
+            onClick={() => void sincronizarTmETorres()}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-xs font-black uppercase text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+            data-testid="btn-sync-tm-torres"
+          >
+            {syncingTmTorres ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sincronizar TM SEG + TORRES
           </button>
           <button
             type="button"
@@ -805,6 +848,27 @@ const ComissoesComerciaisPage: React.FC = () => {
       </div>
 
       <InvoiceDivergenceAuditPanel onSynced={() => { void load(); }} />
+
+      {syncTorresInfo ? (
+        <div
+          className={`rounded-xl border p-4 ${syncTorresInfo.live ? 'border-emerald-200 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}
+          data-testid="comissao-sync-torres-info"
+        >
+          <p className="text-xs font-black uppercase text-gray-800">
+            TORRES · clientes com responsável comercial ({syncTorresInfo.clientes.length})
+          </p>
+          <p className="mt-1 text-[11px] text-gray-600">
+            {syncTorresInfo.live
+              ? 'Leitura ao vivo do cadastro TORRES. Só entra no quadro quem tem comercial e faturamento/OS no período.'
+              : syncTorresInfo.error || 'Live da TORRES indisponível neste ambiente — o quadro usa o ingest já gravado.'}
+          </p>
+          {syncTorresInfo.clientes.length > 0 ? (
+            <p className="mt-2 text-[11px] font-bold text-gray-800">
+              {syncTorresInfo.clientes.map((c) => c.nome).join(' · ')}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {pendencias.length > 0 && (
         <div className="border-2 border-amber-400 bg-amber-50 rounded-xl p-4" data-testid="comissao-pendencias-banner">
@@ -1059,7 +1123,7 @@ const ComissoesComerciaisPage: React.FC = () => {
             titulo="TORRES — por cliente"
             linhas={quadroVisivel.torres}
             rows={rows}
-            vazio={loading ? 'Carregando faturamento…' : 'Sem faturamento TORRES com comercial neste filtro. A TORRES entra pelo ingest quando o cliente tem responsável comercial.'}
+            vazio={loading ? 'Carregando faturamento…' : 'Sem faturamento TORRES com comercial neste filtro. Use Sincronizar TM SEG + TORRES. Só entra cliente com responsável comercial no cadastro da TORRES.'}
             testid="quadro-torres"
           />
         )}

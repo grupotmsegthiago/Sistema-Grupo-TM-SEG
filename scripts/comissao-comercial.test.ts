@@ -657,3 +657,107 @@ describe('comissao comercial — cobertura OS e dashboard', () => {
     assert.equal(kpis.margemOperacionalPct, 40);
   });
 });
+
+describe('comissao comercial — sincronismo TM SEG + TORRES', () => {
+  it('janela de 18 meses e origem inv: sem duplicar ingest numérico', async () => {
+    const {
+      periodoSyncComissoes,
+      origemFaturaTorresPersistencia,
+      faturaTorresPaga,
+    } = await import('../lib/comissao/sincronizarComissoesTorres');
+    assert.deepEqual(periodoSyncComissoes('2026-09-10'), { start: '2025-03-01', end: '2026-09-10' });
+    assert.equal(origemFaturaTorresPersistencia({ id: 'inv:161' }), '161');
+    assert.equal(origemFaturaTorresPersistencia({ id: 'os:1191' }), 'os:1191');
+    assert.equal(faturaTorresPaga({ paymentDate: '2026-09-09' }), true);
+    assert.equal(faturaTorresPaga({ status: 'PENDING' }), false);
+  });
+
+  it('persiste OS TORRES com comercial e ignora lançamento sem responsável', async () => {
+    const { persistirFaturasTorresNoCadastro } = await import('../lib/comissao/sincronizarComissoesTorres');
+    const inserts: any[] = [];
+    const sb = {
+      from() {
+        const chain: any = {
+          select() { return chain; },
+          eq() { return chain; },
+          is() { return chain; },
+          order() { return chain; },
+          limit() { return Promise.resolve({ data: [], error: null }); },
+          maybeSingle: async () => ({ data: null, error: null }),
+          insert(row: any) {
+            inserts.push(row);
+            return {
+              select() {
+                return {
+                  maybeSingle: async () => ({ data: { id: `c${inserts.length}` }, error: null }),
+                };
+              },
+            };
+          },
+          update() {
+            const upd: any = {
+              eq() { return upd; },
+              select() { return Promise.resolve({ data: [], error: null }); },
+            };
+            return upd;
+          },
+        };
+        return chain;
+      },
+    };
+    const persist = await persistirFaturasTorresNoCadastro(sb as any, [
+      {
+        id: 'os:1191',
+        empresa: 'TORRES',
+        cliente: 'TECHTRANS TRANSPORTES',
+        number: '1191',
+        amount: 4447.51,
+        date: '2026-09-09',
+        status: 'EMITIDA',
+        comercialId: 'e2fe3779-0b03-47cf-95a2-0c01a35e3e32',
+        osIds: ['1191'],
+      },
+      {
+        id: 'os:999',
+        empresa: 'TORRES',
+        cliente: 'SEM COMERCIAL',
+        number: '999',
+        amount: 100,
+        date: '2026-09-09',
+        status: 'EMITIDA',
+        comercialId: null,
+        osIds: ['999'],
+      },
+    ]);
+    assert.equal(persist.generated, 1);
+    assert.equal(persist.skippedSemComercial, 1);
+    assert.equal(inserts[0].origem_fatura_id, 'os:1191');
+    assert.equal(inserts[0].empresa_origem, 'TORRES');
+    assert.equal(inserts[0].comercial_id, 'e2fe3779-0b03-47cf-95a2-0c01a35e3e32');
+  });
+
+  it('fail-closed se a TM SEG não tiver chave de leitura da TORRES', async () => {
+    const { sincronizarComissoesTorres } = await import('../lib/comissao/sincronizarComissoesTorres');
+    const r = await sincronizarComissoesTorres({ from() { return {}; } } as any, { sbTorres: null });
+    assert.equal(r.ok, false);
+    assert.equal(r.liveDisponivel, false);
+    assert.match(String(r.error || ''), /TORRES_SUPABASE_SERVICE_ROLE_KEY/);
+  });
+
+  it('botão, rota, rewrite e cron de 6 horas existem', () => {
+    const page = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
+    const ingest = fs.readFileSync('api/comissoes-ingest.ts', 'utf8');
+    const vercel = fs.readFileSync('vercel.json', 'utf8');
+    const cron = fs.readFileSync('server/registerCronRoutes.ts', 'utf8');
+    const sync = fs.readFileSync('lib/comissao/sincronizarComissoesTorres.ts', 'utf8');
+    assert.equal((page.match(/data-testid="btn-sync-tm-torres"/g) || []).length, 1);
+    assert.match(page, /Sincronismo automático a cada 6 horas/);
+    assert.match(page, /comissao-sync-torres-info/);
+    assert.match(page, /from 'react'/);
+    assert.match(ingest, /op === 'sync-tm-torres'/);
+    assert.match(vercel, /\/api\/comissoes\/sync-tm-torres/);
+    assert.match(vercel, /"schedule": "0 \*\/6 \* \* \*"/);
+    assert.match(cron, /sincronizarComissoesTmETorres/);
+    assert.doesNotMatch(sync, /trading_name, responsavel_comercial_id/);
+  });
+});

@@ -51,7 +51,14 @@ export function registerCronRoutes(app: Express): void {
 
   cronRoute(app, "/api/cron/maintenance", async () => {
     const { runMaintenanceTick } = await import("./maintenanceJobs");
-    return runMaintenanceTick();
+    const maintenance = await runMaintenanceTick();
+    const { createSupabaseAdminClient } = await import("./supabaseConfig");
+    const { sincronizarComissoesTmETorres } = await import("../lib/comissao/sincronizarComissoesTorres");
+    const sb = createSupabaseAdminClient();
+    const comissoes = sb
+      ? await sincronizarComissoesTmETorres(sb)
+      : { ok: false, error: "supabase_unavailable" };
+    return { maintenance, comissoes };
   });
 
   console.log("[Cron] Rotas /api/cron/* registradas (Vercel Cron Jobs).");

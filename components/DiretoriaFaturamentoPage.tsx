@@ -97,7 +97,7 @@ const DiretoriaFaturamentoPage: React.FC<Props> = ({ onNavigate, onEditClient })
     semaforo === 'ok'
       ? { bg: 'from-emerald-600 to-emerald-700', titulo: 'Faturamento em dia', sub: 'Toda OS dos ciclos fechados está faturada e aprovada.' }
       : semaforo === 'alerta'
-        ? { bg: 'from-amber-500 to-amber-600', titulo: 'Atenção no ciclo atual', sub: 'Há OS para aprovar ou ciclo de cliente sem cadastro.' }
+        ? { bg: 'from-amber-500 to-amber-600', titulo: 'Ciclos fechados em dia', sub: 'OS do período em curso ficam de fora até o prazo fechar. Cadastre o ciclo nos clientes que ainda não têm.' }
         : { bg: 'from-red-600 to-red-700', titulo: 'Há OS ou fatura em atraso', sub: 'Não feche boletim enquanto restar OS sem fatura ou sem APROVADA.' };
 
   return (
@@ -162,10 +162,10 @@ const DiretoriaFaturamentoPage: React.FC<Props> = ({ onNavigate, onEditClient })
             />
             <Kpi
               testid="kpi-pendentes-aberto"
-              label="Aprovar agora"
+              label="Ciclo em curso"
               value={String(kpis?.osPendentesAberto ?? 0)}
-              sub="Ciclo em curso"
-              tone={(kpis?.osPendentesAberto || 0) > 0 ? 'alerta' : 'ok'}
+              sub="Ainda no prazo — não alerta"
+              tone="neutro"
             />
             <Kpi
               testid="kpi-faturas-atraso"
@@ -192,7 +192,7 @@ const DiretoriaFaturamentoPage: React.FC<Props> = ({ onNavigate, onEditClient })
               <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
                 {(painel?.fila || []).length === 0 ? (
                   <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-4 text-sm font-bold text-emerald-800">
-                    <CheckCircle2 size={16} /> Nenhum cliente travado.
+                    <CheckCircle2 size={16} /> Nada vencido. OS do ciclo em curso não entram aqui.
                   </div>
                 ) : (
                   (painel?.fila || []).map((row) => (

@@ -15,6 +15,7 @@ import {
 } from '../lib/comissao/comissaoIngest.js';
 import { assertComissoesQuadroAccess } from '../lib/comissao/comissaoQuadroAuth.js';
 import { montarQuadroComissoesApi, sincronizarComissoesViaAdmin } from '../lib/comissao/comissaoQuadroApi.js';
+import { sincronizarComissoesTmETorres } from '../lib/comissao/sincronizarComissoesTorres.js';
 
 function extractToken(req: { headers?: Record<string, unknown> }): string {
   const headers = req.headers || {};
@@ -33,6 +34,7 @@ function queryOp(req: { query?: Record<string, unknown>; url?: string }): string
   if (fromQuery) return fromQuery;
   const url = String(req.url || '');
   if (url.includes('/comissoes/quadro')) return 'quadro';
+  if (url.includes('/comissoes/sync-tm-torres')) return 'sync-tm-torres';
   if (url.includes('/comissoes/sync-faturas')) return 'sync-faturas';
   return '';
 }
@@ -73,6 +75,16 @@ async function handleQuadroOps(req: any, res: any, op: string) {
     res.status(200).json(result);
     return;
   }
+  if (op === 'sync-tm-torres') {
+    const start = queryDate(req, 'start');
+    const end = queryDate(req, 'end');
+    const result = await sincronizarComissoesTmETorres(sb, {
+      periodStart: /^\d{4}-\d{2}-\d{2}$/.test(start) ? start : undefined,
+      periodEnd: /^\d{4}-\d{2}-\d{2}$/.test(end) ? end : undefined,
+    });
+    res.status(200).json(result);
+    return;
+  }
   const result = await sincronizarComissoesViaAdmin(sb);
   res.status(200).json(result);
 }
@@ -84,12 +96,12 @@ export async function handleComissoesIngest(req: any, res: any) {
   }
 
   const op = queryOp(req);
-  if (op === 'quadro' || op === 'sync-faturas') {
+  if (op === 'quadro' || op === 'sync-faturas' || op === 'sync-tm-torres') {
     if (op === 'quadro' && req.method !== 'GET') {
       res.status(405).json({ error: 'method_not_allowed' });
       return;
     }
-    if (op === 'sync-faturas' && req.method !== 'POST' && req.method !== 'GET') {
+    if ((op === 'sync-faturas' || op === 'sync-tm-torres') && req.method !== 'POST' && req.method !== 'GET') {
       res.status(405).json({ error: 'method_not_allowed' });
       return;
     }
@@ -156,4 +168,4 @@ export default async function handler(req: any, res: any) {
   return handleComissoesIngest(req, res);
 }
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 120 };

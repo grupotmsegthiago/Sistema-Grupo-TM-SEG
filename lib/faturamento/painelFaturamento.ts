@@ -389,17 +389,6 @@ export function montarPainelFaturamento(args: {
   let osPendentesAberto = 0;
 
   const clientesSemCicloList = ativos.filter((c) => !parseCicloFaturamento(c.ciclo_faturamento));
-  for (const c of clientesSemCicloList) {
-    alertas.push({
-      severidade: 'alerta',
-      tipo: 'CICLO_NAO_CADASTRADO',
-      cliente: displayCliente(c, ''),
-      clienteId: clientIdOf(c),
-      periodo: '—',
-      detalhe: 'Cadastre Diário, Quinzenal ou Mensal',
-      osIds: [],
-    });
-  }
 
   const byCliente = new Map<string, { client: ClientePainel | null; ciclo: CicloFaturamento | null; os: OsNorm[] }>();
   for (const os of osNorm) {
@@ -424,24 +413,7 @@ export function montarPainelFaturamento(args: {
     const cid = clientIdOf(group.client);
 
     if (!ciclo) {
-      const semFatura = group.os.filter((o) => !o.faturada);
-      const semAprov = group.os.filter((o) => !o.aprovada);
-      if (semFatura.length || semAprov.length) {
-        upsertFila({
-          cliente: nome,
-          clienteId: cid,
-          ciclo: null,
-          cicloLabel: labelCicloFaturamento(null),
-          periodo: 'Ciclo não cadastrado',
-          osTotal: group.os.length,
-          osFaturadas: group.os.filter((o) => o.faturada).length,
-          osSemFatura: semFatura.length,
-          osSemAprovacao: semAprov.length,
-          osAbertas: group.os.filter((o) => o.aberta).length,
-          semaforo: semFatura.length ? 'critico' : 'alerta',
-          estado: 'NÃO VALIDADO',
-        });
-      }
+      // Sem ciclo no cadastro não dá para saber o prazo. Não inventa atraso.
       continue;
     }
 
@@ -516,25 +488,7 @@ export function montarPainelFaturamento(args: {
 
     if (vigentes && !periodoEstaFechado(vigentes, today)) {
       const noPeriodo = group.os.filter((o) => o.competencia && isoInRange(o.competencia, vigentes.start, vigentes.end));
-      const semAprov = noPeriodo.filter((o) => !o.aprovada);
-      const semFatura = noPeriodo.filter((o) => !o.faturada);
-      osPendentesAberto += semAprov.length;
-      if (semAprov.length || semFatura.length) {
-        upsertFila({
-          cliente: nome,
-          clienteId: cid,
-          ciclo,
-          cicloLabel: labelCicloFaturamento(ciclo),
-          periodo: `${vigentes.label} (em curso)`,
-          osTotal: noPeriodo.length,
-          osFaturadas: noPeriodo.length - semFatura.length,
-          osSemFatura: semFatura.length,
-          osSemAprovacao: semAprov.length,
-          osAbertas: noPeriodo.filter((o) => o.aberta).length,
-          semaforo: 'alerta',
-          estado: 'ENCONTRADO',
-        });
-      }
+      osPendentesAberto += noPeriodo.filter((o) => !o.aprovada).length;
     }
   }
 
@@ -627,7 +581,7 @@ export function montarPainelFaturamento(args: {
     osCicloFechado > 0 ? Math.round((osFaturadasFechado / osCicloFechado) * 1000) / 10 : osCicloFechado === 0 ? 100 : null;
 
   const temBuraco = osSemFaturaFechado > 0 || osSemAprovacaoFechado > 0 || faturasAtrasadas > 0;
-  const temAlerta = osPendentesAberto > 0 || clientesSemCicloList.length > 0 || fila.some((f) => f.semaforo === 'alerta');
+  const temAlerta = clientesSemCicloList.length > 0 || fila.some((f) => f.semaforo === 'alerta');
   const semaforo: SemaforoFaturamento = temBuraco ? 'critico' : temAlerta ? 'alerta' : 'ok';
 
   return {
