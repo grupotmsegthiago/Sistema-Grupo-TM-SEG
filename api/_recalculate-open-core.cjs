@@ -33,12 +33,14 @@ __export(financialUtils_exports, {
   extractCityFromAddress: () => extractCityFromAddress,
   extractUF: () => extractUF,
   fetchClientPriceTables: () => fetchClientPriceTables,
+  hasPersistedProviderCost: () => hasPersistedProviderCost,
   identifyRegionFromText: () => identifyRegionFromText,
   isIntentionalBillingOverride: () => isIntentionalBillingOverride,
   isSameClientName: () => isSameClientName,
   resolveCancelledTime: () => resolveCancelledTime,
   resolveCancelledWindow: () => resolveCancelledWindow,
-  resolveDisplacementFromAuthorizedKm: () => resolveDisplacementFromAuthorizedKm
+  resolveDisplacementFromAuthorizedKm: () => resolveDisplacementFromAuthorizedKm,
+  resolveDisplayedProviderCost: () => resolveDisplayedProviderCost
 });
 module.exports = __toCommonJS(financialUtils_exports);
 
@@ -541,6 +543,28 @@ function isIntentionalBillingOverride(editReason) {
   ];
   if (blockAutoResync.some((p) => r.includes(p))) return true;
   return true;
+}
+function hasPersistedProviderCost(mission) {
+  if (mission.billing_approved) return true;
+  if (mission.billing_verified_by) return true;
+  if (isIntentionalBillingOverride(mission.cost_edit_reason)) return true;
+  return mission.cost_value != null && Number(mission.cost_value) > 0;
+}
+function resolveDisplayedProviderCost(opts) {
+  const tollProv = Math.max(0, opts.tollValueProvider != null ? Number(opts.tollValueProvider) : Number(opts.tollValue || 0));
+  const dispProv = opts.isSameOs ? 0 : Math.max(0, Number(opts.displacementValueProvider || 0));
+  const storedValue = Number(opts.costValue || 0) + tollProv + dispProv;
+  const persisted = hasPersistedProviderCost({
+    billing_approved: opts.billingApproved,
+    billing_verified_by: opts.billingVerifiedBy,
+    cost_value: opts.costValue,
+    cost_edit_reason: opts.costEditReason
+  });
+  if (persisted) return storedValue;
+  if (opts.projectedProviderTotal != null && opts.status === "Em Viagem") {
+    return Number(opts.projectedProviderTotal) || 0;
+  }
+  return storedValue;
 }
 async function fetchClientPriceTables(supabase, clientName) {
   const trimmed = String(clientName || "").trim();
@@ -1309,12 +1333,9 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
   }
   let isManualOverride = false;
   if (manualTableOverrides?.clientTableId) {
-    const manualTable = clientTables.find((t) => t.id.toString() === manualTableOverrides.clientTableId);
-    const manualTableOp = (manualTable?.operation_type || "").toUpperCase();
-    const regionNames = ["SUDESTE", "SUL", "CENTRO-OESTE", "NORDESTE", "NORTE"];
-    const manualTableRegion = regionNames.find((r) => manualTableOp.includes(r)) || "";
-    const regionOk = !manualTableRegion || !detectedRegion || manualTableRegion === detectedRegion.toUpperCase();
-    if (regionOk) {
+    const wantedId = String(manualTableOverrides.clientTableId);
+    const manualTable = clientTables.find((t) => String(t.id) === wantedId);
+    if (manualTable) {
       appliedClientTable = manualTable;
       clientLog = "Sele\xE7\xE3o Manual / Mem\xF3ria";
       isManualOverride = true;
@@ -1913,10 +1934,12 @@ var auditMissionFinancials = (mission, clientTables, providerTables, clientData,
   extractCityFromAddress,
   extractUF,
   fetchClientPriceTables,
+  hasPersistedProviderCost,
   identifyRegionFromText,
   isIntentionalBillingOverride,
   isSameClientName,
   resolveCancelledTime,
   resolveCancelledWindow,
-  resolveDisplacementFromAuthorizedKm
+  resolveDisplacementFromAuthorizedKm,
+  resolveDisplayedProviderCost
 });

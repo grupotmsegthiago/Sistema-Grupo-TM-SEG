@@ -253,6 +253,7 @@ describe('painel de faturamento — cobertura fail-closed', () => {
     });
     assert.equal(painel.kpis.osSemFaturaFechado, 1);
     assert.ok(painel.fila.some((f) => f.osSemFatura === 1));
+    assert.ok(painel.relatorio.some((r) => r.statusPagamento === 'A COBRAR' && r.osPeriodo === 1));
   });
 
   it('cliente sem ciclo não joga OS do mês corrente na fila', () => {
@@ -274,6 +275,57 @@ describe('painel de faturamento — cobertura fail-closed', () => {
     assert.ok(painel.kpis.clientesSemCiclo >= 1);
     assert.equal(painel.fila.length, 0);
     assert.equal(painel.alertas.length, 0);
+  });
+
+  it('OS de mês já fechado sem fatura aparece como A COBRAR mesmo sem ciclo cadastrado', () => {
+    const painel = montarPainelFaturamento({
+      todayIso: '2026-09-10',
+      lookbackStart: '2026-08-01',
+      clients,
+      missions: [{
+        id: 'GTM-AGO',
+        client: 'SEM CICLO',
+        status: 'Concluída',
+        start_time: '2026-08-20T12:00:00',
+        billing_approved: true,
+      }],
+      invoices: [],
+      vinculos: [],
+      receber: [],
+    });
+    assert.equal(painel.kpis.osSemFaturaFechado, 1);
+    assert.ok(painel.fila.some((f) => f.osSemFatura === 1));
+    assert.ok(painel.relatorio.some((r) => r.statusPagamento === 'A COBRAR'));
+  });
+
+  it('OS anterior a agosto/2026 fica de fora do painel', () => {
+    const painel = montarPainelFaturamento({
+      todayIso: '2026-09-10',
+      lookbackStart: '2026-08-01',
+      clients,
+      missions: [{
+        id: 'GTM-JUL',
+        client: 'DHL',
+        status: 'Concluída',
+        start_time: '2026-07-20T12:00:00',
+        billing_approved: false,
+        invoice_number: null,
+      }],
+      invoices: [{
+        id: 'inv-jul',
+        client: 'DHL',
+        number: 'NF-JUL',
+        amount: 10,
+        date: '2026-07-31',
+        status: 'EMITIDA',
+        period_end: '2026-07-31',
+      }],
+      vinculos: [],
+      receber: [],
+    });
+    assert.equal(painel.kpis.osCicloFechado, 0);
+    assert.equal(painel.fila.length, 0);
+    assert.equal(painel.relatorio.length, 0);
   });
 
   it('Recusada e exclude_from_billing ficam de fora do universo', () => {

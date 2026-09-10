@@ -10,6 +10,9 @@ export type PeriodoFaturamento = {
   chave: string;
 };
 
+/** Painel Diretoria > Faturamento: só a partir deste mês. */
+export const FATURAMENTO_PAINEL_INICIO = '2026-08-01';
+
 const MONTH_SHORT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'] as const;
 
 export function parseCicloFaturamento(raw: unknown): CicloFaturamento | null {
