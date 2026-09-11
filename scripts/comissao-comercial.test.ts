@@ -59,7 +59,7 @@ describe('comissao comercial — integração preservada', () => {
     const form = fs.readFileSync('components/ClientForm.tsx', 'utf8');
     const page = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
     const app = fs.readFileSync('App.tsx', 'utf8');
-    const nav = fs.readFileSync('constants.ts', 'utf8');
+    const nav = fs.readFileSync('lib/navItems.ts', 'utf8');
     assert.match(form, /select-responsavel-comercial/);
     assert.match(form, /from 'react'/);
     assert.match(page, /filter-empresa-comissao/);

@@ -40,21 +40,25 @@ describe('diretoriaAccess — menu só Thiago Moreira / Thiago Santos', () => {
   });
 
   it('menu Diretoria fica acima de Monitoramento no NAV_ITEMS', () => {
-    const src = fs.readFileSync('constants.ts', 'utf8');
+    const src = fs.readFileSync('lib/navItems.ts', 'utf8');
     const idxDir = src.indexOf("name: 'Diretoria'");
     const idxMon = src.indexOf("name: 'Monitoramento'");
     assert.ok(idxDir > 0 && idxMon > 0);
     assert.ok(idxDir < idxMon, 'Diretoria deve aparecer antes de Monitoramento');
   });
 
-  it('Sidebar e App usam canAccessDiretoriaMenu (não só role)', () => {
+  it('Sidebar usa canAccessScreen; App mantém gates da Diretoria', () => {
     const sidebar = fs.readFileSync('components/Sidebar.tsx', 'utf8');
     const app = fs.readFileSync('App.tsx', 'utf8');
-    assert.match(sidebar, /canAccessDiretoriaMenu/);
-    assert.match(sidebar, /DIRETORIA_MENU_SCREEN_IDS/);
+    const screenAccess = fs.readFileSync('lib/screenAccess.ts', 'utf8');
+    assert.match(sidebar, /canAccessScreen/);
+    assert.match(sidebar, /screenAccess/);
+    assert.match(screenAccess, /canAccessDiretoriaMenu/);
+    assert.match(screenAccess, /DIRETORIA_MENU_SCREEN_IDS/);
     assert.doesNotMatch(sidebar, /diretoriaScreens\.has\(itemId\) && \(role === 'diretoria'/);
     assert.match(app, /canAccessDiretoriaMenu/);
     assert.match(app, /case 'diretoria-cockpit'/);
+    assert.match(app, /canAccessScreen/);
     assert.match(sidebar, /from 'react'/);
     assert.match(app, /from 'react'/);
   });

@@ -183,7 +183,8 @@ const ProfileForm: React.FC<Props> = ({ onBack, id }) => {
                         Permissões do Sistema
                     </h3>
                     <p className="text-[11px] text-gray-400 font-medium mt-1">
-                        {selectedPermissions.length} de {allPermissionIds.length} permissões selecionadas
+                        {selectedPermissions.length} de {allPermissionIds.length} permissões selecionadas.
+                        Somente o que estiver marcado aqui aparece no menu do funcionário com este perfil.
                     </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">

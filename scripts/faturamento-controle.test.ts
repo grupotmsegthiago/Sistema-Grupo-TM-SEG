@@ -357,15 +357,18 @@ describe('faturamento diretoria — acesso e menu', () => {
   });
 
   it('menu Diretoria expõe FATURAMENTO e App faz gate', () => {
-    const constants = fs.readFileSync('constants.ts', 'utf8');
+    const nav = fs.readFileSync('lib/navItems.ts', 'utf8');
     const app = fs.readFileSync('App.tsx', 'utf8');
     const sidebar = fs.readFileSync('components/Sidebar.tsx', 'utf8');
+    const screenAccess = fs.readFileSync('lib/screenAccess.ts', 'utf8');
     const form = fs.readFileSync('components/ClientForm.tsx', 'utf8');
-    assert.match(constants, /diretoria-faturamento/);
-    assert.match(constants, /name: 'Faturamento'/);
+    assert.match(nav, /diretoria-faturamento/);
+    assert.match(nav, /name: 'Faturamento'/);
     assert.match(app, /canAccessFaturamentoDiretoria/);
     assert.match(app, /case 'diretoria-faturamento'/);
-    assert.match(sidebar, /canAccessFaturamentoDiretoria/);
+    assert.match(app, /canAccessScreen/);
+    assert.match(sidebar, /canAccessScreen/);
+    assert.match(screenAccess, /canAccessFaturamentoDiretoria/);
     assert.match(form, /select-ciclo-faturamento/);
     assert.match(form, /ciclo_faturamento/);
   });

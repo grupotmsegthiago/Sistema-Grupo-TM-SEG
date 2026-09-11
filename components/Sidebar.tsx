@@ -7,9 +7,7 @@ import {
 import { NAV_ITEMS, APP_VERSION } from '../constants';
 import { NavItem } from '../constants'; // Explicit import to avoid TS error if NAV_ITEMS interface isn't exported correctly
 import { logAction } from '../lib/logger';
-import { canAccessMissionReport } from '../lib/missionReportAccess';
-import { canAccessDiretoriaMenu, canAccessComissoesComerciais, canAccessFaturamentoDiretoria, DIRETORIA_MENU_SCREEN_IDS } from '../lib/diretoriaAccess';
-import { canRequestOsAnalysis } from '../lib/osAnalysisAccess';
+import { canAccessScreen } from '../lib/screenAccess';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -20,23 +18,14 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onLogout }) => {
   const [expandedMenus, setExpandedMenus] = useState<string[]>(['diretoria-group', 'monitoring-group', 'finance-group', 'commercial-group', 'clients-group', 'providers-group', 'settings-group']);
-  const [userPermissions, setUserPermissions] = useState<string[]>([]);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
-  // Carregar permissões do usuário ao montar
+  // Carregar usuário (permissions vêm do perfil vinculado no login)
   useEffect(() => {
     const storedUser = localStorage.getItem('userData');
     if (storedUser) {
         try {
-            const user = JSON.parse(storedUser);
-            setCurrentUser(user);
-            // Se tiver '*', é admin total. Caso contrário, usa a lista de IDs
-            if (user.permissions && user.permissions.includes('*')) {
-                setIsAdmin(true);
-            } else {
-                setUserPermissions(user.permissions || []);
-            }
+            setCurrentUser(JSON.parse(storedUser));
         } catch (e) {
             console.error(e);
         }
@@ -156,130 +145,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
     }
   };
 
-  // Função para verificar se o usuário tem acesso a um item
-  const hasAccess = (itemId: string) => {
-    const role = (currentUser?.role || '').toLowerCase();
-    
-    if (itemId === 'monitoring-group' || itemId === 'missions') return true;
-
-    if (itemId === 'ranking-dhl') {
-      return role === 'avançado' || role === 'avancado' || role === 'diretoria' || role === 'administrador';
-    }
-
-    // Menu Fornecedor (grupo + cadastros + mapa) para todos os usuários internos.
-    // Usuário-cliente do portal continua bloqueado.
-    const providerMenuIds = new Set([
-      'providers-group',
-      'providers',
-      'provider-form',
-      'provider-activation-map',
-      'provider-users',
-      'provider-vehicles',
-      'provider-agents',
-      'provider-technologies',
-    ]);
-    if (providerMenuIds.has(itemId)) {
-      const isClientUser = Boolean(
-        currentUser?.clientId ||
-        (currentUser?.permissions && currentUser.permissions.some((p: string) => p.startsWith('client_view:')))
-      );
-      return !isClientUser;
-    }
-
-    if (itemId === 'mission-report') {
-      return canAccessMissionReport(currentUser);
-    }
-
-    if (role === 'financeiro') {
-        if (itemId === 'finance-group' || itemId === 'fin-report') return true;
-    }
-
-    // Grupo Diretoria: Cockpit (Thiagos), Pendências, ou Faturamento/Comissões (só perfil Diretoria)
-    if (itemId === 'diretoria-group') {
-      return canAccessDiretoriaMenu(currentUser)
-        || canRequestOsAnalysis(currentUser)
-        || canAccessComissoesComerciais(currentUser)
-        || canAccessFaturamentoDiretoria(currentUser);
-    }
-
-    if (itemId === 'comissoes-comerciais') {
-      return canAccessComissoesComerciais(currentUser);
-    }
-
-    if (itemId === 'diretoria-faturamento') {
-      return canAccessFaturamentoDiretoria(currentUser);
-    }
-
-    // Menu Diretoria / Cockpit — SOMENTE Thiago Moreira ou Thiago Santos
-    // (perfil "Diretoria"/Administrador sozinho NÃO libera).
-    if (DIRETORIA_MENU_SCREEN_IDS.has(itemId)) {
-      return canAccessDiretoriaMenu(currentUser);
-    }
-
-    if (itemId === 'os-analysis-pending') {
-      return canRequestOsAnalysis(currentUser);
-    }
-
-    if (itemId === 'fin-report' && canAccessDiretoriaMenu(currentUser)) return true;
-    if (itemId === 'fin-report' && role === 'diretoria') return true;
-
-    if (role === 'comercial') {
-        const forbiddenGroups = ['finance-group', 'settings-group'];
-        if (forbiddenGroups.includes(itemId)) return false;
-        return userPermissions.includes(itemId);
-    }
-
-    // 2. Bloqueio Duro para Usuários Externos (Clientes)
-    const isRestrictedClientUser = currentUser?.clientId || (currentUser?.permissions && currentUser.permissions.some((p: string) => p.startsWith('client_view:')));
-
-    if (isRestrictedClientUser) {
-        const forbiddenGroups = ['finance-group', 'providers-group', 'settings-group', 'commercial-group', 'support-network', 'whatsapp-center'];
-        if (forbiddenGroups.includes(itemId)) return false;
-        if (itemId === 'clients') return false;
-        if (itemId === 'shift-handover') return false;
-    }
-
-    // Passagem de Plantão: ferramenta de operação interna (todos os operadores
-    // internos), nunca para usuários-cliente restritos (já bloqueado acima).
-    if (itemId === 'shift-handover') return true;
-
-    if (itemId === 'alvara-control') {
-        const isAuthorized = role === 'administrador' || role === 'avançado' || role === 'avancado' || role === 'diretoria' || userPermissions.includes('alvara-control');
-        if (!isAuthorized) return false;
-    }
-
-    // RH — somente Diretoria e perfil RH
-    if (itemId === 'rh-group' || itemId.startsWith('rh-')) {
-      return role === 'diretoria' || role === 'rh';
-    }
-
-    // REGRAS DO PERFIL AVANÇADO
-    const isAvancado = role === 'avançado' || role === 'avancado';
-    if (isAvancado) {
-        // Bloqueio total de faturamento/financeiro para Avançado (grupo inteiro e todos subitens)
-        if (itemId === 'finance-group' || itemId.startsWith('fin-')) return false;
-        // Avançado tem acesso explícito a clientes e operações
-        const avancadoAllowed = [
-            'dashboard', 'missions', 'clients-group', 'clients', 'client-routes',
-            'client-vehicles', 'quotes', 'providers-group', 'providers', 'provider-agents',
-            'alvara-control', 'support-network', 'reports', 'provider-activation-map'
-        ];
-        return avancadoAllowed.includes(itemId) || userPermissions.includes(itemId);
-    }
-
-    // Diretoria e Administrador: acesso ao menu Configurações (sem depender de permissão explícita em cada item)
-    const settingsScreens = new Set([
-      'settings-group', 'db-maintenance', 'cost-optimization', 'internal-users',
-      'equipment-manager', 'profiles', 'system-settings', 'system-logs', 'server-stats',
-      'manual-override-settings',
-    ]);
-    if (settingsScreens.has(itemId) && (role === 'diretoria' || role === 'administrador')) {
-      return true;
-    }
-
-    if (isAdmin) return true;
-    return userPermissions.includes(itemId);
-  };
+  // Menu: só o que está vinculado ao perfil do funcionário (fonte: lib/screenAccess).
+  const hasAccess = (itemId: string) => canAccessScreen(currentUser, itemId);
 
   const renderNavItem = (item: NavItem) => {
     if (!hasAccess(item.id)) return null;
