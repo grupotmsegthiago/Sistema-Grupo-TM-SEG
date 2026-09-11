@@ -30,11 +30,13 @@ describe('comissao comercial — baixa e acesso', () => {
     assert.equal(extractFaturaNumeroFromNotes(null, 'Sem fatura'), null);
   });
 
-  it('libera tela para Thiagos, Diretoria e Administrador', () => {
-    assert.equal(canAccessComissoesComerciais({ name: 'Thiago Moreira' }), true);
+  it('libera tela somente para perfil Diretoria', () => {
     assert.equal(canAccessComissoesComerciais({ name: 'Daniel Pinto', role: 'Diretoria' }), true);
-    assert.equal(canAccessComissoesComerciais({ name: 'Bárbara Silva', role: 'Administrador' }), true);
+    assert.equal(canAccessComissoesComerciais({ name: 'Thiago Moreira', role: 'Diretoria' }), true);
+    assert.equal(canAccessComissoesComerciais({ name: 'Thiago Moreira' }), false);
+    assert.equal(canAccessComissoesComerciais({ name: 'Bárbara Silva', role: 'Administrador' }), false);
     assert.equal(canAccessComissoesComerciais({ name: 'João', role: 'comercial' }), false);
+    assert.equal(canAccessComissoesComerciais({ name: 'João', role: 'Financeiro' }), false);
   });
 });
 

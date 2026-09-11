@@ -194,7 +194,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         if (itemId === 'finance-group' || itemId === 'fin-report') return true;
     }
 
-    // Grupo Diretoria: Cockpit (Thiagos), Pendências, Comissões ou Faturamento
+    // Grupo Diretoria: Cockpit (Thiagos), Pendências, ou Faturamento/Comissões (só perfil Diretoria)
     if (itemId === 'diretoria-group') {
       return canAccessDiretoriaMenu(currentUser)
         || canRequestOsAnalysis(currentUser)

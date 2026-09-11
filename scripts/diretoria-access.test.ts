@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { canAccessDiretoriaMenu } from '../lib/diretoriaAccess';
+import { canAccessDiretoriaMenu, canAccessComissoesComerciais, canAccessFaturamentoDiretoria, isPerfilDiretoria } from '../lib/diretoriaAccess';
 import { getRoleDefaultScreen, DIRECTORIA_COCKPIT_SCREEN } from '../lib/screenNavigation';
 
 describe('diretoriaAccess — menu só Thiago Moreira / Thiago Santos', () => {
@@ -57,5 +57,23 @@ describe('diretoriaAccess — menu só Thiago Moreira / Thiago Santos', () => {
     assert.match(app, /case 'diretoria-cockpit'/);
     assert.match(sidebar, /from 'react'/);
     assert.match(app, /from 'react'/);
+  });
+});
+
+describe('diretoriaAccess — Faturamento e Comissões só perfil Diretoria', () => {
+  it('isPerfilDiretoria reconhece apenas a role', () => {
+    assert.equal(isPerfilDiretoria({ role: 'Diretoria' }), true);
+    assert.equal(isPerfilDiretoria({ role: 'administrador' }), false);
+    assert.equal(isPerfilDiretoria({ role: 'financeiro' }), false);
+    assert.equal(isPerfilDiretoria({ name: 'Thiago Moreira' }), false);
+  });
+
+  it('Faturamento e Comissões Comerciais não abrem para Admin/Financeiro/Thiago sem role', () => {
+    assert.equal(canAccessFaturamentoDiretoria({ role: 'Diretoria' }), true);
+    assert.equal(canAccessComissoesComerciais({ role: 'Diretoria' }), true);
+    assert.equal(canAccessFaturamentoDiretoria({ role: 'Administrador' }), false);
+    assert.equal(canAccessComissoesComerciais({ role: 'Administrador' }), false);
+    assert.equal(canAccessFaturamentoDiretoria({ role: 'Financeiro' }), false);
+    assert.equal(canAccessComissoesComerciais({ name: 'Thiago Santos', role: 'Operador' }), false);
   });
 });
