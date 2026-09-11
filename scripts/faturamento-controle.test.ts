@@ -295,10 +295,12 @@ describe('painel de faturamento — cobertura fail-closed', () => {
 });
 
 describe('faturamento diretoria — acesso e menu', () => {
-  it('libera Thiagos, Diretoria, Administrador e Financeiro', () => {
-    assert.equal(canAccessFaturamentoDiretoria({ name: 'Thiago Moreira' }), true);
+  it('libera somente perfil Diretoria', () => {
     assert.equal(canAccessFaturamentoDiretoria({ name: 'Daniel Pinto', role: 'Diretoria' }), true);
-    assert.equal(canAccessFaturamentoDiretoria({ name: 'João', role: 'Financeiro' }), true);
+    assert.equal(canAccessFaturamentoDiretoria({ name: 'Thiago Moreira', role: 'Diretoria' }), true);
+    assert.equal(canAccessFaturamentoDiretoria({ name: 'Thiago Moreira' }), false);
+    assert.equal(canAccessFaturamentoDiretoria({ name: 'Bárbara Silva', role: 'Administrador' }), false);
+    assert.equal(canAccessFaturamentoDiretoria({ name: 'João', role: 'Financeiro' }), false);
     assert.equal(canAccessFaturamentoDiretoria({ name: 'Maria', role: 'comercial' }), false);
   });
 
