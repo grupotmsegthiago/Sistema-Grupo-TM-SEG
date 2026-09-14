@@ -10,14 +10,21 @@ import {
 
 test('resolveInitialScreen usa ?page= da URL', () => {
   const prev = globalThis.window;
+  const prevStorage = globalThis.localStorage;
   (globalThis as any).window = {
     location: { search: '?page=rh-timeclock', href: 'https://x/?page=rh-timeclock' },
     history: { replaceState: () => {} },
+  };
+  (globalThis as any).localStorage = {
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
   };
   try {
     assert.equal(resolveInitialScreen('dashboard'), 'rh-timeclock');
   } finally {
     (globalThis as any).window = prev;
+    (globalThis as any).localStorage = prevStorage;
   }
 });
 
@@ -109,7 +116,7 @@ test('perfil Diretoria sem ser Thiago NÃO abre no cockpit', () => {
   }
 });
 
-test('?page= na URL tem prioridade sobre padrão da Diretoria', () => {
+test('?page= na URL respeita permissão do perfil (senão cai no fallback)', () => {
   const prev = globalThis.window;
   const prevStorage = globalThis.localStorage;
   (globalThis as any).window = {
@@ -117,7 +124,27 @@ test('?page= na URL tem prioridade sobre padrão da Diretoria', () => {
     history: { replaceState: () => {} },
   };
   (globalThis as any).localStorage = {
-    getItem: () => JSON.stringify({ name: 'Thiago Santos', role: 'diretoria' }),
+    getItem: () => JSON.stringify({ name: 'Thiago Santos', role: 'diretoria', permissions: ['missions'] }),
+    setItem: () => {},
+    removeItem: () => {},
+  };
+  try {
+    assert.equal(resolveInitialScreen('dashboard'), 'missions');
+  } finally {
+    (globalThis as any).window = prev;
+    (globalThis as any).localStorage = prevStorage;
+  }
+});
+
+test('?page= sem permissão no perfil não abre a tela', () => {
+  const prev = globalThis.window;
+  const prevStorage = globalThis.localStorage;
+  (globalThis as any).window = {
+    location: { search: '?page=fin-dashboard', href: 'https://sistema.test/?page=fin-dashboard' },
+    history: { replaceState: () => {} },
+  };
+  (globalThis as any).localStorage = {
+    getItem: () => JSON.stringify({ name: 'Operador', role: 'operador', permissions: ['missions'] }),
     setItem: () => {},
     removeItem: () => {},
   };

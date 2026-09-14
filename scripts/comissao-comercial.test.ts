@@ -30,11 +30,13 @@ describe('comissao comercial — baixa e acesso', () => {
     assert.equal(extractFaturaNumeroFromNotes(null, 'Sem fatura'), null);
   });
 
-  it('libera tela para Thiagos, Diretoria e Administrador', () => {
-    assert.equal(canAccessComissoesComerciais({ name: 'Thiago Moreira' }), true);
+  it('libera tela somente para perfil Diretoria', () => {
     assert.equal(canAccessComissoesComerciais({ name: 'Daniel Pinto', role: 'Diretoria' }), true);
-    assert.equal(canAccessComissoesComerciais({ name: 'Bárbara Silva', role: 'Administrador' }), true);
+    assert.equal(canAccessComissoesComerciais({ name: 'Thiago Moreira', role: 'Diretoria' }), true);
+    assert.equal(canAccessComissoesComerciais({ name: 'Thiago Moreira' }), false);
+    assert.equal(canAccessComissoesComerciais({ name: 'Bárbara Silva', role: 'Administrador' }), false);
     assert.equal(canAccessComissoesComerciais({ name: 'João', role: 'comercial' }), false);
+    assert.equal(canAccessComissoesComerciais({ name: 'João', role: 'Financeiro' }), false);
   });
 });
 
@@ -57,7 +59,7 @@ describe('comissao comercial — integração preservada', () => {
     const form = fs.readFileSync('components/ClientForm.tsx', 'utf8');
     const page = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
     const app = fs.readFileSync('App.tsx', 'utf8');
-    const nav = fs.readFileSync('constants.ts', 'utf8');
+    const nav = fs.readFileSync('lib/navItems.ts', 'utf8');
     assert.match(form, /select-responsavel-comercial/);
     assert.match(form, /from 'react'/);
     assert.match(page, /filter-empresa-comissao/);

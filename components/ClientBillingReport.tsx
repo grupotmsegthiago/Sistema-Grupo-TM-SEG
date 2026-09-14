@@ -684,7 +684,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             });
             const dispVal = dispChart.client;
             const dispProv = dispChart.provider;
-            revenue = (m.revenue_value || 0) + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider) + dispVal;
+            revenue = (m.revenue_value || 0) + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client) + dispVal;
             const isSameOsChild = !!(m as { is_same_os?: boolean }).is_same_os;
             const tollProv = resolveStoredProviderToll(m.toll_value || 0, m.toll_value_provider, isSameOsChild);
             const costBase = isSameOsChild ? 0 : (m.cost_value || 0);
@@ -1139,7 +1139,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const useBase = snap.activationFee ?? 0;
                 const useKmEx = snap.kmExtraTotal ?? 0;
                 const useHrEx = snap.hrExtraTotal ?? 0;
-                const useToll = resolveStoredClientToll(m.toll_value ?? snap.tollVal ?? 0, m.toll_value_provider);
+                const useToll = resolveStoredClientToll(m.toll_value ?? snap.tollVal ?? 0, m.toll_value_provider, m.client);
                 // Snapshot pode ter DESL zerado mesmo com KM autorizado — alinha ao Relatório.
                 let snapClientUnitKm = Number(snap.unitKm) || 0;
                 let snapProviderUnitKm = 0;
@@ -1159,7 +1159,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     providerUnitPriceKm: snapProviderUnitKm,
                 }).client;
                 const dbRevenue = m.revenue_value ?? 0;
-                const dbTotal = dbRevenue + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider) + useDisp;
+                const dbTotal = dbRevenue + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client) + useDisp;
                 const wasManuallyEdited = !!(m.billing_verified_by || m.revenue_edit_reason);
                 const snapTotal = snap.totalGeral ?? 0;
                 const snapDispStored = Math.max(0, Number(snap.displacementVal) || 0);
@@ -1270,7 +1270,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 };
             }
 
-            const tollVal = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
+            const tollVal = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client);
             const savedRevenue = m.revenue_value || 0;
             const hasSavedRevenue = savedRevenue > 0;
 
@@ -1433,7 +1433,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 return s + cost + tollP + dispG.provider;
             }
             const rev = m.revenue_value ?? 0;
-            const toll = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
+            const toll = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client);
             return s + rev + toll + dispG.client;
         }, 0);
     }, [missions, reportMode, priceTables, providerTables, clientData]);
@@ -1559,7 +1559,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         missions.forEach((m: any) => {
             const numId = (m.id || '').replace(/\D/g, '');
             const rev = m.revenue_value ?? 0;
-            const toll = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
+            const toll = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client);
             const disp = Math.max(0, m.displacement_value || 0);
             const isVerified = !!(m.billing_verified_by || m.billing_approved);
             const hasDbValue = rev > 0 || (rev === 0 && isVerified);
@@ -2666,7 +2666,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         vlrHoraExcedenteTab: unitHr || 0,
                         vlrKmExcedenteTab: dhlUnitKmExcedente,
                         franquiaTabela: minTabela,
-                        pedagio: isCancelledRow ? 0 : resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider),
+                        pedagio: isCancelledRow ? 0 : resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client),
                         tabelaAplicada: usedTable?.operation_type || '',
                     });
                 }
@@ -5635,7 +5635,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                         try {
                                             const userData = JSON.parse(localStorage.getItem('userData') || '{}');
                                             const userName = userData.name || 'Usuário';
-                                            const tollVal = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
+                                            const tollVal = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client);
                                             const dispVal = Math.max(0, m.displacement_value || 0);
                                             const newRevenue = Math.max(0, Math.round((newTotal - tollVal - dispVal) * 100) / 100);
                                             const reasonStamp = `[${userName} - ${formatNowDateTimeBR()}] Ajustado pela conferência da planilha do cliente (Total ${fmtBRL(newTotal)})`;

@@ -16,6 +16,7 @@ export const FATURA_STATUS_CONGELADA = ['PAGA', 'CANCELADA'] as const;
 
 export type ReceitaOsFaturaInput = {
   id?: string | number | null;
+  client?: string | null;
   revenue_value?: number | null;
   toll_value?: number | null;
   toll_value_provider?: number | null;
@@ -46,7 +47,7 @@ export type SyncFaturaPorOSResult = {
 };
 
 const MISSION_SELECT =
-  'id, revenue_value, toll_value, toll_value_provider, displacement_value';
+  'id, client, revenue_value, toll_value, toll_value_provider, displacement_value';
 
 function isMissingRelation(error: { code?: string; message?: string } | null | undefined): boolean {
   if (!error) return false;
@@ -71,7 +72,7 @@ export function statusFaturaCongelado(status: string | null | undefined): boolea
 export function receitaOsParaFatura(m: ReceitaOsFaturaInput | null | undefined): number {
   if (!m) return 0;
   const rev = Number(m.revenue_value) || 0;
-  const toll = resolveStoredClientToll(m.toll_value, m.toll_value_provider);
+  const toll = resolveStoredClientToll(m.toll_value, m.toll_value_provider, (m as any).client);
   const disp = Math.max(0, Number(m.displacement_value) || 0);
   return roundMoney(rev + toll + disp);
 }

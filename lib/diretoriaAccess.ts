@@ -31,16 +31,27 @@ export const DIRETORIA_MENU_SCREEN_IDS = new Set([
   'gestao-investimento',
 ]);
 
-/** Comissões comerciais: Thiagos + Diretoria/Administrador. */
-export function canAccessComissoesComerciais(user: DiretoriaAccessUser | null | undefined): boolean {
-  if (canAccessDiretoriaMenu(user)) return true;
-  const role = String(user?.role || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return role === 'diretoria' || role === 'administrador';
+/** Perfil de sistema "Diretoria" (role), independente do menu exclusivo dos Thiagos. */
+export function isPerfilDiretoria(user: DiretoriaAccessUser | null | undefined): boolean {
+  const role = String(user?.role || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return role === 'diretoria';
 }
 
-/** Painel Diretoria > Faturamento: Thiagos + Diretoria + Administrador + Financeiro. */
+/**
+ * Comissões / Comissões Comerciais (menu Diretoria): somente perfil Diretoria.
+ * Administrador, Financeiro e acesso por nome (Thiagos) sem role Diretoria NÃO liberam.
+ */
+export function canAccessComissoesComerciais(user: DiretoriaAccessUser | null | undefined): boolean {
+  return isPerfilDiretoria(user);
+}
+
+/**
+ * Painel Diretoria > Faturamento: somente perfil Diretoria.
+ * Administrador e Financeiro NÃO liberam mais esta tela.
+ */
 export function canAccessFaturamentoDiretoria(user: DiretoriaAccessUser | null | undefined): boolean {
-  if (canAccessComissoesComerciais(user)) return true;
-  const role = String(user?.role || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return role === 'financeiro';
+  return isPerfilDiretoria(user);
 }

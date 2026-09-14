@@ -1674,8 +1674,8 @@ export const calculateMissionFinancials = (
     const clientTollBillable = isZeroValueMission
       ? 0
       : (isLogitechTable
-          ? resolveStoredClientToll(tollValue, providerTollValue)
-          : resolveStoredClientToll(mission.toll_value, (mission as any).toll_value_provider));
+          ? resolveStoredClientToll(tollValue, providerTollValue, mission.client)
+          : resolveStoredClientToll(mission.toll_value, (mission as any).toll_value_provider, mission.client));
     const totalRevenue = round2(clientServiceTotal + clientTollBillable);
     const providerServiceTotal = round2(pBase + pExtraKmVal + pExtraHrVal);
     const totalCost = round2(providerServiceTotal + providerTollValue);
@@ -1774,7 +1774,7 @@ export const auditMissionFinancials = (
     const dispProvVal = safeNumber(m.displacement_value_provider);
     const hasManualOverride = !!(m.revenue_edit_reason) || !!(m.cost_edit_reason) || !!(m.snapshot_approved_by);
     if (hasManualOverride) {
-        const storedRev = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, (mission as any).toll_value_provider) + dispVal;
+        const storedRev = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, (mission as any).toll_value_provider, mission.client) + dispVal;
         const storedCst = safeNumber(mission.cost_value) + resolveStoredProviderToll(mission.toll_value, (mission as any).toll_value_provider, !!(mission as any).is_same_os) + dispProvVal;
         return {
             missionId: mission.id || '',
@@ -1793,7 +1793,7 @@ export const auditMissionFinancials = (
     const fin = calculateMissionFinancials(mission, clientTables, providerTables, clientData, new Date(), undefined, providers);
     const isSameOs = !!(mission as any).is_same_os;
     
-    const storedRevenue = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, (mission as any).toll_value_provider) + dispVal;
+    const storedRevenue = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, (mission as any).toll_value_provider, mission.client) + dispVal;
     const storedCost = isSameOs
         ? 0
         : safeNumber(mission.cost_value) + resolveStoredProviderToll(mission.toll_value, (mission as any).toll_value_provider, isSameOs) + dispProvVal;

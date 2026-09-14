@@ -424,26 +424,39 @@ var selectDhlClientTable = (tables, mission, googleKm, options) => {
 // lib/toll/clientTollBilling.ts
 var TOLL_MARKUP_THRESHOLD_BRL = 10;
 var TOLL_MARKUP_FACTOR = 1.2;
+function isDhlClientTollExempt(clientName) {
+  if (!clientName) return false;
+  const n = String(clientName).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  return n.includes("DHL");
+}
 function normalizeTollAmount(value) {
   const n = typeof value === "number" ? value : parseFloat(String(value ?? "").replace(",", "."));
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.round(n * 100) / 100;
 }
-function billableClientToll(baseOrEntered) {
+function billableClientToll(baseOrEntered, clientName) {
   const base = normalizeTollAmount(baseOrEntered);
+  if (isDhlClientTollExempt(clientName)) return base;
   if (base > TOLL_MARKUP_THRESHOLD_BRL) {
     return Math.round(base * TOLL_MARKUP_FACTOR * 100) / 100;
   }
   return base;
 }
-function resolveStoredClientToll(tollValue, tollValueProvider) {
+function resolveStoredClientToll(tollValue, tollValueProvider, clientName) {
   const client = normalizeTollAmount(tollValue);
+  if (isDhlClientTollExempt(clientName)) {
+    if (tollValueProvider !== void 0 && tollValueProvider !== null) {
+      const provider2 = normalizeTollAmount(tollValueProvider);
+      if (provider2 > 0) return provider2;
+    }
+    return client;
+  }
   if (tollValueProvider === void 0 || tollValueProvider === null) {
-    return billableClientToll(client);
+    return billableClientToll(client, clientName);
   }
   const provider = normalizeTollAmount(tollValueProvider);
   if (Math.abs(client - provider) < 9e-3) {
-    return billableClientToll(client);
+    return billableClientToll(client, clientName);
   }
   return client;
 }
@@ -1780,7 +1793,7 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
     iblFee = round2(serviceSubtotal * 0.12);
   }
   const clientServiceTotal = round2(serviceSubtotal + iblFee);
-  const clientTollBillable = isZeroValueMission ? 0 : isLogitechTable ? resolveStoredClientToll(tollValue, providerTollValue) : resolveStoredClientToll(mission.toll_value, mission.toll_value_provider);
+  const clientTollBillable = isZeroValueMission ? 0 : isLogitechTable ? resolveStoredClientToll(tollValue, providerTollValue, mission.client) : resolveStoredClientToll(mission.toll_value, mission.toll_value_provider, mission.client);
   const totalRevenue = round2(clientServiceTotal + clientTollBillable);
   const providerServiceTotal = round2(pBase + pExtraKmVal + pExtraHrVal);
   const totalCost = round2(providerServiceTotal + providerTollValue);
@@ -1873,7 +1886,7 @@ var auditMissionFinancials = (mission, clientTables, providerTables, clientData,
   const dispProvVal = safeNumber(m.displacement_value_provider);
   const hasManualOverride = !!m.revenue_edit_reason || !!m.cost_edit_reason || !!m.snapshot_approved_by;
   if (hasManualOverride) {
-    const storedRev = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, mission.toll_value_provider) + dispVal;
+    const storedRev = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, mission.toll_value_provider, mission.client) + dispVal;
     const storedCst = safeNumber(mission.cost_value) + resolveStoredProviderToll(mission.toll_value, mission.toll_value_provider, !!mission.is_same_os) + dispProvVal;
     return {
       missionId: mission.id || "",
@@ -1890,7 +1903,7 @@ var auditMissionFinancials = (mission, clientTables, providerTables, clientData,
   }
   const fin = calculateMissionFinancials(mission, clientTables, providerTables, clientData, /* @__PURE__ */ new Date(), void 0, providers);
   const isSameOs = !!mission.is_same_os;
-  const storedRevenue = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, mission.toll_value_provider) + dispVal;
+  const storedRevenue = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, mission.toll_value_provider, mission.client) + dispVal;
   const storedCost = isSameOs ? 0 : safeNumber(mission.cost_value) + resolveStoredProviderToll(mission.toll_value, mission.toll_value_provider, isSameOs) + dispProvVal;
   const calculatedRevenue = fin.client.total + dispVal;
   const calculatedCost = isSameOs ? 0 : fin.provider.total + dispProvVal;

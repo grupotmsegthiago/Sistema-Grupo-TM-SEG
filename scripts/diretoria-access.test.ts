@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { canAccessDiretoriaMenu } from '../lib/diretoriaAccess';
+import { canAccessDiretoriaMenu, canAccessComissoesComerciais, canAccessFaturamentoDiretoria, isPerfilDiretoria } from '../lib/diretoriaAccess';
 import { getRoleDefaultScreen, DIRECTORIA_COCKPIT_SCREEN } from '../lib/screenNavigation';
 
 describe('diretoriaAccess — menu só Thiago Moreira / Thiago Santos', () => {
@@ -40,22 +40,44 @@ describe('diretoriaAccess — menu só Thiago Moreira / Thiago Santos', () => {
   });
 
   it('menu Diretoria fica acima de Monitoramento no NAV_ITEMS', () => {
-    const src = fs.readFileSync('constants.ts', 'utf8');
+    const src = fs.readFileSync('lib/navItems.ts', 'utf8');
     const idxDir = src.indexOf("name: 'Diretoria'");
     const idxMon = src.indexOf("name: 'Monitoramento'");
     assert.ok(idxDir > 0 && idxMon > 0);
     assert.ok(idxDir < idxMon, 'Diretoria deve aparecer antes de Monitoramento');
   });
 
-  it('Sidebar e App usam canAccessDiretoriaMenu (não só role)', () => {
+  it('Sidebar usa canAccessScreen; App mantém gates da Diretoria', () => {
     const sidebar = fs.readFileSync('components/Sidebar.tsx', 'utf8');
     const app = fs.readFileSync('App.tsx', 'utf8');
-    assert.match(sidebar, /canAccessDiretoriaMenu/);
-    assert.match(sidebar, /DIRETORIA_MENU_SCREEN_IDS/);
+    const screenAccess = fs.readFileSync('lib/screenAccess.ts', 'utf8');
+    assert.match(sidebar, /canAccessScreen/);
+    assert.match(sidebar, /screenAccess/);
+    assert.match(screenAccess, /canAccessDiretoriaMenu/);
+    assert.match(screenAccess, /DIRETORIA_MENU_SCREEN_IDS/);
     assert.doesNotMatch(sidebar, /diretoriaScreens\.has\(itemId\) && \(role === 'diretoria'/);
     assert.match(app, /canAccessDiretoriaMenu/);
     assert.match(app, /case 'diretoria-cockpit'/);
+    assert.match(app, /canAccessScreen/);
     assert.match(sidebar, /from 'react'/);
     assert.match(app, /from 'react'/);
+  });
+});
+
+describe('diretoriaAccess — Faturamento e Comissões só perfil Diretoria', () => {
+  it('isPerfilDiretoria reconhece apenas a role', () => {
+    assert.equal(isPerfilDiretoria({ role: 'Diretoria' }), true);
+    assert.equal(isPerfilDiretoria({ role: 'administrador' }), false);
+    assert.equal(isPerfilDiretoria({ role: 'financeiro' }), false);
+    assert.equal(isPerfilDiretoria({ name: 'Thiago Moreira' }), false);
+  });
+
+  it('Faturamento e Comissões Comerciais não abrem para Admin/Financeiro/Thiago sem role', () => {
+    assert.equal(canAccessFaturamentoDiretoria({ role: 'Diretoria' }), true);
+    assert.equal(canAccessComissoesComerciais({ role: 'Diretoria' }), true);
+    assert.equal(canAccessFaturamentoDiretoria({ role: 'Administrador' }), false);
+    assert.equal(canAccessComissoesComerciais({ role: 'Administrador' }), false);
+    assert.equal(canAccessFaturamentoDiretoria({ role: 'Financeiro' }), false);
+    assert.equal(canAccessComissoesComerciais({ name: 'Thiago Santos', role: 'Operador' }), false);
   });
 });

@@ -1,6 +1,7 @@
 /** Mantém a tela atual na URL e no sessionStorage para sobreviver a reloads/auto-update. */
 
 import { canAccessDiretoriaMenu } from './diretoriaAccess';
+import { canAccessScreen, fallbackScreenForUser } from './screenAccess';
 
 export const SCREEN_STORAGE_KEY = 'tmseg_current_screen';
 
@@ -29,25 +30,41 @@ export function getStoredScreen(): string | null {
   return null;
 }
 
-/** Cockpit só é home padrão para quem tem menu Diretoria (nome), não pelo perfil. */
-export function getRoleDefaultScreen(): string | null {
+function readStoredUser(): { name?: string; role?: string; permissions?: string[]; clientId?: string } | null {
   try {
     const raw = localStorage.getItem('userData');
     if (!raw) return null;
-    const user = JSON.parse(raw);
-    if (canAccessDiretoriaMenu(user)) return DIRECTORIA_COCKPIT_SCREEN;
+    return JSON.parse(raw);
   } catch {
-    /* ignore */
+    return null;
+  }
+}
+
+/** Cockpit só é home padrão para quem tem menu Diretoria (nome), não pelo perfil. */
+export function getRoleDefaultScreen(): string | null {
+  const user = readStoredUser();
+  if (!user) return null;
+  if (canAccessDiretoriaMenu(user) && canAccessScreen(user, DIRECTORIA_COCKPIT_SCREEN)) {
+    return DIRECTORIA_COCKPIT_SCREEN;
   }
   return null;
 }
 
 export function resolveInitialScreen(fallback = 'dashboard'): string {
+  const user = readStoredUser();
   const fromUrl = getScreenFromUrl();
-  if (fromUrl) return fromUrl;
+  if (fromUrl) {
+    if (!user || canAccessScreen(user, fromUrl)) return fromUrl;
+    return fallbackScreenForUser(user);
+  }
   const roleScreen = getRoleDefaultScreen();
   if (roleScreen) return roleScreen;
-  return getStoredScreen() || fallback;
+  const stored = getStoredScreen();
+  if (stored) {
+    if (!user || canAccessScreen(user, stored)) return stored;
+    return fallbackScreenForUser(user);
+  }
+  return fallback;
 }
 
 /** Atualiza ?page= sem recarregar — preserva outras query params (openMission, etc.). */

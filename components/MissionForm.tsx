@@ -1527,7 +1527,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         return;
     }
 
-    const tollPair = tollPersistencePair(resolvedTollValue, !!formData.isSameOs);
+    const tollPair = tollPersistencePair(resolvedTollValue, !!formData.isSameOs, formData.client);
 
     try {
         let attempts = 0, saved = false, finalId = '';
@@ -2966,7 +2966,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           </div>
                           {(() => {
                               const realToll = normalizeTollAmount(formData.tollValue);
-                              const pair = tollPersistencePair(realToll, !!formData.isSameOs);
+                              const pair = tollPersistencePair(realToll, !!formData.isSameOs, formData.client);
                               return (
                                   <div className="grid grid-cols-2 gap-2" data-testid="toll-client-provider-detail">
                                       <div className="rounded-lg border border-green-200 bg-green-50 px-2.5 py-2">

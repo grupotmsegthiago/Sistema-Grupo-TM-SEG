@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   billableClientToll,
   billableProviderToll,
+  isDhlClientTollExempt,
   normalizeTollAmount,
   resolveStoredClientToll,
   resolveStoredProviderToll,
@@ -11,6 +12,14 @@ import {
 import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
 
 describe('clientTollBilling', () => {
+  it('isDhlClientTollExempt só casa cliente DHL', () => {
+    assert.equal(isDhlClientTollExempt('DHL SUPPLY CHAIN (BRAZIL) LTDA'), true);
+    assert.equal(isDhlClientTollExempt('dhl express brazil ltda'), true);
+    assert.equal(isDhlClientTollExempt('CEVA LOGISTICS'), false);
+    assert.equal(isDhlClientTollExempt(''), false);
+    assert.equal(isDhlClientTollExempt(null), false);
+  });
+
   it('normalizeTollAmount arredonda e rejeita inválido', () => {
     assert.equal(normalizeTollAmount('12,345'), 12.35);
     assert.equal(normalizeTollAmount(-1), 0);
@@ -51,6 +60,25 @@ describe('clientTollBilling', () => {
     assert.equal(resolveStoredProviderToll(50, 50), 50);
     assert.equal(resolveStoredProviderToll(50, null), 50);
     assert.equal(resolveStoredProviderToll(60, 0, true), 0);
+  });
+
+  it('DHL: operação informa o valor — sem acréscimo de 20%', () => {
+    const dhl = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
+    assert.equal(billableClientToll(50, dhl), 50);
+    assert.equal(billableClientToll(100, dhl), 100);
+    assert.equal(billableClientToll(10.01, dhl), 10.01);
+    assert.deepEqual(tollPersistencePair(50, false, dhl), { toll_value: 50, toll_value_provider: 50 });
+    assert.deepEqual(tollPersistencePair(50, true, dhl), { toll_value: 50, toll_value_provider: 0 });
+    assert.equal(resolveStoredClientToll(60, 50, dhl), 50);
+    assert.equal(resolveStoredClientToll(50, 50, dhl), 50);
+    assert.equal(resolveStoredClientToll(50, null, dhl), 50);
+    assert.equal(resolveStoredClientToll(50, 0, dhl), 50);
+  });
+
+  it('demais clientes continuam com fator 1,2', () => {
+    assert.equal(billableClientToll(50, 'CEVA LOGISTICS'), 60);
+    assert.equal(resolveStoredClientToll(50, 50, 'CEVA LOGISTICS'), 60);
+    assert.deepEqual(tollPersistencePair(50, false, 'CEVA LOGISTICS'), { toll_value: 60, toll_value_provider: 50 });
   });
 });
 

@@ -38,7 +38,7 @@ function filterMissionsDrePeriod(
 export function aggregateFinancialDreMissionTotals(missions: Array<Record<string, unknown>>) {
   const missionRevenue = missions.reduce((acc, m) => acc + (Number(m.revenue_value) || 0), 0);
   const missionTollClient = missions.reduce(
-    (acc, m) => acc + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider),
+    (acc, m) => acc + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client),
     0,
   );
   const missionDisplacementClient = missions.reduce(

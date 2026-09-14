@@ -1,3 +1,5 @@
+import { canAccessScreen } from '../screenAccess';
+
 export interface RhUserContext {
   id?: string;
   name?: string;
@@ -24,13 +26,20 @@ export function isRhFinance(user: RhUserContext = getRhUser()): boolean {
   return isRhAdmin(user) || role === 'financeiro' || user.permissions?.includes('rh-salaries') || false;
 }
 
-/** Módulo RH completo — somente Diretoria e perfil RH. */
+/**
+ * Módulo RH na UI: só o que estiver vinculado ao perfil (`permissions`).
+ * Role sozinho (Diretoria/RH) NÃO libera mais o menu.
+ */
 export function canAccessRhModule(user: RhUserContext = getRhUser()): boolean {
-  const role = (user.role || '').toLowerCase();
-  return role === 'diretoria' || role === 'rh';
+  return (
+    canAccessScreen(user, 'rh-group')
+    || canAccessScreen(user, 'rh-dashboard')
+    || canAccessScreen(user, 'rh-employees')
+    || canAccessScreen(user, 'rh-timeclock')
+  );
 }
 
-/** Telas de cadastro/custos de funcionários — somente Diretoria e perfil RH. */
+/** Telas de cadastro/custos de funcionários — exigem `rh-employees` no perfil. */
 export const RH_EMPLOYEES_SCREENS = [
   'rh-employees',
   'rh-employee-workspace',
@@ -39,7 +48,7 @@ export const RH_EMPLOYEES_SCREENS = [
 ] as const;
 
 export function canAccessEmployeesScreen(user: RhUserContext = getRhUser()): boolean {
-  return canAccessRhModule(user);
+  return canAccessScreen(user, 'rh-employees');
 }
 
 export function canViewEmployeeCosts(user: RhUserContext = getRhUser()): boolean {
@@ -47,19 +56,17 @@ export function canViewEmployeeCosts(user: RhUserContext = getRhUser()): boolean
 }
 
 export function canEditRh(user: RhUserContext = getRhUser()): boolean {
-  const role = (user.role || '').toLowerCase();
-  if (isRhAdmin(user)) return true;
-  if (role === 'rh' || user.permissions?.includes('rh-employees')) return true;
-  return false;
+  if (user.permissions?.includes('*')) return true;
+  return canAccessEmployeesScreen(user);
 }
 
-/** Ajuste manual de batidas (entrada, almoço, retorno, saída) — Diretoria e RH. */
+/** Ajuste manual de batidas — exige permissão de RH no perfil. */
 export function canAdjustTimeclock(user: RhUserContext = getRhUser()): boolean {
   return canEditRh(user);
 }
 
 export function canViewSalary(user: RhUserContext = getRhUser()): boolean {
-  return canEditRh(user) || isRhFinance(user) || user.permissions?.includes('rh-salaries');
+  return canEditRh(user) || user.permissions?.includes('rh-salaries') || false;
 }
 
 export function canViewEmployee(employeeId: string, user: RhUserContext = getRhUser()): boolean {
@@ -70,5 +77,5 @@ export function canViewEmployee(employeeId: string, user: RhUserContext = getRhU
 
 export function canAccessRhScreen(screenId: string, user: RhUserContext = getRhUser()): boolean {
   if (screenId !== 'rh-group' && !screenId.startsWith('rh-')) return false;
-  return canAccessRhModule(user);
+  return canAccessScreen(user, screenId);
 }

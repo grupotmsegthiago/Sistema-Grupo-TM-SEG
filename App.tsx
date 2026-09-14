@@ -110,6 +110,7 @@ import { canViewOsAnalysisPendencies } from './lib/osAnalysisAccess';
 import OsAnalysisPendingPage from './components/OsAnalysisPendingPage';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
 import { persistScreen, resolveInitialScreen, getRoleDefaultScreen, getScreenFromUrl } from './lib/screenNavigation';
+import { canAccessScreen, fallbackScreenForUser } from './lib/screenAccess';
 
 // TEMPO DE INATIVIDADE (30 minutos) — só conta com a aba visível/ativa
 const INACTIVITY_LIMIT = 30 * 60 * 1000;
@@ -342,14 +343,25 @@ const App: React.FC = () => {
     if (storedUser) { try { const user = JSON.parse(storedUser); user.force_password_change = false; localStorage.setItem('userData', JSON.stringify(user)); } catch (e) { console.error(e); } }
     setNeedsPasswordChange(false);
   };
+  const getStoredUser = () => {
+    try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+  };
+
   const navigateTo = (screen: string) => {
+    const user = getStoredUser();
+    const target = canAccessScreen(user, screen) ? screen : fallbackScreenForUser(user);
     setSelectedId(null);
-    setCurrentScreen(screen);
-    persistScreen(screen);
+    setCurrentScreen(target);
+    persistScreen(target);
     touchUserActivity();
-    window.dispatchEvent(new CustomEvent('tmseg:screen-change', { detail: screen }));
+    window.dispatchEvent(new CustomEvent('tmseg:screen-change', { detail: target }));
   };
   const handleEdit = (screen: string, id: string) => {
+    const user = getStoredUser();
+    if (!canAccessScreen(user, screen)) {
+      navigateTo(fallbackScreenForUser(user));
+      return;
+    }
     setSelectedId(id);
     setCurrentScreen(screen);
     persistScreen(screen);
@@ -382,6 +394,16 @@ const App: React.FC = () => {
   }
 
   const renderContent = () => {
+    const accessUser = getStoredUser();
+    if (!canAccessScreen(accessUser, currentScreen)) {
+      const fb = fallbackScreenForUser(accessUser);
+      if (fb !== currentScreen) {
+        // Corrige deep-link (?page=) sem permissão no perfil.
+        queueMicrotask(() => navigateTo(fb));
+      }
+      return <Dashboard onOpenMission={handleOpenBillingMission} />;
+    }
+
     switch (currentScreen) {
       case 'dashboard': return <Dashboard onOpenMission={handleOpenBillingMission} />; 
       case 'missions': return <MissionTable onNewMission={() => navigateTo('new-mission')} />;

@@ -4,7 +4,7 @@ import { roleCanAccessEmployees } from '../lib/rh/apiEmployeesAuth';
 import { canAccessRhModule, canAccessRhScreen } from '../lib/rh/permissions';
 
 describe('RH employees access', () => {
-  it('libera somente diretoria e rh', () => {
+  it('API libera somente diretoria e rh (role no backend)', () => {
     assert.equal(roleCanAccessEmployees('diretoria'), true);
     assert.equal(roleCanAccessEmployees('rh'), true);
     assert.equal(roleCanAccessEmployees('financeiro'), false);
@@ -12,25 +12,27 @@ describe('RH employees access', () => {
     assert.equal(roleCanAccessEmployees('operador'), false);
   });
 
-  it('canAccessRhModule no client', () => {
-    assert.equal(canAccessRhModule({ role: 'Diretoria' }), true);
-    assert.equal(canAccessRhModule({ role: 'RH' }), true);
+  it('UI do módulo RH exige telas vinculadas no perfil', () => {
+    assert.equal(canAccessRhModule({ role: 'Diretoria' }), false);
+    assert.equal(canAccessRhModule({ role: 'RH' }), false);
+    assert.equal(canAccessRhModule({ role: 'RH', permissions: ['rh-dashboard'] }), true);
+    assert.equal(canAccessRhModule({ role: 'Financeiro', permissions: ['rh-dashboard'] }), true);
     assert.equal(canAccessRhModule({ role: 'Financeiro' }), false);
-    assert.equal(canAccessRhModule({ role: 'Administrador' }), false);
-    assert.equal(canAccessRhModule({ role: 'financeiro', permissions: ['rh-dashboard'] }), false);
+    assert.equal(canAccessRhModule({ role: 'Administrador', permissions: ['*'] }), true);
   });
 
-  it('canAccessRhScreen bloqueia todo módulo RH para financeiro e administrador', () => {
-    const financeiro = { role: 'financeiro', permissions: ['rh-dashboard', 'rh-timeclock'] };
-    assert.equal(canAccessRhScreen('rh-dashboard', financeiro), false);
-    assert.equal(canAccessRhScreen('rh-employees', financeiro), false);
-    assert.equal(canAccessRhScreen('rh-timeclock', financeiro), false);
+  it('canAccessRhScreen respeita só o vínculo do perfil (não o nome do role)', () => {
+    const financeiroComRh = { role: 'financeiro', permissions: ['rh-dashboard', 'rh-timeclock'] };
+    assert.equal(canAccessRhScreen('rh-dashboard', financeiroComRh), true);
+    assert.equal(canAccessRhScreen('rh-timeclock', financeiroComRh), true);
+    assert.equal(canAccessRhScreen('rh-employees', financeiroComRh), false);
     assert.equal(canAccessRhScreen('rh-dashboard', { role: 'administrador' }), false);
+    assert.equal(canAccessRhScreen('rh-dashboard', { role: 'diretoria' }), false);
   });
 
-  it('canAccessRhScreen libera módulo RH para diretoria e rh', () => {
-    assert.equal(canAccessRhScreen('rh-dashboard', { role: 'diretoria' }), true);
-    assert.equal(canAccessRhScreen('rh-employees', { role: 'diretoria' }), true);
-    assert.equal(canAccessRhScreen('rh-timeclock', { role: 'rh' }), true);
+  it('canAccessRhScreen libera quando o perfil traz a tela', () => {
+    assert.equal(canAccessRhScreen('rh-dashboard', { role: 'diretoria', permissions: ['rh-dashboard'] }), true);
+    assert.equal(canAccessRhScreen('rh-employees', { role: 'diretoria', permissions: ['rh-employees'] }), true);
+    assert.equal(canAccessRhScreen('rh-timeclock', { role: 'rh', permissions: ['rh-timeclock'] }), true);
   });
 });
