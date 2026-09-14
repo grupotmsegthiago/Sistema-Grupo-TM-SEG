@@ -59,6 +59,7 @@ import { googleMapsApiKey, libraries, googleMapsLoadConfig } from '../lib/maps';
 import { extractCoordinates } from '../lib/utils';
 import { fetchRouteProgress, normalizeProgressDestination, resolveRouteProgressPct } from '../lib/routeProgress';
 import DhlIntakeTimeline from './DhlIntakeTimeline';
+import LiveTrackPanel from './LiveTrackPanel';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import { tollPersistencePair } from '../lib/toll/clientTollBilling';
 import { isProviderOnlyControllerUser } from '../lib/plinioMissionRestrictions';
@@ -3903,6 +3904,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 savedProvider={mission.provider || ''}
                             />
                         </div>
+                    )}
+
+                    {!hideProviderInfo && mission?.id && (
+                        <LiveTrackPanel
+                            mission={{
+                                id: mission.id,
+                                mission_type: editData.missionType || mission.mission_type,
+                                status: editData.status || mission.status,
+                                vehicleType: mission.vehicleType,
+                                vehicleData: mission.vehicleData,
+                            }}
+                        />
                     )}
 
                     {/* DADOS DA CARGA E MOTORISTA */}

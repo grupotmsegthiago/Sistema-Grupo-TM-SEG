@@ -57,6 +57,7 @@ import QuoteList from './components/QuoteList';
 import QuoteForm from './components/QuoteForm';
 import PublicAgentRegistration from './components/PublicAgentRegistration';
 import DhlSupplierIntake from './components/DhlSupplierIntake';
+import PublicLiveTrack from './components/PublicLiveTrack';
 import SupportMapFinder from './components/SupportMapFinder'; 
 import PushNotificationManager from './components/PushNotificationManager';
 import CostOptimizationDashboard from './components/CostOptimizationDashboard';
@@ -148,6 +149,7 @@ const App: React.FC = () => {
   const normalizedPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
   const isPublicRoute = normalizedPath === '/cadastro-operacional';
   const isDhlSupplierRoute = normalizedPath === '/fornecedor/dhl';
+  const isLiveTrackRoute = normalizedPath === '/rastreio';
   const isResetPasswordRoute = normalizedPath === '/reset-password';
   const resetToken = new URLSearchParams(window.location.search).get('token') || '';
 
@@ -379,6 +381,7 @@ const App: React.FC = () => {
 
   if (isPublicRoute) { return ( <NotificationProvider> <PublicAgentRegistration /> </NotificationProvider> ); }
   if (isDhlSupplierRoute) { return <DhlSupplierIntake />; }
+  if (isLiveTrackRoute) { return <PublicLiveTrack />; }
 
   if (isResetPasswordRoute && resetToken) {
     return <ResetPassword token={resetToken} onComplete={() => { window.location.href = '/'; }} />;
@@ -564,7 +567,7 @@ const App: React.FC = () => {
     <QueryClientProvider client={queryClient}>
     <RealtimeProvider>
     <NotificationProvider>
-        <UserPresenceTracker enabled={isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isResetPasswordRoute} />
+        <UserPresenceTracker enabled={isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute} />
         <TimeClockGate onLogout={handleLogout} onCleared={() => {}}>
         <div className="flex min-h-screen-ios overflow-x-auto overflow-y-auto font-sans text-gray-800 relative" style={{ maxWidth: '100vw' }}>
         
