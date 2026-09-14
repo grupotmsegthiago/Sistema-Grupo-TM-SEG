@@ -1,5 +1,26 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## RASTREIO AO VIVO VELADA — LINK EXTERNO (SET/2026)
+
+**Data:** 2026-09-14 (UTC-3)
+**Pedido:** gerar link externo para o agente abrir, aceitar LGPD e transmitir
+GPS em tempo real até o fim da missão velada; Central acompanha por OS.
+
+**Fonte da verdade:** `mission_live_tracks` + `mission_live_positions` (Supabase,
+RLS fail-closed, escrita só via `api/live-track.ts`). Link canônico:
+`https://sistema.grupotmseg.com.br/rastreio?token=…`. Botão **somente velada**
+no card da OS, no Editar OS e no modal de status/mapa.
+
+**Não alterado:** cálculo de OS, Ponto B/mapLink da missão, Asaas, eNotas,
+faturamento. Encerramento automático se a OS for Concluída/Cancelada/Recusada.
+
+**Limite honesto:** GPS de navegador exige a tela aberta (Wake Lock + alerta se
+sair). Não há GPS em segundo plano nativo como app WhatsApp/Uber.
+
+**Testes:** `npx tsx --test scripts/live-track-velada.test.ts` — 9/9 pass.
+
+---
+
 ## PEDÁGIO DHL — SEM ACRÉSCIMO DE 20% (SET/2026+)
 
 **Data:** 2026-09-14 (UTC-3)

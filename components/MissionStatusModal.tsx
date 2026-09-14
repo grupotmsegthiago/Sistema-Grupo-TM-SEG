@@ -3,9 +3,12 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { formatDateTimeBR } from '../lib/dateUtils';
 import { Mission, MissionLog, MissionStatus } from '../types';
-import { useLoadScript, GoogleMap, DirectionsRenderer, Marker } from '@react-google-maps/api';
+import { useLoadScript, GoogleMap, DirectionsRenderer, Marker, Circle, Polyline } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { extractCoordinates, resolveLocationDisplay } from '../lib/utils';
+import LiveTrackPanel from './LiveTrackPanel';
+import { isVeladaMission } from '../lib/liveTrack/isVeladaMission';
+import { liveTrackOperatorLabel, useLiveTrackWatch } from '../lib/liveTrack/useLiveTrackWatch';
 // Added AlertTriangle to the imports below
 import { X, MapPin, Flag, Truck, User, Phone, Briefcase, Car, Shield, BarChart3, Navigation, ExternalLink, Edit, Package, Loader2, Target, CheckCircle2, Activity, AlertTriangle } from 'lucide-react';
 
@@ -150,6 +153,19 @@ const MissionStatusModal: React.FC<Props> = ({
     status: locationAnalysis.status
   }), [locationAnalysis, geocodedAddress]);
 
+  const veladaLive = Boolean(isOpen && mission && isVeladaMission(mission) && !hideProviderInfo);
+  const { data: liveWatch } = useLiveTrackWatch(veladaLive ? mission?.id : null, veladaLive, true);
+  const liveLabel = liveTrackOperatorLabel(liveWatch);
+  const livePos = liveWatch?.track?.last_lat != null && liveWatch?.track?.last_lng != null
+    ? { lat: Number(liveWatch.track.last_lat), lng: Number(liveWatch.track.last_lng) }
+    : null;
+  const liveTrail = (liveWatch?.trail || []).map((p) => ({ lat: Number(p.lat), lng: Number(p.lng) })).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  const liveAccuracy = liveWatch?.track?.last_accuracy != null ? Number(liveWatch.track.last_accuracy) : null;
+
+  useEffect(() => {
+    if (livePos) setMapCenter(livePos);
+  }, [livePos?.lat, livePos?.lng]);
+
   if (!isOpen || !mission) return null;
 
   const ALL_STATUSES = [MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION, MissionStatus.SCHEDULED, MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT, MissionStatus.COMPLETED];
@@ -239,7 +255,7 @@ const MissionStatusModal: React.FC<Props> = ({
                         />
                     )}
 
-                    {currentPosition && (
+                    {currentPosition && !livePos && (
                         <Marker 
                             position={currentPosition} 
                             label={{ text: "B", color: "white", fontWeight: "bold" }}
@@ -249,6 +265,37 @@ const MissionStatusModal: React.FC<Props> = ({
                                 scaledSize: new google.maps.Size(42, 42)
                             }}
                             zIndex={1000}
+                        />
+                    )}
+
+                    {liveTrail.length > 1 && (
+                        <Polyline
+                            path={liveTrail}
+                            options={{ strokeColor: '#059669', strokeOpacity: 0.9, strokeWeight: 4 }}
+                        />
+                    )}
+                    {livePos && (
+                        <Marker
+                            position={livePos}
+                            title="Agente ao vivo"
+                            icon={{
+                                url: "https://maps.google.com/mapfiles/ms/icons/orange-dot.png",
+                                scaledSize: new google.maps.Size(48, 48)
+                            }}
+                            zIndex={1200}
+                        />
+                    )}
+                    {livePos && liveAccuracy && liveAccuracy > 0 && isLoaded && (
+                        <Circle
+                            center={livePos}
+                            radius={Math.min(liveAccuracy, 400)}
+                            options={{
+                                fillColor: '#10b981',
+                                fillOpacity: 0.15,
+                                strokeColor: '#059669',
+                                strokeOpacity: 0.7,
+                                strokeWeight: 1,
+                            }}
                         />
                     )}
 
@@ -278,10 +325,16 @@ const MissionStatusModal: React.FC<Props> = ({
                     )}
                 </div>
               )}
+              {veladaLive && liveLabel.tone === 'live' && (
+                <div className="absolute top-3 left-3 z-10 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-lg animate-pulse">
+                  GPS ao vivo
+                </div>
+              )}
             </div>
           </div>
 
           <div className="col-span-12 lg:col-span-4 flex flex-col gap-4 overflow-y-auto pr-2 scrollbar-thin">
+            {veladaLive && <LiveTrackPanel mission={mission} />}
             <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-4 opacity-5"><Navigation size={60} /></div>
                 <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-5">Trajeto Operacional</h4>
