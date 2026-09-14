@@ -112,7 +112,7 @@ const FinancialDRE: React.FC = () => {
             const sumByGroup = (group: string) => categories.filter(c => c.group === group).reduce((acc, cat) => acc + sumByCategory(cat.id), 0);
 
             const missionRevenue = missions.reduce((acc: number, m: any) => acc + (m.revenue_value || 0), 0);
-            const missionTollClient = missions.reduce((acc: number, m: any) => acc + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider), 0);
+            const missionTollClient = missions.reduce((acc: number, m: any) => acc + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client), 0);
             const missionDisplacementClient = missions.reduce((acc: number, m: any) => acc + (m.displacement_value || 0), 0);
             const missionCost = missions.filter((m: any) => m.is_same_os !== true).reduce((acc: number, m: any) => acc + (m.cost_value || 0), 0);
             const missionTollProvider = missions.reduce(

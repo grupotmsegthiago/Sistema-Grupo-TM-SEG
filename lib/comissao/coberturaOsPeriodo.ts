@@ -85,7 +85,7 @@ export function osEstaFaturada(args: {
 
 export function receitaOsPersistida(m: MissaoCoberturaInput): number {
   const receita = Number(m.revenue_value) || 0;
-  const pedagio = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider);
+  const pedagio = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client);
   const desloc = Number(m.displacement_value) || 0;
   return roundMoney(receita + pedagio + desloc);
 }

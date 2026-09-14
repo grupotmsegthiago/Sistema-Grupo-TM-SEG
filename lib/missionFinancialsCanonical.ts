@@ -75,7 +75,7 @@ export function computeCanonicalRevenueCost(
 
   // Pedágio recebido = toll_value (com regra; legado aplica na leitura);
   // pedágio pago = toll_value_provider (valor real; fallback toll_value).
-  const tollRev = resolveStoredClientToll(m.toll_value, m.toll_value_provider);
+  const tollRev = resolveStoredClientToll(m.toll_value, m.toll_value_provider, m.client);
   const tollCost = resolveStoredProviderToll(m.toll_value, m.toll_value_provider, isSameOs);
 
   let revBase = 0;

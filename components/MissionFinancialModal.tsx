@@ -772,7 +772,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     }
     const v = result.hasToll ? result.value : 0;
     const isSameOs = mission?.is_same_os === true;
-    const pair = tollPersistencePair(v, isSameOs);
+    const pair = tollPersistencePair(v, isSameOs, mission?.client);
     const fmt = (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const clientFormatted = fmt(pair.toll_value);
     const providerFormatted = fmt(pair.toll_value_provider);
@@ -2155,8 +2155,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
               const calcToll = financialData.tollValue || 0;
               const currentToll = parseNumber(tollInput);
-              if (calcToll > 0 && Math.abs(currentToll - calcToll) > 0.5 && Math.abs(currentToll - billableClientToll(calcToll)) > 0.5) {
-                  const pair = tollPersistencePair(calcToll, !!mission.is_same_os);
+              if (calcToll > 0 && Math.abs(currentToll - calcToll) > 0.5 && Math.abs(currentToll - billableClientToll(calcToll, mission.client)) > 0.5) {
+                  const pair = tollPersistencePair(calcToll, !!mission.is_same_os, mission.client);
                   setTollInput(fmt(pair.toll_value));
                   setTollProviderInput(fmt(pair.toll_value_provider));
               }

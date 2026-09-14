@@ -1,5 +1,28 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## PEDÁGIO DHL — SEM ACRÉSCIMO DE 20% (SET/2026+)
+
+**Data:** 2026-09-14 (UTC-3)
+**Pedido:** o valor que a operação informar no pedágio deve ser o valor faturado
+à DHL; não aplicar o acréscimo de 20% (base > R$ 10). Demais clientes inalterados.
+Corrigir OS de setembro/2026 em diante.
+
+**Fonte da verdade:** `lib/toll/clientTollBilling.ts` (write/read) × `missions.toll_value`
+(cliente) × `missions.toll_value_provider` (valor da operação). Período:
+`start_time >= 2026-09-01 00:00 America/Sao_Paulo`. Cliente único no banco:
+`DHL SUPPLY CHAIN (BRAZIL) LTDA`.
+
+**Universo (consulta completa, sem `.limit`):** 112 OS DHL no corte da análise;
+55 com diferença; 0 em `financial_invoice_missions`. Pedágio com 20%:
+R$ 4.271,97. Corrigido: R$ 3.573,43. Redução: R$ 698,54.
+44 OS com 20% gravado → `toll_value` = valor da operação + `snapshot_data.tollVal/totalGeral`.
+11 OS iguais (20% só na leitura) → código deixa de aplicar o fator.
+
+**Não alterado:** regra de 20% dos demais clientes, Asaas, eNotas, motor de tabela DHL,
+pedágio do fornecedor.
+
+---
+
 ## DIRETORIA — CONTROLE DE FATURAMENTO (TODA OS)
 
 **Data:** 2026-09-10 (UTC-3)
