@@ -77,6 +77,9 @@ describe('comissao comercial — integração preservada', () => {
     assert.match(page, /dashboard-comissoes-kpis/);
     assert.match(page, /cobertura-os-periodo/);
     assert.match(page, /card-funcionario-/);
+    assert.match(page, /card-valor-fixo/);
+    assert.match(page, /card-total-pagar/);
+    assert.match(page, /comissão \+ fixo/);
     assert.match(page, /quadros-funcionarios/);
     assert.match(page, /linha-tempo-cliente-/);
     assert.match(page, /OS Gerada/);
@@ -654,6 +657,17 @@ describe('comissao comercial — cobertura OS e dashboard', () => {
     assert.equal(funcionarios[0].faturamentoBruto, 50000);
     assert.equal(funcionarios[0].imposto, 8000);
     assert.equal(funcionarios[0].comissao3, 1260);
+    assert.equal(funcionarios[0].valorFixo, 0);
+    assert.equal(funcionarios[0].totalAPagar, 1260);
+    const comFixo = montarQuadrosFuncionarios({
+      comerciais: [{ id: 'abc', nome: 'MIGUEL MOTA', valor_fixo: 2000, usuario_id: 1 }],
+      linhas,
+      rows,
+      cobertura,
+    });
+    assert.equal(comFixo[0].valorFixo, 2000);
+    assert.equal(comFixo[0].comissao3, 1260);
+    assert.equal(comFixo[0].totalAPagar, 3260);
     assert.equal(funcionarios[0].clientes[0].margemPct, 40);
     assert.equal(funcionarios[0].clientes[0].statusFatura, 'PAGO');
     assert.equal(funcionarios[0].clientes[0].statusComissao, 'EM_ABERTO');

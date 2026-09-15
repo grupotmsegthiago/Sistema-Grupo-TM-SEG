@@ -1,5 +1,21 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## COMISSÕES — CARD MOSTRA FIXO + TOTAL A PAGAR (SET/2026)
+
+**Data:** 2026-09-15 (UTC-3)
+**Pedido:** no card do funcionário, incluir o valor total e o fixo.
+
+**Regra (já homologada):** Total a pagar = comissão 3% + valor fixo
+(+ bônus). O card agora exibe Fixo e Total sem precisar abrir. Mota
+está com `valor_fixo = 0` no cadastro — o total fica igual à comissão
+até haver fixo gravado.
+
+**Não alterado:** fórmula 16%/3%/piso, OS, Asaas, eNotas.
+
+**Testes:** `npx tsx --test scripts/comissao-comercial.test.ts`
+
+---
+
 ## COMISSÕES — LINHA DO TEMPO POR CLIENTE (SET/2026)
 
 **Data:** 2026-09-15 (UTC-3)

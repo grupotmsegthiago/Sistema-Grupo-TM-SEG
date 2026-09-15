@@ -387,7 +387,7 @@ function CardFuncionario({
             {aberto ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mt-3">
           <div>
             <p className="text-[9px] font-black text-slate-400 uppercase">Bruto do período</p>
             <p className="text-sm font-black">{fmtBRL(quadro.faturamentoBruto)}</p>
@@ -398,11 +398,16 @@ function CardFuncionario({
           </div>
           <div>
             <p className="text-[9px] font-black text-slate-400 uppercase">Comissão 3% líquido</p>
-            <p className="text-sm font-black text-emerald-700">{fmtBRL(quadro.comissao3)}</p>
+            <p className="text-sm font-black text-emerald-700" data-testid="card-comissao-percentual">{fmtBRL(quadro.comissao3)}</p>
+          </div>
+          <div>
+            <p className="text-[9px] font-black text-slate-400 uppercase">Fixo</p>
+            <p className="text-sm font-black text-slate-800" data-testid="card-valor-fixo">{fmtBRL(quadro.valorFixo)}</p>
           </div>
           <div>
             <p className="text-[9px] font-black text-slate-400 uppercase">Total a pagar</p>
-            <p className="text-sm font-black">{fmtBRL(quadro.totalAPagar)}</p>
+            <p className="text-sm font-black" data-testid="card-total-pagar">{fmtBRL(quadro.totalAPagar)}</p>
+            <p className="text-[9px] font-bold text-slate-400">comissão + fixo</p>
           </div>
         </div>
       </button>
@@ -1163,7 +1168,7 @@ const ComissoesComerciaisPage: React.FC = () => {
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="apuracao-escala-comercial">
           <div className="px-4 py-3 border-b border-gray-100">
             <p className="text-[10px] font-black text-gray-400 uppercase">Apuração do período (TM SEG + TORRES)</p>
-            <p className="text-[11px] text-gray-500">Mesma base do quadro do funcionário: só NF a partir do cadastro do comercial. Imposto de 16% é abatido do bruto. Comissão = 3% do líquido, só a partir de R$ 50 mil. Total a pagar = fixo + comissão.</p>
+            <p className="text-[11px] text-gray-500">Mesma base do quadro do funcionário. Imposto de 16% é abatido do bruto. Comissão = 3% do líquido, só a partir de R$ 50 mil. Total a pagar = comissão + fixo (+ bônus, se houver).</p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
