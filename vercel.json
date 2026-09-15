@@ -731,6 +731,10 @@
       "destination": "/api/support-agents"
     },
     {
+      "source": "/api/live-track",
+      "destination": "/api/live-track"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index"
     },
