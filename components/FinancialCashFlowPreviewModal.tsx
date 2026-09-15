@@ -52,9 +52,9 @@ const FinancialCashFlowPreviewModal: React.FC<Props> = ({
   const projecao = cash.total + liquido;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="cash-flow-preview-overlay">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col">
-        <div className="px-5 py-4 border-b border-gray-200 flex items-start justify-between gap-3">
+    <div className="fixed inset-0 z-[80] flex items-stretch sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4" data-testid="cash-flow-preview-overlay">
+      <div className="bg-white sm:rounded-2xl shadow-2xl w-full max-w-6xl h-[100dvh] sm:h-auto sm:max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="shrink-0 px-4 sm:px-5 py-3 sm:py-4 border-b border-gray-200 flex items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight">Resumo do caixa</h3>
             <p className="text-xs text-gray-500 mt-0.5">O que entra e o que sai no dia, na semana e no mês. Sem a conta de investimento.</p>
@@ -64,7 +64,7 @@ const FinancialCashFlowPreviewModal: React.FC<Props> = ({
           </button>
         </div>
 
-        <div className="px-5 py-4 border-b border-gray-100 bg-slate-50">
+        <div className="shrink-0 px-4 sm:px-5 py-3 border-b border-gray-100 bg-slate-50 max-h-[28vh] overflow-y-auto">
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
             <Wallet size={12} /> Dinheiro nas contas
           </p>
@@ -85,7 +85,7 @@ const FinancialCashFlowPreviewModal: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className="px-5 pt-3 flex gap-1 bg-white">
+        <div className="shrink-0 px-4 sm:px-5 pt-3 flex gap-1 bg-white">
           {HORIZONS.map((h) => (
             <button
               key={h.id}
@@ -101,45 +101,47 @@ const FinancialCashFlowPreviewModal: React.FC<Props> = ({
           ))}
         </div>
 
-        <div className="flex-1 overflow-auto px-5 py-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="border border-red-100 rounded-xl overflow-hidden">
-            <div className="bg-red-50 px-3 py-2 flex items-center justify-between">
+        <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden px-4 sm:px-5 py-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="border border-red-100 rounded-xl overflow-hidden flex flex-col min-h-[220px] max-h-[52vh] lg:max-h-none lg:h-full lg:min-h-0" data-testid="cash-flow-col-pagar">
+            <div className="shrink-0 bg-red-50 px-3 py-2 flex items-center justify-between">
               <p className="text-[11px] font-black uppercase text-red-800 flex items-center gap-1.5">
                 <ArrowDownCircle size={14} /> Contas a Pagar
               </p>
               <p className="text-sm font-black font-mono text-red-600">(-) {formatCurrency(totalPagar)}</p>
             </div>
-            <table className="w-full text-left">
-              <thead>
-                <tr className="text-[9px] font-black uppercase text-gray-400 bg-white">
-                  <th className="px-3 py-2">Descrição</th>
-                  <th className="px-3 py-2 text-right">Valor</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pagar.length === 0 ? (
-                  <tr><td colSpan={2} className="px-3 py-6 text-center text-xs text-gray-400">Nada a sair neste período</td></tr>
-                ) : pagar.map((t) => (
-                  <tr key={t.id} className="border-t border-red-50">
-                    <td className="px-3 py-2 text-[11px] font-bold text-gray-700 uppercase">{t.description || t.entity_name || '—'}</td>
-                    <td className="px-3 py-2 text-right text-[11px] font-black font-mono text-red-600">(-) {formatCurrency(amountPagarPreview(t))}</td>
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain" data-testid="cash-flow-pagar-scroll">
+              <table className="w-full text-left">
+                <thead className="sticky top-0 z-10 bg-white">
+                  <tr className="text-[9px] font-black uppercase text-gray-400">
+                    <th className="px-3 py-2">Descrição</th>
+                    <th className="px-3 py-2 text-right">Valor</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {pagar.length === 0 ? (
+                    <tr><td colSpan={2} className="px-3 py-6 text-center text-xs text-gray-400">Nada a sair neste período</td></tr>
+                  ) : pagar.map((t) => (
+                    <tr key={t.id} className="border-t border-red-50">
+                      <td className="px-3 py-2 text-[11px] font-bold text-gray-700 uppercase">{t.description || t.entity_name || '—'}</td>
+                      <td className="px-3 py-2 text-right text-[11px] font-black font-mono text-red-600">(-) {formatCurrency(amountPagarPreview(t))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          <div className="border border-emerald-100 rounded-xl overflow-hidden">
-            <div className="bg-emerald-50 px-3 py-2 flex items-center justify-between">
+          <div className="border border-emerald-100 rounded-xl overflow-hidden flex flex-col min-h-[220px] max-h-[52vh] lg:max-h-none lg:h-full lg:min-h-0" data-testid="cash-flow-col-receber">
+            <div className="shrink-0 bg-emerald-50 px-3 py-2 flex items-center justify-between">
               <p className="text-[11px] font-black uppercase text-emerald-800 flex items-center gap-1.5">
                 <ArrowUpCircle size={14} /> Contas a Receber
               </p>
               <p className="text-sm font-black font-mono text-emerald-600">(+) {formatCurrency(totalReceber)}</p>
             </div>
-            <div className="overflow-x-auto">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto overscroll-contain" data-testid="cash-flow-receber-scroll">
               <table className="w-full text-left min-w-[520px]">
-                <thead>
-                  <tr className="text-[9px] font-black uppercase text-gray-400 bg-white">
+                <thead className="sticky top-0 z-10 bg-white">
+                  <tr className="text-[9px] font-black uppercase text-gray-400">
                     <th className="px-3 py-2">Cliente</th>
                     <th className="px-3 py-2">Período</th>
                     <th className="px-3 py-2">Data pagamento</th>
@@ -165,7 +167,7 @@ const FinancialCashFlowPreviewModal: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className="px-5 py-3 border-t border-gray-200 grid grid-cols-2 lg:grid-cols-4 gap-2 bg-white">
+        <div className="shrink-0 px-4 sm:px-5 py-3 border-t border-gray-200 grid grid-cols-2 lg:grid-cols-4 gap-2 bg-white">
           <div className="rounded-lg bg-red-50 px-3 py-2">
             <p className="text-[9px] font-black uppercase text-red-500">A sair</p>
             <p className="text-sm font-black font-mono text-red-600">(-) {formatCurrency(totalPagar)}</p>

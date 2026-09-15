@@ -1,5 +1,17 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## CONTAS — RESUMO DO CAIXA: ROLAGEM + COCKPIT
+
+**Data:** 2026-09-15 (UTC-3)
+**Pedido:** rolagem na coluna a pagar (lista cortava) e o mesmo
+botão Resumo no Cockpit da Diretoria, inclusive no celular.
+
+**Não alterado:** motor de OS, Asaas, eNotas, totais do resumo.
+
+**Testes:** `npx tsx --test scripts/financial-cash-flow-preview.test.ts`
+
+---
+
 ## CONTAS — RESUMO DO CAIXA (DIA/SEMANA/MÊS)
 
 **Data:** 2026-09-15 (UTC-3)
