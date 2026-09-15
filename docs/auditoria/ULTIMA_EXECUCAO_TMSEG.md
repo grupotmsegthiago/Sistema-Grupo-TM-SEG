@@ -1,5 +1,23 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## VELADA — BOTÃO GERAR LINK (TIMEOUT DA API)
+
+**Data:** 2026-09-15 (UTC-3)
+**Pedido:** botão Gerar link da velada não funcionava.
+
+**Causa:** `POST /api/live-track?op=generate` caía no Express
+(`api/index`) e estourava tempo (0 bytes).
+
+**Correção:** função leve `api/live-track.ts` + rewrite no `vercel.json`
+(sem nova entrada em `functions`, limite 50). Token com
+`crypto.getRandomValues`. Tabela `mission_live_tracks` já existe.
+
+**Não alterado:** motor de OS, Asaas, eNotas.
+
+**Testes:** `npx tsx --test scripts/live-track-velada.test.ts`
+
+---
+
 ## DIRETORIA — PENDÊNCIAS DE OS (ERRO NA PÁGINA)
 
 **Data:** 2026-09-15 (UTC-3)

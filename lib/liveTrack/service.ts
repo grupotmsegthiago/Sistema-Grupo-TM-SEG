@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { resolvePublicAppUrl } from '../publicAppUrl.js';
 import { LIVE_TRACK_LGPD_FULL, LIVE_TRACK_LGPD_SUMMARY, LIVE_TRACK_LGPD_VERSION } from './lgpd.js';
 import { isTerminalMissionStatus, isVeladaMission } from './isVeladaMission.js';
@@ -19,7 +18,9 @@ import { ensureLiveTrackSchema, getLiveTrackSupabase } from './schema.js';
 const ACTIVE_STATUSES: LiveTrackStatus[] = ['pending', 'consented', 'sharing', 'paused'];
 
 function newToken(): string {
-  return randomBytes(24).toString('base64url');
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Buffer.from(bytes).toString('base64url');
 }
 
 function clientIp(req: { headers?: Record<string, unknown> } | null | undefined): string {

@@ -88,6 +88,8 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(app, /<PublicLiveTrack/);
   const routes = fs.readFileSync('server/liveTrackRoutes.ts', 'utf8');
   assert.match(routes, /\/api\/live-track/);
+  const api = fs.readFileSync('api/live-track.ts', 'utf8');
+  assert.match(api, /handleLiveTrackHttp/);
   const http = fs.readFileSync('lib/liveTrack/httpHandler.ts', 'utf8');
   assert.match(http, /public-ping/);
   assert.match(http, /Não autorizado/);
@@ -111,5 +113,5 @@ test('rota pública /rastreio e API no Express existem', () => {
   const sw = fs.readFileSync('client/public/sw.js', 'utf8');
   assert.match(sw, /\/rastreio/);
   const vercel = fs.readFileSync('vercel.json', 'utf8');
-  assert.doesNotMatch(vercel, /"destination": "\/api\/live-track"/);
+  assert.match(vercel, /"destination": "\/api\/live-track"/);
 });
