@@ -4,6 +4,7 @@
  */
 
 import { isFinanceSupervisorName } from './financeSupervisorAccess';
+import { isPerfilComercial } from './diretoriaAccess';
 
 export type MissionAccessUser = {
   role?: string | null;
@@ -31,6 +32,7 @@ export function isMissionClientScopeRestricted(user: MissionAccessUser | null | 
   if (!user) return false;
   if (hasFullMissionListAccess(user)) return false;
   if (user.clientId) return true;
+  if (isPerfilComercial(user)) return true;
   if (Array.isArray(user.permissions) && user.permissions.some((p) => String(p).startsWith('client_view:'))) {
     return true;
   }

@@ -71,8 +71,15 @@ async function handleQuadroOps(req: any, res: any, op: string) {
       res.status(400).json({ ok: false, error: 'periodo inválido' });
       return;
     }
-    const result = await montarQuadroComissoesApi(sb, start, end);
+    const result = await montarQuadroComissoesApi(sb, start, end, {
+      comercialId: access.comercialId,
+      somenteProprio: access.somenteProprio,
+    });
     res.status(200).json(result);
+    return;
+  }
+  if (!access.podeEscrever) {
+    res.status(403).json({ ok: false, error: 'Permissão negada' });
     return;
   }
   if (op === 'sync-tm-torres') {

@@ -20,7 +20,10 @@ export function registerComissaoQuadroRoutes(app: Express, requireAuth: any): vo
       return res.status(400).json({ ok: false, error: 'periodo inválido' });
     }
     try {
-      const result = await montarQuadroComissoesApi(sb, start, end);
+      const result = await montarQuadroComissoesApi(sb, start, end, {
+        comercialId: access.comercialId,
+        somenteProprio: access.somenteProprio,
+      });
       return res.json(result);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
@@ -31,6 +34,7 @@ export function registerComissaoQuadroRoutes(app: Express, requireAuth: any): vo
   app.post('/api/comissoes/sync-faturas', requireAuth, async (req: Request, res: Response) => {
     const access = await assertComissoesQuadroAccess(req);
     if (!access.ok) return res.status(access.status).json({ ok: false, error: access.error });
+    if (!access.podeEscrever) return res.status(403).json({ ok: false, error: 'Permissão negada' });
     const sb = createSupabaseAdminClient();
     if (!sb) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
     try {
@@ -45,6 +49,7 @@ export function registerComissaoQuadroRoutes(app: Express, requireAuth: any): vo
   app.post('/api/comissoes/sync-tm-torres', requireAuth, async (req: Request, res: Response) => {
     const access = await assertComissoesQuadroAccess(req);
     if (!access.ok) return res.status(access.status).json({ ok: false, error: access.error });
+    if (!access.podeEscrever) return res.status(403).json({ ok: false, error: 'Permissão negada' });
     const sb = createSupabaseAdminClient();
     if (!sb) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
     const start = String(req.query.start || req.body?.start || '').slice(0, 10);

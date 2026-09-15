@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { calcularComissao } from '../lib/comissao/comissaoCalc';
 import { extractFaturaNumeroFromNotes } from '../lib/comissao/comissaoCore';
-import { canAccessComissoesComerciais } from '../lib/diretoriaAccess';
+import { canAccessComissoesComerciais, comissaoSomentePropria } from '../lib/diretoriaAccess';
 
 describe('comissao comercial — cálculo', () => {
   it('aplica 16% de imposto e 3% sobre o líquido', () => {
@@ -30,13 +30,15 @@ describe('comissao comercial — baixa e acesso', () => {
     assert.equal(extractFaturaNumeroFromNotes(null, 'Sem fatura'), null);
   });
 
-  it('libera tela somente para perfil Diretoria', () => {
+  it('libera tela para Diretoria e Comercial; Comercial só o próprio', () => {
     assert.equal(canAccessComissoesComerciais({ name: 'Daniel Pinto', role: 'Diretoria' }), true);
     assert.equal(canAccessComissoesComerciais({ name: 'Thiago Moreira', role: 'Diretoria' }), true);
     assert.equal(canAccessComissoesComerciais({ name: 'Thiago Moreira' }), false);
     assert.equal(canAccessComissoesComerciais({ name: 'Bárbara Silva', role: 'Administrador' }), false);
-    assert.equal(canAccessComissoesComerciais({ name: 'João', role: 'comercial' }), false);
+    assert.equal(canAccessComissoesComerciais({ name: 'João', role: 'comercial' }), true);
     assert.equal(canAccessComissoesComerciais({ name: 'João', role: 'Financeiro' }), false);
+    assert.equal(comissaoSomentePropria({ name: 'Miguel Mota', role: 'Comercial' }), true);
+    assert.equal(comissaoSomentePropria({ name: 'Daniel Pinto', role: 'Diretoria' }), false);
   });
 });
 
@@ -89,6 +91,8 @@ describe('comissao comercial — integração preservada', () => {
     assert.match(page, /montarApuracaoPorComercial/);
     assert.match(page, /filtrarLinhasAposCadastro/);
     assert.match(page, /lancamentoAposCadastro/);
+    assert.match(page, /comissaoSomentePropria/);
+    assert.match(page, /carregarNomesClientesDoComercial/);
     assert.match(page, /50 mil/);
     assert.match(page, /\/api\/comissoes\/quadro/);
     assert.match(page, /\/api\/comissoes\/sync-faturas/);
@@ -904,6 +908,53 @@ describe('comissao comercial — cobertura OS e dashboard', () => {
     });
     assert.equal(fechado.etapaAtual, null);
     assert.equal(fechado.etapas.every((e) => e.estado === 'FEITO'), true);
+  });
+
+  it('restringe o quadro ao comercial vinculado e zera se não houver cadastro', async () => {
+    const { restringirQuadroAoComercial } = await import('../lib/comissao/comissaoQuadroApi');
+    const { nomesParaEscopoCliente } = await import('../lib/comercialEscopo');
+    assert.deepEqual(
+      nomesParaEscopoCliente([
+        { name: 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', trading_name: 'TECHTRANS TRANSPORTES' },
+        { name: 'TRANSPACHECO TRANSPORTE RODOVIARIO DE CARGAS LTDA', trading_name: 'TRANSPORTE PACHECO' },
+      ]).sort(),
+      ['TECHTRANS TRANSPORTES', 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', 'TRANSPACHECO TRANSPORTE RODOVIARIO DE CARGAS LTDA', 'TRANSPORTE PACHECO'].sort(),
+    );
+    const quadro = {
+      ok: true,
+      linhasTm: [
+        { empresa: 'TM SEG' as const, cliente: 'TECHTRANS', faturas: 1, faturamento: 100, imposto: 16, baseLiquida: 84, comissao: 2.52, comercialId: 'abc', comercialNome: 'MOTA', detalhes: [] },
+        { empresa: 'TM SEG' as const, cliente: 'OUTRO', faturas: 1, faturamento: 200, imposto: 32, baseLiquida: 168, comissao: 5, comercialId: 'xyz', comercialNome: 'OUTRO', detalhes: [] },
+      ],
+      linhasTorres: [
+        { empresa: 'TORRES' as const, cliente: 'TVM', faturas: 1, faturamento: 50, imposto: 8, baseLiquida: 42, comissao: 1, comercialId: 'abc', comercialNome: 'MOTA', detalhes: [] },
+      ],
+      meses: ['2026-09'],
+      pendencias: [{ cliente: 'SEM', faturas: 1, total: 10, motivo: 'sem_comercial' as const }],
+      cobertura: {
+        estado: 'ENCONTRADO' as const,
+        consultaIncompleta: false,
+        itens: [
+          { id: 'GTM-1', cliente: 'TECHTRANS', comercialId: 'abc', faturada: false, invoiceNumber: null, receita: 100, custo: 40, lucro: 60, date: '2026-09-09' },
+          { id: 'GTM-2', cliente: 'OUTRO', comercialId: 'xyz', faturada: false, invoiceNumber: null, receita: 200, custo: 80, lucro: 120, date: '2026-09-09' },
+        ],
+        porCliente: [
+          { cliente: 'TECHTRANS', comercialId: 'abc', comercialNome: 'MOTA', missoes: 1, faturadas: 0, semFatura: 1, osSemFaturaIds: ['GTM-1'], receita: 100, custo: 40, lucro: 60, margemPct: 60, estado: 'ENCONTRADO' as const },
+        ],
+        totais: { missoes: 2, faturadas: 0, semFatura: 2, receita: 300, custo: 120, lucro: 180 },
+      },
+      iniciosComissao: { abc: '2026-09-08', xyz: '2026-01-01' },
+    };
+    const soMota = restringirQuadroAoComercial(quadro, 'abc');
+    assert.equal(soMota.linhasTm.length, 1);
+    assert.equal(soMota.linhasTm[0].cliente, 'TECHTRANS');
+    assert.equal(soMota.linhasTorres.length, 1);
+    assert.equal(soMota.cobertura.itens.length, 1);
+    assert.equal(soMota.pendencias.length, 0);
+    assert.equal(soMota.iniciosComissao.xyz, undefined);
+    const vazio = restringirQuadroAoComercial(quadro, null);
+    assert.equal(vazio.linhasTm.length, 0);
+    assert.equal(vazio.linhasTorres.length, 0);
   });
 });
 

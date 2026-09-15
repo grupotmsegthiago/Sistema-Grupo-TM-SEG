@@ -51,6 +51,14 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
       canAccessScreen({ role: 'Diretoria', permissions: ['comissoes-comerciais'] }, 'comissoes-comerciais'),
       true,
     );
+    assert.equal(
+      canAccessScreen({ role: 'Comercial', permissions: [] }, 'comissoes-comerciais'),
+      true,
+    );
+    assert.equal(
+      canAccessScreen({ role: 'Financeiro', permissions: ['comissoes-comerciais'] }, 'comissoes-comerciais'),
+      false,
+    );
   });
 
   it('cliente restrito não vê financeiro/fornecedor mesmo com permission indevida', () => {

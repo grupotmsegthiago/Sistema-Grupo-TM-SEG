@@ -79,5 +79,6 @@ describe('diretoriaAccess — Faturamento e Comissões só perfil Diretoria', ()
     assert.equal(canAccessComissoesComerciais({ role: 'Administrador' }), false);
     assert.equal(canAccessFaturamentoDiretoria({ role: 'Financeiro' }), false);
     assert.equal(canAccessComissoesComerciais({ name: 'Thiago Santos', role: 'Operador' }), false);
+    assert.equal(canAccessComissoesComerciais({ name: 'Miguel Mota', role: 'Comercial' }), true);
   });
 });

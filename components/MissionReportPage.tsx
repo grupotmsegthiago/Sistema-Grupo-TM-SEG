@@ -40,6 +40,8 @@ import {
   type CanonicalResult,
 } from '../lib/missionFinancialsCanonical';
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { isPerfilComercial } from '../lib/diretoriaAccess';
+import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
 
 /** Limite de linhas na tabela — evita freeze com centenas de OS no DOM. */
 const REPORT_PAGE_SIZE = 10;
@@ -134,6 +136,10 @@ const MissionReportPage: React.FC = () => {
       if (currentUser?.clientId) {
         const { data: clientData } = await supabase.from('clients').select('name').eq('id', currentUser.clientId).single();
         if (clientData) query = query.eq('client', clientData.name);
+        else { setAllMissions([]); setBillingAdjustmentsMap(new Map()); setRefDataReady(true); setIsLoading(false); return; }
+      } else if (isPerfilComercial(currentUser) && !currentUser?.permissions?.includes('*')) {
+        const carteira = await carregarNomesClientesDoComercial(supabase, currentUser?.id);
+        if (carteira.nomes.length > 0) query = query.in('client', carteira.nomes);
         else { setAllMissions([]); setBillingAdjustmentsMap(new Map()); setRefDataReady(true); setIsLoading(false); return; }
       }
 

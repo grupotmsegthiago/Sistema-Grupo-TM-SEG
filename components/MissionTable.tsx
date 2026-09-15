@@ -51,6 +51,8 @@ import ClientCommitteePresentation from './ClientCommitteePresentation';
 import MissionOperationalReport from './MissionOperationalReport';
 import MissionTeamPresenceBoard from './MissionTeamPresenceBoard';
 import { hasFullMissionListAccess, isMissionClientScopeRestricted } from '../lib/missionAccess';
+import { isPerfilComercial } from '../lib/diretoriaAccess';
+import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
 import { canSeeOsComPrejuizo, isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import { searchMissionsByTerm } from '../lib/missionTableSearch';
 import { isOsLossHidden, loadOsLossHiddenMap } from '../lib/osLossHidden';
@@ -427,8 +429,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
   const isCommercial = useMemo(() => {
       if (!currentUser) return false;
-      const roleLower = (currentUser.role || '').toLowerCase();
-      return roleLower === 'comercial' && !currentUser.permissions?.includes('*');
+      return isPerfilComercial(currentUser) && !currentUser.permissions?.includes('*');
   }, [currentUser]);
 
   const canEditMission = useMemo(() => {
@@ -694,8 +695,16 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           const { data: clientData } = await supabase.from('clients').select('name').eq('id', user.clientId).single();
           if (clientData) { scope = { type: 'eq', value: clientData.name }; setResolvedClientName(clientData.name); }
           else { setAllMissions([]); allMissionsRef.current = []; if (!silent) setIsLoading(false); setLastMissionsFetchAt(new Date()); return true; }
-      } else if (commercial || (user?.permissions && user.permissions.some(p => p.startsWith('client_view:')))) {
-          const allowedClientIds = user?.permissions?.filter(p => p.startsWith('client_view:')).map(p => p.split(':')[1]) || [];
+      } else if (commercial) {
+          const carteira = await carregarNomesClientesDoComercial(supabase, user?.id);
+          if (carteira.nomes.length > 0) {
+              scope = { type: 'in', values: carteira.nomes };
+              if (carteira.nomes.length === 1) setResolvedClientName(carteira.nomes[0]);
+          } else {
+              scope = { type: 'empty' };
+          }
+      } else if (user?.permissions && user.permissions.some(p => p.startsWith('client_view:'))) {
+          const allowedClientIds = user.permissions.filter(p => p.startsWith('client_view:')).map(p => p.split(':')[1]) || [];
 
           let clientNamesQuery = supabase.from('clients').select('name');
           if (allowedClientIds.length > 0) {

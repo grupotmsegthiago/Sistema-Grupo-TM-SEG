@@ -40,12 +40,25 @@ export function isPerfilDiretoria(user: DiretoriaAccessUser | null | undefined):
   return role === 'diretoria';
 }
 
+export function isPerfilComercial(user: DiretoriaAccessUser | null | undefined): boolean {
+  const role = String(user?.role || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return role === 'comercial' || role.includes('comercial');
+}
+
 /**
- * Comissões / Comissões Comerciais (menu Diretoria): somente perfil Diretoria.
- * Administrador, Financeiro e acesso por nome (Thiagos) sem role Diretoria NÃO liberam.
+ * Comissões: Diretoria vê todos. Comercial vê só o próprio.
+ * Administrador e Financeiro NÃO liberam.
  */
 export function canAccessComissoesComerciais(user: DiretoriaAccessUser | null | undefined): boolean {
-  return isPerfilDiretoria(user);
+  return isPerfilDiretoria(user) || isPerfilComercial(user);
+}
+
+/** Comercial sem perfil Diretoria só enxerga o próprio cadastro. */
+export function comissaoSomentePropria(user: DiretoriaAccessUser | null | undefined): boolean {
+  return isPerfilComercial(user) && !isPerfilDiretoria(user);
 }
 
 /**

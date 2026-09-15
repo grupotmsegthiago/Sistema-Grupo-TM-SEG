@@ -1,5 +1,26 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## COMERCIAL — SÓ A PRÓPRIA CARTEIRA (SET/2026)
+
+**Data:** 2026-09-15 (UTC-3)
+**Pedido:** comercial vinculado vê só as missões dele; menu Comissões
+Comerciais aparece, exclusivamente com o que é dele.
+
+**Missões:** escopo por `comerciais.usuario_id` → clientes com
+`responsavel_comercial_id`. Nome e fantasia entram no filtro da OS.
+Sem cadastro de comercial ou sem cliente vinculado: lista vazia
+(fail-closed). Vale no Monitoramento e no Relatório de OS.
+
+**Comissões:** Diretoria vê todos. Comercial vê só o próprio quadro
+(API `somenteProprio`). Sem botão de sync/cadastro/auditoria. Filtro
+de comercial travado. Sem vínculo: quadro vazio, não vaza o universo.
+
+**Não alterado:** fórmula 16%/3%/piso, Asaas, eNotas, motor de OS.
+
+**Testes:** `npx tsx --test scripts/comissao-comercial.test.ts scripts/diretoria-access.test.ts scripts/screen-access.test.ts scripts/mission-access.test.ts`
+
+---
+
 ## COMISSÕES — CARD MOSTRA FIXO + TOTAL A PAGAR (SET/2026)
 
 **Data:** 2026-09-15 (UTC-3)

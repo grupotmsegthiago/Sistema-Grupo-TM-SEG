@@ -165,7 +165,7 @@ export function canAccessScreen(user: ScreenAccessUser | null | undefined, scree
     return canAccessFaturamentoDiretoria(user) && hasProfilePermission(user, screenId);
   }
   if (screenId === 'comissoes-comerciais') {
-    return canAccessComissoesComerciais(user) && hasProfilePermission(user, screenId);
+    return canAccessComissoesComerciais(user);
   }
 
   // Pendências de OS: regra homologada (Thiagos / Diretoria).
