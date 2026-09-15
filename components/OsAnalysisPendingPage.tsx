@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ClipboardList, ExternalLink, Loader2, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
+import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { useNotification } from '../lib/NotificationContext';
 import type { OsAnalysisRequest } from '../lib/osAnalysisTypes';
 import { canViewOsAnalysisPendencies } from '../lib/osAnalysisAccess';
@@ -8,35 +9,42 @@ import { canViewOsAnalysisPendencies } from '../lib/osAnalysisAccess';
 const fmt = (n: number | null | undefined) =>
   (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+function readStoredUser(): { name?: string; role?: string; permissions?: string[] } {
+  try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+}
+
 const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> = ({ onOpenMission }) => {
   const { showNotification } = useNotification();
   const [items, setItems] = useState<OsAnalysisRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'adjusted' | 'reviewed'>('all');
-
-  const user = (() => {
-    try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
-  })();
+  const user = useMemo(() => readStoredUser(), []);
+  const canView = canViewOsAnalysisPendencies(user);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const q = filter === 'all' ? 'op=list' : `op=list&status=${encodeURIComponent(filter)}`;
       const res = await authFetch(`/api/os-analysis?${q}`);
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (!res.ok) throw new Error(data.error || 'Falha ao carregar');
-      setItems(data.items || []);
+      setItems(Array.isArray(data.items) ? data.items : []);
     } catch (e: any) {
-      showNotification('Erro', e?.message || 'Falha ao carregar pendências', 'error');
+      const msg = e?.message || 'Falha ao carregar pendências';
+      setLoadError(msg);
+      setItems([]);
+      showNotification('Erro', msg, 'error');
     } finally {
       setLoading(false);
     }
   }, [filter, showNotification]);
 
   useEffect(() => {
-    if (canViewOsAnalysisPendencies(user)) void load();
+    if (canView) void load();
     else setLoading(false);
-  }, [load, user]);
+  }, [canView, load]);
 
   const markReviewed = async (id: string) => {
     const res = await authFetch(`/api/os-analysis?op=review&id=${encodeURIComponent(id)}`, {
@@ -44,7 +52,7 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ notes: 'Revisado pela Diretoria' }),
     });
-    const data = await res.json().catch(() => ({}));
+    const data = await parseJsonResponse(res).catch(() => ({}));
     if (!res.ok) {
       showNotification('Erro', data.error || 'Falha', 'error');
       return;
@@ -53,9 +61,9 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
     await load();
   };
 
-  if (!canViewOsAnalysisPendencies(user)) {
+  if (!canView) {
     return (
-      <div className="p-8">
+      <div className="p-8" data-testid="page-os-analysis-pending-denied">
         <p className="text-slate-600">Somente Diretoria acessa as Pendências de OS.</p>
       </div>
     );
@@ -73,7 +81,7 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
             <p className="text-sm text-slate-500">Pedidos de análise · motivo do ajuste · impacto financeiro</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {(['all', 'pending', 'adjusted', 'reviewed'] as const).map((f) => (
             <button
               key={f}
@@ -84,7 +92,7 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
               {f === 'all' ? 'Todas' : f === 'pending' ? 'Pendentes' : f === 'adjusted' ? 'Ajustadas' : 'Revisadas'}
             </button>
           ))}
-          <button type="button" onClick={() => void load()} className="p-2 rounded-xl border bg-white">
+          <button type="button" onClick={() => void load()} className="p-2 rounded-xl border bg-white" data-testid="btn-refresh-os-analysis">
             <RefreshCw size={16} />
           </button>
         </div>
@@ -92,6 +100,12 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
 
       {loading ? (
         <div className="flex items-center gap-2 text-slate-500"><Loader2 className="animate-spin" size={18} /> Carregando…</div>
+      ) : loadError ? (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-red-800" data-testid="os-analysis-load-error">
+          <p className="font-bold">Não foi possível carregar as pendências.</p>
+          <p className="text-sm mt-1">{loadError}</p>
+          <button type="button" onClick={() => void load()} className="mt-3 text-sm font-bold underline">Tentar de novo</button>
+        </div>
       ) : (
         <div className="space-y-3">
           {items.map((item) => {
@@ -100,12 +114,13 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
               item.status === 'pending' ? null :
               delta > 0.01 ? 'positivo' :
               delta < -0.01 ? 'negativo' : 'estável';
+            const recipients = Array.isArray(item.recipients) ? item.recipients.filter((r) => r && r.name) : [];
             return (
               <article key={item.id} className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm" data-testid={`os-analysis-card-${item.mission_id}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      {item.status} · {item.source} · {new Date(item.created_at).toLocaleString('pt-BR')}
+                      {item.status} · {item.source} · {item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : '—'}
                     </p>
                     <h3 className="font-black text-slate-900 mt-0.5">
                       OS {item.mission_id}
@@ -114,9 +129,9 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
                     <p className="text-sm text-slate-600 mt-1">
                       <strong>Pedido ({item.requested_by}):</strong> {item.request_note}
                     </p>
-                    {Array.isArray(item.recipients) && item.recipients.length > 0 && (
+                    {recipients.length > 0 && (
                       <p className="text-xs text-slate-500 mt-1">
-                        Destinatários: {item.recipients.map((r) => r.name).join(', ')}
+                        Destinatários: {recipients.map((r) => r.name).join(', ')}
                         {item.claimed_by_name ? ` · Assumido por ${item.claimed_by_name}` : ''}
                       </p>
                     )}

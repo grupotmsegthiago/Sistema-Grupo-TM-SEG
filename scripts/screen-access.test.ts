@@ -72,6 +72,21 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
     assert.equal(canAccessScreen(client, 'missions'), true);
   });
 
+  it('Pendências de OS abre para Thiagos e perfil Diretoria', () => {
+    assert.equal(
+      canAccessScreen({ name: 'Thiago Moreira', role: 'Operador', permissions: [] }, 'os-analysis-pending'),
+      true,
+    );
+    assert.equal(
+      canAccessScreen({ name: 'Bárbara', role: 'Diretoria', permissions: [] }, 'os-analysis-pending'),
+      true,
+    );
+    assert.equal(
+      canAccessScreen({ name: 'Miguel Mota', role: 'comercial', permissions: ['os-analysis-pending'] }, 'os-analysis-pending'),
+      false,
+    );
+  });
+
   it('wildcard * libera telas comuns (não quebra exclusividade dos Thiagos no cockpit)', () => {
     const admin = { name: 'Maria', role: 'Administrador', permissions: ['*'] };
     assert.equal(hasProfilePermission(admin, 'profiles'), true);

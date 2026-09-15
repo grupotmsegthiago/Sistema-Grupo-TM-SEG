@@ -1,5 +1,20 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## DIRETORIA — PENDÊNCIAS DE OS (ERRO NA PÁGINA)
+
+**Data:** 2026-09-15 (UTC-3)
+**Pedido:** tela Diretoria → Pendências de OS não abria / dava erro.
+
+**Causa:** `user` novo a cada render no `useEffect` relançava o GET sem parar;
+`res.json()` quebrava se a API devolvia HTML; lista sem `Array.isArray`.
+
+**Correção:** user memoizado, `parseJsonResponse`, erro na própria tela,
+lista só com array. Motor de OS / Asaas / eNotas não alterado.
+
+**Testes:** `npx tsx --test scripts/os-analysis-request.test.ts scripts/screen-access.test.ts`
+
+---
+
 ## CONTAS — RESUMO DO CAIXA: ROLAGEM + COCKPIT
 
 **Data:** 2026-09-15 (UTC-3)
