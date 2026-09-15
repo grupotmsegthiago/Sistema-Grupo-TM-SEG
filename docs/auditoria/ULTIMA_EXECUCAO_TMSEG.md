@@ -1,5 +1,23 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## CONTAS — RESUMO DO CAIXA (DIA/SEMANA/MÊS)
+
+**Data:** 2026-09-15 (UTC-3)
+**Pedido:** botão Resumo em Contas a Pagar/Receber com overlay do que
+entra e sai (dia, semana, mês) + saldos das contas do anexo, sem a
+conta de investimento.
+
+**Contas no total:** TM Gestão, TM Security, TM Segurança, XP
+Compromissada, XP Conta Digital. Fora: XP Investimentos e demais
+contas do Painel de Investimentos.
+
+**Não alterado:** motor de OS, Asaas, eNotas, regra do card operacional
+do Cockpit.
+
+**Testes:** `npx tsx --test scripts/financial-cash-flow-preview.test.ts`
+
+---
+
 ## RASTREIO VELADA — SEGUNDO PLANO ATÉ FECHAR A PÁGINA (SET/2026)
 
 **Data:** 2026-09-15 (UTC-3)

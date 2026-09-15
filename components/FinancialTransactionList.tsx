@@ -39,6 +39,9 @@ import { isPureMedicaoInvoice, isPureMedicaoReceivable } from '../lib/billing/me
 import ReceivablePaymentsModal from './ReceivablePaymentsModal';
 import ReceivablePayConfirmModal from './ReceivablePayConfirmModal';
 import { extractParentTransactionId } from '../lib/financial/confirmReceivablePay';
+import FinancialCashFlowPreviewModal from './FinancialCashFlowPreviewModal';
+import { cashFlowCoverRange } from '../lib/financial/cashFlowPreview';
+import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -106,6 +109,9 @@ const FinancialTransactionList: React.FC = () => {
     /** Pais com residual expandido (sublinhas). */
     const [expandedResidualParents, setExpandedResidualParents] = useState<Set<string>>(() => new Set());
     const [overdueUniverse, setOverdueUniverse] = useState<FinancialTransaction[]>([]);
+    const [cashFlowOpen, setCashFlowOpen] = useState(false);
+    const [cashFlowTx, setCashFlowTx] = useState<FinancialTransaction[]>([]);
+    const [loadingCashFlow, setLoadingCashFlow] = useState(false);
 
     const ASAAS_CARD_KEYS = ['TM GESTÃO', 'TM SEGURANCA', 'TM SECURITY'] as const;
 
@@ -321,6 +327,39 @@ const FinancialTransactionList: React.FC = () => {
     // Marcador estável: notes começando com "Atualização de saldo de investimento".
     const isInvestmentAdjustment = (t: FinancialTransaction) =>
         (t.notes || '').startsWith('Atualização de saldo de investimento');
+
+    const openCashFlowPreview = useCallback(async () => {
+        setCashFlowOpen(true);
+        setLoadingCashFlow(true);
+        try {
+            const cover = cashFlowCoverRange(getTodayBR());
+            const result = await fetchAllPages<FinancialTransaction>(async (from, size) => {
+                const { data, error, count } = await supabase
+                    .from('financial_transactions')
+                    .select('*', { count: 'exact' })
+                    .gte('due_date', cover.start)
+                    .lte('due_date', cover.end)
+                    .order('due_date', { ascending: true })
+                    .order('id', { ascending: true })
+                    .range(from, from + size - 1);
+                return { data: data as FinancialTransaction[] | null, error, count };
+            });
+            const rows = result.rows.filter((t) =>
+                !isPureMedicaoReceivable(t)
+                && !investmentCategoryIds.has(t.category_id)
+                && !isInvestmentAdjustment(t)
+                && !isInternalGroupTransfer(t, categories),
+            );
+            setCashFlowTx(rows);
+            if (!result.complete) {
+                showNotification('Consulta incompleta', 'O resumo do caixa não carregou todos os títulos do período.', 'warning');
+            }
+        } catch (e) {
+            showNotification('Resumo', e instanceof Error ? e.message : 'Falha ao montar o resumo do caixa', 'error');
+        } finally {
+            setLoadingCashFlow(false);
+        }
+    }, [categories, investmentCategoryIds, showNotification]);
 
     const filteredByStep = useMemo(() => {
         const typeFilter = activeStep === 'PAGAR' ? 'EXPENSE' : activeStep === 'RECEBER' ? 'INCOME' : null;
@@ -1577,6 +1616,15 @@ const FinancialTransactionList: React.FC = () => {
                     }}
                 />
             )}
+            {cashFlowOpen && (
+                <FinancialCashFlowPreviewModal
+                    today={getTodayBR()}
+                    transactions={cashFlowTx}
+                    accounts={accounts}
+                    latestBalances={latestAccountBalances}
+                    onClose={() => setCashFlowOpen(false)}
+                />
+            )}
             {payConfirmTx && (
                 <ReceivablePayConfirmModal
                     transaction={payConfirmTx}
@@ -1621,6 +1669,14 @@ const FinancialTransactionList: React.FC = () => {
                             <FileText size={16}/> Conciliação
                         </button>
                     )}
+                    <button
+                        type="button"
+                        onClick={() => { void openCashFlowPreview(); }}
+                        className="flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-800 hover:bg-blue-100 px-4 py-2 rounded-lg text-sm font-bold transition-all no-print"
+                        data-testid="btn-resumo-caixa"
+                    >
+                        <Wallet size={16}/> {loadingCashFlow ? 'Montando…' : 'Resumo'}
+                    </button>
                     <button onClick={fetchTransactions} className="p-2.5 border rounded-lg hover:bg-gray-50 text-gray-500 no-print" data-testid="btn-refresh"><RefreshCw size={18} className={loading ? "animate-spin" : ""}/></button>
                     {(activeStep === 'PAGAR' || activeStep === 'RECEBER') && (
                         <button onClick={() => setIsFormOpen(true)} className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm uppercase no-print" data-testid="btn-new-transaction">
