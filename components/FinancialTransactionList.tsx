@@ -1,10 +1,11 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { formatDateBR } from '../lib/dateUtils';
 import { logAction } from '../lib/logger';
 import { supabase } from '../lib/supabase';
+import { fetchAllPages } from '../lib/supabasePaging';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
 import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
@@ -27,6 +28,7 @@ import FinancialDocConferencia from './FinancialDocConferencia';
 import AsaasPixTransferModal from './AsaasPixTransferModal';
 import { calcMaxPixTransfer } from '../lib/asaasPixTransfer';
 import { matchesFinancialStatusFilter, type FinancialStatusFilter } from '../lib/financialStatusFilter';
+import { resolverPeriodoVencimento } from '../lib/financial/transactionPeriod';
 import { computeAccountBalanceOverview } from '../lib/dashboardDiretoria/aggregations';
 import { listBalanceSnapshots } from '../lib/investment/snapshotClient';
 import {
@@ -103,6 +105,7 @@ const FinancialTransactionList: React.FC = () => {
     const [payConfirmTx, setPayConfirmTx] = useState<FinancialTransaction | null>(null);
     /** Pais com residual expandido (sublinhas). */
     const [expandedResidualParents, setExpandedResidualParents] = useState<Set<string>>(() => new Set());
+    const [overdueUniverse, setOverdueUniverse] = useState<FinancialTransaction[]>([]);
 
     const ASAAS_CARD_KEYS = ['TM GESTÃO', 'TM SEGURANCA', 'TM SECURITY'] as const;
 
@@ -161,7 +164,6 @@ const FinancialTransactionList: React.FC = () => {
     }, []);
 
     useEffect(() => { 
-        fetchTransactions();
         fetchAccounts();
         fetchCategories();
         checkAccess();
@@ -170,8 +172,6 @@ const FinancialTransactionList: React.FC = () => {
         // Best-effort: cria tabela de pagamentos parciais se service role + exec_sql existirem
         void authFetch('/api/financial-payments-init', { method: 'POST' }).catch(() => {});
     }, []);
-
-    useRealtimeRefresh(['financial_transactions', 'financial_accounts', 'financial_invoices'], () => { fetchTransactions(); fetchAccounts(); });
 
     const checkAccess = () => {
         const storedUser = localStorage.getItem('userData');
@@ -248,39 +248,68 @@ const FinancialTransactionList: React.FC = () => {
         try { await authFetch('/api/supabase/init-invoices', { method: 'POST' }); } catch {}
     };
 
-    const fetchTransactions = async () => {
+    const periodoVencimento = useMemo(() => resolverPeriodoVencimento({
+        viewPeriod,
+        today: getTodayBR(),
+        customStart: customStartDate,
+        customEnd: customEndDate,
+    }), [viewPeriod, customStartDate, customEndDate]);
+
+    const fetchTransactions = useCallback(async () => {
         setLoading(true);
         try {
-            // Carrega o período principal (visualização padrão)
-            const mainQuery = supabase
-                .from('financial_transactions')
-                .select('*')
-                .gte('due_date', '2026-02-15')
-                .order('due_date', { ascending: false });
-
-            // Carrega TODOS os atrasados (qualquer data anterior a hoje)
-            // que ainda não foram pagos/cancelados, pra o card "Vencidos"
-            // mostrar a totalidade real, mesmo títulos antigos.
-            const todayStr = getTodayBR();
-            const overdueQuery = supabase
-                .from('financial_transactions')
-                .select('*')
-                .lt('due_date', todayStr)
-                .not('status', 'in', '(PAID,CANCELLED,CANCELED)')
-                .order('due_date', { ascending: false });
-
-            const [mainRes, overdueRes] = await Promise.all([mainQuery, overdueQuery]);
-            if (mainRes.error) throw mainRes.error;
-            if (overdueRes.error) throw overdueRes.error;
-
-            // Mescla os dois conjuntos sem duplicar (por id)
-            const merged = new Map<string, FinancialTransaction>();
-            (mainRes.data as FinancialTransaction[]).forEach(t => merged.set(t.id, t));
-            (overdueRes.data as FinancialTransaction[]).forEach(t => { if (!merged.has(t.id)) merged.set(t.id, t); });
+            const result = await fetchAllPages<FinancialTransaction>(async (from, size) => {
+                let q = supabase
+                    .from('financial_transactions')
+                    .select('*', { count: 'exact' })
+                    .order('due_date', { ascending: false })
+                    .order('id', { ascending: false })
+                    .range(from, from + size - 1);
+                if (periodoVencimento) {
+                    q = q.gte('due_date', periodoVencimento.start).lte('due_date', periodoVencimento.end);
+                }
+                const { data, error, count } = await q;
+                return { data: data as FinancialTransaction[] | null, error, count };
+            });
             // Medição enviada por e-mail (sem fatura/boleto Asaas) não aparece em Contas a Receber
-            setTransactions(Array.from(merged.values()).filter((t) => !isPureMedicaoReceivable(t)));
-        } catch (e) { console.error(e); } finally { setLoading(false); }
-    };
+            setTransactions(result.rows.filter((t) => !isPureMedicaoReceivable(t)));
+            if (!result.complete) {
+                showNotification('Consulta incompleta', 'Nem todos os lançamentos do período foram carregados.', 'warning');
+            }
+        } catch (e) {
+            console.error(e);
+            showNotification('Consulta', e instanceof Error ? e.message : 'Falha ao carregar lançamentos', 'error');
+        } finally {
+            setLoading(false);
+        }
+    }, [periodoVencimento, showNotification]);
+
+    const fetchOverdueUniverse = useCallback(async () => {
+        const today = getTodayBR();
+        try {
+            const result = await fetchAllPages<FinancialTransaction>(async (from, size) => {
+                const { data, error, count } = await supabase
+                    .from('financial_transactions')
+                    .select('*', { count: 'exact' })
+                    .lt('due_date', today)
+                    .order('due_date', { ascending: false })
+                    .order('id', { ascending: false })
+                    .range(from, from + size - 1);
+                return { data: data as FinancialTransaction[] | null, error, count };
+            });
+            setOverdueUniverse(result.rows.filter((t) => !isPureMedicaoReceivable(t)));
+        } catch (e) {
+            console.error(e);
+        }
+    }, []);
+
+    useEffect(() => { void fetchTransactions(); }, [fetchTransactions]);
+    useEffect(() => { void fetchOverdueUniverse(); }, [fetchOverdueUniverse]);
+    useRealtimeRefresh(['financial_transactions', 'financial_accounts', 'financial_invoices'], () => {
+        void fetchTransactions();
+        void fetchOverdueUniverse();
+        fetchAccounts();
+    });
 
     const investmentCategoryIds = useMemo(() => {
         return new Set(categories.filter(c => c.group === 'INVESTIMENTOS').map(c => c.id));
@@ -866,13 +895,13 @@ const FinancialTransactionList: React.FC = () => {
 
     const overduePagarAll = useMemo(() => {
         const today = getTodayBR();
-        return transactions.filter(t => t.type === 'EXPENSE' && isOverdue(t, today) && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
-    }, [transactions, investmentCategoryIds]);
+        return overdueUniverse.filter(t => t.type === 'EXPENSE' && isOverdue(t, today) && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
+    }, [overdueUniverse, investmentCategoryIds]);
 
     const overdueReceberAll = useMemo(() => {
         const today = getTodayBR();
-        return transactions.filter(t => t.type === 'INCOME' && isOverdue(t, today) && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
-    }, [transactions, investmentCategoryIds]);
+        return overdueUniverse.filter(t => t.type === 'INCOME' && isOverdue(t, today) && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
+    }, [overdueUniverse, investmentCategoryIds]);
 
     const renderFilters = () => (
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 space-y-3 no-print">
@@ -1017,7 +1046,7 @@ const FinancialTransactionList: React.FC = () => {
                         {loading ? (
                             <tr><td colSpan={colCount} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-red-700"/></td></tr>
                         ) : orderedList.length === 0 ? (
-                            <tr><td colSpan={colCount} className="p-12 text-center text-gray-400 font-bold uppercase italic text-sm">Nenhum lançamento encontrado.</td></tr>
+                            <tr><td colSpan={colCount} className="p-12 text-center text-gray-400 font-bold uppercase italic text-sm">Nenhum lançamento neste período e filtro. Confira as datas e o status (Pendente esconde o que já foi pago).</td></tr>
                         ) : orderedList.map(t => {
                             const isOverdueRow = (t.status === 'PENDING' || t.status === 'PARTIALLY_PAID' || t.status === 'OVERDUE') && t.due_date.split('T')[0] < getTodayBR();
                             const openAmt = getTransactionOpenAmount(t);

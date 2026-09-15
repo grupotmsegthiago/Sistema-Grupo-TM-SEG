@@ -30,5 +30,7 @@ describe("card saldo operacional em Contas a Pagar", () => {
     assert.match(src, /card-total-contas-operacionais/);
     assert.match(src, /Sem XP \/ investimentos/);
     assert.match(src, /from 'react'/);
+    assert.match(src, /fetchAllPages/);
+    assert.doesNotMatch(src, /2026-02-15/);
   });
 });
