@@ -9,7 +9,6 @@ import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { fetchAllPages } from '../lib/supabasePaging';
 import {
-  calcularComissao,
   COMISSAO_STATUS_LABEL,
   type ComissaoStatus,
 } from '../lib/comissao/comissaoCalc';
@@ -29,6 +28,7 @@ import {
 import { coberturaVazia, type CoberturaOsPeriodo } from '../lib/comissao/coberturaOsPeriodo';
 import {
   acharComissaoDaFatura,
+  montarApuracaoPorComercial,
   montarKpisDashboard,
   montarQuadrosFuncionarios,
   type QuadroFuncionario,
@@ -36,11 +36,9 @@ import {
 } from '../lib/comissao/dashboardComissoes';
 import InvoiceDivergenceAuditPanel from './InvoiceDivergenceAuditPanel';
 import {
-  calcularApuracaoComissao,
   gerarLinhasTabelaReferencia,
   TABELA_COMISSAO_PADRAO,
   valorComissaoLinhaAposPiso,
-  brutoPorComercialNasLinhas,
 } from '../lib/comissao/tabelaComissaoPadrao';
 import {
   intervaloQuinzena,
@@ -347,7 +345,7 @@ function CardFuncionario({
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
           <div>
-            <p className="text-[9px] font-black text-slate-400 uppercase">Bruto faturado</p>
+            <p className="text-[9px] font-black text-slate-400 uppercase">Bruto faturado (NF)</p>
             <p className="text-sm font-black">{fmtBRL(quadro.faturamentoBruto)}</p>
           </div>
           <div>
@@ -575,58 +573,6 @@ const ComissoesComerciaisPage: React.FC = () => {
     setNovoFixo(c?.valor_fixo != null ? String(c.valor_fixo) : '');
   }, [comercialId, comerciais]);
 
-  const brutoComercialPeriodo = useMemo(() => brutoPorComercialNasLinhas(rows), [rows]);
-
-  const comissaoLinha = useCallback((r: ComissaoRow) => valorComissaoLinhaAposPiso({
-    valorComissao: Number(r.valor_comissao),
-    brutoComercialNoPeriodo: brutoComercialPeriodo.get(String(r.comercial_id || '').trim()) || 0,
-    percentual: Number(r.percentual_comissao_aplicado),
-  }), [brutoComercialPeriodo]);
-
-  const stats = useMemo(() => {
-    const fat = rows.reduce((s, r) => s + Number(r.valor_faturamento || 0), 0);
-    const imposto = rows.reduce((s, r) => s + calcularComissao(Number(r.valor_faturamento), Number(r.percentual_imposto_aplicado), 0).valorImposto, 0);
-    const base = rows.reduce((s, r) => s + Number(r.valor_base_liquida || 0), 0);
-    const lib = rows.filter((r) => r.status === 'LIBERADO_PARA_PAGAMENTO').reduce((s, r) => s + comissaoLinha(r).valor, 0);
-    const pago = rows.filter((r) => r.status === 'PAGO').reduce((s, r) => s + comissaoLinha(r).valor, 0);
-    const porEmpresa = {
-      TM_SEG: rows.filter((r) => empresaLabel(r.empresa_origem) === 'TM SEG').reduce((s, r) => s + comissaoLinha(r).valor, 0),
-      TORRES: rows.filter((r) => empresaLabel(r.empresa_origem) === 'TORRES').reduce((s, r) => s + comissaoLinha(r).valor, 0),
-    };
-    const porClienteMap = new Map<string, { cliente: string; empresa: string; fat: number; comissao: number; qtd: number }>();
-    for (const r of rows) {
-      const empresa = empresaLabel(r.empresa_origem);
-      const cliente = String(r.cliente_nome || '—').toUpperCase();
-      const key = `${empresa}|${cliente}`;
-      const prev = porClienteMap.get(key) || { cliente, empresa, fat: 0, comissao: 0, qtd: 0 };
-      prev.fat += Number(r.valor_faturamento || 0);
-      prev.comissao += comissaoLinha(r).valor;
-      prev.qtd += 1;
-      porClienteMap.set(key, prev);
-    }
-    const porComercialMap = new Map<string, { comercial: string; fat: number; comissaoLinhas: number; tm: number; torres: number }>();
-    for (const r of rows) {
-      const key = r.comercial_id || r.comerciais?.nome || '—';
-      const nome = String(r.comerciais?.nome || '—');
-      const prev = porComercialMap.get(key) || { comercial: nome, fat: 0, comissaoLinhas: 0, tm: 0, torres: 0 };
-      prev.fat += Number(r.valor_faturamento || 0);
-      prev.comissaoLinhas += Number(r.valor_comissao || 0);
-      if (empresaLabel(r.empresa_origem) === 'TORRES') prev.torres += Number(r.valor_faturamento || 0);
-      else prev.tm += Number(r.valor_faturamento || 0);
-      porComercialMap.set(key, prev);
-    }
-    const porComercial = Array.from(porComercialMap.entries()).map(([id, v]) => {
-      const cadastro = comerciais.find((c) => c.id === id);
-      const apuracao = calcularApuracaoComissao({
-        valorBruto: v.fat,
-        valorFixo: Number(cadastro?.valor_fixo || 0),
-      });
-      return { id, ...v, apuracao, usuarioVinculado: !!cadastro?.usuario_id };
-    }).sort((a, b) => b.fat - a.fat);
-    const porCliente = Array.from(porClienteMap.values()).sort((a, b) => b.comissao - a.comissao);
-    return { fat, imposto, base, lib, pago, qtd: rows.length, porEmpresa, porCliente, porComercial };
-  }, [rows, comerciais, comissaoLinha]);
-
   const quadroVisivel = useMemo(() => {
     const { linhasTm: tmPiso, linhasTorres: torresPiso } = aplicarPisoComissaoQuadro(quadroTm, quadroTorres);
     const matchComercial = (l: LinhaQuadroCliente) => !comercialId || l.comercialId === comercialId;
@@ -642,6 +588,29 @@ const ComissoesComerciaisPage: React.FC = () => {
       totTorres: somarQuadro(torres),
     };
   }, [quadroTm, quadroTorres, empresaFilter, comercialId]);
+
+  const apuracaoPorComercial = useMemo(
+    () => montarApuracaoPorComercial({ linhas: quadroVisivel.all, comerciais }),
+    [quadroVisivel.all, comerciais],
+  );
+
+  const brutoComercialPeriodo = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const linha of apuracaoPorComercial) map.set(linha.id, linha.fat);
+    return map;
+  }, [apuracaoPorComercial]);
+
+  const comissaoLinha = useCallback((r: ComissaoRow) => valorComissaoLinhaAposPiso({
+    valorComissao: Number(r.valor_comissao),
+    brutoComercialNoPeriodo: brutoComercialPeriodo.get(String(r.comercial_id || '').trim()) || 0,
+    percentual: Number(r.percentual_comissao_aplicado),
+  }), [brutoComercialPeriodo]);
+
+  const stats = useMemo(() => {
+    const lib = rows.filter((r) => r.status === 'LIBERADO_PARA_PAGAMENTO').reduce((s, r) => s + comissaoLinha(r).valor, 0);
+    const pago = rows.filter((r) => r.status === 'PAGO').reduce((s, r) => s + comissaoLinha(r).valor, 0);
+    return { lib, pago, porComercial: apuracaoPorComercial };
+  }, [rows, comissaoLinha, apuracaoPorComercial]);
 
   const funcionarios = useMemo(() => {
     const lista = montarQuadrosFuncionarios({
@@ -1091,7 +1060,7 @@ const ComissoesComerciaisPage: React.FC = () => {
         <div className="flex items-end justify-between gap-2">
           <div>
             <p className="text-[10px] font-black text-gray-400 uppercase">Quadro por funcionário comissionado</p>
-            <p className="text-[11px] text-gray-500">Missões, bruto, imposto, 3% do líquido, margem do cliente e pagamento da fatura × comissão.</p>
+            <p className="text-[11px] text-gray-500">Bruto = somente NF do período (TM SEG + TORRES). OS sem fatura aparece no rastreio e não entra no piso nem na comissão.</p>
           </div>
         </div>
         {loading && funcionarios.length === 0 ? (
@@ -1133,7 +1102,7 @@ const ComissoesComerciaisPage: React.FC = () => {
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="apuracao-escala-comercial">
           <div className="px-4 py-3 border-b border-gray-100">
             <p className="text-[10px] font-black text-gray-400 uppercase">Apuração do período (TM SEG + TORRES)</p>
-            <p className="text-[11px] text-gray-500">Bruto TM SEG + TORRES. Imposto de 16% é abatido do bruto (não é pago ao comercial). Comissão = 3% do líquido. Total a pagar = fixo + comissão.</p>
+            <p className="text-[11px] text-gray-500">Mesma base do quadro do funcionário: só NF. Imposto de 16% é abatido do bruto (não é pago ao comercial). Comissão = 3% do líquido, só a partir de R$ 50 mil. Total a pagar = fixo + comissão.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">

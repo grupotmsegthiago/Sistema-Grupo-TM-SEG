@@ -10,10 +10,7 @@ import {
 import {
   aplicarPisoComissaoQuadro,
   carregarQuadroTmSeg,
-  faturasDeOsParaQuadro,
-  mesclarLinhasQuadro,
   mesesComFatura,
-  montarQuadroClientes,
   type LinhaQuadroCliente,
 } from './quadroFaturamentoComissao.js';
 import { carregarQuadroTorres } from './quadroTorres.js';
@@ -54,23 +51,19 @@ export async function montarQuadroComissoesApi(
     carregarCoberturaOsPeriodo(sb, periodStart, periodEnd, lista),
     carregarPendenciasComissao(sb),
   ]);
-  const linhasOs = montarQuadroClientes(
-    faturasDeOsParaQuadro(cobertura.itens),
-    [],
-    lista,
-    periodStart,
-    periodEnd,
-  );
-  const linhasTm = mesclarLinhasQuadro(quadro.linhas, linhasOs);
-  const comPiso = aplicarPisoComissaoQuadro(linhasTm, torres.linhas);
-  const mesesOs = mesesComFatura(
-    cobertura.itens.map((os) => ({ date: os.date, status: os.faturada ? 'PAGA' : 'EMITIDA' })),
+  // OS sem NF fica só na cobertura operacional. Não entra no bruto, piso nem comissão.
+  const comPiso = aplicarPisoComissaoQuadro(quadro.linhas, torres.linhas);
+  const mesesTorres = mesesComFatura(
+    torres.linhas.flatMap((linha) => (linha.detalhes || []).map((d) => ({
+      date: d.date,
+      status: d.pago ? 'PAGA' : 'EMITIDA',
+    }))),
   );
   return {
-    ok: !quadro.error || quadro.linhas.length > 0 || linhasTm.length > 0 || quadro.meses.length > 0 || torres.linhas.length > 0,
+    ok: !quadro.error || quadro.linhas.length > 0 || quadro.meses.length > 0 || torres.linhas.length > 0,
     linhasTm: comPiso.linhasTm,
     linhasTorres: comPiso.linhasTorres,
-    meses: [...new Set([...quadro.meses, ...mesesOs])].sort().reverse(),
+    meses: [...new Set([...quadro.meses, ...mesesTorres])].sort().reverse(),
     pendencias: pend.ok ? pend.pendencias : [],
     cobertura,
     error: quadro.error || torres.error || (!pend.ok ? pend.error : undefined) || cobertura.error,

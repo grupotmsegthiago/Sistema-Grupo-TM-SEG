@@ -81,6 +81,7 @@ describe('comissao comercial — integração preservada', () => {
     assert.match(page, /Fatura cliente/);
     assert.match(page, /mesclarLinhasQuadro/);
     assert.match(page, /aplicarPisoComissaoQuadro/);
+    assert.match(page, /montarApuracaoPorComercial/);
     assert.match(page, /50 mil/);
     assert.match(page, /\/api\/comissoes\/quadro/);
     assert.match(page, /\/api\/comissoes\/sync-faturas/);
@@ -545,7 +546,7 @@ describe('comissao comercial — cobertura OS e dashboard', () => {
     assert.equal(cob.itens.some((os) => os.date === '2026-09-09'), true);
   });
 
-  it('coloca OS TECHTRANS sem NF no quadro TM SEG do comercial', async () => {
+  it('preview de OS sem NF existe, mas não vira base de comissão', async () => {
     const { faturasDeOsParaQuadro, montarQuadroClientes } = await import('../lib/comissao/quadroFaturamentoComissao');
     const { montarCoberturaOsPeriodo } = await import('../lib/comissao/coberturaOsPeriodo');
     const cob = montarCoberturaOsPeriodo({
@@ -657,6 +658,93 @@ describe('comissao comercial — cobertura OS e dashboard', () => {
     assert.equal(kpis.comissao3, 1260);
     assert.equal(kpis.missoes, 3);
     assert.equal(kpis.margemOperacionalPct, 40);
+  });
+
+  it('OS sem NF não infla o bruto nem libera comissão abaixo do piso', async () => {
+    const { montarQuadrosFuncionarios, montarApuracaoPorComercial } = await import('../lib/comissao/dashboardComissoes');
+    const api = fs.readFileSync('lib/comissao/comissaoQuadroApi.ts', 'utf8');
+    assert.doesNotMatch(api, /faturasDeOsParaQuadro/);
+    const cobertura = {
+      estado: 'ENCONTRADO' as const,
+      consultaIncompleta: false,
+      itens: [],
+      porCliente: [{
+        cliente: 'TECHTRANS TRANSPORTES',
+        comercialId: 'abc',
+        comercialNome: 'MIGUEL MOTA',
+        missoes: 21,
+        faturadas: 0,
+        semFatura: 21,
+        osSemFaturaIds: ['GTM-1'],
+        receita: 74_440.50,
+        custo: 40_000,
+        lucro: 34_440.50,
+        margemPct: 46.3,
+        estado: 'ENCONTRADO' as const,
+      }],
+      totais: { missoes: 21, faturadas: 0, semFatura: 21, receita: 74_440.50, custo: 40_000, lucro: 34_440.50 },
+    };
+    const linhas = [{
+      empresa: 'TM SEG' as const,
+      cliente: 'TECHTRANS TRANSPORTES',
+      faturas: 1,
+      faturamento: 6_900.72,
+      imposto: 1104.12,
+      baseLiquida: 5796.60,
+      comissao: 0,
+      comercialId: 'abc',
+      comercialNome: 'MIGUEL MOTA',
+      abaixoDoPiso: true,
+      detalhes: [{ id: 'inv-1', numero: 'NF-1', date: '2026-09-01', faturamento: 6900.72, imposto: 1104.12, valorAPagar: 0, pago: false, osIds: [] }],
+    }, {
+      empresa: 'TORRES' as const,
+      cliente: 'TVM LOG',
+      faturas: 1,
+      faturamento: 35_851.34,
+      imposto: 5736.21,
+      baseLiquida: 30115.13,
+      comissao: 0,
+      comercialId: 'abc',
+      comercialNome: 'MIGUEL MOTA',
+      abaixoDoPiso: true,
+      detalhes: [{ id: 't-1', numero: '1188', date: '2026-09-09', faturamento: 35851.34, imposto: 5736.21, valorAPagar: 0, pago: false, osIds: ['1188'] }],
+    }];
+    const funcionarios = montarQuadrosFuncionarios({
+      comerciais: [{ id: 'abc', nome: 'MIGUEL MOTA', valor_fixo: 0, usuario_id: 1 }],
+      linhas,
+      rows: [{
+        id: 'c1',
+        comercial_id: 'abc',
+        valor_faturamento: 42_752.06,
+        valor_comissao: 1077.35,
+        percentual_comissao_aplicado: 3,
+        status: 'AGUARDANDO_PAGAMENTO_CLIENTE',
+      }],
+      cobertura,
+    });
+    const apuracao = montarApuracaoPorComercial({
+      linhas,
+      comerciais: [{ id: 'abc', nome: 'MIGUEL MOTA', valor_fixo: 0, usuario_id: 1 }],
+    });
+    assert.equal(funcionarios[0].faturamentoBruto, 42_752.06);
+    assert.equal(funcionarios[0].comissao3, 0);
+    assert.equal(funcionarios[0].abaixoDoPiso, true);
+    assert.equal(funcionarios[0].osSemFatura, 21);
+    assert.equal(apuracao[0].fat, funcionarios[0].faturamentoBruto);
+    assert.equal(apuracao[0].tm, 6_900.72);
+    assert.equal(apuracao[0].torres, 35_851.34);
+    assert.equal(apuracao[0].apuracao.comissaoPercentual, funcionarios[0].comissao3);
+    assert.equal(apuracao[0].apuracao.totalAPagar, 0);
+
+    const soOs = montarQuadrosFuncionarios({
+      comerciais: [{ id: 'abc', nome: 'MIGUEL MOTA', valor_fixo: 0, usuario_id: 1 }],
+      linhas: [],
+      rows: [],
+      cobertura,
+    });
+    assert.equal(soOs[0].faturamentoBruto, 0);
+    assert.equal(soOs[0].comissao3, 0);
+    assert.equal(soOs[0].osSemFatura, 21);
   });
 });
 
