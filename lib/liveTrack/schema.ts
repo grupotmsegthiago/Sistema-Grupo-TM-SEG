@@ -1,9 +1,13 @@
-import { getDhlIntakeSupabase } from '../dhl-intake/dhlIntakeSupabase.js';
+import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 
 let ready = false;
 
 export async function getLiveTrackSupabase() {
-  return getDhlIntakeSupabase();
+  const sb = createSupabaseAdminClient();
+  if (!sb) {
+    throw new Error('Supabase admin indisponível para o rastreio ao vivo.');
+  }
+  return sb;
 }
 
 /** Confirma que as tabelas existem (fail-closed). A DDL fica na migration SQL. */

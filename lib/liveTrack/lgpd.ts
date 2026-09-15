@@ -1,4 +1,4 @@
-export const LIVE_TRACK_LGPD_VERSION = '2026-09-14';
+export const LIVE_TRACK_LGPD_VERSION = '2026-09-15-bg';
 
 export const LIVE_TRACK_CONTROLLER = 'GRUPO TM SEG';
 
@@ -16,5 +16,5 @@ export const LIVE_TRACK_LGPD_FULL = [
   'Retenção: enquanto a missão estiver ativa e, após o encerramento, pelo prazo de auditoria operacional. Depois os pontos podem ser eliminados ou anonimizados.',
   'Seus direitos: confirmar o tratamento, acessar, corrigir e solicitar eliminação após o fim da missão, pelos canais da TM SEG.',
   'Obrigatoriedade: sem o compartilhamento em tempo real a Central não consegue acompanhar a velada. Você pode recusar; nesse caso avise o operacional antes de seguir.',
-  'Como funciona: o GPS só é lido com a tela deste link aberta. Mantenha o celular desbloqueado até o fim da missão.',
+  'Como funciona: o GPS é lido por esta página e continua em segundo plano enquanto ela existir (tela apagada, WhatsApp, botão Ocultar/Home). O rastreio só para se você fechar esta página, encerrar o Chrome/Safari ou a OS for finalizada.',
 ].join('\n\n');

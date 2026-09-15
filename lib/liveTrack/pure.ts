@@ -65,7 +65,7 @@ export function buildLiveTrackWhatsappText(opts: { osNumber: string; url: string
     `OS: ${os}`,
     '',
     'Abra o link e clique para compartilhar sua localização em tempo real até o fim da missão.',
-    'Mantenha esta tela aberta (como no WhatsApp e no Uber). Não feche o navegador e não bloqueie o celular.',
+    'Depois toque em *Ocultar* para usar o WhatsApp. O GPS segue em segundo plano enquanto esta página existir. Só para se você fechar a aba ou encerrar o Chrome/Safari.',
     '',
     opts.url,
   ].join('\n');

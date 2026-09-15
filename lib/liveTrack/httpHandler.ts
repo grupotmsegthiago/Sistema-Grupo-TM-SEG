@@ -5,7 +5,7 @@ import {
   publicGetLiveTrack,
   publicPingLiveTrack,
   watchLiveTrack,
-} from '../lib/liveTrack/service.js';
+} from './service.js';
 
 function parseBody(body: unknown): any {
   if (typeof body === 'string') {
@@ -23,7 +23,7 @@ function createdBy(req: any): string {
   return String(req.headers?.['x-tmseg-user-name'] || req.headers?.['x-tmseg-user-id'] || '').slice(0, 120);
 }
 
-export default async function handler(req: any, res: any) {
+export async function handleLiveTrackHttp(req: any, res: any): Promise<void> {
   res.setHeader?.('Cache-Control', 'no-store');
   const op = String(req.query?.op || req.body?.op || '').trim();
   const method = String(req.method || 'GET').toUpperCase();

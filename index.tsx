@@ -25,7 +25,7 @@ const CLIENT_BUILD = {
 // Se divergir → limpa caches + SWs + reload com bypass, preservando login.
 // ============================================================
 
-const PUBLIC_PATHS = ['/fornecedor/dhl', '/cadastro-operacional', '/reset-password'];
+const PUBLIC_PATHS = ['/fornecedor/dhl', '/cadastro-operacional', '/reset-password', '/rastreio'];
 const isPublicExternalRoute = (() => {
   try {
     const p = window.location.pathname.toLowerCase().replace(/\/$/, '');

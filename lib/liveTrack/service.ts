@@ -386,13 +386,11 @@ export async function publicPingLiveTrack(opts: {
     return { status: 200, body: { ok: true, throttled: true, status: track.status, ended: false } };
   }
 
-  const visibility = String(opts.body?.visibility || 'visible');
-  const hidden = visibility === 'hidden';
   const accuracy = clampAccuracy(opts.body?.accuracy);
   const speed = clampOptionalNumber(opts.body?.speed, -1, 80);
   const heading = clampOptionalNumber(opts.body?.heading, 0, 360);
   const battery = clampOptionalNumber(opts.body?.battery, 0, 100);
-  const nextStatus: LiveTrackStatus = hidden ? 'paused' : 'sharing';
+  const nextStatus: LiveTrackStatus = 'sharing';
   const nowIso = new Date(now).toISOString();
 
   const sb = await getLiveTrackSupabase();

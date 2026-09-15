@@ -29,6 +29,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   // Não interfere em requests não-GET, APIs, supabase ou recursos externos.
   if (event.request.method !== 'GET') return;
+  try {
+    const url = new URL(event.request.url);
+    if (url.pathname.startsWith('/api/') || url.pathname === '/rastreio') return;
+  } catch {
+    return;
+  }
   // Network-only, sem cache nenhum.
   event.respondWith(fetch(event.request).catch(() => Response.error()));
 });
@@ -68,6 +74,15 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      const target = event.notification?.data?.url;
+      if (target) {
+        for (const client of clientList) {
+          if (typeof client.url === 'string' && client.url.indexOf('/rastreio') !== -1 && 'focus' in client) {
+            return client.focus();
+          }
+        }
+        return clients.openWindow(target);
+      }
       if (clientList.length > 0) {
         clientList[0].focus();
         return;

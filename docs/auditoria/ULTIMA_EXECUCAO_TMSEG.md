@@ -1,5 +1,50 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## RASTREIO VELADA — SEGUNDO PLANO ATÉ FECHAR A PÁGINA (SET/2026)
+
+**Data:** 2026-09-15 (UTC-3)
+**Pedido:** GPS em segundo plano enquanto a página existir; só para se
+fechar a aba. API de produção estava em 500 (função isolada não bundlava).
+
+**Correção:** `/api/live-track` passa pelo Express (`api/index`). Cliente
+Supabase admin (service_role). Keepalive: áudio + notificação + pulso
+12s + ping 2,5s com a tela oculta. SW não intercepta `/api` nem `/rastreio`.
+
+**Limite honesto:** fechar a página ou encerrar o Chrome/Safari mata o GPS.
+
+**Não alterado:** motor de OS, Asaas, eNotas.
+
+**Testes:** `npx tsx --test scripts/live-track-velada.test.ts`
+
+---
+
+## AUDITORIA — REGRA 15 MIN (HORA CHEIA) OS ≥ 01/09/2026
+
+**Data:** 2026-09-15 (UTC-3)
+**Pedido:** verificar se a regra `full_extra_hour_after_16_min` (fração
+de hora extra > 15 min vira hora cheia) está sendo cumprida nas OS
+desde 01/09/2026. Exemplo: Intermodal.
+
+**Clientes com a flag ligada:** Intermodal, CEVA, CESLOG, CABRAL,
+CRC/COSTALOG.
+
+**Método:** recálculo read-only com `calculateMissionFinancials` (com
+e sem a flag) contra a receita gravada. Motor de OS não foi alterado.
+
+**Intermodal (46 OS):** das 11 com fração > 15 min, 10 cobraram hora
+cheia. Única exceção de valor: GTM-7720 (override manual R$ 1.800,
+hora extra não cobrada). GTM-7830 cumpre na tabela MG (R$ 1.098,51 =
+930 + 1 × 168,51); o seletor automático aponta Nordeste — divergência
+de tabela, não da regra de 15 min. GTM-7702 cumpre o arredondamento
+na tabela Nordeste (origem Contagem/MG). Sem extra ou fração ≤ 15 min:
+regra não se aplica. CABRAL e CRC: 0 OS no período.
+
+**Script:** `npx tsx scripts/audit-regra-15min.ts`
+
+**Não alterado:** motor financeiro, Asaas, eNotas, valores de OS.
+
+---
+
 ## COMERCIAL — SÓ A PRÓPRIA CARTEIRA (SET/2026)
 
 **Data:** 2026-09-15 (UTC-3)
@@ -154,7 +199,7 @@ eNotas, motor de OS, sincronismo TORRES.
 GPS em tempo real até o fim da missão velada; Central acompanha por OS.
 
 **Fonte da verdade:** `mission_live_tracks` + `mission_live_positions` (Supabase,
-RLS fail-closed, escrita só via `api/live-track.ts`). Link canônico:
+RLS fail-closed, escrita só via `/api/live-track` no Express). Link canônico:
 `https://sistema.grupotmseg.com.br/rastreio?token=…`. Botão **somente velada**
 no card da OS, no Editar OS e no modal de status/mapa.
 
