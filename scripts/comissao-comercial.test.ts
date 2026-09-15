@@ -78,10 +78,14 @@ describe('comissao comercial — integração preservada', () => {
     assert.match(page, /cobertura-os-periodo/);
     assert.match(page, /card-funcionario-/);
     assert.match(page, /quadros-funcionarios/);
+    assert.match(page, /linha-tempo-cliente-/);
+    assert.match(page, /OS Gerada/);
     assert.match(page, /Fatura cliente/);
     assert.match(page, /mesclarLinhasQuadro/);
     assert.match(page, /aplicarPisoComissaoQuadro/);
     assert.match(page, /montarApuracaoPorComercial/);
+    assert.match(page, /filtrarLinhasAposCadastro/);
+    assert.match(page, /lancamentoAposCadastro/);
     assert.match(page, /50 mil/);
     assert.match(page, /\/api\/comissoes\/quadro/);
     assert.match(page, /\/api\/comissoes\/sync-faturas/);
@@ -546,7 +550,7 @@ describe('comissao comercial — cobertura OS e dashboard', () => {
     assert.equal(cob.itens.some((os) => os.date === '2026-09-09'), true);
   });
 
-  it('preview de OS sem NF existe, mas não vira base de comissão', async () => {
+  it('OS concluída sem NF com comercial vira linha do quadro', async () => {
     const { faturasDeOsParaQuadro, montarQuadroClientes } = await import('../lib/comissao/quadroFaturamentoComissao');
     const { montarCoberturaOsPeriodo } = await import('../lib/comissao/coberturaOsPeriodo');
     const cob = montarCoberturaOsPeriodo({
@@ -653,6 +657,10 @@ describe('comissao comercial — cobertura OS e dashboard', () => {
     assert.equal(funcionarios[0].clientes[0].margemPct, 40);
     assert.equal(funcionarios[0].clientes[0].statusFatura, 'PAGO');
     assert.equal(funcionarios[0].clientes[0].statusComissao, 'EM_ABERTO');
+    assert.equal(funcionarios[0].clientes[0].linhaTempo.etapaAtual, 'COMISSAO');
+    assert.equal(funcionarios[0].clientes[0].linhaTempo.etapas[0].estado, 'FEITO');
+    assert.equal(funcionarios[0].clientes[0].linhaTempo.etapas[1].estado, 'FEITO');
+    assert.equal(funcionarios[0].clientes[0].linhaTempo.etapas[2].estado, 'FEITO');
     assert.equal(acharComissaoDaFatura(rows, { id: 'inv-1', numero: 'NF-1' })?.id, 'c1');
     const kpis = montarKpisDashboard({ linhas, funcionarios, cobertura });
     assert.equal(kpis.comissao3, 1260);
@@ -660,10 +668,11 @@ describe('comissao comercial — cobertura OS e dashboard', () => {
     assert.equal(kpis.margemOperacionalPct, 40);
   });
 
-  it('OS sem NF não infla o bruto nem libera comissão abaixo do piso', async () => {
+  it('cobertura sozinha não substitui o quadro; a API junta OS sem NF nas linhas', async () => {
     const { montarQuadrosFuncionarios, montarApuracaoPorComercial } = await import('../lib/comissao/dashboardComissoes');
     const api = fs.readFileSync('lib/comissao/comissaoQuadroApi.ts', 'utf8');
-    assert.doesNotMatch(api, /faturasDeOsParaQuadro/);
+    assert.match(api, /faturasDeOsParaQuadro/);
+    assert.match(api, /mesclarLinhasQuadro/);
     const cobertura = {
       estado: 'ENCONTRADO' as const,
       consultaIncompleta: false,
@@ -745,6 +754,142 @@ describe('comissao comercial — cobertura OS e dashboard', () => {
     assert.equal(soOs[0].faturamentoBruto, 0);
     assert.equal(soOs[0].comissao3, 0);
     assert.equal(soOs[0].osSemFatura, 21);
+  });
+
+  it('não agrega NF anterior ao cadastro do comercial', async () => {
+    const { dataInicioComissaoDoCadastro, lancamentoAposCadastro, filtrarLinhasAposCadastro } = await import('../lib/comissao/dataInicioComissao');
+    assert.equal(dataInicioComissaoDoCadastro({
+      usuarioCreatedAt: '2026-09-08T17:05:37.246Z',
+      comercialCreatedAt: '2026-09-08T16:44:45.301Z',
+    }), '2026-09-08');
+    assert.equal(lancamentoAposCadastro('2026-09-07', '2026-09-08'), false);
+    assert.equal(lancamentoAposCadastro('2026-09-08', '2026-09-08'), true);
+    assert.equal(lancamentoAposCadastro('2026-08-11', '2026-09-08'), false);
+    const linhas = filtrarLinhasAposCadastro(
+      [{
+        empresa: 'TM SEG',
+        cliente: 'TRANSPORTE PACHECO',
+        faturas: 2,
+        faturamento: 14182.89,
+        imposto: 2269.26,
+        baseLiquida: 11913.63,
+        comissao: 357.41,
+        comercialId: 'abc',
+        comercialNome: 'MIGUEL MOTA',
+        detalhes: [
+          { id: 'a', numero: 'AGO', date: '2026-08-11', faturamento: 7282.17, imposto: 1165.15, valorAPagar: 183.51, pago: true, osIds: [] },
+          { id: 'b', numero: 'SET', date: '2026-09-08', faturamento: 6900.72, imposto: 1104.12, valorAPagar: 173.90, pago: false, osIds: [] },
+        ],
+      }],
+      new Map([['abc', '2026-09-08']]),
+    );
+    assert.equal(linhas.length, 1);
+    assert.equal(linhas[0].faturas, 1);
+    assert.equal(linhas[0].faturamento, 6900.72);
+    assert.equal(linhas[0].detalhes[0].numero, 'SET');
+  });
+
+  it('OS concluída do cliente vinculado entra no bruto após o cadastro', async () => {
+    const { faturasDeOsParaQuadro, montarQuadroClientes, mesclarLinhasQuadro } = await import('../lib/comissao/quadroFaturamentoComissao');
+    const { montarCoberturaOsPeriodo } = await import('../lib/comissao/coberturaOsPeriodo');
+    const { filtrarLinhasAposCadastro } = await import('../lib/comissao/dataInicioComissao');
+    const cob = montarCoberturaOsPeriodo({
+      missions: [
+        { id: 'GTM-7704', client: 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', status: 'Concluída', end_time: '2026-09-09', invoice_number: null, revenue_value: 1311.88, cost_value: 400 },
+        { id: 'GTM-7764', client: 'TRANSPACHECO TRANSPORTE RODOVIARIO DE CARGAS LTDA', status: 'Concluída', end_time: '2026-09-01', invoice_number: null, revenue_value: 668, cost_value: 200 },
+        { id: 'GTM-7859', client: 'SANKYU LOGISTICS DO BRASIL LTDA.', status: 'Origem', end_time: null, revenue_value: 790, cost_value: 400 },
+      ],
+      clients: [
+        { id: 37, name: 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', trading_name: 'TECHTRANS TRANSPORTES', responsavel_comercial_id: 'abc' },
+        { id: 13, name: 'TRANSPACHECO TRANSPORTE RODOVIARIO DE CARGAS LTDA', trading_name: 'TRANSPORTE PACHECO', responsavel_comercial_id: 'abc' },
+        { id: 64, name: 'SANKYU LOGISTICS DO BRASIL LTDA.', trading_name: 'SANKYU LOGISTICS BRASIL', responsavel_comercial_id: 'abc' },
+      ],
+      comerciais: [{ id: 'abc', nome: 'MIGUEL MOTA' }],
+      idsVinculados: new Set(),
+      periodStart: '2026-09-01',
+      periodEnd: '2026-09-30',
+    });
+    const nf = montarQuadroClientes(
+      [{
+        id: 'inv-p',
+        empresa: 'TM_SEG',
+        cliente: 'TRANSPACHECO TRANSPORTE RODOVIARIO DE CARGAS LTDA',
+        number: 'NF-P',
+        amount: 6900.72,
+        date: '2026-09-08',
+        status: 'EMITIDA',
+        comercialId: 'abc',
+      }],
+      [],
+      [{ id: 'abc', nome: 'MIGUEL MOTA' }],
+      '2026-09-01',
+      '2026-09-30',
+    );
+    const os = montarQuadroClientes(
+      faturasDeOsParaQuadro(cob.itens),
+      [],
+      [{ id: 'abc', nome: 'MIGUEL MOTA' }],
+      '2026-09-01',
+      '2026-09-30',
+    );
+    const linhas = filtrarLinhasAposCadastro(
+      mesclarLinhasQuadro(nf, os),
+      new Map([['abc', '2026-09-08']]),
+    );
+    const tech = linhas.find((l) => /TECHTRANS/.test(l.cliente));
+    const pacheco = linhas.find((l) => /PACHECO|TRANSPACHECO/.test(l.cliente));
+    assert.ok(tech, 'Techtrans após 08/09 precisa entrar');
+    assert.ok(tech.detalhes.some((d) => d.osIds.includes('GTM-7704')));
+    assert.ok(pacheco, 'Pacheco com NF de 08/09 precisa permanecer');
+    assert.equal(pacheco.detalhes.some((d) => d.osIds.includes('GTM-7764')), false);
+    assert.ok(pacheco.detalhes.some((d) => d.numero === 'NF-P'));
+    assert.equal(linhas.some((l) => /SANKYU/.test(l.cliente)), false);
+  });
+
+  it('linha do tempo: OS sem NF para em Faturado; fluxo fecha no pagamento da comissão', async () => {
+    const { montarLinhaTempoCliente, detalheEhOsSemNf } = await import('../lib/comissao/linhaTempoComissao');
+    assert.equal(detalheEhOsSemNf({ id: 'GTM-7704', numero: 'GTM-7704', osIds: ['GTM-7704'] }), true);
+    assert.equal(detalheEhOsSemNf({ id: 'inv-1', numero: 'NF-1', osIds: ['GTM-1'] }), false);
+    const semNf = montarLinhaTempoCliente({
+      empresa: 'TM SEG',
+      faturamento: 21620.26,
+      missoes: 8,
+      osFaturadas: 0,
+      osSemFatura: 8,
+      coberturaEstado: 'ENCONTRADO',
+      statusFatura: 'EM_ABERTO',
+      statusComissao: 'EM_ABERTO',
+      detalhes: [{ id: 'GTM-7704', numero: 'GTM-7704', osIds: ['GTM-7704'], pago: false }],
+    });
+    assert.equal(semNf.etapas.map((e) => `${e.id}:${e.estado}`).join('|'), 'OS_GERADA:FEITO|FATURADO:ATUAL|PAGO:PENDENTE|COMISSAO:PENDENTE');
+    const misto = montarLinhaTempoCliente({
+      empresa: 'TM SEG',
+      faturamento: 14028.72,
+      missoes: 10,
+      osFaturadas: 1,
+      osSemFatura: 9,
+      coberturaEstado: 'ENCONTRADO',
+      statusFatura: 'PARCIAL',
+      statusComissao: 'EM_ABERTO',
+      detalhes: [
+        { id: 'inv-p', numero: 'NF-P', osIds: [], pago: false },
+        { id: 'GTM-7812', numero: 'GTM-7812', osIds: ['GTM-7812'], pago: false },
+      ],
+    });
+    assert.equal(misto.etapaAtual, 'FATURADO');
+    const fechado = montarLinhaTempoCliente({
+      empresa: 'TM SEG',
+      faturamento: 50000,
+      missoes: 3,
+      osFaturadas: 3,
+      osSemFatura: 0,
+      coberturaEstado: 'ENCONTRADO',
+      statusFatura: 'PAGO',
+      statusComissao: 'PAGO',
+      detalhes: [{ id: 'inv-1', numero: 'NF-1', osIds: ['GTM-1'], pago: true }],
+    });
+    assert.equal(fechado.etapaAtual, null);
+    assert.equal(fechado.etapas.every((e) => e.estado === 'FEITO'), true);
   });
 });
 

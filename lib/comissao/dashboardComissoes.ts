@@ -7,6 +7,7 @@ import { calcularApuracaoComissao, valorComissaoLinhaAposPiso, type ApuracaoComi
 import { chaveLinhaQuadro, faturaClienteEstaPaga, type LinhaQuadroCliente } from './quadroFaturamentoComissao.js';
 import { normalizeClienteNome } from './sincronizarComissoesFaturas.js';
 import type { CoberturaCliente, CoberturaOsPeriodo } from './coberturaOsPeriodo.js';
+import { montarLinhaTempoCliente, type LinhaTempoCliente } from './linhaTempoComissao.js';
 
 export type ComissaoDashboardRow = {
   id: string;
@@ -52,6 +53,7 @@ export type ClienteDashboard = {
   comissoesAbertas: number;
   statusFatura: StatusPagamentoPar;
   statusComissao: StatusPagamentoPar;
+  linhaTempo: LinhaTempoCliente;
   detalhes: LinhaQuadroCliente['detalhes'];
 };
 
@@ -90,7 +92,7 @@ export type ApuracaoComercialLinha = {
   usuarioVinculado: boolean;
 };
 
-/** Mesma base do quadro do funcionário: só NF TM SEG + TORRES daquele comercial. */
+/** Mesma base do quadro do funcionário: NF + OS do comercial no período. */
 export function montarApuracaoPorComercial(args: {
   linhas: Array<{
     empresa?: string | null;
@@ -208,6 +210,10 @@ export function montarClientesDashboard(args: {
       if (String(com?.status || '') === 'PAGO') comissoesPagas += 1;
       else comissoesAbertas += 1;
     }
+    const statusFatura = statusPar(faturasPagas, faturasAbertas);
+    const statusComissao = statusPar(comissoesPagas, comissoesAbertas);
+    const coberturaEstado = cob?.estado || (args.cobertura?.consultaIncompleta ? 'CONSULTA INCOMPLETA' : 'NÃO EXISTE');
+    const detalhes = linha.detalhes || [];
     return {
       key: chaveLinhaQuadro(linha),
       empresa: linha.empresa,
@@ -224,7 +230,7 @@ export function montarClientesDashboard(args: {
       osFaturadas: cob?.faturadas || 0,
       osSemFatura: cob?.semFatura || 0,
       osSemFaturaIds: cob?.osSemFaturaIds || [],
-      coberturaEstado: cob?.estado || (args.cobertura?.consultaIncompleta ? 'CONSULTA INCOMPLETA' : 'NÃO EXISTE'),
+      coberturaEstado,
       receitaOs: cob?.receita || 0,
       custoOs: cob?.custo || 0,
       lucroOs: cob?.lucro || 0,
@@ -233,9 +239,20 @@ export function montarClientesDashboard(args: {
       faturasAbertas,
       comissoesPagas,
       comissoesAbertas,
-      statusFatura: statusPar(faturasPagas, faturasAbertas),
-      statusComissao: statusPar(comissoesPagas, comissoesAbertas),
-      detalhes: linha.detalhes || [],
+      statusFatura,
+      statusComissao,
+      linhaTempo: montarLinhaTempoCliente({
+        empresa: linha.empresa,
+        faturamento: linha.faturamento,
+        missoes: cob?.missoes || 0,
+        osFaturadas: cob?.faturadas || 0,
+        osSemFatura: cob?.semFatura || 0,
+        coberturaEstado,
+        statusFatura,
+        statusComissao,
+        detalhes,
+      }),
+      detalhes,
     };
   });
 }

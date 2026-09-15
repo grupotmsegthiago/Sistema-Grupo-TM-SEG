@@ -357,7 +357,7 @@ export async function carregarQuadroTmSeg(
   };
 }
 
-/** Preview operacional: OS concluída sem NF. Não entra na apuração nem no piso. */
+/** OS concluída/faturada sem NF, com comercial. Entra no bruto após o cadastro. */
 export function faturasDeOsParaQuadro(
   os: Array<{
     id: string;

@@ -19,6 +19,7 @@ import {
   anosFiltroComissao,
   aplicarPisoComissaoQuadro,
   carregarQuadroTmSeg,
+  chaveLinhaQuadro,
   mesclarLinhasQuadro,
   quadroDeComissoesTorres,
   resolverPeriodoInicialFaturas,
@@ -30,16 +31,19 @@ import {
   acharComissaoDaFatura,
   montarApuracaoPorComercial,
   montarKpisDashboard,
+  montarClientesDashboard,
   montarQuadrosFuncionarios,
   type QuadroFuncionario,
   type StatusPagamentoPar,
 } from '../lib/comissao/dashboardComissoes';
+import type { LinhaTempoCliente } from '../lib/comissao/linhaTempoComissao';
 import InvoiceDivergenceAuditPanel from './InvoiceDivergenceAuditPanel';
 import {
   gerarLinhasTabelaReferencia,
   TABELA_COMISSAO_PADRAO,
   valorComissaoLinhaAposPiso,
 } from '../lib/comissao/tabelaComissaoPadrao';
+import { filtrarLinhasAposCadastro, lancamentoAposCadastro } from '../lib/comissao/dataInicioComissao';
 import {
   intervaloQuinzena,
   labelQuinzena,
@@ -109,6 +113,33 @@ function labelMesAno(ym: string): string {
   return `${nomes[i] || m}/${y}`;
 }
 
+function clsEtapaLinhaTempo(estado: LinhaTempoCliente['etapas'][number]['estado']): string {
+  if (estado === 'FEITO') return 'bg-green-50 text-green-800 border-green-200';
+  if (estado === 'ATUAL') return 'bg-amber-50 text-amber-800 border-amber-200';
+  return 'bg-gray-50 text-gray-400 border-gray-200';
+}
+
+function LinhaTempoClienteView({
+  linha,
+  cliente,
+}: {
+  linha: LinhaTempoCliente;
+  cliente: string;
+}) {
+  return (
+    <ol className="flex flex-wrap items-center gap-1" data-testid={`linha-tempo-cliente-${cliente}`}>
+      {linha.etapas.map((e, i) => (
+        <li key={e.id} className="flex items-center gap-1">
+          {i > 0 ? <span className="text-[10px] text-slate-300 font-black" aria-hidden>›</span> : null}
+          <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-black uppercase border ${clsEtapaLinhaTempo(e.estado)}`}>
+            {e.label}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function labelPagamento(status: StatusPagamentoPar): { texto: string; cls: string } {
   if (status === 'PAGO') return { texto: 'Fechado', cls: 'bg-green-50 text-green-800 border-green-200' };
   if (status === 'PARCIAL') return { texto: 'Parcial', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
@@ -169,23 +200,29 @@ function TabelaQuadroEmpresa({
   titulo,
   linhas,
   rows,
+  cobertura,
   vazio,
   testid,
 }: {
   titulo: string;
   linhas: LinhaQuadroCliente[];
   rows: ComissaoRow[];
+  cobertura: CoberturaOsPeriodo;
   vazio: string;
   testid: string;
 }) {
   const tot = somarQuadro(linhas);
   const [abertos, setAbertos] = useState<Record<string, boolean>>({});
+  const dashPorKey = useMemo(() => {
+    const lista = montarClientesDashboard({ linhas, rows, cobertura });
+    return new Map(lista.map((c) => [c.key, c]));
+  }, [linhas, rows, cobertura]);
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid={testid}>
       <div className="px-4 py-3 border-b border-gray-100 flex items-end justify-between gap-2">
         <div>
           <p className="text-[10px] font-black text-gray-400 uppercase">{titulo}</p>
-          <p className="text-[11px] text-gray-500">Fatura do cliente e pagamento da comissão lado a lado. Clique na seta para cada NF/OS.</p>
+          <p className="text-[11px] text-gray-500">OS gerada no comercial segue até a comissão, com ou sem NF. Clique na seta para cada NF/OS.</p>
         </div>
         <p className="text-[11px] font-black text-gray-700 whitespace-nowrap">{fmtBRL(tot.faturamento)}</p>
       </div>
@@ -206,8 +243,9 @@ function TabelaQuadroEmpresa({
             </thead>
             <tbody>
               {linhas.map((c) => {
-                const key = `${c.empresa}|${c.cliente}`;
+                const key = chaveLinhaQuadro(c);
                 const aberto = !!abertos[key];
+                const dash = dashPorKey.get(key);
                 return (
                   <React.Fragment key={key}>
                     <tr className="border-t border-gray-50">
@@ -222,7 +260,10 @@ function TabelaQuadroEmpresa({
                           {aberto ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                         </button>
                       </td>
-                      <td className="px-3 py-2 text-xs font-bold uppercase">{c.cliente}</td>
+                      <td className="px-3 py-2 text-xs font-bold uppercase">
+                        <div>{c.cliente}</div>
+                        {dash ? <div className="mt-1 font-medium normal-case"><LinhaTempoClienteView linha={dash.linhaTempo} cliente={c.cliente} /></div> : null}
+                      </td>
                       <td className="px-3 py-2 text-[10px] font-bold text-gray-500 uppercase">{c.comercialNome || '—'}</td>
                       <td className="px-3 py-2 text-right font-mono">{c.faturas}</td>
                       <td className="px-3 py-2 text-right font-mono">{fmtBRL(c.faturamento)}</td>
@@ -319,10 +360,12 @@ function TabelaQuadroEmpresa({
 
 function CardFuncionario({
   quadro,
+  dataInicio,
   aberto,
   onToggle,
 }: {
   quadro: QuadroFuncionario;
+  dataInicio?: string | null;
   aberto: boolean;
   onToggle: () => void;
 }) {
@@ -336,6 +379,7 @@ function CardFuncionario({
             <p className="text-[10px] text-slate-500 font-bold">
               {quadro.missoes} missão(ões) · {quadro.osFaturadas} faturada(s)
               {quadro.osSemFatura > 0 ? ` · ${quadro.osSemFatura} sem fatura` : ''}
+              {dataInicio ? ` · comissão desde ${fmtDate(dataInicio)}` : ''}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -345,7 +389,7 @@ function CardFuncionario({
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
           <div>
-            <p className="text-[9px] font-black text-slate-400 uppercase">Bruto faturado (NF)</p>
+            <p className="text-[9px] font-black text-slate-400 uppercase">Bruto do período</p>
             <p className="text-sm font-black">{fmtBRL(quadro.faturamentoBruto)}</p>
           </div>
           <div>
@@ -395,7 +439,10 @@ function CardFuncionario({
                   const comStatus = labelPagamento(c.statusComissao);
                   return (
                     <tr key={c.key} className="border-t border-gray-100" data-testid={`margem-cliente-${c.cliente}`}>
-                      <td className="py-1.5 pr-3 font-bold uppercase">{c.cliente}</td>
+                      <td className="py-1.5 pr-3 font-bold uppercase">
+                        <div>{c.cliente}</div>
+                        <div className="mt-1 font-medium normal-case"><LinhaTempoClienteView linha={c.linhaTempo} cliente={c.cliente} /></div>
+                      </td>
                       <td className="py-1.5 pr-3 text-right font-mono">{c.missoes || '—'}</td>
                       <td className="py-1.5 pr-3 text-right font-mono">{c.coberturaEstado === 'CONSULTA INCOMPLETA' ? 'NÃO VALIDADO' : c.osSemFatura}</td>
                       <td className="py-1.5 pr-3 text-right font-mono">{fmtBRL(c.faturamento)}</td>
@@ -454,6 +501,7 @@ const ComissoesComerciaisPage: React.FC = () => {
   const [mesesDisponiveis, setMesesDisponiveis] = useState<string[]>([]);
   const [cobertura, setCobertura] = useState<CoberturaOsPeriodo>(coberturaVazia());
   const [funcionarioAberto, setFuncionarioAberto] = useState<string | null>(null);
+  const [iniciosComissao, setIniciosComissao] = useState<Record<string, string>>({});
   const autoSyncRef = useRef(false);
 
   const { start: periodStart, end: periodEnd } = intervaloQuinzena(year, month, quinzenaFiltro);
@@ -503,6 +551,9 @@ const ComissoesComerciaisPage: React.FC = () => {
       try {
         const quadroRes = await authFetch(`/api/comissoes/quadro?start=${encodeURIComponent(periodStart)}&end=${encodeURIComponent(periodEnd)}`);
         const quadroJson = await quadroRes.json().catch(() => ({}));
+        if (quadroJson.iniciosComissao && typeof quadroJson.iniciosComissao === 'object') {
+          setIniciosComissao(quadroJson.iniciosComissao);
+        }
         if (quadroRes.ok && (quadroJson.ok || (quadroJson.linhasTm || []).length > 0 || (quadroJson.linhasTorres || []).length > 0 || (quadroJson.meses || []).length > 0)) {
           setQuadroTm(quadroJson.linhasTm || []);
           setQuadroTorres(mesclarLinhasQuadro(quadroJson.linhasTorres || [], quadroDeComissoesTorres(result.rows, listaComerciais)));
@@ -574,7 +625,9 @@ const ComissoesComerciaisPage: React.FC = () => {
   }, [comercialId, comerciais]);
 
   const quadroVisivel = useMemo(() => {
-    const { linhasTm: tmPiso, linhasTorres: torresPiso } = aplicarPisoComissaoQuadro(quadroTm, quadroTorres);
+    const tmCad = filtrarLinhasAposCadastro(quadroTm, iniciosComissao);
+    const torresCad = filtrarLinhasAposCadastro(quadroTorres, iniciosComissao);
+    const { linhasTm: tmPiso, linhasTorres: torresPiso } = aplicarPisoComissaoQuadro(tmCad, torresCad);
     const matchComercial = (l: LinhaQuadroCliente) => !comercialId || l.comercialId === comercialId;
     const tm = empresaFilter === 'TORRES' ? [] : tmPiso.filter(matchComercial);
     const torres = empresaFilter === 'TM_SEG' ? [] : torresPiso.filter(matchComercial);
@@ -587,7 +640,12 @@ const ComissoesComerciaisPage: React.FC = () => {
       totTm: somarQuadro(tm),
       totTorres: somarQuadro(torres),
     };
-  }, [quadroTm, quadroTorres, empresaFilter, comercialId]);
+  }, [quadroTm, quadroTorres, empresaFilter, comercialId, iniciosComissao]);
+
+  const rowsAposCadastro = useMemo(
+    () => rows.filter((r) => lancamentoAposCadastro(r.data_faturamento, iniciosComissao[String(r.comercial_id || '').trim()] || null)),
+    [rows, iniciosComissao],
+  );
 
   const apuracaoPorComercial = useMemo(
     () => montarApuracaoPorComercial({ linhas: quadroVisivel.all, comerciais }),
@@ -607,20 +665,20 @@ const ComissoesComerciaisPage: React.FC = () => {
   }), [brutoComercialPeriodo]);
 
   const stats = useMemo(() => {
-    const lib = rows.filter((r) => r.status === 'LIBERADO_PARA_PAGAMENTO').reduce((s, r) => s + comissaoLinha(r).valor, 0);
-    const pago = rows.filter((r) => r.status === 'PAGO').reduce((s, r) => s + comissaoLinha(r).valor, 0);
+    const lib = rowsAposCadastro.filter((r) => r.status === 'LIBERADO_PARA_PAGAMENTO').reduce((s, r) => s + comissaoLinha(r).valor, 0);
+    const pago = rowsAposCadastro.filter((r) => r.status === 'PAGO').reduce((s, r) => s + comissaoLinha(r).valor, 0);
     return { lib, pago, porComercial: apuracaoPorComercial };
-  }, [rows, comissaoLinha, apuracaoPorComercial]);
+  }, [rowsAposCadastro, comissaoLinha, apuracaoPorComercial]);
 
   const funcionarios = useMemo(() => {
     const lista = montarQuadrosFuncionarios({
       comerciais,
       linhas: quadroVisivel.all,
-      rows,
+      rows: rowsAposCadastro,
       cobertura,
     });
     return comercialId ? lista.filter((f) => f.id === comercialId) : lista;
-  }, [comerciais, quadroVisivel.all, rows, cobertura, comercialId]);
+  }, [comerciais, quadroVisivel.all, rowsAposCadastro, cobertura, comercialId]);
 
   const kpis = useMemo(() => montarKpisDashboard({
     linhas: quadroVisivel.all,
@@ -649,13 +707,13 @@ const ComissoesComerciaisPage: React.FC = () => {
   };
 
   const exportarRelatorio = () => {
-    if (rows.length === 0) {
+    if (rowsAposCadastro.length === 0) {
       showNotification('Relatório', 'Não há comissões neste filtro para exportar.', 'warning');
       return;
     }
     const comercialNome = comerciais.find((c) => c.id === comercialId)?.nome || 'Todos';
     const csv = montarCsvRelatorioComissoes(
-      rows.map((r) => ({
+      rowsAposCadastro.map((r) => ({
         empresa: empresaLabel(r.empresa_origem),
         cliente_nome: r.cliente_nome,
         comercial_nome: r.comerciais?.nome || comercialNome,
@@ -767,7 +825,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           <h1 className="text-lg font-black text-gray-900 uppercase tracking-tight flex items-center gap-2">
             <BadgeDollarSign className="text-red-600" size={22} /> Comissões Comerciais
           </h1>
-          <p className="text-xs text-gray-500 font-medium">Controle único TM SEG + TORRES. Vínculo pelo usuário COMERCIAL. Fórmula: bruto − 16% da NF = líquido; 3% sobre o líquido. Comissão % só a partir de R$ 50 mil de faturamento do comercial no período. Abaixo disso: só o valor fixo. Total a pagar = fixo + comissão. Sincronismo automático a cada 6 horas (botão também dispara na hora).</p>
+          <p className="text-xs text-gray-500 font-medium">Controle único TM SEG + TORRES. Vínculo pelo usuário COMERCIAL. OS gerada no nome do comercial segue o fluxo até o pagamento da comissão, com ou sem NF: OS Gerada › Faturado › Pago › Comissão. Entra a partir da data de cadastro do comercial. OS em Origem/Agendada ainda não entra no valor. Fórmula: bruto − 16% = líquido; 3% sobre o líquido. Comissão % só a partir de R$ 50 mil no período. Abaixo disso: só o valor fixo. Sincronismo automático a cada 6 horas (botão também dispara na hora).</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -1060,7 +1118,7 @@ const ComissoesComerciaisPage: React.FC = () => {
         <div className="flex items-end justify-between gap-2">
           <div>
             <p className="text-[10px] font-black text-gray-400 uppercase">Quadro por funcionário comissionado</p>
-            <p className="text-[11px] text-gray-500">Bruto = somente NF do período (TM SEG + TORRES). OS sem fatura aparece no rastreio e não entra no piso nem na comissão.</p>
+            <p className="text-[11px] text-gray-500">Bruto = NF + OS concluída do cliente do comercial, a partir do cadastro. Cada cliente tem a linha do tempo OS Gerada › Faturado › Pago › Comissão.</p>
           </div>
         </div>
         {loading && funcionarios.length === 0 ? (
@@ -1071,6 +1129,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           <CardFuncionario
             key={f.id}
             quadro={f}
+            dataInicio={iniciosComissao[f.id] || null}
             aberto={funcionarioAberto === f.id}
             onToggle={() => setFuncionarioAberto((prev) => prev === f.id ? null : f.id)}
           />
@@ -1082,8 +1141,9 @@ const ComissoesComerciaisPage: React.FC = () => {
           <TabelaQuadroEmpresa
             titulo="TM SEG — por cliente"
             linhas={quadroVisivel.tm}
-            rows={rows}
-            vazio={loading ? 'Carregando faturamento…' : 'Sem faturas TM SEG com comercial neste filtro. Vincule o responsável no cadastro do cliente.'}
+            rows={rowsAposCadastro}
+            cobertura={cobertura}
+            vazio={loading ? 'Carregando faturamento…' : 'Sem faturamento TM SEG com comercial neste filtro. Vincule o responsável no cadastro do cliente. OS concluída sem NF do cliente vinculado entra no bruto após o cadastro.'}
             testid="quadro-tm-seg"
           />
         )}
@@ -1091,7 +1151,8 @@ const ComissoesComerciaisPage: React.FC = () => {
           <TabelaQuadroEmpresa
             titulo="TORRES — por cliente"
             linhas={quadroVisivel.torres}
-            rows={rows}
+            rows={rowsAposCadastro}
+            cobertura={cobertura}
             vazio={loading ? 'Carregando faturamento…' : 'Sem faturamento TORRES com comercial neste filtro. Use Sincronizar TM SEG + TORRES. Só entra cliente com responsável comercial no cadastro da TORRES.'}
             testid="quadro-torres"
           />
@@ -1102,7 +1163,7 @@ const ComissoesComerciaisPage: React.FC = () => {
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="apuracao-escala-comercial">
           <div className="px-4 py-3 border-b border-gray-100">
             <p className="text-[10px] font-black text-gray-400 uppercase">Apuração do período (TM SEG + TORRES)</p>
-            <p className="text-[11px] text-gray-500">Mesma base do quadro do funcionário: só NF. Imposto de 16% é abatido do bruto (não é pago ao comercial). Comissão = 3% do líquido, só a partir de R$ 50 mil. Total a pagar = fixo + comissão.</p>
+            <p className="text-[11px] text-gray-500">Mesma base do quadro do funcionário: só NF a partir do cadastro do comercial. Imposto de 16% é abatido do bruto. Comissão = 3% do líquido, só a partir de R$ 50 mil. Total a pagar = fixo + comissão.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -1145,7 +1206,7 @@ const ComissoesComerciaisPage: React.FC = () => {
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         {loading ? (
           <div className="p-10 flex items-center justify-center gap-2 text-gray-500 text-sm"><Loader2 className="animate-spin" size={16} /> Carregando comissões…</div>
-        ) : rows.length === 0 ? (
+        ) : rowsAposCadastro.length === 0 ? (
           <div className="p-10 text-center text-sm text-gray-500">Nenhuma comissão lançada para pagamento neste filtro. O quadro acima já lista o faturamento das faturas.</div>
         ) : (
           <div className="overflow-x-auto">
@@ -1166,7 +1227,7 @@ const ComissoesComerciaisPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
+                {rowsAposCadastro.map((r) => {
                   const linhaPiso = comissaoLinha(r);
                   return (
                   <tr key={r.id} className="border-t border-gray-50" data-testid={`comissao-row-${r.id}`}>

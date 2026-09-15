@@ -10,12 +10,16 @@ import {
 import {
   aplicarPisoComissaoQuadro,
   carregarQuadroTmSeg,
+  faturasDeOsParaQuadro,
+  mesclarLinhasQuadro,
   mesesComFatura,
+  montarQuadroClientes,
   type LinhaQuadroCliente,
 } from './quadroFaturamentoComissao.js';
 import { carregarQuadroTorres } from './quadroTorres.js';
 import { carregarCoberturaOsPeriodo, coberturaVazia, type CoberturaOsPeriodo } from './coberturaOsPeriodo.js';
 import type { ComissaoDbClient } from './comissaoCore.js';
+import { carregarIniciosComissao, filtrarLinhasAposCadastro } from './dataInicioComissao.js';
 
 export type QuadroComissoesApiResult = {
   ok: boolean;
@@ -24,6 +28,7 @@ export type QuadroComissoesApiResult = {
   meses: string[];
   pendencias: Awaited<ReturnType<typeof carregarPendenciasComissao>>['pendencias'];
   cobertura: CoberturaOsPeriodo;
+  iniciosComissao: Record<string, string>;
   error?: string;
 };
 
@@ -41,18 +46,31 @@ export async function montarQuadroComissoesApi(
       meses: [],
       pendencias: [],
       cobertura: coberturaVazia('ERRO', comErr.message, true),
+      iniciosComissao: {},
       error: comErr.message,
     };
   }
   const lista = (comerciais || []) as Array<{ id: string; nome?: string | null }>;
-  const [quadro, torres, cobertura, pend] = await Promise.all([
+  const [quadro, torres, cobertura, pend, inicios] = await Promise.all([
     carregarQuadroTmSeg(sb, periodStart, periodEnd, lista),
     carregarQuadroTorres(sb, periodStart, periodEnd, lista),
     carregarCoberturaOsPeriodo(sb, periodStart, periodEnd, lista),
     carregarPendenciasComissao(sb),
+    carregarIniciosComissao(sb),
   ]);
-  // OS sem NF fica só na cobertura operacional. Não entra no bruto, piso nem comissão.
-  const comPiso = aplicarPisoComissaoQuadro(quadro.linhas, torres.linhas);
+  const linhasOs = montarQuadroClientes(
+    faturasDeOsParaQuadro(cobertura.itens),
+    [],
+    lista,
+    periodStart,
+    periodEnd,
+  );
+  const linhasTm = filtrarLinhasAposCadastro(
+    mesclarLinhasQuadro(quadro.linhas, linhasOs),
+    inicios,
+  );
+  const linhasTorres = filtrarLinhasAposCadastro(torres.linhas, inicios);
+  const comPiso = aplicarPisoComissaoQuadro(linhasTm, linhasTorres);
   const mesesTorres = mesesComFatura(
     torres.linhas.flatMap((linha) => (linha.detalhes || []).map((d) => ({
       date: d.date,
@@ -66,6 +84,7 @@ export async function montarQuadroComissoesApi(
     meses: [...new Set([...quadro.meses, ...mesesTorres])].sort().reverse(),
     pendencias: pend.ok ? pend.pendencias : [],
     cobertura,
+    iniciosComissao: Object.fromEntries(inicios),
     error: quadro.error || torres.error || (!pend.ok ? pend.error : undefined) || cobertura.error,
   };
 }
