@@ -3,7 +3,7 @@
  * Não altera a fórmula (16% / 3% / piso) — só organiza o que já existe.
  */
 import { calcularComissao, roundMoney, type ComissaoStatus } from './comissaoCalc.js';
-import { calcularApuracaoComissao, valorComissaoLinhaAposPiso } from './tabelaComissaoPadrao.js';
+import { calcularApuracaoComissao, valorComissaoLinhaAposPiso, type ApuracaoComissao } from './tabelaComissaoPadrao.js';
 import { chaveLinhaQuadro, faturaClienteEstaPaga, type LinhaQuadroCliente } from './quadroFaturamentoComissao.js';
 import { normalizeClienteNome } from './sincronizarComissoesFaturas.js';
 import type { CoberturaCliente, CoberturaOsPeriodo } from './coberturaOsPeriodo.js';
@@ -79,6 +79,65 @@ export type QuadroFuncionario = {
   statusPagamento: StatusPagamentoPar;
   clientes: ClienteDashboard[];
 };
+
+export type ApuracaoComercialLinha = {
+  id: string;
+  comercial: string;
+  tm: number;
+  torres: number;
+  fat: number;
+  apuracao: ApuracaoComissao;
+  usuarioVinculado: boolean;
+};
+
+/** Mesma base do quadro do funcionário: só NF TM SEG + TORRES daquele comercial. */
+export function montarApuracaoPorComercial(args: {
+  linhas: Array<{
+    empresa?: string | null;
+    comercialId?: string | null;
+    comercialNome?: string | null;
+    faturamento?: number | null;
+  }>;
+  comerciais: Array<{
+    id: string;
+    nome?: string | null;
+    valor_fixo?: number | null;
+    usuario_id?: number | null;
+  }>;
+}): ApuracaoComercialLinha[] {
+  const por = new Map<string, { comercial: string; tm: number; torres: number; fat: number }>();
+  for (const linha of args.linhas) {
+    const id = String(linha.comercialId || '').trim();
+    if (!id) continue;
+    const prev = por.get(id) || {
+      comercial: String(linha.comercialNome || '').trim() || '—',
+      tm: 0,
+      torres: 0,
+      fat: 0,
+    };
+    const fat = Number(linha.faturamento) || 0;
+    prev.fat = roundMoney(prev.fat + fat);
+    if (String(linha.empresa || '').toUpperCase() === 'TORRES') prev.torres = roundMoney(prev.torres + fat);
+    else prev.tm = roundMoney(prev.tm + fat);
+    if (!prev.comercial || prev.comercial === '—') prev.comercial = String(linha.comercialNome || '').trim() || prev.comercial;
+    por.set(id, prev);
+  }
+  return [...por.entries()].map(([id, v]) => {
+    const cadastro = args.comerciais.find((c) => c.id === id);
+    return {
+      id,
+      comercial: cadastro?.nome || v.comercial,
+      tm: v.tm,
+      torres: v.torres,
+      fat: v.fat,
+      apuracao: calcularApuracaoComissao({
+        valorBruto: v.fat,
+        valorFixo: Number(cadastro?.valor_fixo || 0),
+      }),
+      usuarioVinculado: !!cadastro?.usuario_id,
+    };
+  }).sort((a, b) => b.fat - a.fat);
+}
 
 export type KpisDashboardComissao = {
   faturamento: number;
@@ -221,9 +280,8 @@ export function montarQuadrosFuncionarios(args: {
     const cadastro = args.comerciais.find((c) => c.id === id);
     const lista = porComercial.get(id) || [];
     const cobClientes = (args.cobertura?.porCliente || []).filter((c) => String(c.comercialId || '') === id);
-    const faturamentoBruto = roundMoney(lista.reduce((s, c) => s + c.faturamento, 0)
-      || cobClientes.reduce((s, c) => s + c.receita, 0)
-      || brutoPorComercial.get(id) || 0);
+    const faturamentoQuadro = roundMoney(lista.reduce((s, c) => s + c.faturamento, 0));
+    const faturamentoBruto = faturamentoQuadro > 0 ? faturamentoQuadro : (brutoPorComercial.get(id) || 0);
     const imposto = roundMoney(lista.reduce((s, c) => s + c.imposto, 0));
     const liquido = roundMoney(lista.reduce((s, c) => s + c.baseLiquida, 0));
     const apuracao = calcularApuracaoComissao({

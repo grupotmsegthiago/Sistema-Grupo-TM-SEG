@@ -357,7 +357,7 @@ export async function carregarQuadroTmSeg(
   };
 }
 
-/** OS concluída com comercial e sem NF vira linha no quadro (ex.: TECHTRANS do Miguel). */
+/** Preview operacional: OS concluída sem NF. Não entra na apuração nem no piso. */
 export function faturasDeOsParaQuadro(
   os: Array<{
     id: string;

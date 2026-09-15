@@ -1,5 +1,28 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## COMISSÕES — QUADRO E APURAÇÃO COM A MESMA BASE (SET/2026)
+
+**Data:** 2026-09-15 (UTC-3)
+**Pedido:** o quadro do Miguel Mota mostrava bruto R$ 74.440,50 e comissão
+R$ 1.875,90; a apuração do período mostrava R$ 42.752,06 (abaixo do piso) e
+R$ 0,00. As duas seções não batiam.
+
+**Causa:** o quadro do funcionário somava OS concluída **sem NF** no bruto e
+usava isso no piso de R$ 50 mil. A apuração lia só a tabela `comissoes`
+(NF gerada). Duas fontes, dois resultados.
+
+**Fonte da verdade (homologada):** bruto do período = NF TM SEG + TORRES do
+comercial. Imposto 16% abatido do bruto. Comissão = 3% do líquido, só a
+partir de R$ 50 mil. OS sem fatura permanece no rastreio operacional e
+**não** entra no piso nem no total a pagar.
+
+**Não alterado:** fórmula 16%/3%/piso, geração de comissão por NF, Asaas,
+eNotas, motor de OS, sincronismo TORRES.
+
+**Testes:** `npx tsx --test scripts/comissao-comercial.test.ts`
+
+---
+
 ## RASTREIO AO VIVO VELADA — LINK EXTERNO (SET/2026)
 
 **Data:** 2026-09-14 (UTC-3)
@@ -14,10 +37,11 @@ no card da OS, no Editar OS e no modal de status/mapa.
 **Não alterado:** cálculo de OS, Ponto B/mapLink da missão, Asaas, eNotas,
 faturamento. Encerramento automático se a OS for Concluída/Cancelada/Recusada.
 
-**Limite honesto:** GPS de navegador exige a tela aberta (Wake Lock + alerta se
-sair). Não há GPS em segundo plano nativo como app WhatsApp/Uber.
+**Limite honesto:** GPS de navegador segue em segundo plano (Home / Ocultar /
+notificação + áudio de manutenção). Fechar a aba ou encerrar o Chrome/Safari
+mata o GPS — o SO não entrega localização com a página morta.
 
-**Testes:** `npx tsx --test scripts/live-track-velada.test.ts` — 9/9 pass.
+**Testes:** `npx tsx --test scripts/live-track-velada.test.ts`
 
 ---
 
