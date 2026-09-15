@@ -39,11 +39,14 @@ export function liveTrackOperatorLabel(data: LiveTrackWatchBody | null): {
   if (st === 'ended') return { text: 'Rastreio encerrado', tone: 'ended' };
   if (st === 'pending') return { text: 'Aguardando o agente abrir o link', tone: 'wait' };
   if (st === 'consented') return { text: 'Agente aceitou — aguardando GPS', tone: 'wait' };
-  if (st === 'paused') return { text: 'Agente saiu da tela — sinal pausado', tone: 'stale' };
-  if (st === 'sharing' && isLiveTrackStale(data.track.last_seen_at)) {
-    return { text: 'Sinal perdido — peça para manter a tela aberta', tone: 'stale' };
+  if (st === 'paused' && !isLiveTrackStale(data.track.last_seen_at)) {
+    return { text: 'Ao vivo (segundo plano)', tone: 'live' };
   }
-  if (st === 'sharing') return { text: 'Ao vivo — como WhatsApp / Uber', tone: 'live' };
+  if (st === 'paused') return { text: 'Sinal perdido — peça para não fechar o navegador', tone: 'stale' };
+  if (st === 'sharing' && isLiveTrackStale(data.track.last_seen_at)) {
+    return { text: 'Sinal perdido — peça para não fechar o navegador', tone: 'stale' };
+  }
+  if (st === 'sharing') return { text: 'Ao vivo — segundo plano ativo', tone: 'live' };
   return { text: st, tone: 'wait' };
 }
 

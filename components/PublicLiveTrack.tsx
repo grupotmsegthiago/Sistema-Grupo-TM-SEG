@@ -1,20 +1,25 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, Loader2, MapPin, Radio, ShieldCheck, Smartphone,
+  AlertTriangle, CheckCircle2, EyeOff, Loader2, MapPin, Radio, ShieldCheck, Smartphone,
 } from 'lucide-react';
 import tmsegLogo from '../attached_assets/tmseg_logo_transparent.png';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
+import { startLiveTrackKeepalive, type LiveTrackKeepalive } from '../lib/liveTrack/backgroundKeepalive';
 
 type Phase = 'loading' | 'consent' | 'sharing' | 'ended' | 'error';
 
 const GEO_OPTS: PositionOptions = {
   enableHighAccuracy: true,
-  maximumAge: 0,
-  timeout: 12000,
+  maximumAge: 1000,
+  timeout: 15000,
 };
 
 function tokenFromUrl(): string {
   return new URLSearchParams(window.location.search).get('token') || '';
+}
+
+function vis(): 'visible' | 'hidden' {
+  return document.visibilityState === 'visible' ? 'visible' : 'hidden';
 }
 
 export default function PublicLiveTrack() {
@@ -34,21 +39,33 @@ export default function PublicLiveTrack() {
   const [wakeOk, setWakeOk] = useState(false);
   const [busy, setBusy] = useState(false);
   const [nowTs, setNowTs] = useState(() => Date.now());
+  const [minimized, setMinimized] = useState(false);
+  const [bgOk, setBgOk] = useState(false);
 
   const watchIdRef = useRef<number | null>(null);
   const wakeRef = useRef<any>(null);
   const lastSentRef = useRef(0);
   const lastPosRef = useRef<GeolocationPosition | null>(null);
   const endedRef = useRef(false);
+  const keepaliveRef = useRef<LiveTrackKeepalive | null>(null);
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+
+  const stopKeepalive = useCallback(() => {
+    try { keepaliveRef.current?.stop(); } catch { /* ignore */ }
+    keepaliveRef.current = null;
+    setBgOk(false);
+  }, []);
 
   const stopWatch = useCallback(() => {
     if (watchIdRef.current != null && navigator.geolocation) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
-    try { wakeRef.current?.release?.(); } catch {}
+    try { wakeRef.current?.release?.(); } catch { /* ignore */ }
     wakeRef.current = null;
-  }, []);
+    stopKeepalive();
+  }, [stopKeepalive]);
 
   const requestWake = useCallback(async () => {
     try {
@@ -73,27 +90,32 @@ export default function PublicLiveTrack() {
     lastPosRef.current = pos;
     const coords = pos.coords;
     const batt = (navigator as any).getBattery ? await (navigator as any).getBattery().catch(() => null) : null;
+    const tok = tokenRef.current;
+    const payload = {
+      token: tok,
+      lat: coords.latitude,
+      lng: coords.longitude,
+      accuracy: coords.accuracy,
+      speed: coords.speed,
+      heading: coords.heading,
+      battery: batt ? Math.round(batt.level * 100) : undefined,
+      visibility,
+      background: visibility === 'hidden',
+    };
     try {
-      const r = await fetch(`/api/live-track?op=public-ping&token=${encodeURIComponent(token)}`, {
+      const r = await fetch(`/api/live-track?op=public-ping&token=${encodeURIComponent(tok)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store',
-        body: JSON.stringify({
-          token,
-          lat: coords.latitude,
-          lng: coords.longitude,
-          accuracy: coords.accuracy,
-          speed: coords.speed,
-          heading: coords.heading,
-          battery: batt ? Math.round(batt.level * 100) : undefined,
-          visibility,
-        }),
+        keepalive: true,
+        body: JSON.stringify(payload),
       });
       const j = await parseJsonResponse(r);
       if (j?.ended || r.status === 410) {
         endedRef.current = true;
         stopWatch();
         setPhase('ended');
+        setMinimized(false);
         return;
       }
       if (!r.ok) {
@@ -106,7 +128,19 @@ export default function PublicLiveTrack() {
     } catch {
       setError('Sem conexão — tentando de novo automaticamente');
     }
-  }, [stopWatch, token]);
+  }, [stopWatch]);
+
+  const pollOnce = useCallback(() => {
+    if (endedRef.current || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { void sendPing(pos, vis()); },
+      () => {
+        const last = lastPosRef.current;
+        if (last) void sendPing(last, vis());
+      },
+      GEO_OPTS,
+    );
+  }, [sendPing]);
 
   const startGps = useCallback(async () => {
     if (!navigator.geolocation) {
@@ -115,17 +149,23 @@ export default function PublicLiveTrack() {
       return;
     }
     await requestWake();
+    try {
+      keepaliveRef.current = await startLiveTrackKeepalive();
+      setBgOk(true);
+    } catch {
+      setBgOk(false);
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setPhase('sharing');
-        void sendPing(pos, document.visibilityState === 'visible' ? 'visible' : 'hidden');
+        void sendPing(pos, vis());
         watchIdRef.current = navigator.geolocation.watchPosition(
-          (next) => { void sendPing(next, document.visibilityState === 'visible' ? 'visible' : 'hidden'); },
+          (next) => { void sendPing(next, vis()); },
           (err) => {
             if (err.code === err.PERMISSION_DENIED) {
               setError('Permissão de localização negada. Ative o GPS de alta precisão e recarregue esta página.');
             } else {
-              setError('GPS instável. Mantenha a tela aberta e o GPS em alta precisão.');
+              pollOnce();
             }
           },
           GEO_OPTS,
@@ -138,10 +178,11 @@ export default function PublicLiveTrack() {
           setError('Não foi possível obter GPS. Ative a localização de alta precisão e tente de novo.');
         }
         setPhase('consent');
+        stopKeepalive();
       },
       GEO_OPTS,
     );
-  }, [requestWake, sendPing]);
+  }, [pollOnce, requestWake, sendPing, stopKeepalive]);
 
   useEffect(() => {
     if (!token) {
@@ -192,25 +233,53 @@ export default function PublicLiveTrack() {
       const hidden = document.visibilityState !== 'visible';
       setHiddenWarn(hidden);
       if (!hidden) void requestWake();
-      const pos = lastPosRef.current;
-      if (pos) void sendPing(pos, hidden ? 'hidden' : 'visible');
+      pollOnce();
     };
+    const onFreeze = () => { pollOnce(); };
     document.addEventListener('visibilitychange', onVis);
-    const tick = window.setInterval(() => {
-      const pos = lastPosRef.current;
-      if (pos) void sendPing(pos, document.visibilityState === 'visible' ? 'visible' : 'hidden');
-    }, 4000);
+    window.addEventListener('pageshow', onVis);
+    window.addEventListener('freeze', onFreeze);
+    window.addEventListener('resume', onVis as EventListener);
+    const tick = window.setInterval(() => { pollOnce(); }, 2500);
     const onHide = (e: BeforeUnloadEvent) => {
       e.preventDefault();
-      e.returnValue = 'O acompanhamento GPS para se você fechar esta tela.';
+      e.returnValue = 'Se fechar esta página o rastreio GPS para. Ocultar ou ir ao WhatsApp mantém o segundo plano.';
+    };
+    const onPageHide = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        pollOnce();
+        return;
+      }
+      const pos = lastPosRef.current;
+      const tok = tokenRef.current;
+      if (!pos || !tok || endedRef.current) return;
+      try {
+        const body = JSON.stringify({
+          token: tok,
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          visibility: 'hidden',
+          background: true,
+        });
+        navigator.sendBeacon(
+          `/api/live-track?op=public-ping&token=${encodeURIComponent(tok)}`,
+          new Blob([body], { type: 'application/json' }),
+        );
+      } catch { /* ignore */ }
     };
     window.addEventListener('beforeunload', onHide);
+    window.addEventListener('pagehide', onPageHide);
     return () => {
       document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pageshow', onVis);
+      window.removeEventListener('freeze', onFreeze);
+      window.removeEventListener('resume', onVis as EventListener);
       window.clearInterval(tick);
       window.removeEventListener('beforeunload', onHide);
+      window.removeEventListener('pagehide', onPageHide);
     };
-  }, [phase, requestWake, sendPing]);
+  }, [phase, pollOnce, requestWake]);
 
   useEffect(() => () => stopWatch(), [stopWatch]);
 
@@ -240,6 +309,26 @@ export default function PublicLiveTrack() {
       setBusy(false);
     }
   };
+
+  if (phase === 'sharing' && minimized) {
+    return (
+      <div className="min-h-[100dvh] bg-slate-950 text-white flex items-end justify-center p-3">
+        <button
+          type="button"
+          onClick={() => setMinimized(false)}
+          data-testid="live-track-expand"
+          className="w-full max-w-lg rounded-2xl bg-emerald-500 text-slate-950 px-4 py-3 shadow-2xl flex items-center gap-3"
+        >
+          <span className="w-3 h-3 rounded-full bg-slate-950 animate-pulse shrink-0" />
+          <span className="text-left flex-1">
+            <span className="block text-[10px] font-black uppercase tracking-widest">Segundo plano ativo</span>
+            <span className="block text-sm font-bold">TM SEG rastreando{osNumber ? ` · OS ${osNumber}` : ''}</span>
+          </span>
+          <span className="text-[10px] font-black uppercase">Abrir</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[100dvh] bg-slate-950 text-white flex flex-col">
@@ -292,7 +381,7 @@ export default function PublicLiveTrack() {
             <p className="text-sm text-slate-200 leading-relaxed">{lgpdSummary}</p>
             <label className="flex items-start gap-3 text-sm bg-white/5 rounded-xl p-4 border border-white/10">
               <input type="checkbox" className="mt-1" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} data-testid="live-track-lgpd-check" />
-              <span>Li e autorizo o tratamento da minha localização em tempo real até o fim da missão, nos termos da LGPD acima.</span>
+              <span>Li e autorizo o tratamento da minha localização em tempo real, inclusive em segundo plano (tela oculta), até o fim da missão.</span>
             </label>
             <button
               type="button"
@@ -315,15 +404,15 @@ export default function PublicLiveTrack() {
               {busy ? <Loader2 className="animate-spin" size={18} /> : <Radio size={18} />}
               Compartilhar localização em tempo real
             </button>
-            <p className="text-[11px] text-slate-400 text-center">O navegador vai pedir permissão de GPS. Escolha Permitir / Enquanto estiver usando o app.</p>
+            <p className="text-[11px] text-slate-400 text-center">Na permissão de GPS escolha Permitir. Depois use Ocultar para ir ao WhatsApp — o rastreio segue até você fechar esta página.</p>
           </div>
         )}
 
         {phase === 'sharing' && (
           <div className="space-y-5">
             {hiddenWarn && (
-              <div className="rounded-2xl bg-amber-400 text-slate-950 p-4 font-bold text-sm">
-                Volte para esta tela. O GPS de navegador para quando o celular é bloqueado — igual ao Uber, a tela precisa ficar aberta.
+              <div className="rounded-2xl bg-emerald-400 text-slate-950 p-4 font-bold text-sm">
+                Segundo plano ativo. Pode usar o WhatsApp. O GPS só para se você fechar esta página.
               </div>
             )}
             <div className="rounded-3xl bg-emerald-500 text-slate-950 p-6 text-center shadow-2xl">
@@ -334,8 +423,17 @@ export default function PublicLiveTrack() {
               <p className="text-2xl font-black mt-1">Central TM SEG acompanhando</p>
               {osNumber ? <p className="font-mono text-sm mt-2">OS {osNumber}</p> : null}
             </div>
+            <button
+              type="button"
+              onClick={() => setMinimized(true)}
+              data-testid="live-track-minimize"
+              className="w-full h-12 rounded-2xl bg-white/10 border border-white/20 text-white text-sm font-black uppercase tracking-wide flex items-center justify-center gap-2"
+            >
+              <EyeOff size={16} /> Ocultar e rastrear em segundo plano
+            </button>
             <ul className="space-y-2 text-sm text-slate-200">
-              <li className="flex gap-2"><Smartphone size={16} className="mt-0.5 shrink-0" /> Mantenha esta tela aberta até o fim da missão.</li>
+              <li className="flex gap-2"><EyeOff size={16} className="mt-0.5 shrink-0" /> Ocultar, Home ou WhatsApp: GPS continua. Só para se você fechar esta página.</li>
+              <li className="flex gap-2"><Smartphone size={16} className="mt-0.5 shrink-0" /> Deixe o Chrome/Safari aberto (pode ficar oculto) até o fim da missão.</li>
               <li className="flex gap-2"><Radio size={16} className="mt-0.5 shrink-0" /> GPS em alta precisão (não use só Wi‑Fi).</li>
               <li className="flex gap-2"><ShieldCheck size={16} className="mt-0.5 shrink-0" /> Localização usada só nesta OS, com registro LGPD.</li>
             </ul>
@@ -350,7 +448,8 @@ export default function PublicLiveTrack() {
               </div>
             </div>
             <p className="text-[11px] text-slate-400">
-              Tela ligada: {wakeOk ? 'ativa (não vai apagar sozinha)' : 'não suportada neste aparelho — não bloqueie o celular'}.
+              Segundo plano: {bgOk ? 'ativo (notificação + áudio de manutenção)' : 'limitado neste aparelho — não feche a aba'}.
+              {' '}Tela ligada: {wakeOk ? 'ativa' : 'o celular pode apagar a tela; o rastreio tenta seguir'}.
             </p>
             {error && <p className="text-sm text-amber-300">{error}</p>}
             {accuracy != null && accuracy > 80 && (

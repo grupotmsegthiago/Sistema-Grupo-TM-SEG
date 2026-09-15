@@ -60,14 +60,16 @@ test('texto WhatsApp e URL pública usam o domínio canônico', () => {
   assert.match(text, /acompanhamento da sua missão/i);
   assert.match(text, /tempo real até o fim da missão/);
   assert.match(text, /GTM-9999/);
+  assert.match(text, /Ocultar/);
   assert.match(text, /WhatsApp/);
 });
 
 test('LGPD tem controlador, finalidade e retenção', () => {
-  assert.equal(LIVE_TRACK_LGPD_VERSION, '2026-09-14');
+  assert.equal(LIVE_TRACK_LGPD_VERSION, '2026-09-15-bg');
   assert.match(LIVE_TRACK_LGPD_FULL, /GRUPO TM SEG/);
   assert.match(LIVE_TRACK_LGPD_FULL, /Lei 13\.709/);
   assert.match(LIVE_TRACK_LGPD_FULL, /Retenção/);
+  assert.match(LIVE_TRACK_LGPD_FULL, /segundo plano/);
 });
 
 test('botão gerar link só existe no fluxo velada', () => {
@@ -80,16 +82,34 @@ test('botão gerar link só existe no fluxo velada', () => {
   assert.match(panel, /isVeladaMission\(mission\)/);
 });
 
-test('rota pública /rastreio e API dedicada existem', () => {
+test('rota pública /rastreio e API no Express existem', () => {
   const app = fs.readFileSync('App.tsx', 'utf8');
   assert.match(app, /normalizedPath === '\/rastreio'/);
   assert.match(app, /<PublicLiveTrack/);
-  const api = fs.readFileSync('api/live-track.ts', 'utf8');
-  assert.match(api, /public-ping/);
-  assert.match(api, /Não autorizado/);
+  const routes = fs.readFileSync('server/liveTrackRoutes.ts', 'utf8');
+  assert.match(routes, /\/api\/live-track/);
+  const http = fs.readFileSync('lib/liveTrack/httpHandler.ts', 'utf8');
+  assert.match(http, /public-ping/);
+  assert.match(http, /Não autorizado/);
   const page = fs.readFileSync('components/PublicLiveTrack.tsx', 'utf8');
   assert.match(page, /enableHighAccuracy: true/);
   assert.match(page, /wakeLock/);
   assert.match(page, /Compartilhar localização em tempo real/);
   assert.match(page, /live-track-lgpd-check/);
+  assert.match(page, /live-track-minimize/);
+  assert.match(page, /startLiveTrackKeepalive/);
+  assert.match(page, /keepalive: true/);
+  assert.match(page, /fechar esta página/);
+  const idx = fs.readFileSync('index.tsx', 'utf8');
+  assert.match(idx, /\/rastreio/);
+  const apiSrc = fs.readFileSync('lib/liveTrack/service.ts', 'utf8');
+  assert.match(apiSrc, /nextStatus: LiveTrackStatus = 'sharing'/);
+  const keep = fs.readFileSync('lib/liveTrack/backgroundKeepalive.ts', 'utf8');
+  assert.match(keep, /mediaSession/);
+  assert.match(keep, /tmseg-live-track/);
+  assert.match(keep, /setInterval\(resume/);
+  const sw = fs.readFileSync('client/public/sw.js', 'utf8');
+  assert.match(sw, /\/rastreio/);
+  const vercel = fs.readFileSync('vercel.json', 'utf8');
+  assert.doesNotMatch(vercel, /"destination": "\/api\/live-track"/);
 });
