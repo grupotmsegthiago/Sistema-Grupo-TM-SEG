@@ -1,5 +1,71 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## COMISSÕES — LINHA DO TEMPO POR CLIENTE (SET/2026)
+
+**Data:** 2026-09-15 (UTC-3)
+**Pedido:** OS gerada no nome do comercial segue até o pagamento da
+comissão, com ou sem NF. Mostrar linha do tempo por cliente.
+
+**Fluxo:** OS Gerada › Faturado › Pago › Comissão. A etapa atual fica
+âmbar; as concluídas, verde. Sem NF a linha para em Faturado. Só fecha
+quando a comissão é paga.
+
+**Não alterado:** fórmula 16%/3%/piso, cadastro como data de início,
+Asaas, eNotas, motor de OS. Origem/Agendada continua fora do valor.
+
+**Testes:** `npx tsx --test scripts/comissao-comercial.test.ts`
+
+---
+
+## COMISSÕES — OS DOS CLIENTES DO COMERCIAL ENTRA NO BRUTO (SET/2026)
+
+**Data:** 2026-09-15 (UTC-3)
+**Pedido:** Relatório de OS de Techtrans, Pacheco e Sankyu (clientes do
+Miguel Mota) não aparecia no faturamento da comissão.
+
+**Causa:** o quadro somava só NF. Techtrans set/26 = 8 OS concluídas
+(R$ 21.620,26) sem NF; Pacheco após 08/09 = 10 OS (R$ 7.128,00) sem NF.
+Sankyu GTM-7859 (R$ 790) está em **Origem** — ainda não é concluída.
+
+**Regra:** NF + OS concluída/faturada do cliente com responsável
+comercial, a partir da data de cadastro do comercial. Não entra OS
+anterior ao cadastro, OS Origem/Agendada, nem cliente sem comercial.
+OS já vinculada a NF não duplica. Pedágio/desloc persistidos entram
+com a receita da OS.
+
+**Mota (cadastro 08/09/2026):** Techtrans TM SEG passa a entrar;
+Pacheco 01–07/09 fica de fora; NF Pacheco 08/09 permanece.
+
+**Não alterado:** fórmula 16%/3%/piso, Asaas, eNotas, motor de OS.
+
+**Testes:** `npx tsx --test scripts/comissao-comercial.test.ts`
+
+---
+
+## COMISSÕES — SÓ APÓS O CADASTRO DO COMERCIAL (SET/2026)
+
+**Data:** 2026-09-15 (UTC-3)
+**Pedido:** agregar ao funcionário somente NF a partir da data de cadastro
+no sistema. Entender por que Pacheco e Transtech do Mota não apareciam.
+
+**Regra:** dia de início = `system_users.created_at` (Brasília); se não
+houver usuário, `comerciais.created_at`. NF com data anterior **não**
+entra no bruto, piso nem total a pagar. Histórico da fatura permanece.
+
+**Mota:** cadastro em **08/09/2026**. Agosto e 01–07/09 saem da apuração.
+
+**Pacheco / Techtrans (não existe “Transtech” no cadastro):**
+- Os dois estão vinculados ao Mota (`responsavel_comercial_id`).
+- Techtrans TM SEG em setembro: **0 NF** — só OS sem fatura; não entra
+  no bruto (regra de comissão por NF). Há NF TORRES a partir de 09/09.
+- Pacheco TM SEG: NF de 08/09 (R$ 6.900,72) entra; NFs de agosto não.
+
+**Não alterado:** fórmula 16%/3%/piso, Asaas, eNotas, OS, valores gravados.
+
+**Testes:** `npx tsx --test scripts/comissao-comercial.test.ts`
+
+---
+
 ## CONTAS A PAGAR/RECEBER — FILTRO DE DATA NO BANCO (SET/2026)
 
 **Data:** 2026-09-15 (UTC-3)
