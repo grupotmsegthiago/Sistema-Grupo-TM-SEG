@@ -44,6 +44,8 @@ import {
   valorComissaoLinhaAposPiso,
 } from '../lib/comissao/tabelaComissaoPadrao';
 import { filtrarLinhasAposCadastro, lancamentoAposCadastro } from '../lib/comissao/dataInicioComissao';
+import { comissaoSomentePropria } from '../lib/diretoriaAccess';
+import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
 import {
   intervaloQuinzena,
   labelQuinzena,
@@ -473,6 +475,10 @@ function CardFuncionario({
 
 const ComissoesComerciaisPage: React.FC = () => {
   const { showNotification } = useNotification();
+  const usuarioAtual = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+  }, []);
+  const soProprio = comissaoSomentePropria(usuarioAtual);
   const now = new Date();
   const [year, setYear] = useState(2026);
   const [month, setMonth] = useState(9);
@@ -507,6 +513,7 @@ const ComissoesComerciaisPage: React.FC = () => {
   const [cobertura, setCobertura] = useState<CoberturaOsPeriodo>(coberturaVazia());
   const [funcionarioAberto, setFuncionarioAberto] = useState<string | null>(null);
   const [iniciosComissao, setIniciosComissao] = useState<Record<string, string>>({});
+  const [escopoPronto, setEscopoPronto] = useState(!soProprio);
   const autoSyncRef = useRef(false);
 
   const { start: periodStart, end: periodEnd } = intervaloQuinzena(year, month, quinzenaFiltro);
@@ -514,17 +521,29 @@ const ComissoesComerciaisPage: React.FC = () => {
   const loadComerciais = useCallback(async () => {
     const { data, error } = await supabase.from('comerciais').select('id, nome, email, telefone, pix_chave, ativo, usuario_id, valor_fixo, tabela_comissao_codigo').order('nome');
     if (error) throw new Error(error.message);
-    const lista = (data || []) as Comercial[];
+    let lista = (data || []) as Comercial[];
+    if (soProprio) {
+      const uid = Number(usuarioAtual?.id);
+      lista = lista.filter((c) => Number(c.usuario_id) === uid);
+    }
     setComerciais(lista);
     return lista;
-  }, []);
+  }, [soProprio, usuarioAtual?.id]);
 
   const load = useCallback(async () => {
-    if (!periodoPronto) return;
+    if (!periodoPronto || !escopoPronto) return;
+    if (soProprio && !comercialId) {
+      setRows([]);
+      setQuadroTm([]);
+      setQuadroTorres([]);
+      setCobertura(coberturaVazia('NÃO EXISTE', undefined, false));
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const listaComerciais = await loadComerciais();
-      if (!autoSyncRef.current) {
+      if (!autoSyncRef.current && !soProprio) {
         autoSyncRef.current = true;
         setSyncingFaturas(true);
         try {
@@ -606,7 +625,7 @@ const ComissoesComerciaisPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [periodoPronto, periodStart, periodEnd, comercialId, statusFilter, empresaFilter, quinzenaFiltro, loadComerciais, showNotification]);
+  }, [periodoPronto, escopoPronto, periodStart, periodEnd, comercialId, statusFilter, empresaFilter, quinzenaFiltro, loadComerciais, showNotification, soProprio]);
 
   useEffect(() => {
     let alive = true;
@@ -621,7 +640,19 @@ const ComissoesComerciaisPage: React.FC = () => {
     return () => { alive = false; };
   }, []);
 
-  useEffect(() => { if (periodoPronto) void load(); }, [load, periodoPronto]);
+  useEffect(() => {
+    if (!soProprio) return;
+    let alive = true;
+    (async () => {
+      const carteira = await carregarNomesClientesDoComercial(supabase, usuarioAtual?.id);
+      if (!alive) return;
+      if (carteira.comercialId) setComercialId(carteira.comercialId);
+      setEscopoPronto(true);
+    })();
+    return () => { alive = false; };
+  }, [soProprio, usuarioAtual?.id]);
+
+  useEffect(() => { if (periodoPronto && escopoPronto) void load(); }, [load, periodoPronto, escopoPronto]);
 
   useEffect(() => {
     const c = comerciais.find((x) => x.id === comercialId);
@@ -841,6 +872,8 @@ const ComissoesComerciaisPage: React.FC = () => {
           >
             {showTabela ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Tabela padrão
           </button>
+          {!soProprio && (
+            <>
           <button
             type="button"
             disabled={syncingUsers}
@@ -876,10 +909,12 @@ const ComissoesComerciaisPage: React.FC = () => {
           >
             {showCadastro ? 'Fechar PIX/fixo' : 'PIX e valor fixo'}
           </button>
+            </>
+          )}
         </div>
       </div>
 
-      <InvoiceDivergenceAuditPanel onSynced={() => { void load(); }} />
+      {!soProprio && <InvoiceDivergenceAuditPanel onSynced={() => { void load(); }} />}
 
       {syncTorresInfo ? (
         <div
@@ -1052,8 +1087,14 @@ const ComissoesComerciaisPage: React.FC = () => {
           </select>
         </label>
         <label className="text-[10px] font-black text-gray-400 uppercase">Comercial
-          <select className="block mt-1 border rounded-lg px-3 py-2 text-sm font-bold min-w-[180px]" value={comercialId} onChange={(e) => setComercialId(e.target.value)} data-testid="filter-comercial">
-            <option value="">Todos</option>
+          <select
+            className="block mt-1 border rounded-lg px-3 py-2 text-sm font-bold min-w-[180px]"
+            value={comercialId}
+            onChange={(e) => setComercialId(e.target.value)}
+            disabled={soProprio}
+            data-testid="filter-comercial"
+          >
+            {!soProprio && <option value="">Todos</option>}
             {comerciais.filter((c) => c.ativo !== false).map((c) => (
               <option key={c.id} value={c.id}>{c.nome}</option>
             ))}

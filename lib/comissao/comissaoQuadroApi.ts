@@ -32,10 +32,66 @@ export type QuadroComissoesApiResult = {
   error?: string;
 };
 
+export type QuadroComissoesApiOpts = {
+  comercialId?: string | null;
+  somenteProprio?: boolean;
+};
+
+export function restringirQuadroAoComercial(
+  quadro: QuadroComissoesApiResult,
+  comercialId: string | null | undefined,
+): QuadroComissoesApiResult {
+  const id = String(comercialId || '').trim();
+  if (!id) {
+    return {
+      ...quadro,
+      linhasTm: [],
+      linhasTorres: [],
+      pendencias: [],
+      cobertura: {
+        ...quadro.cobertura,
+        itens: [],
+        porCliente: [],
+        totais: { missoes: 0, faturadas: 0, semFatura: 0, receita: 0, custo: 0, lucro: 0 },
+      },
+      iniciosComissao: {},
+    };
+  }
+  const linhasTm = quadro.linhasTm.filter((l) => String(l.comercialId || '') === id);
+  const linhasTorres = quadro.linhasTorres.filter((l) => String(l.comercialId || '') === id);
+  const itens = (quadro.cobertura.itens || []).filter((i) => String(i.comercialId || '') === id);
+  const porCliente = (quadro.cobertura.porCliente || []).filter((c) => String(c.comercialId || '') === id);
+  const inicio = quadro.iniciosComissao?.[id];
+  return {
+    ...quadro,
+    linhasTm,
+    linhasTorres,
+    pendencias: [],
+    cobertura: {
+      ...quadro.cobertura,
+      itens,
+      porCliente,
+      totais: itens.reduce(
+        (acc, os) => ({
+          missoes: acc.missoes + 1,
+          faturadas: acc.faturadas + (os.faturada ? 1 : 0),
+          semFatura: acc.semFatura + (os.faturada ? 0 : 1),
+          receita: acc.receita + (Number(os.receita) || 0),
+          custo: acc.custo + (Number(os.custo) || 0),
+          lucro: acc.lucro + (Number(os.lucro) || 0),
+        }),
+        { missoes: 0, faturadas: 0, semFatura: 0, receita: 0, custo: 0, lucro: 0 },
+      ),
+    },
+    iniciosComissao: inicio ? { [id]: inicio } : {},
+  };
+}
+
 export async function montarQuadroComissoesApi(
   sb: ComissaoDbClient,
   periodStart: string,
   periodEnd: string,
+  opts?: QuadroComissoesApiOpts,
 ): Promise<QuadroComissoesApiResult> {
   const { data: comerciais, error: comErr } = await sb.from('comerciais').select('id, nome');
   if (comErr) {
@@ -77,7 +133,7 @@ export async function montarQuadroComissoesApi(
       status: d.pago ? 'PAGA' : 'EMITIDA',
     }))),
   );
-  return {
+  const base: QuadroComissoesApiResult = {
     ok: !quadro.error || quadro.linhas.length > 0 || quadro.meses.length > 0 || torres.linhas.length > 0,
     linhasTm: comPiso.linhasTm,
     linhasTorres: comPiso.linhasTorres,
@@ -87,6 +143,10 @@ export async function montarQuadroComissoesApi(
     iniciosComissao: Object.fromEntries(inicios),
     error: quadro.error || torres.error || (!pend.ok ? pend.error : undefined) || cobertura.error,
   };
+  if (opts?.somenteProprio) {
+    return restringirQuadroAoComercial(base, opts.comercialId);
+  }
+  return base;
 }
 
 export async function sincronizarComissoesViaAdmin(sb: ComissaoDbClient) {

@@ -29,6 +29,7 @@ describe('missionAccess — lista completa para administrador / Bárbara', () =>
   it('comercial / portal cliente continuam restritos', () => {
     assert.equal(hasFullMissionListAccess({ role: 'Comercial', name: 'João', permissions: ['client_view:x'] }), false);
     assert.equal(isMissionClientScopeRestricted({ role: 'Comercial', permissions: ['client_view:x'] }), true);
+    assert.equal(isMissionClientScopeRestricted({ role: 'Comercial', name: 'Miguel Mota' }), true);
     assert.equal(isMissionClientScopeRestricted({ role: 'Cliente', clientId: 'c1' }), true);
   });
 
@@ -40,5 +41,10 @@ describe('missionAccess — lista completa para administrador / Bárbara', () =>
     assert.match(src, /fullListAccess/);
     assert.match(src, /!hasFullMissionListAccessFlag/);
     assert.match(src, /from 'react'/);
+    assert.match(src, /carregarNomesClientesDoComercial/);
+    assert.match(src, /responsavel_comercial_id|carteira\.nomes/);
+    const report = fs.readFileSync('components/MissionReportPage.tsx', 'utf8');
+    assert.match(report, /carregarNomesClientesDoComercial/);
+    assert.match(report, /from 'react'/);
   });
 });

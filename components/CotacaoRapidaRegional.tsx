@@ -3,7 +3,7 @@ import { Calculator, Copy, Loader2, Save, Pencil, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import { copyTextAsync } from '../lib/clipboard';
-import { canAccessComissoesComerciais } from '../lib/diretoriaAccess';
+import { isPerfilDiretoria } from '../lib/diretoriaAccess';
 import {
   calcularCotacaoRapida,
   formatBRL,
@@ -35,7 +35,7 @@ const CotacaoRapidaRegional: React.FC<Props> = ({ clientName, clientId, onSaved 
   const storedUser = useMemo(() => {
     try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
   }, []);
-  const canEditPiso = canAccessComissoesComerciais(storedUser);
+  const canEditPiso = isPerfilDiretoria(storedUser);
 
   const load = useCallback(async () => {
     setLoading(true);
