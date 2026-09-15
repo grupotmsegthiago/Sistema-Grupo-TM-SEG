@@ -1,5 +1,26 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## CONTAS A PAGAR/RECEBER — FILTRO DE DATA NO BANCO (SET/2026)
+
+**Data:** 2026-09-15 (UTC-3)
+**Pedido:** filtrar 01/08/2026–31/08/2026 e ver todos os lançamentos do
+período. O print de agosto existia; o filtro personalizado vinha vazio.
+
+**Causa:** a tela carregava o universo ordenado do vencimento mais futuro
+e filtrava no navegador. 817 títulos depois de agosto (parcelas até 2030)
+empurravam agosto para fora da primeira página. Histórico **não** foi
+apagado: 264 lançamentos de agosto/2026 permanecem no banco.
+
+**Correção:** a consulta usa `due_date` no intervalo escolhido (Dia /
+Semana / Mês / Personalizado). Status, busca e tipo continuam na tela.
+Card de vencidos globais segue consulta própria. Nenhum registro alterado.
+
+**Não alterado:** valores, status, Asaas, eNotas, OS, comissões.
+
+**Testes:** `npx tsx --test scripts/financial-transaction-period.test.ts scripts/financial-transaction-operational-balance.test.ts`
+
+---
+
 ## COMISSÕES — QUADRO E APURAÇÃO COM A MESMA BASE (SET/2026)
 
 **Data:** 2026-09-15 (UTC-3)
