@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import DiretoriaSistemaTab from './DiretoriaSistemaTab';
 import InvoiceDivergenceAuditPanel from '../InvoiceDivergenceAuditPanel';
-import InvoiceDivergenceAuditPanel from '../InvoiceDivergenceAuditPanel';
+import CashFlowPreviewButton from '../CashFlowPreviewButton';
 import { useDashboardDiretoriaData } from '../../lib/dashboardDiretoria/useDashboardDiretoriaData';
 import {
   buildArApByMonth,
@@ -1143,12 +1143,16 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
                 </select>
               </>
             )}
+            <CashFlowPreviewButton
+              testId="btn-resumo-caixa-diretoria"
+              className="inline-flex items-center justify-center gap-2 bg-blue-50 border border-blue-200 text-blue-800 hover:bg-blue-100 px-4 py-2 rounded-xl text-sm font-bold transition-all no-print w-full sm:w-auto"
+            />
             <button
               type="button"
               onClick={() => { void data.refresh(); }}
               disabled={data.loading}
               title="Recalcula hora extra/valores nas OS em aberto (não faturadas) e atualiza os KPIs"
-              className="inline-flex items-center gap-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-sm"
+              className="inline-flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-sm w-full sm:w-auto"
               data-testid="button-diretoria-refresh"
             >
               {data.loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}

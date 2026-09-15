@@ -55,10 +55,19 @@ describe('cashFlowPreview', () => {
     assert.ok(cover.start <= today && cover.end >= today);
   });
 
-  it('FinancialTransactionList tem o botão de resumo', () => {
-    const src = readFileSync('components/FinancialTransactionList.tsx', 'utf8');
-    assert.match(src, /from 'react'/);
-    assert.match(src, /FinancialCashFlowPreviewModal/);
-    assert.match(src, /btn-resumo-caixa/);
+  it('FinancialTransactionList e Cockpit compartilham o botão de resumo', () => {
+    const list = readFileSync('components/FinancialTransactionList.tsx', 'utf8');
+    const cockpit = readFileSync('components/dashboard/DashboardDiretoria.tsx', 'utf8');
+    const btn = readFileSync('components/CashFlowPreviewButton.tsx', 'utf8');
+    const modal = readFileSync('components/FinancialCashFlowPreviewModal.tsx', 'utf8');
+    assert.match(list, /from 'react'/);
+    assert.match(list, /CashFlowPreviewButton/);
+    assert.match(cockpit, /from 'react'/);
+    assert.match(cockpit, /CashFlowPreviewButton/);
+    assert.match(cockpit, /btn-resumo-caixa-diretoria/);
+    assert.match(btn, /from 'react'/);
+    assert.match(btn, /btn-resumo-caixa/);
+    assert.match(modal, /cash-flow-pagar-scroll/);
+    assert.match(modal, /overflow-y-auto/);
   });
 });
