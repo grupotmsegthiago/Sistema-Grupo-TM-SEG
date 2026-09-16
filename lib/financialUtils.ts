@@ -73,6 +73,25 @@ export function dhlDefaultUnitKmExcess(originUF: string): number {
 }
 
 /**
+ * Destino ainda não definido na criação da OS (ex.: "RAIO 200 KM — DESTINO A DEFINIR").
+ * Não é produto 200KM de acompanhamento — não pode capar KM nem forçar tabela 200KM.
+ */
+export function isUndefinedDestinationPlaceholder(dest: string | undefined | null): boolean {
+    const n = String(dest || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    return n.includes('DESTINO A DEFINIR');
+}
+
+/**
+ * Detecta faixa 100KM / 200KM no nome, sem casar 1000KM, 1100KM, 1200KM, 2200KM.
+ * "1200KM".includes("200KM") era verdadeiro e zerava extra de tabela 1200.
+ */
+export function mentionsFixedKmBand(text: string | undefined | null, band: 100 | 200): boolean {
+    const n = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    const re = band === 200 ? /(^|[^0-9])200\s*KM/ : /(^|[^0-9])100\s*KM/;
+    return re.test(n);
+}
+
+/**
  * Materializa R$ de deslocamento a partir do KM autorizado (`dhl_deslocamento_km`).
  * Se já houver `displacement_value` / `_provider` salvo (> 0), preserva.
  * Cliente: km × taxa (tabela ou fallback DHL por UF).
@@ -1170,7 +1189,9 @@ export const calculateMissionFinancials = (
     const normalizedOrigin = normalize(mission.origin || '');
     const normalizedDest = normalize(mission.destination || '');
     const isJundiai = normalizedOrigin.includes('JUNDIAI');
-    const destHas200km = normalizedDest.includes('200KM') || normalizedDest.includes('200 KM') || normalizedDest.includes('ACOMPANHAMENTO');
+    const destHas200km = !isUndefinedDestinationPlaceholder(mission.destination) && (
+        mentionsFixedKmBand(normalizedDest, 200) || normalizedDest.includes('ACOMPANHAMENTO')
+    );
     const referenceDistance = getTableSelectionDistance();
     let is200kmAccompaniment = destHas200km && !isZeroValueMission;
 
@@ -1388,7 +1409,7 @@ export const calculateMissionFinancials = (
     if (is200kmAccompaniment && !cancelledBeforeExecution && !effectiveProviderTableId && filteredProviderTables.length > 0) {
         const provider200 = filteredProviderTables.find(t => {
             const op = normalize(t.operation_type || '');
-            return (op.includes('ATE 200') || op.includes('200 KM') || op.includes('200KM')) && t.franchise_km >= 200 && t.franchise_km <= 200;
+            return (op.includes('ATE 200') || mentionsFixedKmBand(op, 200)) && t.franchise_km >= 200 && t.franchise_km <= 200;
         });
         if (provider200) {
             appliedProviderTable = provider200;
@@ -1418,7 +1439,7 @@ export const calculateMissionFinancials = (
         const region = String(detectedRegion || '').toUpperCase();
         const is200Km = (t: any) => {
             const op = normalize(t.operation_type || '');
-            return op.includes('200KM') || op.includes('200 KM') || op.includes('ATE 200') ||
+            return mentionsFixedKmBand(op, 200) || op.includes('ATE 200') ||
                    (Number(t.franchise_km) >= 200 && Number(t.franchise_km) <= 200);
         };
         // 1ª tentativa: 200KM + região detectada batendo no operation_type
@@ -1506,8 +1527,9 @@ export const calculateMissionFinancials = (
     const clientHasExtraKmPrice = (appliedClientTable?.price_per_extra_km || 0) > 0
         || (manualTableOverrides?.customClientUnitKm || 0) > 0
         || (findDhlAutoClient(missionClientRaw) && cUnitPriceKm > 0);
-    const clientTableIs200km = appliedTableName.includes('200KM') || appliedTableName.includes('200 KM') || appliedTableName.includes('LOGITECH') || missionDest.includes('200KM');
-    const clientTableIs100km = appliedTableName.includes('100KM') || appliedTableName.includes('100 KM');
+    const destLooks200 = mentionsFixedKmBand(missionDest, 200) && !isUndefinedDestinationPlaceholder(mission.destination);
+    const clientTableIs200km = mentionsFixedKmBand(appliedTableName, 200) || appliedTableName.includes('LOGITECH') || destLooks200;
+    const clientTableIs100km = mentionsFixedKmBand(appliedTableName, 100);
     const isFixedDistanceClientRule = (clientTableIs200km || clientTableIs100km) && !isFranchiseTable(appliedTableName) && !clientHasExtraKmPrice;
 
     const clientHasExtraHrPrice = (appliedClientTable?.price_per_extra_hour || 0) > 0
@@ -1521,7 +1543,9 @@ export const calculateMissionFinancials = (
     const originalDistanceForCalc = distanceForCalculation;
     const originalDurationHours = durationHours;
 
-    if (is200kmAccompaniment && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule) {
+    // Teto 200 km só no produto acompanhamento (franquia ≤ 200). Rota nomeada
+    // (ex.: 1135KM) com destino placeholder "RAIO 200 KM" não pode zerar o extra.
+    if (is200kmAccompaniment && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule && cFranchiseKm <= 200) {
         distanceForCalculation = Math.min(distanceForCalculation, 200);
     }
     if (isFixedDistanceClientRule && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule) {
@@ -1537,8 +1561,8 @@ export const calculateMissionFinancials = (
     const providerTableName = (appliedProviderTable?.operation_type || '').toUpperCase();
     const providerHasExtraKmCost = (appliedProviderTable?.cost_per_extra_km || 0) > 0
         || (manualTableOverrides?.customProviderUnitKm || 0) > 0;
-    const providerTableIs200km = providerTableName.includes('200KM') || providerTableName.includes('200 KM') || providerTableName.includes('LOGITECH');
-    const providerTableIs100km = providerTableName.includes('100KM') || providerTableName.includes('100 KM');
+    const providerTableIs200km = mentionsFixedKmBand(providerTableName, 200) || providerTableName.includes('LOGITECH');
+    const providerTableIs100km = mentionsFixedKmBand(providerTableName, 100);
     const isFixedDistanceProviderRule = (providerTableIs200km || providerTableIs100km) && !isFranchiseTable(providerTableName) && !providerHasExtraKmCost;
 
     const providerHasExtraHrCost = (appliedProviderTable?.cost_per_extra_hour || 0) > 0
@@ -1554,7 +1578,8 @@ export const calculateMissionFinancials = (
         ? manualTableOverrides.providerOpsOverride.durationHours 
         : originalDurationHours;
 
-    if (is200kmAccompaniment && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule) {
+    const pFranchiseKmForCap = Number(appliedProviderTable?.franchise_km || 0);
+    if (is200kmAccompaniment && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule && pFranchiseKmForCap <= 200) {
         providerDistForCalc = Math.min(providerDistForCalc, 200);
     }
 
