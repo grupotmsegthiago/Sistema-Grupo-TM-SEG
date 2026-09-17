@@ -2,10 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Banknote, Loader2, Search, X, AlertTriangle, CheckCircle2, Link2 } from 'lucide-react';
 import type { FinancialTransaction } from '../types';
 import { useNotification } from '../lib/NotificationContext';
-import { parseMoneyInput } from '../lib/financial/confirmReceivablePay';
 import {
   buildAnticipationPlan,
   formatBrl,
+  parseAnticipationMoney,
   parsePctInput,
   settlementLabel,
 } from '../lib/financial/paymentAnticipation';
@@ -17,6 +17,7 @@ import {
 import { getTransactionOpenAmount } from '../lib/financial/partialPayments';
 import { formatDateBR } from '../lib/dateUtils';
 import { logAction } from '../lib/logger';
+import { withTimeout } from '../lib/promiseTimeout';
 
 function getTodayBR(): string {
   const now = new Date();
@@ -99,8 +100,8 @@ const PaymentAnticipationModal: React.FC<Props> = ({ preselected, onClose, onSav
         nfNumber,
         operationDate,
         averageRatePct: parsePctInput(averageRate),
-        netAnticipated: parseMoneyInput(netAnticipated),
-        offeredAmount: parseMoneyInput(offeredAmount),
+        netAnticipated: parseAnticipationMoney(netAnticipated),
+        offeredAmount: parseAnticipationMoney(offeredAmount),
         titleId,
         itemId,
         paymentDate,
@@ -127,27 +128,31 @@ const PaymentAnticipationModal: React.FC<Props> = ({ preselected, onClose, onSav
       showNotification('Atenção', 'Informe a data da operação e a data do pagamento.', 'error');
       return;
     }
-    if (parseMoneyInput(offeredAmount) <= 0 && parseMoneyInput(netAnticipated) <= 0) {
+    if (parseAnticipationMoney(offeredAmount) <= 0 && parseAnticipationMoney(netAnticipated) <= 0) {
       showNotification('Atenção', 'Informe o valor ofertado e/ou o valor líquido antecipado.', 'error');
       return;
     }
     setSaving(true);
     try {
-      const result = await savePaymentAnticipation({
-        fields: {
-          nfNumber: nfNumber.trim(),
-          operationDate,
-          averageRatePct: parsePctInput(averageRate),
-          netAnticipated: parseMoneyInput(netAnticipated) || plan.valorLiquido,
-          offeredAmount: parseMoneyInput(offeredAmount) || plan.saldoTotal,
-          titleId: titleId.trim(),
-          itemId: itemId.trim(),
-          paymentDate,
-        },
-        titles: selected,
-        createdBy: userName,
-      });
-      await logAction(
+      const result = await withTimeout(
+        savePaymentAnticipation({
+          fields: {
+            nfNumber: nfNumber.trim(),
+            operationDate,
+            averageRatePct: parsePctInput(averageRate),
+            netAnticipated: parseAnticipationMoney(netAnticipated) || plan.valorLiquido,
+            offeredAmount: parseAnticipationMoney(offeredAmount) || plan.saldoTotal,
+            titleId: titleId.trim(),
+            itemId: itemId.trim(),
+            paymentDate,
+          },
+          titles: selected,
+          createdBy: userName,
+        }),
+        40_000,
+        'A operação demorou demais. Recarregue e confira se as notas já foram baixadas.',
+      );
+      void logAction(
         'CREATE',
         'PaymentAnticipation',
         result.anticipationId,

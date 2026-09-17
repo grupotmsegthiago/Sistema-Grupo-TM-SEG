@@ -7,6 +7,7 @@ import {
   buildAnticipationPlan,
   extractAnticipationId,
   extractInvoiceRefs,
+  parseAnticipationMoney,
   parsePctInput,
   settlementLabel,
 } from '../lib/financial/paymentAnticipation';
@@ -75,6 +76,12 @@ describe('paymentAnticipation', () => {
     assert.equal(addDaysIso('2026-09-17', 15), '2026-10-02');
     assert.equal(parsePctInput('2,50%'), 2.5);
     assert.equal(parsePctInput('1.5'), 1.5);
+  });
+
+  it('parseAnticipationMoney aceita R$ e formato BR', () => {
+    assert.equal(parseAnticipationMoney('R$ 265.194,19'), 265194.19);
+    assert.equal(parseAnticipationMoney('270.044,47'), 270044.47);
+    assert.equal(parseAnticipationMoney(1000), 1000);
   });
 
   it('marca e extrai NF das notas do título', () => {

@@ -2046,12 +2046,17 @@ export async function sendPaymentAnticipationEmail(
   `;
 
   try {
-    await transporter.sendMail({
-      from: SMTP_FROM,
-      to,
-      subject: `[Antecipação] Ressalva ${brl(p.residual)} — ${payload.entityName || 'Cliente'}`,
-      html: baseTemplate(content, payload.createdBy),
-    });
+    await Promise.race([
+      transporter.sendMail({
+        from: SMTP_FROM,
+        to,
+        subject: `[Antecipação] Ressalva ${brl(p.residual)} — ${payload.entityName || 'Cliente'}`,
+        html: baseTemplate(content, payload.createdBy),
+      }),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Timeout SMTP ao enviar e-mail da antecipação')), 20_000);
+      }),
+    ]);
     console.log(`[Email] Antecipação/ressalva → ${to} | ${payload.anticipationId}`);
     return true;
   } catch (e: any) {

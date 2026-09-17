@@ -6,9 +6,9 @@
 import { supabase } from '../supabase';
 import { authFetch } from '../authFetch';
 import type { FinancialTransaction } from '../../types';
-import { fetchAllPages } from '../supabasePaging';
 import { getTransactionOpenAmount } from './partialPayments';
 import { addPaymentToTransaction } from './receivablePaymentsClient';
+import { withTimeout } from '../promiseTimeout';
 import {
   ANTICIPATION_MARKER,
   buildAnticipationNotes,
@@ -77,38 +77,43 @@ function linkedSummary(titles: AnticipationLinkable[]): string {
 }
 
 async function findMatchingInvoices(title: AnticipationLinkable): Promise<string[]> {
-  const refs = extractInvoiceRefs(`${title.description} ${title.notes || ''}`);
-  const ids = new Set<string>();
-
-  if (refs.length > 0) {
-    const orFilter = refs
-      .slice(0, 8)
-      .map((r) => `number.eq.${r},nf_number.eq.${r}`)
-      .join(',');
-    const { rows } = await fetchAllPages<{ id: string }>(async (from, size) => {
-      const q = supabase
-        .from('financial_invoices')
-        .select('id')
-        .or(orFilter)
-        .neq('status', 'CANCELADA')
-        .range(from, from + size - 1);
-      const { data, error } = await q;
-      return { data: data as { id: string }[] | null, error };
-    }, 200, 2000);
-    for (const row of rows) ids.add(row.id);
+  const refs = extractInvoiceRefs(`${title.description} ${title.notes || ''}`).slice(0, 6);
+  if (refs.length === 0) return [];
+  const orFilter = refs.map((r) => `number.eq.${r},nf_number.eq.${r}`).join(',');
+  const { data, error } = await supabase
+    .from('financial_invoices')
+    .select('id')
+    .or(orFilter)
+    .neq('status', 'CANCELADA')
+    .limit(20);
+  if (error) {
+    console.warn('[antecipação] busca de NF:', error.message);
+    return [];
   }
+  return (data || []).map((row) => row.id);
+}
 
-  if (ids.size === 0 && title.entity_name && title.amount) {
-    const { data } = await supabase
-      .from('financial_invoices')
-      .select('id')
-      .ilike('client', `%${title.entity_name}%`)
-      .eq('amount', title.amount)
-      .eq('status', 'EMITIDA');
-    for (const row of data || []) ids.add(row.id);
+async function sendAnticipationEmailBestEffort(body: Record<string, unknown>): Promise<{ sent: boolean; error?: string }> {
+  const ctrl = new AbortController();
+  try {
+    const res = await withTimeout(
+      authFetch('/api/email/payment-anticipation', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      }),
+      8_000,
+      'Tempo esgotado ao enviar e-mail ao financeiro',
+    );
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      return { sent: false, error: String(json?.error || `Falha ao enviar e-mail (${res.status})`) };
+    }
+    return { sent: true };
+  } catch (e: any) {
+    ctrl.abort();
+    return { sent: false, error: e?.message || 'Falha ao enviar e-mail ao financeiro' };
   }
-
-  return Array.from(ids);
 }
 
 export async function savePaymentAnticipation(
@@ -175,15 +180,23 @@ export async function savePaymentAnticipation(
   let residual: FinancialTransaction | null = null;
   if (plan.settlement === 'SALDO_A_RECEBER' && plan.residual > 0.009) {
     const template = openTitles[0];
+    const allowedEntity = new Set(['Client', 'Provider', 'Other', 'Personal']);
+    const entityType = allowedEntity.has(String(template.entity_type || ''))
+      ? template.entity_type
+      : 'Client';
+    const asUuid = (v: unknown) => {
+      const s = String(v || '').trim();
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s) ? s : null;
+    };
     const residualRow: Record<string, unknown> = {
       description: buildResidualAnticipationDescription(entityName),
       amount: plan.residual,
       type: 'INCOME',
       status: 'PENDING',
       due_date: plan.residualDueDate,
-      category_id: template.category_id || null,
-      account_id: template.account_id || null,
-      entity_type: template.entity_type || 'Client',
+      category_id: asUuid(template.category_id),
+      account_id: asUuid(template.account_id),
+      entity_type: entityType,
       entity_id: template.entity_id || null,
       entity_name: entityName,
       payment_method: template.payment_method || null,
@@ -250,16 +263,20 @@ export async function savePaymentAnticipation(
     updatedIds.push(title.id);
 
     try {
-      await addPaymentToTransaction({
-        transactionId: title.id,
-        titleAmount: Number(title.amount || 0),
-        titleNotes: notes,
-        amount: getTransactionOpenAmount(title),
-        paymentDate: params.fields.paymentDate,
-        notes: `Antecipação ${ANTICIPATION_MARKER}${anticipationId} | ${settlementNote(plan)}`,
-        createdBy: params.createdBy,
-        previousStatus: 'PAID',
-      });
+      await withTimeout(
+        addPaymentToTransaction({
+          transactionId: title.id,
+          titleAmount: Number(title.amount || 0),
+          titleNotes: notes,
+          amount: getTransactionOpenAmount(title),
+          paymentDate: params.fields.paymentDate,
+          notes: `Antecipação ${ANTICIPATION_MARKER}${anticipationId} | ${settlementNote(plan)}`,
+          createdBy: params.createdBy,
+          previousStatus: 'PAID',
+        }),
+        12_000,
+        'Tempo esgotado na trilha de pagamentos',
+      );
     } catch (e) {
       console.warn('[antecipação] trilha de pagamentos:', e);
     }
@@ -292,35 +309,24 @@ export async function savePaymentAnticipation(
   let emailSent = false;
   let emailError: string | undefined;
   if (plan.settlement === 'SALDO_A_RECEBER' && plan.residual > 0.009) {
-    try {
-      const res = await authFetch('/api/email/payment-anticipation', {
-        method: 'POST',
-        body: JSON.stringify({
-          anticipationId,
-          entityName,
-          fields: params.fields,
-          plan,
-          linkedSummary: summary,
-          titles: openTitles.map((t) => ({
-            id: t.id,
-            description: t.description,
-            amount: getTransactionOpenAmount(t),
-            entity_name: t.entity_name,
-          })),
-          residualDueDate: plan.residualDueDate,
-          createdBy: params.createdBy,
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || body?.success === false) {
-        emailError = String(body?.error || `Falha ao enviar e-mail (${res.status})`);
-      } else {
-        emailSent = true;
-      }
-    } catch (e: any) {
-      emailError = e?.message || 'Falha ao enviar e-mail ao financeiro';
-    }
-    await supabase
+    const mail = await sendAnticipationEmailBestEffort({
+      anticipationId,
+      entityName,
+      fields: params.fields,
+      plan,
+      linkedSummary: summary,
+      titles: openTitles.map((t) => ({
+        id: t.id,
+        description: t.description,
+        amount: getTransactionOpenAmount(t),
+        entity_name: t.entity_name,
+      })),
+      residualDueDate: plan.residualDueDate,
+      createdBy: params.createdBy,
+    });
+    emailSent = mail.sent;
+    emailError = mail.error;
+    void supabase
       .from('payment_anticipations')
       .update({ email_sent: emailSent, email_error: emailError || '' })
       .eq('id', anticipationId);
@@ -348,21 +354,19 @@ export async function searchOpenReceivables(term: string): Promise<AnticipationL
     .trim()
     .replace(/[%(),]/g, ' ')
     .slice(0, 80);
-  const { rows } = await fetchAllPages<AnticipationLinkable>(async (from, size) => {
-    let query = supabase
-      .from('financial_transactions')
-      .select('id, description, amount, amount_open, amount_paid, status, notes, entity_name, entity_id, entity_type, category_id, account_id, payment_method, due_date')
-      .eq('type', 'INCOME')
-      .in('status', ['PENDING', 'PARTIALLY_PAID', 'SCHEDULED', 'OVERDUE'])
-      .order('due_date', { ascending: false })
-      .range(from, from + size - 1);
-    if (q) {
-      query = query.or(
-        `entity_name.ilike.%${q}%,description.ilike.%${q}%,notes.ilike.%${q}%`,
-      );
-    }
-    const { data, error } = await query;
-    return { data: data as AnticipationLinkable[] | null, error };
-  }, 200, 3000);
-  return rows.filter((t) => getTransactionOpenAmount(t) > 0.009);
+  let query = supabase
+    .from('financial_transactions')
+    .select('id, description, amount, amount_open, amount_paid, status, notes, entity_name, entity_id, entity_type, category_id, account_id, payment_method, due_date')
+    .eq('type', 'INCOME')
+    .in('status', ['PENDING', 'PARTIALLY_PAID', 'SCHEDULED', 'OVERDUE'])
+    .order('due_date', { ascending: false })
+    .limit(200);
+  if (q) {
+    query = query.or(
+      `entity_name.ilike.%${q}%,description.ilike.%${q}%,notes.ilike.%${q}%`,
+    );
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return ((data || []) as AnticipationLinkable[]).filter((t) => getTransactionOpenAmount(t) > 0.009);
 }

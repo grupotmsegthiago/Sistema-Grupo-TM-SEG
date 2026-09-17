@@ -55,6 +55,19 @@ export function addDaysIso(iso: string, days: number): string {
   return `${yy}-${mm}-${dd}`;
 }
 
+/** Aceita 1.200,50 / 1200.50 / R$ 1.200,50. */
+export function parseAnticipationMoney(raw: string | number | null | undefined): number {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? roundMoney(raw) : 0;
+  let s = String(raw || '')
+    .trim()
+    .replace(/\s/g, '')
+    .replace(/R\$/gi, '');
+  if (!s) return 0;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  const n = Number(s);
+  return Number.isFinite(n) ? roundMoney(n) : 0;
+}
+
 export function parsePctInput(raw: string | number | null | undefined): number {
   if (typeof raw === 'number') return Number.isFinite(raw) ? roundMoney(raw) : 0;
   let s = String(raw || '').trim().replace(/\s/g, '').replace('%', '');
@@ -156,8 +169,8 @@ export function extractInvoiceRefs(text: string | null | undefined): string[] {
   for (const re of patterns) {
     let m: RegExpExecArray | null;
     while ((m = re.exec(raw))) {
-      const v = String(m[1] || '').trim();
-      if (v && !/^(TMSEG|ASAAS)$/i.test(v)) found.add(v);
+      const v = String(m[1] || '').replace(/[^A-Za-z0-9_-]/g, '').trim();
+      if (v && v.length >= 2 && v.length <= 40 && !/^(TMSEG|ASAAS)$/i.test(v)) found.add(v);
     }
   }
   return Array.from(found);
