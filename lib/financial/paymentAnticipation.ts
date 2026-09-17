@@ -81,9 +81,10 @@ export function parsePctInput(raw: string | number | null | undefined): number {
  * Saldo total = soma das notas vinculadas.
  * Juros = valor ofertado − valor líquido (quando ambos existem);
  * senão juros = ofertado × taxa%.
- * Valor líquido = informado, ou ofertado − juros.
- * Ressalva = max(0, saldo total − valor líquido).
- * R$ 0,00 → PAGO; senão Saldo a Receber.
+ * Valor líquido = o informado, ou ofertado − juros.
+ * Cobertura da operação = valor ofertado (ou o saldo, se ofertado vazio).
+ * Ressalva = max(0, saldo total − cobertura). Juros são custo, não saldo do cliente.
+ * Se a operação cobre as notas → PAGO (R$ 0,00).
  */
 export function buildAnticipationPlan(input: AnticipationPlanInput): AnticipationPlan {
   const saldoTotal = roundMoney(
@@ -94,35 +95,33 @@ export function buildAnticipationPlan(input: AnticipationPlanInput): Anticipatio
   const rate = Number(input.averageRatePct) || 0;
   const alerts: string[] = [];
 
+  const baseOperacao = offered > 0.009 ? offered : saldoTotal;
   let juros = 0;
-  if (offered > 0.009 && net > 0.009) {
-    juros = roundMoney(Math.max(0, offered - net));
-  } else if (offered > 0.009 && Math.abs(rate) > 0.0001) {
-    juros = roundMoney(offered * (rate / 100));
-    if (net <= 0.009) net = roundMoney(Math.max(0, offered - juros));
-  } else if (saldoTotal > 0.009 && Math.abs(rate) > 0.0001 && net <= 0.009) {
-    const base = offered > 0.009 ? offered : saldoTotal;
-    juros = roundMoney(base * (rate / 100));
-    net = roundMoney(Math.max(0, base - juros));
+  if (baseOperacao > 0.009 && net > 0.009) {
+    juros = roundMoney(Math.max(0, baseOperacao - net));
+  } else if (baseOperacao > 0.009 && Math.abs(rate) > 0.0001) {
+    juros = roundMoney(baseOperacao * (rate / 100));
+    if (net <= 0.009) net = roundMoney(Math.max(0, baseOperacao - juros));
   }
 
-  if (net <= 0.009 && offered > 0.009) {
-    net = roundMoney(Math.max(0, offered - juros));
+  if (net <= 0.009 && baseOperacao > 0.009) {
+    net = roundMoney(Math.max(0, baseOperacao - juros));
   }
 
   const valorLiquido = net;
-  const residual = roundMoney(Math.max(0, saldoTotal - valorLiquido));
+  const cobertura = offered > 0.009 ? offered : saldoTotal;
+  const residual = roundMoney(Math.max(0, saldoTotal - cobertura));
   const settlement: AnticipationSettlement = residual > 0.009 ? 'SALDO_A_RECEBER' : 'PAGO';
-  const impliedRatePct = offered > 0.009 ? roundMoney((juros / offered) * 100) : 0;
+  const impliedRatePct = baseOperacao > 0.009 ? roundMoney((juros / baseOperacao) * 100) : 0;
 
-  if (rate > 0.0001 && impliedRatePct > 0.0001 && Math.abs(impliedRatePct - rate) > 0.05) {
+  if (rate > 0.0001 && impliedRatePct > 0.0001 && Math.abs(impliedRatePct - rate) > 0.01) {
     alerts.push(
-      `Taxa informada (${rate.toLocaleString('pt-BR')}%) difere da taxa implícita (${impliedRatePct.toLocaleString('pt-BR')}%) sobre o valor ofertado.`,
+      `Taxa conferida: ${impliedRatePct.toLocaleString('pt-BR')}% (juros ${formatBrl(juros)} ÷ ofertado). A taxa digitada foi ${rate.toLocaleString('pt-BR')}%.`,
     );
   }
   if (offered > 0.009 && saldoTotal > 0.009 && Math.abs(offered - saldoTotal) > 0.009) {
     alerts.push(
-      `Valor ofertado (${formatBrl(offered)}) diferente do saldo total das notas vinculadas (${formatBrl(saldoTotal)}).`,
+      `Valor ofertado (${formatBrl(offered)}) diferente do saldo das notas (${formatBrl(saldoTotal)}). A ressalva usa essa diferença, não o juros.`,
     );
   }
   if (saldoTotal <= 0.009) {

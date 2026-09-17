@@ -279,17 +279,23 @@ const PaymentAnticipationModal: React.FC<Props> = ({ preselected, onClose, onSav
             <div className="p-3 rounded-xl border bg-amber-50 border-amber-100">
               <p className="text-[9px] font-black text-amber-700 uppercase">Juros de antecipação</p>
               <p className="text-lg font-black font-mono text-amber-800" data-testid="ant-juros">{formatBrl(plan.juros)}</p>
+              {plan.impliedRatePct > 0.0001 && (
+                <p className="text-[10px] font-bold text-amber-700 mt-1">Taxa conferida: {plan.impliedRatePct.toLocaleString('pt-BR')}%</p>
+              )}
             </div>
             <div className="p-3 rounded-xl border bg-emerald-50 border-emerald-100">
               <p className="text-[9px] font-black text-emerald-700 uppercase">Valor líquido</p>
               <p className="text-lg font-black font-mono text-emerald-800" data-testid="ant-liquido">{formatBrl(plan.valorLiquido)}</p>
+              <p className="text-[10px] text-emerald-700 font-bold mt-1">Ofertado − juros</p>
             </div>
             <div className={`p-3 rounded-xl border ${plan.settlement === 'PAGO' ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`}>
               <p className="text-[9px] font-black uppercase text-gray-500">Situação</p>
               <p className={`text-sm font-black ${plan.settlement === 'PAGO' ? 'text-green-700' : 'text-orange-700'}`} data-testid="ant-settlement">
                 {settlementLabel(plan)}
               </p>
-              {plan.settlement === 'SALDO_A_RECEBER' && (
+              {plan.settlement === 'PAGO' ? (
+                <p className="text-[10px] font-bold text-green-700 mt-1">Operação cobre as notas. Juros não geram saldo a receber.</p>
+              ) : (
                 <p className="text-[10px] font-bold text-orange-700 mt-1">
                   Ressalva vence em {plan.residualDueDate ? formatDateBR(plan.residualDueDate + 'T12:00:00') : '—'} (15 dias)
                 </p>
