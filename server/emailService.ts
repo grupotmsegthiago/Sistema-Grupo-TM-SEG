@@ -1953,4 +1953,111 @@ export async function sendDhlIntakeOperationalFollowupEmail(opts: {
   console.log(`[Email] DHL intake operational follow-up → ${opts.to} | ${opts.pending.length} link(s)`);
 }
 
+function escapeHtml(value: string | number | null | undefined): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export type PaymentAnticipationEmailPayload = {
+  to?: string;
+  anticipationId: string;
+  entityName: string;
+  createdBy?: string;
+  residualDueDate: string;
+  linkedSummary: string;
+  fields: {
+    nfNumber?: string;
+    operationDate?: string;
+    averageRatePct?: number;
+    netAnticipated?: number;
+    offeredAmount?: number;
+    titleId?: string;
+    itemId?: string;
+    paymentDate?: string;
+  };
+  plan: {
+    saldoTotal: number;
+    juros: number;
+    valorLiquido: number;
+    residual: number;
+    settlement?: string;
+  };
+  titles?: Array<{
+    id?: string;
+    description?: string;
+    amount?: number;
+    entity_name?: string | null;
+  }>;
+};
+
+/** Ressalva de antecipação — cobrança do cliente para o financeiro. */
+export async function sendPaymentAnticipationEmail(
+  payload: PaymentAnticipationEmailPayload,
+): Promise<boolean> {
+  const to = payload.to || 'financeiro@grupotmseg.com.br';
+  const brl = (n: number) =>
+    (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const f = payload.fields || {};
+  const p = payload.plan || { saldoTotal: 0, juros: 0, valorLiquido: 0, residual: 0 };
+  const rows = (payload.titles || [])
+    .map(
+      (t) => `
+      <tr>
+        <td style="padding:8px;border-bottom:1px solid #eee;">${escapeHtml(t.description || t.id || '—')}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;">${escapeHtml(t.entity_name || payload.entityName)}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${escapeHtml(brl(Number(t.amount) || 0))}</td>
+      </tr>`,
+    )
+    .join('');
+
+  const content = `
+    <h2>Ressalva de antecipação de pagamento</h2>
+    <p>Foi lançada uma antecipação com <strong>saldo a receber</strong>. Cobrar o cliente <strong>${escapeHtml(payload.entityName)}</strong> até <strong>${escapeHtml(payload.residualDueDate)}</strong>.</p>
+    <table class="info-table">
+      <tr><td>Cliente</td><td>${escapeHtml(payload.entityName)}</td></tr>
+      <tr><td>Nº da NF (operação)</td><td>${escapeHtml(f.nfNumber || '—')}</td></tr>
+      <tr><td>Data da operação</td><td>${escapeHtml(f.operationDate || '—')}</td></tr>
+      <tr><td>Data do pagamento</td><td>${escapeHtml(f.paymentDate || '—')}</td></tr>
+      <tr><td>Taxa média aprovada</td><td>${escapeHtml(f.averageRatePct ?? 0)}%</td></tr>
+      <tr><td>Id do título</td><td>${escapeHtml(f.titleId || '—')}</td></tr>
+      <tr><td>Id do item</td><td>${escapeHtml(f.itemId || '—')}</td></tr>
+      <tr><td>Valor ofertado</td><td>${escapeHtml(brl(Number(f.offeredAmount) || 0))}</td></tr>
+      <tr><td>Saldo total (NFs)</td><td>${escapeHtml(brl(p.saldoTotal))}</td></tr>
+      <tr><td>Juros de antecipação</td><td>${escapeHtml(brl(p.juros))}</td></tr>
+      <tr><td>Valor líquido antecipado</td><td>${escapeHtml(brl(p.valorLiquido))}</td></tr>
+      <tr><td>Saldo a receber (ressalva)</td><td><strong>${escapeHtml(brl(p.residual))}</strong></td></tr>
+      <tr><td>Vencimento da ressalva</td><td>${escapeHtml(payload.residualDueDate)}</td></tr>
+      <tr><td>Notas vinculadas</td><td>${escapeHtml(payload.linkedSummary || '—')}</td></tr>
+      <tr><td>Operação</td><td>${escapeHtml(payload.anticipationId)}</td></tr>
+      <tr><td>Lançado por</td><td>${escapeHtml(payload.createdBy || 'Sistema')}</td></tr>
+    </table>
+    ${rows ? `<h2>Títulos baixados</h2>
+    <table class="info-table" style="width:100%;">
+      <tr><td>Descrição</td><td>Cliente</td><td>Valor</td></tr>
+      ${rows}
+    </table>` : ''}
+    <div class="highlight-box">
+      <p>Ação: cobrar do cliente a ressalva de ${escapeHtml(brl(p.residual))} com prazo de 15 dias (${escapeHtml(payload.residualDueDate)}).</p>
+    </div>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to,
+      subject: `[Antecipação] Ressalva ${brl(p.residual)} — ${payload.entityName || 'Cliente'}`,
+      html: baseTemplate(content, payload.createdBy),
+    });
+    console.log(`[Email] Antecipação/ressalva → ${to} | ${payload.anticipationId}`);
+    return true;
+  } catch (e: any) {
+    console.error(`[Email] Falha antecipação: ${e?.message}`);
+    throw e;
+  }
+}
+
 export { transporter };

@@ -9,7 +9,7 @@ import { computeRouteDistanceKm, computeRouteProgressKm, normalizeRouteAddress }
 import fs from "fs";
 import path from "path";
 import pg from "pg";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider, sendPaymentAnticipationEmail } from "./emailService";
 import { runEmailHealthCheck } from "./emailHealth";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { registerRhRoutes } from "./rhRoutes";
@@ -1871,6 +1871,30 @@ export async function registerRoutes(
       res.json({ success, message: success ? 'E-mail de teste enviado!' : 'Falha ao enviar e-mail' });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/email/payment-anticipation", requireAuth, requireRole('administrador', 'diretoria', 'financeiro', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const body = req.body || {};
+      if (!body.anticipationId) return res.status(400).json({ success: false, error: 'anticipationId obrigatório' });
+      if (!body.plan || Number(body.plan.residual) <= 0.009) {
+        return res.status(400).json({ success: false, error: 'E-mail só é enviado quando há ressalva (saldo a receber).' });
+      }
+      const success = await sendPaymentAnticipationEmail({
+        to: 'financeiro@grupotmseg.com.br',
+        anticipationId: String(body.anticipationId),
+        entityName: String(body.entityName || 'Cliente'),
+        createdBy: String(body.createdBy || ''),
+        residualDueDate: String(body.residualDueDate || ''),
+        linkedSummary: String(body.linkedSummary || ''),
+        fields: body.fields || {},
+        plan: body.plan,
+        titles: Array.isArray(body.titles) ? body.titles : [],
+      });
+      res.json({ success, message: success ? 'E-mail enviado ao financeiro.' : 'Falha ao enviar e-mail' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 

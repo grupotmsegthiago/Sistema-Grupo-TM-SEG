@@ -139,3 +139,78 @@ ALTER TABLE public.financial_transactions
   }
   return { ok: false, exists: false, sql };
 }
+
+const ANTICIPATION_BOOTSTRAP_SQL = `
+CREATE TABLE IF NOT EXISTS public.payment_anticipations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nf_number TEXT DEFAULT '',
+  operation_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  average_rate_pct NUMERIC(8,4) NOT NULL DEFAULT 0,
+  net_anticipated NUMERIC(14,2) NOT NULL DEFAULT 0,
+  offered_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+  title_id TEXT DEFAULT '',
+  item_id TEXT DEFAULT '',
+  payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  saldo_total NUMERIC(14,2) NOT NULL DEFAULT 0,
+  juros NUMERIC(14,2) NOT NULL DEFAULT 0,
+  valor_liquido NUMERIC(14,2) NOT NULL DEFAULT 0,
+  residual NUMERIC(14,2) NOT NULL DEFAULT 0,
+  residual_due_date DATE,
+  settlement TEXT NOT NULL DEFAULT 'PAGO',
+  entity_name TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  email_sent BOOLEAN DEFAULT FALSE,
+  email_error TEXT DEFAULT '',
+  residual_transaction_id UUID REFERENCES public.financial_transactions(id) ON DELETE SET NULL,
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS public.payment_anticipation_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  anticipation_id UUID NOT NULL REFERENCES public.payment_anticipations(id) ON DELETE CASCADE,
+  transaction_id UUID REFERENCES public.financial_transactions(id) ON DELETE SET NULL,
+  invoice_id UUID REFERENCES public.financial_invoices(id) ON DELETE SET NULL,
+  role TEXT NOT NULL DEFAULT 'SOURCE',
+  amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+  description TEXT DEFAULT '',
+  nf_ref TEXT DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+`.trim();
+
+let anticipationEnsured = false;
+
+async function probeAnticipationTable(): Promise<boolean> {
+  const { url, key } = getSupabaseConfig();
+  if (!key) return false;
+  try {
+    const res = await fetch(`${url}/rest/v1/payment_anticipations?select=id&limit=1`, {
+      method: 'GET',
+      headers: restHeaders(key),
+    });
+    if (res.status === 404 || res.status === 406) return false;
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      if (/relation.*does not exist|PGRST205|42P01/i.test(text)) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Best-effort: cria tabelas de antecipação sem recriar policy ampla. */
+export async function ensurePaymentAnticipationTables(): Promise<{ ok: boolean; exists: boolean }> {
+  if (anticipationEnsured) return { ok: true, exists: true };
+  const exists = await probeAnticipationTable();
+  if (exists) {
+    anticipationEnsured = true;
+    return { ok: true, exists: true };
+  }
+  const ran = await tryExecSql(ANTICIPATION_BOOTSTRAP_SQL);
+  if (ran && (await probeAnticipationTable())) {
+    anticipationEnsured = true;
+    return { ok: true, exists: true };
+  }
+  return { ok: false, exists: false };
+}

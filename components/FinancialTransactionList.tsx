@@ -19,7 +19,7 @@ import {
   ArrowRight, AlertCircle, ClipboardCheck, Receipt, 
   FileCheck, BarChart3, Lock, ChevronRight, Eye,
   Building2, Truck, CircleDollarSign, Clock, Filter,
-  Upload, Send
+  Upload, Send, Banknote
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import FinancialTransactionForm from './FinancialTransactionForm';
@@ -40,6 +40,8 @@ import ReceivablePaymentsModal from './ReceivablePaymentsModal';
 import ReceivablePayConfirmModal from './ReceivablePayConfirmModal';
 import { extractParentTransactionId } from '../lib/financial/confirmReceivablePay';
 import CashFlowPreviewButton from './CashFlowPreviewButton';
+import { extractAnticipationId } from '../lib/financial/paymentAnticipation';
+import PaymentAnticipationModal from './PaymentAnticipationModal';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -107,6 +109,8 @@ const FinancialTransactionList: React.FC = () => {
     /** Pais com residual expandido (sublinhas). */
     const [expandedResidualParents, setExpandedResidualParents] = useState<Set<string>>(() => new Set());
     const [overdueUniverse, setOverdueUniverse] = useState<FinancialTransaction[]>([]);
+    const [selectedReceivableIds, setSelectedReceivableIds] = useState<Set<string>>(() => new Set());
+    const [anticipationOpen, setAnticipationOpen] = useState(false);
 
     const ASAAS_CARD_KEYS = ['TM GESTÃO', 'TM SEGURANCA', 'TM SECURITY'] as const;
 
@@ -988,7 +992,7 @@ const FinancialTransactionList: React.FC = () => {
 
     const renderTransactionTable = (list: FinancialTransaction[], typeLabel: string, showConferencia = false) => {
         const isReceber = typeLabel === 'Receita' || typeLabel === 'RECEBER' || activeStep === 'RECEBER';
-        const colCount = (showConferencia ? 9 : 8) + (isReceber ? 1 : 0);
+        const colCount = (showConferencia ? 9 : 8) + (isReceber ? 2 : 0);
 
         // Agrupa saldos residuais logo abaixo do título pai (Contas a Receber).
         const residualByParent = new Map<string, FinancialTransaction[]>();
@@ -1031,6 +1035,25 @@ const FinancialTransactionList: React.FC = () => {
                 <table className="w-full text-left border-collapse">
                     <thead>
                         <tr className="bg-gray-900 text-white text-[10px] font-black uppercase tracking-widest">
+                            {isReceber && (
+                                <th className="px-3 py-3 text-center no-print">
+                                    <input
+                                        type="checkbox"
+                                        className="w-3.5 h-3.5"
+                                        checked={list.filter((t) => t.status !== 'PAID' && t.status !== 'CANCELLED').length > 0 && list.filter((t) => t.status !== 'PAID' && t.status !== 'CANCELLED').every((t) => selectedReceivableIds.has(t.id))}
+                                        onChange={(e) => {
+                                            setSelectedReceivableIds((prev) => {
+                                                const next = new Set(prev);
+                                                const open = list.filter((t) => t.status !== 'PAID' && t.status !== 'CANCELLED');
+                                                if (e.target.checked) open.forEach((t) => next.add(t.id));
+                                                else open.forEach((t) => next.delete(t.id));
+                                                return next;
+                                            });
+                                        }}
+                                        data-testid="chk-ant-select-all"
+                                    />
+                                </th>
+                            )}
                             <th className="px-4 py-3">Vencimento</th>
                             <th className="px-4 py-3">Descrição</th>
                             <th className="px-4 py-3">Favorecido</th>
@@ -1072,6 +1095,28 @@ const FinancialTransactionList: React.FC = () => {
                                     }`}
                                     data-testid={isResidualRow ? `residual-row-${t.id}` : `tx-row-${t.id}`}
                                 >
+                                    {isReceber && (
+                                        <td className="px-3 py-3 text-center no-print">
+                                            {t.status !== 'PAID' && t.status !== 'CANCELLED' ? (
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-3.5 h-3.5"
+                                                    checked={selectedReceivableIds.has(t.id)}
+                                                    onChange={(e) => {
+                                                        setSelectedReceivableIds((prev) => {
+                                                            const next = new Set(prev);
+                                                            if (e.target.checked) next.add(t.id);
+                                                            else next.delete(t.id);
+                                                            return next;
+                                                        });
+                                                    }}
+                                                    data-testid={`chk-tx-${t.id}`}
+                                                />
+                                            ) : (
+                                                <span className="text-gray-300">—</span>
+                                            )}
+                                        </td>
+                                    )}
                                     <td className="px-4 py-3">
                                         <span className={`text-xs font-mono font-bold ${isOverdueRow ? 'text-red-600' : 'text-gray-500'}`}>
                                             {formatDateBR(t.due_date + 'T12:00:00')}
@@ -1103,6 +1148,13 @@ const FinancialTransactionList: React.FC = () => {
                                                 <div className={`font-bold text-sm uppercase ${isResidualRow ? 'text-orange-800' : 'text-gray-800'}`}>{t.description}</div>
                                                 {isResidualRow && (
                                                     <span className="block text-[9px] font-black text-orange-600 mt-0.5 uppercase">Saldo residual</span>
+                                                )}
+                                                {extractAnticipationId(t.notes) && (
+                                                    <span className="block text-[9px] font-black text-teal-700 mt-0.5 uppercase" data-testid={`badge-anticipation-${t.id}`}>
+                                                        {t.notes?.includes('Ressalva de antecipação') || /^↳\s*Ressalva antecipação/i.test(t.description)
+                                                          ? 'Ressalva antecipação'
+                                                          : 'Antecipação'}
+                                                    </span>
                                                 )}
                                                 {hasResidualChildren && (
                                                     <span className="block text-[9px] font-bold text-orange-700 mt-0.5">
@@ -1603,6 +1655,28 @@ const FinancialTransactionList: React.FC = () => {
                     }}
                 />
             )}
+            {anticipationOpen && (
+                <PaymentAnticipationModal
+                    preselected={transactions.filter((t) => selectedReceivableIds.has(t.id) && t.type === 'INCOME')}
+                    onClose={() => setAnticipationOpen(false)}
+                    onSaved={({ updatedIds, residual }) => {
+                        setTransactions((prev) => {
+                            let next = prev.map((item) =>
+                                updatedIds.includes(item.id)
+                                    ? { ...item, status: 'PAID' as const, amount_open: 0, payment_date: item.payment_date }
+                                    : item,
+                            );
+                            if (residual && !next.some((x) => x.id === residual.id)) {
+                                next = [residual, ...next];
+                            }
+                            return next;
+                        });
+                        setSelectedReceivableIds(new Set());
+                        void fetchTransactions();
+                        void fetchInvoices();
+                    }}
+                />
+            )}
 
             <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
                 <div>
@@ -1625,9 +1699,18 @@ const FinancialTransactionList: React.FC = () => {
                     <CashFlowPreviewButton />
                     <button onClick={fetchTransactions} className="p-2.5 border rounded-lg hover:bg-gray-50 text-gray-500 no-print" data-testid="btn-refresh"><RefreshCw size={18} className={loading ? "animate-spin" : ""}/></button>
                     {(activeStep === 'PAGAR' || activeStep === 'RECEBER') && (
-                        <button onClick={() => setIsFormOpen(true)} className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm uppercase no-print" data-testid="btn-new-transaction">
-                            <Plus size={18}/> Novo Lançamento
-                        </button>
+                        <>
+                            <button
+                                onClick={() => setAnticipationOpen(true)}
+                                className="flex items-center gap-2 bg-teal-50 border border-teal-200 text-teal-800 hover:bg-teal-100 px-4 py-2 rounded-lg text-sm font-bold transition-all no-print uppercase"
+                                data-testid="btn-payment-anticipation"
+                            >
+                                <Banknote size={16}/> Antecipação{selectedReceivableIds.size > 0 ? ` (${selectedReceivableIds.size})` : ''}
+                            </button>
+                            <button onClick={() => setIsFormOpen(true)} className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm uppercase no-print" data-testid="btn-new-transaction">
+                                <Plus size={18}/> Novo Lançamento
+                            </button>
+                        </>
                     )}
                 </div>
             </div>
