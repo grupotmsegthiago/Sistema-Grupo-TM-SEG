@@ -5,6 +5,7 @@ import {
   ANTICIPATION_MARKER,
   buildAnticipationNotes,
   buildAnticipationPlan,
+  extractAnticipationDates,
   extractAnticipationId,
   extractInvoiceRefs,
   parseAnticipationMoney,
@@ -153,6 +154,14 @@ describe('paymentAnticipation', () => {
     });
     assert.ok(notes.includes(ANTICIPATION_MARKER));
     assert.equal(extractAnticipationId(notes), 'abc-uuid');
+    const dates = extractAnticipationDates(notes);
+    assert.equal(dates.operationDate, '2026-09-17');
+    assert.equal(dates.paymentDate, '2026-09-17');
+    const cevaDates = extractAnticipationDates(
+      'TMSEG_ANTICIPATION:uuid | Data op: 2026-08-25 | Pagamento: 2026-10-01',
+    );
+    assert.equal(cevaDates.operationDate, '2026-08-25');
+    assert.equal(cevaDates.paymentDate, '2026-10-01');
     const refs = extractInvoiceRefs('Fatura ASAAS-123 | NF 4455 — CEVA');
     assert.ok(refs.includes('ASAAS-123'));
     assert.ok(refs.includes('4455'));

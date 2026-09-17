@@ -40,7 +40,7 @@ import ReceivablePaymentsModal from './ReceivablePaymentsModal';
 import ReceivablePayConfirmModal from './ReceivablePayConfirmModal';
 import { extractParentTransactionId } from '../lib/financial/confirmReceivablePay';
 import CashFlowPreviewButton from './CashFlowPreviewButton';
-import { extractAnticipationId } from '../lib/financial/paymentAnticipation';
+import { extractAnticipationId, extractAnticipationDates } from '../lib/financial/paymentAnticipation';
 import PaymentAnticipationModal from './PaymentAnticipationModal';
 
 const formatCurrency = (val: number | null | undefined) => {
@@ -1081,6 +1081,11 @@ const FinancialTransactionList: React.FC = () => {
                             const hasResidualChildren = !!(childResiduals && childResiduals.length > 0);
                             const residualCollapsed = expandedResidualParents.has(`collapsed:${t.id}`);
                             const residualExpanded = hasResidualChildren && !residualCollapsed;
+                            const anticipationId = extractAnticipationId(t.notes);
+                            const anticipationDates = anticipationId ? extractAnticipationDates(t.notes) : { operationDate: null, paymentDate: null };
+                            const anticipationOpDate = anticipationDates.operationDate;
+                            const anticipationPayDate = anticipationDates.paymentDate
+                              || (anticipationId ? String(t.payment_date || '').slice(0, 10) || null : null);
                             return (
                                 <tr
                                     key={t.id}
@@ -1149,11 +1154,26 @@ const FinancialTransactionList: React.FC = () => {
                                                 {isResidualRow && (
                                                     <span className="block text-[9px] font-black text-orange-600 mt-0.5 uppercase">Saldo residual</span>
                                                 )}
-                                                {extractAnticipationId(t.notes) && (
-                                                    <span className="block text-[9px] font-black text-teal-700 mt-0.5 uppercase" data-testid={`badge-anticipation-${t.id}`}>
-                                                        {t.notes?.includes('Ressalva de antecipação') || /^↳\s*Ressalva antecipação/i.test(t.description)
-                                                          ? 'Ressalva antecipação'
-                                                          : 'Antecipação'}
+                                                {anticipationId && (
+                                                    <span
+                                                        className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[9px] font-black text-teal-700 uppercase"
+                                                        data-testid={`badge-anticipation-${t.id}`}
+                                                    >
+                                                        <span>
+                                                            {t.notes?.includes('Ressalva de antecipação') || /^↳\s*Ressalva antecipação/i.test(t.description)
+                                                              ? 'Ressalva antecipação'
+                                                              : 'Antecipado'}
+                                                        </span>
+                                                        {anticipationOpDate && (
+                                                            <span className="font-bold normal-case" data-testid={`ant-op-date-${t.id}`}>
+                                                                · Antecipação {formatDateBR(anticipationOpDate + 'T12:00:00')}
+                                                            </span>
+                                                        )}
+                                                        {anticipationPayDate && /^\d{4}-\d{2}-\d{2}$/.test(anticipationPayDate) && (
+                                                            <span className="font-bold normal-case" data-testid={`ant-pay-date-${t.id}`}>
+                                                                · Pagamento {formatDateBR(anticipationPayDate + 'T12:00:00')}
+                                                            </span>
+                                                        )}
                                                     </span>
                                                 )}
                                                 {hasResidualChildren && (

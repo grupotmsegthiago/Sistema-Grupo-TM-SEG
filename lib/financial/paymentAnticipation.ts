@@ -157,6 +157,33 @@ export function extractAnticipationId(notes: string | null | undefined): string 
   return id || null;
 }
 
+function firstIsoDate(raw: string, patterns: RegExp[]): string | null {
+  for (const re of patterns) {
+    const m = raw.match(re);
+    const iso = String(m?.[1] || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  }
+  return null;
+}
+
+/** Datas gravadas no bloco da antecipação (notes do título). */
+export function extractAnticipationDates(notes: string | null | undefined): {
+  operationDate: string | null;
+  paymentDate: string | null;
+} {
+  const raw = String(notes || '');
+  return {
+    operationDate: firstIsoDate(raw, [
+      /Data op:\s*(\d{4}-\d{2}-\d{2})/i,
+      /Data da opera[cç][aã]o:\s*(\d{4}-\d{2}-\d{2})/i,
+    ]),
+    paymentDate: firstIsoDate(raw, [
+      /Pagamento:\s*(\d{4}-\d{2}-\d{2})/i,
+      /Data do pagamento:\s*(\d{4}-\d{2}-\d{2})/i,
+    ]),
+  };
+}
+
 export function extractInvoiceRefs(text: string | null | undefined): string[] {
   const raw = String(text || '');
   const found = new Set<string>();
