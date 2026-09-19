@@ -5,6 +5,7 @@ import {
   fillRegionFromEdges,
   regionAreaRatio,
   removeOverlaysFromBuffer,
+  filterOverlayBoxes,
 } from '../lib/printInpainting';
 import { isSupportedPrintMime, normalizePrintMime } from '../lib/printPipelineTypes';
 
@@ -50,6 +51,17 @@ test('fillRegionFromEdges substitui overlay vermelho no centro', () => {
   fillRegionFromEdges(data, w, h, 6, 6, 13, 13);
   const mid = (10 * w + 10) * 4;
   assert.notEqual(data[mid + 1], 0);
+});
+
+test('filterOverlayBoxes ignora placas e mantém timestamps', () => {
+  const w = 1000;
+  const h = 800;
+  const filtered = filterOverlayBoxes([
+    { box_2d: [700, 200, 780, 700], label: 'license plate ABC1234', kind: 'text' },
+    { box_2d: [20, 20, 120, 400], label: 'camera timestamp', kind: 'timestamp' },
+  ], w, h);
+  assert.equal(filtered.length, 1);
+  assert.match(filtered[0].label || '', /timestamp/i);
 });
 
 test('removeOverlaysFromBuffer ignora caixas enormes', () => {
