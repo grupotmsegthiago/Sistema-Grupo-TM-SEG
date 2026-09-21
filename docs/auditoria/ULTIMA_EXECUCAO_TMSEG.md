@@ -1,5 +1,26 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## OS — VIATURA CADASTRADA NÃO APARECIA NO DROPDOWN
+
+**Data:** 2026-09-21 (UTC-3)
+**Pedido:** placa TMG0B411/TMG0B41 da Torres já cadastrada, mas não
+aparecia para incluir na OS.
+
+**Causa:** `UpdateMissionModal.refreshAuxData` lia `vehicles` com
+consulta única (limite PostgREST 1000). Havia 1019 viaturas ativas;
+a TMG0B41 era a 1019ª e ficava de fora.
+
+**Correção:** `fetchAllPages` nas viaturas ativas + aviso
+`CONSULTA INCOMPLETA` se truncar. Mesmo padrão já usado em
+`client_vehicles`.
+
+**Não alterado:** placa no banco (continua `TMG0B41`, 7 caracteres);
+Asaas; eNotas; motor financeiro da OS.
+
+**Testes:** `npx tsx --test scripts/client-vehicles-list-paging.test.ts`
+
+---
+
 ## PEDÁGIO — FAIXAS + CONTROLLER NA AUDITORIA
 
 **Data:** 2026-09-21 (UTC-3)
