@@ -1,5 +1,26 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## PEDÁGIO — FAIXAS + CONTROLLER NA AUDITORIA
+
+**Data:** 2026-09-21 (UTC-3)
+**Pedido:** botão laranja Confirmar Pedágio — liberar edição/salvar para
+controller; DHL sem acréscimo; demais com faixas 20% / 10% / 5%.
+
+**Regra (fonte `lib/toll/clientTollBilling.ts`):**
+- DHL: valor da operação, sem acréscimo.
+- Demais, base > R$ 10: até R$ 100 → +20%; R$ 100,01 a R$ 150 → +10%;
+  acima de R$ 150 → +5%. Até R$ 10 permanece sem acréscimo.
+- Controller/Plínio: edita e salva pedágio do cliente na auditoria
+  (botão laranja + Salvar). Aprovar, receita e deslocamento cliente
+  continuam bloqueados.
+
+**Não alterado:** Asaas, eNotas, motor de tabela DHL, gate de pedágio
+no UpdateMissionModal (conclusão da OS).
+
+**Testes:** `npx tsx --test scripts/toll-client-billing.test.ts scripts/controller-provider-scope.test.ts scripts/plinio-email-restrictions.test.ts`
+
+---
+
 ## VELADA — BOTÃO GERAR LINK (TIMEOUT DA API)
 
 **Data:** 2026-09-15 (UTC-3)

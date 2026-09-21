@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   billableClientToll,
   billableProviderToll,
+  clientTollMarkupFactor,
   isDhlClientTollExempt,
   normalizeTollAmount,
   resolveStoredClientToll,
@@ -29,27 +30,43 @@ describe('clientTollBilling', () => {
   it('billableClientToll: até R$ 10 sem acréscimo', () => {
     assert.equal(billableClientToll(0), 0);
     assert.equal(billableClientToll(10), 10);
-    assert.equal(billableClientToll(10.01), 12.01);
+    assert.equal(clientTollMarkupFactor(10), 1);
   });
 
-  it('billableClientToll: acima de R$ 10 aplica fator 1,2', () => {
+  it('billableClientToll: até R$ 100 aplica 20%', () => {
+    assert.equal(billableClientToll(10.01), 12.01);
     assert.equal(billableClientToll(50), 60);
     assert.equal(billableClientToll(100), 120);
+    assert.equal(clientTollMarkupFactor(100), 1.2);
+  });
+
+  it('billableClientToll: de R$ 100,01 a R$ 150 aplica 10%', () => {
+    assert.equal(billableClientToll(100.01), 110.01);
+    assert.equal(billableClientToll(120), 132);
+    assert.equal(billableClientToll(150), 165);
+    assert.equal(clientTollMarkupFactor(150), 1.1);
+  });
+
+  it('billableClientToll: acima de R$ 150 aplica 5%', () => {
+    assert.equal(billableClientToll(150.01), 157.51);
+    assert.equal(billableClientToll(200), 210);
+    assert.equal(clientTollMarkupFactor(200), 1.05);
   });
 
   it('provider usa valor real; persistência grava cliente com regra', () => {
     assert.equal(billableProviderToll(50), 50);
     assert.equal(billableProviderToll(50, true), 0);
     assert.deepEqual(tollPersistencePair(50, false), { toll_value: 60, toll_value_provider: 50 });
-    assert.deepEqual(tollPersistencePair(100, false), { toll_value: 120, toll_value_provider: 100 });
+    assert.deepEqual(tollPersistencePair(120, false), { toll_value: 132, toll_value_provider: 120 });
+    assert.deepEqual(tollPersistencePair(200, false), { toll_value: 210, toll_value_provider: 200 });
     assert.deepEqual(tollPersistencePair(8, false), { toll_value: 8, toll_value_provider: 8 });
     assert.deepEqual(tollPersistencePair(50, true), { toll_value: 60, toll_value_provider: 0 });
   });
 
   it('resolveStoredClientToll: legado (iguais) aplica regra; novo não dobra', () => {
     assert.equal(resolveStoredClientToll(50, 50), 60);
-    assert.equal(resolveStoredClientToll(100, 100), 120);
-    assert.equal(resolveStoredClientToll(120, 100), 120);
+    assert.equal(resolveStoredClientToll(200, 200), 210);
+    assert.equal(resolveStoredClientToll(132, 120), 132);
     assert.equal(resolveStoredClientToll(8, 8), 8);
     assert.equal(resolveStoredClientToll(50, null), 60);
     assert.equal(resolveStoredClientToll(50), 60);
@@ -62,12 +79,14 @@ describe('clientTollBilling', () => {
     assert.equal(resolveStoredProviderToll(60, 0, true), 0);
   });
 
-  it('DHL: operação informa o valor — sem acréscimo de 20%', () => {
+  it('DHL: operação informa o valor — sem acréscimo', () => {
     const dhl = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
     assert.equal(billableClientToll(50, dhl), 50);
     assert.equal(billableClientToll(100, dhl), 100);
     assert.equal(billableClientToll(10.01, dhl), 10.01);
+    assert.equal(billableClientToll(200, dhl), 200);
     assert.deepEqual(tollPersistencePair(50, false, dhl), { toll_value: 50, toll_value_provider: 50 });
+    assert.deepEqual(tollPersistencePair(200, false, dhl), { toll_value: 200, toll_value_provider: 200 });
     assert.deepEqual(tollPersistencePair(50, true, dhl), { toll_value: 50, toll_value_provider: 0 });
     assert.equal(resolveStoredClientToll(60, 50, dhl), 50);
     assert.equal(resolveStoredClientToll(50, 50, dhl), 50);
@@ -75,10 +94,13 @@ describe('clientTollBilling', () => {
     assert.equal(resolveStoredClientToll(50, 0, dhl), 50);
   });
 
-  it('demais clientes continuam com fator 1,2', () => {
+  it('demais clientes seguem as faixas 20/10/5', () => {
     assert.equal(billableClientToll(50, 'CEVA LOGISTICS'), 60);
+    assert.equal(billableClientToll(120, 'CEVA LOGISTICS'), 132);
+    assert.equal(billableClientToll(200, 'INTERMODAL BRASIL LOGISTICA S.A.'), 210);
     assert.equal(resolveStoredClientToll(50, 50, 'CEVA LOGISTICS'), 60);
     assert.deepEqual(tollPersistencePair(50, false, 'CEVA LOGISTICS'), { toll_value: 60, toll_value_provider: 50 });
+    assert.deepEqual(tollPersistencePair(200, false, 'CESLOG - CESARI LOGISTICA LTDA'), { toll_value: 210, toll_value_provider: 200 });
   });
 });
 

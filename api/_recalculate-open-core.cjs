@@ -422,8 +422,9 @@ var selectDhlClientTable = (tables, mission, googleKm, options) => {
 };
 
 // lib/toll/clientTollBilling.ts
-var TOLL_MARKUP_THRESHOLD_BRL = 10;
-var TOLL_MARKUP_FACTOR = 1.2;
+var TOLL_NO_MARKUP_MAX_BRL = 10;
+var TOLL_MARKUP_20_MAX_BRL = 100;
+var TOLL_MARKUP_10_MAX_BRL = 150;
 function isDhlClientTollExempt(clientName) {
   if (!clientName) return false;
   const n = String(clientName).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
@@ -434,13 +435,19 @@ function normalizeTollAmount(value) {
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.round(n * 100) / 100;
 }
+function clientTollMarkupFactor(baseOrEntered, clientName) {
+  if (isDhlClientTollExempt(clientName)) return 1;
+  const base = normalizeTollAmount(baseOrEntered);
+  if (base <= TOLL_NO_MARKUP_MAX_BRL) return 1;
+  if (base <= TOLL_MARKUP_20_MAX_BRL) return 1.2;
+  if (base <= TOLL_MARKUP_10_MAX_BRL) return 1.1;
+  return 1.05;
+}
 function billableClientToll(baseOrEntered, clientName) {
   const base = normalizeTollAmount(baseOrEntered);
-  if (isDhlClientTollExempt(clientName)) return base;
-  if (base > TOLL_MARKUP_THRESHOLD_BRL) {
-    return Math.round(base * TOLL_MARKUP_FACTOR * 100) / 100;
-  }
-  return base;
+  const factor = clientTollMarkupFactor(base, clientName);
+  if (factor === 1) return base;
+  return Math.round(base * factor * 100) / 100;
 }
 function resolveStoredClientToll(tollValue, tollValueProvider, clientName) {
   const client = normalizeTollAmount(tollValue);

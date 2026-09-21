@@ -38,8 +38,17 @@ describe('Escopo controller/fornecedor', () => {
     assert.equal(payload.last_update, '2026-09-09T12:00:00.000Z');
     assert.deepEqual(assertProviderOnlyPayload(payload), []);
     assert.equal('revenue_value' in payload, false);
+    assert.equal('toll_value' in payload, false);
     assert.equal('billing_approved' in payload, false);
     assert.equal('billing_verified_by' in payload, false);
+    const withClientToll = buildProviderOnlyMissionPayload({
+      costValue: 100,
+      tollValue: 60,
+      tollValueProvider: 50,
+      displacementValueProvider: 0,
+    });
+    assert.equal(withClientToll.toll_value, 60);
+    assert.equal(withClientToll.toll_value_provider, 50);
     assert.equal(providerTollToPersist(0, false), 0);
     assert.equal(providerTollToPersist(50.129, false), 50.13);
     assert.equal(providerTollToPersist(80, true), 0);
@@ -88,6 +97,8 @@ describe('Escopo controller/fornecedor', () => {
     assert.match(source, /providerFinanceInputLocked = \(?isEffectivelyLocked && !isProviderOnlyUser/);
     assert.match(source, /if \(isProviderOnlyUser && approve\)/);
     assert.match(source, /disabled=\{isProviderOnlyUser \|\| isUpdating/);
+    assert.match(source, /clientTollInputLocked/);
+    assert.doesNotMatch(source, /Perfil controller\/fornecedor não pode alterar o pedágio do cliente/);
     assert.doesNotMatch(source, /canSaveProviderAdjustments = isPlinio/);
   });
 
