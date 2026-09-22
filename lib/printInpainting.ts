@@ -207,6 +207,34 @@ export function normalizeOverlayKind(overlay: DetectedOverlay): OverlayKind {
   return inferKind(overlay.label);
 }
 
+const PLATE_SKIP_LABEL = /placa|plate|licen[cs]e|platen|tag.?ve[ií]c|renavam|chassi|hod[oô]metro|odometer|speedometer|painel|dashboard|km\s*real/i;
+
+/** Remove falsos positivos (placas, hodômetro físico) antes do inpainting. */
+export function filterOverlayBoxes(
+  boxes: DetectedOverlay[],
+  width: number,
+  height: number,
+): DetectedOverlay[] {
+  return boxes.filter((box) => {
+    const label = (box.label || '').toLowerCase();
+    if (PLATE_SKIP_LABEL.test(label)) return false;
+
+    const { x0, y0, x1, y1 } = boxToPixels(box.box_2d, width, height, 0);
+    const bw = x1 - x0;
+    const bh = y1 - y0;
+    if (bw <= 0 || bh <= 0) return false;
+
+    const aspect = bw / bh;
+    const centerY = (y0 + y1) / 2;
+    // Faixa larga e baixa na metade inferior → provável placa física
+    if (aspect > 2.2 && bh < height * 0.1 && centerY > height * 0.5) return false;
+    // Retângulo pequeno e muito largo no centro-baixo (placa Mercosul)
+    if (aspect > 3 && bw < width * 0.45 && centerY > height * 0.45 && bh < height * 0.07) return false;
+
+    return true;
+  });
+}
+
 /** Remove overlays detectados preservando o restante da imagem. */
 export function removeOverlaysFromBuffer(
   data: Uint8ClampedArray,
