@@ -44,20 +44,9 @@ async function processOne(sb: any, mission: any): Promise<'sent' | 'skipped' | '
 }
 
 export async function runClientEmailQueueCycle(): Promise<void> {
-  const sb = await getSupabaseAdmin();
-  const { data: pending } = await sb
-    .from('missions')
-    .select('*')
-    .eq('email_pending_client', true)
-    .in('status', PROCESSABLE_STATUSES)
-    .order('created_at', { ascending: true })
-    .limit(MAX_PER_CYCLE);
-  if (!pending?.length) return;
-  let sent = 0;
-  for (const m of pending) {
-    const r = await processOne(sb, m);
-    if (r === 'sent') sent++;
-    await new Promise(res => setTimeout(res, 500));
-  }
-  if (sent > 0) console.log(`[Email Queue Vercel] enviadas=${sent}`);
+  // DESATIVADO (2026-07-14): fila retroativa estava reenviando e-mails de OS
+  // antigas. E-mail do cliente/fornecedor só deve sair na abertura da OS
+  // (envio síncrono em /api/email/mission-*). Não reprocessar backlog.
+  console.log('[Email Queue Vercel] DESATIVADO — sem envio retroativo. Só abertura de OS.');
+  return;
 }
