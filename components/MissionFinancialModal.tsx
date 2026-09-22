@@ -730,6 +730,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Gate unificado: nenhum input financeiro/comercial do CLIENTE editável sem canEditClientData
   // (inclui OS destravada — unlock não contorna a regra do Plinio).
   const clientFinanceInputLocked = isController || isEffectivelyLocked || !canEditClientData || isPaidInvoiceEffectivelyLocked;
+  // Controller/Plínio: pedágio do cliente editável na auditoria (botão laranja + campo + Salvar).
+  const clientTollInputLocked = isPaidInvoiceEffectivelyLocked || (!(isProviderOnlyUser || isControllerRole) && clientFinanceInputLocked);
   const canEditOpsEvenIfLocked = (isBarbaraFinance || !isEffectivelyLocked) && !isPaidInvoiceEffectivelyLocked;
   // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
   // da memória de cálculo devem ACOMPANHAR a tabela escolhida sempre que o
@@ -744,13 +746,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   // Confirmação obrigatória de pedágio: ao abrir o modal sem pedágio confirmado,
   // exige resposta explícita do operador (Sim com valor / Não, sem pedágio).
-  // Não dispara para faturamentos já aprovados/travados nem para Controller.
+  // Controller/Plínio também confirma (botão laranja). Não dispara se o
+  // faturamento já está aprovado/travado (exceto o próprio controller).
   // Só é exigido quando a missão está Concluída ou Cancelada — em outros status
   // (Pendente, Em Andamento, etc.) o operador pode lançar pedágio à vontade
   // sem o bloqueio do diálogo.
   useEffect(() => {
-    if (!isOpen || !mission || isController) return;
-    if (isEffectivelyLocked) return;
+    if (!isOpen || !mission) return;
+    if (isEffectivelyLocked && !isProviderOnlyUser && !isControllerRole) return;
     if (tollConfirmed || tollConfirmAutoOpened || showTollConfirmDialog) return;
     if (isCalculatingToll) return;
     const status = (mission.status || '').trim();
@@ -763,11 +766,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setTollConfirmAutoOpened(true);
     }, 600);
     return () => clearTimeout(t);
-  }, [isOpen, mission?.id, mission?.status, tollConfirmed, tollConfirmAutoOpened, showTollConfirmDialog, isCalculatingToll, isController, isEffectivelyLocked, mission?.billing_approved, mission?.toll_value]);
+  }, [isOpen, mission?.id, mission?.status, tollConfirmed, tollConfirmAutoOpened, showTollConfirmDialog, isCalculatingToll, isProviderOnlyUser, isControllerRole, isEffectivelyLocked, mission?.billing_approved, mission?.toll_value]);
 
   const applyTollConfirmation = async (result: { hasToll: boolean; value: number }) => {
-    if (isProviderOnlyUser) {
-        showNotification('Sem Permissão', 'Perfil controller/fornecedor não pode alterar o pedágio do cliente.', 'error');
+    if (isPaidInvoiceEffectivelyLocked) {
+        showNotification('Bloqueado', paidInvoiceLock.motivo || 'OS vinculada a fatura PAGA.', 'error');
         return;
     }
     const v = result.hasToll ? result.value : 0;
@@ -796,6 +799,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             console.error('[TollConfirm] falha ao salvar pedágio na OS', error);
             throw new Error(`Não foi possível salvar o pedágio na OS: ${error.message}`);
         }
+        setMission((prev) => prev ? { ...prev, toll_value: r2(pair.toll_value), toll_value_provider: r2(pair.toll_value_provider) } : prev);
         try { window.dispatchEvent(new Event('refreshMissions')); } catch {}
     }
 
@@ -2746,7 +2750,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const isSameOs = mission.is_same_os === true;
       const revTotal = isController ? originalRevenue : parseNumber(revenueInput);
       const costTotal = isSameOs ? 0 : parseNumber(costInput);
-      const toll = isController ? (mission.toll_value || 0) : parseNumber(tollInput);
+      const toll = parseNumber(tollInput);
       const tollProv = providerTollToPersist(parseNumber(tollProviderInput), isSameOs);
       const displacement = isController ? ((mission as any).displacement_value || 0) : parseNumber(displacementInput);
       const dispProv = isSameOs ? 0 : parseNumber(displacementProviderInput);
@@ -3025,12 +3029,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
 
-          // Controller/Plínio: payload somente fornecedor (helper centralizado).
-          // Campos do cliente, aprovação e snapshot nunca entram no UPDATE.
+          // Controller/Plínio: payload do fornecedor + pedágio do cliente (auditoria).
+          // Receita, deslocamento cliente, aprovação e snapshot não entram no UPDATE.
           const fullPayload = isProviderOnlyUser
               ? {
                   ...buildProviderOnlyMissionPayload({
                       costValue: isSameOs ? 0 : r2(costServiceOnly),
+                      tollValue: r2(toll),
                       tollValueProvider: isSameOs ? 0 : r2(tollProv),
                       displacementValueProvider: isSameOs ? 0 : r2(dispProv),
                       costEditReason: reasonFields.cost_edit_reason || null,
@@ -3100,6 +3105,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               if (result.error && isProviderOnlyUser && reasonFields.cost_edit_reason) {
                   result = await supabase.from('missions').update({
                       cost_value: isSameOs ? 0 : r2(costServiceOnly),
+                      toll_value: r2(toll),
                       toll_value_provider: isSameOs ? 0 : r2(tollProv),
                       displacement_value_provider: isSameOs ? 0 : r2(dispProv),
                       cost_edit_reason: reasonFields.cost_edit_reason,
@@ -5822,14 +5828,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">Pedágio Cliente</label>
-                                <div className={`relative bg-green-50 border border-green-200 rounded-xl p-3 flex items-center ${isController ? 'opacity-70' : ''}`}>
+                                <div className={`relative bg-green-50 border border-green-200 rounded-xl p-3 flex items-center ${clientTollInputLocked ? 'opacity-70' : ''}`}>
                                     <span className="text-sm font-bold text-green-500 mr-2">R$</span>
                                     <input 
                                         type="text" 
-                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900 ${clientFinanceInputLocked ? 'pointer-events-none' : ''}`}
+                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900 ${clientTollInputLocked ? 'pointer-events-none' : ''}`}
                                         value={tollInput} 
-                                        onChange={e => { if (!clientFinanceInputLocked) handleTollChange(e.target.value); }} 
-                                        readOnly={clientFinanceInputLocked}
+                                        onChange={e => { if (!clientTollInputLocked) handleTollChange(e.target.value); }} 
+                                        readOnly={clientTollInputLocked}
                                         data-testid="input-toll-client"
                                     />
                                     <Building2 size={16} className="text-green-300 ml-2" />

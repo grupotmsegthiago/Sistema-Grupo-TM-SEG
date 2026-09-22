@@ -1008,7 +1008,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     // Listas de Dados
     const [providersList, setProvidersList] = useState<ProviderData[]>([]);
-    const [vehiclesList, setVehiclesList] = useState<Vehicle[]>([]); 
+    const [vehiclesList, setVehiclesList] = useState<Vehicle[]>([]);
+    const [vehiclesListTruncated, setVehiclesListTruncated] = useState(false);
     const [agentsList, setAgentsList] = useState<Agent[]>([]);
     const [allAgentsList, setAllAgentsList] = useState<Agent[]>([]);
     const [clientTables, setClientTables] = useState<ClientPriceTable[]>([]);
@@ -1639,9 +1640,19 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     };
 
     const refreshAuxData = async (clientName: string, providerName: string, vId?: string, cId?: number) => {
-        const [pRes, vRes, activeAgents, allAgents, ctRes, cvRows, dRes] = await Promise.all([
+        const [pRes, vehiclesPage, activeAgents, allAgents, ctRes, cvRows, dRes] = await Promise.all([
             supabase.from('providers').select('*').eq('status', 'Ativo').order('name'),
-            supabase.from('vehicles').select('*').eq('status', 'Ativo'),
+            // 1019+ viaturas ativas: consulta única corta em 1000 (PostgREST) e
+            // placas novas (ex.: TMG0B41 da Torres) somem do dropdown da OS.
+            fetchAllPages<Vehicle>(async (from, size) => {
+                const { data, error } = await supabase
+                    .from('vehicles')
+                    .select('*')
+                    .eq('status', 'Ativo')
+                    .order('id', { ascending: true })
+                    .range(from, from + size - 1);
+                return { data, error };
+            }, 1000, 50_000, { getRowKey: (row) => row.id }),
             fetchAllAgents('Ativo'),
             fetchAllAgents(),
             supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(clientName)),
@@ -1660,7 +1671,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         ]);
         
         if (pRes.data) setProvidersList(pRes.data);
-        if (vRes.data) setVehiclesList(vRes.data);
+        setVehiclesList(vehiclesPage.rows);
+        setVehiclesListTruncated(vehiclesPage.truncated);
         setAgentsList(activeAgents);
         setAllAgentsList(allAgents);
         if (ctRes.data) setClientTables(ctRes.data);
@@ -1676,10 +1688,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }
 
         const currentVId = vId || editData.vehicleId;
-        const currentV = vRes.data?.find(v => v.id.toString() === currentVId);
+        const currentV = vehiclesPage.rows.find(v => v.id.toString() === currentVId);
         if (currentV) setSearchVehicle(currentV.plate);
         else setSearchVehicle('');
-        return { vehicles: vRes.data || [], allAgents: allAgents || [] };
+        return { vehicles: vehiclesPage.rows, allAgents: allAgents || [] };
     };
 
     // Recupera automaticamente o que o fornecedor já salvou via link público DHL
@@ -3783,11 +3795,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                             title={noMatchTyped ? `Cadastrar nova viatura "${typed.toUpperCase()}"` : 'Cadastrar nova viatura'}
                                             data-testid="btn-add-vehicle"
                                         >
-                                            <Plus size={18}/>{noMatchTyped && <span className="text-[10px] uppercase tracking-wider">Cadastrar</span>}
+                                            <Plus size={18}/>                                            {noMatchTyped && <span className="text-[10px] uppercase tracking-wider">Cadastrar</span>}
                                         </button>
                                     );
                                 })()}
                             </div>
+                            {vehiclesListTruncated && (
+                                <div className="mt-1 flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-amber-800">
+                                    <AlertTriangle size={10} /> CONSULTA INCOMPLETA — lista de viaturas pode estar incompleta
+                                </div>
+                            )}
                         </div>
 
                         <div className="relative">

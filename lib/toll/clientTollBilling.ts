@@ -1,14 +1,18 @@
 /**
  * Pedágio cobrado do cliente vs pago ao fornecedor.
- * Regra interna (demais clientes): se base > R$ 10, cliente = base × 1,2; fornecedor = base (valor real).
+ * Demais clientes (base > R$ 10):
+ *   até R$ 100,00 → +20%
+ *   de R$ 100,01 a R$ 150,00 → +10%
+ *   acima de R$ 150,00 → +5%
  * Exceção DHL: o valor que a operação informar é o valor faturado ao cliente (sem acréscimo).
  * Não exibir o percentual na UI — só os valores detalhados (cliente / fornecedor).
  */
 
-const TOLL_MARKUP_THRESHOLD_BRL = 10;
-const TOLL_MARKUP_FACTOR = 1.2;
+const TOLL_NO_MARKUP_MAX_BRL = 10;
+const TOLL_MARKUP_20_MAX_BRL = 100;
+const TOLL_MARKUP_10_MAX_BRL = 150;
 
-/** Cliente DHL não recebe o acréscimo de 20% no pedágio. Demais clientes mantêm a regra. */
+/** Cliente DHL não recebe acréscimo no pedágio. Demais clientes seguem as faixas. */
 export function isDhlClientTollExempt(clientName?: string | null): boolean {
   if (!clientName) return false;
   const n = String(clientName)
@@ -26,16 +30,27 @@ export function normalizeTollAmount(value: unknown): number {
 }
 
 /**
+ * Fator de acréscimo do pedágio do cliente sobre o valor real (base).
+ * DHL e valores até R$ 10,00 = 1 (sem acréscimo).
+ */
+export function clientTollMarkupFactor(baseOrEntered: unknown, clientName?: string | null): number {
+  if (isDhlClientTollExempt(clientName)) return 1;
+  const base = normalizeTollAmount(baseOrEntered);
+  if (base <= TOLL_NO_MARKUP_MAX_BRL) return 1;
+  if (base <= TOLL_MARKUP_20_MAX_BRL) return 1.2;
+  if (base <= TOLL_MARKUP_10_MAX_BRL) return 1.1;
+  return 1.05;
+}
+
+/**
  * Aplica a regra de faturamento do cliente sobre o valor real (base).
- * Se base > R$ 10,00, multiplica pelo fator interno — exceto DHL.
+ * DHL: sem acréscimo. Demais: faixas 20% / 10% / 5%.
  */
 export function billableClientToll(baseOrEntered: unknown, clientName?: string | null): number {
   const base = normalizeTollAmount(baseOrEntered);
-  if (isDhlClientTollExempt(clientName)) return base;
-  if (base > TOLL_MARKUP_THRESHOLD_BRL) {
-    return Math.round(base * TOLL_MARKUP_FACTOR * 100) / 100;
-  }
-  return base;
+  const factor = clientTollMarkupFactor(base, clientName);
+  if (factor === 1) return base;
+  return Math.round(base * factor * 100) / 100;
 }
 
 /** Pedágio a pagar ao fornecedor = valor real (sem markup). */
@@ -66,7 +81,7 @@ export function tollPersistencePair(
 
 /**
  * Lê o pedágio do cliente a partir do que está no banco.
- * - DHL: valor da operação (sem 20%). Se houver pedágio do fornecedor > 0, usa esse valor.
+ * - DHL: valor da operação (sem acréscimo). Se houver pedágio do fornecedor > 0, usa esse valor.
  * - Formato novo: toll_value ≠ toll_value_provider → toll_value já tem a regra.
  * - Legado: mesmos valores (ambos base) → aplica a regra na leitura (não DHL).
  * - toll_value_provider null/undefined → trata toll_value como base.

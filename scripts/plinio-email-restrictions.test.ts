@@ -31,7 +31,7 @@ describe('Permissões financeiras do Plínio', () => {
     assert.match(source, /disabled=\{isProviderOnlyUser \|\| isUpdating/);
     assert.match(source, /readOnly=\{clientFinanceInputLocked\}/);
     assert.match(source, /canSaveProviderAdjustments = isProviderOnlyUser/);
-    assert.match(source, /providerFinanceInputLocked = isEffectivelyLocked && !isProviderOnlyUser/);
+    assert.match(source, /providerFinanceInputLocked = \(?isEffectivelyLocked && !isProviderOnlyUser/);
     assert.match(source, /disabled=\{isUpdating \|\| \(!canSaveProviderAdjustments/);
   });
 
@@ -62,9 +62,9 @@ describe('Permissões financeiras do Plínio', () => {
     assert.ok(start >= 0 && end > start);
     assert.match(payloadBlock, /buildProviderOnlyMissionPayload\(/);
     assert.match(payloadBlock, /costValue:/);
+    assert.match(payloadBlock, /tollValue:/);
     assert.match(payloadBlock, /tollValueProvider:/);
     assert.match(payloadBlock, /displacementValueProvider:/);
-    assert.doesNotMatch(payloadBlock, /\n\s+toll_value:/);
     assert.doesNotMatch(payloadBlock, /\n\s+revenue_value:/);
     assert.doesNotMatch(payloadBlock, /\n\s+billing_approved:/);
     assert.match(source, /const providerSelectorDisabled = !fullEditMode && \(mission\.is_same_os/);
