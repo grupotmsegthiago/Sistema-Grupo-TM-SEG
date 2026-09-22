@@ -9,7 +9,7 @@ import { computeRouteDistanceKm, computeRouteProgressKm, normalizeRouteAddress }
 import fs from "fs";
 import path from "path";
 import pg from "pg";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider, sendPaymentAnticipationEmail } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider, sendPaymentAnticipationEmail } from "./emailService";
 import { runEmailHealthCheck } from "./emailHealth";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { registerRhRoutes } from "./rhRoutes";
@@ -6117,6 +6117,14 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         patch.nf_history = [...existing, entry].slice(-50);
 
         await sb.from('financial_invoices').update(patch).eq('id', inv.id);
+        if (status === 'AUTHORIZED' && pdfUrl) {
+          try {
+            const { sendInvoiceBillingEmail } = await import('./invoiceBillingEmail');
+            await sendInvoiceBillingEmail({ invoiceId: inv.id });
+          } catch (emailErr: any) {
+            console.log(`[Fatura Email] webhook ${inv.id}: ${emailErr?.message || emailErr}`);
+          }
+        }
         updated++;
       }
       console.log(`[PlugNotas Webhook] processado — ${updated} fatura(s) atualizada(s).`);
@@ -6231,105 +6239,25 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   app.post("/api/asaas/send-billing-email", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
-      const { paymentId, clientName, clientCnpj, clientEmail, value, dueDate, description, invoiceNumber, issuerCompany } = req.body;
-      if (!paymentId || !clientEmail || !value || !dueDate) {
-        return res.status(400).json({ error: 'paymentId, clientEmail, value e dueDate são obrigatórios' });
+      const paymentId = req.body?.paymentId;
+      if (!paymentId) {
+        return res.status(400).json({ error: 'paymentId é obrigatório' });
       }
-
-      const company = issuerCompany || undefined;
-      let pixData = null, bankSlipData = null, invoiceData: any = null;
-
-      try { pixData = await getPaymentPixQrCode(paymentId, company); } catch (_) {}
-      try { bankSlipData = await getPaymentBankSlip(paymentId, company); } catch (_) {}
-
-      // Provider-aware: primeiro tenta resolver a NF a partir da fatura no banco
-      // (que conhece nf_provider, nf_image_url, nf_number e plugnotas_invoice_id).
-      // Só consulta a API do Asaas se a fatura local indicar provider ASAAS ou
-      // não tiver dados suficientes (compatibilidade com cobranças antigas).
-      let dbInvoiceRow: any = null;
-      try {
-        const { data: rows } = await supabaseAdmin
-          .from('financial_invoices')
-          .select('nf_provider, nf_image_url, nf_number, nf_status, plugnotas_invoice_id, asaas_invoice_id')
-          .eq('asaas_payment_id', paymentId)
-          .order('created_at', { ascending: false })
-          .limit(1);
-        dbInvoiceRow = rows && rows[0] ? rows[0] : null;
-      } catch (_) { /* fallback abaixo */ }
-
-      const dbProvider = (dbInvoiceRow?.nf_provider || '').toUpperCase();
-      if (dbProvider === 'PLUGNOTAS' && dbInvoiceRow?.nf_image_url) {
-        invoiceData = {
-          id: dbInvoiceRow.plugnotas_invoice_id || null,
-          status: dbInvoiceRow.nf_status || 'AUTHORIZED',
-          number: dbInvoiceRow.nf_number || null,
-          pdfUrl: dbInvoiceRow.nf_image_url,
-          provider: 'PLUGNOTAS',
-        };
-      } else {
-        try {
-          const invoicesResp = await getInvoiceByPayment(paymentId, company);
-          if (invoicesResp?.data?.length > 0) {
-            invoiceData = invoicesResp.data[0];
-          }
-        } catch (_) {}
-        // Se a fatura local diz PLUGNOTAS mas ainda não tem PDF, expõe explicitamente
-        // para o operador em vez de buscar (e nunca encontrar) no Asaas.
-        if (!invoiceData && dbProvider === 'PLUGNOTAS') {
-          invoiceData = {
-            id: dbInvoiceRow.plugnotas_invoice_id || null,
-            status: dbInvoiceRow.nf_status || 'PROCESSING',
-            number: dbInvoiceRow.nf_number || null,
-            pdfUrl: dbInvoiceRow.nf_image_url || null,
-            provider: 'PLUGNOTAS',
-          };
-        }
-      }
-
-      let payment: any = null;
-      try { payment = await getPayment(paymentId, company); } catch (_) {}
-
-      const hasBoleto = !!(payment?.bankSlipUrl || bankSlipData);
-      const hasNf = !!(invoiceData?.pdfUrl);
-      const forceParam = req.body.force === true;
-
-      if (!hasBoleto && !forceParam) {
-        return res.status(400).json({ error: 'Boleto ainda não disponível. Sincronize o status primeiro.', hasBoleto: false, hasNf });
-      }
-      if (!hasNf && !forceParam) {
-        return res.status(400).json({ error: 'Nota Fiscal ainda não disponível. Sincronize o status primeiro.', hasBoleto, hasNf: false });
-      }
-
-      const result = await sendBillingEmail({
-        clientName: clientName || 'Cliente',
-        clientCnpj: clientCnpj || '',
-        clientEmail,
-        invoiceNumber: invoiceNumber || undefined,
-        issuerCompany: issuerCompany || 'Grupo TM SEG',
-        value: parseFloat(value),
-        dueDate,
-        description: description || undefined,
-        paymentId,
-        boletoUrl: payment?.bankSlipUrl || undefined,
-        pixPayload: pixData?.payload || undefined,
-        pixQrCodeBase64: pixData?.encodedImage || undefined,
-        boletoBarcode: bankSlipData?.barCode || undefined,
-        boletoDigitableLine: bankSlipData?.identificationField || undefined,
-        nfPdfUrl: invoiceData?.pdfUrl || undefined,
-        nfNumber: invoiceData?.number || undefined,
-      });
-
-      const responseBody = {
+      // Reenvio manual: sempre os 2 primeiros e-mails do responsável financeiro.
+      const { sendInvoiceBillingEmail } = await import('./invoiceBillingEmail');
+      const result = await sendInvoiceBillingEmail({ paymentId, resend: true });
+      const status = result.success ? 200 : (result.skipped ? 400 : 502);
+      res.status(status).json({
         success: result.success,
+        skipped: result.skipped || false,
         messageId: result.messageId || null,
         recipients: result.recipients || [],
         rejected: result.rejected || [],
         error: result.error || undefined,
-        nfIncluded: hasNf,
-        boletoIncluded: hasBoleto,
-        pixIncluded: !!pixData,
-      };
-      res.status(result.success ? 200 : 502).json(responseBody);
+        nfIncluded: !!result.nfIncluded,
+        boletoIncluded: !!result.boletoIncluded,
+        pixIncluded: !!result.pixIncluded,
+      });
     } catch (err: any) {
       console.error('[Email] Erro ao enviar email de cobrança:', err.message);
       res.status(500).json({ error: err.message });

@@ -25,7 +25,7 @@ import {
   formatManualRetryFeedback,
   missingAsaasPaymentFeedback,
 } from '../lib/nfRetryInvoiceFeedback';
-import { formatEmailRecipients, parseEmailRecipients } from '../lib/email/recipientList';
+import { pickMedicaoRecipients } from '../lib/billing/invoiceBillingEmailPolicy';
 import FaturamentoAlertBanner from './FaturamentoAlertBanner';
 import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
@@ -539,40 +539,25 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
   };
 
   const handleSendEmail = async (inv: Invoice) => {
-    let registeredRecipients = '';
+    let recipients: string[] = [];
     try {
-      let { data: clientRows } = await supabase
+      const clientName = String(inv.client || '').trim();
+      const fragment = clientName.replace(/[%_,.()'"\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 24);
+      const { data: clientRows } = await supabase
         .from('clients')
-        .select('medicao_email, email, operational_email')
-        .eq('name', inv.client)
-        .limit(1);
-      if (!clientRows?.length) {
-        ({ data: clientRows } = await supabase
-          .from('clients')
-          .select('medicao_email, email, operational_email')
-          .eq('trading_name', inv.client)
-          .limit(1));
-      }
-      const client = clientRows?.[0] as any;
-      registeredRecipients = formatEmailRecipients(
-        client?.medicao_email || client?.email || client?.operational_email || '',
-      );
+        .select('name, trading_name, medicao_email, status')
+        .or(`name.ilike."%${fragment}%",trading_name.ilike."%${fragment}%"`)
+        .limit(30);
+      recipients = pickMedicaoRecipients(clientName, clientRows || []);
     } catch (error) {
       console.warn('[Email] Não foi possível carregar destinatários cadastrados:', error);
     }
 
-    const typedRecipients = prompt(
-      'E-mails do cliente para envio da medição, boleto e faturamento:',
-      registeredRecipients,
-    );
-    if (typedRecipients === null) return;
-    const recipients = parseEmailRecipients(typedRecipients);
     if (recipients.length === 0) {
-      alert('Informe ao menos um e-mail válido.');
+      alert('Cadastre o E-mail responsável financeiro (medição / cobrança) no cliente. O envio usa no máximo os 2 primeiros.');
       return;
     }
-    const clientEmail = recipients.join(', ');
-    if (!confirm(`Enviar email de cobrança para:\n${clientEmail}\n\nFatura: NF ${inv.number}\nValor: ${fmtBRL(inv.amount)}\nCliente: ${inv.client}`)) return;
+    if (!confirm(`Enviar cobrança para:\n${recipients.join('\n')}\n\nCópia: financeiro@grupotmseg.com.br e thiago@grupotmseg.com.br\n\nFatura: NF ${inv.number}\nValor: ${fmtBRL(inv.amount)}\nCliente: ${inv.client}`)) return;
     setSendingEmailId(inv.id);
     try {
       const res = await authFetch('/api/asaas/send-billing-email', {
@@ -580,13 +565,6 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentId: inv.asaas_payment_id,
-          clientName: inv.client,
-          clientEmail,
-          value: inv.amount,
-          dueDate: inv.boleto_due_date || inv.date,
-          invoiceNumber: inv.number,
-          issuerCompany: inv.issuer_company || '',
-          description: `Cobrança ref. NF ${inv.number}`,
         }),
       });
       const result = await res.json();

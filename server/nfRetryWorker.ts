@@ -688,6 +688,14 @@ export async function runRetryCycle(opts?: { limit?: number }): Promise<{ proces
   let ok = 0, paused = 0, errors = 0, stuck = 0;
   for (const inv of batch) {
     const res = await retryOne(inv);
+    if (res.ok && 'action' in res && res.action === 'authorized') {
+      try {
+        const { sendInvoiceBillingEmail } = await import('./invoiceBillingEmail');
+        await sendInvoiceBillingEmail({ invoiceId: inv.id });
+      } catch (emailErr: any) {
+        console.log(`[Fatura Email] após NF ${inv.id}: ${emailErr?.message || emailErr}`);
+      }
+    }
     if (res.ok) ok++;
     else if (res.action === 'stuck-alert') stuck++;
     else if (res.paused) paused++;

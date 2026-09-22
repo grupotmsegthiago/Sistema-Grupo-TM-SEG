@@ -4,6 +4,10 @@ import { getScheduledTicks } from "./scheduledRegistry";
 import { runRetryCycle } from "./nfRetryWorker";
 import { runFinancialReportTick } from "./financialReportWorker";
 import { runClientEmailQueueCycle } from "./clientEmailQueueWorker";
+import {
+  INVOICE_BILLING_EMAIL_RESEND_FROM,
+  INVOICE_BILLING_EMAIL_RESEND_TO,
+} from "../lib/billing/invoiceBillingEmailPolicy";
 import { runDhlWorkerTick } from "./dhlSupplierIntake";
 import { runZapiWatchdogTick } from "./zapiWatchdog";
 import { runBillingSyncTick } from "./billingSyncWorker";
@@ -44,7 +48,17 @@ export function registerCronRoutes(app: Express): void {
   });
 
   cronRoute(app, "/api/cron/nf-retry", () => runRetryCycle());
-  cronRoute(app, "/api/cron/email-queue", () => runClientEmailQueueCycle());
+  cronRoute(app, "/api/cron/email-queue", async () => {
+    await runClientEmailQueueCycle();
+    const { runPendingInvoiceBillingEmails } = await import("./invoiceBillingEmail");
+    const resendSetembro = await runPendingInvoiceBillingEmails({
+      fromDate: INVOICE_BILLING_EMAIL_RESEND_FROM,
+      toDate: INVOICE_BILLING_EMAIL_RESEND_TO,
+      limit: 8,
+    });
+    const billingEmails = await runPendingInvoiceBillingEmails({ limit: 8 });
+    return { resendSetembro, billingEmails };
+  });
   cronRoute(app, "/api/cron/dhl", () => runDhlWorkerTick());
   cronRoute(app, "/api/cron/zapi", () => runZapiWatchdogTick());
   cronRoute(app, "/api/cron/billing-sync", () => runBillingSyncTick());

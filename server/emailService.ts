@@ -1049,15 +1049,15 @@ export async function sendBillingEmail(data: BillingEmailData): Promise<{
   `);
 
   try {
-    const recipients = parseEmailRecipients(data.clientEmail);
+    const recipients = parseEmailRecipients(data.clientEmail).slice(0, 2);
     if (recipients.length === 0) {
       return { success: false, error: 'Nenhum destinatário válido informado.' };
     }
     const mailOptions: any = {
       from: SMTP_FROM,
       to: recipients,
-      cc: ['financeiro@grupotmseg.com.br'],
-      bcc: ['thiago@grupotmseg.com.br'],
+      cc: ['financeiro@grupotmseg.com.br', 'thiago@grupotmseg.com.br'],
+      replyTo: 'financeiro@grupotmseg.com.br',
       subject: `Cobrança ${data.invoiceNumber ? `NF ${data.invoiceNumber} — ` : ''}${formatCurrency(data.value)} — Venc. ${formatDueDate(data.dueDate)} — ${data.issuerCompany}`,
       html,
     };

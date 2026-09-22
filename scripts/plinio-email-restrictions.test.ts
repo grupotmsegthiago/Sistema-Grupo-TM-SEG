@@ -95,11 +95,15 @@ describe('Destinatários de medição, boleto e faturamento', () => {
     );
   });
 
-  it('T09 cobrança usa e-mails de medição cadastrados como sugestão', () => {
+  it('T09 cobrança usa no máximo os 2 primeiros e-mails do responsável financeiro', () => {
     const source = fs.readFileSync('components/FinancialInvoiceControl.tsx', 'utf8');
-    assert.match(source, /select\('medicao_email, email, operational_email'\)/);
-    assert.match(source, /client\?\.medicao_email \|\| client\?\.email/);
-    assert.match(source, /parseEmailRecipients\(typedRecipients\)/);
+    assert.match(source, /select\('name, trading_name, medicao_email, status'\)/);
+    assert.match(source, /pickMedicaoRecipients\(clientName, clientRows \|\| \[\]\)/);
+    assert.doesNotMatch(source, /parseEmailRecipients\(typedRecipients\)/);
+    const mail = fs.readFileSync('server/emailService.ts', 'utf8');
+    const billing = mail.slice(mail.indexOf('export async function sendBillingEmail'), mail.indexOf('export async function sendLegalReportEmail'));
+    assert.match(billing, /slice\(0, 2\)/);
+    assert.match(billing, /cc: \['financeiro@grupotmseg.com.br', 'thiago@grupotmseg.com.br'\]/);
   });
 
   it('T10 APIs verificam os destinatários aceitos e rejeitados pelo SMTP', () => {
