@@ -51,6 +51,7 @@ import {
   type StatusTravaOS,
 } from '../lib/billing/verificarTravaOS';
 import { dispararSyncFaturaPorOS } from '../lib/billing/sincronizarFaturaAberta';
+import { shouldCaptureApprovalScreenshot } from '../lib/billing/missionFinancialSavePerf';
 import PaidInvoiceLockPanel from './PaidInvoiceLockPanel';
 import html2canvas from 'html2canvas';
 import FilterableSelect, { type FilterableSelectOption } from './FilterableSelect';
@@ -828,16 +829,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
 
-  const captureModalScreenshot = async (stageName: string, userName: string): Promise<string | null> => {
-    if (!mission) return null;
+  /** Renderiza o print no DOM (html2canvas). Não grava no banco. */
+  const renderModalScreenshotBase64 = async (): Promise<{ base64: string | null; sizeKB: number; error?: string }> => {
     const contentEl = modalContentRef.current;
     if (!contentEl) {
       console.warn('[Screenshot] modalContentRef não encontrado');
-      return null;
+      return { base64: null, sizeKB: 0, error: 'modalContentRef ausente' };
     }
+    setIsCapturing(true);
     try {
-      setIsCapturing(true);
-      await new Promise(r => setTimeout(r, 300));
+      // Pausa curta para o React pintar o estado "capturando" sem inflar o spinner.
+      await new Promise(r => setTimeout(r, 80));
 
       const originalScrollTop = contentEl.scrollTop;
       const originalOverflow = contentEl.style.overflow;
@@ -849,16 +851,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       contentEl.style.maxHeight = 'none';
       contentEl.style.height = 'auto';
 
-      await new Promise(r => setTimeout(r, 100));
-      
+      await new Promise(r => setTimeout(r, 50));
+
+      // Escala menor: modal financeiro é alto; 0.5 reduz CPU/RAM sem perder legibilidade do print.
       const canvas = await html2canvas(contentEl, {
-        scale: 0.75,
+        scale: 0.5,
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#f9fafb',
         logging: false,
         windowWidth: contentEl.scrollWidth,
-        windowHeight: contentEl.scrollHeight,
+        windowHeight: Math.min(contentEl.scrollHeight, 3500),
         ignoreElements: (el) => el.getAttribute('data-html2canvas-ignore') === 'true'
       });
 
@@ -868,7 +871,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       contentEl.scrollTop = originalScrollTop;
 
       const maxWidth = 600;
-      const maxHeight = 4000;
+      const maxHeight = 2800;
       let finalW = canvas.width;
       let finalH = canvas.height;
       if (finalW > maxWidth) {
@@ -879,7 +882,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (finalH > maxHeight) {
         finalH = maxHeight;
       }
-      
+
       const resizedCanvas = document.createElement('canvas');
       resizedCanvas.width = finalW;
       resizedCanvas.height = finalH;
@@ -887,79 +890,78 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (ctx) {
         ctx.drawImage(canvas, 0, 0, finalW, finalH);
       }
-      
-      let base64 = resizedCanvas.toDataURL('image/jpeg', 0.45);
 
-      const sizeKB = Math.round(base64.length * 0.75 / 1024);
-      if (sizeKB > 800) {
-        base64 = resizedCanvas.toDataURL('image/jpeg', 0.25);
+      let base64 = resizedCanvas.toDataURL('image/jpeg', 0.4);
+      let sizeKB = Math.round(base64.length * 0.75 / 1024);
+      if (sizeKB > 600) {
+        base64 = resizedCanvas.toDataURL('image/jpeg', 0.22);
+        sizeKB = Math.round(base64.length * 0.75 / 1024);
       }
-      
-      const finalSizeKB = Math.round(base64.length * 0.75 / 1024);
-      if (finalSizeKB > 2000) {
-        console.warn(`[Screenshot] Imagem muito grande (${finalSizeKB}KB), salvando metadados sem print`);
-        await supabase.from('system_logs').insert([{
-          user_name: userName,
-          action_type: 'APPROVAL_SCREENSHOT',
-          entity: 'BillingApproval',
-          entity_id: mission.id,
-          details: JSON.stringify({
-            stage: stageName,
-            user: userName,
-            date: new Date().toISOString(),
-            missionId: mission.id,
-            screenshot: null,
-            error: `Imagem excedeu limite de tamanho (${finalSizeKB}KB)`
-          })
-        }]);
-        return null;
+      if (sizeKB > 2000) {
+        console.warn(`[Screenshot] Imagem muito grande (${sizeKB}KB), metadados sem print`);
+        return { base64: null, sizeKB, error: `Imagem excedeu limite (${sizeKB}KB)` };
       }
+      return { base64, sizeKB };
+    } finally {
+      setIsCapturing(false);
+    }
+  };
 
-      const { error: insertError } = await supabase.from('system_logs').insert([{
-        user_name: userName,
-        action_type: 'APPROVAL_SCREENSHOT',
-        entity: 'BillingApproval',
-        entity_id: mission.id,
-        details: JSON.stringify({
-          stage: stageName,
-          user: userName,
-          date: new Date().toISOString(),
-          missionId: mission.id,
-          screenshot: base64,
-          sizeKB: finalSizeKB
-        })
-      }]);
-      
-      if (insertError) {
-        console.error('[Screenshot] Erro ao salvar no banco:', insertError);
-        showNotification('Atenção', `Print de aprovação não foi salvo: ${insertError.message}`, 'error');
-        return null;
-      }
-      
-      console.log(`[Screenshot] Captura salva com sucesso (${finalSizeKB}KB) - ${stageName}`);
-      return base64;
+  /** Persistência do print em system_logs — fail-soft (pode rodar em background). */
+  const persistApprovalScreenshotLog = async (
+    stageName: string,
+    userName: string,
+    base64: string | null,
+    sizeKB: number,
+    extra?: { error?: string },
+  ): Promise<void> => {
+    if (!mission) return;
+    const { error: insertError } = await supabase.from('system_logs').insert([{
+      user_name: userName,
+      action_type: 'APPROVAL_SCREENSHOT',
+      entity: 'BillingApproval',
+      entity_id: mission.id,
+      details: JSON.stringify({
+        stage: stageName,
+        user: userName,
+        date: new Date().toISOString(),
+        missionId: mission.id,
+        screenshot: base64,
+        sizeKB,
+        ...(extra?.error ? { error: extra.error } : {}),
+      })
+    }]);
+    if (insertError) {
+      console.error('[Screenshot] Erro ao salvar no banco:', insertError);
+      showNotification('Atenção', `Print de aprovação não foi salvo: ${insertError.message}`, 'error');
+      return;
+    }
+    if (base64) {
+      console.log(`[Screenshot] Captura salva com sucesso (${sizeKB}KB) - ${stageName}`);
+    }
+  };
+
+  /**
+   * Captura o print no DOM e dispara a gravação em background.
+   * Usado somente após o UPDATE da OS (aprovação), com o modal ainda aberto.
+   */
+  const captureModalScreenshotAfterSave = async (stageName: string, userName: string): Promise<void> => {
+    if (!mission) return;
+    try {
+      const rendered = await renderModalScreenshotBase64();
+      void persistApprovalScreenshotLog(
+        stageName,
+        userName,
+        rendered.base64,
+        rendered.sizeKB,
+        rendered.error ? { error: rendered.error } : undefined,
+      ).catch((err) => console.warn('[Screenshot] persist fail-soft:', err));
     } catch (e: any) {
       console.error('[Screenshot] Erro ao capturar:', e);
       showNotification('Atenção', 'Não foi possível capturar o print de aprovação. Os dados financeiros foram salvos normalmente.', 'error');
-      try {
-        await supabase.from('system_logs').insert([{
-          user_name: userName,
-          action_type: 'APPROVAL_SCREENSHOT',
-          entity: 'BillingApproval',
-          entity_id: mission.id,
-          details: JSON.stringify({
-            stage: stageName,
-            user: userName,
-            date: new Date().toISOString(),
-            missionId: mission.id,
-            screenshot: null,
-            error: e?.message || 'Falha na captura'
-          })
-        }]);
-      } catch {}
-      return null;
-    } finally {
-      setIsCapturing(false);
+      void persistApprovalScreenshotLog(stageName, userName, null, 0, {
+        error: e?.message || 'Falha na captura',
+      }).catch(() => {});
     }
   };
   
@@ -2835,8 +2837,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const userName = userData.name || 'Usuário';
           const userRole = userData.role || '';
           
+          // Print de auditoria NÃO bloqueia mais o caminho crítico.
+          // Antes: html2canvas + INSERT de JPEG base64 rodavam ANTES do UPDATE
+          // em missions — Salvar/Aprovar pareciam "travados" por vários segundos.
+          // Agora: grava a OS primeiro; captura o print só na aprovação, depois.
           const { stage: captureStage } = getApprovalStage(userName, userRole);
-          await captureModalScreenshot(approve ? captureStage : 'save', userName);
 
           const revServiceOnly = revTotal - toll - displacement; 
           const costServiceOnly = costTotal - tollProv - dispProv;
@@ -3144,63 +3149,57 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
 
-          // Task #66 — VALUE_EDIT_REASON sempre é gravado quando há divergência
-          // (do motor automático ou da tabela manual), garantindo que a aba
-          // "Edições Manuais" sempre tenha o motivo registrado.
+          // Task #66 — VALUE_EDIT_REASON (fail-soft, não bloqueia o spinner)
           if (Object.keys(reasonFields).length > 0) {
-              try {
-                  const logDetails = isProviderOnlyUser
-                      ? {
-                          cost_edit_reason: reasonFields.cost_edit_reason || null,
-                          autoEngineActive,
-                          autoEngineSuggestedCost,
-                          savedCostServiceOnly: r2(costServiceOnly),
-                          autoEngineDivergent,
-                      }
-                      : {
-                          ...reasonFields,
-                          autoEngineActive,
-                          autoEngineSuggestedCost,
-                          savedCostServiceOnly: r2(costServiceOnly),
-                          autoEngineDivergent,
-                      };
-                  await supabase.from('system_logs').insert([{
-                      user_name: userName,
-                      action_type: 'VALUE_EDIT_REASON',
-                      entity: 'Mission',
-                      entity_id: mission.id,
-                      details: JSON.stringify(logDetails)
-                  }]);
-              } catch (logErr) {
-                  console.warn('[Task #66] Falha ao gravar VALUE_EDIT_REASON', logErr);
-              }
+              const logDetails = isProviderOnlyUser
+                  ? {
+                      cost_edit_reason: reasonFields.cost_edit_reason || null,
+                      autoEngineActive,
+                      autoEngineSuggestedCost,
+                      savedCostServiceOnly: r2(costServiceOnly),
+                      autoEngineDivergent,
+                  }
+                  : {
+                      ...reasonFields,
+                      autoEngineActive,
+                      autoEngineSuggestedCost,
+                      savedCostServiceOnly: r2(costServiceOnly),
+                      autoEngineDivergent,
+                  };
+              void supabase.from('system_logs').insert([{
+                  user_name: userName,
+                  action_type: 'VALUE_EDIT_REASON',
+                  entity: 'Mission',
+                  entity_id: mission.id,
+                  details: JSON.stringify(logDetails)
+              }]).then(({ error: logErr }) => {
+                  if (logErr) console.warn('[Task #66] Falha ao gravar VALUE_EDIT_REASON', logErr);
+              });
           }
 
-          // Task #55 — Audit log do motor auto quando ativo
+          // Task #55 — Audit log do motor auto (fail-soft)
           if (financialData?.autoEngine?.active && !isSameOs) {
-              try {
-                  await supabase.from('system_logs').insert([{
-                      user_name: userName,
-                      action_type: 'FINANCIAL_RECALC',
-                      entity: 'Mission',
-                      entity_id: mission.id,
-                      details: JSON.stringify({
-                          source: 'provider_auto_engine',
-                          bandKm: financialData.autoEngine.bandKm,
-                          bandHours: financialData.autoEngine.bandHours,
-                          realKm: financialData.autoEngine.realKm,
-                          goldenHours: financialData.autoEngine.durationHours,
-                          effectiveStart: financialData.autoEngine.effectiveStartIso,
-                          end: financialData.autoEngine.endIso,
-                          suggestedTotal: financialData.autoEngine.totalCost,
-                          savedCost: r2(costServiceOnly),
-                          divergent: Math.abs(financialData.autoEngine.totalCost - costServiceOnly) > 0.01,
-                          timestamp: new Date().toISOString(),
-                      }),
-                  }]);
-              } catch (logErr) {
-                  console.warn('[Task #55] Falha ao gravar audit FINANCIAL_RECALC', logErr);
-              }
+              void supabase.from('system_logs').insert([{
+                  user_name: userName,
+                  action_type: 'FINANCIAL_RECALC',
+                  entity: 'Mission',
+                  entity_id: mission.id,
+                  details: JSON.stringify({
+                      source: 'provider_auto_engine',
+                      bandKm: financialData.autoEngine.bandKm,
+                      bandHours: financialData.autoEngine.bandHours,
+                      realKm: financialData.autoEngine.realKm,
+                      goldenHours: financialData.autoEngine.durationHours,
+                      effectiveStart: financialData.autoEngine.effectiveStartIso,
+                      end: financialData.autoEngine.endIso,
+                      suggestedTotal: financialData.autoEngine.totalCost,
+                      savedCost: r2(costServiceOnly),
+                      divergent: Math.abs(financialData.autoEngine.totalCost - costServiceOnly) > 0.01,
+                      timestamp: new Date().toISOString(),
+                  }),
+              }]).then(({ error: logErr }) => {
+                  if (logErr) console.warn('[Task #55] Falha ao gravar audit FINANCIAL_RECALC', logErr);
+              });
           }
           
           const savedRevCheck = safeNumber(result.data.revenue_value);
@@ -3298,6 +3297,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
           
+          // Memória de padrão de rota: DELETE ilike em system_logs é lento e
+          // não deve segurar o spinner após a OS já ter sido gravada.
           if (!isProviderOnlyUser && isFullyApproved && manualClientTableId) {
               const missionProvNorm = (mission.provider || '').toUpperCase().trim();
               const routeKeyFull = `${mission.client}|${missionProvNorm}|${mission.origin}|${mission.destination}`.toUpperCase();
@@ -3317,17 +3318,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   routeKeyFull,
                   routeKey: routeKeyBase
               });
-              
-              await supabase.from('system_logs').delete().eq('entity', 'BillingPattern').ilike('details', `%${routeKeyFull}%`);
-              await supabase.from('system_logs').delete().eq('entity', 'BillingPattern').ilike('details', `%${routeKeyBase}%`);
-              
-              await supabase.from('system_logs').insert([{
-                  user_name: 'IA_MEMORY',
-                  action_type: 'UPDATE',
-                  entity: 'BillingPattern',
-                  entity_id: mission.id,
-                  details: details
-              }]);
+              void (async () => {
+                  try {
+                      await supabase.from('system_logs').delete().eq('entity', 'BillingPattern').ilike('details', `%${routeKeyFull}%`);
+                      await supabase.from('system_logs').delete().eq('entity', 'BillingPattern').ilike('details', `%${routeKeyBase}%`);
+                      await supabase.from('system_logs').insert([{
+                          user_name: 'IA_MEMORY',
+                          action_type: 'UPDATE',
+                          entity: 'BillingPattern',
+                          entity_id: mission.id,
+                          details: details
+                      }]);
+                  } catch (patternErr) {
+                      console.warn('[BillingPattern] fail-soft após salvar OS:', patternErr);
+                  }
+              })();
           }
 
           const sysCalcCost = calcCostTotal;
@@ -3432,6 +3437,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (isEditingProvOpsData) setIsEditingProvOpsData(false);
           if (isEditingRoute) setIsEditingRoute(false);
 
+          // Print só na aprovação, DEPOIS do UPDATE (OS já persistida).
+          // Upload do JPEG em system_logs roda em background dentro do helper.
+          if (shouldCaptureApprovalScreenshot(approve)) {
+              await captureModalScreenshotAfterSave(captureStage, userName);
+          }
+
           if (approve) {
               const snapshotMsg = shouldSnapshot ? ' 🔒 Dados Congelados!' : '';
               if (isFullyApproved) {
@@ -3447,51 +3458,49 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
           const resultado = revServiceOnly - costServiceOnly - toll - displacement;
           if (resultado < 0) {
-              try {
-                  await authFetch(`/api/missions/${mission.id}/loss-alert-email`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                          missionId: mission.id,
-                          client: mission.client,
-                          provider: mission.provider,
-                          origin: mission.origin,
-                          destination: mission.destination,
-                          revenueTotal: r2(revServiceOnly),
-                          costTotal: r2(costServiceOnly),
-                          toll: r2(toll),
-                          tollProvider: r2(tollProv),
-                          resultado: r2(resultado),
-                          userName,
-                      })
-                  });
+              void authFetch(`/api/missions/${mission.id}/loss-alert-email`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      missionId: mission.id,
+                      client: mission.client,
+                      provider: mission.provider,
+                      origin: mission.origin,
+                      destination: mission.destination,
+                      revenueTotal: r2(revServiceOnly),
+                      costTotal: r2(costServiceOnly),
+                      toll: r2(toll),
+                      tollProvider: r2(tollProv),
+                      resultado: r2(resultado),
+                      userName,
+                  })
+              }).then(() => {
                   console.log(`[Loss Alert] Email de prejuízo enviado para OS ${mission.id} — Resultado: R$ ${resultado.toFixed(2)}`);
-              } catch (lossErr) {
+              }).catch((lossErr) => {
                   console.warn('[Loss Alert] Falha ao enviar email:', lossErr);
-              }
+              });
           }
 
           if (openAnalysisRequest && (detectedChanges.length > 0 || analysisReason.trim() || editObservation.trim())) {
-              try {
-                  const reason = (analysisReason.trim() || editObservation.trim() || 'Ajuste após pedido de análise');
-                  await authFetch('/api/os-analysis?op=respond', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                          missionId: mission.id,
-                          requestId: openAnalysisRequest.id,
-                          reason,
-                          revenueAfter: r2(revServiceOnly + toll + displacement),
-                          costAfter: r2(costServiceOnly + tollProv + dispProv),
-                          resultAfter: r2(resultado),
-                          changesSummary: detectedChanges.join('\n'),
-                      }),
-                  });
-                  setOpenAnalysisRequest(null);
-                  setAnalysisReason('');
-              } catch (analysisErr) {
+              const reason = (analysisReason.trim() || editObservation.trim() || 'Ajuste após pedido de análise');
+              const analysisPayload = {
+                  missionId: mission.id,
+                  requestId: openAnalysisRequest.id,
+                  reason,
+                  revenueAfter: r2(revServiceOnly + toll + displacement),
+                  costAfter: r2(costServiceOnly + tollProv + dispProv),
+                  resultAfter: r2(resultado),
+                  changesSummary: detectedChanges.join('\n'),
+              };
+              setOpenAnalysisRequest(null);
+              setAnalysisReason('');
+              void authFetch('/api/os-analysis?op=respond', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(analysisPayload),
+              }).catch((analysisErr) => {
                   console.warn('[OS Analysis] Falha ao registrar resposta:', analysisErr);
-              }
+              });
           }
 
           dispararSyncFaturaPorOS(mission.id, userName);

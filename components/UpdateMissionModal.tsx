@@ -2203,17 +2203,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         // operador pedindo e-mail do cliente DHL.
         if (mission?.client && !/DHL/i.test(mission.client)) {
             const clientName = mission.client;
-            let cliCheck: any = null;
-            const { data: byName } = await supabase.from('clients').select('id, email, operational_email, trading_name, name, status').eq('name', clientName);
-            cliCheck = byName?.find(c => c.status === 'Ativo') || byName?.[0] || null;
-            if (!cliCheck) {
-                const { data: byTrading } = await supabase.from('clients').select('id, email, operational_email, trading_name, name, status').eq('trading_name', clientName);
-                cliCheck = byTrading?.find(c => c.status === 'Ativo') || byTrading?.[0] || null;
-            }
-            if (!cliCheck) {
-                const { data: byIlike } = await supabase.from('clients').select('id, email, operational_email, trading_name, name, status').ilike('trading_name', clientName);
-                cliCheck = byIlike?.find(c => c.status === 'Ativo') || byIlike?.[0] || null;
-            }
+            const [byNameRes, byTradingRes, byIlikeRes] = await Promise.all([
+                supabase.from('clients').select('id, email, operational_email, trading_name, name, status').eq('name', clientName),
+                supabase.from('clients').select('id, email, operational_email, trading_name, name, status').eq('trading_name', clientName),
+                supabase.from('clients').select('id, email, operational_email, trading_name, name, status').ilike('trading_name', clientName),
+            ]);
+            const pickActive = (rows: any[] | null | undefined) =>
+                rows?.find(c => c.status === 'Ativo') || rows?.[0] || null;
+            const cliCheck = pickActive(byNameRes.data) || pickActive(byTradingRes.data) || pickActive(byIlikeRes.data);
             if (cliCheck && !(cliCheck.operational_email?.trim()) && !(cliCheck.email?.trim())) {
                 setEmailMissingAlert({ type: 'client', name: mission.client, entityId: cliCheck.id });
                 setQuickEmailInput('');
@@ -2222,17 +2219,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }
         if (editData.provider) {
             const provName = editData.provider;
-            let provCheck: any = null;
-            const { data: byName } = await supabase.from('providers').select('id, email, os_email, trading_name, name, status').eq('name', provName);
-            provCheck = byName?.find(p => p.status === 'Ativo') || byName?.[0] || null;
-            if (!provCheck) {
-                const { data: byTrading } = await supabase.from('providers').select('id, email, os_email, trading_name, name, status').eq('trading_name', provName);
-                provCheck = byTrading?.find(p => p.status === 'Ativo') || byTrading?.[0] || null;
-            }
-            if (!provCheck) {
-                const { data: byIlike } = await supabase.from('providers').select('id, email, os_email, trading_name, name, status').ilike('trading_name', provName);
-                provCheck = byIlike?.find(p => p.status === 'Ativo') || byIlike?.[0] || null;
-            }
+            const [byNameRes, byTradingRes, byIlikeRes] = await Promise.all([
+                supabase.from('providers').select('id, email, os_email, trading_name, name, status').eq('name', provName),
+                supabase.from('providers').select('id, email, os_email, trading_name, name, status').eq('trading_name', provName),
+                supabase.from('providers').select('id, email, os_email, trading_name, name, status').ilike('trading_name', provName),
+            ]);
+            const pickActive = (rows: any[] | null | undefined) =>
+                rows?.find(p => p.status === 'Ativo') || rows?.[0] || null;
+            const provCheck = pickActive(byNameRes.data) || pickActive(byTradingRes.data) || pickActive(byIlikeRes.data);
             if (provCheck && !(provCheck.os_email?.trim()) && !(provCheck.email?.trim())) {
                 setEmailMissingAlert({ type: 'provider', name: editData.provider, entityId: provCheck.id });
                 setQuickEmailInput('');
@@ -2817,10 +2811,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 if (shouldSendGroup) {
                     const statusLabel = `${finalStatus.toUpperCase()}${finalDescription ? ' — ' + finalDescription.toUpperCase() : ''}`;
                     // Print colado tem prioridade; sem print (só mudança de status) usa foto TM SEG.
-                    const groupPhoto = await resolveGroupWhatsAppPhoto(statusLabel);
-                    if (!groupPhoto) {
-                        showNotification('WhatsApp', 'Não foi possível gerar a foto da atualização — grupo do cliente não recebeu a OS.', 'warning');
-                    } else {
+                    // WhatsApp em background — não prende o spinner do Salvamento (comentário do helper).
+                    void (async () => {
+                        const groupPhoto = await resolveGroupWhatsAppPhoto(statusLabel);
+                        if (!groupPhoto) {
+                            showNotification('WhatsApp', 'Não foi possível gerar a foto da atualização — grupo do cliente não recebeu a OS.', 'warning');
+                            return;
+                        }
                         const r = await sendUpdateToClientGroup(mission.client || '', report, groupPhoto, mission.id, true);
                         if (r.sent) {
                             showNotification('WhatsApp', 'Atualização (formulário + foto) enviada ao grupo do cliente.', 'success');
@@ -2829,7 +2826,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         } else if (r.error) {
                             showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
                         }
-                    }
+                    })();
                 } else if (isDHL && hasPrint && !shouldSendGroup) {
                     showNotification('WhatsApp', 'Atualização registrada no sistema — NÃO enviada ao grupo DHL (cliente só recebe marcos operacionais com print).', 'info');
                 }
@@ -2955,14 +2952,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         occurrence: finalDescription,
                         previousOccurrence: mission.currentLocation || '',
                     }) && completionPhotoForGroup) {
-                        const r = await sendUpdateToClientGroup(mission.client || '', finalizeShareText, completionPhotoForGroup, mission.id, true);
-                        if (r.sent) {
-                            showNotification('WhatsApp', 'Fim de missão (formulário + foto) enviado ao grupo do cliente.', 'success');
-                        } else if (r.skipped) {
-                            showNotification('WhatsApp', `Grupo do cliente não configurado: ${r.error || 'cadastre o WhatsApp do cliente'}.`, 'warning');
-                        } else if (r.error) {
-                            showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
-                        }
+                        // Envio ao grupo em background — OS já está gravada.
+                        void sendUpdateToClientGroup(mission.client || '', finalizeShareText, completionPhotoForGroup, mission.id, true)
+                            .then((r) => {
+                                if (r.sent) {
+                                    showNotification('WhatsApp', 'Fim de missão (formulário + foto) enviado ao grupo do cliente.', 'success');
+                                } else if (r.skipped) {
+                                    showNotification('WhatsApp', `Grupo do cliente não configurado: ${r.error || 'cadastre o WhatsApp do cliente'}.`, 'warning');
+                                } else if (r.error) {
+                                    showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
+                                }
+                            });
                     }
 
                     if (photoBlob && showWhatsappCopyPopup(photoBlob, finalizeShareText)) {
