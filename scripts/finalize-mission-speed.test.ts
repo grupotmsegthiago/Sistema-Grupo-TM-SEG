@@ -26,3 +26,11 @@ test('Salvar em fase inicial não prende operador em finalização acidental', (
   assert.match(src, /resolveStatusForSaveSubmit/);
   assert.match(src, /statusToRestoreOnFinalizeCancel/);
 });
+
+test('Colar Print aplica só o logotipo — sem limpeza IA de overlays', () => {
+  const src = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
+  assert.doesNotMatch(src, /\/api\/gemini\/clean-print/);
+  assert.doesNotMatch(src, /Detectando overlays/);
+  assert.match(src, /stampBrandOverlays/);
+  assert.match(src, /Aplicando logotipo TM SEG/);
+});

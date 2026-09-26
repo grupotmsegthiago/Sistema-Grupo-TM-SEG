@@ -29,7 +29,6 @@ import {
   stampBrandOverlays,
   waitUntil,
 } from '../lib/brandPhotoStamp';
-import type { PrintPipelineTimings } from '../lib/printPipelineTypes';
 import DhlOccurrenceReportModal from './DhlOccurrenceReportModal';
 import { useNotification } from '../lib/NotificationContext';
 import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
@@ -1046,12 +1045,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [mirroringExistingUrl, setMirroringExistingUrl] = useState('');
 
     // Print da atualização (temporário — NUNCA vai para o Supabase/bucket).
-    // Fica só em memória: blob PNG com a marca d'água da TM SEG, copiado
-    // junto com o texto do formulário na hora de salvar.
+    // Fica só em memória: blob PNG com o logotipo TM SEG (sem limpeza/edição de imagem),
+    // copiado junto com o texto do formulário na hora de salvar.
     const [updatePrintPreview, setUpdatePrintPreview] = useState('');
     const [updatePrintProcessing, setUpdatePrintProcessing] = useState(false);
-    const [updatePrintAiCleaned, setUpdatePrintAiCleaned] = useState(false);
-    const [updatePrintTimings, setUpdatePrintTimings] = useState<PrintPipelineTimings | null>(null);
     const updatePrintBlobRef = useRef<Blob | null>(null);
 
     /** Pré-processa a foto do hodômetro (checklist) em paralelo ao submit — evita
@@ -1073,115 +1070,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         })();
     };
 
-    const SUPPORTED_PRINT_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
-    const PRINT_PIPELINE_TIMEOUT_MS = 45_000;
-
-    const base64ToBlob = (base64: string, mimeType: string): Blob => {
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      return new Blob([bytes], { type: mimeType });
-    };
-
-    const isPrintPipelineDebug = () =>
-      import.meta.env.DEV || localStorage.getItem('tmseg:print-pipeline-debug') === '1';
-
-    /** Envia print ao pipeline server-side (multipart) e retorna imagem limpa + timings. */
-    const processPrintOnServer = async (
-      file: File,
-    ): Promise<{ blob: Blob; cleaned: boolean; timings: PrintPipelineTimings } | null> => {
-      const mime = (file.type || 'image/jpeg').toLowerCase();
-      if (!SUPPORTED_PRINT_TYPES.has(mime)) {
-        showNotification('Formato inválido', 'Use JPEG, PNG ou WEBP.', 'error');
-        return null;
-      }
-      const uploadStart = performance.now();
-      try {
-        const token = localStorage.getItem('authToken') || '';
-        const form = new FormData();
-        form.append('image', file, file.name || 'print.jpg');
-        const resp = await withTimeout(
-          fetch('/api/gemini/clean-print', {
-            method: 'POST',
-            cache: 'no-store',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'X-Print-Response': 'binary',
-            },
-            body: form,
-          }),
-          PRINT_PIPELINE_TIMEOUT_MS,
-          'Timeout ao limpar print com IA',
-        );
-        const clientUploadMs = Math.round(performance.now() - uploadStart);
-        if (!resp.ok) {
-          const errBody = await resp.text().catch(() => '');
-          let errMsg = `Erro ${resp.status}`;
-          try {
-            const parsed = errBody ? JSON.parse(errBody) : null;
-            errMsg = parsed?.error || parsed?.message || errMsg;
-          } catch {
-            if (errBody) errMsg = errBody.slice(0, 120);
-          }
-          showNotification('Limpeza IA indisponível', `${errMsg}. Usando foto original.`, 'warning');
-          return null;
-        }
-
-        const contentType = (resp.headers.get('Content-Type') || '').toLowerCase();
-        if (contentType.startsWith('image/')) {
-          const blob = await resp.blob();
-          const cleaned = resp.headers.get('X-Print-Cleaned') === '1';
-          let timings: PrintPipelineTimings = {
-            uploadMs: clientUploadMs,
-            readMs: 0,
-            detectionMs: 0,
-            removalMs: 0,
-            logoMs: 0,
-            saveMs: 0,
-            totalMs: clientUploadMs,
-          };
-          try {
-            const headerTimings = JSON.parse(resp.headers.get('X-Print-Timings') || '{}');
-            timings = {
-              uploadMs: headerTimings.uploadMs ?? clientUploadMs,
-              readMs: headerTimings.readMs ?? 0,
-              detectionMs: headerTimings.detectionMs ?? 0,
-              removalMs: headerTimings.removalMs ?? 0,
-              logoMs: 0,
-              saveMs: headerTimings.saveMs ?? 0,
-              totalMs: (headerTimings.totalMs ?? 0) + clientUploadMs,
-            };
-          } catch {
-            // ignora parse
-          }
-          return { blob, cleaned, timings };
-        }
-
-        const j = await resp.json();
-        if (!j?.image) return null;
-        const blob = base64ToBlob(j.image, j.mimeType || 'image/png');
-        const timings: PrintPipelineTimings = {
-          uploadMs: j.timings?.uploadMs ?? clientUploadMs,
-          readMs: j.timings?.readMs ?? 0,
-          detectionMs: j.timings?.detectionMs ?? 0,
-          removalMs: j.timings?.removalMs ?? 0,
-          logoMs: 0,
-          saveMs: j.timings?.saveMs ?? 0,
-          totalMs: (j.timings?.totalMs ?? 0) + clientUploadMs,
-        };
-        return { blob, cleaned: !!j.cleaned, timings };
-      } catch (e) {
-        const msg = e instanceof TimeoutError
-          ? 'A IA demorou demais. Usando foto original.'
-          : 'Falha na limpeza. Usando foto original.';
-        console.warn('[UpdatePrint] Pipeline server falhou (segue com foto original):', e);
-        showNotification('Limpeza IA', msg, 'warning');
-        return null;
-      }
-    };
-
-    const applyBrandStampToBlob = async (source: Blob): Promise<{ blob: Blob; preview: string; logoMs: number }> => {
-      const logoStart = performance.now();
+    /** Aplica só o logotipo TM SEG (+ Instagram) — sem limpeza/edição de overlays. */
+    const applyBrandStampToBlob = async (source: Blob): Promise<{ blob: Blob; preview: string }> => {
       const photoUrl = URL.createObjectURL(source);
       try {
         const photo = await loadStampImage(photoUrl);
@@ -1206,44 +1096,28 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
           canvas.toBlob(b => b ? resolve(b) : reject(new Error('Falha ao gerar PNG')), 'image/png'),
         );
         const preview = canvas.toDataURL('image/png');
-        return { blob, preview, logoMs: Math.round(performance.now() - logoStart) };
+        return { blob, preview };
       } finally {
         URL.revokeObjectURL(photoUrl);
       }
     };
 
     const processUpdatePrint = async (file: File) => {
+      const mime = (file.type || 'image/jpeg').toLowerCase();
+      if (!['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(mime)) {
+        showNotification('Formato inválido', 'Use JPEG, PNG ou WEBP.', 'error');
+        return;
+      }
       setUpdatePrintProcessing(true);
-      setUpdatePrintTimings(null);
-      const totalStart = performance.now();
       try {
-        const processed = await processPrintOnServer(file);
-        const sourceBlob = processed?.blob ?? file;
-        const stamped = await applyBrandStampToBlob(sourceBlob);
+        // Só carimba o logotipo — sem pipeline de remoção de overlays (era lento demais).
+        const stamped = await applyBrandStampToBlob(file);
         updatePrintBlobRef.current = stamped.blob;
         setUpdatePrintPreview(stamped.preview);
-        setUpdatePrintAiCleaned(!!processed?.cleaned);
-
-        if (!processed) {
-          setUpdatePrintAiCleaned(false);
-        }
-
-        if (processed?.timings) {
-          const timings: PrintPipelineTimings = {
-            ...processed.timings,
-            logoMs: stamped.logoMs,
-            totalMs: Math.round(performance.now() - totalStart),
-          };
-          setUpdatePrintTimings(timings);
-          if (isPrintPipelineDebug()) {
-            console.info('[print-pipeline:client]', timings);
-          }
-        }
       } catch (e) {
         console.warn('[UpdatePrint] Falha ao processar print:', e);
         updatePrintBlobRef.current = null;
         setUpdatePrintPreview('');
-        setUpdatePrintTimings(null);
         showNotification('Erro', 'Não foi possível processar o print colado. Tente novamente.', 'error');
       } finally {
         setUpdatePrintProcessing(false);
@@ -1253,8 +1127,6 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const clearUpdatePrint = () => {
         updatePrintBlobRef.current = null;
         setUpdatePrintPreview('');
-        setUpdatePrintAiCleaned(false);
-        setUpdatePrintTimings(null);
     };
 
     const [editData, setEditData] = useState({
@@ -4456,7 +4328,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             >
                                 {updatePrintProcessing ? (
                                     <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300" data-testid="status-update-print-processing">
-                                        <Loader2 className="h-4 w-4 animate-spin" /> Detectando overlays, removendo marcas e aplicando logotipo TM SEG...
+                                        <Loader2 className="h-4 w-4 animate-spin" /> Aplicando logotipo TM SEG...
                                     </div>
                                 ) : updatePrintPreview ? (
                                     <>
@@ -4485,17 +4357,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             {updatePrintPreview && !updatePrintProcessing && (
                                 <div className="mt-2 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2" data-testid="text-update-print-ready">
                                     <CheckCircle2 size={14} className="shrink-0 text-emerald-400" />
-                                    <p className="text-[10px] font-bold text-emerald-300">{updatePrintAiCleaned
-                                        ? 'Foto tratada: overlays removidos e logotipo TM SEG aplicado. Não é salva no sistema — só vai na área de transferência ao salvar.'
-                                        : 'Logotipo TM SEG aplicado (nenhum overlay detectado ou limpeza indisponível). Não é salva no sistema — só vai na área de transferência ao salvar.'}</p>
-                                    {(isPrintPipelineDebug() && updatePrintTimings) && (
-                                        <div className="mt-2 rounded-lg border border-white/10 bg-slate-900/80 p-2 text-left font-mono text-[9px] text-slate-400" data-testid="print-pipeline-timings">
-                                            <p className="font-bold text-amber-300/90 mb-1">Pipeline debug (ms)</p>
-                                            <p>upload: {updatePrintTimings.uploadMs} · leitura: {updatePrintTimings.readMs} · detecção: {updatePrintTimings.detectionMs}</p>
-                                            <p>remoção: {updatePrintTimings.removalMs} · logo: {updatePrintTimings.logoMs} · salvamento: {updatePrintTimings.saveMs}</p>
-                                            <p className="text-emerald-400 font-bold">total: {updatePrintTimings.totalMs} ms</p>
-                                        </div>
-                                    )}
+                                    <p className="text-[10px] font-bold text-emerald-300">Logotipo TM SEG aplicado. Não é salva no sistema — só vai na área de transferência ao salvar.</p>
                                 </div>
                             )}
                         </div>
