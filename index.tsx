@@ -9,6 +9,7 @@ import {
   reloadForPublishedUpdate,
   shouldThrottleUpdateCheck,
 } from './lib/appUpdate';
+import { FORCE_LOGOUT_SEEN_KEY } from './lib/forceLogout';
 import { SCREEN_STORAGE_KEY } from './lib/screenNavigation';
 
 declare const __TMSEG_BUILD_ID__: string;
@@ -57,15 +58,7 @@ async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): 
       return false;
     }
 
-    const serverKey = server.buildId || server.version;
-    if (pendingUpdateBuildId !== serverKey) {
-      pendingUpdateBuildId = serverKey;
-      console.warn(
-        `[AutoUpdate] Nova versão detectada (${serverKey}). Aguardando confirmação antes de recarregar.`
-      );
-      return false;
-    }
-
+    // Atualiza na primeira detecção (necessário para logout global chegar rápido).
     console.warn(
       `[AutoUpdate] Build local (${CLIENT_BUILD.buildId} / v${CLIENT_BUILD.version}) ` +
         `≠ servidor (${server.buildId} / v${server.version}). Atualizando…`
@@ -107,6 +100,26 @@ async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): 
 
     const updated = await checkForPublishedUpdate();
     if (updated) return;
+
+    // Após carregar (ou se já estava na versão nova): sinal global de re-login
+    try {
+      const server = await fetchPublishedVersion();
+      const signal = server?.forceLogoutSignal ? String(server.forceLogoutSignal) : '';
+      if (signal) {
+        const seen = localStorage.getItem(FORCE_LOGOUT_SEEN_KEY) || '';
+        if (signal !== seen) {
+          console.warn('[ForceLogout] Sinal global detectado — exigindo novo login.');
+          localStorage.clear();
+          sessionStorage.clear();
+          localStorage.setItem(FORCE_LOGOUT_SEEN_KEY, signal);
+          localStorage.setItem('app_version', APP_VERSION);
+          window.location.replace('/');
+          return;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
 
     try {
       sessionStorage.removeItem(APP_UPDATE_RELOAD_FLAG);

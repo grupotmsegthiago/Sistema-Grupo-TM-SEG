@@ -114,6 +114,11 @@ import {
 } from './lib/productivity/sessionIdleLogout';
 import { wireNightHeartbeat, reportNightIncident } from './lib/productivity/nightHeartbeat';
 import { isNightWatchActive } from './lib/productivity/nightWatch';
+import {
+  FORCE_LOGOUT_SEEN_KEY,
+  FORCE_LOGOUT_SETTINGS_KEY,
+  parseForceLogoutSignal,
+} from './lib/forceLogout';
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { canAccessMissionReport } from './lib/missionReportAccess';
@@ -257,8 +262,63 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
-    const channel = supabase.channel('global_reset_channel').on('postgres_changes',{event: 'INSERT',schema: 'public',table: 'system_logs',filter: 'entity=eq.FORCE_LOGOUT_SIGNAL'},(payload) => {setRebootCountdown(10);}).subscribe();
-    return () => { supabase.removeChannel(channel); };
+    const channel = supabase
+      .channel('global_reset_channel')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'system_logs',
+          filter: 'entity=eq.FORCE_LOGOUT_SIGNAL',
+        },
+        () => {
+          setRebootCountdown(10);
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'system_settings',
+          filter: `key=eq.${FORCE_LOGOUT_SETTINGS_KEY}`,
+        },
+        (payload) => {
+          const next = parseForceLogoutSignal(
+            (payload.new as { value?: unknown } | null)?.value,
+          );
+          if (!next) return;
+          const seen = localStorage.getItem(FORCE_LOGOUT_SEEN_KEY) || '';
+          if (next === seen) return;
+          localStorage.setItem(FORCE_LOGOUT_SEEN_KEY, next);
+          setRebootCountdown(10);
+        },
+      )
+      .subscribe();
+
+    const poll = window.setInterval(async () => {
+      try {
+        const { data } = await supabase
+          .from('system_settings')
+          .select('value')
+          .eq('key', FORCE_LOGOUT_SETTINGS_KEY)
+          .maybeSingle();
+        const next = parseForceLogoutSignal(data?.value);
+        if (!next) return;
+        const seen = localStorage.getItem(FORCE_LOGOUT_SEEN_KEY) || '';
+        if (next === seen) return;
+        localStorage.setItem(FORCE_LOGOUT_SEEN_KEY, next);
+        setRebootCountdown(10);
+      } catch {
+        /* ignore */
+      }
+    }, 12_000);
+
+    return () => {
+      window.clearInterval(poll);
+      supabase.removeChannel(channel);
+    };
   }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {

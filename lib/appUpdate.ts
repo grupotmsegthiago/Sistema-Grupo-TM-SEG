@@ -6,6 +6,7 @@ export type PublishedVersionInfo = {
   version: string;
   buildId: string;
   builtAt?: string;
+  forceLogoutSignal?: string | null;
 };
 
 export type ClientBuildInfo = {

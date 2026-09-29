@@ -109,6 +109,11 @@ import {
   registerNightWatchRoutes,
 } from "./nightWatchdog";
 import {
+  getLastForceLogoutAt,
+  registerForceLogoutRoutes,
+} from "./forceLogoutAll";
+import { FORCE_LOGOUT_SETTINGS_KEY } from "../lib/forceLogout";
+import {
   AUDIT_SUMMARY_DEFAULTS,
   AUDIT_SUMMARY_SETTINGS_KEY,
   sanitizeAuditSummarySettings,
@@ -999,7 +1004,7 @@ export async function registerRoutes(
   // Versão atual do servidor — lida do constants.ts a cada request.
   // O client compara com sua APP_VERSION em memória; se divergir, faz hard-reset
   // automático e recarrega para garantir bundle sempre atualizado.
-  app.get('/api/version', (_req: Request, res: Response) => {
+  app.get('/api/version', async (_req: Request, res: Response) => {
     try {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
       const constantsPath = path.resolve(process.cwd(), 'constants.ts');
@@ -1009,10 +1014,22 @@ export async function registerRoutes(
         const m = txt.match(/APP_VERSION\s*=\s*["']([^"']+)["']/);
         if (m) version = m[1];
       }
+      let forceLogoutSignal: string | null = getLastForceLogoutAt();
+      try {
+        const { data } = await supabase
+          .from('system_settings')
+          .select('value')
+          .eq('key', FORCE_LOGOUT_SETTINGS_KEY)
+          .maybeSingle();
+        if (data?.value != null) forceLogoutSignal = String(data.value);
+      } catch {
+        /* ignore */
+      }
       res.json({
         version,
         deploymentId: process.env.REPLIT_DEPLOYMENT_ID || null,
         builtAt: Date.now(),
+        forceLogoutSignal,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -9186,6 +9203,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   registerProductivityReportSchedule(supabase);
   registerNightWatchdogSchedule(supabase);
   registerNightWatchRoutes(app, supabase, requireAuth);
+  registerForceLogoutRoutes(app, supabase, requireAuth, requireRole);
 
   app.post(
     '/api/admin/productivity-report',
