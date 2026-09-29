@@ -94,7 +94,6 @@ BEGIN
     BEGIN
       UPDATE public.financial_transactions
       SET status = 'PAID',
-          paid_date = p_payment_date,
           payment_date = p_payment_date
       WHERE description ILIKE '%' || v_number || '%'
         AND status = 'PENDING';
@@ -102,7 +101,7 @@ BEGIN
     EXCEPTION WHEN undefined_column THEN
       UPDATE public.financial_transactions
       SET status = 'PAID',
-          paid_date = p_payment_date
+          payment_date = p_payment_date
       WHERE description ILIKE '%' || v_number || '%'
         AND status = 'PENDING';
       GET DIAGNOSTICS v_tx = ROW_COUNT;

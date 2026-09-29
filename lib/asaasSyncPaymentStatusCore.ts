@@ -160,7 +160,7 @@ export async function runAsaasSyncPaymentStatus(params: {
       if (inv?.number) {
         await sb
           .from('financial_transactions')
-          .update({ status: 'PAID', paid_date: new Date().toISOString().split('T')[0] })
+          .update({ status: 'PAID', payment_date: new Date().toISOString().split('T')[0] })
           .ilike('description', `%${inv.number}%`)
           .eq('status', 'PENDING');
       }

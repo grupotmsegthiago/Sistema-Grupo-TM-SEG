@@ -39,6 +39,8 @@ describe('baixa manual de fatura', () => {
     const sync = fs.readFileSync('migrations/2026_09_29_invoice_manual_payment_sync.sql', 'utf8');
     assert.match(sync, /doc_comprovante_url/);
     assert.match(sync, /Juros/);
+    assert.match(sync, /payment_date = p_payment_date/);
+    assert.doesNotMatch(sync, /paid_date/);
     assert.doesNotMatch(sync, /\bamount\s*=/);
   });
 

@@ -65,7 +65,7 @@ export async function handleAsaasPaymentWebhook(
           .from('financial_transactions')
           .update({
             status: 'PAID',
-            paid_date: deps.today ? deps.today() : new Date().toISOString().split('T')[0],
+            payment_date: deps.today ? deps.today() : new Date().toISOString().split('T')[0],
           })
           .ilike('description', `%${inv.number}%`)
           // Idempotência existente: evento duplicado não atualiza transação já PAID.

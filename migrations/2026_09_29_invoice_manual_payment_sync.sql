@@ -125,7 +125,6 @@ BEGIN
     BEGIN
       UPDATE public.financial_transactions
       SET status = 'PAID',
-          paid_date = p_payment_date,
           payment_date = p_payment_date,
           doc_comprovante_url = left(btrim(p_evidence_url), 2000),
           doc_comprovante_status = 'ok',
@@ -139,7 +138,6 @@ BEGIN
     EXCEPTION WHEN undefined_column THEN
       UPDATE public.financial_transactions
       SET status = 'PAID',
-          paid_date = p_payment_date,
           payment_date = p_payment_date,
           notes = concat_ws(E'\n', NULLIF(notes, ''), v_line)
       WHERE description ILIKE '%' || v_number || '%'
