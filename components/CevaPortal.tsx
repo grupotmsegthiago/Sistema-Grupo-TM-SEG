@@ -8,7 +8,7 @@ import { PainelAoVivo } from './ceva/PainelAoVivo';
 import { TrocarSenhaCeva } from './ceva/TrocarSenhaCeva';
 import { LogoCeva } from './ceva/LogoCeva';
 import type { CampoFiltro as CampoFiltroNome } from '../lib/cevaPortal/camposCliente';
-import { isoDeDataBrasil, mascaraDataBrasil } from '../lib/cevaPortal/datas';
+import { isoDeDataBrasil, mascaraDataBrasil, periodoMesAtualBrasil } from '../lib/cevaPortal/datas';
 import { cabecalhosCeva, gravarSessaoCeva, lerSessaoCeva, limparSessaoCeva, type SessaoCeva } from '../lib/cevaPortal/sessaoCliente';
 import { classeStatusSistema } from '../lib/cevaPortal/status';
 
@@ -254,6 +254,13 @@ const CevaPortal: React.FC = () => {
     motorista: unicos(items, (row) => row.motorista),
   };
 
+  function abrirDiretoria() {
+    const mes = periodoMesAtualBrasil();
+    setFiltro((atual) => ({ ...atual, dataInicial: mes.inicio, dataFinal: mes.fim }));
+    setPagina(1);
+    setVisao('diretoria');
+  }
+
   function mudarFiltro(campo: keyof Filtros, valor: string) {
     setFiltro((atual) => ({ ...atual, [campo]: valor }));
     setPagina(1);
@@ -298,7 +305,7 @@ const CevaPortal: React.FC = () => {
             <div className="flex rounded-full bg-white/10 p-0.5">
               <button type="button" onClick={() => setVisao('controle')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'controle' ? 'bg-white text-[#152c54]' : 'text-white'}`}>Controle</button>
               <button type="button" onClick={() => setVisao('aovivo')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'aovivo' ? 'bg-white text-[#152c54]' : 'text-white'}`}>Ao vivo</button>
-              <button type="button" onClick={() => setVisao('diretoria')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'diretoria' ? 'bg-white text-[#152c54]' : 'text-white'}`}>Diretoria</button>
+              <button type="button" onClick={abrirDiretoria} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'diretoria' ? 'bg-white text-[#152c54]' : 'text-white'}`}>Diretoria</button>
             </div>
           </nav>
           <div className="flex items-center justify-end gap-2">

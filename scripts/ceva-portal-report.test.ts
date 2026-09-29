@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cidadeUfDoEndereco, horaDoBoletim, linhaDoBoletimCeva, localOrigemDestino, numeroOsDoBoletim, osAprovadaParaValores, osMudouDepoisDoSnapshot } from '../lib/cevaPortal/report';
-import { isoDeDataBrasil, mascaraDataBrasil } from '../lib/cevaPortal/datas';
+import { isoDeDataBrasil, mascaraDataBrasil, periodoMesAtualBrasil } from '../lib/cevaPortal/datas';
 import { classeStatusSistema } from '../lib/cevaPortal/status';
 
 const vazio = { priceTables: [], providerTables: [] };
@@ -192,6 +192,9 @@ test('data do filtro segue dia/mês/ano e o status usa a cor do sistema', () => 
   assert.equal(isoDeDataBrasil('28/09/2026'), '2026-09-28');
   assert.equal(isoDeDataBrasil('28/09'), '');
   assert.equal(isoDeDataBrasil('31/02/2026'), '');
+  assert.deepEqual(periodoMesAtualBrasil(new Date('2026-09-28T15:00:00-03:00')), { inicio: '01/09/2026', fim: '30/09/2026' });
+  assert.deepEqual(periodoMesAtualBrasil(new Date('2026-10-01T02:30:00Z')), { inicio: '01/09/2026', fim: '30/09/2026' });
+  assert.deepEqual(periodoMesAtualBrasil(new Date('2026-02-10T12:00:00-03:00')), { inicio: '01/02/2026', fim: '28/02/2026' });
   assert.match(classeStatusSistema('Em Viagem'), /bg-purple-600/);
   assert.match(classeStatusSistema('Concluída'), /bg-green-600/);
   assert.match(classeStatusSistema('Cancelada'), /bg-red-600/);
