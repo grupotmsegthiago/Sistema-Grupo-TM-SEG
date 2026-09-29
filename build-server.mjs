@@ -76,6 +76,16 @@ execSync(
 );
 console.log('Recalculate-open core bundle: api/_recalculate-open-core.cjs');
 
+// Bundle do portal CEVA para api/ceva-portal.ts (login/relatório).
+// Import ESM de lib/cevaPortal/httpHandler + financialUtils quebrava na Vercel
+// (supabasePaging / extensionless → ERR_MODULE_NOT_FOUND; catch com instanceof
+// de classe importada só no try → BillingDatasetIncompleteError is not defined).
+execSync(
+  'npx esbuild lib/cevaPortal/httpHandler.ts --bundle --platform=node --format=cjs --outfile=api/_ceva-portal-core.cjs --packages=external',
+  { stdio: 'inherit' },
+);
+console.log('CEVA portal core bundle: api/_ceva-portal-core.cjs');
+
 // Bundle do worker de reemissão NF para api/nf-control.ts (retry-now).
 // Import ESM de server/nfRetryWorker quebra na Vercel (MODULE_NOT_FOUND) e o
 // Express (api/index) está com cold-start lento demais para o botão Reemitir.

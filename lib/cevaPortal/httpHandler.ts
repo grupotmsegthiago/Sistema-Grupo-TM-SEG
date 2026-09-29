@@ -830,8 +830,11 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
           items,
         });
       } catch (error) {
-        if (error instanceof BillingDatasetIncompleteError) {
-          console.error('[ceva-portal] relatorio incompleto', error.reason);
+        // Não usar instanceof com classe importada só dentro do try —
+        // no catch o binding não existe e vira ReferenceError na Vercel.
+        const incompleto = error instanceof Error && error.name === 'BillingDatasetIncompleteError';
+        if (incompleto) {
+          console.error('[ceva-portal] relatorio incompleto', (error as { reason?: string }).reason);
           res.status(503).json({ error: 'O conjunto de OS do boletim não fechou. Nada foi exibido para não inventar número.' });
           return;
         }

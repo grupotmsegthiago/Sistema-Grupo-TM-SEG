@@ -24,18 +24,20 @@ test('vercel.json desvia ceva-portal do Express catch-all', () => {
   assert.equal('api/ceva-portal.ts' in (vercel.functions || {}), false, 'ceva-portal sem entry em functions');
 });
 
-test('handler leve não importa Express nem financialUtils', () => {
+test('handler leve usa bundle CJS e não instancia BillingDatasetIncompleteError no catch', () => {
   const api = readFileSync(join(root, 'api/ceva-portal.ts'), 'utf8');
   const http = readFileSync(join(root, 'lib/cevaPortal/httpHandler.ts'), 'utf8');
-  assert.match(api, /handleCevaPortalHttp/);
+  const build = readFileSync(join(root, 'build-server.mjs'), 'utf8');
+  assert.match(api, /_ceva-portal-core\.cjs/);
+  assert.match(api, /createRequire/);
   assert.doesNotMatch(api, /from ['"]express['"]|vercelApp|server\/cevaPortal/);
+  assert.match(build, /_ceva-portal-core\.cjs/);
   assert.doesNotMatch(http, /from ['"]express['"]|from ['"].*financialUtils|from ['"].*emailService/);
   assert.match(http, /export async function handleCevaPortalHttp/);
   assert.match(http, /op === 'login'/);
   assert.match(http, /op === 'acesso'/);
-  assert.doesNotMatch(http, /^import .*fetchBillingMissionUniverse/m);
-  assert.match(http, /await import\('\.\/aoVivo\.js'\)/);
-
+  assert.match(http, /error\.name === 'BillingDatasetIncompleteError'/);
+  assert.doesNotMatch(http, /instanceof BillingDatasetIncompleteError/);
 });
 
 test('AcessoCeva tem timeout para não ficar eternamente em Aguarde', () => {
