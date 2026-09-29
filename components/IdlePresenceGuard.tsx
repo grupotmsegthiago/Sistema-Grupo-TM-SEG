@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Keyboard, MousePointerClick, ShieldAlert }
 import { readInteractionStats } from '../lib/productivity/interactionCounters';
 import { flushInteractionStats } from '../lib/productivity/interactionStats';
 import { logProductivityEvent } from '../lib/productivity/logProductivity';
+import { reportNightIncident } from '../lib/productivity/nightHeartbeat';
 import {
   dinnerBreakLabel,
   isDinnerBreakWindow,
@@ -10,15 +11,23 @@ import {
   isNightWatchExemptRole,
   isNightWatchWindow,
   keywordMatches,
+  NIGHT_CHALLENGE_TIMEOUT_MS,
+  NIGHT_FORCE_LOGOUT_MINUTES,
   NIGHT_IDLE_MINUTES,
   NIGHT_IDLE_MS,
   pickNightWatchKeyword,
 } from '../lib/productivity/nightWatch';
 import {
+  LOGOUT_REASON_IDLE_KEY,
+  LOGOUT_REASON_NIGHT_CHALLENGE,
+} from '../lib/productivity/sessionIdleLogout';
+import {
   forceTouchUserActivity,
   getIdleMs,
   setActivityTrackingPaused,
 } from '../lib/userActivityTracker';
+import { supabase } from '../lib/supabase';
+import { APP_VERSION } from '../constants';
 
 type LocalUser = { id?: string | number; name?: string; role?: string };
 
@@ -31,10 +40,39 @@ function readUser(): LocalUser | null {
   }
 }
 
+async function forceLogoutNow(): Promise<void> {
+  try {
+    window.dispatchEvent(new CustomEvent('tmseg:logout'));
+  } catch {
+    /* ignore */
+  }
+  try {
+    await supabase.auth.signOut();
+  } catch {
+    /* ignore */
+  }
+  let reason = '';
+  try {
+    reason = sessionStorage.getItem(LOGOUT_REASON_IDLE_KEY) || '';
+  } catch {
+    /* ignore */
+  }
+  localStorage.clear();
+  sessionStorage.clear();
+  if (reason) {
+    try {
+      sessionStorage.setItem(LOGOUT_REASON_IDLE_KEY, reason);
+    } catch {
+      /* ignore */
+    }
+  }
+  localStorage.setItem('app_version', APP_VERSION);
+  window.location.href = '/';
+}
+
 /**
  * Vigia de presença noturna (20h–08h BRT).
- * Se o usuário ficar sem interação por 15 min, bloqueia a tela até
- * confirmar com clique + digitação da palavra-chave + OK.
+ * Sem interação por 10 min → desafio. Sem resposta em 10 min → logout + alerta.
  */
 export default function IdlePresenceGuard() {
   const [open, setOpen] = useState(false);
@@ -80,14 +118,13 @@ export default function IdlePresenceGuard() {
     forceTouchUserActivity();
   }, []);
 
-  // Poll: vigia efetiva (20h–08h, fora da janta), idle >= 15 min → bloqueia
+  // Poll: vigia efetiva (20h–08h, fora da janta), idle >= 10 min → bloqueia
   useEffect(() => {
     const tick = () => {
       const user = readUser();
       if (!user?.id) return;
       if (isNightWatchExemptRole(user.role)) return;
 
-      // Horário de janta: não contabiliza — libera desafio pendente e zera idle
       if (isDinnerBreakWindow()) {
         if (open) closeChallenge();
         else forceTouchUserActivity();
@@ -95,10 +132,7 @@ export default function IdlePresenceGuard() {
       }
 
       if (!isNightWatchWindow()) {
-        if (open) {
-          // Fora da janela: libera sem exigir (fim do plantão 08h)
-          closeChallenge();
-        }
+        if (open) closeChallenge();
         return;
       }
 
@@ -117,15 +151,29 @@ export default function IdlePresenceGuard() {
     };
   }, [open, openChallenge, closeChallenge]);
 
-  // Timeout do desafio (10 min sem responder) → log
+  // Timeout do desafio → log + e-mail + logout obrigatório
   useEffect(() => {
     if (!open) return;
     const id = window.setTimeout(() => {
-      void logProductivityEvent('IDLE_CHALLENGE_TIMEOUT', {
-        startedAt: challengeStartedAt.current,
-        idleMinutes: idleMinutesShown,
-      });
-    }, 10 * 60 * 1000);
+      void (async () => {
+        await logProductivityEvent('IDLE_CHALLENGE_TIMEOUT', {
+          startedAt: challengeStartedAt.current,
+          idleMinutes: idleMinutesShown,
+        });
+        try {
+          sessionStorage.setItem(LOGOUT_REASON_IDLE_KEY, LOGOUT_REASON_NIGHT_CHALLENGE);
+        } catch {
+          /* ignore */
+        }
+        await reportNightIncident({
+          type: 'challenge_timeout',
+          idleMinutes: idleMinutesShown,
+          details: { startedAt: challengeStartedAt.current },
+        });
+        await flushInteractionStats('challenge_timeout');
+        await forceLogoutNow();
+      })();
+    }, NIGHT_CHALLENGE_TIMEOUT_MS);
     return () => window.clearTimeout(id);
   }, [open, idleMinutesShown]);
 
@@ -140,6 +188,10 @@ export default function IdlePresenceGuard() {
       void logProductivityEvent('IDLE_CHALLENGE_FAILED', {
         reason: 'keyword_mismatch',
         startedAt: challengeStartedAt.current,
+      });
+      void reportNightIncident({
+        type: 'challenge_failed',
+        idleMinutes: idleMinutesShown,
       });
       return;
     }
@@ -184,8 +236,9 @@ export default function IdlePresenceGuard() {
           <div className="flex gap-2 rounded-lg bg-amber-50 border border-amber-100 p-3 text-sm text-amber-950">
             <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-600" />
             <p>
-              O sistema detectou inatividade no horário de plantão. Para continuar usando,
-              confirme presença: clique, digite a palavra-chave e confirme com OK.
+              Plantão noturno: confirme presença agora. Sem resposta em 10 minutos a sessão será
+              encerrada e a diretoria será alertada. Logout automático após {NIGHT_FORCE_LOGOUT_MINUTES} min
+              ociosos.
             </p>
           </div>
 
@@ -247,7 +300,8 @@ export default function IdlePresenceGuard() {
           </button>
 
           <p className="text-[10px] text-center text-slate-400 uppercase tracking-wide">
-            Home office · janta {dinnerBreakLabel()} não conta · logout após 30 min sem uso · relatório 09h e 21h à diretoria
+            Heartbeat 2 min · desafio {NIGHT_IDLE_MINUTES} min · logout {NIGHT_FORCE_LOGOUT_MINUTES} min ·
+            alerta à diretoria · relatório 09h/21h
           </p>
         </div>
       </div>

@@ -105,6 +105,10 @@ import {
   registerProductivityReportSchedule,
 } from "./productivityReport";
 import {
+  registerNightWatchdogSchedule,
+  registerNightWatchRoutes,
+} from "./nightWatchdog";
+import {
   AUDIT_SUMMARY_DEFAULTS,
   AUDIT_SUMMARY_SETTINGS_KEY,
   sanitizeAuditSummarySettings,
@@ -9178,8 +9182,10 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  // Relatório diário de produtividade / vigia noturna (09h → só diretoria)
+  // Relatório diário de produtividade / vigia noturna (09h + 21h → só diretoria)
   registerProductivityReportSchedule(supabase);
+  registerNightWatchdogSchedule(supabase);
+  registerNightWatchRoutes(app, supabase, requireAuth);
 
   app.post(
     '/api/admin/productivity-report',

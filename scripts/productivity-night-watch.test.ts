@@ -21,7 +21,15 @@ import {
   SESSION_IDLE_LOGOUT_MINUTES,
   SESSION_IDLE_LOGOUT_MS,
   shouldEnforceSessionIdleLogout,
+  getIdleLogoutThresholdMs,
+  getIdleLogoutThresholdMinutes,
 } from '../lib/productivity/sessionIdleLogout.ts';
+import {
+  NIGHT_FORCE_LOGOUT_MINUTES,
+  NIGHT_FORCE_LOGOUT_MS,
+  NIGHT_IDLE_MINUTES,
+  NIGHT_STALE_ALERT_MINUTES,
+} from '../lib/productivity/nightWatch.ts';
 
 test('isNightWatchWindow: 20h–08h BRT', () => {
   // 20:00 BRT = 23:00 UTC
@@ -108,15 +116,28 @@ test('fatia noturna do relatório 21h só após 20h', () => {
   assert.ok(after.endIso > after.startIso);
 });
 
-test('logout por idle: 30 min e isenção diretoria/admin', () => {
+test('logout por idle: 30 min diurno / 20 min noturno e isenção diretoria/admin', () => {
   assert.equal(SESSION_IDLE_LOGOUT_MINUTES, 30);
   assert.equal(SESSION_IDLE_LOGOUT_MS, 30 * 60 * 1000);
+  assert.equal(NIGHT_IDLE_MINUTES, 10);
+  assert.equal(NIGHT_FORCE_LOGOUT_MINUTES, 20);
+  assert.equal(NIGHT_FORCE_LOGOUT_MS, 20 * 60 * 1000);
+  assert.equal(NIGHT_STALE_ALERT_MINUTES, 12);
   assert.equal(shouldEnforceSessionIdleLogout('funcionario'), true);
   assert.equal(shouldEnforceSessionIdleLogout('Operador'), true);
   assert.equal(shouldEnforceSessionIdleLogout('Diretoria'), false);
   assert.equal(shouldEnforceSessionIdleLogout('admin'), false);
-  assert.equal(isIdleLogoutDue(29 * 60 * 1000), false);
-  assert.equal(isIdleLogoutDue(30 * 60 * 1000), true);
+  // 15:00 BRT = 18:00 UTC → diurno 30 min
+  const day = new Date('2026-08-06T18:00:00.000Z');
+  assert.equal(getIdleLogoutThresholdMinutes(day), 30);
+  assert.equal(getIdleLogoutThresholdMs(day), SESSION_IDLE_LOGOUT_MS);
+  assert.equal(isIdleLogoutDue(29 * 60 * 1000, day), false);
+  assert.equal(isIdleLogoutDue(30 * 60 * 1000, day), true);
+  // 22:00 BRT = 01:00 UTC → noturno 20 min
+  const night = new Date('2026-08-07T01:00:00.000Z');
+  assert.equal(getIdleLogoutThresholdMinutes(night), 20);
+  assert.equal(isIdleLogoutDue(19 * 60 * 1000, night), false);
+  assert.equal(isIdleLogoutDue(20 * 60 * 1000, night), true);
 });
 
 test('aggregateProductivityLogs resume desafios e tempo ativo', () => {

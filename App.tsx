@@ -106,12 +106,14 @@ import { getIdleMs, wireUserActivityTracker, touchUserActivity } from './lib/use
 import { flushInteractionStats } from './lib/productivity/interactionStats';
 import { logProductivityEvent } from './lib/productivity/logProductivity';
 import {
+  idleLogoutReasonKey,
   isIdleLogoutDue,
-  LOGOUT_REASON_IDLE_30MIN,
   LOGOUT_REASON_IDLE_KEY,
-  SESSION_IDLE_LOGOUT_MINUTES,
+  getIdleLogoutThresholdMinutes,
   shouldEnforceSessionIdleLogout,
 } from './lib/productivity/sessionIdleLogout';
+import { wireNightHeartbeat, reportNightIncident } from './lib/productivity/nightHeartbeat';
+import { isNightWatchActive } from './lib/productivity/nightWatch';
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { canAccessMissionReport } from './lib/missionReportAccess';
@@ -250,6 +252,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
+    return wireNightHeartbeat();
+  }, [isAuthenticated, isPublicRoute]);
+
+  useEffect(() => {
+    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
     const channel = supabase.channel('global_reset_channel').on('postgres_changes',{event: 'INSERT',schema: 'public',table: 'system_logs',filter: 'entity=eq.FORCE_LOGOUT_SIGNAL'},(payload) => {setRebootCountdown(10);}).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [isAuthenticated, isPublicRoute]);
@@ -277,7 +284,7 @@ const App: React.FC = () => {
     if (!token || !userData) { if (isAuthenticated) handleLogout(); } else { verifySessionInDatabase(); }
   }, [isPublicRoute, isAuthenticated, handleLogout]);
 
-  // Logout obrigatório após 30 min sem interação real (funcionários).
+  // Logout obrigatório: 30 min diurno / 20 min na vigia noturna (funcionários).
   // Conta mesmo com aba em segundo plano; diretoria/admin isentos.
   useEffect(() => {
     if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
@@ -298,12 +305,11 @@ const App: React.FC = () => {
       const idleMs = getIdleMs();
       if (!isIdleLogoutDue(idleMs)) return;
       loggingOut = true;
-      const idleMinutes = Math.max(
-        SESSION_IDLE_LOGOUT_MINUTES,
-        Math.floor(idleMs / 60_000),
-      );
+      const thresholdMin = getIdleLogoutThresholdMinutes();
+      const idleMinutes = Math.max(thresholdMin, Math.floor(idleMs / 60_000));
+      const reason = idleLogoutReasonKey();
       try {
-        sessionStorage.setItem(LOGOUT_REASON_IDLE_KEY, LOGOUT_REASON_IDLE_30MIN);
+        sessionStorage.setItem(LOGOUT_REASON_IDLE_KEY, reason);
       } catch {
         /* ignora */
       }
@@ -311,8 +317,16 @@ const App: React.FC = () => {
         await flushInteractionStats('idle_logout');
         await logProductivityEvent('SESSION_IDLE_LOGOUT', {
           idleMinutes,
-          thresholdMinutes: SESSION_IDLE_LOGOUT_MINUTES,
+          thresholdMinutes: thresholdMin,
+          nightWatch: isNightWatchActive(),
         });
+        if (isNightWatchActive()) {
+          await reportNightIncident({
+            type: 'force_logout',
+            idleMinutes,
+            details: { thresholdMinutes: thresholdMin },
+          });
+        }
       } catch {
         /* segue o logout mesmo se o log falhar */
       }

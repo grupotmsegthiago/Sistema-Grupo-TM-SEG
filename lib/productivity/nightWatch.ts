@@ -6,9 +6,28 @@
 
 export const NIGHT_WATCH_TZ = 'America/Sao_Paulo';
 
-/** Minutos sem interação na janela noturna antes de bloquear a tela. */
-export const NIGHT_IDLE_MINUTES = 15;
+/** Minutos sem interação na janela noturna antes de bloquear a tela (desafio). */
+export const NIGHT_IDLE_MINUTES = 10;
 export const NIGHT_IDLE_MS = NIGHT_IDLE_MINUTES * 60 * 1000;
+
+/**
+ * Minutos sem interação na vigia noturna antes de forçar logout
+ * (mais rígido que o logout diurno de 30 min).
+ */
+export const NIGHT_FORCE_LOGOUT_MINUTES = 20;
+export const NIGHT_FORCE_LOGOUT_MS = NIGHT_FORCE_LOGOUT_MINUTES * 60 * 1000;
+
+/** Intervalo do heartbeat de presença noturna (cliente → servidor). */
+export const NIGHT_HEARTBEAT_INTERVAL_MS = 2 * 60 * 1000;
+
+/**
+ * Sem heartbeat por estes minutos na vigia → alerta e-mail à diretoria.
+ * Deve ser > NIGHT_HEARTBEAT_INTERVAL para evitar falso positivo.
+ */
+export const NIGHT_STALE_ALERT_MINUTES = 12;
+
+/** Tempo máximo do desafio aberto sem resposta → timeout + logout. */
+export const NIGHT_CHALLENGE_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** Início da vigia (hora local BRT). */
 export const NIGHT_WATCH_START_HOUR = 20;
@@ -100,8 +119,8 @@ export function isNightWatchActive(date: Date = new Date()): boolean {
 }
 
 export function dinnerBreakLabel(): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(DINNER_BREAK_START.hour)}:${pad(DINNER_BREAK_START.minute)}–${pad(DINNER_BREAK_END.hour)}:${pad(DINNER_BREAK_END.minute)}`;
+  const padN = (n: number) => String(n).padStart(2, '0');
+  return `${padN(DINNER_BREAK_START.hour)}:${padN(DINNER_BREAK_START.minute)}–${padN(DINNER_BREAK_END.hour)}:${padN(DINNER_BREAK_END.minute)}`;
 }
 
 /** Diretoria / admin não entram no bloqueio noturno. */
@@ -141,10 +160,8 @@ export function getNightWatchWindowBounds(reference: Date = new Date()): {
   label: string;
 } {
   const p = getBrasiliaParts(reference);
-  // Após 08:00: janela que terminou hoje 08:00. Antes das 08:00: ainda a janela atual (fim = hoje 08:00).
   const endLocal = `${pad(p.year)}-${pad(p.month)}-${pad(p.day)}T${pad(NIGHT_WATCH_END_HOUR)}:00:00`;
   const endUtc = brasiliaLocalToUtc(endLocal);
-  // 20h → 08h = 12 horas
   const startFixed = new Date(endUtc.getTime() - 12 * 3600_000);
 
   const startLabel = startFixed.toLocaleString('pt-BR', { timeZone: NIGHT_WATCH_TZ });
@@ -163,7 +180,6 @@ export function getPreviousBrasiliaDayBounds(reference: Date = new Date()): {
   dateLabel: string;
 } {
   const p = getBrasiliaParts(reference);
-  // Meia-noite de hoje BRT
   const todayMidnightUtc = brasiliaLocalToUtc(
     `${pad(p.year)}-${pad(p.month)}-${pad(p.day)}T00:00:00`,
   );
@@ -222,12 +238,25 @@ export function getEveningNightSliceBounds(reference: Date = new Date()): {
   };
 }
 
+/** Início da vigia noturna em andamento (ou a última, se ainda de manhã). */
+export function getActiveNightWatchStart(reference: Date = new Date()): Date {
+  const p = getBrasiliaParts(reference);
+  if (p.hour >= NIGHT_WATCH_START_HOUR) {
+    return brasiliaLocalToUtc(
+      `${pad(p.year)}-${pad(p.month)}-${pad(p.day)}T${pad(NIGHT_WATCH_START_HOUR)}:00:00`,
+    );
+  }
+  const todayMidnight = brasiliaLocalToUtc(
+    `${pad(p.year)}-${pad(p.month)}-${pad(p.day)}T00:00:00`,
+  );
+  return new Date(todayMidnight.getTime() - (24 - NIGHT_WATCH_START_HOUR) * 3600_000);
+}
+
 function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
 
 /** Interpreta "YYYY-MM-DDTHH:mm:ss" como horário de Brasília e devolve Date UTC. */
 export function brasiliaLocalToUtc(localIsoNoZone: string): Date {
-  // Usa formatação inversa via offset fixo -03:00 (BRT sem DST desde 2019).
   return new Date(`${localIsoNoZone}-03:00`);
 }

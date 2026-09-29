@@ -49,6 +49,14 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       setError(
         'Sessão encerrada por 30 minutos sem interação no sistema. Faça login novamente.',
       );
+    } else if (logoutReason === 'night_idle') {
+      setError(
+        'Sessão encerrada na vigia noturna (20 min sem interação). Faça login novamente.',
+      );
+    } else if (logoutReason === 'night_challenge_timeout') {
+      setError(
+        'Sessão encerrada: desafio de presença noturna sem resposta. Faça login novamente.',
+      );
     }
   }, []);
 
