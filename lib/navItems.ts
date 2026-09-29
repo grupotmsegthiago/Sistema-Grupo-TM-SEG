@@ -28,6 +28,7 @@ export const NAV_ITEMS: NavItem[] = [
     id: 'monitoring-group',
     children: [
       { name: 'Painel de OS', id: 'missions' },
+      { name: 'Controle Diário', id: 'controle-diario' },
       { name: 'Passagem de Plantão', id: 'shift-handover' },
       { name: 'Relatório de OS', id: 'mission-report' },
       { name: 'Ranking DHL', id: 'ranking-dhl' },

@@ -555,6 +555,10 @@
       "destination": "/api/nf-control?op=list"
     },
     {
+      "source": "/api/nf/manual-payment",
+      "destination": "/api/nf-control?op=manual-payment"
+    },
+    {
       "source": "/api/nf/provider-preferences",
       "destination": "/api/nf-control?op=preferences"
     },

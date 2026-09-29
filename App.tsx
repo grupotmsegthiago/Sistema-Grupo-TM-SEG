@@ -21,6 +21,7 @@ import { RealtimeProvider } from './lib/RealtimeProvider';
 // Componentes
 import Dashboard from './components/Dashboard'; 
 import MissionTable from './components/MissionTable';
+import ControleDiario from './components/ControleDiario';
 import MissionForm from './components/MissionForm';
 import VehicleList from './components/VehicleList';
 import VehicleForm from './components/VehicleForm';
@@ -98,6 +99,8 @@ import DailyCashMovement from './components/DailyCashMovement';
 import VendorVerificationControl from './components/VendorVerificationControl';
 import FinancialInvoiceControl from './components/FinancialInvoiceControl';
 import MissionAlertMonitor from './components/MissionAlertMonitor';
+import EvidenceStartAlert from './components/EvidenceStartAlert';
+import VeladaClosureAlert from './components/VeladaClosureAlert';
 import UserPresenceTracker from './components/UserPresenceTracker';
 import PresenceDebugPanel from './components/PresenceDebugPanel';
 import TimeClockGate from './components/TimeClockGate';
@@ -410,6 +413,7 @@ const App: React.FC = () => {
     switch (currentScreen) {
       case 'dashboard': return <Dashboard onOpenMission={handleOpenBillingMission} />; 
       case 'missions': return <MissionTable onNewMission={() => navigateTo('new-mission')} />;
+      case 'controle-diario': return <ControleDiario />;
       case 'shift-handover': {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
         const rl = (u.role || '').toLowerCase();
@@ -583,7 +587,8 @@ const App: React.FC = () => {
         <Sidebar isOpen={isSidebarOpen} activeScreen={currentScreen} onNavigate={navigateTo} onLogout={handleLogout} />
         <PushNotificationManager />
         <PresenceDebugPanel />
-        {(() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); const allowed = ['operador', 'avançado', 'avancado']; return allowed.includes(r); } catch { return false; } })() && <MissionAlertMonitor />}
+        {(() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); const allowed = ['operador', 'avançado', 'avancado']; return allowed.includes(r); } catch { return false; } })() && <><MissionAlertMonitor /><EvidenceStartAlert /></>}
+        {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <VeladaClosureAlert />}
         <div className="flex-1 flex flex-col min-h-0 min-w-0 relative z-10 lg:pl-20">
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />

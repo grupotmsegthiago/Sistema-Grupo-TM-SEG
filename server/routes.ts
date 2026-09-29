@@ -18,6 +18,7 @@ import { registerGestaoInvestimentoRoutes } from "./gestaoInvestimentoRoutes";
 import { registerSupportAgentsRoutes } from "./supportAgentsRoutes";
 import { registerComissaoQuadroRoutes } from "./comissaoQuadroRoutes";
 import { registerLiveTrackRoutes } from "./liveTrackRoutes";
+import { notifyVeladaClosureComplete } from "./veladaClosureWorker";
 import { runRhMigrations } from "./rhMigrations";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances, transferPixFromCompany } from "./asaasService";
 import {
@@ -808,6 +809,16 @@ export async function registerRoutes(
   registerSupportAgentsRoutes(app, requireAuth, requireRole);
   registerComissaoQuadroRoutes(app, requireAuth);
   registerLiveTrackRoutes(app);
+
+  app.post('/api/missions/:id/velada-closure-notify', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const result = await notifyVeladaClosureComplete(String(req.params.id || ''));
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      console.error('[VeladaClosure]', e?.message || e);
+      res.status(500).json({ error: e?.message || 'Falha ao avisar o fechamento da velada.' });
+    }
+  });
 
   app.post('/api/missions/:id/loss-alert-email', requireAuth, async (req: Request, res: Response) => {
     try {
@@ -3735,6 +3746,13 @@ export async function registerRoutes(
       if (mission.billing_approved) {
         return res.status(403).json({ error: 'OS aprovada para faturamento — recálculo bloqueado. Desfaça a aprovação primeiro.' });
       }
+      // Prejuízo analisado e travado: recálculo só com perfil Diretoria.
+      if (mission.negative_margin_locked) {
+        const role = String((req as any).user?.role || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (role !== 'diretoria') {
+          return res.status(403).json({ error: 'OS com prejuízo analisado e travada. Somente a Diretoria pode alterar.' });
+        }
+      }
       // BLINDAGEM: se houve edição manual com motivo, exige confirmação dupla explícita.
       if ((mission.revenue_edit_reason || mission.cost_edit_reason) && confirm !== 'OVERWRITE_MANUAL_EDIT') {
         return res.status(409).json({
@@ -3845,7 +3863,7 @@ export async function registerRoutes(
 
       for (const raw of (missions || [])) {
         try {
-          if (raw.billing_approved) {
+          if (raw.billing_approved || raw.negative_margin_locked) {
             skipped++;
             continue;
           }
@@ -5861,6 +5879,23 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       res.json(await listFinancialInvoicesForControl());
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/nf/manual-payment", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      const principal = (req as any).user as { name?: string | null; email?: string | null } | undefined;
+      const { registrarBaixaManualFatura } = await import('../lib/invoiceManualPayment.js');
+      const result = await registrarBaixaManualFatura({
+        invoiceId: String(req.body?.invoiceId || ''),
+        paymentDate: String(req.body?.paymentDate || ''),
+        evidenceUrl: String(req.body?.evidenceUrl || ''),
+        note: req.body?.note ? String(req.body.note) : null,
+        registeredBy: principal?.name || principal?.email || 'sistema',
+      });
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
     }
   });
 

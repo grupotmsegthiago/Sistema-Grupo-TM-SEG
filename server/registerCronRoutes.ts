@@ -32,6 +32,9 @@ function cronRoute(app: Express, path: string, job: CronJob) {
 export function registerCronRoutes(app: Express): void {
   cronRoute(app, "/api/cron/minute", async () => {
     runFinancialReportTick();
+    void import("./veladaClosureWorker")
+      .then(({ runVeladaClosureEscalation }) => runVeladaClosureEscalation())
+      .catch((e: any) => console.warn("[Cron] velada closure:", e?.message || e));
     for (const tick of getScheduledTicks()) {
       await tick();
     }

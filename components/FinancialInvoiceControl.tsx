@@ -32,8 +32,9 @@ import {
   AlertCircle, Clock, XCircle, DollarSign, Receipt, Eye, Loader2,
   Calendar, Building2, Hash, ArrowUpDown, ChevronDown, ChevronUp,
   Ban, CreditCard, QrCode, Barcode, Download, X, ImageIcon, Trash2,
-  Mail, Send
+  Mail, Send, Banknote
 } from 'lucide-react';
+import InvoiceManualPaymentDialog from './InvoiceManualPaymentDialog';
 
 interface Invoice {
   id: string;
@@ -66,6 +67,11 @@ interface Invoice {
   nf_provider?: string;
   plugnotas_invoice_id?: string;
   plugnotas_protocol?: string;
+  manual_payment_date?: string | null;
+  manual_payment_evidence_url?: string | null;
+  manual_payment_by?: string | null;
+  manual_payment_at?: string | null;
+  manual_payment_note?: string | null;
 }
 
 interface NfHistoryEntry {
@@ -86,6 +92,7 @@ const HISTORY_ACTION_LABEL: Record<string, { label: string; color: string; bg: s
   'stuck-alert': { label: 'TRAVADA — alerta', color: 'text-white', bg: 'bg-red-600', border: 'border-red-700', icon: AlertCircle },
   'lookup-error': { label: 'Falha de consulta', color: 'text-gray-700', bg: 'bg-gray-100', border: 'border-gray-200', icon: AlertCircle },
   'provider-failover': { label: 'Failover Asaas → PlugNotas', color: 'text-cyan-700', bg: 'bg-cyan-50', border: 'border-cyan-200', icon: RefreshCw },
+  'manual-payment': { label: 'Baixa manual', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: CheckCircle2 },
 };
 
 interface ProviderPreferences {
@@ -141,6 +148,7 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
   const [plugnotasConfigured, setPlugnotasConfigured] = useState(false);
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [reissuePlugnotasId, setReissuePlugnotasId] = useState<string | null>(null);
+  const [manualPayInvoice, setManualPayInvoice] = useState<Invoice | null>(null);
   const [providerByPipeline, setProviderByPipeline] = useState<Record<string, { total: number; authorized: number; error: number; stuck: number; processing: number }>>({});
 
   const fetchIssuerSummary = useCallback(async () => {
@@ -982,6 +990,9 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                         <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black border ${cfg.color} ${cfg.bg} ${cfg.border}`} data-testid={`payment-status-${inv.id}`}>
                           <StatusIcon size={10} /> {payLabel}
                         </span>
+                        {inv.manual_payment_at && (
+                          <span className="block mt-1 text-[8px] font-black text-emerald-700 uppercase">Baixa manual</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 font-mono font-bold text-gray-900 text-xs">{inv.number}</td>
                       <td className="px-4 py-3 font-bold text-gray-800 text-xs uppercase">{inv.client}</td>
@@ -1120,6 +1131,12 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                               </button>
                             ) : null;
                           })()}
+                          {chargeStatus !== 'CANCELADA' && chargeStatus !== 'PAGA' && (
+                            <button onClick={() => setManualPayInvoice(inv)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1.5 rounded-lg flex items-center gap-1" title="Baixa manual do pagamento" data-testid={`btn-manual-pay-${inv.id}`}>
+                              <Banknote size={13} />
+                              <span className="hidden lg:inline text-[9px] font-bold">Baixa</span>
+                            </button>
+                          )}
                           {inv.status !== 'CANCELADA' && inv.status !== 'PAGA' && (
                             <button onClick={() => handleCancelInvoice(inv)} disabled={cancellingId === inv.id} className="bg-red-50 hover:bg-red-100 text-red-500 p-1.5 rounded-lg" title="Cancelar" data-testid={`btn-cancel-${inv.id}`}>
                               {cancellingId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
@@ -1135,6 +1152,14 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
           </div>
         )}
       </div>
+
+      {manualPayInvoice && (
+        <InvoiceManualPaymentDialog
+          invoice={manualPayInvoice}
+          onClose={() => setManualPayInvoice(null)}
+          onSaved={() => { setManualPayInvoice(null); void fetchInvoices(); }}
+        />
+      )}
 
       {showDetail && selectedInvoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -1233,6 +1258,19 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                       </div>
                     </div>
 
+                    {inv.manual_payment_at && (
+                      <div className="border border-emerald-200 bg-emerald-50 rounded-xl p-4 space-y-1" data-testid="manual-payment-audit">
+                        <p className="text-[9px] font-black text-emerald-700 uppercase tracking-widest">Baixa manual</p>
+                        <p className="text-xs text-emerald-950"><span className="font-black">Pagamento:</span> {fmtDate(inv.manual_payment_date || '')}</p>
+                        <p className="text-xs text-emerald-950"><span className="font-black">Quem registrou:</span> {inv.manual_payment_by || '—'}</p>
+                        <p className="text-xs text-emerald-950"><span className="font-black">Quando:</span> {formatDateTimeBR(inv.manual_payment_at)}</p>
+                        {inv.manual_payment_note && <p className="text-xs text-emerald-950"><span className="font-black">Observação:</span> {inv.manual_payment_note}</p>}
+                        {inv.manual_payment_evidence_url && (
+                          <a href={inv.manual_payment_evidence_url} target="_blank" rel="noreferrer" className="inline-flex text-xs font-bold text-emerald-800 underline">Ver evidência do extrato</a>
+                        )}
+                      </div>
+                    )}
+
                     {inv.notes && (
                       <div className="bg-gray-50 rounded-lg p-3">
                         <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Observações</p>
@@ -1319,6 +1357,11 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                       {inv.boleto_image_url && (
                         <button onClick={() => setShowImageModal(inv.boleto_image_url!)} className="flex items-center gap-1.5 text-[10px] font-bold text-orange-600 bg-orange-50 px-3 py-2 rounded-lg border border-orange-200 hover:bg-orange-100">
                           <Receipt size={12} /> Ver Boleto
+                        </button>
+                      )}
+                      {chargeStatus !== 'PAGA' && chargeStatus !== 'CANCELADA' && (
+                        <button type="button" onClick={() => setManualPayInvoice(inv)} className="flex items-center gap-1.5 text-[10px] font-bold text-white bg-emerald-700 px-3 py-2 rounded-lg hover:bg-emerald-800" data-testid={`btn-manual-pay-detail-${inv.id}`}>
+                          <Banknote size={12} /> Baixa manual
                         </button>
                       )}
                       {inv.asaas_payment_id && inv.status !== 'PAGA' && inv.status !== 'CANCELADA' && (

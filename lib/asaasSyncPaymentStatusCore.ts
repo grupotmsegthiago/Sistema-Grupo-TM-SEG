@@ -9,6 +9,7 @@ import {
   getPaymentPixQrCode,
   mapAsaasStatus,
 } from './asaasChargeApi.js';
+import { shouldKeepManualPaidStatus } from './invoiceManualPayment.js';
 import { createSupabaseAdminClient } from './supabaseAdmin.js';
 
 export type SyncPaymentStatusResult = {
@@ -69,6 +70,7 @@ export async function runAsaasSyncPaymentStatus(params: {
   let nfLastError: string | null = null;
   let asaasInvoiceId: string | null = null;
   let skipNfSync = false;
+  let manualPaymentAt: string | null = null;
 
   const sb = createSupabaseAdminClient();
 
@@ -76,9 +78,10 @@ export async function runAsaasSyncPaymentStatus(params: {
     try {
       const { data } = await sb
         .from('financial_invoices')
-        .select('nf_provider, nf_image_url, nf_status, nf_number, plugnotas_invoice_id, asaas_payment_id')
+        .select('nf_provider, nf_image_url, nf_status, nf_number, plugnotas_invoice_id, asaas_payment_id, manual_payment_at')
         .eq('id', invoiceId)
         .maybeSingle();
+      manualPaymentAt = (data as any)?.manual_payment_at || null;
       const rawProv = String((data as any)?.nf_provider || '').toUpperCase();
       const isPlug =
         rawProv === 'PLUGNOTAS' || (!rawProv && !!(data as any)?.plugnotas_invoice_id);
@@ -141,6 +144,9 @@ export async function runAsaasSyncPaymentStatus(params: {
       updateData.nf_last_error = nfLastError.slice(0, 500);
     } else if (nfStatus === 'AUTHORIZED' || nfPdfUrl) {
       updateData.nf_last_error = null;
+    }
+    if (shouldKeepManualPaidStatus(manualPaymentAt, isPaid)) {
+      delete updateData.status;
     }
 
     await sb.from('financial_invoices').update(updateData).eq('id', invoiceId);

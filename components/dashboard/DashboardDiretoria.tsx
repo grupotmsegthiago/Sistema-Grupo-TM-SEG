@@ -9,6 +9,7 @@ import {
   ArrowUpCircle, ArrowDownCircle,   BarChart3,
 } from 'lucide-react';
 import DiretoriaSistemaTab from './DiretoriaSistemaTab';
+import CockpitEvidenceByOperator from '../CockpitEvidenceByOperator';
 import InvoiceDivergenceAuditPanel from '../InvoiceDivergenceAuditPanel';
 import CashFlowPreviewButton from '../CashFlowPreviewButton';
 import { useDashboardDiretoriaData } from '../../lib/dashboardDiretoria/useDashboardDiretoriaData';
@@ -913,6 +914,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
   const renderOperacao = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="lg:col-span-12"><CockpitEvidenceByOperator /></div>
       <div className="lg:col-span-4 grid grid-cols-2 gap-3">
         <KpiTile label="OS no período" value={String(operational.missionCount)} />
         <KpiTile label="OS Mãe ativas" value={String(parentSummary.active)} sub={`${parentSummary.total} grupos`} accent="text-gray-900" />

@@ -45,6 +45,12 @@ import {
 } from '../lib/missionOpsIncomplete';
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import {
+  canApproveNegativeMarginLock,
+  canEditNegativeMarginLockedOs,
+  isNegativeMarginResult,
+  isOsNegativeMarginLocked,
+} from '../lib/osNegativeMarginLock';
+import {
   canUnlockPaidInvoiceLock,
   registrarDesbloqueioAjusteOS,
   verificarTravaSegurancaOS,
@@ -606,10 +612,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const plinioProviderEditBlocked = false;
   const canActivateFullEdit = useMemo(() => {
     if (isProviderOnlyUser) return false;
+    if (isOsNegativeMarginLocked(mission) && !canEditNegativeMarginLockedOs({ role: userRoleLower, name: userNameLower })) return false;
     return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
       || isFinanceSupervisorName(userNameLower) || userNameLower.includes('thiago')
       || userNameLower.includes('simone');
-  }, [userRoleLower, userNameLower, isProviderOnlyUser]);
+  }, [userRoleLower, userNameLower, isProviderOnlyUser, mission?.negative_margin_locked]);
   // OS 5046: libera a troca da TABELA DE CUSTO mesmo com o Motor Automático ativo
   // para os responsáveis pela auditoria (Thiago Moreira, Simone, Barbara) e
   // diretoria/admin. Ao selecionar uma tabela, o motor é desligado para esta
@@ -659,6 +666,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // snapshot), campos editáveis ficam bloqueados. Salvar (rascunho) NÃO trava.
   // Diretoria, administrador e CEO podem destravar manualmente para corrigir.
   const isBillingLocked = !!(mission?.billing_verified_by || mission?.billing_approved || mission?.snapshot_approved_by);
+  // Prejuízo analisado: trava mais forte que a aprovação normal.
+  // Administrador, Bárbara/Giovanna e Controller não destravam — só perfil Diretoria.
+  const negativeMarginHardLocked = isOsNegativeMarginLocked(mission);
+  const canBypassNegativeMarginLock = canEditNegativeMarginLockedOs({ role: userRoleLower, name: userNameLower });
+  const negativeLockBlocks = negativeMarginHardLocked && !canBypassNegativeMarginLock;
+  const canShowNegativeLockButton = canApproveNegativeMarginLock({ name: userNameLower, role: userRoleLower }) && !negativeMarginHardLocked;
   const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower)
     || isBarbaraFinance;
   // ADMINISTRADOR (ex: Barbara) tem liberação permanente: pode editar OS aprovada
@@ -698,7 +711,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     });
     return () => { cancelled = true; };
   }, [isOpen, mission?.id]);
-  const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
+  const isEffectivelyLocked = negativeLockBlocks || (isBillingLocked && !unlockOverride && !isAdminFullAccess);
   const isPaidInvoiceEffectivelyLocked = paidInvoiceLock.bloqueado && !paidUnlockOverride;
   const canUnlockPaidLock = canUnlockPaidInvoiceLock({ role: userRoleLower, name: userNameLower });
 
@@ -725,14 +738,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     }
   };
   // Controller/Plínio salva só o fornecedor: custo editável mesmo com a OS travada.
-  const providerFinanceInputLocked = (isEffectivelyLocked && !isProviderOnlyUser) || isPaidInvoiceEffectivelyLocked;
+  const providerFinanceInputLocked = negativeLockBlocks || (isEffectivelyLocked && !isProviderOnlyUser) || isPaidInvoiceEffectivelyLocked;
   const canSaveProviderAdjustments = isProviderOnlyUser;
   // Gate unificado: nenhum input financeiro/comercial do CLIENTE editável sem canEditClientData
   // (inclui OS destravada — unlock não contorna a regra do Plinio).
   const clientFinanceInputLocked = isController || isEffectivelyLocked || !canEditClientData || isPaidInvoiceEffectivelyLocked;
   // Controller/Plínio: pedágio do cliente editável na auditoria (botão laranja + campo + Salvar).
   const clientTollInputLocked = isPaidInvoiceEffectivelyLocked || (!(isProviderOnlyUser || isControllerRole) && clientFinanceInputLocked);
-  const canEditOpsEvenIfLocked = (isBarbaraFinance || !isEffectivelyLocked) && !isPaidInvoiceEffectivelyLocked;
+  const canEditOpsEvenIfLocked = !negativeLockBlocks && (isBarbaraFinance || !isEffectivelyLocked) && !isPaidInvoiceEffectivelyLocked;
   // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
   // da memória de cálculo devem ACOMPANHAR a tabela escolhida sempre que o
   // usuário tem permissão de trocar a tabela mesmo numa OS travada
@@ -742,7 +755,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // tabela e nada mudou". A recálculo acontece SÓ na tela (estado React);
   // nenhuma escrita no banco/snapshot é disparada por trocar a tabela numa OS
   // travada — a persistência continua exclusiva do fluxo de Salvar/Aprovar.
-  const lockAllowsRecalc = (!isEffectivelyLocked || canEditTablesEvenIfLocked || fullEditMode) && !isPaidInvoiceEffectivelyLocked;
+  const lockAllowsRecalc = !negativeLockBlocks && (!isEffectivelyLocked || canEditTablesEvenIfLocked || fullEditMode) && !isPaidInvoiceEffectivelyLocked;
 
   // Confirmação obrigatória de pedágio: ao abrir o modal sem pedágio confirmado,
   // exige resposta explícita do operador (Sim com valor / Não, sem pedágio).
@@ -2677,8 +2690,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       }
   };
 
-  const handleUpdate = async (approve: boolean) => {
+  const handleUpdate = async (approve: boolean, opts?: { negativeMarginLock?: boolean }) => {
       if (!mission) return;
+      const lockingNegative = !!opts?.negativeMarginLock;
+      let lockActor = false;
+      try {
+          const u = JSON.parse(localStorage.getItem('userData') || '{}');
+          lockActor = canApproveNegativeMarginLock(u);
+          if (lockingNegative && !lockActor) {
+              showNotification('Sem permissão', 'Somente Giovanna Marsili, Beatriz Rocha e Thiago Moreira podem travar uma OS com prejuízo analisado.', 'error');
+              return;
+          }
+          if (!lockingNegative && isOsNegativeMarginLocked(mission) && !canEditNegativeMarginLockedOs(u)) {
+              showNotification('OS travada', `Prejuízo analisado por ${mission.negative_margin_locked_by || 'a equipe'}. Somente a Diretoria pode alterar.`, 'error');
+              return;
+          }
+      } catch {
+          if (lockingNegative || isOsNegativeMarginLocked(mission)) {
+              showNotification('OS travada', 'Não foi possível validar a permissão desta trava.', 'error');
+              return;
+          }
+      }
       if (isPaidInvoiceEffectivelyLocked) {
           showNotification('Bloqueado', paidInvoiceLock.motivo || 'OS vinculada a fatura PAGA.', 'error');
           return;
@@ -2687,11 +2719,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           showNotification('Sem Permissão', 'Perfil controller/fornecedor não pode aprovar OS. Utilize somente Salvar.', 'error');
           return;
       }
-      if (isSnapshotFrozen && !isController && !isProviderOnlyUser && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro' && currentApprovalStatus.currentUserStage !== 'controller') {
+      if (!lockingNegative && isSnapshotFrozen && !isController && !isProviderOnlyUser && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro' && currentApprovalStatus.currentUserStage !== 'controller') {
           showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro, Controller ou Diretoria podem editar.`, 'error');
           return;
       }
-      if (currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance && !isProviderOnlyUser) {
+      if (!lockingNegative && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance && !isProviderOnlyUser) {
           showNotification('Bloqueado', 'Esta OS foi aprovada pela Diretoria. Somente a Diretoria pode editar.', 'error');
           return;
       }
@@ -2827,6 +2859,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           );
           return;
       }
+      if (lockingNegative) {
+          if (!isNegativeMarginResult(revTotal, costTotal)) {
+              showNotification('Sem prejuízo', 'Esta trava só vale quando o fornecedor está cobrando mais que o faturamento.', 'error');
+              return;
+          }
+          if (isOsNegativeMarginLocked(mission)) {
+              showNotification('Já travada', 'Esta OS já foi analisada e travada. Somente a Diretoria pode alterar.', 'error');
+              return;
+          }
+      }
 
       setIsUpdating(true);
       isSavingRef.current = true;
@@ -2886,9 +2928,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const isFullyApproved = hasDiretoria;
           
           const canReleaseBilling = stage === 'financeiro' || stage === 'diretoria' || stage === 'controller';
-          const shouldSnapshot = shouldWriteBillingSnapshot({
-              approve: (approve && canReleaseBilling) || isApprovedForBilling,
-              billingApproved: isApprovedForBilling,
+          const isApprovedForBillingEffective = lockingNegative || isApprovedForBilling;
+          const shouldSnapshot = lockingNegative || shouldWriteBillingSnapshot({
+              approve: (approve && canReleaseBilling) || isApprovedForBillingEffective,
+              billingApproved: isApprovedForBillingEffective,
               existingSnapshot: mission.snapshot_data,
           });
           
@@ -2900,9 +2943,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               cost_value: isSameOs ? 0 : r2(costServiceOnly),
               toll_value: r2(toll),
               displacement_value: r2(displacement),
-              billing_approved: isApprovedForBilling,
+              billing_approved: lockingNegative ? true : isApprovedForBilling,
               last_update: new Date().toISOString(),
           };
+          if (lockingNegative) {
+              const lockedAt = new Date().toISOString();
+              basePayload.negative_margin_locked = true;
+              basePayload.negative_margin_locked_by = userName;
+              basePayload.negative_margin_locked_at = lockedAt;
+          }
           // Salvar = rascunho (sem travar nem marcar conferência / boletim).
           // Aprovar = marca verificação; estágios financeiros liberam boletim.
           // Controller/Plínio (provider-only) não chega aqui com approve=true.
@@ -3416,7 +3465,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               cost_value: costServiceOnly,
               toll_value: toll,
               toll_value_provider: tollProv,
-              billing_approved: isApprovedForBilling,
+              billing_approved: lockingNegative ? true : isApprovedForBilling,
+              ...(lockingNegative ? {
+                  negative_margin_locked: true,
+                  negative_margin_locked_by: userName,
+                  negative_margin_locked_at: basePayload.negative_margin_locked_at,
+              } : {}),
               ...(approve ? { billing_verified_by: userName } : {}),
               ...(shouldSnapshot ? { snapshot_data: basePayload.snapshot_data, snapshot_approved_by: userName, snapshot_approved_at: basePayload.snapshot_approved_at } : {}),
               last_update: basePayload.last_update,
@@ -3432,7 +3486,26 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (isEditingProvOpsData) setIsEditingProvOpsData(false);
           if (isEditingRoute) setIsEditingRoute(false);
 
-          if (approve) {
+          if (lockingNegative) {
+              try {
+                  await supabase.from('system_logs').insert([{
+                      user_name: userName,
+                      action_type: 'NEGATIVE_MARGIN_LOCK',
+                      entity: 'NegativeMarginLock',
+                      entity_id: mission.id,
+                      details: JSON.stringify({
+                          locked_by: userName,
+                          locked_at: basePayload.negative_margin_locked_at,
+                          revenueTotal: r2(revTotal),
+                          costTotal: r2(costTotal),
+                          result: r2(revTotal - costTotal),
+                      }),
+                  }]);
+              } catch (lockLogErr) {
+                  console.warn('[NegativeMarginLock] Falha ao registrar log:', lockLogErr);
+              }
+              showNotification('OS travada', 'Prejuízo analisado e travado. Somente a Diretoria pode alterar esta OS.', 'success');
+          } else if (approve) {
               const snapshotMsg = shouldSnapshot ? ' 🔒 Dados Congelados!' : '';
               if (isFullyApproved) {
                   showNotification('Sucesso', `Faturamento Finalizado pela Diretoria!${snapshotMsg}`, 'success');
@@ -3497,7 +3570,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           dispararSyncFaturaPorOS(mission.id, userName);
           if (onUpdate) onUpdate();
           window.dispatchEvent(new CustomEvent('refreshMissions'));
-          if (!approve || isFullyApproved) onClose();
+          if (!approve || isFullyApproved || lockingNegative) onClose();
       } catch (e: any) {
           console.error('[SAVE ERROR]', e?.message, e?.details, e?.hint);
           const msg = e instanceof Error ? e.message : (e?.message || 'Erro desconhecido');
@@ -5566,7 +5639,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         // OS 5046: a auditoria (canOverrideAutoProvider) também pode trocar a
                                         // tabela com o motor auto ATIVO, sem precisar de EDIÇÃO TOTAL.
                                         const autoBlocksSelector = !!financialData.autoEngine?.active && !canOverrideAutoProvider && !isProviderOnlyUser;
-                                        const providerSelectorDisabled = !fullEditMode && (mission.is_same_os || (isEffectivelyLocked && !canEditTablesEvenIfLocked) || autoBlocksSelector);
+                                        const providerSelectorDisabled = negativeLockBlocks || (!fullEditMode && (mission.is_same_os || (isEffectivelyLocked && !canEditTablesEvenIfLocked) || autoBlocksSelector));
                                         return (
                                             <FilterableSelect
                                                 value={(!fullEditMode && financialData.autoEngine?.active) ? '' : (manualProviderTableId || '')}
@@ -6562,6 +6635,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="truncate">Plano DHL</span>
                                   </button>
                                 )}
+                                {negativeMarginHardLocked && (
+                                  <div className="w-full flex items-center gap-2 rounded-lg border border-slate-300 bg-slate-100 px-2 py-1.5" data-testid="banner-negative-margin-lock">
+                                    <Lock size={14} className="text-slate-700 shrink-0" />
+                                    <span className="text-[9px] sm:text-[10px] font-black uppercase text-slate-700 leading-tight">
+                                      Travada por {mission?.negative_margin_locked_by || 'análise de prejuízo'} — somente a Diretoria altera
+                                    </span>
+                                  </div>
+                                )}
+                                {canShowNegativeLockButton && footerProfit < 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdate(true, { negativeMarginLock: true })}
+                                    disabled={isUpdating}
+                                    className="flex-1 sm:flex-none px-2 sm:px-4 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-50"
+                                    title="Confirma que o prejuízo foi analisado (fornecedor maior que o faturamento). Depois, somente a Diretoria altera a OS."
+                                    data-testid="button-lock-negative-margin"
+                                  >
+                                    <Lock size={14} className="shrink-0" />
+                                    <span className="truncate">Travar prejuízo</span>
+                                  </button>
+                                )}
                                 {canAskOsAnalysis && mission && (
                                   <button
                                     type="button"
@@ -6585,13 +6679,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="truncate">Pedir Análise</span>
                                   </button>
                                 )}
-                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || (!canSaveProviderAdjustments && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${(!canSaveProviderAdjustments && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked)) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={isEffectivelyLocked && !canSaveProviderAdjustments ? 'Faturamento travado — destrave para editar' : canSaveProviderAdjustments ? 'Salvar somente o valor do fornecedor' : ''} data-testid="button-save-adjustments">
-                                    {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? <Lock size={14} className="shrink-0" /> : <Save size={14} className="shrink-0" />}
-                                    <span className="truncate">{(!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado' : 'Salvar'}</span>
+                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || negativeLockBlocks || (!canSaveProviderAdjustments && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${(negativeLockBlocks || (!canSaveProviderAdjustments && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={negativeLockBlocks ? 'Prejuízo analisado — somente a Diretoria altera' : isEffectivelyLocked && !canSaveProviderAdjustments ? 'Faturamento travado — destrave para editar' : canSaveProviderAdjustments ? 'Salvar somente o valor do fornecedor' : ''} data-testid="button-save-adjustments">
+                                    {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (negativeLockBlocks || (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance)) ? <Lock size={14} className="shrink-0" /> : <Save size={14} className="shrink-0" />}
+                                    <span className="truncate">{negativeLockBlocks ? 'Travada' : (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado' : 'Salvar'}</span>
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 
-                                    disabled={isProviderOnlyUser || isUpdating || opsIncomplete || (requiresTollGate && !tollConfirmed && !isBarbaraFinance) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))}
+                                    disabled={negativeLockBlocks || isProviderOnlyUser || isUpdating || opsIncomplete || (requiresTollGate && !tollConfirmed && !isBarbaraFinance) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))}
                                     className={`flex-[1.2] sm:flex-none px-2 sm:px-6 py-2 rounded-lg sm:rounded-xl font-black uppercase text-[9px] sm:text-xs shadow-md flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 h-9 sm:h-10 ${isProviderOnlyUser ? 'bg-gray-400 cursor-not-allowed text-gray-200' : opsIncomplete ? 'bg-gray-400 cursor-not-allowed text-gray-200' : requiresTollGate && !tollConfirmed && !isBarbaraFinance ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
                                     title={isProviderOnlyUser ? 'Controller/fornecedor pode somente salvar; aprovação exclusiva da Diretoria ou Administrador' : opsIncomplete ? `Preencha: ${opsMissingFields.join(', ')}` : undefined}
                                     data-testid="button-approve-billing"
@@ -6599,7 +6693,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="flex items-center gap-1 sm:gap-2">
                                         {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : isProviderOnlyUser ? <Lock size={14} className="shrink-0" /> : opsIncomplete ? <AlertTriangle size={14} className="shrink-0" /> : (!currentApprovalStatus.isPrivilegedReapprover && (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria)) ? <Lock size={14} className="text-amber-600 shrink-0" /> : <CheckCircle2 size={14} className="shrink-0" />}
                                         <span className="truncate">
-                                        {isProviderOnlyUser
+                                        {negativeLockBlocks
+                                            ? 'Travada'
+                                            : isProviderOnlyUser
                                             ? 'Sem permissão'
                                             : opsIncomplete
                                                 ? 'Dados pendentes'

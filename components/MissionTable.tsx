@@ -30,6 +30,7 @@ import MissionHistoryModal from './MissionHistoryModal';
 import MissionFinancialModal from './MissionFinancialModal';
 import MissionFullReportModal from './MissionFullReportModal';
 import DailyGoalThermometer from './DailyGoalThermometer';
+import EndEvidencePendingAlert from './EndEvidencePendingAlert';
 import ExecutiveDashboard from './ExecutiveDashboard';
 import DhlSolicitationModal from './DhlSolicitationModal';
 import LossesDialog from './LossesDialog';
@@ -1836,6 +1837,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
     return (
       <div className="space-y-6 animate-fade-in pb-28 relative">
+        {!isRestrictedClientView && <EndEvidencePendingAlert />}
         <div className={`p-6 rounded-xl shadow-sm border flex flex-col gap-6 ${isCevaClient ? 'bg-[#152c54] border-[#152c54]' : 'bg-white border-gray-200'}`}>
           <div className="flex flex-col 2xl:flex-row 2xl:items-center justify-between gap-6">
           <div className="2xl:w-[350px] shrink-0">

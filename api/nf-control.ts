@@ -31,6 +31,7 @@ import {
 } from '../lib/nfInvoiceControlApi.js';
 import { syncPendingAsaasNfStatuses } from '../lib/asaasNfStatusSync.js';
 import { executeManualInvoiceRetry } from '../lib/nfRetryInvoiceApiCore.js';
+import { registrarBaixaManualFatura } from '../lib/invoiceManualPayment.js';
 
 const require = createRequire(import.meta.url);
 
@@ -99,6 +100,20 @@ export default async function handler(req: LiteReq, res: LiteRes) {
 
     if (method === 'GET' && (op === 'list' || op === 'invoices')) {
       res.status(200).json(await listFinancialInvoicesForControl());
+      return;
+    }
+
+    if (method === 'POST' && op === 'manual-payment') {
+      const principal = await resolveLitePrincipal(token, req);
+      const body = parseBody(req.body);
+      const result = await registrarBaixaManualFatura({
+        invoiceId: String(body.invoiceId || ''),
+        paymentDate: String(body.paymentDate || ''),
+        evidenceUrl: String(body.evidenceUrl || ''),
+        note: body.note ? String(body.note) : null,
+        registeredBy: principal?.name || principal?.email || 'sistema',
+      });
+      res.status(200).json(result);
       return;
     }
 

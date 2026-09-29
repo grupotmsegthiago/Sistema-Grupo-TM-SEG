@@ -6,7 +6,7 @@ import { Mission, MissionStatus, MissionLog, ClientPriceTable, ProviderCostTable
 import { supabase } from '../lib/supabase';
 import { 
   Truck, User, Phone, EyeOff, ShieldCheck, UserCheck, CarFront, 
-  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, AlertTriangle, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X, Upload, Loader2, Camera, Link2
+  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, AlertTriangle, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X, Upload, Loader2, Camera, Link2, Lock
 } from 'lucide-react';
 
 const WhatsAppIcon = ({ size = 14 }: { size?: number }) => (
@@ -22,6 +22,9 @@ import { formatProviderName, resolveLocationDisplay, extractCoordinates } from '
 import { isMissionOpsIncomplete, getMissionOpsMissingFields, isOpsAlertRecipient } from '../lib/missionOpsIncomplete';
 import LiveTrackPanel from './LiveTrackPanel';
 import { isVeladaMission } from '../lib/liveTrack/isVeladaMission';
+import { isOsNegativeMarginLocked } from '../lib/osNegativeMarginLock';
+import { missionHasOccurrence, OCCURRENCE_BANNER } from '../lib/missionOccurrence';
+import MissionOccurrenceDialog from './MissionOccurrenceDialog';
 
 const geocodeCache: Record<string, string> = {};
 const geocodePending: Record<string, Promise<string>> = {};
@@ -210,6 +213,8 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     const [isUploading, setIsUploading] = useState(false);
     const [pendingFiles, setPendingFiles] = useState<{ file: File; preview: string }[]>([]);
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+    const [occurrenceOpen, setOccurrenceOpen] = useState(false);
+    const [occurrenceCount, setOccurrenceCount] = useState<number | null>(null);
     const uploadFileInputRef = useRef<HTMLInputElement>(null);
     const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
     
@@ -732,11 +737,32 @@ Qualquer dúvida, estamos a disposição.
                     </div>
                 );
             })()}
+            {!hideProviderInfo && missionHasOccurrence(occurrenceCount ?? mission.occurrence_count) && (
+                <button
+                    type="button"
+                    onClick={() => setOccurrenceOpen(true)}
+                    className="w-full bg-orange-600 text-white text-[12px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2"
+                    data-testid={`banner-occurrence-${mission.id}`}
+                >
+                    <AlertTriangle size={12} strokeWidth={3} /> {OCCURRENCE_BANNER}
+                </button>
+            )}
             <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-b-xl transition-colors ${isRedLight ? 'bg-red-500' : isImminent ? 'bg-amber-500' : 'bg-transparent'}`}></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-12 min-h-[120px] divide-y sm:divide-y xl:divide-y-0 xl:divide-x divide-gray-100 items-stretch">
                 <div className="sm:col-span-1 xl:col-span-2 p-2.5 xl:p-3 flex flex-col justify-center gap-2 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xl font-black text-gray-900 tracking-tighter leading-none">{mission.id}</span>
+                        {isOsNegativeMarginLocked(mission) && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase bg-slate-800 text-white border border-slate-900 shadow-sm flex items-center gap-1" title={`Prejuízo analisado por ${mission.negative_margin_locked_by || 'a equipe'}. Somente a Diretoria pode alterar.`} data-testid={`badge-negative-lock-${mission.id}`}>
+                                <Lock size={10} /> TRAVADA
+                            </span>
+                        )}
+                        {(/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && (mission as any).dhl_sm_number ? (
+                            <span className={`px-1.5 py-0.5 rounded text-[11px] font-black uppercase border shadow-sm flex items-center gap-1 ${isOsNegativeMarginLocked(mission) ? 'bg-slate-800 text-white border-slate-900' : 'bg-amber-100 text-amber-800 border-amber-400'}`} title={isOsNegativeMarginLocked(mission) ? 'SM travada — somente a Diretoria altera' : 'Número da SM DHL'} data-testid={`badge-sm-${mission.id}`}>
+                                {isOsNegativeMarginLocked(mission) && <Lock size={10} />}
+                                SM: {String((mission as any).dhl_sm_number).toUpperCase()}
+                            </span>
+                        ) : null}
                         {(/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && (mission as any).dhl_se_number ? (
                             <span className="px-1.5 py-0.5 rounded text-[11px] font-black uppercase bg-yellow-100 text-red-700 border border-yellow-400 shadow-sm flex items-center gap-1" title="Número da SE DHL" data-testid={`badge-se-${mission.id}`}>
                                 SE: {String((mission as any).dhl_se_number).toUpperCase()}
@@ -1137,6 +1163,7 @@ Qualquer dúvida, estamos a disposição.
                         <button onClick={(e) => { e.stopPropagation(); if (mission.mapLink) window.open(mission.mapLink, '_blank'); else alert('Nenhuma localização salva nesta OS.'); }} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${mission.mapLink ? 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-600 hover:text-white' : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'}`} title={mission.mapLink ? "Abrir Última Localização (Google Maps)" : "Sem localização salva"}><MapPin size={14} /></button>
                         {isVeladaMission(mission) && <LiveTrackPanel mission={mission} compact />}
                         <button onClick={() => onUpdate(mission)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${canEditMission ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white' : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-200 hover:text-gray-600'}`} title={canEditMission ? "Editar Missão" : "Visualizar Detalhes"}>{canEditMission ? <Pencil size={14}/> : <Eye size={14}/>}</button>
+                        <button type="button" onClick={() => setOccurrenceOpen(true)} className="w-7 h-7 flex items-center justify-center rounded-md bg-orange-50 text-orange-700 border border-orange-200 transition-all duration-200 hover:bg-orange-600 hover:text-white hover:shadow-sm active:scale-95" title="Registrar ocorrência desta OS" data-testid={`button-occurrence-${mission.id}`}><AlertTriangle size={14} /></button>
                         
                         {(isDirector || canEditMission) && onOpenFinancials && (
                             <button onClick={() => onOpenFinancials(mission)} className={`flex items-center justify-center rounded-md transition-all duration-200 hover:shadow-sm active:scale-95 border ${mission.billing_approved ? 'w-7 h-7 bg-blue-600 text-white border-blue-700' : pendingApproval?.hasPartial ? 'h-7 px-1.5 gap-1 bg-gray-100 text-gray-500 border-gray-300 hover:bg-gray-200' : 'w-7 h-7 bg-green-50 text-green-700 border-green-200 hover:bg-green-600 hover:text-white'}`} title={mission.billing_approved ? "Faturamento Aprovado - Visualizar" : pendingApproval?.hasPartial ? `Aguardando: ${pendingApproval.missing.join(', ')} (${pendingApproval.waitingDays}d)` : "Conferência e Aprovação de Faturamento"}>
@@ -1253,6 +1280,14 @@ Qualquer dúvida, estamos a disposição.
             </div>
         )}
 
+        {occurrenceOpen && !hideProviderInfo && (
+            <MissionOccurrenceDialog
+                missionId={mission.id}
+                canWrite={canEditMission}
+                onClose={() => setOccurrenceOpen(false)}
+                onSaved={(count) => setOccurrenceCount(count)}
+            />
+        )}
         {fullScreenImage && (
             <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setFullScreenImage(null)} data-testid="fullscreen-evidence-overlay">
                 <button onClick={(e) => { e.stopPropagation(); setFullScreenImage(null); }} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all z-10" data-testid="button-close-fullscreen-evidence"><X size={24} /></button>

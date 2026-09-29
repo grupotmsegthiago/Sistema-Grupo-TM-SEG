@@ -83,6 +83,21 @@ export interface Mission {
   billing_approved?: boolean;
   billing_verified_by?: string;
 
+  /** Operador que finalizou velada ATIVA/TM SEG e ainda deve informar KM, hora e pedágio. */
+  velada_closure_operator?: string | null;
+  velada_closure_opened_at?: string | null;
+  velada_closure_notified_at?: string | null;
+  velada_closure_escalated_at?: string | null;
+  velada_toll_confirmed?: boolean;
+
+  /** Quantidade de ocorrências de problema registradas nesta OS. */
+  occurrence_count?: number | null;
+
+  /** Prejuízo analisado e travado. Só o perfil Diretoria altera depois. */
+  negative_margin_locked?: boolean;
+  negative_margin_locked_by?: string | null;
+  negative_margin_locked_at?: string | null;
+
   vendor_os_number?: string;
   invoice_number?: string;
   payment_date?: string;

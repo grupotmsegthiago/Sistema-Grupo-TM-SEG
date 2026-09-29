@@ -2,6 +2,7 @@ import { formatDateBR } from '../lib/dateUtils';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Mission } from '../types';
 import { supabase } from '../lib/supabase';
+import { authFetch } from '../lib/authFetch';
 import { AlertTriangle, CheckCircle2, History, Loader2, X } from 'lucide-react';
 
 type HistoryEntry = {
@@ -127,6 +128,12 @@ const TollConfirmationDialog: React.FC<Props> = ({ isOpen, mission, initialValue
                 console.error('[TollConfirm] callback falhou', cbErr);
                 setSubmitError(cbErr?.message || 'Falha ao aplicar confirmação. Tente novamente.');
                 return;
+            }
+            try {
+                await supabase.from('missions').update({ velada_toll_confirmed: true }).eq('id', mission.id);
+                void authFetch(`/api/missions/${mission.id}/velada-closure-notify`, { method: 'POST' }).catch(() => {});
+            } catch {
+                // A confirmação do pedágio já foi gravada. A trava da velada tenta de novo no próximo salvamento.
             }
         } finally {
             setSubmitting(false);

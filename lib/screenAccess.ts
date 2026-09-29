@@ -12,6 +12,7 @@ import {
   canAccessComissoesComerciais,
   canAccessFaturamentoDiretoria,
   DIRETORIA_MENU_SCREEN_IDS,
+  isPerfilComercial,
 } from './diretoriaAccess';
 import { canAccessMissionReport } from './missionReportAccess';
 import { canViewOsAnalysisPendencies } from './osAnalysisAccess';
@@ -150,6 +151,12 @@ export function canAccessScreen(user: ScreenAccessUser | null | undefined, scree
 
   if (isRestrictedClientUser(user) && isClientForbidden(screenId)) {
     return false;
+  }
+
+  // Controle diário: qualquer usuário interno, menos o comercial e o portal do cliente.
+  if (screenId === 'controle-diario') {
+    if (isRestrictedClientUser(user) || isPerfilComercial(user)) return false;
+    return true;
   }
 
   // Dashboard é a home segura de qualquer usuário autenticado (mesmo sem item no perfil).

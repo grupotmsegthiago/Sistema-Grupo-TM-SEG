@@ -3,11 +3,20 @@
  * Usado pelo handler serverless /api/os-analysis (Express catch-all está instável na Vercel).
  */
 
-import { requireOsAnalysisAdmin, type OsAnalysisPrincipal } from './apiAuth.js';
+import { anonSupabaseFallback, requireOsAnalysisAdmin, type OsAnalysisPrincipal } from './apiAuth.js';
 import { sendOsAnalysisAlertEmail } from './sendAlertEmail.js';
 import type { OsAnalysisRecipient } from '../osAnalysisTypes.js';
 
 const SYSTEM_URL = (process.env.SYSTEM_URL || 'https://sistema.grupotmseg.com.br').replace(/\/$/, '');
+
+/** Leitura e revisão seguem sem a service_role: a tela usa a chave anon quando ela falta no ambiente. */
+function analysisReadClient() {
+  try {
+    return requireOsAnalysisAdmin();
+  } catch {
+    return anonSupabaseFallback();
+  }
+}
 
 export function buildAuditLink(missionId: string): string {
   return `${SYSTEM_URL}/?page=missions&openMission=${encodeURIComponent(missionId)}`;
@@ -266,7 +275,7 @@ export async function claimOsAnalysis(principal: OsAnalysisPrincipal, requestId:
 
 export async function listOsAnalysisRequests(status?: string) {
   await ensureOsAnalysisSchema();
-  const sb = requireOsAnalysisAdmin();
+  const sb = analysisReadClient();
   let q = sb.from('os_analysis_requests').select('*').order('created_at', { ascending: false }).limit(300);
   if (status) q = q.eq('status', status);
   const { data, error } = await q;
@@ -375,7 +384,7 @@ export async function respondOsAnalysis(principal: OsAnalysisPrincipal, input: R
 
 export async function reviewOsAnalysis(principal: OsAnalysisPrincipal, id: string, notes?: string) {
   await ensureOsAnalysisSchema();
-  const sb = requireOsAnalysisAdmin();
+  const sb = analysisReadClient();
   const { data, error } = await sb
     .from('os_analysis_requests')
     .update({
