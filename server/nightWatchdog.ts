@@ -95,7 +95,7 @@ export async function sendNightIncidentEmail(opts: {
     }
     <p style="font-size:13px;color:#555;">
       O sistema exige presença no plantão 20h–08h (janta 00h–01h isenta).
-      Desafio aos 10 min · logout forçado aos 20 min · heartbeat a cada 2 min.
+      Desafio aos 10 min · logout forçado aos 20 min · heartbeat a cada 30 min · alerta sem sinal em 1h30.
     </p>
     <pre style="background:#f8fafc;padding:12px;border-radius:8px;font-size:11px;">${escapeHtml(
       JSON.stringify(opts.details || {}, null, 2),
@@ -278,5 +278,5 @@ export function registerNightWatchdogSchedule(supabase: SupabaseClient): void {
       console.error('[NightWatchdog] tick:', e?.message || e);
     }
   });
-  console.log('[NightWatchdog] Agendado via /api/cron/minute — alerta stale ≥12 min.');
+  console.log('[NightWatchdog] Agendado via /api/cron/minute — alerta stale ≥90 min (1h30).');
 }

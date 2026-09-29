@@ -13,8 +13,10 @@ import {
   keywordMatches,
   NIGHT_CHALLENGE_TIMEOUT_MS,
   NIGHT_FORCE_LOGOUT_MINUTES,
+  NIGHT_HEARTBEAT_INTERVAL_MINUTES,
   NIGHT_IDLE_MINUTES,
   NIGHT_IDLE_MS,
+  NIGHT_STALE_ALERT_MINUTES,
   pickNightWatchKeyword,
 } from '../lib/productivity/nightWatch';
 import {
@@ -300,8 +302,8 @@ export default function IdlePresenceGuard() {
           </button>
 
           <p className="text-[10px] text-center text-slate-400 uppercase tracking-wide">
-            Heartbeat 2 min · desafio {NIGHT_IDLE_MINUTES} min · logout {NIGHT_FORCE_LOGOUT_MINUTES} min ·
-            alerta à diretoria · relatório 09h/21h
+            Heartbeat {NIGHT_HEARTBEAT_INTERVAL_MINUTES} min · alerta sem sinal {NIGHT_STALE_ALERT_MINUTES} min ·
+            desafio {NIGHT_IDLE_MINUTES} min · logout {NIGHT_FORCE_LOGOUT_MINUTES} min · relatório 09h/21h
           </p>
         </div>
       </div>

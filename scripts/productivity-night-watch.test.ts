@@ -27,6 +27,8 @@ import {
 import {
   NIGHT_FORCE_LOGOUT_MINUTES,
   NIGHT_FORCE_LOGOUT_MS,
+  NIGHT_HEARTBEAT_INTERVAL_MINUTES,
+  NIGHT_HEARTBEAT_INTERVAL_MS,
   NIGHT_IDLE_MINUTES,
   NIGHT_STALE_ALERT_MINUTES,
 } from '../lib/productivity/nightWatch.ts';
@@ -122,7 +124,9 @@ test('logout por idle: 30 min diurno / 20 min noturno e isenção diretoria/admi
   assert.equal(NIGHT_IDLE_MINUTES, 10);
   assert.equal(NIGHT_FORCE_LOGOUT_MINUTES, 20);
   assert.equal(NIGHT_FORCE_LOGOUT_MS, 20 * 60 * 1000);
-  assert.equal(NIGHT_STALE_ALERT_MINUTES, 12);
+  assert.equal(NIGHT_HEARTBEAT_INTERVAL_MINUTES, 30);
+  assert.equal(NIGHT_HEARTBEAT_INTERVAL_MS, 30 * 60 * 1000);
+  assert.equal(NIGHT_STALE_ALERT_MINUTES, 90);
   assert.equal(shouldEnforceSessionIdleLogout('funcionario'), true);
   assert.equal(shouldEnforceSessionIdleLogout('Operador'), true);
   assert.equal(shouldEnforceSessionIdleLogout('Diretoria'), false);
