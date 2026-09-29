@@ -3,9 +3,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   acharClienteMesmoDocumento,
+  clienteNaCarteiraComercial,
+  clienteStatusAtivo,
   comercialIdDoUsuarioLogado,
+  deduparClientesPorDocumento,
   digitosDocumentoCliente,
   documentoCorrespondeBusca,
+  montarFiltroOrCarteiraComercial,
   perfilEhComercialRole,
 } from '../lib/clientDuplicateGuard.ts';
 
@@ -45,6 +49,54 @@ test('consulta por CNPJ ignora formatação e aceita parcial', () => {
   assert.equal(documentoCorrespondeBusca('03.020.839/0001-80', '12'), false); // < 3 dígitos
 });
 
+test('carteira comercial: responsável ou quem cadastrou; oculta demais', () => {
+  const COM = 'e2fe3779-0b03-47cf-95a2-0c01a35e3e32';
+  assert.equal(
+    clienteNaCarteiraComercial(
+      { id: 110, created_by: 'MIGUEL MOTA', responsavel_comercial_id: COM },
+      { userName: 'Miguel Mota', comercialId: COM },
+    ),
+    true,
+  );
+  assert.equal(
+    clienteNaCarteiraComercial(
+      { id: 50, created_by: 'OUTRO', responsavel_comercial_id: COM },
+      { userName: 'MIGUEL MOTA', comercialId: COM },
+    ),
+    true,
+  );
+  assert.equal(
+    clienteNaCarteiraComercial(
+      { id: 51, created_by: 'OUTRO', responsavel_comercial_id: 'aaaa' },
+      { userName: 'MIGUEL MOTA', comercialId: COM },
+    ),
+    false,
+  );
+  assert.equal(clienteStatusAtivo('Ativo'), true);
+  assert.equal(clienteStatusAtivo('Inativo'), false);
+});
+
+test('dedupa por documento prioriza Ativo e maior id', () => {
+  const rows = [
+    { id: 104, cnpj: '19079259888', status: 'Inativo', trading_name: 'BERIN' },
+    { id: 110, cnpj: '19079259888', status: 'Ativo', trading_name: 'BERIN' },
+    { id: 117, cnpj: '03.020.839/0001-80', status: 'Inativo', trading_name: 'PARANA' },
+    { id: 118, cnpj: '03020839000180', status: 'Ativo', trading_name: 'PARANA' },
+  ];
+  const out = deduparClientesPorDocumento(rows);
+  const ids = out.map((r) => Number(r.id)).sort((a, b) => a - b);
+  assert.deepEqual(ids, [110, 118]);
+});
+
+test('filtro or da carteira inclui created_by e responsavel', () => {
+  const or = montarFiltroOrCarteiraComercial({
+    userName: 'MIGUEL MOTA',
+    comercialId: 'e2fe3779-0b03-47cf-95a2-0c01a35e3e32',
+  });
+  assert.match(or || '', /created_by\.ilike\."MIGUEL MOTA"/);
+  assert.match(or || '', /responsavel_comercial_id\.eq\.e2fe3779/);
+});
+
 test('ClientForm: após insert guarda id e não duplica no retry; comercial auto-vincula', () => {
   const form = readFileSync('components/ClientForm.tsx', 'utf8');
   assert.match(form, /persistedId|setPersistedId/);
@@ -52,6 +104,14 @@ test('ClientForm: após insert guarda id e não duplica no retry; comercial auto
   assert.match(form, /comercialIdDoUsuarioLogado/);
   assert.match(form, /Salvo no sistema/);
   assert.match(form, /TM SEG/);
+});
+
+test('ClientList carteira comercial oculta inativos e dedupa', () => {
+  const clientList = readFileSync('components/ClientList.tsx', 'utf8');
+  assert.match(clientList, /status',\s*'Ativo'|eq\('status',\s*'Ativo'\)/);
+  assert.match(clientList, /montarFiltroOrCarteiraComercial/);
+  assert.match(clientList, /deduparClientesPorDocumento/);
+  assert.match(clientList, /responsavel_comercial_id/);
 });
 
 test('ClientList e ProviderList usam consulta por dígitos de CNPJ', () => {

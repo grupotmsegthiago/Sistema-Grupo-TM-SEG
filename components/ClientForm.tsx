@@ -712,7 +712,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
         if (docErr) throw docErr;
         const dup = acharClienteMesmoDocumento(docRows || [], cnpjDigits, editingId);
         if (dup) {
-          const msg = `Já existe cliente com este CNPJ/CPF no sistema TM SEG (id ${dup.id}: ${dup.name || 'sem nome'}). Abra o cadastro existente — não crie outro. Cadastro na Torres continua só no sistema Torres.`;
+          const st = String(dup.status || '');
+          const msg =
+            st.toLowerCase() === 'inativo'
+              ? `Já existe cliente inativo com este CNPJ/CPF (id ${dup.id}: ${dup.name || 'sem nome'}). Reative esse cadastro — não crie outro. Cadastro na Torres continua só no sistema Torres.`
+              : `Já existe cliente com este CNPJ/CPF no sistema TM SEG (id ${dup.id}: ${dup.name || 'sem nome'}). Abra o cadastro existente — não crie outro. Cadastro na Torres continua só no sistema Torres.`;
           setDuplicateError(msg);
           showNotification('CNPJ já cadastrado', msg, 'error');
           return;
@@ -724,7 +728,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
       const payload: any = {
         name: formData.name, 
         trading_name: formData.trading_name, 
-        cnpj: formData.cnpj,
+        cnpj: cnpjDigits.length === 11 || cnpjDigits.length === 14 ? cnpjDigits : formData.cnpj,
         rg_ie: formData.rg_ie,
         contact_name: formData.contact, 
         email: formData.email, 
