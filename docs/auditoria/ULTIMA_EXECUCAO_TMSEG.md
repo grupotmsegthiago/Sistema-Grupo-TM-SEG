@@ -1,5 +1,25 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## PORTAL CEVA — CONTROLE DE ESCOLTA
+
+**Data:** 2026-09-29 (UTC-3)
+**Pedido:** tirar a coluna Contrato; editar TSP; administrador inclui Operação e TSP novas; exportar Excel e PDF; status acompanha o operador sem F5.
+
+**O que mudou:**
+- Coluna e filtro Contrato saem da tela. O valor já gravado continua no banco.
+- TSP vira campo do cliente, na mesma tabela `ceva_portal_os_campos`.
+- Operação e TSP novas só o administrador inclui (na linha ou pelos botões Nova operação / Nova TSP).
+- Excel e PDF exportam o recorte filtrado, sem Contrato.
+- A cada 5 segundos o portal lê o status gravado na OS e troca o selo. Não recarrega o relatório inteiro.
+
+**Banco:** migration `2026_09_29_ceva_portal_tsp` no projeto Grupo TMSEG (`ajhmmjuewdsukecaimik`): coluna `tsp` e catálogo aceita `tsp`.
+
+**Testes:** `npx tsx --test scripts/ceva-portal-campos.test.ts scripts/ceva-portal-ajustes.test.ts scripts/ceva-portal-aovivo.test.ts`
+
+**Não alterado:** boletim, Asaas, eNotas, motor financeiro.
+
+**Pendência:** status novo chega em até 5 segundos, não no mesmo instante do clique do operador.
+
 ## OS — VIATURA CADASTRADA NÃO APARECIA NO DROPDOWN
 
 **Data:** 2026-09-21 (UTC-3)

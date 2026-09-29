@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
 import { formatDateBR } from '../lib/dateUtils';
+import { documentoCorrespondeBusca } from '../lib/clientDuplicateGuard';
 import { ProviderData } from '../types';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, Search, User, Briefcase, Car, Loader2, Trash2, RefreshCw, AlertTriangle, Pencil, Ban, CheckCircle2, Calendar, Database, FileSpreadsheet, DollarSign, FileWarning, Check, Hash, Fingerprint } from 'lucide-react';
@@ -230,11 +231,16 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
       }
   };
 
-  const filtered = dbProviders.filter(p => 
-    (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (p.trading_name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (p.cnpj || '').includes(searchTerm)
-  );
+  const filtered = useMemo(() => {
+    const term = searchTerm.trim();
+    const termLower = term.toLowerCase();
+    return dbProviders.filter(p =>
+      !term ||
+      (p.name || '').toLowerCase().includes(termLower) ||
+      (p.trading_name || '').toLowerCase().includes(termLower) ||
+      documentoCorrespondeBusca(p.cnpj, term)
+    );
+  }, [dbProviders, searchTerm]);
 
   const getCreatorName = (createdBy: string | undefined) => {
       if (!createdBy) return '---';
@@ -277,7 +283,7 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-5 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
            <div className="relative max-w-md w-full">
-            <input type="text" placeholder="Buscar fornecedor..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+            <input type="text" placeholder="Buscar fornecedor ou CNPJ..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           </div>
         </div>

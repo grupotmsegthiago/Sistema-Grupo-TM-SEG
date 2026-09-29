@@ -19,6 +19,7 @@ import { registerSupportAgentsRoutes } from "./supportAgentsRoutes";
 import { registerComissaoQuadroRoutes } from "./comissaoQuadroRoutes";
 import { registerLiveTrackRoutes } from "./liveTrackRoutes";
 import { notifyVeladaClosureComplete } from "./veladaClosureWorker";
+import { registerCevaPortalRoutes } from "./cevaPortal";
 import { runRhMigrations } from "./rhMigrations";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances, transferPixFromCompany } from "./asaasService";
 import {
@@ -104,6 +105,14 @@ import {
   executeProductivityDailyReport,
   registerProductivityReportSchedule,
 } from "./productivityReport";
+import {
+  registerNightWatchdogSchedule,
+  registerNightWatchRoutes,
+} from "./nightWatchdog";
+import {
+  registerForceLogoutRoutes,
+} from "./forceLogoutAll";
+import { FORCE_LOGOUT_SETTINGS_KEY } from "../lib/forceLogout";
 import {
   AUDIT_SUMMARY_DEFAULTS,
   AUDIT_SUMMARY_SETTINGS_KEY,
@@ -809,6 +818,7 @@ export async function registerRoutes(
   registerSupportAgentsRoutes(app, requireAuth, requireRole);
   registerComissaoQuadroRoutes(app, requireAuth);
   registerLiveTrackRoutes(app);
+  registerCevaPortalRoutes(app);
 
   app.post('/api/missions/:id/velada-closure-notify', requireAuth, async (req: Request, res: Response) => {
     try {
@@ -1004,7 +1014,7 @@ export async function registerRoutes(
   // Versão atual do servidor — lida do constants.ts a cada request.
   // O client compara com sua APP_VERSION em memória; se divergir, faz hard-reset
   // automático e recarrega para garantir bundle sempre atualizado.
-  app.get('/api/version', (_req: Request, res: Response) => {
+  app.get('/api/version', async (_req: Request, res: Response) => {
     try {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
       const constantsPath = path.resolve(process.cwd(), 'constants.ts');
@@ -1014,10 +1024,23 @@ export async function registerRoutes(
         const m = txt.match(/APP_VERSION\s*=\s*["']([^"']+)["']/);
         if (m) version = m[1];
       }
+      let forceLogoutSignal: string | null = null;
+      try {
+        const { data } = await supabase
+          .from('system_settings')
+          .select('value')
+          .eq('key', FORCE_LOGOUT_SETTINGS_KEY)
+          .maybeSingle();
+        const raw = data?.value != null ? String(data.value).trim() : '';
+        forceLogoutSignal = raw || null;
+      } catch {
+        /* ignore */
+      }
       res.json({
         version,
         deploymentId: process.env.REPLIT_DEPLOYMENT_ID || null,
         builtAt: Date.now(),
+        forceLogoutSignal,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -9211,8 +9234,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  // Relatório diário de produtividade / vigia noturna (09h → só diretoria)
+  // Relatório diário de produtividade / vigia noturna (09h + 21h → só diretoria)
   registerProductivityReportSchedule(supabase);
+  registerNightWatchdogSchedule(supabase);
+  registerNightWatchRoutes(app, supabase, requireAuth);
+  registerForceLogoutRoutes(app, supabase, requireAuth, requireRole);
 
   app.post(
     '/api/admin/productivity-report',
@@ -9226,6 +9252,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             : null;
         const result = await executeProductivityDailyReport(supabase, {
           overrideEmails: override,
+          period:
+            req.body?.period === 'today_so_far' ? 'today_so_far' : 'previous_day',
         });
         res.json({ ok: true, ...result, testMode: !!override });
       } catch (e: any) {

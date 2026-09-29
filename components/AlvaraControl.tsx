@@ -8,6 +8,7 @@ import {
     AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, 
     Filter, Clock, Download, Pencil, BellRing, X, Upload, Save, Lock
 } from 'lucide-react';
+import { documentoCorrespondeBusca } from '../lib/clientDuplicateGuard';
 
 const AlvaraControl: React.FC = () => {
     const [providers, setProviders] = useState<ProviderData[]>([]);
@@ -171,8 +172,11 @@ const AlvaraControl: React.FC = () => {
     };
 
     const filtered = providers.filter(p => {
-        const matchesSearch = (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-                             (p.cnpj || '').includes(searchTerm);
+        const term = searchTerm.trim();
+        const termLower = term.toLowerCase();
+        const matchesSearch = !term ||
+                             (p.name || '').toLowerCase().includes(termLower) ||
+                             documentoCorrespondeBusca(p.cnpj, term);
         
         const isVencido = p.status === 'Alvará Vencido';
         

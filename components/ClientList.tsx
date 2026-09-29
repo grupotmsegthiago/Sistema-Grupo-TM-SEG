@@ -5,6 +5,13 @@ import { authFetch } from '../lib/authFetch';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
 import { formatDateBR } from '../lib/dateUtils';
+import {
+  comercialIdDoUsuarioLogado,
+  deduparClientesPorDocumento,
+  documentoCorrespondeBusca,
+  montarFiltroOrCarteiraComercial,
+  perfilEhComercialRole,
+} from '../lib/clientDuplicateGuard';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, Search, Building2, Phone, Mail, Loader2, Trash2, RefreshCw, Pencil, Ban, CheckCircle2, Database, AlertTriangle, DollarSign, FileWarning, TrendingUp, Send, CheckCircle, Clock, ShieldCheck, User, Calendar, Hash, Fingerprint, Target, UserCheck, ToggleLeft, ToggleRight, Lock } from 'lucide-react';
 
@@ -50,7 +57,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
         if (role === 'diretoria' || user.permissions?.includes('*')) {
             setIsDirector(true);
         }
-        if (role === 'comercial' && !user.permissions?.includes('*')) {
+        if (perfilEhComercialRole(role) && !user.permissions?.includes('*')) {
             setIsCommercial(true);
         }
         if (user.clientId) {
@@ -85,12 +92,28 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
       if (lockedClientId) {
           query = query.eq('id', lockedClientId);
       } else if (isCommercial) {
-          const allowedIds = currentUser?.permissions?.filter((p: string) => p.startsWith('client_view:')).map((p: string) => p.split(':')[1]) || [];
-          if (allowedIds.length > 0) {
-              query = query.or(`created_by.eq."${currentUser?.name}",id.in.(${allowedIds.join(',')})`);
-          } else {
-              query = query.eq('created_by', currentUser?.name);
+          // Comercial: só Ativos da carteira (cadastrou OU responsável). Inativos/duplicatas somem.
+          query = query.eq('status', 'Ativo');
+          let comercialId: string | null = null;
+          if (currentUser?.id) {
+            const { data: comerciaisRows } = await supabase
+              .from('comerciais')
+              .select('id, usuario_id');
+            comercialId = comercialIdDoUsuarioLogado(comerciaisRows || [], currentUser.id);
           }
+          const allowedIds =
+            currentUser?.permissions
+              ?.filter((p: string) => p.startsWith('client_view:'))
+              .map((p: string) => p.split(':')[1]) || [];
+          const orFilter = montarFiltroOrCarteiraComercial({
+            userName: currentUser?.name,
+            comercialId,
+            extraIds: allowedIds,
+          });
+          if (!orFilter) {
+            return [];
+          }
+          query = query.or(orFilter);
       }
 
       const { data, error } = await query;
@@ -102,7 +125,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
       
       const clientsWithTableSet = new Set(priceData?.map((item: any) => item.client) || []);
 
-      return (data || []).map((item: any) => ({
+      const mapped = (data || []).map((item: any) => ({
           id: item.id.toString(),
           name: item.name,
           trading_name: item.trading_name, 
@@ -118,12 +141,16 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
           hasPriceTable: clientsWithTableSet.has(item.name),
           created_at: item.created_at,
           created_by: item.created_by,
+          responsavel_comercial_id: item.responsavel_comercial_id || null,
           is_prospect: !!item.is_prospect
       }));
+
+      // Comercial: dedupa CNPJ (mantém o ativo / maior id) — evita fantasma de retry Asaas.
+      return isCommercial ? deduparClientesPorDocumento(mapped) : mapped;
   };
 
   const { data: dbClients = [], isLoading, isError: clientsError, refetch: refetchClients } = useQuery<ClientWithTableStatus[]>({
-    queryKey: ['clients', lockedClientId, isCommercial, currentUser?.id],
+    queryKey: ['clients', lockedClientId, isCommercial, currentUser?.id, currentUser?.name],
     queryFn: fetchClientsQueryFn,
     enabled: !!currentUser,
   });
@@ -194,10 +221,13 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
   };
 
   const filteredClients = useMemo(() => {
+      const term = searchTerm.trim();
+      const termLower = term.toLowerCase();
       return dbClients.filter(c => {
-        const matchesSearch = (c.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                             (c.cnpj || '').includes(searchTerm) ||
-                             (c.trading_name || '').toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesSearch = !term ||
+                             (c.name || '').toLowerCase().includes(termLower) ||
+                             (c.trading_name || '').toLowerCase().includes(termLower) ||
+                             documentoCorrespondeBusca(c.cnpj, term);
         
         let matchesAdjustment = true;
         if (filterAdjustment === 'PENDING') matchesAdjustment = !c.adjustment_2026_applied;
@@ -373,7 +403,11 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-center">
-                        {client.is_prospect ? (
+                        {client.status === 'Inativo' ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase bg-neutral-100 text-neutral-600 border border-neutral-300">
+                                <Ban size={12} /> Inativo
+                            </span>
+                        ) : client.is_prospect ? (
                             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase bg-orange-100 text-orange-700 border border-orange-200">
                                 <Target size={12} /> Prospecção
                             </span>

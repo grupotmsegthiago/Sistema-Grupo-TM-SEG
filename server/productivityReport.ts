@@ -1,5 +1,5 @@
 /**
- * Relatório diário de produtividade / vigia noturna (09:00 BRT → diretoria).
+ * Relatório de produtividade / sessão (09:00 e 21:00 BRT → thiago@grupotmseg.com.br).
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -9,10 +9,13 @@ import {
 } from '../lib/productivity/aggregateProductivity';
 import {
   dinnerBreakLabel,
+  getCurrentBrasiliaDayBounds,
+  getEveningNightSliceBounds,
   getNightWatchWindowBounds,
   getPreviousBrasiliaDayBounds,
   NIGHT_IDLE_MINUTES,
 } from '../lib/productivity/nightWatch';
+import { SESSION_IDLE_LOGOUT_MINUTES } from '../lib/productivity/sessionIdleLogout';
 import { sendSystemAlertEmail } from './emailService';
 import { registerScheduledTick } from './scheduledRegistry';
 import { isLongRunningHost } from './runtime';
@@ -22,17 +25,29 @@ export type { UserProductivityRow };
 
 export const PRODUCTIVITY_REPORT_SETTINGS_KEY = 'productivity_report';
 
-export type ProductivityReportSettings = {
-  emails: string;
+export type ProductivityReportPeriod = 'previous_day' | 'today_so_far';
+
+export type ProductivityReportSchedule = {
   hour: number;
   minute: number;
+  period: ProductivityReportPeriod;
+};
+
+export type ProductivityReportSettings = {
+  emails: string;
+  /** @deprecated Prefer schedules[]. Mantido para compat com system_settings antigo. */
+  hour?: number;
+  minute?: number;
+  schedules: ProductivityReportSchedule[];
 };
 
 export const PRODUCTIVITY_REPORT_DEFAULTS: ProductivityReportSettings = {
-  // Somente diretoria (pedido do Thiago)
+  // Somente Thiago / diretoria (pedido explícito)
   emails: 'thiago@grupotmseg.com.br',
-  hour: 9,
-  minute: 0,
+  schedules: [
+    { hour: 9, minute: 0, period: 'previous_day' },
+    { hour: 21, minute: 0, period: 'today_so_far' },
+  ],
 };
 
 type LogRow = ProductivityLogRow;
@@ -55,11 +70,20 @@ function fmtDt(iso: string | null): string {
   return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
 
+function periodTitle(period: ProductivityReportPeriod): string {
+  return period === 'today_so_far'
+    ? 'Parcial do dia (até agora)'
+    : 'Dia civil completo (ontem)';
+}
+
 export function buildProductivityReportHtml(opts: {
   dateLabel: string;
   nightLabel: string;
   rows: UserProductivityRow[];
+  period?: ProductivityReportPeriod;
+  slotLabel?: string;
 }): string {
+  const period = opts.period || 'previous_day';
   const rowsHtml = opts.rows.length
     ? opts.rows
         .map((r) => {
@@ -82,21 +106,25 @@ export function buildProductivityReportHtml(opts: {
         .join('')
     : `<tr><td colspan="10" style="padding:12px;text-align:center;color:#666;">Nenhuma atividade registrada.</td></tr>`;
 
+  const slot = opts.slotLabel || (period === 'today_so_far' ? '21:00' : '09:00');
+
   return `
-    <h2>📊 Log diário de produtividade (home office)</h2>
+    <h2>📊 Log de produtividade / sessão</h2>
+    <p>Tipo: <strong>${escapeHtml(periodTitle(period))}</strong> · disparo <strong>${escapeHtml(slot)} BRT</strong></p>
     <p>Dia civil: <strong>${escapeHtml(opts.dateLabel)}</strong></p>
-    <p>Janela noturna vigiada (20h–08h): <strong>${escapeHtml(opts.nightLabel)}</strong></p>
+    <p>Janela noturna: <strong>${escapeHtml(opts.nightLabel)}</strong></p>
     <p style="font-size:13px;color:#555;">
+      Colunas principais: <strong>tempo ativo (logado/usando)</strong>, <strong>interações</strong> e <strong>quantas vezes logou</strong>.
       Tempo ativo estimado por sequências de logs com pausa ≤ 30 min.
-      Desafio de presença dispara após <strong>${NIGHT_IDLE_MINUTES} min</strong> sem interação na vigia noturna.
-      <strong>Horário de janta ${dinnerBreakLabel()} BRT não contabiliza</strong> (sem desafio e sem ociosidade).
+      Logout automático após <strong>${SESSION_IDLE_LOGOUT_MINUTES} min</strong> sem interação (funcionários).
+      Desafio de presença noturna após <strong>${NIGHT_IDLE_MINUTES} min</strong> (20h–08h; janta ${dinnerBreakLabel()} isenta).
       Linhas em amarelo: baixo uso (&lt; 1h) ou desafio sem confirmação/timeout.
     </p>
     <table style="border-collapse:collapse;width:100%;font-size:12px;">
       <thead>
         <tr style="background:#1e293b;color:#fff;">
           <th style="padding:8px;border:1px solid #334155;text-align:left;">Funcionário</th>
-          <th style="padding:8px;border:1px solid #334155;">Ativo (dia)</th>
+          <th style="padding:8px;border:1px solid #334155;">Tempo ativo</th>
           <th style="padding:8px;border:1px solid #334155;">Ativo (noite)</th>
           <th style="padding:8px;border:1px solid #334155;">Interações</th>
           <th style="padding:8px;border:1px solid #334155;">Cliques</th>
@@ -110,7 +138,7 @@ export function buildProductivityReportHtml(opts: {
       <tbody>${rowsHtml}</tbody>
     </table>
     <p style="font-size:11px;color:#888;margin-top:16px;">
-      Destinatários: somente diretoria. Relatório automático às 09:00 (Brasília).
+      Destinatário: thiago@grupotmseg.com.br. Envios automáticos às 09:00 (dia anterior) e 21:00 (parcial do dia).
     </p>
   `;
 }
@@ -151,6 +179,34 @@ async function fetchLogs(
   return all;
 }
 
+function normalizeSchedules(raw: unknown, fallbackHour?: number, fallbackMinute?: number): ProductivityReportSchedule[] {
+  if (Array.isArray(raw) && raw.length) {
+    const parsed = raw
+      .map((item) => {
+        const hour = Math.max(0, Math.min(23, Number((item as any)?.hour)));
+        const minute = Math.max(0, Math.min(59, Number((item as any)?.minute ?? 0)));
+        const periodRaw = String((item as any)?.period || 'previous_day');
+        const period: ProductivityReportPeriod =
+          periodRaw === 'today_so_far' ? 'today_so_far' : 'previous_day';
+        if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+        return { hour, minute, period };
+      })
+      .filter(Boolean) as ProductivityReportSchedule[];
+    if (parsed.length) return parsed;
+  }
+  if (fallbackHour != null) {
+    return [
+      {
+        hour: Math.max(0, Math.min(23, Number(fallbackHour))),
+        minute: Math.max(0, Math.min(59, Number(fallbackMinute ?? 0))),
+        period: 'previous_day',
+      },
+      { hour: 21, minute: 0, period: 'today_so_far' },
+    ];
+  }
+  return [...PRODUCTIVITY_REPORT_DEFAULTS.schedules];
+}
+
 async function loadSettings(supabase: SupabaseClient): Promise<ProductivityReportSettings> {
   try {
     const { data, error } = await supabase
@@ -165,29 +221,57 @@ async function loadSettings(supabase: SupabaseClient): Promise<ProductivityRepor
         typeof raw?.emails === 'string' && raw.emails.trim()
           ? raw.emails.trim()
           : PRODUCTIVITY_REPORT_DEFAULTS.emails,
-      hour: Math.max(0, Math.min(23, Number(raw?.hour ?? PRODUCTIVITY_REPORT_DEFAULTS.hour))),
-      minute: Math.max(0, Math.min(59, Number(raw?.minute ?? PRODUCTIVITY_REPORT_DEFAULTS.minute))),
+      schedules: normalizeSchedules(raw?.schedules, raw?.hour, raw?.minute),
     };
   } catch {
     return { ...PRODUCTIVITY_REPORT_DEFAULTS };
   }
 }
 
+export function resolveReportWindows(
+  period: ProductivityReportPeriod,
+  reference: Date = new Date(),
+): {
+  day: { startIso: string; endIso: string; dateLabel: string };
+  night: { startIso: string; endIso: string; label: string };
+} {
+  if (period === 'today_so_far') {
+    return {
+      day: getCurrentBrasiliaDayBounds(reference),
+      night: getEveningNightSliceBounds(reference),
+    };
+  }
+  return {
+    day: getPreviousBrasiliaDayBounds(reference),
+    night: getNightWatchWindowBounds(reference),
+  };
+}
+
 export async function executeProductivityDailyReport(
   supabase: SupabaseClient,
-  opts?: { overrideEmails?: string | null; reference?: Date },
-): Promise<{ sent: boolean; emails: string[]; rows: number; dateLabel: string }> {
+  opts?: {
+    overrideEmails?: string | null;
+    reference?: Date;
+    period?: ProductivityReportPeriod;
+    slotLabel?: string;
+  },
+): Promise<{ sent: boolean; emails: string[]; rows: number; dateLabel: string; period: ProductivityReportPeriod }> {
   const reference = opts?.reference || new Date();
+  const period = opts?.period || 'previous_day';
   const cfg = await loadSettings(supabase);
   const emails = parseEmails(opts?.overrideEmails || cfg.emails);
-  const day = getPreviousBrasiliaDayBounds(reference);
-  const night = getNightWatchWindowBounds(reference);
+  const { day, night } = resolveReportWindows(period, reference);
+  const slotLabel = opts?.slotLabel || (period === 'today_so_far' ? '21:00' : '09:00');
 
-  console.log(`[ProductivityReport] Gerando log ${day.dateLabel} | noite ${night.label}`);
+  console.log(
+    `[ProductivityReport] Gerando log ${period} ${day.dateLabel} | noite ${night.label} | slot ${slotLabel}`,
+  );
 
   const [dayLogs, nightLogs] = await Promise.all([
     fetchLogs(supabase, day.startIso, day.endIso),
-    fetchLogs(supabase, night.startIso, night.endIso),
+    night.startIso === night.endIso
+      ? Promise.resolve([] as LogRow[])
+      : fetchLogs(supabase, night.startIso, night.endIso),
   ]);
 
   const rows = aggregateProductivityLogs(dayLogs, nightLogs);
@@ -195,15 +279,18 @@ export async function executeProductivityDailyReport(
     dateLabel: day.dateLabel,
     nightLabel: night.label,
     rows,
+    period,
+    slotLabel,
   });
+
+  const subject =
+    period === 'today_so_far'
+      ? `Log parcial de produtividade (21h) — ${day.dateLabel}`
+      : `Log diário de produtividade (09h) — ${day.dateLabel}`;
 
   let sent = false;
   if (emails.length) {
-    sent = await sendSystemAlertEmail(
-      emails,
-      `Log diário de produtividade — ${day.dateLabel}`,
-      html,
-    );
+    sent = await sendSystemAlertEmail(emails, subject, html);
   }
 
   try {
@@ -212,13 +299,15 @@ export async function executeProductivityDailyReport(
         user_name: 'Sistema',
         action_type: 'DAILY_REPORT',
         entity: 'ProductivityReport',
-        entity_id: day.dateLabel,
+        entity_id: `${day.dateLabel}:${period}:${slotLabel}`,
         details: JSON.stringify({
           emails,
           sent,
           users: rows.length,
           dateLabel: day.dateLabel,
           nightLabel: night.label,
+          period,
+          slotLabel,
         }),
         created_at: new Date().toISOString(),
       },
@@ -227,25 +316,39 @@ export async function executeProductivityDailyReport(
     console.warn('[ProductivityReport] Falha ao auditar envio:', e?.message);
   }
 
-  return { sent, emails, rows: rows.length, dateLabel: day.dateLabel };
+  return { sent, emails, rows: rows.length, dateLabel: day.dateLabel, period };
 }
 
 export function registerProductivityReportSchedule(supabase: SupabaseClient): void {
-  let lastRunKey = '';
+  const lastRunKeys = new Set<string>();
 
   async function tick() {
     const cfg = await loadSettings(supabase);
     const brasiliaTime = new Date(
       new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }),
     );
-    if (brasiliaTime.getHours() !== cfg.hour || brasiliaTime.getMinutes() !== cfg.minute) return;
-    const key = `${brasiliaTime.toDateString()}-${cfg.hour}:${cfg.minute}`;
-    if (lastRunKey === key) return;
-    lastRunKey = key;
-    try {
-      await executeProductivityDailyReport(supabase);
-    } catch (e: any) {
-      console.error('[ProductivityReport] Erro no tick:', e?.message || e);
+    const hour = brasiliaTime.getHours();
+    const minute = brasiliaTime.getMinutes();
+    const dayKey = brasiliaTime.toDateString();
+
+    for (const schedule of cfg.schedules) {
+      if (hour !== schedule.hour || minute !== schedule.minute) continue;
+      const key = `${dayKey}-${schedule.hour}:${schedule.minute}-${schedule.period}`;
+      if (lastRunKeys.has(key)) continue;
+      lastRunKeys.add(key);
+      // Evita crescer indefinidamente
+      if (lastRunKeys.size > 32) {
+        const first = lastRunKeys.values().next().value;
+        if (first) lastRunKeys.delete(first);
+      }
+      try {
+        await executeProductivityDailyReport(supabase, {
+          period: schedule.period,
+          slotLabel: `${String(schedule.hour).padStart(2, '0')}:${String(schedule.minute).padStart(2, '0')}`,
+        });
+      } catch (e: any) {
+        console.error('[ProductivityReport] Erro no tick:', e?.message || e);
+      }
     }
   }
 
@@ -255,7 +358,7 @@ export function registerProductivityReportSchedule(supabase: SupabaseClient): vo
       tick().catch(() => {});
     }, 60 * 1000);
     console.log(
-      '[ProductivityReport] Agendamento ativo — 09:00 BRT (configurável em system_settings.productivity_report), só diretoria.',
+      '[ProductivityReport] Agendamento ativo — 09:00 e 21:00 BRT → thiago@grupotmseg.com.br',
     );
   }
 }

@@ -20,6 +20,12 @@ import ClientPriceCalculator from './ClientPriceCalculator';
 import QuotePrintModal from './QuotePrintModal';
 import ClientContractTab from './ClientContractTab';
 import { sincronizarComerciaisDeUsuarios } from '../lib/comissao/comissaoUsuarios';
+import {
+  acharClienteMesmoDocumento,
+  comercialIdDoUsuarioLogado,
+  digitosDocumentoCliente,
+  perfilEhComercialRole,
+} from '../lib/clientDuplicateGuard';
 
 interface ClientFormProps {
   onBack: () => void;
@@ -106,6 +112,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [duplicateError, setDuplicateError] = useState('');
+  /** Após o 1º insert bem-sucedido, o retry (ex.: falha Asaas) atualiza o mesmo id — não cria outro. */
+  const [persistedId, setPersistedId] = useState<string | null>(id ? String(id) : null);
   
   const [priceTables, setPriceTables] = useState<ClientPriceTable[]>([]);
 
@@ -184,7 +192,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
   
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [clients, setClientsList] = useState<Client[]>([]);
-  const [comerciais, setComerciais] = useState<Array<{ id: string; nome: string }>>([]);
+  const [comerciais, setComerciais] = useState<Array<{ id: string; nome: string; usuario_id?: number | null }>>([]);
   const [copySourceClientId, setCopySourceClientId] = useState('');
 
   // Motor de Precificação Automática (cópia da lógica de ProviderForm, com REGIÃO)
@@ -259,6 +267,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
   };
 
   useEffect(() => {
+    setPersistedId(id ? String(id) : null);
+  }, [id]);
+
+  useEffect(() => {
     const storedUser = localStorage.getItem('userData');
     if (storedUser) {
         try { setCurrentUser(JSON.parse(storedUser)); } catch (e) { console.error(e); }
@@ -277,6 +289,15 @@ const ClientForm: React.FC<ClientFormProps> = ({
       if (data) setComerciais(data as any);
     })();
   }, [id]);
+
+  /** Comercial logado: cliente novo já nasce na carteira dele (comissão). */
+  useEffect(() => {
+    if (persistedId || !currentUser || formData.responsavel_comercial_id) return;
+    if (!perfilEhComercialRole(currentUser.role)) return;
+    const comercialId = comercialIdDoUsuarioLogado(comerciais, currentUser.id);
+    if (!comercialId) return;
+    setFormData((prev) => (prev.responsavel_comercial_id ? prev : { ...prev, responsavel_comercial_id: comercialId }));
+  }, [comerciais, currentUser, persistedId, formData.responsavel_comercial_id]);
 
   useEffect(() => {
     if (!nfAddressRequiredHint) return;
@@ -311,6 +332,24 @@ const ClientForm: React.FC<ClientFormProps> = ({
 
   const handleSearchCNPJ = async () => {
     const cleanCnpj = formData.cnpj.replace(/\D/g, '');
+    // Consulta no cadastro TM SEG (duplicata) mesmo com CPF (11) ou CNPJ parcial completo.
+    if (cleanCnpj.length === 11 || cleanCnpj.length === 14) {
+      try {
+        const { data: docRows } = await supabase
+          .from('clients')
+          .select('id, name, cnpj, status');
+        const dup = acharClienteMesmoDocumento(docRows || [], cleanCnpj, persistedId || id);
+        if (dup) {
+          showNotification(
+            'CNPJ já cadastrado',
+            `Já existe cliente com este CNPJ/CPF no sistema TM SEG (id ${dup.id}: ${dup.name || 'sem nome'}). Abra o cadastro existente.`,
+            'warning',
+          );
+        }
+      } catch (e) {
+        console.error('Verificação CNPJ cliente', e);
+      }
+    }
     if (cleanCnpj.length !== 14) return;
     
     setIsSearchingCnpj(true);
@@ -649,19 +688,47 @@ const ClientForm: React.FC<ClientFormProps> = ({
       showNotification('Cadastro incompleto', 'Informe Cidade e UF (necessário para emitir NF).', 'error');
       return;
     }
-    const cnpjDigits = String(formData.cnpj || '').replace(/\D/g, '');
+    const cnpjDigits = digitosDocumentoCliente(formData.cnpj);
     if (String(formData.status || '') === 'Ativo' && cnpjDigits.length !== 11 && cnpjDigits.length !== 14) {
       showNotification('Cadastro incompleto', 'Informe um CNPJ/CPF válido para cadastrar o cliente no Asaas.', 'error');
       return;
     }
     setIsSaving(true);
+    setDuplicateError('');
     try {
+      const editingId = persistedId || (id ? String(id) : null);
+      let comercialIdPayload = formData.responsavel_comercial_id || '';
+      if (!comercialIdPayload && perfilEhComercialRole(currentUser?.role)) {
+        comercialIdPayload = comercialIdDoUsuarioLogado(comerciais, currentUser?.id) || '';
+      }
+
+      // Bloqueia CNPJ/CPF duplicado no sistema TM SEG (cadastro Torres é outro sistema).
+      if (cnpjDigits.length === 11 || cnpjDigits.length === 14) {
+        const { data: docRows, error: docErr } = await supabase
+          .from('clients')
+          .select('id, name, cnpj, status')
+          .order('id', { ascending: false })
+          .limit(2000);
+        if (docErr) throw docErr;
+        const dup = acharClienteMesmoDocumento(docRows || [], cnpjDigits, editingId);
+        if (dup) {
+          const st = String(dup.status || '');
+          const msg =
+            st.toLowerCase() === 'inativo'
+              ? `Já existe cliente inativo com este CNPJ/CPF (id ${dup.id}: ${dup.name || 'sem nome'}). Reative esse cadastro — não crie outro. Cadastro na Torres continua só no sistema Torres.`
+              : `Já existe cliente com este CNPJ/CPF no sistema TM SEG (id ${dup.id}: ${dup.name || 'sem nome'}). Abra o cadastro existente — não crie outro. Cadastro na Torres continua só no sistema Torres.`;
+          setDuplicateError(msg);
+          showNotification('CNPJ já cadastrado', msg, 'error');
+          return;
+        }
+      }
+
       const fullAddress = `${formData.street}, ${formData.number}${formData.complement ? ' - ' + formData.complement : ''}, ${formData.neighborhood}, ${formData.city} - ${formData.state}, CEP: ${formData.zip_code}`;
 
       const payload: any = {
         name: formData.name, 
         trading_name: formData.trading_name, 
-        cnpj: formData.cnpj,
+        cnpj: cnpjDigits.length === 11 || cnpjDigits.length === 14 ? cnpjDigits : formData.cnpj,
         rg_ie: formData.rg_ie,
         contact_name: formData.contact, 
         email: formData.email, 
@@ -686,20 +753,20 @@ const ClientForm: React.FC<ClientFormProps> = ({
         nf_service_description: formData.nf_service_description?.trim() || null,
         nf_municipal_service_code: formData.nf_municipal_service_code?.trim() || null,
         nf_municipal_service_name: formData.nf_municipal_service_name?.trim() || null,
-        responsavel_comercial_id: formData.responsavel_comercial_id || null,
+        responsavel_comercial_id: comercialIdPayload || null,
         ciclo_faturamento: formData.ciclo_faturamento || null,
       };
 
-      let savedClientId: string | null = id ? String(id) : null;
-      if (id) {
-          let { error: updErr } = await supabase.from('clients').update(payload).eq('id', id);
+      let savedClientId: string | null = editingId;
+      if (editingId) {
+          let { error: updErr } = await supabase.from('clients').update(payload).eq('id', editingId);
           if (updErr && updErr.code === '42703') {
             const { operational_email, ciclo_faturamento, ...safePayload } = payload;
-            const res2 = await supabase.from('clients').update(safePayload).eq('id', id);
+            const res2 = await supabase.from('clients').update(safePayload).eq('id', editingId);
             updErr = res2.error;
           }
           if (updErr) throw updErr;
-          await logAction('UPDATE', 'Client', id, `Cliente atualizado: ${formData.name}`);
+          await logAction('UPDATE', 'Client', editingId, `Cliente atualizado: ${formData.name}`);
       } else {
           payload.created_by = currentUser?.name || 'SISTEMA';
           let { data: inserted, error: insErr } = await supabase.from('clients').insert([payload]).select('id').single();
@@ -712,6 +779,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
           }
           if (insErr) throw insErr;
           savedClientId = inserted?.id != null ? String(inserted.id) : null;
+          if (savedClientId) setPersistedId(savedClientId);
+          if (comercialIdPayload && !formData.responsavel_comercial_id) {
+            setFormData((prev) => ({ ...prev, responsavel_comercial_id: comercialIdPayload }));
+          }
           await logAction('CREATE', 'Client', savedClientId || 'NEW', `Cliente cadastrado: ${formData.name}`);
       }
 
@@ -726,25 +797,25 @@ const ClientForm: React.FC<ClientFormProps> = ({
           throw new Error(
             syncData?.error ||
               syncData?.results?.[0]?.skipReason ||
-              'Falha ao cadastrar o cliente no Asaas. Corrija o endereço/CNPJ e salve novamente.',
+              'Falha ao cadastrar o cliente no Asaas. O cliente já ficou salvo no TM SEG — corrija e salve novamente (não cria outro cadastro).',
           );
         }
         const companyErrors = (syncData?.results?.[0]?.companies || []).filter((c: any) => !c.ok);
         if (syncData?.results?.[0]?.skipped) {
           throw new Error(
             syncData.results[0].skipReason ||
-              'Cadastro incompleto para o Asaas. Preencha CNPJ e endereço completo.',
+              'Cadastro incompleto para o Asaas. Preencha CNPJ e endereço completo. O cliente já está no TM SEG.',
           );
         }
         if (companyErrors.length > 0) {
           const detail = companyErrors
             .map((c: any) => `${c.company}: ${c.error || 'erro'}`)
             .join(' | ');
-          throw new Error(`Salvo no sistema, mas falhou no Asaas (${detail}). Ajuste e salve novamente.`);
+          throw new Error(`Salvo no sistema TM SEG, mas falhou no Asaas (${detail}). Ajuste e salve novamente — o mesmo cadastro será atualizado.`);
         }
         showNotification(
           'Cliente sincronizado',
-          'Cadastro salvo e enviado às 3 contas Asaas (TM Gestão, TM Segurança e TM Security).',
+          'Cadastro TM SEG salvo e enviado às 3 contas Asaas. Comissão usa este vínculo; Torres continua no sistema Torres.',
           'success',
         );
       }
@@ -1053,6 +1124,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                                 onClick={handleSearchCNPJ}
                                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-600 transition-colors"
                                 disabled={isSearchingCnpj}
+                                title="Consultar CNPJ na Receita Federal"
                             >
                                 {isSearchingCnpj ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
                             </button>
@@ -1093,8 +1165,16 @@ const ClientForm: React.FC<ClientFormProps> = ({
                               <option key={c.id} value={c.id}>{c.nome}</option>
                             ))}
                         </select>
-                        <p className="text-[10px] text-gray-400">Vínculo com usuário interno de perfil COMERCIAL. Não digite nome avulso — cadastre o usuário em Configurações.</p>
+                        <p className="text-[10px] text-gray-400">
+                          Cadastro deste formulário é só do sistema TM SEG. Comercial logado já vincula a carteira dele para comissão.
+                          O quadro de comissão lê TM SEG + Torres; o cadastro na Torres continua no sistema Torres.
+                        </p>
                     </div>
+                    {duplicateError && (
+                      <div className="md:col-span-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700" data-testid="text-client-duplicate-error">
+                        {duplicateError}
+                      </div>
+                    )}
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Status Operacional</label>
                         <select className={INPUT_CLASS} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} data-testid="select-client-status">

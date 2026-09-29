@@ -11,6 +11,7 @@ import {
 import FaceAuthGate from './FaceAuthGate';
 import type { TimeClockUserContext } from '../lib/timeclock/types';
 import { APP_VERSION } from '../constants';
+import { clearLocalStoragePreservingForceLogoutSeen } from '../lib/forceLogout';
 
 interface LoginProps {
   onLogin: () => void;
@@ -36,9 +37,40 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   ];
 
   useEffect(() => {
-    localStorage.clear();
-    sessionStorage.clear();
+    let logoutReason = '';
+    try {
+      logoutReason = sessionStorage.getItem('tmseg:logout_reason') || '';
+    } catch {
+      /* ignora */
+    }
+    // Preserva force_logout_seen — senão o boot em index.tsx entra em loop de reload.
+    clearLocalStoragePreservingForceLogoutSeen();
+    try {
+      sessionStorage.clear();
+    } catch {
+      /* ignora */
+    }
+    if (logoutReason) {
+      try {
+        sessionStorage.setItem('tmseg:logout_reason', logoutReason);
+      } catch {
+        /* ignora */
+      }
+    }
     localStorage.setItem('app_version', APP_VERSION);
+    if (logoutReason === 'idle_30min') {
+      setError(
+        'Sessão encerrada por 30 minutos sem interação no sistema. Faça login novamente.',
+      );
+    } else if (logoutReason === 'night_idle') {
+      setError(
+        'Sessão encerrada na vigia noturna (20 min sem interação). Faça login novamente.',
+      );
+    } else if (logoutReason === 'night_challenge_timeout') {
+      setError(
+        'Sessão encerrada: desafio de presença noturna sem resposta. Faça login novamente.',
+      );
+    }
   }, []);
 
   useEffect(() => {

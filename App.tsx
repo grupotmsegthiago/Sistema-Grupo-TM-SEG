@@ -3,7 +3,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import WhatsAppStatusBanner from './components/WhatsAppStatusBanner';
-import WhatsAppOfflineModal from './components/WhatsAppOfflineModal';
 import OsAnalysisDiretoriaModal from './components/OsAnalysisDiretoriaModal';
 import IdlePresenceGuard from './components/IdlePresenceGuard';
 import Login from './components/Login';
@@ -58,6 +57,7 @@ import QuoteList from './components/QuoteList';
 import QuoteForm from './components/QuoteForm';
 import PublicAgentRegistration from './components/PublicAgentRegistration';
 import DhlSupplierIntake from './components/DhlSupplierIntake';
+import CevaPortal from './components/CevaPortal';
 import PublicLiveTrack from './components/PublicLiveTrack';
 import SupportMapFinder from './components/SupportMapFinder'; 
 import PushNotificationManager from './components/PushNotificationManager';
@@ -105,7 +105,24 @@ import UserPresenceTracker from './components/UserPresenceTracker';
 import PresenceDebugPanel from './components/PresenceDebugPanel';
 import TimeClockGate from './components/TimeClockGate';
 import AppErrorBoundary from './components/AppErrorBoundary';
-import { wireUserActivityTracker, touchUserActivity } from './lib/userActivityTracker';
+import { getIdleMs, wireUserActivityTracker, touchUserActivity } from './lib/userActivityTracker';
+import { flushInteractionStats } from './lib/productivity/interactionStats';
+import { logProductivityEvent } from './lib/productivity/logProductivity';
+import {
+  idleLogoutReasonKey,
+  isIdleLogoutDue,
+  LOGOUT_REASON_IDLE_KEY,
+  getIdleLogoutThresholdMinutes,
+  shouldEnforceSessionIdleLogout,
+} from './lib/productivity/sessionIdleLogout';
+import { wireNightHeartbeat, reportNightIncident } from './lib/productivity/nightHeartbeat';
+import { isNightWatchActive } from './lib/productivity/nightWatch';
+import {
+  FORCE_LOGOUT_SEEN_KEY,
+  FORCE_LOGOUT_SETTINGS_KEY,
+  clearLocalStoragePreservingForceLogoutSeen,
+  parseForceLogoutSignal,
+} from './lib/forceLogout';
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { canAccessMissionReport } from './lib/missionReportAccess';
@@ -115,9 +132,6 @@ import OsAnalysisPendingPage from './components/OsAnalysisPendingPage';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
 import { persistScreen, resolveInitialScreen, getRoleDefaultScreen, getScreenFromUrl } from './lib/screenNavigation';
 import { canAccessScreen, fallbackScreenForUser } from './lib/screenAccess';
-
-// TEMPO DE INATIVIDADE (30 minutos) — só conta com a aba visível/ativa
-const INACTIVITY_LIMIT = 30 * 60 * 1000;
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -151,24 +165,42 @@ const App: React.FC = () => {
 
   const normalizedPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
   const isPublicRoute = normalizedPath === '/cadastro-operacional';
+  const isCevaPortalRoute = normalizedPath === '/ceva';
   const isDhlSupplierRoute = normalizedPath === '/fornecedor/dhl';
   const isLiveTrackRoute = normalizedPath === '/rastreio';
   const isResetPasswordRoute = normalizedPath === '/reset-password';
   const resetToken = new URLSearchParams(window.location.search).get('token') || '';
 
   const handleLogout = useCallback(async () => {
+    let logoutReason = '';
+    try {
+      logoutReason = sessionStorage.getItem(LOGOUT_REASON_IDLE_KEY) || '';
+    } catch {
+      /* ignora */
+    }
     try { window.dispatchEvent(new CustomEvent('tmseg:logout')); } catch {}
     await supabase.auth.signOut();
-    localStorage.clear(); 
-    sessionStorage.clear(); 
-    localStorage.setItem('app_version', APP_VERSION); 
+    clearLocalStoragePreservingForceLogoutSeen();
+    try {
+      sessionStorage.clear();
+    } catch {
+      /* ignora */
+    }
+    if (logoutReason) {
+      try {
+        sessionStorage.setItem(LOGOUT_REASON_IDLE_KEY, logoutReason);
+      } catch {
+        /* ignora */
+      }
+    }
+    localStorage.setItem('app_version', APP_VERSION);
     document.cookie.split(";").forEach((c) => {
         document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
     });
     setIsAuthenticated(false);
     setNeedsPasswordChange(false);
     setCurrentScreen('dashboard');
-    window.location.href = '/'; 
+    window.location.href = '/';
   }, []);
 
   const verifySessionInDatabase = async () => {
@@ -218,7 +250,7 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute) return;
+    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
     const roleDefault = getRoleDefaultScreen();
     if (roleDefault && !getScreenFromUrl()) {
       setCurrentScreen(roleDefault);
@@ -227,14 +259,74 @@ const App: React.FC = () => {
   }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute) return;
+    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
     return wireUserActivityTracker();
   }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute) return;
-    const channel = supabase.channel('global_reset_channel').on('postgres_changes',{event: 'INSERT',schema: 'public',table: 'system_logs',filter: 'entity=eq.FORCE_LOGOUT_SIGNAL'},(payload) => {setRebootCountdown(10);}).subscribe();
-    return () => { supabase.removeChannel(channel); };
+    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
+    return wireNightHeartbeat();
+  }, [isAuthenticated, isPublicRoute]);
+
+  useEffect(() => {
+    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
+    const channel = supabase
+      .channel('global_reset_channel')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'system_logs',
+          filter: 'entity=eq.FORCE_LOGOUT_SIGNAL',
+        },
+        () => {
+          setRebootCountdown(10);
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'system_settings',
+          filter: `key=eq.${FORCE_LOGOUT_SETTINGS_KEY}`,
+        },
+        (payload) => {
+          const next = parseForceLogoutSignal(
+            (payload.new as { value?: unknown } | null)?.value,
+          );
+          if (!next) return;
+          const seen = localStorage.getItem(FORCE_LOGOUT_SEEN_KEY) || '';
+          if (next === seen) return;
+          localStorage.setItem(FORCE_LOGOUT_SEEN_KEY, next);
+          setRebootCountdown(10);
+        },
+      )
+      .subscribe();
+
+    const poll = window.setInterval(async () => {
+      try {
+        const { data } = await supabase
+          .from('system_settings')
+          .select('value')
+          .eq('key', FORCE_LOGOUT_SETTINGS_KEY)
+          .maybeSingle();
+        const next = parseForceLogoutSignal(data?.value);
+        if (!next) return;
+        const seen = localStorage.getItem(FORCE_LOGOUT_SEEN_KEY) || '';
+        if (next === seen) return;
+        localStorage.setItem(FORCE_LOGOUT_SEEN_KEY, next);
+        setRebootCountdown(10);
+      } catch {
+        /* ignore */
+      }
+    }, 12_000);
+
+    return () => {
+      window.clearInterval(poll);
+      supabase.removeChannel(channel);
+    };
   }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {
@@ -245,7 +337,7 @@ const App: React.FC = () => {
   }, [rebootCountdown, handleLogout]);
 
   useEffect(() => {
-    if (isPublicRoute) return; 
+    if (isPublicRoute || isCevaPortalRoute) return; 
     const storedVersion = localStorage.getItem('app_version');
     const token = localStorage.getItem('authToken');
     const userData = localStorage.getItem('userData');
@@ -260,36 +352,70 @@ const App: React.FC = () => {
     if (!token || !userData) { if (isAuthenticated) handleLogout(); } else { verifySessionInDatabase(); }
   }, [isPublicRoute, isAuthenticated, handleLogout]);
 
+  // Logout obrigatório: 30 min diurno / 20 min na vigia noturna (funcionários).
+  // Conta mesmo com aba em segundo plano; diretoria/CEO isentos (admin entra na vigia).
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute) return;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
+    let loggingOut = false;
 
-    const resetTimer = () => {
-      if (document.visibilityState === 'hidden') return;
-      if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => handleLogout(), INACTIVITY_LIMIT);
-    };
-
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        // Pausa o timer quando o app vai para segundo plano (celular).
-        if (timeoutId) clearTimeout(timeoutId);
-        timeoutId = undefined;
-      } else {
-        resetTimer();
+    const readRole = (): string | undefined => {
+      try {
+        const u = JSON.parse(localStorage.getItem('userData') || '{}');
+        return u?.role;
+      } catch {
+        return undefined;
       }
     };
 
-    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click', 'pointerdown'];
-    events.forEach((event) => document.addEventListener(event, resetTimer, { passive: true }));
+    const forceIdleLogout = async () => {
+      if (loggingOut) return;
+      if (!shouldEnforceSessionIdleLogout(readRole())) return;
+      const idleMs = getIdleMs();
+      if (!isIdleLogoutDue(idleMs)) return;
+      loggingOut = true;
+      const thresholdMin = getIdleLogoutThresholdMinutes();
+      const idleMinutes = Math.max(thresholdMin, Math.floor(idleMs / 60_000));
+      const reason = idleLogoutReasonKey();
+      try {
+        sessionStorage.setItem(LOGOUT_REASON_IDLE_KEY, reason);
+      } catch {
+        /* ignora */
+      }
+      try {
+        await flushInteractionStats('idle_logout');
+        await logProductivityEvent('SESSION_IDLE_LOGOUT', {
+          idleMinutes,
+          thresholdMinutes: thresholdMin,
+          nightWatch: isNightWatchActive(),
+        });
+        if (isNightWatchActive()) {
+          await reportNightIncident({
+            type: 'force_logout',
+            idleMinutes,
+            details: { thresholdMinutes: thresholdMin },
+          });
+        }
+      } catch {
+        /* segue o logout mesmo se o log falhar */
+      }
+      await handleLogout();
+    };
+
+    const tick = () => {
+      void forceIdleLogout();
+    };
+
+    tick();
+    const idlePoll = window.setInterval(tick, 15_000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
     document.addEventListener('visibilitychange', onVisibility);
-    resetTimer();
 
     const sessionInterval = setInterval(verifySessionInDatabase, 120000);
     return () => {
-      if (timeoutId) clearTimeout(timeoutId);
+      window.clearInterval(idlePoll);
       clearInterval(sessionInterval);
-      events.forEach((event) => document.removeEventListener(event, resetTimer));
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [isAuthenticated, isPublicRoute, handleLogout]);
@@ -385,6 +511,7 @@ const App: React.FC = () => {
   if (isPublicRoute) { return ( <NotificationProvider> <PublicAgentRegistration /> </NotificationProvider> ); }
   if (isDhlSupplierRoute) { return <DhlSupplierIntake />; }
   if (isLiveTrackRoute) { return <PublicLiveTrack />; }
+  if (isCevaPortalRoute) { return <CevaPortal />; }
 
   if (isResetPasswordRoute && resetToken) {
     return <ResetPassword token={resetToken} onComplete={() => { window.location.href = '/'; }} />;
@@ -593,7 +720,6 @@ const App: React.FC = () => {
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />
             <WhatsAppStatusBanner />
-            <WhatsAppOfflineModal />
             <OsAnalysisDiretoriaModal onOpenMission={handleOpenBillingMission} />
             <IdlePresenceGuard />
             <main className="flex-1 overflow-x-auto overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
