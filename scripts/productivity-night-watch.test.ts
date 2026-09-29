@@ -46,9 +46,11 @@ test('isNightWatchWindow: 20h–08h BRT', () => {
   assert.equal(isNightWatchWindow(new Date('2026-08-05T22:59:00.000Z')), false);
 });
 
-test('diretoria/admin isentos; operador não', () => {
+test('diretoria/ceo isentos; admin e operador entram na vigia', () => {
   assert.equal(isNightWatchExemptRole('Diretoria'), true);
-  assert.equal(isNightWatchExemptRole('administrador'), true);
+  assert.equal(isNightWatchExemptRole('ceo'), true);
+  assert.equal(isNightWatchExemptRole('administrador'), false);
+  assert.equal(isNightWatchExemptRole('admin'), false);
   assert.equal(isNightWatchExemptRole('Operador'), false);
   assert.equal(isNightWatchExemptRole('Avançado'), false);
 });
@@ -129,8 +131,10 @@ test('logout por idle: 30 min diurno / 20 min noturno e isenção diretoria/admi
   assert.equal(NIGHT_STALE_ALERT_MINUTES, 80);
   assert.equal(shouldEnforceSessionIdleLogout('funcionario'), true);
   assert.equal(shouldEnforceSessionIdleLogout('Operador'), true);
+  assert.equal(shouldEnforceSessionIdleLogout('admin'), true);
+  assert.equal(shouldEnforceSessionIdleLogout('administrador'), true);
   assert.equal(shouldEnforceSessionIdleLogout('Diretoria'), false);
-  assert.equal(shouldEnforceSessionIdleLogout('admin'), false);
+  assert.equal(shouldEnforceSessionIdleLogout('ceo'), false);
   // 15:00 BRT = 18:00 UTC → diurno 30 min
   const day = new Date('2026-08-06T18:00:00.000Z');
   assert.equal(getIdleLogoutThresholdMinutes(day), 30);

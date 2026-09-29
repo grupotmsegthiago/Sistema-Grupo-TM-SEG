@@ -1,6 +1,6 @@
 /**
- * Logout obrigatório após inatividade (funcionários).
- * Diretoria/admin ficam isentos (mesma regra da vigia noturna).
+ * Logout obrigatório após inatividade (funcionários e administradores).
+ * Diretoria/CEO ficam isentos.
  * Na vigia noturna o limite é mais curto (NIGHT_FORCE_LOGOUT).
  */
 

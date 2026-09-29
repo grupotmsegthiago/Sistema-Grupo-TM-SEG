@@ -62,8 +62,6 @@ const EXEMPT_ROLES = new Set([
   'diretoria',
   'diretor',
   'diretor(a)',
-  'administrador',
-  'admin',
   'ceo',
 ]);
 
@@ -125,7 +123,7 @@ export function dinnerBreakLabel(): string {
   return `${padN(DINNER_BREAK_START.hour)}:${padN(DINNER_BREAK_START.minute)}–${padN(DINNER_BREAK_END.hour)}:${padN(DINNER_BREAK_END.minute)}`;
 }
 
-/** Diretoria / admin não entram no bloqueio noturno. */
+/** Diretoria / CEO não entram no bloqueio noturno. Admin também é vigiado (20h–08h). */
 export function isNightWatchExemptRole(role: string | null | undefined): boolean {
   const normalized = String(role || '')
     .trim()
