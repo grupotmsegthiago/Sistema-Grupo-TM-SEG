@@ -109,7 +109,6 @@ import {
   registerNightWatchRoutes,
 } from "./nightWatchdog";
 import {
-  getLastForceLogoutAt,
   registerForceLogoutRoutes,
 } from "./forceLogoutAll";
 import { FORCE_LOGOUT_SETTINGS_KEY } from "../lib/forceLogout";
