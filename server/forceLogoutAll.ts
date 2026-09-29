@@ -15,6 +15,24 @@ export function getLastForceLogoutAt(): string | null {
   return lastForceLogoutAt;
 }
 
+async function withTimeout<T>(
+  promise: PromiseLike<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label}: timeout ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function executeForceLogoutAll(
   supabase: SupabaseClient,
   opts?: { triggeredBy?: string },
@@ -23,37 +41,49 @@ export async function executeForceLogoutAll(
   const details: string[] = [];
   lastForceLogoutAt = new Date().toISOString();
 
-  const { error: settingsErr } = await supabase.from('system_settings').upsert(
-    [
-      {
-        key: FORCE_LOGOUT_SETTINGS_KEY,
-        value: signal,
-        updated_at: lastForceLogoutAt,
-      },
-    ],
-    { onConflict: 'key' },
-  );
-  if (settingsErr) {
-    details.push(`system_settings: ${settingsErr.message}`);
-  } else {
-    details.push('system_settings ok');
+  try {
+    const { error: settingsErr } = await withTimeout(
+      supabase.from('system_settings').upsert(
+        [
+          {
+            key: FORCE_LOGOUT_SETTINGS_KEY,
+            value: signal,
+            updated_at: lastForceLogoutAt,
+          },
+        ],
+        { onConflict: 'key' },
+      ),
+      4000,
+      'system_settings',
+    );
+    if (settingsErr) {
+      details.push(`system_settings: ${settingsErr.message}`);
+    } else {
+      details.push('system_settings ok');
+    }
+  } catch (e: any) {
+    details.push(`system_settings: ${e?.message || e}`);
   }
 
   // Melhor esforço: tabela legada usada pelo App antigo
   try {
-    const { error: logErr } = await supabase.from('system_logs').insert([
-      {
-        user_name: opts?.triggeredBy || 'Sistema',
-        action_type: 'OTHER',
-        entity: 'FORCE_LOGOUT_SIGNAL',
-        entity_id: signal,
-        details: JSON.stringify({
-          at: lastForceLogoutAt,
-          triggeredBy: opts?.triggeredBy || 'Sistema',
-        }),
-        created_at: lastForceLogoutAt,
-      },
-    ]);
+    const { error: logErr } = await withTimeout(
+      supabase.from('system_logs').insert([
+        {
+          user_name: opts?.triggeredBy || 'Sistema',
+          action_type: 'OTHER',
+          entity: 'FORCE_LOGOUT_SIGNAL',
+          entity_id: signal,
+          details: JSON.stringify({
+            at: lastForceLogoutAt,
+            triggeredBy: opts?.triggeredBy || 'Sistema',
+          }),
+          created_at: lastForceLogoutAt,
+        },
+      ]),
+      3000,
+      'system_logs',
+    );
     if (logErr) details.push(`system_logs: ${logErr.message}`);
     else details.push('system_logs ok');
   } catch (e: any) {
@@ -62,11 +92,11 @@ export async function executeForceLogoutAll(
 
   let sessionsRevoked = 0;
   try {
-    const rpcPromise = supabase.rpc('force_revoke_all_sessions');
-    const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
-      setTimeout(() => resolve({ data: null, error: { message: 'timeout 3s' } }), 3000),
+    const { data, error } = await withTimeout(
+      supabase.rpc('force_revoke_all_sessions'),
+      3000,
+      'rpc revoke',
     );
-    const { data, error } = await Promise.race([rpcPromise, timeoutPromise]);
     if (error) details.push(`rpc revoke: ${error.message}`);
     else {
       sessionsRevoked = Number(data || 0);
