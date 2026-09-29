@@ -17,13 +17,26 @@ export const AcessoCeva: React.FC<{ onEntrar: (sessao: SessaoCeva) => void }> = 
   const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
-    fetch('/api/ceva-portal/acesso')
+    const ac = new AbortController();
+    const timer = window.setTimeout(() => ac.abort(), 20000);
+    fetch('/api/ceva-portal/acesso', { signal: ac.signal })
       .then(async (response) => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || 'Não foi possível abrir o acesso.');
         setTemAdministrador(data.temAdministrador === true);
       })
-      .catch((err: Error) => setErro(err.message || 'Falha de comunicação.'));
+      .catch((err: Error) => {
+        if (err.name === 'AbortError') {
+          setErro('O servidor demorou demais para responder. Atualize a página.');
+          return;
+        }
+        setErro(err.message || 'Falha de comunicação.');
+      })
+      .finally(() => window.clearTimeout(timer));
+    return () => {
+      ac.abort();
+      window.clearTimeout(timer);
+    };
   }, []);
 
   function voltar() {
@@ -38,12 +51,15 @@ export const AcessoCeva: React.FC<{ onEntrar: (sessao: SessaoCeva) => void }> = 
     event.preventDefault();
     setEnviando(true);
     setErro('');
+    const ac = new AbortController();
+    const timer = window.setTimeout(() => ac.abort(), 25000);
     try {
       const primeiro = modo === 'primeiro';
       const response = await fetch(primeiro ? '/api/ceva-portal/primeiro-acesso' : '/api/ceva-portal/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(primeiro ? { nome, email, senha, confirmacao } : { email, senha }),
+        signal: ac.signal,
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'Não foi possível entrar.');
@@ -54,8 +70,13 @@ export const AcessoCeva: React.FC<{ onEntrar: (sessao: SessaoCeva) => void }> = 
       gravarSessaoCeva(sessao);
       onEntrar(sessao);
     } catch (err) {
-      setErro(err instanceof Error ? err.message : 'Falha de comunicação.');
+      if (err instanceof Error && err.name === 'AbortError') {
+        setErro('O login demorou demais. Tente de novo em instantes.');
+      } else {
+        setErro(err instanceof Error ? err.message : 'Falha de comunicação.');
+      }
     } finally {
+      window.clearTimeout(timer);
       setEnviando(false);
     }
   }

@@ -735,6 +735,54 @@
       "destination": "/api/live-track"
     },
     {
+      "source": "/api/ceva-portal/pessoas/:id",
+      "destination": "/api/ceva-portal?op=pessoas-item&id=:id"
+    },
+    {
+      "source": "/api/ceva-portal/pgr/:os",
+      "destination": "/api/ceva-portal?op=pgr&os=:os"
+    },
+    {
+      "source": "/api/ceva-portal/acesso",
+      "destination": "/api/ceva-portal?op=acesso"
+    },
+    {
+      "source": "/api/ceva-portal/login",
+      "destination": "/api/ceva-portal?op=login"
+    },
+    {
+      "source": "/api/ceva-portal/primeiro-acesso",
+      "destination": "/api/ceva-portal?op=primeiro-acesso"
+    },
+    {
+      "source": "/api/ceva-portal/me",
+      "destination": "/api/ceva-portal?op=me"
+    },
+    {
+      "source": "/api/ceva-portal/trocar-senha",
+      "destination": "/api/ceva-portal?op=trocar-senha"
+    },
+    {
+      "source": "/api/ceva-portal/pessoas",
+      "destination": "/api/ceva-portal?op=pessoas"
+    },
+    {
+      "source": "/api/ceva-portal/ao-vivo",
+      "destination": "/api/ceva-portal?op=ao-vivo"
+    },
+    {
+      "source": "/api/ceva-portal/relatorio",
+      "destination": "/api/ceva-portal?op=relatorio"
+    },
+    {
+      "source": "/api/ceva-portal/campos",
+      "destination": "/api/ceva-portal?op=campos"
+    },
+    {
+      "source": "/api/ceva-portal/solicitacoes",
+      "destination": "/api/ceva-portal?op=solicitacoes"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index"
     },
