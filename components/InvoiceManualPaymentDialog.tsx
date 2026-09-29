@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Banknote, Loader2, X } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
+import { classifyManualPaymentAmount } from '../lib/invoiceManualPayment';
 import { supabase } from '../lib/supabase';
 
 type InvoiceRef = {
@@ -43,6 +44,10 @@ const InvoiceManualPaymentDialog: React.FC<{
 }> = ({ invoice, onClose, onSaved }) => {
   const registrar = useMemo(() => loggedUserName(), []);
   const [paymentDate, setPaymentDate] = useState(brazilToday());
+  const [received, setReceived] = useState(() =>
+    invoice.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+  );
+  const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -71,6 +76,14 @@ const InvoiceManualPaymentDialog: React.FC<{
     }
   };
 
+  const amountPreview = useMemo(() => {
+    try {
+      return { ok: true as const, value: classifyManualPaymentAmount(invoice.amount, received) };
+    } catch (e: unknown) {
+      return { ok: false as const, error: e instanceof Error ? e.message : 'Valor inválido' };
+    }
+  }, [invoice.amount, received]);
+
   const save = async () => {
     if (!file) {
       setError('Anexe a evidência do extrato.');
@@ -78,6 +91,14 @@ const InvoiceManualPaymentDialog: React.FC<{
     }
     if (!paymentDate) {
       setError('Informe a data do pagamento.');
+      return;
+    }
+    if (!amountPreview.ok) {
+      setError(amountPreview.error);
+      return;
+    }
+    if (amountPreview.value.kind === 'normal' && reason.trim().length < 3) {
+      setError('No valor da fatura, informe o motivo.');
       return;
     }
     setSaving(true);
@@ -92,6 +113,9 @@ const InvoiceManualPaymentDialog: React.FC<{
           paymentDate,
           evidenceUrl,
           note,
+          invoiceAmount: invoice.amount,
+          receivedAmount: received,
+          reason,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -135,6 +159,40 @@ const InvoiceManualPaymentDialog: React.FC<{
               <p className="font-bold text-gray-800 uppercase">{invoice.client}</p>
             </div>
           </div>
+
+          <div>
+            <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Valor recebido *</label>
+            <input
+              type="text"
+              value={received}
+              onChange={(e) => setReceived(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-emerald-600"
+              data-testid="manual-pay-amount"
+            />
+            {amountPreview.ok && amountPreview.value.kind === 'juros' && (
+              <p className="text-xs font-bold text-amber-700 mt-1" data-testid="manual-pay-interest">
+                Juros de {amountPreview.value.interest.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} sobre o valor da fatura.
+              </p>
+            )}
+            {amountPreview.ok && amountPreview.value.kind === 'normal' && (
+              <p className="text-[10px] text-gray-500 mt-1">Valor igual ao da fatura. Informe o motivo.</p>
+            )}
+            {!amountPreview.ok && <p className="text-xs font-bold text-red-600 mt-1">{amountPreview.error}</p>}
+          </div>
+
+          {amountPreview.ok && amountPreview.value.kind === 'normal' && (
+            <div>
+              <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Motivo *</label>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={2}
+                maxLength={500}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-600 resize-none"
+                data-testid="manual-pay-reason"
+              />
+            </div>
+          )}
 
           <div>
             <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Data do pagamento *</label>

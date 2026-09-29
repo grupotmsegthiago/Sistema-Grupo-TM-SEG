@@ -5914,6 +5914,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         paymentDate: String(req.body?.paymentDate || ''),
         evidenceUrl: String(req.body?.evidenceUrl || ''),
         note: req.body?.note ? String(req.body.note) : null,
+        invoiceAmount: Number(req.body?.invoiceAmount || 0),
+        receivedAmount: req.body?.receivedAmount ?? '',
+        reason: req.body?.reason ? String(req.body.reason) : null,
         registeredBy: principal?.name || principal?.email || 'sistema',
       });
       res.json(result);

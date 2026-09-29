@@ -72,6 +72,9 @@ interface Invoice {
   manual_payment_by?: string | null;
   manual_payment_at?: string | null;
   manual_payment_note?: string | null;
+  manual_payment_amount?: number | null;
+  manual_payment_interest?: number | null;
+  manual_payment_reason?: string | null;
 }
 
 interface NfHistoryEntry {
@@ -1081,7 +1084,19 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                               <Receipt size={14} />
                             </a>
                           )}
-                          {!inv.nf_image_url && !inv.boleto_image_url && !inv.asaas_bankslip_url && !(inv.nf_status === 'AUTHORIZED' && inv.asaas_invoice_url) && (
+                          {inv.manual_payment_evidence_url && (
+                            <a
+                              href={inv.manual_payment_evidence_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-emerald-700 hover:text-emerald-900"
+                              title="Comprovante do pagamento"
+                              data-testid={`doc-comprovante-${inv.id}`}
+                            >
+                              <Banknote size={14} />
+                            </a>
+                          )}
+                          {!inv.nf_image_url && !inv.boleto_image_url && !inv.asaas_bankslip_url && !inv.manual_payment_evidence_url && !(inv.nf_status === 'AUTHORIZED' && inv.asaas_invoice_url) && (
                             <span className="text-gray-300 text-[10px]">—</span>
                           )}
                         </div>
@@ -1262,6 +1277,13 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                       <div className="border border-emerald-200 bg-emerald-50 rounded-xl p-4 space-y-1" data-testid="manual-payment-audit">
                         <p className="text-[9px] font-black text-emerald-700 uppercase tracking-widest">Baixa manual</p>
                         <p className="text-xs text-emerald-950"><span className="font-black">Pagamento:</span> {fmtDate(inv.manual_payment_date || '')}</p>
+                        <p className="text-xs text-emerald-950"><span className="font-black">Valor recebido:</span> {fmtBRL(Number(inv.manual_payment_amount || inv.amount || 0))}</p>
+                        {Number(inv.manual_payment_interest || 0) > 0.009 && (
+                          <p className="text-xs text-emerald-950"><span className="font-black">Juros:</span> {fmtBRL(Number(inv.manual_payment_interest))} sobre o valor da fatura {fmtBRL(inv.amount)}</p>
+                        )}
+                        {inv.manual_payment_reason && (
+                          <p className="text-xs text-emerald-950"><span className="font-black">Motivo:</span> {inv.manual_payment_reason}</p>
+                        )}
                         <p className="text-xs text-emerald-950"><span className="font-black">Quem registrou:</span> {inv.manual_payment_by || '—'}</p>
                         <p className="text-xs text-emerald-950"><span className="font-black">Quando:</span> {formatDateTimeBR(inv.manual_payment_at)}</p>
                         {inv.manual_payment_note && <p className="text-xs text-emerald-950"><span className="font-black">Observação:</span> {inv.manual_payment_note}</p>}

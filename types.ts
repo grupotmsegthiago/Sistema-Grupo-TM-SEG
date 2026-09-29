@@ -404,6 +404,9 @@ export interface FinancialTransaction {
   doc_nf_status?: FinancialDocStatus | null;
   doc_comprovante_url?: string | null;
   doc_comprovante_status?: FinancialDocStatus | null;
+  manual_payment_amount?: number | null;
+  manual_payment_interest?: number | null;
+  manual_payment_reason?: string | null;
 }
 
 export interface BrandIdentity {

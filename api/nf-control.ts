@@ -111,6 +111,9 @@ export default async function handler(req: LiteReq, res: LiteRes) {
         paymentDate: String(body.paymentDate || ''),
         evidenceUrl: String(body.evidenceUrl || ''),
         note: body.note ? String(body.note) : null,
+        invoiceAmount: Number(body.invoiceAmount || 0),
+        receivedAmount: body.receivedAmount ?? '',
+        reason: body.reason ? String(body.reason) : null,
         registeredBy: principal?.name || principal?.email || 'sistema',
       });
       res.status(200).json(result);

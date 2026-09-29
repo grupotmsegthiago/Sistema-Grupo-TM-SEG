@@ -1181,6 +1181,23 @@ const FinancialTransactionList: React.FC = () => {
                                                         Pago incompleto · {childResiduals!.length} residual(is)
                                                     </span>
                                                 )}
+                                                {isReceber && (t.manual_payment_amount != null || t.doc_comprovante_url) && (
+                                                    <span className="mt-0.5 block text-[9px] font-bold text-emerald-800 normal-case" data-testid={`manual-pay-sync-${t.id}`}>
+                                                      {t.manual_payment_amount != null && (
+                                                        <>Recebido {formatCurrency(Number(t.manual_payment_amount))}</>
+                                                      )}
+                                                      {Number(t.manual_payment_interest || 0) > 0.009 && (
+                                                        <> · Juros {formatCurrency(Number(t.manual_payment_interest))}</>
+                                                      )}
+                                                      {t.manual_payment_reason ? <> · Motivo: {t.manual_payment_reason}</> : null}
+                                                      {t.doc_comprovante_url && (
+                                                        <>
+                                                          {' · '}
+                                                          <a href={t.doc_comprovante_url} target="_blank" rel="noreferrer" className="underline">Comprovante</a>
+                                                        </>
+                                                      )}
+                                                    </span>
+                                                )}
                                                 {isReceber && paidAmt > 0 && t.status !== 'PAID' && (
                                                     <span className="block text-[9px] font-bold text-green-700 mt-0.5">
                                                       Recebido: {formatCurrency(paidAmt)}
