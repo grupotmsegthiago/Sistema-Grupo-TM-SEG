@@ -174,11 +174,13 @@ export async function runAsaasSyncOpenPayments(params: {
         markedPaid++;
         paidIds.push(inv.id);
         if (inv.number) {
+          const { receivableMatchFilter } = await import('./invoiceReceivableSync.js');
           await supabase
             .from('financial_transactions')
             .update({ status: 'PAID', payment_date: new Date().toISOString().split('T')[0] })
-            .ilike('description', `%${inv.number}%`)
-            .eq('status', 'PENDING');
+            .eq('type', 'INCOME')
+            .in('status', ['PENDING', 'OVERDUE'])
+            .or(receivableMatchFilter(inv.number, inv.asaas_payment_id));
         }
       } else {
         const days = overdueDays(effectiveDue);
@@ -242,6 +244,13 @@ export async function runAsaasSyncOpenPayments(params: {
       console.log(`[Asaas Sync Open] falha fatura ${inv.id}: ${message}`);
     }
     await new Promise((r) => setTimeout(r, 150));
+  }
+
+  try {
+    const { syncPaidInvoicesToReceivables } = await import('./invoiceReceivableSync.js');
+    await syncPaidInvoicesToReceivables(supabase);
+  } catch {
+    /* os títulos já atualizados nesta passagem permanecem */
   }
 
   return {

@@ -158,11 +158,19 @@ export async function runAsaasSyncPaymentStatus(params: {
         .eq('id', invoiceId)
         .maybeSingle();
       if (inv?.number) {
+        const { receivableMatchFilter } = await import('./invoiceReceivableSync.js');
         await sb
           .from('financial_transactions')
           .update({ status: 'PAID', payment_date: new Date().toISOString().split('T')[0] })
-          .ilike('description', `%${inv.number}%`)
-          .eq('status', 'PENDING');
+          .eq('type', 'INCOME')
+          .in('status', ['PENDING', 'OVERDUE'])
+          .or(receivableMatchFilter(inv.number, paymentId));
+      }
+      try {
+        const { syncPaidInvoicesToReceivables } = await import('./invoiceReceivableSync.js');
+        await syncPaidInvoicesToReceivables(sb);
+      } catch {
+        /* a fatura já foi marcada */
       }
     }
   }

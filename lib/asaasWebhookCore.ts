@@ -61,15 +61,16 @@ export async function handleAsaasPaymentWebhook(
           })
           .eq('id', inv.id);
 
+        const { receivableMatchFilter } = await import('./invoiceReceivableSync.js');
         await supabase
           .from('financial_transactions')
           .update({
             status: 'PAID',
             payment_date: deps.today ? deps.today() : new Date().toISOString().split('T')[0],
           })
-          .ilike('description', `%${inv.number}%`)
-          // Idempotência existente: evento duplicado não atualiza transação já PAID.
-          .eq('status', 'PENDING');
+          .eq('type', 'INCOME')
+          .in('status', ['PENDING', 'OVERDUE'])
+          .or(receivableMatchFilter(String(inv.number || ''), payment.id));
 
         log(`[Asaas Webhook] Baixa automática: NF ${inv.number} — ${inv.client}`);
         try {
@@ -87,6 +88,13 @@ export async function handleAsaasPaymentWebhook(
         `[Asaas Webhook] Pagamento ${payment.id} sem fatura vinculada (ref=${payment.externalReference || '—'})`,
       );
     }
+  }
+
+  try {
+    const { syncPaidInvoicesToReceivables } = await import('./invoiceReceivableSync.js');
+    await syncPaidInvoicesToReceivables(supabase);
+  } catch {
+    /* a fatura já foi marcada; a tela sincroniza de novo */
   }
 
   return { received: true };

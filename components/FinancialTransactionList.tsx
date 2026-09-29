@@ -36,6 +36,7 @@ import {
   getTransactionPaidAmount,
 } from '../lib/financial/partialPayments';
 import { isPureMedicaoInvoice, isPureMedicaoReceivable } from '../lib/billing/medicaoVisibility';
+import { extractFaturaNumeroFromNotes } from '../lib/comissao/comissaoCore';
 import ReceivablePaymentsModal from './ReceivablePaymentsModal';
 import ReceivablePayConfirmModal from './ReceivablePayConfirmModal';
 import { extractParentTransactionId } from '../lib/financial/confirmReceivablePay';
@@ -263,6 +264,11 @@ const FinancialTransactionList: React.FC = () => {
     const fetchTransactions = useCallback(async () => {
         setLoading(true);
         try {
+            try {
+                await authFetch('/api/nf/sync-receivables', { method: 'POST' });
+            } catch {
+                /* a lista abre com o que já está no banco */
+            }
             const result = await fetchAllPages<FinancialTransaction>(async (from, size) => {
                 let q = supabase
                     .from('financial_transactions')
@@ -1082,6 +1088,7 @@ const FinancialTransactionList: React.FC = () => {
                             const residualCollapsed = expandedResidualParents.has(`collapsed:${t.id}`);
                             const residualExpanded = hasResidualChildren && !residualCollapsed;
                             const anticipationId = extractAnticipationId(t.notes);
+                            const faturaNumero = isReceber ? extractFaturaNumeroFromNotes(t.notes, t.description) : null;
                             const anticipationDates = anticipationId ? extractAnticipationDates(t.notes) : { operationDate: null, paymentDate: null };
                             const anticipationOpDate = anticipationDates.operationDate;
                             const anticipationPayDate = anticipationDates.paymentDate
@@ -1151,6 +1158,11 @@ const FinancialTransactionList: React.FC = () => {
                                             )}
                                             <div className="min-w-0">
                                                 <div className={`font-bold text-sm uppercase ${isResidualRow ? 'text-orange-800' : 'text-gray-800'}`}>{t.description}</div>
+                                                {faturaNumero && (
+                                                    <span className="block text-[9px] font-black text-indigo-700 mt-0.5" data-testid={`badge-fatura-${t.id}`}>
+                                                        Fatura {faturaNumero}
+                                                    </span>
+                                                )}
                                                 {isResidualRow && (
                                                     <span className="block text-[9px] font-black text-orange-600 mt-0.5 uppercase">Saldo residual</span>
                                                 )}

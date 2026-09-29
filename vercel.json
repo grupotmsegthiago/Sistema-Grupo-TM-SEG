@@ -559,6 +559,10 @@
       "destination": "/api/nf-control?op=manual-payment"
     },
     {
+      "source": "/api/nf/sync-receivables",
+      "destination": "/api/nf-control?op=sync-receivables"
+    },
+    {
       "source": "/api/nf/provider-preferences",
       "destination": "/api/nf-control?op=preferences"
     },

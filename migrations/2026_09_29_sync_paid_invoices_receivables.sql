@@ -1,17 +1,4 @@
--- Baixa manual: comprovante, valor, motivo e juros na fatura e no Contas a Receber.
--- O valor (amount) da fatura e do título não é alterado.
-
-ALTER TABLE public.financial_invoices
-  ADD COLUMN IF NOT EXISTS manual_payment_amount numeric(14,2),
-  ADD COLUMN IF NOT EXISTS manual_payment_interest numeric(14,2),
-  ADD COLUMN IF NOT EXISTS manual_payment_reason text;
-
-ALTER TABLE public.financial_transactions
-  ADD COLUMN IF NOT EXISTS manual_payment_amount numeric(14,2),
-  ADD COLUMN IF NOT EXISTS manual_payment_interest numeric(14,2),
-  ADD COLUMN IF NOT EXISTS manual_payment_reason text;
-
-DROP FUNCTION IF EXISTS public.registrar_baixa_manual_fatura(uuid, date, text, text, text);
+-- Reaplica a baixa manual: o titulo e achado pelo numero na observacao, no Asaas ou na descricao.
 
 CREATE OR REPLACE FUNCTION public.registrar_baixa_manual_fatura(
   p_invoice_id uuid,
@@ -175,3 +162,79 @@ $$;
 
 REVOKE ALL ON FUNCTION public.registrar_baixa_manual_fatura(uuid, date, text, text, text, numeric, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.registrar_baixa_manual_fatura(uuid, date, text, text, text, numeric, text) TO anon, authenticated, service_role;
+
+-- Controle de NF conversa com Contas a Receber.
+-- Fatura PAGA marca o título (número na observação, no Asaas ou na descrição).
+-- Não altera amount. Não cria título que não existe. Não inventa data de pagamento.
+
+CREATE OR REPLACE FUNCTION public.sincronizar_faturas_pagas_contas_receber()
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_n integer := 0;
+BEGIN
+  WITH matches AS (
+    SELECT
+      t.id AS tx_id,
+      i.manual_payment_date,
+      i.manual_payment_evidence_url,
+      i.manual_payment_amount,
+      i.manual_payment_interest,
+      i.manual_payment_reason
+    FROM public.financial_transactions t
+    JOIN public.financial_invoices i
+      ON upper(coalesce(i.status, '')) = 'PAGA'
+     AND btrim(coalesce(i.number, '')) <> ''
+     AND (
+       strpos(coalesce(t.notes, ''), 'Fatura ' || btrim(i.number)) > 0
+       OR (
+         nullif(btrim(coalesce(i.asaas_payment_id, '')), '') IS NOT NULL
+         AND strpos(coalesce(t.notes, ''), btrim(i.asaas_payment_id)) > 0
+       )
+       OR strpos(coalesce(t.description, ''), btrim(i.number)) > 0
+     )
+    WHERE t.type = 'INCOME'
+      AND upper(coalesce(t.status, '')) IN ('PENDING', 'OVERDUE')
+  ),
+  unique_matches AS (
+    SELECT *
+    FROM matches m
+    WHERE (
+      SELECT count(*) FROM matches m2 WHERE m2.tx_id = m.tx_id
+    ) = 1
+  )
+  UPDATE public.financial_transactions t
+  SET status = 'PAID',
+      payment_date = COALESCE(t.payment_date, u.manual_payment_date),
+      doc_comprovante_url = COALESCE(
+        t.doc_comprovante_url,
+        NULLIF(left(btrim(coalesce(u.manual_payment_evidence_url, '')), 2000), '')
+      ),
+      doc_comprovante_status = CASE
+        WHEN COALESCE(
+          t.doc_comprovante_url,
+          NULLIF(btrim(coalesce(u.manual_payment_evidence_url, '')), '')
+        ) IS NOT NULL
+          THEN COALESCE(NULLIF(t.doc_comprovante_status, ''), 'ok')
+        ELSE t.doc_comprovante_status
+      END,
+      manual_payment_amount = COALESCE(t.manual_payment_amount, u.manual_payment_amount),
+      manual_payment_interest = COALESCE(t.manual_payment_interest, u.manual_payment_interest),
+      manual_payment_reason = COALESCE(t.manual_payment_reason, u.manual_payment_reason)
+  FROM unique_matches u
+  WHERE t.id = u.tx_id;
+
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RETURN v_n;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.sincronizar_faturas_pagas_contas_receber() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.sincronizar_faturas_pagas_contas_receber() TO anon, authenticated, service_role;
+
+NOTIFY pgrst, 'reload schema';
+
+SELECT public.sincronizar_faturas_pagas_contas_receber();

@@ -3,6 +3,7 @@
  * (sem cold-start do Express em api/index).
  */
 import { createSupabaseAdminClient } from './supabaseAdmin.js';
+import { syncPaidInvoicesToReceivables } from './invoiceReceivableSync.js';
 import { isPureMedicaoInvoice } from './billing/medicaoVisibility.js';
 import { INVOICE_CONTROL_EPOCH, isAfterInvoiceControlEpoch } from './invoiceCleanSlate.js';
 import { invoiceControlChargeStatus, isCanceledNfStatus } from './invoiceDisplay.js';
@@ -165,6 +166,12 @@ export async function listFinancialInvoicesForControl(): Promise<{
   const sb = createSupabaseAdminClient();
   if (!sb) {
     return { success: true, invoices: [], epoch: INVOICE_CONTROL_EPOCH };
+  }
+
+  try {
+    await syncPaidInvoicesToReceivables(sb);
+  } catch {
+    /* a lista segue mesmo se a sincronização do Contas a Receber falhar */
   }
 
   const { data, error } = await sb

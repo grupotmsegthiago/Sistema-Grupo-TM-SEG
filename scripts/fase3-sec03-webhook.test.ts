@@ -211,20 +211,20 @@ describe('SEC-03 — eventos e idempotência do core preservados', () => {
         if (table === 'financial_transactions') {
           return {
             update(payload: { status?: string }) {
-              return {
-                ilike() {
-                  return {
-                    async eq(field: string, expected: string) {
-                      assert.equal(field, 'status');
-                      if (state.transactionStatus === expected) {
-                        state.transactionStatus = payload.status || state.transactionStatus;
-                        state.transactionUpdates += 1;
-                      }
-                      return { error: null };
-                    },
-                  };
-                },
+              const finish = async () => {
+                if (state.transactionStatus === 'PENDING' || state.transactionStatus === 'OVERDUE') {
+                  state.transactionStatus = payload.status || state.transactionStatus;
+                  state.transactionUpdates += 1;
+                }
+                return { error: null };
               };
+              const chain = {
+                eq() { return chain; },
+                in() { return chain; },
+                ilike() { return chain; },
+                or: finish,
+              };
+              return chain;
             },
             insert() {
               state.inserts += 1;

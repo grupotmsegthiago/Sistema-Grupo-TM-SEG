@@ -6,6 +6,7 @@ import {
   classifyManualPaymentAmount,
   shouldKeepManualPaidStatus,
 } from '../lib/invoiceManualPayment.ts';
+import { receivableMatchFilter } from '../lib/invoiceReceivableSync.ts';
 
 const valid = {
   invoiceId: '11111111-1111-4111-8111-111111111111',
@@ -74,6 +75,16 @@ describe('baixa manual de fatura', () => {
     assert.equal(shouldKeepManualPaidStatus('2026-09-29T18:00:00.000Z', false), true);
     assert.equal(shouldKeepManualPaidStatus('2026-09-29T18:00:00.000Z', true), false);
     assert.equal(shouldKeepManualPaidStatus(null, false), false);
+    const link = fs.readFileSync('migrations/2026_09_29_sync_paid_invoices_receivables.sql', 'utf8');
+    assert.match(link, /Fatura /);
+    assert.match(link, /status = 'PAID'/);
+    assert.doesNotMatch(link, /\bamount\s*=/);
+    assert.doesNotMatch(link, /paid_date/);
+    const filter = receivableMatchFilter('TMSEG-20260928-103111-B6W2-S1-1521', 'pay_ym5ncz8tfwhmifh2');
+    assert.match(filter, /notes\.ilike\.%Fatura TMSEG-20260928-103111-B6W2-S1-1521%/);
+    assert.match(filter, /pay_ym5ncz8tfwhmifh2/);
+    const baixa = fs.readFileSync('migrations/2026_09_29_invoice_manual_payment_sync.sql', 'utf8');
+    assert.match(baixa, /strpos\(coalesce\(notes, ''\), 'Fatura '/);
     const sync = fs.readFileSync('lib/asaasSyncPaymentStatusCore.ts', 'utf8');
     assert.match(sync, /shouldKeepManualPaidStatus/);
   });

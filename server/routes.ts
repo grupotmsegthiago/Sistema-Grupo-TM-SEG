@@ -5905,6 +5905,15 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  app.post("/api/nf/sync-receivables", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const { syncPaidInvoicesToReceivablesNow } = await import('../lib/invoiceReceivableSync.js');
+      res.json(await syncPaidInvoicesToReceivablesNow());
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   app.post("/api/nf/manual-payment", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const principal = (req as any).user as { name?: string | null; email?: string | null } | undefined;
@@ -6447,12 +6456,18 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         if (isPaid) {
           const { data: inv } = await supabase.from('financial_invoices').select('number, client').eq('id', invoiceId).single();
           if (inv?.number) {
+            const { receivableMatchFilter } = await import('../lib/invoiceReceivableSync.js');
             await supabase.from('financial_transactions')
               .update({ status: 'PAID', payment_date: new Date().toISOString().split('T')[0] })
-              .ilike('description', `%${inv.number}%`)
-              .eq('status', 'PENDING');
+              .eq('type', 'INCOME')
+              .in('status', ['PENDING', 'OVERDUE'])
+              .or(receivableMatchFilter(inv.number, paymentId));
             console.log(`[Asaas] Baixa automática: NF ${inv.number} — ${inv.client}`);
           }
+          try {
+            const { syncPaidInvoicesToReceivablesNow } = await import('../lib/invoiceReceivableSync.js');
+            await syncPaidInvoicesToReceivablesNow();
+          } catch { /* a fatura já foi marcada; a sincronização geral tenta de novo na tela */ }
         }
       }
 

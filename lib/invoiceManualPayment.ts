@@ -5,6 +5,7 @@
  */
 import { atualizarStatusAposBaixaCliente } from './comissao/comissaoCore.js';
 import { parseMoneyInput, roundMoney } from './financial/confirmReceivablePay.js';
+import { syncPaidInvoicesToReceivables } from './invoiceReceivableSync.js';
 import { createSupabaseAdminClient } from './supabaseAdmin.js';
 
 export type ManualPaymentInput = {
@@ -115,6 +116,12 @@ export async function registrarBaixaManualFatura(input: ManualPaymentInput): Pro
     p_reason: reason || null,
   });
   if (error) throw new Error(error.message || 'Falha ao registrar a baixa');
+
+  try {
+    await syncPaidInvoicesToReceivables(sb);
+  } catch {
+    /* a baixa da fatura já foi gravada; o próximo carregamento tenta de novo */
+  }
 
   const body = (data || {}) as { invoiceId?: string; number?: string | null; transactions?: number };
   let commissionUpdated = 0;
