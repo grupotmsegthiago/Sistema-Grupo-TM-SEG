@@ -23,10 +23,11 @@ import {
   type CevaPortalSession,
 } from './rules.js';
 import { sendCevaPortalAccessEmail } from './emailAcesso.js';
-import { BillingDatasetIncompleteError, fetchBillingMissionUniverse } from '../billing/fetchBillingMissionUniverse.js';
-import { linhaDoBoletimCeva, numeroOsDoBoletim, type CevaBoletimMission } from './report.js';
-import { montarMissaoAoVivo, ordenarMissoesAoVivo, STATUS_AO_VIVO } from './aoVivo.js';
-import { decidirGravacao, ehCampoFiltro, servicoDoSistema, textoPgr, type CampoFiltro } from './camposCliente.js';
+import type { CevaBoletimMission } from './report.js';
+import type { CampoFiltro } from './camposCliente.js';
+// Imports pesados (billing/report/ao-vivo) entram via import() dinâmico nas ops
+// que precisam — evita cold-start do login puxar financialUtils/supabasePaging
+// e quebrar o bundle Vercel com ERR_MODULE_NOT_FOUND.
 
 const STOP_WORDS = ['LTDA', 'LTDA.', 'S.A.', 'S.A', 'SA', 'S/A', 'S/A.', 'DO', 'DE', 'DA', 'E', 'DAS', 'DOS'];
 
@@ -282,7 +283,11 @@ const CATALOGO_CAMPO: Record<CampoFiltro, string> = {
   operacao: 'operacao',
 };
 
-function aplicarCamposCliente(item: { os: string; solicitante: string | null; quemAutorizou: string | null; servico: string | null; atendimentoPgr: string | null; contrato: string | null; operacao: string | null }, salvo: any) {
+function aplicarCamposCliente(
+  item: { os: string; solicitante: string | null; quemAutorizou: string | null; servico: string | null; atendimentoPgr: string | null; contrato: string | null; operacao: string | null },
+  salvo: any,
+  servicoDoSistema: (valor: string | null | undefined) => string | null,
+) {
   item.solicitante = salvo?.solicitante ?? null;
   item.quemAutorizou = salvo?.quem_autorizou ?? null;
   item.servico = salvo?.servico || servicoDoSistema(item.servico);
@@ -708,6 +713,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         return;
       }
       try {
+        const { montarMissaoAoVivo, ordenarMissoesAoVivo, STATUS_AO_VIVO } = await import('./aoVivo.js');
         const { data, error } = await sb
           .from('missions')
           .select('id, status, start_time, end_time, mission_type, driver_name, origin, destination, client_vehicle, start_km, end_km')
@@ -759,6 +765,9 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         return;
       }
       try {
+        const { BillingDatasetIncompleteError, fetchBillingMissionUniverse } = await import('../billing/fetchBillingMissionUniverse.js');
+        const { linhaDoBoletimCeva, numeroOsDoBoletim } = await import('./report.js');
+        const { servicoDoSistema } = await import('./camposCliente.js');
         const { data: clientRow, error: clientError } = await sb
           .from('clients')
           .select('*')
@@ -811,7 +820,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
           loadCamposCliente(sb, missionIds),
           loadCatalogo(sb),
         ]);
-        for (const item of items) aplicarCamposCliente(item, campos.get(`GTM-${item.os}`));
+        for (const item of items) aplicarCamposCliente(item, campos.get(`GTM-${item.os}`), servicoDoSistema);
 
         res.status(200).json({
           periodo: '2026-01-01',
@@ -836,6 +845,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
     if (op === 'campos' && method === 'POST') {
       const session = await portalSession(req);
       if (!exigirUso(res, session)) return;
+      const { decidirGravacao, ehCampoFiltro, textoPgr } = await import('./camposCliente.js');
       const os = String(body?.os || '').trim();
       const campo = String(body?.campo || '');
       const valor = String(body?.valor ?? '');

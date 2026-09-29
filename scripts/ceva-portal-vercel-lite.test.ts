@@ -33,6 +33,9 @@ test('handler leve não importa Express nem financialUtils', () => {
   assert.match(http, /export async function handleCevaPortalHttp/);
   assert.match(http, /op === 'login'/);
   assert.match(http, /op === 'acesso'/);
+  assert.doesNotMatch(http, /^import .*fetchBillingMissionUniverse/m);
+  assert.match(http, /await import\('\.\/aoVivo\.js'\)/);
+
 });
 
 test('AcessoCeva tem timeout para não ficar eternamente em Aguarde', () => {
