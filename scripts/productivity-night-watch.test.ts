@@ -124,9 +124,9 @@ test('logout por idle: 30 min diurno / 20 min noturno e isenção diretoria/admi
   assert.equal(NIGHT_IDLE_MINUTES, 10);
   assert.equal(NIGHT_FORCE_LOGOUT_MINUTES, 20);
   assert.equal(NIGHT_FORCE_LOGOUT_MS, 20 * 60 * 1000);
-  assert.equal(NIGHT_HEARTBEAT_INTERVAL_MINUTES, 30);
-  assert.equal(NIGHT_HEARTBEAT_INTERVAL_MS, 30 * 60 * 1000);
-  assert.equal(NIGHT_STALE_ALERT_MINUTES, 90);
+  assert.equal(NIGHT_HEARTBEAT_INTERVAL_MINUTES, 2);
+  assert.equal(NIGHT_HEARTBEAT_INTERVAL_MS, 2 * 60 * 1000);
+  assert.equal(NIGHT_STALE_ALERT_MINUTES, 80);
   assert.equal(shouldEnforceSessionIdleLogout('funcionario'), true);
   assert.equal(shouldEnforceSessionIdleLogout('Operador'), true);
   assert.equal(shouldEnforceSessionIdleLogout('Diretoria'), false);

@@ -18,15 +18,15 @@ export const NIGHT_FORCE_LOGOUT_MINUTES = 20;
 export const NIGHT_FORCE_LOGOUT_MS = NIGHT_FORCE_LOGOUT_MINUTES * 60 * 1000;
 
 /** Intervalo do heartbeat de presença noturna (cliente → servidor). */
-export const NIGHT_HEARTBEAT_INTERVAL_MINUTES = 30;
+export const NIGHT_HEARTBEAT_INTERVAL_MINUTES = 2;
 export const NIGHT_HEARTBEAT_INTERVAL_MS = NIGHT_HEARTBEAT_INTERVAL_MINUTES * 60 * 1000;
 
 /**
  * Sem heartbeat por estes minutos na vigia → alerta e-mail à diretoria.
  * Deve ser > NIGHT_HEARTBEAT_INTERVAL para evitar falso positivo.
- * Pedido Thiago: 1h30 sem sinal.
+ * Pedido Thiago: 1h20 sem uso/sinal.
  */
-export const NIGHT_STALE_ALERT_MINUTES = 90;
+export const NIGHT_STALE_ALERT_MINUTES = 80;
 
 /** Tempo máximo do desafio aberto sem resposta → timeout + logout. */
 export const NIGHT_CHALLENGE_TIMEOUT_MS = 10 * 60 * 1000;
