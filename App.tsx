@@ -285,7 +285,7 @@ const App: React.FC = () => {
   }, [isPublicRoute, isAuthenticated, handleLogout]);
 
   // Logout obrigatório: 30 min diurno / 20 min na vigia noturna (funcionários).
-  // Conta mesmo com aba em segundo plano; diretoria/admin isentos.
+  // Conta mesmo com aba em segundo plano; diretoria/CEO isentos (admin entra na vigia).
   useEffect(() => {
     if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
     let loggingOut = false;

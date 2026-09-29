@@ -120,7 +120,7 @@ test('fatia noturna do relatório 21h só após 20h', () => {
   assert.ok(after.endIso > after.startIso);
 });
 
-test('logout por idle: 30 min diurno / 20 min noturno e isenção diretoria/admin', () => {
+test('logout por idle: 30 min diurno / 20 min noturno e isenção só diretoria/CEO', () => {
   assert.equal(SESSION_IDLE_LOGOUT_MINUTES, 30);
   assert.equal(SESSION_IDLE_LOGOUT_MS, 30 * 60 * 1000);
   assert.equal(NIGHT_IDLE_MINUTES, 10);
