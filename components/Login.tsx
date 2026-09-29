@@ -36,9 +36,20 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   ];
 
   useEffect(() => {
+    let logoutReason = '';
+    try {
+      logoutReason = sessionStorage.getItem('tmseg:logout_reason') || '';
+    } catch {
+      /* ignora */
+    }
     localStorage.clear();
     sessionStorage.clear();
     localStorage.setItem('app_version', APP_VERSION);
+    if (logoutReason === 'idle_30min') {
+      setError(
+        'Sessão encerrada por 30 minutos sem interação no sistema. Faça login novamente.',
+      );
+    }
   }, []);
 
   useEffect(() => {

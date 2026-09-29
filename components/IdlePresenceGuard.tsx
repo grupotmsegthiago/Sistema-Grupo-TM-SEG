@@ -247,7 +247,7 @@ export default function IdlePresenceGuard() {
           </button>
 
           <p className="text-[10px] text-center text-slate-400 uppercase tracking-wide">
-            Home office · janta {dinnerBreakLabel()} não conta · relatório 09h à diretoria
+            Home office · janta {dinnerBreakLabel()} não conta · logout após 30 min sem uso · relatório 09h e 21h à diretoria
           </p>
         </div>
       </div>

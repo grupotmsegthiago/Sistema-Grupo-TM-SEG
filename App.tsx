@@ -102,7 +102,16 @@ import UserPresenceTracker from './components/UserPresenceTracker';
 import PresenceDebugPanel from './components/PresenceDebugPanel';
 import TimeClockGate from './components/TimeClockGate';
 import AppErrorBoundary from './components/AppErrorBoundary';
-import { wireUserActivityTracker, touchUserActivity } from './lib/userActivityTracker';
+import { getIdleMs, wireUserActivityTracker, touchUserActivity } from './lib/userActivityTracker';
+import { flushInteractionStats } from './lib/productivity/interactionStats';
+import { logProductivityEvent } from './lib/productivity/logProductivity';
+import {
+  isIdleLogoutDue,
+  LOGOUT_REASON_IDLE_30MIN,
+  LOGOUT_REASON_IDLE_KEY,
+  SESSION_IDLE_LOGOUT_MINUTES,
+  shouldEnforceSessionIdleLogout,
+} from './lib/productivity/sessionIdleLogout';
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { canAccessMissionReport } from './lib/missionReportAccess';
@@ -112,9 +121,6 @@ import OsAnalysisPendingPage from './components/OsAnalysisPendingPage';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
 import { persistScreen, resolveInitialScreen, getRoleDefaultScreen, getScreenFromUrl } from './lib/screenNavigation';
 import { canAccessScreen, fallbackScreenForUser } from './lib/screenAccess';
-
-// TEMPO DE INATIVIDADE (30 minutos) — só conta com a aba visível/ativa
-const INACTIVITY_LIMIT = 30 * 60 * 1000;
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -155,18 +161,31 @@ const App: React.FC = () => {
   const resetToken = new URLSearchParams(window.location.search).get('token') || '';
 
   const handleLogout = useCallback(async () => {
+    let logoutReason = '';
+    try {
+      logoutReason = sessionStorage.getItem(LOGOUT_REASON_IDLE_KEY) || '';
+    } catch {
+      /* ignora */
+    }
     try { window.dispatchEvent(new CustomEvent('tmseg:logout')); } catch {}
     await supabase.auth.signOut();
-    localStorage.clear(); 
-    sessionStorage.clear(); 
-    localStorage.setItem('app_version', APP_VERSION); 
+    localStorage.clear();
+    sessionStorage.clear();
+    if (logoutReason) {
+      try {
+        sessionStorage.setItem(LOGOUT_REASON_IDLE_KEY, logoutReason);
+      } catch {
+        /* ignora */
+      }
+    }
+    localStorage.setItem('app_version', APP_VERSION);
     document.cookie.split(";").forEach((c) => {
         document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
     });
     setIsAuthenticated(false);
     setNeedsPasswordChange(false);
     setCurrentScreen('dashboard');
-    window.location.href = '/'; 
+    window.location.href = '/';
   }, []);
 
   const verifySessionInDatabase = async () => {
@@ -258,36 +277,63 @@ const App: React.FC = () => {
     if (!token || !userData) { if (isAuthenticated) handleLogout(); } else { verifySessionInDatabase(); }
   }, [isPublicRoute, isAuthenticated, handleLogout]);
 
+  // Logout obrigatório após 30 min sem interação real (funcionários).
+  // Conta mesmo com aba em segundo plano; diretoria/admin isentos.
   useEffect(() => {
     if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let loggingOut = false;
 
-    const resetTimer = () => {
-      if (document.visibilityState === 'hidden') return;
-      if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => handleLogout(), INACTIVITY_LIMIT);
-    };
-
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        // Pausa o timer quando o app vai para segundo plano (celular).
-        if (timeoutId) clearTimeout(timeoutId);
-        timeoutId = undefined;
-      } else {
-        resetTimer();
+    const readRole = (): string | undefined => {
+      try {
+        const u = JSON.parse(localStorage.getItem('userData') || '{}');
+        return u?.role;
+      } catch {
+        return undefined;
       }
     };
 
-    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click', 'pointerdown'];
-    events.forEach((event) => document.addEventListener(event, resetTimer, { passive: true }));
+    const forceIdleLogout = async () => {
+      if (loggingOut) return;
+      if (!shouldEnforceSessionIdleLogout(readRole())) return;
+      const idleMs = getIdleMs();
+      if (!isIdleLogoutDue(idleMs)) return;
+      loggingOut = true;
+      const idleMinutes = Math.max(
+        SESSION_IDLE_LOGOUT_MINUTES,
+        Math.floor(idleMs / 60_000),
+      );
+      try {
+        sessionStorage.setItem(LOGOUT_REASON_IDLE_KEY, LOGOUT_REASON_IDLE_30MIN);
+      } catch {
+        /* ignora */
+      }
+      try {
+        await flushInteractionStats('idle_logout');
+        await logProductivityEvent('SESSION_IDLE_LOGOUT', {
+          idleMinutes,
+          thresholdMinutes: SESSION_IDLE_LOGOUT_MINUTES,
+        });
+      } catch {
+        /* segue o logout mesmo se o log falhar */
+      }
+      await handleLogout();
+    };
+
+    const tick = () => {
+      void forceIdleLogout();
+    };
+
+    tick();
+    const idlePoll = window.setInterval(tick, 15_000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
     document.addEventListener('visibilitychange', onVisibility);
-    resetTimer();
 
     const sessionInterval = setInterval(verifySessionInDatabase, 120000);
     return () => {
-      if (timeoutId) clearTimeout(timeoutId);
+      window.clearInterval(idlePoll);
       clearInterval(sessionInterval);
-      events.forEach((event) => document.removeEventListener(event, resetTimer));
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [isAuthenticated, isPublicRoute, handleLogout]);

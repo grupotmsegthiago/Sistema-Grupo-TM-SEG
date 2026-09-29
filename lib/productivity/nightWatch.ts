@@ -177,6 +177,51 @@ export function getPreviousBrasiliaDayBounds(reference: Date = new Date()): {
   };
 }
 
+/** Dia civil atual (BRT) 00:00 → reference (ex.: relatório parcial das 21h). */
+export function getCurrentBrasiliaDayBounds(reference: Date = new Date()): {
+  startIso: string;
+  endIso: string;
+  dateLabel: string;
+} {
+  const p = getBrasiliaParts(reference);
+  const startUtc = brasiliaLocalToUtc(
+    `${pad(p.year)}-${pad(p.month)}-${pad(p.day)}T00:00:00`,
+  );
+  const endUtc = reference;
+  const dateLabel = startUtc.toLocaleDateString('pt-BR', { timeZone: NIGHT_WATCH_TZ });
+  return {
+    startIso: startUtc.toISOString(),
+    endIso: endUtc.toISOString(),
+    dateLabel,
+  };
+}
+
+/**
+ * Trecho noturno já iniciado no dia civil atual (20h → reference), se houver.
+ * Antes das 20h BRT retorna janela vazia (start === end).
+ */
+export function getEveningNightSliceBounds(reference: Date = new Date()): {
+  startIso: string;
+  endIso: string;
+  label: string;
+} {
+  const p = getBrasiliaParts(reference);
+  const todayNightStart = brasiliaLocalToUtc(
+    `${pad(p.year)}-${pad(p.month)}-${pad(p.day)}T${pad(NIGHT_WATCH_START_HOUR)}:00:00`,
+  );
+  if (reference.getTime() <= todayNightStart.getTime()) {
+    const iso = reference.toISOString();
+    return { startIso: iso, endIso: iso, label: '— (antes das 20h)' };
+  }
+  const startLabel = todayNightStart.toLocaleString('pt-BR', { timeZone: NIGHT_WATCH_TZ });
+  const endLabel = reference.toLocaleString('pt-BR', { timeZone: NIGHT_WATCH_TZ });
+  return {
+    startIso: todayNightStart.toISOString(),
+    endIso: reference.toISOString(),
+    label: `${startLabel} → ${endLabel}`,
+  };
+}
+
 function pad(n: number): string {
   return String(n).padStart(2, '0');
 }

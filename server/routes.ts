@@ -9193,6 +9193,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             : null;
         const result = await executeProductivityDailyReport(supabase, {
           overrideEmails: override,
+          period:
+            req.body?.period === 'today_so_far' ? 'today_so_far' : 'previous_day',
         });
         res.json({ ok: true, ...result, testMode: !!override });
       } catch (e: any) {

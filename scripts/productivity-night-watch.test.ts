@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   brasiliaLocalToUtc,
   dinnerBreakLabel,
+  getCurrentBrasiliaDayBounds,
+  getEveningNightSliceBounds,
   getNightWatchWindowBounds,
   getPreviousBrasiliaDayBounds,
   isDinnerBreakWindow,
@@ -14,6 +16,12 @@ import {
   pickNightWatchKeyword,
 } from '../lib/productivity/nightWatch.ts';
 import { aggregateProductivityLogs } from '../lib/productivity/aggregateProductivity.ts';
+import {
+  isIdleLogoutDue,
+  SESSION_IDLE_LOGOUT_MINUTES,
+  SESSION_IDLE_LOGOUT_MS,
+  shouldEnforceSessionIdleLogout,
+} from '../lib/productivity/sessionIdleLogout.ts';
 
 test('isNightWatchWindow: 20h–08h BRT', () => {
   // 20:00 BRT = 23:00 UTC
@@ -79,6 +87,36 @@ test('dia civil anterior para relatório 09h', () => {
   // 06/08 09:00 BRT → dia anterior 05/08
   const d = getPreviousBrasiliaDayBounds(new Date('2026-08-06T12:00:00.000Z'));
   assert.equal(d.dateLabel, '05/08/2026');
+});
+
+test('dia civil atual para relatório 21h (parcial)', () => {
+  // 06/08 21:00 BRT = 07/08 00:00 UTC
+  const d = getCurrentBrasiliaDayBounds(new Date('2026-08-07T00:00:00.000Z'));
+  assert.equal(d.dateLabel, '06/08/2026');
+  assert.equal(d.endIso, '2026-08-07T00:00:00.000Z');
+  // início = 06/08 00:00 BRT
+  assert.equal(brasiliaLocalToUtc('2026-08-06T00:00:00').toISOString(), d.startIso);
+});
+
+test('fatia noturna do relatório 21h só após 20h', () => {
+  // 06/08 15:00 BRT = 18:00 UTC → ainda sem noite
+  const before = getEveningNightSliceBounds(new Date('2026-08-06T18:00:00.000Z'));
+  assert.equal(before.startIso, before.endIso);
+  // 06/08 21:00 BRT = 00:00 UTC do dia 7
+  const after = getEveningNightSliceBounds(new Date('2026-08-07T00:00:00.000Z'));
+  assert.equal(brasiliaLocalToUtc('2026-08-06T20:00:00').toISOString(), after.startIso);
+  assert.ok(after.endIso > after.startIso);
+});
+
+test('logout por idle: 30 min e isenção diretoria/admin', () => {
+  assert.equal(SESSION_IDLE_LOGOUT_MINUTES, 30);
+  assert.equal(SESSION_IDLE_LOGOUT_MS, 30 * 60 * 1000);
+  assert.equal(shouldEnforceSessionIdleLogout('funcionario'), true);
+  assert.equal(shouldEnforceSessionIdleLogout('Operador'), true);
+  assert.equal(shouldEnforceSessionIdleLogout('Diretoria'), false);
+  assert.equal(shouldEnforceSessionIdleLogout('admin'), false);
+  assert.equal(isIdleLogoutDue(29 * 60 * 1000), false);
+  assert.equal(isIdleLogoutDue(30 * 60 * 1000), true);
 });
 
 test('aggregateProductivityLogs resume desafios e tempo ativo', () => {
