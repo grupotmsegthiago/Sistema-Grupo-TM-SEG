@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { decidirGravacao, SERVICOS_FIXOS, type CampoFiltro } from '../../lib/cevaPortal/camposCliente';
+import { avisoInclusaoAdmin, decidirGravacao, SERVICOS_FIXOS, type CampoFiltro } from '../../lib/cevaPortal/camposCliente';
 import { cabecalhosCeva, sairDoPortalCeva } from '../../lib/cevaPortal/sessaoCliente';
 
 type HistoricoPgr = { valor: string; anterior: string; em: string; por: string };
@@ -22,8 +22,9 @@ export const CampoFiltro: React.FC<{
   campo: CampoFiltro;
   valor: string | null;
   opcoes: string[];
+  podeIncluirNovo?: boolean;
   onChange: (valor: string | null, filtroNovo: string | null) => void;
-}> = ({ os, campo, valor, opcoes, onChange }) => {
+}> = ({ os, campo, valor, opcoes, podeIncluirNovo = true, onChange }) => {
   const [aberto, setAberto] = useState(false);
   const [texto, setTexto] = useState(valor || '');
   const [erro, setErro] = useState('');
@@ -81,7 +82,10 @@ export const CampoFiltro: React.FC<{
           ))}
         </ul>
       )}
-      {decisao.acao === 'confirmar' && (
+      {decisao.acao === 'confirmar' && !podeIncluirNovo && (
+        <p className="relative z-40 mt-1 w-64 rounded-2xl border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-950">{avisoInclusaoAdmin(campo)}</p>
+      )}
+      {decisao.acao === 'confirmar' && podeIncluirNovo && (
         <div className={`relative z-40 w-64 rounded-2xl border border-slate-200 bg-white p-3 text-[11px] text-black shadow-lg ${sugestoes.length > 0 ? 'mt-28' : 'mt-1'}`}>
           <p>Tem certeza que deseja salvar com esse nome <strong>{decisao.nome}</strong>?</p>
           <div className="mt-2 flex gap-2">
@@ -186,5 +190,67 @@ export const CampoPgr: React.FC<{
         </div>
       )}
     </>
+  );
+};
+
+export const IncluirCatalogo: React.FC<{
+  campo: 'operacao' | 'tsp';
+  rotulo: string;
+  onIncluiu: (valor: string) => void;
+}> = ({ campo, rotulo, onIncluiu }) => {
+  const [aberto, setAberto] = useState(false);
+  const [texto, setTexto] = useState('');
+  const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const decisao = decidirGravacao(campo, texto, []);
+
+  async function gravar(confirmarNovo: boolean) {
+    setSalvando(true);
+    setErro('');
+    try {
+      const response = await fetch('/api/ceva-portal/catalogo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...cabecalhosCeva() },
+        body: JSON.stringify({ campo, valor: texto, confirmarNovo }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) sairDoPortalCeva();
+      if (response.status === 409 && data.confirmar) return;
+      if (!response.ok) throw new Error(data.error || 'Não foi possível incluir.');
+      onIncluiu(String(data.valor || ''));
+      setTexto('');
+      setAberto(false);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : 'Não foi possível incluir.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  if (!aberto) {
+    return (
+      <button type="button" onClick={() => { setTexto(''); setErro(''); setAberto(true); }} className="h-8 rounded-full border border-[#152c54] bg-white px-3 text-xs font-bold text-[#152c54]">
+        {rotulo}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        autoFocus
+        value={texto}
+        onChange={(event) => setTexto(event.target.value)}
+        placeholder={campo === 'tsp' ? 'Nome da TSP' : 'Nome da operação'}
+        className="h-8 w-40 rounded-xl border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-800 outline-none focus:border-[#152c54]"
+      />
+      {decisao.acao === 'confirmar' && (
+        <button type="button" disabled={salvando} onClick={() => void gravar(true)} className="h-8 rounded-full bg-[#152c54] px-3 text-xs font-bold text-white">
+          Salvar {decisao.nome}
+        </button>
+      )}
+      <button type="button" onClick={() => setAberto(false)} className="h-8 rounded-full border border-slate-200 px-3 text-xs font-bold text-slate-500">Cancelar</button>
+      {erro && <span className="text-[11px] font-semibold text-red-700">{erro}</span>}
+    </div>
   );
 };

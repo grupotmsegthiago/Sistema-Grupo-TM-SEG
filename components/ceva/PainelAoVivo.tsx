@@ -60,8 +60,8 @@ function Linha({ ordem, missao }: { ordem: number; missao: MissaoAoVivo }) {
             <Campo rotulo="Km fim" texto={missao.kmFim == null ? '' : missao.kmFim.toLocaleString('pt-BR')} />
             <Campo rotulo="Solicitante" texto={missao.solicitante || ''} />
             <Campo rotulo="Quem autorizou" texto={missao.quemAutorizou || ''} />
-            <Campo rotulo="Contrato" texto={missao.contrato || ''} />
             <Campo rotulo="Operação" texto={missao.operacao || ''} />
+            <Campo rotulo="TSP" texto={missao.tsp || ''} />
             <Campo rotulo="Atendimento PGR" texto={missao.atendimentoPgr || ''} />
           </div>
           <p className="border-t border-slate-100 px-3 py-2 text-[11px] font-bold text-amber-800">Valores: aguardando validação até a OS ser aprovada no sistema.</p>

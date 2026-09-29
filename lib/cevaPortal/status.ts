@@ -22,3 +22,25 @@ function chaveStatus(status: string): string {
 export function classeStatusSistema(status: string): string {
   return CORES[chaveStatus(status)] || 'bg-gray-500 text-white';
 }
+
+/** Troca o status já exibido quando o sistema gravou outro. A lista só muda se houver diferença. */
+export function aplicarStatusOs<T extends { os: string; status: string }>(
+  linhas: T[],
+  atualizacoes: { os: string; status: string }[],
+): T[] {
+  if (atualizacoes.length === 0 || linhas.length === 0) return linhas;
+  const mapa = new Map<string, string>();
+  for (const item of atualizacoes) {
+    const os = String(item.os || '').trim();
+    const status = String(item.status || '').trim();
+    if (os && status) mapa.set(os, status);
+  }
+  let mudou = false;
+  const proximas = linhas.map((linha) => {
+    const status = mapa.get(linha.os);
+    if (!status || status === linha.status) return linha;
+    mudou = true;
+    return { ...linha, status };
+  });
+  return mudou ? proximas : linhas;
+}

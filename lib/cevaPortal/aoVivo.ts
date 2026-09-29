@@ -18,8 +18,8 @@ export type MissaoAoVivo = {
   kmFim: number | null;
   solicitante: string | null;
   quemAutorizou: string | null;
-  contrato: string | null;
   operacao: string | null;
+  tsp: string | null;
   atendimentoPgr: string | null;
 };
 
@@ -45,8 +45,8 @@ export function montarMissaoAoVivo(input: {
     solicitante?: string | null;
     quem_autorizou?: string | null;
     servico?: string | null;
-    contrato?: string | null;
     operacao?: string | null;
+    tsp?: string | null;
     atendimento_pgr?: string | null;
   } | null;
 }): MissaoAoVivo | null {
@@ -68,8 +68,8 @@ export function montarMissaoAoVivo(input: {
     kmFim: kmGravado(input.endKm),
     solicitante: texto(campos?.solicitante),
     quemAutorizou: texto(campos?.quem_autorizou),
-    contrato: texto(campos?.contrato),
     operacao: texto(campos?.operacao),
+    tsp: texto(campos?.tsp),
     atendimentoPgr: texto(campos?.atendimento_pgr),
   };
 }

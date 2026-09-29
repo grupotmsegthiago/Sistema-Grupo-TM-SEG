@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decidirGravacao, nomeParaFiltro, servicoDoSistema, SERVICOS_FIXOS } from '../lib/cevaPortal/camposCliente';
+import { avisoInclusaoAdmin, decidirGravacao, nomeParaFiltro, podeIncluirFiltroNovo, servicoDoSistema, SERVICOS_FIXOS } from '../lib/cevaPortal/camposCliente';
 
 test('serviço vem do tipo gravado na OS', () => {
   assert.equal(servicoDoSistema('Velada'), 'Pronta Resposta');
@@ -34,4 +34,15 @@ test('outro serviço escrito pede confirmação', () => {
 
 test('campo vazio limpa a OS e não vira filtro', () => {
   assert.deepEqual(decidirGravacao('solicitante', '   ', ['LARA']), { acao: 'limpar' });
+});
+
+test('TSP nova pede confirmação e só o administrador inclui', () => {
+  assert.deepEqual(decidirGravacao('tsp', '  rota sul  ', []), { acao: 'confirmar', nome: 'ROTA SUL' });
+  assert.equal(podeIncluirFiltroNovo('administrador', 'tsp'), true);
+  assert.equal(podeIncluirFiltroNovo('administrador', 'operacao'), true);
+  assert.equal(podeIncluirFiltroNovo('analista', 'tsp'), false);
+  assert.equal(podeIncluirFiltroNovo('analista', 'operacao'), false);
+  assert.equal(podeIncluirFiltroNovo('analista', 'solicitante'), true);
+  assert.match(avisoInclusaoAdmin('tsp'), /administrador/);
+  assert.match(avisoInclusaoAdmin('operacao'), /operação/);
 });

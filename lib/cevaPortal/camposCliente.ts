@@ -1,6 +1,7 @@
 /** Campos que o cliente preenche no controle de escolta. */
 
-export const CAMPOS_FILTRO = ['solicitante', 'quemAutorizou', 'servico', 'contrato', 'operacao'] as const;
+export const CAMPOS_FILTRO = ['solicitante', 'quemAutorizou', 'servico', 'contrato', 'operacao', 'tsp'] as const;
+export const CAMPOS_NOVOS_SO_ADMIN = ['operacao', 'tsp'] as const;
 export const CAMPO_PGR = 'atendimentoPgr' as const;
 export const SERVICOS_FIXOS = ['Escolta Caracterizada', 'Pronta Resposta'] as const;
 
@@ -48,4 +49,16 @@ export function textoPgr(valor: string): string {
 
 export function ehCampoFiltro(campo: string): campo is CampoFiltro {
   return (CAMPOS_FILTRO as readonly string[]).includes(campo);
+}
+
+/** Operação e TSP novas só o administrador inclui. Nome já existente qualquer perfil aplica. */
+export function podeIncluirFiltroNovo(perfil: string | null | undefined, campo: CampoFiltro): boolean {
+  if (campo !== 'operacao' && campo !== 'tsp') return true;
+  return perfil === 'administrador';
+}
+
+export function avisoInclusaoAdmin(campo: CampoFiltro): string {
+  if (campo === 'tsp') return 'Só o administrador inclui uma TSP nova.';
+  if (campo === 'operacao') return 'Só o administrador inclui uma operação nova.';
+  return 'Só o administrador inclui esse nome.';
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { CampoFiltro, CampoPgr } from './ceva/CampoCliente';
+import { CampoFiltro, CampoPgr, IncluirCatalogo } from './ceva/CampoCliente';
 import { AcessoCeva } from './ceva/AcessoCeva';
 import { PessoasCeva } from './ceva/PessoasCeva';
 import { PainelDiretoria } from './ceva/PainelDiretoria';
@@ -10,7 +10,9 @@ import { LogoCeva } from './ceva/LogoCeva';
 import type { CampoFiltro as CampoFiltroNome } from '../lib/cevaPortal/camposCliente';
 import { isoDeDataBrasil, mascaraDataBrasil, periodoMesAtualBrasil } from '../lib/cevaPortal/datas';
 import { cabecalhosCeva, gravarSessaoCeva, lerSessaoCeva, limparSessaoCeva, type SessaoCeva } from '../lib/cevaPortal/sessaoCliente';
-import { classeStatusSistema } from '../lib/cevaPortal/status';
+import { baixarExcelControle, baixarPdfControle } from '../lib/cevaPortal/baixarControle';
+import { linhaControleExportavel } from '../lib/cevaPortal/exportarControle';
+import { aplicarStatusOs, classeStatusSistema } from '../lib/cevaPortal/status';
 
 type ReportRow = {
   os: string;
@@ -53,6 +55,7 @@ const CATALOGO_VAZIO: Record<CampoFiltroNome, string[]> = {
   servico: [],
   contrato: [],
   operacao: [],
+  tsp: [],
 };
 
 const CLIENT_HEAD = 'bg-slate-100 text-slate-600';
@@ -141,7 +144,6 @@ type Filtros = {
   solicitante: string;
   quemAutorizou: string;
   servico: string;
-  contrato: string;
   operacao: string;
   placa: string;
   motorista: string;
@@ -155,7 +157,6 @@ const FILTRO_VAZIO: Filtros = {
   solicitante: '',
   quemAutorizou: '',
   servico: '',
-  contrato: '',
   operacao: '',
   placa: '',
   motorista: '',
@@ -172,7 +173,6 @@ function passaFiltro(row: ReportRow, filtro: Filtros): boolean {
   if (filtro.solicitante && row.solicitante !== filtro.solicitante) return false;
   if (filtro.quemAutorizou && row.quemAutorizou !== filtro.quemAutorizou) return false;
   if (filtro.servico && row.servico !== filtro.servico) return false;
-  if (filtro.contrato && row.contrato !== filtro.contrato) return false;
   if (filtro.operacao && row.operacao !== filtro.operacao) return false;
   if (filtro.placa && row.placa !== filtro.placa) return false;
   if (filtro.motorista && row.motorista !== filtro.motorista) return false;
@@ -235,6 +235,31 @@ const CevaPortal: React.FC = () => {
     return () => { ativo = false; };
   }, [sessao]);
 
+  useEffect(() => {
+    if (!sessao || sessao.user.trocarSenha || loading) return;
+    let ativo = true;
+    async function sincronizarStatus() {
+      try {
+        const response = await fetch('/api/ceva-portal/status', { headers: cabecalhosCeva() });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          limparSessaoCeva();
+          if (ativo) setSessao(null);
+          return;
+        }
+        if (!response.ok || !Array.isArray(data.items) || !ativo) return;
+        setItems((atual) => aplicarStatusOs(atual, data.items));
+      } catch {
+        /* a leitura seguinte tenta de novo */
+      }
+    }
+    const relogio = window.setInterval(() => void sincronizarStatus(), 5000);
+    return () => {
+      ativo = false;
+      window.clearInterval(relogio);
+    };
+  }, [sessao, loading]);
+
   const linhas = [...items].sort(maisNovaPrimeiro);
   const visiveis = linhas.filter((row) => passaFiltro(row, filtro));
   const paginas = Math.max(1, Math.ceil(visiveis.length / porTela));
@@ -248,7 +273,6 @@ const CevaPortal: React.FC = () => {
     solicitante: unicos(items, (row) => row.solicitante),
     quemAutorizou: unicos(items, (row) => row.quemAutorizou),
     servico: unicos(items, (row) => row.servico),
-    contrato: unicos(items, (row) => row.contrato),
     operacao: unicos(items, (row) => row.operacao),
     placa: unicos(items, (row) => row.placa),
     motorista: unicos(items, (row) => row.motorista),
@@ -269,6 +293,20 @@ const CevaPortal: React.FC = () => {
   function irPara(proxima: number) {
     setPagina(Math.min(paginas, Math.max(1, proxima)));
     tabelaRef.current?.scrollTo({ top: 0 });
+  }
+
+  function incluirNoCatalogo(campo: 'operacao' | 'tsp', valor: string) {
+    const nome = valor.trim();
+    if (!nome) return;
+    setCatalogo((atual) => atual[campo].some((item) => item.toLocaleUpperCase('pt-BR') === nome.toLocaleUpperCase('pt-BR'))
+      ? atual
+      : { ...atual, [campo]: [...atual[campo], nome].sort((a, b) => a.localeCompare(b, 'pt-BR')) });
+  }
+
+  function exportar(formato: 'excel' | 'pdf') {
+    const linhas = visiveis.map((item) => linhaControleExportavel(item, solicitacao.get(item.os)));
+    if (formato === 'excel') baixarExcelControle(linhas);
+    else baixarPdfControle(linhas);
   }
 
   function atualizarCampo(os: string, campo: CampoFiltroNome | 'atendimentoPgr', valor: string | null, filtroNovo: string | null = null) {
@@ -360,12 +398,13 @@ const CevaPortal: React.FC = () => {
               {filtroAtivo && (
                 <button type="button" onClick={() => { setFiltro(FILTRO_VAZIO); setPagina(1); }} className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-[#152c54]">Limpar</button>
               )}
+              <button type="button" onClick={() => exportar('excel')} className="h-8 rounded-full bg-[#152c54] px-3 text-xs font-bold text-white">Excel</button>
+              <button type="button" onClick={() => exportar('pdf')} className="h-8 rounded-full border border-[#152c54] bg-white px-3 text-xs font-bold text-[#152c54]">PDF</button>
             </div>
             <div className={LINHA_FILTRO}>
               {([
                 ['solicitante', 'Solicitante', opcoes.solicitante],
                 ['quemAutorizou', 'Quem autorizou', opcoes.quemAutorizou],
-                ['contrato', 'Contrato', opcoes.contrato],
                 ['operacao', 'Operação', opcoes.operacao],
                 ['placa', 'Placa', opcoes.placa],
                 ['motorista', 'Motorista', opcoes.motorista],
@@ -380,29 +419,35 @@ const CevaPortal: React.FC = () => {
               <label className={CAMPO_FILTRO}>Local
                 <input value={filtro.local} onChange={(event) => mudarFiltro('local', event.target.value)} placeholder="Cidade" className={`${CONTROLE_FILTRO} w-36`} />
               </label>
+              {sessao.user.perfil === 'administrador' && (
+                <>
+                  <IncluirCatalogo campo="operacao" rotulo="Nova operação" onIncluiu={(valor) => incluirNoCatalogo('operacao', valor)} />
+                  <IncluirCatalogo campo="tsp" rotulo="Nova TSP" onIncluiu={(valor) => incluirNoCatalogo('tsp', valor)} />
+                </>
+              )}
             </div>
           </div>
         )}
         {sessao && !loading && !error && visao === 'diretoria' && <PainelDiretoria linhas={visiveis} />}
         {sessao && !loading && !error && visao === 'controle' && (
           <div ref={tabelaRef} className="max-h-[calc(100vh-280px)] overflow-auto rounded-3xl bg-white shadow-sm ring-1 ring-slate-200/80">
-            <table className="min-w-[2600px] border-separate border-spacing-0 text-xs">
+            <table className="min-w-[2500px] border-separate border-spacing-0 text-xs">
               <thead className="sticky top-0 z-20">
                 <tr>
                   <th className={`${SYSTEM_HEAD} px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em]`} colSpan={2}>OS</th>
-                  <th className={`${CLIENT_HEAD} px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em]`} colSpan={14}>Cliente</th>
+                  <th className={`${CLIENT_HEAD} px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em]`} colSpan={13}>Cliente</th>
                   <th className={`${SYSTEM_HEAD} px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em]`} colSpan={15}>Sistema</th>
                 </tr>
                 <tr className="text-left">
-                  {['OS', 'Status', 'Nº solicitação', 'Data início', 'Data fim', 'Solicitante', 'Quem autorizou', 'Serviço', 'Atendimento PGR', 'Contrato', 'Operação', 'TSP', 'Placa', 'Motorista', 'Franquia hora', 'Franquia km', 'Km início', 'Km fim', 'Km rodado', 'Km excedente', 'Horas trabalhadas', 'Horas excedentes', 'R$ horas excedentes', 'R$ km excedente', 'R$ acionamento', 'R$ total', 'Pedágio', 'R$ km excedente (tarifa)', 'R$ hora excedente (tarifa)', 'Local', 'Obs'].map((label, index) => (
-                    <th key={label} className={`whitespace-nowrap border-b border-slate-200 px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${index === 0 ? 'sticky left-0 z-30' : ''} ${index <= 1 || index >= 16 ? SYSTEM_HEAD : CLIENT_HEAD}`}>{label}</th>
+                  {['OS', 'Status', 'Nº solicitação', 'Data início', 'Data fim', 'Solicitante', 'Quem autorizou', 'Serviço', 'Atendimento PGR', 'Operação', 'TSP', 'Placa', 'Motorista', 'Franquia hora', 'Franquia km', 'Km início', 'Km fim', 'Km rodado', 'Km excedente', 'Horas trabalhadas', 'Horas excedentes', 'R$ horas excedentes', 'R$ km excedente', 'R$ acionamento', 'R$ total', 'Pedágio', 'R$ km excedente (tarifa)', 'R$ hora excedente (tarifa)', 'Local', 'Obs'].map((label, index) => (
+                    <th key={label} className={`whitespace-nowrap border-b border-slate-200 px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${index === 0 ? 'sticky left-0 z-30' : ''} ${index <= 1 || index >= 15 ? SYSTEM_HEAD : CLIENT_HEAD}`}>{label}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {tela.length === 0 && (
                   <tr>
-                    <td colSpan={31} className="px-4 py-10 text-center text-sm text-slate-500">Nenhuma OS neste recorte.</td>
+                    <td colSpan={30} className="px-4 py-10 text-center text-sm text-slate-500">Nenhuma OS neste recorte.</td>
                   </tr>
                 )}
                 {tela.map((item, index) => {
@@ -424,9 +469,8 @@ const CevaPortal: React.FC = () => {
                     <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="quemAutorizou" valor={item.quemAutorizou} opcoes={catalogo.quemAutorizou} onChange={(valor, filtro) => atualizarCampo(item.os, 'quemAutorizou', valor, filtro)} /></td>
                     <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="servico" valor={item.servico} opcoes={catalogo.servico} onChange={(valor, filtro) => atualizarCampo(item.os, 'servico', valor, filtro)} /></td>
                     <td className={`${celula} whitespace-nowrap`}><CampoPgr os={item.os} valor={item.atendimentoPgr} onChange={(valor) => atualizarCampo(item.os, 'atendimentoPgr', valor)} /></td>
-                    <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="contrato" valor={item.contrato} opcoes={catalogo.contrato} onChange={(valor, filtro) => atualizarCampo(item.os, 'contrato', valor, filtro)} /></td>
-                    <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="operacao" valor={item.operacao} opcoes={catalogo.operacao} onChange={(valor, filtro) => atualizarCampo(item.os, 'operacao', valor, filtro)} /></td>
-                    <td className={celula}>{text(item.tsp)}</td>
+                    <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="operacao" valor={item.operacao} opcoes={catalogo.operacao} podeIncluirNovo={sessao.user.perfil === 'administrador'} onChange={(valor, filtro) => atualizarCampo(item.os, 'operacao', valor, filtro)} /></td>
+                    <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="tsp" valor={item.tsp} opcoes={catalogo.tsp} podeIncluirNovo={sessao.user.perfil === 'administrador'} onChange={(valor, filtro) => atualizarCampo(item.os, 'tsp', valor, filtro)} /></td>
                     <td className={`${celula} whitespace-nowrap font-semibold`}>{text(item.placa)}</td>
                     <td className={`${celula} whitespace-nowrap`}>{text(item.motorista)}</td>
                     <td className={celula}>{text(item.franquiaHora)}</td>

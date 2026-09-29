@@ -78,7 +78,7 @@ export type CevaReportRow = {
   atendimentoPgr: null;
   contrato: null;
   operacao: null;
-  tsp: null;
+  tsp: string | null;
   placa: string | null;
   motorista: string | null;
   franquiaHora: string | null;

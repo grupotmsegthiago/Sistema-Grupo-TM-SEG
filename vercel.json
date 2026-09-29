@@ -783,6 +783,14 @@
       "destination": "/api/ceva-portal?op=campos"
     },
     {
+      "source": "/api/ceva-portal/catalogo",
+      "destination": "/api/ceva-portal?op=catalogo"
+    },
+    {
+      "source": "/api/ceva-portal/status",
+      "destination": "/api/ceva-portal?op=status"
+    },
+    {
       "source": "/api/ceva-portal/solicitacoes",
       "destination": "/api/ceva-portal?op=solicitacoes"
     },

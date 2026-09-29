@@ -273,6 +273,7 @@ const COLUNA_CAMPO = {
   atendimentoPgr: 'atendimento_pgr',
   contrato: 'contrato',
   operacao: 'operacao',
+  tsp: 'tsp',
 } as const;
 
 const CATALOGO_CAMPO: Record<CampoFiltro, string> = {
@@ -281,10 +282,11 @@ const CATALOGO_CAMPO: Record<CampoFiltro, string> = {
   servico: 'servico',
   contrato: 'contrato',
   operacao: 'operacao',
+  tsp: 'tsp',
 };
 
 function aplicarCamposCliente(
-  item: { os: string; solicitante: string | null; quemAutorizou: string | null; servico: string | null; atendimentoPgr: string | null; contrato: string | null; operacao: string | null },
+  item: { os: string; solicitante: string | null; quemAutorizou: string | null; servico: string | null; atendimentoPgr: string | null; contrato: string | null; operacao: string | null; tsp: string | null },
   salvo: any,
   servicoDoSistema: (valor: string | null | undefined) => string | null,
 ) {
@@ -294,6 +296,7 @@ function aplicarCamposCliente(
   item.atendimentoPgr = salvo?.atendimento_pgr ?? null;
   item.contrato = salvo?.contrato ?? null;
   item.operacao = salvo?.operacao ?? null;
+  item.tsp = salvo?.tsp ?? null;
 }
 
 async function loadCamposCliente(sb: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, missionIds: string[]) {
@@ -313,6 +316,7 @@ async function loadCatalogo(sb: NonNullable<ReturnType<typeof createSupabaseAdmi
     servico: [],
     contrato: [],
     operacao: [],
+    tsp: [],
   };
   const { data, error } = await sb.from('ceva_portal_catalogo').select('campo, valor').order('valor');
   if (error) throw error;
@@ -322,6 +326,7 @@ async function loadCatalogo(sb: NonNullable<ReturnType<typeof createSupabaseAdmi
     servico: 'servico',
     contrato: 'contrato',
     operacao: 'operacao',
+    tsp: 'tsp',
   };
   for (const row of data || []) {
     const campo = reverso[String(row.campo)];
@@ -848,7 +853,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
     if (op === 'campos' && method === 'POST') {
       const session = await portalSession(req);
       if (!exigirUso(res, session)) return;
-      const { decidirGravacao, ehCampoFiltro, textoPgr } = await import('./camposCliente.js');
+      const { avisoInclusaoAdmin, decidirGravacao, ehCampoFiltro, podeIncluirFiltroNovo, textoPgr } = await import('./camposCliente.js');
       const os = String(body?.os || '').trim();
       const campo = String(body?.campo || '');
       const valor = String(body?.valor ?? '');
@@ -902,6 +907,10 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         if (catError) throw catError;
         const catalogo = (linhas || []).map((row) => String(row.valor));
         const decisao = decidirGravacao(campo, valor, catalogo);
+        if (decisao.acao === 'confirmar' && !podeIncluirFiltroNovo(session?.perfil, campo)) {
+          res.status(403).json({ error: avisoInclusaoAdmin(campo) });
+          return;
+        }
         if (decisao.acao === 'confirmar' && !confirmarNovo) {
           res.status(409).json({ confirmar: true, nome: decisao.nome });
           return;
@@ -920,6 +929,102 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         const message = error instanceof Error ? error.message : 'falha';
         console.error('[ceva-portal] campos', message);
         res.status(500).json({ error: 'Não foi possível salvar o campo.' });
+      }
+      return;
+    }
+
+    if (op === 'catalogo' && method === 'POST') {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      if (session.perfil !== 'administrador') {
+        res.status(403).json({ error: 'Só o administrador inclui operação ou TSP nova.' });
+        return;
+      }
+      const campo = String(body?.campo || '');
+      if (campo !== 'operacao' && campo !== 'tsp') {
+        res.status(400).json({ error: 'Informe operação ou TSP.' });
+        return;
+      }
+      const confirmarNovo = body?.confirmarNovo === true;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: 'Portal indisponível.' });
+        return;
+      }
+      try {
+        const { decidirGravacao } = await import('./camposCliente.js');
+        const { data: linhas, error: catError } = await sb.from('ceva_portal_catalogo').select('valor').eq('campo', CATALOGO_CAMPO[campo]);
+        if (catError) throw catError;
+        const catalogo = (linhas || []).map((row) => String(row.valor));
+        const decisao = decidirGravacao(campo, String(body?.valor ?? ''), catalogo);
+        if (decisao.acao === 'limpar') {
+          res.status(400).json({ error: 'Informe o nome.' });
+          return;
+        }
+        if (decisao.acao === 'confirmar' && !confirmarNovo) {
+          res.status(409).json({ confirmar: true, nome: decisao.nome });
+          return;
+        }
+        const nome = decisao.acao === 'aplicar' ? decisao.valor : decisao.nome;
+        if (decisao.acao === 'confirmar') {
+          const { error: novoError } = await sb.from('ceva_portal_catalogo').upsert(
+            { campo: CATALOGO_CAMPO[campo], valor: nome },
+            { onConflict: 'campo,valor', ignoreDuplicates: true },
+          );
+          if (novoError) throw novoError;
+        }
+        res.status(200).json({ valor: nome });
+      } catch (error) {
+        console.error('[ceva-portal] catalogo', error instanceof Error ? error.message : error);
+        res.status(500).json({ error: 'Não foi possível incluir o nome.' });
+      }
+      return;
+    }
+
+    if (op === 'status' && method === 'GET') {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: 'Status indisponível.' });
+        return;
+      }
+      try {
+        const { numeroOsDoBoletim } = await import('./report.js');
+        const { data: clientRow, error: clientError } = await sb
+          .from('clients')
+          .select('name, trading_name')
+          .eq('name', 'CEVA LOGISTICS LTDA')
+          .maybeSingle();
+        if (clientError) throw clientError;
+        if (!clientRow?.name) {
+          res.status(503).json({ error: 'Cliente CEVA não encontrado.' });
+          return;
+        }
+        const names = [String(clientRow.name).trim()];
+        const trading = String(clientRow.trading_name || '').trim();
+        if (trading && trading !== names[0]) names.push(trading);
+        const pageSize = 1000;
+        const rows: { id: string; status: string | null }[] = [];
+        for (let from = 0; from < 20000; from += pageSize) {
+          const { data, error } = await sb.from('missions').select('id, status').in('client', names).range(from, from + pageSize - 1);
+          if (error) throw error;
+          for (const row of data || []) rows.push({ id: String(row.id || ''), status: row.status });
+          if (!data || data.length < pageSize) {
+            const items = rows.flatMap((row) => {
+              const os = numeroOsDoBoletim(row.id);
+              if (!os) return [];
+              const status = String(row.status || '').trim() || 'Concluída';
+              return [{ os, status }];
+            });
+            res.status(200).json({ atualizadoEm: new Date().toISOString(), items });
+            return;
+          }
+        }
+        res.status(503).json({ error: 'A consulta de status da CEVA não fechou.' });
+      } catch (error) {
+        console.error('[ceva-portal] status', error instanceof Error ? error.message : error);
+        res.status(500).json({ error: 'Não foi possível atualizar o status.' });
       }
       return;
     }

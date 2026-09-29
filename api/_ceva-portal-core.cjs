@@ -39,11 +39,14 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var camposCliente_exports = {};
 __export(camposCliente_exports, {
   CAMPOS_FILTRO: () => CAMPOS_FILTRO,
+  CAMPOS_NOVOS_SO_ADMIN: () => CAMPOS_NOVOS_SO_ADMIN,
   CAMPO_PGR: () => CAMPO_PGR,
   SERVICOS_FIXOS: () => SERVICOS_FIXOS,
+  avisoInclusaoAdmin: () => avisoInclusaoAdmin,
   decidirGravacao: () => decidirGravacao,
   ehCampoFiltro: () => ehCampoFiltro,
   nomeParaFiltro: () => nomeParaFiltro,
+  podeIncluirFiltroNovo: () => podeIncluirFiltroNovo,
   servicoDoSistema: () => servicoDoSistema,
   textoPgr: () => textoPgr
 });
@@ -74,11 +77,21 @@ function textoPgr(valor) {
 function ehCampoFiltro(campo) {
   return CAMPOS_FILTRO.includes(campo);
 }
-var CAMPOS_FILTRO, CAMPO_PGR, SERVICOS_FIXOS, LIMITE_FILTRO, LIMITE_PGR;
+function podeIncluirFiltroNovo(perfil, campo) {
+  if (campo !== "operacao" && campo !== "tsp") return true;
+  return perfil === "administrador";
+}
+function avisoInclusaoAdmin(campo) {
+  if (campo === "tsp") return "S\xF3 o administrador inclui uma TSP nova.";
+  if (campo === "operacao") return "S\xF3 o administrador inclui uma opera\xE7\xE3o nova.";
+  return "S\xF3 o administrador inclui esse nome.";
+}
+var CAMPOS_FILTRO, CAMPOS_NOVOS_SO_ADMIN, CAMPO_PGR, SERVICOS_FIXOS, LIMITE_FILTRO, LIMITE_PGR;
 var init_camposCliente = __esm({
   "lib/cevaPortal/camposCliente.ts"() {
     "use strict";
-    CAMPOS_FILTRO = ["solicitante", "quemAutorizou", "servico", "contrato", "operacao"];
+    CAMPOS_FILTRO = ["solicitante", "quemAutorizou", "servico", "contrato", "operacao", "tsp"];
+    CAMPOS_NOVOS_SO_ADMIN = ["operacao", "tsp"];
     CAMPO_PGR = "atendimentoPgr";
     SERVICOS_FIXOS = ["Escolta Caracterizada", "Pronta Resposta"];
     LIMITE_FILTRO = 120;
@@ -2232,8 +2245,8 @@ function montarMissaoAoVivo(input) {
     kmFim: kmGravado(input.endKm),
     solicitante: texto2(campos?.solicitante),
     quemAutorizou: texto2(campos?.quem_autorizou),
-    contrato: texto2(campos?.contrato),
     operacao: texto2(campos?.operacao),
+    tsp: texto2(campos?.tsp),
     atendimentoPgr: texto2(campos?.atendimento_pgr)
   };
 }
@@ -2998,14 +3011,16 @@ var COLUNA_CAMPO = {
   servico: "servico",
   atendimentoPgr: "atendimento_pgr",
   contrato: "contrato",
-  operacao: "operacao"
+  operacao: "operacao",
+  tsp: "tsp"
 };
 var CATALOGO_CAMPO = {
   solicitante: "solicitante",
   quemAutorizou: "quem_autorizou",
   servico: "servico",
   contrato: "contrato",
-  operacao: "operacao"
+  operacao: "operacao",
+  tsp: "tsp"
 };
 function aplicarCamposCliente(item, salvo, servicoDoSistema2) {
   item.solicitante = salvo?.solicitante ?? null;
@@ -3014,6 +3029,7 @@ function aplicarCamposCliente(item, salvo, servicoDoSistema2) {
   item.atendimentoPgr = salvo?.atendimento_pgr ?? null;
   item.contrato = salvo?.contrato ?? null;
   item.operacao = salvo?.operacao ?? null;
+  item.tsp = salvo?.tsp ?? null;
 }
 async function loadCamposCliente(sb, missionIds) {
   const map = /* @__PURE__ */ new Map();
@@ -3030,7 +3046,8 @@ async function loadCatalogo(sb) {
     quemAutorizou: [],
     servico: [],
     contrato: [],
-    operacao: []
+    operacao: [],
+    tsp: []
   };
   const { data, error } = await sb.from("ceva_portal_catalogo").select("campo, valor").order("valor");
   if (error) throw error;
@@ -3039,7 +3056,8 @@ async function loadCatalogo(sb) {
     quem_autorizou: "quemAutorizou",
     servico: "servico",
     contrato: "contrato",
-    operacao: "operacao"
+    operacao: "operacao",
+    tsp: "tsp"
   };
   for (const row of data || []) {
     const campo = reverso[String(row.campo)];
@@ -3502,7 +3520,7 @@ async function handleCevaPortalHttp(req, res) {
     if (op === "campos" && method === "POST") {
       const session = await portalSession(req);
       if (!exigirUso(res, session)) return;
-      const { decidirGravacao: decidirGravacao2, ehCampoFiltro: ehCampoFiltro2, textoPgr: textoPgr2 } = await Promise.resolve().then(() => (init_camposCliente(), camposCliente_exports));
+      const { avisoInclusaoAdmin: avisoInclusaoAdmin2, decidirGravacao: decidirGravacao2, ehCampoFiltro: ehCampoFiltro2, podeIncluirFiltroNovo: podeIncluirFiltroNovo2, textoPgr: textoPgr2 } = await Promise.resolve().then(() => (init_camposCliente(), camposCliente_exports));
       const os = String(body?.os || "").trim();
       const campo = String(body?.campo || "");
       const valor = String(body?.valor ?? "");
@@ -3551,6 +3569,10 @@ async function handleCevaPortalHttp(req, res) {
         if (catError) throw catError;
         const catalogo = (linhas || []).map((row) => String(row.valor));
         const decisao = decidirGravacao2(campo, valor, catalogo);
+        if (decisao.acao === "confirmar" && !podeIncluirFiltroNovo2(session?.perfil, campo)) {
+          res.status(403).json({ error: avisoInclusaoAdmin2(campo) });
+          return;
+        }
         if (decisao.acao === "confirmar" && !confirmarNovo) {
           res.status(409).json({ confirmar: true, nome: decisao.nome });
           return;
@@ -3569,6 +3591,96 @@ async function handleCevaPortalHttp(req, res) {
         const message = error instanceof Error ? error.message : "falha";
         console.error("[ceva-portal] campos", message);
         res.status(500).json({ error: "N\xE3o foi poss\xEDvel salvar o campo." });
+      }
+      return;
+    }
+    if (op === "catalogo" && method === "POST") {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      if (session.perfil !== "administrador") {
+        res.status(403).json({ error: "S\xF3 o administrador inclui opera\xE7\xE3o ou TSP nova." });
+        return;
+      }
+      const campo = String(body?.campo || "");
+      if (campo !== "operacao" && campo !== "tsp") {
+        res.status(400).json({ error: "Informe opera\xE7\xE3o ou TSP." });
+        return;
+      }
+      const confirmarNovo = body?.confirmarNovo === true;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: "Portal indispon\xEDvel." });
+        return;
+      }
+      try {
+        const { decidirGravacao: decidirGravacao2 } = await Promise.resolve().then(() => (init_camposCliente(), camposCliente_exports));
+        const { data: linhas, error: catError } = await sb.from("ceva_portal_catalogo").select("valor").eq("campo", CATALOGO_CAMPO[campo]);
+        if (catError) throw catError;
+        const catalogo = (linhas || []).map((row) => String(row.valor));
+        const decisao = decidirGravacao2(campo, String(body?.valor ?? ""), catalogo);
+        if (decisao.acao === "limpar") {
+          res.status(400).json({ error: "Informe o nome." });
+          return;
+        }
+        if (decisao.acao === "confirmar" && !confirmarNovo) {
+          res.status(409).json({ confirmar: true, nome: decisao.nome });
+          return;
+        }
+        const nome = decisao.acao === "aplicar" ? decisao.valor : decisao.nome;
+        if (decisao.acao === "confirmar") {
+          const { error: novoError } = await sb.from("ceva_portal_catalogo").upsert(
+            { campo: CATALOGO_CAMPO[campo], valor: nome },
+            { onConflict: "campo,valor", ignoreDuplicates: true }
+          );
+          if (novoError) throw novoError;
+        }
+        res.status(200).json({ valor: nome });
+      } catch (error) {
+        console.error("[ceva-portal] catalogo", error instanceof Error ? error.message : error);
+        res.status(500).json({ error: "N\xE3o foi poss\xEDvel incluir o nome." });
+      }
+      return;
+    }
+    if (op === "status" && method === "GET") {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: "Status indispon\xEDvel." });
+        return;
+      }
+      try {
+        const { numeroOsDoBoletim: numeroOsDoBoletim2 } = await Promise.resolve().then(() => (init_report(), report_exports));
+        const { data: clientRow, error: clientError } = await sb.from("clients").select("name, trading_name").eq("name", "CEVA LOGISTICS LTDA").maybeSingle();
+        if (clientError) throw clientError;
+        if (!clientRow?.name) {
+          res.status(503).json({ error: "Cliente CEVA n\xE3o encontrado." });
+          return;
+        }
+        const names = [String(clientRow.name).trim()];
+        const trading = String(clientRow.trading_name || "").trim();
+        if (trading && trading !== names[0]) names.push(trading);
+        const pageSize = 1e3;
+        const rows = [];
+        for (let from = 0; from < 2e4; from += pageSize) {
+          const { data, error } = await sb.from("missions").select("id, status").in("client", names).range(from, from + pageSize - 1);
+          if (error) throw error;
+          for (const row of data || []) rows.push({ id: String(row.id || ""), status: row.status });
+          if (!data || data.length < pageSize) {
+            const items = rows.flatMap((row) => {
+              const os = numeroOsDoBoletim2(row.id);
+              if (!os) return [];
+              const status = String(row.status || "").trim() || "Conclu\xEDda";
+              return [{ os, status }];
+            });
+            res.status(200).json({ atualizadoEm: (/* @__PURE__ */ new Date()).toISOString(), items });
+            return;
+          }
+        }
+        res.status(503).json({ error: "A consulta de status da CEVA n\xE3o fechou." });
+      } catch (error) {
+        console.error("[ceva-portal] status", error instanceof Error ? error.message : error);
+        res.status(500).json({ error: "N\xE3o foi poss\xEDvel atualizar o status." });
       }
       return;
     }
