@@ -7,14 +7,14 @@
 export const NIGHT_WATCH_TZ = 'America/Sao_Paulo';
 
 /** Minutos sem interação na janela noturna antes de bloquear a tela (desafio). */
-export const NIGHT_IDLE_MINUTES = 10;
+export const NIGHT_IDLE_MINUTES = 20;
 export const NIGHT_IDLE_MS = NIGHT_IDLE_MINUTES * 60 * 1000;
 
 /**
  * Minutos sem interação na vigia noturna antes de forçar logout
- * (mais rígido que o logout diurno de 30 min).
+ * (desafio aos 20 min + 1h para responder = 80 min de ociosidade total).
  */
-export const NIGHT_FORCE_LOGOUT_MINUTES = 20;
+export const NIGHT_FORCE_LOGOUT_MINUTES = 80;
 export const NIGHT_FORCE_LOGOUT_MS = NIGHT_FORCE_LOGOUT_MINUTES * 60 * 1000;
 
 /** Intervalo do heartbeat de presença noturna (cliente → servidor). */
@@ -29,7 +29,8 @@ export const NIGHT_HEARTBEAT_INTERVAL_MS = NIGHT_HEARTBEAT_INTERVAL_MINUTES * 60
 export const NIGHT_STALE_ALERT_MINUTES = 80;
 
 /** Tempo máximo do desafio aberto sem resposta → timeout + logout. */
-export const NIGHT_CHALLENGE_TIMEOUT_MS = 10 * 60 * 1000;
+export const NIGHT_CHALLENGE_TIMEOUT_MINUTES = 60;
+export const NIGHT_CHALLENGE_TIMEOUT_MS = NIGHT_CHALLENGE_TIMEOUT_MINUTES * 60 * 1000;
 
 /** Início da vigia (hora local BRT). */
 export const NIGHT_WATCH_START_HOUR = 20;

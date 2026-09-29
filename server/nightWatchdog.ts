@@ -95,7 +95,7 @@ export async function sendNightIncidentEmail(opts: {
     }
     <p style="font-size:13px;color:#555;">
       O sistema exige presença no plantão 20h–08h (janta 00h–01h isenta).
-      Desafio aos 10 min · logout forçado aos 20 min · heartbeat a cada 2 min · alerta sem uso em 1h20.
+      Desafio aos 20 min · 1h para responder · heartbeat a cada 2 min · alerta sem uso em 1h20.
     </p>
     <pre style="background:#f8fafc;padding:12px;border-radius:8px;font-size:11px;">${escapeHtml(
       JSON.stringify(opts.details || {}, null, 2),

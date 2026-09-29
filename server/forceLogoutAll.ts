@@ -62,9 +62,11 @@ export async function executeForceLogoutAll(
 
   let sessionsRevoked = 0;
   try {
-    // Revoga refresh tokens via REST Admin (PostgREST em auth schema não é exposto;
-    // tenta RPC se existir; senão só o sinal de client resolve).
-    const { data, error } = await supabase.rpc('force_revoke_all_sessions');
+    const rpcPromise = supabase.rpc('force_revoke_all_sessions');
+    const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
+      setTimeout(() => resolve({ data: null, error: { message: 'timeout 3s' } }), 3000),
+    );
+    const { data, error } = await Promise.race([rpcPromise, timeoutPromise]);
     if (error) details.push(`rpc revoke: ${error.message}`);
     else {
       sessionsRevoked = Number(data || 0);

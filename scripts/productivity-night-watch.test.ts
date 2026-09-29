@@ -30,6 +30,8 @@ import {
   NIGHT_HEARTBEAT_INTERVAL_MINUTES,
   NIGHT_HEARTBEAT_INTERVAL_MS,
   NIGHT_IDLE_MINUTES,
+  NIGHT_CHALLENGE_TIMEOUT_MINUTES,
+  NIGHT_CHALLENGE_TIMEOUT_MS,
   NIGHT_STALE_ALERT_MINUTES,
 } from '../lib/productivity/nightWatch.ts';
 
@@ -123,9 +125,11 @@ test('fatia noturna do relatório 21h só após 20h', () => {
 test('logout por idle: 30 min diurno / 20 min noturno e isenção só diretoria/CEO', () => {
   assert.equal(SESSION_IDLE_LOGOUT_MINUTES, 30);
   assert.equal(SESSION_IDLE_LOGOUT_MS, 30 * 60 * 1000);
-  assert.equal(NIGHT_IDLE_MINUTES, 10);
-  assert.equal(NIGHT_FORCE_LOGOUT_MINUTES, 20);
-  assert.equal(NIGHT_FORCE_LOGOUT_MS, 20 * 60 * 1000);
+  assert.equal(NIGHT_IDLE_MINUTES, 20);
+  assert.equal(NIGHT_CHALLENGE_TIMEOUT_MINUTES, 60);
+  assert.equal(NIGHT_CHALLENGE_TIMEOUT_MS, 60 * 60 * 1000);
+  assert.equal(NIGHT_FORCE_LOGOUT_MINUTES, 80);
+  assert.equal(NIGHT_FORCE_LOGOUT_MS, 80 * 60 * 1000);
   assert.equal(NIGHT_HEARTBEAT_INTERVAL_MINUTES, 2);
   assert.equal(NIGHT_HEARTBEAT_INTERVAL_MS, 2 * 60 * 1000);
   assert.equal(NIGHT_STALE_ALERT_MINUTES, 80);
@@ -141,11 +145,11 @@ test('logout por idle: 30 min diurno / 20 min noturno e isenção só diretoria/
   assert.equal(getIdleLogoutThresholdMs(day), SESSION_IDLE_LOGOUT_MS);
   assert.equal(isIdleLogoutDue(29 * 60 * 1000, day), false);
   assert.equal(isIdleLogoutDue(30 * 60 * 1000, day), true);
-  // 22:00 BRT = 01:00 UTC → noturno 20 min
+  // 22:00 BRT = 01:00 UTC → noturno 80 min (20 desafio + 60 resposta)
   const night = new Date('2026-08-07T01:00:00.000Z');
-  assert.equal(getIdleLogoutThresholdMinutes(night), 20);
-  assert.equal(isIdleLogoutDue(19 * 60 * 1000, night), false);
-  assert.equal(isIdleLogoutDue(20 * 60 * 1000, night), true);
+  assert.equal(getIdleLogoutThresholdMinutes(night), 80);
+  assert.equal(isIdleLogoutDue(79 * 60 * 1000, night), false);
+  assert.equal(isIdleLogoutDue(80 * 60 * 1000, night), true);
 });
 
 test('aggregateProductivityLogs resume desafios e tempo ativo', () => {

@@ -12,6 +12,7 @@ import {
   isNightWatchWindow,
   keywordMatches,
   NIGHT_CHALLENGE_TIMEOUT_MS,
+  NIGHT_CHALLENGE_TIMEOUT_MINUTES,
   NIGHT_FORCE_LOGOUT_MINUTES,
   NIGHT_HEARTBEAT_INTERVAL_MINUTES,
   NIGHT_IDLE_MINUTES,
@@ -238,9 +239,8 @@ export default function IdlePresenceGuard() {
           <div className="flex gap-2 rounded-lg bg-amber-50 border border-amber-100 p-3 text-sm text-amber-950">
             <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-600" />
             <p>
-              Plantão noturno: confirme presença agora. Sem resposta em 10 minutos a sessão será
-              encerrada e a diretoria será alertada. Logout automático após {NIGHT_FORCE_LOGOUT_MINUTES} min
-              ociosos.
+              Plantão noturno: confirme presença agora. Sem resposta em {NIGHT_CHALLENGE_TIMEOUT_MINUTES} min a sessão será
+              encerrada e a diretoria será alertada.
             </p>
           </div>
 
@@ -303,7 +303,7 @@ export default function IdlePresenceGuard() {
 
           <p className="text-[10px] text-center text-slate-400 uppercase tracking-wide">
             Heartbeat {NIGHT_HEARTBEAT_INTERVAL_MINUTES} min · alerta sem sinal {NIGHT_STALE_ALERT_MINUTES} min ·
-            desafio {NIGHT_IDLE_MINUTES} min · logout {NIGHT_FORCE_LOGOUT_MINUTES} min · relatório 09h/21h
+            desafio {NIGHT_IDLE_MINUTES} min · sem resposta {NIGHT_CHALLENGE_TIMEOUT_MINUTES} min · relatório 09h/21h
           </p>
         </div>
       </div>
