@@ -3,9 +3,12 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { APP_VERSION } from './constants';
 import {
+  APP_UPDATE_RELOAD_BUILD_KEY,
   APP_UPDATE_RELOAD_FLAG,
   fetchPublishedVersion,
+  isBootReloadGuarded,
   isPublishedVersionNewer,
+  markBootReloadGuard,
   reloadForPublishedUpdate,
   shouldThrottleUpdateCheck,
 } from './lib/appUpdate';
@@ -40,33 +43,39 @@ const isPublicExternalRoute = (() => {
 })();
 
 let updateCheckInFlight = false;
-let pendingUpdateBuildId: string | null = null;
 
 async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): Promise<boolean> {
   if (isPublicExternalRoute) return false;
   if (window.location.hostname === 'localhost') return false;
+  if (isBootReloadGuarded()) return false;
   if (!options?.skipReloadFlag && sessionStorage.getItem(APP_UPDATE_RELOAD_FLAG)) return false;
   if (updateCheckInFlight) return false;
 
   updateCheckInFlight = true;
   try {
     const server = await fetchPublishedVersion();
-    if (!server) {
-      pendingUpdateBuildId = null;
-      return false;
+    if (!server) return false;
+
+    if (!isPublishedVersionNewer(CLIENT_BUILD, server)) return false;
+
+    // Já tentamos recarregar para este build e o bundle antigo ainda veio do cache:
+    // não entrar em loop de replace a cada segundo.
+    try {
+      const already = sessionStorage.getItem(APP_UPDATE_RELOAD_BUILD_KEY) || '';
+      if (already && already === String(server.buildId || server.version || '')) {
+        console.warn(
+          `[AutoUpdate] Já recarregou para ${already} e o bundle local ainda diverge — abortando loop.`,
+        );
+        return false;
+      }
+    } catch {
+      /* ignore */
     }
 
-    if (!isPublishedVersionNewer(CLIENT_BUILD, server)) {
-      pendingUpdateBuildId = null;
-      return false;
-    }
-
-    // Atualiza na primeira detecção (necessário para logout global chegar rápido).
     console.warn(
       `[AutoUpdate] Build local (${CLIENT_BUILD.buildId} / v${CLIENT_BUILD.version}) ` +
-        `≠ servidor (${server.buildId} / v${server.version}). Atualizando…`
+        `≠ servidor (${server.buildId} / v${server.version}). Atualizando…`,
     );
-    pendingUpdateBuildId = null;
     await reloadForPublishedUpdate(server);
     return true;
   } finally {
@@ -96,8 +105,14 @@ async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): 
       localStorage.setItem('app_version', APP_VERSION);
       try {
         const keepScreen = sessionStorage.getItem(SCREEN_STORAGE_KEY);
+        const keepReloadFlag = sessionStorage.getItem(APP_UPDATE_RELOAD_FLAG);
+        const keepReloadBuild = sessionStorage.getItem(APP_UPDATE_RELOAD_BUILD_KEY);
+        const keepGuard = sessionStorage.getItem('tmseg:boot_reload_guard');
         sessionStorage.clear();
         if (keepScreen) sessionStorage.setItem(SCREEN_STORAGE_KEY, keepScreen);
+        if (keepReloadFlag) sessionStorage.setItem(APP_UPDATE_RELOAD_FLAG, keepReloadFlag);
+        if (keepReloadBuild) sessionStorage.setItem(APP_UPDATE_RELOAD_BUILD_KEY, keepReloadBuild);
+        if (keepGuard) sessionStorage.setItem('tmseg:boot_reload_guard', keepGuard);
       } catch {}
     }
 
@@ -106,38 +121,45 @@ async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): 
 
     // Após carregar (ou se já estava na versão nova): sinal global de re-login
     try {
-      const server = await fetchPublishedVersion();
-      const signal = server?.forceLogoutSignal ? String(server.forceLogoutSignal) : '';
-      if (signal) {
-        const seen = localStorage.getItem(FORCE_LOGOUT_SEEN_KEY) || '';
-        if (signal !== seen) {
-          console.warn('[ForceLogout] Sinal global detectado — exigindo novo login.');
-          const hadAuth = Boolean(
-            localStorage.getItem('authToken') || localStorage.getItem('userData'),
-          );
-          clearLocalStoragePreservingForceLogoutSeen();
-          try {
-            sessionStorage.clear();
-          } catch {
-            /* ignore */
+      if (!isBootReloadGuarded()) {
+        const server = await fetchPublishedVersion();
+        const signal = server?.forceLogoutSignal ? String(server.forceLogoutSignal).trim() : '';
+        if (signal) {
+          const seen = localStorage.getItem(FORCE_LOGOUT_SEEN_KEY) || '';
+          if (signal !== seen) {
+            console.warn('[ForceLogout] Sinal global detectado — exigindo novo login.');
+            const hadAuth = Boolean(
+              localStorage.getItem('authToken') || localStorage.getItem('userData'),
+            );
+            clearLocalStoragePreservingForceLogoutSeen();
+            try {
+              sessionStorage.clear();
+            } catch {
+              /* ignore */
+            }
+            localStorage.setItem(FORCE_LOGOUT_SEEN_KEY, signal);
+            localStorage.setItem('app_version', APP_VERSION);
+            if (hadAuth) {
+              markBootReloadGuard();
+              window.location.replace('/');
+            }
+            return;
           }
-          localStorage.setItem(FORCE_LOGOUT_SEEN_KEY, signal);
-          localStorage.setItem('app_version', APP_VERSION);
-          // Só recarrega se havia sessão — senão o Login monta e, se apagar a chave,
-          // vira loop infinito de reload.
-          if (hadAuth) {
-            window.location.replace('/');
-          }
-          return;
         }
       }
     } catch {
       /* ignore */
     }
 
+    // Só remove a flag se o bundle local já bate com o servidor.
     try {
-      sessionStorage.removeItem(APP_UPDATE_RELOAD_FLAG);
-    } catch {}
+      const server = await fetchPublishedVersion();
+      if (!server || !isPublishedVersionNewer(CLIENT_BUILD, server)) {
+        sessionStorage.removeItem(APP_UPDATE_RELOAD_FLAG);
+      }
+    } catch {
+      /* ignore */
+    }
   } catch (err) {
     console.warn('[Boot] Falha na verificação de versão:', err);
   }

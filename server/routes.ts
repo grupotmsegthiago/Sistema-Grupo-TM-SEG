@@ -1014,14 +1014,15 @@ export async function registerRoutes(
         const m = txt.match(/APP_VERSION\s*=\s*["']([^"']+)["']/);
         if (m) version = m[1];
       }
-      let forceLogoutSignal: string | null = getLastForceLogoutAt();
+      let forceLogoutSignal: string | null = null;
       try {
         const { data } = await supabase
           .from('system_settings')
           .select('value')
           .eq('key', FORCE_LOGOUT_SETTINGS_KEY)
           .maybeSingle();
-        if (data?.value != null) forceLogoutSignal = String(data.value);
+        const raw = data?.value != null ? String(data.value).trim() : '';
+        forceLogoutSignal = raw || null;
       } catch {
         /* ignore */
       }

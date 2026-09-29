@@ -50,7 +50,8 @@ async function readForceLogoutSignal(): Promise<string | null> {
     if (!res.ok) return null;
     const rows = (await res.json()) as Array<{ value?: string }>;
     const value = rows?.[0]?.value;
-    return value != null ? String(value) : null;
+    const normalized = value != null ? String(value).trim() : '';
+    return normalized || null;
   } catch {
     return null;
   }

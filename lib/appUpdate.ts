@@ -1,6 +1,11 @@
 /** Detecção de nova versão publicada e reload seguro (preserva login). */
 
 export const APP_UPDATE_RELOAD_FLAG = '__tmseg_just_reloaded__';
+/** Evita loop: não recarregar de novo pelo mesmo buildId do servidor. */
+export const APP_UPDATE_RELOAD_BUILD_KEY = 'tmseg:last_update_reload_build';
+/** Proteção contra replace/reload em sequência < 5s (aba travada em loop). */
+export const APP_BOOT_RELOAD_GUARD_KEY = 'tmseg:boot_reload_guard';
+export const APP_BOOT_RELOAD_GUARD_MS = 5_000;
 
 export type PublishedVersionInfo = {
   version: string;
@@ -25,6 +30,24 @@ export function isPublishedVersionNewer(
     return true;
   }
   return false;
+}
+
+/** true se acabamos de recarregar (anti-loop de auto-update / force-logout). */
+export function isBootReloadGuarded(now = Date.now()): boolean {
+  try {
+    const last = Number(sessionStorage.getItem(APP_BOOT_RELOAD_GUARD_KEY) || 0);
+    return Number.isFinite(last) && last > 0 && now - last < APP_BOOT_RELOAD_GUARD_MS;
+  } catch {
+    return false;
+  }
+}
+
+export function markBootReloadGuard(now = Date.now()): void {
+  try {
+    sessionStorage.setItem(APP_BOOT_RELOAD_GUARD_KEY, String(now));
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function clearCachesAndServiceWorkers(): Promise<void> {
@@ -55,6 +78,10 @@ export async function fetchPublishedVersion(): Promise<PublishedVersionInfo | nu
     if (!res.ok) return null;
     const data = (await res.json()) as PublishedVersionInfo;
     if (!data?.version && !data?.buildId) return null;
+    // Normaliza sinal vazio
+    if (data.forceLogoutSignal != null && !String(data.forceLogoutSignal).trim()) {
+      data.forceLogoutSignal = null;
+    }
     return data;
   } catch {
     return null;
@@ -66,6 +93,15 @@ export async function reloadForPublishedUpdate(
   flagKey = APP_UPDATE_RELOAD_FLAG
 ): Promise<void> {
   sessionStorage.setItem(flagKey, '1');
+  markBootReloadGuard();
+  try {
+    sessionStorage.setItem(
+      APP_UPDATE_RELOAD_BUILD_KEY,
+      String(server.buildId || server.version || ''),
+    );
+  } catch {
+    /* ignore */
+  }
   // Preserva sessão: atualiza app_version antes do reload para o App não cair no login.
   try {
     localStorage.setItem('app_version', server.version);
