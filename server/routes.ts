@@ -18,6 +18,7 @@ import { registerGestaoInvestimentoRoutes } from "./gestaoInvestimentoRoutes";
 import { registerSupportAgentsRoutes } from "./supportAgentsRoutes";
 import { registerComissaoQuadroRoutes } from "./comissaoQuadroRoutes";
 import { registerLiveTrackRoutes } from "./liveTrackRoutes";
+import { registerCevaPortalRoutes } from "./cevaPortal";
 import { runRhMigrations } from "./rhMigrations";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances, transferPixFromCompany } from "./asaasService";
 import {
@@ -808,6 +809,7 @@ export async function registerRoutes(
   registerSupportAgentsRoutes(app, requireAuth, requireRole);
   registerComissaoQuadroRoutes(app, requireAuth);
   registerLiveTrackRoutes(app);
+  registerCevaPortalRoutes(app);
 
   app.post('/api/missions/:id/loss-alert-email', requireAuth, async (req: Request, res: Response) => {
     try {

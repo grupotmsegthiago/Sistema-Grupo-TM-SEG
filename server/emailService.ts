@@ -798,6 +798,43 @@ export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string
   }
 }
 
+function textoDeEmail(valor: string): string {
+  return valor.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Senha do portal CEVA. Só o destinatário liberado pelo administrador recebe. */
+export async function sendCevaPortalAccessEmail(input: { nome: string; email: string; senhaTemporaria: string }): Promise<boolean> {
+  const link = systemAppUrl('/ceva');
+  const html = baseTemplate(`
+    <h2>Acesso ao Controle de Escolta</h2>
+    <p>Olá, <strong>${textoDeEmail(input.nome)}</strong>.</p>
+    <p>O administrador liberou o seu acesso ao controle de escolta da CEVA. Use a senha temporária abaixo e troque-a no primeiro acesso. A troca é obrigatória.</p>
+    <table class="info-table">
+      <tr><td>Link</td><td><a href="${link}" style="color:#c0392b; font-weight:600;">${link}</a></td></tr>
+      <tr><td>E-mail</td><td>${textoDeEmail(input.email)}</td></tr>
+      <tr><td>Senha temporária</td><td><code style="background:#f0f0f0; padding:2px 8px; border-radius:3px; font-size:16px;">${textoDeEmail(input.senhaTemporaria)}</code></td></tr>
+    </table>
+    <div class="highlight-box">
+      <p><strong>Primeiro acesso:</strong> entre com esta senha e cadastre uma nova antes de abrir o controle. Não encaminhe este e-mail.</p>
+    </div>
+    <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
+  `);
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: input.email,
+      subject: 'Acesso ao Controle de Escolta CEVA',
+      html,
+    });
+    console.log(`[Email] Acesso CEVA → ${input.email}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Falha no acesso CEVA para ${input.email}:`, err.message);
+    return false;
+  }
+}
+
 export async function sendVerificationCodeEmail(email: string, userName: string, code: string): Promise<boolean> {
   const html = baseTemplate(`
     <h2>🔐 Código de Verificação</h2>

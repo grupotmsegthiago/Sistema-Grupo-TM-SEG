@@ -56,6 +56,7 @@ import QuoteList from './components/QuoteList';
 import QuoteForm from './components/QuoteForm';
 import PublicAgentRegistration from './components/PublicAgentRegistration';
 import DhlSupplierIntake from './components/DhlSupplierIntake';
+import CevaPortal from './components/CevaPortal';
 import PublicLiveTrack from './components/PublicLiveTrack';
 import SupportMapFinder from './components/SupportMapFinder'; 
 import PushNotificationManager from './components/PushNotificationManager';
@@ -147,6 +148,7 @@ const App: React.FC = () => {
 
   const normalizedPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
   const isPublicRoute = normalizedPath === '/cadastro-operacional';
+  const isCevaPortalRoute = normalizedPath === '/ceva';
   const isDhlSupplierRoute = normalizedPath === '/fornecedor/dhl';
   const isLiveTrackRoute = normalizedPath === '/rastreio';
   const isResetPasswordRoute = normalizedPath === '/reset-password';
@@ -214,7 +216,7 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute) return;
+    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
     const roleDefault = getRoleDefaultScreen();
     if (roleDefault && !getScreenFromUrl()) {
       setCurrentScreen(roleDefault);
@@ -223,12 +225,12 @@ const App: React.FC = () => {
   }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute) return;
+    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
     return wireUserActivityTracker();
   }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute) return;
+    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
     const channel = supabase.channel('global_reset_channel').on('postgres_changes',{event: 'INSERT',schema: 'public',table: 'system_logs',filter: 'entity=eq.FORCE_LOGOUT_SIGNAL'},(payload) => {setRebootCountdown(10);}).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [isAuthenticated, isPublicRoute]);
@@ -241,7 +243,7 @@ const App: React.FC = () => {
   }, [rebootCountdown, handleLogout]);
 
   useEffect(() => {
-    if (isPublicRoute) return; 
+    if (isPublicRoute || isCevaPortalRoute) return; 
     const storedVersion = localStorage.getItem('app_version');
     const token = localStorage.getItem('authToken');
     const userData = localStorage.getItem('userData');
@@ -257,7 +259,7 @@ const App: React.FC = () => {
   }, [isPublicRoute, isAuthenticated, handleLogout]);
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute) return;
+    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     const resetTimer = () => {
@@ -381,6 +383,7 @@ const App: React.FC = () => {
   if (isPublicRoute) { return ( <NotificationProvider> <PublicAgentRegistration /> </NotificationProvider> ); }
   if (isDhlSupplierRoute) { return <DhlSupplierIntake />; }
   if (isLiveTrackRoute) { return <PublicLiveTrack />; }
+  if (isCevaPortalRoute) { return <CevaPortal />; }
 
   if (isResetPasswordRoute && resetToken) {
     return <ResetPassword token={resetToken} onComplete={() => { window.location.href = '/'; }} />;
