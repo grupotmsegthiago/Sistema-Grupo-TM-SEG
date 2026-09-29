@@ -15,6 +15,10 @@ import {
   serializeOperatingCoverage,
   type ProviderOperatingCoverageRow,
 } from '../lib/providerOperatingCoverage';
+import {
+  acharClienteMesmoDocumento,
+  digitosDocumentoCliente,
+} from '../lib/clientDuplicateGuard';
 
 interface ProviderFormProps {
   onBack: () => void;
@@ -511,12 +515,40 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
       }
   };
 
+  const verificarCnpjDuplicado = async (cnpjValue: string) => {
+    const digits = digitosDocumentoCliente(cnpjValue);
+    if (digits.length !== 11 && digits.length !== 14) {
+      setCnpjError('');
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('providers')
+        .select('id, name, cnpj, status');
+      if (error) throw error;
+      const dup = acharClienteMesmoDocumento(data || [], digits, id);
+      if (dup) {
+        setCnpjError(
+          `Já existe fornecedor com este CNPJ/CPF (id ${dup.id}: ${dup.name || 'sem nome'}).`,
+        );
+      } else {
+        setCnpjError('');
+      }
+    } catch (e) {
+      console.error('Verificação CNPJ fornecedor', e);
+    }
+  };
+
   const handleSearchCNPJ = async () => {
     const cleanCnpj = formData.cnpj.replace(/\D/g, '');
-    if (cleanCnpj.length !== 14) return;
+    if (cleanCnpj.length !== 14) {
+      await verificarCnpjDuplicado(formData.cnpj);
+      return;
+    }
     
     setIsSearchingCnpj(true);
     try {
+        await verificarCnpjDuplicado(cleanCnpj);
         const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCnpj}`);
         if (!response.ok) {
             if (response.status === 404) throw new Error('CNPJ não localizado.');
@@ -736,10 +768,13 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         <div className="relative">
                             <input 
                                 type="text" 
-                                className={`${INPUT_CLASS} pl-10 pr-12`} 
+                                className={`${INPUT_CLASS} pl-10 pr-12 ${cnpjError ? 'border-red-500 focus:border-red-500' : ''}`} 
                                 required 
                                 value={formData.cnpj} 
-                                onChange={e => setFormData({...formData, cnpj: e.target.value})}
+                                onChange={e => {
+                                  setCnpjError('');
+                                  setFormData({...formData, cnpj: e.target.value});
+                                }}
                                 onBlur={handleSearchCNPJ}
                             />
                             <Fingerprint className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -748,10 +783,14 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                                 onClick={handleSearchCNPJ}
                                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-600 transition-colors"
                                 disabled={isSearchingCnpj}
+                                title="Consultar CNPJ na Receita Federal"
                             >
                                 {isSearchingCnpj ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
                             </button>
                         </div>
+                        {cnpjError && (
+                          <p className="text-[10px] font-bold text-red-600 mt-1">{cnpjError}</p>
+                        )}
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
                         <label className={LABEL_CLASS}>Razão Social *</label>

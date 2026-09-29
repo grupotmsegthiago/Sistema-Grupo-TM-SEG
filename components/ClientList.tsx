@@ -5,6 +5,7 @@ import { authFetch } from '../lib/authFetch';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
 import { formatDateBR } from '../lib/dateUtils';
+import { documentoCorrespondeBusca } from '../lib/clientDuplicateGuard';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, Search, Building2, Phone, Mail, Loader2, Trash2, RefreshCw, Pencil, Ban, CheckCircle2, Database, AlertTriangle, DollarSign, FileWarning, TrendingUp, Send, CheckCircle, Clock, ShieldCheck, User, Calendar, Hash, Fingerprint, Target, UserCheck, ToggleLeft, ToggleRight, Lock } from 'lucide-react';
 
@@ -194,10 +195,13 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
   };
 
   const filteredClients = useMemo(() => {
+      const term = searchTerm.trim();
+      const termLower = term.toLowerCase();
       return dbClients.filter(c => {
-        const matchesSearch = (c.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                             (c.cnpj || '').includes(searchTerm) ||
-                             (c.trading_name || '').toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesSearch = !term ||
+                             (c.name || '').toLowerCase().includes(termLower) ||
+                             (c.trading_name || '').toLowerCase().includes(termLower) ||
+                             documentoCorrespondeBusca(c.cnpj, term);
         
         let matchesAdjustment = true;
         if (filterAdjustment === 'PENDING') matchesAdjustment = !c.adjustment_2026_applied;

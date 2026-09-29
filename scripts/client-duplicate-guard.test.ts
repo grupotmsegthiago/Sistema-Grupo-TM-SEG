@@ -5,6 +5,7 @@ import {
   acharClienteMesmoDocumento,
   comercialIdDoUsuarioLogado,
   digitosDocumentoCliente,
+  documentoCorrespondeBusca,
   perfilEhComercialRole,
 } from '../lib/clientDuplicateGuard.ts';
 
@@ -36,6 +37,14 @@ test('comercial logado resolve id da carteira', () => {
   assert.equal(perfilEhComercialRole('Diretoria'), false);
 });
 
+test('consulta por CNPJ ignora formatação e aceita parcial', () => {
+  assert.equal(documentoCorrespondeBusca('03.020.839/0001-80', '03020839000180'), true);
+  assert.equal(documentoCorrespondeBusca('03.020.839/0001-80', '03.020.839'), true);
+  assert.equal(documentoCorrespondeBusca('03.020.839/0001-80', '03020839'), true);
+  assert.equal(documentoCorrespondeBusca('03.020.839/0001-80', '99999999'), false);
+  assert.equal(documentoCorrespondeBusca('03.020.839/0001-80', '12'), false); // < 3 dígitos
+});
+
 test('ClientForm: após insert guarda id e não duplica no retry; comercial auto-vincula', () => {
   const form = readFileSync('components/ClientForm.tsx', 'utf8');
   assert.match(form, /persistedId|setPersistedId/);
@@ -43,4 +52,14 @@ test('ClientForm: após insert guarda id e não duplica no retry; comercial auto
   assert.match(form, /comercialIdDoUsuarioLogado/);
   assert.match(form, /Salvo no sistema/);
   assert.match(form, /TM SEG/);
+});
+
+test('ClientList e ProviderList usam consulta por dígitos de CNPJ', () => {
+  const clientList = readFileSync('components/ClientList.tsx', 'utf8');
+  const providerList = readFileSync('components/ProviderList.tsx', 'utf8');
+  const providerForm = readFileSync('components/ProviderForm.tsx', 'utf8');
+  assert.match(clientList, /documentoCorrespondeBusca/);
+  assert.match(providerList, /documentoCorrespondeBusca/);
+  assert.match(providerForm, /verificarCnpjDuplicado/);
+  assert.match(providerForm, /acharClienteMesmoDocumento/);
 });

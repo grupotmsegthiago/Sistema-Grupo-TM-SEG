@@ -332,6 +332,24 @@ const ClientForm: React.FC<ClientFormProps> = ({
 
   const handleSearchCNPJ = async () => {
     const cleanCnpj = formData.cnpj.replace(/\D/g, '');
+    // Consulta no cadastro TM SEG (duplicata) mesmo com CPF (11) ou CNPJ parcial completo.
+    if (cleanCnpj.length === 11 || cleanCnpj.length === 14) {
+      try {
+        const { data: docRows } = await supabase
+          .from('clients')
+          .select('id, name, cnpj, status');
+        const dup = acharClienteMesmoDocumento(docRows || [], cleanCnpj, persistedId || id);
+        if (dup) {
+          showNotification(
+            'CNPJ já cadastrado',
+            `Já existe cliente com este CNPJ/CPF no sistema TM SEG (id ${dup.id}: ${dup.name || 'sem nome'}). Abra o cadastro existente.`,
+            'warning',
+          );
+        }
+      } catch (e) {
+        console.error('Verificação CNPJ cliente', e);
+      }
+    }
     if (cleanCnpj.length !== 14) return;
     
     setIsSearchingCnpj(true);
@@ -1102,6 +1120,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                                 onClick={handleSearchCNPJ}
                                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-600 transition-colors"
                                 disabled={isSearchingCnpj}
+                                title="Consultar CNPJ na Receita Federal"
                             >
                                 {isSearchingCnpj ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
                             </button>

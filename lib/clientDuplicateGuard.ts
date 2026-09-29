@@ -12,7 +12,22 @@ export type ClienteDocRow = {
 };
 
 /**
- * Encontra outro cliente com o mesmo CNPJ/CPF (só dígitos).
+ * Consulta por CNPJ/CPF nas listas: aceita formatado ou só dígitos.
+ * Ex.: termo "03020839000180" encontra "03.020.839/0001-80".
+ * Exige ao menos 3 dígitos no termo para match por dígitos (evita falso positivo).
+ */
+export function documentoCorrespondeBusca(documento: unknown, termo: string): boolean {
+  const term = String(termo ?? '').trim();
+  if (!term) return false;
+  const docStr = String(documento ?? '');
+  if (docStr.toLowerCase().includes(term.toLowerCase())) return true;
+  const termDigits = digitosDocumentoCliente(term);
+  if (termDigits.length < 3) return false;
+  return digitosDocumentoCliente(docStr).includes(termDigits);
+}
+
+/**
+ * Encontra outro registro (cliente/fornecedor) com o mesmo CNPJ/CPF (só dígitos).
  * Falha fechada: sem dígitos suficientes → sem match.
  */
 export function acharClienteMesmoDocumento(
