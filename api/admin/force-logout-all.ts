@@ -1,6 +1,7 @@
 /**
  * POST /api/admin/force-logout-all — leve (sem Express).
  * Grava force_logout_signal em system_settings para deslogar todos os clientes.
+ * Body `{ "clear": true }` remove o sinal (para o loop de reload).
  */
 import {
   FORCE_LOGOUT_EMERGENCY_TOKEN,
@@ -45,7 +46,19 @@ async function fetchWithTimeout(
   }
 }
 
-export default async function handler(req: { method?: string; headers?: Record<string, string | string[] | undefined>; body?: any }, res: Res) {
+function readEmergencyToken(req: {
+  headers?: Record<string, string | string[] | undefined>;
+  body?: any;
+}): string {
+  const raw = req.headers?.['x-emergency-token'];
+  const headerToken = Array.isArray(raw) ? String(raw[0] || '') : String(raw || '');
+  return headerToken || String(req.body?.token || '');
+}
+
+export default async function handler(
+  req: { method?: string; headers?: Record<string, string | string[] | undefined>; body?: any },
+  res: Res,
+) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
 
@@ -54,12 +67,7 @@ export default async function handler(req: { method?: string; headers?: Record<s
     return;
   }
 
-  const headerToken = (() => {
-    const raw = req.headers?.['x-emergency-token'];
-    return Array.isArray(raw) ? String(raw[0] || '') : String(raw || '');
-  })();
-  const bodyToken = String(req.body?.token || '');
-  if (headerToken !== FORCE_LOGOUT_EMERGENCY_TOKEN && bodyToken !== FORCE_LOGOUT_EMERGENCY_TOKEN) {
+  if (readEmergencyToken(req) !== FORCE_LOGOUT_EMERGENCY_TOKEN) {
     res.status(401).json({ ok: false, error: 'token inválido' });
     return;
   }
@@ -70,9 +78,65 @@ export default async function handler(req: { method?: string; headers?: Record<s
     return;
   }
 
-  const signal = `force-${Date.now()}`;
-  const forceLogoutAt = new Date().toISOString();
+  const wantClear = req.body?.clear === true || req.body?.action === 'clear';
+  const at = new Date().toISOString();
   const details: string[] = [];
+
+  if (wantClear) {
+    try {
+      // Preferência: apagar a linha. Fallback: value vazio.
+      const delRes = await fetchWithTimeout(
+        `${sb.url}/rest/v1/system_settings?key=eq.${encodeURIComponent(FORCE_LOGOUT_SETTINGS_KEY)}`,
+        {
+          method: 'DELETE',
+          headers: {
+            apikey: sb.key,
+            Authorization: `Bearer ${sb.key}`,
+            Prefer: 'return=minimal',
+          },
+        },
+        5000,
+      );
+      if (!delRes.ok) {
+        const upsertRes = await fetchWithTimeout(
+          `${sb.url}/rest/v1/system_settings?on_conflict=key`,
+          {
+            method: 'POST',
+            headers: {
+              apikey: sb.key,
+              Authorization: `Bearer ${sb.key}`,
+              'Content-Type': 'application/json',
+              Prefer: 'resolution=merge-duplicates,return=minimal',
+            },
+            body: JSON.stringify([
+              { key: FORCE_LOGOUT_SETTINGS_KEY, value: '', updated_at: at },
+            ]),
+          },
+          5000,
+        );
+        if (!upsertRes.ok) {
+          const text = await upsertRes.text().catch(() => '');
+          res.status(502).json({
+            ok: false,
+            cleared: false,
+            details: [`clear failed: HTTP ${upsertRes.status} ${text.slice(0, 200)}`],
+          });
+          return;
+        }
+        details.push('system_settings cleared via empty value');
+      } else {
+        details.push('system_settings row deleted');
+      }
+      res.status(200).json({ ok: true, cleared: true, forceLogoutAt: at, details });
+      return;
+    } catch (e: any) {
+      res.status(504).json({ ok: false, cleared: false, details: [e?.message || String(e)] });
+      return;
+    }
+  }
+
+  const signal = `force-${Date.now()}`;
+  const forceLogoutAt = at;
 
   try {
     const upsertRes = await fetchWithTimeout(
@@ -108,7 +172,6 @@ export default async function handler(req: { method?: string; headers?: Record<s
     return;
   }
 
-  // Melhor esforço — não bloqueia a resposta se RPC falhar/travar
   let sessionsRevoked = 0;
   try {
     const rpcRes = await fetchWithTimeout(

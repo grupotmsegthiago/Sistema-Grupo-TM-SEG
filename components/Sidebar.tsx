@@ -45,7 +45,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
     if (!ok) return;
 
     try {
-      const keepKeys = ['authToken', 'auth_token', 'userData', 'tmseg-token'];
+      const keepKeys = ['authToken', 'auth_token', 'userData', 'tmseg-token', 'tmseg:force_logout_seen', 'app_version'];
       const preserved: Record<string, string> = {};
       for (const k of keepKeys) {
         const v = localStorage.getItem(k);

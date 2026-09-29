@@ -11,6 +11,7 @@ import {
 import FaceAuthGate from './FaceAuthGate';
 import type { TimeClockUserContext } from '../lib/timeclock/types';
 import { APP_VERSION } from '../constants';
+import { clearLocalStoragePreservingForceLogoutSeen } from '../lib/forceLogout';
 
 interface LoginProps {
   onLogin: () => void;
@@ -42,8 +43,20 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     } catch {
       /* ignora */
     }
-    localStorage.clear();
-    sessionStorage.clear();
+    // Preserva force_logout_seen — senão o boot em index.tsx entra em loop de reload.
+    clearLocalStoragePreservingForceLogoutSeen();
+    try {
+      sessionStorage.clear();
+    } catch {
+      /* ignora */
+    }
+    if (logoutReason) {
+      try {
+        sessionStorage.setItem('tmseg:logout_reason', logoutReason);
+      } catch {
+        /* ignora */
+      }
+    }
     localStorage.setItem('app_version', APP_VERSION);
     if (logoutReason === 'idle_30min') {
       setError(

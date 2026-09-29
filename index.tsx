@@ -9,7 +9,10 @@ import {
   reloadForPublishedUpdate,
   shouldThrottleUpdateCheck,
 } from './lib/appUpdate';
-import { FORCE_LOGOUT_SEEN_KEY } from './lib/forceLogout';
+import {
+  FORCE_LOGOUT_SEEN_KEY,
+  clearLocalStoragePreservingForceLogoutSeen,
+} from './lib/forceLogout';
 import { SCREEN_STORAGE_KEY } from './lib/screenNavigation';
 
 declare const __TMSEG_BUILD_ID__: string;
@@ -109,11 +112,22 @@ async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): 
         const seen = localStorage.getItem(FORCE_LOGOUT_SEEN_KEY) || '';
         if (signal !== seen) {
           console.warn('[ForceLogout] Sinal global detectado — exigindo novo login.');
-          localStorage.clear();
-          sessionStorage.clear();
+          const hadAuth = Boolean(
+            localStorage.getItem('authToken') || localStorage.getItem('userData'),
+          );
+          clearLocalStoragePreservingForceLogoutSeen();
+          try {
+            sessionStorage.clear();
+          } catch {
+            /* ignore */
+          }
           localStorage.setItem(FORCE_LOGOUT_SEEN_KEY, signal);
           localStorage.setItem('app_version', APP_VERSION);
-          window.location.replace('/');
+          // Só recarrega se havia sessão — senão o Login monta e, se apagar a chave,
+          // vira loop infinito de reload.
+          if (hadAuth) {
+            window.location.replace('/');
+          }
           return;
         }
       }

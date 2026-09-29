@@ -31,6 +31,7 @@ import {
 } from '../lib/userActivityTracker';
 import { supabase } from '../lib/supabase';
 import { APP_VERSION } from '../constants';
+import { clearLocalStoragePreservingForceLogoutSeen } from '../lib/forceLogout';
 
 type LocalUser = { id?: string | number; name?: string; role?: string };
 
@@ -60,8 +61,12 @@ async function forceLogoutNow(): Promise<void> {
   } catch {
     /* ignore */
   }
-  localStorage.clear();
-  sessionStorage.clear();
+  clearLocalStoragePreservingForceLogoutSeen();
+  try {
+    sessionStorage.clear();
+  } catch {
+    /* ignore */
+  }
   if (reason) {
     try {
       sessionStorage.setItem(LOGOUT_REASON_IDLE_KEY, reason);

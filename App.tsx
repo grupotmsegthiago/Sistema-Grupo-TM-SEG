@@ -117,6 +117,7 @@ import { isNightWatchActive } from './lib/productivity/nightWatch';
 import {
   FORCE_LOGOUT_SEEN_KEY,
   FORCE_LOGOUT_SETTINGS_KEY,
+  clearLocalStoragePreservingForceLogoutSeen,
   parseForceLogoutSignal,
 } from './lib/forceLogout';
 import RhModule from './components/rh/RhModule';
@@ -176,8 +177,12 @@ const App: React.FC = () => {
     }
     try { window.dispatchEvent(new CustomEvent('tmseg:logout')); } catch {}
     await supabase.auth.signOut();
-    localStorage.clear();
-    sessionStorage.clear();
+    clearLocalStoragePreservingForceLogoutSeen();
+    try {
+      sessionStorage.clear();
+    } catch {
+      /* ignora */
+    }
     if (logoutReason) {
       try {
         sessionStorage.setItem(LOGOUT_REASON_IDLE_KEY, logoutReason);
