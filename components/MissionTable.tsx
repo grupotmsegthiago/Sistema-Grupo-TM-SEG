@@ -4,6 +4,7 @@ import { Mission, MissionStatus, MissionLog, User as UserType, Agent, Client, Cl
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { MISSION_LIVE_WINDOW_EVENT } from '../lib/missionLiveBroadcast';
+import { missionBoardSnapshotChanged } from '../lib/missionLiveUpdate';
 import { getRealtimeConnectionStatus } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
 import { logAction } from '../lib/logger';
@@ -1087,19 +1088,71 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           const handleMissionLive = (event: Event) => {
             markLive();
             const detail = (event as CustomEvent).detail || {};
-            if (detail.event === 'mission_updated') {
-              const payload = detail.payload;
+            if (detail.event === 'mission_updated' && detail.payload?.missionId) {
+              void syncBoardFromServer(String(detail.payload.missionId));
               const userName = currentUserRef.current?.name;
-              if (payload && payload.updatedBy !== userName) {
+              if (detail.payload.updatedBy !== userName) {
                 showNotificationRef.current(
-                  `OS ${payload.missionId} Atualizada`,
-                  `${payload.changeType} — por ${payload.updatedBy}`,
+                  `OS ${detail.payload.missionId} Atualizada`,
+                  `${detail.payload.changeType} — por ${detail.payload.updatedBy}`,
                   'info'
                 );
               }
             }
             if (detail.event === 'handover_note' && detail.payload?.mission_id) {
               setHandoverNotes(prev => ({ ...prev, [String(detail.payload.mission_id)]: detail.payload }));
+            }
+          };
+
+          const OPEN_BOARD_STATUSES = new Set(['Pendente', 'Solicitada', 'Documentação', 'Agendada', 'Origem', 'Em Viagem']);
+
+          const syncBoardFromServer = async (onlyId?: string) => {
+            try {
+              const ids = onlyId
+                ? [onlyId]
+                : allMissionsRef.current
+                  .filter((mission) => OPEN_BOARD_STATUSES.has(mission.status))
+                  .map((mission) => String(mission.id));
+              if (!ids.length) {
+                if (!cancelled) setLastLiveAt(new Date());
+                return;
+              }
+              const fresh: any[] = [];
+              for (let index = 0; index < ids.length; index += 80) {
+                const slice = ids.slice(index, index + 80);
+                const { data, error } = await supabase.from('missions').select('*').in('id', slice);
+                if (error) throw error;
+                if (data) fresh.push(...data);
+              }
+              if (cancelled) return;
+              const byId = new Map(fresh.map((row) => [String(row.id), row]));
+              const applyRows = (prev: Mission[], allowInsert: boolean) => {
+                let changed = false;
+                const seen = new Set(prev.map((mission) => String(mission.id)));
+                const next = prev.map((mission) => {
+                  const row = byId.get(String(mission.id));
+                  if (!row || !missionBoardSnapshotChanged(mission, row)) return mission;
+                  changed = true;
+                  return mapRawMissionRowRef.current(row);
+                });
+                if (allowInsert) {
+                  for (const row of fresh) {
+                    if (seen.has(String(row.id))) continue;
+                    changed = true;
+                    next.unshift(mapRawMissionRowRef.current(row));
+                  }
+                }
+                return changed ? next : prev;
+              };
+              setAllMissions((prev) => {
+                const next = applyRows(prev, Boolean(onlyId));
+                if (next !== prev) allMissionsRef.current = next;
+                return next;
+              });
+              setSearchMatches((prev) => (prev.length ? applyRows(prev, false) : prev));
+              setLastLiveAt(new Date());
+            } catch {
+              // O relógio fica na última confirmação. A próxima passagem tenta de novo.
             }
           };
 
@@ -1118,8 +1171,18 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             scheduleFullRefetchRef.current();
           };
           window.addEventListener('refreshMissions', handleExternalRefresh);
+          const boardTimer = setInterval(() => {
+            if (document.hidden) return;
+            void syncBoardFromServer();
+          }, 8000);
+          const onBoardVisible = () => {
+            if (!document.hidden) void syncBoardFromServer();
+          };
+          document.addEventListener('visibilitychange', onBoardVisible);
           return () => {
             cancelled = true;
+            clearInterval(boardTimer);
+            document.removeEventListener('visibilitychange', onBoardVisible);
             window.removeEventListener('supabase:missions:realtime', handleMissionsRealtime);
             window.removeEventListener('supabase:mission_logs:realtime', handleMissionLogsRealtime);
             window.removeEventListener('tmseg:realtime-status', handleRealtimeStatus);
@@ -2185,8 +2248,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 <span
                   data-testid="panel-live-badge"
                   title={liveConnected
-                    ? 'Conectado. Quando uma OS é atualizada, o card muda na hora para quem está com o painel aberto.'
-                    : 'Reconectando ao servidor. A tela volta a receber as atualizações sozinha.'}
+                    ? 'O painel confirma as OS abertas com o banco a cada poucos segundos. Quando outra pessoa atualiza, o cartão sai da prioridade.'
+                    : 'Reconectando ao servidor. O painel continua conferindo as OS abertas com o banco.'}
                   className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${liveConnected ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-800'}`}
                 >
                   <span className={`h-2 w-2 rounded-full ${liveConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />

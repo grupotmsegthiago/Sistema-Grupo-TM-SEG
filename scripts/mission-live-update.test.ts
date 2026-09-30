@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickLiveMissionUpdate } from '../lib/missionLiveUpdate.ts';
+import { pickLiveMissionUpdate, missionBoardSnapshotChanged } from '../lib/missionLiveUpdate.ts';
 
 test('atualização mais nova da OS aparece no lugar do log antigo', () => {
   const picked = pickLiveMissionUpdate(
@@ -20,6 +20,32 @@ test('log mais novo que a OS continua valendo', () => {
   assert.equal(picked.at, '2026-09-30T18:00:00.000Z');
 });
 
+test('a OS sai do lugar antigo quando outra pessoa grava status ou horário', () => {
+  const current = {
+    status: 'Em Viagem',
+    lastUpdate: '2026-09-30T17:00:00.000Z',
+    currentLocation: 'SEM NOVIDADES',
+    updatedBy: 'Ana',
+    occurrence_count: 0,
+    mapLink: '',
+  };
+  assert.equal(missionBoardSnapshotChanged(current, {
+    status: 'Em Viagem',
+    last_update: '2026-09-30T17:00:00.000Z',
+    current_location: 'SEM NOVIDADES',
+    updated_by: 'Ana',
+    occurrence_count: 0,
+    map_link: '',
+  }), false);
+  assert.equal(missionBoardSnapshotChanged(current, {
+    status: 'Concluída',
+    last_update: '2026-09-30T18:53:00.000Z',
+    current_location: 'CHEGUEI',
+    updated_by: 'Outro',
+    occurrence_count: 0,
+    map_link: '',
+  }), true);
+});
 test('sem log usa a localização atual da OS', () => {
   const picked = pickLiveMissionUpdate(null, {
     lastUpdate: '2026-09-30T17:40:00.000Z',
