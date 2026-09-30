@@ -3,7 +3,8 @@ import { formatDateBR, formatIsoDateBR, formatTimeAuditBR, formatDateTimeBR, for
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB, ProviderCostTable } from '../types';
 import { authFetch } from '../lib/authFetch';
-import { supabase, MISSION_UPDATES_BROADCAST_CHANNEL } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
+import { publishMissionLive } from '../lib/missionLiveBroadcast';
 import { fetchAllPages } from '../lib/supabasePaging';
 import { fetchParentMissionCandidates } from '../lib/parentMissionSearch';
 import { logAction } from '../lib/logger';
@@ -2794,6 +2795,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     if (!noteRes.ok) {
                         const noteErr = await noteRes.json().catch(() => ({} as { error?: string }));
                         showNotification('Observação', noteErr?.error || 'A OS foi salva, mas a observação do Controle Diário não entrou.', 'warning');
+                    } else {
+                        const saved = await noteRes.json().catch(() => null);
+                        if (saved?.mission_id) void publishMissionLive('controle_diario_note', saved);
                     }
                 } catch (noteFail) {
                     console.warn('[ControleDiario] observação:', noteFail);
@@ -3217,15 +3221,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 setEmailConfirmDialog({ type, clientPayload: pendingClientPayload, providerPayload: pendingProviderPayload });
             }
 
-            await supabase.channel(MISSION_UPDATES_BROADCAST_CHANNEL).send({
-                type: 'broadcast',
-                event: 'mission_updated',
-                payload: {
-                    missionId: mission.id,
-                    status: finalStatus,
-                    updatedBy: currentUser.name,
-                    changeType: finalDescription || 'Atualização de Status'
-                }
+            void publishMissionLive('mission_updated', {
+                missionId: mission.id,
+                status: finalStatus,
+                updatedBy: currentUser.name,
+                changeType: finalDescription || 'Atualização de Status',
             });
 
             const senderNameForChange = JSON.parse(localStorage.getItem('userData') || '{}').name || undefined;

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { queryClient } from './queryClient';
+import { bindMissionLiveChannel } from './missionLiveBroadcast';
 
 const REALTIME_TABLES = [
   'missions',
@@ -201,6 +202,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     };
 
     setupGlobalChannel();
+    bindMissionLiveChannel();
 
     return () => {
       cancelled = true;

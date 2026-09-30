@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ImagePlus, Loader2, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { formatDateBR, formatTimeBR } from '../lib/dateUtils';
-import { normalizeOccurrenceText, occurrenceTextError } from '../lib/missionOccurrence';
+import { publishMissionLive, MISSION_LIVE_WINDOW_EVENT } from '../lib/missionLiveBroadcast';
 
 type OccurrenceRow = {
   id: string;
@@ -87,8 +87,8 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     const { data, error: queryError } = await supabase
       .from('mission_occurrences')
       .select('id, description, evidence_url, created_by, created_at')
@@ -96,12 +96,31 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
       .order('created_at', { ascending: false });
     if (queryError) setError(queryError.message);
     else setRows((data || []) as OccurrenceRow[]);
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [missionId]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const onLive = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      const missionFromLive = String(detail.payload?.mission_id || detail.payload?.missionId || '');
+      if (detail.event === 'occurrence' && missionFromLive === String(missionId)) void load(true);
+    };
+    const onMission = (event: Event) => {
+      const payload = (event as CustomEvent).detail;
+      const id = String(payload?.new?.id || payload?.old?.id || '');
+      if (id && id === String(missionId)) void load(true);
+    };
+    window.addEventListener(MISSION_LIVE_WINDOW_EVENT, onLive);
+    window.addEventListener('supabase:missions:realtime', onMission);
+    return () => {
+      window.removeEventListener(MISSION_LIVE_WINDOW_EVENT, onLive);
+      window.removeEventListener('supabase:missions:realtime', onMission);
+    };
+  }, [load, missionId]);
 
   useEffect(() => {
     return () => {
@@ -184,6 +203,7 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
       setText('');
       pickFile(null);
       onSaved(total);
+      void publishMissionLive('occurrence', { mission_id: missionId, occurrence_count: total });
       window.dispatchEvent(new CustomEvent('refreshMissions'));
       await load();
     } catch (err: any) {

@@ -2,7 +2,8 @@ import { formatDateTimeBR } from '../lib/dateUtils';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, MissionLog, User as UserType, Agent, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { authFetch } from '../lib/authFetch';
-import { supabase, MISSION_UPDATES_BROADCAST_CHANNEL } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
+import { MISSION_LIVE_WINDOW_EVENT } from '../lib/missionLiveBroadcast';
 import { useNotification } from '../lib/NotificationContext';
 import { logAction } from '../lib/logger';
 import { 
@@ -10,7 +11,7 @@ import {
   ClipboardList, FileSearch, CalendarClock, MapPin, Truck, Flag, XCircle, UserX, AlertOctagon, ToggleLeft, ToggleRight, Calendar,
   BarChart4, Globe, Building2, LayoutDashboard, User, ExternalLink, RefreshCw,
   Target, Clock, History, CalendarPlus, ShieldAlert, Mail, MessageCircle, ClipboardCheck,
-  FileBarChart, ArrowRight, Briefcase, Printer, Filter, List, Download, Link2, TrendingDown, Sparkles
+  FileBarChart, ArrowRight, Briefcase, Printer, Filter, List, Download, Link2, TrendingDown, Sparkles, ChevronDown
 } from 'lucide-react';
 import { GoogleMap, useLoadScript, Marker, InfoWindow } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
@@ -59,6 +60,7 @@ import { canSeeOsComPrejuizo, isFinanceSupervisorName } from '../lib/financeSupe
 import { searchMissionsByTerm } from '../lib/missionTableSearch';
 import { isOsLossHidden, loadOsLossHiddenMap } from '../lib/osLossHidden';
 import { collectLinkedFamilyIds } from '../lib/missionLinkage';
+import { comparePanelMissions, PANEL_LAYER_META, PANEL_LAYER_ORDER, placeMissionOnPanel, type MissionPanelLayer } from '../lib/missionPanelLayers';
 const cevaLogoPath = '/logo_ceva.png';
 
 
@@ -199,6 +201,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [accidentCount, setAccidentCount] = useState(0);
   const [approvalMap, setApprovalMap] = useState<Record<string, { stage: string; date: string }[]>>({});
   const [evidenceMap, setEvidenceMap] = useState<Record<string, { url: string; uploadedBy: string; uploadedAt: string }[]>>({});
+  const [handoverNotes, setHandoverNotes] = useState<Record<string, { mission_id: string; note: string; updated_by: string; updated_at: string }>>({});
   const [lastLogMap, setLastLogMap] = useState<Record<string, MissionLog>>({});
   const [dhlIntakeMap, setDhlIntakeMap] = useState<Record<string, { status: string; providerFilledAt: string | null; intakeId: string; progressAgent1?: boolean; progressAgent2?: boolean; progressVehicle?: boolean; progressMirror?: boolean }>>({});
   const [resolvedClientName, setResolvedClientName] = useState('');
@@ -436,6 +439,24 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
       [currentUser],
   );
 
+  useEffect(() => {
+    if (isRestrictedClientView) return;
+    let cancel = false;
+    authFetch('/api/shift-handover-notes')
+      .then(async (res) => {
+        if (!res.ok) return;
+        const rows = await res.json();
+        if (cancel || !Array.isArray(rows)) return;
+        const map: Record<string, { mission_id: string; note: string; updated_by: string; updated_at: string }> = {};
+        for (const row of rows) {
+          if (row?.mission_id) map[String(row.mission_id)] = row;
+        }
+        setHandoverNotes(map);
+      })
+      .catch(() => {});
+    return () => { cancel = true; };
+  }, [isRestrictedClientView, lastMissionsFetchAt]);
+
   const isCevaClient = useMemo(() => {
       return isRestrictedClientView && resolvedClientName.toUpperCase().includes('CEVA');
   }, [isRestrictedClientView, resolvedClientName]);
@@ -457,8 +478,6 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const auxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressFullRefetchUntilRef = useRef<number>(0);
-  const broadcastChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const broadcastReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Garante que o fetch inicial concluiu antes de aceitar patches direcionados
   // (evita race de startup com eventos chegando antes do snapshot inicial).
   const initialFetchDoneRef = useRef<boolean>(false);
@@ -1028,15 +1047,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             else scheduleFullRefetchRef.current();
           };
 
-          const setupBroadcastChannel = () => {
-            if (cancelled) return;
-            if (broadcastChannelRef.current) {
-              supabase.removeChannel(broadcastChannelRef.current);
-              broadcastChannelRef.current = null;
-            }
-            const broadcastChannel = supabase
-            .channel(MISSION_UPDATES_BROADCAST_CHANNEL)
-            .on('broadcast', { event: 'mission_updated' }, ({ payload }) => {
+          const handleMissionLive = (event: Event) => {
+            const detail = (event as CustomEvent).detail || {};
+            if (detail.event === 'mission_updated') {
+              const payload = detail.payload;
               const userName = currentUserRef.current?.name;
               if (payload && payload.updatedBy !== userName) {
                 showNotificationRef.current(
@@ -1045,22 +1059,14 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                   'info'
                 );
               }
-            })
-            .subscribe((status: string) => {
-              if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-                console.warn('[Realtime] Canal broadcast desconectado — tentando reconexão em 3s...');
-                if (broadcastReconnectTimerRef.current) clearTimeout(broadcastReconnectTimerRef.current);
-                broadcastReconnectTimerRef.current = setTimeout(() => {
-                  if (!cancelled) setupBroadcastChannel();
-                }, 3000);
-              }
-            });
-            broadcastChannelRef.current = broadcastChannel;
-            return broadcastChannel;
+            }
+            if (detail.event === 'handover_note' && detail.payload?.mission_id) {
+              setHandoverNotes(prev => ({ ...prev, [String(detail.payload.mission_id)]: detail.payload }));
+            }
           };
 
-          setupBroadcastChannel();
           window.addEventListener('supabase:missions:realtime', handleMissionsRealtime);
+          window.addEventListener(MISSION_LIVE_WINDOW_EVENT, handleMissionLive);
           const handleExternalRefresh = () => {
             setSearchRefreshTick(t => t + 1);
             if (Date.now() < suppressFullRefetchUntilRef.current) {
@@ -1072,19 +1078,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           window.addEventListener('refreshMissions', handleExternalRefresh);
           return () => {
             cancelled = true;
-            if (broadcastReconnectTimerRef.current) clearTimeout(broadcastReconnectTimerRef.current);
-            if (broadcastChannelRef.current) supabase.removeChannel(broadcastChannelRef.current);
-            broadcastChannelRef.current = null;
             window.removeEventListener('supabase:missions:realtime', handleMissionsRealtime);
+            window.removeEventListener(MISSION_LIVE_WINDOW_EVENT, handleMissionLive);
             if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
             if (auxTimerRef.current) clearTimeout(auxTimerRef.current);
             window.removeEventListener('refreshMissions', handleExternalRefresh);
           };
     }, [userSessionKey]);
 
-    // A cada 5 min o relógio da tela avança (hora extra visual).
+    // O relógio da tela avança a cada 1s, no mesmo ritmo do contador IMINENTE.
     // O banco da OS não é recalculado aqui: só muda quando o operador edita e salva.
-    const OVERTIME_SYNC_MS = 5 * 60 * 1000;
+    const OVERTIME_SYNC_MS = 1000;
     useEffect(() => {
       if (!userSessionKey) return;
       const timer = setInterval(() => setCurrentTime(new Date()), OVERTIME_SYNC_MS);
@@ -1501,71 +1505,57 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         return 0; 
     }, []);
 
-    const getLastUpdateTimestamp = useCallback((m: Mission) => {
-        return new Date(m.lastUpdate || m.createdAt || 0).getTime();
-    }, []);
-  
     const sortedMissions = useMemo(() => {
-        return [...filteredMissions].sort((a, b) => {
-            const delayA = getDelayMinutes(a);
-            const delayB = getDelayMinutes(b);
+        return [...filteredMissions].sort((a, b) => comparePanelMissions(a, b, currentTime));
+    }, [filteredMissions, currentTime]);
 
-            const isOverdue = (m: Mission, delay: number) => {
-                const status = m.status as MissionStatus;
-                if (status === MissionStatus.SCHEDULED || status === MissionStatus.SOLICITED || status === MissionStatus.DOCUMENTATION) {
-                    return m.startTime && new Date().getTime() > new Date(m.startTime).getTime();
-                }
-                return false;
-            };
+    const panelLayerCounts = useMemo(() => {
+        const counts: Partial<Record<MissionPanelLayer, number>> = {};
+        for (const mission of sortedMissions) {
+            const layer = placeMissionOnPanel(mission, currentTime).layer;
+            counts[layer] = (counts[layer] || 0) + 1;
+        }
+        return counts;
+    }, [sortedMissions, currentTime]);
 
-            const overdueA = isOverdue(a, delayA);
-            const overdueB = isOverdue(b, delayB);
-            if (overdueA !== overdueB) return overdueA ? -1 : 1;
-            if (overdueA && overdueB) return delayB - delayA;
+    // Prioridade 0 começa aberta. As outras camadas começam fechadas.
+    const [expandedLayers, setExpandedLayers] = useState<Record<MissionPanelLayer, boolean>>({
+        atraso: true,
+        iniciar: false,
+        atualizar: false,
+        viagem: false,
+        solicitada: false,
+        outras: false,
+    });
+    const togglePanelLayer = (layer: MissionPanelLayer) => {
+        setExpandedLayers(prev => ({ ...prev, [layer]: !prev[layer] }));
+        setCurrentPage(1);
+    };
 
-            const getAgingTier = (m: Mission, delay: number) => {
-                const status = m.status as MissionStatus;
-                const isActive = status === MissionStatus.IN_TRANSIT || status === MissionStatus.ORIGIN;
-                if (!isActive) return 0;
-                if (delay >= 60) return 3;
-                if (delay >= 30) return 2;
-                return 1;
-            };
+    const panelGroups = useMemo(() => {
+        const grouped = new Map<MissionPanelLayer, Mission[]>();
+        for (const mission of sortedMissions) {
+            const layer = placeMissionOnPanel(mission, currentTime).layer;
+            const list = grouped.get(layer);
+            if (list) list.push(mission);
+            else grouped.set(layer, [mission]);
+        }
+        return PANEL_LAYER_ORDER
+            .filter(layer => (grouped.get(layer)?.length || 0) > 0)
+            .map(layer => ({ layer, missions: grouped.get(layer) || [] }));
+    }, [sortedMissions, currentTime]);
 
-            const tierA = getAgingTier(a, delayA);
-            const tierB = getAgingTier(b, delayB);
+    const visibleMissions = useMemo(() => {
+        return sortedMissions.filter(mission => expandedLayers[placeMissionOnPanel(mission, currentTime).layer]);
+    }, [sortedMissions, currentTime, expandedLayers]);
 
-            if (tierA !== tierB) return tierB - tierA;
-
-            const getStatusPriority = (m: Mission) => {
-                const status = m.status as MissionStatus;
-                if (status === MissionStatus.IN_TRANSIT) return 1000;
-                if (status === MissionStatus.ORIGIN) return 900;
-                if (status === MissionStatus.SCHEDULED) return 800;
-                if (status === MissionStatus.DOCUMENTATION) return 700;
-                if (status === MissionStatus.SOLICITED) return 600;
-                return 0;
-            };
-
-            const spA = getStatusPriority(a);
-            const spB = getStatusPriority(b);
-            if (spA !== spB) return spB - spA;
-
-            if (delayA !== delayB) return delayB - delayA;
-
-            const tsA = getLastUpdateTimestamp(a);
-            const tsB = getLastUpdateTimestamp(b);
-            return tsA - tsB;
-        });
-    }, [filteredMissions, getDelayMinutes, getLastUpdateTimestamp]);
-
-    // Paginação: fatia conforme o tamanho de página escolhido (10 ou 100).
-    const totalPages = Math.max(1, Math.ceil(sortedMissions.length / PAGE_SIZE));
+    // Paginação só das OS das camadas abertas. Os títulos ficam sempre visíveis.
+    const totalPages = Math.max(1, Math.ceil(visibleMissions.length / PAGE_SIZE));
     const safePage = Math.min(currentPage, totalPages);
-    const pagedMissions = useMemo(() => {
+    const pagedMissionIds = useMemo(() => {
         const start = (safePage - 1) * PAGE_SIZE;
-        return sortedMissions.slice(start, start + PAGE_SIZE);
-    }, [sortedMissions, safePage, PAGE_SIZE]);
+        return new Set(visibleMissions.slice(start, start + PAGE_SIZE).map(mission => mission.id));
+    }, [visibleMissions, safePage, PAGE_SIZE]);
 
     // Reset pra página 1 sempre que algum filtro ou o tamanho de página mudar
     useEffect(() => { setCurrentPage(1); }, [searchTerm, osFilterTerm, filterStatus, viewPeriod, customStartDate, customEndDate, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showTollNotConfirmedOnly, approvalViewStage, pageSize]);
@@ -2106,7 +2096,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             {STATUS_CONFIG.filter(s => isRestrictedClientView ? s.id !== MissionStatus.PENDING : true).map((status) => ( <StatCard key={status.id} icon={status.icon} title={status.label} value={statusCounts[status.id] || 0} bgColor={status.color} loading={isLoading} isActive={filterStatus === status.id} onClick={() => { setFilterStatus(status.id); }} /> ))}
         </div>
   
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden sticky top-0 z-20">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden sticky top-0 z-20">
           <div className="p-4 border-b border-gray-100 bg-gray-50/50 backdrop-blur-sm flex flex-col md:flex-row gap-4 justify-between items-center">
             <div className="flex items-center gap-3 flex-1 w-full md:w-auto">
                 <div className="relative flex-1 max-w-md">
@@ -2154,7 +2144,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             </div></div>
   
 
-          <div className="bg-gray-50/5 p-4 min-h-[400px]">
+          <div className="bg-slate-100/70 p-4 min-h-[400px]">
               {isLoading ? ( <div className="flex flex-col items-center justify-center h-64 text-gray-400"><Loader2 size={32} className="animate-spin mb-2 text-red-600" /><p className="text-sm font-medium">Carregando...</p></div> ) : sortedMissions.length === 0 ? ( <div className="relative flex flex-col items-center justify-center h-64 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white overflow-hidden">
                   <svg viewBox="0 0 320 80" className="absolute h-32 opacity-[0.06] pointer-events-none" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <g transform="translate(10, 5) scale(0.85)"><path d="M40 5 L10 15 V35 C10 55 25 70 40 75 C55 70 70 55 70 35 V15 L40 5 Z" stroke="#000" strokeWidth="4" fill="none" strokeLinejoin="round"/><path d="M20 50 Q40 65 60 40" stroke="#b91c1c" strokeWidth="6" strokeLinecap="round"/><path d="M28 22 L40 22 L40 55" stroke="#000" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/><path d="M45 22 L55 38 L65 22 L65 55 M45 55 L45 22" stroke="#000" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/></g>
@@ -2181,44 +2171,72 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     data-testid="mission-list-scroll"
                   >
                     <div ref={mainContentRef} className="flex flex-col gap-3 min-w-0 xl:min-w-[1100px]">
-                      {pagedMissions.map((mission) => {
-                          const diffMinutes = getDelayMinutes(mission);
-                          const isPending = isMissionPending(mission);
-                          const isRedLight = isPending || [MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(mission.status) || (diffMinutes > 60 && ![MissionStatus.COMPLETED].includes(mission.status));
+                      {panelGroups.map((group) => {
+                          const layerMeta = PANEL_LAYER_META[group.layer];
+                          const isOpen = expandedLayers[group.layer];
+                          const visibleCards = isOpen ? group.missions.filter(mission => pagedMissionIds.has(mission.id)) : [];
                           return (
-                              <div key={mission.id} className="relative">
-                                  <MissionCard 
-                                      mission={mission}
-                                      canEditMission={canEditMission}
-                                      isDirector={isDirector}
-                                      isRedLight={isRedLight}
-                                      isImminent={mission.status === MissionStatus.IN_TRANSIT && diffMinutes > 30 && diffMinutes <= 60}
-                                      minutesSinceUpdate={diffMinutes}
-                                      copiedId={copiedId}
-                                      isSendingEmail={isSendingEmail}
-                                      onViewMap={handleOpenStatusModal}
-                                      onUpdate={handleOpenUpdateModal}
-                                      onOpenFinancials={handleOpenFinancialModal} 
-                                      onCopy={handleCopyMission}
-                                      onCopyEmail={handleCopyEmail}
-                                      onDelete={handleDeleteClick}
-                                      hideProviderInfo={isRestrictedClientView}
-                                      onPrint={handleOpenPrintModal}
-                                      onViewHistory={handleViewHistory}
-                                      onFullReport={(m: Mission) => { setMissionForFullReport(m); setIsFullReportOpen(true); }}
-                                      onOperationalReport={(m: Mission) => setMissionForOpReport(m)}
-                                      clientTables={clientTables}
-                                      providerTables={providerTables}
-                                      clientsData={clientsData}
-                                      agentPhonesMap={agentPhonesMap}
-                                      currentTime={currentTime}
-                                      approvalStages={approvalMap[mission.id]}
-                                      evidenceList={evidenceMap[mission.id]}
-                                      lastLog={lastLogMap[mission.id]}
-                                      dhlIntake={dhlIntakeMap[mission.id]}
+                              <div key={group.layer} className="flex flex-col gap-3">
+                                  <button
+                                      type="button"
+                                      onClick={() => togglePanelLayer(group.layer)}
+                                      aria-expanded={isOpen}
+                                      className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 text-left transition-colors ${group.layer === 'atraso' ? 'border-red-200 bg-white hover:bg-red-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                                      data-testid={`panel-layer-${group.layer}`}
+                                  >
+                                      <div className="flex items-center gap-3 min-w-0">
+                                          <ChevronDown size={16} className={`shrink-0 text-slate-500 transition-transform ${isOpen ? 'rotate-0' : '-rotate-90'}`} />
+                                          <span className={`h-8 w-1.5 shrink-0 rounded-full ${layerMeta.rail}`} />
+                                          <div className="min-w-0">
+                                              <p className="text-[12px] font-black uppercase tracking-wide text-slate-800">{layerMeta.title}</p>
+                                              <p className="text-[11px] font-medium text-slate-500 truncate">{isOpen ? layerMeta.hint : 'Clique para expandir'}</p>
+                                          </div>
+                                      </div>
+                                      <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-700">{panelLayerCounts[group.layer] || 0}</span>
+                                  </button>
+                                  {visibleCards.map((mission) => {
+                                      const diffMinutes = getDelayMinutes(mission);
+                                      const isPending = isMissionPending(mission);
+                                      const isRedLight = isPending || [MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(mission.status) || (diffMinutes > 60 && ![MissionStatus.COMPLETED].includes(mission.status));
+                                      return (
+                                          <MissionCard
+                                              key={mission.id}
+                                              mission={mission}
+                                              canEditMission={canEditMission}
+                                              isDirector={isDirector}
+                                              isRedLight={isRedLight}
+                                              isImminent={mission.status === MissionStatus.IN_TRANSIT && diffMinutes > 30 && diffMinutes <= 60}
+                                              minutesSinceUpdate={diffMinutes}
+                                              panelLayer={group.layer}
+                                              copiedId={copiedId}
+                                              isSendingEmail={isSendingEmail}
+                                              onViewMap={handleOpenStatusModal}
+                                              onUpdate={handleOpenUpdateModal}
+                                              onOpenFinancials={handleOpenFinancialModal}
+                                              onCopy={handleCopyMission}
+                                              onCopyEmail={handleCopyEmail}
+                                              onDelete={handleDeleteClick}
+                                              hideProviderInfo={isRestrictedClientView}
+                                              onPrint={handleOpenPrintModal}
+                                              onViewHistory={handleViewHistory}
+                                              onFullReport={(m: Mission) => { setMissionForFullReport(m); setIsFullReportOpen(true); }}
+                                              onOperationalReport={(m: Mission) => setMissionForOpReport(m)}
+                                              clientTables={clientTables}
+                                              providerTables={providerTables}
+                                              clientsData={clientsData}
+                                              agentPhonesMap={agentPhonesMap}
+                                              currentTime={currentTime}
+                                              approvalStages={approvalMap[mission.id]}
+                                              evidenceList={evidenceMap[mission.id]}
+                                              lastLog={lastLogMap[mission.id]}
+                                              dhlIntake={dhlIntakeMap[mission.id]}
                                       tollConfirmation={tollConfirmMap[mission.id]}
+                                      handoverNote={handoverNotes[mission.id]}
+                                      onHandoverNoteSaved={(saved) => setHandoverNotes(prev => ({ ...prev, [saved.mission_id]: saved }))}
                                       onEvidenceUploaded={() => fetchMissions(true)}
-                                  />
+                                          />
+                                      );
+                                  })}
                               </div>
                           );
                       })}
@@ -2226,15 +2244,15 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                   </div>
                 </>
               )}
-              {!isLoading && sortedMissions.length > Math.min(...PAGE_SIZE_OPTIONS) && (
+              {!isLoading && visibleMissions.length > Math.min(...PAGE_SIZE_OPTIONS) && (
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-4 px-2 py-3 bg-white border border-gray-200 rounded-lg" data-testid="pagination-bar">
                   <div className="flex items-center gap-3">
                     <div className="text-xs text-gray-600 font-medium">
                       Mostrando <span className="font-bold text-gray-900">{(safePage - 1) * PAGE_SIZE + 1}</span>
                       {' – '}
-                      <span className="font-bold text-gray-900">{Math.min(safePage * PAGE_SIZE, sortedMissions.length)}</span>
+                      <span className="font-bold text-gray-900">{Math.min(safePage * PAGE_SIZE, visibleMissions.length)}</span>
                       {' de '}
-                      <span className="font-bold text-gray-900">{sortedMissions.length}</span> OS
+                      <span className="font-bold text-gray-900">{visibleMissions.length}</span> OS
                     </div>
                     <div className="flex items-center gap-1.5">
                       <label htmlFor="select-page-size" className="text-xs text-gray-600 font-medium">Por página:</label>

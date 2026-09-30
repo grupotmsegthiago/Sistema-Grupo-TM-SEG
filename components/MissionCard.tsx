@@ -24,7 +24,9 @@ import LiveTrackPanel from './LiveTrackPanel';
 import { isVeladaMission } from '../lib/liveTrack/isVeladaMission';
 import { isOsNegativeMarginLocked } from '../lib/osNegativeMarginLock';
 import { missionHasOccurrence, OCCURRENCE_BANNER } from '../lib/missionOccurrence';
+import { PANEL_LAYER_META, type MissionPanelLayer } from '../lib/missionPanelLayers';
 import MissionOccurrenceDialog from './MissionOccurrenceDialog';
+import MissionHandoverNoteButton, { type HandoverNote } from './MissionHandoverNoteButton';
 
 const geocodeCache: Record<string, string> = {};
 const geocodePending: Record<string, Promise<string>> = {};
@@ -61,6 +63,7 @@ interface MissionCardProps {
     isRedLight: boolean;
     isImminent: boolean;
     minutesSinceUpdate: number;
+    panelLayer?: MissionPanelLayer;
     copiedId: string | null;
     isSendingEmail?: string;
     hideProviderInfo?: boolean;
@@ -86,6 +89,8 @@ interface MissionCardProps {
     evidenceList?: { url: string; uploadedBy: string; uploadedAt: string }[];
     dhlIntake?: { status: string; providerFilledAt: string | null; intakeId: string; progressAgent1?: boolean; progressAgent2?: boolean; progressVehicle?: boolean; progressMirror?: boolean };
     tollConfirmation?: { user: string; date: string; hasToll: boolean; value: number; source?: string };
+    handoverNote?: HandoverNote | null;
+    onHandoverNoteSaved?: (note: HandoverNote) => void;
 }
 
 const formatCurrency = (val: number | null | undefined) => {
@@ -202,9 +207,10 @@ const compressImage = (file: File, maxWidth = 1200, quality = 0.7): Promise<Blob
 };
 
 const MissionCardComponent: React.FC<MissionCardProps> = ({ 
-    mission, canEditMission, isDirector, isRedLight, isImminent, minutesSinceUpdate, copiedId, isSendingEmail, hideProviderInfo,
+    mission, canEditMission, isDirector, isRedLight, isImminent, minutesSinceUpdate, panelLayer, copiedId, isSendingEmail, hideProviderInfo,
     onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport, lastLog, onEvidenceUploaded,
-    clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages, evidenceList, dhlIntake, tollConfirmation
+    clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages, evidenceList, dhlIntake, tollConfirmation,
+    handoverNote, onHandoverNoteSaved
 }) => {
     
     const { showNotification } = useNotification();
@@ -655,12 +661,15 @@ Qualquer dúvida, estamos a disposição.
 
     return (<>
         <div 
-          className={`group relative rounded-xl border transition-all duration-300 hover:-translate-y-1 shadow-sm ${
-              isNegativeProfit ? 'bg-red-50 border-red-400 ring-2 ring-red-300 shadow-red-200 shadow-md hover:shadow-[0_20px_50px_rgba(220,38,38,0.15)]' : 'bg-white hover:shadow-[0_20px_50px_rgba(8,_112,_184,_0.07)]'
+          className={`group relative overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-0.5 shadow-sm ${
+              isNegativeProfit ? 'bg-red-50 border-red-400 ring-2 ring-red-300 shadow-red-200 shadow-md hover:shadow-[0_16px_40px_rgba(220,38,38,0.12)]' : 'bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)] hover:shadow-[0_16px_40px_rgba(15,23,42,0.08)]'
           } ${
-              !isNegativeProfit && (isRedLight ? 'border-red-200 ring-1 ring-red-100' : isImminent ? 'border-amber-200 ring-1 ring-amber-100' : 'border-gray-200 hover:border-blue-200')
+              !isNegativeProfit && (isRedLight ? 'border-red-200 ring-1 ring-red-100' : isImminent ? 'border-amber-200 ring-1 ring-amber-100' : 'border-slate-200 hover:border-slate-300')
           }`}
         >
+            {panelLayer && (
+                <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${PANEL_LAYER_META[panelLayer].rail}`} />
+            )}
             {isNegativeProfit && (
                 <div className="relative overflow-hidden rounded-t-xl" style={{ background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 50%, #991b1b 100%)', boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.2), 0 4px 12px rgba(220,38,38,0.3)' }}>
                     <div className="flex items-center justify-center gap-2 py-1.5 px-3 relative z-10">
@@ -1158,12 +1167,13 @@ Qualquer dúvida, estamos a disposição.
                 </div>
 
                 <div className="sm:col-span-1 xl:col-span-1 py-1 px-1 flex items-center justify-center border-l border-gray-100 bg-white shrink-0">
-                    <div className="grid grid-cols-3 gap-1.5 w-fit justify-items-center"><button onClick={() => onViewMap(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-blue-50 text-blue-600 border border-blue-100 transition-all duration-200 hover:bg-blue-600 hover:text-white hover:shadow-sm active:scale-95" title="Abrir Status (Modal Interno)"><Map size={14} /></button>
+                    <div className="grid grid-cols-3 gap-1.5 w-fit justify-items-center"><button onClick={() => onViewMap(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 transition-all duration-200 hover:bg-blue-600 hover:text-white hover:shadow-sm active:scale-95" title="Abrir Status (Modal Interno)"><Map size={14} /></button>
                         {!hideProviderInfo && (<>
-                        <button onClick={(e) => { e.stopPropagation(); if (mission.mapLink) window.open(mission.mapLink, '_blank'); else alert('Nenhuma localização salva nesta OS.'); }} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${mission.mapLink ? 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-600 hover:text-white' : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'}`} title={mission.mapLink ? "Abrir Última Localização (Google Maps)" : "Sem localização salva"}><MapPin size={14} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); if (mission.mapLink) window.open(mission.mapLink, '_blank'); else alert('Nenhuma localização salva nesta OS.'); }} className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all duration-200 hover:shadow-sm active:scale-95 ${mission.mapLink ? 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-600 hover:text-white' : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'}`} title={mission.mapLink ? "Abrir Última Localização (Google Maps)" : "Sem localização salva"}><MapPin size={14} /></button>
                         {isVeladaMission(mission) && <LiveTrackPanel mission={mission} compact />}
-                        <button onClick={() => onUpdate(mission)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${canEditMission ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white' : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-200 hover:text-gray-600'}`} title={canEditMission ? "Editar Missão" : "Visualizar Detalhes"}>{canEditMission ? <Pencil size={14}/> : <Eye size={14}/>}</button>
-                        <button type="button" onClick={() => setOccurrenceOpen(true)} className="w-7 h-7 flex items-center justify-center rounded-md bg-orange-50 text-orange-700 border border-orange-200 transition-all duration-200 hover:bg-orange-600 hover:text-white hover:shadow-sm active:scale-95" title="Registrar ocorrência desta OS" data-testid={`button-occurrence-${mission.id}`}><AlertTriangle size={14} /></button>
+                        <button onClick={() => onUpdate(mission)} className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all duration-200 hover:shadow-sm active:scale-95 ${canEditMission ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white' : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-200 hover:text-gray-600'}`} title={canEditMission ? "Editar Missão" : "Visualizar Detalhes"}>{canEditMission ? <Pencil size={14}/> : <Eye size={14}/>}</button>
+                        <button type="button" onClick={() => setOccurrenceOpen(true)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-orange-50 text-orange-700 border border-orange-200 transition-all duration-200 hover:bg-orange-600 hover:text-white hover:shadow-sm active:scale-95" title="Registrar ocorrência desta OS" data-testid={`button-occurrence-${mission.id}`}><AlertTriangle size={14} /></button>
+                        <MissionHandoverNoteButton missionId={mission.id} note={handoverNote} onSaved={(saved) => onHandoverNoteSaved?.(saved)} />
                         
                         {(isDirector || canEditMission) && onOpenFinancials && (
                             <button onClick={() => onOpenFinancials(mission)} className={`flex items-center justify-center rounded-md transition-all duration-200 hover:shadow-sm active:scale-95 border ${mission.billing_approved ? 'w-7 h-7 bg-blue-600 text-white border-blue-700' : pendingApproval?.hasPartial ? 'h-7 px-1.5 gap-1 bg-gray-100 text-gray-500 border-gray-300 hover:bg-gray-200' : 'w-7 h-7 bg-green-50 text-green-700 border-green-200 hover:bg-green-600 hover:text-white'}`} title={mission.billing_approved ? "Faturamento Aprovado - Visualizar" : pendingApproval?.hasPartial ? `Aguardando: ${pendingApproval.missing.join(', ')} (${pendingApproval.waitingDays}d)` : "Conferência e Aprovação de Faturamento"}>
@@ -1172,16 +1182,16 @@ Qualquer dúvida, estamos a disposição.
                             </button>
                         )}
                         
-                        <button onClick={() => onCopyEmail(mission)} disabled={isSendingEmail === mission.id} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${isSendingEmail === mission.id ? 'bg-blue-100 text-blue-600 border-blue-200 animate-pulse cursor-wait' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-600 hover:text-white'}`} title="Enviar E-mail ao Cliente" data-testid={`btn-email-client-${mission.id}`}>{isSendingEmail === mission.id ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}</button>
-                        <button onClick={() => onCopy(mission)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${copiedId === mission.id ? 'bg-green-100 text-green-700 border-green-200' : 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20 hover:bg-[#25D366] hover:text-white'}`} title="Copiar Relatório WhatsApp">{copiedId === mission.id ? <Check size={14} strokeWidth={3}/> : <WhatsAppIcon size={14}/>}</button>
-                        {onViewHistory && isDirector && (<button onClick={(e) => { e.stopPropagation(); onViewHistory(mission); }} className="w-7 h-7 flex items-center justify-center rounded-md bg-purple-50 text-purple-600 border border-purple-200 transition-all duration-200 hover:bg-purple-600 hover:text-white hover:shadow-sm active:scale-95" title="Histórico Detalhado (Auditoria)"><FileSearch size={14} /></button>)}</>)}
-                        <button onClick={() => hasEvidence ? setShowEvidenceModal(true) : setShowUploadModal(true)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${hasEvidence ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white' : requiresEvidence ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-600 hover:text-white animate-pulse' : 'bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-600 hover:text-white'}`} title={hasEvidence ? 'Ver Evidência' : 'Anexar Print / Evidência (Ctrl+V para colar)'} data-testid={`button-upload-evidence-${mission.id}`}>
+                        <button onClick={() => onCopyEmail(mission)} disabled={isSendingEmail === mission.id} className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all duration-200 hover:shadow-sm active:scale-95 ${isSendingEmail === mission.id ? 'bg-blue-100 text-blue-600 border-blue-200 animate-pulse cursor-wait' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-600 hover:text-white'}`} title="Enviar E-mail ao Cliente" data-testid={`btn-email-client-${mission.id}`}>{isSendingEmail === mission.id ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}</button>
+                        <button onClick={() => onCopy(mission)} className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all duration-200 hover:shadow-sm active:scale-95 ${copiedId === mission.id ? 'bg-green-100 text-green-700 border-green-200' : 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20 hover:bg-[#25D366] hover:text-white'}`} title="Copiar Relatório WhatsApp">{copiedId === mission.id ? <Check size={14} strokeWidth={3}/> : <WhatsAppIcon size={14}/>}</button>
+                        {onViewHistory && isDirector && (<button onClick={(e) => { e.stopPropagation(); onViewHistory(mission); }} className="w-8 h-8 flex items-center justify-center rounded-xl bg-purple-50 text-purple-600 border border-purple-200 transition-all duration-200 hover:bg-purple-600 hover:text-white hover:shadow-sm active:scale-95" title="Histórico Detalhado (Auditoria)"><FileSearch size={14} /></button>)}</>)}
+                        <button onClick={() => hasEvidence ? setShowEvidenceModal(true) : setShowUploadModal(true)} className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all duration-200 hover:shadow-sm active:scale-95 ${hasEvidence ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white' : requiresEvidence ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-600 hover:text-white animate-pulse' : 'bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-600 hover:text-white'}`} title={hasEvidence ? 'Ver Evidência' : 'Anexar Print / Evidência (Ctrl+V para colar)'} data-testid={`button-upload-evidence-${mission.id}`}>
                             {hasEvidence ? <Image size={14} /> : <Camera size={14} />}
                         </button>
-                        {onPrint && (<button onClick={handlePrintClick} className="w-7 h-7 flex items-center justify-center rounded-md bg-gray-50 text-gray-700 border border-gray-200 transition-all duration-200 hover:bg-gray-700 hover:text-white hover:shadow-sm active:scale-95" title="Imprimir Folha de Missão (PDF) e Copiar Texto"><Printer size={14} /></button>)}
-                        {onFullReport && (<button onClick={() => onFullReport(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-amber-50 text-amber-700 border border-amber-200 transition-all duration-200 hover:bg-amber-600 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Completo PDF (Timeline + Auditoria)"><FileText size={14} /></button>)}
-                        {onOperationalReport && (<button onClick={() => onOperationalReport(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-700 border border-red-200 transition-all duration-200 hover:bg-red-700 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Operacional" data-testid={`button-op-report-${mission.id}`}><Briefcase size={14} /></button>)}
-                        {isDirector && !hideProviderInfo && (<button onClick={() => onDelete(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-600 border-red-100 transition-all duration-200 hover:bg-red-600 hover:text-white hover:shadow-sm active:scale-95" title="Excluir Missão"><Trash2 size={14}/></button>)}
+                        {onPrint && (<button onClick={handlePrintClick} className="w-8 h-8 flex items-center justify-center rounded-xl bg-gray-50 text-gray-700 border border-gray-200 transition-all duration-200 hover:bg-gray-700 hover:text-white hover:shadow-sm active:scale-95" title="Imprimir Folha de Missão (PDF) e Copiar Texto"><Printer size={14} /></button>)}
+                        {onFullReport && (<button onClick={() => onFullReport(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-amber-50 text-amber-700 border border-amber-200 transition-all duration-200 hover:bg-amber-600 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Completo PDF (Timeline + Auditoria)"><FileText size={14} /></button>)}
+                        {onOperationalReport && (<button onClick={() => onOperationalReport(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-red-50 text-red-700 border border-red-200 transition-all duration-200 hover:bg-red-700 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Operacional" data-testid={`button-op-report-${mission.id}`}><Briefcase size={14} /></button>)}
+                        {isDirector && !hideProviderInfo && (<button onClick={() => onDelete(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-red-50 text-red-600 border-red-100 transition-all duration-200 hover:bg-red-600 hover:text-white hover:shadow-sm active:scale-95" title="Excluir Missão"><Trash2 size={14}/></button>)}
                     </div>
                 </div>
             </div>

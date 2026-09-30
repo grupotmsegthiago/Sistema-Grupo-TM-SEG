@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom';
 import { AlertTriangle, Ban, CalendarClock, CalendarDays, CheckCircle2, ClipboardList, FileSearch, MapPin, Moon, Pencil, Radio, RefreshCw, Search, Truck, X, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { publishMissionLive, MISSION_LIVE_WINDOW_EVENT } from '../lib/missionLiveBroadcast';
 import { authFetch } from '../lib/authFetch';
 import { fetchAllPages } from '../lib/supabasePaging';
 import { formatCivilDateBR, formatIsoDateBR, getBrazilDayBounds } from '../lib/dateUtils';
@@ -305,6 +306,23 @@ export default function ControleDiario() {
   }, [rows]);
 
   useEffect(() => {
+    const onLive = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (detail.event !== 'controle_diario_note') return;
+      const payload = detail.payload;
+      const missionId = String(payload?.mission_id || '');
+      if (!missionId || !payload?.note) return;
+      setNotesByMission((prev) => {
+        const current = prev[missionId] || [];
+        if (payload.id && current.some((item) => item.id === payload.id)) return prev;
+        return { ...prev, [missionId]: [payload as DiarioNote, ...current] };
+      });
+    };
+    window.addEventListener(MISSION_LIVE_WINDOW_EVENT, onLive);
+    return () => window.removeEventListener(MISSION_LIVE_WINDOW_EVENT, onLive);
+  }, []);
+
+  useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const kick = () => {
       if (timer) clearTimeout(timer);
@@ -416,6 +434,7 @@ export default function ControleDiario() {
         ...prev,
         [noteRow.id]: [saved, ...(prev[noteRow.id] || [])],
       }));
+      void publishMissionLive('controle_diario_note', saved as unknown as Record<string, unknown>);
       setNoteDraft('');
     } catch (err: any) {
       setNoteError(err?.message || 'Não foi possível salvar a observação.');
