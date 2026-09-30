@@ -32,6 +32,23 @@ export function resolveStatusForSaveSubmit(opts: {
   return originalStatus || missionStatus;
 }
 
+/**
+ * Perfil Operador pode marcar a OS como Recusada e anexar a evidência.
+ * OS aprovada no financeiro e OS travada por prejuízo continuam fechadas.
+ */
+export function canOperatorRefuseOs(
+  role: string | null | undefined,
+  opts: { billingApproved?: boolean; negativeLocked?: boolean } = {},
+): boolean {
+  if (opts.billingApproved || opts.negativeLocked) return false;
+  const normalized = String(role || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+  return normalized === 'operador' || normalized === 'operacional';
+}
+
 /** Status a restaurar no formulário quando o operador cancela o checklist de finalização. */
 export function statusToRestoreOnFinalizeCancel(opts: {
   originalStatus: string;

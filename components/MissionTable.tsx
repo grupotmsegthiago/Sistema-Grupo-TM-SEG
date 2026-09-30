@@ -35,6 +35,7 @@ import ExecutiveDashboard from './ExecutiveDashboard';
 import DhlSolicitationModal from './DhlSolicitationModal';
 import LossesDialog from './LossesDialog';
 import MissingTableDialog, { computeMissingTableRows, type MissingTableRow } from './MissingTableDialog';
+import { canSeeMissingTableAlert as userCanSeeMissingTable, mustForceMissingTable as userMustForceMissingTable } from '../lib/missingTableAccess';
 import {
   fetchBillingAdjustmentsForMissionIds,
   type BillingAdjustmentRecord,
@@ -301,24 +302,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     return isDiretoriaRole;
   }, [isDiretoriaRole]);
 
-  // Alerta "OS sem Tabela": visível para ADMINISTRADOR e AVANÇADO (e acesso total
-  // '*'), além dos nomes históricos (Thiago Moreira, Bárbara, Simone) para não
-  // remover acesso de quem já usava.
-  const canSeeMissingTableAlert = useMemo(() => {
-    if (!currentUser) return false;
-    const nameLower = (currentUser.name || '').toLowerCase();
-    const roleLower = (currentUser.role || '').toLowerCase();
-    const isAdminOrAdvanced = ['administrador', 'avançado', 'avancado'].includes(roleLower) || currentUser.permissions?.includes('*');
-    return isAdminOrAdvanced || nameLower.includes('thiago moreira') || isFinanceSupervisorName(currentUser.name) || nameLower.includes('simone');
-  }, [currentUser]);
+  // Alerta "OS sem Tabela": Administrador, Avançado e nomes históricos.
+  // Perfil Operador não vê, mesmo que o nome caia na exceção da Bárbara.
+  const canSeeMissingTableAlert = useMemo(() => userCanSeeMissingTable(currentUser), [currentUser]);
 
   // ADMINISTRADOR e AVANÇADO são OBRIGADOS a selecionar a tabela: o alerta abre
   // automaticamente a cada atualização de tela enquanto houver OS sem tabela.
-  const mustForceMissingTable = useMemo(() => {
-    if (!currentUser) return false;
-    const roleLower = (currentUser.role || '').toLowerCase();
-    return ['administrador', 'avançado', 'avancado'].includes(roleLower) || currentUser.permissions?.includes('*');
-  }, [currentUser]);
+  const mustForceMissingTable = useMemo(() => userMustForceMissingTable(currentUser), [currentUser]);
 
   // Conta quantas OS estão com prejuízo direto (custo > receita) no período
   // canônico selecionado. Com 0 OS o card não aparece (não abre tela vazia).

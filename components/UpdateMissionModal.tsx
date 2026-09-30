@@ -13,7 +13,7 @@ import { optimizeImageForAI } from '../lib/imageForAI';
 import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
 import { showWhatsappCopyPopup } from '../lib/whatsappCopyFlow';
 import { hasExplicitUpdatePrint, shouldSendClientGroupWhatsApp } from '../lib/clientGroupUpdateFilter';
-import { resolveStatusForSaveSubmit, statusToRestoreOnFinalizeCancel } from '../lib/missionSaveStatus';
+import { canOperatorRefuseOs, resolveStatusForSaveSubmit, statusToRestoreOnFinalizeCancel } from '../lib/missionSaveStatus';
 import { isOdometerExemptProvider, isVeladaPassThroughTerminal, shouldDowngradeCompletedToPending } from '../lib/veladaFinalize';
 import { isVeladaMission } from '../lib/liveTrack/isVeladaMission';
 import {
@@ -1085,6 +1085,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const canBypassNegativeMarginLock = canEditNegativeMarginLockedOs(currentUser);
     const negativeLockBlocks = negativeMarginHardLocked && !canBypassNegativeMarginLock;
     const canEditApproved = hasPrivilegedOsEdit && !negativeLockBlocks;
+    const canOperatorRefuse = canOperatorRefuseOs(currentUser?.role, {
+        billingApproved: isBillingApproved,
+        negativeLocked: negativeLockBlocks,
+    });
     const canRevertStatus = hasPrivilegedOsEdit;
     const canEditTimes = hasPrivilegedOsEdit;
     const canEditEndTime = useMemo(() => {
@@ -2093,8 +2097,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             return;
         }
 
-        if (isCompletedMission && editData.status !== MissionStatus.COMPLETED && !canRevertStatus && !canEditApproved) {
-            showNotification('Sem Permissão', 'Apenas perfis Avançado, Administrador ou Diretoria podem reverter uma OS concluída.', 'error');
+        const operatorRefusingCompleted = isCompletedMission
+            && editData.status === MissionStatus.REFUSED
+            && canOperatorRefuse;
+        if (isCompletedMission && editData.status !== MissionStatus.COMPLETED && !canRevertStatus && !canEditApproved && !operatorRefusingCompleted) {
+            showNotification('Sem Permissão', 'Apenas perfis Avançado, Administrador ou Diretoria podem reverter uma OS concluída. O perfil Operador pode registrar Recusada, com evidência.', 'error');
             return;
         }
 
@@ -2143,7 +2150,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             return;
         }
 
-        if (isOccurrenceRequired && !editData.description.trim()) {
+        const refuseChecklistDone = finalizeConfirmedRef.current && (
+            editData.status === MissionStatus.REFUSED
+            || pendingFinalizeStatusRef.current === MissionStatus.REFUSED
+        );
+        if (isOccurrenceRequired && !editData.description.trim() && !refuseChecklistDone) {
             alert(`ERRO DE PROTOCOLO: Para o status "${editData.status}", o campo OCORRÊNCIA é obrigatório.`);
             return;
         }
@@ -3287,10 +3298,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const isCancel = s === MissionStatus.CANCELLED;
         const isRefuse = s === MissionStatus.REFUSED;
         const directOK = mission && !mission.billing_approved
-            && mission.status !== MissionStatus.COMPLETED
             && mission.status !== MissionStatus.CANCELLED
             && mission.status !== MissionStatus.REFUSED
-            && mission.status !== s;
+            && mission.status !== s
+            && (
+                mission.status !== MissionStatus.COMPLETED
+                || (isRefuse && canOperatorRefuse)
+            );
         if ((isConclude || isCancel || isRefuse) && directOK) {
             setEditData(prev => ({ ...prev, status: s }));
             pendingFinalizeStatusRef.current = s;
@@ -3683,7 +3697,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         {isCompletedMission && !isBillingApproved && !canRevertStatus && (
                             <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl mb-3" data-testid="no-revert-permission">
                                 <ShieldAlert size={16} className="text-gray-500" />
-                                <span className="text-[10px] font-black text-gray-500 uppercase">OS Concluída — seu perfil não permite alterar o status</span>
+                                <span className="text-[10px] font-black text-gray-500 uppercase">
+                                  {canOperatorRefuse
+                                    ? 'OS Concluída — o perfil Operador pode registrar Recusada, com hora e evidência'
+                                    : 'OS Concluída — seu perfil não permite alterar o status'}
+                                </span>
                             </div>
                         )}
                         <div className="flex flex-wrap gap-2 pb-4 border-b border-gray-100">
@@ -3701,7 +3719,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         <div className="mt-4 flex flex-wrap items-end gap-6">
                             <div className="flex gap-2">
                                 {restrictedStatuses.map(s => {
-                                    const isDisabled = canEditApproved ? false : isCompletedMission && (isBillingApproved || !canRevertStatus);
+                                    const isDisabled = canEditApproved
+                                        ? false
+                                        : s === MissionStatus.REFUSED && canOperatorRefuse
+                                            ? false
+                                            : isCompletedMission && (isBillingApproved || !canRevertStatus);
                                     return (
                                         <button key={s} type="button" onClick={() => !isDisabled && handleStatusButton(s)} disabled={isDisabled} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${editData.status === s ? 'bg-gray-900 text-white border-black shadow-md' : isDisabled ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed opacity-50' : 'bg-red-50 text-red-400 border-red-100 hover:bg-red-100'}`}>{s}</button>
                                     );
