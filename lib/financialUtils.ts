@@ -171,6 +171,29 @@ export function isIntentionalBillingOverride(editReason: string | null | undefin
     return true;
 }
 
+/**
+ * A regra check_valor_zero_motivo só aceita valor zero com motivo em
+ * revenue_edit_reason / cost_edit_reason. Não altera o valor, só o texto.
+ */
+export function zeroValueEditReasons(input: {
+    revenue: number;
+    cost: number;
+    revenueReason?: string | null;
+    costReason?: string | null;
+    sameOs?: boolean;
+    fallbackReason?: string | null;
+}): { revenue_edit_reason?: string; cost_edit_reason?: string } {
+    const out: { revenue_edit_reason?: string; cost_edit_reason?: string } = {};
+    const fallback = String(input.fallbackReason || '').trim() || 'AGUARDANDO DEFINIÇÃO';
+    if (!(Number(input.revenue) > 0) && !String(input.revenueReason || '').trim()) {
+        out.revenue_edit_reason = fallback === 'MESMA OS' ? 'AGUARDANDO DEFINIÇÃO' : fallback;
+    }
+    if (!(Number(input.cost) > 0) && !String(input.costReason || '').trim()) {
+        out.cost_edit_reason = input.sameOs ? 'MESMA OS' : fallback;
+    }
+    return out;
+}
+
 /** Custo do fornecedor já persistido na auditoria — inclusive R$ 0,00 com motivo. */
 export function hasPersistedProviderCost(mission: {
     billing_approved?: boolean | null;

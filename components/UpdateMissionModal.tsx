@@ -8,7 +8,7 @@ import { publishMissionLive } from '../lib/missionLiveBroadcast';
 import { fetchAllPages } from '../lib/supabasePaging';
 import { fetchParentMissionCandidates } from '../lib/parentMissionSearch';
 import { logAction } from '../lib/logger';
-import { calculateMissionFinancials, clientFuzzyFilter, extractCityFromAddress, resolveDisplacementFromAuthorizedKm } from '../lib/financialUtils';
+import { calculateMissionFinancials, clientFuzzyFilter, extractCityFromAddress, resolveDisplacementFromAuthorizedKm, zeroValueEditReasons } from '../lib/financialUtils';
 import { questionTableAgainstRoute, type TableRouteQuestion } from '../lib/tableRouteQuestion';
 import { generateContent } from '../lib/gemini';
 import { optimizeImageForAI } from '../lib/imageForAI';
@@ -2759,6 +2759,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 updateData.cost_edit_reason = 'OS Recusada — zerado automaticamente';
             }
 
+            const revenueToStore = updateData.revenue_value != null ? Number(updateData.revenue_value) : Number(mission.revenue_value || 0);
+            const costToStore = updateData.cost_value != null ? Number(updateData.cost_value) : Number(mission.cost_value || 0);
+            Object.assign(updateData, zeroValueEditReasons({
+                revenue: revenueToStore,
+                cost: costToStore,
+                revenueReason: updateData.revenue_edit_reason ?? (mission as any).revenue_edit_reason,
+                costReason: updateData.cost_edit_reason ?? (mission as any).cost_edit_reason,
+                sameOs: !!editData.isSameOs,
+                fallbackReason: updateData.valor_zero_motivo,
+            }));
+
             console.log(`[LOCATION] Enviando localização para OS ${mission.id}:`, {
                 map_link: updateData.map_link,
                 current_location: updateData.current_location,
@@ -2769,8 +2780,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             let saveResult: any = null;
             let saveError: any = null;
             for (let attempt = 1; attempt <= 3; attempt++) {
-                const payload = attempt > 1 && saveError?.message?.includes('valor_zero_motivo') ? (() => { const d = { ...updateData }; delete d.valor_zero_motivo; return d; })() : updateData;
-                const { error, data: updatedRow } = await supabase.from('missions').update(payload).eq('id', mission.id).select('id, last_update, current_location, map_link').single();
+                const { error, data: updatedRow } = await supabase.from('missions').update(updateData).eq('id', mission.id).select('id, last_update, current_location, map_link').single();
                 if (!error && updatedRow) {
                     saveResult = updatedRow;
                     saveError = null;
