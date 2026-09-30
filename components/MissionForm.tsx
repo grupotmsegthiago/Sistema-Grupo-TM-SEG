@@ -19,7 +19,8 @@ import ProviderForm from './ProviderForm';
 import ClientRouteForm from './ClientRouteForm';
 import ClientVehicleForm from './ClientVehicleForm';
 import { formatProviderName } from '../lib/utils';
-import { extractUF, UF_TO_REGION, clientFuzzyFilter, extractCityFromAddress, evaluateRegionalTableConstraint } from '../lib/financialUtils';
+import { extractUF, UF_TO_REGION, clientFuzzyFilter, extractCityFromAddress, evaluateRegionalTableConstraint, TABLE_SPECIFIC_CITY_KEYWORDS } from '../lib/financialUtils';
+import { exclusiveCitiesInAddress, questionTableAgainstRoute } from '../lib/tableRouteQuestion';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
@@ -851,7 +852,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       return generated;
   };
 
-  const findBestTable = (tables: any[], dist: number, locationKeywords: string[], clientRuleKeyword?: string, providerName?: string, originAddress?: string, missionType?: string, estimatedHours?: number) => {
+  const findBestTable = (tables: any[], dist: number, locationKeywords: string[], clientRuleKeyword?: string, providerName?: string, originAddress?: string, missionType?: string, estimatedHours?: number, destAddress?: string) => {
       if (!tables || tables.length === 0) return null;
       const normalizedTables = tables.map(t => ({ ...t, normOp: normalizeStr(t.operation_type || '') }));
       const opType = normalizeStr(missionType || '');
@@ -872,7 +873,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
       const originUF = extractUF(originAddress || '') || locationKeywords[1] || '';
       const originRegion = UF_TO_REGION[originUF] || locationKeywords[2] || '';
-      const originCity = locationKeywords[0] || '';
+      const originExclusive = exclusiveCitiesInAddress(originAddress || '');
+      const originCity = originExclusive[0] || locationKeywords[0] || '';
+      const destCity = exclusiveCitiesInAddress(destAddress || '')[0] || '';
 
       const scored = normalizedTables.map(t => {
           let score = 0;
@@ -882,7 +885,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           // só se a origem da OS corresponder; senão cai para tabela padrão (KM).
           const regionalGate = evaluateRegionalTableConstraint(t.normOp, {
               originCity,
-              destCity: '',
+              destCity,
               originRegion,
               originUF,
               originAddress,
@@ -945,6 +948,16 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               score += 3000;
               reasons.push(`CIDADE: ${originCity}`);
           }
+          const exclusiveHit = originExclusive.find((city) => t.normOp.includes(city));
+          if (exclusiveHit) {
+              score += 4000;
+              reasons.unshift(`TABELA EXCLUSIVA: ${exclusiveHit}`);
+          }
+          const namedCities = TABLE_SPECIFIC_CITY_KEYWORDS.map((city) => city.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()).filter((city) => t.normOp.includes(city));
+          if (namedCities.length > 0 && !namedCities.some((city) => originExclusive.includes(city) || (originCity.length > 3 && city === originCity))) {
+              score -= 8000;
+              reasons.push('CIDADE DA TABELA NAO E A ORIGEM');
+          }
 
           if (t.normOp.includes('EXCETO')) {
               if (originUF === 'MG' && t.normOp.includes('EXCETO MG')) { score -= 5000; reasons.push('BLOQUEADO (EXCETO MG)'); }
@@ -989,7 +1002,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           const pool = normalizedTables.filter(t => {
               const gate = evaluateRegionalTableConstraint(t.normOp, {
                   originCity,
-                  destCity: '',
+                  destCity,
                   originRegion,
                   originUF,
                   originAddress,
@@ -1070,7 +1083,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               revTable = clientPriceTables.find(t => t.id.toString() === revTableId);
               if (revTable) details.push(`FAT (MANUAL): ${revTable.operation_type}`);
           } else {
-              const result = findBestTable(clientPriceTables, effectiveDist, locationKeywords, forceKeyword, undefined, route.origin, formData.missionType, estHours);
+              const result = findBestTable(clientPriceTables, effectiveDist, locationKeywords, forceKeyword, undefined, route.origin, formData.missionType, estHours, route.destination);
               if (result) { revTable = result.table; details.push(`FAT (${result.reason}): ${revTable.operation_type}`); }
           }
           if (revTable) {
@@ -1097,7 +1110,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       const { data } = await supabase.from('provider_cost_tables').select('*').eq('provider', providerOverride);
                       if (data) currentCostTables = data as any;
                   }
-                  const result = findBestTable(currentCostTables, effectiveDist, locationKeywords, forceKeyword, activeProvider, route.origin, formData.missionType, estHours);
+                  const result = findBestTable(currentCostTables, effectiveDist, locationKeywords, forceKeyword, activeProvider, route.origin, formData.missionType, estHours, route.destination);
                   if (result) { cstTable = result.table; details.push(`CUSTO (${result.reason}): ${cstTable.operation_type}`); }
               }
               if (cstTable) {
@@ -1452,6 +1465,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   };
 
   const handleManualTableChange = (type: 'rev' | 'cst', val: string) => {
+      setOperatorConfirmedCalc(false);
       if (type === 'rev') setManualOverrides(prev => ({ ...prev, revenue: false }));
       else setManualOverrides(prev => ({ ...prev, cost: false }));
       const route = getActiveRoute();
@@ -1757,6 +1771,32 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       if (opName.includes('LOGITECH') && !formData.destination.toUpperCase().includes('LOGITECH')) tips.push('Tabela LOGITECH selecionada, mas o destino nao parece ser Logitech. Confirme.');
       return tips.length > 0 ? tips : null;
   })();
+
+  const revenueRouteQuestion = (() => {
+      if (!manualRevenueTableId) return null;
+      const selected = clientPriceTables.find((t) => t.id.toString() === manualRevenueTableId);
+      if (!selected) return null;
+      return questionTableAgainstRoute({
+          tableName: selected.operation_type,
+          origin: formData.origin,
+          destination: formData.destination,
+          candidates: clientPriceTables,
+          distanceKm: parseFloat(formData.totalDistance) || 0,
+      });
+  })();
+  const costRouteQuestion = (() => {
+      if (!manualCostTableId || formData.isSameOs) return null;
+      const selected = providerCostTables.find((t) => t.id.toString() === manualCostTableId);
+      if (!selected) return null;
+      return questionTableAgainstRoute({
+          tableName: selected.operation_type,
+          origin: formData.origin,
+          destination: formData.destination,
+          candidates: providerCostTables,
+          distanceKm: parseFloat(formData.totalDistance) || 0,
+      });
+  })();
+  const tableRouteMismatch = revenueRouteQuestion?.fits === false || costRouteQuestion?.fits === false;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-20 animate-in fade-in">
@@ -3092,6 +3132,26 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               </div>
                           </div>
 
+                          {(revenueRouteQuestion || costRouteQuestion) && (
+                              <div className={`p-4 rounded-xl border-2 space-y-2 ${tableRouteMismatch ? 'bg-amber-50 border-amber-400' : 'bg-emerald-50 border-emerald-300'}`} data-testid="table-route-question">
+                                  <p className="text-[12px] font-black text-gray-900">{revenueRouteQuestion?.headline || costRouteQuestion?.headline}</p>
+                                  {revenueRouteQuestion && <p className="text-[11px] font-semibold text-gray-800" data-testid="table-route-revenue">{revenueRouteQuestion.answer}</p>}
+                                  {costRouteQuestion && <p className="text-[11px] font-semibold text-gray-800" data-testid="table-route-cost">{costRouteQuestion.answer}</p>}
+                                  <div className="flex flex-wrap gap-2">
+                                      {revenueRouteQuestion?.suggestedTableId && (
+                                          <button type="button" onClick={() => handleManualTableChange('rev', revenueRouteQuestion.suggestedTableId!)} className="rounded-lg bg-amber-600 px-3 py-2 text-[10px] font-black uppercase text-white" data-testid="button-use-exclusive-revenue">
+                                              Usar tabela do cliente: {revenueRouteQuestion.suggestedTableName}
+                                          </button>
+                                      )}
+                                      {costRouteQuestion?.suggestedTableId && (
+                                          <button type="button" onClick={() => handleManualTableChange('cst', costRouteQuestion.suggestedTableId!)} className="rounded-lg bg-amber-800 px-3 py-2 text-[10px] font-black uppercase text-white" data-testid="button-use-exclusive-cost">
+                                              Usar tabela do fornecedor: {costRouteQuestion.suggestedTableName}
+                                          </button>
+                                      )}
+                                  </div>
+                              </div>
+                          )}
+
                           {/* RESUMO CLARO PARA CONFIRMAÇÃO DO OPERADOR */}
                           {manualRevenueTableId && (
                               <div className={`p-4 rounded-xl border-2 space-y-3 ${operatorConfirmedCalc ? 'bg-green-50 border-green-300' : 'bg-blue-50 border-blue-300'}`}>
@@ -3148,8 +3208,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       </div>
                                   </div>
                                   {!operatorConfirmedCalc ? (
-                                      <button type="button" onClick={() => setOperatorConfirmedCalc(true)} className="w-full py-3 bg-blue-600 text-white rounded-xl text-[11px] font-black uppercase tracking-wider hover:bg-blue-700 transition-all active:scale-[0.98] shadow-lg" data-testid="button-confirm-calc">
-                                          <Check size={14} className="inline mr-2" />Li e confirmo que os dados estão corretos
+                                      <button type="button" onClick={() => setOperatorConfirmedCalc(true)} className={`w-full py-3 text-white rounded-xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-[0.98] shadow-lg ${tableRouteMismatch ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'}`} data-testid="button-confirm-calc">
+                                          <Check size={14} className="inline mr-2" />{tableRouteMismatch ? 'Confirmo mesmo assim: a tabela não é a exclusiva da origem' : 'Sim, a tabela bate com a origem e o destino'}
                                       </button>
                                   ) : (
                                       <div className="flex items-center justify-between">

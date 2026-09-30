@@ -9,6 +9,7 @@ import { fetchAllPages } from '../lib/supabasePaging';
 import { fetchParentMissionCandidates } from '../lib/parentMissionSearch';
 import { logAction } from '../lib/logger';
 import { calculateMissionFinancials, clientFuzzyFilter, extractCityFromAddress, resolveDisplacementFromAuthorizedKm } from '../lib/financialUtils';
+import { questionTableAgainstRoute, type TableRouteQuestion } from '../lib/tableRouteQuestion';
 import { generateContent } from '../lib/gemini';
 import { optimizeImageForAI } from '../lib/imageForAI';
 import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
@@ -206,6 +207,8 @@ interface FinalizeChecklistDialogProps {
     destCity: string;
     clientTableLine: string;
     providerTableLine: string;
+    clientRouteQuestion?: TableRouteQuestion;
+    providerRouteQuestion?: TableRouteQuestion;
     isRaio: boolean;
     raioFranchiseKm: number;
     startKm: number;
@@ -221,7 +224,7 @@ interface FinalizeChecklistDialogProps {
 
 const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     isOpen, kind, osLabel, providerName, dateLabel, isDhl, destinationAddress, mapLink,
-    originCity, destCity, clientTableLine, providerTableLine, isRaio, raioFranchiseKm, startKm, defaultEndKm,
+    originCity, destCity, clientTableLine, providerTableLine, clientRouteQuestion, providerRouteQuestion, isRaio, raioFranchiseKm, startKm, defaultEndKm,
     franchiseKm, suggestions, defaultDateTime, minDateTime, missionId, onConfirm, onCancel,
 }) => {
     const isCompleted = kind === 'completed';
@@ -629,7 +632,17 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                                 <p data-testid="text-provider-table">Fornecedor: <b>{providerTableLine || 'não identificada'}</b></p>
                             </div>
                         </div>
-                        <FinCheck label="Confirmo as cidades e as tabelas do cliente e do fornecedor" checked={chkCities} onToggle={() => setChkCities(v => !v)} testId="check-cities" />
+                        {[clientRouteQuestion, providerRouteQuestion].filter(Boolean).map((question) => (
+                            <div
+                                key={question!.headline + question!.answer}
+                                className={`mt-2 rounded-lg border p-3 text-[12px] font-medium ${question!.fits ? 'border-emerald-200 bg-emerald-50 text-emerald-950' : 'border-amber-300 bg-amber-50 text-amber-950'}`}
+                                data-testid={question!.fits ? 'text-table-route-ok' : 'text-table-route-warn'}
+                            >
+                                <p className="font-black">{question!.headline}</p>
+                                <p className="mt-1">{question!.answer}</p>
+                            </div>
+                        ))}
+                        <FinCheck label={clientRouteQuestion?.fits === false || providerRouteQuestion?.fits === false ? 'Estou ciente: a tabela não é a exclusiva da origem, e mesmo assim confirmo' : 'Sim, a tabela bate com a origem e o destino'} checked={chkCities} onToggle={() => setChkCities(v => !v)} testId="check-cities" />
                     </FinSection>
                     </>
                     )}
@@ -1448,6 +1461,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         let franchiseKm = appliedTable?.franchise_km || 0;
         let clientTableLine = describeAppliedTable(appliedTableName, franchiseKm, isRaio);
         let providerTableLine = describeAppliedTable('', 0, false);
+        let clientTableName = appliedTableName;
+        let providerTableName = '';
         try {
             if (mission && (clientTables.length > 0 || providerCostTables.length > 0)) {
                 const finPreview = calculateMissionFinancials(
@@ -1471,6 +1486,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 const pKm = Number(finPreview?.provider?.franchiseKm) || 0;
                 const cName = finPreview?.client?.tableName || appliedTableName;
                 const pName = finPreview?.provider?.tableName || '';
+                clientTableName = cName;
+                providerTableName = pName;
                 if (cKm > 0) franchiseKm = cKm;
                 clientTableLine = describeAppliedTable(cName, cKm || franchiseKm, isRaio && (cKm || franchiseKm) > 0);
                 providerTableLine = describeAppliedTable(pName, pKm, isRaio && pKm > 0 && pKm === raioFranchiseKm);
@@ -1496,7 +1513,28 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 }));
         }
 
-        return { isDhl, destinationAddress, originCity, destCity, isRaio, raioFranchiseKm, clientTableLine, providerTableLine, franchiseKm, suggestions };
+        const originFull = editData.origin || mission?.origin || '';
+        const routeKm = missionTotals.plannedKm || missionTotals.traveled;
+        const clientRouteQuestion = clientTableName
+            ? questionTableAgainstRoute({
+                tableName: clientTableName,
+                origin: originFull,
+                destination: destinationAddress,
+                candidates: clientTables,
+                distanceKm: routeKm,
+            })
+            : undefined;
+        const providerRouteQuestion = providerTableName
+            ? questionTableAgainstRoute({
+                tableName: providerTableName,
+                origin: originFull,
+                destination: destinationAddress,
+                candidates: providerCostTables,
+                distanceKm: routeKm,
+            })
+            : undefined;
+
+        return { isDhl, destinationAddress, originCity, destCity, isRaio, raioFranchiseKm, clientTableLine, providerTableLine, franchiseKm, suggestions, clientRouteQuestion, providerRouteQuestion };
     }, [editData, mission, clientTables, providerCostTables, providersList, missionTotals]);
 
     const loadMissionData = async () => {
@@ -4751,6 +4789,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
               destCity={finalizeData.destCity}
               clientTableLine={finalizeData.clientTableLine}
               providerTableLine={finalizeData.providerTableLine}
+              clientRouteQuestion={finalizeData.clientRouteQuestion}
+              providerRouteQuestion={finalizeData.providerRouteQuestion}
               isRaio={finalizeData.isRaio}
               raioFranchiseKm={finalizeData.raioFranchiseKm}
               franchiseKm={finalizeData.franchiseKm}

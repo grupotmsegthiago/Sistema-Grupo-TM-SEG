@@ -13,6 +13,7 @@ import {
   missionOnControlDay,
   sortControleDiarioRows,
   toControleDiarioRow,
+  buildControleDiarioSheet,
   type ControleDiarioRow,
   type ControleDiarioSource,
 } from '../lib/controleDiario';
@@ -174,6 +175,7 @@ export default function ControleDiario() {
   const [updatedAt, setUpdatedAt] = useState('');
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('TODOS');
+  const [expandedSe, setExpandedSe] = useState<Set<string>>(() => new Set());
   const loadTicket = useRef(0);
 
   const days = useMemo(() => daysOfMonth(month), [month]);
@@ -352,12 +354,26 @@ export default function ControleDiario() {
     return rows.filter((row) => {
       if (statusFilter !== 'TODOS' && row.status !== statusFilter) return false;
       if (!q) return true;
-      return [row.os, row.cliente, row.rota, row.motorista, row.fornecedor, row.viatura, row.veiculoEscoltado, row.equipe, ...(notesByMission[row.id] || []).map((item) => item.note)]
+      return [row.os, row.se, row.cliente, row.rota, row.motorista, row.fornecedor, row.viatura, row.veiculoEscoltado, row.equipe, ...(notesByMission[row.id] || []).map((item) => item.note)]
         .join(' ')
         .toUpperCase()
         .includes(q);
     });
   }, [rows, query, statusFilter, sheetRows, notesByMission]);
+
+  const sheet = useMemo(
+    () => buildControleDiarioSheet(visible, printAll ? 'all' : expandedSe),
+    [visible, printAll, expandedSe],
+  );
+
+  const toggleSe = (key: string) => {
+    setExpandedSe((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const openPassagem = async () => {
     setPassagemBusy(true);
@@ -582,12 +598,19 @@ export default function ControleDiario() {
                 </td>
               </tr>
             )}
-            {visible.map((row, index) => {
-              const previous = visible[index - 1];
-              const showSameDaySplit = row.diaAnterior === false && previous?.diaAnterior === true && row.status !== 'FINALIZADO';
-              const showDoneSplit = row.status === 'FINALIZADO' && previous?.status !== 'FINALIZADO';
-              const line = `whitespace-nowrap px-3 py-2 align-middle first:rounded-l-2xl last:rounded-r-2xl ${
-                row.diaAnterior ? 'bg-amber-100' : 'bg-zinc-50 group-hover:bg-red-50'
+            {sheet.map((line, index) => {
+              const row = line.row;
+              let previous: ControleDiarioRow | undefined;
+              for (let i = index - 1; i >= 0; i -= 1) {
+                if (!sheet[i].isChild) {
+                  previous = sheet[i].row;
+                  break;
+                }
+              }
+              const showSameDaySplit = !line.isChild && row.diaAnterior === false && previous?.diaAnterior === true && row.status !== 'FINALIZADO';
+              const showDoneSplit = !line.isChild && row.status === 'FINALIZADO' && previous?.status !== 'FINALIZADO';
+              const lineClass = `whitespace-nowrap px-3 py-2 align-middle first:rounded-l-2xl last:rounded-r-2xl ${
+                row.diaAnterior ? 'bg-amber-100' : line.isChild ? 'bg-yellow-50 group-hover:bg-yellow-100' : 'bg-zinc-50 group-hover:bg-red-50'
               }`;
               return (
                 <React.Fragment key={row.id}>
@@ -613,7 +636,7 @@ export default function ControleDiario() {
                     </tr>
                   )}
                   <tr className="group" data-testid={`controle-diario-row-${row.os}`} title={row.diaAnterior ? 'Missão do dia anterior, ainda em viagem' : undefined}>
-                    <td className={line}>
+                    <td className={lineClass}>
                       <button
                         type="button"
                         onClick={() => openOs(row)}
@@ -624,6 +647,22 @@ export default function ControleDiario() {
                         {opensAudit ? <FileSearch size={12} /> : <Pencil size={12} />}
                         {row.os}
                       </button>
+                      {line.isLeader && line.groupSize > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => toggleSe(line.seKey)}
+                          className="ml-1 inline-flex items-center gap-1 rounded-full bg-yellow-300 px-2 py-1 text-[10px] font-black text-yellow-950 shadow-sm ring-1 ring-yellow-400 hover:bg-yellow-400"
+                          data-testid={`controle-diario-se-${line.seKey}`}
+                          title={`${line.groupSize} OS com a SE ${row.se}. Clique para ver todas juntas.`}
+                        >
+                          {printAll || expandedSe.has(line.seKey) ? '−' : '+'} SE {row.se}
+                        </button>
+                      )}
+                      {line.isChild && (
+                        <span className="ml-1 text-[10px] font-black uppercase text-yellow-800" data-testid={`controle-diario-se-child-${row.os}`}>
+                          mesma SE
+                        </span>
+                      )}
                       {row.ocorrencias > 0 && (
                         <button
                           type="button"
@@ -639,7 +678,7 @@ export default function ControleDiario() {
                       )}
                     </td>
                     <td
-                      className={`${line} relative`}
+                      className={`${lineClass} relative`}
                       onMouseEnter={() => setStatusTip(row.id)}
                       onMouseLeave={() => setStatusTip((current) => (current === row.id ? null : current))}
                     >
@@ -666,23 +705,23 @@ export default function ControleDiario() {
                         </div>
                       )}
                     </td>
-                    <td className={line}>{cell(row.dataInicial)}</td>
-                    <td className={line}>{cell(row.horaAgendada)}</td>
-                    <td className={line}>{cell(row.horaOrigem)}</td>
-                    <td className={`${line} font-semibold`} title={row.cliente}>{cell(row.cliente)}</td>
-                    <td className={line} title={row.rota}>{cell(row.rota)}</td>
-                    <td className={line} title={row.fornecedor}>{cell(row.fornecedor)}</td>
-                    <td className={`${line} font-mono font-bold`}>{cell(row.viatura)}</td>
-                    <td className={`${line} font-mono`}>{cell(row.veiculoEscoltado)}</td>
-                    <td className={line}>{cell(row.dataFinal)}</td>
-                    <td className={line}>{cell(row.horaFinal)}</td>
-                    <td className={`${line} text-right tabular-nums`}>{cell(row.kmInicial)}</td>
-                    <td className={`${line} text-right tabular-nums`}>{cell(row.kmFinal)}</td>
-                    <td className={`${line} text-right font-bold tabular-nums ${row.totalKm != null && row.totalKm < 0 ? 'text-red-700' : ''}`}>
+                    <td className={lineClass}>{cell(row.dataInicial)}</td>
+                    <td className={lineClass}>{cell(row.horaAgendada)}</td>
+                    <td className={lineClass}>{cell(row.horaOrigem)}</td>
+                    <td className={`${lineClass} font-semibold`} title={row.cliente}>{cell(row.cliente)}</td>
+                    <td className={lineClass} title={row.rota}>{cell(row.rota)}</td>
+                    <td className={lineClass} title={row.fornecedor}>{cell(row.fornecedor)}</td>
+                    <td className={`${lineClass} font-mono font-bold`}>{cell(row.viatura)}</td>
+                    <td className={`${lineClass} font-mono`}>{cell(row.veiculoEscoltado)}</td>
+                    <td className={lineClass}>{cell(row.dataFinal)}</td>
+                    <td className={lineClass}>{cell(row.horaFinal)}</td>
+                    <td className={`${lineClass} text-right tabular-nums`}>{cell(row.kmInicial)}</td>
+                    <td className={`${lineClass} text-right tabular-nums`}>{cell(row.kmFinal)}</td>
+                    <td className={`${lineClass} text-right font-bold tabular-nums ${row.totalKm != null && row.totalKm < 0 ? 'text-red-700' : ''}`}>
                       {row.totalKm == null ? '' : row.totalKm.toLocaleString('pt-BR')}
                     </td>
-                    <td className={line} title={row.equipe}>{cell(row.equipe)}</td>
-                    <td className={`${line} max-w-[220px] text-zinc-600`}>
+                    <td className={lineClass} title={row.equipe}>{cell(row.equipe)}</td>
+                    <td className={`${lineClass} max-w-[220px] text-zinc-600`}>
                       {(() => {
                         const latest = notesByMission[row.id]?.[0];
                         return (

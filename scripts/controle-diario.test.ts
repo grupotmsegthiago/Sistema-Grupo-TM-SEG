@@ -9,6 +9,7 @@ import {
   missionOnControlDay,
   sortControleDiarioRows,
   toControleDiarioRow,
+  buildControleDiarioSheet,
 } from '../lib/controleDiario';
 import { canAccessScreen } from '../lib/screenAccess';
 
@@ -149,4 +150,33 @@ test('observação do controle diário guarda o texto e descarta vazio', async (
   assert.equal(normalizeControleDiarioNote('  plantão avisou atraso  '), 'plantão avisou atraso');
   assert.equal(normalizeControleDiarioNote('   '), '');
   assert.equal(normalizeControleDiarioNote('linha 1\r\nlinha 2'), 'linha 1\nlinha 2');
+});
+
+function sheetRow(id: string, se: string, start: string) {
+  return toControleDiarioRow({
+    id,
+    client: 'DHL',
+    status: 'Em Viagem',
+    start_time: start,
+    dhl_se_number: se,
+  }, day);
+}
+
+test('mesma SE da DHL fica junta e fechada até expandir', () => {
+  const rows = sortControleDiarioRows([
+    sheetRow('GTM-1', '190359', '2026-09-28T08:00:00-03:00'),
+    sheetRow('GTM-2', '200000', '2026-09-28T09:00:00-03:00'),
+    sheetRow('GTM-3', 'SE-190359', '2026-09-28T11:00:00-03:00'),
+    sheetRow('GTM-4', '', '2026-09-28T12:00:00-03:00'),
+  ]);
+  const closed = buildControleDiarioSheet(rows, new Set());
+  assert.deepEqual(closed.map((line) => line.row.os), ['1', '2', '4']);
+  assert.equal(closed[0].isLeader, true);
+  assert.equal(closed[0].groupSize, 2);
+  assert.equal(closed[0].row.seKey, '190359');
+
+  const open = buildControleDiarioSheet(rows, new Set(['190359']));
+  assert.deepEqual(open.map((line) => line.row.os), ['1', '3', '2', '4']);
+  assert.equal(open[1].isChild, true);
+  assert.equal(open[1].row.se, 'SE-190359');
 });

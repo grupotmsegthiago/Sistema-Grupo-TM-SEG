@@ -54,6 +54,18 @@ export type ControleDiarioRow = {
   /** Começou antes do dia da folha e ainda não encerrou. */
   diaAnterior: boolean;
   inicioOrdem: number;
+  /** Número da SE DHL como foi gravado. Vazio quando não há SE. */
+  se: string;
+  /** Só os dígitos da SE, para juntar a mesma SE escrita de formas diferentes. */
+  seKey: string;
+};
+
+export type ControleDiarioSheetLine = {
+  row: ControleDiarioRow;
+  seKey: string;
+  groupSize: number;
+  isLeader: boolean;
+  isChild: boolean;
 };
 
 export type ControleDiarioSource = {
@@ -203,6 +215,59 @@ function osLabel(id: string): string {
   return id.replace(/^GTM-/i, '');
 }
 
+/** SE DHL com pelo menos 4 dígitos. Texto curto demais não agrupa a folha. */
+export function controleDiarioSeKey(value: string | null | undefined): { se: string; seKey: string } {
+  const se = String(value || '').trim().toUpperCase();
+  const seKey = se.replace(/\D/g, '');
+  if (seKey.length < 4) return { se: '', seKey: '' };
+  return { se, seKey };
+}
+
+/**
+ * Junta as OS da mesma SE. Fechado, fica só a primeira. Aberto, as outras
+ * sobem para logo abaixo dela, na ordem em que já estavam na folha.
+ */
+export function buildControleDiarioSheet(
+  rows: ControleDiarioRow[],
+  expanded: ReadonlySet<string> | 'all',
+): ControleDiarioSheetLine[] {
+  const buckets = new Map<string, ControleDiarioRow[]>();
+  for (const row of rows) {
+    if (!row.seKey) continue;
+    const list = buckets.get(row.seKey) || [];
+    list.push(row);
+    buckets.set(row.seKey, list);
+  }
+  const emitted = new Set<string>();
+  const out: ControleDiarioSheetLine[] = [];
+  for (const row of rows) {
+    if (emitted.has(row.id)) continue;
+    const group = row.seKey ? buckets.get(row.seKey) : undefined;
+    if (!group || group.length < 2) {
+      out.push({ row, seKey: '', groupSize: 1, isLeader: false, isChild: false });
+      emitted.add(row.id);
+      continue;
+    }
+    const open = expanded === 'all' || expanded.has(row.seKey);
+    const members = open ? group : [group[0]];
+    members.forEach((member, index) => {
+      if (emitted.has(member.id)) return;
+      out.push({
+        row: member,
+        seKey: row.seKey,
+        groupSize: group.length,
+        isLeader: index === 0,
+        isChild: index > 0,
+      });
+      emitted.add(member.id);
+    });
+    if (!open) {
+      for (const member of group) emitted.add(member.id);
+    }
+  }
+  return out;
+}
+
 function kmText(value: number | null | undefined): string {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return '';
@@ -320,6 +385,7 @@ export function toControleDiarioRow(mission: ControleDiarioSource, dayIso: strin
   const totalKm = controleDiarioTotalKm(mission.start_km, mission.end_km);
   const scheduled = mission.estimated_time || mission.start_time;
   const started = mission.start_time ? new Date(mission.start_time).getTime() : 0;
+  const seParts = controleDiarioSeKey(mission.dhl_se_number);
   return {
     id,
     os: osLabel(id),
@@ -347,5 +413,7 @@ export function toControleDiarioRow(mission: ControleDiarioSource, dayIso: strin
     ocorrencias: Number(mission.occurrence_count) > 0 ? Number(mission.occurrence_count) : 0,
     diaAnterior: isControleDiarioCarryover(mission, dayIso),
     inicioOrdem: Number.isFinite(started) ? started : 0,
+    se: seParts.se,
+    seKey: seParts.seKey,
   };
 }

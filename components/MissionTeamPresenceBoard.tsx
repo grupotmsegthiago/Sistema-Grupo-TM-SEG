@@ -6,6 +6,7 @@ import {
   PRESENCE_CATEGORY_LABELS,
   PRESENCE_CATEGORY_ORDER,
   buildPresenceTooltip,
+  formatPresenceLiveLine,
   formatPresenceShortName,
   formatPresenceStatusLine,
   getPresenceCategory,
@@ -94,6 +95,7 @@ const PresenceUserCard: React.FC<UserCardProps> = ({ user, isOnline }) => {
   const serviceStatus = getPresenceServiceStatus(user, { isOnline });
   const style = statusStyle(serviceStatus, isOnline);
   const status = formatPresenceStatusLine(user, isOnline);
+  const live = isOnline ? formatPresenceLiveLine(user) : '';
   const tooltip = buildPresenceTooltip(user);
 
   return (
@@ -118,6 +120,14 @@ const PresenceUserCard: React.FC<UserCardProps> = ({ user, isOnline }) => {
       >
         {status}
       </p>
+      {live ? (
+        <p
+          className="mt-0.5 w-full text-center text-[9px] font-bold uppercase leading-snug text-gray-500 whitespace-normal break-words"
+          data-testid={`presence-live-${user.userId}`}
+        >
+          {live}
+        </p>
+      ) : null}
 
       <div
         role="tooltip"
@@ -269,7 +279,7 @@ const MissionTeamPresenceBoard: React.FC<Props> = ({ enabled = true }) => {
       </div>
 
       <p className="mb-3 text-[9px] font-bold uppercase tracking-wide text-gray-400">
-        Ordem: Em serviço / Online / Aguardando ponto / Almoço / Fora de Serviço — horários em HH:MM (Brasília)
+        Ordem: Em serviço / Online / Aguardando ponto / Almoço / Fora de Serviço. Abaixo: minutos desta conexão e hora da última interação.
       </p>
 
       {displayUsers.length === 0 ? (
