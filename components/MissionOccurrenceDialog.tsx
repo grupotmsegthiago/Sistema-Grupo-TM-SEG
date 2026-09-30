@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ImagePlus, Loader2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ImagePlus, Loader2, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import { publishMissionLive, MISSION_LIVE_WINDOW_EVENT } from '../lib/missionLiveBroadcast';
+import { isOccurrenceOpen, normalizeOccurrenceText, occurrenceTextError, resolutionTextError } from '../lib/missionOccurrence';
 
 type OccurrenceRow = {
   id: string;
@@ -10,6 +11,9 @@ type OccurrenceRow = {
   evidence_url?: string | null;
   created_by?: string | null;
   created_at: string;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
+  resolution_note?: string | null;
 };
 
 export type OccurrenceContext = {
@@ -86,12 +90,15 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
   const [preview, setPreview] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [resolutionDraft, setResolutionDraft] = useState('');
+  const [resolving, setResolving] = useState(false);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     const { data, error: queryError } = await supabase
       .from('mission_occurrences')
-      .select('id, description, evidence_url, created_by, created_at')
+      .select('id, description, evidence_url, created_by, created_at, resolved_at, resolved_by, resolution_note')
       .eq('mission_id', missionId)
       .order('created_at', { ascending: false });
     if (queryError) setError(queryError.message);
@@ -176,7 +183,8 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
       const { count, error: countError } = await supabase
         .from('mission_occurrences')
         .select('id', { count: 'exact', head: true })
-        .eq('mission_id', missionId);
+        .eq('mission_id', missionId)
+        .is('resolved_at', null);
       if (countError) throw countError;
       const total = count || rows.length + 1;
       const { error: missionError } = await supabase
@@ -213,6 +221,72 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
     }
   };
 
+  const resolve = async (row: OccurrenceRow) => {
+    if (!isOccurrenceOpen(row)) return;
+    const message = resolutionTextError(resolutionDraft);
+    if (message) {
+      setError(message);
+      return;
+    }
+    setResolving(true);
+    setError('');
+    try {
+      const author = readUserName();
+      const note = normalizeOccurrenceText(resolutionDraft);
+      const resolvedAt = new Date().toISOString();
+      const { data: updated, error: updateError } = await supabase
+        .from('mission_occurrences')
+        .update({ resolved_at: resolvedAt, resolved_by: author, resolution_note: note })
+        .eq('id', row.id)
+        .eq('mission_id', missionId)
+        .is('resolved_at', null)
+        .select('id')
+        .maybeSingle();
+      if (updateError) throw updateError;
+      if (!updated) {
+        setError('Essa ocorrência já foi resolvida.');
+        await load();
+        return;
+      }
+      const { count, error: countError } = await supabase
+        .from('mission_occurrences')
+        .select('id', { count: 'exact', head: true })
+        .eq('mission_id', missionId)
+        .is('resolved_at', null);
+      if (countError) throw countError;
+      const openCount = count ?? 0;
+      const { error: missionError } = await supabase
+        .from('missions')
+        .update({ occurrence_count: openCount })
+        .eq('id', missionId);
+      if (missionError) throw missionError;
+      const { error: logError } = await supabase.from('system_logs').insert([{
+        user_name: author,
+        action_type: 'OTHER',
+        entity: 'MissionOccurrence',
+        entity_id: missionId,
+        details: JSON.stringify({
+          ocorrencia: row.id,
+          resolvido: note,
+          aviso: 'Ocorrência marcada como resolvida.',
+        }),
+      }]);
+      if (logError) setError('A resolução ficou salva. O histórico da auditoria não registrou desta vez.');
+      setResolvingId(null);
+      setResolutionDraft('');
+      onSaved(openCount);
+      void publishMissionLive('occurrence', { mission_id: missionId, occurrence_count: openCount });
+      window.dispatchEvent(new CustomEvent('refreshMissions'));
+      await load();
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível marcar como resolvido.');
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  const openCount = rows.filter(isOccurrenceOpen).length;
+
   return (
     <div className="fixed inset-0 z-[220] bg-black/60 flex items-center justify-center p-4" data-testid="mission-occurrence-dialog" onPaste={pastePrint}>
       <div className="bg-white w-full max-w-2xl rounded-[28px] shadow-2xl border border-orange-200 overflow-hidden max-h-[90vh] flex flex-col">
@@ -220,7 +294,10 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
           <AlertTriangle size={18} className="mt-0.5 shrink-0" />
           <div className="flex-1">
             <p className="text-sm font-black uppercase">Ocorrência da OS {context?.os || missionId}</p>
-            <p className="text-[11px] font-semibold text-orange-50">Histórico com data, hora, evidência, quem gravou e o motivo.</p>
+            <p className="text-[11px] font-semibold text-orange-50">
+              {loading ? 'Carregando o histórico. ' : openCount > 0 ? `${openCount} em aberto. ` : 'Nenhuma em aberto. '}
+              Histórico com data, hora, evidência, quem gravou, o motivo e a resolução.
+            </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1 hover:bg-orange-500" aria-label="Fechar" data-testid="button-occurrence-close">
             <X size={18} />
@@ -294,11 +371,17 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
           {!canWrite && error && <p className="text-xs font-bold text-red-600">{error}</p>}
           <div>
             <p className="text-[10px] font-black uppercase text-gray-500 mb-2">Histórico</p>
+            {!loading && openCount > 0 && (
+              <p className="mb-2 text-xs font-bold text-orange-800" data-testid="occurrence-open-count">{openCount} em aberto</p>
+            )}
             {loading && <p className="text-xs text-gray-500">Carregando...</p>}
             {!loading && rows.length === 0 && <p className="text-xs text-gray-500">Nenhuma ocorrência nesta OS.</p>}
             <div className="space-y-2">
               {rows.map((row) => (
-                <article key={row.id} className="rounded-2xl border border-orange-100 bg-orange-50/60 px-3 py-3" data-testid={`occurrence-row-${row.id}`}>
+                <article key={row.id} className={`rounded-2xl border px-3 py-3 ${isOccurrenceOpen(row) ? 'border-orange-100 bg-orange-50/60' : 'border-emerald-100 bg-emerald-50/70'}`} data-testid={`occurrence-row-${row.id}`}>
+                  <p className={`mb-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${isOccurrenceOpen(row) ? 'bg-orange-600 text-white' : 'bg-emerald-700 text-white'}`} data-testid={`occurrence-status-${row.id}`}>
+                    {isOccurrenceOpen(row) ? 'Em aberto' : 'Resolvido'}
+                  </p>
                   <div className="grid grid-cols-2 gap-2 text-[11px]">
                     <p data-testid={`occurrence-date-${row.id}`}><span className="font-black uppercase text-zinc-400">Data </span><span className="font-semibold text-zinc-800">{formatDateBR(row.created_at)}</span></p>
                     <p data-testid={`occurrence-time-${row.id}`}><span className="font-black uppercase text-zinc-400">Hora </span><span className="font-semibold text-zinc-800">{formatTimeBR(row.created_at)}</span></p>
@@ -316,6 +399,62 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
                   <p className="text-sm font-semibold text-gray-900" data-testid={`occurrence-reason-${row.id}`}>{row.description}</p>
                   {row.evidence_url && (
                     <img src={row.evidence_url} alt="Evidência da ocorrência" className="mt-2 max-h-36 rounded-xl border border-orange-200" />
+                  )}
+                  {isOccurrenceOpen(row) && canWrite && (
+                    <div className="mt-3">
+                      {resolvingId === row.id ? (
+                        <div className="space-y-2">
+                          <label className="block text-[10px] font-black uppercase text-emerald-800">
+                            O que foi resolvido
+                            <textarea
+                              value={resolutionDraft}
+                              onChange={(e) => setResolutionDraft(e.target.value)}
+                              rows={3}
+                              placeholder="Descreva o que foi resolvido"
+                              className="mt-1 w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm font-medium normal-case text-zinc-900"
+                              data-testid={`input-occurrence-resolution-${row.id}`}
+                            />
+                          </label>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => { void resolve(row); }}
+                              disabled={resolving}
+                              className="rounded-xl bg-emerald-700 px-3 py-2 text-[11px] font-black uppercase text-white disabled:opacity-60"
+                              data-testid={`button-occurrence-confirm-resolve-${row.id}`}
+                            >
+                              {resolving ? <Loader2 size={12} className="inline animate-spin" /> : <CheckCircle2 size={12} className="inline" />} Confirmar resolvido
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setResolvingId(null); setResolutionDraft(''); }}
+                              className="rounded-xl border border-zinc-200 px-3 py-2 text-[11px] font-black uppercase text-zinc-600"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => { setResolvingId(row.id); setResolutionDraft(''); setError(''); }}
+                          className="rounded-xl bg-emerald-700 px-3 py-2 text-[11px] font-black uppercase text-white"
+                          data-testid={`button-occurrence-resolve-${row.id}`}
+                        >
+                          <CheckCircle2 size={12} className="inline" /> Resolvido
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {!isOccurrenceOpen(row) && (
+                    <div className="mt-3 rounded-xl bg-white px-3 py-2" data-testid={`occurrence-resolution-${row.id}`}>
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        <p><span className="font-black uppercase text-zinc-400">Resolvido em </span><span className="font-semibold text-zinc-800">{formatDateBR(row.resolved_at || '')} {formatTimeBR(row.resolved_at || '')}</span></p>
+                        <p><span className="font-black uppercase text-zinc-400">Quem resolveu </span><span className="font-semibold text-zinc-800">{row.resolved_by || 'Operador'}</span></p>
+                      </div>
+                      <p className="mt-2 text-[10px] font-black uppercase text-emerald-800">O que foi resolvido</p>
+                      <p className="text-sm font-semibold text-gray-900">{row.resolution_note || 'Sem motivo'}</p>
+                    </div>
                   )}
                 </article>
               ))}

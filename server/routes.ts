@@ -5065,24 +5065,9 @@ export async function registerRoutes(
     }
   });
 
-  // Observação do Controle Diário: cada salvamento acrescenta uma linha no histórico.
-  let controleDiarioNotesReady: Promise<void> | null = null;
-  const ensureControleDiarioNotes = () => {
-    if (!controleDiarioNotesReady) {
-      controleDiarioNotesReady = pgPool.query(`CREATE TABLE IF NOT EXISTS public.controle_diario_notas (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        mission_id text NOT NULL,
-        note text NOT NULL,
-        created_by text NOT NULL,
-        created_at timestamptz NOT NULL DEFAULT now()
-      )`).then(() => pgPool.query(`CREATE INDEX IF NOT EXISTS idx_controle_diario_notas_mission
-        ON public.controle_diario_notas (mission_id, created_at DESC)`))
-        .then(() => undefined)
-        .catch((e) => { controleDiarioNotesReady = null; throw e; });
-    }
-    return controleDiarioNotesReady;
-  };
-
+  // Observação do Controle Diário. A leitura e a gravação passam pelo cliente
+  // Supabase do servidor. Nesta máquina não há senha direta do Postgres, e o
+  // pool pg quebrava com "password must be a string".
   const denyControleDiarioNotes = (req: Request, res: Response): boolean => {
     const principal = (req as any).user as ResolvedPrincipal | undefined;
     if (!canAccessScreen(principal, 'controle-diario')) {
@@ -5095,21 +5080,19 @@ export async function registerRoutes(
   app.get("/api/controle-diario-notas", requireAuth, requireRole('*'), async (req: Request, res: Response) => {
     if (denyControleDiarioNotes(req, res)) return;
     try {
-      await ensureControleDiarioNotes();
       const ids = String(req.query.ids || '')
         .split(',')
         .map((item) => item.trim())
         .filter((item) => item && item.length <= 80)
         .slice(0, 400);
       if (!ids.length) return res.json([]);
-      const { rows } = await pgPool.query(
-        `SELECT id, mission_id, note, created_by, created_at
-         FROM public.controle_diario_notas
-         WHERE mission_id = ANY($1::text[])
-         ORDER BY created_at DESC`,
-        [ids],
-      );
-      res.json(rows);
+      const { data, error } = await supabase
+        .from('controle_diario_notas')
+        .select('id, mission_id, note, created_by, created_at')
+        .in('mission_id', ids)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      res.json(data || []);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -5118,7 +5101,6 @@ export async function registerRoutes(
   app.post("/api/controle-diario-notas", requireAuth, requireRole('*'), async (req: Request, res: Response) => {
     if (denyControleDiarioNotes(req, res)) return;
     try {
-      await ensureControleDiarioNotes();
       const missionId = String(req.body?.mission_id || '').trim();
       const note = normalizeControleDiarioNote(req.body?.note);
       if (!missionId || missionId.length > 80) return res.status(400).json({ error: 'OS obrigatória' });
@@ -5126,13 +5108,13 @@ export async function registerRoutes(
       const principal = (req as any).user as ResolvedPrincipal;
       const createdBy = String(principal?.name || principal?.email || '').trim();
       if (!createdBy) return res.status(400).json({ error: 'Usuário sem nome para registrar a observação' });
-      const { rows } = await pgPool.query(
-        `INSERT INTO public.controle_diario_notas (mission_id, note, created_by)
-         VALUES ($1, $2, $3)
-         RETURNING id, mission_id, note, created_by, created_at`,
-        [missionId, note, createdBy],
-      );
-      res.json(rows[0]);
+      const { data, error } = await supabase
+        .from('controle_diario_notas')
+        .insert({ mission_id: missionId, note, created_by: createdBy })
+        .select('id, mission_id, note, created_by, created_at')
+        .single();
+      if (error) throw error;
+      res.json(data);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

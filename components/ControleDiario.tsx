@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { AlertTriangle, Ban, CalendarClock, CalendarDays, CheckCircle2, ClipboardList, FileSearch, MapPin, Moon, Pencil, Radio, RefreshCw, Search, Truck, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Ban, CalendarClock, CalendarDays, CheckCircle2, ClipboardList, FileSearch, MapPin, MessageCircle, Moon, Pencil, Radio, RefreshCw, Search, Truck, X, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { publishMissionLive, MISSION_LIVE_WINDOW_EVENT } from '../lib/missionLiveBroadcast';
 import { authFetch } from '../lib/authFetch';
@@ -165,8 +165,22 @@ export default function ControleDiario() {
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState('');
   const [statusTip, setStatusTip] = useState<string | null>(null);
+  const statusTipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openStatusTip = (id: string) => {
+    if (statusTipTimer.current) clearTimeout(statusTipTimer.current);
+    setStatusTip(id);
+  };
+  const closeStatusTip = () => {
+    if (statusTipTimer.current) clearTimeout(statusTipTimer.current);
+    statusTipTimer.current = setTimeout(() => setStatusTip(null), 160);
+  };
   const [printAll, setPrintAll] = useState(false);
   const tableRef = useRef<HTMLTableElement>(null);
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+  const syncingFromTopRef = useRef(false);
+  const syncingFromMainRef = useRef(false);
+  const [topMirrorWidth, setTopMirrorWidth] = useState(1680);
   const rawById = useRef(new Map<string, RawMission>());
   const [rows, setRows] = useState<ControleDiarioRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -366,6 +380,20 @@ export default function ControleDiario() {
     [visible, printAll, expandedSe],
   );
 
+  useEffect(() => {
+    const table = tableRef.current;
+    if (!table || typeof ResizeObserver === 'undefined') return;
+    const update = () => setTopMirrorWidth(table.scrollWidth || 1680);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(table);
+    window.addEventListener('resize', update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, [sheet.length, loading]);
+
   const toggleSe = (key: string) => {
     setExpandedSe((current) => {
       const next = new Set(current);
@@ -464,7 +492,7 @@ export default function ControleDiario() {
   const monthChoices = monthOptions.includes(month) ? monthOptions : [month, ...monthOptions];
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#efe8e6] p-3 sm:p-4" data-testid="controle-diario">
+    <div className="flex h-[calc(100dvh-1.5rem)] min-h-0 flex-col bg-[#efe8e6] p-3 sm:p-4" data-testid="controle-diario">
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_24px_60px_-28px_rgba(69,10,10,0.55)] ring-1 ring-red-100">
       <header className="relative overflow-hidden bg-gradient-to-br from-zinc-950 via-[#4a1010] to-red-700 px-5 py-5 text-white">
         <div className="pointer-events-none absolute -right-8 -top-16 h-44 w-44 rounded-full bg-red-400/25 blur-3xl" />
@@ -581,7 +609,32 @@ export default function ControleDiario() {
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-auto px-3 pb-2">
+      <div
+        ref={topScrollRef}
+        className="sticky top-0 z-20 mx-3 mt-2 h-4 shrink-0 overflow-x-auto overflow-y-hidden rounded-full bg-zinc-200 [scrollbar-color:#71717a_#e4e4e7] [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-zinc-200 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-500"
+        onScroll={() => {
+          if (mainScrollRef.current && topScrollRef.current && !syncingFromMainRef.current) {
+            syncingFromTopRef.current = true;
+            mainScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+            requestAnimationFrame(() => { syncingFromTopRef.current = false; });
+          }
+        }}
+        data-testid="controle-diario-scroll-top"
+        aria-label="Rolagem horizontal da folha"
+      >
+        <div style={{ width: topMirrorWidth, height: 1 }} />
+      </div>
+      <div
+        ref={mainScrollRef}
+        className="min-h-0 flex-1 overflow-auto px-3 pb-2"
+        onScroll={() => {
+          if (mainScrollRef.current && topScrollRef.current && !syncingFromTopRef.current) {
+            syncingFromMainRef.current = true;
+            topScrollRef.current.scrollLeft = mainScrollRef.current.scrollLeft;
+            requestAnimationFrame(() => { syncingFromMainRef.current = false; });
+          }
+        }}
+      >
         <table ref={tableRef} className="min-w-[1680px] w-full border-separate border-spacing-y-1 text-left text-[12px]">
           <thead className="sticky top-0 z-10">
             <tr>
@@ -676,11 +729,23 @@ export default function ControleDiario() {
                           {row.ocorrencias}
                         </button>
                       )}
+                      {(notesByMission[row.id] || []).length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { setNoteRow(row); setNoteDraft(''); setNoteError(''); }}
+                          className="ml-1 inline-flex items-center gap-1 rounded-full bg-amber-400 px-2 py-1 text-[10px] font-black text-amber-950 shadow-sm"
+                          data-testid={`controle-diario-note-bubble-${row.os}`}
+                          title={notesByMission[row.id][0]?.note || 'Observação'}
+                        >
+                          <MessageCircle size={11} />
+                          {notesByMission[row.id].length}
+                        </button>
+                      )}
                     </td>
                     <td
-                      className={`${lineClass} relative`}
-                      onMouseEnter={() => setStatusTip(row.id)}
-                      onMouseLeave={() => setStatusTip((current) => (current === row.id ? null : current))}
+                      className={lineClass}
+                      onMouseEnter={() => openStatusTip(row.id)}
+                      onMouseLeave={closeStatusTip}
                     >
                       <span
                         className={`inline-block cursor-help rounded-full px-2 py-0.5 text-[10px] font-black ${STATUS_TONE[row.status] || 'bg-zinc-100 text-zinc-700'}`}
@@ -688,22 +753,6 @@ export default function ControleDiario() {
                       >
                         {row.status}
                       </span>
-                      {statusTip === row.id && (
-                        <div className="absolute left-0 top-full z-30 w-72 rounded-2xl border border-zinc-200 bg-white p-3 text-left shadow-xl" data-testid={`controle-diario-status-tip-${row.os}`}>
-                          <p className="text-[10px] font-black uppercase tracking-wide text-zinc-400">Última atualização</p>
-                          <p className="mt-1 text-xs font-semibold text-zinc-800">{row.ultimaAtualizacao || 'Sem atualização registrada'}</p>
-                          {row.mapa ? (
-                            <>
-                              {mapPreview(row.mapa) ? (
-                                <iframe title={`Mapa da OS ${row.os}`} src={mapPreview(row.mapa)} className="mt-2 h-32 w-full rounded-xl border border-zinc-100" loading="lazy" />
-                              ) : null}
-                              <a href={row.mapa} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-[11px] font-black text-red-700 underline">Abrir mapa</a>
-                            </>
-                          ) : (
-                            <p className="mt-2 text-[11px] text-zinc-400">Sem mapa nesta atualização.</p>
-                          )}
-                        </div>
-                      )}
                     </td>
                     <td className={lineClass}>{cell(row.dataInicial)}</td>
                     <td className={lineClass}>{cell(row.horaAgendada)}</td>
@@ -738,6 +787,30 @@ export default function ControleDiario() {
                       })()}
                     </td>
                   </tr>
+                  {statusTip === row.id && (
+                    <tr
+                      data-testid={`controle-diario-status-tip-${row.os}`}
+                      onMouseEnter={() => openStatusTip(row.id)}
+                      onMouseLeave={closeStatusTip}
+                    >
+                      <td colSpan={CONTROLE_DIARIO_COLUMNS.length} className="rounded-2xl bg-white px-3 py-2">
+                        <div className="flex max-w-xl items-start gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-3 text-left">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[10px] font-black uppercase tracking-wide text-zinc-400">Última atualização</p>
+                            <p className="mt-1 whitespace-normal text-xs font-semibold text-zinc-800">{row.ultimaAtualizacao || 'Sem atualização registrada'}</p>
+                            {row.mapa ? (
+                              <a href={row.mapa} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-[11px] font-black text-red-700 underline">Abrir mapa</a>
+                            ) : (
+                              <p className="mt-2 text-[11px] text-zinc-400">Sem mapa nesta atualização.</p>
+                            )}
+                          </div>
+                          {row.mapa && mapPreview(row.mapa) ? (
+                            <iframe title={`Mapa da OS ${row.os}`} src={mapPreview(row.mapa)} className="h-28 w-44 shrink-0 rounded-xl border border-zinc-100" loading="lazy" />
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                 </React.Fragment>
               );
             })}
