@@ -114,6 +114,17 @@ const DEBOUNCE_MS = 2000;
 const RECONNECT_MS = 3000;
 const GLOBAL_REALTIME_CHANNEL = 'global-realtime-sync';
 
+let lastRealtimeStatus = '';
+
+export function getRealtimeConnectionStatus(): string {
+  return lastRealtimeStatus;
+}
+
+function publishRealtimeStatus(status: string) {
+  lastRealtimeStatus = status;
+  window.dispatchEvent(new CustomEvent('tmseg:realtime-status', { detail: { status } }));
+}
+
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const pendingTablesRef = useRef<Set<TableName>>(new Set());
   const pendingMissionFullRefreshRef = useRef(false);
@@ -186,6 +197,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       }
 
       channel.subscribe((status) => {
+        publishRealtimeStatus(status);
         if (status === 'SUBSCRIBED') {
           console.log('[Realtime] Conectado — sincronização ativa em', REALTIME_TABLES.length, 'tabelas');
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {

@@ -4,6 +4,7 @@ import { Mission, MissionStatus, MissionLog, User as UserType, Agent, Client, Cl
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { MISSION_LIVE_WINDOW_EVENT } from '../lib/missionLiveBroadcast';
+import { getRealtimeConnectionStatus } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
 import { logAction } from '../lib/logger';
 import { 
@@ -259,6 +260,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
   // Relógio para projeções financeiras (hora extra, margem em OS em andamento).
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [liveConnected, setLiveConnected] = useState(false);
+  const [lastLiveAt, setLastLiveAt] = useState<Date | null>(null);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('userData');
@@ -608,7 +611,19 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 if (!logMap[l.mission_id]) logMap[l.mission_id] = l as MissionLog;
             });
         });
-        if (reqId === derivedReqIdRef.current) setLastLogMap(logMap);
+        if (reqId === derivedReqIdRef.current) {
+          setLastLogMap(prev => {
+            const merged = { ...logMap };
+            for (const [id, existing] of Object.entries(prev)) {
+              const incoming = merged[id];
+              if (!incoming) { merged[id] = existing; continue; }
+              const prevMs = existing?.created_at ? new Date(existing.created_at).getTime() : 0;
+              const nextMs = incoming.created_at ? new Date(incoming.created_at).getTime() : 0;
+              if (prevMs > nextMs) merged[id] = existing;
+            }
+            return merged;
+          });
+        }
     };
 
     const fetchDhlIntakes = async () => {
@@ -1025,7 +1040,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
       fetchMissionsRef.current();
 
+          const markLive = () => setLastLiveAt(new Date());
+
           const handleMissionsRealtime = (event: Event) => {
+            markLive();
             const payload = (event as CustomEvent).detail as { eventType?: string; new?: any; old?: any } | undefined;
             if (!payload) {
               scheduleFullRefetchRef.current();
@@ -1047,7 +1065,27 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             else scheduleFullRefetchRef.current();
           };
 
+          const handleMissionLogsRealtime = (event: Event) => {
+            markLive();
+            const payload = (event as CustomEvent).detail as { eventType?: string; new?: MissionLog } | undefined;
+            const row = payload?.new;
+            if (!row?.mission_id || payload?.eventType === 'DELETE') return;
+            setLastLogMap(prev => {
+              const current = prev[row.mission_id];
+              const nextMs = row.created_at ? new Date(row.created_at).getTime() : 0;
+              const curMs = current?.created_at ? new Date(current.created_at).getTime() : 0;
+              if (current && curMs > nextMs) return prev;
+              return { ...prev, [row.mission_id]: row };
+            });
+          };
+
+          const handleRealtimeStatus = (event: Event) => {
+            const status = (event as CustomEvent).detail?.status;
+            setLiveConnected(status === 'SUBSCRIBED');
+          };
+
           const handleMissionLive = (event: Event) => {
+            markLive();
             const detail = (event as CustomEvent).detail || {};
             if (detail.event === 'mission_updated') {
               const payload = detail.payload;
@@ -1066,7 +1104,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           };
 
           window.addEventListener('supabase:missions:realtime', handleMissionsRealtime);
+          window.addEventListener('supabase:mission_logs:realtime', handleMissionLogsRealtime);
+          window.addEventListener('tmseg:realtime-status', handleRealtimeStatus);
           window.addEventListener(MISSION_LIVE_WINDOW_EVENT, handleMissionLive);
+          const currentStatus = getRealtimeConnectionStatus();
+          if (currentStatus) setLiveConnected(currentStatus === 'SUBSCRIBED');
           const handleExternalRefresh = () => {
             setSearchRefreshTick(t => t + 1);
             if (Date.now() < suppressFullRefetchUntilRef.current) {
@@ -1079,6 +1121,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           return () => {
             cancelled = true;
             window.removeEventListener('supabase:missions:realtime', handleMissionsRealtime);
+            window.removeEventListener('supabase:mission_logs:realtime', handleMissionLogsRealtime);
+            window.removeEventListener('tmseg:realtime-status', handleRealtimeStatus);
             window.removeEventListener(MISSION_LIVE_WINDOW_EVENT, handleMissionLive);
             if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
             if (auxTimerRef.current) clearTimeout(auxTimerRef.current);
@@ -2138,6 +2182,21 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 </button>
               )}
               <div className="flex items-center gap-2">
+                <span
+                  data-testid="panel-live-badge"
+                  title={liveConnected
+                    ? 'Conectado. Quando uma OS é atualizada, o card muda na hora para quem está com o painel aberto.'
+                    : 'Reconectando ao servidor. A tela volta a receber as atualizações sozinha.'}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${liveConnected ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-800'}`}
+                >
+                  <span className={`h-2 w-2 rounded-full ${liveConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                  {liveConnected ? 'Ao vivo' : 'Reconectando'}
+                  {lastLiveAt && (
+                    <span className="font-bold normal-case tracking-normal">
+                      · {lastLiveAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'America/Sao_Paulo' })}
+                    </span>
+                  )}
+                </span>
                 <span className="hidden md:inline">Filtrados:</span>
                 <span className="font-bold text-gray-800 bg-gray-200 px-2 py-1 rounded">{filteredMissions.length}</span>
               </div>

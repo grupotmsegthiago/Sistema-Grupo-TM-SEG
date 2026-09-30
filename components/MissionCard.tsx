@@ -2,6 +2,9 @@
 import React, { memo, useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
+import { pickLiveMissionUpdate } from '../lib/missionLiveUpdate';
+import { buildChargeUpdateMessage } from '../lib/chargeUpdateMessage';
+import { copyTextAsync } from '../lib/clipboard';
 import { Mission, MissionStatus, MissionLog, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
@@ -214,6 +217,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
 }) => {
     
     const { showNotification } = useNotification();
+    const [chargeCopied, setChargeCopied] = useState(false);
     const [showEvidenceModal, setShowEvidenceModal] = useState(false);
     const [showUploadModal, setShowUploadModal] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
@@ -481,6 +485,28 @@ Qualquer dúvida, estamos a disposição.
             console.error("Erro ao copiar texto", err);
         }
         if (onPrint) onPrint(mission);
+    };
+
+    const handleCopyChargeUpdate = () => {
+        const text = buildChargeUpdateMessage({
+            osId: mission.id,
+            origin: mission.origin,
+            destination: mission.destination,
+            plate: mission.clientVehicle?.plate,
+            agent1: mission.agent1,
+            agent2: mission.agent2,
+            agent1Phone: mission.agent1 ? agentPhonesMap?.[mission.agent1] : undefined,
+            agent2Phone: mission.agent2 ? agentPhonesMap?.[mission.agent2] : undefined,
+        });
+        void copyTextAsync(text).then(ok => {
+            if (!ok) {
+                showNotification('Erro', 'Não foi possível copiar. Tente novamente.', 'error');
+                return;
+            }
+            setChargeCopied(true);
+            showNotification('Copiado', 'Cobrança de atualização pronta para colar no WhatsApp.', 'success');
+            window.setTimeout(() => setChargeCopied(false), 2000);
+        });
     };
 
     const handleWhatsAppContact = (phone?: string, name?: string) => {
@@ -920,11 +946,10 @@ Qualquer dúvida, estamos a disposição.
                                 <p className="text-[11px] font-bold text-blue-800 truncate min-w-0">
                                     <span className="font-black text-blue-400 uppercase tracking-wider">Última Atualização: </span>
                                     {(() => {
-                                        const dt = lastLog ? new Date(lastLog.created_at) : mission.lastUpdate ? new Date(mission.lastUpdate) : null;
-                                        const dateStr = dt ? formatDateTimeBR(dt) : '---';
-                                        const rawOccurrence = lastLog?.description || mission.currentLocation || '';
-                                        const occurrence = rawOccurrence.includes('|') ? rawOccurrence.split('|')[0].trim() : rawOccurrence;
-                                        return occurrence ? dateStr + ' - ' + occurrence : dateStr;
+                                        const live = pickLiveMissionUpdate(lastLog, mission);
+                                        const dt = live.at ? new Date(live.at) : null;
+                                        const dateStr = dt && !Number.isNaN(dt.getTime()) ? formatDateTimeBR(dt) : '---';
+                                        return live.text ? dateStr + ' - ' + live.text : dateStr;
                                     })()}
                                 </p>
                             </div>
@@ -994,6 +1019,17 @@ Qualquer dúvida, estamos a disposição.
                                 )}
                             </div>
                         </div>
+                        {!hideProviderInfo && (
+                            <button
+                                type="button"
+                                onClick={handleCopyChargeUpdate}
+                                data-testid={`button-cobrar-atualizacao-${mission.id}`}
+                                title="Copiar texto para cobrar atualização no WhatsApp da equipe"
+                                className={`mt-1 w-full rounded-xl border px-2 py-1.5 text-[10px] font-black uppercase tracking-wide transition-all ${chargeCopied ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'}`}
+                            >
+                                {chargeCopied ? 'Copiado' : 'Cobrar atualização'}
+                            </button>
+                        )}
                     </div>
                 </div>
                 
