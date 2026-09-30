@@ -57,8 +57,8 @@ interface MissionAlert {
 
 const ALERT_SOUND_URL = 'https://assets.mixkit.co/active_storage/sfx/2645/2645-preview.mp3';
 const CHECK_INTERVAL = 30_000;
-const ALERT_WINDOW_MINUTES = 65;
-const ESCALATION_THRESHOLDS = [60, 30, 15, 10, 5, 0];
+const ALERT_WINDOW_MINUTES = 120;
+const ESCALATION_THRESHOLDS = [120, 30, 15, 10, 5, 0];
 
 const getEscalationLevel = (minutes: number): number => {
     if (minutes <= 0) return 5;
@@ -71,7 +71,7 @@ const getEscalationLevel = (minutes: number): number => {
 
 const getEscalationLabel = (level: number): string => {
     switch (level) {
-        case 0: return '1º AVISO — 1H';
+        case 0: return '1º AVISO — 2H';
         case 1: return '2º AVISO — 30MIN';
         case 2: return '3º AVISO — 15MIN';
         case 3: return '4º AVISO — 10MIN';
@@ -287,7 +287,7 @@ const MissionAlertMonitor: React.FC = () => {
     const handleDecline = (alertId: string) => {
         const now = Date.now();
         const alert = alerts.find(a => a.id === alertId);
-        const nextThreshold = ESCALATION_THRESHOLDS.find(t => t < (alert?.minutesUntilStart ?? 60));
+        const nextThreshold = ESCALATION_THRESHOLDS.find(t => t < (alert?.minutesUntilStart ?? ALERT_WINDOW_MINUTES));
         const reminderMinutes = nextThreshold !== undefined
             ? Math.max(2, (alert?.minutesUntilStart ?? 0) - nextThreshold)
             : 5;
@@ -468,7 +468,7 @@ const MissionAlertMonitor: React.FC = () => {
                             <div className="p-6 text-center">
                                 <Shield size={32} className="mx-auto text-gray-300 mb-2" />
                                 <p className="text-sm font-black text-gray-500 uppercase">Nenhuma OS próxima</p>
-                                <p className="text-[10px] text-gray-400 mt-1">Missões dentro de 1 hora aparecerão aqui</p>
+                                <p className="text-[10px] text-gray-400 mt-1">Missões dentro de 2 horas aparecerão aqui</p>
                             </div>
                         )}
                         {sorted.map(a => {

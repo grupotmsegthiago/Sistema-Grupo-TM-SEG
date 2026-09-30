@@ -44,6 +44,9 @@ export type ControleDiarioRow = {
   status: string;
   equipe: string;
   observacao: string;
+  /** Última atualização gravada na OS. Aparece ao passar o mouse no status. */
+  ultimaAtualizacao: string;
+  mapa: string;
   motorista: string;
   origem: string;
   destino: string;
@@ -72,6 +75,7 @@ export type ControleDiarioSource = {
   dhl_se_number?: string | null;
   reference_number?: string | null;
   current_location?: string | null;
+  map_link?: string | null;
   toll_value?: number | null;
   vehiclePlate?: string | null;
   cargoPlate?: string | null;
@@ -335,6 +339,8 @@ export function toControleDiarioRow(mission: ControleDiarioSource, dayIso: strin
     status: controleDiarioStatus(mission, dayIso),
     equipe: oneLine(teamLabel(mission.agent1, mission.agent2).toUpperCase()),
     observacao: oneLine(observation(mission)),
+    ultimaAtualizacao: oneLine(String(mission.current_location || '').trim()),
+    mapa: String(mission.map_link || '').trim(),
     motorista: oneLine(String(mission.driver_name || '')),
     origem: placeLabel(mission.origin),
     destino: placeLabel(mission.destination),

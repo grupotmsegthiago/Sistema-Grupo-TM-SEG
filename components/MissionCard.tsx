@@ -104,7 +104,7 @@ const AgingTimelineBar: React.FC<{ minutes: number; status: string }> = ({ minut
     let bgBase = 'bg-gray-50';
     let label = 'Atualizado';
 
-    if (minutes >= 60) { 
+    if (minutes >= 120) { 
         colorClass = 'bg-red-600';
         textColor = 'text-red-700';
         borderColor = 'border-red-200';

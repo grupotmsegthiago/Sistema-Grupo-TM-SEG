@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom';
 import { AlertTriangle, Ban, CalendarClock, CalendarDays, CheckCircle2, ClipboardList, FileSearch, MapPin, Moon, Pencil, Radio, RefreshCw, Search, Truck, X, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { authFetch } from '../lib/authFetch';
 import { fetchAllPages } from '../lib/supabasePaging';
 import { formatCivilDateBR, formatIsoDateBR, getBrazilDayBounds } from '../lib/dateUtils';
 import {
@@ -27,7 +28,7 @@ const MISSION_COLUMNS = [
   'start_time', 'end_time', 'estimated_time', 'start_km', 'end_km',
   'agent1', 'agent2', 'vehicle_id', 'client_vehicle', 'mission_type',
   'special_operation_type', 'dhl_se_number', 'reference_number',
-  'current_location', 'toll_value', 'driver_name', 'occurrence_count',
+  'current_location', 'map_link', 'toll_value', 'driver_name', 'occurrence_count',
 ].join(', ');
 
 type RawMission = ControleDiarioSource & {
@@ -47,6 +48,40 @@ const STATUS_TONE: Record<string, string> = {
   PRESERVAÇÃO: 'bg-violet-100 text-violet-900',
   CANCELADA: 'bg-zinc-200 text-zinc-600',
   RECUSADA: 'bg-red-100 text-red-800',
+};
+
+function mapPreview(link: string): string {
+  const raw = link.trim();
+  if (!raw) return '';
+  const coords = raw.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+  if (coords) return `https://maps.google.com/maps?q=${coords[1]},${coords[2]}&z=14&output=embed`;
+  if (/google\.[^/]+\/maps/i.test(raw)) {
+    return raw.includes('output=embed') ? raw : `${raw}${raw.includes('?') ? '&' : '?'}output=embed`;
+  }
+  return '';
+}
+
+function whenNote(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '';
+  }
+}
+
+type DiarioNote = {
+  id: string;
+  mission_id: string;
+  note: string;
+  created_by: string;
+  created_at: string;
 };
 
 function tabLabel(iso: string): string {
@@ -122,6 +157,12 @@ export default function ControleDiario() {
   const [occurrenceRow, setOccurrenceRow] = useState<ControleDiarioRow | null>(null);
   const [passagem, setPassagem] = useState<(PassagemPlantao & { image: string }) | null>(null);
   const [passagemBusy, setPassagemBusy] = useState(false);
+  const [notesByMission, setNotesByMission] = useState<Record<string, DiarioNote[]>>({});
+  const [noteRow, setNoteRow] = useState<ControleDiarioRow | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteError, setNoteError] = useState('');
+  const [statusTip, setStatusTip] = useState<string | null>(null);
   const [printAll, setPrintAll] = useState(false);
   const tableRef = useRef<HTMLTableElement>(null);
   const rawById = useRef(new Map<string, RawMission>());
@@ -240,6 +281,30 @@ export default function ControleDiario() {
   }, [day, load]);
 
   useEffect(() => {
+    const ids = rows.map((row) => row.id).filter(Boolean);
+    if (!ids.length) {
+      setNotesByMission({});
+      return;
+    }
+    let cancelled = false;
+    void authFetch(`/api/controle-diario-notas?ids=${encodeURIComponent(ids.join(','))}`)
+      .then(async (res) => (res.ok ? await res.json() : []))
+      .then((list: DiarioNote[]) => {
+        if (cancelled || !Array.isArray(list)) return;
+        const bag: Record<string, DiarioNote[]> = {};
+        for (const item of list) {
+          const key = String(item.mission_id || '');
+          if (!key) continue;
+          if (!bag[key]) bag[key] = [];
+          bag[key].push(item);
+        }
+        setNotesByMission(bag);
+      })
+      .catch(() => { if (!cancelled) setNotesByMission({}); });
+    return () => { cancelled = true; };
+  }, [rows]);
+
+  useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const kick = () => {
       if (timer) clearTimeout(timer);
@@ -269,12 +334,12 @@ export default function ControleDiario() {
     return rows.filter((row) => {
       if (statusFilter !== 'TODOS' && row.status !== statusFilter) return false;
       if (!q) return true;
-      return [row.os, row.cliente, row.rota, row.motorista, row.fornecedor, row.viatura, row.veiculoEscoltado, row.equipe, row.observacao]
+      return [row.os, row.cliente, row.rota, row.motorista, row.fornecedor, row.viatura, row.veiculoEscoltado, row.equipe, ...(notesByMission[row.id] || []).map((item) => item.note)]
         .join(' ')
         .toUpperCase()
         .includes(q);
     });
-  }, [rows, query, statusFilter, sheetRows]);
+  }, [rows, query, statusFilter, sheetRows, notesByMission]);
 
   const openPassagem = async () => {
     setPassagemBusy(true);
@@ -327,6 +392,36 @@ export default function ControleDiario() {
     link.href = passagem.image;
     link.download = `passagem-plantao-${day}.png`;
     link.click();
+  };
+
+  const saveNote = async () => {
+    if (!noteRow || noteSaving) return;
+    const text = noteDraft.trim();
+    if (!text) {
+      setNoteError('Escreva a observação antes de salvar.');
+      return;
+    }
+    setNoteSaving(true);
+    setNoteError('');
+    try {
+      const res = await authFetch('/api/controle-diario-notas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mission_id: noteRow.id, note: text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Não foi possível salvar a observação.');
+      const saved = data as DiarioNote;
+      setNotesByMission((prev) => ({
+        ...prev,
+        [noteRow.id]: [saved, ...(prev[noteRow.id] || [])],
+      }));
+      setNoteDraft('');
+    } catch (err: any) {
+      setNoteError(err?.message || 'Não foi possível salvar a observação.');
+    } finally {
+      setNoteSaving(false);
+    }
   };
 
   const statuses = useMemo(() => ['TODOS', ...Object.keys(counts).sort()], [counts]);
@@ -524,10 +619,33 @@ export default function ControleDiario() {
                         </button>
                       )}
                     </td>
-                    <td className={line}>
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-black ${STATUS_TONE[row.status] || 'bg-zinc-100 text-zinc-700'}`}>
+                    <td
+                      className={`${line} relative`}
+                      onMouseEnter={() => setStatusTip(row.id)}
+                      onMouseLeave={() => setStatusTip((current) => (current === row.id ? null : current))}
+                    >
+                      <span
+                        className={`inline-block cursor-help rounded-full px-2 py-0.5 text-[10px] font-black ${STATUS_TONE[row.status] || 'bg-zinc-100 text-zinc-700'}`}
+                        data-testid={`controle-diario-status-${row.os}`}
+                      >
                         {row.status}
                       </span>
+                      {statusTip === row.id && (
+                        <div className="absolute left-0 top-full z-30 w-72 rounded-2xl border border-zinc-200 bg-white p-3 text-left shadow-xl" data-testid={`controle-diario-status-tip-${row.os}`}>
+                          <p className="text-[10px] font-black uppercase tracking-wide text-zinc-400">Última atualização</p>
+                          <p className="mt-1 text-xs font-semibold text-zinc-800">{row.ultimaAtualizacao || 'Sem atualização registrada'}</p>
+                          {row.mapa ? (
+                            <>
+                              {mapPreview(row.mapa) ? (
+                                <iframe title={`Mapa da OS ${row.os}`} src={mapPreview(row.mapa)} className="mt-2 h-32 w-full rounded-xl border border-zinc-100" loading="lazy" />
+                              ) : null}
+                              <a href={row.mapa} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-[11px] font-black text-red-700 underline">Abrir mapa</a>
+                            </>
+                          ) : (
+                            <p className="mt-2 text-[11px] text-zinc-400">Sem mapa nesta atualização.</p>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className={line}>{cell(row.dataInicial)}</td>
                     <td className={line}>{cell(row.horaAgendada)}</td>
@@ -545,7 +663,22 @@ export default function ControleDiario() {
                       {row.totalKm == null ? '' : row.totalKm.toLocaleString('pt-BR')}
                     </td>
                     <td className={line} title={row.equipe}>{cell(row.equipe)}</td>
-                    <td className={`${line} text-zinc-600`} title={row.observacao}>{cell(row.observacao)}</td>
+                    <td className={`${line} max-w-[220px] text-zinc-600`}>
+                      {(() => {
+                        const latest = notesByMission[row.id]?.[0];
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => { setNoteRow(row); setNoteDraft(''); setNoteError(''); }}
+                            className={`block max-w-full truncate rounded-lg px-2 py-1 text-left text-[10px] font-bold ${latest ? 'bg-amber-100 text-amber-950' : 'bg-zinc-100 text-zinc-500 hover:bg-amber-50'}`}
+                            data-testid={`controle-diario-note-${row.os}`}
+                            title={latest ? `${latest.note} — ${latest.created_by}` : 'Observação registrada ao finalizar, recusar ou cancelar'}
+                          >
+                            {latest ? latest.note : 'Sem observação'}
+                          </button>
+                        );
+                      })()}
+                    </td>
                   </tr>
                 </React.Fragment>
               );
@@ -668,6 +801,52 @@ export default function ControleDiario() {
               <button type="button" onClick={downloadPassagem} className="flex-1 rounded-full bg-zinc-950 py-2 text-sm font-black text-white" data-testid="passagem-plantao-download">
                 Baixar print
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {noteRow && (
+        <div className="fixed inset-0 z-[240] flex items-center justify-center bg-black/60 p-4" data-testid="controle-diario-note-modal">
+          <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
+              <div>
+                <p className="text-sm font-black text-zinc-900">Observação · OS {noteRow.os}</p>
+                <p className="text-[11px] text-zinc-500">{noteRow.cliente} · o histórico guarda quem escreveu</p>
+              </div>
+              <button type="button" onClick={() => !noteSaving && setNoteRow(null)} className="rounded-full p-1 text-zinc-400 hover:bg-zinc-100" data-testid="controle-diario-note-close">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-3 overflow-y-auto p-4">
+              <textarea
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                rows={4}
+                placeholder="Escreva o que o próximo turno precisa saber..."
+                className="w-full rounded-2xl border border-zinc-200 p-3 text-sm outline-none focus:border-red-400"
+                data-testid="controle-diario-note-input"
+              />
+              {noteError && <p className="text-xs font-bold text-red-700">{noteError}</p>}
+              <button
+                type="button"
+                disabled={noteSaving}
+                onClick={() => { void saveNote(); }}
+                className="w-full rounded-full bg-red-700 py-2 text-sm font-black text-white disabled:opacity-50"
+                data-testid="controle-diario-note-save"
+              >
+                {noteSaving ? 'Salvando…' : 'Salvar observação'}
+              </button>
+              <div className="space-y-2" data-testid="controle-diario-note-history">
+                {(notesByMission[noteRow.id] || []).length === 0 && (
+                  <p className="text-xs text-zinc-400">Nenhuma observação salva nesta OS.</p>
+                )}
+                {(notesByMission[noteRow.id] || []).map((item) => (
+                  <div key={item.id} className="rounded-2xl bg-zinc-50 px-3 py-2">
+                    <p className="whitespace-pre-wrap text-sm text-zinc-800">{item.note}</p>
+                    <p className="mt-1 text-[10px] font-bold text-zinc-500">{item.created_by} · {whenNote(item.created_at)}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

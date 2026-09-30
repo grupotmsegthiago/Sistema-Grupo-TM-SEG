@@ -302,12 +302,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     return isDiretoriaRole;
   }, [isDiretoriaRole]);
 
-  // Alerta "OS sem Tabela": Administrador, Avançado e nomes históricos.
-  // Perfil Operador não vê, mesmo que o nome caia na exceção da Bárbara.
+  // Alerta "OS sem Tabela": Administrador e nomes históricos.
+  // Perfis Operador e Avançado não veem, mesmo que o nome caia numa exceção.
   const canSeeMissingTableAlert = useMemo(() => userCanSeeMissingTable(currentUser), [currentUser]);
 
-  // ADMINISTRADOR e AVANÇADO são OBRIGADOS a selecionar a tabela: o alerta abre
-  // automaticamente a cada atualização de tela enquanto houver OS sem tabela.
+  // ADMINISTRADOR vê o alerta aberto ao entrar, enquanto houver OS sem tabela.
   const mustForceMissingTable = useMemo(() => userMustForceMissingTable(currentUser), [currentUser]);
 
   // Conta quantas OS estão com prejuízo direto (custo > receita) no período
@@ -406,9 +405,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   }, [canSeeMissingTableAlert, allMissions, missingTableExtra, missingTableAdj, clientTables, providerTables, clientsData]);
   const missingTableCount = missingTableRows.length;
 
-  // FORÇA administrador/avançado a tratar OS sem tabela: o alerta abre sozinho a
+  // FORÇA o Administrador a tratar OS sem tabela: o alerta abre sozinho a
   // cada montagem da tela (refresh) enquanto houver pendências. Ref evita reabrir
   // repetidamente na mesma sessão depois que o usuário fechar.
+  // Perfil Avançado não entra nessa regra.
   const forcedMissingOpenRef = useRef(false);
   useEffect(() => {
     if (!mustForceMissingTable) return;
@@ -1005,13 +1005,6 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
       let cancelled = false;
 
       fetchMissionsRef.current();
-          const role = (currentUserRef.current?.role || '').toLowerCase();
-          if (!isRestrictedClientViewRef.current && ['diretoria', 'administrador', 'ceo', 'financeiro'].includes(role)) {
-              authFetch('/api/recalculate-all', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-                  .then(r => r.json())
-                  .then(data => { if (data?.success && data.updated > 0) fetchMissionsRef.current(true); })
-                  .catch(() => { /* silencioso */ });
-          }
 
           const handleMissionsRealtime = (event: Event) => {
             const payload = (event as CustomEvent).detail as { eventType?: string; new?: any; old?: any } | undefined;
@@ -1089,34 +1082,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           };
     }, [userSessionKey]);
 
-    // A cada 5 min: recalcula hora extra na tela (todos os usuários).
-    // Diretoria/financeiro: também persiste valores no banco quando mudam (faturamento).
+    // A cada 5 min o relógio da tela avança (hora extra visual).
+    // O banco da OS não é recalculado aqui: só muda quando o operador edita e salva.
     const OVERTIME_SYNC_MS = 5 * 60 * 1000;
     useEffect(() => {
       if (!userSessionKey) return;
-
-      const canPersistBillingRecalc = () => {
-        const role = (currentUserRef.current?.role || '').toLowerCase();
-        return !isRestrictedClientViewRef.current
-          && ['diretoria', 'administrador', 'ceo', 'financeiro'].includes(role);
-      };
-
-      const syncOvertimeAndBilling = async () => {
-        setCurrentTime(new Date());
-        if (!canPersistBillingRecalc()) return;
-        try {
-          const r = await authFetch('/api/recalculate-all', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-          });
-          const data = await r.json();
-          if (data?.success && data.updated > 0) {
-            fetchMissionsRef.current(true);
-          }
-        } catch { /* silencioso */ }
-      };
-
-      const timer = setInterval(syncOvertimeAndBilling, OVERTIME_SYNC_MS);
+      const timer = setInterval(() => setCurrentTime(new Date()), OVERTIME_SYNC_MS);
       return () => clearInterval(timer);
     }, [userSessionKey]);
 

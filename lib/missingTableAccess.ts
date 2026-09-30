@@ -20,28 +20,34 @@ export function isOperadorProfile(role: string | null | undefined): boolean {
   return roleLower === 'operador' || roleLower === 'operacional';
 }
 
+/** Perfil Avançado também fica de fora da tela OS sem Tabela. */
+export function isAvancadoProfile(role: string | null | undefined): boolean {
+  const roleLower = roleKey(role);
+  return roleLower === 'avancado';
+}
+
 /**
- * Alerta "OS sem Tabela": Administrador, Avançado, acesso total e nomes
- * históricos (Thiago Moreira, Bárbara, Giovanna, Simone).
- * O perfil Operador fica de fora em qualquer caso.
+ * Alerta "OS sem Tabela": Administrador, acesso total e nomes históricos
+ * (Thiago Moreira, Bárbara, Giovanna, Simone).
+ * Os perfis Operador e Avançado ficam de fora em qualquer caso.
  */
 export function canSeeMissingTableAlert(user: MissingTableUser | null | undefined): boolean {
   if (!user) return false;
-  if (isOperadorProfile(user.role)) return false;
+  if (isOperadorProfile(user.role) || isAvancadoProfile(user.role)) return false;
   const nameLower = String(user.name || '').toLowerCase();
   const roleLower = roleKey(user.role);
-  const isAdminOrAdvanced = ['administrador', 'avançado', 'avancado'].includes(roleLower)
+  const isAdmin = roleLower === 'administrador'
     || (Array.isArray(user.permissions) && user.permissions.includes('*'));
-  return isAdminOrAdvanced
+  return isAdmin
     || nameLower.includes('thiago moreira')
     || isFinanceSupervisorName(user.name)
     || nameLower.includes('simone');
 }
 
-/** Administrador e Avançado veem o alerta aberto ao entrar na tela. */
+/** Administrador vê o alerta aberto ao entrar na tela. */
 export function mustForceMissingTable(user: MissingTableUser | null | undefined): boolean {
   if (!canSeeMissingTableAlert(user)) return false;
   const roleLower = roleKey(user?.role);
-  return ['administrador', 'avançado', 'avancado'].includes(roleLower)
+  return roleLower === 'administrador'
     || (Array.isArray(user?.permissions) && user.permissions.includes('*'));
 }

@@ -1,7 +1,7 @@
 import { formatDateBR, formatIsoDateBR, formatTimeAuditBR, formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB } from '../types';
+import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB, ProviderCostTable } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { supabase, MISSION_UPDATES_BROADCAST_CHANNEL } from '../lib/supabase';
 import { fetchAllPages } from '../lib/supabasePaging';
@@ -170,6 +170,7 @@ export interface FinalizeConfirmPayload {
     endTravelIso: string | null;
     odometerPrintUrl: string | null;
     tripEvidenceUrl?: string | null;
+    observacao?: string;
 }
 
 // Fornecedores ATIVA e TM SEG: a regra do hodômetro está em lib/veladaFinalize.ts.
@@ -183,6 +184,14 @@ interface OdometerAiResult {
     justificativa: string;
 }
 
+/** Texto do lembrete: nome da tabela e o KM ou raio que o motor já escolheu. */
+function describeAppliedTable(name: string | undefined, franchiseKm: number, asRaio: boolean): string {
+    const label = (name || '').trim() || 'não identificada';
+    const km = Math.round(Number(franchiseKm) || 0);
+    if (km <= 0) return label;
+    return asRaio ? `${label} — raio de ${km} km` : `${label} — ${km} km`;
+}
+
 interface FinalizeChecklistDialogProps {
     isOpen: boolean;
     kind: 'completed' | 'cancelled' | 'refused';
@@ -194,7 +203,8 @@ interface FinalizeChecklistDialogProps {
     mapLink: string;
     originCity: string;
     destCity: string;
-    appliedTableName: string;
+    clientTableLine: string;
+    providerTableLine: string;
     isRaio: boolean;
     raioFranchiseKm: number;
     startKm: number;
@@ -210,7 +220,7 @@ interface FinalizeChecklistDialogProps {
 
 const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     isOpen, kind, osLabel, providerName, dateLabel, isDhl, destinationAddress, mapLink,
-    originCity, destCity, appliedTableName, isRaio, raioFranchiseKm, startKm, defaultEndKm,
+    originCity, destCity, clientTableLine, providerTableLine, isRaio, raioFranchiseKm, startKm, defaultEndKm,
     franchiseKm, suggestions, defaultDateTime, minDateTime, missionId, onConfirm, onCancel,
 }) => {
     const isCompleted = kind === 'completed';
@@ -225,6 +235,7 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     const [raioAnswer, setRaioAnswer] = useState<'yes' | 'no' | null>(null);
     const [raioRealKm, setRaioRealKm] = useState('');
     const [err, setErr] = useState('');
+    const [observacao, setObservacao] = useState('');
     // Trava de duplo-clique: o onConfirm do pai roda uma estimativa de pedágio
     // por IA (vários segundos) antes de fechar o dialog. Sem feedback, o operador
     // clicava "Finalizar" várias vezes. Esta flag desabilita o botão no 1º clique.
@@ -483,7 +494,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             if (!isRefused && !chkAddress) { setErr('Confirme o endereço de destino final.'); return; }
             if (isRaio && !raioAnswer) { setErr('Responda se a viatura rodou o raio.'); return; }
             if (isRaio && raioAnswer === 'no' && (raioRealKm || '').trim() === '') { setErr('Informe o raio realmente rodado (km).'); return; }
-            if (!chkCities) { setErr('Confirme as cidades e a tabela aplicada.'); return; }
+            if (!chkCities) { setErr('Confirme as cidades e as tabelas do cliente e do fornecedor.'); return; }
         }
 
         if (isCompleted) {
@@ -523,6 +534,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             endTravelIso: isCancelled && endTravelParsed && !isNaN(endTravelParsed.getTime()) ? endTravelParsed.toISOString() : null,
             odometerPrintUrl: evidenceOk ? (odoUrl || null) : null,
             tripEvidenceUrl: tripUrl || null,
+            observacao: observacao.trim(),
         });
     };
 
@@ -610,12 +622,13 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                         </div>
                         <div className="mt-2 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3">
                             <TableProperties className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
-                            <p className="text-[12px] font-medium text-blue-900">
-                                Lembrete: verifique se a <b>tabela aplicada</b> nesta OS está correta —
-                                <span className="font-bold"> {appliedTableName || 'tabela não identificada'}</span>.
-                            </p>
+                            <div className="text-[12px] font-medium text-blue-900">
+                                <p>Lembrete: verifique se as <b>tabelas do cliente e do fornecedor</b> desta OS estão corretas. O KM ou o raio abaixo já foi avaliado.</p>
+                                <p className="mt-1" data-testid="text-client-table">Cliente: <b>{clientTableLine || 'não identificada'}</b></p>
+                                <p data-testid="text-provider-table">Fornecedor: <b>{providerTableLine || 'não identificada'}</b></p>
+                            </div>
                         </div>
-                        <FinCheck label="Confirmo as cidades e a tabela aplicada" checked={chkCities} onToggle={() => setChkCities(v => !v)} testId="check-cities" />
+                        <FinCheck label="Confirmo as cidades e as tabelas do cliente e do fornecedor" checked={chkCities} onToggle={() => setChkCities(v => !v)} testId="check-cities" />
                     </FinSection>
                     </>
                     )}
@@ -831,6 +844,19 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                         </FinSection>
                     )}
 
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="field-finalize-observacao">
+                        <label className="text-[10px] font-semibold uppercase tracking-wide text-amber-800">Observação</label>
+                        <p className="mt-0.5 text-[11px] text-amber-900">Vai para a coluna Observação do Controle Diário. A atualização da OS fica no histórico.</p>
+                        <textarea
+                            value={observacao}
+                            onChange={e => setObservacao(e.target.value)}
+                            rows={3}
+                            placeholder="O que o Controle Diário precisa registrar nesta OS..."
+                            className="mt-2 w-full rounded-md border border-amber-300 bg-white px-2.5 py-2 text-sm text-slate-800 outline-none focus:border-amber-500"
+                            data-testid="input-finalize-observacao"
+                        />
+                    </div>
+
                     {err && (
                         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600" data-testid="text-confirm-error">
                             <AlertTriangle size={14} /> {err}
@@ -955,6 +981,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const confirmedPrintUrlRef = useRef<string | null>(null);
     const confirmedPrintBlobRef = useRef<Blob | null>(null);
     const confirmedPrintBlobPromiseRef = useRef<Promise<Blob | null> | null>(null);
+    const confirmedObservacaoRef = useRef<string>('');
     // Relatório de fim de missão (dois botões: copiar texto / copiar foto).
     const [finalizeReport, setFinalizeReport] = useState<{ text: string; photoUrl: string | null } | null>(null);
     const [copiedReportText, setCopiedReportText] = useState(false);
@@ -972,6 +999,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         confirmedPrintUrlRef.current = null;
         confirmedPrintBlobRef.current = null;
         confirmedPrintBlobPromiseRef.current = null;
+        confirmedObservacaoRef.current = '';
         setPendingFinalizeConfirm(null);
         // Print de atualização é estritamente da sessão: limpa ao abrir/trocar OS
         updatePrintBlobRef.current = null;
@@ -1105,6 +1133,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [agentsList, setAgentsList] = useState<Agent[]>([]);
     const [allAgentsList, setAllAgentsList] = useState<Agent[]>([]);
     const [clientTables, setClientTables] = useState<ClientPriceTable[]>([]);
+    const [providerCostTables, setProviderCostTables] = useState<ProviderCostTable[]>([]);
     const [clientVehiclesList, setClientVehiclesList] = useState<ClientVehicleDB[]>([]);
     const [dbPastDrivers, setDbPastDrivers] = useState<{name: string, phone: string}[]>([]);
     const [clientId, setClientId] = useState<number | null>(null);
@@ -1415,7 +1444,39 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const cTables = [...clientTables].sort((a, b) => a.franchise_km - b.franchise_km);
         const appliedTable = cTables.find(t => t.franchise_km >= missionTotals.plannedKm) || cTables[cTables.length - 1];
         const appliedTableName = appliedTable?.operation_type || '';
-        const franchiseKm = appliedTable?.franchise_km || 0;
+        let franchiseKm = appliedTable?.franchise_km || 0;
+        let clientTableLine = describeAppliedTable(appliedTableName, franchiseKm, isRaio);
+        let providerTableLine = describeAppliedTable('', 0, false);
+        try {
+            if (mission && (clientTables.length > 0 || providerCostTables.length > 0)) {
+                const finPreview = calculateMissionFinancials(
+                    {
+                        ...mission,
+                        status: editData.status || mission.status,
+                        provider: editData.provider || mission.provider,
+                        origin: editData.origin || mission.origin,
+                        destination: destinationAddress,
+                        startKm: editData.startKm,
+                        endKm: editData.endKm,
+                    } as Mission,
+                    clientTables,
+                    providerCostTables,
+                    undefined,
+                    new Date(),
+                    undefined,
+                    providersList,
+                );
+                const cKm = Number(finPreview?.client?.franchiseKm) || franchiseKm;
+                const pKm = Number(finPreview?.provider?.franchiseKm) || 0;
+                const cName = finPreview?.client?.tableName || appliedTableName;
+                const pName = finPreview?.provider?.tableName || '';
+                if (cKm > 0) franchiseKm = cKm;
+                clientTableLine = describeAppliedTable(cName, cKm || franchiseKm, isRaio && (cKm || franchiseKm) > 0);
+                providerTableLine = describeAppliedTable(pName, pKm, isRaio && pKm > 0 && pKm === raioFranchiseKm);
+            }
+        } catch {
+            // Mantém o lembrete com a tabela do cliente já conhecida.
+        }
 
         // Sugestões (apenas GUIA): tabelas mais prováveis para a distância real.
         // A troca de tabela e o recálculo continuam no Modal Financeiro.
@@ -1434,8 +1495,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 }));
         }
 
-        return { isDhl, destinationAddress, originCity, destCity, isRaio, raioFranchiseKm, appliedTableName, franchiseKm, suggestions };
-    }, [editData, mission, clientTables, missionTotals]);
+        return { isDhl, destinationAddress, originCity, destCity, isRaio, raioFranchiseKm, clientTableLine, providerTableLine, franchiseKm, suggestions };
+    }, [editData, mission, clientTables, providerCostTables, providersList, missionTotals]);
 
     const loadMissionData = async () => {
         if (!mission) return;
@@ -1658,6 +1719,29 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         else setSearchVehicle('');
         return { vehicles: vehiclesPage.rows, allAgents: allAgents || [] };
     };
+
+    // Tabelas de custo do fornecedor da OS — só para o lembrete e o recálculo no salvar.
+    useEffect(() => {
+        const raw = (editData.provider || '').trim();
+        if (!isOpen || !raw) {
+            setProviderCostTables([]);
+            return;
+        }
+        let cancelled = false;
+        const safe = raw.replace(/[%_]/g, '');
+        if (!safe) {
+            setProviderCostTables([]);
+            return;
+        }
+        void supabase
+            .from('provider_cost_tables')
+            .select('*')
+            .ilike('provider', `%${safe}%`)
+            .then(({ data }) => {
+                if (!cancelled) setProviderCostTables((data || []) as ProviderCostTable[]);
+            });
+        return () => { cancelled = true; };
+    }, [isOpen, editData.provider]);
 
     // Recupera automaticamente o que o fornecedor já salvou via link público DHL
     // (escoltistas, viatura e print do espelhamento). Preenche campos vazios da
@@ -2554,6 +2638,71 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 }
             }
 
+            // Recálculo das tabelas só aqui: o operador confirmou o checklist e apertou salvar.
+            // Não roda em segundo plano. OS aprovada, com edição manual ou recusada fica de fora.
+            const manualFinancialEdit = !!((mission as any).revenue_edit_reason || (mission as any).cost_edit_reason);
+            if (
+                finalizeConfirmedRef.current
+                && finalStatus === MissionStatus.COMPLETED
+                && !manualFinancialEdit
+                && !(mission as any).billing_approved
+            ) {
+                try {
+                    let pctSaveTables = providerCostTables;
+                    if (!pctSaveTables.length) {
+                        const providerName = String(editData.provider || mission.provider || '').replace(/[%_]/g, '');
+                        if (providerName) {
+                            const { data: pctRows } = await supabase
+                                .from('provider_cost_tables')
+                                .select('*')
+                                .ilike('provider', `%${providerName}%`);
+                            pctSaveTables = (pctRows || []) as ProviderCostTable[];
+                        }
+                    }
+                    const finValidated = calculateMissionFinancials(
+                        {
+                            ...mission,
+                            status: MissionStatus.COMPLETED,
+                            provider: editData.provider || mission.provider,
+                            origin: editData.origin,
+                            destination: finalDestination,
+                            startKm: sKm,
+                            endKm: eKm,
+                            startTime: startIso,
+                            endTime: endIso,
+                            is_same_os: editData.isSameOs,
+                        } as Mission,
+                        clientTables,
+                        pctSaveTables,
+                        undefined,
+                        new Date(),
+                        undefined,
+                        providersList,
+                    );
+                    const r2fin = (n: number) => Math.round(Number(n || 0) * 100) / 100;
+                    const newRevenue = r2fin(finValidated?.client?.serviceTotal || 0);
+                    const newCost = editData.isSameOs ? 0 : r2fin(finValidated?.provider?.serviceTotal || 0);
+                    const oldRevenue = Number(mission.revenue_value || 0);
+                    const oldCost = Number(mission.cost_value || 0);
+                    if (finValidated?.client?.tableName && newRevenue > 0) {
+                        updateData.revenue_value = newRevenue;
+                    } else if (newRevenue <= 0 && oldRevenue > 0) {
+                        console.warn(`[UpdateMission] OS ${mission.id}: recálculo do cliente não gravado para não zerar a receita.`);
+                    }
+                    if (editData.isSameOs) {
+                        updateData.cost_value = 0;
+                        updateData.valor_zero_motivo = 'MESMA OS';
+                    } else if (finValidated?.provider?.tableName && newCost > 0) {
+                        updateData.cost_value = newCost;
+                        if (updateData.valor_zero_motivo === 'AGUARDANDO DEFINIÇÃO') updateData.valor_zero_motivo = '';
+                    } else if (newCost <= 0 && oldCost > 0) {
+                        console.warn(`[UpdateMission] OS ${mission.id}: recálculo do fornecedor não gravado para não zerar o custo.`);
+                    }
+                } catch (e) {
+                    console.warn('[UpdateMission] recálculo da tabela na validação:', e);
+                }
+            }
+
             // REGRA PRIORITÁRIA: OS Recusada SEMPRE zera valores de cliente,
             // fornecedor e pedágio — independente do que estiver salvo. Sem
             // exceções, sem snapshot, sem aprovação.
@@ -2632,6 +2781,29 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             }
 
             dispararSyncFaturaPorOS(mission.id, currentUser?.name);
+
+            const observacaoControle = confirmedObservacaoRef.current;
+            confirmedObservacaoRef.current = '';
+            if (observacaoControle) {
+                try {
+                    const noteRes = await authFetch('/api/controle-diario-notas', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mission_id: mission.id, note: observacaoControle }),
+                    });
+                    if (!noteRes.ok) {
+                        const noteErr = await noteRes.json().catch(() => ({} as { error?: string }));
+                        showNotification('Observação', noteErr?.error || 'A OS foi salva, mas a observação do Controle Diário não entrou.', 'warning');
+                    }
+                } catch (noteFail) {
+                    console.warn('[ControleDiario] observação:', noteFail);
+                    showNotification('Observação', 'A OS foi salva, mas a observação do Controle Diário não entrou.', 'warning');
+                }
+            }
+
+            if (updateData.revenue_value != null || updateData.cost_value != null || observacaoControle) {
+                try { window.dispatchEvent(new CustomEvent('refreshMissions')); } catch { /* a tela local segue pelo realtime */ }
+            }
 
             if (
                 finalStatus === MissionStatus.COMPLETED
@@ -3191,6 +3363,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         confirmedRealTimeRef.current = iso;
         confirmedEndTravelRef.current = endTravelIso;
         confirmedPrintUrlRef.current = odometerPrintUrl || null;
+        confirmedObservacaoRef.current = String(payload.observacao || '').trim();
         if (odometerPrintUrl) prefetchConfirmedPrintBlob(odometerPrintUrl);
         if (mission && kind === 'completed' && odometerPrintUrl && tripEvidenceUrl && currentUser?.name) {
             const { error: evidenceErr } = await supabase.from('missions')
@@ -3280,6 +3453,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         resumeSubmitRef.current = null;
         finalizeConfirmedRef.current = false;
         pendingFinalizeStatusRef.current = null;
+        confirmedObservacaoRef.current = '';
         // Destrava o relógio ao vivo que foi congelado ao abrir o gate.
         setIsEndTimeLocked(false);
         if (mission) {
@@ -4575,7 +4749,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
               mapLink={editData.mapLink || ''}
               originCity={finalizeData.originCity}
               destCity={finalizeData.destCity}
-              appliedTableName={finalizeData.appliedTableName}
+              clientTableLine={finalizeData.clientTableLine}
+              providerTableLine={finalizeData.providerTableLine}
               isRaio={finalizeData.isRaio}
               raioFranchiseKm={finalizeData.raioFranchiseKm}
               franchiseKm={finalizeData.franchiseKm}

@@ -143,3 +143,10 @@ test('auditoria da OS fica com Giovanna, Beatriz e Thiago Moreira', () => {
   assert.equal(controleDiarioOpensAudit('Thiago Arruda'), false);
   assert.equal(daysOfMonth('2026-09').length, 30);
 });
+
+test('observação do controle diário guarda o texto e descarta vazio', async () => {
+  const { normalizeControleDiarioNote } = await import('../lib/controleDiarioNotas');
+  assert.equal(normalizeControleDiarioNote('  plantão avisou atraso  '), 'plantão avisou atraso');
+  assert.equal(normalizeControleDiarioNote('   '), '');
+  assert.equal(normalizeControleDiarioNote('linha 1\r\nlinha 2'), 'linha 1\nlinha 2');
+});

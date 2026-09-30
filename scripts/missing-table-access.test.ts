@@ -9,11 +9,15 @@ test('perfil Operador não vê OS sem Tabela, mesmo com nome da exceção', () =
   assert.equal(canSeeMissingTableAlert({ role: 'operador', name: 'Plantão', permissions: ['*'] }), false);
 });
 
-test('Administrador e Avançado continuam vendo e o alerta abre sozinho', () => {
+test('perfil Avançado não vê OS sem Tabela, mesmo com nome da exceção', () => {
+  assert.equal(canSeeMissingTableAlert({ role: 'Avançado', name: 'Supervisão' }), false);
+  assert.equal(mustForceMissingTable({ role: 'AVANÇADO', name: 'Supervisão' }), false);
+  assert.equal(canSeeMissingTableAlert({ role: 'Avançado', name: 'Simone', permissions: ['*'] }), false);
+});
+
+test('Administrador continua vendo e o alerta abre sozinho', () => {
   assert.equal(canSeeMissingTableAlert({ role: 'Administrador', name: 'Bárbara Sgarlata' }), true);
   assert.equal(mustForceMissingTable({ role: 'Administrador', name: 'Bárbara Sgarlata' }), true);
-  assert.equal(canSeeMissingTableAlert({ role: 'Avançado', name: 'Supervisão' }), true);
-  assert.equal(mustForceMissingTable({ role: 'AVANÇADO', name: 'Supervisão' }), true);
 });
 
 test('comercial e operador sem exceção também ficam de fora', () => {
