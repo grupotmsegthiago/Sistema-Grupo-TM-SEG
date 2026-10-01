@@ -26,6 +26,7 @@ import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import { billableClientToll, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import { formatProviderName } from '../lib/utils';
+import { AvisoTabelaOs } from './AvisoTabelaOs';
 import { copyTextAsync } from '../lib/clipboard';
 import { buildAuditSummaryData, type AuditSummaryData } from '../lib/auditSummaryBuilder';
 import AuditSummaryPanel from './AuditSummaryPanel';
@@ -37,6 +38,7 @@ import {
   retryPayloadForSnapshotConstraint,
   shouldWriteBillingSnapshot,
 } from '../lib/missionSnapshot';
+import { diretoriaAindaAprova, faturamentoAprovadoSemDiretoria } from '../lib/billing/diretoriaApproval';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import {
   getMissionOpsDisplayStatus,
@@ -2435,7 +2437,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const stages = approvalLog.map(l => l.stage);
       const hasAuditor = stages.includes('auditor');
       const hasFinanceiro = stages.includes('financeiro');
-      const hasDiretoria = stages.includes('diretoria');
+      const hasDiretoria = diretoriaAindaAprova(approvalLog);
       const hasController = stages.includes('controller');
       const isApprovedForBilling = hasFinanceiro || hasDiretoria || hasController || (mission?.billing_approved === true);
       const isFullyApproved = hasDiretoria;
@@ -3420,6 +3422,59 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const msg = e instanceof Error ? e.message : (e?.message || 'Erro desconhecido');
           showNotification('Erro', `Erro ao salvar: ${msg}`, 'error');
       } finally { setIsUpdating(false); isSavingRef.current = false; }
+  };
+
+  const desaprovarPelaDiretoria = async () => {
+      if (!mission || isUpdating) return;
+      if (currentApprovalStatus.currentUserStage !== 'diretoria' || !currentApprovalStatus.isFullyApproved) return;
+      const segue = window.confirm('Desaprovar esta OS pela Diretoria? Os valores salvos não mudam. A aprovação da Diretoria sai do histórico.');
+      if (!segue) return;
+      const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+      const userName = userData.name || 'Diretoria';
+      const userRole = userData.role || 'Diretoria';
+      const agora = new Date().toISOString();
+      const mantemFaturamento = faturamentoAprovadoSemDiretoria(approvalLog);
+      const logEntry = { user: userName, role: userRole, stage: 'diretoria_revogada', date: agora, changes: [] as string[] };
+      setIsUpdating(true);
+      isSavingRef.current = true;
+      try {
+          const logRes = await supabase.from('system_logs').insert([{
+              user_name: userName,
+              action_type: 'diretoria_revogada',
+              entity: 'BillingApproval',
+              entity_id: mission.id,
+              details: JSON.stringify(logEntry),
+          }]);
+          if (logRes.error) throw logRes.error;
+          const payload: Record<string, unknown> = mantemFaturamento
+              ? { billing_approved: true, last_update: agora }
+              : {
+                  billing_approved: false,
+                  snapshot_approved_by: null,
+                  snapshot_approved_at: null,
+                  billing_verified_by: null,
+                  last_update: agora,
+              };
+          const result = await supabase.from('missions').update(payload).eq('id', mission.id).select('id').single();
+          if (result.error) throw result.error;
+          setApprovalLog(prev => [...prev, logEntry]);
+          setMission(prev => prev ? {
+              ...prev,
+              billing_approved: mantemFaturamento,
+              last_update: agora,
+              ...(mantemFaturamento ? {} : { snapshot_approved_by: null, snapshot_approved_at: null, billing_verified_by: undefined }),
+          } : prev);
+          showNotification('Desaprovado', mantemFaturamento
+              ? 'Aprovação da Diretoria retirada. Financeiro ou Controller seguem valendo.'
+              : 'Aprovação da Diretoria retirada. A OS volta para a pendência de aprovações.', 'success');
+          if (onUpdate) onUpdate();
+          window.dispatchEvent(new CustomEvent('refreshMissions'));
+      } catch (e: any) {
+          showNotification('Erro', `Não foi possível desaprovar: ${e?.message || 'erro desconhecido'}`, 'error');
+      } finally {
+          setIsUpdating(false);
+          isSavingRef.current = false;
+      }
   };
 
   const filteredProviderTables = useMemo(() => {
@@ -5008,6 +5063,25 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         {aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                                     </button>
                                 </div>
+                                <AvisoTabelaOs
+                                    missionId={String(mission.id)}
+                                    origem={String(mission.origin || '')}
+                                    destino={String(mission.destination || '')}
+                                    km={(() => {
+                                        const start = Number(mission.startKm);
+                                        const end = Number(mission.endKm);
+                                        if (Number.isFinite(start) && Number.isFinite(end) && start > 0 && end > start) return Math.round(end - start);
+                                        const total = Number(mission.totalDistance);
+                                        return Number.isFinite(total) && total > 0 ? Math.round(total) : null;
+                                    })()}
+                                    lado="cliente"
+                                    tabelaId={manualClientTableId || String(financialData?.client?.tableId || '')}
+                                    tabelas={(() => {
+                                        const todas = clientTables.filter((t) => !/^__AUTO_MASTER__/i.test(t.operation_type || ''));
+                                        const deste = todas.filter((t) => clientTableMatchesMission(t.client || '', mission.originalClientName || mission.client || ''));
+                                        return (deste.length ? deste : todas).map((t) => ({ id: String(t.id), nome: t.operation_type || '', franchiseKm: t.franchise_km }));
+                                    })()}
+                                />
                                 {/* LOG DE DETECÇÃO DA IA */}
                                 <div className="mt-2 text-[9px] font-bold text-gray-400 flex items-center gap-1.5 bg-gray-50 p-2 rounded-lg border border-gray-100">
                                     <BrainCircuit size={12} className="text-blue-500" />
@@ -5464,6 +5538,23 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </button>
                                     )}
                                 </div>
+                                <AvisoTabelaOs
+                                    missionId={String(mission.id)}
+                                    origem={String(mission.origin || '')}
+                                    destino={String(mission.destination || '')}
+                                    km={(() => {
+                                        const start = Number(mission.startKm);
+                                        const end = Number(mission.endKm);
+                                        if (Number.isFinite(start) && Number.isFinite(end) && start > 0 && end > start) return Math.round(end - start);
+                                        const total = Number(mission.totalDistance);
+                                        return Number.isFinite(total) && total > 0 ? Math.round(total) : null;
+                                    })()}
+                                    lado="fornecedor"
+                                    tabelaId={manualProviderTableId || ''}
+                                    tabelas={filteredProviderTables
+                                        .filter((t) => !/^__AUTO_MASTER__/i.test(t.operation_type || ''))
+                                        .map((t) => ({ id: String(t.id), nome: t.operation_type || '', franchiseKm: t.franchise_km }))}
+                                />
                                 {mission.is_same_os && (
                                     <div
                                         data-testid="alert-same-os-provider-table-unused"
@@ -6089,10 +6180,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest mb-2">Histórico de Aprovações</p>
                             <div className="flex flex-col gap-1">
                                 {approvalLog.map((log, i) => {
-                                    const stageLabel = log.stage === 'auditor' ? 'Aprovado pelo Auditor' : log.stage === 'financeiro' ? 'Aprovado pelo Financeiro' : log.stage === 'diretoria' ? 'Aprovado pela Diretoria' : log.stage === 'controller' ? 'Aprovado pelo Controller' : log.stage.endsWith('_reapproval') ? 'Reaprovação' : `Aprovado (${log.stage})`;
+                                    const stageLabel = log.stage === 'auditor' ? 'Aprovado pelo Auditor' : log.stage === 'financeiro' ? 'Aprovado pelo Financeiro' : log.stage === 'diretoria' ? 'Aprovado pela Diretoria' : log.stage === 'diretoria_revogada' ? 'Desaprovado pela Diretoria' : log.stage === 'controller' ? 'Aprovado pelo Controller' : log.stage.endsWith('_reapproval') ? 'Reaprovação' : `Aprovado (${log.stage})`;
                                     const alteracao = formatHistoryAlteration(stageLabel, log.changes);
                                     return (
-                                    <p key={i} className="text-[11px] font-mono text-gray-800 bg-white px-3 py-1.5 rounded-lg border border-emerald-200" data-testid={`approval-log-${i}`}>
+                                    <p key={i} className={`text-[11px] font-mono px-3 py-1.5 rounded-lg border ${log.stage === 'diretoria_revogada' ? 'text-red-800 bg-red-50 border-red-200' : 'text-gray-800 bg-white border-emerald-200'}`} data-testid={`approval-log-${i}`}>
                                         {formatDateBR(log.date)} / {formatTimeBR(log.date)} · {log.user || '—'} &gt; {alteracao}
                                     </p>
                                     );
@@ -6415,6 +6506,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (negativeLockBlocks || (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance)) ? <Lock size={14} className="shrink-0" /> : <Save size={14} className="shrink-0" />}
                                     <span className="truncate">{negativeLockBlocks ? 'Travada' : (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado' : 'Salvar'}</span>
                                 </button>
+                                {currentApprovalStatus.currentUserStage === 'diretoria' && currentApprovalStatus.isFullyApproved && (
+                                  <button
+                                    type="button"
+                                    onClick={() => { void desaprovarPelaDiretoria(); }}
+                                    disabled={isUpdating}
+                                    className="flex-1 sm:flex-none px-2 sm:px-4 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 bg-white text-red-700 border border-red-300 hover:bg-red-50 disabled:opacity-50"
+                                    title="Desaprovar pela Diretoria. Os valores salvos não mudam."
+                                    data-testid="button-unapprove-diretoria"
+                                  >
+                                    <X size={14} className="shrink-0" />
+                                    <span className="truncate">Desaprovar</span>
+                                  </button>
+                                )}
                                 <button 
                                     onClick={() => handleUpdate(true)} 
                                     disabled={negativeLockBlocks || isProviderOnlyUser || isUpdating || opsIncomplete || (requiresTollGate && !tollConfirmed && !isBarbaraFinance) || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))}

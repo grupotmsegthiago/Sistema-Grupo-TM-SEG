@@ -92,6 +92,8 @@ export type ControleDiarioSource = {
   map_link?: string | null;
   toll_value?: number | null;
   billing_approved?: boolean | null;
+  revenue_value?: number | null;
+  cost_value?: number | null;
   vehiclePlate?: string | null;
   cargoPlate?: string | null;
   originAt?: string | null;
@@ -420,4 +422,52 @@ export function toControleDiarioRow(mission: ControleDiarioSource, dayIso: strin
     se: seParts.se,
     seKey: seParts.seKey,
   };
+}
+
+/** Status cru da OS na lista de pendências. A folha do dia continua com o status operacional. */
+function valorEmReaisZerado(raw: unknown): boolean {
+  if (raw == null || raw === '') return true;
+  const n = typeof raw === 'number' ? raw : Number(String(raw).trim().replace(',', '.'));
+  return !Number.isFinite(n) || Math.abs(n) < 0.005;
+}
+
+/** Já aprovada no sistema. O histórico do Financeiro grava isso em billing_approved. Não é pendência. */
+export function aprovadaNoSistemaForaDaPendencia(mission: { billing_approved?: boolean | null }): boolean {
+  return mission.billing_approved === true;
+}
+
+/** Recusada com cliente e fornecedor em R$ 0,00 já está encerrada. Não entra na fila de aprovação. */
+export function recusadaZeradaForaDaPendencia(mission: {
+  status?: string | null;
+  revenue_value?: number | null;
+  cost_value?: number | null;
+}): boolean {
+  if (String(mission.status || '').trim() !== 'Recusada') return false;
+  return valorEmReaisZerado(mission.revenue_value) && valorEmReaisZerado(mission.cost_value);
+}
+
+export function pendingListStatusLabel(raw: unknown): string {
+  const status = String(raw || '').trim();
+  if (status === 'Concluída' || status === 'Concluida') return 'CONCLUÍDA';
+  if (status === 'Cancelada') return 'CANCELADA';
+  if (status === 'Recusada') return 'RECUSADA';
+  if (status === 'Pendente') return 'PENDENTE';
+  return '';
+}
+
+function pendingListRank(status: string): number {
+  return status === 'PENDENTE' ? 0 : 1;
+}
+
+export function comparePendingApprovalRows(
+  aStatus: string,
+  bStatus: string,
+  a: { inicioOrdem: number; os: string },
+  b: { inicioOrdem: number; os: string },
+): number {
+  const ar = pendingListRank(aStatus);
+  const br = pendingListRank(bStatus);
+  if (ar !== br) return ar - br;
+  if (a.inicioOrdem !== b.inicioOrdem) return a.inicioOrdem - b.inicioOrdem;
+  return a.os.localeCompare(b.os, 'pt-BR', { numeric: true });
 }

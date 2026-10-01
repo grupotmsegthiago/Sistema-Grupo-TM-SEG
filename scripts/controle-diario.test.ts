@@ -7,6 +7,10 @@ import {
   controleDiarioOpensAudit,
   daysOfMonth,
   missionOnControlDay,
+  comparePendingApprovalRows,
+  pendingListStatusLabel,
+  aprovadaNoSistemaForaDaPendencia,
+  recusadaZeradaForaDaPendencia,
   sortControleDiarioRows,
   toControleDiarioRow,
   buildControleDiarioSheet,
@@ -183,4 +187,34 @@ test('mesma SE da DHL fica junta e fechada até expandir', () => {
   assert.deepEqual(open.map((line) => line.row.os), ['1', '3', '2', '4']);
   assert.equal(open[1].isChild, true);
   assert.equal(open[1].row.se, 'SE-190359');
+});
+
+test('lista de pendências só reconhece concluída, cancelada, recusada e pendente', () => {
+  assert.equal(pendingListStatusLabel('Concluída'), 'CONCLUÍDA');
+  assert.equal(pendingListStatusLabel('Concluida'), 'CONCLUÍDA');
+  assert.equal(pendingListStatusLabel('Cancelada'), 'CANCELADA');
+  assert.equal(pendingListStatusLabel('Recusada'), 'RECUSADA');
+  assert.equal(pendingListStatusLabel('Pendente'), 'PENDENTE');
+  assert.equal(pendingListStatusLabel('Em Viagem'), '');
+  const ordem = comparePendingApprovalRows('CONCLUÍDA', 'PENDENTE', { inicioOrdem: 9, os: '1' }, { inicioOrdem: 1, os: '2' });
+  assert.equal(ordem > 0, true);
+  const antigaAntes = comparePendingApprovalRows('CONCLUÍDA', 'CONCLUÍDA', { inicioOrdem: 10, os: '2' }, { inicioOrdem: 50, os: '9' });
+  assert.equal(antigaAntes < 0, true);
+  const canceladaAntigaAntes = comparePendingApprovalRows('CANCELADA', 'CONCLUÍDA', { inicioOrdem: 1, os: '3' }, { inicioOrdem: 40, os: '9' });
+  assert.equal(canceladaAntigaAntes < 0, true);
+  const pendenteNoTopo = comparePendingApprovalRows('PENDENTE', 'CONCLUÍDA', { inicioOrdem: 90, os: '8' }, { inicioOrdem: 1, os: '1' });
+  assert.equal(pendenteNoTopo < 0, true);
+});
+
+test('OS já aprovada no sistema não entra na pendência', () => {
+  assert.equal(aprovadaNoSistemaForaDaPendencia({ billing_approved: true }), true);
+  assert.equal(aprovadaNoSistemaForaDaPendencia({ billing_approved: false }), false);
+  assert.equal(aprovadaNoSistemaForaDaPendencia({ billing_approved: null }), false);
+});
+
+test('recusada com cliente e fornecedor zerados não entra na pendência', () => {
+  assert.equal(recusadaZeradaForaDaPendencia({ status: 'Recusada', revenue_value: 0, cost_value: 0 }), true);
+  assert.equal(recusadaZeradaForaDaPendencia({ status: 'Recusada', revenue_value: null, cost_value: null }), true);
+  assert.equal(recusadaZeradaForaDaPendencia({ status: 'Recusada', revenue_value: 0, cost_value: 150 }), false);
+  assert.equal(recusadaZeradaForaDaPendencia({ status: 'Concluída', revenue_value: 0, cost_value: 0 }), false);
 });

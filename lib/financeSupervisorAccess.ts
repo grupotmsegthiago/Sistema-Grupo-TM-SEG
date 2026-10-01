@@ -50,3 +50,16 @@ export function canSeeOsComPrejuizo(user: OsLossCardUser | null | undefined): bo
   if (roleLower === 'diretoria') return true;
   return false;
 }
+
+/** Coluna de faturamento, fornecedor, margem e pendência no card da OS. */
+export function canSeeMissionBillingSummary(user: OsLossCardUser | null | undefined): boolean {
+  if (!user) return false;
+  const roleLower = String(user.role || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+  if (roleLower === 'financeiro') return true;
+  if (['diretoria', 'administrador', 'controller'].includes(roleLower)) return true;
+  return Array.isArray(user.permissions) && user.permissions.includes('*');
+}

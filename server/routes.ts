@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 import pg from "pg";
 import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider, sendPaymentAnticipationEmail } from "./emailService";
+import { registerTabelaRotaAlerta } from "./tabelaRotaAlerta";
 import { runEmailHealthCheck } from "./emailHealth";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { registerRhRoutes } from "./rhRoutes";
@@ -5122,6 +5123,7 @@ export async function registerRoutes(
       res.status(500).json({ error: e.message });
     }
   });
+  registerTabelaRotaAlerta(app, supabase, requireAuth, requireRole);
   // =============================================================
 
   app.post("/api/investment/init", requireAuth, requireInvestmentApiAccess(), async (_req: Request, res: Response) => {

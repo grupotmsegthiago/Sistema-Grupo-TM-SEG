@@ -63,6 +63,7 @@ interface MissionCardProps {
     mission: Mission;
     canEditMission: boolean;
     isDirector: boolean;
+    canSeeBillingSummary?: boolean;
     isRedLight: boolean;
     isImminent: boolean;
     minutesSinceUpdate: number;
@@ -210,7 +211,7 @@ const compressImage = (file: File, maxWidth = 1200, quality = 0.7): Promise<Blob
 };
 
 const MissionCardComponent: React.FC<MissionCardProps> = ({ 
-    mission, canEditMission, isDirector, isRedLight, isImminent, minutesSinceUpdate, panelLayer, copiedId, isSendingEmail, hideProviderInfo,
+    mission, canEditMission, isDirector, canSeeBillingSummary = false, isRedLight, isImminent, minutesSinceUpdate, panelLayer, copiedId, isSendingEmail, hideProviderInfo,
     onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport, lastLog, onEvidenceUploaded,
     clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages, evidenceList, dhlIntake, tollConfirmation,
     handoverNote, onHandoverNoteSaved
@@ -345,14 +346,14 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     }, [mission.status]);
     
     const financials = useMemo(() => {
-        if (!isDirector && !hideProviderInfo) return null;
+        if (!isDirector && !canSeeBillingSummary && !hideProviderInfo) return null;
         const clientName = ((mission as any).originalClientName || mission.client || '').trim();
         const client = clientsData.find(c => c.name === clientName);
         return calculateMissionFinancials(mission, clientTables, providerTables, client, currentTime);
-    }, [mission, clientTables, providerTables, clientsData, isDirector, hideProviderInfo, currentTime]);
+    }, [mission, clientTables, providerTables, clientsData, isDirector, canSeeBillingSummary, hideProviderInfo, currentTime]);
 
     const isExtraHourActive = useMemo(() => {
-        if (!hideProviderInfo && !isDirector) return false;
+        if (!hideProviderInfo && !isDirector && !canSeeBillingSummary) return false;
         if (!financials) return false;
         if (isTerminal) return false;
         if (![MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT].includes(mission.status as MissionStatus)) return false;
@@ -361,7 +362,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         const clientExcess = financials.client.excessHours > 0;
         const providerExcess = financials.provider?.excessHours > 0;
         return hideProviderInfo ? clientExcess : (clientExcess || providerExcess);
-    }, [financials, isTerminal, mission.status, hideProviderInfo, isDirector]);
+    }, [financials, isTerminal, mission.status, hideProviderInfo, isDirector, canSeeBillingSummary]);
 
     const formatExcessTime = (hours: number) => {
         const totalSeconds = Math.round(hours * 3600);
@@ -374,14 +375,14 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     const hasBeenVerified = !!(mission as any).billing_verified_by;
 
     const auditResult = useMemo(() => {
-        if (!isDirector || !isTerminal) return null;
+        if ((!isDirector && !canSeeBillingSummary) || !isTerminal) return null;
         const storedRev = (mission.revenue_value || 0);
         const storedCost = (mission.cost_value || 0);
         if (storedRev === 0 && storedCost === 0) return null;
         const clientName = ((mission as any).originalClientName || mission.client || '').trim();
         const client = clientsData.find(c => c.name === clientName);
         return auditMissionFinancials(mission, clientTables, providerTables, client);
-    }, [mission, clientTables, providerTables, clientsData, isDirector, isTerminal]);
+    }, [mission, clientTables, providerTables, clientsData, isDirector, canSeeBillingSummary, isTerminal]);
 
     const displayRevenue = useMemo(() => {
         const dbToll = Math.max(0, mission.toll_value || 0);
@@ -1091,7 +1092,7 @@ Qualquer dúvida, estamos a disposição.
                 </div>
 
                 <div className="sm:col-span-1 xl:col-span-1 p-2 xl:p-1.5 flex flex-col justify-center text-center border-l border-r border-gray-100 bg-gray-50/30 gap-2 min-w-[108px] shrink-0">
-                    {isDirector && !hideProviderInfo && (
+                    {(isDirector || canSeeBillingSummary) && !hideProviderInfo && (
                         <div className="flex flex-col gap-1">
                            <div className="bg-white border border-green-200 rounded-lg p-1 shadow-sm">
                                <p className="text-[9px] font-black text-green-500 uppercase tracking-tighter leading-none mb-0.5">Faturamento {mission.billing_approved ? '(Auditado)' : isAdjustedRevenue ? '(Salvo)' : '(Projetado)'}</p>

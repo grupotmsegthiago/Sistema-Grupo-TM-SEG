@@ -58,7 +58,7 @@ import MissionTeamPresenceBoard from './MissionTeamPresenceBoard';
 import { hasFullMissionListAccess, isMissionClientScopeRestricted } from '../lib/missionAccess';
 import { isPerfilComercial } from '../lib/diretoriaAccess';
 import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
-import { canSeeOsComPrejuizo, isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { canSeeMissionBillingSummary, canSeeOsComPrejuizo, isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import { searchMissionsByTerm } from '../lib/missionTableSearch';
 import { isOsLossHidden, loadOsLossHiddenMap } from '../lib/osLossHidden';
 import { collectLinkedFamilyIds } from '../lib/missionLinkage';
@@ -274,6 +274,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const roleLower = (currentUser?.role || '').toLowerCase();
     return ['diretoria', 'administrador', 'controller'].includes(roleLower) || currentUser.permissions?.includes('*');
   }, [currentUser]);
+
+  const canSeeBillingSummary = useMemo(
+    () => canSeeMissionBillingSummary(currentUser),
+    [currentUser],
+  );
 
   const isAdmin = useMemo(() => {
     if (!currentUser) return false;
@@ -2311,6 +2316,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                               mission={mission}
                                               canEditMission={canEditMission}
                                               isDirector={isDirector}
+                                              canSeeBillingSummary={canSeeBillingSummary}
                                               isRedLight={isRedLight}
                                               isImminent={mission.status === MissionStatus.IN_TRANSIT && diffMinutes > 30 && diffMinutes <= 60}
                                               minutesSinceUpdate={diffMinutes}

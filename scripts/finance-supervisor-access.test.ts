@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  canSeeMissionBillingSummary,
   canSeeOsComPrejuizo,
   isFinanceSupervisorName,
   normalizePersonName,
@@ -46,5 +47,19 @@ describe('canSeeOsComPrejuizo', () => {
     assert.equal(canSeeOsComPrejuizo({ name: 'Vendedor', role: 'comercial' }), false);
     assert.equal(canSeeOsComPrejuizo({ name: 'Operacional', role: 'operacional' }), false);
     assert.equal(canSeeOsComPrejuizo(null), false);
+  });
+});
+
+describe('canSeeMissionBillingSummary', () => {
+  it('libera o perfil Financeiro no card da OS', () => {
+    assert.equal(canSeeMissionBillingSummary({ name: 'Analista', role: 'Financeiro' }), true);
+    assert.equal(canSeeMissionBillingSummary({ name: 'Analista', role: 'financeiro' }), true);
+  });
+
+  it('mantém diretoria e administrador e bloqueia operacional', () => {
+    assert.equal(canSeeMissionBillingSummary({ name: 'Thiago', role: 'Diretoria' }), true);
+    assert.equal(canSeeMissionBillingSummary({ name: 'Admin', role: 'administrador' }), true);
+    assert.equal(canSeeMissionBillingSummary({ name: 'Operacional', role: 'operacional' }), false);
+    assert.equal(canSeeMissionBillingSummary(null), false);
   });
 });

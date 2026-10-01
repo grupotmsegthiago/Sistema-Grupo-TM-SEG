@@ -11,6 +11,10 @@ import {
   controleDiarioOpensAudit,
   daysOfMonth,
   missionOnControlDay,
+  comparePendingApprovalRows,
+  pendingListStatusLabel,
+  aprovadaNoSistemaForaDaPendencia,
+  recusadaZeradaForaDaPendencia,
   sortControleDiarioRows,
   toControleDiarioRow,
   buildControleDiarioSheet,
@@ -31,7 +35,7 @@ const MISSION_COLUMNS = [
   'start_time', 'end_time', 'estimated_time', 'start_km', 'end_km',
   'agent1', 'agent2', 'vehicle_id', 'client_vehicle', 'mission_type',
   'special_operation_type', 'dhl_se_number', 'reference_number',
-  'current_location', 'map_link', 'toll_value', 'billing_approved', 'driver_name', 'occurrence_count',
+  'current_location', 'map_link', 'toll_value', 'billing_approved', 'revenue_value', 'cost_value', 'driver_name', 'occurrence_count',
 ].join(', ');
 
 type RawMission = ControleDiarioSource & {
@@ -51,6 +55,7 @@ const STATUS_TONE: Record<string, string> = {
   PRESERVAÇÃO: 'bg-violet-100 text-violet-900',
   CANCELADA: 'bg-zinc-200 text-zinc-600',
   RECUSADA: 'bg-red-100 text-red-800',
+  'CONCLUÍDA': 'bg-emerald-100 text-emerald-800',
 };
 
 function mapPreview(link: string): string {
@@ -102,7 +107,7 @@ function notesOfKind(notes: DiarioNote[] | undefined, kind: NoteKind): DiarioNot
   return (notes || []).filter((item) => noteKindOf(item) === kind);
 }
 
-const PENDING_ROW_GRID = 'grid grid-cols-[4.75rem_minmax(8.5rem,1.2fr)_minmax(8.5rem,1.1fr)_5.75rem_5.75rem_minmax(7.5rem,1fr)_minmax(8rem,1.15fr)_minmax(7rem,0.85fr)_minmax(8.5rem,1fr)_6.75rem] gap-2';
+const PENDING_ROW_GRID = 'grid grid-cols-[4.75rem_minmax(7.2rem,1.05fr)_minmax(7.2rem,0.95fr)_5.1rem_5.1rem_6.3rem_minmax(6.2rem,0.9fr)_minmax(6.8rem,1fr)_minmax(6rem,0.75fr)_minmax(7.2rem,0.9fr)_6.2rem] gap-2';
 
 function tabLabel(iso: string): string {
   const [y, m, d] = iso.split('-');
@@ -235,6 +240,7 @@ export default function ControleDiario() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('TODOS');
   const [pendingOnly, setPendingOnly] = useState(false);
+  const [pendingStatusById, setPendingStatusById] = useState<Record<string, string>>({});
   const [occurrencePreview, setOccurrencePreview] = useState<Record<string, string>>({});
   const [expandedSe, setExpandedSe] = useState<Set<string>>(() => new Set());
   const loadTicket = useRef(0);
@@ -364,18 +370,26 @@ export default function ControleDiario() {
     setError('');
     setIncomplete(false);
     try {
-      const page = await fetchAllPages<RawMission>(async (from, size) => {
-        const q = supabase.from('missions')
+      const fetchGroup = (statuses: string[], onlyUnapproved: boolean) => fetchAllPages<RawMission>(async (from, size) => {
+        let q = supabase.from('missions')
           .select(MISSION_COLUMNS, { count: 'exact' })
-          .in('status', ['Concluída', 'Concluida'])
-          .or('billing_approved.is.null,billing_approved.eq.false')
+          .in('status', statuses)
           .gte('start_time', SEM_APROVACAO_DESDE)
           .order('start_time', { ascending: false })
           .range(from, from + size - 1);
+        if (onlyUnapproved) q = q.or('billing_approved.is.null,billing_approved.eq.false');
         return q;
       }, 1000, 20000, { getRowKey: (row) => String(row.id || '') });
-      if (!page.complete) setIncomplete(true);
-      const missions = page.rows.filter((row) => row.id);
+      const [concluded, others] = await Promise.all([
+        fetchGroup(['Concluída', 'Concluida'], true),
+        fetchGroup(['Cancelada', 'Recusada', 'Pendente'], true),
+      ]);
+      if (!concluded.complete || !others.complete) setIncomplete(true);
+      const byMission = new Map<string, RawMission>();
+      for (const row of [...concluded.rows, ...others.rows]) {
+        if (row.id) byMission.set(String(row.id), row);
+      }
+      const missions = [...byMission.values()].filter((mission) => !recusadaZeradaForaDaPendencia(mission) && !aprovadaNoSistemaForaDaPendencia(mission));
       const byId = new Map<string, RawMission>();
       for (const row of missions) byId.set(String(row.id), row);
       rawById.current = byId;
@@ -390,6 +404,8 @@ export default function ControleDiario() {
       ]);
       if (ticket !== loadTicket.current) return;
       const sheetDay = formatIsoDateBR();
+      const statusById: Record<string, string> = {};
+      for (const mission of missions) statusById[String(mission.id)] = pendingListStatusLabel(mission.status);
       const next = missions
         .map((m) => toControleDiarioRow({
           ...m,
@@ -397,7 +413,9 @@ export default function ControleDiario() {
           cargoPlate: plateFrom(m.client_vehicle, cargoMap),
           originAt: originMap.get(String(m.id)) || null,
         }, sheetDay))
-        .sort((a, b) => b.inicioOrdem - a.inicioOrdem || a.os.localeCompare(b.os, 'pt-BR', { numeric: true }));
+        .filter((row) => Boolean(statusById[row.id]))
+        .sort((a, b) => comparePendingApprovalRows(statusById[a.id] || '', statusById[b.id] || '', a, b));
+      setPendingStatusById(statusById);
       setRows(next);
       setOccurrencePreview(occurrences);
       setUpdatedAt(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }));
@@ -405,6 +423,7 @@ export default function ControleDiario() {
       if (ticket !== loadTicket.current) return;
       setError(err instanceof Error ? err.message : 'Não foi possível ler as OS sem aprovação.');
       setRows([]);
+      setPendingStatusById({});
       setOccurrencePreview({});
     } finally {
       if (ticket === loadTicket.current) setLoading(false);
@@ -487,15 +506,19 @@ export default function ControleDiario() {
   const visible = useMemo(() => {
     if (sheetRows) return sheetRows;
     const q = query.trim().toUpperCase();
-    return rows.filter((row) => {
-      if (statusFilter !== 'TODOS' && row.status !== statusFilter) return false;
+    const list = rows.filter((row) => {
+      if (pendingOnly) {
+        if (!pendingStatusById[row.id]) return false;
+      } else if (statusFilter !== 'TODOS' && row.status !== statusFilter) return false;
       if (!q) return true;
       return [row.os, row.se, row.cliente, row.rota, row.motorista, row.fornecedor, row.viatura, row.veiculoEscoltado, row.equipe, ...(notesByMission[row.id] || []).map((item) => item.note)]
         .join(' ')
         .toUpperCase()
         .includes(q);
     });
-  }, [rows, query, statusFilter, sheetRows, notesByMission]);
+    if (!pendingOnly) return list;
+    return [...list].sort((a, b) => comparePendingApprovalRows(pendingStatusById[a.id] || '', pendingStatusById[b.id] || '', a, b));
+  }, [rows, query, statusFilter, sheetRows, notesByMission, pendingOnly, pendingStatusById]);
 
   useEffect(() => { setPendingPage(1); }, [pendingOnly, query, statusFilter]);
 
@@ -666,7 +689,7 @@ export default function ControleDiario() {
                   pendingOnly ? 'bg-white text-zinc-950' : 'bg-white/15 text-white ring-1 ring-white/40 hover:bg-white/25'
                 }`}
                 data-testid="controle-diario-pending-approval"
-                title={pendingOnly ? 'Voltar para a folha do dia' : 'OS concluídas sem aprovação de faturamento'}
+                title={pendingOnly ? 'Voltar para a folha do dia' : 'Concluídas, canceladas, recusadas e pendentes que ainda não foram aprovadas'}
               >
                 <CheckCircle2 size={13} />
                 Pendências de Aprovações
@@ -766,11 +789,11 @@ export default function ControleDiario() {
         >
           {visible.length === 0 && !loading && (
             <div className="mx-auto mt-10 max-w-md rounded-[32px] bg-gradient-to-b from-white to-zinc-50 px-6 py-10 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_24px_40px_-28px_rgba(69,10,10,0.55)] ring-1 ring-white">
-              <p className="text-sm font-black text-zinc-800">Nenhuma OS concluída sem aprovação.</p>
+              <p className="text-sm font-black text-zinc-800">Nenhuma OS pendente de aprovação.</p>
               <p className="mt-1 text-xs text-zinc-500">A lista mostra agosto de 2026 em diante.</p>
             </div>
           )}
-          <div className="mx-auto flex min-w-[1180px] max-w-[1480px] flex-col gap-2">
+          <div className="mx-auto flex min-w-[1320px] max-w-[1680px] flex-col gap-2">
             {sheet.length > 0 && (
               <div
                 className={`${PENDING_ROW_GRID} sticky top-0 z-10 items-end rounded-2xl bg-[#f6f1f0]/95 px-1.5 py-2 text-[10px] font-black uppercase leading-tight tracking-wide text-zinc-500 backdrop-blur-sm`}
@@ -781,6 +804,7 @@ export default function ControleDiario() {
                 <span>Fornecedor</span>
                 <span>Data inicial</span>
                 <span>Data final</span>
+                <span>Status</span>
                 <span>Rota</span>
                 <span>Ocorrência</span>
                 <span>Observação</span>
@@ -791,7 +815,8 @@ export default function ControleDiario() {
             {sheet.map((line) => {
               const row = line.row;
               const savedNote = latestNoteOf(notesByMission[row.id], 'observacao')?.note || '';
-              const latestNote = savedNote || (row.aprovacaoPendente || row.status === 'PENDENTE' ? 'Pendente de aprovação' : '');
+              const listaStatus = pendingStatusById[row.id] || '';
+              const latestNote = savedNote || (row.aprovacaoPendente || listaStatus === 'PENDENTE' ? 'Pendente de aprovação' : '');
               const auditReminder = latestNoteOf(notesByMission[row.id], 'auditoria')?.note || '';
               const occurrence = occurrencePreview[row.id] || (row.ocorrencias > 0 ? 'Ocorrência registrada' : 'Sem ocorrência');
               return (
@@ -821,6 +846,13 @@ export default function ControleDiario() {
                   </span>
                   <span className="truncate rounded-full bg-zinc-100 px-2 py-1 text-center text-[11px] font-bold text-zinc-600" title="Data final">
                     {row.dataFinal || '—'}
+                  </span>
+                  <span
+                    className={`truncate rounded-full px-2 py-1 text-center text-[10px] font-black ${STATUS_TONE[listaStatus] || 'bg-zinc-100 text-zinc-700'}`}
+                    title={listaStatus || 'Status'}
+                    data-testid={`controle-diario-pending-status-${row.os}`}
+                  >
+                    {listaStatus || '—'}
                   </span>
                   <span className="min-w-0 truncate text-[12px] font-semibold text-zinc-500" title={row.rota}>
                     {row.rota || '—'}
@@ -877,7 +909,7 @@ export default function ControleDiario() {
             })}
           </div>
           {visible.length > 0 && (
-            <div className="mx-auto mt-4 flex min-w-[1180px] max-w-[1480px] items-center justify-between gap-3" data-testid="controle-diario-pending-pager">
+            <div className="mx-auto mt-4 flex min-w-[1320px] max-w-[1680px] items-center justify-between gap-3" data-testid="controle-diario-pending-pager">
               <span className="text-xs font-bold text-zinc-500">
                 {visible.length} OS · página {safePendingPage} de {pendingPageCount}
               </span>
