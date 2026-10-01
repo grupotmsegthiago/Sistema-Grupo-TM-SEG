@@ -150,6 +150,10 @@ test('observação do controle diário guarda o texto e descarta vazio', async (
   assert.equal(normalizeControleDiarioNote('  plantão avisou atraso  '), 'plantão avisou atraso');
   assert.equal(normalizeControleDiarioNote('   '), '');
   assert.equal(normalizeControleDiarioNote('linha 1\r\nlinha 2'), 'linha 1\nlinha 2');
+  const { normalizeControleDiarioNoteKind } = await import('../lib/controleDiarioNotas');
+  assert.equal(normalizeControleDiarioNoteKind('auditoria'), 'auditoria');
+  assert.equal(normalizeControleDiarioNoteKind('observacao'), 'observacao');
+  assert.equal(normalizeControleDiarioNoteKind('outro'), 'observacao');
 });
 
 function sheetRow(id: string, se: string, start: string) {

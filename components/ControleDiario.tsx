@@ -31,7 +31,7 @@ const MISSION_COLUMNS = [
   'start_time', 'end_time', 'estimated_time', 'start_km', 'end_km',
   'agent1', 'agent2', 'vehicle_id', 'client_vehicle', 'mission_type',
   'special_operation_type', 'dhl_se_number', 'reference_number',
-  'current_location', 'map_link', 'toll_value', 'driver_name', 'occurrence_count',
+  'current_location', 'map_link', 'toll_value', 'billing_approved', 'driver_name', 'occurrence_count',
 ].join(', ');
 
 type RawMission = ControleDiarioSource & {
@@ -83,9 +83,26 @@ type DiarioNote = {
   id: string;
   mission_id: string;
   note: string;
+  kind?: string;
   created_by: string;
   created_at: string;
 };
+
+type NoteKind = 'observacao' | 'auditoria';
+
+function noteKindOf(item: DiarioNote): NoteKind {
+  return item.kind === 'auditoria' ? 'auditoria' : 'observacao';
+}
+
+function latestNoteOf(notes: DiarioNote[] | undefined, kind: NoteKind): DiarioNote | undefined {
+  return (notes || []).find((item) => noteKindOf(item) === kind);
+}
+
+function notesOfKind(notes: DiarioNote[] | undefined, kind: NoteKind): DiarioNote[] {
+  return (notes || []).filter((item) => noteKindOf(item) === kind);
+}
+
+const PENDING_ROW_GRID = 'grid grid-cols-[4.75rem_minmax(8.5rem,1.2fr)_minmax(8.5rem,1.1fr)_5.75rem_5.75rem_minmax(7.5rem,1fr)_minmax(8rem,1.15fr)_minmax(7rem,0.85fr)_minmax(8.5rem,1fr)_6.75rem] gap-2';
 
 function tabLabel(iso: string): string {
   const [y, m, d] = iso.split('-');
@@ -188,6 +205,7 @@ export default function ControleDiario() {
   const [passagemBusy, setPassagemBusy] = useState(false);
   const [notesByMission, setNotesByMission] = useState<Record<string, DiarioNote[]>>({});
   const [noteRow, setNoteRow] = useState<ControleDiarioRow | null>(null);
+  const [noteKind, setNoteKind] = useState<NoteKind>('observacao');
   const [noteDraft, setNoteDraft] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState('');
@@ -570,7 +588,7 @@ export default function ControleDiario() {
     if (!noteRow || noteSaving) return;
     const text = noteDraft.trim();
     if (!text) {
-      setNoteError('Escreva a observação antes de salvar.');
+      setNoteError(noteKind === 'auditoria' ? 'Escreva o lembrete antes de salvar.' : 'Escreva a observação antes de salvar.');
       return;
     }
     setNoteSaving(true);
@@ -579,7 +597,7 @@ export default function ControleDiario() {
       const res = await authFetch('/api/controle-diario-notas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mission_id: noteRow.id, note: text }),
+        body: JSON.stringify({ mission_id: noteRow.id, note: text, kind: noteKind }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Não foi possível salvar a observação.');
@@ -648,9 +666,10 @@ export default function ControleDiario() {
                   pendingOnly ? 'bg-white text-zinc-950' : 'bg-white/15 text-white ring-1 ring-white/40 hover:bg-white/25'
                 }`}
                 data-testid="controle-diario-pending-approval"
+                title={pendingOnly ? 'Voltar para a folha do dia' : 'OS concluídas sem aprovação de faturamento'}
               >
                 <CheckCircle2 size={13} />
-                {pendingOnly ? 'Ver folha do dia' : 'Pendências de Aprovações'}
+                Pendências de Aprovações
               </button>
             )}
           </div>
@@ -751,38 +770,63 @@ export default function ControleDiario() {
               <p className="mt-1 text-xs text-zinc-500">A lista mostra agosto de 2026 em diante.</p>
             </div>
           )}
-          <div className="mx-auto flex max-w-[1280px] flex-col gap-2.5">
+          <div className="mx-auto flex min-w-[1180px] max-w-[1480px] flex-col gap-2">
+            {sheet.length > 0 && (
+              <div
+                className={`${PENDING_ROW_GRID} sticky top-0 z-10 items-end rounded-2xl bg-[#f6f1f0]/95 px-1.5 py-2 text-[10px] font-black uppercase leading-tight tracking-wide text-zinc-500 backdrop-blur-sm`}
+                data-testid="controle-diario-pending-columns"
+              >
+                <span>OS</span>
+                <span>Cliente</span>
+                <span>Fornecedor</span>
+                <span>Data inicial</span>
+                <span>Data final</span>
+                <span>Rota</span>
+                <span>Ocorrência</span>
+                <span>Observação</span>
+                <span>Ocorrência de auditoria</span>
+                <span className="text-right">Auditoria</span>
+              </div>
+            )}
             {sheet.map((line) => {
               const row = line.row;
-              const latestNote = notesByMission[row.id]?.[0]?.note || '';
+              const savedNote = latestNoteOf(notesByMission[row.id], 'observacao')?.note || '';
+              const latestNote = savedNote || (row.aprovacaoPendente || row.status === 'PENDENTE' ? 'Pendente de aprovação' : '');
+              const auditReminder = latestNoteOf(notesByMission[row.id], 'auditoria')?.note || '';
               const occurrence = occurrencePreview[row.id] || (row.ocorrencias > 0 ? 'Ocorrência registrada' : 'Sem ocorrência');
               return (
                 <div
                   key={row.id}
                   data-testid={`controle-diario-row-${row.os}`}
-                  className="flex h-14 min-w-0 items-center gap-2 overflow-hidden rounded-full bg-gradient-to-b from-white via-white to-zinc-50/90 px-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.98),0_16px_30px_-20px_rgba(69,10,10,0.62),0_1px_2px_rgba(15,23,42,0.06)] ring-1 ring-zinc-200/90 transition duration-200 hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_#fff,0_22px_36px_-18px_rgba(153,27,27,0.48)]"
+                  className={`${PENDING_ROW_GRID} h-14 min-w-0 items-center overflow-hidden rounded-full bg-gradient-to-b from-white via-white to-zinc-50/90 px-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.98),0_16px_30px_-20px_rgba(69,10,10,0.62),0_1px_2px_rgba(15,23,42,0.06)] ring-1 ring-zinc-200/90 transition duration-200 hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_#fff,0_22px_36px_-18px_rgba(153,27,27,0.48)]`}
                 >
                   <button
                     type="button"
                     onClick={() => openOs(row)}
-                    className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-b from-red-500 to-red-800 px-3 text-[12px] font-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_8px_14px_-8px_rgba(153,27,27,0.9)]"
+                    className="inline-flex h-10 min-w-0 items-center justify-center gap-1 rounded-full bg-gradient-to-b from-red-500 to-red-800 px-2 text-[12px] font-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_8px_14px_-8px_rgba(153,27,27,0.9)]"
                     data-testid={`controle-diario-open-${row.os}`}
                     title={opensAudit ? 'Abrir auditoria da OS' : 'Editar OS'}
                   >
                     {opensAudit ? <FileSearch size={13} /> : <Pencil size={13} />}
                     {row.os}
                   </button>
-                  <span className="hidden shrink-0 rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-bold text-zinc-600 sm:inline">
-                    {row.dataInicial || '—'}
-                  </span>
-                  <span className="min-w-0 w-[22%] truncate text-[13px] font-black text-zinc-900" title={row.cliente}>
+                  <span className="min-w-0 truncate text-[13px] font-black text-zinc-900" title={row.cliente}>
                     {row.cliente || '—'}
                   </span>
-                  <span className="hidden min-w-0 w-[18%] truncate text-[12px] font-semibold text-zinc-500 md:inline" title={row.rota}>
+                  <span className="min-w-0 truncate text-[12px] font-semibold text-zinc-700" title={row.fornecedor || 'Fornecedor'}>
+                    {row.fornecedor || '—'}
+                  </span>
+                  <span className="truncate rounded-full bg-zinc-100 px-2 py-1 text-center text-[11px] font-bold text-zinc-600" title="Data inicial">
+                    {row.dataInicial || '—'}
+                  </span>
+                  <span className="truncate rounded-full bg-zinc-100 px-2 py-1 text-center text-[11px] font-bold text-zinc-600" title="Data final">
+                    {row.dataFinal || '—'}
+                  </span>
+                  <span className="min-w-0 truncate text-[12px] font-semibold text-zinc-500" title={row.rota}>
                     {row.rota || '—'}
                   </span>
                   <span
-                    className={`min-w-0 flex-1 truncate text-[12px] font-semibold ${row.ocorrencias > 0 ? 'text-red-700' : 'text-zinc-400'}`}
+                    className={`min-w-0 truncate text-[12px] font-semibold ${row.ocorrencias > 0 ? 'text-red-700' : 'text-zinc-400'}`}
                     title={occurrence}
                     data-testid={`controle-diario-occurrence-text-${row.os}`}
                   >
@@ -802,17 +846,26 @@ export default function ControleDiario() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => { setNoteRow(row); setNoteDraft(''); setNoteError(''); }}
-                    className="hidden min-w-0 w-[16%] truncate rounded-full bg-amber-50 px-2.5 py-1 text-left text-[11px] font-bold text-amber-950 lg:inline"
-                    title={latestNote || 'Sem observação'}
+                    onClick={() => { setNoteRow(row); setNoteKind('observacao'); setNoteDraft(''); setNoteError(''); }}
+                    className="min-w-0 truncate rounded-full bg-amber-50 px-2.5 py-1 text-left text-[11px] font-bold text-amber-950"
+                    title={savedNote ? savedNote : (latestNote || 'Sem observação')}
                     data-testid={`controle-diario-note-${row.os}`}
                   >
                     {latestNote || 'Sem observação'}
                   </button>
                   <button
                     type="button"
+                    onClick={() => { setNoteRow(row); setNoteKind('auditoria'); setNoteDraft(''); setNoteError(''); }}
+                    className="min-w-0 truncate rounded-full bg-violet-50 px-2.5 py-1 text-left text-[11px] font-bold text-violet-950"
+                    title={auditReminder || 'Lembrete da ocorrência de auditoria'}
+                    data-testid={`controle-diario-audit-note-${row.os}`}
+                  >
+                    {auditReminder || 'Lembrete'}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => openAudit(row)}
-                    className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-b from-zinc-800 to-zinc-950 px-3 text-[11px] font-black uppercase tracking-wide text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_14px_-8px_rgba(0,0,0,0.7)]"
+                    className="inline-flex h-10 items-center justify-center gap-1 rounded-full bg-gradient-to-b from-zinc-800 to-zinc-950 px-2 text-[11px] font-black uppercase tracking-wide text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_14px_-8px_rgba(0,0,0,0.7)]"
                     data-testid={`controle-diario-expand-audit-${row.os}`}
                     title="Abrir a auditoria de faturamento desta OS"
                   >
@@ -824,7 +877,7 @@ export default function ControleDiario() {
             })}
           </div>
           {visible.length > 0 && (
-            <div className="mx-auto mt-4 flex max-w-[1280px] items-center justify-between gap-3" data-testid="controle-diario-pending-pager">
+            <div className="mx-auto mt-4 flex min-w-[1180px] max-w-[1480px] items-center justify-between gap-3" data-testid="controle-diario-pending-pager">
               <span className="text-xs font-bold text-zinc-500">
                 {visible.length} OS · página {safePendingPage} de {pendingPageCount}
               </span>
@@ -974,16 +1027,16 @@ export default function ControleDiario() {
                           {row.ocorrencias}
                         </button>
                       )}
-                      {(notesByMission[row.id] || []).length > 0 && (
+                      {notesOfKind(notesByMission[row.id], 'observacao').length > 0 && (
                         <button
                           type="button"
-                          onClick={() => { setNoteRow(row); setNoteDraft(''); setNoteError(''); }}
+                          onClick={() => { setNoteRow(row); setNoteKind('observacao'); setNoteDraft(''); setNoteError(''); }}
                           className="ml-1 inline-flex items-center gap-1 rounded-full bg-amber-400 px-2 py-1 text-[10px] font-black text-amber-950 shadow-sm"
                           data-testid={`controle-diario-note-bubble-${row.os}`}
-                          title={notesByMission[row.id][0]?.note || 'Observação'}
+                          title={latestNoteOf(notesByMission[row.id], 'observacao')?.note || 'Observação'}
                         >
                           <MessageCircle size={11} />
-                          {notesByMission[row.id].length}
+                          {notesOfKind(notesByMission[row.id], 'observacao').length}
                         </button>
                       )}
                     </td>
@@ -1017,16 +1070,17 @@ export default function ControleDiario() {
                     <td className={lineClass} title={row.equipe}>{cell(row.equipe)}</td>
                     <td className={`${lineClass} max-w-[220px] text-zinc-600`}>
                       {(() => {
-                        const latest = notesByMission[row.id]?.[0];
+                        const latest = latestNoteOf(notesByMission[row.id], 'observacao');
+                        const pendingNote = !latest && (row.status === 'PENDENTE' || row.aprovacaoPendente) ? 'Pendente de aprovação' : '';
                         return (
                           <button
                             type="button"
-                            onClick={() => { setNoteRow(row); setNoteDraft(''); setNoteError(''); }}
-                            className={`block max-w-full truncate rounded-lg px-2 py-1 text-left text-[10px] font-bold ${latest ? 'bg-amber-100 text-amber-950' : 'bg-zinc-100 text-zinc-500 hover:bg-amber-50'}`}
+                            onClick={() => { setNoteRow(row); setNoteKind('observacao'); setNoteDraft(''); setNoteError(''); }}
+                            className={`block max-w-full truncate rounded-lg px-2 py-1 text-left text-[10px] font-bold ${latest || pendingNote ? 'bg-amber-100 text-amber-950' : 'bg-zinc-100 text-zinc-500 hover:bg-amber-50'}`}
                             data-testid={`controle-diario-note-${row.os}`}
-                            title={latest ? `${latest.note} — ${latest.created_by}` : 'Observação registrada ao finalizar, recusar ou cancelar'}
+                            title={latest ? `${latest.note} — ${latest.created_by}` : pendingNote || 'Observação registrada ao finalizar, recusar ou cancelar'}
                           >
-                            {latest ? latest.note : 'Sem observação'}
+                            {latest ? latest.note : (pendingNote || 'Sem observação')}
                           </button>
                         );
                       })()}
@@ -1187,8 +1241,8 @@ export default function ControleDiario() {
           <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
               <div>
-                <p className="text-sm font-black text-zinc-900">Observação · OS {noteRow.os}</p>
-                <p className="text-[11px] text-zinc-500">{noteRow.cliente} · o histórico guarda quem escreveu</p>
+                <p className="text-sm font-black text-zinc-900">{noteKind === 'auditoria' ? 'Ocorrência de auditoria' : 'Observação'} · OS {noteRow.os}</p>
+                <p className="text-[11px] text-zinc-500">{noteKind === 'auditoria' ? 'Lembrete da auditoria. O histórico guarda quem escreveu.' : `${noteRow.cliente} · o histórico guarda quem escreveu`}</p>
               </div>
               <button type="button" onClick={() => !noteSaving && setNoteRow(null)} className="rounded-full p-1 text-zinc-400 hover:bg-zinc-100" data-testid="controle-diario-note-close">
                 <X size={18} />
@@ -1199,7 +1253,7 @@ export default function ControleDiario() {
                 value={noteDraft}
                 onChange={(e) => setNoteDraft(e.target.value)}
                 rows={4}
-                placeholder="Escreva o que o próximo turno precisa saber..."
+                placeholder={noteKind === 'auditoria' ? 'Lembrete da ocorrência de auditoria...' : 'Escreva o que o próximo turno precisa saber...'}
                 className="w-full rounded-2xl border border-zinc-200 p-3 text-sm outline-none focus:border-red-400"
                 data-testid="controle-diario-note-input"
               />
@@ -1211,13 +1265,13 @@ export default function ControleDiario() {
                 className="w-full rounded-full bg-red-700 py-2 text-sm font-black text-white disabled:opacity-50"
                 data-testid="controle-diario-note-save"
               >
-                {noteSaving ? 'Salvando…' : 'Salvar observação'}
+                {noteSaving ? 'Salvando…' : (noteKind === 'auditoria' ? 'Salvar lembrete' : 'Salvar observação')}
               </button>
               <div className="space-y-2" data-testid="controle-diario-note-history">
-                {(notesByMission[noteRow.id] || []).length === 0 && (
-                  <p className="text-xs text-zinc-400">Nenhuma observação salva nesta OS.</p>
+                {notesOfKind(notesByMission[noteRow.id], noteKind).length === 0 && (
+                  <p className="text-xs text-zinc-400">{noteKind === 'auditoria' ? 'Nenhum lembrete salvo nesta OS.' : 'Nenhuma observação salva nesta OS.'}</p>
                 )}
-                {(notesByMission[noteRow.id] || []).map((item) => (
+                {notesOfKind(notesByMission[noteRow.id], noteKind).map((item) => (
                   <div key={item.id} className="rounded-2xl bg-zinc-50 px-3 py-2">
                     <p className="whitespace-pre-wrap text-sm text-zinc-800">{item.note}</p>
                     <p className="mt-1 text-[10px] font-bold text-zinc-500">{item.created_by} · {whenNote(item.created_at)}</p>

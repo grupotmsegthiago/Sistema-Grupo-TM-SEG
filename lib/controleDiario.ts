@@ -53,6 +53,8 @@ export type ControleDiarioRow = {
   ocorrencias: number;
   /** Começou antes do dia da folha e ainda não encerrou. */
   diaAnterior: boolean;
+  /** Concluída e o faturamento ainda não foi aprovado. */
+  aprovacaoPendente: boolean;
   inicioOrdem: number;
   /** Número da SE DHL como foi gravado. Vazio quando não há SE. */
   se: string;
@@ -89,6 +91,7 @@ export type ControleDiarioSource = {
   current_location?: string | null;
   map_link?: string | null;
   toll_value?: number | null;
+  billing_approved?: boolean | null;
   vehiclePlate?: string | null;
   cargoPlate?: string | null;
   originAt?: string | null;
@@ -411,6 +414,7 @@ export function toControleDiarioRow(mission: ControleDiarioSource, dayIso: strin
     origem: placeLabel(mission.origin),
     destino: placeLabel(mission.destination),
     ocorrencias: Number(mission.occurrence_count) > 0 ? Number(mission.occurrence_count) : 0,
+    aprovacaoPendente: (mission.status === 'Concluída' || mission.status === 'Concluida') && mission.billing_approved !== true,
     diaAnterior: isControleDiarioCarryover(mission, dayIso),
     inicioOrdem: Number.isFinite(started) ? started : 0,
     se: seParts.se,

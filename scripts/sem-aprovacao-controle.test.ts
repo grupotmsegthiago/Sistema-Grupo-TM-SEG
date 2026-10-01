@@ -17,6 +17,13 @@ describe('Sem aprovação no Controle Diário', () => {
     assert.match(source, /Pendências de Aprovações/);
     assert.match(source, /controle-diario-pending-list/);
     assert.match(source, /h-14 min-w-0 items-center/);
+    assert.match(source, /Pendências de Aprovações/);
+    assert.match(source, /controle-diario-pending-columns/);
+    assert.match(source, /Data inicial/);
+    assert.match(source, /Data final/);
+    assert.match(source, /Fornecedor/);
+    assert.match(source, /Ocorrência de auditoria/);
+    assert.match(source, /Pendente de aprovação/);
   });
 
   it('botão só para Financeiro e Diretoria', () => {

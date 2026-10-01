@@ -83,7 +83,7 @@ import {
 } from "./patrimonioStore";
 import { ADD_MISSION_COLUMNS_RESPONSE, buildProviderOpsColumnsResponse } from "../lib/migrationEndpointPayloads";
 import { canAccessScreen } from "../lib/screenAccess";
-import { normalizeControleDiarioNote } from "../lib/controleDiarioNotas";
+import { normalizeControleDiarioNote, normalizeControleDiarioNoteKind } from "../lib/controleDiarioNotas";
 import {
   getSupabaseBillingLinks,
   getSupabaseDbMetrics,
@@ -5090,7 +5090,7 @@ export async function registerRoutes(
       if (!ids.length) return res.json([]);
       const { data, error } = await supabase
         .from('controle_diario_notas')
-        .select('id, mission_id, note, created_by, created_at')
+        .select('id, mission_id, note, kind, created_by, created_at')
         .in('mission_id', ids)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -5105,6 +5105,7 @@ export async function registerRoutes(
     try {
       const missionId = String(req.body?.mission_id || '').trim();
       const note = normalizeControleDiarioNote(req.body?.note);
+      const kind = normalizeControleDiarioNoteKind(req.body?.kind);
       if (!missionId || missionId.length > 80) return res.status(400).json({ error: 'OS obrigatória' });
       if (!note) return res.status(400).json({ error: 'Escreva a observação antes de salvar' });
       const principal = (req as any).user as ResolvedPrincipal;
@@ -5112,8 +5113,8 @@ export async function registerRoutes(
       if (!createdBy) return res.status(400).json({ error: 'Usuário sem nome para registrar a observação' });
       const { data, error } = await supabase
         .from('controle_diario_notas')
-        .insert({ mission_id: missionId, note, created_by: createdBy })
-        .select('id, mission_id, note, created_by, created_at')
+        .insert({ mission_id: missionId, note, kind, created_by: createdBy })
+        .select('id, mission_id, note, kind, created_by, created_at')
         .single();
       if (error) throw error;
       res.json(data);
