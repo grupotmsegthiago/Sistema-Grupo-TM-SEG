@@ -1,13 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { LogOut } from 'lucide-react';
 import TimeClockModal from './TimeClockModal';
-import ShiftWaitScreen from './ShiftWaitScreen';
 import { enrichUserWithCltData } from '../lib/timeclock/cltEmployee';
 import {
   needsEntryPunchToday,
   requiresTimeclockUser,
 } from '../lib/timeclock/eligibility';
-import { canPunchEntryNow } from '../lib/timeclock/shiftRules';
 import { fetchTodayTimeClockEntries } from '../lib/timeclock/registerPunch';
 import type { TimeClockUserContext } from '../lib/timeclock/types';
 
@@ -20,19 +18,18 @@ interface Props {
 /**
  * Bloqueia o sistema até o operador bater a entrada (IN) do dia.
  * Diretoria e perfis sem obrigatoriedade de ponto passam direto.
+ * Não há mais trava por horário de turno — a batida de entrada fica liberada a qualquer hora.
  */
 const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
   const [loading, setLoading] = useState(true);
   const [mustPunch, setMustPunch] = useState(false);
-  const [shiftBlocked, setShiftBlocked] = useState(false);
-  const [user, setUser] = useState<TimeClockUserContext | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
   // `initial` = primeira avaliação (mostra o "loading" que oculta a tela).
   // As reavaliações periódicas rodam em segundo plano SEM mexer em `loading`,
   // caso contrário o gate renderiza `null` e desmonta/remonta toda a árvore
   // (a tela "pisca" e componentes como o alerta "OS sem Tabela" reabrem a
-  // cada ciclo). Só atualizamos mustPunch/shiftBlocked se algo mudar.
+  // cada ciclo). Só atualizamos mustPunch se algo mudar.
   const evaluate = useCallback(async (initial = false) => {
     if (initial) setLoading(true);
     let rawUser: TimeClockUserContext | null = null;
@@ -45,12 +42,9 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
       rawUser = raw;
       const enriched = await enrichUserWithCltData(raw);
       localStorage.setItem('userData', JSON.stringify(enriched));
-      setUser(enriched);
-      rawUser = enriched;
 
       if (!requiresTimeclockUser(enriched)) {
         setMustPunch(false);
-        setShiftBlocked(false);
         return;
       }
 
@@ -59,21 +53,17 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
       });
       if (!needsEntryPunchToday(entries)) {
         setMustPunch(false);
-        setShiftBlocked(false);
         onCleared();
         return;
       }
 
-      const window = canPunchEntryNow(enriched.shiftType);
-      setShiftBlocked(!window.allowed);
       setMustPunch(true);
-      setModalOpen((prev) => prev || window.allowed);
+      setModalOpen(true);
     } catch (e) {
       console.warn('[TimeClockGate] evaluate falhou:', e);
       // Fail-closed: operadores/CLT não entram sem confirmação de ponto.
       if (rawUser && requiresTimeclockUser(rawUser)) {
         setMustPunch(true);
-        setShiftBlocked(false);
         setModalOpen(true);
       } else {
         setMustPunch(false);
@@ -101,8 +91,7 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
 
   return (
     <>
-      {shiftBlocked && <ShiftWaitScreen shiftType={user?.shiftType} />}
-      {!shiftBlocked && !modalOpen && (
+      {!modalOpen && (
         <div className="fixed inset-0 z-[190] flex items-center justify-center bg-slate-950/90 p-4">
           <div className="max-w-lg w-full rounded-2xl border border-blue-500/30 bg-slate-900 p-6 text-center">
             <h2 className="text-lg font-black text-white uppercase mb-2">Bata seu ponto para iniciar</h2>
@@ -128,7 +117,7 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
         </div>
       )}
       <TimeClockModal
-        open={modalOpen && !shiftBlocked}
+        open={modalOpen}
         forced
         onClose={() => {}}
         onRegistered={handleRegistered}

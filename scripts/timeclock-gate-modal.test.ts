@@ -4,7 +4,8 @@ import fs from 'node:fs';
 
 test('TimeClockGate esconde overlay quando modal de ponto está aberto', () => {
   const src = fs.readFileSync('components/TimeClockGate.tsx', 'utf8');
-  assert.match(src, /!shiftBlocked && !modalOpen/);
+  assert.match(src, /\{!modalOpen && \(/);
+  assert.doesNotMatch(src, /ShiftWaitScreen|shiftBlocked|canPunchEntryNow/);
 });
 
 test('TimeClockModal forced usa z-index acima do gate', () => {

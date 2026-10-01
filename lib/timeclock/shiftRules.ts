@@ -2,12 +2,13 @@ import { TMSEG_TIMEZONE } from '../dateUtils';
 
 export type ShiftType = 'diurno' | 'noturno';
 
+/** Referência de início do turno (documentação / plantão). Não bloqueia mais a batida. */
 export const SHIFT_ENTRY_START: Record<ShiftType, { hour: number; minute: number }> = {
   diurno: { hour: 7, minute: 30 },
   noturno: { hour: 19, minute: 30 },
 };
 
-/** Plantão noturno segue até 09:30 do dia seguinte (entrada permitida nessa janela). */
+/** Plantão noturno segue até 09:30 do dia seguinte (usado no carry-over de batidas). */
 export const SHIFT_NOTURNO_PLANTAO_END = { hour: 9, minute: 30 };
 
 export const ACTIVITY_IDLE_MS = 10 * 60 * 1000;
@@ -45,52 +46,14 @@ export interface ShiftWindowResult {
   waitUntilLabel?: string;
 }
 
-function formatHm(h: number, m: number): string {
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-function isNoturnoEntryWindowAllowed(nowMin: number, startMin: number, endMin: number): boolean {
-  // Plantão 19:30→09:30: entrada após 19:30 OU entre 00:00 e 09:30 (cauda do plantão).
-  return nowMin >= startMin || nowMin <= endMin;
-}
-
-/** Verifica se o operador pode bater a entrada (IN) agora. */
+/**
+ * Verifica se o operador pode bater a entrada (IN) agora.
+ * Regra de horário removida: entrada liberada a qualquer momento (diurno e noturno).
+ */
 export function canPunchEntryNow(
   shiftTypeInput: string | null | undefined,
-  now: Date = new Date(),
+  _now: Date = new Date(),
 ): ShiftWindowResult {
   const shiftType = normalizeShiftType(shiftTypeInput);
-  const start = SHIFT_ENTRY_START[shiftType];
-  const { hour, minute } = getBrtParts(now);
-  const nowMin = minutesSinceMidnight(hour, minute);
-  const startMin = minutesSinceMidnight(start.hour, start.minute);
-
-  if (shiftType === 'noturno') {
-    const endMin = minutesSinceMidnight(
-      SHIFT_NOTURNO_PLANTAO_END.hour,
-      SHIFT_NOTURNO_PLANTAO_END.minute,
-    );
-    if (isNoturnoEntryWindowAllowed(nowMin, startMin, endMin)) {
-      return { allowed: true, shiftType };
-    }
-    const label = formatHm(start.hour, start.minute);
-    return {
-      allowed: false,
-      shiftType,
-      waitUntilLabel: label,
-      message: `Turno noturno: batida de entrada liberada após ${label} ou durante o plantão (até ${formatHm(SHIFT_NOTURNO_PLANTAO_END.hour, SHIFT_NOTURNO_PLANTAO_END.minute)}).`,
-    };
-  }
-
-  if (nowMin >= startMin) {
-    return { allowed: true, shiftType };
-  }
-
-  const label = formatHm(start.hour, start.minute);
-  return {
-    allowed: false,
-    shiftType,
-    waitUntilLabel: label,
-    message: `Turno diurno: batida de entrada liberada após ${label}.`,
-  };
+  return { allowed: true, shiftType };
 }

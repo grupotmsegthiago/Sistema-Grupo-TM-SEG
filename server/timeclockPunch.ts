@@ -6,7 +6,6 @@ import {
 } from '../lib/rh/apiEmployeesAuth';
 import { isDiretoriaRole, employeeRequiresTimeclock } from '../lib/timeclock/eligibility';
 import { ensureNightShiftOperatorRecord } from '../lib/timeclock/nightShiftOperators';
-import { canPunchEntryNow } from '../lib/timeclock/shiftRules';
 import { fetchActiveShiftEntries } from '../lib/timeclock/shiftEntries';
 import { getNextTimeClockStage } from '../lib/timeclock/stages';
 import { namesLikelyMatch } from '../lib/timeclock/nameMatch';
@@ -161,13 +160,7 @@ export async function handleTimeclockPunch(req: Request, res: Response): Promise
     return;
   }
 
-  if (stage === 'IN') {
-    const window = canPunchEntryNow(shiftType);
-    if (!window.allowed) {
-      res.status(403).json({ ok: false, error: window.message || 'Horário de entrada bloqueado.' });
-      return;
-    }
-  }
+  // Entrada (IN) liberada a qualquer horário — trava de turno removida.
 
   const path = `timeclock/${userId}/${Date.now()}.jpg`;
   const buffer = Buffer.from(photoBase64, 'base64');
