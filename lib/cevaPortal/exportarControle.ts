@@ -108,6 +108,18 @@ function valorCliente(item: LinhaControleExportavel, value: number | null): stri
   return dinheiro(value);
 }
 
+/** Tira colunas do Excel/PDF sem mudar a ordem das que ficam. Lista vazia devolve o controle completo. */
+export function recortarColunasControle(linhas: string[][], ocultas: readonly string[]): { cabecalhos: string[]; linhas: string[][] } {
+  const fora = new Set(ocultas);
+  const indices = CABECALHOS_CONTROLE
+    .map((nome, indice) => (fora.has(nome) ? -1 : indice))
+    .filter((indice) => indice >= 0);
+  return {
+    cabecalhos: indices.map((indice) => CABECALHOS_CONTROLE[indice]),
+    linhas: linhas.map((linha) => indices.map((indice) => linha[indice] ?? '')),
+  };
+}
+
 export function linhaControleExportavel(item: LinhaControleExportavel, numero: number | undefined): string[] {
   const obs = item.valores === 'APROVADO' && item.valorTotal != null
     ? (item.obs || '')
@@ -146,12 +158,12 @@ export function linhaControleExportavel(item: LinhaControleExportavel, numero: n
   ];
 }
 
-export function nomeArquivoControle(extensao: 'xlsx' | 'pdf', agora = new Date()): string {
+export function nomeArquivoControle(extensao: 'xlsx' | 'pdf', agora = new Date(), prefixo = 'ceva'): string {
   const dia = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   }).format(agora);
-  return `controle-escolta-ceva-${dia}.${extensao}`;
+  return `controle-escolta-${prefixo}-${dia}.${extensao}`;
 }

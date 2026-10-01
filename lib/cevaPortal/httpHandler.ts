@@ -2,7 +2,9 @@
  * Handler HTTP do portal CEVA — leve para Vercel (não passa pelo Express/api/index).
  * O catch-all Express estoura tempo e o login ficava em "Aguarde...".
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createSupabaseAdminClient } from '../supabaseAdmin.js';
+import { PORTAL_CEVA, PORTAL_IBL, type PortalServidor } from './portalServidor.js';
 import {
   decidirPrimeiroAcesso,
   emailDeAcesso,
@@ -18,8 +20,6 @@ import {
 import {
   buildCevaSolicitacao,
   CEVA_PORTAL_LOGIN_ENABLED,
-  issueCevaPortalToken,
-  readPortalToken,
   type CevaPortalSession,
 } from './rules.js';
 import { sendCevaPortalAccessEmail } from './emailAcesso.js';
@@ -28,6 +28,23 @@ import type { CampoFiltro } from './camposCliente.js';
 // Imports pesados (billing/report/ao-vivo) entram via import() dinâmico nas ops
 // que precisam — evita cold-start do login puxar financialUtils/supabasePaging
 // e quebrar o bundle Vercel com ERR_MODULE_NOT_FOUND.
+
+const contextoPortal = new AsyncLocalStorage<PortalServidor>();
+
+function cfg(): PortalServidor {
+  return contextoPortal.getStore() ?? PORTAL_CEVA;
+}
+
+function tokenDoPortal(userId: string | number, now = Date.now()): string {
+  return `${cfg().tokenPrefix}-${userId}-${now}`;
+}
+
+function idDoToken(header: string | null | undefined): string | null {
+  const raw = String(header || '').replace(/^Bearer\s+/i, '').trim();
+  const prefixo = cfg().tokenPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = raw.match(new RegExp(`^${prefixo}-(\\d+)-(\\d{10,})$`));
+  return match ? match[1] : null;
+}
 
 const STOP_WORDS = ['LTDA', 'LTDA.', 'S.A.', 'S.A', 'SA', 'S/A', 'S/A.', 'DO', 'DE', 'DA', 'E', 'DAS', 'DOS'];
 
@@ -96,19 +113,35 @@ function sessaoDe(row: { id: number | string; nome: string; email: string; perfi
   return { ...user, perfil, trocarSenha: user.trocarSenha };
 }
 
+function sessaoAberta(): PortalUser {
+  return {
+    id: 'aberto',
+    name: cfg().rotulo,
+    email: 'sem-login',
+    perfil: 'administrador',
+    trocarSenha: false,
+  };
+}
+
 async function portalSession(req: any): Promise<PortalUser | null> {
-  const userId = readPortalToken(String(req.headers?.authorization || req.headers?.['x-ceva-portal'] || ''));
-  if (!userId) return null;
+  const userId = idDoToken(String(req.headers?.authorization || req.headers?.[cfg().headerSessao] || ''));
+  if (!userId) return cfg().exigeLogin ? null : sessaoAberta();
   const sb = createSupabaseAdminClient();
   if (!sb) return null;
 
   const { data: user } = await sb
-    .from('ceva_portal_usuarios')
+    .from(cfg().tabelas.usuarios)
     .select('id, nome, email, perfil, status, trocar_senha')
     .eq('id', userId)
     .maybeSingle();
-  if (!user || user.status !== 'ativo') return null;
+  if (!user || user.status !== 'ativo') return cfg().exigeLogin ? null : sessaoAberta();
   return sessaoDe(user);
+}
+
+function bloquearPessoasSemLogin(res: any, session: PortalUser): boolean {
+  if (session.id !== 'aberto') return false;
+  res.status(403).json({ error: 'O cadastro de pessoas fica para quando o login for ligado.' });
+  return true;
 }
 
 function exigirUso(res: any, session: PortalUser | null): session is PortalUser {
@@ -125,7 +158,7 @@ function exigirUso(res: any, session: PortalUser | null): session is PortalUser 
 
 async function existeAdministrador(sb: NonNullable<ReturnType<typeof createSupabaseAdminClient>>): Promise<boolean> {
   const { count, error } = await sb
-    .from('ceva_portal_usuarios')
+    .from(cfg().tabelas.usuarios)
     .select('id', { count: 'exact', head: true })
     .eq('perfil', 'administrador');
   if (error) throw error;
@@ -134,7 +167,7 @@ async function existeAdministrador(sb: NonNullable<ReturnType<typeof createSupab
 
 async function outroAdministradorVivo(sb: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, id: number): Promise<boolean> {
   const { count, error } = await sb
-    .from('ceva_portal_usuarios')
+    .from(cfg().tabelas.usuarios)
     .select('id', { count: 'exact', head: true })
     .eq('perfil', 'administrador')
     .neq('status', 'inativo')
@@ -199,7 +232,7 @@ async function loadPriceTables(sb: NonNullable<ReturnType<typeof createSupabaseA
     rows.push(...(data || []));
     if (!data || data.length < pageSize) return rows;
   }
-  throw new Error('Tabelas de preço da CEVA incompletas.');
+  throw new Error(`Tabelas de preço da ${cfg().rotulo} incompletas.`);
 }
 
 async function loadPlates(sb: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, vehicleIds: unknown[]): Promise<Map<string, string>> {
@@ -299,10 +332,31 @@ function aplicarCamposCliente(
   item.tsp = salvo?.tsp ?? null;
 }
 
+function acessoNegado(error: unknown): boolean {
+  const row = error as { code?: string; message?: string };
+  return row?.code === '42501' || String(row?.message || '').toLowerCase().includes('permission denied');
+}
+
+/** Nome oficial em clients. A IBL entra como Intermodal; a CEVA continua pelo nome exato. */
+async function carregarClienteDoPortal(sb: NonNullable<ReturnType<typeof createSupabaseAdminClient>>) {
+  const busca = String(cfg().clienteBusca || '').trim();
+  if (!busca) {
+    const { data, error } = await sb.from('clients').select('*').eq('name', cfg().clienteNome).maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+  const { data, error } = await sb.from('clients').select('*').ilike('name', `%${busca}%`).limit(20);
+  if (error) throw error;
+  const linhas = data || [];
+  const oficial = linhas.find((row: { name?: string }) => String(row.name || '').trim().toUpperCase() === cfg().clienteNome.toUpperCase());
+  if (oficial) return oficial;
+  return linhas.length === 1 ? linhas[0] : null;
+}
+
 async function loadCamposCliente(sb: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, missionIds: string[]) {
   const map = new Map<string, any>();
   for (const part of chunks(missionIds, 200)) {
-    const { data, error } = await sb.from('ceva_portal_os_campos').select('*').in('mission_id', part);
+    const { data, error } = await sb.from(cfg().tabelas.osCampos).select('*').in('mission_id', part);
     if (error) throw error;
     for (const row of data || []) map.set(String(row.mission_id), row);
   }
@@ -318,7 +372,7 @@ async function loadCatalogo(sb: NonNullable<ReturnType<typeof createSupabaseAdmi
     operacao: [],
     tsp: [],
   };
-  const { data, error } = await sb.from('ceva_portal_catalogo').select('campo, valor').order('valor');
+  const { data, error } = await sb.from(cfg().tabelas.catalogo).select('campo, valor').order('valor');
   if (error) throw error;
   const reverso: Record<string, CampoFiltro> = {
     solicitante: 'solicitante',
@@ -337,11 +391,11 @@ async function loadCatalogo(sb: NonNullable<ReturnType<typeof createSupabaseAdmi
 
 async function gravarColuna(sb: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, missionId: string, campo: keyof typeof COLUNA_CAMPO, valor: string | null) {
   const coluna = COLUNA_CAMPO[campo];
-  const { data: atual, error: leitura } = await sb.from('ceva_portal_os_campos').select('*').eq('mission_id', missionId).maybeSingle();
+  const { data: atual, error: leitura } = await sb.from(cfg().tabelas.osCampos).select('*').eq('mission_id', missionId).maybeSingle();
   if (leitura) throw leitura;
   const payload = { ...(atual || { mission_id: missionId }), [coluna]: valor, updated_at: new Date().toISOString() };
   delete payload.id;
-  const { error } = await sb.from('ceva_portal_os_campos').upsert(payload, { onConflict: 'mission_id' });
+  const { error } = await sb.from(cfg().tabelas.osCampos).upsert(payload, { onConflict: 'mission_id' });
   if (error) throw error;
   return atual;
 }
@@ -364,21 +418,27 @@ function parseBody(body: unknown): any {
   return body || {};
 }
 
+function anotarQuery(req: any, extra: Record<string, string>): void {
+  const atual = req?.query;
+  if (!atual || typeof atual !== 'object') return;
+  Object.assign(atual, extra);
+}
+
 function resolveOp(req: any): string {
   const fromQuery = String(req.query?.op || '').trim();
   if (fromQuery) return fromQuery;
   const url = String(req.url || '');
   const path = url.split('?')[0];
-  const match = path.match(/\/api\/ceva-portal\/([^/]+)(?:\/([^/]+))?/);
+  const match = path.match(/\/api\/(?:ceva|ibl)-portal\/([^/]+)(?:\/([^/]+))?/);
   if (!match) return '';
   const head = match[1];
   const tail = match[2];
   if (head === 'pessoas' && tail) {
-    req.query = { ...(req.query || {}), id: tail };
+    anotarQuery(req, { id: tail });
     return 'pessoas-item';
   }
   if (head === 'pgr' && tail) {
-    req.query = { ...(req.query || {}), os: tail };
+    anotarQuery(req, { os: tail });
     return 'pgr';
   }
   return head;
@@ -386,6 +446,15 @@ function resolveOp(req: any): string {
 
 /** Entrada única do portal CEVA (Vercel leve + Express local). */
 export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
+  return contextoPortal.run(PORTAL_CEVA, () => executarPortalHttp(req, res));
+}
+
+/** Mesmo controle de escolta, com as OS da Intermodal Brasil Logística. */
+export async function handleIblPortalHttp(req: any, res: any): Promise<void> {
+  return contextoPortal.run(PORTAL_IBL, () => executarPortalHttp(req, res));
+}
+
+async function executarPortalHttp(req: any, res: any): Promise<void> {
   res.setHeader?.('Cache-Control', 'no-store');
   const method = String(req.method || 'GET').toUpperCase();
   const op = resolveOp(req);
@@ -401,7 +470,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
       try {
         res.status(200).json({ temAdministrador: await existeAdministrador(sb) });
       } catch (error) {
-        console.error('[ceva-portal] acesso', error instanceof Error ? error.message : error);
+        console.error(`[${cfg().logPrefix}] acesso`, error instanceof Error ? error.message : error);
         res.status(500).json({ error: 'Não foi possível abrir o acesso.' });
       }
       return;
@@ -425,7 +494,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         return;
       }
       const { data: user } = await sb
-        .from('ceva_portal_usuarios')
+        .from(cfg().tabelas.usuarios)
         .select('id, nome, email, senha_hash, perfil, status, trocar_senha')
         .eq('email', email)
         .maybeSingle();
@@ -448,7 +517,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         return;
       }
       clearFailures(key);
-      res.status(200).json({ token: issueCevaPortalToken(user.id), user: session });
+      res.status(200).json({ token: tokenDoPortal(user.id), user: session });
       return;
     }
 
@@ -495,12 +564,12 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
           return;
         }
         const { data: criado, error } = await sb
-          .from('ceva_portal_usuarios')
+          .from(cfg().tabelas.usuarios)
           .insert({ nome, email, senha_hash: hashSenha(senha), perfil: 'administrador', status: 'ativo', trocar_senha: false })
           .select('id, nome, email, perfil, trocar_senha')
           .single();
         if (error || !criado) {
-          console.error('[ceva-portal] primeiro administrador', error?.message);
+          console.error(`[${cfg().logPrefix}] primeiro administrador`, error?.message);
           res.status(500).json({ error: 'Não foi possível criar o administrador.' });
           return;
         }
@@ -510,9 +579,9 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
           return;
         }
         clearFailures(key);
-        res.status(201).json({ token: issueCevaPortalToken(criado.id), user: session });
+        res.status(201).json({ token: tokenDoPortal(criado.id), user: session });
       } catch (error) {
-        console.error('[ceva-portal] primeiro acesso', error instanceof Error ? error.message : error);
+        console.error(`[${cfg().logPrefix}] primeiro acesso`, error instanceof Error ? error.message : error);
         res.status(500).json({ error: 'Não foi possível concluir o primeiro acesso.' });
       }
       return;
@@ -555,13 +624,13 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         res.status(503).json({ error: 'Portal indisponível.' });
         return;
       }
-      const { data: user } = await sb.from('ceva_portal_usuarios').select('id, senha_hash').eq('id', session.id).maybeSingle();
+      const { data: user } = await sb.from(cfg().tabelas.usuarios).select('id, senha_hash').eq('id', session.id).maybeSingle();
       if (!user || !senhaConfere(senhaAtual, user.senha_hash)) {
         res.status(401).json({ error: 'A senha atual não confere.' });
         return;
       }
       const { error } = await sb
-        .from('ceva_portal_usuarios')
+        .from(cfg().tabelas.usuarios)
         .update({ senha_hash: hashSenha(senhaNova), trocar_senha: false, atualizado_em: new Date().toISOString() })
         .eq('id', session.id);
       if (error) {
@@ -575,6 +644,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
     if (op === 'pessoas' && method === 'GET') {
       const session = await portalSession(req);
       if (!exigirUso(res, session)) return;
+      if (bloquearPessoasSemLogin(res, session)) return;
       if (!podeCadastrarPessoa(session.perfil)) {
         res.status(403).json({ error: 'O analista não cadastra pessoas.' });
         return;
@@ -585,7 +655,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         return;
       }
       const { data, error } = await sb
-        .from('ceva_portal_usuarios')
+        .from(cfg().tabelas.usuarios)
         .select('id, nome, email, perfil, status, trocar_senha')
         .order('nome');
       if (error) {
@@ -608,6 +678,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
     if (op === 'pessoas' && method === 'POST') {
       const session = await portalSession(req);
       if (!exigirUso(res, session)) return;
+      if (bloquearPessoasSemLogin(res, session)) return;
       if (!podeCadastrarPessoa(session.perfil)) {
         res.status(403).json({ error: 'O analista não cadastra pessoas.' });
         return;
@@ -634,7 +705,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
       }
       const senhaTemporaria = gerarSenhaTemporaria();
       const { data, error } = await sb
-        .from('ceva_portal_usuarios')
+        .from(cfg().tabelas.usuarios)
         .insert({ nome, email, perfil, status: 'ativo', trocar_senha: true, senha_hash: hashSenha(senhaTemporaria), criado_por: Number(session.id) })
         .select('id, nome, email, perfil, status, trocar_senha')
         .single();
@@ -646,9 +717,9 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         res.status(500).json({ error: 'Não foi possível liberar o acesso.' });
         return;
       }
-      const enviou = await sendCevaPortalAccessEmail({ nome, email, senhaTemporaria });
+      const enviou = await sendCevaPortalAccessEmail({ nome, email, senhaTemporaria, rotulo: cfg().rotulo, caminho: cfg().caminho });
       if (!enviou) {
-        await sb.from('ceva_portal_usuarios').delete().eq('id', data.id);
+        await sb.from(cfg().tabelas.usuarios).delete().eq('id', data.id);
         res.status(503).json({ error: 'Não foi possível enviar o e-mail. O acesso não foi liberado.' });
         return;
       }
@@ -661,6 +732,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
     if (op === 'pessoas-item' && method === 'PATCH') {
       const session = await portalSession(req);
       if (!exigirUso(res, session)) return;
+      if (bloquearPessoasSemLogin(res, session)) return;
       if (!podeCadastrarPessoa(session.perfil)) {
         res.status(403).json({ error: 'O analista não cadastra pessoas.' });
         return;
@@ -677,7 +749,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         return;
       }
       const { data: atual, error: leitura } = await sb
-        .from('ceva_portal_usuarios')
+        .from(cfg().tabelas.usuarios)
         .select('id, perfil, status, senha_hash')
         .eq('id', id)
         .maybeSingle();
@@ -696,7 +768,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
       }
       const proximo = status === 'inativo' ? 'inativo' : atual.senha_hash ? 'ativo' : 'pendente';
       const { data, error } = await sb
-        .from('ceva_portal_usuarios')
+        .from(cfg().tabelas.usuarios)
         .update({ status: proximo, atualizado_em: new Date().toISOString() })
         .eq('id', id)
         .select('id, nome, email, perfil, status')
@@ -718,11 +790,16 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         return;
       }
       try {
-        const { montarMissaoAoVivo, ordenarMissoesAoVivo, STATUS_AO_VIVO } = await import('./aoVivo.js');
+        const { montarMissaoAoVivo, ordenarMissoesAoVivo, segueNoAoVivo, STATUS_AO_VIVO } = await import('./aoVivo.js');
+        const cliente = await carregarClienteDoPortal(sb);
+        if (!cliente?.name) {
+          res.status(503).json({ error: `Cliente ${cfg().clienteBusca || cfg().rotulo} não encontrado.` });
+          return;
+        }
         const { data, error } = await sb
           .from('missions')
-          .select('id, status, start_time, end_time, mission_type, driver_name, origin, destination, client_vehicle, start_km, end_km')
-          .eq('client', 'CEVA LOGISTICS LTDA')
+          .select('id, status, start_time, end_time, mission_type, driver_name, origin, destination, client_vehicle, start_km, end_km, billing_approved')
+          .eq('client', cliente.name)
           .in('status', [...STATUS_AO_VIVO])
           .order('start_time', { ascending: false })
           .limit(500);
@@ -732,11 +809,15 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
           return;
         }
         const linhas = data || [];
-        const [plates, campos] = await Promise.all([
-          loadPlates(sb, linhas.map((row) => row.client_vehicle)),
-          loadCamposCliente(sb, linhas.map((row) => String(row.id || ''))),
-        ]);
+        const plates = await loadPlates(sb, linhas.map((row) => row.client_vehicle));
+        let campos = new Map<string, any>();
+        try {
+          campos = await loadCamposCliente(sb, linhas.map((row) => String(row.id || '')));
+        } catch (error) {
+          if (cfg().exigeLogin || !acessoNegado(error)) throw error;
+        }
         const missoes = ordenarMissoesAoVivo(linhas.flatMap((row) => {
+          if (!segueNoAoVivo(row)) return [];
           const missao = montarMissaoAoVivo({
             id: String(row.id || ''),
             status: row.status,
@@ -755,7 +836,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         }));
         res.status(200).json({ atualizadoEm: new Date().toISOString(), missoes });
       } catch (error) {
-        console.error('[ceva-portal] ao-vivo', error instanceof Error ? error.message : error);
+        console.error(`[${cfg().logPrefix}] ao-vivo`, error instanceof Error ? error.message : error);
         res.status(500).json({ error: 'Não foi possível atualizar as missões.' });
       }
       return;
@@ -773,14 +854,9 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         const { BillingDatasetIncompleteError, fetchBillingMissionUniverse } = await import('../billing/fetchBillingMissionUniverse.js');
         const { linhaDoBoletimCeva, numeroOsDoBoletim } = await import('./report.js');
         const { servicoDoSistema } = await import('./camposCliente.js');
-        const { data: clientRow, error: clientError } = await sb
-          .from('clients')
-          .select('*')
-          .eq('name', 'CEVA LOGISTICS LTDA')
-          .maybeSingle();
-        if (clientError) throw clientError;
+        const clientRow = await carregarClienteDoPortal(sb);
         if (!clientRow?.name) {
-          res.status(503).json({ error: 'Cliente CEVA não encontrado.' });
+          res.status(503).json({ error: `Cliente ${cfg().clienteBusca || cfg().rotulo} não encontrado.` });
           return;
         }
         const canonicalNames = [String(clientRow.name).trim()];
@@ -821,10 +897,26 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
           });
         }).filter((row): row is NonNullable<typeof row> => row != null);
 
-        const [campos, catalogo] = await Promise.all([
-          loadCamposCliente(sb, missionIds),
-          loadCatalogo(sb),
-        ]);
+        let campos: Awaited<ReturnType<typeof loadCamposCliente>>;
+        let catalogo: Awaited<ReturnType<typeof loadCatalogo>>;
+        try {
+          [campos, catalogo] = await Promise.all([
+            loadCamposCliente(sb, missionIds),
+            loadCatalogo(sb),
+          ]);
+        } catch (error) {
+          if (cfg().exigeLogin || !acessoNegado(error)) throw error;
+          console.error(`[${cfg().logPrefix}] campos do cliente sem leitura; o boletim segue só com as OS`);
+          campos = new Map();
+          catalogo = {
+            solicitante: [],
+            quemAutorizou: [],
+            servico: [],
+            contrato: [],
+            operacao: [],
+            tsp: [],
+          };
+        }
         for (const item of items) aplicarCamposCliente(item, campos.get(`GTM-${item.os}`), servicoDoSistema);
 
         res.status(200).json({
@@ -839,13 +931,13 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         // no catch o binding não existe e vira ReferenceError na Vercel.
         const incompleto = error instanceof Error && error.name === 'BillingDatasetIncompleteError';
         if (incompleto) {
-          console.error('[ceva-portal] relatorio incompleto', (error as { reason?: string }).reason);
+          console.error(`[${cfg().logPrefix}] relatorio incompleto`, (error as { reason?: string }).reason);
           res.status(503).json({ error: 'O conjunto de OS do boletim não fechou. Nada foi exibido para não inventar número.' });
           return;
         }
-        const message = error instanceof Error ? error.message : 'falha';
-        console.error('[ceva-portal] relatorio', message);
-        res.status(500).json({ error: 'Não foi possível carregar as OS da CEVA.' });
+        const message = error instanceof Error ? error.message : (error as { message?: string })?.message || 'falha';
+        console.error(`[${cfg().logPrefix}] relatorio`, message);
+        res.status(500).json({ error: `Não foi possível carregar as OS da ${cfg().rotulo}.` });
       }
       return;
     }
@@ -872,14 +964,14 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         .from('missions')
         .select('id')
         .eq('id', missionId)
-        .eq('client', 'CEVA LOGISTICS LTDA')
+        .eq('client', (await carregarClienteDoPortal(sb))?.name || cfg().clienteNome)
         .maybeSingle();
       if (missionError) {
         res.status(500).json({ error: 'Não foi possível conferir a OS.' });
         return;
       }
       if (!mission) {
-        res.status(404).json({ error: 'OS não encontrada no boletim da CEVA.' });
+        res.status(404).json({ error: `OS não encontrada no boletim da ${cfg().rotulo}.` });
         return;
       }
       try {
@@ -888,11 +980,11 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
           const atual = await gravarColuna(sb, missionId, 'atendimentoPgr', texto || null);
           const anterior = atual?.atendimento_pgr ?? null;
           if ((anterior || '') !== texto) {
-            const { error: histError } = await sb.from('ceva_portal_pgr_historico').insert({
+            const { error: histError } = await sb.from(cfg().tabelas.pgrHistorico).insert({
               mission_id: missionId,
               valor: texto,
               valor_anterior: anterior,
-              alterado_por: session?.name || 'Portal CEVA',
+              alterado_por: session?.name || `Portal ${cfg().rotulo}`,
             });
             if (histError) throw histError;
           }
@@ -903,7 +995,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
           res.status(400).json({ error: 'Campo inválido.' });
           return;
         }
-        const { data: linhas, error: catError } = await sb.from('ceva_portal_catalogo').select('valor').eq('campo', CATALOGO_CAMPO[campo]);
+        const { data: linhas, error: catError } = await sb.from(cfg().tabelas.catalogo).select('valor').eq('campo', CATALOGO_CAMPO[campo]);
         if (catError) throw catError;
         const catalogo = (linhas || []).map((row) => String(row.valor));
         const decisao = decidirGravacao(campo, valor, catalogo);
@@ -917,7 +1009,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         }
         const gravar = decisao.acao === 'limpar' ? null : decisao.acao === 'aplicar' ? decisao.valor : decisao.nome;
         if (decisao.acao === 'confirmar') {
-          const { error: novoError } = await sb.from('ceva_portal_catalogo').upsert(
+          const { error: novoError } = await sb.from(cfg().tabelas.catalogo).upsert(
             { campo: CATALOGO_CAMPO[campo], valor: decisao.nome },
             { onConflict: 'campo,valor', ignoreDuplicates: true },
           );
@@ -927,7 +1019,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         res.status(200).json({ valor: gravar, filtro: decisao.acao === 'confirmar' ? decisao.nome : null });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'falha';
-        console.error('[ceva-portal] campos', message);
+        console.error(`[${cfg().logPrefix}] campos`, message);
         res.status(500).json({ error: 'Não foi possível salvar o campo.' });
       }
       return;
@@ -953,7 +1045,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
       }
       try {
         const { decidirGravacao } = await import('./camposCliente.js');
-        const { data: linhas, error: catError } = await sb.from('ceva_portal_catalogo').select('valor').eq('campo', CATALOGO_CAMPO[campo]);
+        const { data: linhas, error: catError } = await sb.from(cfg().tabelas.catalogo).select('valor').eq('campo', CATALOGO_CAMPO[campo]);
         if (catError) throw catError;
         const catalogo = (linhas || []).map((row) => String(row.valor));
         const decisao = decidirGravacao(campo, String(body?.valor ?? ''), catalogo);
@@ -967,7 +1059,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         }
         const nome = decisao.acao === 'aplicar' ? decisao.valor : decisao.nome;
         if (decisao.acao === 'confirmar') {
-          const { error: novoError } = await sb.from('ceva_portal_catalogo').upsert(
+          const { error: novoError } = await sb.from(cfg().tabelas.catalogo).upsert(
             { campo: CATALOGO_CAMPO[campo], valor: nome },
             { onConflict: 'campo,valor', ignoreDuplicates: true },
           );
@@ -975,7 +1067,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         }
         res.status(200).json({ valor: nome });
       } catch (error) {
-        console.error('[ceva-portal] catalogo', error instanceof Error ? error.message : error);
+        console.error(`[${cfg().logPrefix}] catalogo`, error instanceof Error ? error.message : error);
         res.status(500).json({ error: 'Não foi possível incluir o nome.' });
       }
       return;
@@ -991,14 +1083,9 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
       }
       try {
         const { numeroOsDoBoletim } = await import('./report.js');
-        const { data: clientRow, error: clientError } = await sb
-          .from('clients')
-          .select('name, trading_name')
-          .eq('name', 'CEVA LOGISTICS LTDA')
-          .maybeSingle();
-        if (clientError) throw clientError;
+        const clientRow = await carregarClienteDoPortal(sb);
         if (!clientRow?.name) {
-          res.status(503).json({ error: 'Cliente CEVA não encontrado.' });
+          res.status(503).json({ error: `Cliente ${cfg().clienteBusca || cfg().rotulo} não encontrado.` });
           return;
         }
         const names = [String(clientRow.name).trim()];
@@ -1021,9 +1108,9 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
             return;
           }
         }
-        res.status(503).json({ error: 'A consulta de status da CEVA não fechou.' });
+        res.status(503).json({ error: `A consulta de status da ${cfg().rotulo} não fechou.` });
       } catch (error) {
-        console.error('[ceva-portal] status', error instanceof Error ? error.message : error);
+        console.error(`[${cfg().logPrefix}] status`, error instanceof Error ? error.message : error);
         res.status(500).json({ error: 'Não foi possível atualizar o status.' });
       }
       return;
@@ -1043,7 +1130,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         return;
       }
       const { data, error } = await sb
-        .from('ceva_portal_pgr_historico')
+        .from(cfg().tabelas.pgrHistorico)
         .select('valor, valor_anterior, alterado_em, alterado_por')
         .eq('mission_id', `GTM-${os}`)
         .order('alterado_em', { ascending: false })
@@ -1077,12 +1164,12 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         return;
       }
       const { data, error } = await sb
-        .from('ceva_escolta_solicitacoes')
+        .from(cfg().tabelas.solicitacoes)
         .select('id, numero, data_inicio, data_fim, solicitante, quem_autorizou, servico, atendimento_pgr, contrato, operacao, tsp, placa, motorista, franquia_hora, franquia_km, filled_by_name, filled_by_email, created_at')
         .order('created_at', { ascending: false })
         .limit(200);
       if (error) {
-        console.error('[ceva-portal] list', error.message);
+        console.error(`[${cfg().logPrefix}] list`, error.message);
         res.status(500).json({ error: 'Não foi possível carregar as solicitações.' });
         return;
       }
@@ -1111,7 +1198,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
       }
       const value = draft.value;
       const { data, error } = await sb
-        .from('ceva_escolta_solicitacoes')
+        .from(cfg().tabelas.solicitacoes)
         .insert({
           data_inicio: value.dataInicio,
           data_fim: value.dataFim,
@@ -1133,7 +1220,7 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
         .select('id, numero, data_inicio, data_fim, solicitante, quem_autorizou, servico, atendimento_pgr, contrato, operacao, tsp, placa, motorista, franquia_hora, franquia_km, filled_by_name, filled_by_email, created_at')
         .single();
       if (error || !data) {
-        console.error('[ceva-portal] insert', error?.message);
+        console.error(`[${cfg().logPrefix}] insert`, error?.message);
         res.status(500).json({ error: 'Não foi possível registrar a solicitação.' });
         return;
       }
@@ -1141,12 +1228,12 @@ export async function handleCevaPortalHttp(req: any, res: any): Promise<void> {
       return;
     }
 
-    res.status(404).json({ error: 'Rota do portal CEVA não encontrada.' });
+    res.status(404).json({ error: `Rota do portal ${cfg().rotulo} não encontrada.` });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[ceva-portal]', message);
+    console.error(`[${cfg().logPrefix}]`, message);
     if (!res.headersSent) {
-      res.status(500).json({ error: message || 'Falha no portal CEVA.' });
+      res.status(500).json({ error: message || `Falha no portal ${cfg().rotulo}.` });
     }
   }
 }

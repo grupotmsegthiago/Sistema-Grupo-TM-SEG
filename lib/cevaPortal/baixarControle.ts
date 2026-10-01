@@ -2,25 +2,25 @@ import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import { CABECALHOS_CONTROLE, nomeArquivoControle } from './exportarControle';
 
-export function baixarExcelControle(linhas: string[][]): void {
-  const planilha = XLSX.utils.aoa_to_sheet([[...CABECALHOS_CONTROLE], ...linhas]);
+export function baixarExcelControle(linhas: string[][], prefixo = 'ceva', cabecalhos: readonly string[] = CABECALHOS_CONTROLE): void {
+  const planilha = XLSX.utils.aoa_to_sheet([[...cabecalhos], ...linhas]);
   const livro = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(livro, planilha, 'Controle');
-  XLSX.writeFile(livro, nomeArquivoControle('xlsx'));
+  XLSX.writeFile(livro, nomeArquivoControle('xlsx', new Date(), prefixo));
 }
 
-export function baixarPdfControle(linhas: string[][]): void {
+export function baixarPdfControle(linhas: string[][], titulo = 'Controle de Escolta CEVA', prefixo = 'ceva', cabecalhos: readonly string[] = CABECALHOS_CONTROLE): void {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a3' });
   const margem = 16;
   const largura = doc.internal.pageSize.getWidth() - margem * 2;
   const altura = doc.internal.pageSize.getHeight();
-  const larguraColuna = largura / CABECALHOS_CONTROLE.length;
+  const larguraColuna = largura / cabecalhos.length;
   const alturaLinha = 11;
   let y = margem + 12;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text('Controle de Escolta CEVA', margem, margem + 2);
+  doc.text(titulo, margem, margem + 2);
 
   const escrever = (celulas: string[], negrito: boolean) => {
     if (y + alturaLinha > altura - margem) {
@@ -36,7 +36,7 @@ export function baixarPdfControle(linhas: string[][]): void {
     y += alturaLinha;
   };
 
-  escrever([...CABECALHOS_CONTROLE], true);
+  escrever([...cabecalhos], true);
   for (const linha of linhas) escrever(linha, false);
-  doc.save(nomeArquivoControle('pdf'));
+  doc.save(nomeArquivoControle('pdf', new Date(), prefixo));
 }

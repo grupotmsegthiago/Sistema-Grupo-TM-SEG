@@ -1,6 +1,7 @@
 import React from 'react';
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { montarPainel, type Fatia, type LinhaPainel } from '../../lib/cevaPortal/painel';
+import { usePortalCliente } from './portalMarca';
 
 function moeda(valor: number): string {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -16,7 +17,7 @@ function Cartao({ rotulo, valor, detalhe }: { rotulo: string; valor: string; det
   return (
     <article className="rounded-3xl bg-white px-4 py-4 shadow-sm">
       <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{rotulo}</p>
-      <p className="mt-1 text-2xl font-black tracking-tight text-[#152c54]">{valor}</p>
+      <p className="mt-1 text-2xl font-black tracking-tight text-[var(--portal-marca)]">{valor}</p>
       {detalhe && <p className="mt-1 text-xs text-slate-500">{detalhe}</p>}
     </article>
   );
@@ -26,7 +27,7 @@ function Barras({ titulo, itens, modo }: { titulo: string; itens: Fatia[]; modo:
   const maximo = Math.max(...itens.map((item) => (modo === 'valor' ? item.valor : item.quantidade)), 1);
   return (
     <section className="rounded-3xl bg-white p-4 shadow-sm">
-      <h3 className="text-sm font-black text-[#152c54]">{titulo}</h3>
+      <h3 className="text-sm font-black text-[var(--portal-marca)]">{titulo}</h3>
       {itens.length === 0 && <p className="mt-3 text-xs text-slate-500">Ainda sem dados neste recorte.</p>}
       <ul className="mt-3 grid gap-2">
         {itens.map((item) => {
@@ -38,7 +39,7 @@ function Barras({ titulo, itens, modo }: { titulo: string; itens: Fatia[]; modo:
                 <span className="shrink-0 text-slate-500">{modo === 'valor' ? `${moeda(item.valor)} · ${item.quantidade.toLocaleString('pt-BR')} OS` : `${item.quantidade.toLocaleString('pt-BR')} OS`}</span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full rounded-full bg-[#152c54]" style={{ width: `${Math.max(4, (medida / maximo) * 100)}%` }} />
+                <div className="h-full rounded-full bg-[var(--portal-marca)]" style={{ width: `${Math.max(4, (medida / maximo) * 100)}%` }} />
               </div>
             </li>
           );
@@ -49,7 +50,9 @@ function Barras({ titulo, itens, modo }: { titulo: string; itens: Fatia[]; modo:
 }
 
 export const PainelDiretoria: React.FC<{ linhas: LinhaPainel[] }> = ({ linhas }) => {
+  const portal = usePortalCliente();
   const painel = montarPainel(linhas);
+  const mostrarOperacao = !portal.marca.colunasOcultas.includes('Operação');
   const cancelamento = painel.os ? (painel.canceladas / painel.os) * 100 : 0;
   const composicao = [
     { nome: 'Acionamento', valor: painel.acionamento },
@@ -72,7 +75,7 @@ export const PainelDiretoria: React.FC<{ linhas: LinhaPainel[] }> = ({ linhas })
       </div>
 
       <section className="rounded-3xl bg-white p-4 shadow-sm">
-        <h3 className="text-sm font-black text-[#152c54]">Mês a mês</h3>
+        <h3 className="text-sm font-black text-[var(--portal-marca)]">Mês a mês</h3>
         <p className="text-xs text-slate-500">Barras são a quantidade de OS. A linha é o faturamento do boletim.</p>
         <div className="mt-3 h-72">
           <ResponsiveContainer width="100%" height="100%">
@@ -82,8 +85,8 @@ export const PainelDiretoria: React.FC<{ linhas: LinhaPainel[] }> = ({ linhas })
               <YAxis yAxisId="os" tick={{ fontSize: 11, fill: '#64748b' }} allowDecimals={false} />
               <YAxis yAxisId="rs" orientation="right" tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(valor) => `${Math.round(Number(valor) / 1000)} mil`} />
               <Tooltip formatter={(valor, nome) => nome === 'Faturamento' ? moeda(Number(valor)) : Number(valor).toLocaleString('pt-BR')} />
-              <Bar yAxisId="os" dataKey="os" name="OS" fill="#152c54" radius={[8, 8, 0, 0]} />
-              <Line yAxisId="rs" dataKey="faturamento" name="Faturamento" stroke="#c45b5b" strokeWidth={2.5} dot={false} />
+              <Bar yAxisId="os" dataKey="os" name="OS" fill="var(--portal-marca)" radius={[8, 8, 0, 0]} />
+              <Line yAxisId="rs" dataKey="faturamento" name="Faturamento" stroke="var(--portal-destaque)" strokeWidth={2.5} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -93,12 +96,12 @@ export const PainelDiretoria: React.FC<{ linhas: LinhaPainel[] }> = ({ linhas })
         <Barras titulo="Serviço" itens={painel.servicos} modo="valor" />
         <Barras titulo="Situação" itens={painel.status} modo="quantidade" />
         <section className="rounded-3xl bg-white p-4 shadow-sm lg:col-span-2">
-          <h3 className="text-sm font-black text-[#152c54]">Composição do boletim</h3>
+          <h3 className="text-sm font-black text-[var(--portal-marca)]">Composição do boletim</h3>
           <div className="mt-3 grid gap-3 sm:grid-cols-4">
             {composicao.map((parte) => (
-              <div key={parte.nome} className="rounded-2xl bg-[#f6f3ef] px-3 py-3">
+              <div key={parte.nome} className="rounded-2xl bg-[var(--portal-fundo)] px-3 py-3">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{parte.nome}</p>
-                <p className="mt-1 text-lg font-black text-[#152c54]">{moeda(parte.valor)}</p>
+                <p className="mt-1 text-lg font-black text-[var(--portal-marca)]">{moeda(parte.valor)}</p>
               </div>
             ))}
           </div>
@@ -106,7 +109,7 @@ export const PainelDiretoria: React.FC<{ linhas: LinhaPainel[] }> = ({ linhas })
         <Barras titulo="Motoristas" itens={painel.motoristas} modo="valor" />
         <Barras titulo="Placas" itens={painel.placas} modo="valor" />
         <Barras titulo="Origem" itens={painel.origens} modo="valor" />
-        {painel.operacoes.length > 0 && <Barras titulo="Operação" itens={painel.operacoes} modo="valor" />}
+        {mostrarOperacao && painel.operacoes.length > 0 && <Barras titulo="Operação" itens={painel.operacoes} modo="valor" />}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { AlertTriangle, Ban, CalendarClock, CalendarDays, CheckCircle2, ClipboardList, FileSearch, MapPin, MessageCircle, Moon, Pencil, Radio, RefreshCw, Search, Truck, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Ban, CalendarClock, CalendarDays, CheckCircle2, ClipboardList, FileSearch, MapPin, Maximize2, MessageCircle, Moon, Pencil, Radio, RefreshCw, Search, Truck, X, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { publishMissionLive, MISSION_LIVE_WINDOW_EVENT } from '../lib/missionLiveBroadcast';
 import { authFetch } from '../lib/authFetch';
@@ -22,6 +22,7 @@ import UpdateMissionModal from './UpdateMissionModal';
 import MissionFinancialModal from './MissionFinancialModal';
 import MissionOccurrenceDialog from './MissionOccurrenceDialog';
 import { buildPassagemPlantao, type PassagemPlantao } from '../lib/passagemPlantao';
+import { SEM_APROVACAO_DESDE, SEM_APROVACAO_POR_PAGINA, canViewAprovacoesPendentes } from '../lib/aprovacoesPendentesAccess';
 
 const OPEN_STATUSES = ['Solicitada', 'Documentação', 'Agendada', 'Origem', 'Em Viagem', 'Pendente'];
 const LOOKBACK_DAYS = 90;
@@ -115,6 +116,32 @@ function plateFrom(raw: string | null | undefined, map: Map<string, string>): st
   return '';
 }
 
+async function loadOccurrencePreview(ids: string[]): Promise<Record<string, string>> {
+  const ranked = new Map<string, { text: string; at: string; open: boolean }>();
+  for (const batch of chunks(ids, 80)) {
+    const { data, error } = await supabase
+      .from('mission_occurrences')
+      .select('mission_id, description, created_at, resolved_at')
+      .in('mission_id', batch)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    for (const row of data || []) {
+      const id = String(row.mission_id || '');
+      const text = String(row.description || '').replace(/\s+/g, ' ').trim();
+      if (!id || !text) continue;
+      const open = !row.resolved_at;
+      const at = String(row.created_at || '');
+      const prev = ranked.get(id);
+      if (!prev || (open && !prev.open) || (open === prev.open && at > prev.at)) {
+        ranked.set(id, { text, at, open });
+      }
+    }
+  }
+  const out: Record<string, string> = {};
+  for (const [id, item] of ranked) out[id] = item.text;
+  return out;
+}
+
 async function loadPlateMap(table: 'vehicles' | 'client_vehicles', ids: string[]): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   for (const batch of chunks(ids, 80)) {
@@ -189,6 +216,8 @@ export default function ControleDiario() {
   const [updatedAt, setUpdatedAt] = useState('');
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('TODOS');
+  const [pendingOnly, setPendingOnly] = useState(false);
+  const [occurrencePreview, setOccurrencePreview] = useState<Record<string, string>>({});
   const [expandedSe, setExpandedSe] = useState<Set<string>>(() => new Set());
   const loadTicket = useRef(0);
 
@@ -210,6 +239,8 @@ export default function ControleDiario() {
     }
   }, []);
   const opensAudit = controleDiarioOpensAudit(currentUser?.name);
+  const canSeePendingApproval = canViewAprovacoesPendentes(currentUser);
+  const [pendingPage, setPendingPage] = useState(1);
 
   const openOs = (row: ControleDiarioRow) => {
     const raw = rawById.current.get(row.id);
@@ -227,6 +258,22 @@ export default function ControleDiario() {
     } as Mission;
     if (opensAudit) setAuditMission(mission);
     else setEditMission(mission);
+  };
+
+  const openAudit = (row: ControleDiarioRow) => {
+    const raw = rawById.current.get(row.id);
+    setAuditMission({
+      id: row.id,
+      client: raw?.client || '',
+      provider: raw?.provider || '',
+      status: raw?.status,
+      origin: raw?.origin,
+      destination: raw?.destination,
+      start_time: raw?.start_time,
+      startTime: raw?.start_time,
+      endTime: raw?.end_time,
+      originalClientName: raw?.client || '',
+    } as Mission);
   };
 
   const pickMonth = (next: string) => {
@@ -293,9 +340,66 @@ export default function ControleDiario() {
     }
   }, []);
 
+  const loadPending = useCallback(async () => {
+    const ticket = ++loadTicket.current;
+    setLoading(true);
+    setError('');
+    setIncomplete(false);
+    try {
+      const page = await fetchAllPages<RawMission>(async (from, size) => {
+        const q = supabase.from('missions')
+          .select(MISSION_COLUMNS, { count: 'exact' })
+          .in('status', ['Concluída', 'Concluida'])
+          .or('billing_approved.is.null,billing_approved.eq.false')
+          .gte('start_time', SEM_APROVACAO_DESDE)
+          .order('start_time', { ascending: false })
+          .range(from, from + size - 1);
+        return q;
+      }, 1000, 20000, { getRowKey: (row) => String(row.id || '') });
+      if (!page.complete) setIncomplete(true);
+      const missions = page.rows.filter((row) => row.id);
+      const byId = new Map<string, RawMission>();
+      for (const row of missions) byId.set(String(row.id), row);
+      rawById.current = byId;
+      const vehicleIds = [...new Set(missions.map((m) => String(m.vehicle_id || '')).filter(Boolean))];
+      const cargoIds = [...new Set(missions.map((m) => String(m.client_vehicle || '')).filter(Boolean))];
+      const ids = missions.map((m) => String(m.id));
+      const [vehicleMap, cargoMap, originMap, occurrences] = await Promise.all([
+        loadPlateMap('vehicles', vehicleIds),
+        loadPlateMap('client_vehicles', cargoIds),
+        loadOriginTimes(ids),
+        loadOccurrencePreview(ids),
+      ]);
+      if (ticket !== loadTicket.current) return;
+      const sheetDay = formatIsoDateBR();
+      const next = missions
+        .map((m) => toControleDiarioRow({
+          ...m,
+          vehiclePlate: plateFrom(m.vehicle_id, vehicleMap),
+          cargoPlate: plateFrom(m.client_vehicle, cargoMap),
+          originAt: originMap.get(String(m.id)) || null,
+        }, sheetDay))
+        .sort((a, b) => b.inicioOrdem - a.inicioOrdem || a.os.localeCompare(b.os, 'pt-BR', { numeric: true }));
+      setRows(next);
+      setOccurrencePreview(occurrences);
+      setUpdatedAt(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }));
+    } catch (err) {
+      if (ticket !== loadTicket.current) return;
+      setError(err instanceof Error ? err.message : 'Não foi possível ler as OS sem aprovação.');
+      setRows([]);
+      setOccurrencePreview({});
+    } finally {
+      if (ticket === loadTicket.current) setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    void load(day);
-  }, [day, load]);
+    if (pendingOnly) void loadPending();
+    else {
+      setOccurrencePreview({});
+      void load(day);
+    }
+  }, [day, load, pendingOnly, loadPending]);
 
   useEffect(() => {
     const ids = rows.map((row) => row.id).filter(Boolean);
@@ -342,7 +446,7 @@ export default function ControleDiario() {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const kick = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { void load(day); }, 600);
+      timer = setTimeout(() => { void (pendingOnly ? loadPending() : load(day)); }, 600);
     };
     window.addEventListener('refreshMissions', kick);
     window.addEventListener('supabase:missions:realtime', kick);
@@ -353,7 +457,7 @@ export default function ControleDiario() {
       window.removeEventListener('refreshMissions', kick);
       window.removeEventListener('supabase:missions:realtime', kick);
     };
-  }, [day, load]);
+  }, [day, load, pendingOnly, loadPending]);
 
   const counts = useMemo(() => {
     const bag: Record<string, number> = {};
@@ -375,10 +479,16 @@ export default function ControleDiario() {
     });
   }, [rows, query, statusFilter, sheetRows, notesByMission]);
 
-  const sheet = useMemo(
-    () => buildControleDiarioSheet(visible, printAll ? 'all' : expandedSe),
-    [visible, printAll, expandedSe],
-  );
+  useEffect(() => { setPendingPage(1); }, [pendingOnly, query, statusFilter]);
+
+  const pendingPageCount = Math.max(1, Math.ceil(visible.length / SEM_APROVACAO_POR_PAGINA));
+  const safePendingPage = Math.min(Math.max(1, pendingPage), pendingPageCount);
+  const sheet = useMemo(() => {
+    const source = pendingOnly
+      ? visible.slice((safePendingPage - 1) * SEM_APROVACAO_POR_PAGINA, safePendingPage * SEM_APROVACAO_POR_PAGINA)
+      : visible;
+    return buildControleDiarioSheet(source, printAll ? 'all' : expandedSe);
+  }, [visible, pendingOnly, safePendingPage, printAll, expandedSe]);
 
   useEffect(() => {
     const table = tableRef.current;
@@ -501,7 +611,9 @@ export default function ControleDiario() {
             <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-red-300">Grupo TM SEG</p>
             <h1 className="text-2xl font-black tracking-tight">Controle diário</h1>
             <p className="mt-1 max-w-2xl text-sm text-red-100/80">
-              Folha do dia {formatCivilDateBR(day)}, lida direto das OS. Placa, rota, equipe, KM e status acompanham o banco.
+              {pendingOnly
+                ? 'OS concluídas ainda sem aprovação de faturamento, lidas direto do banco. Ocorrência, observação e a auditoria ficam nesta mesma folha.'
+                : `Folha do dia ${formatCivilDateBR(day)}, lida direto das OS. Placa, rota, equipe, KM e status acompanham o banco.`}
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs">
@@ -511,7 +623,7 @@ export default function ControleDiario() {
             </span>
             <button
               type="button"
-              onClick={() => { void load(day); }}
+              onClick={() => { void (pendingOnly ? loadPending() : load(day)); }}
               className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1.5 font-bold hover:bg-red-500"
               data-testid="controle-diario-refresh"
             >
@@ -528,16 +640,35 @@ export default function ControleDiario() {
               <ClipboardList size={13} />
               {passagemBusy ? 'Gerando…' : 'Passagem de plantão'}
             </button>
+            {canSeePendingApproval && (
+              <button
+                type="button"
+                onClick={() => setPendingOnly((current) => !current)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-black ${
+                  pendingOnly ? 'bg-white text-zinc-950' : 'bg-white/15 text-white ring-1 ring-white/40 hover:bg-white/25'
+                }`}
+                data-testid="controle-diario-pending-approval"
+              >
+                <CheckCircle2 size={13} />
+                {pendingOnly ? 'Ver folha do dia' : 'Pendências de Aprovações'}
+              </button>
+            )}
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          {[
-            ['Na folha', rows.length],
-            ['Finalizadas', counts.FINALIZADO || 0],
-            ['Pernoite', counts.PERNOITE || 0],
-            ['Em viagem', counts['EM VIAGEM'] || 0],
-            ['Preservação', counts['PRESERVAÇÃO'] || 0],
-          ].map(([label, value]) => (
+          {(pendingOnly
+            ? [
+                ['Sem aprovação', rows.length],
+                ['Nesta página', sheet.length],
+                ['Com ocorrência', rows.filter((item) => item.ocorrencias > 0).length],
+              ]
+            : [
+                ['Na folha', rows.length],
+                ['Finalizadas', counts.FINALIZADO || 0],
+                ['Pernoite', counts.PERNOITE || 0],
+                ['Em viagem', counts['EM VIAGEM'] || 0],
+                ['Preservação', counts['PRESERVAÇÃO'] || 0],
+              ]).map(([label, value]) => (
             <div key={String(label)} className="rounded-2xl bg-white/10 px-3 py-2 backdrop-blur-sm">
               <p className="text-[10px] font-bold uppercase tracking-wider text-red-200">{label}</p>
               <p className="text-lg font-black">{value}</p>
@@ -547,7 +678,7 @@ export default function ControleDiario() {
       </header>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-red-50 bg-[#fffaf9] px-4 py-3">
-        <label className="flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-zinc-600 shadow-sm ring-1 ring-zinc-200">
+        {!pendingOnly && <label className="flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-zinc-600 shadow-sm ring-1 ring-zinc-200">
           <CalendarDays size={14} className="text-red-700" />
           <select
             value={month}
@@ -559,8 +690,8 @@ export default function ControleDiario() {
               <option key={item} value={item}>{monthLabel(item)}</option>
             ))}
           </select>
-        </label>
-        <input
+        </label>}
+        {!pendingOnly && <input
           type="date"
           value={day}
           onChange={(e) => {
@@ -571,7 +702,7 @@ export default function ControleDiario() {
           }}
           className="rounded-full border-0 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm ring-1 ring-zinc-200 outline-none"
           data-testid="controle-diario-date"
-        />
+        />}
         <label className="relative min-w-[220px] flex-1">
           <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input
@@ -582,7 +713,7 @@ export default function ControleDiario() {
             data-testid="controle-diario-search"
           />
         </label>
-        <div className="flex flex-wrap gap-1">
+        {!pendingOnly && <div className="flex flex-wrap gap-1">
           {statuses.map((status) => (
             <button
               key={status}
@@ -595,7 +726,7 @@ export default function ControleDiario() {
               {status === 'TODOS' ? `Todos (${rows.length})` : `${status} (${counts[status] || 0})`}
             </button>
           ))}
-        </div>
+        </div>}
       </div>
 
       {error && (
@@ -609,6 +740,120 @@ export default function ControleDiario() {
         </div>
       )}
 
+      {pendingOnly && (
+        <div
+          className="min-h-0 flex-1 overflow-auto bg-[radial-gradient(ellipse_at_top,rgba(254,226,226,0.55),transparent_46%),linear-gradient(180deg,#fbf8f7_0%,#f1ebe9_100%)] px-4 py-4"
+          data-testid="controle-diario-pending-list"
+        >
+          {visible.length === 0 && !loading && (
+            <div className="mx-auto mt-10 max-w-md rounded-[32px] bg-gradient-to-b from-white to-zinc-50 px-6 py-10 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_24px_40px_-28px_rgba(69,10,10,0.55)] ring-1 ring-white">
+              <p className="text-sm font-black text-zinc-800">Nenhuma OS concluída sem aprovação.</p>
+              <p className="mt-1 text-xs text-zinc-500">A lista mostra agosto de 2026 em diante.</p>
+            </div>
+          )}
+          <div className="mx-auto flex max-w-[1280px] flex-col gap-2.5">
+            {sheet.map((line) => {
+              const row = line.row;
+              const latestNote = notesByMission[row.id]?.[0]?.note || '';
+              const occurrence = occurrencePreview[row.id] || (row.ocorrencias > 0 ? 'Ocorrência registrada' : 'Sem ocorrência');
+              return (
+                <div
+                  key={row.id}
+                  data-testid={`controle-diario-row-${row.os}`}
+                  className="flex h-14 min-w-0 items-center gap-2 overflow-hidden rounded-full bg-gradient-to-b from-white via-white to-zinc-50/90 px-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.98),0_16px_30px_-20px_rgba(69,10,10,0.62),0_1px_2px_rgba(15,23,42,0.06)] ring-1 ring-zinc-200/90 transition duration-200 hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_#fff,0_22px_36px_-18px_rgba(153,27,27,0.48)]"
+                >
+                  <button
+                    type="button"
+                    onClick={() => openOs(row)}
+                    className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-b from-red-500 to-red-800 px-3 text-[12px] font-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_8px_14px_-8px_rgba(153,27,27,0.9)]"
+                    data-testid={`controle-diario-open-${row.os}`}
+                    title={opensAudit ? 'Abrir auditoria da OS' : 'Editar OS'}
+                  >
+                    {opensAudit ? <FileSearch size={13} /> : <Pencil size={13} />}
+                    {row.os}
+                  </button>
+                  <span className="hidden shrink-0 rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-bold text-zinc-600 sm:inline">
+                    {row.dataInicial || '—'}
+                  </span>
+                  <span className="min-w-0 w-[22%] truncate text-[13px] font-black text-zinc-900" title={row.cliente}>
+                    {row.cliente || '—'}
+                  </span>
+                  <span className="hidden min-w-0 w-[18%] truncate text-[12px] font-semibold text-zinc-500 md:inline" title={row.rota}>
+                    {row.rota || '—'}
+                  </span>
+                  <span
+                    className={`min-w-0 flex-1 truncate text-[12px] font-semibold ${row.ocorrencias > 0 ? 'text-red-700' : 'text-zinc-400'}`}
+                    title={occurrence}
+                    data-testid={`controle-diario-occurrence-text-${row.os}`}
+                  >
+                    {row.ocorrencias > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setOccurrenceRow(row)}
+                        className="mr-1 inline-flex items-center gap-0.5 rounded-full bg-red-600 px-1.5 py-0.5 align-middle text-[10px] font-black text-white"
+                        style={{ animation: 'blink-pending 1s ease-in-out infinite' }}
+                        data-testid={`controle-diario-occurrence-${row.os}`}
+                      >
+                        <AlertTriangle size={10} />
+                        {row.ocorrencias}
+                      </button>
+                    )}
+                    {occurrence}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setNoteRow(row); setNoteDraft(''); setNoteError(''); }}
+                    className="hidden min-w-0 w-[16%] truncate rounded-full bg-amber-50 px-2.5 py-1 text-left text-[11px] font-bold text-amber-950 lg:inline"
+                    title={latestNote || 'Sem observação'}
+                    data-testid={`controle-diario-note-${row.os}`}
+                  >
+                    {latestNote || 'Sem observação'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openAudit(row)}
+                    className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-b from-zinc-800 to-zinc-950 px-3 text-[11px] font-black uppercase tracking-wide text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_14px_-8px_rgba(0,0,0,0.7)]"
+                    data-testid={`controle-diario-expand-audit-${row.os}`}
+                    title="Abrir a auditoria de faturamento desta OS"
+                  >
+                    <Maximize2 size={13} />
+                    Auditoria
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          {visible.length > 0 && (
+            <div className="mx-auto mt-4 flex max-w-[1280px] items-center justify-between gap-3" data-testid="controle-diario-pending-pager">
+              <span className="text-xs font-bold text-zinc-500">
+                {visible.length} OS · página {safePendingPage} de {pendingPageCount}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={safePendingPage <= 1}
+                  onClick={() => setPendingPage(safePendingPage - 1)}
+                  className="rounded-full bg-white px-4 py-2 text-xs font-black uppercase text-zinc-700 shadow-[inset_0_1px_0_#fff,0_8px_16px_-12px_rgba(15,23,42,0.45)] ring-1 ring-zinc-200 disabled:opacity-40"
+                  data-testid="controle-diario-pending-prev"
+                >
+                  Anterior
+                </button>
+                <button
+                  type="button"
+                  disabled={safePendingPage >= pendingPageCount}
+                  onClick={() => setPendingPage(safePendingPage + 1)}
+                  className="rounded-full bg-white px-4 py-2 text-xs font-black uppercase text-zinc-700 shadow-[inset_0_1px_0_#fff,0_8px_16px_-12px_rgba(15,23,42,0.45)] ring-1 ring-zinc-200 disabled:opacity-40"
+                  data-testid="controle-diario-pending-next"
+                >
+                  Próxima
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!pendingOnly && (<>
       <div
         ref={topScrollRef}
         className="sticky top-0 z-20 mx-3 mt-2 h-4 shrink-0 overflow-x-auto overflow-y-hidden rounded-full bg-zinc-200 [scrollbar-color:#71717a_#e4e4e7] [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-zinc-200 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-500"
@@ -647,7 +892,7 @@ export default function ControleDiario() {
             {visible.length === 0 && !loading && (
               <tr>
                 <td colSpan={CONTROLE_DIARIO_COLUMNS.length} className="px-4 py-10 text-center text-sm text-zinc-500">
-                  Nenhuma OS do sistema neste dia.
+                  {pendingOnly ? 'Nenhuma OS concluída sem aprovação.' : 'Nenhuma OS do sistema neste dia.'}
                 </td>
               </tr>
             )}
@@ -817,8 +1062,9 @@ export default function ControleDiario() {
           </tbody>
         </table>
       </div>
+      </>)}
 
-      <footer className="flex items-center gap-1.5 overflow-x-auto px-4 py-3">
+      {!pendingOnly && <footer className="flex items-center gap-1.5 overflow-x-auto px-4 py-3">
         {days.map((iso) => {
           const active = iso === day;
           return (
@@ -835,7 +1081,7 @@ export default function ControleDiario() {
             </button>
           );
         })}
-      </footer>
+      </footer>}
       </div>
       {editMission && (
         <UpdateMissionModal
@@ -851,7 +1097,7 @@ export default function ControleDiario() {
           isOpen
           mission={auditMission}
           onClose={() => setAuditMission(null)}
-          onUpdate={() => { void load(day); }}
+          onUpdate={() => { void (pendingOnly ? loadPending() : load(day)); }}
         />
       )}
       {occurrenceRow && (

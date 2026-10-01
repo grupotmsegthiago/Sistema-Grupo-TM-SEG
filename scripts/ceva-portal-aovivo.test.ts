@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { montarMissaoAoVivo, ordenarMissoesAoVivo } from '../lib/cevaPortal/aoVivo';
+import { montarMissaoAoVivo, ordenarMissoesAoVivo, segueNoAoVivo } from '../lib/cevaPortal/aoVivo';
 
 test('em viagem fica na frente das programadas', () => {
   const ordem = ordenarMissoesAoVivo([
@@ -32,4 +32,12 @@ test('missão ao vivo traz os dados da OS e deixa km vazio como vazio', () => {
   assert.equal(missao.kmFim, null);
   assert.equal(missao.origem, 'Guarujá - SP');
   assert.equal(montarMissaoAoVivo({ id: '1985', status: 'Em Viagem' }), null);
+});
+
+test('OS finalizada ou aprovada sai do ao vivo; viagem com hora final permanece', () => {
+  assert.equal(segueNoAoVivo({ status: 'Pendente', end_time: '2026-05-25T16:01:00+00:00', billing_approved: true }), false);
+  assert.equal(segueNoAoVivo({ status: 'Pendente', end_time: '2026-05-25T16:01:00+00:00', billing_approved: false }), false);
+  assert.equal(segueNoAoVivo({ status: 'Pendente', end_time: null, billing_approved: false }), true);
+  assert.equal(segueNoAoVivo({ status: 'Em Viagem', end_time: '2026-10-01T18:00:00+00:00', billing_approved: false }), true);
+  assert.equal(segueNoAoVivo({ status: 'Concluída', end_time: '2026-05-25T16:01:00+00:00', billing_approved: true }), false);
 });

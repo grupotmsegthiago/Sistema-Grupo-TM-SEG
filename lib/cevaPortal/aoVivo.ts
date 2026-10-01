@@ -3,6 +3,24 @@ import { kmGravado, localOrigemDestino, numeroOsDoBoletim, cidadeUfDoEndereco } 
 
 export const STATUS_AO_VIVO = ['Em Viagem', 'Origem', 'Agendada', 'Solicitada', 'Documentação', 'Pendente'] as const;
 
+/**
+ * A OS sai do ao vivo quando o faturamento já foi aprovado ou quando a situação
+ * ficou Pendente mesmo com hora final — é a conclusão que o sistema não grava
+ * como Concluída se a OS já estava aprovada. Em Viagem e Origem com hora final
+ * continuam, porque a rota ainda pode estar no ar.
+ */
+export function segueNoAoVivo(row: {
+  status?: string | null;
+  end_time?: string | null;
+  billing_approved?: boolean | null;
+}): boolean {
+  const status = String(row.status || '').trim();
+  if (!(STATUS_AO_VIVO as readonly string[]).includes(status)) return false;
+  if (row.billing_approved === true) return false;
+  if (status === 'Pendente' && String(row.end_time || '').trim()) return false;
+  return true;
+}
+
 export type MissaoAoVivo = {
   os: string;
   status: string;

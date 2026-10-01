@@ -87,6 +87,29 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
     );
   });
 
+  it('Aprovações Pendentes abre para Financeiro e Diretoria', () => {
+    assert.equal(
+      canAccessScreen({ name: 'Ana', role: 'Financeiro', permissions: [] }, 'fin-aprovacoes-pendentes'),
+      true,
+    );
+    assert.equal(
+      canAccessScreen({ name: 'Maria', role: 'Administrador', permissions: ['*'] }, 'fin-aprovacoes-pendentes'),
+      false,
+    );
+    assert.equal(
+      canAccessScreen({ name: 'Bárbara', role: 'Diretoria', permissions: [] }, 'fin-aprovacoes-pendentes'),
+      true,
+    );
+    assert.equal(
+      canAccessScreen({ name: 'João', role: 'Operador', permissions: ['fin-aprovacoes-pendentes'] }, 'fin-aprovacoes-pendentes'),
+      false,
+    );
+    assert.equal(
+      canAccessScreen({ name: 'Ana', role: 'Financeiro', permissions: ['fin-dashboard'] }, 'finance-group'),
+      true,
+    );
+  });
+
   it('wildcard * libera telas comuns (não quebra exclusividade dos Thiagos no cockpit)', () => {
     const admin = { name: 'Maria', role: 'Administrador', permissions: ['*'] };
     assert.equal(hasProfilePermission(admin, 'profiles'), true);

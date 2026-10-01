@@ -44,10 +44,10 @@ export function canSeeMissingTableAlert(user: MissingTableUser | null | undefine
     || nameLower.includes('simone');
 }
 
-/** Administrador vê o alerta aberto ao entrar na tela. */
-export function mustForceMissingTable(user: MissingTableUser | null | undefined): boolean {
-  if (!canSeeMissingTableAlert(user)) return false;
-  const roleLower = roleKey(user?.role);
-  return roleLower === 'administrador'
-    || (Array.isArray(user?.permissions) && user.permissions.includes('*'));
+/**
+ * A lista não abre sozinha. Quem pode ver o alerta usa o card
+ * "OS sem Tabela" e abre a tela quando quiser.
+ */
+export function mustForceMissingTable(_user: MissingTableUser | null | undefined): boolean {
+  return false;
 }

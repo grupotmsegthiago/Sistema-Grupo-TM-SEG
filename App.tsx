@@ -58,6 +58,7 @@ import QuoteForm from './components/QuoteForm';
 import PublicAgentRegistration from './components/PublicAgentRegistration';
 import DhlSupplierIntake from './components/DhlSupplierIntake';
 import CevaPortal from './components/CevaPortal';
+import IblPortal from './components/IblPortal';
 import PublicLiveTrack from './components/PublicLiveTrack';
 import SupportMapFinder from './components/SupportMapFinder'; 
 import PushNotificationManager from './components/PushNotificationManager';
@@ -129,6 +130,8 @@ import { canAccessMissionReport } from './lib/missionReportAccess';
 import { canAccessDiretoriaMenu, canAccessComissoesComerciais, canAccessFaturamentoDiretoria } from './lib/diretoriaAccess';
 import { canViewOsAnalysisPendencies } from './lib/osAnalysisAccess';
 import OsAnalysisPendingPage from './components/OsAnalysisPendingPage';
+import { canViewAprovacoesPendentes } from './lib/aprovacoesPendentesAccess';
+import AprovacoesPendentesPage from './components/AprovacoesPendentesPage';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
 import { persistScreen, resolveInitialScreen, getRoleDefaultScreen, getScreenFromUrl } from './lib/screenNavigation';
 import { canAccessScreen, fallbackScreenForUser } from './lib/screenAccess';
@@ -166,6 +169,8 @@ const App: React.FC = () => {
   const normalizedPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
   const isPublicRoute = normalizedPath === '/cadastro-operacional';
   const isCevaPortalRoute = normalizedPath === '/ceva';
+  const isIblPortalRoute = normalizedPath === '/ibl';
+  const isPortalExternoRoute = isCevaPortalRoute || isIblPortalRoute;
   const isDhlSupplierRoute = normalizedPath === '/fornecedor/dhl';
   const isLiveTrackRoute = normalizedPath === '/rastreio';
   const isResetPasswordRoute = normalizedPath === '/reset-password';
@@ -250,7 +255,7 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
+    if (!isAuthenticated || isPublicRoute || isPortalExternoRoute) return;
     const roleDefault = getRoleDefaultScreen();
     if (roleDefault && !getScreenFromUrl()) {
       setCurrentScreen(roleDefault);
@@ -259,17 +264,17 @@ const App: React.FC = () => {
   }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
+    if (!isAuthenticated || isPublicRoute || isPortalExternoRoute) return;
     return wireUserActivityTracker();
   }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
+    if (!isAuthenticated || isPublicRoute || isPortalExternoRoute) return;
     return wireNightHeartbeat();
   }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
+    if (!isAuthenticated || isPublicRoute || isPortalExternoRoute) return;
     const channel = supabase
       .channel('global_reset_channel')
       .on(
@@ -337,7 +342,7 @@ const App: React.FC = () => {
   }, [rebootCountdown, handleLogout]);
 
   useEffect(() => {
-    if (isPublicRoute || isCevaPortalRoute) return; 
+    if (isPublicRoute || isPortalExternoRoute) return; 
     const storedVersion = localStorage.getItem('app_version');
     const token = localStorage.getItem('authToken');
     const userData = localStorage.getItem('userData');
@@ -355,7 +360,7 @@ const App: React.FC = () => {
   // Logout obrigatório: 30 min diurno / 20 min na vigia noturna (funcionários).
   // Conta mesmo com aba em segundo plano; diretoria/CEO isentos (admin entra na vigia).
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute || isCevaPortalRoute) return;
+    if (!isAuthenticated || isPublicRoute || isPortalExternoRoute) return;
     let loggingOut = false;
 
     const readRole = (): string | undefined => {
@@ -511,6 +516,7 @@ const App: React.FC = () => {
   if (isPublicRoute) { return ( <NotificationProvider> <PublicAgentRegistration /> </NotificationProvider> ); }
   if (isDhlSupplierRoute) { return <DhlSupplierIntake />; }
   if (isLiveTrackRoute) { return <PublicLiveTrack />; }
+  if (isIblPortalRoute) { return <IblPortal />; }
   if (isCevaPortalRoute) { return <CevaPortal />; }
 
   if (isResetPasswordRoute && resetToken) {
@@ -603,6 +609,12 @@ const App: React.FC = () => {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
         return canViewOsAnalysisPendencies(u)
           ? <OsAnalysisPendingPage onOpenMission={handleOpenBillingMission} />
+          : <Dashboard onOpenMission={handleOpenBillingMission} />;
+      }
+      case 'fin-aprovacoes-pendentes': {
+        const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+        return canViewAprovacoesPendentes(u)
+          ? <AprovacoesPendentesPage onOpenMission={handleOpenBillingMission} />
           : <Dashboard onOpenMission={handleOpenBillingMission} />;
       }
       case 'fin-billing': return (

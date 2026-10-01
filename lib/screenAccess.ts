@@ -16,6 +16,7 @@ import {
 } from './diretoriaAccess';
 import { canAccessMissionReport } from './missionReportAccess';
 import { canViewOsAnalysisPendencies } from './osAnalysisAccess';
+import { APROVACOES_PENDENTES_SCREEN, canViewAprovacoesPendentes } from './aprovacoesPendentesAccess';
 
 export type ScreenAccessUser = {
   name?: string | null;
@@ -178,6 +179,11 @@ export function canAccessScreen(user: ScreenAccessUser | null | undefined, scree
   // Pendências de OS: regra homologada (Thiagos / Diretoria).
   if (screenId === 'os-analysis-pending') {
     return canViewOsAnalysisPendencies(user);
+  }
+
+  // Aprovações Pendentes: Financeiro e Diretoria (nem * libera outro perfil).
+  if (screenId === APROVACOES_PENDENTES_SCREEN) {
+    return canViewAprovacoesPendentes(user);
   }
 
   // Relatório de OS: helper já inclui permissão `mission-report` + allowlist.

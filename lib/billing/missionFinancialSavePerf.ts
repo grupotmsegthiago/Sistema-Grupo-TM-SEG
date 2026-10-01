@@ -1,17 +1,17 @@
 /**
  * Política de performance do Salvar/Aprovar no MissionFinancialModal.
  *
- * O gargalo histórico era: html2canvas + INSERT de JPEG base64 em system_logs
- * ANTES do UPDATE em missions — o spinner ficava preso vários segundos sem gravar
- * receita/custo/aprovação.
+ * O gargalo era o html2canvas + INSERT de JPEG base64 em system_logs
+ * (APPROVAL_SCREENSHOT). A captura travava o Chrome na aprovação e, ao
+ * reabrir a OS, o histórico baixava o print inteiro.
  *
- * Ordem correta do caminho crítico:
+ * Caminho atual:
  * 1) UPDATE missions (+ logs essenciais de aprovação/ajuste)
- * 2) Captura DOM do print (só em Aprovar; modal ainda aberto)
- * 3) Persistência do print e demais side-effects em background (fail-soft)
+ * 2) Histórico só em texto: dia / horário · login > alteração
+ * A captura de tela na aprovação está desligada.
  */
 
-/** Print de auditoria só na aprovação — Salvar Ajustes não precisa travar o UI. */
-export function shouldCaptureApprovalScreenshot(approve: boolean): boolean {
-  return approve === true;
+/** Captura de print desligada — aprovação e salvamento não fotografam o modal. */
+export function shouldCaptureApprovalScreenshot(_approve: boolean): boolean {
+  return false;
 }

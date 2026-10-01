@@ -1,7 +1,9 @@
 "use strict";
+var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __esm = (fn, res, err) => function __init() {
   if (err) throw err[0];
@@ -23,7 +25,61 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// lib/asaasEnvKeys.ts
+function sanitizeAsaasEnvValue(raw) {
+  return String(raw || "").replace(/^\uFEFF/, "").replace(/[\r\n\u200b\u200c\u200d]/g, "").trim().replace(/^["']+|["']+$/g, "");
+}
+function readFirstEnv(...names) {
+  for (const name of names) {
+    const value = sanitizeAsaasEnvValue(process.env[name]);
+    if (value) return value;
+  }
+  return "";
+}
+function getAsaasApiKeyTmGestao() {
+  return readFirstEnv(
+    "Asaas_TMSEGEST\xC3O_API",
+    "ASAAS_TMSEGEST\xC3O_API",
+    "Asaas_TMSEGESTAO_API",
+    "ASAAS_TMSEGESTAO_API",
+    "ASAAS_TMGESTAO_API",
+    "TMGESTAO",
+    "ASAAS_API_KEY",
+    "ASAAS_API_KEY_TMGESTAO"
+  );
+}
+function getAsaasApiKeyTmSeguranca() {
+  return readFirstEnv(
+    "TMSEGURANCA",
+    "ASAAS_TMSEGURANCA_API",
+    "TMSEGURAN\xC7A",
+    "ASAAS_API_KEY_TMSECURITY",
+    "ASAAS_API_KEY_TM_SEGURANCA"
+  );
+}
+function getAsaasApiKeyTmSecurity() {
+  return readFirstEnv(
+    "ASAAS_TMSECURITY_API",
+    "TMSECURITY",
+    "ASAAS_API_KEY_TMSECURITY_60",
+    "ASAAS_API_KEY_TM_SECURITY"
+  );
+}
+var init_asaasEnvKeys = __esm({
+  "lib/asaasEnvKeys.ts"() {
+    "use strict";
+  }
+});
 
 // lib/supabaseDefaults.ts
 var TMSEG_SUPABASE_PROJECT_REF, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY;
@@ -265,6 +321,732 @@ var init_supabaseConfig = __esm({
   }
 });
 
+// lib/asaasChargeApi.ts
+function companies() {
+  return {
+    "TM GEST\xC3O": {
+      apiKey: getAsaasApiKeyTmGestao(),
+      cnpj: "60485843000157",
+      name: "TM GEST\xC3O",
+      aliases: ["TM GESTAO", "TM GEST\xC3O", "GESTAO", "GEST\xC3O"]
+    },
+    "TM SEGURANCA": {
+      apiKey: getAsaasApiKeyTmSeguranca(),
+      cnpj: "28804378000167",
+      name: "Tm Seguranca Consultoria & Tecnologia Integrada Ltda",
+      aliases: [
+        "TM SEGURAN\xC7A",
+        "TM SEGURANCA",
+        "TMSEGURANCA",
+        "TMSEGURAN\xC7A",
+        "SEGURAN\xC7A",
+        "SEGURANCA",
+        "TM SEGURANCA CONSULTORIA"
+      ]
+    },
+    "TM SECURITY": {
+      apiKey: getAsaasApiKeyTmSecurity(),
+      cnpj: "60508931000127",
+      name: "TM Security Gest\xE3o Corporativa Ltda",
+      aliases: ["TM SECURITY", "TMSECURITY", "SECURITY", "TM SECURITY GESTAO", "TM SECURITY GEST\xC3O"]
+    }
+  };
+}
+function resolveCompanyEntry2(company) {
+  const all = companies();
+  if (company) {
+    const upper = company.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    for (const val of Object.values(all)) {
+      const normalizedAliases = val.aliases.map(
+        (a) => a.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      );
+      if (normalizedAliases.some((alias) => upper.includes(alias) || alias.includes(upper))) return val;
+      if (upper.includes(val.cnpj)) return val;
+      const normalizedName = val.name.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (normalizedName.includes(upper) || upper.includes(normalizedName)) return val;
+    }
+  }
+  return all["TM GEST\xC3O"];
+}
+function asaasBaseUrl(company) {
+  const custom = readFirstEnv("ASAAS_API_BASE_URL", "ASAAS_BASE_URL");
+  if (custom) return custom.replace(/\/$/, "");
+  const keySample = resolveCompanyEntry2(company).apiKey || "";
+  if (keySample.includes("_hmlg_") || keySample.includes("_sandbox_")) {
+    return "https://sandbox.asaas.com/api/v3";
+  }
+  return "https://api.asaas.com/v3";
+}
+function buildAbortSignal(external) {
+  let timeoutSignal;
+  let cleanup;
+  const anyFactory = AbortSignal.timeout;
+  if (typeof anyFactory === "function") {
+    timeoutSignal = anyFactory(ASAAS_FETCH_TIMEOUT_MS2);
+  } else {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ASAAS_FETCH_TIMEOUT_MS2);
+    timeoutSignal = controller.signal;
+    cleanup = () => clearTimeout(timer);
+  }
+  if (external && typeof AbortSignal.any === "function") {
+    return { signal: AbortSignal.any([external, timeoutSignal]), cleanup };
+  }
+  return { signal: timeoutSignal, cleanup };
+}
+async function asaasFetch2(endpoint, options = {}, company) {
+  const entry = resolveCompanyEntry2(company);
+  if (!entry.apiKey) throw new Error("ASAAS_API_KEY n\xE3o configurada para a empresa selecionada");
+  if (options.method && options.method !== "GET") {
+    console.log(`[Asaas] ${options.method} ${endpoint} | Empresa: ${entry.name}`);
+  }
+  const url = `${asaasBaseUrl(company)}${endpoint}`;
+  const { signal, cleanup } = buildAbortSignal(options.signal || null);
+  const started = Date.now();
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal,
+      headers: {
+        "Content-Type": "application/json",
+        access_token: entry.apiKey,
+        ...options.headers || {}
+      }
+    });
+    const text = await res.text();
+    let data = {};
+    if (text.trim()) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Resposta inv\xE1lida do Asaas (${res.status})`);
+      }
+    }
+    if (!res.ok) {
+      const errMsg = data.errors?.map((e) => e.description).join("; ") || data.message || JSON.stringify(data);
+      throw new Error(`Asaas API Error (${res.status}): ${errMsg}`);
+    }
+    return data;
+  } catch (err) {
+    const name = String(err?.name || "");
+    if (name === "AbortError" || name === "TimeoutError" || /aborted|timeout/i.test(String(err?.message || ""))) {
+      throw new Error(
+        `Timeout ao comunicar com Asaas (${ASAAS_FETCH_TIMEOUT_MS2 / 1e3}s) \u2014 ${endpoint} [${Date.now() - started}ms]`
+      );
+    }
+    throw err;
+  } finally {
+    cleanup?.();
+  }
+}
+async function getPayment(paymentId, company, signal) {
+  return asaasFetch2(`/payments/${encodeURIComponent(paymentId)}`, { signal }, company);
+}
+async function getInvoicesByPayment(paymentId, company, signal) {
+  const data = await asaasFetch2(
+    `/invoices?payment=${encodeURIComponent(paymentId)}`,
+    { signal },
+    company
+  );
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data)) return data;
+  return [];
+}
+async function getPaymentPixQrCode(paymentId, company, signal) {
+  try {
+    return await asaasFetch2(
+      `/payments/${encodeURIComponent(paymentId)}/pixQrCode`,
+      { signal },
+      company
+    );
+  } catch {
+    return null;
+  }
+}
+async function getPaymentBankSlip(paymentId, company, signal) {
+  try {
+    return await asaasFetch2(
+      `/payments/${encodeURIComponent(paymentId)}/identificationField`,
+      { signal },
+      company
+    );
+  } catch {
+    return null;
+  }
+}
+var ASAAS_FETCH_TIMEOUT_MS2;
+var init_asaasChargeApi = __esm({
+  "lib/asaasChargeApi.ts"() {
+    "use strict";
+    init_asaasEnvKeys();
+    ASAAS_FETCH_TIMEOUT_MS2 = 8e3;
+  }
+});
+
+// lib/email/recipientList.ts
+function parseEmailRecipients(value) {
+  const seen = /* @__PURE__ */ new Set();
+  const recipients = [];
+  for (const raw of String(value || "").split(/[,;\r\n]+/)) {
+    const email = raw.trim().toLowerCase();
+    if (!email || !SIMPLE_EMAIL_PATTERN.test(email) || seen.has(email)) continue;
+    seen.add(email);
+    recipients.push(email);
+  }
+  return recipients;
+}
+function takeFirstEmailRecipients(value, max = 2) {
+  const limit = Number.isFinite(max) && max > 0 ? Math.floor(max) : 2;
+  return parseEmailRecipients(value).slice(0, limit);
+}
+function normalizeSmtpAddress(value) {
+  if (typeof value === "string") return value.trim().toLowerCase();
+  if (value && typeof value === "object" && "address" in value) {
+    return String(value.address || "").trim().toLowerCase();
+  }
+  return "";
+}
+function rejectedRequestedRecipients(requested, accepted, rejected) {
+  const acceptedSet = new Set(
+    (Array.isArray(accepted) ? accepted : []).map(normalizeSmtpAddress).filter(Boolean)
+  );
+  const rejectedSet = new Set(
+    (Array.isArray(rejected) ? rejected : []).map(normalizeSmtpAddress).filter(Boolean)
+  );
+  return requested.filter((email) => rejectedSet.has(email) || !acceptedSet.has(email));
+}
+var SIMPLE_EMAIL_PATTERN;
+var init_recipientList = __esm({
+  "lib/email/recipientList.ts"() {
+    "use strict";
+    SIMPLE_EMAIL_PATTERN = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+  }
+});
+
+// lib/billing/transferBillingClients.ts
+function normalizeClientBillingName(name) {
+  return String(name || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+function isBankTransferBillingClient(name, tradingName) {
+  const n = `${normalizeClientBillingName(name)} ${normalizeClientBillingName(tradingName)}`;
+  return n.includes("CEVA") || n.includes("DHL");
+}
+var init_transferBillingClients = __esm({
+  "lib/billing/transferBillingClients.ts"() {
+    "use strict";
+  }
+});
+
+// lib/billing/invoiceBillingEmailPolicy.ts
+function brtDayStartUtc(isoDate) {
+  return `${isoDate}T03:00:00.000Z`;
+}
+function nextIsoDate(isoDate) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+function brtDayEndExclusiveUtc(isoDate) {
+  return brtDayStartUtc(nextIsoDate(isoDate));
+}
+function normalizeBillingClientName(value) {
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+function matchScore(invoiceClient, candidate) {
+  const needle = normalizeBillingClientName(invoiceClient);
+  if (!needle) return 0;
+  const name = normalizeBillingClientName(candidate.name);
+  const trading = normalizeBillingClientName(candidate.trading_name);
+  const exact = name === needle || trading === needle;
+  const covers = (value) => value.length >= 4 && (value.startsWith(needle) || needle.startsWith(value));
+  let score = 0;
+  if (exact) score = 100;
+  else if (covers(name) || covers(trading)) score = 60;
+  else return 0;
+  if (String(candidate.status || "").toLowerCase() === "ativo") score += 10;
+  if (takeFirstEmailRecipients(candidate.medicao_email, 1).length > 0) score += 5;
+  return score;
+}
+function pickMedicaoRecipients(invoiceClient, candidates, max = MAX_INVOICE_BILLING_RECIPIENTS) {
+  let best = null;
+  let bestScore = 0;
+  for (const candidate of candidates) {
+    const score = matchScore(invoiceClient, candidate);
+    if (score > bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+  if (!best) return [];
+  return takeFirstEmailRecipients(best.medicao_email, max);
+}
+function invoiceReadyForBillingEmail(inv) {
+  const status = String(inv.status || "").toUpperCase();
+  if (status === "CANCELADA" || status === "CANCELADO" || status === "CANCELED") {
+    return { ok: false, reason: "Fatura cancelada." };
+  }
+  if (!inv.asaas_payment_id) {
+    return { ok: false, reason: "Fatura sem cobran\xE7a Asaas." };
+  }
+  if (!/^https?:\/\//i.test(String(inv.nf_image_url || ""))) {
+    return { ok: false, reason: "Nota Fiscal ainda n\xE3o dispon\xEDvel. Sincronize o status primeiro." };
+  }
+  const transfer = isBankTransferBillingClient(inv.client);
+  const boleto = String(inv.asaas_bankslip_url || inv.boleto_image_url || "");
+  if (!transfer && !/^https?:\/\//i.test(boleto)) {
+    return { ok: false, reason: "Boleto ainda n\xE3o dispon\xEDvel. Sincronize o status primeiro." };
+  }
+  return { ok: true, transfer };
+}
+var MAX_INVOICE_BILLING_RECIPIENTS, MAX_INVOICE_BILLING_EMAIL_ATTEMPTS, INVOICE_BILLING_EMAIL_AUTO_FROM;
+var init_invoiceBillingEmailPolicy = __esm({
+  "lib/billing/invoiceBillingEmailPolicy.ts"() {
+    "use strict";
+    init_recipientList();
+    init_transferBillingClients();
+    MAX_INVOICE_BILLING_RECIPIENTS = 2;
+    MAX_INVOICE_BILLING_EMAIL_ATTEMPTS = 5;
+    INVOICE_BILLING_EMAIL_AUTO_FROM = "2026-09-22";
+  }
+});
+
+// lib/agents/agentNameMatch.ts
+var init_agentNameMatch = __esm({
+  "lib/agents/agentNameMatch.ts"() {
+    "use strict";
+  }
+});
+
+// lib/agents/fetchAgentsByNames.ts
+var init_fetchAgentsByNames = __esm({
+  "lib/agents/fetchAgentsByNames.ts"() {
+    "use strict";
+    init_agentNameMatch();
+  }
+});
+
+// server/pdfReportService.ts
+var import_jspdf, import_supabase_js2;
+var init_pdfReportService = __esm({
+  "server/pdfReportService.ts"() {
+    "use strict";
+    import_jspdf = require("jspdf");
+    import_supabase_js2 = require("@supabase/supabase-js");
+    init_supabaseConfig();
+    init_agentNameMatch();
+    init_fetchAgentsByNames();
+  }
+});
+
+// server/emailService.ts
+function toTitleCase(str) {
+  return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase());
+}
+function baseTemplate(content, senderName) {
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { margin:0; padding:0; background:#f4f4f4; font-family: 'Segoe UI', Arial, sans-serif; }
+  .container { max-width:600px; margin:0 auto; background:#ffffff; border-radius:8px; overflow:hidden; box-shadow:0 2px 12px rgba(0,0,0,0.08); }
+  .header { background:#1a1a1a; padding:28px 32px; text-align:center; }
+  .header h1 { color:#ffffff; font-size:22px; margin:0 0 4px; letter-spacing:1px; }
+  .header .accent { color:#c0392b; font-weight:700; }
+  .header .subtitle { color:#999; font-size:12px; margin:0; letter-spacing:2px; text-transform:uppercase; }
+  .body-content { padding:32px; color:#333; line-height:1.7; font-size:14px; }
+  .body-content h2 { color:#1a1a1a; font-size:18px; border-bottom:3px solid #c0392b; padding-bottom:8px; margin-top:0; }
+  .info-table { width:100%; border-collapse:collapse; margin:16px 0; }
+  .info-table td { padding:10px 14px; border-bottom:1px solid #eee; vertical-align:top; }
+  .info-table td:first-child { font-weight:600; color:#1a1a1a; width:40%; white-space:nowrap; }
+  .info-table td:last-child { color:#555; }
+  .badge { display:inline-block; background:#c0392b; color:#fff; padding:4px 12px; border-radius:4px; font-size:12px; font-weight:600; letter-spacing:0.5px; }
+  .footer { background:#1a1a1a; padding:24px 32px; text-align:center; border-top:3px solid #c0392b; }
+  .footer p { color:#999; font-size:12px; margin:4px 0; }
+  .footer .ceo { color:#ffffff; font-weight:600; font-size:13px; }
+  .footer .company { color:#c0392b; font-weight:600; }
+  .divider { height:3px; background: linear-gradient(90deg, #c0392b, #1a1a1a); margin:0; }
+  .highlight-box { background:#fdf2f2; border-left:4px solid #c0392b; padding:12px 16px; margin:16px 0; border-radius:0 4px 4px 0; }
+  .highlight-box p { margin:4px 0; font-size:13px; color:#555; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>GRUPO <span class="accent">TM SEG</span></h1>
+    <p class="subtitle">Seguran\xE7a &amp; Escolta Armada</p>
+  </div>
+  <div class="divider"></div>
+  <div class="body-content">
+    ${content}
+  </div>
+  <div class="footer">
+    <p class="ceo">${senderName ? toTitleCase(senderName) : "Equipe Grupo TM SEG"}</p>
+    <p class="company">Grupo TM SEG</p>
+    <p>Intermedia\xE7\xE3o de Escolta Armada</p>
+    <p style="margin-top:8px; font-size:11px; color:#666;">Este \xE9 um e-mail autom\xE1tico. Em caso de d\xFAvidas, entre em contato pelo e-mail adm@grupotmseg.com.br</p>
+  </div>
+</div>
+</body>
+</html>`;
+}
+function formatCurrency(val) {
+  return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function formatDueDate(dateStr) {
+  try {
+    const [y, m, d] = dateStr.split("-");
+    return `${d}/${m}/${y}`;
+  } catch {
+    return dateStr;
+  }
+}
+async function sendBillingEmail(data) {
+  const boletoBlock = data.boletoUrl ? `
+    <div style="background:#f0fdf4; border:2px solid #16a34a; border-radius:8px; padding:16px; margin:16px 0; text-align:center;">
+      <p style="margin:0 0 8px; font-size:14px; font-weight:700; color:#16a34a;">\u{1F4C4} BOLETO BANC\xC1RIO</p>
+      <a href="${data.boletoUrl}" target="_blank" style="display:inline-block; background:#16a34a; color:#fff; padding:10px 24px; border-radius:6px; text-decoration:none; font-weight:700; font-size:14px;">Visualizar / Imprimir Boleto</a>
+      ${data.boletoDigitableLine ? `<p style="margin:12px 0 0; font-size:11px; color:#555; word-break:break-all;"><strong>Linha Digit\xE1vel:</strong> ${data.boletoDigitableLine}</p>` : ""}
+      ${data.boletoBarcode ? `<p style="margin:4px 0 0; font-size:11px; color:#555;"><strong>C\xF3digo de Barras:</strong> ${data.boletoBarcode}</p>` : ""}
+    </div>
+  ` : "";
+  const pixBlock = data.pixPayload || data.pixQrCodeBase64 ? `
+    <div style="background:#f0f9ff; border:2px solid #0284c7; border-radius:8px; padding:16px; margin:16px 0; text-align:center;">
+      <p style="margin:0 0 8px; font-size:14px; font-weight:700; color:#0284c7;">\u{1F4F1} PAGAMENTO VIA PIX</p>
+      ${data.pixQrCodeBase64 ? `<img src="data:image/png;base64,${data.pixQrCodeBase64}" alt="QR Code PIX" style="width:200px; height:200px; margin:8px auto; display:block; border-radius:8px;" />` : ""}
+      ${data.pixPayload ? `<p style="margin:8px 0 0; font-size:11px; color:#555; word-break:break-all;"><strong>Pix Copia e Cola:</strong> ${data.pixPayload}</p>` : ""}
+    </div>
+  ` : "";
+  const nfBlock = data.nfPdfUrl ? `
+    <div style="background:#fefce8; border:2px solid #ca8a04; border-radius:8px; padding:16px; margin:16px 0; text-align:center;">
+      <p style="margin:0 0 8px; font-size:14px; font-weight:700; color:#ca8a04;">\u{1F4CB} NOTA FISCAL DE SERVI\xC7O${data.nfNumber ? ` N\xBA ${data.nfNumber}` : ""}</p>
+      <a href="${data.nfPdfUrl}" target="_blank" style="display:inline-block; background:#ca8a04; color:#fff; padding:10px 24px; border-radius:6px; text-decoration:none; font-weight:700; font-size:14px;">Baixar NF em PDF</a>
+    </div>
+  ` : "";
+  const html = baseTemplate(`
+    <h2>\u{1F4B0} Cobran\xE7a \u2014 ${data.issuerCompany}</h2>
+    <p>Prezado(a) <strong>${data.clientName}</strong>,</p>
+    <p>Segue a cobran\xE7a referente aos servi\xE7os prestados conforme detalhamento abaixo:</p>
+    <table class="info-table">
+      <tr><td>Empresa Emissora</td><td><strong>${data.issuerCompany}</strong></td></tr>
+      <tr><td>Cliente</td><td>${data.clientName}</td></tr>
+      <tr><td>CNPJ</td><td>${data.clientCnpj}</td></tr>
+      ${data.invoiceNumber ? `<tr><td>Refer\xEAncia NF</td><td><span class="badge">${data.invoiceNumber}</span></td></tr>` : ""}
+      <tr><td>Descri\xE7\xE3o</td><td>${data.description || "Intermedia\xE7\xE3o de Escolta Armada e Fiscal de Rota"}</td></tr>
+      <tr><td>Valor</td><td style="font-size:18px; font-weight:900; color:#c0392b;">${formatCurrency(data.value)}</td></tr>
+      <tr><td>Vencimento</td><td><strong>${formatDueDate(data.dueDate)}</strong></td></tr>
+    </table>
+
+    ${boletoBlock}
+    ${pixBlock}
+    ${nfBlock}
+
+    <div class="highlight-box">
+      <p><strong>Observa\xE7\xE3o:</strong> Em caso de d\xFAvidas sobre esta cobran\xE7a, entre em contato pelo e-mail <a href="mailto:adm@grupotmseg.com.br">adm@grupotmseg.com.br</a>.</p>
+    </div>
+    <p>Atenciosamente,<br><strong>${data.issuerCompany}</strong></p>
+  `);
+  try {
+    const recipients = parseEmailRecipients(data.clientEmail).slice(0, 2);
+    if (recipients.length === 0) {
+      return { success: false, error: "Nenhum destinat\xE1rio v\xE1lido informado." };
+    }
+    const mailOptions = {
+      from: SMTP_FROM,
+      to: recipients,
+      cc: ["financeiro@grupotmseg.com.br", "thiago@grupotmseg.com.br"],
+      replyTo: "financeiro@grupotmseg.com.br",
+      subject: `Cobran\xE7a ${data.invoiceNumber ? `NF ${data.invoiceNumber} \u2014 ` : ""}${formatCurrency(data.value)} \u2014 Venc. ${formatDueDate(data.dueDate)} \u2014 ${data.issuerCompany}`,
+      html
+    };
+    const info = await transporter.sendMail(mailOptions);
+    const messageId = info.messageId || "";
+    const rejected = Array.isArray(info.accepted) || Array.isArray(info.rejected) ? rejectedRequestedRecipients(recipients, info.accepted, info.rejected) : [];
+    if (rejected.length > 0) {
+      console.error(`[Email] Cobran\xE7a rejeitada para: ${rejected.join(", ")} | Message-ID: ${messageId}`);
+      return {
+        success: false,
+        messageId,
+        recipients,
+        rejected,
+        error: `Servidor SMTP n\xE3o aceitou: ${rejected.join(", ")}`
+      };
+    }
+    console.log(`[Email] Cobran\xE7a enviada \u2192 ${recipients.join(", ")} | ${data.clientName} | R$ ${data.value} | Venc: ${data.dueDate} | Message-ID: ${messageId}`);
+    return { success: true, messageId, recipients, rejected: [] };
+  } catch (err) {
+    console.error(`[Email] Erro ao enviar cobran\xE7a para ${data.clientEmail}:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+var import_nodemailer, EMAIL_USER, EMAIL_PASS, SMTP_FROM, transporter;
+var init_emailService = __esm({
+  "server/emailService.ts"() {
+    "use strict";
+    import_nodemailer = __toESM(require("nodemailer"), 1);
+    init_pdfReportService();
+    init_recipientList();
+    EMAIL_USER = process.env.EMAIL_USER || "adm@grupotmseg.com.br";
+    EMAIL_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || "";
+    SMTP_FROM = `"Grupo TM SEG" <adm@grupotmseg.com.br>`;
+    transporter = import_nodemailer.default.createTransport({
+      host: "smtp.office365.com",
+      port: 587,
+      secure: false,
+      auth: {
+        user: EMAIL_USER,
+        pass: EMAIL_PASS
+      },
+      tls: {
+        ciphers: "SSLv3",
+        rejectUnauthorized: false
+      },
+      requireTLS: true
+    });
+    console.log(`[Email] SMTP configurado: ${EMAIL_USER} | from: adm@grupotmseg.com.br | senha: ${EMAIL_PASS ? "***configurada***" : "\u26A0 VAZIA"}`);
+  }
+});
+
+// server/invoiceBillingEmail.ts
+var invoiceBillingEmail_exports = {};
+__export(invoiceBillingEmail_exports, {
+  runPendingInvoiceBillingEmails: () => runPendingInvoiceBillingEmails,
+  sendInvoiceBillingEmail: () => sendInvoiceBillingEmail
+});
+function admin() {
+  const sb = createSupabaseAdminClient();
+  if (!sb) throw new Error("Supabase admin indispon\xEDvel");
+  return sb;
+}
+async function loadInvoice(opts) {
+  const sb = admin();
+  const columns = "id, number, client, amount, date, boleto_due_date, issuer_company, status, nf_image_url, nf_number, nf_provider, asaas_payment_id, asaas_bankslip_url, boleto_image_url, plugnotas_invoice_id, notes, billing_email_sent_at, billing_email_attempts";
+  if (opts.invoiceId) {
+    const { data: data2, error: error2 } = await sb.from("financial_invoices").select(columns).eq("id", opts.invoiceId).maybeSingle();
+    if (error2) throw new Error(error2.message);
+    return data2 || null;
+  }
+  if (!opts.paymentId) return null;
+  const { data, error } = await sb.from("financial_invoices").select(columns).eq("asaas_payment_id", opts.paymentId).order("created_at", { ascending: false }).limit(1);
+  if (error) throw new Error(error.message);
+  return (data || [])[0] || null;
+}
+async function loadMedicaoRecipients(clientName) {
+  const trimmed = clientName.trim();
+  if (!trimmed) return [];
+  const fragment = trimmed.replace(/[%_,.()'"\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 24);
+  if (!fragment) return [];
+  const sb = admin();
+  const { data, error } = await sb.from("clients").select("name, trading_name, medicao_email, status").or(`name.ilike."%${fragment}%",trading_name.ilike."%${fragment}%"`).limit(30);
+  if (error) throw new Error(error.message);
+  return pickMedicaoRecipients(trimmed, data || []);
+}
+async function claimInvoice(id, resend) {
+  const sb = admin();
+  const { data, error } = await sb.from("financial_invoices").select("billing_email_sent_at, billing_email_claim, billing_email_sending_at").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  const row = data;
+  if (!resend && row?.billing_email_sent_at) return false;
+  const sendingAt = row?.billing_email_sending_at ? new Date(row.billing_email_sending_at).getTime() : 0;
+  const claimIsFresh = !!row?.billing_email_claim && Date.now() - sendingAt < CLAIM_STALE_MS;
+  if (claimIsFresh) return false;
+  const claim = crypto.randomUUID();
+  let query = sb.from("financial_invoices").update({
+    billing_email_claim: claim,
+    billing_email_sending_at: (/* @__PURE__ */ new Date()).toISOString()
+  }).eq("id", id);
+  if (row?.billing_email_claim) query = query.eq("billing_email_claim", row.billing_email_claim);
+  else query = query.is("billing_email_claim", null);
+  if (!resend) query = query.is("billing_email_sent_at", null);
+  const { data: updated, error: updateError } = await query.select("billing_email_claim").maybeSingle();
+  if (updateError) throw new Error(updateError.message);
+  return updated?.billing_email_claim === claim;
+}
+async function markEmailResult(id, patch) {
+  const sb = admin();
+  const { error } = await sb.from("financial_invoices").update({
+    billing_email_claim: null,
+    billing_email_sending_at: null,
+    ...patch
+  }).eq("id", id);
+  if (error) console.log(`[Fatura Email] falha ao gravar rastro ${id}: ${error.message}`);
+}
+async function sendInvoiceBillingEmail(opts) {
+  const invoice = await loadInvoice(opts);
+  if (!invoice) {
+    return { success: false, error: "Fatura n\xE3o encontrada." };
+  }
+  if (!opts.resend && invoice.billing_email_sent_at) {
+    return { success: true, skipped: true, invoiceId: invoice.id, client: invoice.client, recipients: [], error: void 0 };
+  }
+  const attempts = Number(invoice.billing_email_attempts || 0);
+  if (!opts.resend && attempts >= MAX_INVOICE_BILLING_EMAIL_ATTEMPTS) {
+    return {
+      success: false,
+      skipped: true,
+      invoiceId: invoice.id,
+      client: invoice.client,
+      error: "Limite de tentativas de e-mail atingido."
+    };
+  }
+  const ready = invoiceReadyForBillingEmail(invoice);
+  if (!ready.ok) {
+    return { success: false, skipped: true, invoiceId: invoice.id, client: invoice.client, error: ready.reason, nfIncluded: false, boletoIncluded: false };
+  }
+  const recipients = await loadMedicaoRecipients(String(invoice.client || ""));
+  if (recipients.length === 0) {
+    await markEmailResult(invoice.id, {
+      billing_email_error: "Cliente sem E-mail respons\xE1vel financeiro (medi\xE7\xE3o / cobran\xE7a).",
+      billing_email_attempts: attempts + 1
+    });
+    return {
+      success: false,
+      invoiceId: invoice.id,
+      client: invoice.client,
+      error: "Cliente sem E-mail respons\xE1vel financeiro (medi\xE7\xE3o / cobran\xE7a)."
+    };
+  }
+  const claimed = await claimInvoice(invoice.id, !!opts.resend);
+  if (!claimed) {
+    return { success: false, skipped: true, invoiceId: invoice.id, client: invoice.client, error: "Envio de e-mail j\xE1 em andamento." };
+  }
+  const paymentId = String(invoice.asaas_payment_id);
+  const company = invoice.issuer_company || void 0;
+  let pixData = null;
+  let bankSlipData = null;
+  let payment = null;
+  try {
+    pixData = await getPaymentPixQrCode(paymentId, company);
+  } catch {
+  }
+  try {
+    bankSlipData = await getPaymentBankSlip(paymentId, company);
+  } catch {
+  }
+  try {
+    payment = await getPayment(paymentId, company);
+  } catch {
+  }
+  let nfPdfUrl = invoice.nf_image_url || void 0;
+  let nfNumber = invoice.nf_number || void 0;
+  const provider = String(invoice.nf_provider || "").toUpperCase();
+  if (provider !== "PLUGNOTAS") {
+    try {
+      const list = await getInvoicesByPayment(paymentId, company);
+      const nf = list.find((item) => item?.pdfUrl || item?.status === "AUTHORIZED") || null;
+      if (nf?.pdfUrl) nfPdfUrl = nf.pdfUrl;
+      if (nf?.number) nfNumber = String(nf.number);
+    } catch {
+    }
+  }
+  const boletoUrl = payment?.bankSlipUrl || invoice.asaas_bankslip_url || invoice.boleto_image_url || void 0;
+  const hasBoleto = !!boletoUrl && !ready.transfer;
+  const hasNf = !!nfPdfUrl;
+  try {
+    const result = await sendBillingEmail({
+      clientName: invoice.client || "Cliente",
+      clientCnpj: "",
+      clientEmail: recipients.join(", "),
+      invoiceNumber: invoice.number || void 0,
+      issuerCompany: invoice.issuer_company || "Grupo TM SEG",
+      value: Number(invoice.amount || 0),
+      dueDate: String(invoice.boleto_due_date || invoice.date || "").slice(0, 10),
+      description: invoice.notes || `Cobran\xE7a ref. NF ${invoice.number || ""}`.trim(),
+      paymentId,
+      boletoUrl: ready.transfer ? void 0 : boletoUrl,
+      pixPayload: pixData?.payload || void 0,
+      pixQrCodeBase64: pixData?.encodedImage || void 0,
+      boletoBarcode: bankSlipData?.barCode || void 0,
+      boletoDigitableLine: bankSlipData?.identificationField || void 0,
+      nfPdfUrl,
+      nfNumber
+    });
+    if (!result.success) {
+      await markEmailResult(invoice.id, {
+        billing_email_error: result.error || "Falha no envio",
+        billing_email_recipients: recipients.join(", "),
+        billing_email_attempts: attempts + 1
+      });
+      return {
+        success: false,
+        invoiceId: invoice.id,
+        client: invoice.client,
+        messageId: result.messageId || null,
+        recipients: result.recipients || recipients,
+        rejected: result.rejected || [],
+        error: result.error,
+        nfIncluded: hasNf,
+        boletoIncluded: hasBoleto,
+        pixIncluded: !!pixData?.payload
+      };
+    }
+    await markEmailResult(invoice.id, {
+      billing_email_sent_at: (/* @__PURE__ */ new Date()).toISOString(),
+      billing_email_error: null,
+      billing_email_recipients: (result.recipients || recipients).join(", "),
+      billing_email_attempts: attempts
+    });
+    console.log(`[Fatura Email] ${invoice.number || invoice.id} \u2192 ${(result.recipients || recipients).join(", ")}`);
+    return {
+      success: true,
+      invoiceId: invoice.id,
+      client: invoice.client,
+      messageId: result.messageId || null,
+      recipients: result.recipients || recipients,
+      rejected: [],
+      nfIncluded: hasNf,
+      boletoIncluded: hasBoleto,
+      pixIncluded: !!pixData?.payload
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await markEmailResult(invoice.id, {
+      billing_email_error: message.slice(0, 500),
+      billing_email_attempts: attempts + 1
+    });
+    return { success: false, invoiceId: invoice.id, client: invoice.client, error: message };
+  }
+}
+async function runPendingInvoiceBillingEmails(opts) {
+  const fromDate = opts?.fromDate || INVOICE_BILLING_EMAIL_AUTO_FROM;
+  const limit = Math.max(1, Math.min(Number(opts?.limit) || 8, 40));
+  const sb = admin();
+  let query = sb.from("financial_invoices").select("id").in("status", ["EMITIDA", "VENCIDA", "PAGA"]).is("billing_email_sent_at", null).lt("billing_email_attempts", MAX_INVOICE_BILLING_EMAIL_ATTEMPTS).ilike("nf_image_url", "http%").or("asaas_bankslip_url.ilike.http%,boleto_image_url.ilike.http%,client.ilike.%CEVA%,client.ilike.%DHL%").gte("created_at", brtDayStartUtc(fromDate)).order("created_at", { ascending: true }).limit(limit);
+  if (opts?.toDate) query = query.lt("created_at", brtDayEndExclusiveUtc(opts.toDate));
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  let sent = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (const row of data || []) {
+    const result = await sendInvoiceBillingEmail({ invoiceId: String(row.id) });
+    if (result.success && !result.skipped) sent++;
+    else if (result.skipped || result.success) skipped++;
+    else failed++;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  if ((data || []).length > 0) {
+    console.log(`[Fatura Email] ciclo ${fromDate}${opts?.toDate ? `..${opts.toDate}` : ""} scanned=${(data || []).length} sent=${sent} skipped=${skipped} failed=${failed}`);
+  }
+  return { scanned: (data || []).length, sent, skipped, failed };
+}
+var CLAIM_STALE_MS;
+var init_invoiceBillingEmail = __esm({
+  "server/invoiceBillingEmail.ts"() {
+    "use strict";
+    init_asaasChargeApi();
+    init_invoiceBillingEmailPolicy();
+    init_supabaseConfig();
+    init_emailService();
+    CLAIM_STALE_MS = 10 * 60 * 1e3;
+  }
+});
+
 // server/nfRetryWorker.ts
 var nfRetryWorker_exports = {};
 __export(nfRetryWorker_exports, {
@@ -277,52 +1059,20 @@ __export(nfRetryWorker_exports, {
 });
 module.exports = __toCommonJS(nfRetryWorker_exports);
 
-// lib/asaasEnvKeys.ts
-function sanitizeAsaasEnvValue(raw) {
-  return String(raw || "").replace(/^\uFEFF/, "").replace(/[\r\n\u200b\u200c\u200d]/g, "").trim().replace(/^["']+|["']+$/g, "");
-}
-function readFirstEnv(...names) {
-  for (const name of names) {
-    const value = sanitizeAsaasEnvValue(process.env[name]);
-    if (value) return value;
-  }
-  return "";
-}
-function getAsaasApiKeyTmGestao() {
-  return readFirstEnv(
-    "Asaas_TMSEGEST\xC3O_API",
-    "ASAAS_TMSEGEST\xC3O_API",
-    "Asaas_TMSEGESTAO_API",
-    "ASAAS_TMSEGESTAO_API",
-    "ASAAS_TMGESTAO_API",
-    "TMGESTAO",
-    "ASAAS_API_KEY",
-    "ASAAS_API_KEY_TMGESTAO"
-  );
-}
-function getAsaasApiKeyTmSeguranca() {
-  return readFirstEnv(
-    "TMSEGURANCA",
-    "ASAAS_TMSEGURANCA_API",
-    "TMSEGURAN\xC7A",
-    "ASAAS_API_KEY_TMSECURITY",
-    "ASAAS_API_KEY_TM_SEGURANCA"
-  );
-}
-function getAsaasApiKeyTmSecurity() {
-  return readFirstEnv(
-    "ASAAS_TMSECURITY_API",
-    "TMSECURITY",
-    "ASAAS_API_KEY_TMSECURITY_60",
-    "ASAAS_API_KEY_TM_SECURITY"
-  );
-}
+// lib/asaasBalancesCore.ts
+init_asaasEnvKeys();
+
+// lib/asaasTransferPixCore.ts
+init_asaasEnvKeys();
 
 // lib/asaasPendingTransferMemory.ts
 var MEMORY_TTL_MS = 20 * 60 * 1e3;
 
 // lib/services/asaasPendingTransferService.ts
 var MEMORY_TTL_MS2 = 20 * 60 * 1e3;
+
+// server/asaasService.ts
+init_asaasEnvKeys();
 
 // lib/nfDiscrimination.ts
 var ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH = 250;
@@ -426,10 +1176,10 @@ function asaasCompanies() {
   };
 }
 function resolveCompanyEntry(company) {
-  const companies = asaasCompanies();
+  const companies2 = asaasCompanies();
   if (company) {
     const upper = company.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    for (const [, val] of Object.entries(companies)) {
+    for (const [, val] of Object.entries(companies2)) {
       const normalizedAliases = val.aliases.map((a) => a.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
       if (normalizedAliases.some((alias) => upper.includes(alias) || alias.includes(upper))) return val;
       if (upper.includes(val.cnpj)) return val;
@@ -437,7 +1187,7 @@ function resolveCompanyEntry(company) {
       if (normalizedName.includes(upper) || upper.includes(normalizedName)) return val;
     }
   }
-  return companies["TM GEST\xC3O"];
+  return companies2["TM GEST\xC3O"];
 }
 function resolveApiKey(company) {
   return resolveCompanyEntry(company).apiKey;
@@ -1563,6 +2313,14 @@ async function runRetryCycle(opts) {
   let ok = 0, paused = 0, errors = 0, stuck = 0;
   for (const inv of batch) {
     const res = await retryOne(inv);
+    if (res.ok && "action" in res && res.action === "authorized") {
+      try {
+        const { sendInvoiceBillingEmail: sendInvoiceBillingEmail2 } = await Promise.resolve().then(() => (init_invoiceBillingEmail(), invoiceBillingEmail_exports));
+        await sendInvoiceBillingEmail2({ invoiceId: inv.id });
+      } catch (emailErr) {
+        console.log(`[Fatura Email] ap\xF3s NF ${inv.id}: ${emailErr?.message || emailErr}`);
+      }
+    }
     if (res.ok) ok++;
     else if (res.action === "stuck-alert") stuck++;
     else if (res.paused) paused++;

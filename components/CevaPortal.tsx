@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { CampoFiltro, CampoPgr, IncluirCatalogo } from './ceva/CampoCliente';
 import { AcessoCeva } from './ceva/AcessoCeva';
@@ -7,11 +7,12 @@ import { PainelDiretoria } from './ceva/PainelDiretoria';
 import { PainelAoVivo } from './ceva/PainelAoVivo';
 import { TrocarSenhaCeva } from './ceva/TrocarSenhaCeva';
 import { LogoCeva } from './ceva/LogoCeva';
+import { PortalCasca, usePortalCliente } from './ceva/portalMarca';
 import type { CampoFiltro as CampoFiltroNome } from '../lib/cevaPortal/camposCliente';
 import { isoDeDataBrasil, mascaraDataBrasil, periodoMesAtualBrasil } from '../lib/cevaPortal/datas';
-import { cabecalhosCeva, gravarSessaoCeva, lerSessaoCeva, limparSessaoCeva, type SessaoCeva } from '../lib/cevaPortal/sessaoCliente';
+import type { SessaoCeva } from '../lib/cevaPortal/sessaoCliente';
 import { baixarExcelControle, baixarPdfControle } from '../lib/cevaPortal/baixarControle';
-import { linhaControleExportavel } from '../lib/cevaPortal/exportarControle';
+import { linhaControleExportavel, recortarColunasControle } from '../lib/cevaPortal/exportarControle';
 import { aplicarStatusOs, classeStatusSistema } from '../lib/cevaPortal/status';
 
 type ReportRow = {
@@ -59,7 +60,40 @@ const CATALOGO_VAZIO: Record<CampoFiltroNome, string[]> = {
 };
 
 const CLIENT_HEAD = 'bg-slate-100 text-slate-600';
-const SYSTEM_HEAD = 'bg-[#152c54] text-white';
+const SYSTEM_HEAD = 'bg-[var(--portal-marca)] text-white';
+
+const COLUNAS_TABELA = [
+  { nome: 'OS', grupo: 'os' },
+  { nome: 'Status', grupo: 'os' },
+  { nome: 'Nº solicitação', grupo: 'cliente' },
+  { nome: 'Data início', grupo: 'cliente' },
+  { nome: 'Data fim', grupo: 'cliente' },
+  { nome: 'Solicitante', grupo: 'cliente' },
+  { nome: 'Quem autorizou', grupo: 'cliente' },
+  { nome: 'Serviço', grupo: 'cliente' },
+  { nome: 'Atendimento PGR', grupo: 'cliente' },
+  { nome: 'Operação', grupo: 'cliente' },
+  { nome: 'TSP', grupo: 'cliente' },
+  { nome: 'Placa', grupo: 'cliente' },
+  { nome: 'Motorista', grupo: 'cliente' },
+  { nome: 'Franquia hora', grupo: 'cliente' },
+  { nome: 'Franquia km', grupo: 'cliente' },
+  { nome: 'Km início', grupo: 'sistema' },
+  { nome: 'Km fim', grupo: 'sistema' },
+  { nome: 'Km rodado', grupo: 'sistema' },
+  { nome: 'Km excedente', grupo: 'sistema' },
+  { nome: 'Horas trabalhadas', grupo: 'sistema' },
+  { nome: 'Horas excedentes', grupo: 'sistema' },
+  { nome: 'R$ horas excedentes', grupo: 'sistema' },
+  { nome: 'R$ km excedente', grupo: 'sistema' },
+  { nome: 'R$ acionamento', grupo: 'sistema' },
+  { nome: 'R$ total', grupo: 'sistema' },
+  { nome: 'Pedágio', grupo: 'sistema' },
+  { nome: 'R$ km excedente (tarifa)', grupo: 'sistema' },
+  { nome: 'R$ hora excedente (tarifa)', grupo: 'sistema' },
+  { nome: 'Local', grupo: 'sistema' },
+  { nome: 'Obs', grupo: 'sistema' },
+] as const;
 
 function when(value: string | null): string {
   if (!value) return '—';
@@ -183,44 +217,53 @@ function passaFiltro(row: ReportRow, filtro: Filtros): boolean {
 const POR_TELA = [10, 20, 50, 100] as const;
 
 const CAMPO_FILTRO = 'inline-flex items-center gap-2 whitespace-nowrap text-[11px] font-bold text-slate-500';
-const CONTROLE_FILTRO = 'h-8 rounded-xl border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-800 outline-none focus:border-[#152c54] focus:bg-white';
+const CONTROLE_FILTRO = 'h-8 rounded-xl border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-800 outline-none focus:border-[var(--portal-acao)] focus:bg-white';
 const LINHA_FILTRO = 'flex flex-nowrap items-center gap-3 overflow-x-auto px-4 py-3';
 
 const CevaPortal: React.FC = () => {
+  const portal = usePortalCliente();
+  const sessaoAberta = useMemo<SessaoCeva | null>(() => (
+    portal.marca.exigeLogin ? null : {
+      token: '',
+      user: { id: 'aberto', name: portal.marca.rotulo, email: '', perfil: 'administrador' },
+    }
+  ), [portal.marca]);
   const [items, setItems] = useState<ReportRow[]>([]);
   const [catalogo, setCatalogo] = useState(CATALOGO_VAZIO);
   const [total, setTotal] = useState(0);
-  const [sessao, setSessao] = useState<SessaoCeva | null>(() => lerSessaoCeva());
+  const [sessao, setSessao] = useState<SessaoCeva | null>(() => (portal.marca.exigeLogin ? portal.ler() : sessaoAberta));
   const [pessoasAberto, setPessoasAberto] = useState(false);
   const [visao, setVisao] = useState<'controle' | 'diretoria' | 'aovivo'>('controle');
-  const [loading, setLoading] = useState(() => Boolean(lerSessaoCeva()));
+  const [loading, setLoading] = useState(() => !portal.marca.exigeLogin || Boolean(portal.ler()));
   const [error, setError] = useState('');
   const [filtro, setFiltro] = useState<Filtros>(FILTRO_VAZIO);
   const [porTela, setPorTela] = useState<(typeof POR_TELA)[number]>(20);
   const [pagina, setPagina] = useState(1);
   const tabelaRef = useRef<HTMLDivElement>(null);
+  const sessaoAtual = portal.marca.exigeLogin ? sessao : sessaoAberta;
 
   useEffect(() => {
     const sair = () => {
-      limparSessaoCeva();
+      if (!portal.marca.exigeLogin) return;
+      portal.limpar();
       setSessao(null);
       setPessoasAberto(false);
       setItems([]);
     };
-    window.addEventListener('ceva-portal-sair', sair);
-    return () => window.removeEventListener('ceva-portal-sair', sair);
-  }, []);
+    window.addEventListener(portal.marca.eventoSair, sair);
+    return () => window.removeEventListener(portal.marca.eventoSair, sair);
+  }, [portal]);
 
   useEffect(() => {
-    if (!sessao || sessao.user.trocarSenha) return;
+    if (!sessaoAtual || sessaoAtual.user.trocarSenha) return;
     let ativo = true;
     setLoading(true);
     setError('');
-    fetch('/api/ceva-portal/relatorio', { headers: cabecalhosCeva() })
+    fetch(portal.url('/relatorio'), { headers: portal.cabecalhos() })
       .then(async (response) => {
         const data = await response.json().catch(() => ({}));
-        if (response.status === 401) {
-          limparSessaoCeva();
+        if (response.status === 401 && portal.marca.exigeLogin) {
+          portal.limpar();
           if (ativo) setSessao(null);
           return;
         }
@@ -233,17 +276,17 @@ const CevaPortal: React.FC = () => {
       .catch((err: Error) => { if (ativo) setError(err.message || 'Falha de comunicação.'); })
       .finally(() => { if (ativo) setLoading(false); });
     return () => { ativo = false; };
-  }, [sessao]);
+  }, [sessaoAtual, portal]);
 
   useEffect(() => {
-    if (!sessao || sessao.user.trocarSenha || loading) return;
+    if (!sessaoAtual || sessaoAtual.user.trocarSenha || loading) return;
     let ativo = true;
     async function sincronizarStatus() {
       try {
-        const response = await fetch('/api/ceva-portal/status', { headers: cabecalhosCeva() });
+        const response = await fetch(portal.url('/status'), { headers: portal.cabecalhos() });
         const data = await response.json().catch(() => ({}));
-        if (response.status === 401) {
-          limparSessaoCeva();
+        if (response.status === 401 && portal.marca.exigeLogin) {
+          portal.limpar();
           if (ativo) setSessao(null);
           return;
         }
@@ -258,7 +301,7 @@ const CevaPortal: React.FC = () => {
       ativo = false;
       window.clearInterval(relogio);
     };
-  }, [sessao, loading]);
+  }, [sessaoAtual, loading, portal]);
 
   const linhas = [...items].sort(maisNovaPrimeiro);
   const visiveis = linhas.filter((row) => passaFiltro(row, filtro));
@@ -303,10 +346,18 @@ const CevaPortal: React.FC = () => {
       : { ...atual, [campo]: [...atual[campo], nome].sort((a, b) => a.localeCompare(b, 'pt-BR')) });
   }
 
+  const colunasOcultas = portal.marca.colunasOcultas;
+  const colunaVisivel = (nome: string) => !colunasOcultas.includes(nome);
+  const colunasTabela = COLUNAS_TABELA.filter((coluna) => colunaVisivel(coluna.nome));
+  const faixa = (grupo: 'os' | 'cliente' | 'sistema') => colunasTabela.filter((coluna) => coluna.grupo === grupo).length;
+
   function exportar(formato: 'excel' | 'pdf') {
-    const linhas = visiveis.map((item) => linhaControleExportavel(item, solicitacao.get(item.os)));
-    if (formato === 'excel') baixarExcelControle(linhas);
-    else baixarPdfControle(linhas);
+    const recorte = recortarColunasControle(
+      visiveis.map((item) => linhaControleExportavel(item, solicitacao.get(item.os))),
+      colunasOcultas,
+    );
+    if (formato === 'excel') baixarExcelControle(recorte.linhas, portal.marca.arquivo, recorte.cabecalhos);
+    else baixarPdfControle(recorte.linhas, portal.marca.tituloPdf, portal.marca.arquivo, recorte.cabecalhos);
   }
 
   function atualizarCampo(os: string, campo: CampoFiltroNome | 'atendimentoPgr', valor: string | null, filtroNovo: string | null = null) {
@@ -316,22 +367,24 @@ const CevaPortal: React.FC = () => {
     }
   }
 
-  if (!sessao) {
-    return <AcessoCeva onEntrar={(proxima) => { setSessao(proxima); setLoading(true); setError(''); }} />;
+  if (!sessaoAtual) {
+    return <PortalCasca><AcessoCeva onEntrar={(proxima) => { setSessao(proxima); setLoading(true); setError(''); }} /></PortalCasca>;
   }
 
-  if (sessao.user.trocarSenha) {
+  if (sessaoAtual.user.trocarSenha) {
     return (
-      <TrocarSenhaCeva
-        onTrocou={(proxima) => { gravarSessaoCeva(proxima); setSessao(proxima); setLoading(true); }}
-        onSair={() => { setSessao(null); setItems([]); }}
-      />
+      <PortalCasca>
+        <TrocarSenhaCeva
+          onTrocou={(proxima) => { portal.gravar(proxima); setSessao(proxima); setLoading(true); }}
+          onSair={() => { setSessao(null); setItems([]); }}
+        />
+      </PortalCasca>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#f6f3ef]">
-      <header className="bg-[#152c54] text-white">
+    <PortalCasca className="min-h-screen bg-[var(--portal-fundo)]">
+      <header className="bg-[var(--portal-marca)] text-white">
         <div className="grid items-center gap-3 px-4 py-3 md:grid-cols-[1fr_auto_1fr]">
           <div className="flex items-center gap-3">
             <span className="inline-flex rounded-xl bg-white px-2.5 py-1">
@@ -341,25 +394,29 @@ const CevaPortal: React.FC = () => {
           </div>
           <nav className="flex justify-center">
             <div className="flex rounded-full bg-white/10 p-0.5">
-              <button type="button" onClick={() => setVisao('controle')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'controle' ? 'bg-white text-[#152c54]' : 'text-white'}`}>Controle</button>
-              <button type="button" onClick={() => setVisao('aovivo')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'aovivo' ? 'bg-white text-[#152c54]' : 'text-white'}`}>Ao vivo</button>
-              <button type="button" onClick={abrirDiretoria} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'diretoria' ? 'bg-white text-[#152c54]' : 'text-white'}`}>Diretoria</button>
+              <button type="button" onClick={() => setVisao('controle')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'controle' ? 'bg-white text-[var(--portal-marca)]' : 'text-white'}`}>Controle</button>
+              <button type="button" onClick={() => setVisao('aovivo')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'aovivo' ? 'bg-white text-[var(--portal-marca)]' : 'text-white'}`}>Ao vivo</button>
+              <button type="button" onClick={abrirDiretoria} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'diretoria' ? 'bg-white text-[var(--portal-marca)]' : 'text-white'}`}>Diretoria</button>
             </div>
           </nav>
           <div className="flex items-center justify-end gap-2">
-            <p className="text-right text-xs">
-              <span className="block font-bold">{sessao.user.name}</span>
-              <span className="capitalize text-slate-300">{sessao.user.perfil}</span>
-            </p>
-            {sessao.user.perfil === 'administrador' && (
-              <button type="button" onClick={() => setPessoasAberto((aberto) => !aberto)} className="h-8 rounded-full border border-white/40 px-3 text-xs font-bold">Pessoas</button>
+            {portal.marca.exigeLogin && (
+              <>
+                <p className="text-right text-xs">
+                  <span className="block font-bold">{sessaoAtual.user.name}</span>
+                  <span className="capitalize text-slate-300">{sessaoAtual.user.perfil}</span>
+                </p>
+                {sessaoAtual.user.perfil === 'administrador' && (
+                  <button type="button" onClick={() => setPessoasAberto((aberto) => !aberto)} className="h-8 rounded-full border border-white/40 px-3 text-xs font-bold">Pessoas</button>
+                )}
+                <button type="button" onClick={() => { portal.limpar(); setSessao(null); setPessoasAberto(false); setItems([]); }} className="h-8 rounded-full border border-white/40 px-3 text-xs font-bold">Sair</button>
+              </>
             )}
-            <button type="button" onClick={() => { limparSessaoCeva(); setSessao(null); setPessoasAberto(false); setItems([]); }} className="h-8 rounded-full border border-white/40 px-3 text-xs font-bold">Sair</button>
           </div>
         </div>
       </header>
       <main className="p-4 md:p-6">
-        {pessoasAberto && sessao.user.perfil === 'administrador' && <PessoasCeva onFechar={() => setPessoasAberto(false)} />}
+        {pessoasAberto && portal.marca.exigeLogin && sessaoAtual.user.perfil === 'administrador' && <PessoasCeva onFechar={() => setPessoasAberto(false)} />}
         {visao !== 'aovivo' && loading && (
           <p className="inline-flex items-center gap-2 rounded-3xl bg-white px-4 py-3 text-sm text-slate-500 shadow-sm"><Loader2 className="animate-spin" size={16} /> Carregando relatório...</p>
         )}
@@ -368,7 +425,7 @@ const CevaPortal: React.FC = () => {
         {visao !== 'aovivo' && !loading && !error && (
           <div className="mb-4 rounded-3xl bg-white shadow-sm">
             <div className={`${LINHA_FILTRO} border-b border-slate-100`}>
-              <p className="inline-flex items-center gap-2 rounded-full bg-[#152c54] px-3 py-1 text-xs font-bold text-white">
+              <p className="inline-flex items-center gap-2 rounded-full bg-[var(--portal-marca)] px-3 py-1 text-xs font-bold text-white">
                 {visiveis.length.toLocaleString('pt-BR')}{visiveis.length !== total ? ` de ${total.toLocaleString('pt-BR')}` : ''} OS
                 {visiveis.length > 0 ? <span className="font-semibold text-slate-300">{inicio + 1}–{inicio + tela.length}</span> : null}
               </p>
@@ -396,10 +453,10 @@ const CevaPortal: React.FC = () => {
                 </label>
               ))}
               {filtroAtivo && (
-                <button type="button" onClick={() => { setFiltro(FILTRO_VAZIO); setPagina(1); }} className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-[#152c54]">Limpar</button>
+                <button type="button" onClick={() => { setFiltro(FILTRO_VAZIO); setPagina(1); }} className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-[var(--portal-marca)]">Limpar</button>
               )}
-              <button type="button" onClick={() => exportar('excel')} className="h-8 rounded-full bg-[#152c54] px-3 text-xs font-bold text-white">Excel</button>
-              <button type="button" onClick={() => exportar('pdf')} className="h-8 rounded-full border border-[#152c54] bg-white px-3 text-xs font-bold text-[#152c54]">PDF</button>
+              <button type="button" onClick={() => exportar('excel')} className="h-8 rounded-full bg-[var(--portal-acao)] px-3 text-xs font-bold text-[var(--portal-acao-texto)]">Excel</button>
+              <button type="button" onClick={() => exportar('pdf')} className="h-8 rounded-full border border-[var(--portal-acao)] bg-white px-3 text-xs font-bold text-[var(--portal-acao)]">PDF</button>
             </div>
             <div className={LINHA_FILTRO}>
               {([
@@ -408,7 +465,7 @@ const CevaPortal: React.FC = () => {
                 ['operacao', 'Operação', opcoes.operacao],
                 ['placa', 'Placa', opcoes.placa],
                 ['motorista', 'Motorista', opcoes.motorista],
-              ] as const).map(([campo, rotulo, lista]) => (
+              ] as const).filter(([, rotulo]) => colunaVisivel(rotulo)).map(([campo, rotulo, lista]) => (
                 <label key={campo} className={CAMPO_FILTRO}>{rotulo}
                   <select value={filtro[campo]} onChange={(event) => mudarFiltro(campo, event.target.value)} className={`${CONTROLE_FILTRO} max-w-[160px]`}>
                     <option value="">Todos</option>
@@ -419,11 +476,11 @@ const CevaPortal: React.FC = () => {
               <label className={CAMPO_FILTRO}>Local
                 <input value={filtro.local} onChange={(event) => mudarFiltro('local', event.target.value)} placeholder="Cidade" className={`${CONTROLE_FILTRO} w-36`} />
               </label>
-              {sessao.user.perfil === 'administrador' && (
-                <>
-                  <IncluirCatalogo campo="operacao" rotulo="Nova operação" onIncluiu={(valor) => incluirNoCatalogo('operacao', valor)} />
-                  <IncluirCatalogo campo="tsp" rotulo="Nova TSP" onIncluiu={(valor) => incluirNoCatalogo('tsp', valor)} />
-                </>
+              {sessaoAtual.user.perfil === 'administrador' && colunaVisivel('Operação') && (
+                <IncluirCatalogo campo="operacao" rotulo="Nova operação" onIncluiu={(valor) => incluirNoCatalogo('operacao', valor)} />
+              )}
+              {sessaoAtual.user.perfil === 'administrador' && colunaVisivel('TSP') && (
+                <IncluirCatalogo campo="tsp" rotulo="Nova TSP" onIncluiu={(valor) => incluirNoCatalogo('tsp', valor)} />
               )}
             </div>
           </div>
@@ -431,23 +488,23 @@ const CevaPortal: React.FC = () => {
         {sessao && !loading && !error && visao === 'diretoria' && <PainelDiretoria linhas={visiveis} />}
         {sessao && !loading && !error && visao === 'controle' && (
           <div ref={tabelaRef} className="max-h-[calc(100vh-280px)] overflow-auto rounded-3xl bg-white shadow-sm ring-1 ring-slate-200/80">
-            <table className="min-w-[2500px] border-separate border-spacing-0 text-xs">
+            <table className={`${colunasOcultas.length ? 'min-w-[2100px]' : 'min-w-[2500px]'} border-separate border-spacing-0 text-xs`}>
               <thead className="sticky top-0 z-20">
                 <tr>
-                  <th className={`${SYSTEM_HEAD} px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em]`} colSpan={2}>OS</th>
-                  <th className={`${CLIENT_HEAD} px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em]`} colSpan={13}>Cliente</th>
-                  <th className={`${SYSTEM_HEAD} px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em]`} colSpan={15}>Sistema</th>
+                  <th className={`${SYSTEM_HEAD} px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em]`} colSpan={faixa('os')}>OS</th>
+                  <th className={`${CLIENT_HEAD} px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em]`} colSpan={faixa('cliente')}>Cliente</th>
+                  <th className={`${SYSTEM_HEAD} px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em]`} colSpan={faixa('sistema')}>Sistema</th>
                 </tr>
                 <tr className="text-left">
-                  {['OS', 'Status', 'Nº solicitação', 'Data início', 'Data fim', 'Solicitante', 'Quem autorizou', 'Serviço', 'Atendimento PGR', 'Operação', 'TSP', 'Placa', 'Motorista', 'Franquia hora', 'Franquia km', 'Km início', 'Km fim', 'Km rodado', 'Km excedente', 'Horas trabalhadas', 'Horas excedentes', 'R$ horas excedentes', 'R$ km excedente', 'R$ acionamento', 'R$ total', 'Pedágio', 'R$ km excedente (tarifa)', 'R$ hora excedente (tarifa)', 'Local', 'Obs'].map((label, index) => (
-                    <th key={label} className={`whitespace-nowrap border-b border-slate-200 px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${index === 0 ? 'sticky left-0 z-30' : ''} ${index <= 1 || index >= 15 ? SYSTEM_HEAD : CLIENT_HEAD}`}>{label}</th>
+                  {colunasTabela.map((coluna, index) => (
+                    <th key={coluna.nome} className={`whitespace-nowrap border-b border-slate-200 px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${index === 0 ? 'sticky left-0 z-30' : ''} ${coluna.grupo === 'cliente' ? CLIENT_HEAD : SYSTEM_HEAD}`}>{coluna.nome}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {tela.length === 0 && (
                   <tr>
-                    <td colSpan={30} className="px-4 py-10 text-center text-sm text-slate-500">Nenhuma OS neste recorte.</td>
+                    <td colSpan={colunasTabela.length} className="px-4 py-10 text-center text-sm text-slate-500">Nenhuma OS neste recorte.</td>
                   </tr>
                 )}
                 {tela.map((item, index) => {
@@ -456,7 +513,7 @@ const CevaPortal: React.FC = () => {
                   const valorCls = `${celula} whitespace-nowrap tabular-nums`;
                   return (
                   <tr key={item.os} className="transition-colors hover:bg-slate-100/80">
-                    <td className={`${celula} sticky left-0 z-10 font-black whitespace-nowrap shadow-[6px_0_10px_-8px_rgba(15,23,42,0.45)] text-[#152c54] ${fundo}`}>{item.os}</td>
+                    <td className={`${celula} sticky left-0 z-10 font-black whitespace-nowrap shadow-[6px_0_10px_-8px_rgba(15,23,42,0.45)] text-[var(--portal-marca)] ${fundo}`}>{item.os}</td>
                     <td className={`${celula} whitespace-nowrap`}>
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${classeStatusSistema(item.status)}`}>
                         {text(item.status)}
@@ -465,12 +522,12 @@ const CevaPortal: React.FC = () => {
                     <td className={`${celula} font-bold`}>{solicitacao.get(item.os)}</td>
                     <td className={`${celula} whitespace-nowrap`}>{when(item.dataInicio)}</td>
                     <td className={`${celula} whitespace-nowrap`}>{when(item.dataFim)}</td>
-                    <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="solicitante" valor={item.solicitante} opcoes={catalogo.solicitante} onChange={(valor, filtro) => atualizarCampo(item.os, 'solicitante', valor, filtro)} /></td>
-                    <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="quemAutorizou" valor={item.quemAutorizou} opcoes={catalogo.quemAutorizou} onChange={(valor, filtro) => atualizarCampo(item.os, 'quemAutorizou', valor, filtro)} /></td>
+                    {colunaVisivel('Solicitante') && <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="solicitante" valor={item.solicitante} opcoes={catalogo.solicitante} onChange={(valor, filtro) => atualizarCampo(item.os, 'solicitante', valor, filtro)} /></td>}
+                    {colunaVisivel('Quem autorizou') && <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="quemAutorizou" valor={item.quemAutorizou} opcoes={catalogo.quemAutorizou} onChange={(valor, filtro) => atualizarCampo(item.os, 'quemAutorizou', valor, filtro)} /></td>}
                     <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="servico" valor={item.servico} opcoes={catalogo.servico} onChange={(valor, filtro) => atualizarCampo(item.os, 'servico', valor, filtro)} /></td>
-                    <td className={`${celula} whitespace-nowrap`}><CampoPgr os={item.os} valor={item.atendimentoPgr} onChange={(valor) => atualizarCampo(item.os, 'atendimentoPgr', valor)} /></td>
-                    <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="operacao" valor={item.operacao} opcoes={catalogo.operacao} podeIncluirNovo={sessao.user.perfil === 'administrador'} onChange={(valor, filtro) => atualizarCampo(item.os, 'operacao', valor, filtro)} /></td>
-                    <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="tsp" valor={item.tsp} opcoes={catalogo.tsp} podeIncluirNovo={sessao.user.perfil === 'administrador'} onChange={(valor, filtro) => atualizarCampo(item.os, 'tsp', valor, filtro)} /></td>
+                    {colunaVisivel('Atendimento PGR') && <td className={`${celula} whitespace-nowrap`}><CampoPgr os={item.os} valor={item.atendimentoPgr} onChange={(valor) => atualizarCampo(item.os, 'atendimentoPgr', valor)} /></td>}
+                    {colunaVisivel('Operação') && <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="operacao" valor={item.operacao} opcoes={catalogo.operacao} podeIncluirNovo={sessaoAtual.user.perfil === 'administrador'} onChange={(valor, filtro) => atualizarCampo(item.os, 'operacao', valor, filtro)} /></td>}
+                    {colunaVisivel('TSP') && <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="tsp" valor={item.tsp} opcoes={catalogo.tsp} podeIncluirNovo={sessaoAtual.user.perfil === 'administrador'} onChange={(valor, filtro) => atualizarCampo(item.os, 'tsp', valor, filtro)} /></td>}
                     <td className={`${celula} whitespace-nowrap font-semibold`}>{text(item.placa)}</td>
                     <td className={`${celula} whitespace-nowrap`}>{text(item.motorista)}</td>
                     <td className={celula}>{text(item.franquiaHora)}</td>
@@ -484,7 +541,7 @@ const CevaPortal: React.FC = () => {
                     <td className={valorCls}>{celulaValor(item, item.valorHrsExcedente)}</td>
                     <td className={valorCls}>{celulaValor(item, item.valorKmExcedente)}</td>
                     <td className={valorCls}>{celulaValor(item, item.valorAcionamento)}</td>
-                    <td className={`${valorCls} ${item.valores === 'APROVADO' ? 'font-black text-[#152c54]' : ''}`}>{celulaValor(item, item.valorTotal)}</td>
+                    <td className={`${valorCls} ${item.valores === 'APROVADO' ? 'font-black text-[var(--portal-marca)]' : ''}`}>{celulaValor(item, item.valorTotal)}</td>
                     <td className={valorCls}>{celulaValor(item, item.pedagio)}</td>
                     <td className={valorCls}>{celulaValor(item, item.tarifaKm)}</td>
                     <td className={valorCls}>{celulaValor(item, item.tarifaHora)}</td>
@@ -501,11 +558,11 @@ const CevaPortal: React.FC = () => {
           <div className="mt-4 flex items-center gap-2 text-xs font-bold text-slate-600">
             <button type="button" disabled={paginaAtual <= 1} onClick={() => irPara(paginaAtual - 1)} className="h-9 rounded-full bg-white px-4 shadow-sm disabled:opacity-40">Anterior</button>
             <span className="px-2">Página {paginaAtual} de {paginas}</span>
-            <button type="button" disabled={paginaAtual >= paginas} onClick={() => irPara(paginaAtual + 1)} className="h-9 rounded-full bg-[#152c54] px-4 text-white shadow-sm disabled:opacity-40">Próxima</button>
+            <button type="button" disabled={paginaAtual >= paginas} onClick={() => irPara(paginaAtual + 1)} className="h-9 rounded-full bg-[var(--portal-acao)] px-4 text-[var(--portal-acao-texto)] shadow-sm disabled:opacity-40">Próxima</button>
           </div>
         )}
       </main>
-    </div>
+    </PortalCasca>
   );
 };
 

@@ -15,12 +15,15 @@ export async function sendCevaPortalAccessEmail(input: {
   nome: string;
   email: string;
   senhaTemporaria: string;
+  rotulo?: string;
+  caminho?: string;
 }): Promise<boolean> {
-  const link = systemAppUrl('/ceva');
+  const rotulo = input.rotulo || 'CEVA';
+  const link = systemAppUrl(input.caminho || '/ceva');
   const html = `<!DOCTYPE html><html lang="pt-BR"><body style="font-family:Segoe UI,Arial,sans-serif;color:#333;line-height:1.6">
     <h2>Acesso ao Controle de Escolta</h2>
     <p>Olá, <strong>${escapar(input.nome)}</strong>.</p>
-    <p>O administrador liberou o seu acesso ao controle de escolta da CEVA. Use a senha temporária abaixo e troque-a no primeiro acesso.</p>
+    <p>O administrador liberou o seu acesso ao controle de escolta da ${escapar(rotulo)}. Use a senha temporária abaixo e troque-a no primeiro acesso.</p>
     <p><strong>Link:</strong> <a href="${link}">${link}</a><br>
     <strong>E-mail:</strong> ${escapar(input.email)}<br>
     <strong>Senha temporária:</strong> <code>${escapar(input.senhaTemporaria)}</code></p>
@@ -31,13 +34,13 @@ export async function sendCevaPortalAccessEmail(input: {
     await sendMail({
       from: SMTP_FROM,
       to: input.email,
-      subject: 'Acesso ao Controle de Escolta CEVA',
+      subject: `Acesso ao Controle de Escolta ${rotulo}`,
       html,
     });
     return true;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[Email] Falha no acesso CEVA para ${input.email}:`, message);
+    console.error(`[Email] Falha no acesso ${rotulo} para ${input.email}:`, message);
     return false;
   }
 }

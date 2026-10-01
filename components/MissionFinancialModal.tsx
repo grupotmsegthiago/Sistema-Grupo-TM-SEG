@@ -16,7 +16,7 @@ import {
   findDhlCorrectionSource,
   type DhlCorrectionRecord,
 } from '../lib/dhlAutoTableSelector';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History, Settings2, FileText, Copy, MailWarning, Search } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Link2, Layers, Scale, Sparkles, Navigation, History, Settings2, FileText, Copy, MailWarning, Search } from 'lucide-react';
 import { canRequestOsAnalysis } from '../lib/osAnalysisAccess';
 import RequestOsAnalysisModal, { type RequestOsAnalysisPayload } from './RequestOsAnalysisModal';
 import type { OsAnalysisRequest } from '../lib/osAnalysisTypes';
@@ -57,9 +57,10 @@ import {
   type StatusTravaOS,
 } from '../lib/billing/verificarTravaOS';
 import { dispararSyncFaturaPorOS } from '../lib/billing/sincronizarFaturaAberta';
-import { shouldCaptureApprovalScreenshot } from '../lib/billing/missionFinancialSavePerf';
+import { hasPersistedBillingFreeze, shouldRecalcOnTableChange } from '../lib/billing/tableSwapPolicy';
+import { isClientValueLockedAfterFinanceApproval } from '../lib/billing/financeClientLock';
+import { describeMoneyChange, describeTableChange, formatHistoryAlteration } from '../lib/billing/billingHistoryText';
 import PaidInvoiceLockPanel from './PaidInvoiceLockPanel';
-import html2canvas from 'html2canvas';
 import FilterableSelect, { type FilterableSelectOption } from './FilterableSelect';
 import { fetchMissionById, fetchParentMissionCandidates, type ParentMissionRow } from '../lib/parentMissionSearch';
 import { resolveSameOsLink, type SameOsLinkRole } from '../lib/missionLinkage';
@@ -438,7 +439,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [tollConfirmAutoOpened, setTollConfirmAutoOpened] = useState(false);
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
   const [tollEmbeddedInCost, setTollEmbeddedInCost] = useState(false);
-  const [approvalLog, setApprovalLog] = useState<Array<{user: string; role: string; stage: string; date: string}>>([]);
+  const [approvalLog, setApprovalLog] = useState<Array<{user: string; role: string; stage: string; date: string; changes?: string[]}>>([]);
   // Histórico permanente de alterações pós-aprovação (Data / Quem / Mudanças / Observação)
   const [editHistory, setEditHistory] = useState<Array<{user: string; date: string; changes: string[]; note: string}>>([]);
   const [editObservation, setEditObservation] = useState('');
@@ -463,6 +464,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isSavingRef = React.useRef(false);
   const userManuallyEditedRef = React.useRef(false);
   const dbValuesLoadedRef = React.useRef(false);
+  const openedTablesRef = React.useRef<{ clientId: string; clientName: string; providerId: string; providerName: string } | null>(null);
   const staleAutoResyncDoneRef = React.useRef<string | null>(null);
   const [savedByInfo, setSavedByInfo] = useState<string | null>(null);
 
@@ -636,7 +638,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // ligar a EDIÇÃO TOTAL. Isso apenas destrava o campo; NÃO recalcula nem
   // sobrescreve valores por conta própria (os snapshots de OS aprovadas seguem
   // protegidos no fluxo de salvar/aprovar).
-  const canEditClientTablesEvenIfLocked = canOverrideAutoProvider && !isProviderOnlyUser;
+  const financeApprovedClientLock = isClientValueLockedAfterFinanceApproval(
+    approvalLog.some((entry) => entry.stage === 'financeiro'),
+    userRoleLower,
+  );
+  const canEditClientTablesEvenIfLocked = canOverrideAutoProvider && !isProviderOnlyUser && !financeApprovedClientLock;
   const canEditProviderTablesEvenIfLocked = canOverrideAutoProvider || isProviderOnlyUser;
   const canEditTablesEvenIfLocked = canEditClientTablesEvenIfLocked || canEditProviderTablesEvenIfLocked;
   const [fullEditMode, setFullEditMode] = useState(false);
@@ -658,7 +664,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     return canEditOpsData || ['operacional', 'operador'].includes(userRoleLower) || fullEditMode;
   }, [canEditOpsData, userRoleLower, fullEditMode]);
   // Controller/Plínio: somente fornecedor — bloqueio explícito do lado cliente.
-  const canEditClientData = !isProviderOnlyUser && ((canEditOpsData && !isController) || fullEditMode);
+  // Após aprovação do Financeiro, o valor do cliente só a Diretoria altera.
+  const canEditClientData = !isProviderOnlyUser && !financeApprovedClientLock && ((canEditOpsData && !isController) || fullEditMode);
   // Controller pode ajustar o valor total do fornecedor mesmo após verificação.
   const canEditProviderCostTotal = canEditOpsData
     && (fullEditMode || !isProviderTotalLockedByController || isControllerRole || isProviderOnlyUser);
@@ -743,9 +750,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const canSaveProviderAdjustments = isProviderOnlyUser;
   // Gate unificado: nenhum input financeiro/comercial do CLIENTE editável sem canEditClientData
   // (inclui OS destravada — unlock não contorna a regra do Plinio).
-  const clientFinanceInputLocked = isController || isEffectivelyLocked || !canEditClientData || isPaidInvoiceEffectivelyLocked;
-  // Controller/Plínio: pedágio do cliente editável na auditoria (botão laranja + campo + Salvar).
-  const clientTollInputLocked = isPaidInvoiceEffectivelyLocked || (!(isProviderOnlyUser || isControllerRole) && clientFinanceInputLocked);
+  const clientFinanceInputLocked = financeApprovedClientLock || isController || isEffectivelyLocked || !canEditClientData || isPaidInvoiceEffectivelyLocked;
+  // Controller só mexe no fornecedor. Pedágio do cliente segue a trava do valor do cliente.
+  const clientTollInputLocked = isPaidInvoiceEffectivelyLocked || isProviderOnlyUser || isControllerRole || clientFinanceInputLocked;
   const canEditOpsEvenIfLocked = !negativeLockBlocks && (isBarbaraFinance || !isEffectivelyLocked) && !isPaidInvoiceEffectivelyLocked;
   // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
   // da memória de cálculo devem ACOMPANHAR a tabela escolhida sempre que o
@@ -758,29 +765,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // travada — a persistência continua exclusiva do fluxo de Salvar/Aprovar.
   const lockAllowsRecalc = !negativeLockBlocks && (!isEffectivelyLocked || canEditTablesEvenIfLocked || fullEditMode) && !isPaidInvoiceEffectivelyLocked;
 
-  // Confirmação obrigatória de pedágio: ao abrir o modal sem pedágio confirmado,
-  // exige resposta explícita do operador (Sim com valor / Não, sem pedágio).
-  // Controller/Plínio também confirma (botão laranja). Não dispara se o
-  // faturamento já está aprovado/travado (exceto o próprio controller).
-  // Só é exigido quando a missão está Concluída ou Cancelada — em outros status
-  // (Pendente, Em Andamento, etc.) o operador pode lançar pedágio à vontade
-  // sem o bloqueio do diálogo.
-  useEffect(() => {
-    if (!isOpen || !mission) return;
-    if (isEffectivelyLocked && !isProviderOnlyUser && !isControllerRole) return;
-    if (tollConfirmed || tollConfirmAutoOpened || showTollConfirmDialog) return;
-    if (isCalculatingToll) return;
-    const status = (mission.status || '').trim();
-    const requiresToll = status === 'Concluída' || status === 'Cancelada';
-    if (!requiresToll) return;
-    const hasApprovedToll = !!mission.billing_approved && mission.toll_value != null;
-    if (hasApprovedToll) return;
-    const t = setTimeout(() => {
-      setShowTollConfirmDialog(true);
-      setTollConfirmAutoOpened(true);
-    }, 600);
-    return () => clearTimeout(t);
-  }, [isOpen, mission?.id, mission?.status, tollConfirmed, tollConfirmAutoOpened, showTollConfirmDialog, isCalculatingToll, isProviderOnlyUser, isControllerRole, isEffectivelyLocked, mission?.billing_approved, mission?.toll_value]);
+  // O botão Confirmar Pedágio saiu da auditoria. O valor continua nos campos
+  // de pedágio e no salvamento; abrir o modal não exige mais o diálogo.
 
   const applyTollConfirmation = async (result: { hasToll: boolean; value: number }) => {
     if (isPaidInvoiceEffectivelyLocked) {
@@ -838,146 +824,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   
 
   const tollCalcMissionRef = React.useRef<string | null>(null);
-  const modalContentRef = React.useRef<HTMLDivElement>(null);
-  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
-  const [isCapturing, setIsCapturing] = useState(false);
 
-  /** Renderiza o print no DOM (html2canvas). Não grava no banco. */
-  const renderModalScreenshotBase64 = async (): Promise<{ base64: string | null; sizeKB: number; error?: string }> => {
-    const contentEl = modalContentRef.current;
-    if (!contentEl) {
-      console.warn('[Screenshot] modalContentRef não encontrado');
-      return { base64: null, sizeKB: 0, error: 'modalContentRef ausente' };
-    }
-    setIsCapturing(true);
-    try {
-      // Pausa curta para o React pintar o estado "capturando" sem inflar o spinner.
-      await new Promise(r => setTimeout(r, 80));
-
-      const originalScrollTop = contentEl.scrollTop;
-      const originalOverflow = contentEl.style.overflow;
-      const originalMaxH = contentEl.style.maxHeight;
-      const originalH = contentEl.style.height;
-
-      contentEl.scrollTop = 0;
-      contentEl.style.overflow = 'visible';
-      contentEl.style.maxHeight = 'none';
-      contentEl.style.height = 'auto';
-
-      await new Promise(r => setTimeout(r, 50));
-
-      // Escala menor: modal financeiro é alto; 0.5 reduz CPU/RAM sem perder legibilidade do print.
-      const canvas = await html2canvas(contentEl, {
-        scale: 0.5,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#f9fafb',
-        logging: false,
-        windowWidth: contentEl.scrollWidth,
-        windowHeight: Math.min(contentEl.scrollHeight, 3500),
-        ignoreElements: (el) => el.getAttribute('data-html2canvas-ignore') === 'true'
-      });
-
-      contentEl.style.overflow = originalOverflow;
-      contentEl.style.maxHeight = originalMaxH;
-      contentEl.style.height = originalH;
-      contentEl.scrollTop = originalScrollTop;
-
-      const maxWidth = 600;
-      const maxHeight = 2800;
-      let finalW = canvas.width;
-      let finalH = canvas.height;
-      if (finalW > maxWidth) {
-        const r = maxWidth / finalW;
-        finalW = maxWidth;
-        finalH = Math.round(canvas.height * r);
-      }
-      if (finalH > maxHeight) {
-        finalH = maxHeight;
-      }
-
-      const resizedCanvas = document.createElement('canvas');
-      resizedCanvas.width = finalW;
-      resizedCanvas.height = finalH;
-      const ctx = resizedCanvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(canvas, 0, 0, finalW, finalH);
-      }
-
-      let base64 = resizedCanvas.toDataURL('image/jpeg', 0.4);
-      let sizeKB = Math.round(base64.length * 0.75 / 1024);
-      if (sizeKB > 600) {
-        base64 = resizedCanvas.toDataURL('image/jpeg', 0.22);
-        sizeKB = Math.round(base64.length * 0.75 / 1024);
-      }
-      if (sizeKB > 2000) {
-        console.warn(`[Screenshot] Imagem muito grande (${sizeKB}KB), metadados sem print`);
-        return { base64: null, sizeKB, error: `Imagem excedeu limite (${sizeKB}KB)` };
-      }
-      return { base64, sizeKB };
-    } finally {
-      setIsCapturing(false);
-    }
-  };
-
-  /** Persistência do print em system_logs — fail-soft (pode rodar em background). */
-  const persistApprovalScreenshotLog = async (
-    stageName: string,
-    userName: string,
-    base64: string | null,
-    sizeKB: number,
-    extra?: { error?: string },
-  ): Promise<void> => {
-    if (!mission) return;
-    const { error: insertError } = await supabase.from('system_logs').insert([{
-      user_name: userName,
-      action_type: 'APPROVAL_SCREENSHOT',
-      entity: 'BillingApproval',
-      entity_id: mission.id,
-      details: JSON.stringify({
-        stage: stageName,
-        user: userName,
-        date: new Date().toISOString(),
-        missionId: mission.id,
-        screenshot: base64,
-        sizeKB,
-        ...(extra?.error ? { error: extra.error } : {}),
-      })
-    }]);
-    if (insertError) {
-      console.error('[Screenshot] Erro ao salvar no banco:', insertError);
-      showNotification('Atenção', `Print de aprovação não foi salvo: ${insertError.message}`, 'error');
-      return;
-    }
-    if (base64) {
-      console.log(`[Screenshot] Captura salva com sucesso (${sizeKB}KB) - ${stageName}`);
-    }
-  };
-
-  /**
-   * Captura o print no DOM e dispara a gravação em background.
-   * Usado somente após o UPDATE da OS (aprovação), com o modal ainda aberto.
-   */
-  const captureModalScreenshotAfterSave = async (stageName: string, userName: string): Promise<void> => {
-    if (!mission) return;
-    try {
-      const rendered = await renderModalScreenshotBase64();
-      void persistApprovalScreenshotLog(
-        stageName,
-        userName,
-        rendered.base64,
-        rendered.sizeKB,
-        rendered.error ? { error: rendered.error } : undefined,
-      ).catch((err) => console.warn('[Screenshot] persist fail-soft:', err));
-    } catch (e: any) {
-      console.error('[Screenshot] Erro ao capturar:', e);
-      showNotification('Atenção', 'Não foi possível capturar o print de aprovação. Os dados financeiros foram salvos normalmente.', 'error');
-      void persistApprovalScreenshotLog(stageName, userName, null, 0, {
-        error: e?.message || 'Falha na captura',
-      }).catch(() => {});
-    }
-  };
-  
   const autoCalculateToll = async (origin: string, destination: string, missionId?: string) => {
     setTollInput('0,00');
     setTollProviderInput('0,00');
@@ -1154,6 +1001,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (!initialMission?.id || isSavingRef.current) return;
       userManuallyEditedRef.current = false;
       dbValuesLoadedRef.current = false;
+      openedTablesRef.current = null;
       staleAutoResyncDoneRef.current = null;
       setUseSavedValues(false);
       setIsLoading(true);
@@ -1441,7 +1289,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               fetchHistoricalPatterns(fullMission, (ptRes.data || []) as ProviderCostTable[]);
 
               const [approvalRes, adjustmentRes, editHistRes, tollConfRes] = await Promise.all([
-                  supabase.from('system_logs').select('*').eq('entity', 'BillingApproval').eq('entity_id', initialMission.id).order('created_at', { ascending: true }),
+                  supabase.from('system_logs').select('id, action_type, user_name, created_at, details').eq('entity', 'BillingApproval').eq('entity_id', initialMission.id).neq('action_type', 'APPROVAL_SCREENSHOT').order('created_at', { ascending: true }),
                   supabase.from('system_logs').select('*').eq('entity', 'BillingAdjustment').eq('entity_id', initialMission.id).order('created_at', { ascending: false }).limit(1),
                   supabase.from('system_logs').select('*').eq('entity', 'MissionEditHistory').eq('entity_id', initialMission.id).order('created_at', { ascending: false }),
                   supabase.from('system_logs').select('details, created_at, user_name').eq('entity', 'MissionTollConfirmation').eq('entity_id', initialMission.id).order('created_at', { ascending: false }).limit(1)
@@ -1485,11 +1333,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   setEditHistory([]);
               }
 
-              const logData = approvalRes.data;
-              if (logData && logData.length > 0) {
+              const logData = (approvalRes.data || []).filter((l: any) => l.action_type !== 'APPROVAL_SCREENSHOT' && !String(l.details || '').includes('"screenshot"'));
+              if (logData.length > 0) {
                   setApprovalLog(logData.map((l: any) => {
-                      try { return JSON.parse(l.details); } catch { return { user: l.user_name, role: '', stage: l.action_type, date: l.created_at }; }
-                  }));
+                      try {
+                          const parsed = JSON.parse(l.details);
+                          if (parsed?.screenshot) return null;
+                          return {
+                              user: parsed.user || l.user_name || '',
+                              role: parsed.role || '',
+                              stage: parsed.stage || l.action_type,
+                              date: parsed.date || l.created_at,
+                              changes: Array.isArray(parsed.changes) ? parsed.changes : [],
+                          };
+                      } catch { return { user: l.user_name, role: '', stage: l.action_type, date: l.created_at, changes: [] }; }
+                  }).filter(Boolean) as Array<{ user: string; role: string; stage: string; date: string }>);
               }
 
               if (adjustmentRes.data && adjustmentRes.data.length > 0) {
@@ -2014,6 +1872,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   }, [financialData?.client?.detectionLog, financialData?.client?.tableId, financialData?.realTraveledKm, manualClientTableId, mission]);
 
     useEffect(() => {
+      if (isLoading || !financialData || openedTablesRef.current) return;
+      const providerId = manualProviderTableId && !String(manualProviderTableId).startsWith('auto-')
+        ? String(manualProviderTableId)
+        : String(financialData.provider.tableId || '');
+      openedTablesRef.current = {
+        clientId: String(manualClientTableId || financialData.client.tableId || ''),
+        clientName: String(financialData.client.tableName || ''),
+        providerId,
+        providerName: String(financialData.provider.tableName || ''),
+      };
+    }, [isLoading, financialData, manualClientTableId, manualProviderTableId]);
+
+    useEffect(() => {
       if (financialData && mission && !isLoading) {
           const fmtBR = (v: number) => v.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
           // Total da MEMÓRIA DE CÁLCULO — mesma expressão exibida na linha
@@ -2024,7 +1895,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               ? 0
               : financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
 
-          const canAutoFill = !dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current;
+          // Salvar / conferir / aprovar desliga o motor. O número grande fica no
+          // valor gravado até o usuário trocar a tabela atual por outra.
+          const savedBillingFrozen = hasPersistedBillingFreeze(mission);
+          const canAutoFill = !dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && !savedBillingFrozen;
           if (canAutoFill) {
               setRevenueInput(fmtBR(autoClientTotal));
               setCostInput(fmtBR(autoProviderTotal));
@@ -2047,7 +1921,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               && !hasFrozenOrApproved
               && !revIntentional
               && !costIntentional
-              && !userManuallyEditedRef.current;
+              && !userManuallyEditedRef.current
+              && !savedBillingFrozen;
 
           if (canResyncSaved) {
               const currentRev = parseNumber(revenueInput);
@@ -2150,6 +2025,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // Motor automático é fonte oficial na TELA apenas quando não há
           // override/salvamento manual nem OS conferida/aprovada.
           if (financialData.autoEngine?.active && !mission.is_same_os && !userManuallyEditedRef.current && !isSavingRef.current && !isControllerRole
+              && !savedBillingFrozen
               && !isIntentionalBillingOverride(mission.cost_edit_reason)
               && !(mission.billing_approved || mission.snapshot_approved_by || mission.billing_verified_by)) {
               const engineCostTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
@@ -2163,6 +2039,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // Regra: depois de salvo/aprovado ou com override intencional, NUNCA
           // sobrescrever valores do banco por recálculo automático.
           if (isCevaLogitech && dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && lockAllowsRecalc
+              && !savedBillingFrozen
               && !isIntentionalBillingOverride(mission.revenue_edit_reason)
               && !isIntentionalBillingOverride(mission.cost_edit_reason)
               && !(mission.billing_approved || mission.snapshot_approved_by || mission.billing_verified_by)) {
@@ -2263,15 +2140,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         }
         // Quando o faturamento está travado (já salvo/aprovado) e não houve destravamento,
         // não permitimos que o auto-recálculo sobrescreva os valores salvos no banco.
-        // Task #143: se o usuário tem permissão de trocar a tabela mesmo travado
-        // (lockAllowsRecalc), liberamos os refs para que o número grande/breakdown
-        // acompanhem a nova tabela na tela — sem gravar nada no banco.
+        // Task #143: trocar para uma tabela NOVA atualiza o número grande na hora
+        // (swapClientTable / swapProviderTable). Hidratar o id da tabela já salva,
+        // ou reselecionar a mesma, não solta o valor gravado.
         if (!lockAllowsRecalc) {
+            return;
+        }
+        if (hasPersistedBillingFreeze(mission)) {
             return;
         }
         dbValuesLoadedRef.current = false;
         userManuallyEditedRef.current = false;
-    }, [manualClientTableId, manualProviderTableId, customClientBase, customClientKm, customClientHour, customProviderBase, customProviderKm, customProviderHour, iblEnabled, providerOpsOverride, isLoading, isEffectivelyLocked, lockAllowsRecalc]);
+    }, [manualClientTableId, manualProviderTableId, customClientBase, customClientKm, customClientHour, customProviderBase, customProviderKm, customProviderHour, iblEnabled, providerOpsOverride, isLoading, isEffectivelyLocked, lockAllowsRecalc, mission]);
 
 
   const handleTollChange = (val: string) => {
@@ -2520,45 +2400,22 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       }
   };
 
-  // Troca rápida da TABELA DE PREÇO do cliente (campo Receita). Define a tabela
-  // manual, limpa overrides e flags de verificação/edição para que o cálculo
-  // automático refaça o total com a nova tabela. O autofill (effect de params)
-  // atualiza o revenueInput sozinho; "Aplicar e Salvar" chama handleUpdate.
+  // Troca da tabela do cliente. A mesma tabela não mexe no valor salvo.
+  // Tabela nova: refaz só o número grande do cliente (serviço + pedágio + deslocamento).
+  // Conferência, motivo e banco permanecem até o Salvar.
   const swapClientTable = (id: string) => {
+      if (financeApprovedClientLock || !canEditClientData) return;
+      if (!shouldRecalcOnTableChange(manualClientTableId, id)) return;
       setManualClientTableId(id);
       setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour('');
-      setUseSavedValues(false);
-      userManuallyEditedRef.current = false;
-      dbValuesLoadedRef.current = false;
-      if (!(isBillingLocked && canEditClientTablesEvenIfLocked)) {
-          setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
-          if (mission) {
-              supabase.from('missions')
-                  .update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null })
-                  .eq('id', mission.id)
-                  .then(({ error }) => { if (error) console.error('Erro ao limpar flags (troca tabela cliente):', error); });
-          }
-      }
       recalcBigNumbersOnTableSwap({ clientTableId: id });
   };
 
-  // Troca rápida da TABELA DE CUSTO do fornecedor (campo Custo). Mesma lógica do
-  // cliente, aplicada aos parâmetros do fornecedor.
+  // Troca da tabela do fornecedor. Mesma regra do cliente, só no custo.
   const swapProviderTable = (id: string) => {
+      if (!shouldRecalcOnTableChange(manualProviderTableId, id)) return;
       setManualProviderTableId(id);
       setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
-      setUseSavedValues(false);
-      userManuallyEditedRef.current = false;
-      dbValuesLoadedRef.current = false;
-      if (!(isBillingLocked && canEditProviderTablesEvenIfLocked)) {
-          setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
-          if (mission) {
-              supabase.from('missions')
-                  .update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null })
-                  .eq('id', mission.id)
-                  .then(({ error }) => { if (error) console.error('Erro ao limpar flags (troca tabela fornecedor):', error); });
-          }
-      }
       recalcBigNumbersOnTableSwap({ providerTableId: id });
   };
 
@@ -2729,13 +2586,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           showNotification('Bloqueado', 'Esta OS foi aprovada pela Diretoria. Somente a Diretoria pode editar.', 'error');
           return;
       }
-      // Gate de pedágio (Task #45): a aprovação requer confirmação manual
-      // explícita, mesmo para reaprovação privilegiada ou OS bloqueada.
-      // Confirma cruzando com system_logs (TOLL_CONFIRMATION) e o valor
-      // do input atual, sem confiar apenas em estado local.
-      // Só é exigido quando a missão está Concluída ou Cancelada.
-      const missionStatusTrim = (mission.status || '').trim();
-      const requiresTollGate = missionStatusTrim === 'Concluída' || missionStatusTrim === 'Cancelada';
+      // O botão Confirmar Pedágio saiu da auditoria. Aprovar não depende mais desse diálogo.
       if (approve && opsIncomplete) {
           showNotification(
               'Dados Operacionais Pendentes',
@@ -2745,48 +2596,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           opsDataSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
           return;
       }
-      if (approve && !mission.billing_approved && requiresTollGate && !isBarbaraFinance) {
-          if (!tollConfirmed) {
-              setShowTollConfirmDialog(true);
-              showNotification('Pedágio Não Confirmado', 'Confirme se há ou não pedágio antes de aprovar.', 'error');
-              return;
-          }
-          try {
-              const inputToll = parseNumber(tollInput);
-              const { data: tollLogs } = await supabase
-                  .from('system_logs')
-                  .select('details')
-                  .eq('entity', 'MissionTollConfirmation')
-                  .eq('entity_id', mission.id)
-                  .order('created_at', { ascending: false })
-                  .limit(1);
-              const log = tollLogs && tollLogs[0];
-              let matched = false;
-              if (log) {
-                  const parsed = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
-                  const loggedValue = Number(parsed?.value ?? 0);
-                  if (Math.abs(loggedValue - inputToll) < 0.01) matched = true;
-              }
-              if (!matched) {
-                  setTollConfirmed(false);
-                  setShowTollConfirmDialog(true);
-                  showNotification('Pedágio Não Confirmado', 'O valor exibido não corresponde à última confirmação registrada. Confirme novamente.', 'error');
-                  return;
-              }
-          } catch (e) {
-              console.error('[TollConfirm] verificação pré-aprovação falhou', e);
-              showNotification('Erro', 'Não foi possível validar a confirmação de pedágio. Tente novamente.', 'error');
-              return;
-          }
-      }
-
       const originalRevenue = (mission.revenue_value || 0) + (mission.toll_value || 0) + ((mission as any).displacement_value || 0);
       const isSameOs = mission.is_same_os === true;
-      const revTotal = isController ? originalRevenue : parseNumber(revenueInput);
+      const keepSavedClient = isController || financeApprovedClientLock;
+      const revTotal = keepSavedClient ? originalRevenue : parseNumber(revenueInput);
       const costTotal = isSameOs ? 0 : parseNumber(costInput);
-      const toll = parseNumber(tollInput);
+      const toll = financeApprovedClientLock ? Number(mission.toll_value || 0) : parseNumber(tollInput);
       const tollProv = providerTollToPersist(parseNumber(tollProviderInput), isSameOs);
-      const displacement = isController ? ((mission as any).displacement_value || 0) : parseNumber(displacementInput);
+      const displacement = keepSavedClient ? ((mission as any).displacement_value || 0) : parseNumber(displacementInput);
       const dispProv = isSameOs ? 0 : parseNumber(displacementProviderInput);
       const calcRevTotal = financialData ? (financialData.client.serviceTotal + toll + displacement) : 0;
       const calcCostTotal = financialData ? (financialData.provider.serviceTotal + tollProv + dispProv) : 0;
@@ -2833,13 +2650,28 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const origDispProv = (mission as any).displacement_value_provider || 0;
       const newRevenueService = revTotal - toll - displacement;
       const newCostService = costTotal - tollProv - dispProv;
-      const detectedChanges: string[] = [];
-      if (Math.abs(origRevenueService - newRevenueService) > 0.01) detectedChanges.push(`Serviço Cliente: R$ ${origRevenueService.toFixed(2)} → R$ ${newRevenueService.toFixed(2)}`);
-      if (Math.abs(origCost - newCostService) > 0.01) detectedChanges.push(`Serviço Fornecedor: R$ ${origCost.toFixed(2)} → R$ ${newCostService.toFixed(2)}`);
-      if (Math.abs(origToll - toll) > 0.01) detectedChanges.push(`Pedágio Cliente: R$ ${origToll.toFixed(2)} → R$ ${toll.toFixed(2)}`);
-      if (Math.abs(origTollProv - tollProv) > 0.01) detectedChanges.push(`Pedágio Fornecedor: R$ ${origTollProv.toFixed(2)} → R$ ${tollProv.toFixed(2)}`);
-      if (Math.abs(origDisp - displacement) > 0.01) detectedChanges.push(`Deslocamento Cliente: R$ ${origDisp.toFixed(2)} → R$ ${displacement.toFixed(2)}`);
-      if (Math.abs(origDispProv - dispProv) > 0.01) detectedChanges.push(`Deslocamento Fornecedor: R$ ${origDispProv.toFixed(2)} → R$ ${dispProv.toFixed(2)}`);
+      const detectedChanges: string[] = [
+          describeMoneyChange('Serviço Cliente', origRevenueService, newRevenueService),
+          describeMoneyChange('Serviço Fornecedor', origCost, newCostService),
+          describeMoneyChange('Pedágio Cliente', origToll, toll),
+          describeMoneyChange('Pedágio Fornecedor', origTollProv, tollProv),
+          describeMoneyChange('Deslocamento Cliente', origDisp, displacement),
+          describeMoneyChange('Deslocamento Fornecedor', origDispProv, dispProv),
+          describeTableChange(
+              'Tabela Cliente',
+              openedTablesRef.current?.clientId,
+              openedTablesRef.current?.clientName,
+              manualClientTableId || financialData?.client.tableId,
+              financialData?.client.tableName,
+          ),
+          describeTableChange(
+              'Tabela Fornecedor',
+              openedTablesRef.current?.providerId,
+              openedTablesRef.current?.providerName,
+              manualProviderTableId || financialData?.provider.tableId,
+              financialData?.provider.tableName,
+          ),
+      ].filter((line): line is string => !!line);
       const requiresPostApprovalNote = wasAlreadyApproved && detectedChanges.length > 0 && !approve;
       // Controller/Plínio: o motivo do ajuste de fornecedor JÁ é a justificativa
       // oficial — não exigir um segundo campo de observação além do motivo.
@@ -2879,11 +2711,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const userName = userData.name || 'Usuário';
           const userRole = userData.role || '';
           
-          // Print de auditoria NÃO bloqueia mais o caminho crítico.
-          // Antes: html2canvas + INSERT de JPEG base64 rodavam ANTES do UPDATE
-          // em missions — Salvar/Aprovar pareciam "travados" por vários segundos.
-          // Agora: grava a OS primeiro; captura o print só na aprovação, depois.
-          const { stage: captureStage } = getApprovalStage(userName, userRole);
+          // Sem captura de tela: o histórico fica só em texto
+          // (dia / horário · login > alteração). O JPEG em system_logs
+          // travava o Chrome na aprovação e ao reabrir a OS.
 
           const revServiceOnly = revTotal - toll - displacement; 
           const costServiceOnly = costTotal - tollProv - dispProv;
@@ -2891,6 +2721,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const { stage, label } = getApprovalStage(userName, userRole);
           
           const newLog = [...approvalLog];
+          let appendedApproval: { user: string; role: string; stage: string; date: string; changes: string[] } | null = null;
           if (approve) {
               // Re-aprovação permitida para usuários privilegiados (Barbara, Daniel, Thiago):
               // atualiza o carimbo do estágio com o nome e a data mais recente.
@@ -2899,9 +2730,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   || uNameLow.includes('daniel') || uNameLow.includes('michelle')
                   || uNameLow.includes('thiago');
               const existingIdx = newLog.findIndex(l => l.stage === stage);
-              const logEntry = { user: userName, role: userRole, stage, date: new Date().toISOString() };
+              const logEntry = { user: userName, role: userRole, stage, date: new Date().toISOString(), changes: detectedChanges };
               if (existingIdx < 0) {
                   newLog.push(logEntry);
+                  appendedApproval = logEntry;
                   await supabase.from('system_logs').insert([{
                       user_name: userName,
                       action_type: stage,
@@ -2911,6 +2743,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   }]);
               } else if (allowReapprove) {
                   newLog[existingIdx] = logEntry;
+                  appendedApproval = logEntry;
                   await supabase.from('system_logs').insert([{
                       user_name: userName,
                       action_type: `${stage}_reapproval`,
@@ -3083,13 +2916,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
 
-          // Controller/Plínio: payload do fornecedor + pedágio do cliente (auditoria).
-          // Receita, deslocamento cliente, aprovação e snapshot não entram no UPDATE.
+          // Controller/Plínio: só o fornecedor. Receita, pedágio e deslocamento
+          // do cliente, aprovação e snapshot não entram no UPDATE.
           const fullPayload = isProviderOnlyUser
               ? {
                   ...buildProviderOnlyMissionPayload({
                       costValue: isSameOs ? 0 : r2(costServiceOnly),
-                      tollValue: r2(toll),
                       tollValueProvider: isSameOs ? 0 : r2(tollProv),
                       displacementValueProvider: isSameOs ? 0 : r2(dispProv),
                       costEditReason: reasonFields.cost_edit_reason || null,
@@ -3159,7 +2991,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               if (result.error && isProviderOnlyUser && reasonFields.cost_edit_reason) {
                   result = await supabase.from('missions').update({
                       cost_value: isSameOs ? 0 : r2(costServiceOnly),
-                      toll_value: r2(toll),
                       toll_value_provider: isSameOs ? 0 : r2(tollProv),
                       displacement_value_provider: isSameOs ? 0 : r2(dispProv),
                       cost_edit_reason: reasonFields.cost_edit_reason,
@@ -3426,22 +3257,24 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               showNotification('Erro', 'OS salva, mas falhou ao registrar log de ajuste: ' + adjInsRes.error.message, 'error');
           }
 
-          // Histórico permanente de alterações da OS (Data / Quem / Mudanças /
-          // Observação). Acumulativo: nunca apaga registros anteriores. Gravado
-          // sempre que houver alteração de valor após uma aprovação prévia.
-          if (wasAlreadyApproved && detectedChanges.length > 0) {
+          // Histórico permanente (Data / Quem / Mudanças). Acumulativo.
+          // Grava tabela e valor de/para em todo Salvar ou Aprovar que altere a OS.
+          if (detectedChanges.length > 0) {
               const nowIso = new Date().toISOString();
               const histPayload = {
                   user: userName,
                   role: userRole,
                   date: nowIso,
                   changes: detectedChanges,
-                  note: providerSaveObservation.observation || editObservation.trim() || (approve ? 'Reaprovação' : ''),
+                  note: providerSaveObservation.observation || editObservation.trim() || (approve && wasAlreadyApproved ? 'Reaprovação' : ''),
                   approve
               };
+              const histAction = wasAlreadyApproved
+                  ? (approve ? 'POST_APPROVAL_REAPPROVE' : 'POST_APPROVAL_EDIT')
+                  : 'BILLING_EDIT';
               const histRes = await supabase.from('system_logs').insert([{
                   user_name: userName,
-                  action_type: approve ? 'POST_APPROVAL_REAPPROVE' : 'POST_APPROVAL_EDIT',
+                  action_type: histAction,
                   entity: 'MissionEditHistory',
                   entity_id: mission.id,
                   details: JSON.stringify(histPayload)
@@ -3451,6 +3284,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               } else {
                   setEditHistory(prev => [{ user: userName, date: nowIso, changes: detectedChanges, note: histPayload.note }, ...prev]);
                   setEditObservation('');
+                  openedTablesRef.current = {
+                      clientId: String(manualClientTableId || financialData?.client.tableId || ''),
+                      clientName: String(financialData?.client.tableName || ''),
+                      providerId: String(manualProviderTableId || financialData?.provider.tableId || ''),
+                      providerName: String(financialData?.provider.tableName || ''),
+                  };
               }
           }
 
@@ -3458,7 +3297,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const verifiedLabel = `${userName} (${dateStr})`;
           setSavedByInfo(verifiedLabel);
 
-          setApprovalLog(newLog);
+          if (appendedApproval) setApprovalLog(prev => [...prev, appendedApproval]);
           
           setUseSavedValues(true);
           dbValuesLoadedRef.current = true;
@@ -3511,12 +3350,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
               showNotification('OS travada', 'Prejuízo analisado e travado. Somente a Diretoria pode alterar esta OS.', 'success');
           } else {
-          // Print só na aprovação, DEPOIS do UPDATE (OS já persistida).
-          // Upload do JPEG em system_logs roda em background dentro do helper.
-          if (shouldCaptureApprovalScreenshot(approve)) {
-              await captureModalScreenshotAfterSave(captureStage, userName);
-          }
-
           if (approve) {
               const snapshotMsg = shouldSnapshot ? ' 🔒 Dados Congelados!' : '';
               if (isFullyApproved) {
@@ -3687,8 +3520,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const isZeroCostError = financialData && financialData.provider.base === 0 && !mission.is_same_os && (financialData.realTraveledKm > 0 || financialData.durationHours > 0);
   
-  const missionStatusTrim = (mission?.status || '').trim();
-  const requiresTollGate = missionStatusTrim === 'Concluída' || missionStatusTrim === 'Cancelada';
+  const requiresTollGate = false;
   const footerRevTotal = parseNumber(revenueInput);
   const footerCostTotal = parseNumber(costInput);
   const footerProfit = footerRevTotal - footerCostTotal;
@@ -3842,45 +3674,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                               <Sparkles size={12} /> Atualizar IA
                           </button>
                       )}
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {isCapturing && (
-          <div className="absolute inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl px-8 py-6 flex items-center gap-4 shadow-2xl border-2 border-blue-200 animate-pulse">
-                  <Camera size={28} className="text-blue-600" />
-                  <div>
-                      <p className="text-sm font-black text-blue-800 uppercase">Capturando Print...</p>
-                      <p className="text-[10px] text-gray-500">Registrando tela para auditoria</p>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {screenshotPreview && (
-          <div className="absolute inset-0 z-[115] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setScreenshotPreview(null)}>
-              <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-                  <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-emerald-50 to-blue-50">
-                      <div className="flex items-center gap-3">
-                          <div className="p-2 bg-emerald-100 rounded-lg"><Camera size={18} className="text-emerald-700" /></div>
-                          <div>
-                              <p className="text-sm font-black text-gray-800 uppercase">Print da Aprovacao</p>
-                              <p className="text-[10px] text-gray-500">Registro visual no momento da aprovacao - {mission.id}</p>
-                          </div>
-                      </div>
-                      <button onClick={() => setScreenshotPreview(null)} className="p-2 rounded-full hover:bg-gray-100 transition-colors">
-                          <X size={20} className="text-gray-500" />
-                      </button>
-                  </div>
-                  <div className="flex-1 overflow-auto p-4 bg-gray-100">
-                      <img src={screenshotPreview} alt="Print da aprovação" className="w-full rounded-xl border border-gray-300 shadow-lg" />
-                  </div>
-                  <div className="p-3 border-t bg-white flex justify-end">
-                      <a href={screenshotPreview} download={`print_${mission.id}_${Date.now()}.jpg`} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors" data-testid="btn-download-screenshot">
-                          <Save size={14} /> Baixar Imagem
-                      </a>
                   </div>
               </div>
           </div>
@@ -4423,7 +4216,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           </div>
         )}
 
-        <div ref={modalContentRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-gray-50 pb-4 sm:pb-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-gray-50 pb-4 sm:pb-6">
             <PaidInvoiceLockPanel
                 lock={paidInvoiceLock}
                 unlocked={paidUnlockOverride}
@@ -5103,6 +4896,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         const handleChange = (newTableId: string) => {
                                             if (!canEditClientData) return;
                                             if ((isController || isEffectivelyLocked) && !canEditTablesEvenIfLocked) return;
+                                            if (!shouldRecalcOnTableChange(manualClientTableId, newTableId)) return;
                                             // Task #111: registra correção do auditor quando troca a sugestão do motor DHL.
                                             try {
                                                 const sug = dhlEngineSuggestionRef.current;
@@ -5169,25 +4963,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             } catch (err) {
                                                 console.warn('[DHL Memória] Erro ao capturar correção:', err);
                                             }
+                                            // Tabela nova: só a tela. Motivo, conferência e valor no banco
+                                            // continuam até o Salvar.
                                             setManualClientTableId(newTableId);
                                             setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour('');
-                                            setUseSavedValues(false);
-                                            userManuallyEditedRef.current = false;
-                                            // "Só abrir o campo, sem regravar": quando a auditoria troca a tabela
-                                            // numa OS já SALVA/APROVADA (lock ativo), a mudança fica apenas em
-                                            // estado local; nada é regravado no banco até o Salvar/Aprovar explícito,
-                                            // preservando billing_verified_by e os snapshots imutáveis.
-                                            if (!(isBillingLocked && canEditTablesEvenIfLocked)) {
-                                                setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
-                                                if (mission) {
-                                                    supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id).then(res => {
-                                                        if (res.error) {
-                                                            console.error('[Tabela Cliente] Falha ao limpar verificação:', res.error);
-                                                            showNotification('Erro', 'Não foi possível atualizar a tabela de preço: ' + res.error.message, 'error');
-                                                        }
-                                                    });
-                                                }
-                                            }
                                             recalcBigNumbersOnTableSwap({ clientTableId: newTableId });
                                         };
                                         return (
@@ -5629,20 +5408,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         const handleChange = (val: string) => {
                                             if (isEffectivelyLocked && !fullEditMode && !canEditTablesEvenIfLocked) return;
                                             if (financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider && !isProviderOnlyUser) return;
+                                            if (!shouldRecalcOnTableChange(manualProviderTableId, val)) return;
+                                            // Tabela nova: só a tela. Motivo, conferência e valor no banco
+                                            // continuam até o Salvar.
                                             setManualProviderTableId(val);
                                             setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
-                                            setUseSavedValues(false);
-                                            userManuallyEditedRef.current = false;
-                                            // "Só abrir o campo, sem regravar": numa OS já SALVA/APROVADA a troca da
-                                            // tabela de custo pela auditoria fica apenas em estado local até o
-                                            // Salvar/Aprovar explícito (preserva snapshots imutáveis).
-                                            if (!(isBillingLocked && canEditTablesEvenIfLocked)) {
-                                                const resetPayload = isProviderOnlyUser
-                                                    ? { cost_edit_reason: '' }
-                                                    : { revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null };
-                                                setMission(prev => prev ? { ...prev, ...resetPayload } : prev);
-                                                if (mission) supabase.from('missions').update(resetPayload).eq('id', mission.id);
-                                            }
                                             recalcBigNumbersOnTableSwap({ providerTableId: val });
                                         };
                                         // EDIÇÃO TOTAL (Barbara/Thiago/Simone/diretoria/admin) destrava o
@@ -5886,15 +5656,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <div className="flex items-center gap-1.5 text-[10px] font-black text-white bg-green-600 px-2 py-1 rounded-lg border border-green-700">
                                         <CheckCircle2 size={12}/> {tollSource || 'CONFIRMADO'}
                                     </div>
-                                )}
-                                {!isCalculatingToll && !tollConfirmed && (
-                                    <button
-                                        onClick={() => setShowTollConfirmDialog(true)}
-                                        className="flex items-center gap-1.5 text-[10px] font-black text-white bg-orange-500 hover:bg-orange-600 px-3 py-1.5 rounded-lg border border-orange-600 animate-pulse cursor-pointer transition-colors"
-                                        data-testid="button-open-toll-confirmation"
-                                    >
-                                        <AlertTriangle size={12}/> CONFIRMAR PEDÁGIO
-                                    </button>
                                 )}
                                 {!isCalculatingToll && tollConfirmed && !isEffectivelyLocked && (
                                     <button
@@ -6326,44 +6087,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                     {approvalLog.length > 0 && (
                         <div className="mx-4 mb-4 p-3 bg-gradient-to-r from-emerald-50 to-blue-50 rounded-xl border border-emerald-200">
                             <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest mb-2">Histórico de Aprovações</p>
-                            <div className="flex flex-wrap gap-2">
-                                {approvalLog.map((log, i) => (
-                                    <div key={i} className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-emerald-200 shadow-sm" data-testid={`approval-log-${i}`}>
-                                        <CheckCircle2 size={12} className={log.stage === 'auditor' ? 'text-amber-500' : log.stage === 'financeiro' ? 'text-blue-500' : log.stage === 'controller' ? 'text-purple-500' : 'text-emerald-600'} />
-                                        <div>
-                                            <span className="text-[10px] font-black text-gray-800">
-                                                {log.stage === 'auditor' ? 'Auditor' : log.stage === 'financeiro' ? 'Financeiro' : log.stage === 'diretoria' ? 'Diretoria' : log.stage === 'controller' ? 'Controller' : log.stage}
-                                            </span>
-                                            <span className="text-[9px] text-gray-500 ml-1">({log.user})</span>
-                                            <p className="text-[8px] text-gray-400 font-mono">{formatDateTimeBR(log.date)}</p>
-                                        </div>
-                                        <button
-                                            onClick={async () => {
-                                                const { data } = await supabase.from('system_logs')
-                                                    .select('details')
-                                                    .eq('entity', 'BillingApproval')
-                                                    .eq('entity_id', mission.id)
-                                                    .eq('action_type', 'APPROVAL_SCREENSHOT')
-                                                    .order('created_at', { ascending: false });
-                                                if (data) {
-                                                    const match = data.find(d => {
-                                                        try { const p = JSON.parse(d.details); return p.stage === log.stage; } catch { return false; }
-                                                    });
-                                                    if (match) {
-                                                        try { setScreenshotPreview(JSON.parse(match.details).screenshot); } catch {}
-                                                    } else {
-                                                        showNotification('Sem Print', 'Nenhum print de tela encontrado para esta aprovação.', 'error');
-                                                    }
-                                                }
-                                            }}
-                                            className="p-1 rounded-md hover:bg-emerald-100 transition-colors ml-1"
-                                            title="Ver print da aprovação"
-                                            data-testid={`btn-view-screenshot-${log.stage}`}
-                                        >
-                                            <Camera size={12} className="text-emerald-600" />
-                                        </button>
-                                    </div>
-                                ))}
+                            <div className="flex flex-col gap-1">
+                                {approvalLog.map((log, i) => {
+                                    const stageLabel = log.stage === 'auditor' ? 'Aprovado pelo Auditor' : log.stage === 'financeiro' ? 'Aprovado pelo Financeiro' : log.stage === 'diretoria' ? 'Aprovado pela Diretoria' : log.stage === 'controller' ? 'Aprovado pelo Controller' : log.stage.endsWith('_reapproval') ? 'Reaprovação' : `Aprovado (${log.stage})`;
+                                    const alteracao = formatHistoryAlteration(stageLabel, log.changes);
+                                    return (
+                                    <p key={i} className="text-[11px] font-mono text-gray-800 bg-white px-3 py-1.5 rounded-lg border border-emerald-200" data-testid={`approval-log-${i}`}>
+                                        {formatDateBR(log.date)} / {formatTimeBR(log.date)} · {log.user || '—'} &gt; {alteracao}
+                                    </p>
+                                    );
+                                })}
                             </div>
                             <div className="flex gap-1.5 mt-2">
                                 <div className={`h-1.5 flex-1 rounded-full ${currentApprovalStatus.hasAuditor ? 'bg-amber-400' : 'bg-gray-200'}`} title="Auditor" />
@@ -6518,27 +6251,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-2 flex items-center gap-1.5">
                                 <History size={12} /> Histórico de Alterações ({editHistory.length})
                             </p>
-                            <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
-                                {editHistory.map((h, i) => (
-                                    <div key={i} className="bg-white px-3 py-2 rounded-lg border border-amber-200 shadow-sm" data-testid={`edit-history-${i}`}>
-                                        <div className="flex items-center justify-between gap-2 mb-1">
-                                            <span className="text-[10px] font-black text-gray-800 uppercase">{h.user}</span>
-                                            <span className="text-[9px] text-gray-500 font-mono">{formatDateTimeBR(h.date)}</span>
-                                        </div>
-                                        {h.changes.length > 0 && (
-                                            <ul className="text-[10px] text-gray-700 font-mono space-y-0.5 mb-1">
-                                                {h.changes.map((c, j) => (
-                                                    <li key={j} className="leading-tight">• {c}</li>
-                                                ))}
-                                            </ul>
-                                        )}
-                                        {h.note && (
-                                            <p className="text-[10px] italic text-amber-800 bg-amber-50 border-l-2 border-amber-300 pl-2 py-0.5 mt-1">
-                                                Obs: {h.note}
-                                            </p>
-                                        )}
-                                    </div>
-                                ))}
+                            <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+                                {editHistory.map((h, i) => {
+                                    const alteracao = [...h.changes, h.note ? `Obs: ${h.note}` : ''].filter(Boolean).join(' · ') || 'Alteração';
+                                    return (
+                                    <p key={i} className="text-[11px] font-mono text-gray-800 bg-white px-3 py-1.5 rounded-lg border border-amber-200" data-testid={`edit-history-${i}`}>
+                                        {formatDateBR(h.date)} / {formatTimeBR(h.date)} · {h.user || '—'} &gt; {alteracao}
+                                    </p>
+                                    );
+                                })}
                             </div>
                         </div>
                     )}

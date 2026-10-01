@@ -4,27 +4,23 @@ import { describe, it } from 'node:test';
 import { shouldCaptureApprovalScreenshot } from '../lib/billing/missionFinancialSavePerf.ts';
 
 describe('Performance Salvar/Aprovar missão', () => {
-  it('print de auditoria só na aprovação (Salvar não captura)', () => {
+  it('aprovação não captura print de tela', () => {
     assert.equal(shouldCaptureApprovalScreenshot(false), false);
-    assert.equal(shouldCaptureApprovalScreenshot(true), true);
+    assert.equal(shouldCaptureApprovalScreenshot(true), false);
   });
 
-  it('MissionFinancialModal: UPDATE da OS antes do print; Salvar não chama captura', () => {
+  it('MissionFinancialModal: UPDATE da OS sem html2canvas nem print', () => {
     const source = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
     const handleStart = source.indexOf('const handleUpdate = async');
     const handleEnd = source.indexOf('const filteredProviderTables', handleStart);
     assert.ok(handleStart > 0 && handleEnd > handleStart, 'bloco handleUpdate encontrado');
     const block = source.slice(handleStart, handleEnd);
 
-    // Não pode haver captura bloqueando ANTES do update de missions
-    const updateIdx = block.indexOf("supabase.from('missions').update(fullPayload)");
-    const screenshotIdx = block.indexOf('captureModalScreenshotAfterSave');
-    assert.ok(updateIdx > 0, 'UPDATE missions presente');
-    assert.ok(screenshotIdx > 0, 'captura pós-save presente');
-    assert.ok(updateIdx < screenshotIdx, 'UPDATE deve vir antes do print');
-
-    assert.match(block, /shouldCaptureApprovalScreenshot\(approve\)/);
-    assert.doesNotMatch(block, /await captureModalScreenshot\(/);
+    assert.ok(block.indexOf("supabase.from('missions').update(fullPayload)") > 0, 'UPDATE missions presente');
+    assert.equal(source.indexOf('captureModalScreenshotAfterSave'), -1);
+    assert.doesNotMatch(source, /import html2canvas/);
+    assert.doesNotMatch(source, /action_type:\s*'APPROVAL_SCREENSHOT'/);
+    assert.match(source, /neq\('action_type', 'APPROVAL_SCREENSHOT'\)/);
   });
 
   it('UpdateMissionModal: envio WhatsApp ao grupo não prende o spinner do save', () => {

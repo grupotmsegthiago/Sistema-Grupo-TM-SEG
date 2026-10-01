@@ -28,11 +28,11 @@ describe('Permissões financeiras do Plínio', () => {
   it('T03 bloqueia aprovação e libera Salvar só no fornecedor', () => {
     const source = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
     assert.match(source, /if \(isProviderOnlyUser && approve\)/);
-    assert.match(source, /disabled=\{isProviderOnlyUser \|\| isUpdating/);
+    assert.match(source, /disabled=\{[^}]*isProviderOnlyUser \|\| isUpdating/);
     assert.match(source, /readOnly=\{clientFinanceInputLocked\}/);
     assert.match(source, /canSaveProviderAdjustments = isProviderOnlyUser/);
-    assert.match(source, /providerFinanceInputLocked = \(?isEffectivelyLocked && !isProviderOnlyUser/);
-    assert.match(source, /disabled=\{isUpdating \|\| \(!canSaveProviderAdjustments/);
+    assert.match(source, /providerFinanceInputLocked = negativeLockBlocks \|\| \(isEffectivelyLocked && !isProviderOnlyUser\)/);
+    assert.match(source, /disabled=\{isUpdating \|\| negativeLockBlocks \|\| \(!canSaveProviderAdjustments/);
   });
 
   it('T04 não classifica mais Plínio como Diretoria ou re-aprovador', () => {
@@ -62,12 +62,12 @@ describe('Permissões financeiras do Plínio', () => {
     assert.ok(start >= 0 && end > start);
     assert.match(payloadBlock, /buildProviderOnlyMissionPayload\(/);
     assert.match(payloadBlock, /costValue:/);
-    assert.match(payloadBlock, /tollValue:/);
+    assert.doesNotMatch(payloadBlock, /tollValue:/);
     assert.match(payloadBlock, /tollValueProvider:/);
     assert.match(payloadBlock, /displacementValueProvider:/);
     assert.doesNotMatch(payloadBlock, /\n\s+revenue_value:/);
     assert.doesNotMatch(payloadBlock, /\n\s+billing_approved:/);
-    assert.match(source, /const providerSelectorDisabled = !fullEditMode && \(mission\.is_same_os/);
+    assert.match(source, /const providerSelectorDisabled = negativeLockBlocks \|\| \(!fullEditMode && \(mission\.is_same_os/);
   });
 });
 

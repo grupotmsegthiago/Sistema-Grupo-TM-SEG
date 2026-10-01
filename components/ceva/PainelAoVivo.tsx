@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { cabecalhosCeva, sairDoPortalCeva } from '../../lib/cevaPortal/sessaoCliente';
 import { classeStatusSistema } from '../../lib/cevaPortal/status';
+import { usePortalCliente } from './portalMarca';
 import type { MissaoAoVivo } from '../../lib/cevaPortal/aoVivo';
 
 function hora(iso: string | null): string {
@@ -36,13 +36,15 @@ function Campo({ rotulo, texto }: { rotulo: string; texto: string }) {
 }
 
 function Linha({ ordem, missao }: { ordem: number; missao: MissaoAoVivo }) {
+  const portal = usePortalCliente();
+  const mostrar = (nome: string) => !portal.marca.colunasOcultas.includes(nome);
   return (
     <li className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80">
       <div className="grid grid-cols-[52px_1fr]">
-        <div className="flex items-center justify-center bg-[#152c54] text-lg font-black text-white">{ordem}</div>
+        <div className="flex items-center justify-center bg-[var(--portal-marca)] text-lg font-black text-white">{ordem}</div>
         <div>
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2">
-            <p className="text-base font-black text-[#152c54]">OS {missao.os}</p>
+            <p className="text-base font-black text-[var(--portal-marca)]">OS {missao.os}</p>
             <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${classeStatusSistema(missao.status)}`}>
               {missao.status}
             </span>
@@ -58,11 +60,11 @@ function Linha({ ordem, missao }: { ordem: number; missao: MissaoAoVivo }) {
             <Campo rotulo="Local" texto={missao.local || ''} />
             <Campo rotulo="Km início" texto={missao.kmInicio == null ? '' : missao.kmInicio.toLocaleString('pt-BR')} />
             <Campo rotulo="Km fim" texto={missao.kmFim == null ? '' : missao.kmFim.toLocaleString('pt-BR')} />
-            <Campo rotulo="Solicitante" texto={missao.solicitante || ''} />
-            <Campo rotulo="Quem autorizou" texto={missao.quemAutorizou || ''} />
-            <Campo rotulo="Operação" texto={missao.operacao || ''} />
-            <Campo rotulo="TSP" texto={missao.tsp || ''} />
-            <Campo rotulo="Atendimento PGR" texto={missao.atendimentoPgr || ''} />
+            {mostrar('Solicitante') && <Campo rotulo="Solicitante" texto={missao.solicitante || ''} />}
+            {mostrar('Quem autorizou') && <Campo rotulo="Quem autorizou" texto={missao.quemAutorizou || ''} />}
+            {mostrar('Operação') && <Campo rotulo="Operação" texto={missao.operacao || ''} />}
+            {mostrar('TSP') && <Campo rotulo="TSP" texto={missao.tsp || ''} />}
+            {mostrar('Atendimento PGR') && <Campo rotulo="Atendimento PGR" texto={missao.atendimentoPgr || ''} />}
           </div>
           <p className="border-t border-slate-100 px-3 py-2 text-[11px] font-bold text-amber-800">Valores: aguardando validação até a OS ser aprovada no sistema.</p>
         </div>
@@ -72,6 +74,7 @@ function Linha({ ordem, missao }: { ordem: number; missao: MissaoAoVivo }) {
 }
 
 export const PainelAoVivo: React.FC = () => {
+  const portal = usePortalCliente();
   const [missoes, setMissoes] = useState<MissaoAoVivo[]>([]);
   const [erro, setErro] = useState('');
   const [quando, setQuando] = useState<string | null>(null);
@@ -80,10 +83,10 @@ export const PainelAoVivo: React.FC = () => {
     let ativo = true;
     async function carregar() {
       try {
-        const response = await fetch('/api/ceva-portal/ao-vivo', { headers: cabecalhosCeva() });
+        const response = await fetch(portal.url('/ao-vivo'), { headers: portal.cabecalhos() });
         const data = await response.json().catch(() => ({}));
         if (response.status === 401) {
-          sairDoPortalCeva();
+          portal.sair();
           return;
         }
         if (!response.ok) throw new Error(data.error || 'Não foi possível atualizar as missões.');
@@ -101,7 +104,7 @@ export const PainelAoVivo: React.FC = () => {
       ativo = false;
       window.clearInterval(relogio);
     };
-  }, []);
+  }, [portal]);
 
   const viagem = missoes.filter((missao) => missao.status === 'Em Viagem').length;
   const atualizado = quando ? hora(quando) : '';
@@ -110,8 +113,8 @@ export const PainelAoVivo: React.FC = () => {
     <div className="grid gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#c45b5b]">Ao vivo</p>
-          <h2 className="text-2xl font-black text-[#152c54]">Missões em andamento</h2>
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--portal-destaque)]">Ao vivo</p>
+          <h2 className="text-2xl font-black text-[var(--portal-marca)]">Missões em andamento</h2>
         </div>
         <p className="text-xs font-semibold text-slate-500">{missoes.length.toLocaleString('pt-BR')} no ar · {viagem.toLocaleString('pt-BR')} em viagem · atualizado {atualizado || 'agora'}</p>
       </div>

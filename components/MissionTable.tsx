@@ -38,7 +38,7 @@ import ExecutiveDashboard from './ExecutiveDashboard';
 import DhlSolicitationModal from './DhlSolicitationModal';
 import LossesDialog from './LossesDialog';
 import MissingTableDialog, { computeMissingTableRows, type MissingTableRow } from './MissingTableDialog';
-import { canSeeMissingTableAlert as userCanSeeMissingTable, mustForceMissingTable as userMustForceMissingTable } from '../lib/missingTableAccess';
+import { canSeeMissingTableAlert as userCanSeeMissingTable } from '../lib/missingTableAccess';
 import {
   fetchBillingAdjustmentsForMissionIds,
   type BillingAdjustmentRecord,
@@ -311,10 +311,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
   // Alerta "OS sem Tabela": Administrador e nomes históricos.
   // Perfis Operador e Avançado não veem, mesmo que o nome caia numa exceção.
+  // O card aparece quando há OS; a lista só abre no clique.
   const canSeeMissingTableAlert = useMemo(() => userCanSeeMissingTable(currentUser), [currentUser]);
-
-  // ADMINISTRADOR vê o alerta aberto ao entrar, enquanto houver OS sem tabela.
-  const mustForceMissingTable = useMemo(() => userMustForceMissingTable(currentUser), [currentUser]);
 
   // Conta quantas OS estão com prejuízo direto (custo > receita) no período
   // canônico selecionado. Com 0 OS o card não aparece (não abre tela vazia).
@@ -411,19 +409,6 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     }
   }, [canSeeMissingTableAlert, allMissions, missingTableExtra, missingTableAdj, clientTables, providerTables, clientsData]);
   const missingTableCount = missingTableRows.length;
-
-  // FORÇA o Administrador a tratar OS sem tabela: o alerta abre sozinho a
-  // cada montagem da tela (refresh) enquanto houver pendências. Ref evita reabrir
-  // repetidamente na mesma sessão depois que o usuário fechar.
-  // Perfil Avançado não entra nessa regra.
-  const forcedMissingOpenRef = useRef(false);
-  useEffect(() => {
-    if (!mustForceMissingTable) return;
-    if (missingTableCount > 0 && !forcedMissingOpenRef.current) {
-      forcedMissingOpenRef.current = true;
-      setIsMissingTableOpen(true);
-    }
-  }, [mustForceMissingTable, missingTableCount]);
 
   const isCommercial = useMemo(() => {
       if (!currentUser) return false;

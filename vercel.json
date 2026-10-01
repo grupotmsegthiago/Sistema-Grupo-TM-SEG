@@ -747,6 +747,62 @@
       "destination": "/api/live-track"
     },
     {
+      "source": "/api/ibl-portal/pessoas/:id",
+      "destination": "/api/ibl-portal?op=pessoas-item&id=:id"
+    },
+    {
+      "source": "/api/ibl-portal/pgr/:os",
+      "destination": "/api/ibl-portal?op=pgr&os=:os"
+    },
+    {
+      "source": "/api/ibl-portal/acesso",
+      "destination": "/api/ibl-portal?op=acesso"
+    },
+    {
+      "source": "/api/ibl-portal/login",
+      "destination": "/api/ibl-portal?op=login"
+    },
+    {
+      "source": "/api/ibl-portal/primeiro-acesso",
+      "destination": "/api/ibl-portal?op=primeiro-acesso"
+    },
+    {
+      "source": "/api/ibl-portal/me",
+      "destination": "/api/ibl-portal?op=me"
+    },
+    {
+      "source": "/api/ibl-portal/trocar-senha",
+      "destination": "/api/ibl-portal?op=trocar-senha"
+    },
+    {
+      "source": "/api/ibl-portal/pessoas",
+      "destination": "/api/ibl-portal?op=pessoas"
+    },
+    {
+      "source": "/api/ibl-portal/ao-vivo",
+      "destination": "/api/ibl-portal?op=ao-vivo"
+    },
+    {
+      "source": "/api/ibl-portal/relatorio",
+      "destination": "/api/ibl-portal?op=relatorio"
+    },
+    {
+      "source": "/api/ibl-portal/campos",
+      "destination": "/api/ibl-portal?op=campos"
+    },
+    {
+      "source": "/api/ibl-portal/catalogo",
+      "destination": "/api/ibl-portal?op=catalogo"
+    },
+    {
+      "source": "/api/ibl-portal/status",
+      "destination": "/api/ibl-portal?op=status"
+    },
+    {
+      "source": "/api/ibl-portal/solicitacoes",
+      "destination": "/api/ibl-portal?op=solicitacoes"
+    },
+    {
       "source": "/api/ceva-portal/pessoas/:id",
       "destination": "/api/ceva-portal?op=pessoas-item&id=:id"
     },
