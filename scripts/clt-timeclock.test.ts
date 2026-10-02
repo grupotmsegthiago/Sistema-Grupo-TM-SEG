@@ -7,6 +7,7 @@ import {
   isEmployeeEligibleForTimeClock,
 } from '../lib/timeclock/cltEmployee.ts';
 import {
+  isAdministradorRole,
   isOperationalRole,
   requiresTimeclockUser,
 } from '../lib/timeclock/eligibility.ts';
@@ -41,6 +42,16 @@ test('requiresTimeclockUser inclui perfis operacionais', () => {
   assert.equal(requiresTimeclockUser({ id: '2', name: 'Adv', role: 'AVANÇADO' }), true);
   assert.equal(requiresTimeclockUser({ id: '3', name: 'Dir', role: 'Diretoria' }), false);
   assert.equal(isOperationalRole('operacional'), true);
+});
+
+test('administrador não passa pela facial nem pelo ponto', () => {
+  assert.equal(isAdministradorRole('Administrador'), true);
+  assert.equal(isAdministradorRole('admin'), true);
+  assert.equal(
+    requiresTimeclockUser({ id: '3', name: 'Barbara', role: 'Administrador', isClt: true, requiresTimeclock: true }),
+    false,
+  );
+  assert.equal(requiresTimeclockUser({ id: '1', name: 'Op', role: 'Operador', isClt: true }), true);
 });
 
 test('namesLikelyMatch vincula Daniel Pinto ao cadastro RH', async () => {
