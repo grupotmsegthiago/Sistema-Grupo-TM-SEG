@@ -4,7 +4,8 @@ import { isCltContractType, isEmployeeEligibleForTimeClock } from './cltEmployee
 
 const DIRETORIA_ROLES = new Set(['diretoria', 'diretor', 'diretor(a)']);
 const ADMIN_ROLES = new Set(['administrador', 'admin']);
-const OPERATIONAL_ROLES = new Set(['operador', 'operacional', 'avançado', 'avancado']);
+const AVANCADO_ROLES = new Set(['avancado']);
+const OPERATIONAL_ROLES = new Set(['operador', 'operacional']);
 
 /** E-mails de gestão/auditoria isentos de batida de ponto no login. */
 const TIMECLOCK_EXEMPT_EMAILS = new Set(['daniel@grupotmseg.com.br']);
@@ -26,11 +27,16 @@ export function isAdministradorRole(role: string | null | undefined): boolean {
   return ADMIN_ROLES.has(normalizeRole(role));
 }
 
+/** Perfil Avançado não passa pela facial nem pelo ponto na entrada. */
+export function isAvancadoRole(role: string | null | undefined): boolean {
+  return AVANCADO_ROLES.has(normalizeRole(role));
+}
+
 /** Daniel (auditor/coordenador) e perfis equivalentes não batem ponto. */
 export function isTimeclockExemptUser(user: TimeClockUserContext | null | undefined): boolean {
   if (!user) return false;
   const role = (user as { role?: string }).role;
-  if (isDiretoriaRole(role) || isAdministradorRole(role)) return true;
+  if (isDiretoriaRole(role) || isAdministradorRole(role) || isAvancadoRole(role)) return true;
   const email = String(user.email || '').trim().toLowerCase();
   if (email && TIMECLOCK_EXEMPT_EMAILS.has(email)) return true;
   return false;

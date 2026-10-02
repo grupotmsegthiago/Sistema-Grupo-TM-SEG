@@ -8,6 +8,7 @@ import {
 } from '../lib/timeclock/cltEmployee.ts';
 import {
   isAdministradorRole,
+  isAvancadoRole,
   isOperationalRole,
   requiresTimeclockUser,
 } from '../lib/timeclock/eligibility.ts';
@@ -39,7 +40,7 @@ test('isCltUser reconhece flag isClt e contractType', () => {
 
 test('requiresTimeclockUser inclui perfis operacionais', () => {
   assert.equal(requiresTimeclockUser({ id: '1', name: 'Op', role: 'Operador' }), true);
-  assert.equal(requiresTimeclockUser({ id: '2', name: 'Adv', role: 'AVANÇADO' }), true);
+  assert.equal(requiresTimeclockUser({ id: '2', name: 'Adv', role: 'AVANÇADO' }), false);
   assert.equal(requiresTimeclockUser({ id: '3', name: 'Dir', role: 'Diretoria' }), false);
   assert.equal(isOperationalRole('operacional'), true);
 });
@@ -49,6 +50,17 @@ test('administrador não passa pela facial nem pelo ponto', () => {
   assert.equal(isAdministradorRole('admin'), true);
   assert.equal(
     requiresTimeclockUser({ id: '3', name: 'Barbara', role: 'Administrador', isClt: true, requiresTimeclock: true }),
+    false,
+  );
+  assert.equal(requiresTimeclockUser({ id: '1', name: 'Op', role: 'Operador', isClt: true }), true);
+});
+
+test('avançado não passa pela facial nem pelo ponto', () => {
+  assert.equal(isAvancadoRole('Avançado'), true);
+  assert.equal(isAvancadoRole('AVANÇADO'), true);
+  assert.equal(isAvancadoRole('avancado'), true);
+  assert.equal(
+    requiresTimeclockUser({ id: '4', name: 'Michelle', role: 'Avançado', isClt: true, requiresTimeclock: true }),
     false,
   );
   assert.equal(requiresTimeclockUser({ id: '1', name: 'Op', role: 'Operador', isClt: true }), true);
