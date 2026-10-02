@@ -26,6 +26,7 @@ import {
   digitosDocumentoCliente,
   perfilEhComercialRole,
 } from '../lib/clientDuplicateGuard';
+import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
 
 interface ClientFormProps {
   onBack: () => void;
@@ -414,7 +415,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const isFinanceAdmin = currentUser && (() => {
       const r = (currentUser.role || '').toLowerCase();
       const perms = currentUser.permissions || [];
-      return r === 'diretoria' || r === 'administrador' || r === 'comercial' ||
+      return r === 'diretoria' || r === 'administrador' || r === 'comercial' || isFinanceProfileRole(r) ||
              perms.includes('*') || perms.includes('client-prices');
   })();
 

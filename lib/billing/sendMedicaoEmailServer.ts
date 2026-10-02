@@ -39,7 +39,7 @@ function baseTemplate(content: string, senderName?: string): string {
 
 export type MedicaoEmailAttachment = {
   filename: string;
-  contentBase64: string;
+  content: Buffer;
   contentType: string;
 };
 
@@ -103,7 +103,7 @@ export async function sendMedicaoEmailLite(
       html,
       attachments: (data.attachments || []).map((a) => ({
         filename: a.filename,
-        content: Buffer.from(a.contentBase64, 'base64'),
+        content: a.content,
         contentType: a.contentType,
       })),
     });

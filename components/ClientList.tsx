@@ -12,6 +12,7 @@ import {
   montarFiltroOrCarteiraComercial,
   perfilEhComercialRole,
 } from '../lib/clientDuplicateGuard';
+import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, Search, Building2, Phone, Mail, Loader2, Trash2, RefreshCw, Pencil, Ban, CheckCircle2, Database, AlertTriangle, DollarSign, FileWarning, TrendingUp, Send, CheckCircle, Clock, ShieldCheck, User, Calendar, Hash, Fingerprint, Target, UserCheck, ToggleLeft, ToggleRight, Lock } from 'lucide-react';
 
@@ -34,6 +35,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isDirector, setIsDirector] = useState(false);
   const [isCommercial, setIsCommercial] = useState(false);
+  const [isFinance, setIsFinance] = useState(false);
   const [lockedClientId, setLockedClientId] = useState<number | null>(null);
   const [userNamesMap, setUserNamesMap] = useState<Record<string, string>>({});
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -59,6 +61,9 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
         }
         if (perfilEhComercialRole(role) && !user.permissions?.includes('*')) {
             setIsCommercial(true);
+        }
+        if (isFinanceProfileRole(role)) {
+            setIsFinance(true);
         }
         if (user.clientId) {
             setLockedClientId(parseInt(user.clientId));
@@ -482,25 +487,25 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
                     <td className="px-6 py-4 text-right">
                         <div className="flex justify-end gap-2">
                             {(isAdmin || isCommercial) && (
-                                <>
-                                    <button 
-                                        onClick={() => handleToggleStatus(client.id, client.status, client.name)}
-                                        className={`p-2 rounded-lg transition-all ${client.status === 'Ativo' ? 'text-gray-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-400 hover:text-green-600 hover:bg-green-50'}`}
-                                        title={client.status === 'Ativo' ? 'Inativar Cliente' : 'Ativar Cliente'}
-                                        disabled={isToggling === client.id}
-                                    >
-                                        {isToggling === client.id ? <Loader2 size={18} className="animate-spin" /> : 
-                                         client.status === 'Ativo' ? <Ban size={18} /> : <CheckCircle2 size={18} />
-                                        }
-                                    </button>
-                                    <button 
-                                        onClick={() => onEdit(client.id)}
-                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                                        title="Editar"
-                                    >
-                                        <Pencil size={18} />
-                                    </button>
-                                </>
+                                <button 
+                                    onClick={() => handleToggleStatus(client.id, client.status, client.name)}
+                                    className={`p-2 rounded-lg transition-all ${client.status === 'Ativo' ? 'text-gray-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-400 hover:text-green-600 hover:bg-green-50'}`}
+                                    title={client.status === 'Ativo' ? 'Inativar Cliente' : 'Ativar Cliente'}
+                                    disabled={isToggling === client.id}
+                                >
+                                    {isToggling === client.id ? <Loader2 size={18} className="animate-spin" /> : 
+                                     client.status === 'Ativo' ? <Ban size={18} /> : <CheckCircle2 size={18} />
+                                    }
+                                </button>
+                            )}
+                            {(isAdmin || isCommercial || isFinance) && (
+                                <button 
+                                    onClick={() => onEdit(client.id)}
+                                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                    title="Editar cadastro"
+                                >
+                                    <Pencil size={18} />
+                                </button>
                             )}
                             {isDirector && (
                                 <button 

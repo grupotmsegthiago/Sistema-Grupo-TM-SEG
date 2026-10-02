@@ -1832,7 +1832,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const excelBlob = await buildMedicaoExcelBlob(false);
             if (!excelBlob) throw new Error('Falha ao gerar Excel da medição');
 
-            const { generateMedicaoPdfBlob, blobToBase64 } = await import('../lib/billing/medicaoPdfExport');
+            const { generateMedicaoPdfBlob } = await import('../lib/billing/medicaoPdfExport');
+            const { subirAnexoMedicao } = await import('../lib/billing/subirAnexosMedicao');
             setAiStatus('Gerando PDF da medição...');
             const pdfBlob = await generateMedicaoPdfBlob('print-area');
 
@@ -1907,9 +1908,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 setAiStatus('Reenvio: título já existe — só o e-mail será enviado...');
             }
 
+            setAiStatus('Guardando Excel e PDF para o envio...');
+            const pastaAnexo = (globalThis.crypto?.randomUUID?.() || `${Date.now()}`).replace(/-/g, '');
+            const excelGuardado = await subirAnexoMedicao(
+                excelBlob,
+                excelName,
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                pastaAnexo,
+            );
+            const pdfGuardado = await subirAnexoMedicao(pdfBlob, pdfName, 'application/pdf', pastaAnexo);
             setAiStatus('Enviando e-mail com anexos...');
-            const excelB64 = await blobToBase64(excelBlob);
-            const pdfB64 = await blobToBase64(pdfBlob);
             const res = await authFetch('/api/billing-send-medicao', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1925,13 +1933,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     attachments: [
                         {
                             filename: excelName,
-                            contentBase64: excelB64,
-                            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                            storagePath: excelGuardado.storagePath,
+                            contentType: excelGuardado.contentType,
                         },
                         {
                             filename: pdfName,
-                            contentBase64: pdfB64,
-                            contentType: 'application/pdf',
+                            storagePath: pdfGuardado.storagePath,
+                            contentType: pdfGuardado.contentType,
                         },
                     ],
                 }),

@@ -10,6 +10,11 @@ export function normalizePersonName(name: string | null | undefined): string {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
+/** Perfil Financeiro (nome do perfil no login, com ou sem acento). */
+export function isFinanceProfileRole(role: string | null | undefined): boolean {
+  return normalizePersonName(role) === 'financeiro';
+}
+
 /** True para Bárbara Sgarlata / Giovanna Marsili (e variantes sem acento). */
 export function isFinanceSupervisorName(name: string | null | undefined): boolean {
   const n = normalizePersonName(name);

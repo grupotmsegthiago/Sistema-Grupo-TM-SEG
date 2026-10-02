@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   canSeeMissionBillingSummary,
   canSeeOsComPrejuizo,
+  isFinanceProfileRole,
   isFinanceSupervisorName,
   normalizePersonName,
 } from '../lib/financeSupervisorAccess';
@@ -47,6 +48,19 @@ describe('canSeeOsComPrejuizo', () => {
     assert.equal(canSeeOsComPrejuizo({ name: 'Vendedor', role: 'comercial' }), false);
     assert.equal(canSeeOsComPrejuizo({ name: 'Operacional', role: 'operacional' }), false);
     assert.equal(canSeeOsComPrejuizo(null), false);
+  });
+});
+
+describe('isFinanceProfileRole', () => {
+  it('reconhece o perfil Financeiro', () => {
+    assert.equal(isFinanceProfileRole('Financeiro'), true);
+    assert.equal(isFinanceProfileRole('financeiro'), true);
+  });
+
+  it('não libera comercial nem diretoria por esse atalho', () => {
+    assert.equal(isFinanceProfileRole('Comercial'), false);
+    assert.equal(isFinanceProfileRole('Diretoria'), false);
+    assert.equal(isFinanceProfileRole(null), false);
   });
 });
 

@@ -7,6 +7,7 @@ import { ProviderCostTable } from '../types';
 import ImportProviderCostModal from './ImportProviderCostModal';
 import { AUTO_MASTER_OP_TYPE, generateAutoBands, suggestAutoMasterFromManualTables, isAutoMasterRow, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
 import { useNotification } from '../lib/NotificationContext';
+import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
 import ClientContractTab from './ClientContractTab';
 import ProviderOperatingCoverageEditor from './ProviderOperatingCoverageEditor';
 import {
@@ -94,7 +95,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
   const isFinanceAdmin = currentUser && (() => {
     const r = (currentUser.role || '').toLowerCase();
     const perms = currentUser.permissions || [];
-    return r === 'diretoria' || r === 'administrador' || r === 'comercial' || r === 'controller' ||
+    return r === 'diretoria' || r === 'administrador' || r === 'comercial' || r === 'controller' || isFinanceProfileRole(r) ||
            perms.includes('*') || perms.includes('provider-costs');
   })();
 

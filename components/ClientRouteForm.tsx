@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Save, Navigation, MapPin, Building2, Ruler, Loader2, Plus, Trash2, Map as MapIcon, DollarSign, AlertTriangle, Calculator, Info, Check, ExternalLink, ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
 import { Client, ClientPriceTable, QuoteItem } from '../types';
 import { useLoadScript, Autocomplete, GoogleMap, DirectionsRenderer } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
@@ -76,7 +77,7 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
     const storedUser = localStorage.getItem('userData');
     if (storedUser) {
         const user = JSON.parse(storedUser);
-        if (user.role === 'Administrador' || user.role === 'Diretoria' || user.permissions?.includes('*')) setIsAdmin(true);
+        if (user.role === 'Administrador' || user.role === 'Diretoria' || user.permissions?.includes('*') || isFinanceProfileRole(user.role)) setIsAdmin(true);
     }
     async function loadData() {
         const { data: clientsData } = await supabase.from('clients').select('*').eq('status', 'Ativo');
