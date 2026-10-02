@@ -28,6 +28,7 @@ import { resolveRouteProgressPct } from '../lib/routeProgress';
 import MissionStatusModal from './MissionStatusModal';
 import UpdateMissionModal from './UpdateMissionModal';
 import MissionCard from './MissionCard';
+import OsActionPlanModal from './OsActionPlanModal';
 import MissionPrintModal from './MissionPrintModal';
 import MissionHistoryModal from './MissionHistoryModal';
 import MissionFinancialModal from './MissionFinancialModal';
@@ -59,6 +60,7 @@ import { hasFullMissionListAccess, isMissionClientScopeRestricted } from '../lib
 import { isPerfilComercial } from '../lib/diretoriaAccess';
 import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
 import { canSeeMissionBillingSummary, canSeeOsComPrejuizo, isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { searchMissionsByTerm } from '../lib/missionTableSearch';
 import { isOsLossHidden, loadOsLossHiddenMap } from '../lib/osLossHidden';
 import { collectLinkedFamilyIds } from '../lib/missionLinkage';
@@ -182,6 +184,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [isFullReportOpen, setIsFullReportOpen] = useState(false);
   const [missionForFullReport, setMissionForFullReport] = useState<Mission | null>(null);
   const [missionForOpReport, setMissionForOpReport] = useState<Mission | null>(null);
+  const [planoAcaoId, setPlanoAcaoId] = useState<string | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [missionToDelete, setMissionToDelete] = useState<Mission | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -280,6 +283,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     [currentUser],
   );
 
+  const ocultaFinanceiro = useMemo(() => isPerfilAvancado(currentUser), [currentUser]);
+
   const isAdmin = useMemo(() => {
     if (!currentUser) return false;
     const roleLower = (currentUser?.role || '').toLowerCase();
@@ -298,7 +303,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
   /** Card "OS com Prejuízo" — Bárbara, Daniel, Giovanna (+ admin/diretoria/controller). */
   const canSeeFinancials = useMemo(
-    () => canSeeOsComPrejuizo(currentUser),
+    () => !isPerfilAvancado(currentUser) && canSeeOsComPrejuizo(currentUser),
     [currentUser],
   );
 
@@ -1713,6 +1718,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         } catch { /* ignore */ }
     }, [allMissions, mapRawMissionRow]);
     const handleOpenPrintModal = (mission: Mission) => { setMissionForPrint(mission); setIsPrintModalOpen(true); };
+    const handleActionPlan = (mission: Mission) => { setPlanoAcaoId(mission.id); };
     const handleDeleteClick = (mission: Mission) => { setMissionToDelete(mission); setDeletePassword(''); setCancelEscortAtOrigin(null); setIsDeleteModalOpen(true); };
     
     const handleCopyMission = (mission: Mission) => {
@@ -1898,7 +1904,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           <div className="flex flex-wrap gap-2 items-center justify-end 2xl:flex-1">
                 {!isRestrictedClientView && ( <div className="flex items-center gap-2 bg-indigo-50 p-1.5 rounded-lg border border-indigo-200"><input type="text" className="bg-transparent text-xs font-bold text-indigo-900 placeholder-indigo-400 outline-none w-32 pl-2" placeholder="Filtrar OS..." value={osFilterTerm} onChange={(e) => setOsFilterTerm(e.target.value)} data-testid="input-os-filter" />{osFilterTerm && <button onClick={() => setOsFilterTerm('')} className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-700" data-testid="button-clear-os-filter"><X size={14} /></button>}</div> )}
                 <button onClick={() => setShowFleetMap(!showFleetMap)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showFleetMap ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-indigo-600 text-white border-indigo-700 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50')}`}><Globe size={14} /> Mapa</button>
-                {!isRestrictedClientView && ( <button onClick={() => setShowAnalyticsDash(!showAnalyticsDash)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showAnalyticsDash ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}><BarChart4 size={14} /> Analytics</button> )}
+                {!isRestrictedClientView && !ocultaFinanceiro && ( <button onClick={() => setShowAnalyticsDash(!showAnalyticsDash)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showAnalyticsDash ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}><BarChart4 size={14} /> Analytics</button> )}
                 {isRestrictedClientView && ( <button onClick={() => { setShowClientDash(!showClientDash); if (!showClientDash) { setShowClientReports(false); setShowClientCommittee(false); } }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientDash ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-red-700 text-white border-red-800 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')}`} data-testid="button-client-dashboard"><BarChart4 size={14} /> Painel</button> )}
                 {isRestrictedClientView && ( <button onClick={() => { setShowClientReports(!showClientReports); if (!showClientReports) { setShowClientDash(false); setShowClientCommittee(false); } }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientReports ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-red-700 text-white border-red-800 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')}`} data-testid="button-client-reports"><Activity size={14} /> Relatórios</button> )}
                 {isRestrictedClientView && ( <button onClick={() => { setShowClientCommittee(!showClientCommittee); if (!showClientCommittee) { setShowClientDash(false); setShowClientReports(false); } }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientCommittee ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-red-700 text-white border-red-800 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')}`} data-testid="button-client-committee"><FileSearch size={14} /> Comitê</button> )}
@@ -2037,7 +2043,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           )}
         </div>
   
-        {!isRestrictedClientView && showAnalyticsDash && (
+        {!isRestrictedClientView && !ocultaFinanceiro && showAnalyticsDash && (
             <ExecutiveDashboard 
                 missions={allMissions} 
                 isDirector={isDirector} 
@@ -2316,7 +2322,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                               mission={mission}
                                               canEditMission={canEditMission}
                                               isDirector={isDirector}
-                                              canSeeBillingSummary={canSeeBillingSummary}
+                                              canSeeBillingSummary={canSeeBillingSummary && !ocultaFinanceiro}
+                                              hideFinancialInfo={ocultaFinanceiro}
                                               isRedLight={isRedLight}
                                               isImminent={mission.status === MissionStatus.IN_TRANSIT && diffMinutes > 30 && diffMinutes <= 60}
                                               minutesSinceUpdate={diffMinutes}
@@ -2325,7 +2332,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                               isSendingEmail={isSendingEmail}
                                               onViewMap={handleOpenStatusModal}
                                               onUpdate={handleOpenUpdateModal}
-                                              onOpenFinancials={handleOpenFinancialModal}
+                                              onOpenFinancials={ocultaFinanceiro ? undefined : handleOpenFinancialModal}
                                               onCopy={handleCopyMission}
                                               onCopyEmail={handleCopyEmail}
                                               onDelete={handleDeleteClick}
@@ -2334,6 +2341,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                               onViewHistory={handleViewHistory}
                                               onFullReport={(m: Mission) => { setMissionForFullReport(m); setIsFullReportOpen(true); }}
                                               onOperationalReport={(m: Mission) => setMissionForOpReport(m)}
+                                              onActionPlan={isRestrictedClientView ? undefined : handleActionPlan}
                                               clientTables={clientTables}
                                               providerTables={providerTables}
                                               clientsData={clientsData}
@@ -2454,6 +2462,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         {showClientRequestModal && resolvedClientName && <ClientMissionRequest clientName={resolvedClientName} onClose={() => setShowClientRequestModal(false)} onSuccess={() => { fetchMissions(true); showNotification('Sucesso', 'Solicitação enviada com sucesso!', 'success'); }} />}
         <DhlSolicitationModal isOpen={showDhlSolicitation} onClose={() => setShowDhlSolicitation(false)} />
         {missionForOpReport && <MissionOperationalReport mission={missionForOpReport} onClose={() => setMissionForOpReport(null)} isClientView={isRestrictedClientView} isInternalEditor={isDirector || (currentUser?.role || '').toLowerCase() === 'avançado'} />}
+        {planoAcaoId && <OsActionPlanModal missionId={planoAcaoId} onClose={() => setPlanoAcaoId(null)} />}
         {isDeleteModalOpen && missionToDelete && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-red-200">

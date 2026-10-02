@@ -10,6 +10,7 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
   it('oculta tela que não está nas permissions', () => {
     const user = { role: 'Operador', permissions: ['dashboard', 'missions'] };
     assert.equal(canAccessScreen(user, 'missions'), true);
+    assert.equal(canAccessScreen(user, 'treinamento'), true);
     assert.equal(canAccessScreen(user, 'fin-dashboard'), false);
     assert.equal(canAccessScreen(user, 'providers'), false);
     assert.equal(canAccessScreen(user, 'profiles'), false);
@@ -70,6 +71,7 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
     assert.equal(canAccessScreen(client, 'fin-dashboard'), false);
     assert.equal(canAccessScreen(client, 'providers'), false);
     assert.equal(canAccessScreen(client, 'missions'), true);
+    assert.equal(canAccessScreen(client, 'treinamento'), false);
   });
 
   it('Pendências de OS abre para Thiagos e perfil Diretoria', () => {

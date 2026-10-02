@@ -136,6 +136,8 @@ import AprovacoesPendentesPage from './components/AprovacoesPendentesPage';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
 import { persistScreen, resolveInitialScreen, getRoleDefaultScreen, getScreenFromUrl } from './lib/screenNavigation';
 import { canAccessScreen, fallbackScreenForUser } from './lib/screenAccess';
+import TrainingAcademy from './components/TrainingAcademy';
+import { operadorBloqueado, normalizarModulos } from './lib/training/operadorAcademy';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -166,6 +168,7 @@ const App: React.FC = () => {
       return shouldShowMotivation(u.id || u.email || 'anon');
     } catch { return false; }
   });
+  const [academyVersion, setAcademyVersion] = useState(0);
 
   const normalizedPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
   const isPublicRoute = normalizedPath === '/cadastro-operacional';
@@ -214,7 +217,7 @@ const App: React.FC = () => {
       if (!storedUser) return;
       try {
           const user = JSON.parse(storedUser);
-          const { data, error } = await supabase.from('system_users').select(`name, status, force_password_change, permissions, profile_id, client_id, profiles:profile_id ( name, permissions )`).eq('id', user.id).single();
+          const { data, error } = await supabase.from('system_users').select(`name, status, force_password_change, permissions, profile_id, client_id, training_required, training_passed_at, training_modules, training_score, profiles:profile_id ( name, permissions )`).eq('id', user.id).single();
           if (error) {
             console.warn('[Sessão] Falha temporária ao verificar usuário — mantendo login:', error.message);
             return;
@@ -237,6 +240,11 @@ const App: React.FC = () => {
               user.role = data.profiles.name;
               needsUpdate = true;
           }
+          user.trainingRequired = Boolean(data.training_required);
+          user.trainingPassedAt = data.training_passed_at || null;
+          user.trainingModules = normalizarModulos(data.training_modules);
+          user.trainingScore = data.training_score ?? null;
+          needsUpdate = true;
           if (needsUpdate) {
               localStorage.setItem('userData', JSON.stringify(user));
           }
@@ -528,6 +536,19 @@ const App: React.FC = () => {
   
   if (needsPasswordChange) { return <ChangePasswordModal onSuccess={handlePasswordChanged} />; }
 
+  if (operadorBloqueado(getStoredUser())) {
+    return (
+      <NotificationProvider>
+        <TrainingAcademy
+          key={academyVersion}
+          mode="obrigatorio"
+          onPassed={() => setAcademyVersion((v) => v + 1)}
+          onLogout={handleLogout}
+        />
+      </NotificationProvider>
+    );
+  }
+
   if (motivationPending) {
     const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
     return <MotivationGate userId={u.id || u.email || 'anon'} userName={u.name || u.full_name} onAcknowledge={() => setMotivationPending(false)} />;
@@ -545,7 +566,8 @@ const App: React.FC = () => {
     }
 
     switch (currentScreen) {
-      case 'dashboard': return <Dashboard onOpenMission={handleOpenBillingMission} />; 
+      case 'dashboard': return <Dashboard onOpenMission={handleOpenBillingMission} />;
+      case 'treinamento': return <TrainingAcademy mode="revisao" />;
       case 'missions': return <MissionTable onNewMission={() => navigateTo('new-mission')} />;
       case 'controle-diario': return <ControleDiario />;
       case 'shift-handover': {

@@ -7,6 +7,7 @@ import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { useNotification } from '../lib/NotificationContext';
+import { isPerfilOperador } from '../lib/training/operadorAcademy';
 import { perfilEhComercial } from '../lib/comissao/tabelaComissaoPadrao';
 import { upsertComercialDoUsuario } from '../lib/comissao/comissaoUsuarios';
 
@@ -287,6 +288,10 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               status: formData.status,
               force_password_change: !id
           };
+          if (!id && userType === 'internal') {
+              const profile = profiles.find((p) => String(p.id) === String(formData.profileId));
+              if (isPerfilOperador(profile?.name)) payload.training_required = true;
+          }
           if (userType === 'client' && isClientUser) {
               payload.permissions = selectedPermissions;
           }

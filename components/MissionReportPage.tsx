@@ -40,6 +40,7 @@ import {
   type CanonicalResult,
 } from '../lib/missionFinancialsCanonical';
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { isPerfilComercial } from '../lib/diretoriaAccess';
 import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
 
@@ -121,6 +122,7 @@ const MissionReportPage: React.FC = () => {
 
   const canSeeFinancials = useMemo(() => {
     if (!currentUser) return false;
+    if (isPerfilAvancado(currentUser)) return false;
     const nameLower = (currentUser.name || '').toLowerCase();
     const roleLower = (currentUser.role || '').toLowerCase();
     return nameLower.includes('daniel') || nameLower.includes('michelle') || isFinanceSupervisorName(currentUser.name) || nameLower.includes('thiago') || roleLower === 'controller';

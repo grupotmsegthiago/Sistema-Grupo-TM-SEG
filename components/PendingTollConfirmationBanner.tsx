@@ -4,6 +4,7 @@ import { fetchAllPages } from '../lib/supabasePaging';
 import { AlertTriangle, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
 
 import { formatDateBR } from '../lib/dateUtils';
+import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 
 interface PendingMission {
     id: string;
@@ -20,13 +21,28 @@ interface Props {
 
 const formatDate = (d: string | null) => formatDateBR(d);
 
+function readSessionUser(): { role?: string | null } | null {
+    try {
+        return JSON.parse(localStorage.getItem('userData') || '{}');
+    } catch {
+        return null;
+    }
+}
+
 const PendingTollConfirmationBanner: React.FC<Props> = ({ onOpenMission }) => {
     const [missions, setMissions] = useState<PendingMission[]>([]);
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState(false);
     const [listTruncated, setListTruncated] = useState(false);
 
+    const ocultaFinanceiro = isPerfilAvancado(readSessionUser());
+
     const load = useCallback(async () => {
+        if (isPerfilAvancado(readSessionUser())) {
+            setMissions([]);
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         try {
             // Só pedágios pendentes de OS concluídas a partir de maio/2026.
@@ -81,6 +97,7 @@ const PendingTollConfirmationBanner: React.FC<Props> = ({ onOpenMission }) => {
         };
     }, [load]);
 
+    if (ocultaFinanceiro) return null;
     if (loading && missions.length === 0) return null;
     if (!loading && missions.length === 0) return null;
 

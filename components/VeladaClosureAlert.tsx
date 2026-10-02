@@ -11,6 +11,7 @@ import {
   veladaFinalKmIsValid,
   type VeladaClosureMission,
 } from '../lib/veladaClosureAlert';
+import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 
 type Row = VeladaClosureMission & {
   id: string;
@@ -20,7 +21,7 @@ type Row = VeladaClosureMission & {
   start_km?: number | null;
 };
 
-type SessionUser = { name?: string; email?: string };
+type SessionUser = { name?: string; email?: string; role?: string | null };
 
 const POLL_MS = 30_000;
 
@@ -84,13 +85,20 @@ const VeladaClosureAlert: React.FC = () => {
     return () => window.clearInterval(timer);
   }, [load]);
 
+  const ocultaFinanceiro = isPerfilAvancado(user);
+
+  const missingForUser = (row: Row) => {
+    const missing = getVeladaClosureMissing(row, tollLogged.has(row.id));
+    return ocultaFinanceiro ? missing.filter((item) => item !== 'PEDÁGIO') : missing;
+  };
+
   const mine = useMemo(() => {
     if (!user?.name) return [];
     return rows.filter((row) => (
       veladaClosureOperatorMatches(row.velada_closure_operator, user.name)
-      && getVeladaClosureMissing(row, tollLogged.has(row.id)).length > 0
+      && missingForUser(row).length > 0
     ));
-  }, [rows, tollLogged, user?.name]);
+  }, [rows, tollLogged, user?.name, ocultaFinanceiro]);
 
   const overdueForThiago = useMemo(() => {
     if (!isThiagoVeladaEscalationUser(user)) return [];
@@ -126,14 +134,14 @@ const VeladaClosureAlert: React.FC = () => {
       return;
     }
     const alreadyToll = active.velada_toll_confirmed === true || tollLogged.has(active.id);
-    if (!alreadyToll && tollChoice !== 'yes' && tollChoice !== 'no') {
+    if (!ocultaFinanceiro && !alreadyToll && tollChoice !== 'yes' && tollChoice !== 'no') {
       setError('Confirme se houve pedágio.');
       return;
     }
     const tollAmount = tollChoice === 'yes'
       ? Number(String(tollValue).replace(/\./g, '').replace(',', '.'))
       : 0;
-    if (!alreadyToll && tollChoice === 'yes' && !(tollAmount > 0)) {
+    if (!ocultaFinanceiro && !alreadyToll && tollChoice === 'yes' && !(tollAmount > 0)) {
       setError('Informe o valor do pedágio.');
       return;
     }
@@ -147,13 +155,13 @@ const VeladaClosureAlert: React.FC = () => {
         last_update: new Date().toISOString(),
         updated_by: user.name,
       };
-      if (!alreadyToll) {
+      if (!ocultaFinanceiro && !alreadyToll) {
         payload.toll_value = tollAmount;
         payload.velada_toll_confirmed = true;
       }
       const { error: updateError } = await supabase.from('missions').update(payload).eq('id', active.id);
       if (updateError) throw updateError;
-      if (!alreadyToll) {
+      if (!ocultaFinanceiro && !alreadyToll) {
         const { error: logError } = await supabase.from('system_logs').insert([{
           user_name: user.name,
           action_type: 'TOLL_CONFIRMATION',
@@ -194,7 +202,7 @@ const VeladaClosureAlert: React.FC = () => {
   }
 
   if (mine.length > 0 && active) {
-    const missing = getVeladaClosureMissing(active, tollLogged.has(active.id));
+    const missing = missingForUser(active);
     const tollDone = active.velada_toll_confirmed === true || tollLogged.has(active.id);
     return (
       <div className="fixed inset-0 z-[240] bg-black/70 flex items-center justify-center p-4" data-testid="velada-closure-alert">
@@ -203,7 +211,7 @@ const VeladaClosureAlert: React.FC = () => {
             <AlertTriangle size={18} className="mt-0.5 shrink-0" />
             <div className="flex-1">
               <p className="text-sm font-black uppercase tracking-wide">Velada pendente</p>
-              <p className="text-[11px] font-bold">Falta KM final, hora final e pedágio. Pode fechar agora: ao abrir o sistema o aviso volta até esses dados serem salvos.</p>
+              <p className="text-[11px] font-bold">{ocultaFinanceiro ? 'Falta KM final e hora final. Pode fechar agora: ao abrir o sistema o aviso volta até esses dados serem salvos.' : 'Falta KM final, hora final e pedágio. Pode fechar agora: ao abrir o sistema o aviso volta até esses dados serem salvos.'}</p>
             </div>
             <button type="button" onClick={() => setDismissed(true)} className="rounded-lg p-1 hover:bg-amber-400" aria-label="Fechar alerta" data-testid="button-velada-closure-close">
               <X size={18} />
@@ -228,16 +236,16 @@ const VeladaClosureAlert: React.FC = () => {
             <label className="block text-[10px] font-black uppercase text-gray-500">Hora final
               <input type="datetime-local" value={endLocal} onChange={(e) => setEndLocal(e.target.value)} className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold" data-testid="input-velada-end-time" />
             </label>
-            <div className="text-[10px] font-black uppercase text-gray-500">Pedágio</div>
-            {tollDone ? (
+            {!ocultaFinanceiro && <div className="text-[10px] font-black uppercase text-gray-500">Pedágio</div>}
+            {!ocultaFinanceiro && (tollDone ? (
               <p className="text-xs font-bold text-emerald-700">Pedágio já confirmado.</p>
             ) : (
               <div className="flex gap-2">
                 <button type="button" onClick={() => setTollChoice('no')} className={`flex-1 py-2 rounded-lg text-xs font-black uppercase border ${tollChoice === 'no' ? 'bg-slate-900 text-white' : 'bg-white'}`}>Sem pedágio</button>
                 <button type="button" onClick={() => setTollChoice('yes')} className={`flex-1 py-2 rounded-lg text-xs font-black uppercase border ${tollChoice === 'yes' ? 'bg-slate-900 text-white' : 'bg-white'}`}>Com pedágio</button>
               </div>
-            )}
-            {!tollDone && tollChoice === 'yes' && (
+            ))}
+            {!ocultaFinanceiro && !tollDone && tollChoice === 'yes' && (
               <input value={tollValue} onChange={(e) => setTollValue(e.target.value)} placeholder="Valor do pedágio" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold" data-testid="input-velada-toll" />
             )}
             {error && <p className="text-xs font-bold text-red-600">{error}</p>}

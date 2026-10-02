@@ -23,6 +23,7 @@ import { extractUF, UF_TO_REGION, clientFuzzyFilter, extractCityFromAddress, eva
 import { exclusiveCitiesInAddress, questionTableAgainstRoute } from '../lib/tableRouteQuestion';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
+import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
 
 const INPUT_CLASS = "w-full bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-red-500/10 focus:border-red-500 text-sm h-11 transition-all text-gray-700 pl-12 pr-4";
@@ -132,6 +133,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const { showNotification } = useNotification();
   const [osId, setOsId] = useState("GTM-....");
   const [canViewFinancials, setCanViewFinancials] = useState(false);
+  const [ocultaFinanceiro, setOcultaFinanceiro] = useState(false);
   const [canViewIntakeSnapshots, setCanViewIntakeSnapshots] = useState(false);
   
   const now = new Date();
@@ -256,7 +258,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   );
   const tollAmountNow = parseFloat(formData.tollValue || '0') || 0;
   const tollOkForStep = tollLoaded && (
-      tollAmountNow > 0
+      ocultaFinanceiro
+      || tollAmountNow > 0
       || tollZeroConfirmed
       || isSyntheticTollDest(formData.destination || '')
   );
@@ -586,6 +589,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             const role = (user.role || "").toLowerCase();
             const allowed = ['diretoria', 'administrador'].includes(role) || (user.permissions && user.permissions.includes('*'));
             setCanViewFinancials(allowed);
+            setOcultaFinanceiro(isPerfilAvancado(user));
             const opAllowed = ['administrador', 'diretoria', 'avançado', 'avancado', 'operador'].includes(role) || (user.permissions && user.permissions.includes('*'));
             setCanViewIntakeSnapshots(opAllowed);
             if (role === 'comercial') {
@@ -1232,6 +1236,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       !!r && (r.provider === 'qualp' || r.provider === 'gemini-ai' || r.provider === 'rapidapi-pedagio') && typeof r.value === 'number';
 
   const notifyTollResult = (r: { provider?: string; value: number; count: number; confianca?: string }) => {
+      if (ocultaFinanceiro) return;
       if (r.provider === 'gemini-ai') {
           const confLabel = r.confianca === 'alta' ? 'alta' : r.confianca === 'media' ? 'média' : 'baixa';
           showNotification(
@@ -1285,7 +1290,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       setTollFetchDone(true);
       setTollDetails(null);
       setFormData(prev => ({ ...prev, tollValue: prev.tollValue || '0' }));
-      showNotification('Pedágio', 'Cálculo automático interrompido. Informe o valor manualmente (R$ 0,00 se a rota não tiver pedágio).', 'info');
+      if (!ocultaFinanceiro) {
+        showNotification('Pedágio', 'Cálculo automático interrompido. Informe o valor manualmente (R$ 0,00 se a rota não tiver pedágio).', 'info');
+      }
   };
 
   const applyTollForRoute = async (origin: string, destination: string, opts?: { notify?: boolean; force?: boolean }): Promise<number | null> => {
@@ -1305,7 +1312,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           setTollFetchDone(true);
           setTollDetails({ count: 0, tolls: [], provider: 'fixed' });
           setFormData(prev => ({ ...prev, tollValue: '35.00' }));
-          if (opts?.notify !== false) showNotification('Regra CEVA', 'Pedágio fixo de R$ 35,00 aplicado (CEVA + Jundiaí + 200KM).', 'success');
+          if (opts?.notify !== false && !ocultaFinanceiro) showNotification('Regra CEVA', 'Pedágio fixo de R$ 35,00 aplicado (CEVA + Jundiaí + 200KM).', 'success');
           return 35;
       }
 
@@ -1531,7 +1538,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         showNotification('Pedágio obrigatório', 'Informe o valor do pedágio (use a rota mais cara no Rotas Brasil).', 'error');
         return;
     }
-    if (resolvedTollValue === 0 && !tollZeroConfirmed && !isSyntheticTollDest(destForToll)) {
+    if (!ocultaFinanceiro && resolvedTollValue === 0 && !tollZeroConfirmed && !isSyntheticTollDest(destForToll)) {
         setIsSaving(false);
         showNotification(
           'Confirmar pedágio R$ 0,00',
@@ -2958,12 +2965,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               <Loader2 size={18} className="animate-spin text-amber-600 shrink-0" />
                               <div className="min-w-0">
                                   <p className="text-[11px] font-black text-amber-800 uppercase">Calculando pedágio...</p>
-                                  <p className="text-[9px] text-amber-600 font-bold">Aguarde até 60s ou informe manualmente (R$ 0,00 se não houver pedágio).</p>
+                                  <p className="text-[9px] text-amber-600 font-bold">{ocultaFinanceiro ? 'O sistema calcula o pedágio desta rota.' : 'Aguarde até 60s ou informe manualmente (R$ 0,00 se não houver pedágio).'}</p>
                               </div>
                           </div>
-                          <button type="button" onClick={skipTollCalculation} className="shrink-0 rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-[9px] font-black uppercase text-amber-800 hover:bg-amber-100" data-testid="button-skip-toll-calc">
+                          {!ocultaFinanceiro && <button type="button" onClick={skipTollCalculation} className="shrink-0 rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-[9px] font-black uppercase text-amber-800 hover:bg-amber-100" data-testid="button-skip-toll-calc">
                               Informar manual
-                          </button>
+                          </button>}
                       </div>
                   )}
 
@@ -2997,14 +3004,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               <div className="flex items-center gap-2">
                                   {manualOverrides.toll ? <AlertTriangle size={16} className="text-amber-600" /> : <CheckCircle2 size={16} className={parseFloat(formData.tollValue || '0') > 0 ? 'text-green-600' : 'text-blue-600'} />}
                                   <p className="text-[11px] font-black uppercase text-gray-800">
-                                      Pedágio (valor real): R$ {parseFloat(formData.tollValue || '0').toFixed(2)}
+                                      {ocultaFinanceiro ? 'Pedágio calculado pelo sistema' : `Pedágio (valor real): R$ ${parseFloat(formData.tollValue || '0').toFixed(2)}`}
                                   </p>
                               </div>
                               {tollDetails?.provider === 'qualp' && !manualOverrides.toll && <span className="text-[8px] font-black text-blue-600 uppercase">QualP</span>}
                               {tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && <span className="text-[8px] font-black text-purple-600 uppercase">Estimativa IA</span>}
                               {tollDetails?.provider === 'fixed' && !manualOverrides.toll && <span className="text-[8px] font-black text-orange-600 uppercase">Regra fixa</span>}
                           </div>
-                          {(() => {
+                          {!ocultaFinanceiro && (() => {
                               const realToll = normalizeTollAmount(formData.tollValue);
                               const pair = tollPersistencePair(realToll, !!formData.isSameOs, formData.client);
                               return (
@@ -3020,7 +3027,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                   </div>
                               );
                           })()}
-                          {tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && (
+                          {!ocultaFinanceiro && tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && (
                               <p className="text-[9px] text-purple-700 font-bold">Estimativa por IA — confirme o valor manualmente se necessário.</p>
                           )}
                           {tollDetails && tollDetails.count > 0 && !manualOverrides.toll && (
@@ -3029,7 +3036,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           {!manualOverrides.toll && (
                               <button type="button" onClick={() => applyTollForRoute(formData.origin, formData.destination, { force: true })} className="text-[9px] font-bold text-blue-600 hover:text-blue-800 underline" data-testid="button-recalc-toll-step5">Recalcular pedágio</button>
                           )}
-                          <div className="flex items-center gap-2 pt-1 border-t border-gray-200/60">
+                          {!ocultaFinanceiro && <div className="flex items-center gap-2 pt-1 border-t border-gray-200/60">
                               <span className="text-sm font-black text-gray-600">R$</span>
                               <input
                                 type="number"
@@ -3077,8 +3084,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                 data-testid="input-toll-manual"
                               />
                               <span className="text-[8px] font-bold text-gray-400 uppercase">Obrigatório</span>
-                          </div>
-                          {(parseFloat(formData.tollValue || '0') === 0) && !isSyntheticTollDest(formData.destination || '') && (
+                          </div>}
+                          {!ocultaFinanceiro && (parseFloat(formData.tollValue || '0') === 0) && !isSyntheticTollDest(formData.destination || '') && (
                               <label className="flex items-start gap-2 text-[11px] font-bold text-amber-900 bg-amber-100 border border-amber-300 rounded-lg p-2 cursor-pointer" data-testid="toll-zero-confirm">
                                   <input
                                     type="checkbox"
@@ -3116,7 +3123,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-green-500 opacity-50 pointer-events-none" />
                                       <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                   </div>
-                                  {manualRevenueTableId && (() => { const t = clientPriceTables.find(pt => pt.id.toString() === manualRevenueTableId); return t ? <p className="text-[8px] font-bold text-green-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.price_per_extra_km || 0} | Extra Hora: R${t.price_per_extra_hour || 0}</p> : null; })()}
+                                  {!ocultaFinanceiro && manualRevenueTableId && (() => { const t = clientPriceTables.find(pt => pt.id.toString() === manualRevenueTableId); return t ? <p className="text-[8px] font-bold text-green-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.price_per_extra_km || 0} | Extra Hora: R${t.price_per_extra_hour || 0}</p> : null; })()}
                               </div>
                               <div>
                                   <label className={LABEL_CLASS}>Tabela de Custo (Fornecedor) {manualCostTableId && <span className="text-red-600">✓</span>}</label>
@@ -3128,7 +3135,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500 opacity-50 pointer-events-none" />
                                       <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                   </div>
-                                  {manualCostTableId && !formData.isSameOs && (() => { const t = providerCostTables.find(pt => pt.id.toString() === manualCostTableId); return t ? <p className="text-[8px] font-bold text-red-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.cost_per_extra_km || 0} | Extra Hora: R${t.cost_per_extra_hour || 0}</p> : null; })()}
+                                  {!ocultaFinanceiro && manualCostTableId && !formData.isSameOs && (() => { const t = providerCostTables.find(pt => pt.id.toString() === manualCostTableId); return t ? <p className="text-[8px] font-bold text-red-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.cost_per_extra_km || 0} | Extra Hora: R${t.cost_per_extra_hour || 0}</p> : null; })()}
                               </div>
                           </div>
 
@@ -3201,7 +3208,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200">
                                           <Navigation size={12} className="text-green-500 shrink-0" />
                                           <span className="font-black text-gray-900">Pedágio:</span>
-                                          <span>{isCalculatingToll ? 'Calculando...' : `R$ ${parseFloat(formData.tollValue || '0').toFixed(2)}`}</span>
+                                          <span>{ocultaFinanceiro ? (isCalculatingToll ? 'Calculando...' : 'calculado pelo sistema') : (isCalculatingToll ? 'Calculando...' : `R$ ${parseFloat(formData.tollValue || '0').toFixed(2)}`)}</span>
                                           {tollDetails?.provider === 'qualp' && <span className="text-[8px] text-blue-600 font-black">(via QualP)</span>}
                                           {tollDetails?.provider === 'gemini-ai' && <span className="text-[8px] text-purple-600 font-black">(estimativa IA — confirmar)</span>}
                                           {manualOverrides.toll && <span className="text-[8px] text-amber-600 font-black">(manual)</span>}
@@ -3369,6 +3376,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                   </div>
                                   <div className={`p-3 rounded-xl border ${manualOverrides.toll ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
                                       <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Pedágio {manualOverrides.toll && <span className="text-amber-600">(Manual)</span>}</p>
+                                      {ocultaFinanceiro ? (
+                                          <p className="text-sm font-black text-gray-800">Calculado pelo sistema</p>
+                                      ) : (
                                       <div className="flex items-center gap-1">
                                           <span className="text-[10px] font-black text-gray-400">R$</span>
                                           <input
@@ -3410,8 +3420,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                             data-testid="input-toll-summary"
                                           />
                                       </div>
+                                      )}
                                       <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? (tollDetails.provider === 'gemini-ai' ? (tollDetails.count === 0 ? 'Sem pedágio · Estimativa IA' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · Estimativa IA`) : tollDetails.provider === 'fixed' ? 'Regra fixa CEVA' : (tollDetails.count === 0 ? 'Sem pedágio · QualP' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · QualP`)) : isCalculatingToll ? 'Calculando...' : tollFetchDone ? 'Calculado nesta tela' : 'Aguardando cálculo'}</p>
-                                      {tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && (
+                                      {!ocultaFinanceiro && tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && (
                                           <p className="text-[7px] font-black uppercase mt-1 text-purple-700">Estimativa IA — confirmar manualmente</p>
                                       )}
                                       {tollDetails?.confianca && !manualOverrides.toll && <p className={`text-[7px] font-black uppercase mt-1 ${tollDetails.confianca === 'alta' ? 'text-green-600' : tollDetails.confianca === 'media' ? 'text-yellow-600' : 'text-red-600'}`}>Conf: {tollDetails.confianca}</p>}
@@ -3437,7 +3448,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                                       <p className="text-[9px] font-bold text-gray-700 truncate">{t.name}</p>
                                                       <p className="text-[7px] text-gray-400 font-bold">{t.road}{t.sentido ? ` · ${t.sentido}` : ''}{t.cobrancaUnica ? ' · Unidirecional' : ''}</p>
                                                   </div>
-                                                  <span className="text-[10px] font-black text-green-600 ml-2">R$ {(t.value || 0).toFixed(2)}</span>
+                                                  {!ocultaFinanceiro && <span className="text-[10px] font-black text-green-600 ml-2">R$ {(t.value || 0).toFixed(2)}</span>}
                                               </div>
                                           ))}
                                       </div>

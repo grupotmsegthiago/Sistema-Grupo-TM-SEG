@@ -1,4 +1,5 @@
 import { formatDateBR, formatIsoDateBR, formatTimeAuditBR, formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
+import OsActionPlanModal from './OsActionPlanModal';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB, ProviderCostTable } from '../types';
@@ -36,6 +37,7 @@ import DhlOccurrenceReportModal from './DhlOccurrenceReportModal';
 import { useNotification } from '../lib/NotificationContext';
 import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { canEditNegativeMarginLockedOs, isOsNegativeMarginLocked } from '../lib/osNegativeMarginLock';
 import { canSaveFinalizeEvidence, endEvidencePendingPatch, endEvidenceSavedPatch } from '../lib/endEvidenceGate';
 import { refusedOsClearSnapshotFields } from '../lib/missionSnapshot';
@@ -1054,8 +1056,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     // Plínio atua somente no lado fornecedor, após aprovação superior.
     // Operadores (Michele, Beatriz, Lucas, Daniel, etc.) finalizam a OS
     // sem o gate de pedágio — o valor é cobrado depois, no fluxo financeiro.
+    const ocultaFinanceiro = useMemo(() => isPerfilAvancado(currentUser), [currentUser]);
+
     const isTollResponsibleUser = useMemo(() => {
-        if (!currentUser) return false;
+        if (!currentUser || ocultaFinanceiro) return false;
         const norm = (s: string) => (s || '')
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
             .toLowerCase().trim();
@@ -1064,7 +1068,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const allowedFirstNames = ['barbara', 'simone'];
         const firstName = name.split(/\s+/)[0];
         return allowedFirstNames.includes(firstName) || allowedFirstNames.some(n => name.includes(n));
-    }, [currentUser]);
+    }, [currentUser, ocultaFinanceiro]);
 
     // Supervisão financeira (Bárbara / Giovanna): pode editar OS concluída/aprovada —
     // inclusive KM final de missões veladas TM SEG/ATIVA enviadas depois da conclusão.
@@ -1174,6 +1178,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [deslocFile, setDeslocFile] = useState<File | null>(null);
     const [deslocSending, setDeslocSending] = useState(false);
     const [dhlOccurrenceReportOpen, setDhlOccurrenceReportOpen] = useState(false);
+    const [planoAcaoAberto, setPlanoAcaoAberto] = useState(false);
     const [deslocExistingUrl, setDeslocExistingUrl] = useState('');
     const [mirroringFile, setMirroringFile] = useState<File | null>(null);
     const [mirroringPreview, setMirroringPreview] = useState('');
@@ -2211,7 +2216,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             }
             showNotification(
                 'Salvo',
-                approvedPayload.displacement_value || approvedPayload.displacement_value_provider
+                !ocultaFinanceiro && (approvedPayload.displacement_value || approvedPayload.displacement_value_provider)
                     ? 'KM e deslocamento (R$) atualizados. Demais campos permanecem travados pela aprovação.'
                     : 'KM de deslocamento atualizado. Os demais campos estão travados porque a OS já foi aprovada.',
                 'success',
@@ -3453,7 +3458,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         (mission as any).toll_value_provider = pair.toll_value_provider;
                         tollConfirmedRef.current = true;
                         const confLabel = j.confianca === 'alta' ? 'alta' : j.confianca === 'media' ? 'média' : 'baixa';
-                        showNotification(
+                        if (!ocultaFinanceiro) showNotification(
                             'Pedágio (Estimativa IA)',
                             v === 0
                                 ? 'IA não identificou pedágio nesta rota. Confirme manualmente se houver.'
@@ -4247,6 +4252,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             {((mission?.client || '').toUpperCase().includes('DHL')) && (
                                 <div><label className={LABEL_CLASS}><span className="text-red-600 font-black">Nº S.E. (DHL)</span></label><input type="text" className={`${INPUT_CLASS} border-red-300 bg-yellow-50/40`} placeholder="Ex: SE-123456 / 4912345" value={editData.dhl_se_number} onChange={e => setEditData({...editData, dhl_se_number: e.target.value.toUpperCase()})} data-testid="input-edit-dhl-se-number" /></div>
                             )}
+                            <div className="md:col-span-2">
+                                <button
+                                    type="button"
+                                    onClick={() => { if (mission?.id) setPlanoAcaoAberto(true); }}
+                                    className="inline-flex items-center gap-2 rounded-xl border-2 border-slate-700 bg-white px-4 py-2.5 text-[11px] font-black uppercase tracking-wide text-slate-800 hover:bg-slate-50 transition-colors"
+                                    data-testid="button-open-os-action-plan"
+                                >
+                                    <FileText size={16} />
+                                    Gerar Plano de Ação desta OS
+                                </button>
+                            </div>
                             {isDiretoria && String(editData.dhl_se_number || mission?.dhl_se_number || '').trim() && (
                                 <div className="md:col-span-2">
                                     <button
@@ -4272,7 +4288,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     <input type="text" className={`${INPUT_CLASS} border-amber-300 bg-amber-50/40 ${negativeLockBlocks ? 'opacity-60 cursor-not-allowed' : ''}`} placeholder="Ex: SM-789012 (opcional)" value={editData.dhl_sm_number} onChange={e => { if (!negativeLockBlocks) setEditData({...editData, dhl_sm_number: e.target.value.toUpperCase()}); }} disabled={negativeLockBlocks} data-testid="input-edit-dhl-sm-number" />
                                 </div>
                             )}
-                            {((mission?.client || '').toUpperCase().includes('DHL')) && (
+                            {((mission?.client || '').toUpperCase().includes('DHL')) && !ocultaFinanceiro && (
                                 <div className="md:col-span-2 p-3 rounded-xl border border-red-200 bg-red-50/30">
                                     <label className={LABEL_CLASS}><span className="text-red-600 font-black">KM Deslocamento cobrado pra DHL</span></label>
                                     <input type="number" min="0" step="1" className={`${INPUT_CLASS} border-red-300 bg-white`} placeholder="Ex: 170 (deixe vazio se não houver)" value={editData.dhl_deslocamento_km} onChange={e => setEditData({...editData, dhl_deslocamento_km: e.target.value})} data-testid="input-edit-dhl-deslocamento-km" />
@@ -4296,7 +4312,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     </div>
                                 </div>
                             )}
-                            {((mission?.client || '').toUpperCase().includes('CEVA')) && (
+                            {((mission?.client || '').toUpperCase().includes('CEVA')) && !ocultaFinanceiro && (
                                 <div><label className={LABEL_CLASS}><span className="text-teal-600 font-black">Liberação de Faturamento</span></label><input type="text" className={`${INPUT_CLASS} border-teal-300 bg-teal-50/30`} placeholder="Ex: A001, B002..." value={editData.billing_release} onChange={e => setEditData({...editData, billing_release: e.target.value.toUpperCase()})} data-testid="input-edit-billing-release" /></div>
                             )}
                         </div>
@@ -4882,6 +4898,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
               isOpen={dhlOccurrenceReportOpen}
               onClose={() => setDhlOccurrenceReportOpen(false)}
             />
+          )}
+          {mission && planoAcaoAberto && (
+            <OsActionPlanModal missionId={mission.id} onClose={() => setPlanoAcaoAberto(false)} />
           )}
         </div>
     );

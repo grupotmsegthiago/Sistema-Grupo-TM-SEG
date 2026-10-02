@@ -11,6 +11,7 @@ import {
 import FaceAuthGate from './FaceAuthGate';
 import type { TimeClockUserContext } from '../lib/timeclock/types';
 import { APP_VERSION } from '../constants';
+import { normalizarModulos } from '../lib/training/operadorAcademy';
 import { clearLocalStoragePreservingForceLogoutSeen } from '../lib/forceLogout';
 
 interface LoginProps {
@@ -121,7 +122,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             provider_id,
             profile_id,
             force_password_change,
-            permissions, 
+            permissions,
+            training_required,
+            training_passed_at,
+            training_modules,
+            training_score,
             profiles:profile_id (
                 name,
                 permissions
@@ -163,19 +168,26 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       };
 
       userData = await enrichUserWithCltData(userData);
+      const sessionUser = {
+        ...userData,
+        trainingRequired: Boolean(userCheck.training_required),
+        trainingPassedAt: userCheck.training_passed_at || null,
+        trainingModules: normalizarModulos(userCheck.training_modules),
+        trainingScore: userCheck.training_score ?? null,
+      };
 
-      if (requiresTimeclockUser(userData)) {
+      if (requiresTimeclockUser(sessionUser)) {
         // Token pendente: validação facial chama /api/gemini/generate antes do login completo.
         localStorage.setItem('authToken', `tmseg-token-${userCheck.id}-${Date.now()}`);
-        setPendingUser(userData);
-        setFaceMode(hasFaceRegistered(userData) ? 'verify' : 'register');
+        setPendingUser(sessionUser);
+        setFaceMode(hasFaceRegistered(sessionUser) ? 'verify' : 'register');
         setAuthPhase('face');
         setIsLoading(false);
         return;
       }
 
       localStorage.setItem('authToken', `tmseg-token-${userCheck.id}-${Date.now()}`);
-      localStorage.setItem('userData', JSON.stringify(userData));
+      localStorage.setItem('userData', JSON.stringify(sessionUser));
       localStorage.setItem('app_version', APP_VERSION);
 
       await logAction('LOGIN', 'Auth', userCheck.id, `Login realizado: ${userCheck.name}`);

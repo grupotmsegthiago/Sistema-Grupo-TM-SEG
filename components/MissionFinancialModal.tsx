@@ -31,6 +31,7 @@ import { copyTextAsync } from '../lib/clipboard';
 import { buildAuditSummaryData, type AuditSummaryData } from '../lib/auditSummaryBuilder';
 import AuditSummaryPanel from './AuditSummaryPanel';
 import DhlOccurrenceReportModal from './DhlOccurrenceReportModal';
+import OsActionPlanModal from './OsActionPlanModal';
 import MissionAnalyticalReportModal from './MissionAnalyticalReportModal';
 import { formatDateTimeBR, formatNowDateTimeBR, formatDateBR, formatTimeBR, toDatetimeLocalValueBR, datetimeLocalToIsoBR } from '../lib/dateUtils';
 import {
@@ -39,6 +40,7 @@ import {
   shouldWriteBillingSnapshot,
 } from '../lib/missionSnapshot';
 import { diretoriaAindaAprova, faturamentoAprovadoSemDiretoria } from '../lib/billing/diretoriaApproval';
+import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import {
   getMissionOpsDisplayStatus,
@@ -477,6 +479,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [auditSummaryView, setAuditSummaryView] = useState<'visual' | 'text'>('visual');
   const [auditSummaryLoading, setAuditSummaryLoading] = useState(false);
   const [dhlOccurrenceReportOpen, setDhlOccurrenceReportOpen] = useState(false);
+  const [osActionPlanOpen, setOsActionPlanOpen] = useState(false);
   const [analyticalReportOpen, setAnalyticalReportOpen] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<{
     clientSuggestion: { tableId: string; tableName: string; reason: string } | null;
@@ -3644,6 +3647,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isSavedZero = tollSource === 'VALOR SALVO (R$ 0,00)';
   const isAwaitingCheck = tollSource === 'AGUARDANDO CONFERÊNCIA';
 
+  if (isPerfilAvancado({ role: userRoleLower })) {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
+        <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center shadow-2xl">
+          <p className="text-sm font-black text-gray-900 uppercase">Sem acesso financeiro</p>
+          <p className="text-xs text-gray-600 mt-2">O perfil Avançado não visualiza valores, pedágio nem aprovação de faturamento.</p>
+          <button type="button" onClick={onClose} className="mt-4 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase">Fechar</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center overflow-y-auto bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in">
       
@@ -4251,6 +4266,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           >
             <Navigation size={18} className="shrink-0" />
             Gerar Relatório Analítico da Viagem (PDF)
+          </button>
+        </div>
+
+        <div
+          className="shrink-0 px-3 py-2.5 sm:px-5 bg-gradient-to-r from-[#450a0a] to-[#7f1d1d] border-b border-red-950/30"
+          data-testid="bar-os-action-plan"
+        >
+          <button
+            type="button"
+            onClick={() => setOsActionPlanOpen(true)}
+            className="w-full flex items-center justify-center gap-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-[0.99] text-white px-4 py-3 text-xs sm:text-sm font-black uppercase tracking-wide border border-white/25 shadow-lg"
+            data-testid="button-os-action-plan-banner"
+          >
+            <FileText size={18} className="shrink-0" />
+            Gerar Plano de Ação (PDF)
           </button>
         </div>
 
@@ -6582,6 +6612,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           isOpen={dhlOccurrenceReportOpen}
           onClose={() => setDhlOccurrenceReportOpen(false)}
         />
+      )}
+      {mission && osActionPlanOpen && (
+        <OsActionPlanModal missionId={mission.id} onClose={() => setOsActionPlanOpen(false)} />
       )}
       {mission && analyticalReportOpen && (
         <MissionAnalyticalReportModal

@@ -9,6 +9,7 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { name: 'Página Inicial', icon: 'LayoutDashboard', id: 'dashboard' },
+  { name: 'Treinamento', icon: 'GraduationCap', id: 'treinamento' },
   {
     name: 'Diretoria',
     icon: 'Crown',

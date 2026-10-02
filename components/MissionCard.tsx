@@ -9,7 +9,7 @@ import { Mission, MissionStatus, MissionLog, ClientPriceTable, ProviderCostTable
 import { supabase } from '../lib/supabase';
 import { 
   Truck, User, Phone, EyeOff, ShieldCheck, UserCheck, CarFront, 
-  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, AlertTriangle, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X, Upload, Loader2, Camera, Link2, Lock
+  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, AlertTriangle, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X, Upload, Loader2, Camera, Link2, Lock, ClipboardList
 } from 'lucide-react';
 
 const WhatsAppIcon = ({ size = 14 }: { size?: number }) => (
@@ -64,6 +64,7 @@ interface MissionCardProps {
     canEditMission: boolean;
     isDirector: boolean;
     canSeeBillingSummary?: boolean;
+    hideFinancialInfo?: boolean;
     isRedLight: boolean;
     isImminent: boolean;
     minutesSinceUpdate: number;
@@ -82,6 +83,7 @@ interface MissionCardProps {
     onViewHistory?: (m: Mission) => void;
     onFullReport?: (m: Mission) => void;
     onOperationalReport?: (m: Mission) => void;
+    onActionPlan?: (m: Mission) => void;
     lastLog?: MissionLog;
     onEvidenceUploaded?: () => void;
     clientTables: ClientPriceTable[];
@@ -211,8 +213,8 @@ const compressImage = (file: File, maxWidth = 1200, quality = 0.7): Promise<Blob
 };
 
 const MissionCardComponent: React.FC<MissionCardProps> = ({ 
-    mission, canEditMission, isDirector, canSeeBillingSummary = false, isRedLight, isImminent, minutesSinceUpdate, panelLayer, copiedId, isSendingEmail, hideProviderInfo,
-    onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport, lastLog, onEvidenceUploaded,
+    mission, canEditMission, isDirector, canSeeBillingSummary = false, hideFinancialInfo = false, isRedLight, isImminent, minutesSinceUpdate, panelLayer, copiedId, isSendingEmail, hideProviderInfo,
+    onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport, onActionPlan, lastLog, onEvidenceUploaded,
     clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages, evidenceList, dhlIntake, tollConfirmation,
     handoverNote, onHandoverNoteSaved
 }) => {
@@ -419,7 +421,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     const profitMargin = useMemo(() => {
         return displayRevenue > 0 ? ((displayRevenue - displayCost) / displayRevenue) * 100 : 0;
     }, [displayRevenue, displayCost]);
-    const isNegativeProfit = profitMargin < 0;
+    const isNegativeProfit = !hideFinancialInfo && profitMargin < 0;
 
     const isActive = !isTerminal;
 
@@ -817,7 +819,7 @@ Qualquer dúvida, estamos a disposição.
                         <span className={`px-1.5 py-0.5 rounded text-[11px] font-extrabold uppercase border tracking-wider ${showOpsPendingAlert ? 'bg-amber-100 text-amber-800 border-amber-300' : getStatusBadgeClass(mission.status)}`}>
                             {showOpsPendingAlert ? 'PENDENTE DADOS' : mission.status}
                         </span>
-                        {(() => {
+                        {!hideFinancialInfo && (() => {
                             if (tollConfirmation) {
                                 const dt = tollConfirmation.date ? new Date(tollConfirmation.date) : null;
                                 const dtStr = dt && !isNaN(dt.getTime()) ? formatDateTimeBR(dt) : '—';
@@ -1092,7 +1094,7 @@ Qualquer dúvida, estamos a disposição.
                 </div>
 
                 <div className="sm:col-span-1 xl:col-span-1 p-2 xl:p-1.5 flex flex-col justify-center text-center border-l border-r border-gray-100 bg-gray-50/30 gap-2 min-w-[108px] shrink-0">
-                    {(isDirector || canSeeBillingSummary) && !hideProviderInfo && (
+                    {!hideFinancialInfo && (isDirector || canSeeBillingSummary) && !hideProviderInfo && (
                         <div className="flex flex-col gap-1">
                            <div className="bg-white border border-green-200 rounded-lg p-1 shadow-sm">
                                <p className="text-[9px] font-black text-green-500 uppercase tracking-tighter leading-none mb-0.5">Faturamento {mission.billing_approved ? '(Auditado)' : isAdjustedRevenue ? '(Salvo)' : '(Projetado)'}</p>
@@ -1156,7 +1158,7 @@ Qualquer dúvida, estamos a disposição.
                            </div>
                         </div>
                     )}
-                    {hideProviderInfo && financials && (
+                    {!hideFinancialInfo && hideProviderInfo && financials && (
                         <div className="flex flex-col gap-1" data-testid={`client-billing-${mission.id}`}>
                            <div className="rounded-lg p-1.5 shadow-sm border" style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', borderColor: '#86efac' }}>
                                <p className="text-[9px] font-black text-green-600 uppercase tracking-wider leading-none mb-0.5">Faturamento</p>
@@ -1212,7 +1214,7 @@ Qualquer dúvida, estamos a disposição.
                         <button type="button" onClick={() => setOccurrenceOpen(true)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-orange-50 text-orange-700 border border-orange-200 transition-all duration-200 hover:bg-orange-600 hover:text-white hover:shadow-sm active:scale-95" title="Registrar ocorrência desta OS" data-testid={`button-occurrence-${mission.id}`}><AlertTriangle size={14} /></button>
                         <MissionHandoverNoteButton missionId={mission.id} note={handoverNote} onSaved={(saved) => onHandoverNoteSaved?.(saved)} />
                         
-                        {(isDirector || canEditMission) && onOpenFinancials && (
+                        {!hideFinancialInfo && (isDirector || canEditMission) && onOpenFinancials && (
                             <button onClick={() => onOpenFinancials(mission)} className={`flex items-center justify-center rounded-md transition-all duration-200 hover:shadow-sm active:scale-95 border ${mission.billing_approved ? 'w-7 h-7 bg-blue-600 text-white border-blue-700' : pendingApproval?.hasPartial ? 'h-7 px-1.5 gap-1 bg-gray-100 text-gray-500 border-gray-300 hover:bg-gray-200' : 'w-7 h-7 bg-green-50 text-green-700 border-green-200 hover:bg-green-600 hover:text-white'}`} title={mission.billing_approved ? "Faturamento Aprovado - Visualizar" : pendingApproval?.hasPartial ? `Aguardando: ${pendingApproval.missing.join(', ')} (${pendingApproval.waitingDays}d)` : "Conferência e Aprovação de Faturamento"}>
                                 <Calculator size={14} />
                                 {pendingApproval?.hasPartial && <span className="text-[9px] font-black text-gray-500 leading-none whitespace-nowrap">{pendingApproval.missing[0]} ({pendingApproval.waitingDays}d)</span>}
@@ -1228,6 +1230,7 @@ Qualquer dúvida, estamos a disposição.
                         {onPrint && (<button onClick={handlePrintClick} className="w-8 h-8 flex items-center justify-center rounded-xl bg-gray-50 text-gray-700 border border-gray-200 transition-all duration-200 hover:bg-gray-700 hover:text-white hover:shadow-sm active:scale-95" title="Imprimir Folha de Missão (PDF) e Copiar Texto"><Printer size={14} /></button>)}
                         {onFullReport && (<button onClick={() => onFullReport(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-amber-50 text-amber-700 border border-amber-200 transition-all duration-200 hover:bg-amber-600 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Completo PDF (Timeline + Auditoria)"><FileText size={14} /></button>)}
                         {onOperationalReport && (<button onClick={() => onOperationalReport(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-red-50 text-red-700 border border-red-200 transition-all duration-200 hover:bg-red-700 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Operacional" data-testid={`button-op-report-${mission.id}`}><Briefcase size={14} /></button>)}
+                        {onActionPlan && (<button type="button" onClick={() => onActionPlan(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-[#e8eef4] text-[#0d3b66] border border-[#0d3b66]/30 transition-all duration-200 hover:bg-[#0d3b66] hover:text-white hover:shadow-sm active:scale-95" title="Gerar Plano de Ação desta OS" data-testid={`button-os-action-plan-${mission.id}`}><ClipboardList size={14} /></button>)}
                         {isDirector && !hideProviderInfo && (<button onClick={() => onDelete(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-red-50 text-red-600 border-red-100 transition-all duration-200 hover:bg-red-600 hover:text-white hover:shadow-sm active:scale-95" title="Excluir Missão"><Trash2 size={14}/></button>)}
                     </div>
                 </div>

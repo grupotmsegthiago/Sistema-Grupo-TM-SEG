@@ -17,6 +17,7 @@ import {
 import { canAccessMissionReport } from './missionReportAccess';
 import { canViewOsAnalysisPendencies } from './osAnalysisAccess';
 import { APROVACOES_PENDENTES_SCREEN, canViewAprovacoesPendentes } from './aprovacoesPendentesAccess';
+import { isPerfilAvancado, telaFinanceiraOcultaParaAvancado } from './avancadoFinanceBlock';
 
 export type ScreenAccessUser = {
   name?: string | null;
@@ -154,6 +155,10 @@ export function canAccessScreen(user: ScreenAccessUser | null | undefined, scree
     return false;
   }
 
+  if (isPerfilAvancado(user) && telaFinanceiraOcultaParaAvancado(resolvePermissionId(screenId))) {
+    return false;
+  }
+
   // Controle diário: qualquer usuário interno, menos o comercial e o portal do cliente.
   if (screenId === 'controle-diario') {
     if (isRestrictedClientUser(user) || isPerfilComercial(user)) return false;
@@ -162,6 +167,12 @@ export function canAccessScreen(user: ScreenAccessUser | null | undefined, scree
 
   // Dashboard é a home segura de qualquer usuário autenticado (mesmo sem item no perfil).
   if (screenId === 'dashboard') return true;
+
+  // Treinamento: quem já entra revê as aulas. Portal do cliente não entra.
+  if (screenId === 'treinamento') {
+    if (isRestrictedClientUser(user)) return false;
+    return true;
+  }
 
   // Cockpit / Gestão Investimento: exclusivo dos Thiagos (não basta perfil).
   if (DIRETORIA_MENU_SCREEN_IDS.has(screenId)) {
@@ -210,7 +221,7 @@ export function fallbackScreenForUser(user: ScreenAccessUser | null | undefined)
         if (child.id === 'dashboard') continue;
         if (canAccessScreen(user, child.id)) return child.id;
       }
-    } else if (item.id !== 'dashboard' && canAccessScreen(user, item.id)) {
+    } else if (item.id !== 'dashboard' && item.id !== 'treinamento' && canAccessScreen(user, item.id)) {
       return item.id;
     }
   }
