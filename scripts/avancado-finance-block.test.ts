@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { isPerfilAvancado, telaFinanceiraOcultaParaAvancado } from '../lib/avancadoFinanceBlock';
 import { canAccessScreen } from '../lib/screenAccess';
 
@@ -19,4 +20,14 @@ test('Avançado não abre tela financeira nem com permissão marcada', () => {
   assert.equal(canAccessScreen(user, 'missions'), true);
   assert.equal(telaFinanceiraOcultaParaAvancado('fin-billing'), true);
   assert.equal(telaFinanceiraOcultaParaAvancado('missions'), false);
+});
+
+test('abertura da OS continua exigindo pedágio para o Avançado', () => {
+  const form = fs.readFileSync('components/MissionForm.tsx', 'utf8');
+  const gate = form.slice(form.indexOf('const tollOkForStep'), form.indexOf('const step5Done'));
+  assert.doesNotMatch(gate, /ocultaFinanceiro/);
+  assert.match(form, /data-testid="input-toll-manual"/);
+  assert.match(form, /data-testid="toll-zero-confirm"/);
+  assert.match(form, /resolvedTollValue === 0 && !tollZeroConfirmed/);
+  assert.doesNotMatch(form, /!ocultaFinanceiro && resolvedTollValue === 0/);
 });
