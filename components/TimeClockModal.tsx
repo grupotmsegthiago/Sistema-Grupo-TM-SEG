@@ -7,6 +7,7 @@ import {
   Fingerprint,
   CheckCircle2,
   AlertTriangle,
+  ArrowLeft,
 } from 'lucide-react';
 import SignaturePad from './SignaturePad';
 import { useNotification } from '../lib/NotificationContext';
@@ -128,6 +129,12 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
     return canvasRef.current.toDataURL('image/jpeg', 0.85).split(',')[1];
   };
 
+  const handleBackToFace = () => {
+    setPhotoBase64(null);
+    setError('');
+    setStep('face');
+  };
+
   const handleFaceContinue = async () => {
     setLoading(true);
     setError('');
@@ -206,11 +213,14 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
               <p className="text-[10px] text-gray-500 font-bold">{formatNowTimeBR()}</p>
             </div>
           </div>
-          {!forced && (
-            <button type="button" onClick={onClose} className="p-2 rounded-full hover:bg-gray-100">
-              <X size={18} />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center gap-1 px-2 py-1.5 rounded-full hover:bg-gray-100 text-[11px] font-black uppercase text-gray-600"
+            data-testid="button-fechar-ponto"
+          >
+            <X size={16} /> Fechar
+          </button>
         </div>
 
         <div className="p-5 space-y-4">
@@ -269,9 +279,19 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
             </div>
           ) : step === 'signature' ? (
             <div className="space-y-4">
-              <p className="text-xs font-bold text-gray-600 flex items-center gap-2">
-                <PenLine size={14} /> Confirme com assinatura digital
-              </p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-bold text-gray-600 flex items-center gap-2">
+                  <PenLine size={14} /> Confirme com assinatura digital
+                </p>
+                <button
+                  type="button"
+                  onClick={handleBackToFace}
+                  className="inline-flex items-center gap-1 text-[11px] font-black uppercase text-gray-500 hover:text-gray-800"
+                  data-testid="button-voltar-ponto"
+                >
+                  <ArrowLeft size={14} /> Voltar
+                </button>
+              </div>
 
               {user?.digitalSignatureUrl ? (
                 <div className="space-y-3">

@@ -119,7 +119,7 @@ const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
       <TimeClockModal
         open={modalOpen}
         forced
-        onClose={() => {}}
+        onClose={() => setModalOpen(false)}
         onRegistered={handleRegistered}
       />
     </>
