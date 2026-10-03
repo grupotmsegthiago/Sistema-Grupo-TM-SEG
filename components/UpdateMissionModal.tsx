@@ -220,6 +220,7 @@ interface FinalizeChecklistDialogProps {
     defaultDateTime: string;
     minDateTime?: string;
     missionId: string;
+    isVelada?: boolean;
     onConfirm: (payload: FinalizeConfirmPayload) => void;
     onCancel: (info?: { leavePending?: boolean }) => void;
 }
@@ -227,7 +228,7 @@ interface FinalizeChecklistDialogProps {
 const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     isOpen, kind, osLabel, providerName, dateLabel, isDhl, destinationAddress, mapLink,
     originCity, destCity, clientTableLine, providerTableLine, clientRouteQuestion, providerRouteQuestion, isRaio, raioFranchiseKm, startKm, defaultEndKm,
-    franchiseKm, suggestions, defaultDateTime, minDateTime, missionId, onConfirm, onCancel,
+    franchiseKm, suggestions, defaultDateTime, minDateTime, missionId, isVelada = false, onConfirm, onCancel,
 }) => {
     const isCompleted = kind === 'completed';
     const isCancelled = kind === 'cancelled';
@@ -309,6 +310,7 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     const veladaPassThrough = isVeladaPassThroughTerminal({
         odometerExempt,
         kind: isCompleted ? 'completed' : isCancelled ? 'cancelled' : 'refused',
+        isVelada,
     });
 
     // Evidência obrigatória em todo status terminal (Concluída, Cancelada, Recusada).
@@ -453,6 +455,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         tripUploading,
         kmUploading: odoUploading,
         timeConfirmed: photoTimeConfirmed,
+        requireKmPhoto: !veladaPassThrough,
     });
 
     // Etapas visíveis nesta OS (para a barra de progresso).
@@ -480,7 +483,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
     const essentialDone = isRefused
         ? (evidenceOk && !!dt)
         : isCompleted
-            ? (!!dt && evidenceOk)
+            ? (!!dt && !!tripUrl && photoTimeConfirmed && (veladaPassThrough || evidenceOk))
             : isCancelled && veladaPassThrough
                 ? (!!dt && !!endTravelDt && evidenceOk)
                 : (!!dt && !!endTravelDt && endKmNum != null && endKmNum > 0 && evidenceOk);
@@ -511,7 +514,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             if (!odometerExempt) {
                 if (kmMismatch && !chkTable) { setErr('O KM rodado não bate com a tabela. Confirme a ciência da tabela aplicada.'); return; }
             }
-            if (!evidenceOk || odoUploading) { setErr('Espere a foto do KM terminar de carregar.'); return; }
+            if (!veladaPassThrough && (!evidenceOk || odoUploading)) { setErr('Espere a foto do KM terminar de carregar.'); return; }
             if (!tripUrl || tripUploading) { setErr('Espere a foto do fim da viagem terminar de carregar.'); return; }
             if (!photoTimeConfirmed) { setErr('Confirme o horário do fim pela foto do fornecedor.'); return; }
             if (!dt) { setErr('Informe a data e a hora exata da finalização.'); return; }
@@ -701,7 +704,30 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                             )}
 
                             {/* Auditoria do hodômetro por IA */}
-                            {odometerExempt ? (
+                            {veladaPassThrough ? (
+                            <>
+                            <div className="mt-3 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="note-odometer-exempt">
+                                <Gauge className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                                <p className="text-[12px] font-medium text-blue-900">
+                                    Fornecedor <b>{providerName}</b>: o KM final chega depois que a viatura volta à base. Finalize agora com <b>horário</b> e <b>foto do fim da viagem</b>. O KM fica pendente no painel até você cobrar o fornecedor e gravar.
+                                </p>
+                            </div>
+                            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <div className="flex items-center gap-2">
+                                    <Gauge className="h-4 w-4 text-slate-600" />
+                                    <p className="text-[12px] font-bold text-slate-800">Print do hodômetro (opcional agora)</p>
+                                </div>
+                                <p className="mt-1 text-[11px] font-medium text-slate-500">Pode salvar se já tiver o KM. Se ainda não tiver, finalize sem isso — a pendência fica no seu nome.</p>
+                                <div tabIndex={0} onPaste={(e) => { const item = Array.from(e.clipboardData.items).find(it => it.type.startsWith('image/')); const file = item?.getAsFile(); if (file) { e.preventDefault(); handleOdometerImage(file); } }} className="mt-2 flex min-h-[64px] cursor-text flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 text-center outline-none focus:border-emerald-500" data-testid="dropzone-odometer">
+                                    {odoPreview ? (<img src={odoPreview} alt="Hodômetro" className="max-h-44 rounded-md border border-slate-200" data-testid="img-odometer-preview" />) : (<p className="text-[11px] font-semibold text-slate-400">Clique aqui e tecle Ctrl+V se já tiver o print</p>)}
+                                    <label className="mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-slate-700 px-2.5 py-1.5 text-[11px] font-semibold text-white" data-testid="button-odometer-attach"><Plus className="h-3.5 w-3.5" /> Anexar imagem<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleOdometerImage(f); e.currentTarget.value=''; }} /></label>
+                                </div>
+                                {(odoUploading || odoChecking) && (<div className="mt-2 flex items-center gap-2 text-[12px] font-semibold text-slate-600"><Loader2 className="h-4 w-4 animate-spin" /> Enviando evidência...</div>)}
+                                {odoErr && (<div className="mt-2 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-bold text-red-600"><AlertTriangle size={13} /> {odoErr}</div>)}
+                                {odoUrl && !odoUploading && (<div className="mt-2 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-2 text-[11px] font-bold text-emerald-800">Print do KM salvo.</div>)}
+                            </div>
+                            </>
+                            ) : odometerExempt ? (
                             <>
                             <div className="mt-3 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="note-odometer-exempt">
                                 <Gauge className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
@@ -809,7 +835,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                             </div>
                             <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                                 <p className="text-[12px] font-bold text-slate-800">Foto do fim da viagem</p>
-                                <p className="mt-1 text-[11px] font-medium text-slate-500">A foto precisa terminar de carregar antes de salvar.</p>
+                                <p className="mt-1 text-[11px] font-medium text-slate-500">{veladaPassThrough ? 'Obrigatória para finalizar. O KM final pode ficar pendente.' : 'A foto precisa terminar de carregar antes de salvar.'}</p>
                                 <div tabIndex={0} onPaste={(e) => { const item = Array.from(e.clipboardData.items).find(it => it.type.startsWith('image/')); const file = item?.getAsFile(); if (file) { e.preventDefault(); void handleTripImage(file); } }} className="mt-2 flex min-h-[64px] cursor-text flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-red-300 bg-white p-3 text-center outline-none" data-testid="dropzone-trip-evidence">
                                     {tripPreview ? <img src={tripPreview} alt="Fim da viagem" className="max-h-44 rounded-md border" /> : <p className="text-[11px] font-semibold text-slate-400">Cole ou anexe a foto do fim da viagem</p>}
                                     <label className="mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-slate-700 px-2.5 py-1.5 text-[11px] font-semibold text-white">Anexar foto<input type="file" accept="image/*" className="hidden" data-testid="input-trip-evidence" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleTripImage(f); e.currentTarget.value = ''; }} /></label>
@@ -3418,9 +3444,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         confirmedPrintUrlRef.current = odometerPrintUrl || null;
         confirmedObservacaoRef.current = String(payload.observacao || '').trim();
         if (odometerPrintUrl) prefetchConfirmedPrintBlob(odometerPrintUrl);
-        if (mission && kind === 'completed' && odometerPrintUrl && tripEvidenceUrl && currentUser?.name) {
+        if (mission && kind === 'completed' && tripEvidenceUrl && currentUser?.name) {
             const { error: evidenceErr } = await supabase.from('missions')
-                .update(endEvidenceSavedPatch(currentUser.name, tripEvidenceUrl, odometerPrintUrl))
+                .update(endEvidenceSavedPatch(currentUser.name, tripEvidenceUrl, odometerPrintUrl || null))
                 .eq('id', mission.id);
             if (evidenceErr) console.warn('[EndEvidence] Falha ao gravar as fotos do fim:', evidenceErr.message);
         }
@@ -4834,6 +4860,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                   : undefined
               }
               missionId={mission?.id ? String(mission.id) : ''}
+              isVelada={isVeladaMission({ missionType: editData.missionType, mission_type: mission?.mission_type })}
               onConfirm={handleFinalizeConfirmed}
               onCancel={handleFinalizeCancelled}
             />

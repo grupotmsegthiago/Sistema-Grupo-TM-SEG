@@ -6,10 +6,13 @@ export function canSaveFinalizeEvidence(input: {
   tripUploading?: boolean;
   kmUploading?: boolean;
   timeConfirmed?: boolean;
+  /** Velada ATIVA/TM SEG: print do KM entra depois; não trava a finalização. */
+  requireKmPhoto?: boolean;
 }): boolean {
+  const requireKmPhoto = input.requireKmPhoto !== false;
   return Boolean(
     input.tripUrl
-    && input.kmUrl
+    && (!requireKmPhoto || input.kmUrl)
     && !input.tripUploading
     && !input.kmUploading
     && input.timeConfirmed,
@@ -23,10 +26,10 @@ export function endEvidencePendingPatch(operator: string) {
   };
 }
 
-export function endEvidenceSavedPatch(operator: string, tripUrl: string, kmUrl: string) {
+export function endEvidenceSavedPatch(operator: string, tripUrl: string, kmUrl?: string | null) {
   return {
     end_trip_evidence_url: tripUrl,
-    end_km_evidence_url: kmUrl,
+    end_km_evidence_url: kmUrl || null,
     end_photo_time_confirmed: true,
     end_evidence_pending: false,
     end_evidence_operator: operator,

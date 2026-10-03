@@ -28,6 +28,28 @@ test('só salva a finalização quando as duas fotos carregaram e o horário da 
   }), false);
 });
 
+test('velada ATIVA/TM SEG finaliza sem print de KM, com foto do fim e horário', () => {
+  assert.equal(canSaveFinalizeEvidence({
+    tripUrl: 'https://foto-viagem',
+    kmUrl: '',
+    timeConfirmed: true,
+    requireKmPhoto: false,
+  }), true);
+  assert.equal(canSaveFinalizeEvidence({
+    tripUrl: '',
+    kmUrl: '',
+    timeConfirmed: true,
+    requireKmPhoto: false,
+  }), false);
+  assert.equal(canSaveFinalizeEvidence({
+    tripUrl: 'https://foto-viagem',
+    kmUrl: '',
+    tripUploading: true,
+    timeConfirmed: true,
+    requireKmPhoto: false,
+  }), false);
+});
+
 test('cockpit conta evidência e pendência por operador', () => {
   const rows = summarizeEvidenceByOperator([
     { operator: 'Lucas Silva', pending: true },

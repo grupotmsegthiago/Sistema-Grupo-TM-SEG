@@ -25,6 +25,7 @@ import { formatProviderName, resolveLocationDisplay, extractCoordinates } from '
 import { isMissionOpsIncomplete, getMissionOpsMissingFields, isOpsAlertRecipient } from '../lib/missionOpsIncomplete';
 import LiveTrackPanel from './LiveTrackPanel';
 import { isVeladaMission } from '../lib/liveTrack/isVeladaMission';
+import { isVeladaFinalKmPending } from '../lib/veladaClosureAlert';
 import { isOsNegativeMarginLocked } from '../lib/osNegativeMarginLock';
 import { missionHasOccurrence, OCCURRENCE_BANNER } from '../lib/missionOccurrence';
 import { PANEL_LAYER_META, type MissionPanelLayer } from '../lib/missionPanelLayers';
@@ -436,6 +437,8 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         }
     }, [mission]);
 
+    const showVeladaKmPending = useMemo(() => isVeladaFinalKmPending(mission), [mission]);
+
     const missingInfo = useMemo(() => {
         const missing: string[] = [];
         const isRelevantStatus = [MissionStatus.SCHEDULED, MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT, MissionStatus.DOCUMENTATION].includes(mission.status);
@@ -784,6 +787,15 @@ Qualquer dúvida, estamos a disposição.
                 >
                     <AlertTriangle size={12} strokeWidth={3} /> {OCCURRENCE_BANNER}
                 </button>
+            )}
+            {!hideProviderInfo && showVeladaKmPending && (
+                <div
+                    className="w-full bg-amber-500 text-amber-950 text-[12px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 animate-pulse"
+                    data-testid={`banner-velada-km-pending-${mission.id}`}
+                    title="Missão velada finalizada. Falta o KM final para cobrar o fornecedor."
+                >
+                    <AlertTriangle size={12} strokeWidth={3} /> Falta KM final — cobrar o fornecedor
+                </div>
             )}
             <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-b-xl transition-colors ${isRedLight ? 'bg-red-500' : isImminent ? 'bg-amber-500' : 'bg-transparent'}`}></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-12 min-h-[120px] divide-y sm:divide-y xl:divide-y-0 xl:divide-x divide-gray-100 items-stretch">

@@ -211,7 +211,7 @@ const VeladaClosureAlert: React.FC = () => {
             <AlertTriangle size={18} className="mt-0.5 shrink-0" />
             <div className="flex-1">
               <p className="text-sm font-black uppercase tracking-wide">Velada pendente</p>
-              <p className="text-[11px] font-bold">{ocultaFinanceiro ? 'Falta KM final e hora final. Pode fechar agora: ao abrir o sistema o aviso volta até esses dados serem salvos.' : 'Falta KM final, hora final e pedágio. Pode fechar agora: ao abrir o sistema o aviso volta até esses dados serem salvos.'}</p>
+              <p className="text-[11px] font-bold">{ocultaFinanceiro ? 'A OS já foi finalizada. Falta o KM final (a viatura ainda pode estar voltando à base). Pode fechar agora: ao abrir o sistema o aviso volta até o KM ser gravado.' : 'A OS já foi finalizada. Falta o KM final para cobrar o fornecedor (e o pedágio, se ainda não estiver confirmado). Pode fechar agora: o aviso volta até esses dados serem salvos.'}</p>
             </div>
             <button type="button" onClick={() => setDismissed(true)} className="rounded-lg p-1 hover:bg-amber-400" aria-label="Fechar alerta" data-testid="button-velada-closure-close">
               <X size={18} />
