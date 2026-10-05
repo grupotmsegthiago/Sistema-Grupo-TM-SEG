@@ -39,7 +39,7 @@ import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { canEditNegativeMarginLockedOs, isOsNegativeMarginLocked } from '../lib/osNegativeMarginLock';
-import { canSaveFinalizeEvidence, endEvidencePendingPatch, endEvidenceSavedPatch } from '../lib/endEvidenceGate';
+import { canSaveFinalizeEvidence, endEvidencePendingPatch, endEvidenceSavedPatch, shouldResetFinalizeChecklist } from '../lib/endEvidenceGate';
 import { refusedOsClearSnapshotFields } from '../lib/missionSnapshot';
 import {
   canUnlockPaidInvoiceLock,
@@ -263,34 +263,36 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     const [tripUploading, setTripUploading] = useState(false);
     const [tripErr, setTripErr] = useState('');
     const [photoTimeConfirmed, setPhotoTimeConfirmed] = useState(false);
+    const checklistWasOpenRef = useRef(false);
 
     useEffect(() => {
-        if (isOpen) {
-            setEndKm(defaultEndKm);
-            setDt(defaultDateTime);
-            setEndTravelDt(defaultDateTime);
-            setChkAddress(false);
-            setChkCities(false);
-            setChkTable(false);
-            setRaioAnswer(null);
-            setRaioRealKm('');
-            setErr('');
-            setSubmitting(false);
-            setOdoFile(null);
-            setOdoPreview('');
-            setOdoUrl('');
-            setOdoUploading(false);
-            setOdoChecking(false);
-            setOdoResult(null);
-            setOdoValidatedKm(null);
-            setOdoErr('');
-            setOdoConfirmed(false);
-            setTripPreview('');
-            setTripUrl('');
-            setTripUploading(false);
-            setTripErr('');
-            setPhotoTimeConfirmed(false);
-        }
+        const reset = shouldResetFinalizeChecklist(isOpen, checklistWasOpenRef.current);
+        checklistWasOpenRef.current = isOpen;
+        if (!reset) return;
+        setEndKm(defaultEndKm);
+        setDt(defaultDateTime);
+        setEndTravelDt(defaultDateTime);
+        setChkAddress(false);
+        setChkCities(false);
+        setChkTable(false);
+        setRaioAnswer(null);
+        setRaioRealKm('');
+        setErr('');
+        setSubmitting(false);
+        setOdoFile(null);
+        setOdoPreview('');
+        setOdoUrl('');
+        setOdoUploading(false);
+        setOdoChecking(false);
+        setOdoResult(null);
+        setOdoValidatedKm(null);
+        setOdoErr('');
+        setOdoConfirmed(false);
+        setTripPreview('');
+        setTripUrl('');
+        setTripUploading(false);
+        setTripErr('');
+        setPhotoTimeConfirmed(false);
     }, [isOpen, defaultEndKm, defaultDateTime]);
 
     if (!isOpen) return null;
@@ -665,7 +667,8 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                                 </div>
                                 <div className="mt-2">
                                     <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">Data e hora exata da recusa *</label>
-                                    <input type="datetime-local" step={1} value={dt} min={minDateTime} onChange={e => setDt(e.target.value)} className="mt-1 w-full rounded-md border border-red-300 bg-white px-2.5 py-2 text-sm font-bold text-slate-800 outline-none focus:border-red-500" data-testid="input-confirm-real-time" />
+                                    <input type="datetime-local" step={1} value={dt} onChange={e => setDt(e.target.value)} className="mt-1 w-full rounded-md border border-red-300 bg-white px-2.5 py-2 text-sm font-bold text-slate-800 outline-none focus:border-red-500" data-testid="input-confirm-real-time" />
+                                    <p className="mt-1 text-[11px] font-medium text-red-800">Use o horário que aparece na evidência, mesmo que seja antes do início agendado da OS.</p>
                                 </div>
                             </div>
                             <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -1065,6 +1068,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     
     // Controle de Relógio em Tempo Real
     const [isEndTimeLocked, setIsEndTimeLocked] = useState(false);
+    // O checklist de recusa/finalização não pode ser atropelado por um reload da OS.
+    const checklistOpenRef = useRef(false);
+    checklistOpenRef.current = !!pendingFinalizeConfirm;
 
     // Permissões Administrativas
     const isCommercial = useMemo(() => {
@@ -1377,7 +1383,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const isGoogleLinkRequired = isRequirementActive;
 
     useEffect(() => {
-        if (!isOpen || isEndTimeLocked) return;
+        if (!isOpen || isEndTimeLocked || pendingFinalizeConfirm) return;
         if (!canEditEndTime && mission && [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED, MissionStatus.PENDING].includes(mission.status as MissionStatus) && mission.endTime) return;
 
         // VERIFICAÇÃO DE AGENDAMENTO FUTURO
@@ -1401,7 +1407,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [isOpen, isEndTimeLocked, mission, editData.startDate, editData.startTime, canEditEndTime]);
+    }, [isOpen, isEndTimeLocked, pendingFinalizeConfirm, mission, editData.startDate, editData.startTime, canEditEndTime]);
 
     // Função auxiliar para validar KM (Apenas Ponto)
     const handleKmInput = (field: 'startKm' | 'endKm', value: string) => {
@@ -1573,6 +1579,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         setIsLoadingData(true);
         try {
             const { data: m } = await supabase.from('missions').select('*').eq('id', mission.id).single();
+            if (!m || checklistOpenRef.current) return;
             const startDT = m.start_time ? {
                 date: formatIsoDateBR(new Date(m.start_time)),
                 time: formatTimeAuditBR(new Date(m.start_time))

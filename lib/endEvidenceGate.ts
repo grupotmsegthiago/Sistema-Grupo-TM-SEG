@@ -1,3 +1,12 @@
+/**
+ * O checklist de finalizar, recusar ou cancelar só zera foto e horário ao abrir.
+ * O relógio da OS muda a hora padrão a cada segundo. Se o dialog reiniciasse
+ * junto, a foto sumia e o horário voltava a ser pedido, e a recusa não salvava.
+ */
+export function shouldResetFinalizeChecklist(isOpen: boolean, wasOpen: boolean): boolean {
+  return isOpen && !wasOpen;
+}
+
 /** Fotos do fim da missão precisam terminar de carregar antes do operador salvar. */
 
 export function canSaveFinalizeEvidence(input: {

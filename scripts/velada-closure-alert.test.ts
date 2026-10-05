@@ -73,6 +73,16 @@ test('KM final não pode ser menor que o inicial', () => {
   assert.equal(veladaFinalKmIsValid(0, 0), false);
 });
 
+test('o aviso da velada pede pedágio também para o perfil Avançado', () => {
+  const src = fs.readFileSync('components/VeladaClosureAlert.tsx', 'utf8');
+  assert.match(src, /button-velada-toll-no/);
+  assert.match(src, /button-velada-toll-yes/);
+  assert.match(src, /input-velada-toll/);
+  assert.match(src, /Confirme se houve pedágio/);
+  assert.doesNotMatch(src, /ocultaFinanceiro/);
+  assert.doesNotMatch(src, /isPerfilAvancado/);
+});
+
 test('o aviso da velada fecha e fica pendente até salvar', () => {
   const src = fs.readFileSync('components/VeladaClosureAlert.tsx', 'utf8');
   assert.match(src, /button-velada-closure-close/);

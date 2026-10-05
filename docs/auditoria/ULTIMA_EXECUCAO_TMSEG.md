@@ -1,5 +1,20 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## VELADA — BOTÃO DE PEDÁGIO E RECUSA TRAVADA
+
+**Data:** 2026-10-05 (UTC)
+**Pedido:** o botão de pedágio sumiu no aviso da velada; a recusa apaga a foto e fica pedindo o horário.
+
+**Causa:**
+- O aviso de velada escondia pedágio para o perfil Avançado. O print do grupo mostra exatamente esse texto, sem Sem pedágio / Com pedágio.
+- O checklist de recusa zerava foto e horário sempre que o relógio da OS mudava a hora padrão. O campo de hora da recusa também recusava horário anterior ao início agendado.
+
+**Correção:** o aviso volta a exigir KM, hora e pedágio para qualquer perfil. O checklist só reinicia ao abrir. A recusa aceita o horário da evidência.
+
+**Não alterado:** Asaas, eNotas, motor financeiro, telas de dinheiro do perfil Avançado.
+
+**Testes:** `npx tsx --test scripts/velada-closure-alert.test.ts scripts/end-evidence-gate.test.ts scripts/avancado-finance-block.test.ts`
+
 ## PORTAL CEVA — CONTROLE DE ESCOLTA
 
 **Data:** 2026-09-29 (UTC-3)
