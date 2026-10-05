@@ -71,6 +71,8 @@ export function labelForEditableId(id: string): string {
   if (row) return `Linha ${row[1].toUpperCase()}`;
   if (id.startsWith('5w2h-')) return `5W2H — ${id.replace('5w2h-', '')}`;
   if (id.startsWith('5pq-')) return `5 Porquês — nível ${id.replace('5pq-', '')}`;
+  if (id.startsWith('prazo-')) return `Prazo ${id.replace('prazo-', '').toUpperCase()}`;
+  if (id.startsWith('ap-')) return `Ação preventiva ${id.toUpperCase()}`;
   if (id.startsWith('ac-')) return `Ação corretiva ${id.toUpperCase()}`;
   if (id.startsWith('commit-')) return `Compromisso TM SEG ${id.replace('commit-', '')}`;
   if (id.startsWith('contencao-')) return `Contenção ${id.replace('contencao-', '').toUpperCase()}`;

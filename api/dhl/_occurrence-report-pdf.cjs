@@ -223,12 +223,23 @@ function editableRow(id) {
   return `data-dhl-editable="${id}" data-dhl-adjust-only="1"`;
 }
 function buildRootCauseBlock(data, provider) {
-  return `<div class="quote" ${editable("sec-4-3-causa-raiz")}><strong>Identificamos um descompasso no planejamento e na gest\xE3o de capacidade log\xEDstica do parceiro ${esc(provider)}</strong>, com aloca\xE7\xE3o de viatura ainda vinculada a opera\xE7\xE3o anterior sem margem de seguran\xE7a temporal, o que exigiu remanejamento e troca de VTR em campo. A TM SEG refor\xE7a junto ao parceiro o compromisso com a melhoria dos processos para que situa\xE7\xF5es semelhantes n\xE3o se repitam, preservando o padr\xE3o de qualidade exigido pela opera\xE7\xE3o DHL.</div>`;
+  return `<div class="quote" ${editable("sec-4-3-causa-raiz")}><strong>Identificamos um descompasso entre o hor\xE1rio acordado e a execu\xE7\xE3o operacional do parceiro ${esc(provider)}</strong>. A TM SEG j\xE1 trata o caso diretamente com o fornecedor, com apura\xE7\xE3o documentada, plano de melhoria e acompanhamento, para que a ocorr\xEAncia n\xE3o se repita e o padr\xE3o exigido pela opera\xE7\xE3o DHL seja preservado.</div>`;
 }
 function buildFullOccurrenceReportHtml(data, options) {
   const logoSrc = String(options?.logoDataUri || "").trim();
   const generatedLabel = formatDateTimeBR(data.generatedAt);
   const emissionDate = formatDateBR(data.generatedAt);
+  const prazo = (days) => {
+    const base = new Date(data.generatedAt);
+    if (Number.isNaN(base.getTime())) return emissionDate;
+    return formatDateBR(new Date(base.getTime() + days * 24 * 60 * 60 * 1e3));
+  };
+  const d2 = prazo(2);
+  const d4 = prazo(4);
+  const d7 = prazo(7);
+  const d9 = prazo(9);
+  const d12 = prazo(12);
+  const d30 = prazo(30);
   const provider = data.provider || "parceiro operacional";
   const delayHuman = formatDelayHuman(data.delayMinutesAtOrigin);
   const originArrival = markAt(data, "Chegada na origem");
@@ -268,7 +279,7 @@ function buildFullOccurrenceReportHtml(data, options) {
     const detailCell = typeof source === "string" && source.includes("km") ? src : sourceCell;
     return `<tr><td>${esc(String(label))}</td><td>${timeCell}</td><td>${esc(String(detailCell))}</td></tr>`;
   }).join("");
-  const factsSummary = data.factsSummary?.trim() || `Na opera\xE7\xE3o do dia ${formatDateBR(scheduledOrigin || missionCreated)}, a S.E. ${data.seNumber} estava programada para atendimento na origem \xE0s ${formatTimeBR(scheduledOrigin)}. Houve atraso na chegada \xE0 origem (${delayHuman}), com necessidade de remanejamento de viatura. A TM SEG manteve comunica\xE7\xE3o com a DHL e acompanhou a opera\xE7\xE3o at\xE9 a conclus\xE3o.`;
+  const factsSummary = data.factsSummary?.trim() || `Na opera\xE7\xE3o do dia ${formatDateBR(scheduledOrigin || missionCreated)}, a S.E. ${data.seNumber} estava programada para atendimento na origem \xE0s ${formatTimeBR(scheduledOrigin)}. Houve atraso na chegada \xE0 origem (${delayHuman}). A TM SEG acionou o fornecedor, manteve comunica\xE7\xE3o com a DHL e acompanhou a opera\xE7\xE3o at\xE9 a conclus\xE3o.`;
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -330,9 +341,9 @@ function buildFullOccurrenceReportHtml(data, options) {
   <table>
     <thead><tr><th>Pergunta</th><th>Resposta</th></tr></thead>
     <tbody>
-      <tr><td>O qu\xEA?</td><td>Atraso na chegada da equipe de escolta \xE0 origem e deslocamento inicial da viatura para endere\xE7o divergente do programado (destino em vez de origem).</td></tr>
-      <tr><td>Quando?</td><td>Opera\xE7\xE3o do dia ${formatDateBR(scheduledOrigin)}, com hor\xE1rio contratual de atendimento \xE0s ${formatTimeBR(scheduledOrigin)} na origem.</td></tr>
-      <tr><td>Onde?</td><td>Origem: ${esc(data.origin)}.</td></tr>
+      <tr><td>O qu\xEA?</td><td ${editable("5w2h-oque")}>Atraso na chegada da equipe de escolta \xE0 origem em rela\xE7\xE3o ao hor\xE1rio programado.</td></tr>
+      <tr><td>Quando?</td><td ${editable("5w2h-quando")}>Opera\xE7\xE3o do dia ${formatDateBR(scheduledOrigin)}, com hor\xE1rio contratual de atendimento \xE0s ${formatTimeBR(scheduledOrigin)} na origem.</td></tr>
+      <tr><td>Onde?</td><td ${editable("5w2h-onde")}>Origem: ${esc(data.origin)}.</td></tr>
       <tr><td>Quem?</td><td ${editable("5w2h-quem")}>Equipe S.E. ${esc(data.seNumber)}, executada pelo parceiro ${esc(provider)}, sob gest\xE3o operacional da TM SEG.</td></tr>
       <tr><td>Por qu\xEA?</td><td ${editable("5w2h-porque")}>Falha no planejamento log\xEDstico do parceiro e necessidade de remanejamento/troca de viatura em campo.</td></tr>
       <tr><td>Como?</td><td ${editable("5w2h-como")}>A viatura designada n\xE3o concluiu a opera\xE7\xE3o anterior a tempo; houve troca de VTR em deslocamento e orienta\xE7\xE3o da central para corre\xE7\xE3o de rota.</td></tr>
@@ -379,12 +390,12 @@ function buildFullOccurrenceReportHtml(data, options) {
   <h2>4. Justificativa do atraso e an\xE1lise de causa raiz</h2>
   <div class="subsection">
   <h3>4.1 S\xEDntese executiva</h3>
-  <p ${editable("sec-4-1-sintese")}>O atraso de <strong>${delayHuman}</strong> na chegada \xE0 origem da S.E. ${esc(data.seNumber)} n\xE3o decorreu de falha no aceite ou no registro da miss\xE3o pela TM SEG. A OS foi aberta em <strong>${missionCreated ? `${formatDateBR(missionCreated)} \xE0s ${formatTimeBR(missionCreated)}` : "\u2014"}</strong>. A ocorr\xEAncia est\xE1 associada a um descompasso pontual na execu\xE7\xE3o operacional do parceiro, j\xE1 acionado para alinhamento e melhoria cont\xEDnua.</p>
+  <p ${editable("sec-4-1-sintese")}>O atraso de <strong>${delayHuman}</strong> na chegada \xE0 origem da S.E. ${esc(data.seNumber)} n\xE3o decorreu de falha no aceite ou no registro da miss\xE3o pela TM SEG. A OS foi aberta em <strong>${missionCreated ? `${formatDateBR(missionCreated)} \xE0s ${formatTimeBR(missionCreated)}` : "\u2014"}</strong>. A ocorr\xEAncia est\xE1 em apura\xE7\xE3o conjunta com o fornecedor, j\xE1 acionado para alinhamento, plano de melhoria e preven\xE7\xE3o de reincid\xEAncia.</p>
   </div>
 
   <div class="subsection">
   <h3>4.2 Vers\xE3o do parceiro</h3>
-  <p ${editable("sec-4-2-parceiro")}>O fornecedor informou necessidade de <strong>troca de viatura (VTR) no meio do percurso</strong>. A TM SEG segue apurando os detalhes operacionais para consolidar o entendimento completo dos fatos, com foco em preven\xE7\xE3o de reincid\xEAncia.</p>
+  <p ${editable("sec-4-2-parceiro")}>O fornecedor foi acionado para apresentar a vers\xE3o operacional dos fatos. A TM SEG conduz a apura\xE7\xE3o em conjunto com o parceiro e consolida o entendimento da ocorr\xEAncia, com foco em tratar o caso e evitar reincid\xEAncia.</p>
   </div>
 
   <div class="subsection section-root-cause">
@@ -397,11 +408,11 @@ function buildFullOccurrenceReportHtml(data, options) {
   <table>
     <thead><tr><th>N\xEDvel</th><th>Pergunta</th><th>Resposta</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td>Por que houve atraso na origem?</td><td>A viatura chegou \xE0 origem somente \xE0s ${formatTimeBR(originArrival)} (registro sist\xEAmico).</td></tr>
-      <tr><td>2</td><td>Por que a viatura n\xE3o chegou no hor\xE1rio programado?</td><td ${editable("5pq-2")}>Foi necess\xE1rio reorganizar a VTR durante o deslocamento.</td></tr>
-      <tr><td>3</td><td>Por que foi necess\xE1rio reorganizar a VTR?</td><td ${editable("5pq-3")}>A viatura designada n\xE3o estava dispon\xEDvel a tempo para assumir a miss\xE3o.</td></tr>
-      <tr><td>4</td><td>Por que a viatura n\xE3o estava dispon\xEDvel?</td><td ${editable("5pq-4")}>Havia sobreposi\xE7\xE3o com outra opera\xE7\xE3o, sem desaloca\xE7\xE3o com anteced\xEAncia suficiente.</td></tr>
-      <tr><td>5</td><td>Por que n\xE3o houve substitui\xE7\xE3o preventiva?</td><td ${editable("5pq-5")}>O fluxo de backup n\xE3o foi acionado com a anteced\xEAncia necess\xE1ria; a TM SEG foi informada em momento posterior ao ideal.</td></tr>
+      <tr><td>1</td><td>Por que houve atraso na origem?</td><td ${editable("5pq-1")}>A viatura chegou \xE0 origem somente \xE0s ${formatTimeBR(originArrival)} (registro sist\xEAmico).</td></tr>
+      <tr><td>2</td><td>Por que a viatura n\xE3o chegou no hor\xE1rio programado?</td><td ${editable("5pq-2")}>A execu\xE7\xE3o do parceiro n\xE3o acompanhou o hor\xE1rio programado da origem.</td></tr>
+      <tr><td>3</td><td>Por que a execu\xE7\xE3o n\xE3o acompanhou o hor\xE1rio?</td><td ${editable("5pq-3")}>A viatura designada n\xE3o estava liberada com a anteced\xEAncia necess\xE1ria para assumir a miss\xE3o.</td></tr>
+      <tr><td>4</td><td>Por que a viatura n\xE3o estava liberada a tempo?</td><td ${editable("5pq-4")}>Havia conflito de janela operacional, sem desaloca\xE7\xE3o com margem de seguran\xE7a.</td></tr>
+      <tr><td>5</td><td>Por que n\xE3o houve substitui\xE7\xE3o preventiva?</td><td ${editable("5pq-5")}>O plano de backup com o fornecedor n\xE3o foi acionado a tempo; a TM SEG foi comunicada depois do momento ideal.</td></tr>
     </tbody>
   </table>
   </div>
@@ -411,11 +422,11 @@ function buildFullOccurrenceReportHtml(data, options) {
   <table>
     <thead><tr><th>#</th><th>A\xE7\xE3o</th><th>Status</th><th>Data</th></tr></thead>
     <tbody>
-      <tr ${editableRow("row-c1")}><td>C1</td><td>Comunica\xE7\xE3o imediata \xE0 DHL assim que identificada a necessidade de troca de viatura</td><td>Conclu\xEDda</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
-      <tr ${editableRow("row-c2")}><td>C2</td><td>Orienta\xE7\xE3o da equipe para corre\xE7\xE3o de rota (destino \u2192 origem)</td><td>Conclu\xEDda</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
-      <tr ${editableRow("row-c3")}><td>C3</td><td>Acompanhamento operacional cont\xEDnuo at\xE9 a conclus\xE3o da miss\xE3o</td><td>Conclu\xEDda</td><td>${formatDateBR(completed)}</td></tr>
+      <tr ${editableRow("row-c1")}><td>C1</td><td ${editable("contencao-c1")}>Comunica\xE7\xE3o imediata \xE0 DHL assim que a ocorr\xEAncia operacional foi identificada</td><td>Conclu\xEDda</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
+      <tr ${editableRow("row-c2")}><td>C2</td><td ${editable("contencao-c2")}>Orienta\xE7\xE3o da equipe e corre\xE7\xE3o do atendimento at\xE9 a conclus\xE3o da etapa afetada</td><td>Conclu\xEDda</td><td>${formatDateBR(scheduledOrigin)}</td></tr>
+      <tr ${editableRow("row-c3")}><td>C3</td><td ${editable("contencao-c3")}>Acompanhamento operacional cont\xEDnuo at\xE9 a conclus\xE3o da miss\xE3o</td><td>Conclu\xEDda</td><td>${formatDateBR(completed)}</td></tr>
       <tr ${editableRow("row-c4")}><td>C4</td><td ${editable("contencao-c4")}>Alinhamento formal e apura\xE7\xE3o junto ao parceiro, com plano de melhoria</td><td>Conclu\xEDda</td><td>${emissionDate}</td></tr>
-      <tr ${editableRow("row-c5")}><td>C5</td><td>Retorno formal \xE0 DHL com relato estruturado dos fatos</td><td>Conclu\xEDda</td><td>${emissionDate}</td></tr>
+      <tr ${editableRow("row-c5")}><td>C5</td><td ${editable("contencao-c5")}>Retorno formal \xE0 DHL com relato estruturado dos fatos e do plano de a\xE7\xE3o</td><td>Conclu\xEDda</td><td>${emissionDate}</td></tr>
     </tbody>
   </table>
   </div>
@@ -426,11 +437,11 @@ function buildFullOccurrenceReportHtml(data, options) {
   <table>
     <thead><tr><th>ID</th><th>A\xE7\xE3o</th><th>Respons\xE1vel</th><th>Prazo</th><th>Indicador</th></tr></thead>
     <tbody>
-      <tr ${editableRow("row-ac-01")}><td>AC-01</td><td ${editable("ac-01")}>Concluir apura\xE7\xE3o documentada com o parceiro e plano de melhoria para evitar reincid\xEAncia</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>17/07/2026</td><td>Termo arquivado</td></tr>
-      <tr ${editableRow("row-ac-02")}><td>AC-02</td><td>Registro formal no scorecard de fornecedores e refor\xE7o de SLA</td><td>Gest\xE3o de Fornecedores TM SEG</td><td>14/07/2026</td><td>Registro no sistema</td></tr>
-      <tr ${editableRow("row-ac-03")}><td>AC-03</td><td>Revis\xE3o tempor\xE1ria de aloca\xE7\xE3o em miss\xF5es cr\xEDticas DHL/Foxconn at\xE9 conclus\xE3o das a\xE7\xF5es</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>Imediato</td><td>Plano de capacidade validado</td></tr>
-      <tr ${editableRow("row-ac-04")}><td>AC-04</td><td>Plano de capacidade di\xE1rio do parceiro (VTRs \xD7 miss\xF5es) at\xE9 D-1 \xE0s 18:00</td><td>${esc(provider)} / TM SEG</td><td>14/07/2026</td><td>Planilha conferida</td></tr>
-      <tr ${editableRow("row-ac-05")}><td>AC-05</td><td>Reuni\xE3o de alinhamento operacional (SLA, janelas, substitui\xE7\xE3o)</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>16/07/2026</td><td>Ata assinada</td></tr>
+      <tr ${editableRow("row-ac-01")}><td>AC-01</td><td ${editable("ac-01")}>Concluir apura\xE7\xE3o documentada com o parceiro e plano de melhoria para evitar reincid\xEAncia</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td ${editable("prazo-ac-01")}>${d7}</td><td>Termo arquivado</td></tr>
+      <tr ${editableRow("row-ac-02")}><td>AC-02</td><td ${editable("ac-02")}>Registro formal no acompanhamento do fornecedor e refor\xE7o de SLA</td><td>Gest\xE3o de Fornecedores TM SEG</td><td ${editable("prazo-ac-02")}>${d2}</td><td>Registro no sistema</td></tr>
+      <tr ${editableRow("row-ac-03")}><td>AC-03</td><td ${editable("ac-03")}>Revis\xE3o tempor\xE1ria de aloca\xE7\xE3o em miss\xF5es cr\xEDticas DHL/Foxconn at\xE9 conclus\xE3o das a\xE7\xF5es</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td ${editable("prazo-ac-03")}>Imediato</td><td>Plano de capacidade validado</td></tr>
+      <tr ${editableRow("row-ac-04")}><td>AC-04</td><td ${editable("ac-04")}>Plano de capacidade di\xE1rio do parceiro (VTRs \xD7 miss\xF5es) at\xE9 D-1 \xE0s 18:00</td><td>${esc(provider)} / TM SEG</td><td ${editable("prazo-ac-04")}>${d2}</td><td>Planilha conferida</td></tr>
+      <tr ${editableRow("row-ac-05")}><td>AC-05</td><td ${editable("ac-05")}>Reuni\xE3o de alinhamento operacional com o fornecedor (SLA, janelas, substitui\xE7\xE3o)</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td ${editable("prazo-ac-05")}>${d4}</td><td>Ata assinada</td></tr>
     </tbody>
   </table>
   </div>
@@ -440,12 +451,12 @@ function buildFullOccurrenceReportHtml(data, options) {
   <table>
     <thead><tr><th>ID</th><th>A\xE7\xE3o</th><th>Respons\xE1vel</th><th>Prazo</th><th>Indicador</th></tr></thead>
     <tbody>
-      <tr ${editableRow("row-ap-01")}><td>AP-01</td><td>Monitoramento reduzido (15 min) nas 2 h que antecedem a origem</td><td>Central de Monitoramento TM SEG</td><td>14/07/2026</td><td>Log \u2264 15 min</td></tr>
-      <tr ${editableRow("row-ap-02")}><td>AP-02</td><td>Gatilho autom\xE1tico de risco e viatura de backup na regi\xE3o</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>21/07/2026</td><td>Simula\xE7\xE3o documentada</td></tr>
-      <tr ${editableRow("row-ap-03")}><td>AP-03</td><td>Check-in GPS + confirma\xE7\xE3o verbal de origem antes do hor\xE1rio</td><td>Central de Monitoramento TM SEG</td><td>14/07/2026</td><td>100% miss\xF5es DHL</td></tr>
-      <tr ${editableRow("row-ap-04")}><td>AP-04</td><td>Reuni\xE3o de refor\xE7o com parceiros da base Sudeste DHL</td><td>Gest\xE3o de Fornecedores TM SEG</td><td>24/07/2026</td><td>Lista de presen\xE7a</td></tr>
-      <tr ${editableRow("row-ap-05")}><td>AP-05</td><td>Briefing de aceite: VTR dedicada sem sobreposi\xE7\xE3o de janela</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>14/07/2026</td><td>Checklist no aceite</td></tr>
-      <tr ${editableRow("row-ap-06")}><td>AP-06</td><td>Reporte semanal de desempenho DHL (4 semanas)</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td>Semanal</td><td>Relat\xF3rio \xE0s segundas</td></tr>
+      <tr ${editableRow("row-ap-01")}><td>AP-01</td><td ${editable("ap-01")}>Monitoramento reduzido (15 min) nas 2 h que antecedem a origem</td><td>Central de Monitoramento TM SEG</td><td ${editable("prazo-ap-01")}>${d2}</td><td>Log \u2264 15 min</td></tr>
+      <tr ${editableRow("row-ap-02")}><td>AP-02</td><td ${editable("ap-02")}>Gatilho de risco e viatura de backup na regi\xE3o, alinhado com o fornecedor</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td ${editable("prazo-ap-02")}>${d9}</td><td>Simula\xE7\xE3o documentada</td></tr>
+      <tr ${editableRow("row-ap-03")}><td>AP-03</td><td ${editable("ap-03")}>Check-in GPS + confirma\xE7\xE3o verbal de origem antes do hor\xE1rio</td><td>Central de Monitoramento TM SEG</td><td ${editable("prazo-ap-03")}>${d2}</td><td>100% miss\xF5es DHL</td></tr>
+      <tr ${editableRow("row-ap-04")}><td>AP-04</td><td ${editable("ap-04")}>Reuni\xE3o de refor\xE7o com parceiros da base Sudeste DHL</td><td>Gest\xE3o de Fornecedores TM SEG</td><td ${editable("prazo-ap-04")}>${d12}</td><td>Lista de presen\xE7a</td></tr>
+      <tr ${editableRow("row-ap-05")}><td>AP-05</td><td ${editable("ap-05")}>Briefing de aceite: VTR dedicada sem sobreposi\xE7\xE3o de janela</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td ${editable("prazo-ap-05")}>${d2}</td><td>Checklist no aceite</td></tr>
+      <tr ${editableRow("row-ap-06")}><td>AP-06</td><td ${editable("ap-06")}>Reporte semanal de desempenho DHL ao cliente (4 semanas)</td><td>Coordena\xE7\xE3o Operacional TM SEG</td><td ${editable("prazo-ap-06")}>Semanal</td><td>Relat\xF3rio \xE0s segundas</td></tr>
     </tbody>
   </table>
   </div>
@@ -453,12 +464,12 @@ function buildFullOccurrenceReportHtml(data, options) {
   <div class="subsection">
   <h3>6.3 Cronograma consolidado</h3>
   <div class="cronograma" ${editable("cronograma")}>${emissionDate} \u2500\u2500\u25CF Emiss\xE3o deste plano de a\xE7\xE3o
-14/07/2026 \u2500\u2500\u25CF AP-01, AP-03, AP-05 em vigor | AC-02, AC-04 iniciados
-16/07/2026 \u2500\u2500\u25CF AC-05 \u2014 Reuni\xE3o ${esc(provider)}
-17/07/2026 \u2500\u2500\u25CF AC-01 conclu\xEDdo | AP-06 \u2014 1\xBA relat\xF3rio semanal
-21/07/2026 \u2500\u2500\u25CF AP-02 \u2014 Protocolo de backup operacional
-24/07/2026 \u2500\u2500\u25CF AP-04 \u2014 Reuni\xE3o geral de parceiros Sudeste
-14/08/2026 \u2500\u2500\u25CF Encerramento do ciclo de acompanhamento intensivo (4 semanas)</div>
+${d2} \u2500\u2500\u25CF AP-01, AP-03, AP-05 em vigor | AC-02, AC-04 iniciados com o fornecedor
+${d4} \u2500\u2500\u25CF AC-05 \u2014 Reuni\xE3o de alinhamento com o parceiro
+${d7} \u2500\u2500\u25CF AC-01 conclu\xEDdo | AP-06 \u2014 1\xBA relat\xF3rio semanal \xE0 DHL
+${d9} \u2500\u2500\u25CF AP-02 \u2014 Protocolo de backup operacional
+${d12} \u2500\u2500\u25CF AP-04 \u2014 Reuni\xE3o geral de parceiros Sudeste
+${d30} \u2500\u2500\u25CF Encerramento do ciclo de acompanhamento intensivo (4 semanas)</div>
   </div>
 
   <div class="subsection-loose">
@@ -473,7 +484,7 @@ function buildFullOccurrenceReportHtml(data, options) {
       <tr><td>Reincid\xEAncia do parceiro em opera\xE7\xF5es DHL</td><td>0</td><td>Mensal</td><td>Gest\xE3o de Fornecedores</td></tr>
     </tbody>
   </table>
-  <p ${editable("sec-7-referencia")}><em>Refer\xEAncia hist\xF3rica TM SEG: mais de 380 miss\xF5es aceitas e realizadas na opera\xE7\xE3o DHL, sendo esta a primeira ocorr\xEAncia de atraso significativo.</em></p>
+  <p ${editable("sec-7-referencia")}><em>A TM SEG acompanha o fornecedor desta ocorr\xEAncia at\xE9 o encerramento do ciclo de estabiliza\xE7\xE3o, com reporte peri\xF3dico \xE0 DHL.</em></p>
   </div>
 
   <div class="subsection">
@@ -1322,6 +1333,10 @@ REGRAS OBRIGAT\xD3RIAS:
 5. Em textos narrativos, prefira "parceiro" ou "fornecedor" em vez de citar o nome comercial do parceiro. Tom construtivo e profissional, sem linguagem punitiva ou acusat\xF3ria que manche a imagem do parceiro.
 6. Mantenha HTML simples no campo html: <strong>, <em>, <br/> quando necess\xE1rio. Respeite o formato de cada bloco: respostas de c\xE9lula de tabela devem ser curtas e diretas; blocos de s\xEDntese/causa podem ser um par\xE1grafo.
 7. Escreva em portugu\xEAs do Brasil. Se faltar informa\xE7\xE3o para algum bloco, produza um texto coerente e neutro com base no que existe, sem inventar dados factuais.
+8. O plano de a\xE7\xE3o \xE9 o que o cliente precisa ver: demonstre que a TM SEG est\xE1 tratando a ocorr\xEAncia em conjunto com o fornecedor, com a\xE7\xF5es, respons\xE1veis e prazos. Reescreva os blocos ac-*, ap-*, contencao-*, 5pq-* e 5w2h-* para ESTA ocorr\xEAncia. N\xE3o repita a hist\xF3ria de outra S.E. N\xE3o afirme troca de viatura, rota invertida ou sobreposi\xE7\xE3o de janela se isso n\xE3o estiver nos DADOS ou no e-mail.
+9. Blocos prazo-ac-* e prazo-ap-*: devolva SOMENTE "dd/mm/aaaa", "Imediato" ou "Semanal". A data de emiss\xE3o est\xE1 nos DADOS DO SISTEMA e \xE9 o marco zero. Todo prazo datado deve ser igual ou posterior a essa emiss\xE3o. N\xE3o reuse datas de exemplo anteriores \xE0 emiss\xE3o.
+10. Bloco cronograma: reescreva no formato "dd/mm/aaaa \u2500\u2500\u25CF ...", usando exatamente os mesmos prazos dos blocos prazo-*. Inclua a emiss\xE3o, as a\xE7\xF5es com o fornecedor e o encerramento do acompanhamento cerca de 30 dias depois.
+11. N\xE3o invente quantidade de miss\xF5es hist\xF3ricas. Se o n\xFAmero n\xE3o estiver nos DADOS, n\xE3o cite contagem (ex.: "380 miss\xF5es").
 
 DADOS DO SISTEMA (fatos reais):
 ${context.factsBlock}
@@ -1433,6 +1448,7 @@ function buildAiContext(data) {
     `Atraso registrado na origem (minutos): ${data.delayMinutesAtOrigin ?? 0}`,
     `Hod\xF4metro inicial: ${data.odometerStartKm || "\u2014"}`,
     `Hod\xF4metro final: ${data.odometerEndKm || "\u2014"}`,
+    `Data de emiss\xE3o deste plano (marco zero dos prazos): ${formatDateBR(data.generatedAt)}`,
     "Marcos operacionais (registro sist\xEAmico):",
     ...data.marks.map((m) => `  - ${m.label}: ${markWhen(m.at)}`)
   ].join("\n");
@@ -1454,8 +1470,7 @@ async function generateDhlOccurrenceReportHtml(input, options) {
       logoDataUri
     });
     let aiGenerated = false;
-    const hasEmailContext = !!(data.emailAttachmentText?.trim() || data.emailLink?.trim());
-    if (options?.generateText && hasEmailContext) {
+    if (options?.generateText) {
       try {
         html = await generateDhlReportHtmlWithAi(html, buildAiContext(data), options.generateText);
         aiGenerated = true;
