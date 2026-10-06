@@ -4,6 +4,7 @@ import { Client, ClientPriceTable } from '../types';
 import { supabase } from '../lib/supabase';
 import { authFetch } from '../lib/authFetch';
 import { logAction } from '../lib/logger';
+import { publicarNovidadeCadastro } from '../lib/tmsegNews';
 import { clientFuzzyFilter } from '../lib/financialUtils';
 import { generateAutoBands, suggestAutoMasterFromManualTables, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
 import { useNotification } from '../lib/NotificationContext';
@@ -785,6 +786,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
             setFormData((prev) => ({ ...prev, responsavel_comercial_id: comercialIdPayload }));
           }
           await logAction('CREATE', 'Client', savedClientId || 'NEW', `Cliente cadastrado: ${formData.name}`);
+          void publicarNovidadeCadastro({
+            tipo: 'cliente',
+            nomeCadastro: formData.name,
+            autor: currentUser?.name || 'Equipe',
+          });
       }
 
       // Cliente Ativo: cadastra/atualiza nas 3 contas Asaas (endereço fiscal obrigatório).
