@@ -77,6 +77,11 @@ import {
   providerTollToPersist,
   resolveProviderSaveObservation,
 } from '../lib/controllerProviderScope';
+import {
+  frasePedagioAuditadoPeloFinanceiro,
+  nomeAuditorFinanceiroDoPedagio,
+  type RegistroAuditoriaPedagio,
+} from '../lib/pedagioAuditoriaFinanceira';
 
 interface Props {
   isOpen: boolean;
@@ -446,7 +451,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [tollEmbeddedInCost, setTollEmbeddedInCost] = useState(false);
   const [approvalLog, setApprovalLog] = useState<Array<{user: string; role: string; stage: string; date: string; changes?: string[]}>>([]);
   // Histórico permanente de alterações pós-aprovação (Data / Quem / Mudanças / Observação)
-  const [editHistory, setEditHistory] = useState<Array<{user: string; date: string; changes: string[]; note: string}>>([]);
+  const [editHistory, setEditHistory] = useState<Array<{user: string; role?: string; date: string; changes: string[]; note: string}>>([]);
   const [editObservation, setEditObservation] = useState('');
   const [analysisReason, setAnalysisReason] = useState('');
   const [openAnalysisRequest, setOpenAnalysisRequest] = useState<OsAnalysisRequest | null>(null);
@@ -757,8 +762,40 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Gate unificado: nenhum input financeiro/comercial do CLIENTE editável sem canEditClientData
   // (inclui OS destravada — unlock não contorna a regra do Plinio).
   const clientFinanceInputLocked = financeApprovedClientLock || isController || isEffectivelyLocked || !canEditClientData || isPaidInvoiceEffectivelyLocked;
-  // Controller só mexe no fornecedor. Pedágio do cliente segue a trava do valor do cliente.
-  const clientTollInputLocked = isPaidInvoiceEffectivelyLocked || isProviderOnlyUser || isControllerRole || clientFinanceInputLocked;
+  const registrosAuditoriaPedagio = useMemo<RegistroAuditoriaPedagio[]>(() => ([
+    ...approvalLog.map((entry) => ({
+      user: entry.user,
+      role: entry.role,
+      stage: entry.stage,
+      changes: entry.changes,
+      date: entry.date,
+    })),
+    ...editHistory.map((entry) => ({
+      user: entry.user,
+      role: entry.role,
+      changes: entry.changes,
+      date: entry.date,
+    })),
+  ]), [approvalLog, editHistory]);
+  const auditorPedagioCliente = useMemo(
+    () => nomeAuditorFinanceiroDoPedagio(registrosAuditoriaPedagio, 'cliente'),
+    [registrosAuditoriaPedagio],
+  );
+  const auditorPedagioFornecedor = useMemo(
+    () => nomeAuditorFinanceiroDoPedagio(registrosAuditoriaPedagio, 'fornecedor'),
+    [registrosAuditoriaPedagio],
+  );
+  const travaPedagioClienteFinanceiro = (isControllerRole || isProviderOnlyUser) && !!auditorPedagioCliente;
+  const travaPedagioFornecedorFinanceiro = (isControllerRole || isProviderOnlyUser) && !!auditorPedagioFornecedor;
+  // Controller/Plínio edita os dois pedágios, salvo se o financeiro já alterou aquele lado.
+  const clientTollInputLocked = isPaidInvoiceEffectivelyLocked
+    || negativeLockBlocks
+    || travaPedagioClienteFinanceiro
+    || (!(isControllerRole || isProviderOnlyUser) && clientFinanceInputLocked);
+  const providerTollInputLocked = isPaidInvoiceEffectivelyLocked
+    || negativeLockBlocks
+    || travaPedagioFornecedorFinanceiro
+    || plinioProviderEditBlocked;
   const canEditOpsEvenIfLocked = !negativeLockBlocks && (isBarbaraFinance || !isEffectivelyLocked) && !isPaidInvoiceEffectivelyLocked;
   // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
   // da memória de cálculo devem ACOMPANHAR a tabela escolhida sempre que o
@@ -1326,6 +1363,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           const p = JSON.parse(l.details);
                           return {
                               user: l.user_name || p.user || '',
+                              role: p.role || '',
                               date: p.date || l.created_at,
                               changes: Array.isArray(p.changes) ? p.changes : [],
                               note: p.note || ''
@@ -2607,8 +2645,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const keepSavedClient = isController || financeApprovedClientLock;
       const revTotal = keepSavedClient ? originalRevenue : parseNumber(revenueInput);
       const costTotal = isSameOs ? 0 : parseNumber(costInput);
-      const toll = financeApprovedClientLock ? Number(mission.toll_value || 0) : parseNumber(tollInput);
-      const tollProv = providerTollToPersist(parseNumber(tollProviderInput), isSameOs);
+      const toll = (travaPedagioClienteFinanceiro || (financeApprovedClientLock && !(isControllerRole || isProviderOnlyUser)))
+        ? Number(mission.toll_value || 0)
+        : parseNumber(tollInput);
+      const tollProv = travaPedagioFornecedorFinanceiro
+        ? providerTollToPersist(Number((mission as any).toll_value_provider || 0), isSameOs)
+        : providerTollToPersist(parseNumber(tollProviderInput), isSameOs);
       const displacement = keepSavedClient ? ((mission as any).displacement_value || 0) : parseNumber(displacementInput);
       const dispProv = isSameOs ? 0 : parseNumber(displacementProviderInput);
       const calcRevTotal = financialData ? (financialData.client.serviceTotal + toll + displacement) : 0;
@@ -2654,7 +2696,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const origTollProv = (mission as any).toll_value_provider || 0;
       const origDisp = (mission as any).displacement_value || 0;
       const origDispProv = (mission as any).displacement_value_provider || 0;
-      const newRevenueService = revTotal - toll - displacement;
+      const newRevenueService = isProviderOnlyUser ? origRevenueService : revTotal - toll - displacement;
       const newCostService = costTotal - tollProv - dispProv;
       const detectedChanges: string[] = [
           describeMoneyChange('Serviço Cliente', origRevenueService, newRevenueService),
@@ -2922,12 +2964,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
 
-          // Controller/Plínio: só o fornecedor. Receita, pedágio e deslocamento
-          // do cliente, aprovação e snapshot não entram no UPDATE.
+          // Controller/Plínio grava o fornecedor e, se o financeiro ainda não auditou, o pedágio do cliente.
           const fullPayload = isProviderOnlyUser
               ? {
                   ...buildProviderOnlyMissionPayload({
                       costValue: isSameOs ? 0 : r2(costServiceOnly),
+                      tollValue: r2(toll),
+                      persistClientToll: !travaPedagioClienteFinanceiro,
                       tollValueProvider: isSameOs ? 0 : r2(tollProv),
                       displacementValueProvider: isSameOs ? 0 : r2(dispProv),
                       costEditReason: reasonFields.cost_edit_reason || null,
@@ -3288,7 +3331,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               if (histRes.error) {
                   console.error('[MissionEditHistory Insert] Falha ao registrar histórico:', histRes.error);
               } else {
-                  setEditHistory(prev => [{ user: userName, date: nowIso, changes: detectedChanges, note: histPayload.note }, ...prev]);
+                  setEditHistory(prev => [{ user: userName, role: userRole, date: nowIso, changes: detectedChanges, note: histPayload.note }, ...prev]);
                   setEditObservation('');
                   openedTablesRef.current = {
                       clientId: String(manualClientTableId || financialData?.client.tableId || ''),
@@ -5804,6 +5847,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     />
                                     <Building2 size={16} className="text-green-300 ml-2" />
                                 </div>
+                                {travaPedagioClienteFinanceiro && auditorPedagioCliente && (
+                                    <p className="text-[10px] font-black text-red-700 mt-1" data-testid="text-toll-client-audited">
+                                        {frasePedagioAuditadoPeloFinanceiro(auditorPedagioCliente)}
+                                    </p>
+                                )}
                                 {useSavedValues && parseNumber(tollInput) > 0 && (
                                     <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ PEDÁGIO SALVO NA MEMÓRIA</span>
                                 )}
@@ -5855,19 +5903,24 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             </div>
                             <div>
                                 <label className="text-[9px] font-black text-blue-700 uppercase mb-1 block">Pedágio Fornecedor</label>
-                                <div className="relative bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center">
+                                <div className={`relative bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center ${providerTollInputLocked ? 'opacity-70' : ''}`}>
                                     <span className="text-sm font-bold text-blue-500 mr-2">R$</span>
                                     <input 
                                         type="text" 
-                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-blue-900 ${plinioProviderEditBlocked ? 'pointer-events-none opacity-60' : ''}`}
+                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-blue-900 ${providerTollInputLocked ? 'pointer-events-none' : ''}`}
                                         value={tollProviderInput} 
-                                        onChange={e => { if (!plinioProviderEditBlocked) handleTollProviderChange(e.target.value); }}
-                                        readOnly={plinioProviderEditBlocked}
-                                        title={plinioProviderEditBlocked ? 'Aguardando aprovação da Diretoria ou Administrador' : undefined}
+                                        onChange={e => { if (!providerTollInputLocked) handleTollProviderChange(e.target.value); }}
+                                        readOnly={providerTollInputLocked}
+                                        title={travaPedagioFornecedorFinanceiro && auditorPedagioFornecedor ? frasePedagioAuditadoPeloFinanceiro(auditorPedagioFornecedor) : undefined}
                                         data-testid="input-toll-provider"
                                     />
                                     <Briefcase size={16} className="text-blue-300 ml-2" />
                                 </div>
+                                {travaPedagioFornecedorFinanceiro && auditorPedagioFornecedor && (
+                                    <p className="text-[10px] font-black text-red-700 mt-1" data-testid="text-toll-provider-audited">
+                                        {frasePedagioAuditadoPeloFinanceiro(auditorPedagioFornecedor)}
+                                    </p>
+                                )}
                                 {tollEmbeddedInCost && (
                                     <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ PEDÁGIO JÁ INCLUSO NO CUSTO SALVO</span>
                                 )}

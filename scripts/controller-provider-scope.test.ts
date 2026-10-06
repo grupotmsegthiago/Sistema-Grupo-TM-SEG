@@ -49,6 +49,15 @@ describe('Escopo controller/fornecedor', () => {
     });
     assert.equal('toll_value' in withClientToll, false);
     assert.equal(withClientToll.toll_value_provider, 50);
+    const comPedagioCliente = buildProviderOnlyMissionPayload({
+      costValue: 100,
+      tollValue: 60.126,
+      persistClientToll: true,
+      tollValueProvider: 50,
+      displacementValueProvider: 0,
+    });
+    assert.equal(comPedagioCliente.toll_value, 60.13);
+    assert.equal(comPedagioCliente.toll_value_provider, 50);
     assert.equal(providerTollToPersist(0, false), 0);
     assert.equal(providerTollToPersist(50.129, false), 50.13);
     assert.equal(providerTollToPersist(80, true), 0);
@@ -97,7 +106,10 @@ describe('Escopo controller/fornecedor', () => {
     assert.match(source, /providerFinanceInputLocked = negativeLockBlocks \|\| \(isEffectivelyLocked && !isProviderOnlyUser\)/);
     assert.match(source, /if \(isProviderOnlyUser && approve\)/);
     assert.match(source, /disabled=\{[^}]*isProviderOnlyUser \|\| isUpdating/);
-    assert.match(source, /clientTollInputLocked = isPaidInvoiceEffectivelyLocked \|\| isProviderOnlyUser \|\| isControllerRole/);
+    assert.match(source, /travaPedagioClienteFinanceiro/);
+    assert.match(source, /frasePedagioAuditadoPeloFinanceiro/);
+    assert.match(source, /persistClientToll: !travaPedagioClienteFinanceiro/);
+    assert.doesNotMatch(source, /clientTollInputLocked = isPaidInvoiceEffectivelyLocked \|\| isProviderOnlyUser \|\| isControllerRole/);
     assert.doesNotMatch(source, /button-open-toll-confirmation/);
     assert.doesNotMatch(source, /CONFIRMAR PEDÁGIO/);
     assert.doesNotMatch(source, /canSaveProviderAdjustments = isPlinio/);
