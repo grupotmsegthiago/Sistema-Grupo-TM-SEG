@@ -33,6 +33,7 @@ import {
     fetchBillingMissionUniverse,
 } from '../lib/billing/fetchBillingMissionUniverse';
 import {
+    canFillDhlSheetRole,
     formatDhlPeriodApprovalBlockMessage,
     listSystemSesMissingFromSheet,
     listUnapprovedDhlPeriodMissions,
@@ -1022,8 +1023,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const canFillDhlSheet = (() => {
         try {
-            const role = (JSON.parse(localStorage.getItem('userData') || '{}').role || '').toLowerCase();
-            return role === 'administrador' || role === 'diretoria';
+            const role = JSON.parse(localStorage.getItem('userData') || '{}').role;
+            return canFillDhlSheetRole(role);
         } catch {
             return false;
         }
