@@ -263,6 +263,57 @@ export function montarMensagemDisponibilidadeDhl(alerta: {
   ].join('\n');
 }
 
+export const DHL_COPIA_ALERTA_EVENT = 'tmseg:dhl-copia-alerta';
+
+export type AvisoCopiaDhl = {
+  missionId: string;
+  copiadoPor: string;
+  posicao?: string;
+  regiao?: string;
+  origem: 'ao-vivo' | 'clique';
+};
+
+export type ResultadoCopiaDhl = {
+  resultado: 'ok' | 'ja' | 'bloqueado' | 'erro';
+  copiadoPor: string | null;
+  posicao: string | null;
+  regiao: string | null;
+};
+
+function normalizarOperador(nome?: string | null): string {
+  return String(nome || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function mesmoOperador(a?: string | null, b?: string | null): boolean {
+  const na = normalizarOperador(a);
+  const nb = normalizarOperador(b);
+  return !!na && na === nb;
+}
+
+/** Outra pessoa já levou o texto. O próprio operador ainda pode copiar de novo. */
+export function copiaBloqueadaPara(copiadoPor?: string | null, eu?: string | null): boolean {
+  const quem = String(copiadoPor || '').trim();
+  if (!quem) return false;
+  return !mesmoOperador(quem, eu);
+}
+
+export function textoAlertaJaCopiado(por: string, missionId: string, posicao?: string | null): string {
+  const quem = String(por || '').trim() || 'Outro operador';
+  const onde = String(posicao || '').trim();
+  const lugar = onde ? ` (${onde})` : '';
+  return `${quem} já copiou a mensagem da OS ${missionId}${lugar}. Não envie de novo no grupo da DHL.`;
+}
+
+export function abrirAlertaCopiaDhl(aviso: AvisoCopiaDhl) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(DHL_COPIA_ALERTA_EVENT, { detail: aviso }));
+}
+
 export function erroTabelaAusente(error: { code?: string; message?: string } | null | undefined): boolean {
   const msg = `${error?.code || ''} ${error?.message || ''}`;
   return /42P01|PGRST205|does not exist|schema cache|Could not find the table/i.test(msg);
@@ -384,9 +435,10 @@ export async function carregarAlertasDhl(opts?: { reconciliar?: boolean }): Prom
   }
 }
 
-export async function marcarCopiadoDhl(missionId: string, por: string): Promise<'ok' | 'ja' | 'bloqueado' | 'erro'> {
+export async function marcarCopiadoDhl(missionId: string, por: string): Promise<ResultadoCopiaDhl> {
   const cutoff = new Date(Date.now() - HORA_MS).toISOString();
   const agora = new Date().toISOString();
+  const vazio = { copiadoPor: null, posicao: null, regiao: null };
   try {
     const { data, error } = await supabase
       .from(TABELA_DHL_VIATURA)
@@ -399,22 +451,41 @@ export async function marcarCopiadoDhl(missionId: string, por: string): Promise<
       .eq('mission_id', missionId)
       .eq('status', 'pendente')
       .gte('finalizada_em', cutoff)
-      .select('mission_id');
-    if (error) return 'erro';
+      .select('mission_id, posicao, regiao, copiado_por');
+    if (error) return { resultado: 'erro', ...vazio };
     if (data && data.length > 0) {
-      avisarOutrasTelas({ missionId, status: 'copiado' });
-      return 'ok';
+      const salvo = data[0] as { posicao?: string | null; regiao?: string | null; copiado_por?: string | null };
+      const copiadoPor = String(salvo.copiado_por || por || 'Operador');
+      avisarOutrasTelas({
+        missionId,
+        status: 'copiado',
+        copiadoPor,
+        posicao: String(salvo.posicao || ''),
+        regiao: String(salvo.regiao || ''),
+      });
+      return {
+        resultado: 'ok',
+        copiadoPor,
+        posicao: salvo.posicao ? String(salvo.posicao) : null,
+        regiao: salvo.regiao ? String(salvo.regiao) : null,
+      };
     }
     const { data: row } = await supabase
       .from(TABELA_DHL_VIATURA)
-      .select('status')
+      .select('status, copiado_por, posicao, regiao')
       .eq('mission_id', missionId)
       .limit(1);
-    const status = String(row?.[0]?.status || '');
-    if (status === 'copiado' || status === 'confirmado') return 'ja';
-    return 'bloqueado';
+    const atual = row?.[0] as { status?: string; copiado_por?: string | null; posicao?: string | null; regiao?: string | null } | undefined;
+    const status = String(atual?.status || '');
+    const detalhe = {
+      copiadoPor: atual?.copiado_por ? String(atual.copiado_por) : null,
+      posicao: atual?.posicao ? String(atual.posicao) : null,
+      regiao: atual?.regiao ? String(atual.regiao) : null,
+    };
+    if (status === 'copiado' || status === 'confirmado') return { resultado: 'ja', ...detalhe };
+    return { resultado: 'bloqueado', ...detalhe };
   } catch {
-    return 'erro';
+    return { resultado: 'erro', copiadoPor: null, posicao: null, regiao: null };
   }
 }
 

@@ -7,8 +7,11 @@ import {
   entraNaListaBloqueados,
   montarMensagemDisponibilidadeDhl,
   parteLocal,
+  copiaBloqueadaPara,
+  mesmoOperador,
   podeAuditarNaoEncaminhados,
   podeVerPainelDhl,
+  textoAlertaJaCopiado,
   resolverAlertaDhl,
   textoHaQuantoTempo,
   tomDoBotao,
@@ -155,6 +158,18 @@ test('só diretoria e administrador veem as não encaminhadas', () => {
   assert.equal(podeAuditarNaoEncaminhados({ role: 'Operador' }), false);
   assert.equal(podeAuditarNaoEncaminhados({ role: 'financeiro', permissions: ['*'] }), true);
   assert.equal(podeAuditarNaoEncaminhados(null), false);
+});
+
+test('segunda cópia de outro operador fica bloqueada e avisa o nome', () => {
+  assert.equal(mesmoOperador('Maria Souza', 'maria souza'), true);
+  assert.equal(mesmoOperador('João', 'Maria'), false);
+  assert.equal(copiaBloqueadaPara('Maria Souza', 'João'), true);
+  assert.equal(copiaBloqueadaPara('Maria Souza', 'maria souza'), false);
+  assert.equal(copiaBloqueadaPara('', 'João'), false);
+  const texto = textoAlertaJaCopiado('Maria Souza', 'GTM-9001', 'CURITIBA - PR');
+  assert.match(texto, /Maria Souza já copiou a mensagem da OS GTM-9001/);
+  assert.match(texto, /CURITIBA - PR/);
+  assert.match(texto, /Não envie de novo no grupo da DHL/);
 });
 
 test('painel só para a operação interna', () => {

@@ -3,9 +3,11 @@ import { Check, Clock, Copy, Lock, MapPin, MessageCircle, Truck } from 'lucide-r
 import { copyTextAsync } from '../lib/clipboard';
 import { formatDateTimeBR } from '../lib/dateUtils';
 import {
+  abrirAlertaCopiaDhl,
   agruparPorRegiao,
   carregarAlertasDhl,
   confirmarEnvioDhl,
+  copiaBloqueadaPara,
   entraNaListaBloqueados,
   marcarCopiadoDhl,
   minutosRestantes,
@@ -14,6 +16,7 @@ import {
   podeVerPainelDhl,
   rotuloRegiao,
   salvarObservacaoDhl,
+  textoAlertaJaCopiado,
   textoHaQuantoTempo,
   tomDoBotao,
   visivelNoPainelVivo,
@@ -83,7 +86,22 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
     const reconcile = window.setInterval(() => { void load(true); }, RECONCILE_MS);
     const onLive = (ev: Event) => {
       const detail = (ev as CustomEvent).detail;
-      if (detail?.event === 'dhl_viatura') void load(false);
+      if (detail?.event !== 'dhl_viatura') return;
+      const payload = detail.payload || {};
+      const missionId = String(payload.missionId || '');
+      if (missionId && payload.status === 'copiado') {
+        setRows((prev) => prev.map((item) => (
+          item.mission_id === missionId
+            ? { ...item, status: 'copiado', copiado_por: String(payload.copiadoPor || item.copiado_por || '') }
+            : item
+        )));
+      }
+      if (missionId && payload.status === 'confirmado') {
+        setRows((prev) => prev.map((item) => (
+          item.mission_id === missionId ? { ...item, status: 'confirmado' } : item
+        )));
+      }
+      void load(false);
     };
     window.addEventListener(MISSION_LIVE_WINDOW_EVENT, onLive);
     return () => {
@@ -119,6 +137,16 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
 
   const comunicar = (row: AlertaDhl) => {
     if (ocupadoId) return;
+    if (row.status === 'copiado' && copiaBloqueadaPara(row.copiado_por, nome)) {
+      abrirAlertaCopiaDhl({
+        missionId: row.mission_id,
+        copiadoPor: row.copiado_por || 'Outro operador',
+        posicao: row.posicao,
+        regiao: row.regiao,
+        origem: 'clique',
+      });
+      return;
+    }
     if (tomDoBotao(row.status, row.finalizada_em, new Date()) === 'vermelho') {
       showNotification('Fora do prazo', 'Passou 1 hora. Essa viatura já saiu do painel.', 'warning');
       void load(false);
@@ -137,14 +165,27 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
         showNotification('WhatsApp', 'Não foi possível copiar o texto. Tente de novo.', 'error');
         return;
       }
-      const resultado = row.status === 'copiado' ? 'ja' : await marcarCopiadoDhl(row.mission_id, nome);
+      const resultado = await marcarCopiadoDhl(row.mission_id, nome);
       setOcupadoId(null);
-      if (resultado === 'bloqueado') {
+      if (resultado.resultado === 'ja' && copiaBloqueadaPara(resultado.copiadoPor, nome)) {
+        const quem = resultado.copiadoPor || 'Outro operador';
+        void copyTextAsync(textoAlertaJaCopiado(quem, row.mission_id, resultado.posicao || row.posicao));
+        abrirAlertaCopiaDhl({
+          missionId: row.mission_id,
+          copiadoPor: quem,
+          posicao: resultado.posicao || row.posicao,
+          regiao: resultado.regiao || row.regiao,
+          origem: 'clique',
+        });
+        void load(false);
+        return;
+      }
+      if (resultado.resultado === 'bloqueado') {
         showNotification('Fora do prazo', 'Passou 1 hora sem comunicação. A viatura saiu do painel.', 'warning');
         void load(false);
         return;
       }
-      if (resultado === 'erro') {
+      if (resultado.resultado === 'erro') {
         showNotification('WhatsApp', 'O texto foi copiado, mas o painel não gravou. Os outros operadores podem não ver o verde claro.', 'warning');
       } else {
         showNotification('WhatsApp', 'Texto copiado. Cole no grupo da DHL e confirme o envio.', 'success');
@@ -265,7 +306,7 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
                             finalizada {textoHaQuantoTempo(row.finalizada_em, now)}
                           </span>
                         </div>
-                        {claro && (
+                        {claro && !copiaBloqueadaPara(row.copiado_por, nome) && (
                           <button
                             type="button"
                             onClick={() => setConfirmandoId(row.mission_id)}
@@ -273,6 +314,9 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
                           >
                             Confirmar envio no grupo
                           </button>
+                        )}
+                        {claro && copiaBloqueadaPara(row.copiado_por, nome) && (
+                          <p className="text-[10px] font-black text-amber-800">{row.copiado_por} já copiou. Não envie de novo.</p>
                         )}
                         {row.status === 'pendente' && restante > 0 && restante <= 15 && (
                           <p className="text-[10px] font-black text-amber-700">Sai do painel em {restante} min se ninguém comunicar</p>

@@ -102,6 +102,7 @@ import FinancialInvoiceControl from './components/FinancialInvoiceControl';
 import MissionAlertMonitor from './components/MissionAlertMonitor';
 import EvidenceStartAlert from './components/EvidenceStartAlert';
 import VeladaClosureAlert from './components/VeladaClosureAlert';
+import DhlCopiaAoVivo from './components/DhlCopiaAoVivo';
 import TabelaRotaAlertaUsuario from './components/TabelaRotaAlertaUsuario';
 import UserPresenceTracker from './components/UserPresenceTracker';
 import PresenceDebugPanel from './components/PresenceDebugPanel';
@@ -751,6 +752,7 @@ const App: React.FC = () => {
         <PresenceDebugPanel />
         {(() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); const allowed = ['operador', 'avançado', 'avancado']; return allowed.includes(r); } catch { return false; } })() && <><MissionAlertMonitor /><EvidenceStartAlert /></>}
         {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <VeladaClosureAlert />}
+        {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <DhlCopiaAoVivo />}
         <div className="flex-1 flex flex-col min-h-0 min-w-0 relative z-10 lg:pl-20">
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />
