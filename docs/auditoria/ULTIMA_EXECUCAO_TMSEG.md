@@ -1,5 +1,13 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## GTM-6482: 100% SEM MAPA E SEM FOTO
+
+**Data:** 2026-10-06
+**O que apareceu:** o aviso “O mapa com as ruas não foi gerado” e “As fotos não entraram”, mesmo com a barra em 100%.
+**Causa no site publicado:** o servidor tentava o OpenStreetMap primeiro. De lá a conexão não encerra, a função fica presa e a cópia das fotos não chega a rodar.
+**O que mudou:** mapa geral e miniaturas saem num único pedido, pela Esri, com a conexão encerrada em 2,5s. Se o mapa ou as fotos existentes não entrarem, a barra para em 90% e o texto diz que faltou. 100% só quando os dois estão no documento.
+**Ainda não publicado.** O site no ar continua com o comportamento antigo até a próxima publicação.
+
 ## MAPA CINZA “API KEY REQUIRED” E FOTO QUE NÃO ABRE
 
 **Data:** 2026-10-06

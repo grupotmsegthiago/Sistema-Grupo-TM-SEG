@@ -28,6 +28,10 @@ interface EvidenciaLocal {
   principal: boolean;
 }
 
+function ilustracaoCompleta(avisos: string[]): boolean {
+  return !avisos.some((aviso) => /mapa com as ruas não foi gerado|fotos não entraram|Parte das fotos/i.test(aviso));
+}
+
 function BarraCarga({ pct, texto, segundos }: { pct: number; texto: string; segundos: number }) {
   const valor = Math.max(0, Math.min(100, Math.round(pct)));
   return (
@@ -227,7 +231,8 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
       mostrar(enriquecido, pronto);
       marcarCarga(96, 'Gravando o relatório');
       await gravarHtml(pronto);
-      marcarCarga(100, 'Relatório pronto');
+      if (ilustracaoCompleta(ilustrado.avisos)) marcarCarga(100, 'Relatório pronto');
+      else marcarCarga(90, 'Faltou o mapa ou as fotos');
       const avisoFinal = [avisoFalha, ...ilustrado.avisos].filter(Boolean).join(' ');
       if (avisoFinal) setAvisoIa(avisoFinal);
     } catch (erro) {
@@ -235,8 +240,10 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
       setAvisoIa(`Não foi possível montar o relatório (${mensagem}).`);
     } finally {
       setGerando(false);
-      setCarga(null);
-      pctRef.current = 0;
+      if (pctRef.current >= 100) {
+        setCarga(null);
+        pctRef.current = 0;
+      }
     }
   };
 
@@ -280,12 +287,15 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
       setUltimaVersao(pronto);
       marcarCarga(96, 'Gravando o relatório');
       await gravarHtml(pronto);
-      marcarCarga(100, 'Relatório pronto');
+      if (ilustracaoCompleta(ilustrado.avisos)) marcarCarga(100, 'Relatório pronto');
+      else marcarCarga(90, 'Faltou o mapa ou as fotos');
       if (ilustrado.avisos.length) setAvisoIa(ilustrado.avisos.join(' '));
     } finally {
       setGerando(false);
-      setCarga(null);
-      pctRef.current = 0;
+      if (pctRef.current >= 100) {
+        setCarga(null);
+        pctRef.current = 0;
+      }
     }
   };
 
@@ -435,7 +445,7 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
                   </div>
                 )}
                 {avisoIa && <p className="text-[12px] font-bold text-amber-700">{avisoIa}</p>}
-                {gerando && carga && <BarraCarga pct={carga.pct} texto={carga.texto} segundos={segundos} />}
+                {(gerando || (carga && carga.pct < 100)) && carga && <BarraCarga pct={carga.pct} texto={carga.texto} segundos={segundos} />}
                 <button type="submit" disabled={gerando} className="w-full rounded-xl bg-gradient-to-r from-[#9f1239] to-[#e11d2e] text-white px-4 py-3 text-[12px] font-black uppercase disabled:opacity-60" data-testid="button-choose-os-report">
                   {tipoEscolha === 'padrao' ? (gerando ? `${carga?.pct ?? 0}% carregando` : 'Gerar relatório da missão') : 'Continuar para a apuração'}
                 </button>
@@ -497,7 +507,7 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
                   </div>
                 ))}
                 {avisoIa && <p className="text-[12px] font-bold text-amber-700">{avisoIa}</p>}
-                {gerando && carga && <BarraCarga pct={carga.pct} texto={carga.texto} segundos={segundos} />}
+                {(gerando || (carga && carga.pct < 100)) && carga && <BarraCarga pct={carga.pct} texto={carga.texto} segundos={segundos} />}
                 <button type="submit" disabled={gerando} className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#9f1239] to-[#e11d2e] text-white px-4 py-3 text-[12px] font-black uppercase shadow-lg disabled:opacity-60" data-testid="button-generate-os-action-plan">
                   <Sparkles size={16} /> {gerando ? `${carga?.pct ?? 0}% carregando` : 'Analisar e gerar relatório'}
                 </button>
@@ -528,7 +538,7 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
                 </div>
               )}
               <p className="px-4 py-2 text-[12px] text-slate-700 bg-white border-b border-rose-100">Revise e edite o plano de ação e o plano de melhoria antes de salvar. O documento só é gravado no botão Salvar.</p>
-              {gerando && carga && <div className="px-4 py-2 bg-white border-b border-rose-100"><BarraCarga pct={carga.pct} texto={carga.texto} segundos={segundos} /></div>}
+              {(gerando || (carga && carga.pct < 100)) && carga && <div className="px-4 py-2 bg-white border-b border-rose-100"><BarraCarga pct={carga.pct} texto={carga.texto} segundos={segundos} /></div>}
               {avisoIa && <p className="px-4 py-2 text-[12px] font-bold text-amber-800 bg-amber-50">{avisoIa}</p>}
               {html && !aprovado && <p className="px-4 py-2 text-[12px] font-bold text-amber-800 bg-amber-50">Rascunho na tela. O PDF ainda não marca aprovação. Use Aprovar antes de enviar ao cliente.</p>}
               {emissao?.modalidade === 'ocorrencia' && emissao.croqui && (

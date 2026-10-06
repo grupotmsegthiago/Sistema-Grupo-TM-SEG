@@ -1,7 +1,10 @@
 /**
  * Mapa estático com arruamento e os marcadores da missão.
  * A chave de mapa não entra no HTML. O PNG é gerado no servidor.
+ * O pedido usa https com prazo curto e encerra a conexão. O fetch comum
+ * não cancelava no servidor da Vercel e a função ficava presa, sem mapa e sem foto.
  */
+import https from 'node:https';
 import sharp from 'sharp';
 
 export type PontoMapaImagem = { lat: number; lng: number; rotulo: string };
@@ -28,6 +31,36 @@ export function escolherZoom(pontos: PontoMapaImagem[], largura: number, altura:
   return 5;
 }
 
+function baixarUrl(url: string, ms: number): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    let terminou = false;
+    const fim = (buf: Buffer | null) => {
+      if (terminou) return;
+      terminou = true;
+      resolve(buf);
+    };
+    const req = https.get(url, {
+      headers: { 'User-Agent': 'TMSEG/1.0 (contato@grupotmseg.com.br)', Accept: 'image/png,image/jpeg' },
+    }, (res) => {
+      const status = res.statusCode || 0;
+      if (status < 200 || status >= 300) {
+        res.resume();
+        fim(null);
+        return;
+      }
+      const partes: Buffer[] = [];
+      res.on('data', (parte: Buffer) => partes.push(parte));
+      res.on('end', () => fim(Buffer.concat(partes)));
+      res.on('error', () => fim(null));
+    });
+    req.setTimeout(ms, () => {
+      req.destroy();
+      fim(null);
+    });
+    req.on('error', () => fim(null));
+  });
+}
+
 async function baixarTile(zoom: number, x: number, y: number): Promise<Buffer | null> {
   const n = 2 ** zoom;
   const xx = ((x % n) + n) % n;
@@ -35,30 +68,37 @@ async function baixarTile(zoom: number, x: number, y: number): Promise<Buffer | 
   const chave = `${zoom}/${xx}/${y}`;
   const guardado = cacheTile.get(chave);
   if (guardado) return guardado;
-  // O Carto responde HTTP 200 com o texto "API KEY REQUIRED" no lugar da rua.
-  // Esse arquivo era aceito como mapa e a tela ficava cinza. O OSM entra primeiro.
-  // Se ele não responder (acontece no servidor da Vercel), o mapa de ruas da Esri cobre.
+  // O Carto responde HTTP 200 com "API KEY REQUIRED" e o OSM, a partir da Vercel, não encerra.
+  // A rua vem primeiro do mapa da Esri. O outro só entra se esse não responder em 2,5s.
   const fontes = [
-    `https://tile.openstreetmap.org/${chave}.png`,
     `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${zoom}/${y}/${xx}`,
+    `https://tile.openstreetmap.org/${chave}.png`,
   ];
   for (const url of fontes) {
-    try {
-      const resposta = await fetch(url, {
-        signal: AbortSignal.timeout(4000),
-        headers: { 'User-Agent': 'TMSEG/1.0 (contato@grupotmseg.com.br)', Accept: 'image/png,image/jpeg' },
-      });
-      if (!resposta.ok) continue;
-      const buf = Buffer.from(await resposta.arrayBuffer());
-      if (buf.length < 100) continue;
-      if (cacheTile.size > 400) cacheTile.clear();
-      cacheTile.set(chave, buf);
-      return buf;
-    } catch {
-      /* tenta a próxima fonte */
-    }
+    const buf = await baixarUrl(url, 2500);
+    if (!buf || buf.length < 100) continue;
+    if (cacheTile.size > 400) cacheTile.clear();
+    cacheTile.set(chave, buf);
+    return buf;
   }
   return null;
+}
+
+export async function renderizarPacoteMapas(
+  mapas: Array<{ id?: string; pontos?: PontoMapaImagem[]; largura?: number; altura?: number }>,
+): Promise<Array<{ id: string; base64: string }>> {
+  const saida: Array<{ id: string; base64: string }> = [];
+  for (const item of (mapas || []).slice(0, 16)) {
+    const id = String(item?.id || '').trim();
+    if (!id) continue;
+    try {
+      const png = await renderizarMapaPng(item);
+      saida.push({ id, base64: png.toString('base64') });
+    } catch {
+      saida.push({ id, base64: '' });
+    }
+  }
+  return saida;
 }
 
 export async function renderizarMapaPng(args: {

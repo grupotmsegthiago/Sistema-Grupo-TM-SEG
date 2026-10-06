@@ -85,8 +85,16 @@ async function buildApp(): Promise<Express> {
   });
   app.post("/api/mapa-estatico", async (req, res) => {
     try {
+      const corpo = req.body || {};
+      if (Array.isArray(corpo.mapas)) {
+        const { renderizarPacoteMapas } = await import("../lib/osActionPlan/mapaEstatico");
+        const imagens = await renderizarPacoteMapas(corpo.mapas);
+        res.setHeader("Cache-Control", "no-store");
+        res.json({ success: true, imagens });
+        return;
+      }
       const { renderizarMapaPng } = await import("../lib/osActionPlan/mapaEstatico");
-      const png = await renderizarMapaPng(req.body || {});
+      const png = await renderizarMapaPng(corpo);
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Cache-Control", "no-store");
       res.send(png);

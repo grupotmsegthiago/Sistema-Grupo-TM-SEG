@@ -1,42 +1,33 @@
 /**
  * Prepara o relatório para a prévia e para o PDF:
  * a foto entra no próprio HTML e o mapa vira imagem com o arruamento.
- * O mapa não espera a foto. Se a foto demorar, o relatório ainda sai com o link original.
+ * Mapa geral e miniaturas saem num único pedido, para não prender o servidor.
+ * O relatório só fica pronto quando o mapa e as fotos existentes entraram.
  */
 import { authFetch } from '../authFetch';
-import { optimizeImageForAI } from '../imageForAI';
 import { agruparPontos } from './diarioOperacional';
 import type { OsActionPlanInput } from './types';
 
-async function lerComoDataUrl(blob: Blob): Promise<string> {
-  const otimo = await optimizeImageForAI(blob, { maxDim: 1400, quality: 0.82 });
-  return `data:${otimo.mimeType};base64,${otimo.data}`;
-}
-
-async function pedirMapa(pontos: Array<{ lat: number; lng: number; rotulo: string }>, largura: number, altura: number): Promise<string | null> {
+async function pedirPacoteMapas(
+  pedidos: Array<{ id: string; pontos: Array<{ lat: number; lng: number; rotulo: string }>; largura: number; altura: number }>,
+): Promise<Record<string, string>> {
+  if (!pedidos.length) return {};
   try {
     const resposta = await authFetch('/api/mapa-estatico', {
       method: 'POST',
-      body: JSON.stringify({ pontos, largura, altura }),
-      signal: AbortSignal.timeout(20000),
+      body: JSON.stringify({ mapas: pedidos }),
+      signal: AbortSignal.timeout(25000),
     });
-    if (!resposta.ok) return null;
-    return await lerComoDataUrl(await resposta.blob());
-  } catch {
-    return null;
-  }
-}
-
-async function emSerie<T>(itens: T[], limite: number, tarefa: (item: T) => Promise<void>): Promise<void> {
-  let indice = 0;
-  const trabalhadores = Array.from({ length: Math.min(limite, itens.length) }, async () => {
-    while (indice < itens.length) {
-      const atual = itens[indice];
-      indice += 1;
-      await tarefa(atual);
+    if (!resposta.ok) return {};
+    const corpo = await resposta.json() as { imagens?: Array<{ id?: string; base64?: string }> };
+    const saida: Record<string, string> = {};
+    for (const item of corpo.imagens || []) {
+      if (item.id && item.base64) saida[item.id] = `data:image/png;base64,${item.base64}`;
     }
-  });
-  await Promise.all(trabalhadores);
+    return saida;
+  } catch {
+    return {};
+  }
 }
 
 async function embutirFotos(urls: string[]): Promise<{ fotoEmbutida: Record<string, string>; falhas: number }> {
@@ -60,12 +51,16 @@ async function embutirFotos(urls: string[]): Promise<{ fotoEmbutida: Record<stri
   }
 }
 
-export async function ilustrarRelatorio(
+function faltaImagem(avisos: string[]): boolean {
+  return avisos.some((aviso) => /mapa com as ruas não foi gerado|fotos não entraram|Parte das fotos/i.test(aviso));
+}
+
+async function ilustrarUmaVez(
   entrada: OsActionPlanInput,
   aoAvancar?: (evento: { tipo: 'foto' | 'mapa'; feitos: number; total: number }) => void,
 ): Promise<{ entrada: OsActionPlanInput; avisos: string[] }> {
   const avisos: string[] = [];
-  const atualizacoes = entrada.atualizacoes || [];
+  const atualizacoes = (entrada.atualizacoes || []).map((item) => ({ ...item }));
   const urls = atualizacoes.flatMap((item) => [...(item.fotos || []), ...(item.fotoUrl ? [item.fotoUrl] : [])]);
   const brutos = [
     ...(entrada.origemCoord ? [{ lat: entrada.origemCoord.lat, lng: entrada.origemCoord.lng, rotulo: 'A' }] : []),
@@ -74,37 +69,29 @@ export async function ilustrarRelatorio(
       .map((item) => ({ lat: item.lat as number, lng: item.lng as number, rotulo: String(item.numero || '') })),
     ...(entrada.destinoCoord ? [{ lat: entrada.destinoCoord.lat, lng: entrada.destinoCoord.lng, rotulo: 'B' }] : []),
   ];
+  const pedidos: Array<{ id: string; pontos: Array<{ lat: number; lng: number; rotulo: string }>; largura: number; altura: number }> = [];
+  if (brutos.length) pedidos.push({ id: 'geral', pontos: agruparPontos(brutos), largura: 900, altura: 480 });
+  const vistos = new Set<string>();
+  for (const item of atualizacoes) {
+    if (item.lat == null || item.lng == null) continue;
+    const id = `${item.lat.toFixed(4)},${item.lng.toFixed(4)}`;
+    if (vistos.has(id)) continue;
+    vistos.add(id);
+    pedidos.push({ id, pontos: [{ lat: item.lat, lng: item.lng, rotulo: String(item.numero || '') }], largura: 480, altura: 300 });
+  }
+  aoAvancar?.({ tipo: 'mapa', feitos: 0, total: Math.max(1, pedidos.length) });
   const fotosPromise = embutirFotos(urls).then((fotos) => {
     aoAvancar?.({ tipo: 'foto', feitos: 1, total: 1 });
     return fotos;
   });
-  const mapaPromise = (async () => {
-    const comMini = atualizacoes.map((item) => ({ ...item }));
-    const chaves = new Set(comMini.filter((item) => item.lat != null && item.lng != null).map((item) => `${item.lat!.toFixed(4)},${item.lng!.toFixed(4)}`));
-    const totalMapas = (brutos.length ? 1 : 0) + chaves.size;
-    let mapasFeitos = 0;
-    const marcarMapa = () => {
-      mapasFeitos += 1;
-      aoAvancar?.({ tipo: 'mapa', feitos: mapasFeitos, total: Math.max(1, totalMapas) });
-    };
-    const cache = new Map<string, Promise<string | null>>();
-    const pedirUmaVez = (lat: number, lng: number, rotulo: string) => {
-      const chave = `${lat.toFixed(4)},${lng.toFixed(4)}`;
-      if (!cache.has(chave)) {
-        cache.set(chave, pedirMapa([{ lat, lng, rotulo }], 480, 300).finally(marcarMapa));
-      }
-      return cache.get(chave) as Promise<string | null>;
-    };
-    const [mapaImagem] = await Promise.all([
-      brutos.length ? pedirMapa(agruparPontos(brutos), 900, 480).finally(marcarMapa) : Promise.resolve(null),
-      emSerie(comMini.filter((item) => item.lat != null && item.lng != null), 3, async (item) => {
-        item.miniMapaImagem = await pedirUmaVez(item.lat as number, item.lng as number, String(item.numero || '')) || null;
-      }),
-    ]);
-    return { mapaImagem, atualizacoes: comMini };
-  })();
-  const [fotos, mapa] = await Promise.all([fotosPromise, mapaPromise]);
-  if (brutos.length && !mapa.mapaImagem) {
+  const [fotos, imagens] = await Promise.all([fotosPromise, pedirPacoteMapas(pedidos)]);
+  aoAvancar?.({ tipo: 'mapa', feitos: pedidos.length, total: Math.max(1, pedidos.length) });
+  for (const item of atualizacoes) {
+    if (item.lat == null || item.lng == null) continue;
+    item.miniMapaImagem = imagens[`${item.lat.toFixed(4)},${item.lng.toFixed(4)}`] || null;
+  }
+  const mapaImagem = imagens.geral || null;
+  if (brutos.length && !mapaImagem) {
     avisos.push('O mapa com as ruas não foi gerado. O relatório ficou só com os pontos.');
   }
   if (fotos.falhas > 0) {
@@ -115,10 +102,22 @@ export async function ilustrarRelatorio(
   return {
     entrada: {
       ...entrada,
-      atualizacoes: mapa.atualizacoes,
-      mapaImagem: mapa.mapaImagem,
+      atualizacoes,
+      mapaImagem,
       fotoEmbutida: Object.keys(fotos.fotoEmbutida).length ? fotos.fotoEmbutida : null,
     },
     avisos,
   };
+}
+
+export async function ilustrarRelatorio(
+  entrada: OsActionPlanInput,
+  aoAvancar?: (evento: { tipo: 'foto' | 'mapa'; feitos: number; total: number }) => void,
+): Promise<{ entrada: OsActionPlanInput; avisos: string[] }> {
+  const primeira = await ilustrarUmaVez(entrada, aoAvancar);
+  if (!faltaImagem(primeira.avisos)) return primeira;
+  const segunda = await ilustrarUmaVez(entrada, aoAvancar);
+  if (!faltaImagem(segunda.avisos)) return segunda;
+  if (segunda.entrada.mapaImagem && !primeira.entrada.mapaImagem) return segunda;
+  return primeira;
 }
