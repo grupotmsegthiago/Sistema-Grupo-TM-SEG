@@ -1,5 +1,5 @@
 /**
- * Mapa estático com arruamento (tiles do OpenStreetMap) e os marcadores da missão.
+ * Mapa estático com arruamento e os marcadores da missão.
  * A chave de mapa não entra no HTML. O PNG é gerado no servidor.
  */
 import sharp from 'sharp';
@@ -35,17 +35,18 @@ async function baixarTile(zoom: number, x: number, y: number): Promise<Buffer | 
   const chave = `${zoom}/${xx}/${y}`;
   const guardado = cacheTile.get(chave);
   if (guardado) return guardado;
-  // O OSM costuma não responder a partir do servidor da Vercel e segurava o relatório.
-  // O Carto entra primeiro, com tempo curto, e o outro só se esse falhar.
+  // O Carto responde HTTP 200 com o texto "API KEY REQUIRED" no lugar da rua.
+  // Esse arquivo era aceito como mapa e a tela ficava cinza. O OSM entra primeiro.
+  // Se ele não responder (acontece no servidor da Vercel), o mapa de ruas da Esri cobre.
   const fontes = [
-    `https://basemaps.cartocdn.com/rastertiles/voyager/${chave}.png`,
     `https://tile.openstreetmap.org/${chave}.png`,
+    `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${zoom}/${y}/${xx}`,
   ];
   for (const url of fontes) {
     try {
       const resposta = await fetch(url, {
         signal: AbortSignal.timeout(4000),
-        headers: { 'User-Agent': 'TMSEG/1.0 (contato@grupotmseg.com.br)', Accept: 'image/png' },
+        headers: { 'User-Agent': 'TMSEG/1.0 (contato@grupotmseg.com.br)', Accept: 'image/png,image/jpeg' },
       });
       if (!resposta.ok) continue;
       const buf = Buffer.from(await resposta.arrayBuffer());

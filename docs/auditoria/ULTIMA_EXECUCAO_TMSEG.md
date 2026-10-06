@@ -1,5 +1,21 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## MAPA CINZA “API KEY REQUIRED” E FOTO QUE NÃO ABRE
+
+**Data:** 2026-10-06
+**O que aparecia:** o mapa e os quadrados das atualizações vinham quase brancos, com a frase API KEY REQUIRED. O clique em Abrir foto não saía do relatório.
+**Causa:** o servidor de tiles do Carto responde HTTP 200 com essa marca d’água, e o sistema aceitava o arquivo como se fosse a rua.
+**O que mudou:** o arruamento passa a vir do OpenStreetMap e, se ele não responder, do mapa de ruas da Esri. O clique em Abrir foto abre o arquivo original numa aba nova.
+**Não publicado.** Atualizar `http://127.0.0.1:5000` e gerar o relatório de novo. O HTML já gravado continua com o mapa antigo.
+
+## BARRA DE PORCENTAGEM NA GERAÇÃO DO RELATÓRIO
+
+**Data:** 2026-10-05
+**O que faltava:** o formulário ficava parado em um texto fixo. Não dava para saber se a geração andava ou tinha travado.
+**O que mudou:** a barra mostra a etapa e a porcentagem real (endereços, texto, mapa, fotos, análise, gravação) e um contador de segundos. A porcentagem não volta para trás. Se o número para e os segundos continuam, aquele passo está esperando resposta.
+**Teste:** `npx tsx --test scripts/os-action-plan.test.ts` — 40 passaram. O modal compilou no esbuild.
+**Não publicado.** Atualizar `http://127.0.0.1:5000` e gerar de novo. O site no ar só mostra a barra depois de publicar.
+
 ## A TELA PARAVA EM “REDIGINDO A ANÁLISE”
 
 **Data:** 2026-10-05

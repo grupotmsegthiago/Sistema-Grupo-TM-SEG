@@ -293,6 +293,7 @@ export async function resolverPosicoes(args: {
   destino?: string | null;
   linkAtualMissao?: string | null;
   geocodificar: (endereco: string) => Promise<{ lat: number; lng: number } | null>;
+  aoAvancar?: (feitos: number, total: number) => void;
 }): Promise<{
   atualizacoes: OsActionPlanAtualizacao[];
   origemCoord: { lat: number; lng: number } | null;
@@ -327,11 +328,16 @@ export async function resolverPosicoes(args: {
   marcar(args.destino);
   // Várias consultas ao mesmo tempo. Uma trava não segura a fila inteira.
   let cursor = 0;
+  let feitos = 0;
+  const total = pendentes.length;
+  args.aoAvancar?.(0, total);
   await Promise.all(Array.from({ length: Math.min(4, pendentes.length) }, async () => {
     while (cursor < pendentes.length) {
       const chave = pendentes[cursor];
       cursor += 1;
       await buscar(chave);
+      feitos += 1;
+      args.aoAvancar?.(feitos, total);
     }
   }));
   const comCoordenadaNoRegistro = lista.filter((item) => item.fontePosicao === 'registro' && item.lat != null && item.lng != null).length;

@@ -117,7 +117,10 @@ async function geocodificarEndereco(endereco: string): Promise<{ lat: number; ln
   return null;
 }
 
-export async function completarPosicoes(entrada: OsActionPlanInput): Promise<OsActionPlanInput> {
+export async function completarPosicoes(
+  entrada: OsActionPlanInput,
+  aoAvancar?: (feitos: number, total: number) => void,
+): Promise<OsActionPlanInput> {
   const linkGravado = [...(entrada.atualizacoes || [])]
     .reverse()
     .map((item) => String(item.linkMapa || ''))
@@ -128,6 +131,7 @@ export async function completarPosicoes(entrada: OsActionPlanInput): Promise<OsA
     destino: entrada.destino,
     linkAtualMissao: linkGravado,
     geocodificar: geocodificarEndereco,
+    aoAvancar,
   });
   return {
     ...entrada,

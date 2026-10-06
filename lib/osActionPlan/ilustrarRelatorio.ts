@@ -60,7 +60,10 @@ async function embutirFotos(urls: string[]): Promise<{ fotoEmbutida: Record<stri
   }
 }
 
-export async function ilustrarRelatorio(entrada: OsActionPlanInput): Promise<{ entrada: OsActionPlanInput; avisos: string[] }> {
+export async function ilustrarRelatorio(
+  entrada: OsActionPlanInput,
+  aoAvancar?: (evento: { tipo: 'foto' | 'mapa'; feitos: number; total: number }) => void,
+): Promise<{ entrada: OsActionPlanInput; avisos: string[] }> {
   const avisos: string[] = [];
   const atualizacoes = entrada.atualizacoes || [];
   const urls = atualizacoes.flatMap((item) => [...(item.fotos || []), ...(item.fotoUrl ? [item.fotoUrl] : [])]);
@@ -71,19 +74,29 @@ export async function ilustrarRelatorio(entrada: OsActionPlanInput): Promise<{ e
       .map((item) => ({ lat: item.lat as number, lng: item.lng as number, rotulo: String(item.numero || '') })),
     ...(entrada.destinoCoord ? [{ lat: entrada.destinoCoord.lat, lng: entrada.destinoCoord.lng, rotulo: 'B' }] : []),
   ];
-  const fotosPromise = embutirFotos(urls);
+  const fotosPromise = embutirFotos(urls).then((fotos) => {
+    aoAvancar?.({ tipo: 'foto', feitos: 1, total: 1 });
+    return fotos;
+  });
   const mapaPromise = (async () => {
     const comMini = atualizacoes.map((item) => ({ ...item }));
+    const chaves = new Set(comMini.filter((item) => item.lat != null && item.lng != null).map((item) => `${item.lat!.toFixed(4)},${item.lng!.toFixed(4)}`));
+    const totalMapas = (brutos.length ? 1 : 0) + chaves.size;
+    let mapasFeitos = 0;
+    const marcarMapa = () => {
+      mapasFeitos += 1;
+      aoAvancar?.({ tipo: 'mapa', feitos: mapasFeitos, total: Math.max(1, totalMapas) });
+    };
     const cache = new Map<string, Promise<string | null>>();
     const pedirUmaVez = (lat: number, lng: number, rotulo: string) => {
       const chave = `${lat.toFixed(4)},${lng.toFixed(4)}`;
       if (!cache.has(chave)) {
-        cache.set(chave, pedirMapa([{ lat, lng, rotulo }], 480, 300));
+        cache.set(chave, pedirMapa([{ lat, lng, rotulo }], 480, 300).finally(marcarMapa));
       }
       return cache.get(chave) as Promise<string | null>;
     };
     const [mapaImagem] = await Promise.all([
-      brutos.length ? pedirMapa(agruparPontos(brutos), 900, 480) : Promise.resolve(null),
+      brutos.length ? pedirMapa(agruparPontos(brutos), 900, 480).finally(marcarMapa) : Promise.resolve(null),
       emSerie(comMini.filter((item) => item.lat != null && item.lng != null), 3, async (item) => {
         item.miniMapaImagem = await pedirUmaVez(item.lat as number, item.lng as number, String(item.numero || '')) || null;
       }),

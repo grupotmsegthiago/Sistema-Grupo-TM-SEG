@@ -28,6 +28,21 @@ interface EvidenciaLocal {
   principal: boolean;
 }
 
+function BarraCarga({ pct, texto, segundos }: { pct: number; texto: string; segundos: number }) {
+  const valor = Math.max(0, Math.min(100, Math.round(pct)));
+  return (
+    <div className="space-y-1" aria-live="polite">
+      <div className="flex items-center justify-between gap-3 text-[11px] font-bold text-rose-900">
+        <span>{texto}</span>
+        <span className="shrink-0">{valor}% · {segundos}s</span>
+      </div>
+      <div className="h-2.5 overflow-hidden rounded-full bg-rose-100">
+        <div className="h-full bg-gradient-to-r from-[#9f1239] to-[#e11d2e] transition-[width] duration-300" style={{ width: `${valor}%` }} />
+      </div>
+    </div>
+  );
+}
+
 const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClose }) => {
   const [dados, setDados] = useState<OsActionPlanInput | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -45,7 +60,10 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
   const [etapa, setEtapa] = useState<'escolha' | 'apuracao'>('escolha');
   const [tipoEscolha, setTipoEscolha] = useState<'padrao' | 'ocorrencia'>('padrao');
   const [escopo, setEscopo] = useState<'todas' | 'relevantes'>('relevantes');
+  const [carga, setCarga] = useState<{ pct: number; texto: string } | null>(null);
+  const [segundos, setSegundos] = useState(0);
   const hidratado = useRef(false);
+  const pctRef = useRef(0);
 
   useEffect(() => {
     let ativo = true;
@@ -75,6 +93,21 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
     salvarContextoLocal(missionId, { problema, relato });
   }, [missionId, problema, relato]);
 
+  useEffect(() => {
+    if (!gerando) {
+      setSegundos(0);
+      return;
+    }
+    const id = window.setInterval(() => setSegundos((n) => n + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [gerando]);
+
+  const marcarCarga = (pct: number, texto: string) => {
+    const proximo = Math.max(pctRef.current, Math.min(100, Math.round(pct)));
+    pctRef.current = proximo;
+    setCarga({ pct: proximo, texto });
+  };
+
   const escolherFotos = (lista: FileList | null) => {
     const novas = Array.from(lista || []).filter((f) => f.type.startsWith('image/') || f.type === 'application/pdf').slice(0, 8);
     setEvidencias((atual) => {
@@ -100,7 +133,9 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
       return;
     }
     setGerando(true);
-    setAvisoIa('Localizando os pontos, as fotos e o mapa da missão.');
+    pctRef.current = 0;
+    marcarCarga(4, 'Preparando o relatório');
+    setAvisoIa(null);
     setAprovado(false);
     const fotosTratativa = await Promise.all(evidencias.filter((e) => e.preview).map(async (f) => {
       const dataUrl = await new Promise<string>((resolve) => {
@@ -137,18 +172,31 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
       geradoEm: new Date().toISOString(),
     };
     try {
-      const comPosicao = await completarPosicoes(pacote);
+      marcarCarga(8, 'Localizando os endereços');
+      const comPosicao = await completarPosicoes(pacote, (feitos, total) => {
+        const pct = total > 0 ? 8 + Math.round((feitos / total) * 32) : 40;
+        marcarCarga(pct, total > 0 ? `Localizando endereços ${feitos} de ${total}` : 'Endereços já localizados');
+      });
       comPosicao.croqui = montarCroqui(comPosicao);
       const mostrar = (base: OsActionPlanInput, htmlPronto: string) => {
         setEmissao(base);
         setHtml(htmlPronto);
         setUltimaVersao(htmlPronto);
       };
+      marcarCarga(45, 'Montando o texto do relatório');
       // O relatório abre antes do mapa e da IA. Esses passos não podem deixar a tela parada.
       mostrar(comPosicao, buildOsActionPlanHtml(comPosicao));
-      setAvisoIa('O relatório já está na tela. Mapa e fotos entram em seguida.');
-      const ilustrado = await ilustrarRelatorio(comPosicao);
+      marcarCarga(52, 'Buscando o mapa e as fotos');
+      const ilustrado = await ilustrarRelatorio(comPosicao, (evento) => {
+        if (evento.tipo === 'foto') {
+          marcarCarga(78, 'Fotos copiadas para o documento');
+          return;
+        }
+        const pct = 52 + Math.round((evento.feitos / Math.max(1, evento.total)) * 24);
+        marcarCarga(pct, `Mapa ${evento.feitos} de ${evento.total}`);
+      });
       const enriquecido = ilustrado.entrada;
+      marcarCarga(88, 'Escrevendo a análise');
       let narrativa = '';
       let avisoFalha = '';
       let limiteIa: ReturnType<typeof setTimeout> | undefined;
@@ -177,7 +225,9 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
       const pronto = buildOsActionPlanHtml(enriquecido);
       salvarContextoLocal(missionId, { problema: foco, relato: relato.trim() });
       mostrar(enriquecido, pronto);
+      marcarCarga(96, 'Gravando o relatório');
       await gravarHtml(pronto);
+      marcarCarga(100, 'Relatório pronto');
       const avisoFinal = [avisoFalha, ...ilustrado.avisos].filter(Boolean).join(' ');
       if (avisoFinal) setAvisoIa(avisoFinal);
     } catch (erro) {
@@ -185,13 +235,17 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
       setAvisoIa(`Não foi possível montar o relatório (${mensagem}).`);
     } finally {
       setGerando(false);
+      setCarga(null);
+      pctRef.current = 0;
     }
   };
 
   const gerarPadrao = async () => {
     if (!dados || gerando) return;
     setGerando(true);
-    setAvisoIa('Localizando os pontos da missão.');
+    pctRef.current = 0;
+    marcarCarga(4, 'Preparando o relatório');
+    setAvisoIa(null);
     setAprovado(false);
     const pacote: OsActionPlanInput = {
       ...dados,
@@ -202,20 +256,36 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
       geradoEm: new Date().toISOString(),
     };
     try {
-      const comPosicao = await completarPosicoes(pacote);
+      marcarCarga(8, 'Localizando os endereços');
+      const comPosicao = await completarPosicoes(pacote, (feitos, total) => {
+        const pct = total > 0 ? 8 + Math.round((feitos / total) * 32) : 40;
+        marcarCarga(pct, total > 0 ? `Localizando endereços ${feitos} de ${total}` : 'Endereços já localizados');
+      });
+      marcarCarga(45, 'Montando o texto do relatório');
       setEmissao(comPosicao);
       setHtml(buildOsActionPlanHtml(comPosicao));
-      setAvisoIa('O relatório já está na tela. Mapa e fotos entram em seguida.');
-      const ilustrado = await ilustrarRelatorio(comPosicao);
+      marcarCarga(52, 'Buscando o mapa e as fotos');
+      const ilustrado = await ilustrarRelatorio(comPosicao, (evento) => {
+        if (evento.tipo === 'foto') {
+          marcarCarga(78, 'Fotos copiadas para o documento');
+          return;
+        }
+        const pct = 52 + Math.round((evento.feitos / Math.max(1, evento.total)) * 30);
+        marcarCarga(pct, `Mapa ${evento.feitos} de ${evento.total}`);
+      });
       const enriquecido = ilustrado.entrada;
       const pronto = buildOsActionPlanHtml(enriquecido);
       setEmissao(enriquecido);
       setHtml(pronto);
       setUltimaVersao(pronto);
+      marcarCarga(96, 'Gravando o relatório');
       await gravarHtml(pronto);
+      marcarCarga(100, 'Relatório pronto');
       if (ilustrado.avisos.length) setAvisoIa(ilustrado.avisos.join(' '));
     } finally {
       setGerando(false);
+      setCarga(null);
+      pctRef.current = 0;
     }
   };
 
@@ -365,8 +435,9 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
                   </div>
                 )}
                 {avisoIa && <p className="text-[12px] font-bold text-amber-700">{avisoIa}</p>}
+                {gerando && carga && <BarraCarga pct={carga.pct} texto={carga.texto} segundos={segundos} />}
                 <button type="submit" disabled={gerando} className="w-full rounded-xl bg-gradient-to-r from-[#9f1239] to-[#e11d2e] text-white px-4 py-3 text-[12px] font-black uppercase disabled:opacity-60" data-testid="button-choose-os-report">
-                  {tipoEscolha === 'padrao' ? (gerando ? 'Gerando...' : 'Gerar relatório da missão') : 'Continuar para a apuração'}
+                  {tipoEscolha === 'padrao' ? (gerando ? `${carga?.pct ?? 0}% carregando` : 'Gerar relatório da missão') : 'Continuar para a apuração'}
                 </button>
               </form>
               <div className="bg-white rounded-2xl p-4 shadow-[0_12px_28px_rgba(17,24,39,.08)] text-sm space-y-2">
@@ -426,8 +497,9 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
                   </div>
                 ))}
                 {avisoIa && <p className="text-[12px] font-bold text-amber-700">{avisoIa}</p>}
+                {gerando && carga && <BarraCarga pct={carga.pct} texto={carga.texto} segundos={segundos} />}
                 <button type="submit" disabled={gerando} className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#9f1239] to-[#e11d2e] text-white px-4 py-3 text-[12px] font-black uppercase shadow-lg disabled:opacity-60" data-testid="button-generate-os-action-plan">
-                  <Sparkles size={16} /> {gerando ? 'Redigindo a análise e montando o mapa...' : 'Analisar e gerar relatório'}
+                  <Sparkles size={16} /> {gerando ? `${carga?.pct ?? 0}% carregando` : 'Analisar e gerar relatório'}
                 </button>
               </form>
               <div className="bg-white rounded-2xl p-4 shadow-[0_12px_28px_rgba(17,24,39,.08)] text-sm space-y-2">
@@ -456,6 +528,7 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
                 </div>
               )}
               <p className="px-4 py-2 text-[12px] text-slate-700 bg-white border-b border-rose-100">Revise e edite o plano de ação e o plano de melhoria antes de salvar. O documento só é gravado no botão Salvar.</p>
+              {gerando && carga && <div className="px-4 py-2 bg-white border-b border-rose-100"><BarraCarga pct={carga.pct} texto={carga.texto} segundos={segundos} /></div>}
               {avisoIa && <p className="px-4 py-2 text-[12px] font-bold text-amber-800 bg-amber-50">{avisoIa}</p>}
               {html && !aprovado && <p className="px-4 py-2 text-[12px] font-bold text-amber-800 bg-amber-50">Rascunho na tela. O PDF ainda não marca aprovação. Use Aprovar antes de enviar ao cliente.</p>}
               {emissao?.modalidade === 'ocorrencia' && emissao.croqui && (
@@ -501,7 +574,25 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
                 </details>
               )}
               {emissao?.modalidade === 'ocorrencia' && !emissao.croqui && <p className="px-4 py-2 text-[12px] text-slate-600 bg-white border-b">Não há croqui: a sequência não tem elementos suficientes para um desenho sem inventar o fato.</p>}
-              <iframe id="os-action-plan-frame" title={`Plano de Ação ${missionId}`} className="w-full flex-1 bg-white" srcDoc={html} />
+              <iframe
+                id="os-action-plan-frame"
+                title={`Plano de Ação ${missionId}`}
+                className="w-full flex-1 bg-white"
+                srcDoc={html}
+                onLoad={(evento) => {
+                  const doc = evento.currentTarget.contentDocument;
+                  if (!doc || doc.documentElement.dataset.abrirFoto === '1') return;
+                  doc.documentElement.dataset.abrirFoto = '1';
+                  doc.addEventListener('click', (clique) => {
+                    const alvo = (clique.target as Element | null)?.closest?.('a.foto-link');
+                    if (!alvo) return;
+                    const endereco = alvo.getAttribute('href');
+                    if (!endereco || endereco.startsWith('data:')) return;
+                    clique.preventDefault();
+                    window.open(endereco, '_blank', 'noopener');
+                  });
+                }}
+              />
             </div>
           )}
         </div>
