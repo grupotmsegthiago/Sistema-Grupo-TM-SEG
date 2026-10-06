@@ -182,3 +182,53 @@ export function conferirTabelaRota(
     sugestaoNome: sugestao?.nome || '',
   };
 }
+
+function ladoDaTabela(lado?: string | null): string {
+  if (lado === 'fornecedor') return 'no custo do fornecedor';
+  if (lado === 'cliente') return 'no preço do cliente';
+  return '';
+}
+
+/** Faixa pura (100KM, ATÉ 100 KM). Tabela de outra cidade não entra aqui. */
+function sugestaoEhFaixaKm(nome: string): boolean {
+  const limpo = limp(nome);
+  if (limpo.includes(' X ')) return false;
+  return /^\d+\s*KM$/.test(limpo) || /ATE \d+\s*KM$/.test(limpo);
+}
+
+/**
+ * Texto para quem abriu a OS: o que foi aplicado, por que não combina
+ * e o que fazer na próxima para não repetir.
+ * Uma sugestão que só “cobre o KM” mas é de outra cidade não é recomendada.
+ */
+export function explicarTabelaErrada(input: {
+  criador?: string | null;
+  tabela?: string | null;
+  motivos?: string[] | null;
+  sugestaoNome?: string | null;
+  lado?: string | null;
+}): string {
+  const quem = String(input.criador || '').trim() || 'Quem abriu a OS';
+  const tabela = String(input.tabela || '').trim();
+  const motivos = (input.motivos || []).map((item) => String(item || '').trim()).filter(Boolean);
+  const sugestao = String(input.sugestaoNome || '').trim();
+  const soKm = motivos.length > 0 && motivos.every((item) => /KM da rota/i.test(item));
+  const sugestaoDeOutraCidade = Boolean(sugestao) && !sugestaoEhFaixaKm(sugestao) && soKm;
+  const motivosLimpos = motivos
+    .map((item) => (soKm ? item.replace(/\s*A faixa que cobre é \d+[^.]*\./i, '').trim() : item))
+    .filter(Boolean);
+  const lado = ladoDaTabela(input.lado);
+  const aplicada = tabela
+    ? `A tabela aplicada${lado ? ` ${lado}` : ''} foi ${tabela}.`
+    : (lado ? `O erro foi ${lado}.` : '');
+  const porque = motivosLimpos.length
+    ? motivosLimpos.join(' ')
+    : (tabela ? `A tabela ${tabela} não combina com a rota.` : 'A tabela aplicada não combina com a rota.');
+  let proxima = 'Na próxima, confira a UF, a região e a faixa de KM antes de aplicar a tabela.';
+  if (sugestaoDeOutraCidade) {
+    proxima = 'Na próxima, escolha uma faixa igual ou maior que o KM, da mesma UF e região da rota. Não troque por uma tabela de outra cidade só porque a faixa é maior.';
+  } else if (sugestao) {
+    proxima = `Na próxima, use a tabela ${sugestao}.`;
+  }
+  return [`${quem}, não repita esta OS.`, aplicada, porque, proxima].filter(Boolean).join(' ');
+}

@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
+import { explicarTabelaErrada } from '../lib/conferenciaTabelaRota';
 import { supabase } from '../lib/supabase';
 
 type Alerta = {
   id: string;
   os: string;
+  criador: string;
   tabela: string;
   motivos: string[];
   sugestaoNome: string;
+  lado: string;
 };
 
 const GUARDADOS = 'tmseg-tabela-errada-lidos';
@@ -53,16 +56,18 @@ export default function TabelaRotaAlertaUsuario() {
         const vistos = lidos();
         const meus = data.flatMap((row) => {
           if (vistos.has(String(row.id))) return [];
-          let detalhe: { criador?: string; tabela?: string; motivos?: string[]; sugestaoNome?: string } = {};
+          let detalhe: { criador?: string; tabela?: string; motivos?: string[]; sugestaoNome?: string; lado?: string } = {};
           try { detalhe = JSON.parse(String(row.details || '{}')); } catch { detalhe = {}; }
           const criador = String(detalhe.criador || row.user_name || '');
           if (!mesmoNome(criador, eu)) return [];
           return [{
             id: String(row.id),
             os: String(row.entity_id || ''),
+            criador,
             tabela: String(detalhe.tabela || ''),
             motivos: Array.isArray(detalhe.motivos) ? detalhe.motivos.map(String) : [],
             sugestaoNome: String(detalhe.sugestaoNome || ''),
+            lado: String(detalhe.lado || ''),
           }];
         });
         setAlertas(meus.slice(0, 3));
@@ -85,9 +90,15 @@ export default function TabelaRotaAlertaUsuario() {
           <AlertTriangle size={18} className="mt-0.5 shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="text-xs font-black uppercase">OS {alerta.os} aberta com a tabela errada</p>
-            <p className="mt-1 text-xs font-semibold">{alerta.tabela}</p>
-            {alerta.motivos[0] && <p className="mt-1 text-xs">{alerta.motivos[0]}</p>}
-            {alerta.sugestaoNome && <p className="mt-1 text-xs">Tabela que faz mais sentido: {alerta.sugestaoNome}</p>}
+            <p className="mt-1 text-xs">{explicarTabelaErrada(alerta)}</p>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('tmseg:open-billing-mission', { detail: alerta.os }))}
+              className="mt-1 text-xs font-black uppercase text-red-800 underline"
+              data-testid={`alerta-tabela-errada-auditoria-${alerta.os}`}
+            >
+              Abrir auditoria de faturamento
+            </button>
           </div>
           <button type="button" onClick={() => fechar(alerta.id)} className="rounded-full p-1 hover:bg-red-100" aria-label="Fechar alerta">
             <X size={14} />

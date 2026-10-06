@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { conferirTabelaRota } from '../lib/conferenciaTabelaRota';
+import { conferirTabelaRota, explicarTabelaErrada } from '../lib/conferenciaTabelaRota';
 
 const cubatao = { id: '1', nome: 'SUDESTE - CUBATÃO X SANTOS', franchiseKm: 100 };
 const betim = { id: '2', nome: 'SUDESTE - BETIM X BETIM', franchiseKm: 100 };
@@ -44,4 +44,44 @@ test('faixa curta para o KM da rota sugere a faixa que cobre', () => {
   assert.equal(resultado.status, 'ERRADA');
   assert.match(resultado.motivos.join(' '), /160/);
   assert.equal(resultado.sugestaoId, '3');
+});
+
+test('explica o erro para quem abriu a OS e aponta a tabela certa', () => {
+  const texto = explicarTabelaErrada({
+    criador: 'Beatriz de Carvalho Simões',
+    tabela: 'SUDESTE - ATÉ 100 KM - MG E ES',
+    motivos: ['A tabela é SUDESTE e a rota está em NORDESTE.'],
+    sugestaoNome: 'NORDESTE - ATÉ 100 KM',
+    lado: 'cliente',
+  });
+  assert.match(texto, /Beatriz de Carvalho Simões, não repita esta OS/);
+  assert.match(texto, /no preço do cliente/);
+  assert.match(texto, /NORDESTE/);
+  assert.match(texto, /Na próxima, use a tabela NORDESTE - ATÉ 100 KM/);
+});
+
+test('faixa curta não manda usar tabela de outra cidade', () => {
+  const texto = explicarTabelaErrada({
+    criador: 'Beatriz de Carvalho Simões',
+    lado: 'cliente',
+    tabela: 'SUDESTE - ATÉ 100 KM - MG E ES',
+    motivos: ['O KM da rota é 104 e a faixa aplicada é 100. A faixa que cobre é 550 (SUDESTE - CONTAGEM/MG X UBERLÂNDIA/MG).'],
+    sugestaoNome: 'SUDESTE - CONTAGEM/MG X UBERLÂNDIA/MG',
+  });
+  assert.match(texto, /não repita esta OS/);
+  assert.match(texto, /104/);
+  assert.doesNotMatch(texto, /use a tabela SUDESTE - CONTAGEM/);
+  assert.match(texto, /Não troque por uma tabela de outra cidade/);
+});
+
+test('faixa curta de KM puro aponta a faixa que cobre', () => {
+  const texto = explicarTabelaErrada({
+    criador: 'Cristiane Aurora',
+    lado: 'fornecedor',
+    tabela: '500KM',
+    motivos: ['O KM da rota é 511 e a faixa aplicada é 500. A faixa que cobre é 600 (600KM).'],
+    sugestaoNome: '600KM',
+  });
+  assert.match(texto, /no custo do fornecedor/);
+  assert.match(texto, /Na próxima, use a tabela 600KM/);
 });

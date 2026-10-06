@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
+import { explicarTabelaErrada } from '../lib/conferenciaTabelaRota';
 import { supabase } from '../lib/supabase';
 
 type Linha = {
@@ -8,13 +9,21 @@ type Linha = {
   criador: string;
   tabela: string;
   quando: string;
+  explicacao: string;
 };
+
+function abrirAuditoria(os: string) {
+  const id = String(os || '').trim();
+  if (!id) return;
+  window.dispatchEvent(new CustomEvent('tmseg:open-billing-mission', { detail: id }));
+}
 
 export default function CockpitTabelaErrada() {
   const [linhas, setLinhas] = useState<Linha[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [incompleta, setIncompleta] = useState(false);
+  const [explicando, setExplicando] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelado = false;
@@ -35,17 +44,27 @@ export default function CockpitTabelaErrada() {
         const rows = data || [];
         setIncompleta(count != null && count > rows.length);
         setLinhas(rows.map((row) => {
-          let detalhe: { criador?: string; tabela?: string } = {};
+          let detalhe: { criador?: string; tabela?: string; motivos?: string[]; sugestaoNome?: string; lado?: string } = {};
           try { detalhe = JSON.parse(String(row.details || '{}')); } catch { detalhe = {}; }
           const quando = row.created_at
             ? new Date(row.created_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
             : '';
+          const criador = String(detalhe.criador || row.user_name || 'não identificado');
+          const tabela = String(detalhe.tabela || '');
+          const motivos = Array.isArray(detalhe.motivos) ? detalhe.motivos.map(String) : [];
           return {
             id: String(row.id),
             os: String(row.entity_id || ''),
-            criador: String(detalhe.criador || row.user_name || 'não identificado'),
-            tabela: String(detalhe.tabela || ''),
+            criador,
+            tabela,
             quando,
+            explicacao: explicarTabelaErrada({
+              criador,
+              tabela,
+              motivos,
+              sugestaoNome: detalhe.sugestaoNome,
+              lado: detalhe.lado,
+            }),
           };
         }));
         setLoading(false);
@@ -85,12 +104,45 @@ export default function CockpitTabelaErrada() {
         <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto">
           {linhas.map((linha) => (
             <li key={linha.id} className="rounded-xl bg-red-50/70 px-3 py-2 text-xs">
-              <span className="font-black text-red-900">OS {linha.os}</span>
-              <span className="mx-1 text-gray-400">·</span>
-              <span className="font-bold uppercase">{linha.criador}</span>
-              <span className="mx-1 text-gray-400">·</span>
-              <span>{linha.tabela}</span>
-              {linha.quando && <span className="ml-2 text-gray-500">{linha.quando}</span>}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => abrirAuditoria(linha.os)}
+                  className="font-black text-red-900 underline"
+                  title="Abrir no auditador de faturamento"
+                  data-testid={`cockpit-tabela-errada-auditoria-${linha.id}`}
+                >
+                  OS {linha.os}
+                </button>
+                <span className="mx-1 text-gray-400">·</span>
+                <span className="font-bold uppercase">{linha.criador}</span>
+                <span className="mx-1 text-gray-400">·</span>
+                <span>{linha.tabela}</span>
+                {linha.quando && <span className="ml-2 text-gray-500">{linha.quando}</span>}
+              </div>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                <button
+                  type="button"
+                  onClick={() => abrirAuditoria(linha.os)}
+                  className="font-black uppercase text-red-800 underline"
+                  data-testid={`cockpit-tabela-errada-abrir-${linha.id}`}
+                >
+                  Abrir no auditador
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExplicando((atual) => atual === linha.id ? null : linha.id)}
+                  className="font-black uppercase text-red-800 underline"
+                  data-testid={`cockpit-tabela-errada-erro-${linha.id}`}
+                >
+                  O que foi alterado
+                </button>
+              </div>
+              {explicando === linha.id && (
+                <p className="mt-1 text-[11px] font-semibold leading-snug text-red-950" data-testid={`cockpit-tabela-errada-explicacao-${linha.id}`}>
+                  {linha.explicacao}
+                </p>
+              )}
             </li>
           ))}
         </ul>

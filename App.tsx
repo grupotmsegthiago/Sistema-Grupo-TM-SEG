@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import WhatsAppStatusBanner from './components/WhatsAppStatusBanner';
@@ -523,6 +523,16 @@ const App: React.FC = () => {
     };
     window.addEventListener('tmseg:navigate', handler as EventListener);
     return () => window.removeEventListener('tmseg:navigate', handler as EventListener);
+  }, []);
+  const openBillingRef = useRef(handleOpenBillingMission);
+  openBillingRef.current = handleOpenBillingMission;
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const missionId = String((e as CustomEvent).detail || '').trim();
+      if (missionId) void openBillingRef.current(missionId);
+    };
+    window.addEventListener('tmseg:open-billing-mission', handler as EventListener);
+    return () => window.removeEventListener('tmseg:open-billing-mission', handler as EventListener);
   }, []);
   const handleSaveAndContinue = (missionId: string) => { localStorage.setItem('openMissionOnLoad', missionId); navigateTo('missions'); };
 
