@@ -9,6 +9,8 @@ import {
   normalizeOccurrenceText,
   occurrenceTextError,
   resolutionTextError,
+  ROTULO_O_QUE_FOI_FEITO,
+  ROTULO_RESOLVER_OCORRENCIA,
 } from '../lib/missionOccurrence';
 
 test('ocorrência exige um texto que a auditoria consiga ler', () => {
@@ -19,7 +21,9 @@ test('ocorrência exige um texto que a auditoria consiga ler', () => {
 });
 
 test('ocorrência resolvida exige o motivo e sai da lista em aberto', () => {
-  assert.equal(resolutionTextError('ok'), 'Descreva o que foi resolvido.');
+  assert.equal(resolutionTextError('ok'), 'Informe o que foi feito.');
+  assert.equal(ROTULO_RESOLVER_OCORRENCIA, 'Resolvido');
+  assert.equal(ROTULO_O_QUE_FOI_FEITO, 'Informar o que foi feito');
   assert.equal(resolutionTextError('Motorista liberado e viagem retomada'), null);
   assert.equal(isOccurrenceOpen({ resolved_at: null }), true);
   assert.equal(isOccurrenceOpen({ resolved_at: '2026-09-30T14:00:00Z' }), false);

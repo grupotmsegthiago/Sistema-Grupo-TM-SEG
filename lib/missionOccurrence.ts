@@ -27,9 +27,12 @@ export function countOpenOccurrences(rows: { resolved_at?: string | null }[]): n
   return rows.filter(isOccurrenceOpen).length;
 }
 
+export const ROTULO_RESOLVER_OCORRENCIA = 'Resolvido';
+export const ROTULO_O_QUE_FOI_FEITO = 'Informar o que foi feito';
+
 export function resolutionTextError(raw: string): string | null {
   const text = normalizeOccurrenceText(raw);
-  if (text.length < MIN_LENGTH) return 'Descreva o que foi resolvido.';
+  if (text.length < MIN_LENGTH) return 'Informe o que foi feito.';
   if (text.length > MAX_LENGTH) return 'A resolução passou de 2000 caracteres.';
   return null;
 }

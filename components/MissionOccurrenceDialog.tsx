@@ -3,7 +3,8 @@ import { AlertTriangle, CheckCircle2, ImagePlus, Loader2, X } from 'lucide-react
 import { supabase } from '../lib/supabase';
 import { formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import { publishMissionLive, MISSION_LIVE_WINDOW_EVENT } from '../lib/missionLiveBroadcast';
-import { isOccurrenceOpen, normalizeOccurrenceText, occurrenceTextError, resolutionTextError } from '../lib/missionOccurrence';
+import { marcarOcorrenciaResolvida } from '../lib/marcarOcorrenciaResolvida';
+import { isOccurrenceOpen, normalizeOccurrenceText, occurrenceTextError, ROTULO_O_QUE_FOI_FEITO, ROTULO_RESOLVER_OCORRENCIA } from '../lib/missionOccurrence';
 
 type OccurrenceRow = {
   id: string;
@@ -223,66 +224,26 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
 
   const resolve = async (row: OccurrenceRow) => {
     if (!isOccurrenceOpen(row)) return;
-    const message = resolutionTextError(resolutionDraft);
-    if (message) {
-      setError(message);
-      return;
-    }
     setResolving(true);
     setError('');
-    try {
-      const author = readUserName();
-      const note = normalizeOccurrenceText(resolutionDraft);
-      const resolvedAt = new Date().toISOString();
-      const { data: updated, error: updateError } = await supabase
-        .from('mission_occurrences')
-        .update({ resolved_at: resolvedAt, resolved_by: author, resolution_note: note })
-        .eq('id', row.id)
-        .eq('mission_id', missionId)
-        .is('resolved_at', null)
-        .select('id')
-        .maybeSingle();
-      if (updateError) throw updateError;
-      if (!updated) {
-        setError('Essa ocorrência já foi resolvida.');
-        await load();
-        return;
-      }
-      const { count, error: countError } = await supabase
-        .from('mission_occurrences')
-        .select('id', { count: 'exact', head: true })
-        .eq('mission_id', missionId)
-        .is('resolved_at', null);
-      if (countError) throw countError;
-      const openCount = count ?? 0;
-      const { error: missionError } = await supabase
-        .from('missions')
-        .update({ occurrence_count: openCount })
-        .eq('id', missionId);
-      if (missionError) throw missionError;
-      const { error: logError } = await supabase.from('system_logs').insert([{
-        user_name: author,
-        action_type: 'OTHER',
-        entity: 'MissionOccurrence',
-        entity_id: missionId,
-        details: JSON.stringify({
-          ocorrencia: row.id,
-          resolvido: note,
-          aviso: 'Ocorrência marcada como resolvida.',
-        }),
-      }]);
-      if (logError) setError('A resolução ficou salva. O histórico da auditoria não registrou desta vez.');
-      setResolvingId(null);
-      setResolutionDraft('');
-      onSaved(openCount);
-      void publishMissionLive('occurrence', { mission_id: missionId, occurrence_count: openCount });
-      window.dispatchEvent(new CustomEvent('refreshMissions'));
-      await load();
-    } catch (err: any) {
-      setError(err?.message || 'Não foi possível marcar como resolvido.');
-    } finally {
+    const result = await marcarOcorrenciaResolvida({
+      occurrenceId: row.id,
+      missionId,
+      note: resolutionDraft,
+      author: readUserName(),
+    });
+    if (!result.ok) {
+      setError(result.error);
+      if (result.already) await load();
       setResolving(false);
+      return;
     }
+    if (result.auditFailed) setError('A resolução ficou salva. O histórico da auditoria não registrou desta vez.');
+    setResolvingId(null);
+    setResolutionDraft('');
+    onSaved(result.openCount);
+    await load();
+    setResolving(false);
   };
 
   const openCount = rows.filter(isOccurrenceOpen).length;
@@ -405,12 +366,12 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
                       {resolvingId === row.id ? (
                         <div className="space-y-2">
                           <label className="block text-[10px] font-black uppercase text-emerald-800">
-                            O que foi resolvido
+                            {ROTULO_O_QUE_FOI_FEITO}
                             <textarea
                               value={resolutionDraft}
                               onChange={(e) => setResolutionDraft(e.target.value)}
                               rows={3}
-                              placeholder="Descreva o que foi resolvido"
+                              placeholder="Informe o que foi feito"
                               className="mt-1 w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm font-medium normal-case text-zinc-900"
                               data-testid={`input-occurrence-resolution-${row.id}`}
                             />
@@ -441,7 +402,7 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
                           className="rounded-xl bg-emerald-700 px-3 py-2 text-[11px] font-black uppercase text-white"
                           data-testid={`button-occurrence-resolve-${row.id}`}
                         >
-                          <CheckCircle2 size={12} className="inline" /> Resolvido
+                          <CheckCircle2 size={12} className="inline" /> {ROTULO_RESOLVER_OCORRENCIA}
                         </button>
                       )}
                     </div>
@@ -452,7 +413,7 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
                         <p><span className="font-black uppercase text-zinc-400">Resolvido em </span><span className="font-semibold text-zinc-800">{formatDateBR(row.resolved_at || '')} {formatTimeBR(row.resolved_at || '')}</span></p>
                         <p><span className="font-black uppercase text-zinc-400">Quem resolveu </span><span className="font-semibold text-zinc-800">{row.resolved_by || 'Operador'}</span></p>
                       </div>
-                      <p className="mt-2 text-[10px] font-black uppercase text-emerald-800">O que foi resolvido</p>
+                      <p className="mt-2 text-[10px] font-black uppercase text-emerald-800">O que foi feito</p>
                       <p className="text-sm font-semibold text-gray-900">{row.resolution_note || 'Sem motivo'}</p>
                     </div>
                   )}

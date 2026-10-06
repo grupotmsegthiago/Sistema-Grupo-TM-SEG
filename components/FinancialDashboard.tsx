@@ -12,6 +12,7 @@ import { FinancialTransaction, FinancialAccount, FinancialCategory } from '../ty
 import { useQuery } from '@tanstack/react-query';
 import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
 import FaturamentoAlertBanner from './FaturamentoAlertBanner';
+import CockpitOpenOccurrences from './CockpitOpenOccurrences';
 
 const isInvestmentMovement = (t: FinancialTransaction, categories: FinancialCategory[]) => {
     if (categories.some(c => c.id === t.category_id && c.group === 'INVESTIMENTOS')) return true;
@@ -124,7 +125,10 @@ const FinancialDashboard: React.FC<{ onNavigate?: (screen: string) => void }> = 
   return (
     <div className="space-y-6 animate-fade-in pb-12 bg-gray-50/50 p-2 rounded-2xl">
       <FaturamentoAlertBanner onOpenPainel={() => onNavigate?.('diretoria-faturamento')} />
-      
+      <div className="px-1">
+        <CockpitOpenOccurrences />
+      </div>
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-2">
         <div>
           <h2 className="text-2xl font-black text-gray-900 flex items-center gap-3 tracking-tight">
