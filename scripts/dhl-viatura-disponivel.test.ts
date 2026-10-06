@@ -6,7 +6,6 @@ import {
   filtrarViaturasPorRaio,
   idPublicoViatura,
   montarPontosPublicos,
-  urlMapaViaturas,
 } from '../lib/dhlViaturaMapa';
 import {
   HORA_MS,
@@ -279,17 +278,16 @@ test('mapa público esconde OS, fornecedor e cliente e obedece o raio', () => {
   assert.equal(filtrarViaturasPorRaio(pontos, { lat: curitiba.lat, lng: curitiba.lng }, 0).length, 0);
   assert.equal(filtrarViaturasPorRaio(pontos, null, 0).length, 2);
 
-  const comLink = montarMensagemDisponibilidadeDhl({
+  const semLink = montarMensagemDisponibilidadeDhl({
     regiao: 'SUL',
     posicao: 'CURITIBA - PR',
     uf: 'PR',
     finalizadaEm: ha(5),
-    linkMapa: urlMapaViaturas('https://sistema.grupotmseg.com.br'),
   });
-  assert.match(comLink, /https:\/\/sistema\.grupotmseg\.com\.br\/dhl/);
-  assert.match(comLink, /Portal DHL/);
-  assert.equal(comLink.includes('GTM-'), false);
-  assert.equal(comLink.includes('FORNECEDOR'), false);
+  assert.equal(semLink.includes('Portal DHL'), false);
+  assert.equal(semLink.includes('https://'), false);
+  assert.equal(semLink.includes('GTM-'), false);
+  assert.equal(semLink.includes('FORNECEDOR'), false);
 });
 
 test('painel só para a operação interna', () => {

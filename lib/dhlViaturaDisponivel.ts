@@ -1,7 +1,6 @@
 import { authFetch } from './authFetch';
 import { formatDateTimeBR } from './dateUtils';
 import { descreverDeCoordenada, descreverReferencia, foraDoPortalPorRaio, type ReferenciaDhl } from './dhlReferenciaGeografica';
-import { urlMapaViaturas } from './dhlViaturaMapa';
 import { extractCityFromAddress, extractUF, UF_TO_REGION } from './financialUtils';
 import { publishMissionLive, MISSION_LIVE_WINDOW_EVENT } from './missionLiveBroadcast';
 import { supabase } from './supabase';
@@ -248,7 +247,6 @@ export function montarMensagemDisponibilidadeDhl(alerta: {
   posicao: string;
   finalizadaEm: string;
   uf?: string;
-  linkMapa?: string;
 }, referencia?: ReferenciaDhl | null): string {
   const regiao = rotuloRegiao(alerta.regiao);
   const local = String(alerta.posicao || '').replace(/\s+/g, ' ').trim();
@@ -274,10 +272,6 @@ export function montarMensagemDisponibilidadeDhl(alerta: {
     '',
     '🚛 *Equipe disponível para novas missões.*',
   );
-  const link = String(alerta.linkMapa || '').trim();
-  if (link) {
-    linhas.push('', `🗺️ *Portal DHL:* ${link}`);
-  }
   return linhas.join('\n');
 }
 
@@ -289,20 +283,19 @@ export async function montarMensagemDisponibilidadeDhlAoVivo(alerta: {
   uf?: string;
 }): Promise<string> {
   const uf = String(alerta.uf || '').toUpperCase();
-  const linkMapa = urlMapaViaturas();
   if (!uf || descreverReferencia(alerta.posicao, uf)) {
-    return montarMensagemDisponibilidadeDhl({ ...alerta, uf, linkMapa });
+    return montarMensagemDisponibilidadeDhl({ ...alerta, uf });
   }
   try {
     const resp = await authFetch(`/api/geocode-address?address=${encodeURIComponent(`${alerta.posicao}, Brasil`)}`);
-    if (!resp.ok) return montarMensagemDisponibilidadeDhl({ ...alerta, uf, linkMapa });
+    if (!resp.ok) return montarMensagemDisponibilidadeDhl({ ...alerta, uf });
     const data = await resp.json();
     const lat = Number(data?.location?.lat);
     const lng = Number(data?.location?.lng);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return montarMensagemDisponibilidadeDhl({ ...alerta, uf, linkMapa });
-    return montarMensagemDisponibilidadeDhl({ ...alerta, uf, linkMapa }, descreverDeCoordenada({ lat, lng }, uf));
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return montarMensagemDisponibilidadeDhl({ ...alerta, uf });
+    return montarMensagemDisponibilidadeDhl({ ...alerta, uf }, descreverDeCoordenada({ lat, lng }, uf));
   } catch {
-    return montarMensagemDisponibilidadeDhl({ ...alerta, uf, linkMapa });
+    return montarMensagemDisponibilidadeDhl({ ...alerta, uf });
   }
 }
 
