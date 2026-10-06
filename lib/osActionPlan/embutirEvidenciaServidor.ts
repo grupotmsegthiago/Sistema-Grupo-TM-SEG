@@ -13,12 +13,31 @@ export function urlDeEvidenciaPermitida(url: string): boolean {
   return url.startsWith(PREFIXO) && !url.includes('..') && !url.includes('\\');
 }
 
+function comPrazo<T>(trabalho: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    trabalho.then(
+      (valor) => {
+        clearTimeout(timer);
+        resolve(valor);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      },
+    );
+  });
+}
+
 async function copiarUma(url: string): Promise<string | null> {
   if (!urlDeEvidenciaPermitida(url)) return null;
-  const resposta = await fetch(url, {
-    signal: AbortSignal.timeout(40000),
+  // O fetch da Vercel às vezes não obedece o AbortSignal e a rota fica presa.
+  // O prazo abaixo devolve vazio e o navegador copia a foto por conta própria.
+  const resposta = await comPrazo(fetch(url, {
+    signal: AbortSignal.timeout(8000),
     headers: { 'User-Agent': 'TMSEG/1.0 (contato@grupotmseg.com.br)' },
-  });
+  }), 8000);
+  if (!resposta) return null;
   if (!resposta.ok) return null;
   const tipo = String(resposta.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
   if (!tipo.startsWith('image/')) return null;

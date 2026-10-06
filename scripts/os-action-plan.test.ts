@@ -631,6 +631,39 @@ describe('relatório operacional da missão', () => {
     assert.match(html, /src="data:image\/jpeg;base64,QUJD"/);
     assert.match(html, new RegExp(`href="${foto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
     assert.match(html, /Abrir foto/);
+    assert.match(html, /class="foto-missao"/);
+    assert.match(html, /\.foto-missao img\s*\{[^}]*max-width:\s*100%/);
+    assert.match(html, /\.foto-missao img\s*\{[^}]*object-fit:\s*contain/);
+    assert.match(html, /\.foto-missao img\s*\{[^}]*max-height:\s*220mm/);
+    assert.doesNotMatch(html, /class="foto-link quadro"/);
+    assert.match(html, /\.foto-celula \.quadro img\s*\{[^}]*width:\s*42mm/);
+  });
+
+  it('mostra a foto inteira e não esconde a que ficou fora da atualização', () => {
+    const solta = 'https://exemplo.supabase.co/storage/v1/object/public/mission-evidence/os/hodometro.jpg';
+    const html = buildOsActionPlanHtml(base({
+      modalidade: 'padrao',
+      atualizacoes: atualizacoesDeExemplo(1),
+      fotos: [{ legenda: 'Hodômetro final', url: solta, quando: null, local: null }],
+    }));
+    assert.match(html, /data-secao="fotos-soltas"/);
+    assert.match(html, /Hodômetro final/);
+    assert.match(html, new RegExp(solta.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(html, /class="foto-missao"/);
+  });
+
+  it('amarra a foto do hodômetro na atualização de encerramento', () => {
+    const odometro = 'https://ajhmmjuewdsukecaimik.supabase.co/storage/v1/object/public/mission-evidence/odometer/GTM-6482/1784232198582.png';
+    const itens = montarAtualizacoes({
+      logs: [],
+      historico: [
+        { field_name: 'current_location', new_value: 'Solicitação Criada', changed_at: '2026-07-16T15:37:25.489Z', changed_by: 'Beatriz' },
+        { field_name: 'current_location', new_value: 'AUTO ENTREGUE EM SEGURANÇA, FIM DE MISSÃO. | SÃO PAULO', changed_at: '2026-07-16T20:03:53.525Z', changed_by: 'Beatriz' },
+      ],
+      fotos: [{ legenda: 'Hodômetro', url: odometro, quando: '2026-07-16T20:03:19.711Z', local: null }],
+    });
+    assert.equal(itens[1].fotos?.[0], odometro);
+    assert.equal(itens[0].fotos?.length || 0, 0);
   });
 
   it('não corta atualização quando a missão tem muitas', () => {

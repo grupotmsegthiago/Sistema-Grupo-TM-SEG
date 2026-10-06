@@ -244,8 +244,8 @@ export function buildOsActionPlanHtml(d: OsActionPlanInput): string {
     .fotos-pagina { table-layout: fixed; page-break-inside: avoid; break-inside: avoid; margin-top: 8px; }
     .fotos-pagina tr, .fotos-pagina td { break-inside: avoid; page-break-inside: avoid; }
     .foto-celula { width: 33.33%; vertical-align: top; padding: 6px; }
-    .quadro { width: 42mm; height: 42mm; margin: 0 auto 6px; overflow: hidden; background: #f3f4f6; border: 1px solid #e5e7eb; }
-    .quadro img { width: 42mm; height: 42mm; object-fit: cover; object-position: center; display: block; }
+    .foto-celula .quadro { width: 42mm; height: 42mm; margin: 0 auto 6px; overflow: hidden; background: #f3f4f6; border: 1px solid #e5e7eb; }
+    .foto-celula .quadro img { width: 42mm; height: 42mm; object-fit: cover; object-position: center; display: block; }
     .foto-celula p { margin: 0 0 3px; font-size: 8pt; line-height: 1.3; }
     .grade thead { display: table-header-group; }
     .grade tr { break-inside: avoid; page-break-inside: avoid; }

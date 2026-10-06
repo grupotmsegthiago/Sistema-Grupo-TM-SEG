@@ -376,14 +376,31 @@ export async function resolverPosicoes(args: {
   return { atualizacoes: lista, origemCoord, destinoCoord, diagnostico };
 }
 
+function htmlFotosSoltas(d: OsActionPlanInput, lista: OsActionPlanAtualizacao[]): string {
+  const usadas = new Set(lista.flatMap((item) => item.fotos || []));
+  const soltas = (d.fotos || []).filter((foto) => foto.url && !usadas.has(foto.url));
+  if (!soltas.length) return '';
+  const figuras = soltas.map((foto, indice) => figuraFoto(
+    foto.url,
+    foto.legenda || `Foto ${indice + 1} da missão`,
+    d.fotoEmbutida,
+  )).join('');
+  return `<div data-secao="fotos-soltas"><h3>Registros fotográficos da missão</h3><div class="galeria-fotos">${figuras}</div></div>`;
+}
+
+function figuraFoto(url: string, alt: string, embutidas?: Record<string, string> | null): string {
+  const visivel = embutidas?.[url] || url;
+  return `<figure class="foto-missao"><img src="${esc(visivel)}" alt="${esc(alt)}" /><figcaption><a class="link-foto" href="${esc(url)}" target="_blank" rel="noopener">Abrir foto</a></figcaption></figure>`;
+}
+
 function fotosHtml(item: OsActionPlanAtualizacao, embutidas?: Record<string, string> | null): string {
   const fotos = item.fotos || [];
   if (!fotos.length) return '';
-  const classe = fotos.length <= 1 ? 'galeria n1' : 'galeria n2';
-  return `<div class="${classe}">${fotos.map((url, indice) => {
-    const visivel = embutidas?.[url] || url;
-    return `<a class="foto-link quadro" href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(visivel)}" alt="Foto ${indice + 1} da atualização ${esc(numeroTexto(item.numero || indice + 1))}" /><span class="abrir-foto">Abrir foto</span></a>`;
-  }).join('')}</div>`;
+  return `<div class="galeria-fotos">${fotos.map((url, indice) => figuraFoto(
+    url,
+    `Foto ${indice + 1} da atualização ${numeroTexto(item.numero || indice + 1)}`,
+    embutidas,
+  )).join('')}</div>`;
 }
 
 function miniMapaHtml(item: OsActionPlanAtualizacao): string {
@@ -400,7 +417,7 @@ export function htmlQuadroAtualizacoes(d: OsActionPlanInput): string {
   const { lista, nota } = selecionarAtualizacoes(d);
   const cartoes = lista.length
     ? lista.map((item) => `<article class="atualizacao" data-atualizacao="${esc(item.numero || '')}">
-      <div class="par-visual"><div class="quadros-tempo">${miniMapaHtml(item)}${fotosHtml(item, d.fotoEmbutida)}</div><div class="corpo-atualizacao">
+      <div class="par-visual"><div class="quadros-tempo">${miniMapaHtml(item)}</div><div class="corpo-atualizacao">
       <header><strong>ATUALIZAÇÃO ${esc(numeroTexto(item.numero || 0))}</strong><span>${esc(dataHoraDe(item.quando))}</span></header>
       <p><strong>Status:</strong> ${esc(item.status || 'Atualização operacional')}</p>
       <p><strong>Local:</strong> ${esc(item.local || 'Local não informado nesta atualização.')}</p>
@@ -408,12 +425,14 @@ export function htmlQuadroAtualizacoes(d: OsActionPlanInput): string {
       ${(item.fotos || []).length ? '' : '<p class="sem-foto">Sem registro fotográfico nesta atualização.</p>'}
       <p class="quem">Registrado por: ${esc(item.por || 'Não informado')}</p>
       </div></div>
+      ${fotosHtml(item, d.fotoEmbutida)}
     </article>`).join('')
     : '<p>Nenhuma atualização operacional foi encontrada nesta OS.</p>';
   return `<section data-secao="diario">
     <h2>Quadro de atualizações da missão</h2>
     ${nota ? `<p class="nota-diario">${esc(nota)}</p>` : ''}
     ${cartoes}
+    ${htmlFotosSoltas(d, lista)}
   </section>`;
 }
 
@@ -425,20 +444,23 @@ export function cssDiario(): string {
     .quadros-tempo { display: flex; flex: 0 0 auto; gap: 6px; align-items: flex-start; }
     .corpo-atualizacao { flex: 1 1 auto; min-width: 0; }
     .quadro { position: relative; width: 32mm; height: 32mm; flex: 0 0 32mm; overflow: hidden; border: 1px solid #e5e7eb; border-radius: 8px; background: #f8fafc; }
-    .galeria { display: flex; gap: 6px; }
-    .foto-link { display: block; color: #fff; text-decoration: none; }
     .quadro img, .quadro svg { display: block; width: 32mm; height: 32mm; object-fit: cover; object-position: center; }
-    .selo-mini, .abrir-foto { position: absolute; left: 0; right: 0; bottom: 0; margin: 0; padding: 2px 4px; background: rgba(17,24,39,.78); color: #fff; font-size: 7pt; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .selo-mini { position: absolute; left: 0; right: 0; bottom: 0; margin: 0; padding: 2px 4px; background: rgba(17,24,39,.78); color: #fff; font-size: 7pt; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .selo-mini span { display: none; }
-    .abrir-foto { position: absolute; font-weight: 700; text-decoration: underline; }
-    .mapa-geral { display: block; width: 100%; height: auto; max-height: 68mm; object-fit: contain; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; }
+    .galeria-fotos { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 8px; }
+    .foto-missao { margin: 0; width: 100%; break-inside: avoid; page-break-inside: avoid; }
+    .foto-missao img { display: block; max-width: 100%; max-height: 220mm; width: auto; height: auto; object-fit: contain; object-position: center; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; }
+    .foto-missao figcaption { margin: 2px 0 0; font-size: 8pt; }
+    .link-foto { color: #991b1b; font-weight: 700; }
+    .mapa-geral { display: block; width: 100%; height: auto; max-height: 115mm; object-fit: contain; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; }
     .sem-foto, .nota-diario, .aviso-mapa { font-size: 9pt; color: #374151; }
     .atualizacao .quem { font-size: 8.5pt; color: #4b5563; }
     .sequencia { margin: 8px 0; padding-left: 18px; }
     .mapa-svg { width: 100%; break-inside: avoid; page-break-inside: avoid; }
     @media print {
       .atualizacao { break-inside: auto; page-break-inside: auto; }
-      .atualizacao header, .par-visual, .mapa-svg { break-inside: avoid; page-break-inside: avoid; }
+      .atualizacao header, .par-visual, .mapa-svg, .foto-missao { break-inside: avoid; page-break-inside: avoid; }
+      .foto-missao img { max-width: 100% !important; width: auto !important; height: auto !important; max-height: 220mm !important; object-fit: contain !important; }
     }
   `;
 }

@@ -6,29 +6,28 @@
  */
 import https from 'node:https';
 import sharp from 'sharp';
+import { TILE_MAPA, escolherZoom, limitesDoMapa, projetar, urlTileRua } from './mapaGrade';
 
 export type PontoMapaImagem = { lat: number; lng: number; rotulo: string };
 
-const TILE = 256;
+export { escolherZoom, projetar };
+
 const cacheTile = new Map<string, Buffer>();
 
-export function projetar(lat: number, lng: number, zoom: number): { x: number; y: number } {
-  const n = 2 ** zoom;
-  const x = ((lng + 180) / 360) * n * TILE;
-  const seno = Math.sin((lat * Math.PI) / 180);
-  const y = (0.5 - Math.log((1 + seno) / (1 - seno)) / (4 * Math.PI)) * n * TILE;
-  return { x, y };
-}
-
-export function escolherZoom(pontos: PontoMapaImagem[], largura: number, altura: number): number {
-  if (pontos.length <= 1) return 16;
-  for (let zoom = 15; zoom >= 5; zoom -= 1) {
-    const px = pontos.map((p) => projetar(p.lat, p.lng, zoom));
-    const larg = Math.max(...px.map((p) => p.x)) - Math.min(...px.map((p) => p.x));
-    const alt = Math.max(...px.map((p) => p.y)) - Math.min(...px.map((p) => p.y));
-    if (larg <= largura - 90 && alt <= altura - 90) return zoom;
-  }
-  return 5;
+function comPrazo<T>(trabalho: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    trabalho.then(
+      (valor) => {
+        clearTimeout(timer);
+        resolve(valor);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      },
+    );
+  });
 }
 
 function baixarUrl(url: string, ms: number): Promise<Buffer | null> {
@@ -62,16 +61,17 @@ function baixarUrl(url: string, ms: number): Promise<Buffer | null> {
 }
 
 async function baixarTile(zoom: number, x: number, y: number): Promise<Buffer | null> {
+  const chaveUrl = urlTileRua(zoom, x, y);
+  if (!chaveUrl) return null;
   const n = 2 ** zoom;
   const xx = ((x % n) + n) % n;
-  if (y < 0 || y >= n) return null;
   const chave = `${zoom}/${xx}/${y}`;
   const guardado = cacheTile.get(chave);
   if (guardado) return guardado;
   // O Carto responde HTTP 200 com "API KEY REQUIRED" e o OSM, a partir da Vercel, não encerra.
   // A rua vem primeiro do mapa da Esri. O outro só entra se esse não responder em 2,5s.
   const fontes = [
-    `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${zoom}/${y}/${xx}`,
+    chaveUrl,
     `https://tile.openstreetmap.org/${chave}.png`,
   ];
   for (const url of fontes) {
@@ -91,12 +91,10 @@ export async function renderizarPacoteMapas(
   for (const item of (mapas || []).slice(0, 16)) {
     const id = String(item?.id || '').trim();
     if (!id) continue;
-    try {
-      const png = await renderizarMapaPng(item);
-      saida.push({ id, base64: png.toString('base64') });
-    } catch {
-      saida.push({ id, base64: '' });
-    }
+    // Prazo duro: o download do tile, na Vercel, às vezes não dispara o timeout do socket
+    // e a função ficava presa. Sem resposta, o relatório saía só com os pontos, sem a rua.
+    const png = await comPrazo(renderizarMapaPng(item).catch(() => null), 8000);
+    saida.push({ id, base64: png ? png.toString('base64') : '' });
   }
   return saida;
 }
@@ -110,24 +108,16 @@ export async function renderizarMapaPng(args: {
   if (!pontos.length) throw new Error('sem pontos');
   const largura = Math.max(280, Math.min(1000, Number(args.largura) || 900));
   const altura = Math.max(180, Math.min(700, Number(args.altura) || 480));
-  const zoom = escolherZoom(pontos, largura, altura);
+  const grade = limitesDoMapa(pontos, largura, altura);
+  if (!grade) throw new Error('sem pontos');
+  const { zoom, origemX, origemY } = grade;
   const px = pontos.map((p) => ({ ...projetar(p.lat, p.lng, zoom), rotulo: p.rotulo }));
-  const centroX = (Math.min(...px.map((p) => p.x)) + Math.max(...px.map((p) => p.x))) / 2;
-  const centroY = (Math.min(...px.map((p) => p.y)) + Math.max(...px.map((p) => p.y))) / 2;
-  const origemX = centroX - largura / 2;
-  const origemY = centroY - altura / 2;
-  const x0 = Math.floor(origemX / TILE);
-  const y0 = Math.floor(origemY / TILE);
-  const x1 = Math.floor((origemX + largura) / TILE);
-  const y1 = Math.floor((origemY + altura) / TILE);
-  const pedidos: Array<Promise<sharp.OverlayOptions | null>> = [];
-  for (let tx = x0; tx <= x1; tx += 1) {
-    for (let ty = y0; ty <= y1; ty += 1) {
-      pedidos.push(baixarTile(zoom, tx, ty).then((tile) => (
-        tile ? { input: tile, left: Math.round(tx * TILE - origemX), top: Math.round(ty * TILE - origemY) } : null
-      )));
-    }
-  }
+  const tiles = grade.tiles;
+  const pedidos: Array<Promise<sharp.OverlayOptions | null>> = tiles.map(({ tx, ty }) => (
+    baixarTile(zoom, tx, ty).then((tile) => (
+      tile ? { input: tile, left: Math.round(tx * TILE_MAPA - origemX), top: Math.round(ty * TILE_MAPA - origemY) } : null
+    ))
+  ));
   const camadas = (await Promise.all(pedidos)).filter((item): item is sharp.OverlayOptions => item != null);
   if (!camadas.length) throw new Error('tiles indisponíveis');
   const marcas = px.map((p) => {

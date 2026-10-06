@@ -6,6 +6,7 @@
  */
 import { authFetch } from '../authFetch';
 import { agruparPontos } from './diarioOperacional';
+import { desenharMapaNoNavegador, embutirFotosNoNavegador } from './mapaNoNavegador';
 import type { OsActionPlanInput } from './types';
 
 async function pedirPacoteMapas(
@@ -16,7 +17,7 @@ async function pedirPacoteMapas(
     const resposta = await authFetch('/api/mapa-estatico', {
       method: 'POST',
       body: JSON.stringify({ mapas: pedidos }),
-      signal: AbortSignal.timeout(25000),
+      signal: AbortSignal.timeout(8000),
     });
     if (!resposta.ok) return {};
     const corpo = await resposta.json() as { imagens?: Array<{ id?: string; base64?: string }> };
@@ -37,7 +38,7 @@ async function embutirFotos(urls: string[]): Promise<{ fotoEmbutida: Record<stri
     const resposta = await authFetch('/api/evidencia-imagem', {
       method: 'POST',
       body: JSON.stringify({ urls: remotas }),
-      signal: AbortSignal.timeout(50000),
+      signal: AbortSignal.timeout(8000),
     });
     if (!resposta.ok) return { fotoEmbutida: {}, falhas: remotas.length };
     const corpo = await resposta.json() as { imagens?: Array<{ url?: string; dataUrl?: string | null }> };
@@ -61,7 +62,10 @@ async function ilustrarUmaVez(
 ): Promise<{ entrada: OsActionPlanInput; avisos: string[] }> {
   const avisos: string[] = [];
   const atualizacoes = (entrada.atualizacoes || []).map((item) => ({ ...item }));
-  const urls = atualizacoes.flatMap((item) => [...(item.fotos || []), ...(item.fotoUrl ? [item.fotoUrl] : [])]);
+  const urls = [
+    ...atualizacoes.flatMap((item) => [...(item.fotos || []), ...(item.fotoUrl ? [item.fotoUrl] : [])]),
+    ...(entrada.fotos || []).map((foto) => foto.url),
+  ];
   const brutos = [
     ...(entrada.origemCoord ? [{ lat: entrada.origemCoord.lat, lng: entrada.origemCoord.lng, rotulo: 'A' }] : []),
     ...atualizacoes
@@ -84,7 +88,25 @@ async function ilustrarUmaVez(
     aoAvancar?.({ tipo: 'foto', feitos: 1, total: 1 });
     return fotos;
   });
-  const [fotos, imagens] = await Promise.all([fotosPromise, pedirPacoteMapas(pedidos)]);
+  const [fotosServidor, imagensServidor] = await Promise.all([fotosPromise, pedirPacoteMapas(pedidos)]);
+  const faltamFoto = [...new Set(urls.filter((url) => url && !url.startsWith('data:') && !fotosServidor.fotoEmbutida[url]))];
+  const fotosLocais = await embutirFotosNoNavegador(faltamFoto);
+  const fotoEmbutida = { ...fotosServidor.fotoEmbutida, ...fotosLocais };
+  const fotos = {
+    fotoEmbutida,
+    falhas: [...new Set(urls.filter((url) => url && !url.startsWith('data:')))].filter((url) => !fotoEmbutida[url]).length,
+  };
+  const imagens = { ...imagensServidor };
+  const mapasFaltando = pedidos.filter((pedido) => !imagens[pedido.id]);
+  let cursorMapa = 0;
+  await Promise.all(Array.from({ length: Math.min(3, mapasFaltando.length) }, async () => {
+    while (cursorMapa < mapasFaltando.length) {
+      const pedido = mapasFaltando[cursorMapa];
+      cursorMapa += 1;
+      const desenhado = await desenharMapaNoNavegador(pedido.pontos, pedido.largura, pedido.altura);
+      if (desenhado) imagens[pedido.id] = desenhado;
+    }
+  }));
   aoAvancar?.({ tipo: 'mapa', feitos: pedidos.length, total: Math.max(1, pedidos.length) });
   for (const item of atualizacoes) {
     if (item.lat == null || item.lng == null) continue;
