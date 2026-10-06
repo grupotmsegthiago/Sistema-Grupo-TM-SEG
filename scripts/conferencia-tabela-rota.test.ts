@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { cartaParaMim, montarCartaTabelaErrada } from '../lib/cartaTabelaErrada';
 import { conferirTabelaRota, explicarTabelaErrada } from '../lib/conferenciaTabelaRota';
 
 const cubatao = { id: '1', nome: 'SUDESTE - CUBATÃO X SANTOS', franchiseKm: 100 };
@@ -72,6 +73,22 @@ test('faixa curta não manda usar tabela de outra cidade', () => {
   assert.match(texto, /104/);
   assert.doesNotMatch(texto, /use a tabela SUDESTE - CONTAGEM/);
   assert.match(texto, /Não troque por uma tabela de outra cidade/);
+});
+
+test('a carta é só de quem abriu a OS', () => {
+  const carta = montarCartaTabelaErrada({
+    os: 'GTM-6482',
+    criador: 'Beatriz de Carvalho Simões',
+    lado: 'cliente',
+    tabela: 'SUDESTE - ATÉ 100 KM - MG E ES',
+    motivos: ['O KM da rota é 104 e a faixa aplicada é 100.'],
+  });
+  assert.equal(carta.para, 'Beatriz de Carvalho Simões');
+  assert.match(carta.assunto, /GTM-6482/);
+  assert.match(carta.corpo, /não repita esta OS/);
+  assert.equal(cartaParaMim(carta.para, 'beatriz de carvalho simoes'), true);
+  assert.equal(cartaParaMim(carta.para, 'Michelle Dias'), false);
+  assert.equal(cartaParaMim('não identificado', 'Michelle Dias'), false);
 });
 
 test('faixa curta de KM puro aponta a faixa que cobre', () => {

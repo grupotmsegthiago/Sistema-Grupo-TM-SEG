@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
-import { explicarTabelaErrada } from '../lib/conferenciaTabelaRota';
+import { nomeDeCarta } from '../lib/cartaTabelaErrada';
 import { supabase } from '../lib/supabase';
 
 type Linha = {
@@ -9,7 +9,7 @@ type Linha = {
   criador: string;
   tabela: string;
   quando: string;
-  explicacao: string;
+  temCarta: boolean;
 };
 
 function abrirAuditoria(os: string) {
@@ -23,7 +23,6 @@ export default function CockpitTabelaErrada() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [incompleta, setIncompleta] = useState(false);
-  const [explicando, setExplicando] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelado = false;
@@ -51,20 +50,13 @@ export default function CockpitTabelaErrada() {
             : '';
           const criador = String(detalhe.criador || row.user_name || 'não identificado');
           const tabela = String(detalhe.tabela || '');
-          const motivos = Array.isArray(detalhe.motivos) ? detalhe.motivos.map(String) : [];
           return {
             id: String(row.id),
             os: String(row.entity_id || ''),
             criador,
             tabela,
             quando,
-            explicacao: explicarTabelaErrada({
-              criador,
-              tabela,
-              motivos,
-              sugestaoNome: detalhe.sugestaoNome,
-              lado: detalhe.lado,
-            }),
+            temCarta: nomeDeCarta(criador) !== 'NAO IDENTIFICADO',
           };
         }));
         setLoading(false);
@@ -83,7 +75,7 @@ export default function CockpitTabelaErrada() {
           <h3 className="text-sm font-black text-gray-900 uppercase tracking-wide flex items-center gap-2">
             <AlertTriangle size={16} className="text-red-600" /> Tabelas que não combinam com a rota
           </h3>
-          <p className="text-xs text-gray-500 mt-1">Quem abriu a OS com estado, UF ou KM fora da tabela aplicada.</p>
+          <p className="text-xs text-gray-500 mt-1">A carta vai para quem abriu a OS. Cada um lê só a sua.</p>
         </div>
         <p className="text-2xl font-black text-red-700" data-testid="cockpit-tabela-errada-count">{loading ? '…' : linhas.length}</p>
       </div>
@@ -120,7 +112,7 @@ export default function CockpitTabelaErrada() {
                 <span>{linha.tabela}</span>
                 {linha.quando && <span className="ml-2 text-gray-500">{linha.quando}</span>}
               </div>
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <button
                   type="button"
                   onClick={() => abrirAuditoria(linha.os)}
@@ -129,20 +121,10 @@ export default function CockpitTabelaErrada() {
                 >
                   Abrir no auditador
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setExplicando((atual) => atual === linha.id ? null : linha.id)}
-                  className="font-black uppercase text-red-800 underline"
-                  data-testid={`cockpit-tabela-errada-erro-${linha.id}`}
-                >
-                  O que foi alterado
-                </button>
+                <span className="text-[10px] font-black uppercase text-red-700" data-testid={`cockpit-tabela-errada-carta-${linha.id}`}>
+                  {linha.temCarta ? `Carta para ${linha.criador}` : 'Sem carta — criador não identificado'}
+                </span>
               </div>
-              {explicando === linha.id && (
-                <p className="mt-1 text-[11px] font-semibold leading-snug text-red-950" data-testid={`cockpit-tabela-errada-explicacao-${linha.id}`}>
-                  {linha.explicacao}
-                </p>
-              )}
             </li>
           ))}
         </ul>

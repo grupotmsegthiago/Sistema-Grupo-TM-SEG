@@ -105,7 +105,7 @@ import EvidenceStartAlert from './components/EvidenceStartAlert';
 import VeladaClosureAlert from './components/VeladaClosureAlert';
 import DhlCopiaAoVivo from './components/DhlCopiaAoVivo';
 import DhlViaturaNovaAlerta from './components/DhlViaturaNovaAlerta';
-import TabelaRotaAlertaUsuario from './components/TabelaRotaAlertaUsuario';
+import CartasTabelaErrada from './components/CartasTabelaErrada';
 import UserPresenceTracker from './components/UserPresenceTracker';
 import PresenceDebugPanel from './components/PresenceDebugPanel';
 import TimeClockGate from './components/TimeClockGate';
@@ -776,7 +776,7 @@ const App: React.FC = () => {
             <IdlePresenceGuard />
             <main className="flex-1 overflow-x-auto overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="w-full mx-auto relative">
-                <TabelaRotaAlertaUsuario />
+                <CartasTabelaErrada />
                 <AppErrorBoundary onReset={() => {
                   // Só limpa o erro — não joga o usuário pro dashboard automaticamente.
                 }}>
