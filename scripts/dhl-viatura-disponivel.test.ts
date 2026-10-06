@@ -18,6 +18,9 @@ import {
   mesmoOperador,
   podeAuditarNaoEncaminhados,
   podeVerPainelDhl,
+  TEXTO_ALERTA_VIATURA_DISPONIVEL,
+  detalheAlertaViaturaDisponivel,
+  deveAvisarOperadores,
   textoAlertaJaCopiado,
   resolverAlertaDhl,
   rascunhosDeMissoesFinalizadas,
@@ -239,6 +242,18 @@ test('segunda cópia de outro operador fica bloqueada e avisa o nome', () => {
   assert.match(texto, /Maria Souza já copiou a mensagem da OS GTM-9001/);
   assert.match(texto, /CURITIBA - PR/);
   assert.match(texto, /Não envie de novo no grupo da DHL/);
+});
+
+test('avisa a operação só na primeira vez, dentro da janela', () => {
+  assert.equal(TEXTO_ALERTA_VIATURA_DISPONIVEL, 'Tem viatura disponível, favor mandar pra DHL.');
+  assert.equal(detalheAlertaViaturaDisponivel('CURITIBA - PR', 'SUL'), 'CURITIBA - PR · Sul');
+  assert.equal(detalheAlertaViaturaDisponivel('EXTREMA - MG', 'TOPO'), 'EXTREMA - MG · No topo');
+  assert.equal(detalheAlertaViaturaDisponivel('', ''), '');
+  assert.equal(deveAvisarOperadores('pendente', ha(5), now), true);
+  assert.equal(deveAvisarOperadores('pendente', ha(31), now), false);
+  assert.equal(deveAvisarOperadores('copiado', ha(5), now), false);
+  assert.equal(deveAvisarOperadores('confirmado', ha(2), now), false);
+  assert.equal(TEXTO_ALERTA_VIATURA_DISPONIVEL.includes('FORNECEDOR'), false);
 });
 
 test('mapa público esconde OS, fornecedor e cliente e obedece o raio', () => {

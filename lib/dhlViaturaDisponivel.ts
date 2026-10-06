@@ -352,6 +352,22 @@ export function textoAlertaJaCopiado(por: string, missionId: string, posicao?: s
   return `${quem} já copiou a mensagem da OS ${missionId}${lugar}. Não envie de novo no grupo da DHL.`;
 }
 
+/** Frase fixa do aviso que sobe para a operação quando a viatura entra na regra. */
+export const TEXTO_ALERTA_VIATURA_DISPONIVEL = 'Tem viatura disponível, favor mandar pra DHL.';
+
+export function detalheAlertaViaturaDisponivel(posicao?: string | null, regiao?: string | null): string {
+  const onde = String(posicao || '').trim();
+  const reg = String(regiao || '').trim();
+  if (onde && reg) return `${onde} · ${rotuloRegiao(reg)}`;
+  if (onde) return onde;
+  return reg ? rotuloRegiao(reg) : '';
+}
+
+/** Só a primeira vez, enquanto ainda dá tempo de comunicar. Copiada ou vencida não avisa de novo. */
+export function deveAvisarOperadores(status: string, finalizadaEm: string, now: Date = new Date()): boolean {
+  return status === 'pendente' && dentroDaJanela(finalizadaEm, now);
+}
+
 export function abrirAlertaCopiaDhl(aviso: AvisoCopiaDhl) {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent(DHL_COPIA_ALERTA_EVENT, { detail: aviso }));
@@ -403,7 +419,13 @@ export async function garantirAlertaDhl(rascunho: RascunhoAlertaDhl | null): Pro
       if (!erroTabelaAusente(error)) console.warn('[DHL viatura] insert:', error.message);
       return;
     }
-    avisarOutrasTelas({ missionId: rascunho.missionId, status: 'pendente' });
+    avisarOutrasTelas({
+      missionId: rascunho.missionId,
+      status: 'pendente',
+      posicao: rascunho.posicao,
+      regiao: rascunho.regiao,
+      uf: rascunho.uf,
+    });
   } catch (err) {
     console.warn('[DHL viatura] garantir:', err);
   }
