@@ -221,7 +221,7 @@ const CockpitOpenOccurrences: React.FC = () => {
         <MissionOccurrenceDialog
           missionId={selected.missionId}
           canWrite
-          context={{ os: selected.missionId, cliente: selected.client, rota: selected.route }}
+          context={{ os: selected.missionId, cliente: selected.client, rota: selected.routeFull || selected.route }}
           onClose={() => { setSelected(null); void load(); }}
           onSaved={() => { void load(); }}
         />

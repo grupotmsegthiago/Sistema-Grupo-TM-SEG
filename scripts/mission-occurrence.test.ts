@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   OCCURRENCE_BANNER,
   buildOpenOccurrenceViews,
+  formatarPontoRota,
+  formatarRotaCidadeUf,
   countOpenOccurrences,
   isOccurrenceOpen,
   missionHasOccurrence,
@@ -47,15 +49,47 @@ test('ocorrência resolvida exige o motivo e sai da lista em aberto', () => {
       created_at: '2026-09-30T13:00:00Z',
       resolved_at: '2026-09-30T15:00:00Z',
     },
-  ], [{ id: 'GTM-1', client: 'LUFT', origin: 'Cuiabá', destination: 'MT' }]);
+  ], [{
+    id: 'GTM-1',
+    client: 'LUFT',
+    origin: 'AV. AÇAÍ, 875 - DISTRITO INDUSTRIAL I, MANAUS - AM, 69075-020',
+    destination: 'PINDORAMA - SP, 15830-000',
+  }]);
   assert.equal(views.length, 1);
   assert.equal(views[0].missionId, 'GTM-1');
   assert.equal(views[0].client, 'LUFT');
-  assert.equal(views[0].route, 'Cuiabá → MT');
+  assert.equal(views[0].route, 'MANAUS - AM x PINDORAMA - SP');
   const missing = buildOpenOccurrenceViews([
     { id: 'c', mission_id: 'GTM-9', description: 'Sem OS', created_at: '2026-09-30T14:00:00Z' },
   ], []);
   assert.equal(missing[0].client, 'NÃO CARREGADO');
+});
+
+test('rota da ocorrência fica cidade e UF, e código plus vira a cidade', () => {
+  assert.equal(
+    formatarPontoRota('XGMH+H3X - PARANATINGA, MT, 78870-000'),
+    'PARANATINGA - MT',
+  );
+  assert.equal(
+    formatarPontoRota('8MRW+2XR, TRÊS CORAÇÕES - MG, 37410-000'),
+    'TRÊS CORAÇÕES - MG',
+  );
+  assert.equal(
+    formatarPontoRota('VXVV+HH2 - REGIÃO METROPOLITANA DE JUNDIAÍ, JUNDIAÍ - SP'),
+    'JUNDIAÍ - SP',
+  );
+  assert.equal(
+    formatarPontoRota('BR-153, KM 9 - PARQUE INDUSTRIAL, JACAREZINHO - PR, 86400-000'),
+    'JACAREZINHO - PR',
+  );
+  assert.equal(
+    formatarRotaCidadeUf(
+      'LMG-800, KM 7.9, S/N - RODOVIARIO, CONFINS - MG, 33500-000',
+      'R. SIMÃO ANTÔNIO, 149 - CINCAO, CONTAGEM - MG, 32371-610',
+    ),
+    'CONFINS - MG x CONTAGEM - MG',
+  );
+  assert.equal(formatarRotaCidadeUf('LAT -23.550500, LNG -46.633300', 'RIO DE JANEIRO - RJ'), 'RIO DE JANEIRO - RJ');
 });
 
 test('o cartão só avisa quando a OS já tem ocorrência', () => {
