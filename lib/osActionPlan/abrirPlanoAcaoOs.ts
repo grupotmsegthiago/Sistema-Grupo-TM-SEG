@@ -1,6 +1,8 @@
 import { supabase } from '../supabase';
+import { authFetch } from '../authFetch';
 import { buildOsActionPlanHtml } from './buildOsActionPlanHtml';
-import type { OsActionPlanAtualizacao, OsActionPlanCadastro, OsActionPlanContaCliente, OsActionPlanFoto, OsActionPlanInput } from './types';
+import { montarAtualizacoes, resolverPosicoes } from './diarioOperacional';
+import type { OsActionPlanCadastro, OsActionPlanContaCliente, OsActionPlanFoto, OsActionPlanInput } from './types';
 
 function limpo(value: unknown): string | null {
   const t = String(value ?? '').trim();
@@ -71,22 +73,67 @@ async function contarContaCliente(clientName: string): Promise<OsActionPlanConta
   return { estado: 'ENCONTRADO', total: total.count, caracterizada: caracterizada.count, velada: velada.count, desde };
 }
 
-async function lerHistoricoMissao(id: string): Promise<{ rows: Record<string, unknown>[]; estado: 'ENCONTRADO' | 'ERRO' }> {
+type EstadoLeitura = 'ENCONTRADO' | 'ERRO' | 'CONSULTA INCOMPLETA';
+
+async function lerFaixas(
+  ler: (inicio: number, fim: number) => PromiseLike<{ data: unknown[] | null; error: { message?: string } | null }>,
+): Promise<{ rows: Record<string, unknown>[]; estado: EstadoLeitura }> {
   const rows: Record<string, unknown>[] = [];
   const tamanho = 1000;
   for (let inicio = 0; inicio < 20000; inicio += tamanho) {
-    const { data, error } = await supabase
-      .from('mission_history')
-      .select('changed_at,changed_by,field_name,new_value')
-      .eq('mission_id', id)
-      .order('changed_at', { ascending: true })
-      .range(inicio, inicio + tamanho - 1);
-    if (error) return { rows, estado: rows.length > 0 ? 'ENCONTRADO' : 'ERRO' };
+    const { data, error } = await ler(inicio, inicio + tamanho - 1);
+    if (error) return { rows, estado: rows.length > 0 ? 'CONSULTA INCOMPLETA' : 'ERRO' };
     const pagina = (data || []) as Record<string, unknown>[];
     rows.push(...pagina);
     if (pagina.length < tamanho) return { rows, estado: 'ENCONTRADO' };
   }
-  return { rows, estado: 'ENCONTRADO' };
+  return { rows, estado: 'CONSULTA INCOMPLETA' };
+}
+
+async function lerHistoricoMissao(id: string): Promise<{ rows: Record<string, unknown>[]; estado: EstadoLeitura }> {
+  return lerFaixas((inicio, fim) => supabase
+    .from('mission_history')
+    .select('changed_at,changed_by,field_name,new_value')
+    .eq('mission_id', id)
+    .order('changed_at', { ascending: true })
+    .range(inicio, fim));
+}
+
+async function geocodificarEndereco(endereco: string): Promise<{ lat: number; lng: number } | null> {
+  const consulta = String(endereco || '').trim();
+  if (consulta.length < 8) return null;
+  try {
+    const resposta = await authFetch(`/api/geocode-address?address=${encodeURIComponent(consulta)}`);
+    const json = await resposta.json().catch(() => ({}));
+    const local = json?.location;
+    if (local && Number.isFinite(Number(local.lat)) && Number.isFinite(Number(local.lng))) {
+      return { lat: Number(local.lat), lng: Number(local.lng) };
+    }
+  } catch {
+    /* o relatório segue sem esse ponto */
+  }
+  return null;
+}
+
+export async function completarPosicoes(entrada: OsActionPlanInput): Promise<OsActionPlanInput> {
+  const linkGravado = [...(entrada.atualizacoes || [])]
+    .reverse()
+    .map((item) => String(item.linkMapa || ''))
+    .find((link) => /maps\?q=|@-?\d+\.\d+/.test(link)) || null;
+  const posicoes = await resolverPosicoes({
+    atualizacoes: entrada.atualizacoes || [],
+    origem: entrada.origem,
+    destino: entrada.destino,
+    linkAtualMissao: linkGravado,
+    geocodificar: geocodificarEndereco,
+  });
+  return {
+    ...entrada,
+    atualizacoes: posicoes.atualizacoes,
+    origemCoord: posicoes.origemCoord,
+    destinoCoord: posicoes.destinoCoord,
+    diagnosticoMapa: posicoes.diagnostico,
+  };
 }
 
 export async function coletarPlanoAcaoOs(missionId: string): Promise<OsActionPlanInput | null> {
@@ -117,17 +164,25 @@ export async function coletarPlanoAcaoOs(missionId: string): Promise<OsActionPla
   const contaCliente = await contarContaCliente(clientName);
 
   const historico = await lerHistoricoMissao(id);
-  const [{ data: occurrences }, { data: logs }] = await Promise.all([
-    supabase
+  const [occurrences, logs, diario] = await Promise.all([
+    lerFaixas((inicio, fim) => supabase
       .from('mission_occurrences')
       .select('description,evidence_url,created_at,created_by,resolved_at')
       .eq('mission_id', id)
-      .order('created_at', { ascending: true }),
-    supabase
+      .order('created_at', { ascending: true })
+      .range(inicio, fim)),
+    lerFaixas((inicio, fim) => supabase
       .from('system_logs')
       .select('created_at,action_type,details,user_name')
       .eq('entity_id', id)
-      .order('created_at', { ascending: true }),
+      .order('created_at', { ascending: true })
+      .range(inicio, fim)),
+    lerFaixas((inicio, fim) => supabase
+      .from('mission_logs')
+      .select('created_at,updated_by,description,map_link')
+      .eq('mission_id', id)
+      .order('created_at', { ascending: true })
+      .range(inicio, fim)),
   ]);
 
   const rows = historico.rows;
@@ -174,7 +229,7 @@ export async function coletarPlanoAcaoOs(missionId: string): Promise<OsActionPla
     if (typeof raw === 'object') return raw as Record<string, unknown>;
     try { return JSON.parse(String(raw)) as Record<string, unknown>; } catch { return {}; }
   };
-  for (const log of (logs || []) as Array<Record<string, unknown>>) {
+  for (const log of logs.rows) {
     const details = lerDetalhe(log.details);
     const direta = limpo(details.publicUrl || details.evidenceUrl || details.url || details.imageUrl);
     const caminho = limpo(details.filePath || details.path);
@@ -189,35 +244,63 @@ export async function coletarPlanoAcaoOs(missionId: string): Promise<OsActionPla
   pushFoto('Hodômetro final', m.end_km_evidence_url, limpo(m.end_time));
   pushFoto('Print de deslocamento', m.dhl_deslocamento_approval_url, limpo(m.updated_at));
 
+  let consultaEvidencias: 'ENCONTRADO' | 'CONSULTA INCOMPLETA' = 'ENCONTRADO';
   const pastas = [id, `odometer/${id}`, `fim-viagem/${id}`, `ocorrencias/${id}`, `refused/${id}`, `cancelled/${id}`];
   for (const pasta of pastas) {
-    const { data: arquivos } = await supabase.storage.from('mission-evidence').list(pasta, { limit: 40 });
-    for (const arquivo of arquivos || []) {
-      if (!arquivo.name || arquivo.name.endsWith('/')) continue;
-      const caminho = `${pasta}/${arquivo.name}`;
-      const url = supabase.storage.from('mission-evidence').getPublicUrl(caminho).data.publicUrl;
-      const marca = arquivo.name.match(/(\d{13})/);
-      const quandoArquivo = marca ? new Date(Number(marca[1])).toISOString() : null;
-      pushFoto(
-        pasta.includes('odometer') ? 'Hodômetro' : pasta.includes('fim-viagem') ? 'Fim da viagem' : 'Tela de atualização da missão',
-        url,
-        quandoArquivo,
-      );
+    let offset = 0;
+    for (;;) {
+      const { data: arquivos, error: erroArquivo } = await supabase.storage.from('mission-evidence').list(pasta, { limit: 100, offset });
+      if (erroArquivo) {
+        consultaEvidencias = 'CONSULTA INCOMPLETA';
+        break;
+      }
+      const lista = arquivos || [];
+      for (const arquivo of lista) {
+        if (!arquivo.name || arquivo.name.endsWith('/')) continue;
+        const caminho = `${pasta}/${arquivo.name}`;
+        const url = supabase.storage.from('mission-evidence').getPublicUrl(caminho).data.publicUrl;
+        const marca = arquivo.name.match(/(\d{13})/);
+        const quandoArquivo = marca ? new Date(Number(marca[1])).toISOString() : null;
+        pushFoto(
+          pasta.includes('odometer') ? 'Hodômetro' : pasta.includes('fim-viagem') ? 'Fim da viagem' : 'Tela de atualização da missão',
+          url,
+          quandoArquivo,
+        );
+      }
+      if (lista.length < 100) break;
+      offset += lista.length;
+      if (offset >= 400) {
+        consultaEvidencias = 'CONSULTA INCOMPLETA';
+        break;
+      }
     }
   }
 
-  for (const o of (occurrences || []) as Array<Record<string, unknown>>) {
+  for (const o of occurrences.rows) {
     pushFoto('Evidência da ocorrência', o.evidence_url);
   }
 
-  const atualizacoes: OsActionPlanAtualizacao[] = rows
+  const fotosProntas = fotosComLocal(fotos, rows
     .filter((h) => h.field_name === 'current_location' && limpo(h.new_value))
     .map((h) => ({
       quando: String(h.changed_at || ''),
       texto: String(h.new_value),
       por: limpo(h.changed_by),
       fotoUrl: null,
-    }));
+    })));
+  const atualizacoesBrutas = montarAtualizacoes({
+    logs: diario.rows,
+    historico: rows,
+    fotos: fotosProntas,
+  });
+  const posicoes = await resolverPosicoes({
+    atualizacoes: atualizacoesBrutas,
+    origem: limpo(m.origin),
+    destino: limpo(m.destination),
+    linkAtualMissao: limpo(m.map_link),
+    geocodificar: geocodificarEndereco,
+  });
+  const atualizacoes = posicoes.atualizacoes;
 
   return {
     missionId: id,
@@ -250,6 +333,10 @@ export async function coletarPlanoAcaoOs(missionId: string): Promise<OsActionPla
     criadoEm: limpo(m.created_at),
     atrasoMinutosOrigem,
     historicoEstado: historico.estado,
+    consultaOcorrencias: occurrences.estado,
+    consultaLogs: logs.estado,
+    consultaDiario: diario.estado,
+    consultaEvidencias,
     linhaDoTempo: rows
       .filter((h) => h.field_name === 'status' && limpo(h.new_value))
       .map((h) => ({
@@ -258,9 +345,12 @@ export async function coletarPlanoAcaoOs(missionId: string): Promise<OsActionPla
         por: limpo(h.changed_by),
       })),
     atualizacoes,
+    origemCoord: posicoes.origemCoord,
+    destinoCoord: posicoes.destinoCoord,
+    diagnosticoMapa: posicoes.diagnostico,
     historicoCliente: [],
     contaCliente,
-    ocorrencias: ((occurrences || []) as Array<Record<string, unknown>>)
+    ocorrencias: occurrences.rows
       .filter((o) => limpo(o.description))
       .map((o) => ({
         quando: String(o.created_at || ''),
@@ -268,7 +358,7 @@ export async function coletarPlanoAcaoOs(missionId: string): Promise<OsActionPla
         autor: limpo(o.created_by),
         resolvida: Boolean(o.resolved_at),
       })),
-    fotos: fotosComLocal(fotos, atualizacoes),
+    fotos: fotosProntas,
     tratativaTexto: null,
     narrativaIa: null,
     tratativaIa: null,

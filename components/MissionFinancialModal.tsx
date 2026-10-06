@@ -32,6 +32,7 @@ import { buildAuditSummaryData, type AuditSummaryData } from '../lib/auditSummar
 import AuditSummaryPanel from './AuditSummaryPanel';
 import DhlOccurrenceReportModal from './DhlOccurrenceReportModal';
 import OsActionPlanModal from './OsActionPlanModal';
+import BotaoRelatorioMissao from './BotaoRelatorioMissao';
 import MissionAnalyticalReportModal from './MissionAnalyticalReportModal';
 import { formatDateTimeBR, formatNowDateTimeBR, formatDateBR, formatTimeBR, toDatetimeLocalValueBR, datetimeLocalToIsoBR } from '../lib/dateUtils';
 import {
@@ -4273,15 +4274,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           className="shrink-0 px-3 py-2.5 sm:px-5 bg-gradient-to-r from-[#450a0a] to-[#7f1d1d] border-b border-red-950/30"
           data-testid="bar-os-action-plan"
         >
-          <button
-            type="button"
+          <BotaoRelatorioMissao
+            missionId={String(mission?.id || '')}
             onClick={() => setOsActionPlanOpen(true)}
             className="w-full flex items-center justify-center gap-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-[0.99] text-white px-4 py-3 text-xs sm:text-sm font-black uppercase tracking-wide border border-white/25 shadow-lg"
-            data-testid="button-os-action-plan-banner"
-          >
-            <FileText size={18} className="shrink-0" />
-            Gerar Plano de Ação (PDF)
-          </button>
+            testId="button-os-action-plan-banner"
+          />
         </div>
 
         {showDhlOccurrenceReportBtn && (

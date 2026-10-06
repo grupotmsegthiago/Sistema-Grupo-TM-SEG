@@ -1,5 +1,6 @@
 import { formatDateBR, formatIsoDateBR, formatTimeAuditBR, formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
 import OsActionPlanModal from './OsActionPlanModal';
+import BotaoRelatorioMissao from './BotaoRelatorioMissao';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB, ProviderCostTable } from '../types';
@@ -4286,15 +4287,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 <div><label className={LABEL_CLASS}><span className="text-red-600 font-black">Nº S.E. (DHL)</span></label><input type="text" className={`${INPUT_CLASS} border-red-300 bg-yellow-50/40`} placeholder="Ex: SE-123456 / 4912345" value={editData.dhl_se_number} onChange={e => setEditData({...editData, dhl_se_number: e.target.value.toUpperCase()})} data-testid="input-edit-dhl-se-number" /></div>
                             )}
                             <div className="md:col-span-2">
-                                <button
-                                    type="button"
+                                <BotaoRelatorioMissao
+                                    missionId={String(mission?.id || '')}
                                     onClick={() => { if (mission?.id) setPlanoAcaoAberto(true); }}
-                                    className="inline-flex items-center gap-2 rounded-xl border-2 border-slate-700 bg-white px-4 py-2.5 text-[11px] font-black uppercase tracking-wide text-slate-800 hover:bg-slate-50 transition-colors"
-                                    data-testid="button-open-os-action-plan"
-                                >
-                                    <FileText size={16} />
-                                    Gerar Plano de Ação desta OS
-                                </button>
+                                    className="inline-flex items-center gap-2 rounded-xl border-2 border-slate-700 bg-white px-4 py-2.5 text-[11px] font-black uppercase tracking-wide text-slate-800 hover:bg-slate-50 transition-colors text-left"
+                                    testId="button-open-os-action-plan"
+                                />
                             </div>
                             {isDiretoria && String(editData.dhl_se_number || mission?.dhl_se_number || '').trim() && (
                                 <div className="md:col-span-2">

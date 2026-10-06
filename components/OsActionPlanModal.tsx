@@ -1,132 +1,248 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, Printer, ImagePlus, Sparkles, Bold, Italic, AlignLeft, AlignCenter, AlignRight, AlignJustify, Save, Pencil } from 'lucide-react';
-import { buildOsActionPlanHtml, montarRelatoOs } from '../lib/osActionPlan/buildOsActionPlanHtml';
-import { coletarPlanoAcaoOs } from '../lib/osActionPlan/abrirPlanoAcaoOs';
-import { lerPlanoSalvo, salvarPlanoAcaoOs } from '../lib/osActionPlan/salvarPlanoAcao';
-import { redigirContextoOs, separarRespostaIa } from '../lib/osActionPlan/redigirContexto';
-import { textoEhRelatorioColado, textoEhRotina } from '../lib/osActionPlan/montarPlanos';
-import { optimizeImageForAI } from '../lib/imageForAI';
+import { buildOsActionPlanHtml } from '../lib/osActionPlan/buildOsActionPlanHtml';
+import { coletarPlanoAcaoOs, completarPosicoes } from '../lib/osActionPlan/abrirPlanoAcaoOs';
+import { lerPlanoSalvo, planoSalvoCompativel, salvarContextoLocal, salvarPlanoAcaoOs } from '../lib/osActionPlan/salvarPlanoAcao';
+import { inventarioMissao } from '../lib/osActionPlan/diarioOperacional';
+import { aguardarImagensDoRelatorio } from '../lib/osActionPlan/prontoParaPdf';
+import { montarCroqui } from '../lib/osActionPlan/montarCroqui';
+import { redigirAnaliseOcorrencia } from '../lib/osActionPlan/redigirContexto';
+import { ilustrarRelatorio } from '../lib/osActionPlan/ilustrarRelatorio';
+import { textoEhRelatorioColado } from '../lib/osActionPlan/montarPlanos';
+import type { CroquiOcorrencia, OsActionPlanInput } from '../lib/osActionPlan/types';
 import { formatDateTimeBR } from '../lib/dateUtils';
-import type { OsActionPlanInput } from '../lib/osActionPlan/types';
 
 interface OsActionPlanModalProps {
   missionId: string;
   onClose: () => void;
 }
 
-interface FotoLocal {
+interface EvidenciaLocal {
+  id: string;
   nome: string;
   preview: string;
   file: File;
+  tipo: string;
+  descricao: string;
+  origem: string;
+  principal: boolean;
 }
 
 const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClose }) => {
   const [dados, setDados] = useState<OsActionPlanInput | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [texto, setTexto] = useState('');
-  const [fotos, setFotos] = useState<FotoLocal[]>([]);
+  const [problema, setProblema] = useState('');
+  const [relato, setRelato] = useState('');
+  const [evidencias, setEvidencias] = useState<EvidenciaLocal[]>([]);
+  const [emissao, setEmissao] = useState<OsActionPlanInput | null>(null);
+  const [aprovado, setAprovado] = useState(false);
   const [gerando, setGerando] = useState(false);
   const [avisoIa, setAvisoIa] = useState<string | null>(null);
   const [html, setHtml] = useState<string | null>(null);
+  const [ultimaVersao, setUltimaVersao] = useState<string | null>(null);
   const [editando, setEditando] = useState(false);
   const [salvando, setSalvando] = useState(false);
+  const [etapa, setEtapa] = useState<'escolha' | 'apuracao'>('escolha');
+  const [tipoEscolha, setTipoEscolha] = useState<'padrao' | 'ocorrencia'>('padrao');
+  const [escopo, setEscopo] = useState<'todas' | 'relevantes'>('relevantes');
+  const hidratado = useRef(false);
 
   useEffect(() => {
     let ativo = true;
+    hidratado.current = false;
     setDados(null);
     setErro(null);
     setHtml(null);
+    setUltimaVersao(null);
     setEditando(false);
     void Promise.all([coletarPlanoAcaoOs(missionId), lerPlanoSalvo(missionId)]).then(([lido, salvo]) => {
       if (!ativo) return;
       if (!lido && !salvo) setErro('Não foi possível ler os dados desta OS.');
       if (lido) setDados(lido);
-      if (salvo && salvo.includes('data-secao="resumo"')) setHtml(salvo);
-      else if (salvo) setAvisoIa('Há uma versão antiga salva, com o texto misturado na tabela. Gere o relatório de novo para substituir. A versão antiga não foi apagada.');
+      if (salvo) setUltimaVersao(salvo);
+      if (lido && salvo && planoSalvoCompativel(salvo)) {
+        setHtml(salvo);
+      } else if (salvo) {
+        setAvisoIa('Há uma versão salva anterior. Ela continua disponível para abrir.');
+      }
+      hidratado.current = true;
     });
     return () => { ativo = false; };
   }, [missionId]);
 
+  useEffect(() => {
+    if (!hidratado.current) return;
+    salvarContextoLocal(missionId, { problema, relato });
+  }, [missionId, problema, relato]);
+
   const escolherFotos = (lista: FileList | null) => {
-    const novas = Array.from(lista || []).filter((f) => f.type.startsWith('image/')).slice(0, 6);
-    setFotos((atual) => {
-      const juntas = [...atual, ...novas.map((file) => ({ nome: file.name, file, preview: URL.createObjectURL(file) }))];
-      return juntas.slice(0, 6);
+    const novas = Array.from(lista || []).filter((f) => f.type.startsWith('image/') || f.type === 'application/pdf').slice(0, 8);
+    setEvidencias((atual) => {
+      const juntas = [...atual, ...novas.map((file) => ({
+        id: `${file.name}-${file.size}-${file.lastModified}`,
+        nome: file.name,
+        file,
+        preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : '',
+        tipo: 'WhatsApp',
+        descricao: '',
+        origem: '',
+        principal: false,
+      }))];
+      return juntas.slice(0, 8);
     });
   };
 
-  const gerar = async (usarIa: boolean) => {
+  const gerar = async () => {
     if (!dados || gerando) return;
-    setGerando(true);
-    setAvisoIa(null);
-    let narrativa: string | null = null;
-    let objetivoIa: string | null = null;
-    let planoAcaoIa: string | null = null;
-    let planoMelhoriaIa: string | null = null;
-    let conclusaoIa: string | null = null;
-    let tratativaIa: string | null = null;
-    try {
-      const imagens = [];
-      if (usarIa) {
-        for (const foto of fotos) imagens.push(await optimizeImageForAI(foto.file));
-      }
-      const resumo = [
-        ...montarRelatoOs(dados),
-        ...dados.atualizacoes
-          .filter((a) => !textoEhRotina(a.texto) && !textoEhRelatorioColado(a.texto))
-          .slice(0, 8)
-          .map((a) => `Atualização relevante em ${a.quando || 'horário a confirmar'}: ${a.texto.slice(0, 180)}`),
-        ...dados.ocorrencias
-          .filter((o) => !textoEhRelatorioColado(o.texto))
-          .slice(0, 4)
-          .map((o) => `Ocorrência: ${o.texto.slice(0, 180)}`),
-      ].join('\n');
-      const textoLimpo = textoEhRelatorioColado(texto) ? '' : texto;
-      const bruto = await redigirContextoOs({
-        resumoFatos: resumo,
-        textoUsuario: usarIa ? textoLimpo : '',
-        imagens,
-      });
-      const partes = separarRespostaIa(bruto);
-      objetivoIa = partes.objetivo;
-      narrativa = partes.descricao;
-      planoAcaoIa = partes.planoAcao;
-      planoMelhoriaIa = partes.planoMelhoria;
-      conclusaoIa = partes.conclusao;
-      tratativaIa = partes.tratativa;
-    } catch {
-      setAvisoIa('A leitura automática não entrou nesta geração. O objetivo e o resumo foram escritos com os registros desta OS e seguem para revisão antes de salvar.');
+    const foco = problema.trim();
+    if (foco.length < 20) {
+      setAvisoIa('Descreva o problema principal antes de gerar. Esse texto define o foco do relatório.');
+      return;
     }
-    const fotosTratativa = await Promise.all(fotos.map(async (f) => {
+    setGerando(true);
+    setAvisoIa('Localizando os pontos, as fotos e o mapa da missão.');
+    setAprovado(false);
+    const fotosTratativa = await Promise.all(evidencias.filter((e) => e.preview).map(async (f) => {
       const dataUrl = await new Promise<string>((resolve) => {
         const leitor = new FileReader();
         leitor.onload = () => resolve(String(leitor.result || ''));
         leitor.onerror = () => resolve(f.preview);
         leitor.readAsDataURL(f.file);
       });
-      return { legenda: `Tratativa — ${f.nome}`, url: dataUrl || f.preview };
+      return { legenda: `${f.principal ? 'Evidência principal' : f.tipo} — ${f.descricao || f.nome}`, url: dataUrl || f.preview };
     }));
-    setHtml(buildOsActionPlanHtml({
+    const pacote: OsActionPlanInput = {
       ...dados,
-      tratativaTexto: textoEhRelatorioColado(texto) ? null : (texto.trim() || null),
-      objetivoIa,
-      narrativaIa: narrativa,
-      planoAcaoIa,
-      planoMelhoriaIa,
-      conclusaoIa,
-      tratativaIa,
+      tratativaTexto: textoEhRelatorioColado(relato) ? null : (relato.trim() || null),
+      problemaPrincipal: foco,
+      relatoComplementar: relato.trim() || null,
+      evidenciasApuracao: evidencias.map((e) => ({
+        tipo: e.tipo,
+        descricao: e.descricao || e.nome,
+        origem: e.origem || null,
+        quando: null,
+        principal: e.principal,
+        url: e.preview || null,
+      })),
+      modalidade: 'ocorrencia',
+      escopoAtualizacoes: escopo,
+      objetivoIa: null,
+      narrativaIa: null,
+      planoAcaoIa: null,
+      planoMelhoriaIa: null,
+      conclusaoIa: null,
+      tratativaIa: null,
       fotosTratativa,
+      aprovadoCliente: false,
       geradoEm: new Date().toISOString(),
-    }));
-    setGerando(false);
+    };
+    try {
+      const ilustrado = await ilustrarRelatorio(await completarPosicoes(pacote));
+      const comPosicao = ilustrado.entrada;
+      let narrativa = '';
+      let avisoFalha = '';
+      try {
+        narrativa = await redigirAnaliseOcorrencia(comPosicao);
+      } catch (erroIa) {
+        const mensagem = erroIa instanceof Error ? erroIa.message : 'falha ao consultar a IA';
+        avisoFalha = `A IA não respondeu (${/403|blocked|referer/i.test(mensagem) ? 'a chave do Google bloqueou a consulta' : mensagem.slice(0, 160)}). O documento leva o resumo para o cliente, sem copiar o texto interno e sem atribuir culpa.`;
+      }
+      if (!narrativa.trim() && !avisoFalha) {
+        avisoFalha = 'A IA não devolveu o resumo. O documento leva o resumo para o cliente, sem copiar o texto interno e sem atribuir culpa.';
+      }
+      comPosicao.narrativaIa = narrativa.trim() || null;
+      comPosicao.croqui = montarCroqui(comPosicao);
+      const pronto = buildOsActionPlanHtml(comPosicao);
+      salvarContextoLocal(missionId, { problema: foco, relato: relato.trim() });
+      setEmissao(comPosicao);
+      setHtml(pronto);
+      setUltimaVersao(pronto);
+      await gravarHtml(pronto);
+      const avisoFinal = [avisoFalha, ...ilustrado.avisos].filter(Boolean).join(' ');
+      if (avisoFinal) setAvisoIa(avisoFinal);
+    } catch (erro) {
+      const mensagem = erro instanceof Error ? erro.message : 'falha ao montar o relatório';
+      setAvisoIa(`Não foi possível montar o relatório (${mensagem}).`);
+    } finally {
+      setGerando(false);
+    }
+  };
+
+  const gerarPadrao = async () => {
+    if (!dados || gerando) return;
+    setGerando(true);
+    setAvisoIa('Localizando os pontos da missão.');
+    setAprovado(false);
+    const pacote: OsActionPlanInput = {
+      ...dados,
+      modalidade: 'padrao',
+      escopoAtualizacoes: 'todas',
+      problemaPrincipal: null,
+      croqui: null,
+      geradoEm: new Date().toISOString(),
+    };
+    try {
+      const ilustrado = await ilustrarRelatorio(await completarPosicoes(pacote));
+      const comPosicao = ilustrado.entrada;
+      const pronto = buildOsActionPlanHtml(comPosicao);
+      setEmissao(comPosicao);
+      setHtml(pronto);
+      setUltimaVersao(pronto);
+      await gravarHtml(pronto);
+      if (ilustrado.avisos.length) setAvisoIa(ilustrado.avisos.join(' '));
+    } finally {
+      setGerando(false);
+    }
+  };
+
+  const autorAtual = () => {
+    try {
+      const bruto = localStorage.getItem('userData');
+      if (!bruto) return null;
+      const usuario = JSON.parse(bruto) as { name?: string; nome?: string };
+      return usuario.name || usuario.nome || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const gravarHtml = async (vivo: string) => {
+    const resultado = await salvarPlanoAcaoOs(missionId, vivo, autorAtual());
+    setAvisoIa(resultado.aviso === 'Plano salvo.' ? 'Versão gravada. Ela reabre nesta OS.' : resultado.aviso);
+    setUltimaVersao(vivo);
+  };
+
+  const aprovar = () => {
+    if (!emissao) return;
+    const pacote = { ...emissao, aprovadoCliente: true, geradoEm: new Date().toISOString() };
+    const pronto = buildOsActionPlanHtml(pacote);
+    setEmissao(pacote);
+    setAprovado(true);
+    setHtml(pronto);
+    void gravarHtml(pronto);
+  };
+
+  const aplicarCroqui = (croqui: CroquiOcorrencia | null) => {
+    if (!emissao) return;
+    const pacote = { ...emissao, croqui };
+    setEmissao(pacote);
+    setHtml(buildOsActionPlanHtml(pacote));
   };
 
   const quadro = () => document.getElementById('os-action-plan-frame') as HTMLIFrameElement | null;
 
-  const imprimir = () => {
+  const imprimir = async () => {
     const frame = quadro();
-    frame?.contentWindow?.focus();
-    frame?.contentWindow?.print();
+    const doc = frame?.contentDocument;
+    const janela = frame?.contentWindow;
+    if (!doc || !janela) return;
+    const pronto = await aguardarImagensDoRelatorio(doc);
+    if (!pronto.ok) {
+      setAvisoIa(pronto.aviso);
+      return;
+    }
+    janela.focus();
+    janela.print();
   };
 
   const comando = (cmd: string) => {
@@ -151,23 +267,17 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
     const doc = frame?.contentDocument;
     if (!doc || salvando) return;
     setSalvando(true);
-    let autor: string | null = null;
-    try {
-      const bruto = localStorage.getItem('userData');
-      if (bruto) {
-        const usuario = JSON.parse(bruto) as { name?: string; nome?: string };
-        autor = usuario.name || usuario.nome || null;
-      }
-    } catch { autor = null; }
     const vivo = `<!DOCTYPE html>\n${doc.documentElement.outerHTML}`;
     if (/apurar a atualiza[cç][aã]o registrada/i.test(vivo) || /<td[^>]*>[^<]{400,}/i.test(vivo)) {
       setAvisoIa('Esta versão ainda copia texto bruto para o plano. Gere o relatório visual de novo antes de salvar.');
       setSalvando(false);
       return;
     }
-    const resultado = await salvarPlanoAcaoOs(missionId, vivo, autor);
+    const resultado = await salvarPlanoAcaoOs(missionId, vivo, autorAtual());
+    salvarContextoLocal(missionId, { problema, relato });
     setAvisoIa(resultado.aviso);
     setHtml(vivo);
+    setUltimaVersao(vivo);
     setEditando(false);
     setSalvando(false);
   };
@@ -177,13 +287,16 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
       <div className="bg-[#f7f4f2] rounded-3xl w-full max-w-6xl h-[92vh] flex flex-col shadow-[0_24px_60px_rgba(0,0,0,.35)] overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="px-4 py-3 bg-gradient-to-r from-[#14080c] to-[#9f1239] text-white flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-black uppercase tracking-wide">Plano de Ação desta OS</h3>
+            <h3 className="text-sm font-black uppercase tracking-wide">Relatórios operacionais</h3>
             <p className="text-[12px] text-rose-100">{missionId}{dados ? ` · ${dados.clientName}` : ''}</p>
           </div>
           <div className="flex items-center gap-2">
             {html && (
               <>
-                <button type="button" onClick={() => { setHtml(null); setEditando(false); }} className="rounded-xl bg-white/15 px-3 py-2 text-[11px] font-black uppercase">Voltar ao formulário</button>
+                <button type="button" onClick={() => { setHtml(null); setEditando(false); setEtapa('escolha'); }} className="rounded-xl bg-white/15 px-3 py-2 text-[11px] font-black uppercase">Nova versão</button>
+                {!aprovado && (
+                  <button type="button" onClick={aprovar} className="rounded-xl bg-white text-slate-900 px-3 py-2 text-[11px] font-black uppercase" data-testid="button-approve-os-action-plan">Aprovar</button>
+                )}
                 <button type="button" onClick={alternarEdicao} className="inline-flex items-center gap-1 rounded-xl bg-white/15 px-3 py-2 text-[11px] font-black uppercase" data-testid="button-edit-os-action-plan">
                   <Pencil size={14} /> {editando ? 'Concluir edição' : 'Editar'}
                 </button>
@@ -204,34 +317,93 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
         <div className="flex-1 min-h-0">
           {erro && <p className="p-6 text-sm font-bold text-red-700">{erro}</p>}
           {!erro && !dados && <p className="p-6 text-sm font-bold text-gray-500">Lendo KM, horários, timeline e histórico do cliente...</p>}
-          {dados && !html && (
+          {dados && !html && etapa === 'escolha' && (
             <div className="h-full overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
-              <form className="bg-white rounded-2xl p-4 shadow-[0_12px_28px_rgba(17,24,39,.08)] space-y-3" onSubmit={(e) => { e.preventDefault(); void gerar(true); }}>
-                <h4 className="text-[12px] font-black uppercase tracking-wide text-rose-900">Formulário da tratativa</h4>
-                <p className="text-[12px] text-gray-500">Escreva o que aconteceu e anexe os prints do WhatsApp. A IA lê as fotos e reescreve o contexto com base nelas e nos dados desta OS.</p>
-                <textarea
-                  value={texto}
-                  onChange={(e) => setTexto(e.target.value)}
-                  rows={7}
-                  placeholder="Descreva a tratativa, o que o cliente ou a equipe informou, e o que deve constar no plano..."
-                  className="w-full rounded-xl border border-rose-100 bg-rose-50/40 px-3 py-2 text-sm"
-                  data-testid="input-os-action-context"
-                />
-                <label className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-rose-200 px-3 py-4 text-[12px] font-bold text-rose-900 cursor-pointer">
-                  <ImagePlus size={16} /> Anexar prints da tratativa (até 6)
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => escolherFotos(e.target.files)} data-testid="input-os-action-photos" />
+              <form className="bg-white rounded-2xl p-4 shadow-[0_12px_28px_rgba(17,24,39,.08)] space-y-3" onSubmit={(e) => { e.preventDefault(); if (tipoEscolha === 'padrao') gerarPadrao(); else setEtapa('apuracao'); }}>
+                <h4 className="text-[12px] font-black uppercase tracking-wide text-rose-900">Qual relatório deseja gerar?</h4>
+                {ultimaVersao && (
+                  <button type="button" onClick={() => setHtml(ultimaVersao)} className="w-full rounded-xl border border-rose-200 px-3 py-2 text-[11px] font-black uppercase text-rose-900">
+                    Abrir a última versão salva
+                  </button>
+                )}
+                <label className="flex gap-2 items-start rounded-xl border border-rose-100 p-3">
+                  <input type="radio" name="tipo-relatorio" checked={tipoEscolha === 'padrao'} onChange={() => setTipoEscolha('padrao')} />
+                  <span><strong className="block text-[12px] uppercase">Relatório padrão da missão</strong><span className="text-[12px] text-gray-500">Missão sem ocorrência. Gera o histórico operacional completo.</span></span>
                 </label>
-                {fotos.length > 0 && (
-                  <div className="grid grid-cols-3 gap-2">
-                    {fotos.map((f) => <img key={f.preview} src={f.preview} alt={f.nome} className="h-20 w-full object-cover rounded-lg" />)}
+                <label className="flex gap-2 items-start rounded-xl border border-rose-100 p-3">
+                  <input type="radio" name="tipo-relatorio" checked={tipoEscolha === 'ocorrencia'} onChange={() => setTipoEscolha('ocorrencia')} />
+                  <span><strong className="block text-[12px] uppercase">Relatório da missão com ocorrência</strong><span className="text-[12px] text-gray-500">Houve ocorrência ou situação que pede análise e plano de ação.</span></span>
+                </label>
+                {tipoEscolha === 'ocorrencia' && (
+                  <div className="space-y-2 text-[12px]">
+                    <label className="flex gap-2"><input type="radio" name="escopo" checked={escopo === 'relevantes'} onChange={() => setEscopo('relevantes')} /> Somente atualizações relacionadas ao problema</label>
+                    <label className="flex gap-2"><input type="radio" name="escopo" checked={escopo === 'todas'} onChange={() => setEscopo('todas')} /> Todas as atualizações</label>
                   </div>
                 )}
                 {avisoIa && <p className="text-[12px] font-bold text-amber-700">{avisoIa}</p>}
-                <button type="submit" disabled={gerando} className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#9f1239] to-[#e11d2e] text-white px-4 py-3 text-[12px] font-black uppercase shadow-lg disabled:opacity-60" data-testid="button-generate-os-action-plan">
-                  <Sparkles size={16} /> {gerando ? 'Lendo a tratativa...' : 'Gerar relatório visual'}
+                <button type="submit" disabled={gerando} className="w-full rounded-xl bg-gradient-to-r from-[#9f1239] to-[#e11d2e] text-white px-4 py-3 text-[12px] font-black uppercase disabled:opacity-60" data-testid="button-choose-os-report">
+                  {tipoEscolha === 'padrao' ? (gerando ? 'Gerando...' : 'Gerar relatório da missão') : 'Continuar para a apuração'}
                 </button>
-                <button type="button" disabled={gerando} onClick={() => void gerar(false)} className="w-full rounded-xl border border-slate-200 px-4 py-2 text-[11px] font-black uppercase text-slate-700">
-                  Gerar só com os dados da OS
+              </form>
+              <div className="bg-white rounded-2xl p-4 shadow-[0_12px_28px_rgba(17,24,39,.08)] text-sm space-y-2">
+                <h4 className="text-[12px] font-black uppercase tracking-wide text-rose-900">Dados encontrados</h4>
+                {inventarioMissao(dados).map((item) => (
+                  <p key={item.texto}>{item.ok ? '✓' : '⚠'} {item.texto}</p>
+                ))}
+              </div>
+            </div>
+          )}
+          {dados && !html && etapa === 'apuracao' && (
+            <div className="h-full overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
+              <form className="bg-white rounded-2xl p-4 shadow-[0_12px_28px_rgba(17,24,39,.08)] space-y-3" onSubmit={(e) => { e.preventDefault(); void gerar(); }}>
+                <h4 className="text-[12px] font-black uppercase tracking-wide text-rose-900">Contexto da apuração</h4>
+                <button type="button" onClick={() => setEtapa('escolha')} className="w-full rounded-xl border border-rose-200 px-3 py-2 text-[11px] font-black uppercase text-rose-900">Voltar à escolha do relatório</button>
+                {ultimaVersao && (
+                  <button type="button" onClick={() => setHtml(ultimaVersao)} className="w-full rounded-xl border border-rose-200 px-3 py-2 text-[11px] font-black uppercase text-rose-900">
+                    Voltar à última versão salva
+                  </button>
+                )}
+                <p className="text-[12px] text-gray-500">O texto abaixo define o foco do relatório. Ele não vira fato comprovado sozinho. O sistema cruza esse foco com a OS e com as provas anexadas.</p>
+                <label className="block text-[11px] font-black uppercase text-slate-600">Qual é o problema principal?</label>
+                <textarea
+                  value={problema}
+                  onChange={(e) => setProblema(e.target.value)}
+                  rows={5}
+                  placeholder="Ex.: Durante a passagem pelo pedágio, a equipe perdeu a identificação visual do veículo escoltado, confundiu-o com outro caminhão semelhante e depois retomou o veículo correto pela placa."
+                  className="w-full rounded-xl border border-rose-100 bg-rose-50/40 px-3 py-2 text-sm"
+                  data-testid="input-os-action-context"
+                />
+                <label className="block text-[11px] font-black uppercase text-slate-600">Relato complementar</label>
+                <textarea
+                  value={relato}
+                  onChange={(e) => setRelato(e.target.value)}
+                  rows={3}
+                  placeholder="Relatos da equipe, da Central, do motorista ou do cliente."
+                  className="w-full rounded-xl border border-rose-100 px-3 py-2 text-sm"
+                />
+                <label className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-rose-200 px-3 py-4 text-[12px] font-bold text-rose-900 cursor-pointer">
+                  <ImagePlus size={16} /> Anexar provas (imagem ou PDF, até 8)
+                  <input type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={(e) => escolherFotos(e.target.files)} data-testid="input-os-action-photos" />
+                </label>
+                {evidencias.map((ev) => (
+                  <div key={ev.id} className="rounded-xl border border-rose-100 p-2 space-y-2">
+                    <div className="flex gap-2 items-center">
+                      {ev.preview ? <img src={ev.preview} alt={ev.nome} className="h-14 w-14 object-cover rounded-lg" /> : <span className="text-[11px] font-bold">{ev.nome}</span>}
+                      <select value={ev.tipo} onChange={(e) => setEvidencias((lista) => lista.map((item) => item.id === ev.id ? { ...item, tipo: e.target.value } : item))} className="rounded-lg border px-2 py-1 text-[12px]">
+                        {['WhatsApp', 'Foto', 'Documento', 'Telemetria', 'E-mail', 'Outro'].map((op) => <option key={op}>{op}</option>)}
+                      </select>
+                      <label className="text-[11px] font-bold flex items-center gap-1">
+                        <input type="checkbox" checked={ev.principal} onChange={(e) => setEvidencias((lista) => lista.map((item) => item.id === ev.id ? { ...item, principal: e.target.checked } : item))} />
+                        Evidência principal
+                      </label>
+                    </div>
+                    <input value={ev.descricao} onChange={(e) => setEvidencias((lista) => lista.map((item) => item.id === ev.id ? { ...item, descricao: e.target.value } : item))} placeholder="O que esta prova mostra. Ex.: mensagem em que a equipe informa a perda do caminhão." className="w-full rounded-lg border px-2 py-1 text-[12px]" />
+                    <input value={ev.origem} onChange={(e) => setEvidencias((lista) => lista.map((item) => item.id === ev.id ? { ...item, origem: e.target.value } : item))} placeholder="Origem: grupo, agente, central..." className="w-full rounded-lg border px-2 py-1 text-[12px]" />
+                  </div>
+                ))}
+                {avisoIa && <p className="text-[12px] font-bold text-amber-700">{avisoIa}</p>}
+                <button type="submit" disabled={gerando} className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#9f1239] to-[#e11d2e] text-white px-4 py-3 text-[12px] font-black uppercase shadow-lg disabled:opacity-60" data-testid="button-generate-os-action-plan">
+                  <Sparkles size={16} /> {gerando ? 'Redigindo a análise e montando o mapa...' : 'Analisar e gerar relatório'}
                 </button>
               </form>
               <div className="bg-white rounded-2xl p-4 shadow-[0_12px_28px_rgba(17,24,39,.08)] text-sm space-y-2">
@@ -261,6 +433,48 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
               )}
               <p className="px-4 py-2 text-[12px] text-slate-700 bg-white border-b border-rose-100">Revise e edite o plano de ação e o plano de melhoria antes de salvar. O documento só é gravado no botão Salvar.</p>
               {avisoIa && <p className="px-4 py-2 text-[12px] font-bold text-amber-800 bg-amber-50">{avisoIa}</p>}
+              {html && !aprovado && <p className="px-4 py-2 text-[12px] font-bold text-amber-800 bg-amber-50">Rascunho na tela. O PDF ainda não marca aprovação. Use Aprovar antes de enviar ao cliente.</p>}
+              {emissao?.modalidade === 'ocorrencia' && emissao.croqui && (
+                <div className="max-h-56 overflow-y-auto px-3 py-2 bg-white border-b border-rose-100 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <strong className="text-[11px] uppercase text-rose-900">Prévia do croqui</strong>
+                    <span className="text-[11px] text-slate-500">{emissao.croqui.aprovado ? 'Aprovado para o PDF' : 'Fora do PDF até aprovar'}</span>
+                    <button type="button" className="rounded-lg border px-2 py-1 text-[11px] font-bold" onClick={() => aplicarCroqui(montarCroqui(emissao))}>Regerar croqui</button>
+                    <button type="button" className="rounded-lg bg-slate-900 text-white px-2 py-1 text-[11px] font-bold" onClick={() => emissao.croqui && aplicarCroqui({ ...emissao.croqui, aprovado: true })}>Aprovar croqui</button>
+                  </div>
+                  <input className="w-full rounded border px-2 py-1 text-[12px]" value={emissao.croqui.subtitulo} onChange={(e) => emissao.croqui && aplicarCroqui({ ...emissao.croqui, aprovado: false, subtitulo: e.target.value })} />
+                  {emissao.croqui.etapas.map((etapa, indice) => (
+                    <div key={etapa.id} className="grid grid-cols-[1fr_auto] gap-1">
+                      <textarea className="rounded border px-2 py-1 text-[12px]" rows={2} value={etapa.legenda} onChange={(e) => {
+                        if (!emissao.croqui) return;
+                        const etapas = emissao.croqui.etapas.map((item, i) => i === indice ? { ...item, legenda: e.target.value } : item);
+                        aplicarCroqui({ ...emissao.croqui, aprovado: false, etapas });
+                      }} />
+                      <div className="flex flex-col gap-1">
+                        <button type="button" className="text-[10px] font-bold" onClick={() => {
+                          if (!emissao.croqui || indice === 0) return;
+                          const etapas = [...emissao.croqui.etapas];
+                          const [item] = etapas.splice(indice, 1);
+                          etapas.splice(indice - 1, 0, item);
+                          aplicarCroqui({ ...emissao.croqui, aprovado: false, etapas });
+                        }}>Subir</button>
+                        <button type="button" className="text-[10px] font-bold" onClick={() => {
+                          if (!emissao.croqui) return;
+                          aplicarCroqui({ ...emissao.croqui, aprovado: false, etapas: emissao.croqui.etapas.filter((_, i) => i !== indice) });
+                        }}>Remover</button>
+                      </div>
+                    </div>
+                  ))}
+                  {emissao.croqui.etapas.length < 6 && (
+                    <button type="button" className="text-[11px] font-bold text-rose-900" onClick={() => emissao.croqui && aplicarCroqui({
+                      ...emissao.croqui,
+                      aprovado: false,
+                      etapas: [...emissao.croqui.etapas, { id: `extra-${emissao.croqui.etapas.length + 1}`, titulo: 'Etapa complementar', legenda: '', classificacao: 'relatado', quando: null }],
+                    })}>Adicionar etapa</button>
+                  )}
+                </div>
+              )}
+              {emissao?.modalidade === 'ocorrencia' && !emissao.croqui && <p className="px-4 py-2 text-[12px] text-slate-600 bg-white border-b">Não há croqui: a sequência não tem elementos suficientes para um desenho sem inventar o fato.</p>}
               <iframe id="os-action-plan-frame" title={`Plano de Ação ${missionId}`} className="w-full flex-1 bg-white" srcDoc={html} />
             </div>
           )}

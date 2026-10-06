@@ -1,5 +1,7 @@
 import { generateContent } from '../gemini';
 import type { AIImagePayload } from '../imageForAI';
+import { narrativaAceitaParaCliente } from './linguagemCliente';
+import type { OsActionPlanInput } from './types';
 
 export interface SecoesPlanoIa {
   objetivo: string | null;
@@ -30,15 +32,15 @@ export function montarPromptContexto(resumoFatos: string, textoUsuario: string):
     '(dois ou três parágrafos: o que aconteceu, só o relato)',
     '',
     'PLANO_ACAO:',
+    'Escreva o plano somente em cima do OBJETIVO e da DESCRICAO acima.',
+    'Não transforme KM, hodômetro, status, chegada, saída, foto ou atualização já lançada no sistema em ação.',
+    'Cada linha é uma medida futura para o problema classificado, com prazo sugerido. Não copie o que o sistema já lançou.',
+    'Não promova hipótese a fato. Não escreva que o agente errou, que o motorista causou a ocorrência ou que a central falhou.',
     'Uma linha por medida, neste formato, sem outro texto:',
     'Ação | Responsável | Prazo | Status | Evidência/indicador',
-    'Status somente: Proposta, Em andamento ou Concluída.',
-    'Concluída só se a OS já registrar a resolução. Não apresente proposta como execução.',
+    'Status somente: Proposta ou Em andamento. Não use Concluída.',
     'Responsável ou prazo desconhecido: A definir após validação.',
     'Evidência desconhecida: Pendente de confirmação.',
-    'Se a atualização da missão descreve ponto a apurar, não escreva que não houve ocorrência.',
-    'Se ocorrência e atualização divergirem, sinalize a divergência e não escolha um lado.',
-    'Não gere uma linha para cada atualização. Ignore rotina: sem novidades, equipe na origem, status concluída.',
     'Não copie texto bruto, relato longo nem relatório anterior para dentro da ação. Cada ação tem no máximo 160 caracteres.',
     '',
     'PLANO_MELHORIA:',
@@ -79,6 +81,56 @@ export function separarRespostaIa(bruto: string): SecoesPlanoIa {
     conclusao: mapa.CONCLUSAO || null,
     tratativa: mapa.TRATATIVA || null,
   };
+}
+
+export function montarPromptAnalise(foco: string, diario: string, relato: string): string {
+  return [
+    'Você redige a seção Análise da ocorrência de um relatório da TM SEG para o cliente.',
+    'O relato complementar pode ser um texto interno longo. Entenda o que aconteceu e escreva só o resumo. Não copie o texto.',
+    'Escreva em português do Brasil, em dois parágrafos corridos, separados por uma linha em branco. No máximo 900 caracteres.',
+    'O primeiro parágrafo diz o que a apuração trata, em linguagem institucional.',
+    'O segundo diz como a operação foi restabelecida, sem nomear culpado e sem transferir a falha a fornecedor ou terceirizado.',
+    'Não cite nome de pessoa, CPF, telefone, CNPJ, velocidade em km/h, telemetria nem a expressão uso restrito.',
+    'Não escreva que a equipe seguiu o veículo errado, que alguém errou ou que a empresa é culpada.',
+    'Se houve perda de identificação no pedágio, diga que a identificação visual foi perdida momentaneamente e que o acompanhamento do veículo da OS foi retomado após a conferência da placa.',
+    'Não invente placa, horário, telemetria, velocidade medida, ligação ou trajeto ausente do material.',
+    'Não escreva Trajeto realizado. Não liste atualização sem posição.',
+    'Não use o slogan de identificação positiva.',
+    'Parada para descanso ou RF não é o problema quando o foco é perda de identificação.',
+    'Velocidade apenas relatada, sem medição, não é a causa.',
+    'Não copie o histórico inteiro. Não use tópicos nem títulos. Responda só os parágrafos.',
+    '',
+    'FOCO INFORMADO:',
+    foco,
+    '',
+    'RELATO COMPLEMENTAR:',
+    relato || '(nenhum)',
+    '',
+    'REGISTROS DA OPERAÇÃO:',
+    diario || '(sem atualizações)',
+  ].join('\n');
+}
+
+export function diarioParaAnalise(entrada: OsActionPlanInput): string {
+  return (entrada.atualizacoes || []).map((item) => {
+    const status = String(item.status || item.texto || '').split('|')[0].replace(/\s+/g, ' ').trim();
+    const curto = status.length > 80 ? 'Atualização operacional' : status;
+    const local = item.local ? ` | ${item.local}` : '';
+    return `${item.numero || ''} | ${item.quando} | ${curto}${local}`;
+  }).join('\n');
+}
+
+export async function redigirAnaliseOcorrencia(entrada: OsActionPlanInput): Promise<string> {
+  const texto = await generateContent({
+    contents: montarPromptAnalise(
+      String(entrada.problemaPrincipal || '').trim(),
+      diarioParaAnalise(entrada),
+      String(entrada.relatoComplementar || '').trim(),
+    ),
+    model: 'gemini-2.5-flash',
+    config: { maxOutputTokens: 1200, temperature: 0.2 },
+  });
+  return narrativaAceitaParaCliente(String(texto || '').trim(), entrada.fornecedor, entrada.clientName);
 }
 
 export async function redigirContextoOs(input: {

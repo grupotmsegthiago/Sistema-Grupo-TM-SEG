@@ -33,6 +33,18 @@ export interface OsActionPlanAtualizacao {
   texto: string;
   por: string | null;
   fotoUrl: string | null;
+  status?: string | null;
+  local?: string | null;
+  fotos?: string[];
+  lat?: number | null;
+  lng?: number | null;
+  linkMapa?: string | null;
+  /** Imagem do arruamento deste ponto, pronta para o PDF. */
+  miniMapaImagem?: string | null;
+  /** De onde saiu a coordenada: registro já gravado, link de posição ou endereço geocodificado. */
+  fontePosicao?: 'registro' | 'link' | 'endereco' | null;
+  /** Número da atualização na missão, o mesmo do mapa e do quadro. */
+  numero?: number;
 }
 
 export interface OsActionPlanHistoricoCliente {
@@ -51,6 +63,22 @@ export interface OsActionPlanContaCliente {
   caracterizada: number | null;
   velada: number | null;
   desde: string | null;
+}
+
+export interface CroquiEtapa {
+  id: string;
+  titulo: string;
+  legenda: string;
+  classificacao: 'confirmado' | 'relatado';
+  quando: string | null;
+}
+
+export interface CroquiOcorrencia {
+  tipo: 'pedagio' | 'perda_contato' | 'desvio_rota' | 'parada' | 'acesso';
+  titulo: string;
+  subtitulo: string;
+  etapas: CroquiEtapa[];
+  aprovado: boolean;
 }
 
 /** Dados operacionais de UMA ordem de serviço. Sem valores financeiros. */
@@ -84,7 +112,10 @@ export interface OsActionPlanInput {
   horaFinalFornecedor: string | null;
   kmInicialFornecedor: string | null;
   kmFinalFornecedor: string | null;
-  historicoEstado?: 'ENCONTRADO' | 'NÃO CARREGADO' | 'ERRO';
+  historicoEstado?: 'ENCONTRADO' | 'NÃO CARREGADO' | 'ERRO' | 'CONSULTA INCOMPLETA';
+  consultaOcorrencias?: 'ENCONTRADO' | 'ERRO' | 'CONSULTA INCOMPLETA';
+  consultaLogs?: 'ENCONTRADO' | 'ERRO' | 'CONSULTA INCOMPLETA';
+  consultaEvidencias?: 'ENCONTRADO' | 'ERRO' | 'CONSULTA INCOMPLETA';
   linhaDoTempo: OsActionPlanMarco[];
   atualizacoes: OsActionPlanAtualizacao[];
   historicoCliente: OsActionPlanHistoricoCliente[];
@@ -92,6 +123,18 @@ export interface OsActionPlanInput {
   ocorrencias: OsActionPlanOcorrencia[];
   fotos: OsActionPlanFoto[];
   tratativaTexto: string | null;
+  problemaPrincipal?: string | null;
+  relatoComplementar?: string | null;
+  aprovadoCliente?: boolean;
+  evidenciasApuracao?: Array<{
+    tipo: string;
+    descricao: string;
+    origem: string | null;
+    quando: string | null;
+    principal: boolean;
+    url: string | null;
+  }>;
+  croqui?: CroquiOcorrencia | null;
   objetivoIa?: string | null;
   narrativaIa: string | null;
   planoAcaoIa?: string | null;
@@ -100,4 +143,24 @@ export interface OsActionPlanInput {
   tratativaIa: string | null;
   fotosTratativa: OsActionPlanFoto[];
   geradoEm: string;
+  /** padrao = missão sem ocorrência. ocorrencia = relatório com plano de ação. */
+  modalidade?: 'padrao' | 'ocorrencia';
+  /** No relatório com ocorrência, o quadro pode ficar só no que conversa com o problema. */
+  escopoAtualizacoes?: 'todas' | 'relevantes';
+  consultaDiario?: 'ENCONTRADO' | 'ERRO' | 'CONSULTA INCOMPLETA';
+  origemCoord?: { lat: number; lng: number } | null;
+  destinoCoord?: { lat: number; lng: number } | null;
+  /** Imagem do mapa com arruamento, pronta para a prévia e para o PDF. */
+  mapaImagem?: string | null;
+  /** Cópia da foto já dentro do HTML. A chave é o endereço original, que continua no link Abrir foto. */
+  fotoEmbutida?: Record<string, string> | null;
+  diagnosticoMapa?: {
+    atualizacoes: number;
+    comEndereco: number;
+    comLink: number;
+    comCoordenadaNoRegistro: number;
+    extraidasDoLink: number;
+    geocodificadas: number;
+    semLocal: number;
+  };
 }

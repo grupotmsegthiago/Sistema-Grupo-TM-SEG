@@ -1,7 +1,9 @@
 import { formatDateTimeBR } from '../dateUtils';
+import { analisarOcorrencia } from './analisarOcorrencia';
+import { htmlMapaMissao, htmlQuadroAtualizacoes } from './diarioOperacional';
+import { htmlCroqui } from './montarCroqui';
+import { narrativaAceitaParaCliente, resumoInstitucional } from './linguagemCliente';
 import {
-  linhasPlanoAcao,
-  linhasPlanoMelhoria,
   textoEhRelatorioColado,
   textoEhRotina,
   type LinhaPlano,
@@ -91,9 +93,10 @@ export interface RelatorioOcorrencia {
   indicadores: LinhaIndicador[];
   pendenciasConclusao: string[];
   encerramento: string;
+  procedimento: string[] | null;
+  rastreio: Array<{ tipo: string; descricao: string; fonte: string; registroId: string }>;
 }
 
-const RESP = 'A definir após validação';
 const NAO = 'Não informado';
 
 function esc(value: unknown): string {
@@ -372,7 +375,8 @@ export function montarRelatorioOcorrencia(d: OsActionPlanInput): RelatorioOcorre
   const colados = [...(d.atualizacoes || []), ...d.ocorrencias.map((o) => ({ texto: o.texto }))]
     .filter((a) => textoEhRelatorioColado(a.texto)).length
     + (d.tratativaTexto && textoEhRelatorioColado(d.tratativaTexto) ? 1 : 0);
-  const historicoFalhou = d.historicoEstado === 'ERRO' || d.historicoEstado === 'NÃO CARREGADO';
+  const historicoFalhou = d.historicoEstado === 'ERRO' || d.historicoEstado === 'NÃO CARREGADO' || d.historicoEstado === 'CONSULTA INCOMPLETA';
+  const ocorrenciasIncompletas = d.consultaOcorrencias === 'ERRO' || d.consultaOcorrencias === 'CONSULTA INCOMPLETA';
   const aberta = ocorrenciasUteis.some((o) => !o.resolvida) || relevantes.length > 0 || colados > 0 || historicoFalhou;
   const statusApuracao: StatusApuracao = !aberta && ocorrenciasUteis.some((o) => o.resolvida)
     ? 'Concluída'
@@ -419,8 +423,16 @@ export function montarRelatorioOcorrencia(d: OsActionPlanInput): RelatorioOcorre
       certainty: 'registrado',
     });
   }
+  const foco = String(d.problemaPrincipal || '').trim();
+  const focoN = semAcento(foco);
   for (const a of d.atualizacoes || []) {
-    const evento = redigirAtualizacao(a.texto);
+    const nAtual = semAcento(a.texto);
+    if (foco && /\brf\b|descanso|repouso/.test(nAtual) && !/descanso|repouso|\brf\b/.test(focoN)) continue;
+    if (foco && textoEhRotina(a.texto)) continue;
+    let evento = redigirAtualizacao(a.texto);
+    if (foco && /alta velocidade|velocidade alta|saiu a frente/.test(nAtual) && !/velocidade/.test(focoN)) {
+      evento = 'A equipe informou que o veículo estava à frente da escolta e sem retorno ao contato.';
+    }
     if (!evento) continue;
     cronologia.push({
       time: hora(a.quando),
@@ -442,7 +454,8 @@ export function montarRelatorioOcorrencia(d: OsActionPlanInput): RelatorioOcorre
   );
   const dataCurta = hora(d.horarioProgramado).split(', ')[0];
   const horaPrevista = horaComH(d.horarioProgramado);
-  const objetivo = [
+  const objetivoEscrito = textoCurtoAceito(d.objetivoIa, 900);
+  const objetivo = objetivoEscrito || [
     `O presente relatório tem por objetivo apresentar à ${cliente} os registros disponíveis sobre a execução da escolta ${tipo} vinculada à OS ${d.missionId}${se}, prevista para ${dataCurta || 'data a confirmar'}${horaPrevista ? `, às ${horaPrevista}` : ''}, e documentar os pontos que permanecem pendentes de esclarecimento.`,
     d.status === 'Concluída' && statusApuracao !== 'Concluída'
       ? 'Embora a missão conste como encerrada no sistema, a apuração dos fatos relatados durante o percurso continua em andamento.'
@@ -477,7 +490,9 @@ export function montarRelatorioOcorrencia(d: OsActionPlanInput): RelatorioOcorre
   const historia = `Segundo o relato da equipe durante o percurso, ${historiaBruta.charAt(0).toLowerCase()}${historiaBruta.slice(1)}`;
   const formal = ocorrenciasUteis.length
     ? `Houve ocorrência formal no cadastro${ocorrenciasUteis[0].resolvida ? ', marcada como resolvida' : ', ainda em aberto'}: “${ocorrenciasUteis[0].texto.trim().slice(0, 160)}”.`
-    : 'Não há ocorrência formal lançada nesta OS.';
+    : ocorrenciasIncompletas
+      ? 'A leitura das ocorrências formais não fechou. Não dá para afirmar que não há ocorrência.'
+      : 'Não há ocorrência formal lançada nesta OS.';
   const limite = relatosEquipe.teveVelocidade
     ? 'Como não há elementos independentes suficientes para confirmar a velocidade do caminhão ou reconstituir integralmente a sequência dos contatos e da localização, a ocorrência permanece sujeita à análise dos registros operacionais e das imagens disponíveis.'
     : historicoFalhou
@@ -504,27 +519,14 @@ export function montarRelatorioOcorrencia(d: OsActionPlanInput): RelatorioOcorre
   const tratativa = textoCurtoAceito(d.tratativaTexto, 280);
   const tratativaIa = textoCurtoAceito(d.tratativaIa, 400);
   const relatos = [
-    tratativa ? `Tratativa informada para esta emissão: ${tratativa}` : '',
-    tratativaIa || '',
+    tratativa ? `Relato complementar informado para esta apuração: ${tratativa}` : '',
+    foco ? '' : (tratativaIa || ''),
   ].filter(Boolean);
 
-  const planoBase = linhasPlanoAcao(d);
-  const contencao: LinhaContencao[] = planoBase
-    .filter((l) => l.status === 'Concluída')
-    .map((l, i) => ({
-      id: `CT-${i + 1}`,
-      acao: l.acao,
-      responsavel: l.responsavel,
-      data: hora(ocorrenciasUteis.find((o) => o.resolvida)?.quando || null),
-      status: 'Concluída' as const,
-      evidencia: l.evidencia,
-    }));
-  const corretivas = planoBase
-    .filter((l) => l.status !== 'Concluída')
-    .map((l, i) => ({ ...l, id: `AC-${i + 1}` }));
-  const preventivas = linhasPlanoMelhoria(d)
-    .filter((l) => !corretivas.some((c) => c.acao === l.acao) && !contencao.some((c) => c.acao === l.acao))
-    .map((l, i) => ({ ...l, id: `MP-${i + 1}` }));
+  const analiseAuto = analisarOcorrencia(d);
+  const contencao: LinhaContencao[] = [];
+  const corretivas = analiseAuto.acao;
+  const preventivas = analiseAuto.melhoria.filter((l) => !corretivas.some((c) => c.acao === l.acao));
   const cronograma: LinhaCronograma[] = [...corretivas, ...preventivas].map((l) => ({
     quando: l.prazo || 'A definir',
     id: l.id,
@@ -540,7 +542,7 @@ export function montarRelatorioOcorrencia(d: OsActionPlanInput): RelatorioOcorre
 
   return {
     documento: {
-      titulo: 'Plano de Ação e Justificativa de Ocorrência',
+      titulo: String(d.problemaPrincipal || '').trim() ? 'Relatório de Ocorrência e Plano de Ação' : 'Plano de Ação e Justificativa de Ocorrência',
       numero: d.missionId,
       os: d.missionId,
       se: info(d.seNumber),
@@ -581,9 +583,11 @@ export function montarRelatorioOcorrencia(d: OsActionPlanInput): RelatorioOcorre
       ...(dhl ? [{ rotulo: 'Documento DHL', valor: dhl }] : []),
       ...(ceslog ? [{ rotulo: 'Referência', valor: ceslog }] : []),
     ],
-    objetivo,
-    objetivoIa: false,
-    resumo,
+    objetivo: foco
+      ? `Este relatório trata da OS ${d.missionId}. Problema informado para a apuração: ${foco} Esse texto define o foco e não é, por si só, fato comprovado.`
+      : objetivo,
+    objetivoIa: Boolean(objetivoEscrito) && !foco,
+    resumo: foco ? analiseAuto.conclusao : resumo,
     resumoIa: false,
     descricao: resumo,
     cincoW2H: [
@@ -607,53 +611,47 @@ export function montarRelatorioOcorrencia(d: OsActionPlanInput): RelatorioOcorre
     anexos: fotos.map((f, i) => `Anexo ${i + 1}: ${f.legenda || 'sem legenda'}${f.local ? ` — ${f.local}` : ''}`),
     analise: {
       fatosConfirmados: [
-        `Status da missão: ${info(d.status)}.`,
-        `Rota: ${info(d.origem)} para ${info(d.destino)}.`,
-        `Carga ${info(d.placaCarga)}; viatura ${info(d.placaViatura)}.`,
-        ocorrenciasUteis.length ? 'Existe ocorrência formal no cadastro da OS.' : 'Não existe ocorrência formal no cadastro da OS.',
+        ...analiseAuto.itens.filter((i) => i.tipo === 'fato_confirmado').map((i) => i.descricao),
         `Atraso na origem: ${atraso}.`,
       ],
-      relatos: relatos.length ? relatos : ['Nenhum relato curto foi informado além dos registros do sistema.'],
-      divergencias: relevantes.length && ocorrenciasUteis.length
-        ? ['Há ocorrência formal e atualização operacional no mesmo conjunto. Nenhuma fonte foi escolhida como versão definitiva.']
+      relatos: [
+        ...analiseAuto.itens.filter((i) => i.tipo === 'relato').map((i) => i.descricao),
+        ...relatos,
+      ].filter((t) => t.trim()).length
+        ? [...analiseAuto.itens.filter((i) => i.tipo === 'relato').map((i) => i.descricao), ...relatos].filter((t) => t.trim())
+        : ['Nenhum relato curto foi informado além dos registros do sistema.'],
+      divergencias: analiseAuto.itens.some((i) => i.tipo === 'divergencia')
+        ? analiseAuto.itens.filter((i) => i.tipo === 'divergencia').map((i) => i.descricao)
         : ['Não há divergência de horário ou de versão apontada entre as fontes lidas.'],
       limitacoes: [
-        rotina ? `${rotina} atualização(ões) de rotina foram lidas só como contexto.` : '',
+        ...analiseAuto.itens.filter((i) => i.tipo === 'ausencia' || i.tipo === 'hipotese').map((i) => i.descricao),
+        rotina && !foco ? `${rotina} atualização(ões) de rotina foram lidas só como contexto.` : '',
         colados ? 'Um texto extenso, com cara de relatório anterior, foi encontrado e não foi copiado para as células do plano.' : '',
         historicoFalhou ? 'Histórico da missão: NÃO CARREGADO. A cronologia pode estar incompleta.' : '',
-        fotos.length ? 'A foto não comprova o que não estiver visível. Nenhuma imagem foi criada para preencher evidência.' : 'Não há foto anexada nesta emissão.',
-        'Posição informada em atualização não é tratada como telemetria nem como prova de perda de contato.',
+        ocorrenciasIncompletas ? 'Ocorrências formais: CONSULTA INCOMPLETA.' : '',
+        fotos.length ? 'A foto não comprova o que não estiver visível.' : '',
       ].filter(Boolean),
-      causa: ocorrenciasUteis.some((o) => o.resolvida) && !relevantes.length && !colados
-        ? 'A ocorrência formal está marcada como resolvida na OS. Causa raiz não foi reaberta neste documento.'
-        : 'Causa em apuração. Não foi possível determinar com os dados disponíveis.',
+      causa: analiseAuto.causaTexto,
       hipoteses: ['Nenhuma hipótese foi promovida a fato. O que não está no registro permanece pendente de confirmação.'],
     },
     acoesContencao: contencao,
-    planoAcao: corretivas.length ? corretivas : [{
-      id: 'AC-1',
-      acao: 'Nenhuma medida corretiva é proposta: não há ocorrência formal nem ponto fora da rotina.',
-      responsavel: RESP,
-      prazo: RESP,
-      status: 'Proposta',
-      evidencia: 'Pendente de confirmação',
-    }],
-    planoMelhoria: preventivas.length ? preventivas : [{
-      id: 'MP-1',
-      acao: 'Nenhuma medida preventiva específica é proposta. Não há fato fora da rotina que a sustente.',
-      responsavel: RESP,
-      prazo: RESP,
-      status: 'Proposta',
-      evidencia: 'Pendente de confirmação',
-    }],
+    planoAcao: corretivas,
+    planoMelhoria: preventivas,
+    procedimento: analiseAuto.procedimento,
+    rastreio: analiseAuto.itens.map((i) => ({
+      tipo: i.tipo,
+      descricao: i.descricao,
+      fonte: i.fonte,
+      registroId: i.registroId,
+    })),
     cronograma,
-    indicadores: [{
-      nome: 'Conferência da evidência desta apuração',
-      meta: 'A definir',
-      frequencia: 'A definir',
-      responsavel: RESP,
-      resultado: 'Não medido',
-    }],
+    indicadores: analiseAuto.indicadores.map((i) => ({
+      nome: i.nome,
+      meta: i.meta,
+      frequencia: i.frequencia,
+      responsavel: i.responsavel,
+      resultado: i.resultado,
+    })),
     pendenciasConclusao: [
       statusApuracao === 'Concluída'
         ? 'Não há pendência de apuração além do que já está marcado como resolvido na OS.'
@@ -662,11 +660,7 @@ export function montarRelatorioOcorrencia(d: OsActionPlanInput): RelatorioOcorre
       !fotos.length ? 'Evidência fotográfica da etapa crítica: não localizada nos registros consultados.' : '',
       colados ? 'Revisar o texto longo somente se a pessoa usuária pedir para reabrir o relatório anterior.' : '',
     ].filter(Boolean),
-    encerramento: statusApuracao === 'Concluída'
-      ? 'Encaminhamos o documento com a ocorrência formal já marcada como resolvida na OS. O envio ao cliente ainda depende de quem aprova esta versão.'
-      : d.status === 'Concluída'
-        ? 'Encaminhamos o documento com a missão já encerrada no sistema e com a apuração ainda aberta. Não há, neste cadastro, data definida para a versão final.'
-        : 'A apuração segue pendente de confirmação. Encaminhamos o que já está registrado e deixamos em aberto o que o cadastro ainda não fecha.',
+    encerramento: analiseAuto.conclusao,
   };
 }
 
@@ -753,9 +747,10 @@ export function renderizarRelatorio(r: RelatorioOcorrencia): string {
   <h3>Relatos recebidos</h3>
   <div class="campo" data-campo="relatos">${lista(r.analise.relatos)}</div>
   <h3>Divergências e limitações</h3>
-  <div class="campo" data-campo="divergencias">${lista([...r.analise.divergencias, ...r.analise.limitacoes])}</div>
+  <div class="campo" data-campo="divergencias">${lista([...r.analise.divergencias, ...r.analise.limitacoes].filter((t) => !/convertida em coordenada|lidas só como contexto|hipótese foi promovida/i.test(t)))}</div>
   <h3>Causa ou fatores contribuintes</h3>
-  <div class="campo" data-campo="causa"><p>${esc(r.analise.causa)}</p>${lista(r.analise.hipoteses)}</div>
+  <div class="campo" data-campo="causa"><p>${esc(r.analise.causa)}</p></div>
+  <div hidden data-secao="auditoria-interna">${r.rastreio.map((i) => `<span data-tipo="${esc(i.tipo)}" data-fonte="${esc(i.fonte)}" data-registro="${esc(i.registroId)}">${esc(i.descricao)}</span>`).join('')}</div>
 </section>
 <section data-secao="contencao">
   <h2>Ações de contenção já executadas</h2>
@@ -765,12 +760,18 @@ export function renderizarRelatorio(r: RelatorioOcorrencia): string {
 </section>
 <section data-secao="plano-acao">
   <h2>Plano de Ação Corretiva</h2>
-  <p class="aviso-plano">Cada linha é uma medida curta. Resumo, descrição e cronologia ficam nas seções anteriores.</p>
+  <p class="aviso-plano">Medidas ligadas ao problema informado para esta apuração. Não repetem o que o sistema já lançou.</p>
   ${tabela(['ID', 'Ação', 'Responsável', 'Prazo', 'Status', 'Evidência de conclusão'], r.planoAcao.map((l) => [l.id, l.acao, l.responsavel, l.prazo, l.status, l.evidencia]), 'acao')}
 </section>
 <section data-secao="plano-melhoria">
   <h2>Plano de Melhoria Preventiva</h2>
   ${tabela(['ID', 'Melhoria preventiva', 'Responsável', 'Prazo', 'Status', 'Indicador de eficácia'], r.planoMelhoria.map((l) => [l.id, l.acao, l.responsavel, l.prazo, l.status, l.evidencia]), 'melhoria')}
+</section>
+<section data-secao="procedimento">
+  <h2>Procedimento preventivo recomendado</h2>
+  ${r.procedimento && r.procedimento.length
+    ? `<ol class="fluxo">${r.procedimento.map((passo) => `<li>${esc(passo)}</li>`).join('')}</ol>`
+    : '<p>Não há fluxo preventivo específico para o risco identificado nesta OS.</p>'}
 </section>
 <section data-secao="cronograma">
   <h2>Cronograma consolidado</h2>
@@ -788,10 +789,117 @@ export function renderizarRelatorio(r: RelatorioOcorrencia): string {
 </section>
 <section data-secao="encerramento">
   <h2>Conclusão e encaminhamento ao cliente</h2>
-  <div class="campo" data-campo="encerramento">${esc(r.encerramento)}</div>
+  <div class="campo" data-campo="encerramento">${prosa(r.encerramento)}</div>
 </section>`;
 }
 
 export function htmlCorpoAnalise(d: OsActionPlanInput): string {
-  return renderizarRelatorio(montarRelatorioOcorrencia(d));
+  const relatorio = montarRelatorioOcorrencia(d);
+  const base = String(d.problemaPrincipal || '').trim()
+    ? renderizarExecutivo(d, relatorio)
+    : renderizarRelatorio(relatorio);
+  if (d.modalidade !== 'ocorrencia' || String(d.problemaPrincipal || '').trim()) return base;
+  return `${base}${htmlMapaMissao(d)}${htmlQuadroAtualizacoes(d)}`;
+}
+
+function semaforo(status: string): string {
+  const n = status.toLowerCase();
+  if (/conclu/.test(n)) return 'Concluído';
+  if (/implanta|andamento/.test(n)) return 'Em implantação';
+  return 'Pendente';
+}
+
+function renderizarExecutivo(d: OsActionPlanInput, r: RelatorioOcorrencia): string {
+  const analise = analisarOcorrencia(d);
+  const foco = String(d.problemaPrincipal || '').trim();
+  const cronologia = r.cronologia.filter((e) => !/lançou o status/i.test(e.event));
+  const fatos = analise.itens.filter((i) => i.tipo === 'fato_confirmado').map((i) => i.descricao);
+  const relatos = [
+    ...analise.itens.filter((i) => i.tipo === 'relato').map((i) => i.descricao),
+    d.relatoComplementar || '',
+    d.tratativaTexto || '',
+  ].map((t) => t.trim()).filter((t) => t && t.length <= 220 && !textoEhRelatorioColado(t));
+  const linhas = [...analise.acao, ...analise.melhoria];
+  const plano = tabela(
+    ['ID', 'Ação', 'Responsável', 'Prazo', 'Status', 'Evidência'],
+    linhas.map((l) => [l.id, l.acao, l.responsavel, l.prazo, semaforo(l.status), l.evidencia]),
+    'plano',
+  );
+  const antes = analise.categorias.some((c) => c === 'perda_contato' || c === 'veiculo_incorreto')
+    ? 'Perda visual → veículo semelhante, quando for o caso → acompanhamento → divergência identificada.'
+    : 'A sequência relatada seguiu sem a barreira que interrompe o fato.';
+  const depois = (analise.procedimento || []).filter((p) => p !== analise.procedimento?.[0]);
+  const croqui = d.croqui?.aprovado
+    ? htmlCroqui(d.croqui, {
+      os: d.missionId,
+      cliente: d.clientName || 'Cliente',
+      data: r.documento.dataOperacao || 'conforme registro',
+      operacao: d.tipo || 'Operação',
+    })
+    : '';
+  const causa = analise.causaEstado === 'confirmada'
+    ? analise.causaTexto
+    : 'Não há causa confirmada além do que os registros sustentam. O fator tratado abaixo é a barreira que faltou, não um culpado.';
+
+  const narrativa = narrativaAceitaParaCliente(String(d.narrativaIa || ''), d.fornecedor, d.clientName)
+    || (foco ? resumoInstitucional(foco, String(d.relatoComplementar || '')) : '');
+  const analiseEscrita = narrativa
+    ? `<div class="campo" data-campo="analise">${prosa(narrativa.replace(/\n+/g, '\n\n'))}</div>`
+    : `<h3>Fato identificado</h3>
+  <div class="campo">${lista(fatos)}</div>
+  <h3>Circunstâncias da ocorrência</h3>
+  <div class="campo">${lista(relatos.length ? relatos : ['Nenhum relato complementar foi informado.'])}</div>`;
+
+  return `<section data-secao="documento">
+  <h2>Ocorrência apurada</h2>
+  <div class="summary" data-campo="ocorrencia-apurada"><p>${esc(foco)}</p></div>
+  <div class="campo" data-campo="identificacao">
+    <p><strong>OS:</strong> ${esc(d.missionId)} · <strong>Cliente:</strong> ${esc(d.clientName || '—')}</p>
+    <p><strong>Operação:</strong> ${esc(d.tipo || '—')} · <strong>Data:</strong> ${esc(r.documento.dataOperacao)}</p>
+    <p><strong>Origem / destino:</strong> ${esc(d.origem || '—')} → ${esc(d.destino || '—')} · <strong>Status:</strong> ${esc(d.status || '—')}</p>
+  </div>
+</section>
+<section data-secao="resumo">
+  <h2>Resumo executivo</h2>
+  <div class="campo" data-campo="resumo">${prosa(r.resumo)}</div>
+</section>
+${croqui}
+${d.modalidade === 'ocorrencia' ? `${htmlMapaMissao(d)}${htmlQuadroAtualizacoes(d)}` : ''}
+<section data-secao="cronologia">
+  <h2>Cronologia relevante</h2>
+  <div class="trilha">${cronologia.length
+    ? cronologia.map((e) => `<article class="cartao"><div class="quem">${rosto(e.certainty === 'registrado' ? 'equipe' : 'robo')}</div><div data-campo="cronologia"><strong>${esc(e.time)}</strong> <span class="nivel">${e.certainty === 'registrado' ? 'Registro' : 'Relato'}</span><p>${esc(e.event)}</p><small>Fonte: registro da operação</small></div></article>`).join('')
+    : '<p class="campo" data-campo="cronologia">Não há evento ligado ao problema informado.</p>'}</div>
+</section>
+<section data-secao="analise">
+  <h2>Análise da ocorrência</h2>
+  ${analiseEscrita}
+  <h3>Causa / fator contribuinte</h3>
+  <div class="campo" data-campo="causa"><p>${esc(causa)}</p></div>
+  <div hidden data-secao="auditoria-interna">${r.rastreio.map((i) => `<span data-tipo="${esc(i.tipo)}" data-fonte="${esc(i.fonte)}" data-registro="${esc(i.registroId)}">${esc(i.descricao)}</span>`).join('')}</div>
+</section>
+<section data-secao="barreira">
+  <h2>Barreira identificada</h2>
+  <div class="summary"><p>${esc(analise.barreira || 'Não há barreira operacional específica identificada para este problema.')}</p></div>
+</section>
+<section data-secao="plano-acao">
+  <h2>Plano de ação</h2>
+  <p class="aviso-plano">Medidas ligadas ao problema informado para esta apuração. Não repetem o que o sistema já lançou.</p>
+  ${plano}
+</section>
+<section data-secao="procedimento">
+  <h2>Antes e depois</h2>
+  <div class="antes-depois">
+    <div><h3>Situação identificada</h3><p>${esc(antes)}</p></div>
+    <div><h3>Novo procedimento</h3>${depois.length ? `<ol class="fluxo">${depois.map((p) => `<li>${esc(p)}</li>`).join('')}</ol>` : '<p>Não há procedimento específico para este problema.</p>'}</div>
+  </div>
+</section>
+<section data-secao="indicadores">
+  <h2>Indicadores</h2>
+  ${tabela(['Indicador', 'Meta', 'Frequência', 'Responsável', 'Resultado atual'], r.indicadores.map((l) => [l.nome, l.meta, l.frequencia, l.responsavel, l.resultado]), 'indicadores')}
+</section>
+<section data-secao="encerramento">
+  <h2>Conclusão</h2>
+  <div class="campo" data-campo="encerramento">${prosa(analise.conclusao)}</div>
+</section>`;
 }

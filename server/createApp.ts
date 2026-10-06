@@ -77,6 +77,36 @@ async function buildApp(): Promise<Express> {
 
   await registerRoutes(httpServer, app);
 
+  // A função já existe em api/geocode-address.ts (Vercel). Sem esta rota, o Vite local
+  // devolve o arquivo em vez de executar a geocodificação e o mapa da missão fica vazio.
+  const { default: geocodeAddress } = await import("../api/geocode-address");
+  app.get("/api/geocode-address", (req, res) => {
+    void geocodeAddress(req, res);
+  });
+  app.post("/api/mapa-estatico", async (req, res) => {
+    try {
+      const { renderizarMapaPng } = await import("../lib/osActionPlan/mapaEstatico");
+      const png = await renderizarMapaPng(req.body || {});
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "no-store");
+      res.send(png);
+    } catch (erro: any) {
+      res.status(500).json({ success: false, error: erro?.message || "mapa indisponível" });
+    }
+  });
+  // A foto pública do armazenamento entra no HTML por aqui. O navegador sozinho
+  // deixava a geração presa e a impressão saía com o espaço da imagem em branco.
+  app.post("/api/evidencia-imagem", async (req, res) => {
+    try {
+      const { embutirEvidencias } = await import("../lib/osActionPlan/embutirEvidenciaServidor");
+      const imagens = await embutirEvidencias(req.body?.urls);
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ success: true, imagens });
+    } catch (erro: any) {
+      res.status(500).json({ success: false, error: erro?.message || "foto indisponível", imagens: [] });
+    }
+  });
+
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

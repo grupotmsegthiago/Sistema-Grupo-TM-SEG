@@ -1,3 +1,4 @@
+import { analisarOcorrencia } from './analisarOcorrencia';
 import type { OsActionPlanInput } from './types';
 
 export type StatusPlano = 'Proposta' | 'Em andamento' | 'Concluída';
@@ -49,11 +50,12 @@ function statusValido(bruto: string, fatos: string, permitirConcluida: boolean):
   return 'Proposta';
 }
 
-function campoLivre(bruto: string | undefined, fatos: string, padrao: string): string {
+function campoLivre(bruto: string | undefined, fatos: string, padrao: string, manterProposta = false): string {
   const t = String(bruto || '').trim();
   if (!t) return padrao;
   if (t.toLowerCase() === padrao.toLowerCase()) return padrao;
   if (t.toLowerCase() === 'pendente de confirmação') return 'Pendente de confirmação';
+  if (manterProposta) return t;
   if (!citado(fatos, t)) return padrao;
   return t;
 }
@@ -62,6 +64,7 @@ export function interpretarLinhasPlano(
   texto: string,
   fatos: string,
   permitirConcluida: boolean,
+  manterProposta = false,
 ): LinhaPlano[] {
   const linhas: LinhaPlano[] = [];
   for (const bruta of texto.split('\n')) {
@@ -72,14 +75,14 @@ export function interpretarLinhasPlano(
     if (partes.length < 5 || !partes[0]) continue;
     if (!acaoAceita(partes[0], [])) continue;
     const status = statusValido(partes[3], fatos, permitirConcluida);
-    let evidencia = campoLivre(partes.slice(4).join(' | '), fatos, EVIDENCIA);
+    let evidencia = campoLivre(partes.slice(4).join(' | '), fatos, EVIDENCIA, manterProposta);
     if (partes[3].toLowerCase().startsWith('conclu') && status !== 'Concluída') {
-      evidencia = 'Pendente de confirmação. Status ajustado para Proposta: não há comprovante de conclusão na OS.';
+      evidencia = 'Pendente de confirmação. Status ajustado para Proposta: o resumo dos fatos não comprova a conclusão.';
     }
     linhas.push({
       acao: partes[0],
-      responsavel: campoLivre(partes[1], fatos, RESPONSAVEL),
-      prazo: campoLivre(partes[2], fatos, PRAZO),
+      responsavel: campoLivre(partes[1], fatos, RESPONSAVEL, manterProposta),
+      prazo: campoLivre(partes[2], fatos, PRAZO, manterProposta),
       status,
       evidencia,
     });
@@ -89,10 +92,6 @@ export function interpretarLinhasPlano(
 
 function linha(acao: string, evidencia = EVIDENCIA, status: StatusPlano = 'Proposta'): LinhaPlano {
   return { acao, responsavel: RESPONSAVEL, prazo: PRAZO, status, evidencia };
-}
-
-function atualizacoes(d: OsActionPlanInput) {
-  return (d.atualizacoes || []).filter((a) => String(a.texto || '').trim());
 }
 
 export function textoEhRelatorioColado(texto: string): boolean {
@@ -127,63 +126,53 @@ export function acaoAceita(acao: string, fontes: string[]): boolean {
   return !fontes.some((f) => f.length > 70 && t.toLowerCase().includes(f.slice(0, 70).toLowerCase()));
 }
 
-function fontesBrutas(d: OsActionPlanInput): string[] {
-  return [
-    ...d.atualizacoes.map((a) => a.texto),
-    ...d.ocorrencias.map((o) => o.texto),
-    d.tratativaTexto || '',
-    d.narrativaIa || '',
-    d.planoAcaoIa || '',
-  ].filter((t) => t.trim().length > 0);
+function temaDoRelato(objetivo: string, resumo: string): string {
+  const texto = `${objetivo} ${resumo}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (/atraso/.test(texto)) return 'o atraso descrito no resumo dos fatos';
+  if (/parada|\brf\b|descanso/.test(texto)) return 'a parada descrita no resumo dos fatos';
+  if (/pane|pneu|quebra|avaria/.test(texto)) return 'a falha descrita no resumo dos fatos';
+  if (/velocidade|contato|condutor/.test(texto)) return 'a perda de acompanhamento descrita no resumo dos fatos';
+  return 'o fato descrito no resumo e no objetivo deste documento';
+}
+
+/** Plano proposto a partir do objetivo e do resumo. Não lê status, ocorrência nem atualização da OS. */
+export function linhasPlanoSobreRelato(input: {
+  objetivo: string;
+  resumo: string;
+  planoAcao?: string | null;
+  planoMelhoria?: string | null;
+}): { acao: LinhaPlano[]; melhoria: LinhaPlano[] } {
+  const relato = `${input.objetivo}\n${input.resumo}`;
+  const acaoIa = interpretarLinhasPlano(input.planoAcao || '', relato, false, true)
+    .filter((l) => acaoAceita(l.acao, []));
+  const melhoriaIa = interpretarLinhasPlano(input.planoMelhoria || '', relato, false, true)
+    .filter((l) => acaoAceita(l.acao, []) && !acaoIa.some((a) => a.acao === l.acao));
+  if (acaoIa.length || melhoriaIa.length) {
+    return {
+      acao: acaoIa.length ? acaoIa : [linha(`Tratar com o fornecedor ${temaDoRelato(input.objetivo, input.resumo)} e devolver posição ao cliente.`)],
+      melhoria: melhoriaIa.length ? melhoriaIa : [linha(`Definir, com o fornecedor, um controle para que ${temaDoRelato(input.objetivo, input.resumo)} não se repita.`)],
+    };
+  }
+  const tema = temaDoRelato(input.objetivo, input.resumo);
+  return {
+    acao: [
+      linha(`Alinhar com o fornecedor ${tema} e informar o cliente sobre a tratativa.`),
+      linha('Combinar com o fornecedor o retorno da apuração, com responsável e prazo visíveis para o cliente.'),
+    ],
+    melhoria: [
+      linha(`Definir, com o fornecedor, um controle para que ${tema} não se repita na operação seguinte.`),
+    ],
+  };
 }
 
 export function linhasPlanoAcao(d: OsActionPlanInput): LinhaPlano[] {
-  const linhas: LinhaPlano[] = [];
-  const ocorrenciasUteis = d.ocorrencias.filter((o) => !textoEhRelatorioColado(o.texto));
-  const relevantes = atualizacoes(d).filter((a) => !textoEhRotina(a.texto) && !textoEhRelatorioColado(a.texto));
-  if (ocorrenciasUteis.some((o) => o.resolvida)) {
-    linhas.push(linha(
-      'Registrar o encerramento da ocorrência já lançado nesta OS.',
-      'Resolução registrada na OS',
-      'Concluída',
-    ));
-  }
-  if (ocorrenciasUteis.some((o) => !o.resolvida)) {
-    linhas.push(linha(
-      'Validar a ocorrência formal registrada nesta OS, sem tratar o texto como causa concluída.',
-      d.fotos.length ? 'Conferir os anexos já lançados. Complemento pendente de confirmação.' : EVIDENCIA,
-    ));
-  }
-  if (relevantes.length > 0 && !ocorrenciasUteis.some((o) => !o.resolvida)) {
-    const n = relevantes.map((a) => a.texto).join(' ').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const acao = /parada|\brf\b|descanso/.test(n)
-      ? 'Confirmar o motivo da parada registrada nesta OS, sem concluir a causa.'
-      : /atraso/.test(n)
-        ? 'Validar o atraso registrado nesta OS, sem concluir a causa.'
-        : /pane|pneu|quebra|avaria/.test(n)
-          ? 'Isolar a falha mecânica registrada nesta OS e separar fato de relato.'
-          : 'Reunir as atualizações relevantes e confirmar se há ocorrência a apurar.';
-    linhas.push(linha(acao));
-  }
-  if (d.fotos.length > 0 && (ocorrenciasUteis.length > 0 || relevantes.length > 0)) {
-    linhas.push(linha('Conferir as evidências anexadas antes de encerrar a apuração. A foto não comprova o que não estiver visível.'));
-  }
-  if (linhas.length === 0) {
-    linhas.push(linha('Nenhuma medida corretiva é proposta: não há ocorrência formal nem ponto fora da rotina.'));
-  }
-  return linhas.filter((l) => acaoAceita(l.acao, fontesBrutas(d)));
+  return analisarOcorrencia(d).acao;
 }
 
 export function linhasPlanoMelhoria(d: OsActionPlanInput): LinhaPlano[] {
-  const relevantes = atualizacoes(d).filter((a) => !textoEhRotina(a.texto) && !textoEhRelatorioColado(a.texto));
-  const temPonto = d.ocorrencias.some((o) => !textoEhRelatorioColado(o.texto)) || relevantes.length > 0;
-  if (!temPonto) return [linha('Nenhuma medida preventiva específica é proposta. Não há fato fora da rotina que a sustente.')];
-  const acoes = new Set(linhasPlanoAcao(d).map((l) => l.acao));
-  const candidatas = [
-    linha('Revisar o modo de registrar atualização, separando rotina, fato e ponto pendente. Medida preventiva, ainda não executada.', 'Indicador: atualização seguinte com essa separação. Pendente de confirmação'),
-    linha('Incluir no checklist da central a conferência de evidência antes de encerrar apuração. Medida preventiva, ainda não executada.', 'Indicador: evidência conferida na OS. Pendente de confirmação'),
-  ];
-  return candidatas.filter((l) => !acoes.has(l.acao) && acaoAceita(l.acao, fontesBrutas(d)));
+  const plano = analisarOcorrencia(d);
+  const acoes = new Set(plano.acao.map((l) => l.acao));
+  return plano.melhoria.filter((l) => !acoes.has(l.acao));
 }
 
 function renderTabela(linhas: LinhaPlano[], nota: string, modo: 'acao' | 'melhoria'): string {
@@ -203,7 +192,7 @@ export function htmlPlanoAcao(d: OsActionPlanInput): string {
   const linhas = linhasPlanoAcao(d);
   return renderTabela(
     linhas.length ? linhas : [linha('Nenhuma medida corretiva é proposta: não há ocorrência formal nem ponto fora da rotina.')],
-    'Somente medidas de apuração ou correção. O texto das outras seções não entra nesta tabela.',
+    'Medidas propostas para o problema identificado nos registros. Não repetem o que o sistema já lançou.',
     'acao',
   );
 }
