@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cartaParaMim, montarCartaTabelaErrada } from '../lib/cartaTabelaErrada';
+import { cartaDaLinha, cartaParaMim, montarCartaErroPedagio, montarCartaTabelaErrada } from '../lib/cartaTabelaErrada';
 import { conferirTabelaRota, explicarTabelaErrada } from '../lib/conferenciaTabelaRota';
 
 const cubatao = { id: '1', nome: 'SUDESTE - CUBATÃO X SANTOS', franchiseKm: 100 };
@@ -89,6 +89,37 @@ test('a carta é só de quem abriu a OS', () => {
   assert.equal(cartaParaMim(carta.para, 'beatriz de carvalho simoes'), true);
   assert.equal(cartaParaMim(carta.para, 'Michelle Dias'), false);
   assert.equal(cartaParaMim('não identificado', 'Michelle Dias'), false);
+});
+
+test('erro de pedágio vira carta só para quem alterou por último', () => {
+  assert.equal(montarCartaErroPedagio({ os: 'GTM-1', lado: 'cliente', destinatario: 'Bárbara Sgarlata', autor: 'Plinio', texto: 'ok' }), null);
+  const carta = montarCartaErroPedagio({
+    os: 'GTM-1',
+    lado: 'cliente',
+    destinatario: 'Bárbara Sgarlata',
+    autor: 'Plinio Alves',
+    texto: 'O pedágio do cliente ficou R$ 10 acima do comprovante.',
+  });
+  assert.ok(carta);
+  assert.equal(cartaParaMim(carta!.para, 'barbara sgarlata'), true);
+  assert.equal(cartaParaMim(carta!.para, 'Plinio Alves'), false);
+  assert.match(carta!.corpo, /altere o pedágio você mesmo/);
+  assert.match(carta!.corpo, /R\$ 10 acima/);
+  const lida = cartaDaLinha({
+    id: 'abc',
+    action_type: 'TOLL_ERROR_REPORT',
+    entity_id: 'GTM-1',
+    user_name: 'Plinio Alves',
+    details: JSON.stringify({
+      os: 'GTM-1',
+      lado: 'fornecedor',
+      destinatario: 'Giovanna Marsili',
+      autor: 'Plinio Alves',
+      texto: 'O pedágio do fornecedor não bate com o recibo.',
+    }),
+  });
+  assert.equal(lida?.para, 'Giovanna Marsili');
+  assert.match(lida?.assunto || '', /fornecedor/);
 });
 
 test('faixa curta de KM puro aponta a faixa que cobre', () => {

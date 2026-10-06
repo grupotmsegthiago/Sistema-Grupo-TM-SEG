@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   frasePedagioAuditadoPeloFinanceiro,
   nomeAuditorFinanceiroDoPedagio,
+  ultimoQueAlterouPedagio,
 } from '../lib/pedagioAuditoriaFinanceira';
 
 describe('pedágio auditado pelo financeiro', () => {
@@ -54,5 +55,34 @@ describe('pedágio auditado pelo financeiro', () => {
     assert.equal(nomeAuditorFinanceiroDoPedagio([
       { user: 'Bárbara Sgarlata', stage: 'financeiro', date: '2026-10-06T18:00:00.000Z', changes: ['Serviço Cliente: de R$ 1,00 para R$ 2,00'] },
     ], 'cliente'), null);
+  });
+
+  it('o reporte vai para quem alterou o pedágio por último, mesmo sem ser financeiro', () => {
+    const registros = [
+      {
+        user: 'Ana Operação',
+        role: 'operador',
+        date: '2026-10-06T12:00:00.000Z',
+        changes: ['Pedágio Cliente: de R$ 10,00 para R$ 20,00'],
+      },
+      {
+        user: 'Bárbara Sgarlata',
+        role: 'administrador',
+        stage: 'financeiro',
+        date: '2026-10-06T15:00:00.000Z',
+        changes: ['Pedágio Cliente: de R$ 20,00 para R$ 35,00'],
+      },
+      {
+        user: 'Giovanna Marsili',
+        role: 'financeiro',
+        date: '2026-10-06T16:00:00.000Z',
+        changes: ['Pedágio Fornecedor: de R$ 20,00 para R$ 18,00'],
+      },
+    ];
+    assert.equal(ultimoQueAlterouPedagio(registros, 'cliente'), 'Bárbara Sgarlata');
+    assert.equal(ultimoQueAlterouPedagio(registros, 'fornecedor'), 'Giovanna Marsili');
+    assert.equal(ultimoQueAlterouPedagio([
+      { user: 'Ana Operação', role: 'operador', date: '2026-10-06T12:00:00.000Z', changes: ['Pedágio Cliente: de R$ 10,00 para R$ 20,00'] },
+    ], 'cliente'), 'Ana Operação');
   });
 });

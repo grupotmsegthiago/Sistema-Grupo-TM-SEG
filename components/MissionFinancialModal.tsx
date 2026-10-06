@@ -80,8 +80,11 @@ import {
 import {
   frasePedagioAuditadoPeloFinanceiro,
   nomeAuditorFinanceiroDoPedagio,
+  ultimoQueAlterouPedagio,
   type RegistroAuditoriaPedagio,
 } from '../lib/pedagioAuditoriaFinanceira';
+import { cartaParaMim } from '../lib/cartaTabelaErrada';
+import { ReportarErroPedagio } from './ReportarErroPedagio';
 
 interface Props {
   isOpen: boolean;
@@ -785,16 +788,55 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     () => nomeAuditorFinanceiroDoPedagio(registrosAuditoriaPedagio, 'fornecedor'),
     [registrosAuditoriaPedagio],
   );
+  const ultimoPedagioCliente = useMemo(
+    () => ultimoQueAlterouPedagio(registrosAuditoriaPedagio, 'cliente'),
+    [registrosAuditoriaPedagio],
+  );
+  const ultimoPedagioFornecedor = useMemo(
+    () => ultimoQueAlterouPedagio(registrosAuditoriaPedagio, 'fornecedor'),
+    [registrosAuditoriaPedagio],
+  );
+  const [corrigirPedagio, setCorrigirPedagio] = useState({ cliente: false, fornecedor: false });
+  useEffect(() => {
+    const missionId = String(mission?.id || '');
+    const eu = String(currentUserIdentity.name || '').trim();
+    if (!missionId || !eu) {
+      setCorrigirPedagio({ cliente: false, fornecedor: false });
+      return;
+    }
+    let cancelado = false;
+    void supabase
+      .from('system_logs')
+      .select('details')
+      .eq('action_type', 'TOLL_ERROR_REPORT')
+      .eq('entity_id', missionId)
+      .limit(40)
+      .then(({ data }) => {
+        if (cancelado) return;
+        const lados = { cliente: false, fornecedor: false };
+        for (const row of data || []) {
+          try {
+            const detalhe = JSON.parse(String((row as { details?: string }).details || '{}'));
+            if (!cartaParaMim(String(detalhe.destinatario || ''), eu)) continue;
+            if (detalhe.lado === 'fornecedor') lados.fornecedor = true;
+            else lados.cliente = true;
+          } catch { /* linha ilegível não libera o campo */ }
+        }
+        setCorrigirPedagio(lados);
+      });
+    return () => { cancelado = true; };
+  }, [mission?.id, currentUserIdentity.name]);
   const travaPedagioClienteFinanceiro = (isControllerRole || isProviderOnlyUser) && !!auditorPedagioCliente;
   const travaPedagioFornecedorFinanceiro = (isControllerRole || isProviderOnlyUser) && !!auditorPedagioFornecedor;
   // Controller/Plínio edita os dois pedágios, salvo se o financeiro já alterou aquele lado.
+  // Quem recebeu a carta do erro altera esse lado, mesmo com a trava.
   const clientTollInputLocked = isPaidInvoiceEffectivelyLocked
     || negativeLockBlocks
-    || travaPedagioClienteFinanceiro
-    || (!(isControllerRole || isProviderOnlyUser) && clientFinanceInputLocked);
+    || (travaPedagioClienteFinanceiro && !corrigirPedagio.cliente)
+    || (!(isControllerRole || isProviderOnlyUser) && clientFinanceInputLocked && !corrigirPedagio.cliente);
   const providerTollInputLocked = isPaidInvoiceEffectivelyLocked
     || negativeLockBlocks
-    || travaPedagioFornecedorFinanceiro
+    || (travaPedagioFornecedorFinanceiro && !corrigirPedagio.fornecedor)
     || plinioProviderEditBlocked;
   const canEditOpsEvenIfLocked = !negativeLockBlocks && (isBarbaraFinance || !isEffectivelyLocked) && !isPaidInvoiceEffectivelyLocked;
   // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
@@ -2645,10 +2687,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const keepSavedClient = isController || financeApprovedClientLock;
       const revTotal = keepSavedClient ? originalRevenue : parseNumber(revenueInput);
       const costTotal = isSameOs ? 0 : parseNumber(costInput);
-      const toll = (travaPedagioClienteFinanceiro || (financeApprovedClientLock && !(isControllerRole || isProviderOnlyUser)))
+      const toll = ((travaPedagioClienteFinanceiro && !corrigirPedagio.cliente) || (financeApprovedClientLock && !(isControllerRole || isProviderOnlyUser) && !corrigirPedagio.cliente))
         ? Number(mission.toll_value || 0)
         : parseNumber(tollInput);
-      const tollProv = travaPedagioFornecedorFinanceiro
+      const tollProv = (travaPedagioFornecedorFinanceiro && !corrigirPedagio.fornecedor)
         ? providerTollToPersist(Number((mission as any).toll_value_provider || 0), isSameOs)
         : providerTollToPersist(parseNumber(tollProviderInput), isSameOs);
       const displacement = keepSavedClient ? ((mission as any).displacement_value || 0) : parseNumber(displacementInput);
@@ -5852,6 +5894,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         {frasePedagioAuditadoPeloFinanceiro(auditorPedagioCliente)}
                                     </p>
                                 )}
+                                {corrigirPedagio.cliente && (
+                                    <p className="text-[10px] font-black text-red-700 mt-1">Chegou um erro neste pedágio. Altere o valor e salve.</p>
+                                )}
+                                {(isControllerRole || isProviderOnlyUser) && ultimoPedagioCliente && !cartaParaMim(ultimoPedagioCliente, String(currentUserIdentity.name || '')) && (
+                                    <ReportarErroPedagio
+                                        missionId={String(mission.id)}
+                                        lado="cliente"
+                                        destinatario={ultimoPedagioCliente}
+                                        autor={String(currentUserIdentity.name || 'Controller')}
+                                    />
+                                )}
                                 {useSavedValues && parseNumber(tollInput) > 0 && (
                                     <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ PEDÁGIO SALVO NA MEMÓRIA</span>
                                 )}
@@ -5920,6 +5973,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <p className="text-[10px] font-black text-red-700 mt-1" data-testid="text-toll-provider-audited">
                                         {frasePedagioAuditadoPeloFinanceiro(auditorPedagioFornecedor)}
                                     </p>
+                                )}
+                                {corrigirPedagio.fornecedor && (
+                                    <p className="text-[10px] font-black text-red-700 mt-1">Chegou um erro neste pedágio. Altere o valor e salve.</p>
+                                )}
+                                {(isControllerRole || isProviderOnlyUser) && ultimoPedagioFornecedor && !cartaParaMim(ultimoPedagioFornecedor, String(currentUserIdentity.name || '')) && (
+                                    <ReportarErroPedagio
+                                        missionId={String(mission.id)}
+                                        lado="fornecedor"
+                                        destinatario={ultimoPedagioFornecedor}
+                                        autor={String(currentUserIdentity.name || 'Controller')}
+                                    />
                                 )}
                                 {tollEmbeddedInCost && (
                                     <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ PEDÁGIO JÁ INCLUSO NO CUSTO SALVO</span>

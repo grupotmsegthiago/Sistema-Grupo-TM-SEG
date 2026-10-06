@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Mail, X } from 'lucide-react';
-import { cartaParaMim, montarCartaTabelaErrada, nomeDeCarta, type CartaTabela } from '../lib/cartaTabelaErrada';
+import { cartaDaLinha, cartaParaMim, type CartaTabela } from '../lib/cartaTabelaErrada';
 import { useNotification } from '../lib/NotificationContext';
 import { supabase } from '../lib/supabase';
 
@@ -52,51 +52,7 @@ function marcarAbertaNestaSessao(id: string) {
   }
 }
 
-function quandoDe(iso: string): string {
-  if (!iso) return '';
-  const data = new Date(iso);
-  if (Number.isNaN(data.getTime())) return '';
-  return data.toLocaleString('pt-BR', {
-    timeZone: 'America/Sao_Paulo',
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-type Detalhe = {
-  criador?: string;
-  tabela?: string;
-  motivos?: string[];
-  sugestaoNome?: string;
-  lado?: string;
-};
-
-function detalheDe(raw: string): Detalhe {
-  try {
-    const parsed = JSON.parse(String(raw || '{}'));
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function cartaDoLog(row: { id?: string; user_name?: string; entity_id?: string; details?: string; created_at?: string }): CartaTabela | null {
-  const detalhe = detalheDe(String(row.details || ''));
-  const para = String(detalhe.criador || row.user_name || '').trim();
-  if (!para || nomeDeCarta(para) === 'NAO IDENTIFICADO') return null;
-  return montarCartaTabelaErrada({
-    id: String(row.id || ''),
-    os: String(row.entity_id || ''),
-    criador: para,
-    tabela: detalhe.tabela,
-    motivos: Array.isArray(detalhe.motivos) ? detalhe.motivos.map(String) : [],
-    sugestaoNome: detalhe.sugestaoNome,
-    lado: detalhe.lado,
-    quando: quandoDe(String(row.created_at || '')),
-  });
-}
+const TIPOS_CARTA = ['TABLE_ROUTE_MISMATCH', 'TOLL_ERROR_REPORT'];
 
 export default function CartasTabelaErrada() {
   const eu = nomeAtual();
@@ -111,8 +67,8 @@ export default function CartasTabelaErrada() {
     const [erros, leituras] = await Promise.all([
       supabase
         .from('system_logs')
-        .select('id, user_name, entity_id, details, created_at')
-        .eq('action_type', 'TABLE_ROUTE_MISMATCH')
+        .select('id, action_type, user_name, entity_id, details, created_at')
+        .in('action_type', TIPOS_CARTA)
         .order('created_at', { ascending: false })
         .limit(80),
       supabase
@@ -128,7 +84,7 @@ export default function CartasTabelaErrada() {
     }
     setLidas(lidasAgora);
     const minhas = (erros.data || [])
-      .map(cartaDoLog)
+      .map((row) => cartaDaLinha(row))
       .filter((carta): carta is CartaTabela => Boolean(carta && cartaParaMim(carta.para, eu)));
     setCartas(minhas);
   }, [eu]);
@@ -142,8 +98,8 @@ export default function CartasTabelaErrada() {
       const payload = (event as CustomEvent).detail as { eventType?: string; new?: Record<string, string> } | undefined;
       if (payload?.eventType !== 'INSERT') return;
       const row = payload.new;
-      if (!row || row.action_type !== 'TABLE_ROUTE_MISMATCH') return;
-      const carta = cartaDoLog(row);
+      if (!row || !TIPOS_CARTA.includes(String(row.action_type || ''))) return;
+      const carta = cartaDaLinha(row);
       if (!carta || !cartaParaMim(carta.para, eu)) return;
       setCartas((atual) => atual.some((item) => item.id === carta.id) ? atual : [carta, ...atual]);
       if (lidasLocais().has(carta.id) || jaAbriuNestaSessao(carta.id)) return;
