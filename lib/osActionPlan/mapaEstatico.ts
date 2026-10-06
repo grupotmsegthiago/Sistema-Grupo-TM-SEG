@@ -35,13 +35,16 @@ async function baixarTile(zoom: number, x: number, y: number): Promise<Buffer | 
   const chave = `${zoom}/${xx}/${y}`;
   const guardado = cacheTile.get(chave);
   if (guardado) return guardado;
+  // O OSM costuma não responder a partir do servidor da Vercel e segurava o relatório.
+  // O Carto entra primeiro, com tempo curto, e o outro só se esse falhar.
   const fontes = [
-    `https://tile.openstreetmap.org/${chave}.png`,
     `https://basemaps.cartocdn.com/rastertiles/voyager/${chave}.png`,
+    `https://tile.openstreetmap.org/${chave}.png`,
   ];
   for (const url of fontes) {
     try {
       const resposta = await fetch(url, {
+        signal: AbortSignal.timeout(4000),
         headers: { 'User-Agent': 'TMSEG/1.0 (contato@grupotmseg.com.br)', Accept: 'image/png' },
       });
       if (!resposta.ok) continue;
@@ -76,14 +79,15 @@ export async function renderizarMapaPng(args: {
   const y0 = Math.floor(origemY / TILE);
   const x1 = Math.floor((origemX + largura) / TILE);
   const y1 = Math.floor((origemY + altura) / TILE);
-  const camadas: sharp.OverlayOptions[] = [];
+  const pedidos: Array<Promise<sharp.OverlayOptions | null>> = [];
   for (let tx = x0; tx <= x1; tx += 1) {
     for (let ty = y0; ty <= y1; ty += 1) {
-      const tile = await baixarTile(zoom, tx, ty);
-      if (!tile) continue;
-      camadas.push({ input: tile, left: Math.round(tx * TILE - origemX), top: Math.round(ty * TILE - origemY) });
+      pedidos.push(baixarTile(zoom, tx, ty).then((tile) => (
+        tile ? { input: tile, left: Math.round(tx * TILE - origemX), top: Math.round(ty * TILE - origemY) } : null
+      )));
     }
   }
+  const camadas = (await Promise.all(pedidos)).filter((item): item is sharp.OverlayOptions => item != null);
   if (!camadas.length) throw new Error('tiles indisponíveis');
   const marcas = px.map((p) => {
     const cx = (p.x - origemX).toFixed(1);

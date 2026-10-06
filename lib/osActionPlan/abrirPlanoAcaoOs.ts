@@ -103,7 +103,9 @@ async function geocodificarEndereco(endereco: string): Promise<{ lat: number; ln
   const consulta = String(endereco || '').trim();
   if (consulta.length < 8) return null;
   try {
-    const resposta = await authFetch(`/api/geocode-address?address=${encodeURIComponent(consulta)}`);
+    const resposta = await authFetch(`/api/geocode-address?address=${encodeURIComponent(consulta)}`, {
+      signal: AbortSignal.timeout(8000),
+    });
     const json = await resposta.json().catch(() => ({}));
     const local = json?.location;
     if (local && Number.isFinite(Number(local.lat)) && Number.isFinite(Number(local.lng))) {

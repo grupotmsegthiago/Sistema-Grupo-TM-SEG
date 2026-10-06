@@ -18,7 +18,7 @@ async function pedirMapa(pontos: Array<{ lat: number; lng: number; rotulo: strin
     const resposta = await authFetch('/api/mapa-estatico', {
       method: 'POST',
       body: JSON.stringify({ pontos, largura, altura }),
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(20000),
     });
     if (!resposta.ok) return null;
     return await lerComoDataUrl(await resposta.blob());
@@ -73,16 +73,21 @@ export async function ilustrarRelatorio(entrada: OsActionPlanInput): Promise<{ e
   ];
   const fotosPromise = embutirFotos(urls);
   const mapaPromise = (async () => {
-    const mapaImagem = brutos.length ? await pedirMapa(agruparPontos(brutos), 900, 480) : null;
-    const cache = new Map<string, string | null>();
     const comMini = atualizacoes.map((item) => ({ ...item }));
-    await emSerie(comMini.filter((item) => item.lat != null && item.lng != null), 3, async (item) => {
-      const chave = `${item.lat!.toFixed(4)},${item.lng!.toFixed(4)}`;
+    const cache = new Map<string, Promise<string | null>>();
+    const pedirUmaVez = (lat: number, lng: number, rotulo: string) => {
+      const chave = `${lat.toFixed(4)},${lng.toFixed(4)}`;
       if (!cache.has(chave)) {
-        cache.set(chave, await pedirMapa([{ lat: item.lat as number, lng: item.lng as number, rotulo: String(item.numero || '') }], 480, 300));
+        cache.set(chave, pedirMapa([{ lat, lng, rotulo }], 480, 300));
       }
-      item.miniMapaImagem = cache.get(chave) || null;
-    });
+      return cache.get(chave) as Promise<string | null>;
+    };
+    const [mapaImagem] = await Promise.all([
+      brutos.length ? pedirMapa(agruparPontos(brutos), 900, 480) : Promise.resolve(null),
+      emSerie(comMini.filter((item) => item.lat != null && item.lng != null), 3, async (item) => {
+        item.miniMapaImagem = await pedirUmaVez(item.lat as number, item.lng as number, String(item.numero || '')) || null;
+      }),
+    ]);
     return { mapaImagem, atualizacoes: comMini };
   })();
   const [fotos, mapa] = await Promise.all([fotosPromise, mapaPromise]);

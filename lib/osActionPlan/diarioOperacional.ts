@@ -311,6 +311,29 @@ export async function resolverPosicoes(args: {
     return valido;
   };
   const linkMissao = extractCoordinates(String(args.linkAtualMissao || ''));
+  const ultimoPrevio = lista.length - 1;
+  const pendentes: string[] = [];
+  const marcar = (endereco: string | null | undefined) => {
+    const chave = chaveEndereco(String(endereco || ''));
+    if (chave.length < 8 || pendentes.includes(chave)) return;
+    pendentes.push(chave);
+  };
+  lista.forEach((item, i) => {
+    if (item.lat != null && item.lng != null) return;
+    if (i === ultimoPrevio && linkMissao) return;
+    marcar(item.local);
+  });
+  marcar(args.origem);
+  marcar(args.destino);
+  // Várias consultas ao mesmo tempo. Uma trava não segura a fila inteira.
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(4, pendentes.length) }, async () => {
+    while (cursor < pendentes.length) {
+      const chave = pendentes[cursor];
+      cursor += 1;
+      await buscar(chave);
+    }
+  }));
   const comCoordenadaNoRegistro = lista.filter((item) => item.fontePosicao === 'registro' && item.lat != null && item.lng != null).length;
   let extraidasDoLink = lista.filter((item) => item.fontePosicao === 'link' && item.lat != null).length;
   let geocodificadas = 0;

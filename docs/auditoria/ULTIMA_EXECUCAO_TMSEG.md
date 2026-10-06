@@ -1,5 +1,12 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## A TELA PARAVA EM “REDIGINDO A ANÁLISE”
+
+**Data:** 2026-10-05
+**O que acontecia:** o formulário ficava em “Localizando os pontos” até o mapa, as fotos e a IA terminarem. Uma consulta lenta segurava o relatório inteiro.
+**O que mudou:** o documento abre assim que os pontos da OS são lidos. Mapa e fotos entram depois. Cada geocodificação espera no máximo 8 segundos, e a análise automática no máximo 12.
+**Não publicado.**
+
 ## CROQUI, TEXTO CORRIDO E BANDEIRAS
 
 **Data:** 2026-10-05

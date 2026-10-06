@@ -137,26 +137,46 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
       geradoEm: new Date().toISOString(),
     };
     try {
-      const ilustrado = await ilustrarRelatorio(await completarPosicoes(pacote));
-      const comPosicao = ilustrado.entrada;
+      const comPosicao = await completarPosicoes(pacote);
+      comPosicao.croqui = montarCroqui(comPosicao);
+      const mostrar = (base: OsActionPlanInput, htmlPronto: string) => {
+        setEmissao(base);
+        setHtml(htmlPronto);
+        setUltimaVersao(htmlPronto);
+      };
+      // O relatório abre antes do mapa e da IA. Esses passos não podem deixar a tela parada.
+      mostrar(comPosicao, buildOsActionPlanHtml(comPosicao));
+      setAvisoIa('O relatório já está na tela. Mapa e fotos entram em seguida.');
+      const ilustrado = await ilustrarRelatorio(comPosicao);
+      const enriquecido = ilustrado.entrada;
       let narrativa = '';
       let avisoFalha = '';
+      let limiteIa: ReturnType<typeof setTimeout> | undefined;
+      const pedidoIa = redigirAnaliseOcorrencia(enriquecido);
+      void pedidoIa.catch(() => undefined);
       try {
-        narrativa = await redigirAnaliseOcorrencia(comPosicao);
+        narrativa = await Promise.race([
+          pedidoIa,
+          new Promise<string>((_, rejeitar) => {
+            limiteIa = setTimeout(() => rejeitar(new Error('tempo esgotado')), 12000);
+          }),
+        ]);
       } catch (erroIa) {
         const mensagem = erroIa instanceof Error ? erroIa.message : 'falha ao consultar a IA';
-        avisoFalha = `A IA não respondeu (${/403|blocked|referer/i.test(mensagem) ? 'a chave do Google bloqueou a consulta' : mensagem.slice(0, 160)}). O documento leva o resumo para o cliente, sem copiar o texto interno e sem atribuir culpa.`;
+        avisoFalha = /tempo esgotado/i.test(mensagem)
+          ? 'A análise automática demorou. O relatório ficou com o texto já escrito para o cliente.'
+          : `A IA não respondeu (${/403|blocked|referer/i.test(mensagem) ? 'a chave do Google bloqueou a consulta' : mensagem.slice(0, 160)}). O documento leva o resumo para o cliente, sem copiar o texto interno e sem atribuir culpa.`;
+      } finally {
+        if (limiteIa) clearTimeout(limiteIa);
       }
       if (!narrativa.trim() && !avisoFalha) {
         avisoFalha = 'A IA não devolveu o resumo. O documento leva o resumo para o cliente, sem copiar o texto interno e sem atribuir culpa.';
       }
-      comPosicao.narrativaIa = narrativa.trim() || null;
-      comPosicao.croqui = montarCroqui(comPosicao);
-      const pronto = buildOsActionPlanHtml(comPosicao);
+      enriquecido.narrativaIa = narrativa.trim() || null;
+      enriquecido.croqui = comPosicao.croqui;
+      const pronto = buildOsActionPlanHtml(enriquecido);
       salvarContextoLocal(missionId, { problema: foco, relato: relato.trim() });
-      setEmissao(comPosicao);
-      setHtml(pronto);
-      setUltimaVersao(pronto);
+      mostrar(enriquecido, pronto);
       await gravarHtml(pronto);
       const avisoFinal = [avisoFalha, ...ilustrado.avisos].filter(Boolean).join(' ');
       if (avisoFinal) setAvisoIa(avisoFinal);
@@ -182,10 +202,14 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
       geradoEm: new Date().toISOString(),
     };
     try {
-      const ilustrado = await ilustrarRelatorio(await completarPosicoes(pacote));
-      const comPosicao = ilustrado.entrada;
-      const pronto = buildOsActionPlanHtml(comPosicao);
+      const comPosicao = await completarPosicoes(pacote);
       setEmissao(comPosicao);
+      setHtml(buildOsActionPlanHtml(comPosicao));
+      setAvisoIa('O relatório já está na tela. Mapa e fotos entram em seguida.');
+      const ilustrado = await ilustrarRelatorio(comPosicao);
+      const enriquecido = ilustrado.entrada;
+      const pronto = buildOsActionPlanHtml(enriquecido);
+      setEmissao(enriquecido);
       setHtml(pronto);
       setUltimaVersao(pronto);
       await gravarHtml(pronto);
@@ -435,7 +459,9 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
               {avisoIa && <p className="px-4 py-2 text-[12px] font-bold text-amber-800 bg-amber-50">{avisoIa}</p>}
               {html && !aprovado && <p className="px-4 py-2 text-[12px] font-bold text-amber-800 bg-amber-50">Rascunho na tela. O PDF ainda não marca aprovação. Use Aprovar antes de enviar ao cliente.</p>}
               {emissao?.modalidade === 'ocorrencia' && emissao.croqui && (
-                <div className="max-h-56 overflow-y-auto px-3 py-2 bg-white border-b border-rose-100 space-y-2">
+                <details className="bg-white border-b border-rose-100">
+                <summary className="cursor-pointer px-4 py-2 text-[12px] font-bold text-rose-900">Ajustar o texto do croqui</summary>
+                <div className="max-h-56 overflow-y-auto px-3 py-2 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <strong className="text-[11px] uppercase text-rose-900">Croqui no documento</strong>
                     <span className="text-[11px] text-slate-500">Já entra no relatório. Ajuste o texto se precisar.</span>
@@ -472,6 +498,7 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
                     })}>Adicionar etapa</button>
                   )}
                 </div>
+                </details>
               )}
               {emissao?.modalidade === 'ocorrencia' && !emissao.croqui && <p className="px-4 py-2 text-[12px] text-slate-600 bg-white border-b">Não há croqui: a sequência não tem elementos suficientes para um desenho sem inventar o fato.</p>}
               <iframe id="os-action-plan-frame" title={`Plano de Ação ${missionId}`} className="w-full flex-1 bg-white" srcDoc={html} />
