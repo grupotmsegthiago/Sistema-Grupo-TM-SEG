@@ -425,16 +425,22 @@ async function expirarVencidos(): Promise<void> {
   if (error && !erroTabelaAusente(error)) console.warn('[DHL viatura] expirar:', error.message);
 }
 
-async function reconciliarRecentes(now: Date): Promise<void> {
-  const cutoff = new Date(now.getTime() - (HORA_MS - 60_000)).toISOString();
-  const { data, error } = await supabase
-    .from('missions')
-    .select('id, provider, client, status, current_location, destination, end_time, last_update, is_same_os')
-    .eq('status', 'Concluída')
-    .gte('last_update', cutoff)
-    .limit(80);
-  if (error || !data) return;
-  for (const row of data as Array<Record<string, unknown>>) {
+type LinhaMissaoFinalizada = {
+  id?: string | null;
+  status?: string | null;
+  is_same_os?: boolean | null;
+  provider?: string | null;
+  client?: string | null;
+  current_location?: string | null;
+  destination?: string | null;
+  end_time?: string | null;
+  last_update?: string | null;
+};
+
+/** Só os campos públicos. Não devolve fornecedor nem cliente. */
+export function rascunhosDeMissoesFinalizadas(rows: LinhaMissaoFinalizada[], now: Date = new Date()): RascunhoAlertaDhl[] {
+  const saida: RascunhoAlertaDhl[] = [];
+  for (const row of rows) {
     const rascunho = resolverAlertaDhl({
       missionId: String(row.id || ''),
       status: String(row.status || ''),
@@ -446,8 +452,34 @@ async function reconciliarRecentes(now: Date): Promise<void> {
       endTime: row.end_time ? String(row.end_time) : null,
       lastUpdate: row.last_update ? String(row.last_update) : null,
     }, now);
-    if (rascunho) await garantirAlertaDhl(rascunho);
+    if (rascunho) saida.push(rascunho);
   }
+  return saida;
+}
+
+/** Missões concluídas nos últimos 30 minutos. O portal usa isso direto, sem esperar o botão de finalizar. */
+export async function buscarMissoesFinalizadasNaJanela(now: Date = new Date(), opts?: { interno?: boolean }): Promise<RascunhoAlertaDhl[]> {
+  const corte = new Date(now.getTime() - HORA_MS).toISOString();
+  const colunas = opts?.interno
+    ? 'id, provider, client, status, current_location, destination, end_time, last_update, is_same_os'
+    : 'id, status, current_location, destination, end_time, last_update, is_same_os';
+  const { data, error } = await supabase
+    .from('missions')
+    .select(colunas)
+    .eq('status', 'Concluída')
+    .gte('end_time', corte)
+    .order('end_time', { ascending: false })
+    .limit(80);
+  if (error || !data) {
+    if (error) console.warn('[DHL viatura] missões recentes:', error.message);
+    return [];
+  }
+  return rascunhosDeMissoesFinalizadas(data as LinhaMissaoFinalizada[], now);
+}
+
+async function reconciliarRecentes(now: Date): Promise<void> {
+  const recentes = await buscarMissoesFinalizadasNaJanela(now, { interno: true });
+  for (const rascunho of recentes) await garantirAlertaDhl(rascunho);
 }
 
 export async function carregarAlertasDhl(opts?: { reconciliar?: boolean }): Promise<{ alertas: AlertaDhl[]; tabelaOk: boolean }> {

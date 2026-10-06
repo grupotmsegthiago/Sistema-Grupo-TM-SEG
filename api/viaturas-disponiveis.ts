@@ -13,6 +13,7 @@ import {
   type LinhaMapaViatura,
   type PontoMapaPublico,
 } from '../lib/dhlViaturaMapa.js';
+import { rascunhosDeMissoesFinalizadas } from '../lib/dhlViaturaDisponivel.js';
 
 const cacheGeo = new Map<string, { lat: number; lng: number } | null>();
 
@@ -57,12 +58,22 @@ export default async function handler(req: any, res: any) {
       .order('finalizada_em', { ascending: false })
       .limit(80);
 
-    if (error) {
-      res.status(200).json({ viaturas: [], aviso: 'Mapa ainda sem tabela.' });
-      return;
-    }
-
-    const linhas = (data || []) as LinhaMapaViatura[];
+    const linhas = error ? [] : (data || []) as LinhaMapaViatura[];
+    const { data: missoes } = await supabase
+      .from('missions')
+      .select('id, status, current_location, destination, end_time, last_update, is_same_os')
+      .eq('status', 'Concluída')
+      .gte('end_time', corte)
+      .order('end_time', { ascending: false })
+      .limit(80);
+    const dasMissoes = montarPontosPublicos(rascunhosDeMissoesFinalizadas(missoes || [], agora).map((item) => ({
+      mission_id: item.missionId,
+      posicao: item.posicao,
+      uf: item.uf,
+      regiao: item.regiao,
+      finalizada_em: item.finalizadaEm,
+      status: 'pendente',
+    })), agora);
     const conhecidas = montarPontosPublicos(linhas, agora);
     const ids = new Set(conhecidas.map((p) => p.id));
     const extras: PontoMapaPublico[] = [];
@@ -80,7 +91,14 @@ export default async function handler(req: any, res: any) {
       extras.push(ponto);
     }
 
-    res.status(200).json({ viaturas: [...conhecidas, ...extras], atualizadoEm: agora.toISOString() });
+    const juntas = [...dasMissoes, ...conhecidas, ...extras];
+    const vistas = new Set<string>();
+    const viaturas = juntas.filter((ponto) => {
+      if (vistas.has(ponto.id)) return false;
+      vistas.add(ponto.id);
+      return true;
+    });
+    res.status(200).json({ viaturas, atualizadoEm: agora.toISOString() });
   } catch {
     res.status(200).json({ viaturas: [] });
   }

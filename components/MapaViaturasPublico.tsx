@@ -3,7 +3,7 @@ import { Autocomplete, Circle, GoogleMap, OverlayView, useLoadScript } from '@re
 import { MapPin, Radio } from 'lucide-react';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { supabase } from '../lib/supabase';
-import { textoHaQuantoTempo } from '../lib/dhlViaturaDisponivel';
+import { buscarMissoesFinalizadasNaJanela, textoHaQuantoTempo } from '../lib/dhlViaturaDisponivel';
 import { ehCidadeTopo, ordemCidadeTopo } from '../lib/dhlReferenciaGeografica';
 import {
   filtrarViaturasPorRaio,
@@ -37,7 +37,20 @@ function zoomDoRaio(km: number): number {
   return 4;
 }
 
-async function carregarPontos(): Promise<PontoMapaPublico[]> {
+function juntarPontos(listas: PontoMapaPublico[][]): PontoMapaPublico[] {
+  const vistos = new Set<string>();
+  const saida: PontoMapaPublico[] = [];
+  for (const lista of listas) {
+    for (const ponto of lista) {
+      if (vistos.has(ponto.id)) continue;
+      vistos.add(ponto.id);
+      saida.push(ponto);
+    }
+  }
+  return saida;
+}
+
+async function pontosDaTabela(): Promise<PontoMapaPublico[]> {
   try {
     const resp = await fetch('/api/viaturas-disponiveis', { cache: 'no-store' });
     if (resp.ok) {
@@ -60,6 +73,23 @@ async function carregarPontos(): Promise<PontoMapaPublico[]> {
     mission_id: `${row.uf}|${row.posicao}|${row.finalizada_em}`,
   }));
   return montarPontosPublicos(linhas);
+}
+
+async function pontosDasMissoes(): Promise<PontoMapaPublico[]> {
+  const recentes = await buscarMissoesFinalizadasNaJanela();
+  return montarPontosPublicos(recentes.map((item) => ({
+    mission_id: item.missionId,
+    posicao: item.posicao,
+    uf: item.uf,
+    regiao: item.regiao,
+    finalizada_em: item.finalizadaEm,
+    status: 'pendente',
+  })));
+}
+
+async function carregarPontos(): Promise<PontoMapaPublico[]> {
+  const [tabela, missoes] = await Promise.all([pontosDaTabela(), pontosDasMissoes()]);
+  return juntarPontos([missoes, tabela]);
 }
 
 export default function MapaViaturasPublico() {

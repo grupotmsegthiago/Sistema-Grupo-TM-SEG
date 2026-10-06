@@ -20,6 +20,7 @@ import {
   podeVerPainelDhl,
   textoAlertaJaCopiado,
   resolverAlertaDhl,
+  rascunhosDeMissoesFinalizadas,
   textoHaQuantoTempo,
   tomDoBotao,
   visivelNoPainelVivo,
@@ -99,6 +100,18 @@ test('sem UF na ocorrência, usa o destino; menção a SP no meio do texto não 
   }), now);
   assert.equal(mista?.uf, 'SC');
   assert.equal(mista?.regiao, 'SUL');
+});
+
+test('busca as missões concluídas nos últimos 30 minutos', () => {
+  const linhas = rascunhosDeMissoesFinalizadas([
+    { id: 'GTM-1', status: 'Concluída', current_location: 'EXTREMA - MG', end_time: ha(10) },
+    { id: 'GTM-2', status: 'Concluída', current_location: 'GUARULHOS - SP', end_time: ha(5) },
+    { id: 'GTM-3', status: 'Concluída', current_location: 'CURITIBA - PR', end_time: ha(40) },
+    { id: 'GTM-4', status: 'Em Viagem', current_location: 'CURITIBA - PR', end_time: ha(5) },
+  ], now);
+  assert.deepEqual(linhas.map((item) => item.posicao), ['EXTREMA - MG']);
+  assert.equal(linhas[0].providerName, '');
+  assert.equal(linhas[0].cliente, '');
 });
 
 test('qualquer cliente entra no painel; o texto só avisa a DHL da viatura', () => {
