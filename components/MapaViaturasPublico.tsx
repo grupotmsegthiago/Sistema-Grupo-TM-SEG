@@ -132,7 +132,7 @@ export default function MapaViaturasPublico() {
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-black/10 px-4 py-3">
         <p className="text-[11px] font-black uppercase tracking-wide text-[#D40511]">Tudo que está liberado</p>
-        <p className="text-sm font-black text-black">
+        <p className="text-sm font-black text-[#323232]">
           {busca ? `${visiveis.length} dentro do raio` : `${pontos.length} viatura${pontos.length === 1 ? '' : 's'} nesta hora`}
         </p>
       </div>
@@ -155,10 +155,10 @@ export default function MapaViaturasPublico() {
                   key={ponto.id}
                   type="button"
                   onClick={() => abrirPonto(ponto)}
-                  className={`flex w-full items-start justify-between gap-2 rounded-lg px-2 py-2 text-left ${selecionado === ponto.id ? 'bg-[#FFCC00]/40' : 'hover:bg-slate-50'}`}
+                  className={`flex w-full items-start justify-between gap-2 rounded-lg px-2 py-2 text-left ${selecionado === ponto.id ? 'bg-[#FFCC00]' : 'hover:bg-[#f2f2f2]'}`}
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-xs font-black text-slate-800">Viatura TM Segue · {ponto.posicao}</span>
+                    <span className="block truncate text-xs font-black text-[#323232]">Viatura TM Segue · {ponto.posicao}</span>
                     <span className="block text-[10px] font-semibold text-slate-500">
                       Liberada {textoHaQuantoTempo(ponto.finalizadaEm, agora)}
                     </span>
@@ -178,14 +178,17 @@ export default function MapaViaturasPublico() {
   );
 
   return (
-    <div className="flex h-screen flex-col bg-[#f6f6f6]" data-testid="portal-dhl">
-      <header className="z-20 flex items-center gap-3 bg-[#FFCC00] px-4 py-2.5 text-black shadow-md">
-        <span className="rounded bg-[#D40511] px-2.5 py-1 text-base font-black tracking-tight text-white">DHL</span>
-        <div className="min-w-0">
-          <p className="text-sm font-black uppercase leading-tight">Portal DHL</p>
-          <p className="text-[11px] font-semibold text-black/70">Viaturas liberadas no mapa · Escolta TM Segue</p>
+    <div className="flex h-screen flex-col bg-[#f2f2f2]" data-testid="portal-dhl">
+      <header
+        className="z-20 flex items-center gap-3 px-4 py-2.5 text-[#323232] shadow-md"
+        style={{ backgroundImage: 'linear-gradient(to right, #ffcc00 30%, #ffe57f 79%, #fff0b2)' }}
+      >
+        <img src="/logo-dhl.svg" alt="DHL" className="h-7 w-auto" />
+        <div className="min-w-0 border-l border-black/15 pl-3">
+          <p className="text-sm font-black uppercase leading-tight text-[#D40511]">Portal DHL</p>
+          <p className="text-[11px] font-semibold text-[#323232]">Viaturas liberadas no mapa · Escolta TM Segue</p>
         </div>
-        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-black px-2.5 py-1 text-[10px] font-black uppercase text-[#FFCC00]">
+        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-[#D40511] px-2.5 py-1 text-[10px] font-black uppercase text-white">
           <Radio size={12} /> {pontos.length} liberadas
         </span>
         <img src="/logo.png" alt="TM Segue" className="h-9 w-9 object-contain" />
