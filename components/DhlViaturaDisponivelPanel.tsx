@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, Clock, Copy, Lock, MapPin, MessageCircle, Truck } from 'lucide-react';
 import { copyTextAsync } from '../lib/clipboard';
 import { formatDateTimeBR } from '../lib/dateUtils';
+import { descreverReferencia } from '../lib/dhlReferenciaGeografica';
 import {
   abrirAlertaCopiaDhl,
   agruparPorRegiao,
@@ -11,7 +12,7 @@ import {
   entraNaListaBloqueados,
   marcarCopiadoDhl,
   minutosRestantes,
-  montarMensagemDisponibilidadeDhl,
+  montarMensagemDisponibilidadeDhlAoVivo,
   podeAuditarNaoEncaminhados,
   podeVerPainelDhl,
   rotuloRegiao,
@@ -152,9 +153,10 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
       void load(false);
       return;
     }
-    const texto = montarMensagemDisponibilidadeDhl({
+    const texto = montarMensagemDisponibilidadeDhlAoVivo({
       regiao: row.regiao,
       posicao: row.posicao,
+      uf: row.uf,
       finalizadaEm: row.finalizada_em,
     });
     setOcupadoId(row.mission_id);
@@ -271,6 +273,7 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
             <div className="space-y-2">
               {grupo.itens.map((row) => {
                 const tom = tomDoBotao(row.status, row.finalizada_em, now);
+                const referencia = descreverReferencia(row.posicao, row.uf);
                 const claro = tom === 'claro';
                 const restante = minutosRestantes(row.finalizada_em, now);
                 return (
@@ -284,6 +287,9 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
                           <MapPin size={12} className="mt-0.5 shrink-0" />
                           <span>{row.posicao}</span>
                         </p>
+                        {referencia && (
+                          <p className="mt-0.5 text-[10px] font-semibold text-gray-500">{referencia.resumo}</p>
+                        )}
                       </div>
                       <div className="flex flex-col items-stretch gap-1 sm:items-end">
                         <div className="flex flex-wrap items-center justify-end gap-2">

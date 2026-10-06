@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { formatDateTimeBR } from '../lib/dateUtils';
+import { descreverReferencia, distanciaKm } from '../lib/dhlReferenciaGeografica';
 import {
   HORA_MS,
   agruparPorRegiao,
@@ -88,6 +89,7 @@ test('qualquer cliente entra no painel; o texto só avisa a DHL da viatura', () 
     const msg = montarMensagemDisponibilidadeDhl({
       regiao: alerta!.regiao,
       posicao: alerta!.posicao,
+      uf: alerta!.uf,
       finalizadaEm: alerta!.finalizadaEm,
     });
     assert.equal(msg.toUpperCase().includes(client.toUpperCase()), false, client);
@@ -100,6 +102,7 @@ test('mensagem da DHL não revela fornecedor, OS nem cliente', () => {
   const msg = montarMensagemDisponibilidadeDhl({
     regiao: 'SUL',
     posicao: 'CURITIBA - PR',
+    uf: 'PR',
     finalizadaEm: quando,
   });
   assert.match(msg, /EQUIPE TM SEGUE INFORMA/);
@@ -112,6 +115,9 @@ test('mensagem da DHL não revela fornecedor, OS nem cliente', () => {
   assert.equal(msg.includes('SECRETO'), false);
   assert.equal(msg.includes('GTM-'), false);
   assert.equal(msg.includes('CEVA'), false);
+  assert.match(msg, /Distância da capital/);
+  assert.match(msg, /na capital \(Curitiba\)/);
+  assert.match(msg, /Afonso Pena · CWB/);
   assert.match(msg, /🟢/);
   assert.match(msg, /📍/);
   assert.match(msg, /✅/);
@@ -158,6 +164,36 @@ test('só diretoria e administrador veem as não encaminhadas', () => {
   assert.equal(podeAuditarNaoEncaminhados({ role: 'Operador' }), false);
   assert.equal(podeAuditarNaoEncaminhados({ role: 'financeiro', permissions: ['*'] }), true);
   assert.equal(podeAuditarNaoEncaminhados(null), false);
+});
+
+test('mensagem diz a distância da capital do estado e do aeroporto mais próximo', () => {
+  const curitiba = descreverReferencia('CURITIBA - PR', 'PR');
+  assert.ok(curitiba);
+  assert.match(curitiba!.capital, /na capital \(Curitiba\)/);
+  assert.match(curitiba!.aeroporto, /Afonso Pena · CWB/);
+
+  const londrina = descreverReferencia('LONDRINA - PR', 'PR');
+  assert.ok(londrina);
+  assert.match(londrina!.capital, /de Curitiba/);
+  assert.match(londrina!.aeroporto, /Londrina · LDB/);
+  const kmCapital = Number(londrina!.capital.match(/cerca de (\d+) km/)?.[1]);
+  assert.ok(kmCapital > 250 && kmCapital < 400);
+
+  const joinville = descreverReferencia('JOINVILLE - SC', 'SC');
+  assert.match(joinville!.aeroporto || '', /Joinville · JOI/);
+  assert.match(joinville!.capital || '', /Florianópolis/);
+
+  assert.equal(descreverReferencia('SITIO NOVO SEM CIDADE - PR', 'PR'), null);
+  const semCidade = montarMensagemDisponibilidadeDhl({
+    regiao: 'SUL',
+    posicao: 'SITIO NOVO SEM CIDADE - PR',
+    uf: 'PR',
+    finalizadaEm: ha(5),
+  });
+  assert.equal(semCidade.includes('Distância da capital'), false);
+
+  const reta = distanciaKm({ lat: -25.4284, lng: -49.2733 }, { lat: -25.4284, lng: -49.2733 });
+  assert.equal(reta < 0.01, true);
 });
 
 test('segunda cópia de outro operador fica bloqueada e avisa o nome', () => {

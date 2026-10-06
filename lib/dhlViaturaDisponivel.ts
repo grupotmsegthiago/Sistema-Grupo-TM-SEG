@@ -1,4 +1,6 @@
+import { authFetch } from './authFetch';
 import { formatDateTimeBR } from './dateUtils';
+import { descreverDeCoordenada, descreverReferencia, type ReferenciaDhl } from './dhlReferenciaGeografica';
 import { extractCityFromAddress, extractUF, UF_TO_REGION } from './financialUtils';
 import { publishMissionLive, MISSION_LIVE_WINDOW_EVENT } from './missionLiveBroadcast';
 import { supabase } from './supabase';
@@ -244,11 +246,15 @@ export function montarMensagemDisponibilidadeDhl(alerta: {
   regiao: string;
   posicao: string;
   finalizadaEm: string;
-}): string {
+  uf?: string;
+}, referencia?: ReferenciaDhl | null): string {
   const regiao = rotuloRegiao(alerta.regiao);
   const local = String(alerta.posicao || '').replace(/\s+/g, ' ').trim();
   const quando = formatDateTimeBR(alerta.finalizadaEm);
-  return [
+  const ref = referencia === undefined && alerta.uf
+    ? descreverReferencia(local, alerta.uf)
+    : referencia;
+  const linhas = [
     '🟢 *EQUIPE TM SEGUE INFORMA*',
     '',
     `Temos uma viatura disponível na região *${regiao}*.`,
@@ -256,11 +262,41 @@ export function montarMensagemDisponibilidadeDhl(alerta: {
     '📍 *Última posição (fim de viagem):*',
     local,
     '',
+  ];
+  if (ref) {
+    linhas.push(ref.capital, ref.aeroporto, '');
+  }
+  linhas.push(
     '✅ A equipe acabou de finalizar.',
     `🕒 *Finalização:* ${quando}`,
     '',
     '🚛 *Equipe disponível para novas missões.*',
-  ].join('\n');
+  );
+  return linhas.join('\n');
+}
+
+/** Cidade conhecida sai na hora. Cidade nova tenta o mapa antes de copiar. */
+export async function montarMensagemDisponibilidadeDhlAoVivo(alerta: {
+  regiao: string;
+  posicao: string;
+  finalizadaEm: string;
+  uf?: string;
+}): Promise<string> {
+  const uf = String(alerta.uf || '').toUpperCase();
+  if (!uf || descreverReferencia(alerta.posicao, uf)) {
+    return montarMensagemDisponibilidadeDhl({ ...alerta, uf });
+  }
+  try {
+    const resp = await authFetch(`/api/geocode-address?address=${encodeURIComponent(`${alerta.posicao}, Brasil`)}`);
+    if (!resp.ok) return montarMensagemDisponibilidadeDhl({ ...alerta, uf });
+    const data = await resp.json();
+    const lat = Number(data?.location?.lat);
+    const lng = Number(data?.location?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return montarMensagemDisponibilidadeDhl({ ...alerta, uf });
+    return montarMensagemDisponibilidadeDhl({ ...alerta, uf }, descreverDeCoordenada({ lat, lng }, uf));
+  } catch {
+    return montarMensagemDisponibilidadeDhl({ ...alerta, uf });
+  }
 }
 
 export const DHL_COPIA_ALERTA_EVENT = 'tmseg:dhl-copia-alerta';
