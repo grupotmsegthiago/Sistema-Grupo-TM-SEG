@@ -42,6 +42,7 @@ import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { canEditNegativeMarginLockedOs, isOsNegativeMarginLocked } from '../lib/osNegativeMarginLock';
 import { canSaveFinalizeEvidence, endEvidencePendingPatch, endEvidenceSavedPatch, shouldResetFinalizeChecklist } from '../lib/endEvidenceGate';
 import { refusedOsClearSnapshotFields } from '../lib/missionSnapshot';
+import { garantirAlertaDhl, resolverAlertaDhl } from '../lib/dhlViaturaDisponivel';
 import {
   canUnlockPaidInvoiceLock,
   kmHorasValoresSnapshotMudou,
@@ -3046,6 +3047,20 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             });
 
             const isNowCompleted = finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED;
+
+            if (isNowCompleted) {
+                void garantirAlertaDhl(resolverAlertaDhl({
+                    missionId: mission.id,
+                    status: finalStatus,
+                    isSameOs: !!(editData.isSameOs || mission.is_same_os),
+                    provider: editData.provider || mission.provider,
+                    client: mission.client,
+                    currentLocation: finalLocationToSave,
+                    destination: finalDestination,
+                    endTime: endIso,
+                    lastUpdate: new Date().toISOString(),
+                }));
+            }
 
             // Quando a cópia combinada (texto+foto) dá certo, o pai NÃO pode
             // re-copiar só o texto (isso sobrescreveria a foto no clipboard).
