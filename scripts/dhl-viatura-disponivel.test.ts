@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import { formatDateTimeBR } from '../lib/dateUtils';
 import { descreverReferencia, distanciaKm } from '../lib/dhlReferenciaGeografica';
 import {
+  filtrarViaturasPorRaio,
+  idPublicoViatura,
+  montarPontosPublicos,
+  urlMapaViaturas,
+} from '../lib/dhlViaturaMapa';
+import {
   HORA_MS,
   agruparPorRegiao,
   entraNaListaBloqueados,
@@ -206,6 +212,41 @@ test('segunda cópia de outro operador fica bloqueada e avisa o nome', () => {
   assert.match(texto, /Maria Souza já copiou a mensagem da OS GTM-9001/);
   assert.match(texto, /CURITIBA - PR/);
   assert.match(texto, /Não envie de novo no grupo da DHL/);
+});
+
+test('mapa público esconde OS, fornecedor e cliente e obedece o raio', () => {
+  const pontos = montarPontosPublicos([
+    { mission_id: 'GTM-183013', posicao: 'CURITIBA - PR', uf: 'PR', regiao: 'SUL', finalizada_em: ha(10), status: 'pendente' },
+    { mission_id: 'GTM-200', posicao: 'MANAUS - AM', uf: 'AM', regiao: 'NORTE', finalizada_em: ha(8), status: 'confirmado' },
+    { mission_id: 'GTM-SP', posicao: 'SÃO PAULO - SP', uf: 'SP', regiao: 'SUDESTE', finalizada_em: ha(5), status: 'pendente' },
+    { mission_id: 'GTM-VELHA', posicao: 'FLORIANÓPOLIS - SC', uf: 'SC', regiao: 'SUL', finalizada_em: ha(90), status: 'pendente' },
+    { mission_id: 'GTM-X', posicao: 'SITIO SEM CIDADE - PR', uf: 'PR', regiao: 'SUL', finalizada_em: ha(4), status: 'pendente' },
+  ], now);
+
+  assert.equal(pontos.length, 2);
+  assert.equal(pontos.some((p) => p.uf === 'SP'), false);
+  assert.equal(JSON.stringify(pontos).includes('GTM-'), false);
+  assert.equal(JSON.stringify(pontos).includes('mission'), false);
+  assert.equal(pontos[0].id.startsWith('tm'), true);
+  assert.notEqual(idPublicoViatura('GTM-183013'), 'GTM-183013');
+
+  const curitiba = pontos.find((p) => p.uf === 'PR')!;
+  const perto = filtrarViaturasPorRaio(pontos, { lat: curitiba.lat, lng: curitiba.lng }, 50);
+  assert.equal(perto.some((p) => p.uf === 'PR'), true);
+  assert.equal(perto.some((p) => p.uf === 'AM'), false);
+  assert.equal(filtrarViaturasPorRaio(pontos, { lat: curitiba.lat, lng: curitiba.lng }, 0).length, 0);
+  assert.equal(filtrarViaturasPorRaio(pontos, null, 0).length, 2);
+
+  const comLink = montarMensagemDisponibilidadeDhl({
+    regiao: 'SUL',
+    posicao: 'CURITIBA - PR',
+    uf: 'PR',
+    finalizadaEm: ha(5),
+    linkMapa: urlMapaViaturas('https://sistema.grupotmseg.com.br'),
+  });
+  assert.match(comLink, /https:\/\/sistema\.grupotmseg\.com\.br\/viaturas/);
+  assert.equal(comLink.includes('GTM-'), false);
+  assert.equal(comLink.includes('FORNECEDOR'), false);
 });
 
 test('painel só para a operação interna', () => {

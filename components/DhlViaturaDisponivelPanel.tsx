@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, Clock, Copy, Lock, MapPin, MessageCircle, Truck } from 'lucide-react';
+import { Check, Clock, Copy, ExternalLink, Lock, MapPin, MessageCircle, Truck } from 'lucide-react';
 import { copyTextAsync } from '../lib/clipboard';
 import { formatDateTimeBR } from '../lib/dateUtils';
 import { descreverReferencia } from '../lib/dhlReferenciaGeografica';
+import { urlMapaViaturas } from '../lib/dhlViaturaMapa';
 import {
   abrirAlertaCopiaDhl,
   agruparPorRegiao,
@@ -246,7 +247,22 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
             Qualquer cliente. A OS finalizada fora de São Paulo e Rio de Janeiro entra aqui para avisar a DHL que a Escolta TM Segue tem viatura na região. Fornecedor e cliente ficam só neste painel.
           </p>
         </div>
-        <p className="text-[10px] font-bold uppercase text-green-200">Some ao confirmar o envio no grupo</p>
+        <div className="flex flex-col items-end gap-1">
+          <p className="text-[10px] font-bold uppercase text-green-200">Some ao confirmar o envio no grupo</p>
+          <button
+            type="button"
+            onClick={() => {
+              const url = urlMapaViaturas();
+              void copyTextAsync(url).then((ok) => {
+                showNotification('Mapa', ok ? 'Link do mapa copiado.' : url, ok ? 'success' : 'info');
+              });
+            }}
+            className="inline-flex items-center gap-1 rounded-md bg-white/15 px-2 py-1 text-[10px] font-black uppercase text-white hover:bg-white/25"
+            title={urlMapaViaturas()}
+          >
+            <ExternalLink size={11} /> Link do mapa para o cliente
+          </button>
+        </div>
       </div>
 
       {!tabelaOk && (

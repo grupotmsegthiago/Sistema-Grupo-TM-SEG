@@ -60,6 +60,7 @@ import DhlSupplierIntake from './components/DhlSupplierIntake';
 import CevaPortal from './components/CevaPortal';
 import IblPortal from './components/IblPortal';
 import PublicLiveTrack from './components/PublicLiveTrack';
+import MapaViaturasPublico from './components/MapaViaturasPublico';
 import SupportMapFinder from './components/SupportMapFinder'; 
 import PushNotificationManager from './components/PushNotificationManager';
 import CostOptimizationDashboard from './components/CostOptimizationDashboard';
@@ -178,6 +179,7 @@ const App: React.FC = () => {
   const isPortalExternoRoute = isCevaPortalRoute || isIblPortalRoute;
   const isDhlSupplierRoute = normalizedPath === '/fornecedor/dhl';
   const isLiveTrackRoute = normalizedPath === '/rastreio';
+  const isViaturasMapaRoute = normalizedPath === '/viaturas';
   const isResetPasswordRoute = normalizedPath === '/reset-password';
   const resetToken = new URLSearchParams(window.location.search).get('token') || '';
 
@@ -526,6 +528,7 @@ const App: React.FC = () => {
   if (isPublicRoute) { return ( <NotificationProvider> <PublicAgentRegistration /> </NotificationProvider> ); }
   if (isDhlSupplierRoute) { return <DhlSupplierIntake />; }
   if (isLiveTrackRoute) { return <PublicLiveTrack />; }
+  if (isViaturasMapaRoute) { return <MapaViaturasPublico />; }
   if (isIblPortalRoute) { return <IblPortal />; }
   if (isCevaPortalRoute) { return <CevaPortal />; }
 
