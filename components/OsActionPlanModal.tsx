@@ -437,10 +437,9 @@ const OsActionPlanModal: React.FC<OsActionPlanModalProps> = ({ missionId, onClos
               {emissao?.modalidade === 'ocorrencia' && emissao.croqui && (
                 <div className="max-h-56 overflow-y-auto px-3 py-2 bg-white border-b border-rose-100 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <strong className="text-[11px] uppercase text-rose-900">Prévia do croqui</strong>
-                    <span className="text-[11px] text-slate-500">{emissao.croqui.aprovado ? 'Aprovado para o PDF' : 'Fora do PDF até aprovar'}</span>
+                    <strong className="text-[11px] uppercase text-rose-900">Croqui no documento</strong>
+                    <span className="text-[11px] text-slate-500">Já entra no relatório. Ajuste o texto se precisar.</span>
                     <button type="button" className="rounded-lg border px-2 py-1 text-[11px] font-bold" onClick={() => aplicarCroqui(montarCroqui(emissao))}>Regerar croqui</button>
-                    <button type="button" className="rounded-lg bg-slate-900 text-white px-2 py-1 text-[11px] font-bold" onClick={() => emissao.croqui && aplicarCroqui({ ...emissao.croqui, aprovado: true })}>Aprovar croqui</button>
                   </div>
                   <input className="w-full rounded border px-2 py-1 text-[12px]" value={emissao.croqui.subtitulo} onChange={(e) => emissao.croqui && aplicarCroqui({ ...emissao.croqui, aprovado: false, subtitulo: e.target.value })} />
                   {emissao.croqui.etapas.map((etapa, indice) => (

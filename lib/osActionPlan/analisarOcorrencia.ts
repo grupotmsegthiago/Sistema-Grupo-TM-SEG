@@ -523,7 +523,7 @@ export function analisarOcorrencia(d: OsActionPlanInput): AnaliseOcorrencia {
     ));
   }
 
-  if (/perda de contato|perdeu o contato|contato visual|perda de acompanhamento|identificacao visual|perda momentanea|rompimento|saiu a frente|nao atende|tentando contato|alta velocidade|perdemos o veiculo|sumiu/.test(n)) {
+  if (/perda de contato|perdeu o contato|perdeu o veiculo|contato visual|perda de acompanhamento|identificacao visual|perda momentanea|rompimento|saiu a frente|nao atende|tentando contato|alta velocidade|perdemos o veiculo|sumiu/.test(n)) {
     categorias.add('perda_contato');
     itens.push(item(
       'relato',

@@ -434,9 +434,9 @@ export function htmlMapaMissao(d: OsActionPlanInput): string {
   const legenda = pontos.map((ponto) => {
     const partes = ponto.rotulo.split('·');
     const textos = [
-      partes.includes('A') ? `Origem — ${d.origem || ''}` : '',
+      partes.includes('A') ? `🚩 Origem — ${d.origem || ''}` : '',
       partes.some((parte) => parte !== 'A' && parte !== 'B') ? `Atualização ${partes.filter((parte) => parte !== 'A' && parte !== 'B').join(', ')}` : '',
-      partes.includes('B') ? `Destino — ${d.destino || ''}` : '',
+      partes.includes('B') ? `🏁 Destino — ${d.destino || ''}` : '',
     ].filter(Boolean);
     return `<li><b>${esc(ponto.rotulo)}</b> ${esc(textos.join(' · '))}</li>`;
   }).join('');

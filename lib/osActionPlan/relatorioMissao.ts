@@ -50,8 +50,8 @@ export function htmlRelatorioPadrao(d: OsActionPlanInput): string {
       ${linha('Motorista', valor(d.motorista))}
       ${linha('Viatura de escolta', [d.modeloViatura, d.placaViatura].filter(Boolean).join(' · ') || 'Não informado nesta OS')}
       ${linha('Agentes', d.equipe?.length ? d.equipe.join(', ') : 'Não informado nesta OS')}
-      ${linha('Origem', valor(d.origem))}
-      ${linha('Destino', valor(d.destino))}
+      ${linha('🚩 Origem', valor(d.origem))}
+      ${linha('🏁 Destino', valor(d.destino))}
       ${linha('Horário programado', quando(d.horarioProgramado))}
       ${linha('Início registrado', quando(d.linhaDoTempo?.[0]?.quando || d.horarioProgramado))}
       ${linha('Encerramento', quando(d.horarioFim))}

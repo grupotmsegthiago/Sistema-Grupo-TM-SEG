@@ -1,8 +1,8 @@
 import { formatDateTimeBR } from '../dateUtils';
 import { analisarOcorrencia } from './analisarOcorrencia';
 import { htmlMapaMissao, htmlQuadroAtualizacoes } from './diarioOperacional';
-import { htmlCroqui } from './montarCroqui';
-import { narrativaAceitaParaCliente, resumoInstitucional } from './linguagemCliente';
+import { htmlCroqui, montarCroqui } from './montarCroqui';
+import { narrativaAceitaParaCliente, prosaHumana } from './linguagemCliente';
 import {
   textoEhRelatorioColado,
   textoEhRotina,
@@ -813,12 +813,6 @@ function renderizarExecutivo(d: OsActionPlanInput, r: RelatorioOcorrencia): stri
   const analise = analisarOcorrencia(d);
   const foco = String(d.problemaPrincipal || '').trim();
   const cronologia = r.cronologia.filter((e) => !/lançou o status/i.test(e.event));
-  const fatos = analise.itens.filter((i) => i.tipo === 'fato_confirmado').map((i) => i.descricao);
-  const relatos = [
-    ...analise.itens.filter((i) => i.tipo === 'relato').map((i) => i.descricao),
-    d.relatoComplementar || '',
-    d.tratativaTexto || '',
-  ].map((t) => t.trim()).filter((t) => t && t.length <= 220 && !textoEhRelatorioColado(t));
   const linhas = [...analise.acao, ...analise.melhoria];
   const plano = tabela(
     ['ID', 'Ação', 'Responsável', 'Prazo', 'Status', 'Evidência'],
@@ -829,39 +823,31 @@ function renderizarExecutivo(d: OsActionPlanInput, r: RelatorioOcorrencia): stri
     ? 'Perda visual → veículo semelhante, quando for o caso → acompanhamento → divergência identificada.'
     : 'A sequência relatada seguiu sem a barreira que interrompe o fato.';
   const depois = (analise.procedimento || []).filter((p) => p !== analise.procedimento?.[0]);
-  const croqui = d.croqui?.aprovado
-    ? htmlCroqui(d.croqui, {
+  const croquiFonte = d.croqui || montarCroqui(d);
+  const croqui = croquiFonte
+    ? htmlCroqui(croquiFonte, {
       os: d.missionId,
       cliente: d.clientName || 'Cliente',
       data: r.documento.dataOperacao || 'conforme registro',
       operacao: d.tipo || 'Operação',
     })
     : '';
-  const causa = analise.causaEstado === 'confirmada'
-    ? analise.causaTexto
-    : 'Não há causa confirmada além do que os registros sustentam. O fator tratado abaixo é a barreira que faltou, não um culpado.';
-
+  const textoCliente = prosaHumana(foco, String(d.relatoComplementar || ''));
   const narrativa = narrativaAceitaParaCliente(String(d.narrativaIa || ''), d.fornecedor, d.clientName)
-    || (foco ? resumoInstitucional(foco, String(d.relatoComplementar || '')) : '');
-  const analiseEscrita = narrativa
-    ? `<div class="campo" data-campo="analise">${prosa(narrativa.replace(/\n+/g, '\n\n'))}</div>`
-    : `<h3>Fato identificado</h3>
-  <div class="campo">${lista(fatos)}</div>
-  <h3>Circunstâncias da ocorrência</h3>
-  <div class="campo">${lista(relatos.length ? relatos : ['Nenhum relato complementar foi informado.'])}</div>`;
+    || textoCliente.analise;
+  const analiseEscrita = `<div class="campo" data-campo="analise">${prosa(narrativa.replace(/\n+/g, '\n\n'))}</div>`;
 
   return `<section data-secao="documento">
-  <h2>Ocorrência apurada</h2>
-  <div class="summary" data-campo="ocorrencia-apurada"><p>${esc(foco)}</p></div>
   <div class="campo" data-campo="identificacao">
     <p><strong>OS:</strong> ${esc(d.missionId)} · <strong>Cliente:</strong> ${esc(d.clientName || '—')}</p>
-    <p><strong>Operação:</strong> ${esc(d.tipo || '—')} · <strong>Data:</strong> ${esc(r.documento.dataOperacao)}</p>
-    <p><strong>Origem / destino:</strong> ${esc(d.origem || '—')} → ${esc(d.destino || '—')} · <strong>Status:</strong> ${esc(d.status || '—')}</p>
+    <p><strong>Operação:</strong> ${esc(d.tipo || '—')} · <strong>Data:</strong> ${esc(r.documento.dataOperacao)} · <strong>Status:</strong> ${esc(d.status || '—')}</p>
+    <p>🚩 <strong>Origem:</strong> ${esc(d.origem || '—')}</p>
+    <p>🏁 <strong>Destino:</strong> ${esc(d.destino || '—')}</p>
   </div>
 </section>
 <section data-secao="resumo">
   <h2>Resumo executivo</h2>
-  <div class="campo" data-campo="resumo">${prosa(r.resumo)}</div>
+  <div class="campo" data-campo="resumo">${prosa(textoCliente.resumo)}</div>
 </section>
 ${croqui}
 ${d.modalidade === 'ocorrencia' ? `${htmlMapaMissao(d)}${htmlQuadroAtualizacoes(d)}` : ''}
@@ -875,12 +861,12 @@ ${d.modalidade === 'ocorrencia' ? `${htmlMapaMissao(d)}${htmlQuadroAtualizacoes(
   <h2>Análise da ocorrência</h2>
   ${analiseEscrita}
   <h3>Causa / fator contribuinte</h3>
-  <div class="campo" data-campo="causa"><p>${esc(causa)}</p></div>
+  <div class="campo" data-campo="causa"><p>${esc(textoCliente.causa)}</p></div>
   <div hidden data-secao="auditoria-interna">${r.rastreio.map((i) => `<span data-tipo="${esc(i.tipo)}" data-fonte="${esc(i.fonte)}" data-registro="${esc(i.registroId)}">${esc(i.descricao)}</span>`).join('')}</div>
 </section>
 <section data-secao="barreira">
   <h2>Barreira identificada</h2>
-  <div class="summary"><p>${esc(analise.barreira || 'Não há barreira operacional específica identificada para este problema.')}</p></div>
+  <div class="campo" data-campo="barreira">${prosa(textoCliente.barreira)}</div>
 </section>
 <section data-secao="plano-acao">
   <h2>Plano de ação</h2>
@@ -900,6 +886,6 @@ ${d.modalidade === 'ocorrencia' ? `${htmlMapaMissao(d)}${htmlQuadroAtualizacoes(
 </section>
 <section data-secao="encerramento">
   <h2>Conclusão</h2>
-  <div class="campo" data-campo="encerramento">${prosa(analise.conclusao)}</div>
+  <div class="campo" data-campo="encerramento">${prosa(textoCliente.conclusao)}</div>
 </section>`;
 }

@@ -34,6 +34,87 @@ export function textoParaCliente(texto: string, fornecedor?: string | null, clie
   return s;
 }
 
+function semAcento(texto: string): string {
+  return String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+/**
+ * Quatro trechos em prosa, como quem redige o documento.
+ * O foco manda no assunto. O relato longo só esclarece; não é copiado.
+ */
+export function prosaHumana(foco: string, relato: string): { resumo: string; analise: string; causa: string; barreira: string; conclusao: string } {
+  const nf = semAcento(foco);
+  const nr = semAcento(relato);
+  const perda = /perdeu o veiculo|perdemos o veiculo|perda de contato|perdeu o contato|contato visual|identificacao visual|perda de acompanhamento|perdeu de vista/.test(nf)
+    || /perdeu o veiculo|identificacao visual|perda de acompanhamento/.test(nr);
+  const pedagio = /pedagio/.test(nf) || (perda && /pedagio/.test(nr));
+  const semelhante = /semelh|parecid|outro caminh|caminhao errad|veiculo errad|divergenc/.test(`${nf}\n${nr}`);
+  const onde = pedagio ? 'na passagem pelo pedágio' : 'durante o deslocamento';
+
+  if (pedagio || perda) {
+    const resumo = semelhante
+      ? `Na escolta, ${onde}, a equipe perdeu por um momento a identificação visual do veículo da OS. Havia um veículo de aparência parecida no local. A equipe conferiu a placa, voltou para o veículo cadastrado e retomou o acompanhamento.`
+      : `Na escolta, ${onde}, a equipe perdeu o veículo de vista por um momento. Em seguida conferiu a placa, localizou o veículo cadastrado na OS e retomou a escolta.`;
+    const analise = semelhante
+      ? `${onde.charAt(0).toUpperCase()}${onde.slice(1)}, a equipe vinha com o veículo da OS e perdeu a identificação visual. Nesse intervalo surgiu a dúvida com um veículo de aparência parecida. A conferência da placa encerrou a dúvida, e a escolta voltou para o veículo que consta na OS.`
+      : `${onde.charAt(0).toUpperCase()}${onde.slice(1)}, a equipe de escolta perdeu de vista o veículo que acompanhava. Os registros não separam um horário só desse instante. O desfecho está no que a equipe fez em seguida: localizou o veículo da OS, conferiu a placa e voltou a escoltá-lo.`;
+    const barreira = pedagio
+      ? 'No pedágio a identificação visual se perde com facilidade. O que faltou nesse instante foi confirmar a placa antes de continuar. Sem essa conferência, a equipe não tem certeza de que ainda está com o veículo da OS.'
+      : 'Quando a equipe perde o veículo de vista, seguir sem uma nova conferência da placa deixa a escolta sem saber se ainda está com o veículo da OS.';
+    const causa = semelhante
+      ? 'O que pesou foi a perda da identificação visual diante de um veículo de aparência parecida. A placa é o que separou um do outro.'
+      : pedagio
+        ? 'O que pesou foi a perda da identificação visual na passagem pelo pedágio, antes da equipe conferir a placa.'
+        : 'O que pesou foi a perda da identificação visual durante o deslocamento, antes da nova conferência da placa.';
+    const conclusao = 'A escolta do veículo cadastrado foi restabelecida. Fica o combinado com a equipe: se perder o veículo de vista de novo, avisa a Central de Monitoramento e só continua depois de confirmar a placa.';
+    return { resumo, analise, causa, barreira, conclusao };
+  }
+
+  if (/desvio de rota|fora da rota|fora de rota|itinerario diverg/.test(nf)) {
+    return {
+      resumo: 'A equipe informou um desvio em relação à rota cadastrada na OS. A Central confronta esse relato com o itinerário antes de tratar o trecho como retomado.',
+      analise: 'O apontamento fala em saída da rota prevista. Este documento não reconstrói o caminho por coordenada. O que dá para registrar é o confronto entre a rota da OS e o que a equipe declarou, até a Central confirmar a retomada.',
+      barreira: 'Faltou, no momento do desvio, confrontar a rota cadastrada com a posição que a equipe declarou.',
+      causa: 'O fator em aberto é a diferença entre a rota cadastrada e o trecho que a equipe declarou.',
+      conclusao: 'O desvio fica registrado nesta OS. A escolta segue na rota cadastrada assim que a Central confirma que o veículo voltou ao itinerário.',
+    };
+  }
+
+  if (/parada/.test(nf) && !/\brf\b|descanso|repouso/.test(nf)) {
+    return {
+      resumo: 'Houve uma parada no percurso, além do deslocamento normal da escolta. O motivo permanece o que estiver escrito no registro da OS.',
+      analise: 'A parada aparece no relato da operação. A causa não foi além do que está escrito. O que está documentado é a interrupção do deslocamento e, quando houver lançamento, a retomada.',
+      barreira: 'A parada foi lançada sem separar, no mesmo momento, o motivo do simples fato de ter parado.',
+      causa: 'A parada está no relato. O motivo dela continua o que a OS tiver escrito, sem uma causa extra.',
+      conclusao: 'A parada fica no histórico da OS. A escolta retoma o deslocamento quando o registro mostra o reinício, sem transformar a parada em causa de outra falha.',
+    };
+  }
+
+  if (/(?<!sem\s)atraso/.test(nf)) {
+    return {
+      resumo: 'O horário de chegada na origem ficou depois do que estava combinado. O motivo desse atraso continua o que a equipe registrar, sem uma causa fechada neste documento.',
+      analise: 'O horário programado e o lançamento da origem mostram a diferença. Essa diferença está no cadastro. O porquê operacional não foi completado além do relato.',
+      barreira: 'O atraso ficou visível no horário, mas o aviso à Central e o motivo ainda dependem do que foi escrito na OS.',
+      causa: 'O horário de chegada passou do combinado. O motivo operacional dessa diferença não está fechado.',
+      conclusao: 'A chegada fora do horário combinado fica registrada. A apuração do motivo segue com o relato da equipe, sem antecipar uma causa que o sistema não confirma.',
+    };
+  }
+
+  const curto = String(foco || '').trim().replace(/\s+/g, ' ');
+  const dito = curto.length > 0 && curto.length <= 180 && !curto.includes('|')
+    ? textoParaCliente(curto).replace(/\.$/, '')
+    : '';
+  return {
+    resumo: dito
+      ? `O que motivou este relatório foi o seguinte: ${dito}. Os registros da OS foram conferidos, e o texto fica só no que está documentado.`
+      : 'Este relatório reúne o que a operação registrou nesta OS. O que não está no sistema não foi completado.',
+    analise: 'O apontamento e os registros da missão foram lidos juntos. Não há, neste material, uma sequência que permita descrever o fato com mais detalhe do que o diário da operação já mostra.',
+    barreira: 'Não há uma barreira única para este apontamento. O controle segue o que a equipe já lança: posição, horário e evidência de cada atualização.',
+    causa: 'Não há, nos registros lidos, um fator único que explique o apontamento além do que a equipe já lançou.',
+    conclusao: 'A OS permanece com o status do cadastro. O acompanhamento continua pelos registros da operação, sem conclusão além do que esses registros sustentam.',
+  };
+}
+
 /** Resumo curto para o cliente. O texto interno longo não é copiado e não vira confissão. */
 export function resumoInstitucional(foco: string, relato: string): string {
   const n = `${foco}\n${relato}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();

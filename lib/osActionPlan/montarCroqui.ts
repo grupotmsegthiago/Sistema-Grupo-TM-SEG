@@ -170,7 +170,7 @@ function veiculoSvg(rotulo: string, tom: 'os' | 'escolta' | 'outro'): string {
   return `<span class="viatura" style="border-color:${cor};color:${cor}"><svg viewBox="0 0 64 28" aria-hidden="true"><rect x="2" y="8" width="44" height="14" rx="2" fill="none" stroke="${cor}" stroke-width="2"/><rect x="46" y="12" width="14" height="10" rx="1" fill="none" stroke="${cor}" stroke-width="2"/><circle cx="14" cy="24" r="3" fill="${cor}"/><circle cx="36" cy="24" r="3" fill="${cor}"/></svg><small>${esc(rotulo)}</small></span>`;
 }
 
-/** HTML do croqui. Só entra no PDF quando a pessoa aprovou. */
+/** HTML do croqui. Entra no documento junto com o relatório. */
 export function htmlCroqui(croqui: CroquiOcorrencia, meta: { os: string; cliente: string; data: string; operacao: string }): string {
   const etapas = croqui.etapas.slice(0, 6).map((e, i) => {
     const quando = e.quando ? e.quando : 'Sem horário próprio nesta etapa';

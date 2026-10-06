@@ -513,9 +513,7 @@ describe('análise automática do plano de ação', () => {
     assert.equal(croqui?.etapas.find((e) => e.id === 'pedagio')?.quando, null);
     assert.doesNotMatch(JSON.stringify(croqui), /ABC1D23|XYZ9F87|06:30|06:40|06:50/);
     assert.match(croqui?.etapas.map((e) => e.legenda).join(' ') || '', /Segundo o contexto informado/);
-    const semAprovacao = buildOsActionPlanHtml(entrada);
-    assert.doesNotMatch(semAprovacao, /data-secao="croqui"/);
-    const html = buildOsActionPlanHtml({ ...entrada, croqui: croqui ? { ...croqui, aprovado: true } : null });
+    const html = buildOsActionPlanHtml(entrada);
     assert.match(html, /data-secao="croqui"/);
     assert.match(html, /CROQUI ILUSTRATIVO/);
     assert.match(html, /Não representa escala/);
@@ -523,10 +521,31 @@ describe('análise automática do plano de ação', () => {
     assert.match(html, /Veículo semelhante/);
     assert.doesNotMatch(html, /ABC1D23|XYZ9F87|06:40/);
     assert.match(html, /Barreira identificada/);
-    assert.match(html, /Ocorrência apurada/);
+    assert.doesNotMatch(html, /Ocorrência apurada/);
+    assert.match(html, /🚩/);
+    assert.match(html, /🏁/);
     assert.doesNotMatch(html, /data-secao="evidencias"|Histórico da OS:|>E01</);
     assert.match(html, />Pendente</);
     assert.doesNotMatch(html, /equipe de escolta errou|foi culpada|foi negligente/i);
+  });
+
+  it('o foco curto do pedágio vira texto corrido e o croqui entra no documento', () => {
+    const html = buildOsActionPlanHtml(base({
+      modalidade: 'ocorrencia',
+      problemaPrincipal: 'Escolta perdeu o veículo no pedagio',
+      origem: 'Diadema/SP',
+      destino: 'São José dos Pinhais/PR',
+    }));
+    assert.doesNotMatch(html, /Ocorrência apurada/);
+    assert.doesNotMatch(html, /Escolta perdeu o veículo no pedagio/);
+    assert.match(html, /Resumo executivo[\s\S]*passagem pelo pedágio/);
+    assert.match(html, /Análise da ocorrência[\s\S]*conferiu a placa|localizou o veículo/);
+    assert.match(html, /Barreira identificada[\s\S]*confirmar a placa/);
+    assert.match(html, /Conclusão[\s\S]*restabelecida/);
+    assert.match(html, /data-secao="croqui"/);
+    assert.match(html, /🚩 <strong>Origem:<\/strong> Diadema\/SP/);
+    assert.match(html, /🏁 <strong>Destino:<\/strong> São José dos Pinhais\/PR/);
+    assert.doesNotMatch(html, /outro caminhão|não atribui culpa|rascunho/i);
   });
 
   it('perda de contato, desvio, parada e acesso geram o croqui do caso', () => {
@@ -543,7 +562,8 @@ describe('análise automática do plano de ação', () => {
     assert.equal(montarCroqui(entrada), null);
     const html = buildOsActionPlanHtml(entrada);
     assert.doesNotMatch(html, /data-secao="croqui"/);
-    assert.match(html, /Ocorrência apurada/);
+    assert.doesNotMatch(html, /Ocorrência apurada/);
+    assert.match(html, /Resumo executivo/);
   });
 
   it('o PDF do cliente não transfere a falha ao fornecedor', () => {
@@ -685,7 +705,8 @@ describe('relatório operacional da missão', () => {
     }));
     assert.match(html, /data-campo="analise"/);
     assert.match(html, /identificação visual/);
-    assert.match(html, /não atribui culpa/);
+    assert.match(html, /aparência parecida/);
+    assert.doesNotMatch(html, /não atribui culpa|Ocorrência apurada/);
     assert.doesNotMatch(html, /Carlos Serra|CNPJ|km\/h|Uso restrito|outro caminhão|texto interno texto interno/i);
   });
 

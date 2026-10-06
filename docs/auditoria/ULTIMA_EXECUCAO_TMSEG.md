@@ -1,6 +1,11 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
-# ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
+## CROQUI, TEXTO CORRIDO E BANDEIRAS
+
+**Data:** 2026-10-05
+**O que faltava:** o croqui existia, mas só entrava no PDF depois de um segundo botão. A seção Ocorrência apurada repetia a frase crua do foco.
+**O que mudou:** o croqui entra no documento assim que a sequência existe. A frase crua saiu. Resumo, análise, barreira e conclusão vão em texto corrido. Origem leva 🚩 e destino leva 🏁.
+**Não publicado.** Gerar o relatório de novo. O HTML já gravado não muda sozinho.
 
 ## RESUMO PARA O CLIENTE SEM O TEXTO INTERNO
 
