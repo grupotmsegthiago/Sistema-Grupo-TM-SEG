@@ -2,10 +2,10 @@
  * Mapa público das viaturas disponíveis para o cliente.
  * O ponto sai só com cidade, região e horário. Sem fornecedor, cliente, OS ou placa.
  */
-import { acharCidade, distanciaKm } from './dhlReferenciaGeografica';
+import { acharCidade, distanciaKm, foraDoPortalPorRaio } from './dhlReferenciaGeografica';
 
 export const CAMINHO_MAPA_VIATURAS = '/dhl';
-export const JANELA_MAPA_MS = 60 * 60 * 1000;
+export const JANELA_MAPA_MS = 30 * 60 * 1000;
 export const RAIO_MAX_KM = 1000;
 
 const STATUS_NO_MAPA = new Set(['pendente', 'copiado', 'confirmado']);
@@ -60,7 +60,7 @@ function deslocar(lat: number, lng: number, id: string): { lat: number; lng: num
 
 export function linhaVisivelNoMapa(row: Pick<LinhaMapaViatura, 'status' | 'uf' | 'finalizada_em'>, now = new Date()): boolean {
   const uf = String(row.uf || '').toUpperCase();
-  if (uf === 'SP' || uf === 'RJ') return false;
+  if (foraDoPortalPorRaio(row.posicao, uf)) return false;
   if (!STATUS_NO_MAPA.has(String(row.status || ''))) return false;
   const fim = new Date(row.finalizada_em).getTime();
   if (!Number.isFinite(fim)) return false;

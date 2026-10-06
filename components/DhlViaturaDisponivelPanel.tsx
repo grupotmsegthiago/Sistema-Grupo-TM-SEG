@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, Clock, Copy, ExternalLink, Lock, MapPin, MessageCircle, Truck } from 'lucide-react';
 import { copyTextAsync } from '../lib/clipboard';
 import { formatDateTimeBR } from '../lib/dateUtils';
-import { descreverReferencia } from '../lib/dhlReferenciaGeografica';
+import { descreverReferencia, ehCidadeTopo, ordemCidadeTopo } from '../lib/dhlReferenciaGeografica';
 import { urlMapaViaturas } from '../lib/dhlViaturaMapa';
 import {
   abrirAlertaCopiaDhl,
@@ -118,7 +118,14 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
     () => rows.filter((row) => visivelNoPainelVivo(row, now)),
     [rows, now],
   );
-  const grupos = useMemo(() => agruparPorRegiao(vivas), [vivas]);
+  const grupos = useMemo(() => {
+    const topo = vivas
+      .filter((row) => ehCidadeTopo(row.posicao))
+      .sort((a, b) => ordemCidadeTopo(a.posicao) - ordemCidadeTopo(b.posicao)
+        || new Date(b.finalizada_em).getTime() - new Date(a.finalizada_em).getTime());
+    const resto = agruparPorRegiao(vivas.filter((row) => !ehCidadeTopo(row.posicao)));
+    return topo.length ? [{ regiao: 'TOPO', itens: topo }, ...resto] : resto;
+  }, [vivas]);
   const bloqueados = useMemo(
     () => rows.filter((row) => entraNaListaBloqueados(row, now)),
     [rows, now],
@@ -150,7 +157,7 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
       return;
     }
     if (tomDoBotao(row.status, row.finalizada_em, new Date()) === 'vermelho') {
-      showNotification('Fora do prazo', 'Passou 1 hora. Essa viatura já saiu do painel.', 'warning');
+      showNotification('Fora do prazo', 'Passaram 30 minutos. Essa viatura já saiu do painel.', 'warning');
       void load(false);
       return;
     }
@@ -184,7 +191,7 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
         return;
       }
       if (resultado.resultado === 'bloqueado') {
-        showNotification('Fora do prazo', 'Passou 1 hora sem comunicação. A viatura saiu do painel.', 'warning');
+        showNotification('Fora do prazo', 'Passaram 30 minutos sem comunicação. A viatura saiu do painel.', 'warning');
         void load(false);
         return;
       }
@@ -244,7 +251,7 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
             <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-black">{vivas.length}</span>
           </div>
           <p className="mt-1 text-[11px] font-semibold text-green-100">
-            Qualquer cliente. A OS finalizada fora de São Paulo e Rio de Janeiro entra aqui para avisar a DHL que a Escolta TM Segue tem viatura na região. Fornecedor e cliente ficam só neste painel.
+            Qualquer cliente. A OS finalizada fica 30 minutos, em qualquer lugar, menos num raio de 100 km de São Paulo e do Rio. Extrema, Pouso Alegre e Varginha ficam no topo. Fornecedor e cliente ficam só neste painel.
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -274,7 +281,7 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
       <div className="max-h-[42vh] overflow-y-auto p-3 space-y-3">
         {grupos.length === 0 && tabelaOk && (
           <p className="text-xs font-semibold text-gray-500 px-1 py-2" data-testid="painel-dhl-vazio">
-            Nenhuma viatura fora de SP e RJ aguardando comunicação.
+            Nenhuma viatura liberada fora do raio de 100 km de São Paulo e do Rio.
           </p>
         )}
         {grupos.map((grupo) => (
@@ -410,7 +417,7 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
                   <p className="text-[11px] font-bold text-red-800">Cliente: {row.cliente || '—'} · Fornecedor: {row.provider_name || '—'}</p>
                   <p className="text-[11px] font-semibold text-red-800">{row.posicao}</p>
                   <p className="text-[10px] font-semibold text-red-700">Finalizada em {formatDateTimeBR(row.finalizada_em)} · {textoHaQuantoTempo(row.finalizada_em, now)}</p>
-                  <p className="mt-1 text-[11px] font-semibold text-red-900">{row.motivo_bloqueio || 'Passou 1 hora sem clicar em Comunicar a DHL.'}</p>
+                  <p className="mt-1 text-[11px] font-semibold text-red-900">{row.motivo_bloqueio || 'Passaram 30 minutos sem clicar em Comunicar a DHL.'}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <input
                       value={notas[row.mission_id] ?? ''}

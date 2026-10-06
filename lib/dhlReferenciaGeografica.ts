@@ -26,9 +26,11 @@ const CAPITAL: Record<string, Ponto> = {
   RN: { nome: 'Natal', lat: -5.7793, lng: -35.2009 },
   RO: { nome: 'Porto Velho', lat: -8.7612, lng: -63.9004 },
   RR: { nome: 'Boa Vista', lat: 2.8235, lng: -60.6758 },
+  RJ: { nome: 'Rio de Janeiro', lat: -22.9068, lng: -43.1729 },
   RS: { nome: 'Porto Alegre', lat: -30.0346, lng: -51.2177 },
   SC: { nome: 'Florianópolis', lat: -27.5954, lng: -48.5480 },
   SE: { nome: 'Aracaju', lat: -10.9472, lng: -37.0731 },
+  SP: { nome: 'São Paulo', lat: -23.5505, lng: -46.6333 },
   TO: { nome: 'Palmas', lat: -10.2491, lng: -48.3243 },
 };
 
@@ -69,6 +71,12 @@ const AEROPORTOS: Aeroporto[] = [
   { nome: 'Petrolina', codigo: 'PNZ', lat: -9.3624, lng: -40.5691 },
   { nome: 'Teresina', codigo: 'THE', lat: -5.0599, lng: -42.8235 },
   { nome: 'Parnaíba', codigo: 'PHB', lat: -2.8937, lng: -41.7319 },
+  { nome: 'Guarulhos', codigo: 'GRU', lat: -23.4356, lng: -46.4731 },
+  { nome: 'Congonhas', codigo: 'CGH', lat: -23.6261, lng: -46.6566 },
+  { nome: 'Viracopos', codigo: 'VCP', lat: -23.0074, lng: -47.1345 },
+  { nome: 'Galeão', codigo: 'GIG', lat: -22.8090, lng: -43.2506 },
+  { nome: 'Santos Dumont', codigo: 'SDU', lat: -22.9105, lng: -43.1631 },
+  { nome: 'Ribeirão Preto', codigo: 'RAO', lat: -21.1342, lng: -47.7742 },
   { nome: 'Afonso Pena', codigo: 'CWB', lat: -25.5285, lng: -49.1758 },
   { nome: 'Londrina', codigo: 'LDB', lat: -23.3336, lng: -51.1301 },
   { nome: 'Maringá', codigo: 'MGF', lat: -23.4760, lng: -52.0160 },
@@ -120,6 +128,16 @@ const CIDADES: Cidade[] = [
   { nome: 'Ipatinga', uf: 'MG', lat: -19.4683, lng: -42.5470 },
   { nome: 'Pouso Alegre', uf: 'MG', lat: -22.2300, lng: -45.9360 },
   { nome: 'Extrema', uf: 'MG', lat: -22.8547, lng: -46.3186 },
+  { nome: 'Varginha', uf: 'MG', lat: -21.5556, lng: -45.4364 },
+  { nome: 'São Paulo', uf: 'SP', lat: -23.5505, lng: -46.6333 },
+  { nome: 'Guarulhos', uf: 'SP', lat: -23.4543, lng: -46.5337 },
+  { nome: 'Campinas', uf: 'SP', lat: -22.9056, lng: -47.0608 },
+  { nome: 'Santos', uf: 'SP', lat: -23.9608, lng: -46.3336 },
+  { nome: 'São José dos Campos', uf: 'SP', lat: -23.1896, lng: -45.8841 },
+  { nome: 'Ribeirão Preto', uf: 'SP', lat: -21.1775, lng: -47.8103 },
+  { nome: 'Rio de Janeiro', uf: 'RJ', lat: -22.9068, lng: -43.1729 },
+  { nome: 'Niterói', uf: 'RJ', lat: -22.8832, lng: -43.1034 },
+  { nome: 'Campos dos Goytacazes', uf: 'RJ', lat: -21.7545, lng: -41.3244 },
   { nome: 'Vila Velha', uf: 'ES', lat: -20.3297, lng: -40.2925 },
   { nome: 'Serra', uf: 'ES', lat: -20.1286, lng: -40.3078 },
   { nome: 'Cariacica', uf: 'ES', lat: -20.2632, lng: -40.4165 },
@@ -187,6 +205,40 @@ function normalizar(value: string): string {
 
 function contemNome(texto: string, nome: string): boolean {
   return ` ${normalizar(texto)} `.includes(` ${normalizar(nome)} `);
+}
+
+/** Centros do raio que não entra no portal: cidade de São Paulo e cidade do Rio. */
+const CENTROS_FORA_DO_PORTAL = [
+  { nome: 'São Paulo', lat: -23.5505, lng: -46.6333 },
+  { nome: 'Rio de Janeiro', lat: -22.9068, lng: -43.1729 },
+];
+
+export const RAIO_EXCLUSAO_KM = 100;
+
+/** Estas três ficam no portal mesmo perto de São Paulo, e sempre no topo da lista. */
+const CIDADES_TOPO = ['Extrema', 'Pouso Alegre', 'Varginha'];
+
+export function ehCidadeTopo(posicao: string): boolean {
+  return CIDADES_TOPO.some((nome) => contemNome(posicao, nome));
+}
+
+export function ordemCidadeTopo(posicao: string): number {
+  const indice = CIDADES_TOPO.findIndex((nome) => contemNome(posicao, nome));
+  return indice < 0 ? 99 : indice;
+}
+
+/**
+ * true quando a viatura está a até 100 km de São Paulo ou do Rio.
+ * Sem coordenada em SP ou RJ, fica de fora. Extrema, Pouso Alegre e Varginha passam.
+ */
+export function foraDoPortalPorRaio(posicao: string, uf?: string): boolean {
+  if (ehCidadeTopo(posicao)) return false;
+  const cidade = acharCidade(posicao, uf);
+  if (!cidade) {
+    const estado = String(uf || '').toUpperCase();
+    return estado === 'SP' || estado === 'RJ';
+  }
+  return CENTROS_FORA_DO_PORTAL.some((centro) => distanciaKm(cidade, centro) <= RAIO_EXCLUSAO_KM);
 }
 
 export function acharCidade(posicao: string, uf?: string): Cidade | null {

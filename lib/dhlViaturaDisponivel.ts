@@ -1,20 +1,18 @@
 import { authFetch } from './authFetch';
 import { formatDateTimeBR } from './dateUtils';
-import { descreverDeCoordenada, descreverReferencia, type ReferenciaDhl } from './dhlReferenciaGeografica';
+import { descreverDeCoordenada, descreverReferencia, foraDoPortalPorRaio, type ReferenciaDhl } from './dhlReferenciaGeografica';
 import { urlMapaViaturas } from './dhlViaturaMapa';
 import { extractCityFromAddress, extractUF, UF_TO_REGION } from './financialUtils';
 import { publishMissionLive, MISSION_LIVE_WINDOW_EVENT } from './missionLiveBroadcast';
 import { supabase } from './supabase';
 
 /** Janela em que a viatura ainda é considerada no lugar da finalização. */
-export const HORA_MS = 60 * 60 * 1000;
+export const HORA_MS = 30 * 60 * 1000;
 
 export const TABELA_DHL_VIATURA = 'dhl_viatura_disponivel';
 
 export const MOTIVO_BLOQUEIO =
-  'Ninguém clicou em Comunicar a DHL dentro de 1 hora. A viatura saiu do painel porque já não está mais nessa posição.';
-
-export const UFS_EXCLUIDAS = new Set(['SP', 'RJ']);
+  'Ninguém clicou em Comunicar a DHL dentro de 30 minutos. A viatura saiu do painel porque já não está mais nessa posição.';
 
 export const REGIOES_ORDEM = ['NORTE', 'NORDESTE', 'CENTRO-OESTE', 'SUDESTE', 'SUL'] as const;
 
@@ -72,6 +70,7 @@ const ROTULO: Record<string, string> = {
   'CENTRO-OESTE': 'Centro-Oeste',
   SUDESTE: 'Sudeste',
   SUL: 'Sul',
+  TOPO: 'No topo',
 };
 
 export function rotuloRegiao(regiao: string): string {
@@ -122,7 +121,7 @@ export function minutosRestantes(finalizadaEm: string, now: Date): number {
 /**
  * Verde escuro: ninguém copiou.
  * Verde claro: alguém já copiou (vale para todos).
- * Vermelho: passou 1 hora sem o clique — bloqueado, fora do painel vivo.
+ * Vermelho: passou 30 minutos sem o clique — bloqueado, fora do painel vivo.
  */
 export function tomDoBotao(status: StatusAlertaDhl, finalizadaEm: string, now: Date): TomBotaoDhl {
   if (status === 'expirado') return 'vermelho';
@@ -205,9 +204,9 @@ export function agruparPorRegiao<T extends { regiao: string; finalizada_em: stri
 }
 
 /**
- * Qualquer cliente. A OS entra porque a viatura ficou livre e a operação
- * vai avisar a DHL, não porque a viagem era da DHL.
- * Fica de fora São Paulo, Rio de Janeiro e o desdobramento da mesma OS.
+ * Qualquer cliente. A OS finalizada entra por 30 minutos, em qualquer lugar,
+ * menos num raio de 100 km de São Paulo ou do Rio. Extrema, Pouso Alegre e
+ * Varginha entram mesmo perto de São Paulo. O desdobramento da mesma OS fica de fora.
  */
 export function resolverAlertaDhl(input: MissaoParaAlerta, now: Date = new Date()): RascunhoAlertaDhl | null {
   const status = String(input.status || '');
@@ -219,7 +218,8 @@ export function resolverAlertaDhl(input: MissaoParaAlerta, now: Date = new Date(
   const ufAtual = extractUF(localAtual);
   const ufDestino = extractUF(localDestino);
   const uf = ufAtual || ufDestino;
-  if (!uf || UFS_EXCLUIDAS.has(uf)) return null;
+  const posicaoPrevia = (ufAtual ? localAtual : localDestino).replace(/\s+/g, ' ').trim();
+  if (!uf || foraDoPortalPorRaio(posicaoPrevia, uf)) return null;
   const regiao = UF_TO_REGION[uf] || '';
   if (!regiao) return null;
 

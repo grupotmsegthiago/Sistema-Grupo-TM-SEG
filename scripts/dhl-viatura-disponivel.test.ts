@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { formatDateTimeBR } from '../lib/dateUtils';
-import { descreverReferencia, distanciaKm } from '../lib/dhlReferenciaGeografica';
+import { descreverReferencia, distanciaKm, ehCidadeTopo, foraDoPortalPorRaio, ordemCidadeTopo } from '../lib/dhlReferenciaGeografica';
 import {
   filtrarViaturasPorRaio,
   idPublicoViatura,
@@ -48,7 +48,7 @@ test('separa a última posição do texto da ocorrência', () => {
   assert.equal(parteLocal('ENTREGUE'), 'ENTREGUE');
 });
 
-test('entra no painel só fora de SP e RJ, pela última posição', () => {
+test('entra no portal por 30 min, fora do raio de 100 km, com o sul de Minas no topo', () => {
   const curitiba = resolverAlertaDhl(base(), now);
   assert.ok(curitiba);
   assert.equal(curitiba?.regiao, 'SUL');
@@ -58,11 +58,25 @@ test('entra no painel só fora de SP e RJ, pela última posição', () => {
 
   assert.equal(resolverAlertaDhl(base({ currentLocation: 'GUARULHOS - SP' }), now), null);
   assert.equal(resolverAlertaDhl(base({ currentLocation: 'São Paulo' }), now), null);
+  assert.equal(resolverAlertaDhl(base({ currentLocation: 'CAMPINAS - SP' }), now), null);
   assert.equal(resolverAlertaDhl(base({ currentLocation: 'Niterói - RJ' }), now), null);
   assert.equal(resolverAlertaDhl(base({ currentLocation: 'Rio de Janeiro' }), now), null);
+  assert.equal(resolverAlertaDhl(base({ currentLocation: 'RIBEIRAO PRETO - SP' }), now)?.uf, 'SP');
+  assert.equal(resolverAlertaDhl(base({ currentLocation: 'CAMPOS DOS GOYTACAZES - RJ' }), now)?.uf, 'RJ');
+  assert.equal(resolverAlertaDhl(base({ currentLocation: 'EXTREMA - MG' }), now)?.uf, 'MG');
+  assert.equal(resolverAlertaDhl(base({ currentLocation: 'POUSO ALEGRE - MG' }), now)?.uf, 'MG');
+  assert.equal(resolverAlertaDhl(base({ currentLocation: 'VARGINHA - MG' }), now)?.uf, 'MG');
+  assert.equal(foraDoPortalPorRaio('EXTREMA - MG', 'MG'), false);
+  assert.equal(foraDoPortalPorRaio('GUARULHOS - SP', 'SP'), true);
+  assert.deepEqual(
+    ['VARGINHA - MG', 'EXTREMA - MG', 'POUSO ALEGRE - MG'].sort((a, b) => ordemCidadeTopo(a) - ordemCidadeTopo(b)),
+    ['EXTREMA - MG', 'POUSO ALEGRE - MG', 'VARGINHA - MG'],
+  );
+  assert.equal(ehCidadeTopo('CURITIBA - PR'), false);
   assert.equal(resolverAlertaDhl(base({ status: 'Em Viagem' }), now), null);
   assert.equal(resolverAlertaDhl(base({ isSameOs: true }), now), null);
-  assert.equal(resolverAlertaDhl(base({ endTime: ha(61) }), now), null);
+  assert.equal(resolverAlertaDhl(base({ endTime: ha(31) }), now), null);
+  assert.ok(resolverAlertaDhl(base({ endTime: ha(20) }), now));
 
   assert.equal(resolverAlertaDhl(base({ currentLocation: 'RECIFE - PE' }), now)?.regiao, 'NORDESTE');
   assert.equal(resolverAlertaDhl(base({ currentLocation: 'MANAUS - AM' }), now)?.regiao, 'NORTE');
@@ -131,11 +145,11 @@ test('mensagem da DHL não revela fornecedor, OS nem cliente', () => {
   assert.match(msg, /🚛/);
 });
 
-test('cor do botão e saída do painel depois de 1 hora', () => {
+test('cor do botão e saída do painel depois de 30 minutos', () => {
   const pendente = { status: 'pendente' as const, finalizada_em: ha(10) };
-  const copiado = { status: 'copiado' as const, finalizada_em: ha(70) };
-  const estourado = { status: 'pendente' as const, finalizada_em: ha(60) };
-  const expirado = { status: 'expirado' as const, finalizada_em: ha(80) };
+  const copiado = { status: 'copiado' as const, finalizada_em: ha(20) };
+  const estourado = { status: 'pendente' as const, finalizada_em: ha(30) };
+  const expirado = { status: 'expirado' as const, finalizada_em: ha(40) };
 
   assert.equal(tomDoBotao('pendente', pendente.finalizada_em, now), 'escuro');
   assert.equal(tomDoBotao('copiado', copiado.finalizada_em, now), 'claro');
@@ -147,7 +161,7 @@ test('cor do botão e saída do painel depois de 1 hora', () => {
   assert.equal(entraNaListaBloqueados(estourado, now), true);
   assert.equal(entraNaListaBloqueados(expirado, now), true);
   assert.equal(entraNaListaBloqueados(copiado, now), false);
-  assert.equal(HORA_MS, 3_600_000);
+  assert.equal(HORA_MS, 30 * 60 * 1000);
 });
 
 test('tempo relativo e agrupamento por região', () => {

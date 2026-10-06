@@ -4,8 +4,10 @@ import { MapPin, Radio } from 'lucide-react';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { supabase } from '../lib/supabase';
 import { textoHaQuantoTempo } from '../lib/dhlViaturaDisponivel';
+import { ehCidadeTopo, ordemCidadeTopo } from '../lib/dhlReferenciaGeografica';
 import {
   filtrarViaturasPorRaio,
+  JANELA_MAPA_MS,
   montarPontosPublicos,
   RAIO_MAX_KM,
   type LinhaMapaViatura,
@@ -21,6 +23,7 @@ function rotuloRegiaoSimples(regiao: string): string {
     'CENTRO-OESTE': 'Centro-Oeste',
     SUDESTE: 'Sudeste',
     SUL: 'Sul',
+    TOPO: 'No topo · Extrema, Pouso Alegre e Varginha',
   };
   return mapa[regiao] || regiao;
 }
@@ -44,7 +47,7 @@ async function carregarPontos(): Promise<PontoMapaPublico[]> {
   } catch {
     /* o mapa ainda lê o banco direto se a API não estiver no ar */
   }
-  const corte = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const corte = new Date(Date.now() - JANELA_MAPA_MS).toISOString();
   const { data, error } = await supabase
     .from('dhl_viatura_disponivel')
     .select('posicao, uf, regiao, finalizada_em, status')
@@ -91,17 +94,22 @@ export default function MapaViaturasPublico() {
   );
   const grupos = useMemo(() => {
     const ordem = ['NORTE', 'NORDESTE', 'CENTRO-OESTE', 'SUDESTE', 'SUL'];
+    const topo = visiveis
+      .filter((ponto) => ehCidadeTopo(ponto.posicao))
+      .sort((a, b) => ordemCidadeTopo(a.posicao) - ordemCidadeTopo(b.posicao));
     const mapa = new Map<string, typeof visiveis>();
     for (const ponto of visiveis) {
+      if (ehCidadeTopo(ponto.posicao)) continue;
       const lista = mapa.get(ponto.regiao) || [];
       lista.push(ponto);
       mapa.set(ponto.regiao, lista);
     }
-    return [...mapa.entries()].sort((a, b) => {
+    const resto = [...mapa.entries()].sort((a, b) => {
       const ia = ordem.indexOf(a[0]);
       const ib = ordem.indexOf(b[0]);
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
     });
+    return topo.length ? [['TOPO', topo] as [string, typeof visiveis], ...resto] : resto;
   }, [visiveis]);
 
   useEffect(() => {
@@ -186,7 +194,7 @@ export default function MapaViaturasPublico() {
         <img src="/logo-dhl.svg" alt="DHL" className="h-7 w-auto" />
         <div className="min-w-0 border-l border-black/15 pl-3">
           <p className="text-sm font-black uppercase leading-tight text-[#D40511]">Portal DHL</p>
-          <p className="text-[11px] font-semibold text-[#323232]">Viaturas liberadas no mapa · Escolta TM Segue</p>
+          <p className="text-[11px] font-semibold text-[#323232]">30 minutos · fora de 100 km de São Paulo e do Rio</p>
         </div>
         <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-[#D40511] px-2.5 py-1 text-[10px] font-black uppercase text-white">
           <Radio size={12} /> {pontos.length} liberadas
