@@ -200,7 +200,7 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
             <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-black">{vivas.length}</span>
           </div>
           <p className="mt-1 text-[11px] font-semibold text-green-100">
-            OS finalizadas fora de São Paulo e Rio de Janeiro, separadas por região. O fornecedor fica só neste painel — o texto da DHL fala em Escolta TM Segue.
+            Qualquer cliente. A OS finalizada fora de São Paulo e Rio de Janeiro entra aqui para avisar a DHL que a Escolta TM Segue tem viatura na região. Fornecedor e cliente ficam só neste painel.
           </p>
         </div>
         <p className="text-[10px] font-bold uppercase text-green-200">Some ao confirmar o envio no grupo</p>
@@ -237,6 +237,7 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-[11px] font-black text-gray-900">{row.mission_id}</p>
+                        <p className="text-[11px] font-bold text-gray-700">Cliente: {row.cliente || '—'}</p>
                         <p className="text-[11px] font-bold text-gray-700">Fornecedor: {row.provider_name || '—'}</p>
                         <p className="mt-0.5 flex items-start gap-1 text-[11px] font-semibold text-gray-600">
                           <MapPin size={12} className="mt-0.5 shrink-0" />
@@ -340,7 +341,7 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
               {bloqueados.map((row) => (
                 <article key={row.mission_id} className="rounded-lg border border-red-300 bg-red-50 p-2" data-testid={`dhl-bloqueada-${row.mission_id}`}>
                   <p className="text-[11px] font-black text-red-900">{row.mission_id} · {rotuloRegiao(row.regiao)} · bloqueada</p>
-                  <p className="text-[11px] font-bold text-red-800">Fornecedor: {row.provider_name || '—'}</p>
+                  <p className="text-[11px] font-bold text-red-800">Cliente: {row.cliente || '—'} · Fornecedor: {row.provider_name || '—'}</p>
                   <p className="text-[11px] font-semibold text-red-800">{row.posicao}</p>
                   <p className="text-[10px] font-semibold text-red-700">Finalizada em {formatDateTimeBR(row.finalizada_em)} · {textoHaQuantoTempo(row.finalizada_em, now)}</p>
                   <p className="mt-1 text-[11px] font-semibold text-red-900">{row.motivo_bloqueio || 'Passou 1 hora sem clicar em Comunicar a DHL.'}</p>

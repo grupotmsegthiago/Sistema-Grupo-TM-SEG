@@ -202,8 +202,9 @@ export function agruparPorRegiao<T extends { regiao: string; finalizada_em: stri
 }
 
 /**
- * OS concluída, que não seja desdobramento da mesma OS, cuja última posição
- * não é São Paulo nem Rio de Janeiro.
+ * Qualquer cliente. A OS entra porque a viatura ficou livre e a operação
+ * vai avisar a DHL, não porque a viagem era da DHL.
+ * Fica de fora São Paulo, Rio de Janeiro e o desdobramento da mesma OS.
  */
 export function resolverAlertaDhl(input: MissaoParaAlerta, now: Date = new Date()): RascunhoAlertaDhl | null {
   const status = String(input.status || '');

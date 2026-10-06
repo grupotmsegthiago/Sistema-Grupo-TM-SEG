@@ -77,6 +77,21 @@ test('sem UF na ocorrência, usa o destino; menção a SP no meio do texto não 
   assert.equal(mista?.regiao, 'SUL');
 });
 
+test('qualquer cliente entra no painel; o texto só avisa a DHL da viatura', () => {
+  for (const client of ['DHL SUPPLY CHAIN', 'CEVA', 'LUFT', 'POLAR', 'Cliente Avulso']) {
+    const alerta = resolverAlertaDhl(base({ client, missionId: `GTM-${client.length}` }), now);
+    assert.ok(alerta, client);
+    assert.equal(alerta?.cliente, client);
+    const msg = montarMensagemDisponibilidadeDhl({
+      regiao: alerta!.regiao,
+      posicao: alerta!.posicao,
+      finalizadaEm: alerta!.finalizadaEm,
+    });
+    assert.equal(msg.toUpperCase().includes(client.toUpperCase()), false, client);
+    assert.match(msg, /viatura disponível na região/);
+  }
+});
+
 test('mensagem da DHL não revela fornecedor, OS nem cliente', () => {
   const quando = ha(8);
   const msg = montarMensagemDisponibilidadeDhl({
