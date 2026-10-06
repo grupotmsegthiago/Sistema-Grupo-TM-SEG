@@ -89,6 +89,20 @@ export default function MapaViaturasPublico() {
     () => filtrarViaturasPorRaio(pontos, busca, raio),
     [pontos, busca, raio],
   );
+  const grupos = useMemo(() => {
+    const ordem = ['NORTE', 'NORDESTE', 'CENTRO-OESTE', 'SUDESTE', 'SUL'];
+    const mapa = new Map<string, typeof visiveis>();
+    for (const ponto of visiveis) {
+      const lista = mapa.get(ponto.regiao) || [];
+      lista.push(ponto);
+      mapa.set(ponto.regiao, lista);
+    }
+    return [...mapa.entries()].sort((a, b) => {
+      const ia = ordem.indexOf(a[0]);
+      const ib = ordem.indexOf(b[0]);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+  }, [visiveis]);
 
   useEffect(() => {
     if (!mapa || !busca) return;
@@ -108,151 +122,177 @@ export default function MapaViaturasPublico() {
     setSelecionado(null);
   };
 
-  return (
-    <div className="relative h-screen w-screen overflow-hidden bg-slate-900" data-testid="mapa-viaturas-publico">
-      {isLoaded && !loadError ? (
-        <GoogleMap
-          mapContainerStyle={{ width: '100%', height: '100%' }}
-          center={busca || CENTRO_BRASIL}
-          zoom={busca ? zoomDoRaio(raio) : 4}
-          onLoad={setMapa}
-          options={{
-            streetViewControl: false,
-            mapTypeControl: false,
-            fullscreenControl: false,
-            clickableIcons: false,
-          }}
-        >
-          {busca && (
-            <Circle
-              center={busca}
-              radius={raio * 1000}
-              options={{
-                fillColor: '#991b1b',
-                fillOpacity: 0.08,
-                strokeColor: '#991b1b',
-                strokeOpacity: 0.8,
-                strokeWeight: 2,
-                clickable: false,
-              }}
-            />
-          )}
-          {visiveis.map((ponto) => (
-            <OverlayView
-              key={ponto.id}
-              position={{ lat: ponto.lat, lng: ponto.lng }}
-              mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
-              getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -h })}
-            >
-              <button
-                type="button"
-                onClick={() => setSelecionado(ponto.id)}
-                className="flex flex-col items-center"
-                title="Viatura TM Segue"
-              >
-                <span className="flex h-12 w-12 items-center justify-center rounded-full border-[3px] border-red-800 bg-white shadow-lg">
-                  <img src="/logo.png" alt="TM Segue" className="h-8 w-8 object-contain" />
-                </span>
-                <span className="h-0 w-0 border-x-[8px] border-t-[12px] border-x-transparent border-t-red-800" />
-              </button>
-            </OverlayView>
-          ))}
-        </GoogleMap>
-      ) : (
-        <div className="flex h-full items-center justify-center text-sm font-bold text-white">
-          {loadError ? 'Não foi possível abrir o mapa.' : 'Abrindo o mapa...'}
-        </div>
-      )}
+  const abrirPonto = (ponto: { id: string; lat: number; lng: number }) => {
+    setSelecionado(ponto.id);
+    mapa?.panTo({ lat: ponto.lat, lng: ponto.lng });
+    mapa?.setZoom(11);
+  };
 
-      <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center px-3">
-        <div className="pointer-events-auto w-full max-w-xl rounded-2xl border border-red-900/20 bg-white/95 p-3 shadow-2xl backdrop-blur">
-          <div className="mb-2 flex items-center gap-2">
-            <img src="/logo.png" alt="" className="h-8 w-8 object-contain" />
-            <div className="min-w-0">
-              <p className="text-sm font-black uppercase tracking-wide text-red-900">TM Segue · Viaturas disponíveis</p>
-              <p className="text-[11px] font-semibold text-slate-500">Escolta TM Segue. A posição é a cidade do fim da viagem.</p>
-            </div>
-            <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-[10px] font-black uppercase text-red-800">
-              <Radio size={12} /> {visiveis.length}
-            </span>
-          </div>
-
-          {isLoaded && (
-            <Autocomplete onLoad={setAutocomplete} onPlaceChanged={aoEscolherLugar}>
-              <input
-                type="text"
-                placeholder="Digite a cidade ou o endereço"
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold outline-none focus:border-red-800"
-                data-testid="mapa-viaturas-busca"
-              />
-            </Autocomplete>
-          )}
-
-          <label className="mt-3 block">
-            <span className="flex items-center justify-between text-[11px] font-black uppercase text-slate-600">
-              <span>Raio</span>
-              <span className="text-red-800">{raio} km</span>
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={RAIO_MAX_KM}
-              step={10}
-              value={raio}
-              onChange={(e) => setRaio(Number(e.target.value))}
-              className="mt-1 w-full accent-red-800"
-              data-testid="mapa-viaturas-raio"
-            />
-            <span className="flex justify-between text-[10px] font-bold text-slate-400">
-              <span>0 km</span>
-              <span>1000 km</span>
-            </span>
-            {!busca && (
-              <span className="mt-1 block text-[10px] font-semibold text-slate-400">
-                Digite a cidade para filtrar as viaturas dentro do raio.
-              </span>
-            )}
-          </label>
-
-          {busca && (
-            <p className="mt-1 truncate text-[11px] font-semibold text-slate-500">
-              <MapPin size={12} className="mr-1 inline" />
-              {busca.endereco}
+  const lista = (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="border-b border-black/10 px-4 py-3">
+        <p className="text-[11px] font-black uppercase tracking-wide text-[#D40511]">Tudo que está liberado</p>
+        <p className="text-sm font-black text-black">
+          {busca ? `${visiveis.length} dentro do raio` : `${pontos.length} viatura${pontos.length === 1 ? '' : 's'} nesta hora`}
+        </p>
+      </div>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        {visiveis.length === 0 && (
+          <p className="rounded-lg bg-slate-50 px-3 py-3 text-xs font-semibold text-slate-500">
+            {busca
+              ? 'Nenhuma viatura liberada dentro desse raio agora.'
+              : 'Nenhuma viatura liberada nesta hora.'}
+          </p>
+        )}
+        {grupos.map(([regiao, itens]) => (
+          <div key={regiao}>
+            <p className="mb-1 px-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
+              {rotuloRegiaoSimples(regiao)} · {itens.length}
             </p>
+            <div className="space-y-1">
+              {itens.map((ponto) => (
+                <button
+                  key={ponto.id}
+                  type="button"
+                  onClick={() => abrirPonto(ponto)}
+                  className={`flex w-full items-start justify-between gap-2 rounded-lg px-2 py-2 text-left ${selecionado === ponto.id ? 'bg-[#FFCC00]/40' : 'hover:bg-slate-50'}`}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-black text-slate-800">Viatura TM Segue · {ponto.posicao}</span>
+                    <span className="block text-[10px] font-semibold text-slate-500">
+                      Liberada {textoHaQuantoTempo(ponto.finalizadaEm, agora)}
+                    </span>
+                  </span>
+                  {ponto.distanciaKm != null && (
+                    <span className="shrink-0 text-[11px] font-black text-[#D40511]">
+                      {Math.max(1, Math.round(ponto.distanciaKm))} km
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex h-screen flex-col bg-[#f6f6f6]" data-testid="portal-dhl">
+      <header className="z-20 flex items-center gap-3 bg-[#FFCC00] px-4 py-2.5 text-black shadow-md">
+        <span className="rounded bg-[#D40511] px-2.5 py-1 text-base font-black tracking-tight text-white">DHL</span>
+        <div className="min-w-0">
+          <p className="text-sm font-black uppercase leading-tight">Portal DHL</p>
+          <p className="text-[11px] font-semibold text-black/70">Viaturas liberadas no mapa · Escolta TM Segue</p>
+        </div>
+        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-black px-2.5 py-1 text-[10px] font-black uppercase text-[#FFCC00]">
+          <Radio size={12} /> {pontos.length} liberadas
+        </span>
+        <img src="/logo.png" alt="TM Segue" className="h-9 w-9 object-contain" />
+      </header>
+
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <aside className="order-2 h-[42vh] border-t border-black/10 bg-white lg:order-1 lg:h-auto lg:w-[360px] lg:border-r lg:border-t-0">
+          {lista}
+        </aside>
+
+        <div className="relative order-1 min-h-[52vh] flex-1 lg:order-2">
+          {isLoaded && !loadError ? (
+            <GoogleMap
+              mapContainerStyle={{ width: '100%', height: '100%' }}
+              center={busca || CENTRO_BRASIL}
+              zoom={busca ? zoomDoRaio(raio) : 4}
+              onLoad={setMapa}
+              options={{
+                streetViewControl: false,
+                mapTypeControl: false,
+                fullscreenControl: false,
+                clickableIcons: false,
+              }}
+            >
+              {busca && (
+                <Circle
+                  center={busca}
+                  radius={raio * 1000}
+                  options={{
+                    fillColor: '#D40511',
+                    fillOpacity: 0.08,
+                    strokeColor: '#D40511',
+                    strokeOpacity: 0.85,
+                    strokeWeight: 2,
+                    clickable: false,
+                  }}
+                />
+              )}
+              {visiveis.map((ponto) => (
+                <OverlayView
+                  key={ponto.id}
+                  position={{ lat: ponto.lat, lng: ponto.lng }}
+                  mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+                  getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -h })}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelecionado(ponto.id)}
+                    className="flex flex-col items-center"
+                    title="Viatura TM Segue"
+                  >
+                    <span className={`flex h-12 w-12 items-center justify-center rounded-full border-[3px] bg-white shadow-lg ${selecionado === ponto.id ? 'border-[#FFCC00]' : 'border-[#D40511]'}`}>
+                      <img src="/logo.png" alt="TM Segue" className="h-8 w-8 object-contain" />
+                    </span>
+                    <span className={`h-0 w-0 border-x-[8px] border-t-[12px] border-x-transparent ${selecionado === ponto.id ? 'border-t-[#FFCC00]' : 'border-t-[#D40511]'}`} />
+                  </button>
+                </OverlayView>
+              ))}
+            </GoogleMap>
+          ) : (
+            <div className="flex h-full items-center justify-center bg-slate-900 text-sm font-bold text-white">
+              {loadError ? 'Não foi possível abrir o mapa.' : 'Abrindo o mapa...'}
+            </div>
           )}
 
-          <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-            {visiveis.length === 0 && (
-              <p className="rounded-lg bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-500">
-                {busca
-                  ? 'Nenhuma viatura TM Segue dentro desse raio agora.'
-                  : 'Nenhuma viatura disponível nesta hora.'}
+          <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center px-3">
+            <div className="pointer-events-auto w-full max-w-xl rounded-2xl border border-black/10 bg-white/95 p-3 shadow-2xl backdrop-blur">
+              <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-[#D40511]">
+                Busque uma cidade e veja as viaturas liberadas por perto
               </p>
-            )}
-            {visiveis.map((ponto) => (
-              <button
-                key={ponto.id}
-                type="button"
-                onClick={() => {
-                  setSelecionado(ponto.id);
-                  mapa?.panTo({ lat: ponto.lat, lng: ponto.lng });
-                  mapa?.setZoom(11);
-                }}
-                className={`flex w-full items-start justify-between gap-2 rounded-lg px-2 py-1.5 text-left ${selecionado === ponto.id ? 'bg-red-50' : 'hover:bg-slate-50'}`}
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-xs font-black text-slate-800">Viatura TM Segue · {ponto.posicao}</span>
-                  <span className="block text-[10px] font-semibold text-slate-500">
-                    {rotuloRegiaoSimples(ponto.regiao)} · {textoHaQuantoTempo(ponto.finalizadaEm, agora)}
-                  </span>
+              {isLoaded && (
+                <Autocomplete onLoad={setAutocomplete} onPlaceChanged={aoEscolherLugar}>
+                  <input
+                    type="text"
+                    placeholder="Digite a cidade ou o endereço"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold outline-none focus:border-[#D40511]"
+                    data-testid="mapa-viaturas-busca"
+                  />
+                </Autocomplete>
+              )}
+              <label className="mt-3 block">
+                <span className="flex items-center justify-between text-[11px] font-black uppercase text-slate-600">
+                  <span>Raio</span>
+                  <span className="text-[#D40511]">{raio} km</span>
                 </span>
-                {ponto.distanciaKm != null && (
-                  <span className="shrink-0 text-[11px] font-black text-red-800">
-                    {Math.max(1, Math.round(ponto.distanciaKm))} km
-                  </span>
-                )}
-              </button>
-            ))}
+                <input
+                  type="range"
+                  min={0}
+                  max={RAIO_MAX_KM}
+                  step={10}
+                  value={raio}
+                  onChange={(e) => setRaio(Number(e.target.value))}
+                  className="mt-1 w-full accent-[#D40511]"
+                  data-testid="mapa-viaturas-raio"
+                />
+                <span className="flex justify-between text-[10px] font-bold text-slate-400">
+                  <span>0 km</span>
+                  <span>1000 km</span>
+                </span>
+              </label>
+              {busca && (
+                <p className="mt-1 truncate text-[11px] font-semibold text-slate-500">
+                  <MapPin size={12} className="mr-1 inline" />
+                  {busca.endereco}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>

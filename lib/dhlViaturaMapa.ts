@@ -4,7 +4,7 @@
  */
 import { acharCidade, distanciaKm } from './dhlReferenciaGeografica';
 
-export const CAMINHO_MAPA_VIATURAS = '/viaturas';
+export const CAMINHO_MAPA_VIATURAS = '/dhl';
 export const JANELA_MAPA_MS = 60 * 60 * 1000;
 export const RAIO_MAX_KM = 1000;
 

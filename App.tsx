@@ -179,7 +179,7 @@ const App: React.FC = () => {
   const isPortalExternoRoute = isCevaPortalRoute || isIblPortalRoute;
   const isDhlSupplierRoute = normalizedPath === '/fornecedor/dhl';
   const isLiveTrackRoute = normalizedPath === '/rastreio';
-  const isViaturasMapaRoute = normalizedPath === '/viaturas';
+  const isViaturasMapaRoute = normalizedPath === '/viaturas' || normalizedPath === '/dhl';
   const isResetPasswordRoute = normalizedPath === '/reset-password';
   const resetToken = new URLSearchParams(window.location.search).get('token') || '';
 

@@ -276,7 +276,7 @@ export function montarMensagemDisponibilidadeDhl(alerta: {
   );
   const link = String(alerta.linkMapa || '').trim();
   if (link) {
-    linhas.push('', `🗺️ *Mapa das viaturas:* ${link}`);
+    linhas.push('', `🗺️ *Portal DHL:* ${link}`);
   }
   return linhas.join('\n');
 }

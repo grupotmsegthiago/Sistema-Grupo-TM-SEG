@@ -244,7 +244,8 @@ test('mapa público esconde OS, fornecedor e cliente e obedece o raio', () => {
     finalizadaEm: ha(5),
     linkMapa: urlMapaViaturas('https://sistema.grupotmseg.com.br'),
   });
-  assert.match(comLink, /https:\/\/sistema\.grupotmseg\.com\.br\/viaturas/);
+  assert.match(comLink, /https:\/\/sistema\.grupotmseg\.com\.br\/dhl/);
+  assert.match(comLink, /Portal DHL/);
   assert.equal(comLink.includes('GTM-'), false);
   assert.equal(comLink.includes('FORNECEDOR'), false);
 });

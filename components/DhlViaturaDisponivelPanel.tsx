@@ -254,13 +254,13 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
             onClick={() => {
               const url = urlMapaViaturas();
               void copyTextAsync(url).then((ok) => {
-                showNotification('Mapa', ok ? 'Link do mapa copiado.' : url, ok ? 'success' : 'info');
+                showNotification('Portal DHL', ok ? 'Link do portal copiado.' : url, ok ? 'success' : 'info');
               });
             }}
             className="inline-flex items-center gap-1 rounded-md bg-white/15 px-2 py-1 text-[10px] font-black uppercase text-white hover:bg-white/25"
             title={urlMapaViaturas()}
           >
-            <ExternalLink size={11} /> Link do mapa para o cliente
+            <ExternalLink size={11} /> Link do portal DHL
           </button>
         </div>
       </div>
