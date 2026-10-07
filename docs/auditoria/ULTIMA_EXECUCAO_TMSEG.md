@@ -1,5 +1,31 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## PONTO CLT — FACIAL DE VOLTA, SEM TRAVA DE HORÁRIO
+
+**Data:** 2026-10-07
+**Pedido:** funcionário CLT em RH / Funcionários volta a bater ponto com identificação facial. O horário do turno não bloqueia o uso do sistema.
+
+**O que mudou:** CLT ativo (ou em experiência), mesmo no perfil Avançado, passa de novo pela cobrança de entrada com facial. A batida continua liberada a qualquer hora. Diretoria, Administrador e o auditor Daniel seguem sem essa trava.
+
+**Não alterado:** sequência das quatro batidas, cálculo de OS, financeiro.
+
+## VS TRANSPORTES — REFERÊNCIA DE PEDIDOS NO BOLETIM
+
+**Data:** 2026-10-07
+**Pedido:** só para a VS TRANSPORTES, o time informa a Referência de Pedidos na OS (ex.: 303185 / 303189) e essa coluna aparece no boletim de medição. OS já concluídas e aprovadas também recebem o campo, para preencher e reenviar o boletim.
+
+**O que mudou:**
+- Cliente: `VS TRANSPORTES LTDA` (fantasia VS OPERADOR LOGISTICO, id 80).
+- Campo na criação da OS (`MissionForm`), na edição (`UpdateMissionModal`) e na Auditoria de Faturamento (`MissionFinancialModal`), gravado em `missions.reference_number` (coluna que já existia).
+- OS concluída e aprovada: na auditoria, o botão **Salvar referência** grava só esse número, mesmo com o faturamento travado. Quem não pode alterar o restante da OS ainda consegue salvar só essa referência.
+- Boletim de medição do cliente (tela, Excel e PDF) ganha a coluna **REF. PEDIDOS**. O PDF sai do mesmo HTML.
+
+**Não alterado:** cálculo da OS, aprovação, snapshot financeiro, Asaas, eNotas, colunas de CESLOG/DHL/CEVA/INTERMODAL, boletim de fornecedor.
+
+**Testes:** `npx tsx --test scripts/vs-transportes-pedido.test.ts`
+
+**Pendência:** as OS já aprovadas com a referência vazia são preenchidas na Auditoria de Faturamento (campo ciano no topo) e o boletim é gerado de novo. Não publicado.
+
 ## PORTAL CEVA — CONTROLE DE ESCOLTA
 
 **Data:** 2026-09-29 (UTC-3)

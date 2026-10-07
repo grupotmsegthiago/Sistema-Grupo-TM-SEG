@@ -202,6 +202,13 @@ export function canAccessScreen(user: ScreenAccessUser | null | undefined, scree
     return canAccessMissionReport(user);
   }
 
+  // Cadastro de Viaturas é operacional (inclusive vínculo para a DHL).
+  // O perfil Financeiro não usa essa tela.
+  if (resolvePermissionId(screenId) === 'provider-vehicles') {
+    const role = (user.role || '').toLowerCase();
+    if (role === 'financeiro') return false;
+  }
+
   // Grupos do menu: visível somente se algum filho estiver acessível.
   if (screenId.endsWith('-group')) {
     return childrenOfGroup(screenId).some((childId) => canAccessScreen(user, childId));

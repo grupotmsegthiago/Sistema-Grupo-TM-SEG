@@ -32,13 +32,17 @@ export function isAvancadoRole(role: string | null | undefined): boolean {
   return AVANCADO_ROLES.has(normalizeRole(role));
 }
 
-/** Daniel (auditor/coordenador) e perfis equivalentes não batem ponto. */
+/**
+ * Diretoria, Administrador e o auditor Daniel não batem ponto.
+ * Avançado só fica isento quando não é CLT no RH. CLT ativo volta a bater ponto e facial.
+ */
 export function isTimeclockExemptUser(user: TimeClockUserContext | null | undefined): boolean {
   if (!user) return false;
   const role = (user as { role?: string }).role;
-  if (isDiretoriaRole(role) || isAdministradorRole(role) || isAvancadoRole(role)) return true;
+  if (isDiretoriaRole(role) || isAdministradorRole(role)) return true;
   const email = String(user.email || '').trim().toLowerCase();
   if (email && TIMECLOCK_EXEMPT_EMAILS.has(email)) return true;
+  if (isAvancadoRole(role) && user.isClt !== true) return true;
   return false;
 }
 
@@ -61,12 +65,15 @@ export function employeeRequiresTimeclock(employee: {
   );
 }
 
-/** Usuário logado deve passar pelo fluxo de ponto. */
+/**
+ * Usuário logado deve passar pelo fluxo de ponto e facial.
+ * CLT do RH entra mesmo no perfil Avançado. Horário de turno não isenta nem trava.
+ */
 export function requiresTimeclockUser(user: TimeClockUserContext | null | undefined): boolean {
   if (!user?.id) return false;
   if (isTimeclockExemptUser(user)) return false;
-  if (user.requiresTimeclock === true) return true;
   if (user.isClt === true) return true;
+  if (user.requiresTimeclock === true) return true;
   if (isOperationalRole((user as any).role)) return true;
   return false;
 }

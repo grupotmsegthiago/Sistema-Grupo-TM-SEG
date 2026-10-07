@@ -55,12 +55,16 @@ test('administrador não passa pela facial nem pelo ponto', () => {
   assert.equal(requiresTimeclockUser({ id: '1', name: 'Op', role: 'Operador', isClt: true }), true);
 });
 
-test('avançado não passa pela facial nem pelo ponto', () => {
+test('avançado sem CLT não passa pela facial; CLT do RH volta ao ponto', () => {
   assert.equal(isAvancadoRole('Avançado'), true);
   assert.equal(isAvancadoRole('AVANÇADO'), true);
   assert.equal(isAvancadoRole('avancado'), true);
   assert.equal(
     requiresTimeclockUser({ id: '4', name: 'Michelle', role: 'Avançado', isClt: true, requiresTimeclock: true }),
+    true,
+  );
+  assert.equal(
+    requiresTimeclockUser({ id: '9', name: 'SemVinculo', role: 'Avançado', isClt: false }),
     false,
   );
   assert.equal(requiresTimeclockUser({ id: '1', name: 'Op', role: 'Operador', isClt: true }), true);

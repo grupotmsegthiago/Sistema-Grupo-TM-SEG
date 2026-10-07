@@ -169,8 +169,8 @@ export async function enrichUserWithCltData(
   const isClt = isCltContractType(contractType) && isEmployeeEligibleForTimeClock(employee.status);
   let requiresTimeclock = employeeRequiresTimeclock(employee);
 
-  // Isenção explícita (ex.: Daniel auditor) prevalece sobre flag no RH.
-  if (isTimeclockExemptUser(user)) {
+  // Diretoria, Administrador e auditor isento prevalecem. CLT no perfil Avançado continua no ponto.
+  if (isTimeclockExemptUser({ ...user, isClt, requiresTimeclock })) {
     requiresTimeclock = false;
   }
 

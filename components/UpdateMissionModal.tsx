@@ -37,6 +37,7 @@ import DhlOccurrenceReportModal from './DhlOccurrenceReportModal';
 import { useNotification } from '../lib/NotificationContext';
 import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { isVsTransportesClient, referenciaPedidosVsFaltando } from '../lib/billing/vsTransportesPedido';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { canEditNegativeMarginLockedOs, isOsNegativeMarginLocked } from '../lib/osNegativeMarginLock';
 import { canSaveFinalizeEvidence, endEvidencePendingPatch, endEvidenceSavedPatch } from '../lib/endEvidenceGate';
@@ -1057,6 +1058,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     // Operadores (Michele, Beatriz, Lucas, Daniel, etc.) finalizam a OS
     // sem o gate de pedágio — o valor é cobrado depois, no fluxo financeiro.
     const ocultaFinanceiro = useMemo(() => isPerfilAvancado(currentUser), [currentUser]);
+    const isPerfilFinanceiro = (currentUser?.role || '').toLowerCase() === 'financeiro';
 
     const isTollResponsibleUser = useMemo(() => {
         if (!currentUser || ocultaFinanceiro) return false;
@@ -2148,6 +2150,15 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             return;
         }
 
+        if (referenciaPedidosVsFaltando(mission.client, editData.reference_number)) {
+            showNotification(
+                'Referência de Pedidos',
+                'Para a VS TRANSPORTES, o operacional precisa informar a Referência de Pedidos antes de salvar. Ex.: 303185 / 303189',
+                'error',
+            );
+            return;
+        }
+
         const paidLocked = paidInvoiceLock.bloqueado && !paidUnlockOverride;
         if (paidLocked) {
             const changingKmHours = kmHorasValoresSnapshotMudou(originalKmHoursRef.current, {
@@ -2174,6 +2185,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             // (cliente/fornecedor) — senão o Relatório mostra DESL e o faturamento não cobra.
             const deslocKmValue = editData.dhl_deslocamento_km !== '' ? (parseFloat(editData.dhl_deslocamento_km) || 0) : null;
             const approvedPayload: Record<string, unknown> = { dhl_deslocamento_km: deslocKmValue };
+            // VS TRANSPORTES: a referência de pedidos entra depois da aprovação,
+            // sem liberar status, KM, valores ou snapshot.
+            if (isVsTransportesClient(mission.client)) {
+                approvedPayload.reference_number = String(editData.reference_number || '').trim() || null;
+            }
             const curDisp = Math.max(0, Number((mission as any).displacement_value) || 0);
             const curDispProv = Math.max(0, Number((mission as any).displacement_value_provider) || 0);
             if ((deslocKmValue || 0) > 0 && (curDisp <= 0 || (curDispProv <= 0 && !mission.is_same_os)) && !paidLocked) {
@@ -2214,11 +2230,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 showNotification('Erro', 'Falha ao salvar KM de deslocamento: ' + deslocErr.message, 'error');
                 return;
             }
+            const salvouRefPedidos = Object.prototype.hasOwnProperty.call(approvedPayload, 'reference_number');
+            const materializouDesloc = !ocultaFinanceiro && (approvedPayload.displacement_value || approvedPayload.displacement_value_provider);
             showNotification(
                 'Salvo',
-                !ocultaFinanceiro && (approvedPayload.displacement_value || approvedPayload.displacement_value_provider)
-                    ? 'KM e deslocamento (R$) atualizados. Demais campos permanecem travados pela aprovação.'
-                    : 'KM de deslocamento atualizado. Os demais campos estão travados porque a OS já foi aprovada.',
+                salvouRefPedidos
+                    ? (materializouDesloc
+                        ? 'Referência de Pedidos salva. KM e deslocamento (R$) também atualizados. Demais campos permanecem travados pela aprovação.'
+                        : 'Referência de Pedidos salva. Os demais campos permanecem travados pela aprovação.')
+                    : (materializouDesloc
+                        ? 'KM e deslocamento (R$) atualizados. Demais campos permanecem travados pela aprovação.'
+                        : 'KM de deslocamento atualizado. Os demais campos estão travados porque a OS já foi aprovada.'),
                 'success',
             );
             dispararSyncFaturaPorOS(mission.id, currentUser?.name);
@@ -4161,7 +4183,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     </div>
 
                     {/* Cadastro operacional — link externo do fornecedor (todos os clientes) */}
-                    {!hideProviderInfo && mission?.id && (
+                    {!hideProviderInfo && mission?.id && !(isPerfilFinanceiro && (mission?.client || '').toUpperCase().includes('DHL')) && (
                         <div className="p-6 bg-white border border-gray-200 rounded-[2.5rem] shadow-sm">
                             <DhlIntakeTimeline
                                 missionId={mission.id}
@@ -4248,6 +4270,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             <div><label className={LABEL_CLASS}>GR / Espelhamento</label><input type="text" className={`${INPUT_CLASS} border-indigo-200 bg-indigo-50/20`} value={editData.gr_espelhamento} onChange={e => setEditData({...editData, gr_espelhamento: e.target.value.toUpperCase()})} /></div>
                             {((mission?.client || '').toUpperCase().includes('CESLOG') || (mission?.client || '').toUpperCase().includes('CESARI')) && (
                                 <div><label className={LABEL_CLASS}><span className="text-purple-600 font-black">Nº Referência</span></label><input type="text" className={`${INPUT_CLASS} border-purple-300 bg-purple-50/30`} placeholder="Nº Referência CESLOG/CESARI" value={editData.reference_number} onChange={e => setEditData({...editData, reference_number: e.target.value})} data-testid="input-edit-reference-number" /></div>
+                            )}
+                            {isVsTransportesClient(mission?.client) && (
+                                <div className="md:col-span-2">
+                                    <label className={LABEL_CLASS}><span className="text-red-600">*</span> <span className="text-cyan-700 font-black">Referência de Pedidos</span></label>
+                                    <input type="text" required className={`${INPUT_CLASS} border-cyan-400 bg-cyan-50/40`} placeholder="Ex.: 303185 / 303189" value={editData.reference_number} onChange={e => setEditData({...editData, reference_number: e.target.value})} data-testid="input-edit-vs-pedido-ref" />
+                                    <p className="text-[9px] text-cyan-800 font-bold mt-1">Obrigatório para o operacional da VS TRANSPORTES. Ex.: 303185 / 303189. Entra na coluna REF. PEDIDOS do boletim.</p>
+                                </div>
                             )}
                             {((mission?.client || '').toUpperCase().includes('DHL')) && (
                                 <div><label className={LABEL_CLASS}><span className="text-red-600 font-black">Nº S.E. (DHL)</span></label><input type="text" className={`${INPUT_CLASS} border-red-300 bg-yellow-50/40`} placeholder="Ex: SE-123456 / 4912345" value={editData.dhl_se_number} onChange={e => setEditData({...editData, dhl_se_number: e.target.value.toUpperCase()})} data-testid="input-edit-dhl-se-number" /></div>

@@ -25,6 +25,7 @@ import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import { billableClientToll, tollPersistencePair } from '../lib/toll/clientTollBilling';
+import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
 import { formatProviderName } from '../lib/utils';
 import { AvisoTabelaOs } from './AvisoTabelaOs';
 import { copyTextAsync } from '../lib/clipboard';
@@ -274,6 +275,76 @@ const BillingPeriodOverridePanel: React.FC<{
                     </div>
                 </div>
             )}
+        </div>
+    );
+};
+
+/** Só VS TRANSPORTES: grava a referência de pedidos sem mexer em valor, aprovação ou snapshot. */
+const VsPedidoReferenciaPanel: React.FC<{
+    mission: Mission | null;
+    setMission: React.Dispatch<React.SetStateAction<Mission | null>>;
+    showNotification: (t: string, m: string, k?: any) => void;
+}> = ({ mission, setMission, showNotification }) => {
+    const clientName = mission?.originalClientName || mission?.client;
+    const visible = isVsTransportesClient(clientName, mission?.client);
+    const [value, setValue] = useState(String(mission?.reference_number || ''));
+    const [saving, setSaving] = useState(false);
+
+    React.useEffect(() => {
+        setValue(String(mission?.reference_number || ''));
+    }, [mission?.id, mission?.reference_number]);
+
+    if (!mission || !visible) return null;
+
+    const handleSave = async () => {
+        const referencia = value.trim();
+        if (!referencia) {
+            showNotification('Referência de Pedidos', 'Informe a referência de pedidos da VS TRANSPORTES. Ex.: 303185 / 303189', 'error');
+            return;
+        }
+        setSaving(true);
+        try {
+            const { error } = await supabase
+                .from('missions')
+                .update({ reference_number: referencia })
+                .eq('id', mission.id);
+            if (error) {
+                showNotification('Erro', 'Falha ao salvar a referência de pedidos: ' + error.message, 'error');
+                return;
+            }
+            setMission(prev => prev ? { ...prev, reference_number: referencia } : prev);
+            showNotification('Salvo', 'Referência de Pedidos gravada. Ela entra na coluna REF. PEDIDOS ao gerar o boletim de novo.', 'success');
+            window.dispatchEvent(new CustomEvent('refreshMissions'));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div data-testid="panel-vs-pedido-ref" className="bg-cyan-50 border-2 border-cyan-400 rounded-xl p-4 shadow-sm">
+            <label className="text-[10px] font-black text-cyan-800 uppercase tracking-widest block mb-1.5">
+                <span className="text-red-600">*</span> Referência de Pedidos — VS TRANSPORTES
+            </label>
+            <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                    type="text"
+                    value={value}
+                    onChange={e => setValue(e.target.value)}
+                    placeholder="Ex.: 303185 / 303189"
+                    data-testid="input-audit-vs-pedido-ref"
+                    className="flex-1 bg-white border border-cyan-300 rounded-lg px-3 py-2 text-sm font-bold text-gray-800 outline-none focus:ring-2 focus:ring-cyan-400"
+                />
+                <button
+                    type="button"
+                    onClick={() => void handleSave()}
+                    disabled={saving}
+                    data-testid="button-save-vs-pedido-ref"
+                    className="bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-black uppercase px-4 py-2 rounded-lg disabled:opacity-50"
+                >
+                    {saving ? 'Salvando…' : 'Salvar referência'}
+                </button>
+            </div>
+            <p className="text-[10px] text-cyan-900 font-bold mt-1.5">Não altera valores, aprovação nem pedágio. Só preenche a coluna do boletim de medição.</p>
         </div>
     );
 };
@@ -3959,16 +4030,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               {auditSummaryLoading ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
               Resumo
             </button>
-            <button
-              type="button"
-              data-testid="button-analytical-report-audit"
-              onClick={() => setAnalyticalReportOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-md active:scale-95 bg-white/10 text-white hover:bg-white/20 border border-white/25"
-              title="Relatório analítico completo da viagem (PDF com layout TM SEG)"
-            >
-              <Navigation size={12} />
-              Relatório OS
-            </button>
             {showDhlOccurrenceReportBtn && (
               <button
                 type="button"
@@ -4254,36 +4315,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           </div>
         </header>
 
-        <div
-          className="shrink-0 px-3 py-2.5 sm:px-5 bg-gradient-to-r from-[#111827] to-[#991b1b] border-b border-red-950/30"
-          data-testid="bar-analytical-os-report"
-        >
-          <button
-            type="button"
-            onClick={() => setAnalyticalReportOpen(true)}
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-[0.99] text-white px-4 py-3 text-xs sm:text-sm font-black uppercase tracking-wide border border-white/25 shadow-lg"
-            data-testid="button-analytical-report-banner"
-          >
-            <Navigation size={18} className="shrink-0" />
-            Gerar Relatório Analítico da Viagem (PDF)
-          </button>
-        </div>
-
-        <div
-          className="shrink-0 px-3 py-2.5 sm:px-5 bg-gradient-to-r from-[#450a0a] to-[#7f1d1d] border-b border-red-950/30"
-          data-testid="bar-os-action-plan"
-        >
-          <button
-            type="button"
-            onClick={() => setOsActionPlanOpen(true)}
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-[0.99] text-white px-4 py-3 text-xs sm:text-sm font-black uppercase tracking-wide border border-white/25 shadow-lg"
-            data-testid="button-os-action-plan-banner"
-          >
-            <FileText size={18} className="shrink-0" />
-            Gerar Plano de Ação (PDF)
-          </button>
-        </div>
-
         {showDhlOccurrenceReportBtn && (
           <div
             className="hidden sm:block shrink-0 px-3 py-2.5 sm:px-5 bg-gradient-to-r from-[#450a0a] to-[#7f1d1d] border-b border-red-950/30"
@@ -4344,6 +4375,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                     )}
                 </div>
             )}
+            <VsPedidoReferenciaPanel mission={mission} setMission={setMission} showNotification={showNotification} />
             <BillingPeriodOverridePanel mission={mission} setMission={setMission} showNotification={showNotification} />
 
             {(() => {
@@ -6468,15 +6500,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 )}
                                 <div className="flex gap-1.5 sm:gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setAnalyticalReportOpen(true)}
-                                  className="flex-1 sm:flex-none px-2 sm:px-4 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 bg-[#111827] text-white hover:bg-[#991b1b] border border-red-900/30"
-                                  data-testid="button-analytical-report-footer"
-                                >
-                                  <Navigation size={14} className="shrink-0" />
-                                  <span className="truncate">Relatório OS</span>
-                                </button>
                                 {showDhlOccurrenceReportBtn && (
                                   <button
                                     type="button"

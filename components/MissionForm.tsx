@@ -23,6 +23,7 @@ import { extractUF, UF_TO_REGION, clientFuzzyFilter, extractCityFromAddress, eva
 import { exclusiveCitiesInAddress, questionTableAgainstRoute } from '../lib/tableRouteQuestion';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
+import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
 
@@ -268,7 +269,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const isVtcClient = (formData.client || '').toUpperCase().includes('VTC');
   const isCeslogClient = (formData.client || '').toUpperCase().includes('CESLOG') || (formData.client || '').toUpperCase().includes('CESARI');
+  const isVsTransportes = isVsTransportesClient(formData.client);
   const isDhlClient = (formData.client || '').toUpperCase().includes('DHL');
+  const isPerfilFinanceiro = (() => {
+    try {
+      return (JSON.parse(localStorage.getItem('userData') || '{}').role || '').toLowerCase() === 'financeiro';
+    } catch {
+      return false;
+    }
+  })();
   const hasSavedOs = /^GTM-\d+/i.test(osId);
 
   const fetchDhlIntakes = useCallback(async (missionId: string) => {
@@ -1500,6 +1509,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     if (!formData.client || (!formData.origin && !formData.destination)) return alert("Selecione o cliente e informe a origem e destino da rota.");
     const clientUpper = (formData.client || '').toUpperCase();
     if ((clientUpper.includes('CESLOG') || clientUpper.includes('CESARI')) && !formData.reference_number.trim()) return alert("Para clientes CESLOG/CESARI, o Nº da Referência é obrigatório.");
+    if (isVsTransportesClient(clientUpper) && !formData.reference_number.trim()) return alert("Para a VS TRANSPORTES, a Referência de Pedidos é obrigatória. Ex.: 303185 / 303189");
     if (clientUpper.includes('DHL') && !formData.dhl_se_number.trim()) return alert("Para o cliente DHL, o Número da S.E. é obrigatório.");
 
     const scheduledDateTime = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`);
@@ -2041,6 +2051,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <p className="text-[9px] text-purple-600 font-bold mt-1">Campo obrigatório para clientes CESLOG e CESARI</p>
                       </div>
                   )}
+                  {isVsTransportes && (
+                      <div className="p-4 rounded-xl border-2 border-cyan-500 bg-cyan-50 animate-in slide-in-from-top-2 duration-300">
+                          <label className={LABEL_CLASS}><span className="text-red-600">*</span> Referência de Pedidos (VS TRANSPORTES)</label>
+                          <input type="text" required className={INPUT_CLASS} placeholder="Ex.: 303185 / 303189" value={formData.reference_number} onChange={e => setFormData(prev => ({ ...prev, reference_number: e.target.value }))} data-testid="input-vs-pedido-ref" />
+                          <p className="text-[9px] text-cyan-800 font-bold mt-1">Obrigatório só para a VS TRANSPORTES. Sai na coluna REF. PEDIDOS do boletim de medição.</p>
+                      </div>
+                  )}
                   {(isDhlClient || hasSavedOs) && (
                       <div className="p-4 rounded-xl border-2 animate-in slide-in-from-top-2 duration-300" style={isDhlClient ? { borderColor: '#D40511', background: 'linear-gradient(180deg, #fff8d6 0%, #fffbe6 100%)' } : { borderColor: '#e5e7eb', background: '#ffffff' }}>
                       {isDhlClient && (<>
@@ -2177,7 +2194,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           </p>
                       </>)}
 
-                          {hasSavedOs && (
+                          {hasSavedOs && !(isDhlClient && isPerfilFinanceiro) && (
                             <div className="mt-4 pt-4 border-t-2 border-dashed" style={{ borderColor: isDhlClient ? '#D40511' : '#e5e7eb' }} data-testid="panel-dhl-intakes">
                               <div className="flex items-center justify-between mb-2">
                                 <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#7f1d1d' }}>

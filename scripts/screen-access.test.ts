@@ -24,6 +24,21 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
     assert.equal(canAccessScreen({ role: 'Financeiro', permissions: [] }, 'fin-dashboard'), false);
   });
 
+  it('perfil Financeiro não abre Cadastro de Viaturas', () => {
+    assert.equal(
+      canAccessScreen({ role: 'Financeiro', permissions: ['provider-vehicles', 'providers-group'] }, 'provider-vehicles'),
+      false,
+    );
+    assert.equal(
+      canAccessScreen({ role: 'Financeiro', permissions: ['provider-vehicles'] }, 'provider-vehicle-form'),
+      false,
+    );
+    assert.equal(
+      canAccessScreen({ role: 'Operador', permissions: ['provider-vehicles'] }, 'provider-vehicles'),
+      true,
+    );
+  });
+
   it('mostra apenas o que foi vinculado no perfil', () => {
     const user = {
       role: 'Financeiro',
