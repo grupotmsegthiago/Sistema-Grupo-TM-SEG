@@ -181,7 +181,7 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400">TM SEG NEWS</p>
         <h2 className="mt-1 text-2xl font-black tracking-tight">Olá, {primeiro}.</h2>
         <p className="mt-1 max-w-2xl text-sm text-gray-300">
-          Avisos da diretoria, cliente novo e fornecedor novo. Todo mundo lê. A diretoria vê quem visualizou.
+          Bem vindo ao Portal TM SEG.
         </p>
       </div>
 
