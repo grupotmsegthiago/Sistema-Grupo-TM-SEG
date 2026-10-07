@@ -4,6 +4,7 @@ import { descreverDeCoordenada, descreverReferencia, foraDoPortalPorRaio, type R
 import { extractCityFromAddress, extractUF, UF_TO_REGION } from './financialUtils';
 import { publishMissionLive, MISSION_LIVE_WINDOW_EVENT } from './missionLiveBroadcast';
 import { supabase } from './supabase';
+import { isOdometerExemptProvider } from './veladaFinalize';
 
 /** Janela em que a viatura ainda é considerada no lugar da finalização. */
 export const HORA_MS = 30 * 60 * 1000;
@@ -129,7 +130,16 @@ export function tomDoBotao(status: StatusAlertaDhl, finalizadaEm: string, now: D
   return 'escuro';
 }
 
-export function visivelNoPainelVivo(alerta: Pick<AlertaDhl, 'status' | 'finalizada_em'>, now: Date): boolean {
+/** ATIVA e TM SEG não entram no comunicado da DHL. */
+export function fornecedorEntraNoComunicadoDhl(nome?: string | null): boolean {
+  return !isOdometerExemptProvider(nome);
+}
+
+export function visivelNoPainelVivo(
+  alerta: Pick<AlertaDhl, 'status' | 'finalizada_em'> & { provider_name?: string | null },
+  now: Date,
+): boolean {
+  if (!fornecedorEntraNoComunicadoDhl(alerta.provider_name)) return false;
   if (alerta.status === 'copiado') return true;
   if (alerta.status === 'pendente') return idadeMs(alerta.finalizada_em, now) < HORA_MS;
   return false;
@@ -146,9 +156,13 @@ export function textoMotivoNaOs(motivo: string): string {
 }
 
 export function entraNaListaBloqueados(
-  alerta: Pick<AlertaDhl, 'status' | 'finalizada_em'> & { observacao_diretoria?: string | null },
+  alerta: Pick<AlertaDhl, 'status' | 'finalizada_em'> & {
+    observacao_diretoria?: string | null;
+    provider_name?: string | null;
+  },
   now: Date,
 ): boolean {
+  if (!fornecedorEntraNoComunicadoDhl(alerta.provider_name)) return false;
   if (motivoJaGravado(alerta.observacao_diretoria)) return false;
   if (alerta.status === 'expirado') return true;
   return alerta.status === 'pendente' && idadeMs(alerta.finalizada_em, now) >= HORA_MS;
@@ -220,11 +234,13 @@ export function agruparPorRegiao<T extends { regiao: string; finalizada_em: stri
  * Qualquer cliente. A OS finalizada entra por 30 minutos, em qualquer lugar,
  * menos num raio de 100 km de São Paulo ou do Rio. Extrema, Pouso Alegre e
  * Varginha entram mesmo perto de São Paulo. O desdobramento da mesma OS fica de fora.
+ * Fornecedor ATIVA ou TM SEG não entra no comunicado.
  */
 export function resolverAlertaDhl(input: MissaoParaAlerta, now: Date = new Date()): RascunhoAlertaDhl | null {
   const status = String(input.status || '');
   if (status !== 'Concluída') return null;
   if (input.isSameOs) return null;
+  if (!fornecedorEntraNoComunicadoDhl(input.provider)) return null;
 
   const localAtual = parteLocal(String(input.currentLocation || ''));
   const localDestino = parteLocal(String(input.destination || ''));
@@ -370,8 +386,14 @@ export function detalheAlertaViaturaDisponivel(posicao?: string | null, regiao?:
   return reg ? rotuloRegiao(reg) : '';
 }
 
-/** Só a primeira vez, enquanto ainda dá tempo de comunicar. Copiada ou vencida não avisa de novo. */
-export function deveAvisarOperadores(status: string, finalizadaEm: string, now: Date = new Date()): boolean {
+/** Só a primeira vez, enquanto ainda dá tempo de comunicar. Copiada, vencida ou ATIVA/TM SEG não avisa. */
+export function deveAvisarOperadores(
+  status: string,
+  finalizadaEm: string,
+  now: Date = new Date(),
+  providerName?: string | null,
+): boolean {
+  if (!fornecedorEntraNoComunicadoDhl(providerName)) return false;
   return status === 'pendente' && dentroDaJanela(finalizadaEm, now);
 }
 
@@ -396,6 +418,7 @@ function avisarOutrasTelas(payload: Record<string, unknown>) {
 
 export async function garantirAlertaDhl(rascunho: RascunhoAlertaDhl | null): Promise<void> {
   if (!rascunho?.missionId) return;
+  if (!fornecedorEntraNoComunicadoDhl(rascunho.providerName)) return;
   try {
     const { data: existing, error: readError } = await supabase
       .from(TABELA_DHL_VIATURA)
@@ -491,7 +514,7 @@ export async function buscarMissoesFinalizadasNaJanela(now: Date = new Date(), o
   const corte = new Date(now.getTime() - HORA_MS).toISOString();
   const colunas = opts?.interno
     ? 'id, provider, client, status, current_location, destination, end_time, last_update, is_same_os'
-    : 'id, status, current_location, destination, end_time, last_update, is_same_os';
+    : 'id, provider, status, current_location, destination, end_time, last_update, is_same_os';
   const { data, error } = await supabase
     .from('missions')
     .select(colunas)
