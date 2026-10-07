@@ -24,7 +24,188 @@
 
 **Testes:** `npx tsx --test scripts/vs-transportes-pedido.test.ts`
 
-**Pendência:** as OS já aprovadas com a referência vazia são preenchidas na Auditoria de Faturamento (campo ciano no topo) e o boletim é gerado de novo. Não publicado.
+**Pendência:** as OS já aprovadas com a referência vazia são preenchidas na Auditoria de Faturamento (campo ciano no topo) e o boletim é gerado de novo.
+
+## GTM-6482: 100% SEM MAPA E SEM FOTO
+
+**Data:** 2026-10-06
+**O que apareceu:** o aviso “O mapa com as ruas não foi gerado” e “As fotos não entraram”, mesmo com a barra em 100%.
+**Causa no site publicado:** o servidor tentava o OpenStreetMap primeiro. De lá a conexão não encerra, a função fica presa e a cópia das fotos não chega a rodar.
+**O que mudou:** mapa geral e miniaturas saem num único pedido, pela Esri, com a conexão encerrada em 2,5s. Se o mapa ou as fotos existentes não entrarem, a barra para em 90% e o texto diz que faltou. 100% só quando os dois estão no documento.
+**Ainda não publicado.** O site no ar continua com o comportamento antigo até a próxima publicação.
+
+## MAPA CINZA “API KEY REQUIRED” E FOTO QUE NÃO ABRE
+
+**Data:** 2026-10-06
+**O que aparecia:** o mapa e os quadrados das atualizações vinham quase brancos, com a frase API KEY REQUIRED. O clique em Abrir foto não saía do relatório.
+**Causa:** o servidor de tiles do Carto responde HTTP 200 com essa marca d’água, e o sistema aceitava o arquivo como se fosse a rua.
+**O que mudou:** o arruamento passa a vir do OpenStreetMap e, se ele não responder, do mapa de ruas da Esri. O clique em Abrir foto abre o arquivo original numa aba nova.
+**Não publicado.** Atualizar `http://127.0.0.1:5000` e gerar o relatório de novo. O HTML já gravado continua com o mapa antigo.
+
+## BARRA DE PORCENTAGEM NA GERAÇÃO DO RELATÓRIO
+
+**Data:** 2026-10-05
+**O que faltava:** o formulário ficava parado em um texto fixo. Não dava para saber se a geração andava ou tinha travado.
+**O que mudou:** a barra mostra a etapa e a porcentagem real (endereços, texto, mapa, fotos, análise, gravação) e um contador de segundos. A porcentagem não volta para trás. Se o número para e os segundos continuam, aquele passo está esperando resposta.
+**Teste:** `npx tsx --test scripts/os-action-plan.test.ts` — 40 passaram. O modal compilou no esbuild.
+**Não publicado.** Atualizar `http://127.0.0.1:5000` e gerar de novo. O site no ar só mostra a barra depois de publicar.
+
+## A TELA PARAVA EM “REDIGINDO A ANÁLISE”
+
+**Data:** 2026-10-05
+**O que acontecia:** o formulário ficava em “Localizando os pontos” até o mapa, as fotos e a IA terminarem. Uma consulta lenta segurava o relatório inteiro.
+**O que mudou:** o documento abre assim que os pontos da OS são lidos. Mapa e fotos entram depois. Cada geocodificação espera no máximo 8 segundos, e a análise automática no máximo 12.
+**Não publicado.**
+
+## CROQUI, TEXTO CORRIDO E BANDEIRAS
+
+**Data:** 2026-10-05
+**O que faltava:** o croqui existia, mas só entrava no PDF depois de um segundo botão. A seção Ocorrência apurada repetia a frase crua do foco.
+**O que mudou:** o croqui entra no documento assim que a sequência existe. A frase crua saiu. Resumo, análise, barreira e conclusão vão em texto corrido. Origem leva 🚩 e destino leva 🏁.
+**Não publicado.** Gerar o relatório de novo. O HTML já gravado não muda sozinho.
+
+## RESUMO PARA O CLIENTE SEM O TEXTO INTERNO
+
+**Data:** 2026-10-05
+**O que aparecia:** a Análise da ocorrência colava o relatório interno inteiro, com nomes, CNPJ, velocidade e texto que expõe a empresa.
+**O que mudou:** esse texto é lido como contexto. O cliente recebe dois parágrafos: perda momentânea da identificação visual e retomada do veículo da OS, sem culpa e sem copiar o material interno. Se a IA responder um texto seguro e curto, ele entra. Se a chave continuar bloqueada, entra o resumo institucional.
+**Não publicado.** Gerar o relatório de novo.
+
+## ANÁLISE 403, MAPA LARGO E FOTOS DO STORAGE — GTM-8335
+
+**Data:** 2026-10-05
+**IA:** a chamada saía sem Referer (`<empty>`). O cliente agora envia o endereço autorizado. Com esse endereço, as chaves locais ainda respondem `API_KEY_SERVICE_BLOCKED` — a API de geração está bloqueada na chave. Não é falha do texto do relatório.
+**Mapa da atualização:** coluna de 198px e 112px de altura, ao lado do texto. O HTML já gerado guarda o CSS antigo; é preciso gerar de novo.
+**Storage conferido em GTM-8335:** só a foto da solicitação, o hodômetro final e a foto de fim de viagem. O print colado em cada atualização não vai para o bucket. A atualização 05 não tem arquivo.
+**Não publicado.**
+
+## FOTOS NÃO ABRIAM — GTM-8335
+
+**Data:** 2026-10-05
+**O que estava na tela:** o relatório salvo às 21:07, mapa cinza e atualizações 02 e 03 sem foto. A geração das 21:46 geocodificou e parou ao baixar as imagens; o mapa com rua não chegou a ser pedido e nada foi gravado.
+**O que mudou:** a foto é copiada pelo servidor para dentro do HTML (`/api/evidencia-imagem`) e o mapa das ruas é pedido ao mesmo tempo. O link "Abrir foto" continua no arquivo original. Atualização sem foto no intervalo de 20 minutos segue escrita como sem registro.
+**Não publicado.** Atualizar a página em `http://127.0.0.1:5000` e gerar de novo.
+
+## PDF SEM FOTO E SEM ARRUAMENTO — teste.pdf
+
+**Data:** 2026-10-05
+**O que o PDF mostrava:** o mapa era um retângulo cinza com bolinhas. A foto da atualização 01 ocupava uma área em branco porque a imagem do armazenamento não entrou na impressão.
+
+**O que mudou:** a foto passa a ir dentro do HTML, então a impressão não depende de baixar o arquivo na hora. O mapa e o mini mapa passam a ser imagem com o arruamento do lugar (ruas e cidades), com os mesmos números A, atualizações e B. A legenda de que não é telemetria continua.
+
+**Teste:** a rota local `/api/mapa-estatico` devolveu PNG de 67 KB com a rua da origem. Os testes do relatório: 37 passaram.
+
+**Não publicado.** Gerar o relatório de novo. O `teste.pdf` já salvo não muda sozinho.
+
+## MAPA, FOTOS E ANÁLISE DA OCORRÊNCIA
+
+**Data:** 2026-10-05
+**Pedido:** o mapa e as fotos não apareciam, e a Análise da ocorrência não resumia o ocorrido com IA. O restante do documento continua.
+
+**Causa:** no relatório com ocorrência o quadro ficava só nas atualizações cuja frase continha uma palavra do problema. As fotos desta OS estão na abertura e na entrega, e essas frases não entram nesse filtro, então as imagens sumiam. O mapa usava a mesma lista. A geração também não chamava a IA: a análise saía em tópicos internos.
+
+**O que mudou:** ao gerar, o sistema geocodifica de novo os endereços que ainda não têm ponto. O quadro mantém a atualização ligada ao problema e também toda atualização que tenha foto ou posição. A seção Análise da ocorrência passa a ser o texto da IA, em parágrafos, a partir do foco e dos registros. Mapa, mini mapas, fotos, croqui e plano continuam no mesmo documento. Se a IA falhar, o relatório sai mesmo assim e o aviso fica na tela.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 37 passaram.
+
+**Não publicado.** É preciso gerar o relatório de novo.
+
+## MAPA DA MISSÃO E RETIRADA DAS EVIDÊNCIAS — GTM-8335
+
+**Data:** 2026-10-05
+**Pedido:** tirar o bloco Evidências do PDF do cliente e descobrir por que o mapa dizia que não havia posição. Não publicar.
+
+**Onde a coordenada se perdia:** nas atualizações. A OS GTM-8335 tem 14 registros de localização no histórico e nenhum log em `mission_logs`. Não existe coluna de latitude/longitude na atualização. Nenhuma atualização guarda link. O único link do banco é `missions.map_link`, com a última posição (`?q=-25.4953379,-49.150897`). O parser já lia esse formato. O relatório não chamava a geocodificação que já existe e o desenho só nascia se a coordenada já viesse pronta. Por isso o PDF dizia "Não há posição válida para desenhar o mapa". Não era falha só da exportação.
+
+**Contagem desta OS:** 14 atualizações; 12 com endereço; 0 links na atualização e 1 link na OS; 0 coordenadas gravadas na atualização; 1 coordenada extraída do link da OS; 11 endereços geocodificados; 2 registros sem localização (criação da solicitação e um registro vazio). Origem e destino saíram do endereço da OS.
+
+**O que mudou:** cada atualização usa coordenada já gravada, senão a coordenada do link, senão o geocódigo do endereço. O link da OS entra na última atualização que não tem ponto. Origem é A, atualizações numeradas, destino é B. Ponto igual fica no mesmo marcador, com os números juntos. Não há linha de trajeto. O aviso de que não é telemetria continua. O card com posição mostra o mini mapa ao lado da foto. Se nada resolver, o cliente vê só "Mapa da missão indisponível para esta operação." O motivo técnico fica oculto. O bloco Evidências / Histórico da OS saiu do PDF. No localhost, a rota `/api/geocode-address` passa a executar a função que a Vercel já usava; antes o Vite devolvia o arquivo e a geocodificação não rodava.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 36 passaram. A OS real foi geocodificada pelo endpoint local. O HTML e o PDF impresso pelo Chrome (11 páginas) trazem origem, destino, atualizações 3 a 14, mini mapas, o aviso de telemetria, e não trazem "Não há posição válida", "Trajeto realizado" nem Evidências. Nenhuma coordenada foi inventada: as 11 vieram do geocódigo e a última, do link gravado.
+
+**Não publicado.** A versão já salva nesta OS continua o documento antigo até gerar de novo.
+
+## CORREÇÃO DO LAYOUT DO PDF — DOC(2) COMO BASE
+
+**Data:** 2026-10-05
+**Pedido:** o DOC(2) volta a ser o visual. O doc1 não pode continuar com a cronologia espremida. Manter croqui, atualizações, fotos, mapas e os dois tipos de relatório. Não publicar.
+
+**Causa:** o card da cronologia foi feito para duas colunas, avatar de 44px e texto no restante. No relatório com foco, o texto entrou sozinho na coluna de 44px. A frase quebrou em uma faixa estreita e o `break-inside: avoid` empurrou cada card para uma página quase vazia. O relatório sem ocorrência também estava com um HTML visual diferente do DOC(2).
+
+**O que mudou:** o card agora é faixa inteira (`width: 100%`), com o avatar ao lado do texto, como no DOC(2). Grades de foto, mapa, croqui e indicadores usam `minmax(0, 1fr)` para não encolherem na impressão. O relatório padrão da missão usa o mesmo cabeçalho, cards e rodapé. A impressão espera as imagens carregarem. Atualizações, fotos, mapa SVG e croqui continuam.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 35 passaram, 0 falharam. Chrome imprimiu o HTML novo: o PDF com ocorrência ficou com 10 páginas e 158 trechos de texto largos contra 1 estreito. O PDF padrão ficou com 8 páginas e 106 trechos largos. O doc1.pdf e o DOC(2).pdf não têm texto selecionável, então a comparação deles foi visual, não por medida de caractere.
+
+**Não publicado.**
+
+## RELATÓRIO OPERACIONAL DA MISSÃO
+
+**Data:** 2026-10-05
+**Pedido:** toda OS pode gerar o relatório da missão, com ou sem ocorrência. O quadro traz as atualizações reais, as fotos reais e o ponto de posição já gravado. Não publicar.
+
+**O que mudou:** ao abrir o relatório, a tela pergunta se é o padrão da missão ou o relatório com ocorrência. O padrão não pede problema, causa, croqui nem plano. Os dois tipos levam o mapa dos pontos e o diário. O mapa é um desenho SVG com a coordenada que já está no link da atualização. Não chama Google Static Maps e não coloca chave no PDF. A frase do documento deixa claro que ponto de atualização não é telemetria contínua. No modo ocorrência, o padrão do quadro é só o que conversa com o problema; dá para pedir todas. A versão anterior fica neste navegador antes de gravar a nova. O banco continua com um HTML por OS. Na tela da OS, o botão passou a ser Relatório da Missão e mostra se já existe versão.
+
+**Banco:** nenhum. Não houve migration. O histórico de versões ainda não tem tabela própria.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 33 passaram, 0 falharam.
+
+**Não publicado.**
+
+**Próximo passo:** se o mapa precisar da imagem de rua do Google, autorizar o custo do Static Maps antes de ligar. A chave não pode ir para o HTML.
+
+## RELATÓRIO EXECUTIVO E CROQUI DA OCORRÊNCIA
+
+**Data:** 2026-10-05
+**Pedido:** o PDF do cliente fica executivo. O croqui ilustra a sequência, só depois de aprovação humana, sem placa ou horário inventados. A falha não é transferida ao fornecedor.
+
+**O que mudou:** com o problema informado, o HTML do cliente traz ocorrência apurada, cronologia ligada ao foco, evidências numeradas, barreira, antes/depois e plano curto. O croqui é diagrama (SVG/HTML), não foto. Entra no PDF somente com `croqui.aprovado`. O texto final troca nome de fornecedor e frases de culpa por linguagem da equipe de escolta e da TM SEG.
+
+**Banco:** nenhum.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 27 passaram naquela etapa. A reabertura da versão compatível continua. O fluxo novo está na seção de cima.
+
+**Não publicado.**
+
+## RELATÓRIO DE OCORRÊNCIA — CONTEXTO DA APURAÇÃO
+
+**Data:** 2026-10-05
+**Pedido:** antes de gerar o PDF da OS, a Diretoria informa o problema. Esse texto define o foco. Não vira fato sozinho. O relatório do cliente fica curto e não mistura rascunho com visto aprovado.
+
+**O que mudou:** o modal abre o formulário "Contexto da apuração" (problema, relato, anexos com evidência principal). O HTML só nasce depois de "Analisar e gerar relatório". Com foco informado, velocidade alta e parada para descanso não viram o problema. O plano de perda de identificação fica em 1 corretiva e 3 preventivas, com procedimento institucional de nova identificação da placa. O título do PDF é "Relatório de Ocorrência e Plano de Ação". A tabela de visto fica em branco até o botão Aprovar. Frases internas de telemetria, contagem de rotina e hipótese ficam fora do corpo visível.
+
+**Banco:** nenhum. Quem aprovou e a versão enviada ao cliente ainda não têm tabela própria.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 23 passaram, 0 falharam.
+
+**Não publicado.**
+
+## PLANO DE AÇÃO DA OS — ANÁLISE POR CATEGORIA
+
+**Data:** 2026-10-05
+**Pedido:** o plano corretivo e o preventivo saem do problema identificado nos registros da OS, com prazo sugerido, sem inventar causa e sem publicar.
+
+**O que mudou:** `lib/osActionPlan/analisarOcorrencia.ts` classifica fato, relato, hipótese, divergência e ausência. Perda de contato ou divergência de veículo gera plano de identificação positiva: apuração em 48 horas, regra de não seguir veículo semelhante sem placa, checklist, alerta de sistema, Central, reciclagem e auditoria. Indicadores com meta e resultado Não medido. A coleta de histórico, ocorrências, logs e evidências pagina o conjunto. O relatório DHL da diretoria não foi alterado.
+
+**Banco:** nenhum. Aprovação com versão enviada ao cliente continua fora, porque `os_action_plans` só guarda um HTML.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 22 passaram. GTM-8335 lida no banco: categoria perda de contato; o texto não fala em veículo incorreto, então isso não foi inventado. Descanso de condutor não vira ação corretiva.
+
+**Não publicado.**
+
+## VELADA — BOTÃO DE PEDÁGIO E RECUSA TRAVADA
+
+**Data:** 2026-10-05 (UTC)
+**Pedido:** o botão de pedágio sumiu no aviso da velada; a recusa apaga a foto e fica pedindo o horário.
+
+**Causa:**
+- O aviso de velada escondia pedágio para o perfil Avançado. O print do grupo mostra exatamente esse texto, sem Sem pedágio / Com pedágio.
+- O checklist de recusa zerava foto e horário sempre que o relógio da OS mudava a hora padrão. O campo de hora da recusa também recusava horário anterior ao início agendado.
+
+**Correção:** o aviso volta a exigir KM, hora e pedágio para qualquer perfil. O checklist só reinicia ao abrir. A recusa aceita o horário da evidência.
+
+**Não alterado:** Asaas, eNotas, motor financeiro, telas de dinheiro do perfil Avançado.
+
+**Testes:** `npx tsx --test scripts/velada-closure-alert.test.ts scripts/end-evidence-gate.test.ts scripts/avancado-finance-block.test.ts`
 
 ## PORTAL CEVA — CONTROLE DE ESCOLTA
 

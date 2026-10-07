@@ -73,6 +73,23 @@ export function formatDhlUnapprovedOsLine(m: {
   return se ? `• ${os} / SE ${se} (${st})` : `• ${os} (${st})`;
 }
 
+function normalizeAccessRole(role: string | null | undefined): string {
+  return String(role || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * Botão "Preencher Planilha (SE)": sobe a planilha da DHL e cruza com as OS.
+ * Liberado para Administrador, Diretoria e Financeiro (nome do perfil no login).
+ */
+export function canFillDhlSheetRole(role: string | null | undefined): boolean {
+  const normalized = normalizeAccessRole(role);
+  return normalized === 'administrador' || normalized === 'diretoria' || normalized === 'financeiro';
+}
+
 export function formatDhlPeriodApprovalBlockMessage(
   unapproved: Array<{
     os_number?: string | null;

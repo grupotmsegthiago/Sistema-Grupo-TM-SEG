@@ -1,22 +1,18 @@
-import { formatDateBR } from '../lib/dateUtils';
+import { formatDateTimeBR } from '../lib/dateUtils';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Mission } from '../types';
 import { supabase } from '../lib/supabase';
 import { authFetch } from '../lib/authFetch';
+import { buscarHistoricoPedagioDaOs, type LinhaHistoricoPedagio } from '../lib/toll/pedagioDaOs';
 import { AlertTriangle, CheckCircle2, History, Loader2, X } from 'lucide-react';
-
-type HistoryEntry = {
-    missionId: string;
-    date: string;
-    toll: number;
-    user?: string | null;
-};
 
 interface Props {
     isOpen: boolean;
     mission: Mission | null;
     initialValue?: string;
     source: 'financial_modal' | 'completion' | 'manual';
+    /** Só a lista desta OS. Não confirma nem grava pedágio. */
+    somenteHistorico?: boolean;
     onClose?: () => void;
     allowClose?: boolean;
     onConfirm: (result: { hasToll: boolean; value: number }) => void | Promise<void>;
@@ -29,12 +25,10 @@ const parseBRL = (val: string): number => {
     return isNaN(n) ? 0 : n;
 };
 
-const formatBRL = (n: number): string => n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-const TollConfirmationDialog: React.FC<Props> = ({ isOpen, mission, initialValue, source, onClose, allowClose = false, onConfirm }) => {
+const TollConfirmationDialog: React.FC<Props> = ({ isOpen, mission, initialValue, source, somenteHistorico = false, onClose, allowClose = false, onConfirm }) => {
     const [choice, setChoice] = useState<'yes' | 'no' | null>(null);
     const [valueInput, setValueInput] = useState(initialValue || '');
-    const [history, setHistory] = useState<HistoryEntry[] | null>(null);
+    const [history, setHistory] = useState<LinhaHistoricoPedagio[] | null>(null);
     const [showHistory, setShowHistory] = useState(false);
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -56,24 +50,11 @@ const TollConfirmationDialog: React.FC<Props> = ({ isOpen, mission, initialValue
     }, [mission]);
 
     const loadHistory = async () => {
-        if (!mission || history) { setShowHistory(s => !s); return; }
+        if (!mission) return;
+        if (history && !somenteHistorico) { setShowHistory(s => !s); return; }
         setLoadingHistory(true);
         try {
-            const { data } = await supabase
-                .from('missions')
-                .select('id, toll_value, last_update, updated_by, origin, destination')
-                .eq('origin', mission.origin)
-                .eq('destination', mission.destination)
-                .neq('id', mission.id)
-                .not('toll_value', 'is', null)
-                .order('last_update', { ascending: false })
-                .limit(10);
-            const entries: HistoryEntry[] = (data || []).map((m: any) => ({
-                missionId: m.id,
-                date: m.last_update,
-                toll: Number(m.toll_value) || 0,
-                user: m.updated_by,
-            }));
+            const entries = await buscarHistoricoPedagioDaOs(supabase, mission.id);
             setHistory(entries);
             setShowHistory(true);
         } catch (e) {
@@ -84,6 +65,29 @@ const TollConfirmationDialog: React.FC<Props> = ({ isOpen, mission, initialValue
             setLoadingHistory(false);
         }
     };
+
+    useEffect(() => {
+        if (!isOpen || !somenteHistorico || !mission?.id) return;
+        let cancelado = false;
+        setLoadingHistory(true);
+        buscarHistoricoPedagioDaOs(supabase, mission.id)
+            .then((entries) => {
+                if (cancelado) return;
+                setHistory(entries);
+                setShowHistory(true);
+            })
+            .catch((e) => {
+                console.error('[TollConfirm] historico falhou', e);
+                if (!cancelado) {
+                    setHistory([]);
+                    setShowHistory(true);
+                }
+            })
+            .finally(() => {
+                if (!cancelado) setLoadingHistory(false);
+            });
+        return () => { cancelado = true; };
+    }, [isOpen, somenteHistorico, mission?.id]);
 
     const canSubmit = choice === 'no' || (choice === 'yes' && parseBRL(valueInput) > 0);
 
@@ -148,7 +152,7 @@ const TollConfirmationDialog: React.FC<Props> = ({ isOpen, mission, initialValue
                 <div className="bg-gradient-to-r from-orange-500 to-amber-500 px-5 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-2 text-white">
                         <AlertTriangle size={18} />
-                        <h3 className="text-sm font-black uppercase tracking-wide">Confirmação Obrigatória de Pedágio</h3>
+                        <h3 className="text-sm font-black uppercase tracking-wide">{somenteHistorico ? 'Histórico de pedágio desta OS' : 'Confirmação Obrigatória de Pedágio'}</h3>
                     </div>
                     {allowClose && onClose && (
                         <button onClick={onClose} className="text-white/80 hover:text-white" data-testid="button-toll-close"><X size={18} /></button>
@@ -179,7 +183,7 @@ const TollConfirmationDialog: React.FC<Props> = ({ isOpen, mission, initialValue
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    {!somenteHistorico && <div className="grid grid-cols-2 gap-3">
                         <button
                             type="button"
                             onClick={() => setChoice('yes')}
@@ -204,9 +208,9 @@ const TollConfirmationDialog: React.FC<Props> = ({ isOpen, mission, initialValue
                             </div>
                             <span className="text-[10px] text-gray-500">A rota não teve cobrança de pedágio.</span>
                         </button>
-                    </div>
+                    </div>}
 
-                    {choice === 'yes' && (
+                    {!somenteHistorico && choice === 'yes' && (
                         <div>
                             <label className="text-[10px] font-black text-gray-700 uppercase mb-1 block">Valor do Pedágio (R$)</label>
                             <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center">
@@ -236,33 +240,33 @@ const TollConfirmationDialog: React.FC<Props> = ({ isOpen, mission, initialValue
                             data-testid="button-toll-history"
                         >
                             {loadingHistory ? <Loader2 size={12} className="animate-spin" /> : <History size={12} />}
-                            {showHistory ? 'Ocultar histórico' : 'Ver histórico desta rota'}
+                            {showHistory ? 'Ocultar histórico' : 'Ver histórico desta OS'}
                         </button>
                         {showHistory && history && (
                             <div className="mt-2 max-h-40 overflow-y-auto border border-gray-100 rounded-lg">
                                 {history.length === 0 ? (
-                                    <p className="p-3 text-[10px] text-gray-500">Nenhum histórico de pedágio para esta rota.</p>
+                                    <p className="p-3 text-[10px] text-gray-500">Nenhum histórico de pedágio nesta OS.</p>
                                 ) : (
                                     <table className="w-full text-[10px]">
                                         <thead className="bg-gray-50 sticky top-0">
                                             <tr className="text-gray-600 uppercase font-bold">
                                                 <th className="text-left px-2 py-1">Data</th>
                                                 <th className="text-left px-2 py-1">Quem</th>
-                                                <th className="text-right px-2 py-1">Pedágio</th>
+                                                <th className="text-left px-2 py-1">Registro</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {history.map((h, i) => (
-                                                <tr key={h.missionId + i} className="border-t border-gray-100">
-                                                    <td className="px-2 py-1 text-gray-700">{h.date ? formatDateBR(h.date) : '—'}</td>
-                                                    <td className="px-2 py-1 text-gray-700 truncate max-w-[120px]">{h.user || '—'}</td>
-                                                    <td className="px-2 py-1 text-right font-bold text-green-700">R$ {formatBRL(h.toll)}</td>
+                                                <tr key={`${h.quando}-${i}`} className="border-t border-gray-100">
+                                                    <td className="px-2 py-1 text-gray-700 whitespace-nowrap">{h.quando ? formatDateTimeBR(h.quando) : '—'}</td>
+                                                    <td className="px-2 py-1 text-gray-700 truncate max-w-[120px]">{h.quem || '—'}</td>
+                                                    <td className="px-2 py-1 text-left font-bold text-green-700">{h.texto}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
                                 )}
-                                <p className="px-2 py-1 text-[9px] text-gray-500 bg-gray-50 border-t border-gray-100">Apenas consulta — valores nunca são aplicados automaticamente.</p>
+                                <p className="px-2 py-1 text-[9px] text-gray-500 bg-gray-50 border-t border-gray-100">Somente o pedágio desta OS. Outras OS não entram nesta lista.</p>
                             </div>
                         )}
                     </div>
@@ -272,7 +276,7 @@ const TollConfirmationDialog: React.FC<Props> = ({ isOpen, mission, initialValue
                         {submitError}
                     </div>
                 )}
-                <div className="bg-gray-50 border-t border-gray-100 px-5 py-3 flex items-center justify-end gap-2">
+                {!somenteHistorico && <div className="bg-gray-50 border-t border-gray-100 px-5 py-3 flex items-center justify-end gap-2">
                     {allowClose && onClose && (
                         <button onClick={onClose} className="px-4 py-2 rounded-lg text-[10px] font-black text-gray-600 uppercase hover:bg-gray-200" data-testid="button-toll-cancel">Cancelar</button>
                     )}
@@ -285,7 +289,7 @@ const TollConfirmationDialog: React.FC<Props> = ({ isOpen, mission, initialValue
                         {submitting ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
                         Confirmar Pedágio
                     </button>
-                </div>
+                </div>}
             </div>
         </div>
     );

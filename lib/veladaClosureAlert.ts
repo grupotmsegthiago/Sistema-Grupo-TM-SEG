@@ -52,6 +52,12 @@ export function hasVeladaFinalKm(mission: VeladaClosureMission): boolean {
   return Number.isFinite(endKm) && endKm > 0;
 }
 
+/** OS concluída da velada ATIVA/TM SEG ainda sem KM para cobrar o fornecedor. */
+export function isVeladaFinalKmPending(mission: VeladaClosureMission | null | undefined): boolean {
+  if (!mission) return false;
+  return veladaClosureApplies(mission) && !hasVeladaFinalKm(mission);
+}
+
 export function hasVeladaFinalTime(mission: VeladaClosureMission): boolean {
   const raw = mission.endTime ?? mission.end_time;
   if (raw == null || String(raw).trim() === '') return false;

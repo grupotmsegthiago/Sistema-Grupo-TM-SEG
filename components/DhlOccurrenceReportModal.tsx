@@ -74,7 +74,7 @@ function DhlReportLoadingOverlay({
         </div>
 
         <p className="text-sm font-black uppercase tracking-wide text-[#0d3b66]">
-          Plano de Ação DHL
+          Plano de Ação desta OS
         </p>
         <p className="mt-2 text-xs text-slate-600 leading-relaxed min-h-[2.5rem]">
           {label}
@@ -251,7 +251,7 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
     setError(null);
     targetPercentRef.current = 8;
     setProgressPercent(8);
-    setProgressLabel('Gerando pré-visualização...');
+    setProgressLabel('Lendo KM, horários, timeline e histórico do cliente…');
 
     try {
       const { html, evidenceCount, phasePhotoCount } = await fetchDhlOccurrenceReportPreview(reportParams, applyProgress);
@@ -483,9 +483,9 @@ export default function DhlOccurrenceReportModal({ mission, isOpen, onClose }: P
           <div className="flex items-center gap-2">
             <FileText size={18} />
             <div>
-              <h3 className="text-sm font-black uppercase tracking-wide">Plano de Ação DHL</h3>
+              <h3 className="text-sm font-black uppercase tracking-wide">Plano de Ação desta OS</h3>
               <p className="text-[11px] opacity-90">
-                S.E. {seNumber} · OS {mission.id}
+                {mission.id}{seNumber ? ` · S.E. ${seNumber}` : ''}
                 {step === 'preview' ? ' · Pré-visualização' : ''}
               </p>
             </div>

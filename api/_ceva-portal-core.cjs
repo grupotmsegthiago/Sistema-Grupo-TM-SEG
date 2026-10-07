@@ -2675,7 +2675,7 @@ var PORTAL_IBL = {
   headerSessao: "x-ibl-portal",
   logPrefix: "ibl-portal",
   caminho: "/ibl",
-  exigeLogin: false,
+  exigeLogin: true,
   tabelas: {
     usuarios: "ibl_portal_usuarios",
     osCampos: "ibl_portal_os_campos",
@@ -2687,6 +2687,59 @@ var PORTAL_IBL = {
 
 // lib/cevaPortal/acesso.ts
 var import_crypto = require("crypto");
+
+// lib/cevaPortal/regrasAcesso.ts
+var DIAS_TROCA_SENHA_PORTAL = 30;
+var PERMISSAO_SO_PORTAL = "portal-only";
+function senhaPortalVencida(senhaAlteradaEm, agora = /* @__PURE__ */ new Date(), dias = DIAS_TROCA_SENHA_PORTAL) {
+  if (!senhaAlteradaEm) return false;
+  const quando = new Date(senhaAlteradaEm).getTime();
+  if (!Number.isFinite(quando)) return true;
+  return agora.getTime() - quando >= dias * 24 * 60 * 60 * 1e3;
+}
+function deveTrocarSenhaPortal(input) {
+  if (input.trocarSenha === true) return true;
+  return senhaPortalVencida(input.senhaAlteradaEm, input.agora ?? /* @__PURE__ */ new Date());
+}
+function permissoesDoPortal(caminho, perfil) {
+  const rota = caminho.startsWith("/") ? caminho : `/${caminho}`;
+  return [PERMISSAO_SO_PORTAL, `portal:${rota}`, `portal-perfil:${perfil}`];
+}
+function usuarioSoPortal(perms) {
+  return Array.isArray(perms) && perms.includes(PERMISSAO_SO_PORTAL);
+}
+function caminhoPortalDasPermissoes(perms) {
+  if (!Array.isArray(perms)) return null;
+  const marca = perms.find((item) => typeof item === "string" && item.startsWith("portal:/"));
+  return typeof marca === "string" ? marca.slice("portal:".length) : null;
+}
+function mensagemAcessoPortal(input) {
+  const senha = input.manteveSenha ? "A senha continua a mesma que voc\xEA j\xE1 usa neste portal." : `\u{1F511} *Senha:* ${input.senha || ""}`;
+  const aviso = input.manteveSenha ? "A senha precisa ser trocada a cada 30 dias dentro do portal." : "\u26A0\uFE0F No primeiro acesso, voc\xEA dever\xE1 trocar sua senha. Depois, a troca \xE9 obrigat\xF3ria a cada 30 dias.";
+  return [
+    `\u{1F510} *GRUPO TMSEG \u2014 Acesso ao portal ${input.rotulo}*`,
+    "",
+    `Ol\xE1 *${input.nome}*,`,
+    "",
+    "Seu acesso mostra somente as informa\xE7\xF5es deste cliente.",
+    "",
+    `\u{1F4E7} *Login:* ${input.email}`,
+    senha,
+    `\u{1F310} *Link:* ${input.link}`,
+    "",
+    aviso,
+    "",
+    "_Grupo TMSEG \u2014 Gest\xE3o Operacional_"
+  ].join("\n");
+}
+function decidirPrimeiroAcesso(_input) {
+  return {
+    ok: false,
+    error: "O acesso \xE9 criado no Cadastro de Usu\xE1rios do cliente, com a op\xE7\xE3o Acesso ao portal. A senha chega nessa libera\xE7\xE3o e troca no primeiro acesso."
+  };
+}
+
+// lib/cevaPortal/acesso.ts
 function podeCadastrarPessoa(perfil) {
   return perfil === "administrador";
 }
@@ -2727,9 +2780,58 @@ function gerarSenhaTemporaria() {
   const bytes = (0, import_crypto.randomBytes)(12);
   return [...bytes].map((byte) => ALFABETO_SENHA[byte % ALFABETO_SENHA.length]).join("");
 }
-function decidirPrimeiroAcesso(input) {
-  if (!input.existeAdministrador) return { ok: true, acao: "criar-administrador" };
-  return { ok: false, error: "A senha chega por e-mail quando o administrador libera o acesso. Entre com ela para trocar no primeiro acesso." };
+
+// lib/cevaPortal/cadastroSistema.ts
+function colunaSenhaAlteradaAusente(error) {
+  if (!error) return false;
+  const message = String(error.message || "").toLowerCase();
+  return error.code === "42703" || error.code === "PGRST204" || message.includes("senha_alterada_em");
+}
+async function vincularCadastroCliente(sb, input) {
+  const { data: existente, error: leitura } = await sb.from("system_users").select("id, client_id, user_type, provider_id").ilike("email", input.email).maybeSingle();
+  if (leitura) return { ok: false, error: "N\xE3o foi poss\xEDvel consultar o cadastro de usu\xE1rios." };
+  const permissoes = permissoesDoPortal(input.caminho, input.perfil);
+  const status = input.ativo ? "Ativo" : "Inativo";
+  if (existente) {
+    const tipo = String(existente.user_type || "");
+    if (tipo && tipo !== "client") {
+      return { ok: false, error: "Este e-mail j\xE1 pertence a um usu\xE1rio interno. Use outro e-mail no portal." };
+    }
+    if (existente.provider_id) {
+      return { ok: false, error: "Este e-mail j\xE1 pertence a um fornecedor. Use outro e-mail no portal." };
+    }
+    if (existente.client_id && String(existente.client_id) !== String(input.clientId)) {
+      return { ok: false, error: "Este e-mail j\xE1 est\xE1 vinculado a outro cliente." };
+    }
+    const { error: error2 } = await sb.from("system_users").update({
+      name: input.nome,
+      client_id: input.clientId,
+      user_type: "client",
+      status,
+      permissions: permissoes,
+      force_password_change: false
+    }).eq("id", existente.id);
+    if (error2) return { ok: false, error: "N\xE3o foi poss\xEDvel atualizar o cadastro de usu\xE1rios." };
+    return { ok: true, id: String(existente.id) };
+  }
+  const payload = {
+    name: input.nome,
+    email: input.email,
+    client_id: input.clientId,
+    user_type: "client",
+    status,
+    force_password_change: false,
+    permissions: permissoes
+  };
+  if (input.senhaTemporaria) payload.password = input.senhaTemporaria;
+  const { data, error } = await sb.from("system_users").insert(payload).select("id").single();
+  if (error || !data?.id) return { ok: false, error: "N\xE3o foi poss\xEDvel criar o usu\xE1rio no cadastro do cliente." };
+  return { ok: true, id: String(data.id) };
+}
+async function alinharStatusCadastroPortal(sb, email, ativo) {
+  const { data } = await sb.from("system_users").select("id, permissions, user_type").ilike("email", email).maybeSingle();
+  if (!data || String(data.user_type || "") !== "client" || !usuarioSoPortal(data.permissions)) return;
+  await sb.from("system_users").update({ status: ativo ? "Ativo" : "Inativo" }).eq("id", data.id);
 }
 
 // lib/cevaPortal/rules.ts
@@ -2830,7 +2932,7 @@ async function sendCevaPortalAccessEmail(input) {
   const html = `<!DOCTYPE html><html lang="pt-BR"><body style="font-family:Segoe UI,Arial,sans-serif;color:#333;line-height:1.6">
     <h2>Acesso ao Controle de Escolta</h2>
     <p>Ol\xE1, <strong>${escapar(input.nome)}</strong>.</p>
-    <p>O administrador liberou o seu acesso ao controle de escolta da ${escapar(rotulo)}. Use a senha tempor\xE1ria abaixo e troque-a no primeiro acesso.</p>
+    <p>O administrador liberou o seu acesso ao controle de escolta da ${escapar(rotulo)}. Use a senha tempor\xE1ria abaixo, troque-a no primeiro acesso e repita a troca a cada 30 dias. O portal mostra somente este cliente.</p>
     <p><strong>Link:</strong> <a href="${link}">${link}</a><br>
     <strong>E-mail:</strong> ${escapar(input.email)}<br>
     <strong>Senha tempor\xE1ria:</strong> <code>${escapar(input.senhaTemporaria)}</code></p>
@@ -2914,8 +3016,24 @@ function usuarioPublico(row) {
 function sessaoDe(row) {
   const perfil = perfilDeAcesso(row.perfil);
   if (!perfil) return null;
-  const user = usuarioPublico({ ...row, perfil, trocarSenha: row.trocar_senha === true });
-  return { ...user, perfil, trocarSenha: user.trocarSenha };
+  const trocarSenha = deveTrocarSenhaPortal({
+    trocarSenha: row.trocar_senha === true,
+    senhaAlteradaEm: row.senha_alterada_em
+  });
+  const user = usuarioPublico({ ...row, perfil, trocarSenha });
+  return { ...user, perfil, trocarSenha };
+}
+async function lerUsuarioPortal(sb, filtro, comSenha) {
+  const base = comSenha ? "id, nome, email, senha_hash, perfil, status, trocar_senha" : "id, nome, email, perfil, status, trocar_senha";
+  const consulta = (colunas) => {
+    let query = sb.from(cfg().tabelas.usuarios).select(colunas);
+    if (filtro.id) query = query.eq("id", filtro.id);
+    if (filtro.email) query = query.eq("email", filtro.email);
+    return query.maybeSingle();
+  };
+  const completo = await consulta(`${base}, senha_alterada_em`);
+  if (!colunaSenhaAlteradaAusente(completo.error)) return completo;
+  return consulta(base);
 }
 function sessaoAberta() {
   return {
@@ -2931,7 +3049,8 @@ async function portalSession(req) {
   if (!userId) return cfg().exigeLogin ? null : sessaoAberta();
   const sb = createSupabaseAdminClient();
   if (!sb) return null;
-  const { data: user } = await sb.from(cfg().tabelas.usuarios).select("id, nome, email, perfil, status, trocar_senha").eq("id", userId).maybeSingle();
+  const { data: user, error } = await lerUsuarioPortal(sb, { id: userId }, false);
+  if (error) return null;
   if (!user || user.status !== "ativo") return cfg().exigeLogin ? null : sessaoAberta();
   return sessaoDe(user);
 }
@@ -2946,7 +3065,7 @@ function exigirUso(res, session) {
     return false;
   }
   if (session.trocarSenha) {
-    res.status(403).json({ error: "Troque a senha enviada por e-mail para continuar.", trocarSenha: true });
+    res.status(403).json({ error: "Troque a senha para continuar. A troca \xE9 obrigat\xF3ria no primeiro acesso e a cada 30 dias.", trocarSenha: true });
     return false;
   }
   return true;
@@ -3237,7 +3356,11 @@ async function executarPortalHttp(req, res) {
         res.status(503).json({ error: "Portal indispon\xEDvel." });
         return;
       }
-      const { data: user } = await sb.from(cfg().tabelas.usuarios).select("id, nome, email, senha_hash, perfil, status, trocar_senha").eq("email", email).maybeSingle();
+      const { data: user, error: erroUsuario } = await lerUsuarioPortal(sb, { email }, true);
+      if (erroUsuario) {
+        res.status(500).json({ error: "N\xE3o foi poss\xEDvel entrar." });
+        return;
+      }
       if (!user || !senhaConfere(senha, user.senha_hash)) {
         registerFailure(key);
         res.status(401).json({ error: INVALID_LOGIN });
@@ -3251,6 +3374,21 @@ async function executarPortalHttp(req, res) {
         res.status(403).json({ error: "O administrador ainda n\xE3o liberou este acesso." });
         return;
       }
+      const { data: sistema } = await sb.from("system_users").select("id, status, client_id, user_type, permissions").ilike("email", email).maybeSingle();
+      if (sistema) {
+        const clienteDoLogin = await carregarClienteDoPortal(sb);
+        const mesmoCliente = Boolean(clienteDoLogin?.id) && String(sistema.client_id || "") === String(clienteDoLogin.id);
+        const tipo = String(sistema.user_type || "");
+        const internoOuFornecedor = tipo === "internal" || tipo === "provider";
+        if (sistema.status !== "Ativo" || internoOuFornecedor || !mesmoCliente) {
+          res.status(403).json({ error: "Este acesso n\xE3o est\xE1 liberado no Cadastro de Usu\xE1rios deste cliente." });
+          return;
+        }
+        if (usuarioSoPortal(sistema.permissions) && caminhoPortalDasPermissoes(sistema.permissions) !== cfg().caminho) {
+          res.status(403).json({ error: "Este acesso n\xE3o est\xE1 liberado no Cadastro de Usu\xE1rios deste cliente." });
+          return;
+        }
+      }
       const session = sessaoDe(user);
       if (!session) {
         res.status(401).json({ error: INVALID_LOGIN });
@@ -3261,64 +3399,13 @@ async function executarPortalHttp(req, res) {
       return;
     }
     if (op === "primeiro-acesso" && method === "POST") {
-      const email = emailDeAcesso(body?.email);
-      const senha = String(body?.senha || "");
-      const confirmacao = String(body?.confirmacao || "");
-      const key = `${clientIp(req)}|primeiro|${email || ""}`;
+      const key = `${clientIp(req)}|primeiro|${emailDeAcesso(body?.email) || ""}`;
       if (tooManyAttempts(key)) {
         res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
         return;
       }
-      if (!email) {
-        res.status(400).json({ error: "Informe um e-mail v\xE1lido." });
-        return;
-      }
-      const senhaInvalida = validarSenha(senha);
-      if (senhaInvalida) {
-        res.status(400).json({ error: senhaInvalida });
-        return;
-      }
-      if (senha !== confirmacao) {
-        res.status(400).json({ error: "A confirma\xE7\xE3o da senha n\xE3o confere." });
-        return;
-      }
-      const sb = createSupabaseAdminClient();
-      if (!sb) {
-        res.status(503).json({ error: "Portal indispon\xEDvel." });
-        return;
-      }
-      try {
-        const decisao = decidirPrimeiroAcesso({ existeAdministrador: await existeAdministrador(sb) });
-        if (!decisao.ok) {
-          res.status(403).json({ error: decisao.error });
-          return;
-        }
-        const nome = nomeDeAcesso(body?.nome);
-        if (!nome) {
-          res.status(400).json({ error: "Informe o nome do administrador." });
-          return;
-        }
-        if (await existeAdministrador(sb)) {
-          res.status(409).json({ error: "O administrador j\xE1 foi criado. Use o login." });
-          return;
-        }
-        const { data: criado, error } = await sb.from(cfg().tabelas.usuarios).insert({ nome, email, senha_hash: hashSenha(senha), perfil: "administrador", status: "ativo", trocar_senha: false }).select("id, nome, email, perfil, trocar_senha").single();
-        if (error || !criado) {
-          console.error(`[${cfg().logPrefix}] primeiro administrador`, error?.message);
-          res.status(500).json({ error: "N\xE3o foi poss\xEDvel criar o administrador." });
-          return;
-        }
-        const session = sessaoDe(criado);
-        if (!session) {
-          res.status(500).json({ error: "N\xE3o foi poss\xEDvel criar o administrador." });
-          return;
-        }
-        clearFailures(key);
-        res.status(201).json({ token: tokenDoPortal(criado.id), user: session });
-      } catch (error) {
-        console.error(`[${cfg().logPrefix}] primeiro acesso`, error instanceof Error ? error.message : error);
-        res.status(500).json({ error: "N\xE3o foi poss\xEDvel concluir o primeiro acesso." });
-      }
+      const decisao = decidirPrimeiroAcesso();
+      res.status(403).json({ error: decisao.error });
       return;
     }
     if (op === "me" && method === "GET") {
@@ -3362,7 +3449,18 @@ async function executarPortalHttp(req, res) {
         res.status(401).json({ error: "A senha atual n\xE3o confere." });
         return;
       }
-      const { error } = await sb.from(cfg().tabelas.usuarios).update({ senha_hash: hashSenha(senhaNova), trocar_senha: false, atualizado_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", session.id);
+      const agora = (/* @__PURE__ */ new Date()).toISOString();
+      const troca = {
+        senha_hash: hashSenha(senhaNova),
+        trocar_senha: false,
+        senha_alterada_em: agora,
+        atualizado_em: agora
+      };
+      let { error } = await sb.from(cfg().tabelas.usuarios).update(troca).eq("id", session.id);
+      if (colunaSenhaAlteradaAusente(error)) {
+        const { senha_alterada_em: _ignorado, ...semData } = troca;
+        ({ error } = await sb.from(cfg().tabelas.usuarios).update(semData).eq("id", session.id));
+      }
       if (error) {
         res.status(500).json({ error: "N\xE3o foi poss\xEDvel trocar a senha." });
         return;
@@ -3429,7 +3527,22 @@ async function executarPortalHttp(req, res) {
         return;
       }
       const senhaTemporaria = gerarSenhaTemporaria();
-      const { data, error } = await sb.from(cfg().tabelas.usuarios).insert({ nome, email, perfil, status: "ativo", trocar_senha: true, senha_hash: hashSenha(senhaTemporaria), criado_por: Number(session.id) }).select("id, nome, email, perfil, status, trocar_senha").single();
+      const criador = Number(session.id);
+      const novo = {
+        nome,
+        email,
+        perfil,
+        status: "ativo",
+        trocar_senha: true,
+        senha_hash: hashSenha(senhaTemporaria),
+        senha_alterada_em: null,
+        criado_por: Number.isInteger(criador) ? criador : null
+      };
+      let { data, error } = await sb.from(cfg().tabelas.usuarios).insert(novo).select("id, nome, email, perfil, status, trocar_senha").single();
+      if (colunaSenhaAlteradaAusente(error)) {
+        const { senha_alterada_em: _ignorado, ...semData } = novo;
+        ({ data, error } = await sb.from(cfg().tabelas.usuarios).insert(semData).select("id, nome, email, perfil, status, trocar_senha").single());
+      }
       if (error?.code === "23505") {
         res.status(409).json({ error: "Este e-mail j\xE1 est\xE1 cadastrado." });
         return;
@@ -3438,14 +3551,33 @@ async function executarPortalHttp(req, res) {
         res.status(500).json({ error: "N\xE3o foi poss\xEDvel liberar o acesso." });
         return;
       }
-      const enviou = await sendCevaPortalAccessEmail({ nome, email, senhaTemporaria, rotulo: cfg().rotulo, caminho: cfg().caminho });
-      if (!enviou) {
+      const cliente = await carregarClienteDoPortal(sb);
+      if (!cliente?.id) {
         await sb.from(cfg().tabelas.usuarios).delete().eq("id", data.id);
-        res.status(503).json({ error: "N\xE3o foi poss\xEDvel enviar o e-mail. O acesso n\xE3o foi liberado." });
+        res.status(503).json({ error: `Cliente ${cfg().clienteBusca || cfg().rotulo} n\xE3o encontrado.` });
         return;
       }
+      const vinculo = await vincularCadastroCliente(sb, {
+        nome,
+        email,
+        senhaTemporaria,
+        clientId: cliente.id,
+        caminho: cfg().caminho,
+        perfil,
+        ativo: true
+      });
+      if (!vinculo.ok) {
+        await sb.from(cfg().tabelas.usuarios).delete().eq("id", data.id);
+        res.status(409).json({ error: vinculo.error });
+        return;
+      }
+      const enviou = await sendCevaPortalAccessEmail({ nome, email, senhaTemporaria, rotulo: cfg().rotulo, caminho: cfg().caminho });
+      const link = systemAppUrl(cfg().caminho);
       res.status(201).json({
-        pessoa: { id: data.id, nome: data.nome, email: data.email, perfil: data.perfil, status: data.status, trocarSenha: true }
+        pessoa: { id: data.id, nome: data.nome, email: data.email, perfil: data.perfil, status: data.status, trocarSenha: true },
+        senhaTemporaria,
+        emailEnviado: enviou,
+        mensagem: mensagemAcessoPortal({ nome, email, senha: senhaTemporaria, rotulo: cfg().rotulo, link, manteveSenha: false })
       });
       return;
     }
@@ -3488,6 +3620,7 @@ async function executarPortalHttp(req, res) {
         res.status(500).json({ error: "N\xE3o foi poss\xEDvel alterar a pessoa." });
         return;
       }
+      if (data.email) await alinharStatusCadastroPortal(sb, String(data.email), proximo === "ativo");
       res.status(200).json({ pessoa: data });
       return;
     }

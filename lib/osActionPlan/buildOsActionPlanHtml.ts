@@ -1,5 +1,8 @@
 import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../dateUtils';
+import { cssDiario } from './diarioOperacional';
+import { textoParaCliente } from './linguagemCliente';
 import { htmlCorpoAnalise } from './montarRelatorio';
+import { htmlRelatorioPadrao } from './relatorioMissao';
 import type { OsActionPlanInput } from './types';
 
 export type PerfilClienteOs = 'dhl' | 'ceva' | 'ceslog' | 'vtc' | 'geral';
@@ -142,7 +145,11 @@ function objetivoLocal(d: OsActionPlanInput): string {
 function estilosRelatorio(): string {
   return `
     @page { size: A4; margin: 14mm 14mm 16mm; }
+    html, body { width: 100%; }
+    * { box-sizing: border-box; }
     body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; font-size: 10pt; line-height: 1.45; margin: 0; background: #fff; }
+    section, .trilha, .campo, .summary { width: 100%; max-width: 100%; }
+    p, td, li, .campo { overflow-wrap: break-word; }
     .header {
       display: flex; align-items: center; gap: 16px;
       background: linear-gradient(135deg, #111827 0%, #991b1b 55%, #dc2626 100%);
@@ -162,7 +169,7 @@ function estilosRelatorio(): string {
     .meta td:last-child, .meta td:last-child strong { font-weight: 400; text-transform: lowercase; }
     .summary, .quote { background: linear-gradient(90deg, #fef2f2 0%, #fff 100%); border-left: 4px solid #dc2626; padding: 10px 12px; margin: 8px 0; }
     .timeline td:first-child { width: 28%; font-weight: 600; }
-    .photos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .photos { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
     .photo-card { border: 1px solid #fca5a5; border-radius: 6px; padding: 8px; background: linear-gradient(180deg, #fff 0%, #fef2f2 100%); break-inside: avoid; page-break-inside: avoid; }
     .photo-card img { width: 100%; max-height: 200px; object-fit: contain; border-radius: 4px; background: #fff; }
     .photo-missing { min-height: 64px; display: flex; align-items: center; justify-content: center; background: #f3f4f6; color: #6b7280; font-size: 8.5pt; text-align: center; padding: 8px; border-radius: 4px; }
@@ -176,13 +183,17 @@ function estilosRelatorio(): string {
     .campo p:last-child { margin-bottom: 0; }
     ul.compact li { margin-bottom: 4px; }
     @media print {
+      html, body, section, .cartao, .faixa, .painel, .linha, .atualizacao, .par-visual, .antes-depois { width: 100% !important; max-width: 100% !important; }
       .no-print { display: none !important; }
-      .header, th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .header, th, .selo, .metrica { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .fotos-pagina, .atualizacao { break-inside: auto; page-break-inside: auto; }
+      .cartao, .atualizacao header, .par-visual, .foto-celula { break-inside: avoid; page-break-inside: avoid; }
     }
   `;
 }
 
 export function buildOsActionPlanHtml(d: OsActionPlanInput): string {
+  const operacional = d.modalidade === 'padrao';
   const cliente = texto(d.clientName, 'Cliente');
   const emissao = formatDateBR(d.geradoEm);
   const gerado = formatDateTimeBR(d.geradoEm);
@@ -200,42 +211,53 @@ export function buildOsActionPlanHtml(d: OsActionPlanInput): string {
   const blocoConta = conta.estado === 'ENCONTRADO' && conta.total != null && conta.caracterizada != null && conta.velada != null
     ? `<p class="desde">Histórico da conta ${conta.desde ? `desde ${esc(quando(conta.desde))}` : 'desde a primeira OS encontrada'}.</p>${barra('Total de missões', conta.total, conta.total || 1)}${barra('Caracterizada', conta.caracterizada, conta.total || 1)}${barra('Velada', conta.velada, conta.total || 1)}`
     : '<p>O histórico da conta não foi carregado.</p>';
-  const corpo = htmlCorpoAnalise(d);
+  const executivo = !operacional && Boolean(String(d.problemaPrincipal || '').trim());
+  const vistoEmBranco = operacional || executivo;
+  const corpo = operacional ? htmlRelatorioPadrao(d) : htmlCorpoAnalise(d);
+  const titulo = operacional
+    ? 'Relatório Operacional da Missão'
+    : executivo
+      ? 'Relatório de Ocorrência e Plano de Ação'
+      : 'Plano de Ação e Justificativa de Ocorrência';
 
-  return `<!DOCTYPE html>
+  return textoParaCliente(`<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
   <title>Plano de Ação — ${esc(d.missionId)} — ${esc(cliente)}</title>
-  <style>${estilosRelatorio()}
-    .faixa { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0 16px 12px; }
+  <style>${estilosRelatorio()}${cssDiario()}
+    .faixa { display: grid; width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0 16px 12px; }
     .selo { background: linear-gradient(160deg, #1f2937 0%, #7f1d1d 100%); color: #fff; border-radius: 16px; padding: 10px 12px; box-shadow: 0 14px 28px rgba(17,24,39,.22); }
     .selo span { display: block; font-size: 8pt; letter-spacing: .08em; text-transform: uppercase; color: #fecaca; font-weight: 800; }
     .selo strong { display: block; margin-top: 4px; font-size: 11pt; }
-    .painel { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 8px 16px 12px; }
+    .painel { display: grid; width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 8px 16px 12px; }
     .metrica { background: linear-gradient(180deg, #fff 0%, #fff7f7 100%); border-radius: 14px; padding: 10px 12px; box-shadow: 0 12px 24px rgba(17,24,39,.1), inset 0 1px 0 #fff; border: 1px solid #fee2e2; }
     .metrica span { display: block; font-size: 8pt; letter-spacing: .06em; text-transform: uppercase; color: #9f1239; font-weight: 800; }
     .metrica strong { display: block; margin-top: 4px; font-size: 13pt; font-weight: 400; text-transform: lowercase; }
     .trilha { margin: 4px 0 12px; }
-    .cartao { display: grid; grid-template-columns: 44px 1fr; gap: 8px; border: 1px solid #fee2e2; border-radius: 12px; padding: 8px; margin: 0 0 8px; break-inside: avoid; page-break-inside: avoid; }
+    .cartao { display: flex; width: 100%; max-width: 100%; align-items: flex-start; gap: 8px; border: 1px solid #fee2e2; border-radius: 12px; padding: 8px; margin: 0 0 8px; break-inside: avoid; page-break-inside: avoid; }
+    .cartao > .quem { flex: 0 0 44px; width: 44px; }
+    .cartao > div { flex: 1 1 auto; min-width: 0; max-width: 100%; }
     .nivel { display: inline-block; margin-left: 8px; font-size: 8pt; font-weight: 800; color: #9f1239; text-transform: uppercase; }
     .legenda { display: flex; gap: 8px; align-items: center; font-size: 8pt; margin: 8px 0 12px; }
     .foto-card { break-inside: avoid; page-break-inside: avoid; }
     .fotos-pagina { table-layout: fixed; page-break-inside: avoid; break-inside: avoid; margin-top: 8px; }
     .fotos-pagina tr, .fotos-pagina td { break-inside: avoid; page-break-inside: avoid; }
     .foto-celula { width: 33.33%; vertical-align: top; padding: 6px; }
-    .quadro { width: 42mm; height: 42mm; margin: 0 auto 6px; overflow: hidden; background: #f3f4f6; border: 1px solid #e5e7eb; }
-    .quadro img { width: 42mm; height: 42mm; object-fit: cover; object-position: center; display: block; }
+    .foto-celula .quadro { width: 42mm; height: 42mm; margin: 0 auto 6px; overflow: hidden; background: #f3f4f6; border: 1px solid #e5e7eb; }
+    .foto-celula .quadro img { width: 42mm; height: 42mm; object-fit: cover; object-position: center; display: block; }
     .foto-celula p { margin: 0 0 3px; font-size: 8pt; line-height: 1.3; }
     .grade thead { display: table-header-group; }
     .grade tr { break-inside: avoid; page-break-inside: avoid; }
-    .linha { display: grid; grid-template-columns: 36px 128px 108px 1fr; gap: 8px; align-items: center; padding: 5px 2px; border-bottom: 1px solid #f3f4f6; }
+    .linha { display: grid; width: 100%; grid-template-columns: 36px 128px 108px minmax(0, 1fr); gap: 8px; align-items: center; padding: 5px 2px; border-bottom: 1px solid #f3f4f6; }
+    .linha > * { min-width: 0; }
     .linha .quando { font-size: 9pt; font-weight: 400; }
     .linha .tipo { font-size: 8pt; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #9f1239; }
     .linha .texto { font-size: 9pt; font-weight: 400; }
     .rosto { width: 32px; height: 32px; }
     .conta .desde { margin: 0 0 8px; font-size: 9pt; }
-    .barra { display: grid; grid-template-columns: 150px 1fr 42px; gap: 8px; align-items: center; margin: 6px 0; }
+    .barra { display: grid; width: 100%; grid-template-columns: 150px minmax(0, 1fr) 42px; gap: 8px; align-items: center; margin: 6px 0; }
+    .barra > * { min-width: 0; }
     .barra b { font-size: 8pt; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
     .barra em { font-style: normal; font-weight: 400; text-align: right; }
     .trilho-barra { height: 12px; background: #f3f4f6; border-radius: 999px; overflow: hidden; }
@@ -243,17 +265,35 @@ export function buildOsActionPlanHtml(d: OsActionPlanInput): string {
     .grade th { text-transform: uppercase; font-weight: 800; font-size: 8pt; }
     .grade td { font-weight: 400; text-transform: none; }
     .aviso-plano { font-size: 8.5pt; color: #7f1d1d; margin: 0 0 6px; }
+    .croqui { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #fff; }
+    .croqui header { display: flex; justify-content: space-between; gap: 12px; border-bottom: 3px solid #991b1b; padding-bottom: 8px; margin-bottom: 10px; }
+    .croqui header strong { color: #991b1b; letter-spacing: .04em; }
+    .croqui header ul { margin: 0; padding: 0; list-style: none; font-size: 8pt; text-align: right; }
+    .croqui ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+    .etapa-croqui { display: grid; width: 100%; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; break-inside: avoid; }
+    .etapa-croqui > * { min-width: 0; }
+    .etapa-croqui > b { width: 28px; height: 28px; border-radius: 50%; background: #991b1b; color: #fff; display: flex; align-items: center; justify-content: center; }
+    .etapa-croqui em { display: block; font-size: 8pt; color: #4b5563; font-style: normal; }
+    .frota, .pistas { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+    .pistas i { font-style: normal; border: 1px solid #111827; padding: 6px 8px; font-size: 8pt; }
+    .viatura { display: inline-flex; flex-direction: column; align-items: center; border: 1px solid #d1d5db; border-radius: 6px; padding: 4px; min-width: 72px; }
+    .viatura svg { width: 64px; height: 28px; }
+    .viatura small { font-size: 7.5pt; }
+    .aviso-croqui { font-size: 8pt; color: #374151; border-top: 1px solid #e5e7eb; padding-top: 8px; }
+    .antes-depois { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .antes-depois > * { min-width: 0; }
+    .antes-depois > div { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
+    .sem { font-weight: 800; }
   </style>
 </head>
-<body>
+<body${operacional ? ' data-tipo="operacional"' : ''} data-os="${esc(d.missionId)}">
   <header class="header">
     <img src="/logo.png" alt="Grupo TM SEG" />
     <div class="cover-title">
-      <h1>Plano de Ação e Justificativa de Ocorrência</h1>
+      <h1>${titulo}</h1>
       <p>${esc(cliente)} — OS ${esc(d.missionId)}</p>
     </div>
   </header>
-
   <div class="faixa">
     <div class="selo"><span>Status</span><strong>${esc(texto(d.status, '—'))}</strong></div>
     <div class="selo"><span>Operação</span><strong>${esc(texto(d.tipo, '—'))}</strong></div>
@@ -271,25 +311,30 @@ export function buildOsActionPlanHtml(d: OsActionPlanInput): string {
 
   ${corpo}
 
-  <h2>Histórico da conta</h2>
-  <div class="conta">${blocoConta}</div>
+  ${operacional ? '' : `<h2>Histórico da conta</h2>
+  <div class="conta">${blocoConta}</div>`}
 
   <h2>Aprovação</h2>
   <table>
     <thead><tr><th>Função</th><th>Nome</th><th>Assinatura</th><th>Data</th></tr></thead>
     <tbody>
-      <tr><td>Direção / Operações</td><td>Diretoria — Grupo TM SEG</td><td>Visto eletrônico</td><td>${esc(emissao)}</td></tr>
-      <tr><td>Coordenação operacional</td><td>Central de monitoramento TM SEG</td><td>Acompanhamento desta OS</td><td>${esc(emissao)}</td></tr>
+      ${vistoEmBranco
+        ? (d.aprovadoCliente
+          ? `<tr><td>Diretoria</td><td>Diretoria — Grupo TM SEG</td><td>Aprovado</td><td>${esc(emissao)}</td></tr>`
+          : `<tr><td>Diretoria</td><td></td><td></td><td></td></tr>
+      <tr><td>Coordenação operacional</td><td></td><td></td><td></td></tr>`)
+        : `<tr><td>Direção / Operações</td><td>Diretoria — Grupo TM SEG</td><td>Visto eletrônico</td><td>${esc(emissao)}</td></tr>
+      <tr><td>Coordenação operacional</td><td>Central de monitoramento TM SEG</td><td>Acompanhamento desta OS</td><td>${esc(emissao)}</td></tr>`}
     </tbody>
   </table>
   <div class="signature">
     <div class="visto">VISTO</div>
     <strong>Diretoria — Grupo TM SEG</strong><br />
-    ${esc(gerado)}
+    ${vistoEmBranco ? (d.aprovadoCliente ? esc(gerado) : 'Espaço para assinatura.') : esc(gerado)}
   </div>
   <p class="footer">Documento gerado eletronicamente pelo Sistema Grupo TM SEG em ${esc(gerado)} (horário de Brasília).<br />
   contato: thiago@grupotmseg.com.br | sistema.grupotmseg.com.br</p>
   <p class="no-print">Para salvar em PDF: use <strong>Imprimir / PDF</strong> e escolha <strong>Salvar como PDF</strong>.</p>
 </body>
-</html>`;
+</html>`, d.fornecedor, d.clientName);
 }

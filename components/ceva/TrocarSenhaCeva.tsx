@@ -52,10 +52,10 @@ export const TrocarSenhaCeva: React.FC<{
     <div className="flex min-h-screen items-center justify-center bg-[#091426] px-4 py-10">
       <form onSubmit={(event) => void enviar(event)} className="w-full max-w-md rounded-[2rem] bg-[var(--portal-fundo)] p-8 text-slate-800 shadow-2xl">
         <LogoCeva tamanho="destaque" />
-        <p className="mt-5 text-xs font-bold uppercase tracking-[0.22em] text-[var(--portal-destaque)]">Primeiro acesso</p>
+        <p className="mt-5 text-xs font-bold uppercase tracking-[0.22em] text-[var(--portal-destaque)]">Senha do portal</p>
         <h1 className="mt-2 text-3xl font-black tracking-tight text-[var(--portal-marca)]">Troque a senha</h1>
-        <p className="mt-2 text-sm leading-relaxed text-slate-600">A senha do e-mail é temporária. Cadastre uma nova para abrir o controle. Essa troca é obrigatória.</p>
-        <label className={CAMPO}>Senha do e-mail
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">A senha temporária vale só para o primeiro acesso. Depois, ela precisa ser trocada a cada 30 dias para continuar no controle deste cliente.</p>
+        <label className={CAMPO}>Senha atual
           <input type="password" value={senhaAtual} onChange={(event) => setSenhaAtual(event.target.value)} className={CONTROLE} autoComplete="current-password" required />
         </label>
         <label className={CAMPO}>Nova senha

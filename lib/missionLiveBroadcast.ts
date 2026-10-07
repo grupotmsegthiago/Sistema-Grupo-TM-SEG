@@ -28,6 +28,7 @@ export function bindMissionLiveChannel(): RealtimeChannel {
   channel.on('broadcast', { event: 'handover_note' }, forward('handover_note'));
   channel.on('broadcast', { event: 'controle_diario_note' }, forward('controle_diario_note'));
   channel.on('broadcast', { event: 'occurrence' }, forward('occurrence'));
+  channel.on('broadcast', { event: 'dhl_viatura' }, forward('dhl_viatura'));
   channel.subscribe((status) => {
     if (status === 'SUBSCRIBED') {
       console.log('[Realtime] Avisos de OS, observação e passagem ativos');

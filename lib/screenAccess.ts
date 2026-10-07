@@ -17,6 +17,7 @@ import {
 import { canAccessMissionReport } from './missionReportAccess';
 import { canViewOsAnalysisPendencies } from './osAnalysisAccess';
 import { APROVACOES_PENDENTES_SCREEN, canViewAprovacoesPendentes } from './aprovacoesPendentesAccess';
+import { canViewRankingDhl } from './rankingDhlAccess';
 import { isPerfilAvancado, telaFinanceiraOcultaParaAvancado } from './avancadoFinanceBlock';
 
 export type ScreenAccessUser = {
@@ -46,6 +47,7 @@ export const SCREEN_PERMISSION_ALIASES: Record<string, string> = {
   'rh-employee-form': 'rh-employees',
   'rh-employee-profile': 'rh-employees',
   'ai-support': 'dashboard',
+  'meu-portal': 'dashboard',
 };
 
 /** Áreas internas bloqueadas para usuário-cliente do portal. */
@@ -195,6 +197,11 @@ export function canAccessScreen(user: ScreenAccessUser | null | undefined, scree
   // Aprovações Pendentes: Financeiro e Diretoria (nem * libera outro perfil).
   if (screenId === APROVACOES_PENDENTES_SCREEN) {
     return canViewAprovacoesPendentes(user);
+  }
+
+  // Ranking DHL (prêmio): só Diretoria e Financeiro. O link some para os demais.
+  if (screenId === 'ranking-dhl') {
+    return canViewRankingDhl(user);
   }
 
   // Relatório de OS: helper já inclui permissão `mission-report` + allowlist.

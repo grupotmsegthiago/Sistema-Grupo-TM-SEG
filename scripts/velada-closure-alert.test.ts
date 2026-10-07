@@ -6,6 +6,7 @@ import {
   getVeladaClosureMissing,
   isThiagoVeladaEscalationUser,
   isVeladaClosureOverdue,
+  isVeladaFinalKmPending,
   veladaClosureApplies,
   veladaClosureOperatorMatches,
   veladaFinalKmIsValid,
@@ -72,6 +73,16 @@ test('KM final não pode ser menor que o inicial', () => {
   assert.equal(veladaFinalKmIsValid(0, 0), false);
 });
 
+test('o aviso da velada pede pedágio também para o perfil Avançado', () => {
+  const src = fs.readFileSync('components/VeladaClosureAlert.tsx', 'utf8');
+  assert.match(src, /button-velada-toll-no/);
+  assert.match(src, /button-velada-toll-yes/);
+  assert.match(src, /input-velada-toll/);
+  assert.match(src, /Confirme se houve pedágio/);
+  assert.doesNotMatch(src, /ocultaFinanceiro/);
+  assert.doesNotMatch(src, /isPerfilAvancado/);
+});
+
 test('o aviso da velada fecha e fica pendente até salvar', () => {
   const src = fs.readFileSync('components/VeladaClosureAlert.tsx', 'utf8');
   assert.match(src, /button-velada-closure-close/);
@@ -79,4 +90,13 @@ test('o aviso da velada fecha e fica pendente até salvar', () => {
   assert.match(src, /velada-closure-pending-pill/);
   assert.match(src, /setDismissed\(true\)/);
   assert.doesNotMatch(src, /para liberar a tela/);
+});
+
+test('KM final pendente marca velada concluída sem hodômetro', () => {
+  assert.equal(isVeladaFinalKmPending(base), true);
+  assert.equal(isVeladaFinalKmPending({ ...base, end_km: 1800 }), false);
+  assert.equal(isVeladaFinalKmPending({ ...base, status: 'Em Viagem' }), false);
+  const card = fs.readFileSync('components/MissionCard.tsx', 'utf8');
+  assert.match(card, /banner-velada-km-pending/);
+  assert.match(card, /isVeladaFinalKmPending/);
 });

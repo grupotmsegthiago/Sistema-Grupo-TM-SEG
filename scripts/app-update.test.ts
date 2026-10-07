@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isPublishedVersionNewer } from '../lib/appUpdate.ts';
+import { isPublishedVersionNewer, UPDATE_CHECK_COOLDOWN_MS } from '../lib/appUpdate.ts';
 
 test('isPublishedVersionNewer detecta buildId diferente', () => {
   assert.equal(
@@ -20,6 +20,10 @@ test('isPublishedVersionNewer detecta version diferente sem buildId', () => {
     ),
     true
   );
+});
+
+test('aba aberta confere publicação em menos de um minuto', () => {
+  assert.ok(UPDATE_CHECK_COOLDOWN_MS <= 60_000);
 });
 
 test('isPublishedVersionNewer não atualiza quando igual', () => {

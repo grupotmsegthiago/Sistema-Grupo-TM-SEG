@@ -15,9 +15,10 @@ export function isOdometerExemptProvider(providerName?: string | null): boolean 
 export function isVeladaPassThroughTerminal(opts: {
   odometerExempt: boolean;
   kind: 'completed' | 'cancelled' | 'refused';
+  isVelada?: boolean;
 }): boolean {
-  const { odometerExempt, kind } = opts;
-  return odometerExempt && (kind === 'completed' || kind === 'cancelled');
+  const { odometerExempt, kind, isVelada = true } = opts;
+  return isVelada && odometerExempt && (kind === 'completed' || kind === 'cancelled');
 }
 
 /** Conclusão velada confirmada no checklist não cai em Pendente por falta de KM. */

@@ -22,6 +22,7 @@ import { registerLiveTrackRoutes } from "./liveTrackRoutes";
 import { notifyVeladaClosureComplete } from "./veladaClosureWorker";
 import { registerCevaPortalRoutes } from "./cevaPortal";
 import { registerIblPortalRoutes } from "./iblPortal";
+import { registerPortalClienteAcesso } from "./portalClienteAcesso";
 import { runRhMigrations } from "./rhMigrations";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances, transferPixFromCompany } from "./asaasService";
 import {
@@ -824,6 +825,7 @@ export async function registerRoutes(
   registerLiveTrackRoutes(app);
   registerCevaPortalRoutes(app);
   registerIblPortalRoutes(app);
+  registerPortalClienteAcesso(app);
 
   app.post('/api/missions/:id/velada-closure-notify', requireAuth, async (req: Request, res: Response) => {
     try {

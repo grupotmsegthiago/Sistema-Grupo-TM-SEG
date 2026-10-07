@@ -423,6 +423,9 @@ test('geração via IA preenche blocos com base no contexto e NÃO copia o e-mai
   assert.match(capturedPrompt, /a escolta atrasou/);
   assert.match(capturedPrompt, /N[ÃA]O copie e cole o e-mail/i);
   assert.match(capturedPrompt, /Nº S\.E\.: 183013/);
+  assert.match(capturedPrompt, /plano de ação/);
+  assert.match(capturedPrompt, /prazo-ac-\*/);
+  assert.match(capturedPrompt, /marco zero/);
 });
 
 test('HTML marca trechos editáveis para ajuste com IA', () => {
@@ -433,7 +436,19 @@ test('HTML marca trechos editáveis para ajuste com IA', () => {
   assert.match(html, /data-dhl-editable="sec-4-1-sintese"/);
   assert.match(html, /data-dhl-editable="sec-4-3-causa-raiz"/);
   assert.match(html, /data-dhl-editable="row-ac-02"[^>]*data-dhl-adjust-only="1"/);
+  assert.match(html, /data-dhl-editable="prazo-ac-01"/);
+  assert.match(html, /data-dhl-editable="ac-02"/);
+  assert.match(html, /data-dhl-editable="ap-01"/);
   assert.match(html, /data-dhl-editable="cronograma"/);
+  assert.match(html, /10\/07\/2026 ──● Emissão deste plano de ação/);
+  assert.match(html, /12\/07\/2026 ──● AP-01, AP-03, AP-05/);
+  assert.match(html, /09\/08\/2026 ──● Encerramento do ciclo/);
+  assert.doesNotMatch(html, /14\/08\/2026/);
+  assert.doesNotMatch(html, /troca de viatura \(VTR\)/i);
+  assert.match(html, /5\. Ações de contenção/);
+  assert.match(html, /6\. Plano de ação/);
+  assert.match(html, /7\. Indicadores de acompanhamento/);
+  assert.match(html, /10\. Aprovação/);
   assert.doesNotMatch(html, /8\.1 Parecer da Diretoria/i);
 });
 

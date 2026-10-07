@@ -166,16 +166,14 @@ async function checkForPublishedUpdate(options?: { skipReloadFlag?: boolean }): 
 })();
 
 if (!isPublicExternalRoute && window.location.hostname !== 'localhost') {
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && !shouldThrottleUpdateCheck()) {
-      void checkForPublishedUpdate({ skipReloadFlag: true });
-    }
-  });
-  window.addEventListener('focus', () => {
-    if (!shouldThrottleUpdateCheck()) {
-      void checkForPublishedUpdate({ skipReloadFlag: true });
-    }
-  });
+  const checarAtualizacaoPublicada = () => {
+    if (document.visibilityState !== 'visible') return;
+    if (shouldThrottleUpdateCheck()) return;
+    void checkForPublishedUpdate({ skipReloadFlag: true });
+  };
+  document.addEventListener('visibilitychange', checarAtualizacaoPublicada);
+  window.addEventListener('focus', checarAtualizacaoPublicada);
+  window.setInterval(checarAtualizacaoPublicada, 60_000);
 }
 
 const rootElement = document.getElementById('root');
@@ -191,6 +189,13 @@ root.render(
 );
 
 if ('serviceWorker' in navigator && window.location.hostname !== 'localhost') {
+  let recarregouPeloSw = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (recarregouPeloSw || isBootReloadGuarded()) return;
+    recarregouPeloSw = true;
+    markBootReloadGuard();
+    window.location.reload();
+  });
   window.addEventListener('load', async () => {
     try {
       await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });

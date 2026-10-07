@@ -47,7 +47,8 @@ describe('Permissões financeiras do Plínio', () => {
   it('T05 exclui controller/Plínio do gate operacional que grava pedágio do cliente', () => {
     const source = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
     assert.match(source, /isProviderOnlyControllerUser\(currentUser\)/);
-    assert.match(source, /const allowedFirstNames = \['barbara', 'simone'\]/);
+    assert.match(source, /isFinanceProfileRole\(currentUser\?\.role\)/);
+    assert.doesNotMatch(source, /allowedFirstNames = \['barbara', 'simone'\]/);
     assert.match(source, /if \(isProviderOnlyUser\) \{\s*showNotification\('Sem Permissão'/);
     assert.match(source, /kind === 'completed' && !mission\.billing_approved && !isProviderOnlyUser/);
     assert.doesNotMatch(source, /name\.includes\('plinio'\) \|\| name\.includes\('plínio'\)/);

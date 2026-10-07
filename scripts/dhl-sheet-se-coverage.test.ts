@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
+  canFillDhlSheetRole,
   formatDhlPeriodApprovalBlockMessage,
   isDhlPeriodMissionApproved,
   listSystemSesMissingFromSheet,
@@ -100,5 +101,28 @@ describe('Planilha DHL — só gera com APROVADA/APROVADO', () => {
     assert.match(fill, /listUnapprovedDhlPeriodMissions\(foundMissions\)/);
     assert.match(fill, /formatDhlPeriodApprovalBlockMessage/);
     assert.match(src, /Há \$\{pendCount\} OS sem APROVADA\/APROVADO/);
+  });
+});
+
+describe('Planilha DHL — quem vê o botão Preencher Planilha', () => {
+  it('T09 — Financeiro, Diretoria e Administrador veem; operacional não', () => {
+    assert.equal(canFillDhlSheetRole('Financeiro'), true);
+    assert.equal(canFillDhlSheetRole('financeiro'), true);
+    assert.equal(canFillDhlSheetRole('FINANCEIRO'), true);
+    assert.equal(canFillDhlSheetRole('Diretoria'), true);
+    assert.equal(canFillDhlSheetRole('Administrador'), true);
+    assert.equal(canFillDhlSheetRole('operacional'), false);
+    assert.equal(canFillDhlSheetRole('comercial'), false);
+    assert.equal(canFillDhlSheetRole(''), false);
+    assert.equal(canFillDhlSheetRole(null), false);
+  });
+
+  it('T10 — o boletim usa a regra de perfil, inclusive Financeiro', () => {
+    const src = fs.readFileSync('components/ClientBillingReport.tsx', 'utf8');
+    const start = src.indexOf('const canFillDhlSheet');
+    const end = src.indexOf('const getPeriodLabel', start);
+    const gate = src.slice(start, end);
+    assert.match(gate, /canFillDhlSheetRole\(role\)/);
+    assert.match(src, /isDhlBilling && canFillDhlSheet &&/);
   });
 });

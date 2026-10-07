@@ -1,5 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   canAccessScreen,
   hasProfilePermission,
@@ -125,6 +128,18 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
       canAccessScreen({ name: 'Ana', role: 'Financeiro', permissions: ['fin-dashboard'] }, 'finance-group'),
       true,
     );
+  });
+
+  it('Ranking DHL fica só para Diretoria e Financeiro', () => {
+    assert.equal(canAccessScreen({ role: 'Diretoria', permissions: [] }, 'ranking-dhl'), true);
+    assert.equal(canAccessScreen({ role: 'Financeiro', permissions: [] }, 'ranking-dhl'), true);
+    assert.equal(canAccessScreen({ role: 'Administrador', permissions: ['*'] }, 'ranking-dhl'), false);
+    assert.equal(canAccessScreen({ role: 'Avançado', permissions: ['ranking-dhl', '*'] }, 'ranking-dhl'), false);
+    assert.equal(canAccessScreen({ role: 'Operador', permissions: ['ranking-dhl'] }, 'ranking-dhl'), false);
+    assert.equal(canAccessScreen({ role: 'Controller', permissions: ['*'] }, 'ranking-dhl'), false);
+    const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../App.tsx'), 'utf8');
+    assert.match(app, /canViewRankingDhl/);
+    assert.doesNotMatch(app, /rl === 'avançado' \|\| rl === 'avancado' \|\| rl === 'diretoria'/);
   });
 
   it('wildcard * libera telas comuns (não quebra exclusividade dos Thiagos no cockpit)', () => {

@@ -25,6 +25,7 @@ import { formatProviderName, resolveLocationDisplay, extractCoordinates } from '
 import { isMissionOpsIncomplete, getMissionOpsMissingFields, isOpsAlertRecipient } from '../lib/missionOpsIncomplete';
 import LiveTrackPanel from './LiveTrackPanel';
 import { isVeladaMission } from '../lib/liveTrack/isVeladaMission';
+import { isVeladaFinalKmPending } from '../lib/veladaClosureAlert';
 import { isOsNegativeMarginLocked } from '../lib/osNegativeMarginLock';
 import { missionHasOccurrence, OCCURRENCE_BANNER } from '../lib/missionOccurrence';
 import { PANEL_LAYER_META, type MissionPanelLayer } from '../lib/missionPanelLayers';
@@ -436,6 +437,8 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         }
     }, [mission]);
 
+    const showVeladaKmPending = useMemo(() => isVeladaFinalKmPending(mission), [mission]);
+
     const missingInfo = useMemo(() => {
         const missing: string[] = [];
         const isRelevantStatus = [MissionStatus.SCHEDULED, MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT, MissionStatus.DOCUMENTATION].includes(mission.status);
@@ -784,6 +787,15 @@ Qualquer dúvida, estamos a disposição.
                 >
                     <AlertTriangle size={12} strokeWidth={3} /> {OCCURRENCE_BANNER}
                 </button>
+            )}
+            {!hideProviderInfo && showVeladaKmPending && (
+                <div
+                    className="w-full bg-amber-500 text-amber-950 text-[12px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 animate-pulse"
+                    data-testid={`banner-velada-km-pending-${mission.id}`}
+                    title="Missão velada finalizada. Falta o KM final para cobrar o fornecedor."
+                >
+                    <AlertTriangle size={12} strokeWidth={3} /> Falta KM final — cobrar o fornecedor
+                </div>
             )}
             <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-b-xl transition-colors ${isRedLight ? 'bg-red-500' : isImminent ? 'bg-amber-500' : 'bg-transparent'}`}></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-12 min-h-[120px] divide-y sm:divide-y xl:divide-y-0 xl:divide-x divide-gray-100 items-stretch">
@@ -1230,7 +1242,7 @@ Qualquer dúvida, estamos a disposição.
                         {onPrint && (<button onClick={handlePrintClick} className="w-8 h-8 flex items-center justify-center rounded-xl bg-gray-50 text-gray-700 border border-gray-200 transition-all duration-200 hover:bg-gray-700 hover:text-white hover:shadow-sm active:scale-95" title="Imprimir Folha de Missão (PDF) e Copiar Texto"><Printer size={14} /></button>)}
                         {onFullReport && (<button onClick={() => onFullReport(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-amber-50 text-amber-700 border border-amber-200 transition-all duration-200 hover:bg-amber-600 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Completo PDF (Timeline + Auditoria)"><FileText size={14} /></button>)}
                         {onOperationalReport && (<button onClick={() => onOperationalReport(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-red-50 text-red-700 border border-red-200 transition-all duration-200 hover:bg-red-700 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Operacional" data-testid={`button-op-report-${mission.id}`}><Briefcase size={14} /></button>)}
-                        {onActionPlan && (<button type="button" onClick={() => onActionPlan(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-[#e8eef4] text-[#0d3b66] border border-[#0d3b66]/30 transition-all duration-200 hover:bg-[#0d3b66] hover:text-white hover:shadow-sm active:scale-95" title="Gerar Plano de Ação desta OS" data-testid={`button-os-action-plan-${mission.id}`}><ClipboardList size={14} /></button>)}
+                        {onActionPlan && (<button type="button" onClick={() => onActionPlan(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-[#e8eef4] text-[#0d3b66] border border-[#0d3b66]/30 transition-all duration-200 hover:bg-[#0d3b66] hover:text-white hover:shadow-sm active:scale-95" title="Relatório da Missão" data-testid={`button-os-action-plan-${mission.id}`}><ClipboardList size={14} /></button>)}
                         {isDirector && !hideProviderInfo && (<button onClick={() => onDelete(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-red-50 text-red-600 border-red-100 transition-all duration-200 hover:bg-red-600 hover:text-white hover:shadow-sm active:scale-95" title="Excluir Missão"><Trash2 size={14}/></button>)}
                     </div>
                 </div>
