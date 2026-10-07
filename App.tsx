@@ -132,6 +132,7 @@ import {
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { canAccessMissionReport } from './lib/missionReportAccess';
+import { canViewRankingDhl } from './lib/rankingDhlAccess';
 import { canAccessDiretoriaMenu, canAccessComissoesComerciais, canAccessFaturamentoDiretoria } from './lib/diretoriaAccess';
 import { canViewOsAnalysisPendencies } from './lib/osAnalysisAccess';
 import OsAnalysisPendingPage from './components/OsAnalysisPendingPage';
@@ -730,9 +731,7 @@ const App: React.FC = () => {
       }
       case 'ranking-dhl': {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
-        const rl = (u.role || '').toLowerCase();
-        const allowed = rl === 'avançado' || rl === 'avancado' || rl === 'diretoria' || rl === 'administrador';
-        return allowed ? <RankingDHL /> : <Dashboard />;
+        return canViewRankingDhl(u) ? <RankingDHL /> : <Dashboard />;
       }
       case 'support-network': return <SupportMapFinder onNavigate={navigateTo} />;
       default: {
