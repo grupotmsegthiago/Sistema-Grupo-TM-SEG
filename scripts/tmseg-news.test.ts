@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   atualizacoesVisiveis,
+  nomesDePerfil,
   nomesQueViram,
   noticiaDoLog,
   partesQuando,
@@ -61,6 +62,18 @@ test('atualização do sistema só aparece para o perfil que acessa a área', ()
   assert.equal(atualizacoesVisiveis(operador).every((item) => item.fotos.length > 0 && (item.treinamento?.passos.length || 0) > 0), true);
   const financeiro = { role: 'financeiro', name: 'Plínio', permissions: ['fin-dashboard'] };
   assert.equal(atualizacoesVisiveis(financeiro).some((item) => item.titulo === 'Erro de pedágio vai para quem alterou'), true);
+});
+
+test('a coluna perfil mostra quem pode acessar', () => {
+  assert.deepEqual(nomesDePerfil(['dashboard'], []), ['Todos']);
+  assert.deepEqual(
+    nomesDePerfil(['fin-dashboard'], [
+      { name: 'Financeiro', permissions: ['fin-dashboard'] },
+      { name: 'Operador', permissions: ['missions'] },
+    ]),
+    ['Financeiro'],
+  );
+  assert.deepEqual(nomesDePerfil(['missions'], []), ['Painel de OS']);
 });
 
 test('a linha da atualização separa data e hora', () => {

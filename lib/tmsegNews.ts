@@ -188,6 +188,31 @@ export function atualizacoesVisiveis(user: UsuarioNews | null | undefined): Noti
   return ATUALIZACOES_SISTEMA.filter((item) => usuarioVeItem(user, item.telas));
 }
 
+const ACESSO_DE_TODOS = new Set(['dashboard', 'treinamento']);
+
+/** Nomes de perfil que podem abrir a atualização. Sem perfil carregado, mostra a área. */
+export function nomesDePerfil(
+  telas: string[] | null | undefined,
+  perfis: { name?: string | null; permissions?: string[] | null }[] = [],
+): string[] {
+  const lista = (telas || []).map((tela) => String(tela || '').trim()).filter(Boolean);
+  if (!lista.length || lista.every((tela) => ACESSO_DE_TODOS.has(tela))) return ['Todos'];
+  const especificas = lista.filter((tela) => !ACESSO_DE_TODOS.has(tela));
+  const nomes: string[] = [];
+  for (const perfil of perfis) {
+    const nome = String(perfil.name || '').trim();
+    if (!nome) continue;
+    const permissions = Array.isArray(perfil.permissions) ? perfil.permissions : [];
+    const usuario = { name: nome, role: nome, permissions };
+    if (especificas.some((tela) => canAccessScreen(usuario, tela))) nomes.push(nome);
+  }
+  if (especificas.includes('diretoria-cockpit') && !nomes.some((nome) => limpa(nome) === 'diretoria')) {
+    nomes.unshift('Diretoria');
+  }
+  if (nomes.length) return nomes;
+  return especificas.map((id) => AREAS_ATUALIZACAO.find((area) => area.id === id)?.nome || id);
+}
+
 export function separarLeitura(publico: string[], leram: string[]): { leu: string[]; naoLeu: string[] } {
   const chaves = new Set(nomesQueViram(leram).map((nome) => limpa(nome)));
   const pessoas = nomesQueViram(publico);

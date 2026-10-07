@@ -11,6 +11,7 @@ import {
   AREAS_ATUALIZACAO,
   atualizacoesVisiveis,
   noticiaDoLog,
+  nomesDePerfil,
   nomesQueViram,
   partesQuando,
   podePublicarNews,
@@ -47,6 +48,7 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
   const [atualizacoes, setAtualizacoes] = useState<Noticia[]>(() => atualizacoesVisiveis(usuario));
   const [vistas, setVistas] = useState<Record<string, string[]>>({});
   const [colegas, setColegas] = useState<UsuarioNews[]>([]);
+  const [perfis, setPerfis] = useState<{ name: string; permissions: string[] }[]>([]);
   const [titulo, setTitulo] = useState('');
   const [texto, setTexto] = useState('');
   const [tipoPublicacao, setTipoPublicacao] = useState<TipoNoticia>('atualizacao');
@@ -74,6 +76,13 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
     setAtualizacoes(mural);
     setNoticias(visiveis.filter((item) => item.tipo !== 'atualizacao'));
     const ids = [...mural, ...visiveis].map((item) => item.id).filter(Boolean);
+    const cadastroPerfis = await supabase.from('profiles').select('name, permissions').order('name');
+    setPerfis(((cadastroPerfis.data || []) as { name?: string; permissions?: string[] }[])
+      .map((perfil) => ({
+        name: String(perfil.name || '').trim(),
+        permissions: Array.isArray(perfil.permissions) ? perfil.permissions : [],
+      }))
+      .filter((perfil) => perfil.name));
     if (!ids.length) {
       setVistas({});
       return;
@@ -489,6 +498,7 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
                   <th className="px-3 py-2">Data</th>
                   <th className="px-3 py-2">Hora</th>
                   <th className="px-3 py-2">Informativo</th>
+                  <th className="px-3 py-2">Perfil</th>
                   <th className="px-3 py-2">Criado por</th>
                   <th className="px-3 py-2"></th>
                 </tr>
@@ -501,6 +511,7 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
                       <td className="whitespace-nowrap px-3 py-2 text-gray-700">{quando.data}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-gray-700">{quando.hora}</td>
                       <td className="px-3 py-2 font-bold text-gray-900">{item.titulo}</td>
+                      <td className="px-3 py-2 text-gray-700" title={nomesDePerfil(item.telas, perfis).join(', ')}>{nomesDePerfil(item.telas, perfis).join(', ')}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-gray-600">{item.autor}</td>
                       <td className="px-3 py-2 text-right">
                         <button type="button" onClick={() => setAberta(item.id)} className="text-[11px] font-black uppercase text-red-700 underline">
@@ -516,7 +527,7 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
           {completa && (
             <article className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm" data-testid={`tmseg-news-completo-${completa.id}`}>
               <p className="text-[10px] font-black uppercase text-red-700">
-                {partesQuando(completa.criadoEm).data} · {partesQuando(completa.criadoEm).hora} · {completa.autor}
+                {partesQuando(completa.criadoEm).data} · {partesQuando(completa.criadoEm).hora} · Perfil: {nomesDePerfil(completa.telas, perfis).join(', ')} · {completa.autor}
               </p>
               <h3 className="mt-1 text-base font-black text-gray-900">{completa.titulo}</h3>
               <p className="mt-2 text-sm leading-relaxed text-gray-700">{completa.texto}</p>
