@@ -7,6 +7,8 @@
 export type ProviderOnlySaveInput = {
   costValue: number;
   tollValue?: number;
+  /** Quando verdadeiro, o controller grava também o pedágio do cliente. */
+  persistClientToll?: boolean;
   tollValueProvider: number;
   displacementValueProvider: number;
   costEditReason?: string | null;
@@ -29,8 +31,12 @@ export function buildProviderOnlyMissionPayload(input: ProviderOnlySaveInput): R
     displacement_value_provider: Number(input.displacementValueProvider) || 0,
     last_update: input.lastUpdate || new Date().toISOString(),
   };
-  // tollValue (pedágio do cliente) não entra: controller só grava o fornecedor.
-  void input.tollValue;
+  if (input.persistClientToll) {
+    const clientToll = Number(input.tollValue);
+    payload.toll_value = Number.isFinite(clientToll) && clientToll > 0
+      ? Math.round(clientToll * 100) / 100
+      : 0;
+  }
   const reason = String(input.costEditReason || '').trim();
   if (reason) {
     // Nunca enviar null — constraints históricas rejeitam null em motivos.

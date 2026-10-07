@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
+import { nomeDeCarta } from '../lib/cartaTabelaErrada';
 import { supabase } from '../lib/supabase';
 
 type Linha = {
@@ -8,7 +9,14 @@ type Linha = {
   criador: string;
   tabela: string;
   quando: string;
+  temCarta: boolean;
 };
+
+function abrirAuditoria(os: string) {
+  const id = String(os || '').trim();
+  if (!id) return;
+  window.dispatchEvent(new CustomEvent('tmseg:open-billing-mission', { detail: id }));
+}
 
 export default function CockpitTabelaErrada() {
   const [linhas, setLinhas] = useState<Linha[]>([]);
@@ -35,17 +43,20 @@ export default function CockpitTabelaErrada() {
         const rows = data || [];
         setIncompleta(count != null && count > rows.length);
         setLinhas(rows.map((row) => {
-          let detalhe: { criador?: string; tabela?: string } = {};
+          let detalhe: { criador?: string; tabela?: string; motivos?: string[]; sugestaoNome?: string; lado?: string } = {};
           try { detalhe = JSON.parse(String(row.details || '{}')); } catch { detalhe = {}; }
           const quando = row.created_at
             ? new Date(row.created_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
             : '';
+          const criador = String(detalhe.criador || row.user_name || 'não identificado');
+          const tabela = String(detalhe.tabela || '');
           return {
             id: String(row.id),
             os: String(row.entity_id || ''),
-            criador: String(detalhe.criador || row.user_name || 'não identificado'),
-            tabela: String(detalhe.tabela || ''),
+            criador,
+            tabela,
             quando,
+            temCarta: nomeDeCarta(criador) !== 'NAO IDENTIFICADO',
           };
         }));
         setLoading(false);
@@ -64,7 +75,7 @@ export default function CockpitTabelaErrada() {
           <h3 className="text-sm font-black text-gray-900 uppercase tracking-wide flex items-center gap-2">
             <AlertTriangle size={16} className="text-red-600" /> Tabelas que não combinam com a rota
           </h3>
-          <p className="text-xs text-gray-500 mt-1">Quem abriu a OS com estado, UF ou KM fora da tabela aplicada.</p>
+          <p className="text-xs text-gray-500 mt-1">A carta vai para quem abriu a OS. Cada um lê só a sua.</p>
         </div>
         <p className="text-2xl font-black text-red-700" data-testid="cockpit-tabela-errada-count">{loading ? '…' : linhas.length}</p>
       </div>
@@ -85,12 +96,35 @@ export default function CockpitTabelaErrada() {
         <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto">
           {linhas.map((linha) => (
             <li key={linha.id} className="rounded-xl bg-red-50/70 px-3 py-2 text-xs">
-              <span className="font-black text-red-900">OS {linha.os}</span>
-              <span className="mx-1 text-gray-400">·</span>
-              <span className="font-bold uppercase">{linha.criador}</span>
-              <span className="mx-1 text-gray-400">·</span>
-              <span>{linha.tabela}</span>
-              {linha.quando && <span className="ml-2 text-gray-500">{linha.quando}</span>}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => abrirAuditoria(linha.os)}
+                  className="font-black text-red-900 underline"
+                  title="Abrir no auditador de faturamento"
+                  data-testid={`cockpit-tabela-errada-auditoria-${linha.id}`}
+                >
+                  OS {linha.os}
+                </button>
+                <span className="mx-1 text-gray-400">·</span>
+                <span className="font-bold uppercase">{linha.criador}</span>
+                <span className="mx-1 text-gray-400">·</span>
+                <span>{linha.tabela}</span>
+                {linha.quando && <span className="ml-2 text-gray-500">{linha.quando}</span>}
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <button
+                  type="button"
+                  onClick={() => abrirAuditoria(linha.os)}
+                  className="font-black uppercase text-red-800 underline"
+                  data-testid={`cockpit-tabela-errada-abrir-${linha.id}`}
+                >
+                  Abrir no auditador
+                </button>
+                <span className="text-[10px] font-black uppercase text-red-700" data-testid={`cockpit-tabela-errada-carta-${linha.id}`}>
+                  {linha.temCarta ? `Carta para ${linha.criador}` : 'Sem carta — criador não identificado'}
+                </span>
+              </div>
             </li>
           ))}
         </ul>

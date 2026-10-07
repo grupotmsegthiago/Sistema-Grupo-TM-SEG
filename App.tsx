@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import WhatsAppStatusBanner from './components/WhatsAppStatusBanner';
@@ -18,7 +18,8 @@ import { NotificationProvider } from './lib/NotificationContext';
 import { RealtimeProvider } from './lib/RealtimeProvider';
 
 // Componentes
-import Dashboard from './components/Dashboard'; 
+import Dashboard from './components/Dashboard';
+import MeuPortal from './components/MeuPortal'; 
 import MissionTable from './components/MissionTable';
 import ControleDiario from './components/ControleDiario';
 import MissionForm from './components/MissionForm';
@@ -60,6 +61,7 @@ import DhlSupplierIntake from './components/DhlSupplierIntake';
 import CevaPortal from './components/CevaPortal';
 import IblPortal from './components/IblPortal';
 import PublicLiveTrack from './components/PublicLiveTrack';
+import MapaViaturasPublico from './components/MapaViaturasPublico';
 import SupportMapFinder from './components/SupportMapFinder'; 
 import PushNotificationManager from './components/PushNotificationManager';
 import CostOptimizationDashboard from './components/CostOptimizationDashboard';
@@ -102,7 +104,9 @@ import FinancialInvoiceControl from './components/FinancialInvoiceControl';
 import MissionAlertMonitor from './components/MissionAlertMonitor';
 import EvidenceStartAlert from './components/EvidenceStartAlert';
 import VeladaClosureAlert from './components/VeladaClosureAlert';
-import TabelaRotaAlertaUsuario from './components/TabelaRotaAlertaUsuario';
+import DhlCopiaAoVivo from './components/DhlCopiaAoVivo';
+import DhlViaturaNovaAlerta from './components/DhlViaturaNovaAlerta';
+import CartasTabelaErrada from './components/CartasTabelaErrada';
 import UserPresenceTracker from './components/UserPresenceTracker';
 import PresenceDebugPanel from './components/PresenceDebugPanel';
 import TimeClockGate from './components/TimeClockGate';
@@ -177,6 +181,7 @@ const App: React.FC = () => {
   const isPortalExternoRoute = isCevaPortalRoute || isIblPortalRoute;
   const isDhlSupplierRoute = normalizedPath === '/fornecedor/dhl';
   const isLiveTrackRoute = normalizedPath === '/rastreio';
+  const isViaturasMapaRoute = normalizedPath === '/viaturas' || normalizedPath === '/dhl';
   const isResetPasswordRoute = normalizedPath === '/reset-password';
   const resetToken = new URLSearchParams(window.location.search).get('token') || '';
 
@@ -520,11 +525,22 @@ const App: React.FC = () => {
     window.addEventListener('tmseg:navigate', handler as EventListener);
     return () => window.removeEventListener('tmseg:navigate', handler as EventListener);
   }, []);
+  const openBillingRef = useRef(handleOpenBillingMission);
+  openBillingRef.current = handleOpenBillingMission;
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const missionId = String((e as CustomEvent).detail || '').trim();
+      if (missionId) void openBillingRef.current(missionId);
+    };
+    window.addEventListener('tmseg:open-billing-mission', handler as EventListener);
+    return () => window.removeEventListener('tmseg:open-billing-mission', handler as EventListener);
+  }, []);
   const handleSaveAndContinue = (missionId: string) => { localStorage.setItem('openMissionOnLoad', missionId); navigateTo('missions'); };
 
   if (isPublicRoute) { return ( <NotificationProvider> <PublicAgentRegistration /> </NotificationProvider> ); }
   if (isDhlSupplierRoute) { return <DhlSupplierIntake />; }
   if (isLiveTrackRoute) { return <PublicLiveTrack />; }
+  if (isViaturasMapaRoute) { return <MapaViaturasPublico />; }
   if (isIblPortalRoute) { return <IblPortal />; }
   if (isCevaPortalRoute) { return <CevaPortal />; }
 
@@ -567,6 +583,7 @@ const App: React.FC = () => {
 
     switch (currentScreen) {
       case 'dashboard': return <Dashboard onOpenMission={handleOpenBillingMission} />;
+      case 'meu-portal': return <MeuPortal />;
       case 'treinamento': return <TrainingAcademy mode="revisao" />;
       case 'missions': return <MissionTable onNewMission={() => navigateTo('new-mission')} />;
       case 'controle-diario': return <ControleDiario />;
@@ -751,6 +768,8 @@ const App: React.FC = () => {
         <PresenceDebugPanel />
         {(() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); const allowed = ['operador', 'avançado', 'avancado']; return allowed.includes(r); } catch { return false; } })() && <><MissionAlertMonitor /><EvidenceStartAlert /></>}
         {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <VeladaClosureAlert />}
+        {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <DhlCopiaAoVivo />}
+        {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <DhlViaturaNovaAlerta />}
         <div className="flex-1 flex flex-col min-h-0 min-w-0 relative z-10 lg:pl-20">
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />
@@ -759,7 +778,7 @@ const App: React.FC = () => {
             <IdlePresenceGuard />
             <main className="flex-1 overflow-x-auto overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="w-full mx-auto relative">
-                <TabelaRotaAlertaUsuario />
+                <CartasTabelaErrada />
                 <AppErrorBoundary onReset={() => {
                   // Só limpa o erro — não joga o usuário pro dashboard automaticamente.
                 }}>

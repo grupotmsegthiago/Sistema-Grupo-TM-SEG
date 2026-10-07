@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Save, Briefcase, Truck, Loader2, Search, Calendar, FileText, AlertTriangle, CheckCircle2, MapPin, Upload, Eye, X, Trash2, DollarSign, Plus, Edit, FileSpreadsheet, TrendingUp, Percent, Lock, Phone as PhoneIcon, Mail, Hash, Fingerprint, Building2, ShieldCheck, User, RotateCcw, Check, CheckSquare, Square, Download, ScrollText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
+import { publicarNovidadeCadastro } from '../lib/tmsegNews';
 import { ProviderCostTable } from '../types';
 import ImportProviderCostModal from './ImportProviderCostModal';
 import { AUTO_MASTER_OP_TYPE, generateAutoBands, suggestAutoMasterFromManualTables, isAutoMasterRow, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
@@ -693,6 +694,11 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
            if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|operating_coverage)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('insert', error.message));
            if (error) throw error;
            await logAction('CREATE', 'Provider', 'NEW', `Fornecedor cadastrado: ${formData.name}`);
+           void publicarNovidadeCadastro({
+             tipo: 'fornecedor',
+             nomeCadastro: formData.name,
+             autor: currentUser?.name || 'Equipe',
+           });
        }
        if (coverageColumnMissing && coverageTouched) {
            showNotification('Atenção', 'Fornecedor salvo, mas os estados/filiais ainda não puderam ser gravados. Rode a migration 2026_08_18_providers_operating_coverage.sql no Supabase.', 'warning');

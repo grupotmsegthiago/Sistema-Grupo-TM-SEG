@@ -187,6 +187,10 @@
       "destination": "/api/geocode-address"
     },
     {
+      "source": "/api/viaturas-disponiveis",
+      "destination": "/api/viaturas-disponiveis"
+    },
+    {
       "source": "/api/reverse-geocode",
       "destination": "/api/reverse-geocode"
     },
