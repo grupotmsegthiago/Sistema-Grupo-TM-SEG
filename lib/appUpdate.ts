@@ -115,8 +115,9 @@ export async function reloadForPublishedUpdate(
   window.location.replace(url.toString());
 }
 
-/** Intervalo mínimo entre checagens ao voltar para a aba (evita reload em loop). */
-export const UPDATE_CHECK_COOLDOWN_MS = 30 * 60 * 1000;
+/** Intervalo mínimo entre checagens. Curto de propósito: a aba que ficou aberta
+ *  durante o deploy precisa pegar a publicação sem esperar meia hora. */
+export const UPDATE_CHECK_COOLDOWN_MS = 45 * 1000;
 
 let lastUpdateCheckAt = 0;
 

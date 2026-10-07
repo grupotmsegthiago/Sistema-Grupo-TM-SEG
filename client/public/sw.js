@@ -1,6 +1,5 @@
-// O servidor injeta uma linha "// build: <timestamp>" no topo deste arquivo
-// a cada requisição. Isso garante que todo deploy muda os bytes do sw.js,
-// forçando o navegador a baixar a versão nova e disparar o ciclo de update.
+// O servidor pode prefixar "// build: <deploy>-v<versão>". O carimbo é estável
+// por publicação: muda quando sobe versão nova, não a cada request.
 const CACHE_NAME = 'tmseg-runtime';
 
 self.addEventListener('install', (event) => {
@@ -8,8 +7,8 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.keys().then(names => Promise.all(names.map(n => caches.delete(n))))
   );
-  // Não auto-ativa — espera o app pedir via postMessage('SKIP_WAITING')
-  // para podermos sincronizar o reload da página.
+  // Ativa neste deploy. O arquivo só muda quando o sistema publica.
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
