@@ -51,6 +51,8 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
   const [tipoPublicacao, setTipoPublicacao] = useState<TipoNoticia>('atualizacao');
   const [telas, setTelas] = useState<string[]>([]);
   const [anexo, setAnexo] = useState<File | null>(null);
+  const [fotosArquivos, setFotosArquivos] = useState<File[]>([]);
+  const [passosTexto, setPassosTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
   const anexoRef = useRef<HTMLInputElement>(null);
 
@@ -160,6 +162,24 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
     setEnviando(true);
     let anexoNome = '';
     let anexoUrl = '';
+    const fotosEnviadas: { url: string; legenda: string }[] = [];
+    for (const foto of fotosArquivos) {
+      const safe = foto.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `news/${Date.now()}_${safe}`;
+      const upload = await supabase.storage.from('mission-evidence').upload(path, foto, {
+        upsert: true,
+        contentType: foto.type || 'image/jpeg',
+      });
+      if (upload.error) {
+        setEnviando(false);
+        showNotification('Foto', upload.error.message, 'warning');
+        return;
+      }
+      fotosEnviadas.push({
+        url: supabase.storage.from('mission-evidence').getPublicUrl(path).data.publicUrl,
+        legenda: foto.name,
+      });
+    }
     if (anexo) {
       const safe = anexo.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const path = `news/${Date.now()}_${safe}`;
@@ -183,6 +203,10 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
       anexoNome,
       anexoUrl,
       telas: tipoPublicacao === 'atualizacao' ? telas : [],
+      fotos: fotosEnviadas,
+      treinamento: tipoPublicacao === 'atualizacao'
+        ? { passos: passosTexto.split('\n').map((passo) => passo.trim()).filter(Boolean), tela: telas[0] }
+        : undefined,
     });
     setEnviando(false);
     if (!resultado.ok) {
@@ -192,6 +216,8 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
     setTitulo('');
     setTexto('');
     setTelas([]);
+    setFotosArquivos([]);
+    setPassosTexto('');
     setAnexo(null);
     if (anexoRef.current) anexoRef.current.value = '';
     showNotification('Publicado', 'A equipe já pode ler no TM SEG NEWS.', 'success');
@@ -234,6 +260,28 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
         </p>
         <h3 className="mt-1 text-base font-black text-gray-900">{noticia.titulo}</h3>
         <p className="mt-2 text-sm leading-relaxed text-gray-700">{noticia.texto}</p>
+        {noticia.fotos.length > 0 && (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {noticia.fotos.map((foto) => (
+              <figure key={foto.url} className="overflow-hidden rounded-xl border border-gray-100">
+                <img src={foto.url} alt={foto.legenda} className="h-40 w-full object-cover" />
+                <figcaption className="px-2 py-1 text-[10px] font-bold text-gray-500">{foto.legenda}</figcaption>
+              </figure>
+            ))}
+          </div>
+        )}
+        {!!noticia.treinamento?.passos.length && (
+          <ol className="mt-3 space-y-1" data-testid={`tmseg-news-treino-${noticia.id}`}>
+            {noticia.treinamento.passos.map((passo, indice) => (
+              <li key={passo} className="text-sm text-gray-800">{indice + 1}. {passo}</li>
+            ))}
+          </ol>
+        )}
+        {noticia.treinamento?.tela && (
+          <button type="button" onClick={() => abrirAtalho(noticia.treinamento?.tela || '', noticia.titulo)} className="mt-2 rounded-xl bg-gray-950 px-3 py-2 text-[11px] font-black uppercase text-white">
+            Abrir a ferramenta
+          </button>
+        )}
         {noticia.anexoUrl && (
           <a href={noticia.anexoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-black uppercase text-red-700">
             <Paperclip size={12} /> {noticia.anexoNome || 'Abrir anexo'}
@@ -359,7 +407,31 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
               })}
             </div>
           )}
+          {tipoPublicacao === 'atualizacao' && (
+            <textarea
+              value={passosTexto}
+              onChange={(event) => setPassosTexto(event.target.value)}
+              rows={3}
+              placeholder={'Como usar, um passo por linha\nNa home, clique no card\nSiga a tela que abrir'}
+              className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
+              data-testid="tmseg-news-passos"
+            />
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
+            {tipoPublicacao === 'atualizacao' && (
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-[11px] font-black uppercase text-gray-700">
+                Fotos
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  data-testid="tmseg-news-fotos"
+                  onChange={(event) => setFotosArquivos(Array.from(event.target.files || []))}
+                />
+              </label>
+            )}
+            {fotosArquivos.length > 0 && <span className="text-xs text-gray-500">{fotosArquivos.length} foto(s)</span>}
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-[11px] font-black uppercase text-gray-700">
               <Paperclip size={14} /> Anexar
               <input

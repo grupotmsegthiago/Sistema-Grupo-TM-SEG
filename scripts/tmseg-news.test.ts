@@ -36,13 +36,15 @@ test('quem visualizou não repete o mesmo nome', () => {
     entity_id: 'n1',
     user_name: 'Thiago Moreira',
     created_at: '2026-10-06T12:00:00.000Z',
-    details: JSON.stringify({ titulo: 'Escala de sábado', texto: 'A escala muda às 7h.', tipo: 'informe', autor: 'Thiago Moreira', anexoNome: 'escala.pdf', anexoUrl: 'https://exemplo/escala.pdf' }),
+    details: JSON.stringify({ titulo: 'Escala de sábado', texto: 'A escala muda às 7h.', tipo: 'informe', autor: 'Thiago Moreira', anexoNome: 'escala.pdf', anexoUrl: 'https://exemplo/escala.pdf', fotos: [{ url: 'https://exemplo/foto.png', legenda: 'Tela nova' }], treinamento: { passos: ['Abra o card', 'Siga o passo'], tela: 'dashboard' } }),
   });
   assert.equal(noticia?.titulo, 'Escala de sábado');
   assert.equal(noticia?.autor, 'Thiago Moreira');
   assert.equal(noticia?.anexoNome, 'escala.pdf');
   assert.equal(noticia?.anexoUrl, 'https://exemplo/escala.pdf');
   assert.deepEqual(noticia?.telas, []);
+  assert.equal(noticia?.fotos[0]?.legenda, 'Tela nova');
+  assert.deepEqual(noticia?.treinamento?.passos, ['Abra o card', 'Siga o passo']);
 });
 
 test('atualização do sistema só aparece para o perfil que acessa a área', () => {
@@ -52,6 +54,10 @@ test('atualização do sistema só aparece para o perfil que acessa a área', ()
   const titulos = atualizacoesVisiveis(operador).map((item) => item.titulo);
   assert.equal(titulos.includes('Meu Portal'), true);
   assert.equal(titulos.includes('Viaturas para comunicar à DHL'), false);
+  const portal = atualizacoesVisiveis(operador).find((item) => item.titulo === 'Meu Portal');
+  assert.equal(portal?.fotos[0]?.url, '/atualizacoes/sys-meu-portal.svg');
+  assert.equal(portal?.treinamento?.passos.length, 3);
+  assert.equal(atualizacoesVisiveis(operador).every((item) => item.fotos.length > 0 && (item.treinamento?.passos.length || 0) > 0), true);
   const financeiro = { role: 'financeiro', name: 'Plínio', permissions: ['fin-dashboard'] };
   assert.equal(atualizacoesVisiveis(financeiro).some((item) => item.titulo === 'Erro de pedágio vai para quem alterou'), true);
 });

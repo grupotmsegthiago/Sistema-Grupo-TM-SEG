@@ -456,6 +456,16 @@ export default function MeuPortal() {
               <article key={noticia.id} className="rounded-xl border border-gray-100 p-3">
                 <p className="text-sm font-black">{noticia.titulo}</p>
                 <p className="mt-1 text-sm text-gray-700">{noticia.texto}</p>
+                {noticia.fotos.map((foto) => (
+                  <img key={foto.url} src={foto.url} alt={foto.legenda} className="mt-2 h-36 w-full rounded-xl object-cover" />
+                ))}
+                {!!noticia.treinamento?.passos.length && (
+                  <ol className="mt-2 space-y-1">
+                    {noticia.treinamento.passos.map((passo, indice) => (
+                      <li key={passo} className="text-sm text-gray-800">{indice + 1}. {passo}</li>
+                    ))}
+                  </ol>
+                )}
                 {noticia.anexoUrl && <a href={noticia.anexoUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-black uppercase text-red-700">{noticia.anexoNome || 'Abrir anexo'}</a>}
                 <p className="mt-2 text-[11px] font-bold text-gray-500">{lidos[noticia.id] ? textoLidoEm(lidos[noticia.id]) : 'Ainda não lido'}</p>
                 {!lidos[noticia.id] && <button type="button" onClick={() => abrirComunicado(noticia)} className="mt-1 text-[11px] font-black uppercase text-gray-700 underline">Marcar como lido</button>}
