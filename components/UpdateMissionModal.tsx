@@ -3466,57 +3466,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             if (evidenceErr) console.warn('[EndEvidence] Falha ao gravar as fotos do fim:', evidenceErr.message);
         }
 
-        // Recálculo automático de pedágio (estimativa por IA / Gemini) ao
-        // CONCLUIR. Não usamos a QualP aqui por custo; o endpoint
-        // /api/toll/gemini-estimate usa a integração Gemini já existente.
-        // Salva direto em toll_value (e toll_value_provider = 0 quando é a mesma
-        // OS) sem pedir confirmação manual. OS aprovada NUNCA é tocada. Em
-        // falha, mantém o gate manual de pedágio (tollConfirmedRef permanece false).
-        if (mission && kind === 'completed' && !mission.billing_approved && !isProviderOnlyUser) {
-            try {
-                const r = await withTimeout(
-                    authFetch('/api/toll/gemini-estimate', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ origin: editData.origin, destination: editData.destination }),
-                    }),
-                    5000,
-                    'Estimativa de pedágio excedeu 5s',
-                );
-                const j = await r.json().catch(() => ({} as any));
-                if (j?.success && typeof j.tollValue === 'number') {
-                    const v = Number(j.tollValue.toFixed(2));
-                    const pair = tollPersistencePair(v, !!mission.is_same_os, mission.client);
-                    // Guarda no banco: nunca sobrescreve pedágio de OS aprovada
-                    // (fecha a janela de aprovação concorrente — o snapshot
-                    // financeiro congelado jamais é tocado).
-                    const { error: tollErr } = await supabase.from('missions')
-                        .update({ toll_value: pair.toll_value, toll_value_provider: pair.toll_value_provider })
-                        .eq('id', mission.id)
-                        .eq('billing_approved', false);
-                    if (!tollErr) {
-                        mission.toll_value = pair.toll_value;
-                        (mission as any).toll_value_provider = pair.toll_value_provider;
-                        tollConfirmedRef.current = true;
-                        const confLabel = j.confianca === 'alta' ? 'alta' : j.confianca === 'media' ? 'média' : 'baixa';
-                        if (!ocultaFinanceiro) showNotification(
-                            'Pedágio (Estimativa IA)',
-                            v === 0
-                                ? 'IA não identificou pedágio nesta rota. Confirme manualmente se houver.'
-                                : `Real R$ ${v.toFixed(2)} · Cliente R$ ${pair.toll_value.toFixed(2)} (${j.tollCount || 0} praça${(j.tollCount || 0) > 1 ? 's' : ''}) — estimativa IA ao concluir. Confirme manualmente. Confiança: ${confLabel}.`,
-                            'info'
-                        );
-                        console.log(`[FIM MISSÃO] Pedágio (IA) recalculado e salvo: R$ ${v} (fornecedor R$ ${provToll})`);
-                    }
-                }
-            } catch (e) {
-                if (e instanceof TimeoutError) {
-                    console.warn('[FIM MISSÃO] Estimativa de pedágio (IA) expirou — segue sem bloquear a conclusão.');
-                } else {
-                    console.warn('[FIM MISSÃO] Falha ao recalcular pedágio (IA):', e);
-                }
-            }
-        }
+        // A conclusão não estima nem grava pedágio. O valor da OS é o que foi
+        // digitado, com a faixa de porcentagem do cliente (DHL sem acréscimo).
 
         const d = new Date(iso);
         const endDate = formatIsoDateBR(d);
