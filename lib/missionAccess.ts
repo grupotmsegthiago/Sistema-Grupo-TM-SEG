@@ -3,7 +3,7 @@
  * Isolamento por cliente é client-side — admin/liberação financeira devem ver tudo.
  */
 
-import { isFinanceSupervisorName } from './financeSupervisorAccess';
+import { isFinanceProfileRole, isFinanceSupervisorName } from './financeSupervisorAccess';
 import { isPerfilComercial } from './diretoriaAccess';
 
 export type MissionAccessUser = {
@@ -22,6 +22,25 @@ export function hasFullMissionListAccess(user: MissionAccessUser | null | undefi
   // Bárbara / Giovanna — independente do rótulo exato do perfil no banco.
   if (isFinanceSupervisorName(user.name)) return true;
   return false;
+}
+
+/**
+ * Perfil Financeiro não baixa o quadro de OS ao abrir o painel.
+ * A OS entra só quando a pessoa consulta no filtro (número, cliente, placa, motorista).
+ * Administrador e acesso total (*) continuam com a lista completa.
+ * Bárbara / Giovanna no perfil Financeiro também consultam sob demanda — o nome
+ * segue liberando faturamento (hasFullMissionListAccess), sem baixar o quadro.
+ */
+export function financeiroConsultaOsSobDemanda(user: MissionAccessUser | null | undefined): boolean {
+  if (!user) return false;
+  if (Array.isArray(user.permissions) && user.permissions.includes('*')) return false;
+  const roleLower = String(user.role || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+  if (roleLower === 'administrador') return false;
+  return isFinanceProfileRole(user.role);
 }
 
 /**

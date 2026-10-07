@@ -6,6 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type MissionSearchClientScope =
   | { type: 'empty' }
+  | { type: 'all' }
   | { type: 'eq'; value: string }
   | { type: 'in'; values: string[] };
 
@@ -94,4 +95,108 @@ export async function searchMissionsByTerm(
   }
 
   return { rows, truncated, exactIdAttempted };
+}
+
+export type ConsultaOsContexto = {
+  vehicleMap: Record<string, any>;
+  clientVehicleMap: Record<string, any>;
+  clientNameMap: Record<string, string>;
+  providerNameMap: Record<string, string>;
+  clients: any[];
+  clientTables: any[];
+  providerTables: any[];
+  agentPhones: Record<string, string>;
+};
+
+function valoresUnicos(values: unknown[]): any[] {
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (const value of values) {
+    if (value == null || value === '' || value === '---') continue;
+    const key = String(value);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
+async function selectInChunks(
+  supabase: SupabaseClient,
+  table: string,
+  columns: string,
+  column: string,
+  values: any[],
+  chunkSize = 80,
+): Promise<any[]> {
+  if (values.length === 0) return [];
+  const out: any[] = [];
+  for (let index = 0; index < values.length; index += chunkSize) {
+    const slice = values.slice(index, index + chunkSize);
+    const { data, error } = await supabase.from(table).select(columns).in(column, slice);
+    if (error) throw error;
+    if (data) out.push(...data);
+  }
+  return out;
+}
+
+/**
+ * Contexto só das OS que o Financeiro consultou.
+ * Não pagina missions, nem baixa tabelas/clientes/agentes inteiros.
+ */
+export async function carregarContextoOsConsultadas(
+  supabase: SupabaseClient,
+  rows: Record<string, unknown>[],
+): Promise<ConsultaOsContexto> {
+  const vehicleIds = valoresUnicos(rows.map((row) => row.vehicle_id));
+  const clientVehicleIds = valoresUnicos(rows.map((row) => row.client_vehicle));
+  const clientNames = valoresUnicos(rows.map((row) => String(row.client || '').trim())).map(String);
+  const providerNames = valoresUnicos(rows.map((row) => String(row.provider || '').trim())).map(String);
+  const agentNames = valoresUnicos(rows.flatMap((row) => [row.agent1, row.agent2])).map(String);
+
+  const [vehicles, clientVehicles, clients, providers, clientTables, providerTables, agents] = await Promise.all([
+    selectInChunks(supabase, 'vehicles', '*', 'id', vehicleIds),
+    selectInChunks(supabase, 'client_vehicles', 'id, plate, model, brand, color', 'id', clientVehicleIds),
+    selectInChunks(supabase, 'clients', '*', 'name', clientNames),
+    selectInChunks(supabase, 'providers', 'name, trading_name', 'name', providerNames),
+    selectInChunks(supabase, 'client_price_tables', '*', 'client', clientNames),
+    selectInChunks(supabase, 'provider_cost_tables', '*', 'provider', providerNames),
+    selectInChunks(supabase, 'agents', 'name, phone', 'name', agentNames),
+  ]);
+
+  const vehicleMap = vehicles.reduce((acc: Record<string, any>, vehicle: any) => {
+    acc[vehicle.id] = vehicle;
+    return acc;
+  }, {});
+  const clientVehicleMap = clientVehicles.reduce((acc: Record<string, any>, vehicle: any) => {
+    acc[String(vehicle.id)] = vehicle;
+    return acc;
+  }, {});
+  const clientNameMap = clients.reduce((acc: Record<string, string>, client: any) => {
+    if (client.trading_name && String(client.trading_name).trim() !== '') {
+      acc[String(client.name || '').trim().toUpperCase()] = String(client.trading_name).trim();
+    }
+    return acc;
+  }, {});
+  const providerNameMap = providers.reduce((acc: Record<string, string>, provider: any) => {
+    if (provider.trading_name && String(provider.trading_name).trim() !== '') {
+      acc[String(provider.name || '').trim().toUpperCase()] = String(provider.trading_name).trim();
+    }
+    return acc;
+  }, {});
+  const agentPhones: Record<string, string> = {};
+  for (const agent of agents) {
+    if (agent?.name && agent?.phone) agentPhones[agent.name] = agent.phone;
+  }
+
+  return {
+    vehicleMap,
+    clientVehicleMap,
+    clientNameMap,
+    providerNameMap,
+    clients,
+    clientTables,
+    providerTables,
+    agentPhones,
+  };
 }
