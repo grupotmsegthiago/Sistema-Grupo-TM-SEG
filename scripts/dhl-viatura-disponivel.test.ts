@@ -11,6 +11,7 @@ import {
   HORA_MS,
   agruparPorRegiao,
   entraNaListaBloqueados,
+  textoMotivoNaOs,
   montarMensagemDisponibilidadeDhl,
   parteLocal,
   copiaBloqueadaPara,
@@ -176,6 +177,9 @@ test('cor do botão e saída do painel depois de 30 minutos', () => {
   assert.equal(entraNaListaBloqueados(estourado, now), true);
   assert.equal(entraNaListaBloqueados(expirado, now), true);
   assert.equal(entraNaListaBloqueados(copiado, now), false);
+  assert.equal(entraNaListaBloqueados({ ...expirado, observacao_diretoria: 'ajustes do sistema' }, now), false);
+  assert.equal(entraNaListaBloqueados({ ...expirado, observacao_diretoria: '   ' }, now), true);
+  assert.equal(textoMotivoNaOs('ajustes do sistema'), 'Não encaminhada à DHL. ajustes do sistema');
   assert.equal(HORA_MS, 30 * 60 * 1000);
 });
 
