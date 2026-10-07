@@ -1,10 +1,11 @@
 import { canAccessDiretoriaMenu, isPerfilDiretoria, type DiretoriaAccessUser } from './diretoriaAccess';
+import { canAccessScreen, type ScreenAccessUser } from './screenAccess';
 import { supabase } from './supabase';
 
 export const ACAO_NEWS = 'TMSEG_NEWS';
 export const ACAO_NEWS_VIEW = 'TMSEG_NEWS_VIEW';
 
-export type TipoNoticia = 'informe' | 'cliente' | 'fornecedor';
+export type TipoNoticia = 'informe' | 'cliente' | 'fornecedor' | 'atualizacao';
 
 export type Noticia = {
   id: string;
@@ -15,9 +16,83 @@ export type Noticia = {
   quando: string;
   anexoNome?: string;
   anexoUrl?: string;
+  /** Vazio: todo mundo de dentro. Com telas: só quem o perfil deixa abrir. */
+  telas: string[];
 };
 
-export type UsuarioNews = DiretoriaAccessUser & {
+/** Áreas que a diretoria marca ao publicar uma atualização. */
+export const AREAS_ATUALIZACAO = [
+  { id: 'dashboard', nome: 'Página inicial' },
+  { id: 'missions', nome: 'Painel de OS' },
+  { id: 'controle-diario', nome: 'Controle diário' },
+  { id: 'diretoria-cockpit', nome: 'Cockpit' },
+  { id: 'fin-dashboard', nome: 'Financeiro' },
+  { id: 'rh-employees', nome: 'RH' },
+  { id: 'rh-timeclock', nome: 'Ponto' },
+  { id: 'clients', nome: 'Clientes' },
+  { id: 'providers', nome: 'Fornecedores' },
+  { id: 'treinamento', nome: 'Treinamento' },
+] as const;
+
+/** O que já mudou no sistema. Cada item só aparece para quem acessa uma das telas. */
+export const ATUALIZACOES_SISTEMA: Noticia[] = [
+  {
+    id: 'sys-meu-portal',
+    titulo: 'Meu Portal',
+    texto: 'A área pessoal reúne ponto, escala, holerites, documentos, documentação profissional, solicitações, comunicados e dados. Férias continuam fora.',
+    tipo: 'atualizacao',
+    autor: 'Sistema',
+    quando: '',
+    telas: ['dashboard'],
+  },
+  {
+    id: 'sys-treinamento',
+    titulo: 'Treinamento mostra quem assistiu',
+    texto: 'Cada aula da trilha do operador indica se a pessoa já assistiu ou ainda não assistiu. O atalho abre o treinamento.',
+    tipo: 'atualizacao',
+    autor: 'Sistema',
+    quando: '',
+    telas: ['treinamento'],
+  },
+  {
+    id: 'sys-dhl-viaturas',
+    titulo: 'Viaturas para comunicar à DHL',
+    texto: 'No Painel de OS, a viatura finalizada aparece por região. Quem copia fica visível para a equipe. Sem cópia em 30 minutos, ela vai para Não encaminhadas.',
+    tipo: 'atualizacao',
+    autor: 'Sistema',
+    quando: '',
+    telas: ['missions'],
+  },
+  {
+    id: 'sys-ocorrencias',
+    titulo: 'Ocorrências em uma linha',
+    texto: 'A lista em aberto ficou em uma linha por ocorrência. A rota aparece como Cidade - UF x Cidade - UF. Código de mapa vira a cidade.',
+    tipo: 'atualizacao',
+    autor: 'Sistema',
+    quando: '',
+    telas: ['diretoria-cockpit', 'fin-dashboard'],
+  },
+  {
+    id: 'sys-carta-tabela',
+    titulo: 'Carta da tabela que não combina',
+    texto: 'Quando a tabela não combina com a rota, a carta chega só para quem abriu a OS. O texto do erro não fica aberto para o restante da equipe.',
+    tipo: 'atualizacao',
+    autor: 'Sistema',
+    quando: '',
+    telas: ['missions', 'diretoria-cockpit'],
+  },
+  {
+    id: 'sys-pedagio',
+    titulo: 'Erro de pedágio vai para quem alterou',
+    texto: 'Quem encontra um erro no pedágio escreve o que está errado. A carta chega para a última pessoa que alterou aquele valor, e ela mesma corrige.',
+    tipo: 'atualizacao',
+    autor: 'Sistema',
+    quando: '',
+    telas: ['fin-dashboard', 'missions'],
+  },
+];
+
+export type UsuarioNews = DiretoriaAccessUser & ScreenAccessUser & {
   clientId?: string | null;
   providerId?: string | null;
 };
@@ -44,6 +119,27 @@ export function podeVerNews(user: UsuarioNews | null | undefined): boolean {
   if (!role) return true;
   if (role === 'cliente' || role === 'client' || role === 'fornecedor' || role === 'provider') return false;
   return true;
+}
+
+/** Sem telas, o aviso é geral. Com telas, só entra quem o perfil deixa abrir pelo menos uma. */
+export function usuarioVeItem(user: UsuarioNews | null | undefined, telas: string[] | null | undefined): boolean {
+  if (!podeVerNews(user)) return false;
+  const lista = (telas || []).map((tela) => String(tela || '').trim()).filter(Boolean);
+  if (!lista.length) return true;
+  return lista.some((tela) => canAccessScreen(user, tela));
+}
+
+export function atualizacoesVisiveis(user: UsuarioNews | null | undefined): Noticia[] {
+  return ATUALIZACOES_SISTEMA.filter((item) => usuarioVeItem(user, item.telas));
+}
+
+export function separarLeitura(publico: string[], leram: string[]): { leu: string[]; naoLeu: string[] } {
+  const chaves = new Set(nomesQueViram(leram).map((nome) => limpa(nome)));
+  const pessoas = nomesQueViram(publico);
+  return {
+    leu: pessoas.filter((nome) => chaves.has(limpa(nome))),
+    naoLeu: pessoas.filter((nome) => !chaves.has(limpa(nome))),
+  };
 }
 
 export function textoParabensCadastro(
@@ -80,7 +176,7 @@ export function noticiaDoLog(row: {
   details?: string;
   created_at?: string;
 }): Noticia | null {
-  let detalhe: { titulo?: string; texto?: string; tipo?: string; autor?: string; anexoNome?: string; anexoUrl?: string } = {};
+  let detalhe: { titulo?: string; texto?: string; tipo?: string; autor?: string; anexoNome?: string; anexoUrl?: string; telas?: unknown } = {};
   try {
     const parsed = JSON.parse(String(row.details || '{}'));
     if (parsed && typeof parsed === 'object') detalhe = parsed;
@@ -90,7 +186,10 @@ export function noticiaDoLog(row: {
   const texto = String(detalhe.texto || '').trim();
   const titulo = String(detalhe.titulo || '').trim();
   if (!texto || !titulo) return null;
-  const tipo = detalhe.tipo === 'cliente' || detalhe.tipo === 'fornecedor' ? detalhe.tipo : 'informe';
+  const tipo = detalhe.tipo === 'cliente' || detalhe.tipo === 'fornecedor' || detalhe.tipo === 'atualizacao'
+    ? detalhe.tipo
+    : 'informe';
+  const telas = Array.isArray(detalhe.telas) ? detalhe.telas.map((tela) => String(tela || '').trim()).filter(Boolean) : [];
   return {
     id: String(row.entity_id || row.id || ''),
     titulo,
@@ -100,6 +199,7 @@ export function noticiaDoLog(row: {
     quando: quandoDe(String(row.created_at || '')),
     anexoNome: String(detalhe.anexoNome || '').trim() || undefined,
     anexoUrl: String(detalhe.anexoUrl || '').trim() || undefined,
+    telas,
   };
 }
 
@@ -123,13 +223,15 @@ export async function publicarNews(input: {
   autor: string;
   anexoNome?: string;
   anexoUrl?: string;
+  telas?: string[];
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const titulo = String(input.titulo || '').trim();
   const texto = String(input.texto || '').replace(/\s+/g, ' ').trim();
   const autor = String(input.autor || '').trim() || 'Diretoria';
   const anexoNome = String(input.anexoNome || '').trim();
   const anexoUrl = String(input.anexoUrl || '').trim();
-  if (titulo.length < 3 || texto.length < 5) return { ok: false, error: 'Escreva o título e a informação.' };
+  const telas = (input.telas || []).map((tela) => String(tela || '').trim()).filter(Boolean);
+  if (titulo.length < 3 || texto.length < 5) return { ok: false, error: 'Escreva o título e o descritivo do que foi alterado.' };
   const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`;
   const insert = await supabase.from('system_logs').insert([{
     user_name: autor,
@@ -143,6 +245,7 @@ export async function publicarNews(input: {
       autor,
       anexoNome: anexoNome || undefined,
       anexoUrl: anexoUrl || undefined,
+      telas,
     }),
   }]);
   if (insert.error) return { ok: false, error: insert.error.message };

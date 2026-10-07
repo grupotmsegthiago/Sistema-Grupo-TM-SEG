@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  atualizacoesVisiveis,
   nomesQueViram,
   noticiaDoLog,
   podePublicarNews,
   podeVerNews,
+  separarLeitura,
   textoParabensCadastro,
+  usuarioVeItem,
 } from '../lib/tmsegNews';
 
 test('diretoria publica e o cliente de fora não vê o mural', () => {
@@ -39,4 +42,22 @@ test('quem visualizou não repete o mesmo nome', () => {
   assert.equal(noticia?.autor, 'Thiago Moreira');
   assert.equal(noticia?.anexoNome, 'escala.pdf');
   assert.equal(noticia?.anexoUrl, 'https://exemplo/escala.pdf');
+  assert.deepEqual(noticia?.telas, []);
+});
+
+test('atualização do sistema só aparece para o perfil que acessa a área', () => {
+  const operador = { role: 'operador', name: 'Beatriz', permissions: ['quotes'] };
+  assert.equal(usuarioVeItem(operador, ['missions']), false);
+  assert.equal(usuarioVeItem(operador, []), true);
+  const titulos = atualizacoesVisiveis(operador).map((item) => item.titulo);
+  assert.equal(titulos.includes('Meu Portal'), true);
+  assert.equal(titulos.includes('Viaturas para comunicar à DHL'), false);
+  const financeiro = { role: 'financeiro', name: 'Plínio', permissions: ['fin-dashboard'] };
+  assert.equal(atualizacoesVisiveis(financeiro).some((item) => item.titulo === 'Erro de pedágio vai para quem alterou'), true);
+});
+
+test('balão separa quem leu de quem ainda não leu', () => {
+  const leitura = separarLeitura(['Beatriz', 'Michelle Dias', 'Thiago Moreira'], ['beatriz']);
+  assert.deepEqual(leitura.leu, ['Beatriz']);
+  assert.deepEqual(leitura.naoLeu, ['Michelle Dias', 'Thiago Moreira']);
 });

@@ -11,7 +11,7 @@ import { TIME_CLOCK_STAGE_LABELS } from '../lib/timeclock/stages';
 import type { TimeClockStage } from '../lib/timeclock/types';
 import { MODULOS, MODULOS_OPERADOR } from '../lib/training/operadorAcademy';
 import { modulosDaSessao } from '../lib/training/trainingStore';
-import { noticiaDoLog, ACAO_NEWS, ACAO_NEWS_VIEW, type Noticia } from '../lib/tmsegNews';
+import { noticiaDoLog, atualizacoesVisiveis, usuarioVeItem, ACAO_NEWS, ACAO_NEWS_VIEW, type Noticia } from '../lib/tmsegNews';
 import {
   ACAO_PORTAL_PEDIDO,
   documentoProfissional,
@@ -153,14 +153,17 @@ export default function MeuPortal() {
       .eq('action_type', ACAO_NEWS)
       .order('created_at', { ascending: false })
       .limit(30);
-    const ids = (posts.data || []).map((row) => String(row.entity_id || row.id || '')).filter(Boolean);
-    const views = ids.length
-      ? await supabase.from('system_logs').select('entity_id, user_name, created_at').eq('action_type', ACAO_NEWS_VIEW).in('entity_id', ids).limit(1000)
+    const publicadas = (posts.data || []).map((row) => noticiaDoLog(row)).filter((item): item is Noticia => !!item && usuarioVeItem(usuario, item.telas));
+    const idsPublicados = new Set(publicadas.map((item) => item.id));
+    const sistema = atualizacoesVisiveis(usuario).filter((item) => !idsPublicados.has(item.id));
+    setNoticias([...sistema, ...publicadas]);
+    const idsVista = [...(posts.data || []).map((row) => String(row.entity_id || row.id || '')), ...sistema.map((item) => item.id)].filter(Boolean);
+    const views = idsVista.length
+      ? await supabase.from('system_logs').select('entity_id, user_name, created_at').eq('action_type', ACAO_NEWS_VIEW).in('entity_id', idsVista).limit(1000)
       : { data: [] };
     const meusPedidos = userId
       ? await supabase.from('system_logs').select('id, details, created_at').eq('action_type', ACAO_PORTAL_PEDIDO).eq('entity_id', userId).order('created_at', { ascending: false }).limit(20)
       : { data: [] };
-    setNoticias((posts.data || []).map((row) => noticiaDoLog(row)).filter((item): item is Noticia => !!item));
     const leitura: Record<string, string> = {};
     const linhasVista = (views.data || []) as { entity_id?: string; user_name?: string; created_at?: string }[];
     for (const row of linhasVista) {

@@ -8,12 +8,17 @@ import { modulosDaSessao } from '../lib/training/trainingStore';
 import {
   ACAO_NEWS,
   ACAO_NEWS_VIEW,
+  AREAS_ATUALIZACAO,
+  atualizacoesVisiveis,
   noticiaDoLog,
   nomesQueViram,
   podePublicarNews,
   podeVerNews,
   publicarNews,
+  separarLeitura,
+  usuarioVeItem,
   type Noticia,
+  type TipoNoticia,
   type UsuarioNews,
 } from '../lib/tmsegNews';
 
@@ -38,10 +43,13 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
   const publica = podePublicarNews(usuario);
   const ve = podeVerNews(usuario);
   const [noticias, setNoticias] = useState<Noticia[]>([]);
+  const [atualizacoes, setAtualizacoes] = useState<Noticia[]>(() => atualizacoesVisiveis(usuario));
   const [vistas, setVistas] = useState<Record<string, string[]>>({});
-  const [aberto, setAberto] = useState<string | null>(null);
+  const [colegas, setColegas] = useState<UsuarioNews[]>([]);
   const [titulo, setTitulo] = useState('');
   const [texto, setTexto] = useState('');
+  const [tipoPublicacao, setTipoPublicacao] = useState<TipoNoticia>('atualizacao');
+  const [telas, setTelas] = useState<string[]>([]);
   const [anexo, setAnexo] = useState<File | null>(null);
   const [enviando, setEnviando] = useState(false);
   const anexoRef = useRef<HTMLInputElement>(null);
@@ -54,8 +62,14 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
       .order('created_at', { ascending: false })
       .limit(30);
     const lista = (posts.data || []).map(noticiaDoLog).filter((item): item is Noticia => Boolean(item));
-    setNoticias(lista);
-    const ids = lista.map((item) => item.id).filter(Boolean);
+    const visiveis = lista.filter((item) => usuarioVeItem(usuario, item.telas));
+    const doSistema = atualizacoesVisiveis(usuario);
+    const idsSistema = new Set(doSistema.map((item) => item.id));
+    const publicadas = visiveis.filter((item) => item.tipo === 'atualizacao' && !idsSistema.has(item.id));
+    const mural = [...doSistema, ...publicadas];
+    setAtualizacoes(mural);
+    setNoticias(visiveis.filter((item) => item.tipo !== 'atualizacao'));
+    const ids = [...mural, ...visiveis].map((item) => item.id).filter(Boolean);
     if (!ids.length) {
       setVistas({});
       return;
@@ -73,7 +87,31 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
       mapa[id] = nomesQueViram([...(mapa[id] || []), String(row.user_name || '')]);
     }
     setVistas(mapa);
-  }, []);
+    if (!podePublicarNews(usuario)) {
+      setColegas([]);
+      return;
+    }
+    const pessoas = await supabase
+      .from('system_users')
+      .select('name, status, permissions, client_id, provider_id, profiles:profile_id(name, permissions)')
+      .is('client_id', null)
+      .is('provider_id', null)
+      .limit(300);
+    const equipe: UsuarioNews[] = [];
+    for (const row of (pessoas.data || []) as Array<Record<string, unknown>>) {
+      if (String(row.status || '').toLowerCase() !== 'ativo') continue;
+      const perfilBruto = row.profiles;
+      const perfil = (Array.isArray(perfilBruto) ? perfilBruto[0] : perfilBruto) as { name?: string; permissions?: string[] } | null;
+      const permissoes = [
+        ...(Array.isArray(perfil?.permissions) ? perfil.permissions : []),
+        ...(Array.isArray(row.permissions) ? row.permissions as string[] : []),
+      ];
+      const nome = String(row.name || '').trim();
+      if (!nome) continue;
+      equipe.push({ name: nome, role: String(perfil?.name || ''), permissions: permissoes });
+    }
+    setColegas(equipe);
+  }, [usuario]);
 
   useEffect(() => {
     if (!ve) return;
@@ -83,8 +121,9 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     if (!ve) return;
     const eu = String(usuario.name || '').trim();
-    if (!eu || !noticias.length) return;
-    for (const noticia of noticias) {
+    const itens = [...atualizacoes, ...noticias];
+    if (!eu || !itens.length) return;
+    for (const noticia of itens) {
       const atuais = vistas[noticia.id] || [];
       const ja = atuais.length > 0 && nomesQueViram([...atuais, eu]).length === atuais.length;
       const chave = `tmseg-news-vista:${noticia.id}:${eu}`;
@@ -100,7 +139,7 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
         if (error) sessionStorage.removeItem(chave);
       });
     }
-  }, [ve, noticias, vistas, usuario.name]);
+  }, [ve, atualizacoes, noticias, vistas, usuario.name]);
 
   useEffect(() => {
     if (!ve) return;
@@ -109,7 +148,7 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
       if (payload?.eventType !== 'INSERT' || payload.new?.action_type !== ACAO_NEWS) return;
       const noticia = noticiaDoLog(payload.new);
       void carregar();
-      if (!noticia) return;
+      if (!noticia || !usuarioVeItem(usuario, noticia.telas)) return;
       if (String(payload.new.user_name || '') === String(usuario.name || '')) return;
       showNotification('TM SEG NEWS', noticia.titulo, noticia.tipo === 'informe' ? 'info' : 'success', `news-${noticia.titulo}`);
     };
@@ -139,10 +178,11 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
     const resultado = await publicarNews({
       titulo,
       texto,
-      tipo: 'informe',
+      tipo: tipoPublicacao,
       autor: String(usuario.name || 'Diretoria'),
       anexoNome,
       anexoUrl,
+      telas: tipoPublicacao === 'atualizacao' ? telas : [],
     });
     setEnviando(false);
     if (!resultado.ok) {
@@ -151,6 +191,7 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
     }
     setTitulo('');
     setTexto('');
+    setTelas([]);
     setAnexo(null);
     if (anexoRef.current) anexoRef.current.value = '';
     showNotification('Publicado', 'A equipe já pode ler no TM SEG NEWS.', 'success');
@@ -172,6 +213,54 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
   if (!ve) return null;
   const primeiro = String(usuario.name || '').trim().split(' ')[0] || 'equipe';
   const lista = compact ? noticias.slice(0, 3) : noticias;
+  const mudancas = compact ? atualizacoes.slice(0, 3) : atualizacoes;
+
+  const cartao = (noticia: Noticia) => {
+    const quemViu = vistas[noticia.id] || [];
+    const publico = colegas.filter((pessoa) => usuarioVeItem(pessoa, noticia.telas)).map((pessoa) => String(pessoa.name || ''));
+    const leitura = separarLeitura(publico, quemViu);
+    const rotulo = noticia.tipo === 'cliente'
+      ? 'Cliente novo'
+      : noticia.tipo === 'fornecedor'
+        ? 'Fornecedor novo'
+        : noticia.tipo === 'atualizacao'
+          ? 'Atualização'
+          : 'Informe';
+    return (
+      <article key={noticia.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm" data-testid={`tmseg-news-item-${noticia.id}`}>
+        <p className="text-[10px] font-black uppercase text-red-700">
+          {rotulo}
+          {noticia.quando ? ` · ${noticia.quando}` : ''}
+        </p>
+        <h3 className="mt-1 text-base font-black text-gray-900">{noticia.titulo}</h3>
+        <p className="mt-2 text-sm leading-relaxed text-gray-700">{noticia.texto}</p>
+        {noticia.anexoUrl && (
+          <a href={noticia.anexoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-black uppercase text-red-700">
+            <Paperclip size={12} /> {noticia.anexoNome || 'Abrir anexo'}
+          </a>
+        )}
+        <p className="mt-2 text-[11px] font-bold text-gray-400">Por {noticia.autor}</p>
+        {publica && (
+          <div className="mt-3" data-testid={`tmseg-news-baloes-${noticia.id}`}>
+            <p className="text-[10px] font-black uppercase text-gray-400">
+              {leitura.leu.length} leram · {leitura.naoLeu.length} ainda não leram
+            </p>
+            <div className="mt-1 flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+              {leitura.leu.map((nome) => (
+                <span key={`leu-${nome}`} title={`${nome} leu`} className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold text-emerald-800">{nome}</span>
+              ))}
+              {leitura.naoLeu.map((nome) => (
+                <span key={`falta-${nome}`} title={`${nome} ainda não leu`} className="rounded-full border border-dashed border-gray-300 px-2 py-1 text-[10px] font-bold text-gray-500">{nome}</span>
+              ))}
+              {!publico.length && quemViu.map((nome) => (
+                <span key={`viu-${nome}`} title={`${nome} leu`} className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold text-emerald-800">{nome}</span>
+              ))}
+            </div>
+          </div>
+        )}
+      </article>
+    );
+  };
   const aulas = MODULOS.filter((item) => item.trilha === 'operador');
   const aulasVistas = modulosDaSessao(usuario as { trainingModules?: unknown });
 
@@ -232,8 +321,12 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
       {publica && (
         <div className="rounded-2xl border border-red-200 bg-white p-4 shadow-sm">
           <p className="flex items-center gap-2 text-xs font-black uppercase text-red-800">
-            <Megaphone size={14} /> Publicar para toda a equipe
+            <Megaphone size={14} /> Publicar atualização
           </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" onClick={() => setTipoPublicacao('atualizacao')} className={`rounded-full px-3 py-1 text-[11px] font-bold ${tipoPublicacao === 'atualizacao' ? 'bg-gray-950 text-white' : 'bg-gray-100 text-gray-600'}`}>Atualização do sistema</button>
+            <button type="button" onClick={() => setTipoPublicacao('informe')} className={`rounded-full px-3 py-1 text-[11px] font-bold ${tipoPublicacao === 'informe' ? 'bg-gray-950 text-white' : 'bg-gray-100 text-gray-600'}`}>Informe geral</button>
+          </div>
           <input
             value={titulo}
             onChange={(event) => setTitulo(event.target.value)}
@@ -245,10 +338,27 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
             value={texto}
             onChange={(event) => setTexto(event.target.value)}
             rows={compact ? 2 : 3}
-            placeholder="A informação que todo mundo precisa ler"
+            placeholder="Descritivo do que foi alterado"
             className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
             data-testid="tmseg-news-texto"
           />
+          {tipoPublicacao === 'atualizacao' && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {AREAS_ATUALIZACAO.map((area) => {
+                const ativa = telas.includes(area.id);
+                return (
+                  <button
+                    key={area.id}
+                    type="button"
+                    onClick={() => setTelas((atual) => ativa ? atual.filter((id) => id !== area.id) : [...atual, area.id])}
+                    className={`rounded-full px-2 py-1 text-[10px] font-bold ${ativa ? 'bg-red-700 text-white' : 'bg-gray-100 text-gray-600'}`}
+                  >
+                    {area.nome}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-[11px] font-black uppercase text-gray-700">
               <Paperclip size={14} /> Anexar
@@ -275,48 +385,20 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
         </div>
       )}
 
+      {mudancas.length > 0 && (
+        <div className="space-y-3" data-testid="tmseg-news-atualizacoes">
+          <p className="text-xs font-black uppercase tracking-wide text-gray-500">Atualizações do sistema</p>
+          {mudancas.map(cartao)}
+        </div>
+      )}
+
       <div id="tmseg-news-feed" className="space-y-3">
         {lista.length === 0 && (
           <p className="rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">
             Nenhuma notícia ainda. Quando a diretoria publicar, ou quando entrar um cliente ou fornecedor, aparece aqui.
           </p>
         )}
-        {lista.map((noticia) => {
-          const quemViu = vistas[noticia.id] || [];
-          return (
-            <article key={noticia.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm" data-testid={`tmseg-news-item-${noticia.id}`}>
-              <p className="text-[10px] font-black uppercase text-red-700">
-                {noticia.tipo === 'cliente' ? 'Cliente novo' : noticia.tipo === 'fornecedor' ? 'Fornecedor novo' : 'Informe'}
-                {noticia.quando ? ` · ${noticia.quando}` : ''}
-              </p>
-              <h3 className="mt-1 text-base font-black text-gray-900">{noticia.titulo}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-gray-700">{noticia.texto}</p>
-              {noticia.anexoUrl && (
-                <a href={noticia.anexoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-black uppercase text-red-700">
-                  <Paperclip size={12} /> {noticia.anexoNome || 'Abrir anexo'}
-                </a>
-              )}
-              <p className="mt-2 text-[11px] font-bold text-gray-400">Por {noticia.autor}</p>
-              {publica && (
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    onClick={() => setAberto((atual) => atual === noticia.id ? null : noticia.id)}
-                    className="text-[11px] font-black uppercase text-gray-600 underline"
-                    data-testid={`tmseg-news-vistas-${noticia.id}`}
-                  >
-                    {quemViu.length} visualizaram
-                  </button>
-                  {aberto === noticia.id && (
-                    <p className="mt-1 text-xs text-gray-600">
-                      {quemViu.length ? quemViu.join(', ') : 'Ninguém visualizou ainda.'}
-                    </p>
-                  )}
-                </div>
-              )}
-            </article>
-          );
-        })}
+        {lista.map(cartao)}
       </div>
     </section>
   );

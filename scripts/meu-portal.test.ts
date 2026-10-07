@@ -96,6 +96,10 @@ test('o card da home virou Meu Portal e a publicação anexa arquivo', () => {
   assert.match(html, /Treinamento/);
   assert.match(html, /Não assistiu/);
   assert.match(html, /Anexar/);
+  assert.match(html, /Atualizações do sistema/);
+  assert.match(html, /leram/);
+  assert.match(html, /ainda não leram/);
+  assert.equal(html.includes('Viaturas para comunicar à DHL'), false);
 });
 
 test('leitura do comunicado mostra dia e hora', () => {
