@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { LogoCeva } from './LogoCeva';
 import { usePortalCliente } from './portalMarca';
+import { mensagemAcessoPortal } from '../../lib/cevaPortal/regrasAcesso';
 
 type Pessoa = {
   id: string;
@@ -43,6 +44,8 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [enviando, setEnviando] = useState(false);
+  const [mensagem, setMensagem] = useState('');
+  const [copiado, setCopiado] = useState(false);
 
   async function carregar() {
     const response = await fetch(portal.url('/pessoas'), { headers: portal.cabecalhos() });
@@ -86,11 +89,25 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
         return;
       }
       if (!response.ok) throw new Error(data.error || 'Não foi possível liberar o acesso.');
+      const link = `${window.location.origin}/${portal.marca.id}`;
+      const texto = typeof data.mensagem === 'string' && data.mensagem
+        ? data.mensagem
+        : mensagemAcessoPortal({
+          nome,
+          email,
+          senha: String(data.senhaTemporaria || ''),
+          rotulo: portal.marca.rotulo,
+          link,
+          manteveSenha: false,
+        });
       setNome('');
       setEmail('');
       setPerfil('analista');
       setConfirmarAdmin(false);
-      setAviso(`Senha enviada para ${data.pessoa?.email || email}. No primeiro acesso a troca é obrigatória.`);
+      setMensagem(texto);
+      setAviso(data.emailEnviado === false
+        ? 'O e-mail não saiu. Copie a mensagem abaixo e envie a senha por ela. No primeiro acesso a troca é obrigatória, e de novo a cada 30 dias.'
+        : `Senha enviada para ${data.pessoa?.email || email}. No primeiro acesso a troca é obrigatória, e de novo a cada 30 dias.`);
       await carregar();
     } catch (err) {
       setErro(err instanceof Error ? err.message : 'Falha de comunicação.');
@@ -133,7 +150,7 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
               </span>
               <p className="mt-8 text-xs font-bold uppercase tracking-[0.28em] text-[#ffb4b4]">Acessos</p>
               <h2 className="mt-3 max-w-sm text-4xl font-black leading-tight">Quem entra no controle</h2>
-              <p className="mt-4 max-w-sm text-sm leading-relaxed text-slate-300">Só o administrador libera pessoas. A senha temporária vai por e-mail, e no primeiro acesso a troca é obrigatória.</p>
+              <p className="mt-4 max-w-sm text-sm leading-relaxed text-slate-300">Só o administrador libera pessoas. A senha temporária vai na mensagem, troca no primeiro acesso e de novo a cada 30 dias. Cada pessoa vê só este cliente.</p>
             </div>
             <ul className="grid gap-3 text-sm">
               {[
@@ -183,6 +200,22 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
               <p className="mt-4 rounded-2xl bg-[var(--portal-destaque-suave)] px-4 py-3 text-sm text-[#8a3030]">Esta pessoa vai poder cadastrar e bloquear acessos. Confirme se é isso mesmo.</p>
             )}
             {aviso && <p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{aviso}</p>}
+            {mensagem && (
+              <div className="mt-4 space-y-2">
+                <pre className="whitespace-pre-wrap rounded-2xl bg-slate-900 p-4 text-xs text-white" data-testid="text-mensagem-portal">{mensagem}</pre>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(mensagem);
+                    setCopiado(true);
+                    window.setTimeout(() => setCopiado(false), 2500);
+                  }}
+                  className="h-10 rounded-2xl bg-slate-900 px-4 text-xs font-bold text-white"
+                >
+                  {copiado ? 'Mensagem copiada' : 'Copiar mensagem com a senha'}
+                </button>
+              </div>
+            )}
             {erro && <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800">{erro}</p>}
             <button type="submit" disabled={enviando} className="mt-5 h-12 w-full rounded-2xl bg-[var(--portal-acao)] text-sm font-bold text-white shadow-lg shadow-black/20 disabled:opacity-60">
               {enviando ? 'Liberando...' : confirmarAdmin ? 'Confirmar administrador' : 'Liberar acesso'}

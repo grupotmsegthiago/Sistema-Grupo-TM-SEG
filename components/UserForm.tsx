@@ -10,6 +10,14 @@ import { useNotification } from '../lib/NotificationContext';
 import { isPerfilOperador } from '../lib/training/operadorAcademy';
 import { perfilEhComercial } from '../lib/comissao/tabelaComissaoPadrao';
 import { upsertComercialDoUsuario } from '../lib/comissao/comissaoUsuarios';
+import {
+  mensagemAcessoPortal,
+  perfilPortalDasPermissoes,
+  permissoesDoPortal,
+  usuarioSoPortal,
+  type PerfilCeva,
+} from '../lib/cevaPortal/regrasAcesso';
+import { portalPorNomeCliente } from '../lib/cevaPortal/portalServidor';
 
 interface EquipmentItem {
   id: string;
@@ -64,6 +72,20 @@ const INPUT_CLASS = "w-full pl-10 pr-4 py-3 bg-white border border-gray-300 roun
 const SELECT_CLASS = `${INPUT_CLASS} appearance-none bg-[url('https://api.iconify.design/lucide/chevron-down.svg?color=%239ca3af')] bg-[length:1.25em] bg-no-repeat bg-[position:right_1rem_center]`;
 const LABEL_CLASS = "text-xs font-bold text-gray-500 uppercase mb-1.5 block tracking-wider";
 
+function textoDaMensagem(credenciais: { name: string; email: string; password: string; link?: string; rotulo?: string; manteveSenha?: boolean }): string {
+  if (credenciais.link && credenciais.rotulo) {
+    return mensagemAcessoPortal({
+      nome: credenciais.name,
+      email: credenciais.email,
+      senha: credenciais.password,
+      rotulo: credenciais.rotulo,
+      link: credenciais.link,
+      manteveSenha: credenciais.manteveSenha === true,
+    });
+  }
+  return `🔐 *GRUPO TMSEG — Acesso ao Sistema*\n\nOlá *${credenciais.name}*,\n\nSeu acesso ao sistema foi criado com sucesso.\n\n📧 *Login:* ${credenciais.email}\n🔑 *Senha:* ${credenciais.password}\n🌐 *Link:* ${window.location.origin}\n\n⚠️ No primeiro acesso, você deverá trocar sua senha por segurança.\n\nEm caso de dúvidas, entre em contato com o suporte.\n\n_Grupo TMSEG — Gestão Operacional_`;
+}
+
 const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const { showNotification } = useNotification();
   const [formData, setFormData] = useState({
@@ -86,7 +108,9 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const [emailError, setEmailError] = useState('');
   const [generatedPass, setGeneratedPass] = useState('');
   const [isSendingReset, setIsSendingReset] = useState(false);
-  const [createdCredentials, setCreatedCredentials] = useState<{ name: string; email: string; password: string; type: string } | null>(null);
+  const [createdCredentials, setCreatedCredentials] = useState<{ name: string; email: string; password: string; type: string; link?: string; rotulo?: string; manteveSenha?: boolean } | null>(null);
+  const [acessoPortal, setAcessoPortal] = useState(false);
+  const [perfilPortal, setPerfilPortal] = useState<PerfilCeva>('analista');
   const [credentialsCopied, setCredentialsCopied] = useState(false);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(
     CLIENT_PERMISSION_OPTIONS.filter(p => p.default).map(p => p.id)
@@ -232,6 +256,8 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               });
               if (data.permissions && Array.isArray(data.permissions) && data.permissions.length > 0) {
                   setSelectedPermissions(data.permissions);
+                  setAcessoPortal(usuarioSoPortal(data.permissions));
+                  setPerfilPortal(perfilPortalDasPermissoes(data.permissions) || 'analista');
               }
           }
       } catch (e) {
@@ -275,6 +301,12 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
       if (userType === 'client' && !formData.clientId) return showNotification('Erro', 'Selecione o Cliente vinculado.', 'error');
       if (userType === 'provider' && !formData.providerId) return showNotification('Erro', 'Selecione o Fornecedor vinculado.', 'error');
 
+      const clienteId = userType === 'client' ? (isClientUser ? currentUserClientId : formData.clientId) : '';
+      const clientePortal = clients.find((item) => String(item.id) === String(clienteId));
+      const portalCliente = userType === 'client' ? portalPorNomeCliente(clientePortal?.name) : null;
+      const liberarPortal = Boolean(portalCliente && acessoPortal);
+      if (liberarPortal && !perfilPortal) return showNotification('Erro', 'Selecione se a pessoa é administradora do portal.', 'error');
+
       setIsSaving(true);
       try {
           const payload: any = {
@@ -292,8 +324,12 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               const profile = profiles.find((p) => String(p.id) === String(formData.profileId));
               if (isPerfilOperador(profile?.name)) payload.training_required = true;
           }
-          if (userType === 'client' && isClientUser) {
-              payload.permissions = selectedPermissions;
+          if (userType === 'client' && isClientUser && !liberarPortal) {
+              payload.permissions = selectedPermissions.filter((item) => item !== 'portal-only' && !String(item).startsWith('portal:') && !String(item).startsWith('portal-perfil:'));
+          }
+          if (liberarPortal && portalCliente) {
+              payload.permissions = permissoesDoPortal(portalCliente.caminho, perfilPortal);
+              payload.force_password_change = false;
           }
           const vincularComercial = async (userId: string | number) => {
               if (userType !== 'internal') return;
@@ -308,23 +344,67 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   showNotification('Comissão', res.error || 'Usuário salvo, mas o vínculo da tabela de comissão falhou.', 'warning');
               }
           };
+          let usuarioId = id ? String(id) : '';
           if (id) {
               const { error: updErr } = await supabase.from('system_users').update(payload).eq('id', id);
               if (updErr) throw new Error('Erro ao salvar usuário: ' + updErr.message);
               if (userType === 'internal') await saveEquipmentData(id);
               await vincularComercial(id);
               await logAction('UPDATE', 'User', id, `Usuário atualizado: ${payload.name}`);
-              showNotification('Sucesso', 'Usuário atualizado.', 'success');
           } else {
               const { data, error } = await supabase.from('system_users').insert([payload]).select();
               if (error) throw error;
               if (data && data[0]) {
+                  usuarioId = String(data[0].id);
                   await logAction('CREATE', 'User', data[0].id, `Novo usuário: ${payload.name}`);
                   if (userType === 'internal' && (equipments.length > 0 || chips.length > 0)) {
                     await saveEquipmentData(data[0].id);
                   }
                   await vincularComercial(data[0].id);
               }
+          }
+          if (portalCliente && usuarioId) {
+              const resposta = await authFetch('/api/portal-cliente/acesso', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                      clientId: payload.client_id,
+                      nome: payload.name,
+                      email: payload.email,
+                      senha: payload.password,
+                      perfil: perfilPortal,
+                      ativo: payload.status === 'Ativo',
+                      systemUserId: usuarioId,
+                      acesso: liberarPortal,
+                  }),
+              });
+              let corpo: { error?: string; manteveSenha?: boolean } = {};
+              try {
+                  corpo = await parseJsonResponse(resposta);
+              } catch (erroPortal) {
+                  if (!id) await supabase.from('system_users').delete().eq('id', usuarioId);
+                  throw erroPortal;
+              }
+              if (!resposta.ok) {
+                  if (!id) await supabase.from('system_users').delete().eq('id', usuarioId);
+                  throw new Error(corpo?.error || 'Não foi possível liberar o acesso ao portal.');
+              }
+              if (!id) {
+                  const link = `${window.location.origin}${portalCliente.caminho}`;
+                  setCreatedCredentials({
+                      name: payload.name,
+                      email: payload.email,
+                      password: payload.password,
+                      type: 'Portal do cliente',
+                      link,
+                      rotulo: portalCliente.rotulo,
+                      manteveSenha: corpo?.manteveSenha === true,
+                  });
+                  setCredentialsCopied(false);
+                  showNotification('Sucesso', 'Usuário do portal criado.', 'success');
+                  return;
+              }
+          }
+          if (!id) {
               showNotification('Sucesso', 'Usuário criado com sucesso.', 'success');
               setCreatedCredentials({
                   name: payload.name,
@@ -333,7 +413,6 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   type: userType === 'client' ? 'Cliente' : userType === 'provider' ? 'Fornecedor' : 'Interno'
               });
               setCredentialsCopied(false);
-
               try {
                   const verCode = Math.floor(100000 + Math.random() * 900000).toString();
                   await authFetch('/api/email/welcome', {
@@ -353,6 +432,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               }
               return;
           }
+          showNotification('Sucesso', 'Usuário atualizado.', 'success');
           onBack();
       } catch (e: any) {
           showNotification('Erro', e.message, 'error');
@@ -541,6 +621,35 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                           )}
                       </div>
                       <p className="text-[10px] text-blue-700 mt-2 flex items-center gap-1"><Info size={12}/> {isClientUser ? 'Novo usuário será vinculado automaticamente à sua empresa.' : 'Este usuário verá apenas dados deste cliente.'}</p>
+                      {portalPorNomeCliente((isClientUser ? clients.find(c => c.id === currentUserClientId)?.name : clients.find(c => String(c.id) === String(formData.clientId))?.name)) && (
+                          <div className="mt-4 rounded-lg border border-blue-200 bg-white p-3 space-y-3">
+                              <label className="flex items-center gap-2 text-sm font-bold text-blue-900">
+                                  <input
+                                      type="checkbox"
+                                      checked={acessoPortal}
+                                      onChange={(event) => setAcessoPortal(event.target.checked)}
+                                      data-testid="checkbox-acesso-portal"
+                                  />
+                                  Acesso ao portal
+                              </label>
+                              <p className="text-[10px] text-blue-700">O link abre só o controle deste cliente. A senha troca no primeiro acesso e a cada 30 dias. Quem já tem senha no portal, como a Lara na CEVA, mantém a senha atual.</p>
+                              {acessoPortal && (
+                                  <div>
+                                      <label className={LABEL_CLASS}>Perfil no portal</label>
+                                      <select
+                                          className={`${SELECT_CLASS} bg-white`}
+                                          value={perfilPortal}
+                                          onChange={(event) => setPerfilPortal(event.target.value === 'administrador' ? 'administrador' : 'analista')}
+                                          data-testid="select-perfil-portal"
+                                      >
+                                          <option value="analista">Não administrador</option>
+                                          <option value="administrador">Administrador</option>
+                                      </select>
+                                      <p className="text-[10px] text-blue-700 mt-2">O administrador cria novos usuários do mesmo cliente, com a mesma regra de senha.</p>
+                                  </div>
+                              )}
+                          </div>
+                      )}
                   </div>
               )}
 
@@ -793,40 +902,27 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                           <div className="space-y-2">
                               <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">Nome:</span><span className="text-sm font-black text-gray-900">{createdCredentials.name}</span></div>
                               <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">E-mail:</span><span className="text-sm font-bold text-gray-900 font-mono">{createdCredentials.email}</span></div>
-                              <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">Senha:</span><span className="text-sm font-black text-gray-900 font-mono tracking-wider">{createdCredentials.password}</span></div>
+                              {!createdCredentials.manteveSenha && (
+                                  <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">Senha:</span><span className="text-sm font-black text-gray-900 font-mono tracking-wider">{createdCredentials.password}</span></div>
+                              )}
                               <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">Tipo:</span><span className="text-sm font-bold text-gray-900">{createdCredentials.type}</span></div>
                           </div>
                       </div>
 
                       <div className="bg-amber-50 rounded-xl p-3 border border-amber-200 flex items-start gap-2">
                           <AlertTriangle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
-                          <p className="text-[11px] font-medium text-amber-800">No primeiro acesso, o sistema solicitará a troca de senha por segurança.</p>
+                          <p className="text-[11px] font-medium text-amber-800">{createdCredentials.manteveSenha ? 'A senha que esta pessoa já usa no portal foi mantida. A troca continua obrigatória a cada 30 dias.' : createdCredentials.link ? 'No primeiro acesso a senha será trocada. Depois, a troca é obrigatória a cada 30 dias. O portal mostra só este cliente.' : 'No primeiro acesso, o sistema solicitará a troca de senha por segurança.'}</p>
                       </div>
 
                       <div className="bg-gray-900 rounded-xl p-4 text-white font-mono text-xs leading-relaxed whitespace-pre-wrap select-all" data-testid="text-credentials-message">
-{`🔐 *GRUPO TMSEG — Acesso ao Sistema*
-
-Olá *${createdCredentials.name}*,
-
-Seu acesso ao sistema foi criado com sucesso.
-
-📧 *Login:* ${createdCredentials.email}
-🔑 *Senha:* ${createdCredentials.password}
-🌐 *Link:* ${window.location.origin}
-
-⚠️ No primeiro acesso, você deverá trocar sua senha por segurança.
-
-Em caso de dúvidas, entre em contato com o suporte.
-
-_Grupo TMSEG — Gestão Operacional_`}
+{textoDaMensagem(createdCredentials)}
                       </div>
 
                       <div className="flex gap-3">
                           <button
                               data-testid="button-copy-credentials"
                               onClick={() => {
-                                  const msg = `🔐 *GRUPO TMSEG — Acesso ao Sistema*\n\nOlá *${createdCredentials.name}*,\n\nSeu acesso ao sistema foi criado com sucesso.\n\n📧 *Login:* ${createdCredentials.email}\n🔑 *Senha:* ${createdCredentials.password}\n🌐 *Link:* ${window.location.origin}\n\n⚠️ No primeiro acesso, você deverá trocar sua senha por segurança.\n\nEm caso de dúvidas, entre em contato com o suporte.\n\n_Grupo TMSEG — Gestão Operacional_`;
-                                  navigator.clipboard.writeText(msg);
+                                  navigator.clipboard.writeText(textoDaMensagem(createdCredentials));
                                   setCredentialsCopied(true);
                                   setTimeout(() => setCredentialsCopied(false), 3000);
                               }}

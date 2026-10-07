@@ -21,8 +21,8 @@ test('portal IBL usa a Intermodal Brasil e não mistura tabela com a CEVA', () =
   assert.equal(MARCA_IBL.css['--portal-acao'], '#F7941E');
   assert.equal(MARCA_IBL.css['--portal-marca'], '#111111');
   assert.equal(MARCA_IBL.logo, '/logo_ibl_portal.png');
-  assert.equal(MARCA_IBL.exigeLogin, false);
-  assert.equal(PORTAL_IBL.exigeLogin, false);
+  assert.equal(MARCA_IBL.exigeLogin, true);
+  assert.equal(PORTAL_IBL.exigeLogin, true);
   assert.equal(PORTAL_CEVA.exigeLogin, true);
   assert.deepEqual([...MARCA_IBL.colunasOcultas], ['Solicitante', 'Quem autorizou', 'Atendimento PGR', 'Operação', 'TSP']);
   assert.deepEqual([...MARCA_CEVA.colunasOcultas], []);
