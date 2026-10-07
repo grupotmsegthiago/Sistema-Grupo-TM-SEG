@@ -3358,6 +3358,7 @@ async function executarPortalHttp(req, res) {
       }
       const { data: user, error: erroUsuario } = await lerUsuarioPortal(sb, { email }, true);
       if (erroUsuario) {
+        console.error(`[${cfg().logPrefix}] login`, erroUsuario.message || erroUsuario);
         res.status(500).json({ error: "N\xE3o foi poss\xEDvel entrar." });
         return;
       }

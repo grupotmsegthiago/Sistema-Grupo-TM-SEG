@@ -1,5 +1,14 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## PAINEL DHL NA LISTA DE OS
+
+**Data:** 2026-10-07
+**Pedido:** a tela de viaturas DHL no painel de OS fica só para Operador, Avançado e Administrador.
+
+**O que mudou:** Diretoria, Financeiro, Comercial e Controller deixam de ver esse painel e os avisos ligados a ele. Quem abre a tela continua sendo Operador, Avançado e Administrador.
+
+**Não publicado.**
+
 ## PONTO CLT — FACIAL DE VOLTA, SEM TRAVA DE HORÁRIO
 
 **Data:** 2026-10-07
