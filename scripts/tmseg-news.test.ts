@@ -4,6 +4,7 @@ import {
   atualizacoesVisiveis,
   nomesDePerfil,
   nomesQueViram,
+  selosDePerfil,
   noticiaDoLog,
   partesQuando,
   podePublicarNews,
@@ -74,6 +75,14 @@ test('a coluna perfil mostra quem pode acessar', () => {
     ['Financeiro'],
   );
   assert.deepEqual(nomesDePerfil(['missions'], []), ['Painel de OS']);
+  assert.deepEqual(
+    nomesDePerfil(['missions'], [
+      { name: 'Operador', permissions: ['missions'] },
+      { name: 'Financeiro', permissions: ['missions'] },
+    ]),
+    ['Todos'],
+  );
+  assert.deepEqual(selosDePerfil(['Financeiro', 'Operador', 'RH']), { visiveis: ['Financeiro', 'Operador'], resto: 1 });
 });
 
 test('a linha da atualização separa data e hora', () => {

@@ -13,6 +13,7 @@ import {
   noticiaDoLog,
   nomesDePerfil,
   nomesQueViram,
+  selosDePerfil,
   partesQuando,
   podePublicarNews,
   podeVerNews,
@@ -492,29 +493,38 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
         <div className="space-y-3" data-testid="tmseg-news-atualizacoes">
           <p className="text-xs font-black uppercase tracking-wide text-gray-500">Atualizações do sistema</p>
           <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
-            <table className="w-full min-w-[640px] text-left text-sm">
+            <table className="w-full min-w-[720px] table-fixed text-left text-sm">
               <thead className="bg-gray-50 text-[10px] font-black uppercase text-gray-500">
                 <tr>
-                  <th className="px-3 py-2">Data</th>
-                  <th className="px-3 py-2">Hora</th>
+                  <th className="w-28 whitespace-nowrap px-3 py-2">Data</th>
+                  <th className="w-16 whitespace-nowrap px-3 py-2">Hora</th>
                   <th className="px-3 py-2">Informativo</th>
-                  <th className="px-3 py-2">Perfil</th>
-                  <th className="px-3 py-2">Criado por</th>
-                  <th className="px-3 py-2"></th>
+                  <th className="w-44 whitespace-nowrap px-3 py-2">Perfil</th>
+                  <th className="w-28 whitespace-nowrap px-3 py-2">Criado por</th>
+                  <th className="w-36 px-3 py-2"></th>
                 </tr>
               </thead>
               <tbody>
                 {mudancas.map((item) => {
                   const quando = partesQuando(item.criadoEm);
+                  const nomes = nomesDePerfil(item.telas, perfis);
+                  const selos = selosDePerfil(nomes);
                   return (
                     <tr key={item.id} className="border-t border-gray-100" data-testid={`tmseg-news-linha-${item.id}`}>
                       <td className="whitespace-nowrap px-3 py-2 text-gray-700">{quando.data}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-gray-700">{quando.hora}</td>
-                      <td className="px-3 py-2 font-bold text-gray-900">{item.titulo}</td>
-                      <td className="px-3 py-2 text-gray-700" title={nomesDePerfil(item.telas, perfis).join(', ')}>{nomesDePerfil(item.telas, perfis).join(', ')}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-gray-600">{item.autor}</td>
-                      <td className="px-3 py-2 text-right">
-                        <button type="button" onClick={() => setAberta(item.id)} className="text-[11px] font-black uppercase text-red-700 underline">
+                      <td className="truncate px-3 py-2 font-bold text-gray-900" title={item.titulo}>{item.titulo}</td>
+                      <td className="px-3 py-2" title={nomes.join(', ')}>
+                        <div className="flex items-center gap-1">
+                          {selos.visiveis.map((nome) => (
+                            <span key={nome} className="max-w-[7.5rem] truncate rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-700">{nome}</span>
+                          ))}
+                          {selos.resto > 0 && <span className="text-[10px] font-bold text-gray-400">+{selos.resto}</span>}
+                        </div>
+                      </td>
+                      <td className="truncate whitespace-nowrap px-3 py-2 text-gray-600">{item.autor}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right">
+                        <button type="button" onClick={() => setAberta(item.id)} className="whitespace-nowrap text-[11px] font-black uppercase text-red-700 underline">
                           Acessar completo
                         </button>
                       </td>

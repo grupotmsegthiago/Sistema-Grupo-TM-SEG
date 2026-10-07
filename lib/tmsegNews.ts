@@ -209,8 +209,17 @@ export function nomesDePerfil(
   if (especificas.includes('diretoria-cockpit') && !nomes.some((nome) => limpa(nome) === 'diretoria')) {
     nomes.unshift('Diretoria');
   }
+  const cadastrados = perfis.map((perfil) => String(perfil.name || '').trim()).filter(Boolean);
+  if (cadastrados.length > 0 && nomes.length >= cadastrados.length) return ['Todos'];
   if (nomes.length) return nomes;
   return especificas.map((id) => AREAS_ATUALIZACAO.find((area) => area.id === id)?.nome || id);
+}
+
+/** Até dois selos na linha. O restante fica no +N. */
+export function selosDePerfil(nomes: string[]): { visiveis: string[]; resto: number } {
+  const lista = nomes.length ? nomes : ['Todos'];
+  if (lista.length === 1 && limpa(lista[0]) === 'todos') return { visiveis: ['Todos'], resto: 0 };
+  return { visiveis: lista.slice(0, 2), resto: Math.max(0, lista.length - 2) };
 }
 
 export function separarLeitura(publico: string[], leram: string[]): { leu: string[]; naoLeu: string[] } {
