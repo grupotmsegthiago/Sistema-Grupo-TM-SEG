@@ -25,6 +25,7 @@ import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import { billableClientToll, tollPersistencePair } from '../lib/toll/clientTollBilling';
+import { gravarOcorrenciaPedagioAprovado, pedagioAlterado, senhaDoUsuarioConfere } from '../lib/toll/pedagioDaOs';
 import { formatProviderName } from '../lib/utils';
 import { AvisoTabelaOs } from './AvisoTabelaOs';
 import { copyTextAsync } from '../lib/clipboard';
@@ -48,7 +49,7 @@ import {
   getMissionOpsMissingFields,
   isMissionOpsIncomplete,
 } from '../lib/missionOpsIncomplete';
-import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { isFinanceProfileRole, isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import {
   canApproveNegativeMarginLock,
   canEditNegativeMarginLockedOs,
@@ -449,6 +450,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   const [tollConfirmed, setTollConfirmed] = useState(false);
   const [showTollConfirmDialog, setShowTollConfirmDialog] = useState(false);
+  const [tollSomenteHistorico, setTollSomenteHistorico] = useState(false);
+  const [reeditarPedagioAprovado, setReeditarPedagioAprovado] = useState(false);
+  const [senhaPedagioAberta, setSenhaPedagioAberta] = useState(false);
+  const [senhaPedagio, setSenhaPedagio] = useState('');
+  const [senhaPedagioErro, setSenhaPedagioErro] = useState('');
+  const [senhaPedagioChecando, setSenhaPedagioChecando] = useState(false);
+  const senhaPedagioOkRef = useRef(false);
+  const saveApproveRef = useRef(false);
   const [tollConfirmAutoOpened, setTollConfirmAutoOpened] = useState(false);
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
   const [tollEmbeddedInCost, setTollEmbeddedInCost] = useState(false);
@@ -828,15 +837,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   }, [mission?.id, currentUserIdentity.name]);
   const travaPedagioClienteFinanceiro = (isControllerRole || isProviderOnlyUser) && !!auditorPedagioCliente;
   const travaPedagioFornecedorFinanceiro = (isControllerRole || isProviderOnlyUser) && !!auditorPedagioFornecedor;
+  // Depois da aprovação, o financeiro só mexe no pedágio pelo botão e confirma com a senha.
+  const perfilFinanceiro = isFinanceProfileRole(userRoleLower);
+  const reeditandoPedagio = financeApprovedClientLock && perfilFinanceiro && reeditarPedagioAprovado;
+  const financeiroEditaPedagioAntes = perfilFinanceiro && !financeApprovedClientLock && !isPaidInvoiceEffectivelyLocked && !negativeLockBlocks;
   // Controller/Plínio edita os dois pedágios, salvo se o financeiro já alterou aquele lado.
   // Quem recebeu a carta do erro altera esse lado, mesmo com a trava.
   const clientTollInputLocked = isPaidInvoiceEffectivelyLocked
     || negativeLockBlocks
     || (travaPedagioClienteFinanceiro && !corrigirPedagio.cliente)
-    || (!(isControllerRole || isProviderOnlyUser) && clientFinanceInputLocked && !corrigirPedagio.cliente);
+    || (!(isControllerRole || isProviderOnlyUser) && clientFinanceInputLocked && !corrigirPedagio.cliente && !reeditandoPedagio && !financeiroEditaPedagioAntes);
   const providerTollInputLocked = isPaidInvoiceEffectivelyLocked
     || negativeLockBlocks
     || (travaPedagioFornecedorFinanceiro && !corrigirPedagio.fornecedor)
+    || (financeApprovedClientLock && perfilFinanceiro && !reeditandoPedagio && !corrigirPedagio.fornecedor)
     || plinioProviderEditBlocked;
   const canEditOpsEvenIfLocked = !negativeLockBlocks && (isBarbaraFinance || !isEffectivelyLocked) && !isPaidInvoiceEffectivelyLocked;
   // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
@@ -1158,6 +1172,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           
           if (mRes.data) {
+              setReeditarPedagioAprovado(false);
               const d = mRes.data;
               // Corrige legado: filha Mesma OS não pode ter custo de fornecedor salvo.
               if (d.is_same_os) {
@@ -2684,17 +2699,29 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       }
       const originalRevenue = (mission.revenue_value || 0) + (mission.toll_value || 0) + ((mission as any).displacement_value || 0);
       const isSameOs = mission.is_same_os === true;
-      const keepSavedClient = isController || financeApprovedClientLock;
-      const revTotal = keepSavedClient ? originalRevenue : parseNumber(revenueInput);
-      const costTotal = isSameOs ? 0 : parseNumber(costInput);
-      const toll = ((travaPedagioClienteFinanceiro && !corrigirPedagio.cliente) || (financeApprovedClientLock && !(isControllerRole || isProviderOnlyUser) && !corrigirPedagio.cliente))
+      const travarPedagioCliente = (travaPedagioClienteFinanceiro && !corrigirPedagio.cliente)
+        || (financeApprovedClientLock && !reeditandoPedagio && !(isControllerRole || isProviderOnlyUser) && !corrigirPedagio.cliente);
+      const travarPedagioFornecedor = (travaPedagioFornecedorFinanceiro && !corrigirPedagio.fornecedor)
+        || (financeApprovedClientLock && perfilFinanceiro && !reeditandoPedagio && !corrigirPedagio.fornecedor);
+      const toll = travarPedagioCliente
         ? Number(mission.toll_value || 0)
         : parseNumber(tollInput);
-      const tollProv = (travaPedagioFornecedorFinanceiro && !corrigirPedagio.fornecedor)
+      const tollProv = travarPedagioFornecedor
         ? providerTollToPersist(Number((mission as any).toll_value_provider || 0), isSameOs)
         : providerTollToPersist(parseNumber(tollProviderInput), isSameOs);
-      const displacement = keepSavedClient ? ((mission as any).displacement_value || 0) : parseNumber(displacementInput);
-      const dispProv = isSameOs ? 0 : parseNumber(displacementProviderInput);
+      const displacement = reeditandoPedagio || isController || financeApprovedClientLock
+        ? Number((mission as any).displacement_value || 0)
+        : parseNumber(displacementInput);
+      const dispProv = isSameOs ? 0 : (reeditandoPedagio
+        ? Number((mission as any).displacement_value_provider || 0)
+        : parseNumber(displacementProviderInput));
+      const keepSavedClient = (isController || financeApprovedClientLock) && !reeditandoPedagio;
+      const revTotal = reeditandoPedagio
+        ? Number(mission.revenue_value || 0) + toll + displacement
+        : (keepSavedClient ? originalRevenue : parseNumber(revenueInput));
+      const costTotal = isSameOs ? 0 : (reeditandoPedagio
+        ? Number(mission.cost_value || 0) + tollProv + dispProv
+        : parseNumber(costInput));
       const calcRevTotal = financialData ? (financialData.client.serviceTotal + toll + displacement) : 0;
       const calcCostTotal = financialData ? (financialData.provider.serviceTotal + tollProv + dispProv) : 0;
       const revDivergent = isController ? false : Math.abs(revTotal - calcRevTotal) > 1;
@@ -2794,12 +2821,25 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
       }
 
+      const mudouPedagioAprovado = reeditandoPedagio && (
+        pedagioAlterado(Number(mission.toll_value || 0), toll)
+        || pedagioAlterado(Number((mission as any).toll_value_provider || 0), tollProv)
+      );
+      if (mudouPedagioAprovado && !senhaPedagioOkRef.current) {
+          saveApproveRef.current = approve;
+          setSenhaPedagio('');
+          setSenhaPedagioErro('');
+          setSenhaPedagioAberta(true);
+          return;
+      }
+
       setIsUpdating(true);
       isSavingRef.current = true;
       try {
           const userData = JSON.parse(localStorage.getItem('userData') || '{}');
           const userName = userData.name || 'Usuário';
           const userRole = userData.role || '';
+          if (senhaPedagioOkRef.current) senhaPedagioOkRef.current = false;
           
           // Sem captura de tela: o histórico fica só em texto
           // (dia / horário · login > alteração). O JPEG em system_logs
@@ -3100,6 +3140,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           if (result.error) throw result.error;
           if (!result.data) throw new Error('Falha na persistência: registro não retornado após UPDATE');
+          if (mudouPedagioAprovado) {
+              const ocorrencia = await gravarOcorrenciaPedagioAprovado(supabase, {
+                  missionId: String(mission.id),
+                  quem: userName,
+                  clienteDe: Number(mission.toll_value || 0),
+                  clientePara: toll,
+                  fornecedorDe: Number((mission as any).toll_value_provider || 0),
+                  fornecedorPara: tollProv,
+              });
+              if (!ocorrencia.ok) throw new Error(ocorrencia.erro);
+              setReeditarPedagioAprovado(false);
+          }
 
           if (isProviderOnlyUser && !isSameOs) {
               const wantedToll = r2(tollProv);
@@ -3604,6 +3656,25 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           return false;
       });
   }, [providerTables, mission?.provider, providerAliases]);
+
+  const confirmarSenhaPedagio = async () => {
+      setSenhaPedagioChecando(true);
+      setSenhaPedagioErro('');
+      try {
+          const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+          const ok = await senhaDoUsuarioConfere(supabase, { id: userData.id, email: userData.email }, senhaPedagio);
+          if (!ok) {
+              setSenhaPedagioErro('Senha incorreta.');
+              return;
+          }
+          senhaPedagioOkRef.current = true;
+          setSenhaPedagioAberta(false);
+          setSenhaPedagio('');
+          await handleUpdate(saveApproveRef.current);
+      } finally {
+          setSenhaPedagioChecando(false);
+      }
+  };
 
   const handleAiSuggest = async () => {
       if (!mission || aiLoading) return;
@@ -5861,18 +5932,34 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <CheckCircle2 size={12}/> {tollSource || 'CONFIRMADO'}
                                     </div>
                                 )}
-                                {!isCalculatingToll && tollConfirmed && !isEffectivelyLocked && (
+                                {!isCalculatingToll && (
                                     <button
-                                        onClick={() => setShowTollConfirmDialog(true)}
+                                        type="button"
+                                        onClick={() => { setTollSomenteHistorico(true); setShowTollConfirmDialog(true); }}
                                         className="flex items-center gap-1.5 text-[10px] font-black text-indigo-700 hover:text-indigo-900 px-2 py-1 rounded-lg border border-indigo-200 hover:bg-indigo-50"
                                         data-testid="button-reconfirm-toll"
-                                        title="Reconfirmar / ver histórico de pedágio"
+                                        title="Histórico de pedágio desta OS"
                                     >
                                         <History size={12}/> HISTÓRICO
                                     </button>
                                 )}
+                                {financeApprovedClientLock && perfilFinanceiro && !reeditandoPedagio && !isPaidInvoiceEffectivelyLocked && !negativeLockBlocks && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setReeditarPedagioAprovado(true)}
+                                        className="flex items-center gap-1.5 text-[10px] font-black text-amber-800 hover:text-amber-950 px-2 py-1 rounded-lg border border-amber-300 hover:bg-amber-50"
+                                        data-testid="button-reeditar-pedagio"
+                                    >
+                                        <Pencil size={12}/> Alterar pedágio
+                                    </button>
+                                )}
                             </div>
                         </div>
+                        {reeditandoPedagio && (
+                            <p className="text-[10px] font-bold text-amber-800 mb-3" data-testid="text-reeditar-pedagio">
+                                Edição do pedágio liberada. Ao salvar, confirme com a senha do sistema. A mudança gera uma ocorrência nesta OS.
+                            </p>
+                        )}
                         
                         <div className="grid grid-cols-2 gap-3">
                             <div>
@@ -6647,7 +6734,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="truncate">Pedir Análise</span>
                                   </button>
                                 )}
-                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || negativeLockBlocks || (!canSaveProviderAdjustments && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${(negativeLockBlocks || (!canSaveProviderAdjustments && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={negativeLockBlocks ? 'Prejuízo analisado — somente a Diretoria altera' : isEffectivelyLocked && !canSaveProviderAdjustments ? 'Faturamento travado — destrave para editar' : canSaveProviderAdjustments ? 'Salvar somente o valor do fornecedor' : ''} data-testid="button-save-adjustments">
+                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || negativeLockBlocks || (!canSaveProviderAdjustments && !reeditandoPedagio && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${(negativeLockBlocks || (!canSaveProviderAdjustments && !reeditandoPedagio && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={negativeLockBlocks ? 'Prejuízo analisado — somente a Diretoria altera' : isEffectivelyLocked && !canSaveProviderAdjustments ? 'Faturamento travado — destrave para editar' : canSaveProviderAdjustments ? 'Salvar somente o valor do fornecedor' : ''} data-testid="button-save-adjustments">
                                     {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (negativeLockBlocks || (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance)) ? <Lock size={14} className="shrink-0" /> : <Save size={14} className="shrink-0" />}
                                     <span className="truncate">{negativeLockBlocks ? 'Travada' : (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado' : 'Salvar'}</span>
                                 </button>
@@ -6717,10 +6804,48 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         mission={mission}
         initialValue={tollInput}
         source="financial_modal"
+        somenteHistorico={tollSomenteHistorico}
         allowClose={true}
-        onClose={() => { setShowTollConfirmDialog(false); setTollConfirmAutoOpened(true); }}
+        onClose={() => { setShowTollConfirmDialog(false); setTollSomenteHistorico(false); setTollConfirmAutoOpened(true); }}
         onConfirm={applyTollConfirmation}
       />
+      {senhaPedagioAberta && (
+        <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4" data-testid="modal-senha-pedagio">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-3">
+            <h3 className="text-sm font-black uppercase text-slate-900">Confirmar alteração do pedágio</h3>
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              Digite a senha do sistema. A gravação fica no histórico desta OS e gera uma ocorrência.
+            </p>
+            <input
+              type="password"
+              autoFocus
+              value={senhaPedagio}
+              onChange={(e) => setSenhaPedagio(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              data-testid="input-senha-pedagio"
+            />
+            {senhaPedagioErro && <p className="text-[11px] font-bold text-red-600">{senhaPedagioErro}</p>}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { setSenhaPedagioAberta(false); setSenhaPedagio(''); setSenhaPedagioErro(''); }}
+                className="px-3 py-2 text-[10px] font-black uppercase text-slate-500"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarSenhaPedagio}
+                disabled={senhaPedagioChecando || !senhaPedagio.trim()}
+                className="px-4 py-2 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase disabled:opacity-40"
+                data-testid="button-confirmar-senha-pedagio"
+              >
+                {senhaPedagioChecando ? 'Conferindo...' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {mission && dhlOccurrenceReportOpen && (
         <DhlOccurrenceReportModal
           mission={{ ...mission, dhl_se_number: dhlSeNumber }}

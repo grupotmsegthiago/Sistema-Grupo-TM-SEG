@@ -37,7 +37,7 @@ import {
 import DhlOccurrenceReportModal from './DhlOccurrenceReportModal';
 import { useNotification } from '../lib/NotificationContext';
 import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
-import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { isFinanceProfileRole, isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { canEditNegativeMarginLockedOs, isOsNegativeMarginLocked } from '../lib/osNegativeMarginLock';
 import { canSaveFinalizeEvidence, endEvidencePendingPatch, endEvidenceSavedPatch, shouldResetFinalizeChecklist } from '../lib/endEvidenceGate';
@@ -1086,22 +1086,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         [currentUser],
     );
 
-    // Apenas Barbara e Simone preenchem o pedágio do cliente ao finalizar.
-    // Plínio atua somente no lado fornecedor, após aprovação superior.
-    // Operadores (Michele, Beatriz, Lucas, Daniel, etc.) finalizam a OS
-    // sem o gate de pedágio — o valor é cobrado depois, no fluxo financeiro.
+    // O aviso de pedágio na finalização abre para o perfil Financeiro.
+    // Operação conclui sem esse passo. O controller edita e salva o fornecedor;
+    // quem aprova o valor final é o financeiro. Plínio não grava o pedágio do cliente.
     const ocultaFinanceiro = useMemo(() => isPerfilAvancado(currentUser), [currentUser]);
 
     const isTollResponsibleUser = useMemo(() => {
         if (!currentUser || ocultaFinanceiro) return false;
-        const norm = (s: string) => (s || '')
-            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-            .toLowerCase().trim();
-        const name = norm(currentUser.name || currentUser.username || '');
-        if (!name) return false;
-        const allowedFirstNames = ['barbara', 'simone'];
-        const firstName = name.split(/\s+/)[0];
-        return allowedFirstNames.includes(firstName) || allowedFirstNames.some(n => name.includes(n));
+        return isFinanceProfileRole(currentUser?.role);
     }, [currentUser, ocultaFinanceiro]);
 
     // Supervisão financeira (Bárbara / Giovanna): pode editar OS concluída/aprovada —
