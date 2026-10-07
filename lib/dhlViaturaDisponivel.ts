@@ -170,22 +170,14 @@ function papel(user: UsuarioPainel | null | undefined): string {
     .toLowerCase();
 }
 
-/** Operação interna. Cliente, comercial e fornecedor não veem o painel. */
+const PERFIS_COMUNICADO_DHL = new Set(['operador', 'avancado', 'administrador']);
+
+/** Comunicado da DHL só para operador, avançado e administrador. */
 export function podeVerPainelDhl(user: UsuarioPainel | null | undefined): boolean {
   if (!user) return false;
   if (user.providerId || user.userType === 'provider') return false;
   if (user.clientId || user.userType === 'client') return false;
-  const role = papel(user);
-  if (role.includes('comercial')) return false;
-  if (
-    role.includes('operador')
-    || role.includes('diretoria')
-    || role.includes('administrador')
-    || role.includes('avancado')
-    || role.includes('financeiro')
-    || role.includes('controller')
-  ) return true;
-  return !!user.permissions?.includes('*');
+  return PERFIS_COMUNICADO_DHL.has(papel(user));
 }
 
 export function podeAuditarNaoEncaminhados(user: { role?: string | null; profileName?: string | null; permissions?: string[] | null } | null | undefined): boolean {

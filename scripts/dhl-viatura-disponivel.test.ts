@@ -294,11 +294,16 @@ test('mapa público esconde OS, fornecedor e cliente e obedece o raio', () => {
   assert.equal(semLink.includes('FORNECEDOR'), false);
 });
 
-test('painel só para a operação interna', () => {
-  assert.equal(podeVerPainelDhl({ role: 'operador' }), true);
-  assert.equal(podeVerPainelDhl({ role: 'avançado' }), true);
-  assert.equal(podeVerPainelDhl({ role: 'diretoria' }), true);
+test('comunicado da DHL só para operador, avançado e administrador', () => {
+  assert.equal(podeVerPainelDhl({ role: 'Operador' }), true);
+  assert.equal(podeVerPainelDhl({ role: 'AVANÇADO' }), true);
+  assert.equal(podeVerPainelDhl({ role: 'Administrador' }), true);
+  assert.equal(podeVerPainelDhl({ role: 'diretoria' }), false);
+  assert.equal(podeVerPainelDhl({ role: 'financeiro' }), false);
+  assert.equal(podeVerPainelDhl({ role: 'Controller' }), false);
   assert.equal(podeVerPainelDhl({ role: 'comercial' }), false);
+  assert.equal(podeVerPainelDhl({ role: 'RH' }), false);
+  assert.equal(podeVerPainelDhl({ role: 'financeiro', permissions: ['*'] }), false);
   assert.equal(podeVerPainelDhl({ role: 'operador', userType: 'provider', providerId: '9' }), false);
   assert.equal(podeVerPainelDhl({ role: 'operador', clientId: '1' }), false);
   assert.equal(podeVerPainelDhl(null), false);
