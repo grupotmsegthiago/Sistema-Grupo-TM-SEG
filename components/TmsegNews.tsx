@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, FileDown, Megaphone, Newspaper, Receipt, Users } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CalendarDays, GraduationCap, Megaphone, Newspaper, Paperclip, Receipt, Users } from 'lucide-react';
 import { canAccessScreen } from '../lib/screenAccess';
 import { useNotification } from '../lib/NotificationContext';
 import { supabase } from '../lib/supabase';
+import { MODULOS } from '../lib/training/operadorAcademy';
+import { modulosDaSessao } from '../lib/training/trainingStore';
 import {
   ACAO_NEWS,
   ACAO_NEWS_VIEW,
@@ -26,8 +28,8 @@ function usuarioAtual(): UsuarioNews & { name?: string } {
 const ATALHOS = [
   { id: 'escala', titulo: 'Escala de trabalho', texto: 'Folha de ponto e o ritmo do dia.', tela: 'rh-timeclock', icon: CalendarDays },
   { id: 'info', titulo: 'Informações', texto: 'Avisos da diretoria e novidades da equipe.', tela: '', icon: Newspaper },
-  { id: 'holerite', titulo: 'Download do holerite', texto: 'Abra o cadastro e baixe o holerite.', tela: 'rh-employees', icon: Receipt },
-  { id: 'portal', titulo: 'Portal do funcionário', texto: 'RH, ponto e seus dados.', tela: 'rh-dashboard', icon: Users },
+  { id: 'holerite', titulo: 'Download do holerite', texto: 'O PDF completo fica no Meu Portal.', tela: 'meu-portal', icon: Receipt },
+  { id: 'portal', titulo: 'Meu Portal', texto: 'Ponto, escala, holerites, documentos e solicitações.', tela: 'meu-portal', icon: Users },
 ];
 
 export default function TmsegNews({ compact = false }: { compact?: boolean }) {
@@ -40,7 +42,9 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
   const [aberto, setAberto] = useState<string | null>(null);
   const [titulo, setTitulo] = useState('');
   const [texto, setTexto] = useState('');
+  const [anexo, setAnexo] = useState<File | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const anexoRef = useRef<HTMLInputElement>(null);
 
   const carregar = useCallback(async () => {
     const posts = await supabase
@@ -115,11 +119,30 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
 
   const publicar = async () => {
     setEnviando(true);
+    let anexoNome = '';
+    let anexoUrl = '';
+    if (anexo) {
+      const safe = anexo.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `news/${Date.now()}_${safe}`;
+      const upload = await supabase.storage.from('mission-evidence').upload(path, anexo, {
+        upsert: true,
+        contentType: anexo.type || 'application/octet-stream',
+      });
+      if (upload.error) {
+        setEnviando(false);
+        showNotification('Anexo', upload.error.message, 'warning');
+        return;
+      }
+      anexoNome = anexo.name;
+      anexoUrl = supabase.storage.from('mission-evidence').getPublicUrl(path).data.publicUrl;
+    }
     const resultado = await publicarNews({
       titulo,
       texto,
       tipo: 'informe',
       autor: String(usuario.name || 'Diretoria'),
+      anexoNome,
+      anexoUrl,
     });
     setEnviando(false);
     if (!resultado.ok) {
@@ -128,6 +151,8 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
     }
     setTitulo('');
     setTexto('');
+    setAnexo(null);
+    if (anexoRef.current) anexoRef.current.value = '';
     showNotification('Publicado', 'A equipe já pode ler no TM SEG NEWS.', 'success');
     void carregar();
   };
@@ -147,6 +172,8 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
   if (!ve) return null;
   const primeiro = String(usuario.name || '').trim().split(' ')[0] || 'equipe';
   const lista = compact ? noticias.slice(0, 3) : noticias;
+  const aulas = MODULOS.filter((item) => item.trilha === 'operador');
+  const aulasVistas = modulosDaSessao(usuario as { trainingModules?: unknown });
 
   return (
     <section className="space-y-4" data-testid="tmseg-news">
@@ -179,6 +206,29 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
         </div>
       )}
 
+      {!compact && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm" data-testid="tmseg-news-treinamento">
+          <p className="flex items-center gap-2 text-xs font-black uppercase text-gray-700">
+            <GraduationCap size={14} /> Treinamento
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {aulas.map((aula) => {
+              const viu = aulasVistas.includes(aula.id);
+              return (
+                <button
+                  key={aula.id}
+                  type="button"
+                  onClick={() => abrirAtalho('treinamento', aula.titulo)}
+                  className={`rounded-full px-3 py-1 text-[11px] font-bold ${viu ? 'bg-emerald-50 text-emerald-800' : 'bg-gray-100 text-gray-600'}`}
+                >
+                  {viu ? 'Assistiu' : 'Não assistiu'} · {aula.titulo}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {publica && (
         <div className="rounded-2xl border border-red-200 bg-white p-4 shadow-sm">
           <p className="flex items-center gap-2 text-xs font-black uppercase text-red-800">
@@ -199,15 +249,29 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
             className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
             data-testid="tmseg-news-texto"
           />
-          <button
-            type="button"
-            onClick={() => { void publicar(); }}
-            disabled={enviando}
-            className="mt-2 rounded-xl bg-red-700 px-3 py-2 text-[11px] font-black uppercase text-white disabled:opacity-60"
-            data-testid="tmseg-news-publicar"
-          >
-            Publicar
-          </button>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-[11px] font-black uppercase text-gray-700">
+              <Paperclip size={14} /> Anexar
+              <input
+                ref={anexoRef}
+                type="file"
+                accept="image/*,.pdf,.doc,.docx"
+                className="hidden"
+                data-testid="tmseg-news-anexo"
+                onChange={(event) => setAnexo(event.target.files?.[0] || null)}
+              />
+            </label>
+            {anexo && <span className="text-xs text-gray-500">{anexo.name}</span>}
+            <button
+              type="button"
+              onClick={() => { void publicar(); }}
+              disabled={enviando}
+              className="rounded-xl bg-red-700 px-3 py-2 text-[11px] font-black uppercase text-white disabled:opacity-60"
+              data-testid="tmseg-news-publicar"
+            >
+              Publicar
+            </button>
+          </div>
         </div>
       )}
 
@@ -227,6 +291,11 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
               </p>
               <h3 className="mt-1 text-base font-black text-gray-900">{noticia.titulo}</h3>
               <p className="mt-2 text-sm leading-relaxed text-gray-700">{noticia.texto}</p>
+              {noticia.anexoUrl && (
+                <a href={noticia.anexoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-black uppercase text-red-700">
+                  <Paperclip size={12} /> {noticia.anexoNome || 'Abrir anexo'}
+                </a>
+              )}
               <p className="mt-2 text-[11px] font-bold text-gray-400">Por {noticia.autor}</p>
               {publica && (
                 <div className="mt-2">

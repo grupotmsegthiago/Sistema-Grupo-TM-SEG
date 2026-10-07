@@ -18,7 +18,8 @@ import { NotificationProvider } from './lib/NotificationContext';
 import { RealtimeProvider } from './lib/RealtimeProvider';
 
 // Componentes
-import Dashboard from './components/Dashboard'; 
+import Dashboard from './components/Dashboard';
+import MeuPortal from './components/MeuPortal'; 
 import MissionTable from './components/MissionTable';
 import ControleDiario from './components/ControleDiario';
 import MissionForm from './components/MissionForm';
@@ -582,6 +583,7 @@ const App: React.FC = () => {
 
     switch (currentScreen) {
       case 'dashboard': return <Dashboard onOpenMission={handleOpenBillingMission} />;
+      case 'meu-portal': return <MeuPortal />;
       case 'treinamento': return <TrainingAcademy mode="revisao" />;
       case 'missions': return <MissionTable onNewMission={() => navigateTo('new-mission')} />;
       case 'controle-diario': return <ControleDiario />;

@@ -13,6 +13,8 @@ export type Noticia = {
   tipo: TipoNoticia;
   autor: string;
   quando: string;
+  anexoNome?: string;
+  anexoUrl?: string;
 };
 
 export type UsuarioNews = DiretoriaAccessUser & {
@@ -78,7 +80,7 @@ export function noticiaDoLog(row: {
   details?: string;
   created_at?: string;
 }): Noticia | null {
-  let detalhe: { titulo?: string; texto?: string; tipo?: string; autor?: string } = {};
+  let detalhe: { titulo?: string; texto?: string; tipo?: string; autor?: string; anexoNome?: string; anexoUrl?: string } = {};
   try {
     const parsed = JSON.parse(String(row.details || '{}'));
     if (parsed && typeof parsed === 'object') detalhe = parsed;
@@ -96,6 +98,8 @@ export function noticiaDoLog(row: {
     tipo,
     autor: String(detalhe.autor || row.user_name || 'Diretoria').trim(),
     quando: quandoDe(String(row.created_at || '')),
+    anexoNome: String(detalhe.anexoNome || '').trim() || undefined,
+    anexoUrl: String(detalhe.anexoUrl || '').trim() || undefined,
   };
 }
 
@@ -117,10 +121,14 @@ export async function publicarNews(input: {
   texto: string;
   tipo: TipoNoticia;
   autor: string;
+  anexoNome?: string;
+  anexoUrl?: string;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const titulo = String(input.titulo || '').trim();
   const texto = String(input.texto || '').replace(/\s+/g, ' ').trim();
   const autor = String(input.autor || '').trim() || 'Diretoria';
+  const anexoNome = String(input.anexoNome || '').trim();
+  const anexoUrl = String(input.anexoUrl || '').trim();
   if (titulo.length < 3 || texto.length < 5) return { ok: false, error: 'Escreva o título e a informação.' };
   const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`;
   const insert = await supabase.from('system_logs').insert([{
@@ -128,7 +136,14 @@ export async function publicarNews(input: {
     action_type: ACAO_NEWS,
     entity: 'News',
     entity_id: id,
-    details: JSON.stringify({ titulo, texto, tipo: input.tipo, autor }),
+    details: JSON.stringify({
+      titulo,
+      texto,
+      tipo: input.tipo,
+      autor,
+      anexoNome: anexoNome || undefined,
+      anexoUrl: anexoUrl || undefined,
+    }),
   }]);
   if (insert.error) return { ok: false, error: insert.error.message };
   return { ok: true, id };

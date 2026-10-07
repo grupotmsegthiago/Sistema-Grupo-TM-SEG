@@ -46,6 +46,7 @@ export const SCREEN_PERMISSION_ALIASES: Record<string, string> = {
   'rh-employee-form': 'rh-employees',
   'rh-employee-profile': 'rh-employees',
   'ai-support': 'dashboard',
+  'meu-portal': 'dashboard',
 };
 
 /** Áreas internas bloqueadas para usuário-cliente do portal. */

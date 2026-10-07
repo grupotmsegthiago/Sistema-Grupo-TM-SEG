@@ -33,8 +33,10 @@ test('quem visualizou não repete o mesmo nome', () => {
     entity_id: 'n1',
     user_name: 'Thiago Moreira',
     created_at: '2026-10-06T12:00:00.000Z',
-    details: JSON.stringify({ titulo: 'Escala de sábado', texto: 'A escala muda às 7h.', tipo: 'informe', autor: 'Thiago Moreira' }),
+    details: JSON.stringify({ titulo: 'Escala de sábado', texto: 'A escala muda às 7h.', tipo: 'informe', autor: 'Thiago Moreira', anexoNome: 'escala.pdf', anexoUrl: 'https://exemplo/escala.pdf' }),
   });
   assert.equal(noticia?.titulo, 'Escala de sábado');
   assert.equal(noticia?.autor, 'Thiago Moreira');
+  assert.equal(noticia?.anexoNome, 'escala.pdf');
+  assert.equal(noticia?.anexoUrl, 'https://exemplo/escala.pdf');
 });
