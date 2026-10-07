@@ -18,6 +18,7 @@ import {
 } from '../lib/dhlAutoTableSelector';
 import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Link2, Layers, Scale, Sparkles, Navigation, History, Settings2, FileText, Copy, MailWarning, Search } from 'lucide-react';
 import { canRequestOsAnalysis } from '../lib/osAnalysisAccess';
+import { podeVerRelatoriosDaOs } from '../lib/diretoriaAccess';
 import RequestOsAnalysisModal, { type RequestOsAnalysisPayload } from './RequestOsAnalysisModal';
 import type { OsAnalysisRequest } from '../lib/osAnalysisTypes';
 import { suggestPriceTable } from '../lib/gemini';
@@ -606,6 +607,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     }
   }, [userNameLower, userRoleLower]);
   const canGenerateDhlOccurrenceReport = useMemo(() => userRoleLower === 'diretoria', [userRoleLower]);
+  const podeVerRelatoriosDaOsFlag = useMemo(
+    () => podeVerRelatoriosDaOs({ role: userRoleLower }),
+    [userRoleLower],
+  );
   const dhlSeNumber = String((mission as any)?.dhl_se_number || '').trim();
   const showDhlOccurrenceReportBtn =
     canGenerateDhlOccurrenceReport
@@ -4045,6 +4050,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               {auditSummaryLoading ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
               Resumo
             </button>
+            {podeVerRelatoriosDaOsFlag && (
             <button
               type="button"
               data-testid="button-analytical-report-audit"
@@ -4055,6 +4061,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               <Navigation size={12} />
               Relatório OS
             </button>
+            )}
             {showDhlOccurrenceReportBtn && (
               <button
                 type="button"
@@ -4340,6 +4347,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           </div>
         </header>
 
+        {podeVerRelatoriosDaOsFlag && (
         <div
           className="shrink-0 px-3 py-2.5 sm:px-5 bg-gradient-to-r from-[#111827] to-[#991b1b] border-b border-red-950/30"
           data-testid="bar-analytical-os-report"
@@ -4354,7 +4362,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             Gerar Relatório Analítico da Viagem (PDF)
           </button>
         </div>
+        )}
 
+        {podeVerRelatoriosDaOsFlag && (
         <div
           className="shrink-0 px-3 py-2.5 sm:px-5 bg-gradient-to-r from-[#450a0a] to-[#7f1d1d] border-b border-red-950/30"
           data-testid="bar-os-action-plan"
@@ -4366,6 +4376,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             testId="button-os-action-plan-banner"
           />
         </div>
+        )}
 
         {showDhlOccurrenceReportBtn && (
           <div
@@ -6583,6 +6594,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 )}
                                 <div className="flex gap-1.5 sm:gap-2">
+                                {podeVerRelatoriosDaOsFlag && (
                                 <button
                                   type="button"
                                   onClick={() => setAnalyticalReportOpen(true)}
@@ -6592,6 +6604,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                   <Navigation size={14} className="shrink-0" />
                                   <span className="truncate">Relatório OS</span>
                                 </button>
+                                )}
                                 {showDhlOccurrenceReportBtn && (
                                   <button
                                     type="button"

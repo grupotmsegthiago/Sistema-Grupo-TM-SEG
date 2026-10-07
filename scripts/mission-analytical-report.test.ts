@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { podeVerRelatoriosDaOs } from '../lib/diretoriaAccess';
 import {
   buildStaticMapUrl,
   isStopUpdate,
@@ -162,15 +163,34 @@ describe('relatório analítico da OS — HTML TM SEG', () => {
 });
 
 describe('relatório analítico da OS — Auditoria de Faturamento', () => {
-  it('expõe botão na auditoria e mantém import React', () => {
+  it('só o perfil Diretoria vê os relatórios da OS', () => {
+    assert.equal(podeVerRelatoriosDaOs({ role: 'Diretoria', name: 'Thiago Moreira' }), true);
+    assert.equal(podeVerRelatoriosDaOs({ role: 'diretoria' }), true);
+    assert.equal(podeVerRelatoriosDaOs({ role: 'Financeiro', name: 'Giovanna Marsili' }), false);
+    assert.equal(podeVerRelatoriosDaOs({ role: 'Administrador', name: 'Thiago Moreira' }), false);
+    assert.equal(podeVerRelatoriosDaOs({ role: 'Operador' }), false);
+    assert.equal(podeVerRelatoriosDaOs({ role: 'AVANÇADO' }), false);
+    assert.equal(podeVerRelatoriosDaOs({ role: 'Controller' }), false);
+    assert.equal(podeVerRelatoriosDaOs(null), false);
+  });
+
+  it('expõe botão na auditoria só para Diretoria e mantém import React', () => {
     const modal = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
     const page = fs.readFileSync('components/MissionAnalyticalReportModal.tsx', 'utf8');
+    const update = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
+    const table = fs.readFileSync('components/MissionTable.tsx', 'utf8');
     assert.match(modal, /from 'react'/);
     assert.match(modal, /import React,/);
+    assert.match(modal, /podeVerRelatoriosDaOsFlag/);
     assert.match(modal, /button-analytical-report-audit/);
     assert.match(modal, /button-analytical-report-banner/);
     assert.match(modal, /button-analytical-report-footer/);
+    assert.match(modal, /button-os-action-plan-banner/);
     assert.match(modal, /MissionAnalyticalReportModal/);
+    assert.match(update, /podeVerRelatoriosDaOs\(currentUser\)/);
+    assert.match(update, /from 'react'/);
+    assert.match(table, /podeVerRelatoriosDaOs\(currentUser\)/);
+    assert.match(table, /from 'react'/);
     assert.match(page, /from 'react'/);
     assert.match(page, /modal-analytical-os-report/);
     assert.match(page, /button-print-analytical-os-report/);

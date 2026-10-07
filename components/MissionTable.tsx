@@ -58,7 +58,7 @@ import ClientCommitteePresentation from './ClientCommitteePresentation';
 import MissionOperationalReport from './MissionOperationalReport';
 import MissionTeamPresenceBoard from './MissionTeamPresenceBoard';
 import { hasFullMissionListAccess, isMissionClientScopeRestricted } from '../lib/missionAccess';
-import { isPerfilComercial } from '../lib/diretoriaAccess';
+import { isPerfilComercial, podeVerRelatoriosDaOs } from '../lib/diretoriaAccess';
 import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
 import { canSeeMissionBillingSummary, canSeeOsComPrejuizo, isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
@@ -2343,7 +2343,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                               onViewHistory={handleViewHistory}
                                               onFullReport={(m: Mission) => { setMissionForFullReport(m); setIsFullReportOpen(true); }}
                                               onOperationalReport={(m: Mission) => setMissionForOpReport(m)}
-                                              onActionPlan={isRestrictedClientView ? undefined : handleActionPlan}
+                                              onActionPlan={podeVerRelatoriosDaOs(currentUser) && !isRestrictedClientView ? handleActionPlan : undefined}
                                               clientTables={clientTables}
                                               providerTables={providerTables}
                                               clientsData={clientsData}

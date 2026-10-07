@@ -1,6 +1,7 @@
 import { formatDateBR, formatIsoDateBR, formatTimeAuditBR, formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
 import OsActionPlanModal from './OsActionPlanModal';
 import BotaoRelatorioMissao from './BotaoRelatorioMissao';
+import { podeVerRelatoriosDaOs } from '../lib/diretoriaAccess';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB, ProviderCostTable } from '../types';
@@ -4301,6 +4302,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             {((mission?.client || '').toUpperCase().includes('DHL')) && (
                                 <div><label className={LABEL_CLASS}><span className="text-red-600 font-black">Nº S.E. (DHL)</span></label><input type="text" className={`${INPUT_CLASS} border-red-300 bg-yellow-50/40`} placeholder="Ex: SE-123456 / 4912345" value={editData.dhl_se_number} onChange={e => setEditData({...editData, dhl_se_number: e.target.value.toUpperCase()})} data-testid="input-edit-dhl-se-number" /></div>
                             )}
+                            {podeVerRelatoriosDaOs(currentUser) && (
                             <div className="md:col-span-2">
                                 <BotaoRelatorioMissao
                                     missionId={String(mission?.id || '')}
@@ -4309,6 +4311,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     testId="button-open-os-action-plan"
                                 />
                             </div>
+                            )}
                             {isDiretoria && String(editData.dhl_se_number || mission?.dhl_se_number || '').trim() && (
                                 <div className="md:col-span-2">
                                     <button

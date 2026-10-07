@@ -40,6 +40,15 @@ export function isPerfilDiretoria(user: DiretoriaAccessUser | null | undefined):
   return role === 'diretoria';
 }
 
+/**
+ * Relatório analítico da viagem e relatório da missão.
+ * Só o perfil Diretoria. Administrador, Financeiro e os demais ficam de fora
+ * para a auditoria de faturamento não perder altura na tela.
+ */
+export function podeVerRelatoriosDaOs(user: DiretoriaAccessUser | null | undefined): boolean {
+  return isPerfilDiretoria(user);
+}
+
 export function isPerfilComercial(user: DiretoriaAccessUser | null | undefined): boolean {
   const role = String(user?.role || '')
     .toLowerCase()
