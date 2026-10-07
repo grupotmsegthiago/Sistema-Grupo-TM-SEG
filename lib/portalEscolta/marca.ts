@@ -71,7 +71,7 @@ export const MARCA_IBL: MarcaPortal = {
   logoAlt: 'IBL Logística',
   arquivo: 'ibl',
   tituloPdf: 'Controle de Escolta IBL',
-  exigeLogin: false,
+  exigeLogin: true,
   colunasOcultas: ['Solicitante', 'Quem autorizou', 'Atendimento PGR', 'Operação', 'TSP'],
   css: CSS_IBL,
 };

@@ -52,9 +52,17 @@ export function gerarSenhaTemporaria(): string {
   return [...bytes].map((byte) => ALFABETO_SENHA[byte % ALFABETO_SENHA.length]).join('');
 }
 
-export function decidirPrimeiroAcesso(input: {
-  existeAdministrador: boolean;
-}): { ok: true; acao: 'criar-administrador' } | { ok: false; error: string } {
-  if (!input.existeAdministrador) return { ok: true, acao: 'criar-administrador' };
-  return { ok: false, error: 'A senha chega por e-mail quando o administrador libera o acesso. Entre com ela para trocar no primeiro acesso.' };
-}
+export {
+  DIAS_TROCA_SENHA_PORTAL,
+  PERMISSAO_SO_PORTAL,
+  caminhoPortalDasPermissoes,
+  decidirPrimeiroAcesso,
+  deveTrocarSenhaPortal,
+  mensagemAcessoPortal,
+  perfilPortalDasPermissoes,
+  permissoesDoPortal,
+  preservarSenhaPortal,
+  semMarcasDePortal,
+  senhaPortalVencida,
+  usuarioSoPortal,
+} from './regrasAcesso.js';

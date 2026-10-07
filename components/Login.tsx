@@ -13,6 +13,7 @@ import type { TimeClockUserContext } from '../lib/timeclock/types';
 import { APP_VERSION } from '../constants';
 import { normalizarModulos } from '../lib/training/operadorAcademy';
 import { clearLocalStoragePreservingForceLogoutSeen } from '../lib/forceLogout';
+import { caminhoPortalDasPermissoes, usuarioSoPortal } from '../lib/cevaPortal/regrasAcesso';
 
 interface LoginProps {
   onLogin: () => void;
@@ -155,6 +156,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       const profilePerms = userCheck.profiles?.permissions || [];
       const userPerms = userCheck.permissions || [];
       const combinedPermissions = [...new Set([...profilePerms, ...userPerms])];
+      if (usuarioSoPortal(combinedPermissions)) {
+        const caminho = caminhoPortalDasPermissoes(combinedPermissions) || '';
+        throw new Error(`Este acesso é somente o portal do cliente. Entre em ${window.location.origin}${caminho}`);
+      }
 
       let userData = {
         id: userCheck.id,
