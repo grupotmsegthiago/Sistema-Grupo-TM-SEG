@@ -27,6 +27,7 @@ export type Noticia = {
   telas: string[];
   fotos: FotoAtualizacao[];
   treinamento?: TreinamentoAtualizacao;
+  criadoEm?: string;
 };
 
 /** Áreas que a diretoria marca ao publicar uma atualização. */
@@ -43,14 +44,15 @@ export const AREAS_ATUALIZACAO = [
   { id: 'treinamento', nome: 'Treinamento' },
 ] as const;
 
-function guia(id: string, titulo: string, texto: string, telas: string[], tela: string, passos: string[], legenda: string): Noticia {
+function guia(id: string, titulo: string, texto: string, telas: string[], tela: string, passos: string[], legenda: string, criadoEm: string): Noticia {
   return {
     id,
     titulo,
     texto,
     tipo: 'atualizacao',
     autor: 'Sistema',
-    quando: '',
+    quando: quandoDe(criadoEm),
+    criadoEm,
     telas,
     fotos: [{ url: `/atualizacoes/${id}.svg`, legenda }],
     treinamento: { tela, passos },
@@ -71,6 +73,7 @@ export const ATUALIZACOES_SISTEMA: Noticia[] = [
       'Abra o módulo que precisa: ponto, holerite, documentos ou solicitações.',
     ],
     'Card Meu Portal na página inicial',
+    '2026-10-06T21:00:00-03:00',
   ),
   guia(
     'sys-treinamento',
@@ -84,6 +87,7 @@ export const ATUALIZACOES_SISTEMA: Noticia[] = [
       'Clique na aula para abrir e assistir até o fim.',
     ],
     'Balões de aula assistida e não assistida',
+    '2026-10-06T21:20:00-03:00',
   ),
   guia(
     'sys-dhl-viaturas',
@@ -97,6 +101,7 @@ export const ATUALIZACOES_SISTEMA: Noticia[] = [
       'Se outra pessoa já copiou, não envie de novo.',
     ],
     'Painel de viaturas finalizadas por região',
+    '2026-10-06T18:00:00-03:00',
   ),
   guia(
     'sys-ocorrencias',
@@ -110,6 +115,7 @@ export const ATUALIZACOES_SISTEMA: Noticia[] = [
       'No financeiro, clique em Resolvido, escreva o que foi feito e confirme.',
     ],
     'Ocorrência em uma linha com a rota em cidade e UF',
+    '2026-10-06T19:10:00-03:00',
   ),
   guia(
     'sys-carta-tabela',
@@ -123,6 +129,7 @@ export const ATUALIZACOES_SISTEMA: Noticia[] = [
       'Abra a OS no auditador e ajuste a tabela da rota.',
     ],
     'Carta interna só para quem abriu a OS',
+    '2026-10-06T19:40:00-03:00',
   ),
   guia(
     'sys-pedagio',
@@ -136,6 +143,7 @@ export const ATUALIZACOES_SISTEMA: Noticia[] = [
       'Quem recebeu a carta abre a OS, corrige o valor e salva.',
     ],
     'Reportar erro de pedágio para quem alterou',
+    '2026-10-06T20:05:00-03:00',
   ),
 ];
 
@@ -200,6 +208,16 @@ export function textoParabensCadastro(
   return {
     titulo: `${tipo === 'cliente' ? 'Cliente novo' : 'Fornecedor novo'}: ${nome}`,
     texto: `${quem}, parabéns. Você cadastrou o ${palavra} ${nome}. Obrigado pelo apoio. Cada cadastro novo fortalece a TM SEG e abre caminho para a equipe inteira. Seguimos juntos.`,
+  };
+}
+
+export function partesQuando(iso: string | null | undefined): { data: string; hora: string } {
+  if (!iso) return { data: '—', hora: '—' };
+  const data = new Date(iso);
+  if (Number.isNaN(data.getTime())) return { data: '—', hora: '—' };
+  return {
+    data: data.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+    hora: data.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
   };
 }
 
@@ -273,6 +291,7 @@ export function noticiaDoLog(row: {
     tipo,
     autor: String(detalhe.autor || row.user_name || 'Diretoria').trim(),
     quando: quandoDe(String(row.created_at || '')),
+    criadoEm: String(row.created_at || ''),
     anexoNome: String(detalhe.anexoNome || '').trim() || undefined,
     anexoUrl: String(detalhe.anexoUrl || '').trim() || undefined,
     telas,

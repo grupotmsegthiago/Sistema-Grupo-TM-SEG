@@ -12,6 +12,7 @@ import {
   atualizacoesVisiveis,
   noticiaDoLog,
   nomesQueViram,
+  partesQuando,
   podePublicarNews,
   podeVerNews,
   publicarNews,
@@ -53,6 +54,7 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
   const [anexo, setAnexo] = useState<File | null>(null);
   const [fotosArquivos, setFotosArquivos] = useState<File[]>([]);
   const [passosTexto, setPassosTexto] = useState('');
+  const [aberta, setAberta] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const anexoRef = useRef<HTMLInputElement>(null);
 
@@ -123,9 +125,8 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     if (!ve) return;
     const eu = String(usuario.name || '').trim();
-    const itens = [...atualizacoes, ...noticias];
-    if (!eu || !itens.length) return;
-    for (const noticia of itens) {
+    if (!eu || !noticias.length) return;
+    for (const noticia of noticias) {
       const atuais = vistas[noticia.id] || [];
       const ja = atuais.length > 0 && nomesQueViram([...atuais, eu]).length === atuais.length;
       const chave = `tmseg-news-vista:${noticia.id}:${eu}`;
@@ -141,7 +142,7 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
         if (error) sessionStorage.removeItem(chave);
       });
     }
-  }, [ve, atualizacoes, noticias, vistas, usuario.name]);
+  }, [ve, noticias, vistas, usuario.name]);
 
   useEffect(() => {
     if (!ve) return;
@@ -239,7 +240,28 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
   if (!ve) return null;
   const primeiro = String(usuario.name || '').trim().split(' ')[0] || 'equipe';
   const lista = compact ? noticias.slice(0, 3) : noticias;
-  const mudancas = compact ? atualizacoes.slice(0, 3) : atualizacoes;
+  const mudancas = [...atualizacoes].sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || ''))).slice(0, compact ? 3 : atualizacoes.length);
+  const completa = mudancas.find((item) => item.id === aberta) || null;
+
+  const jaLeu = (id: string) => {
+    const atuais = vistas[id] || [];
+    const eu = String(usuario.name || '').trim();
+    if (!eu || !atuais.length) return false;
+    return nomesQueViram([...atuais, eu]).length === atuais.length;
+  };
+
+  const marcarComoLido = (noticia: Noticia) => {
+    const eu = String(usuario.name || '').trim();
+    if (!eu || jaLeu(noticia.id)) return;
+    setVistas((atual) => ({ ...atual, [noticia.id]: nomesQueViram([...(atual[noticia.id] || []), eu]) }));
+    void supabase.from('system_logs').insert([{
+      user_name: eu,
+      action_type: ACAO_NEWS_VIEW,
+      entity: 'News',
+      entity_id: noticia.id,
+      details: JSON.stringify({ nome: eu }),
+    }]);
+  };
 
   const cartao = (noticia: Noticia) => {
     const quemViu = vistas[noticia.id] || [];
@@ -460,7 +482,93 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
       {mudancas.length > 0 && (
         <div className="space-y-3" data-testid="tmseg-news-atualizacoes">
           <p className="text-xs font-black uppercase tracking-wide text-gray-500">Atualizações do sistema</p>
-          {mudancas.map(cartao)}
+          <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="bg-gray-50 text-[10px] font-black uppercase text-gray-500">
+                <tr>
+                  <th className="px-3 py-2">Data</th>
+                  <th className="px-3 py-2">Hora</th>
+                  <th className="px-3 py-2">Informativo</th>
+                  <th className="px-3 py-2">Criado por</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {mudancas.map((item) => {
+                  const quando = partesQuando(item.criadoEm);
+                  return (
+                    <tr key={item.id} className="border-t border-gray-100" data-testid={`tmseg-news-linha-${item.id}`}>
+                      <td className="whitespace-nowrap px-3 py-2 text-gray-700">{quando.data}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-gray-700">{quando.hora}</td>
+                      <td className="px-3 py-2 font-bold text-gray-900">{item.titulo}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-gray-600">{item.autor}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button type="button" onClick={() => setAberta(item.id)} className="text-[11px] font-black uppercase text-red-700 underline">
+                          Acessar completo
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {completa && (
+            <article className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm" data-testid={`tmseg-news-completo-${completa.id}`}>
+              <p className="text-[10px] font-black uppercase text-red-700">
+                {partesQuando(completa.criadoEm).data} · {partesQuando(completa.criadoEm).hora} · {completa.autor}
+              </p>
+              <h3 className="mt-1 text-base font-black text-gray-900">{completa.titulo}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-gray-700">{completa.texto}</p>
+              {completa.fotos.length > 0 && (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {completa.fotos.map((foto) => (
+                    <figure key={foto.url} className="overflow-hidden rounded-xl border border-gray-100">
+                      <img src={foto.url} alt={foto.legenda} className="h-44 w-full object-cover" />
+                      <figcaption className="px-2 py-1 text-[10px] font-bold text-gray-500">{foto.legenda}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+              )}
+              {!!completa.treinamento?.passos.length && (
+                <ol className="mt-3 space-y-1">
+                  {completa.treinamento.passos.map((passo, indice) => (
+                    <li key={passo} className="text-sm text-gray-800">{indice + 1}. {passo}</li>
+                  ))}
+                </ol>
+              )}
+              {completa.treinamento?.tela && (
+                <button type="button" onClick={() => abrirAtalho(completa.treinamento?.tela || '', completa.titulo)} className="mt-3 rounded-xl bg-gray-950 px-3 py-2 text-[11px] font-black uppercase text-white">
+                  Abrir a ferramenta
+                </button>
+              )}
+              {publica && (() => {
+                const quemViu = vistas[completa.id] || [];
+                const publico = colegas.filter((pessoa) => usuarioVeItem(pessoa, completa.telas)).map((pessoa) => String(pessoa.name || ''));
+                const leitura = separarLeitura(publico, quemViu);
+                return (
+                  <div className="mt-3">
+                    <p className="text-[10px] font-black uppercase text-gray-400">{leitura.leu.length} leram · {leitura.naoLeu.length} ainda não leram</p>
+                    <div className="mt-1 flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+                      {leitura.leu.map((nome) => <span key={`leu-${nome}`} className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold text-emerald-800">{nome}</span>)}
+                      {leitura.naoLeu.map((nome) => <span key={`falta-${nome}`} className="rounded-full border border-dashed border-gray-300 px-2 py-1 text-[10px] font-bold text-gray-500">{nome}</span>)}
+                    </div>
+                  </div>
+                );
+              })()}
+              <div className="mt-4 border-t border-gray-100 pt-3">
+                <button
+                  type="button"
+                  disabled={jaLeu(completa.id)}
+                  onClick={() => marcarComoLido(completa)}
+                  className="rounded-xl bg-emerald-700 px-3 py-2 text-[11px] font-black uppercase text-white disabled:bg-gray-200 disabled:text-gray-500"
+                  data-testid="tmseg-news-marcar-lido"
+                >
+                  {jaLeu(completa.id) ? 'Lido' : 'Marcar como lido'}
+                </button>
+              </div>
+            </article>
+          )}
         </div>
       )}
 

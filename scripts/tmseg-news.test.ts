@@ -4,6 +4,7 @@ import {
   atualizacoesVisiveis,
   nomesQueViram,
   noticiaDoLog,
+  partesQuando,
   podePublicarNews,
   podeVerNews,
   separarLeitura,
@@ -60,6 +61,12 @@ test('atualização do sistema só aparece para o perfil que acessa a área', ()
   assert.equal(atualizacoesVisiveis(operador).every((item) => item.fotos.length > 0 && (item.treinamento?.passos.length || 0) > 0), true);
   const financeiro = { role: 'financeiro', name: 'Plínio', permissions: ['fin-dashboard'] };
   assert.equal(atualizacoesVisiveis(financeiro).some((item) => item.titulo === 'Erro de pedágio vai para quem alterou'), true);
+});
+
+test('a linha da atualização separa data e hora', () => {
+  assert.deepEqual(partesQuando('2026-10-06T21:00:00-03:00'), { data: '06/10/2026', hora: '21:00' });
+  const portal = atualizacoesVisiveis({ role: 'operador', name: 'Beatriz', permissions: ['quotes'] }).find((item) => item.id === 'sys-meu-portal');
+  assert.equal(portal?.criadoEm, '2026-10-06T21:00:00-03:00');
 });
 
 test('balão separa quem leu de quem ainda não leu', () => {

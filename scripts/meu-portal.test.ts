@@ -97,8 +97,9 @@ test('o card da home virou Meu Portal e a publicação anexa arquivo', () => {
   assert.match(html, /Não assistiu/);
   assert.match(html, /Anexar/);
   assert.match(html, /Atualizações do sistema/);
-  assert.match(html, /leram/);
-  assert.match(html, /ainda não leram/);
+  assert.match(html, /Informativo/);
+  assert.match(html, /Criado por/);
+  assert.match(html, /Acessar completo/);
   assert.equal(html.includes('Viaturas para comunicar à DHL'), false);
 });
 
