@@ -1000,7 +1000,7 @@ const FinancialTransactionList: React.FC = () => {
 
     const renderTransactionTable = (list: FinancialTransaction[], typeLabel: string, showConferencia = false) => {
         const isReceber = typeLabel === 'Receita' || typeLabel === 'RECEBER' || activeStep === 'RECEBER';
-        const colCount = (showConferencia ? 9 : 8) + (isReceber ? 2 : 0);
+        const colCount = (showConferencia ? 9 : 8) + (isReceber ? 3 : 0);
 
         // Agrupa saldos residuais logo abaixo do título pai (Contas a Receber).
         const residualByParent = new Map<string, FinancialTransaction[]>();
@@ -1064,6 +1064,7 @@ const FinancialTransactionList: React.FC = () => {
                             )}
                             <th className="px-4 py-3">Vencimento</th>
                             <th className="px-4 py-3">Descrição</th>
+                            {isReceber && <th className="px-4 py-3 text-center">NF / Fatura</th>}
                             <th className="px-4 py-3">Favorecido</th>
                             <th className="px-4 py-3">Categoria</th>
                             <th className="px-4 py-3 text-center">Forma Pgto</th>
@@ -1165,27 +1166,6 @@ const FinancialTransactionList: React.FC = () => {
                                             )}
                                             <div className="min-w-0">
                                                 <div className={`font-bold text-sm uppercase ${isResidualRow ? 'text-orange-800' : 'text-gray-800'}`}>{t.description}</div>
-                                                {faturaNumero && (
-                                                    <span className="block text-[9px] font-black text-indigo-700 mt-0.5" data-testid={`badge-fatura-${t.id}`}>
-                                                        Fatura {faturaNumero}
-                                                    </span>
-                                                )}
-                                                {nfUrl && (
-                                                    <a
-                                                      href={nfUrl}
-                                                      target="_blank"
-                                                      rel="noreferrer"
-                                                      className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 underline"
-                                                      data-testid={`link-nf-receivable-${t.id}`}
-                                                    >
-                                                      <FileText size={10} /> Abrir nota fiscal
-                                                    </a>
-                                                )}
-                                                {linkedInvoice && !nfUrl && (
-                                                    <span className="mt-0.5 block text-[9px] font-bold text-amber-700" data-testid={`nf-pending-receivable-${t.id}`}>
-                                                      Nota fiscal ainda não disponível no Controle de NF
-                                                    </span>
-                                                )}
                                                 {isResidualRow && (
                                                     <span className="block text-[9px] font-black text-orange-600 mt-0.5 uppercase">Saldo residual</span>
                                                 )}
@@ -1262,6 +1242,36 @@ const FinancialTransactionList: React.FC = () => {
                                             </div>
                                         </div>
                                     </td>
+                                    {isReceber && (
+                                        <td className="px-4 py-3 text-center">
+                                            <div className="flex items-center justify-center gap-2">
+                                                <span className="max-w-24 truncate font-mono text-[10px] font-bold text-indigo-700" title={faturaNumero || linkedInvoice?.number || ''}>
+                                                    {faturaNumero || linkedInvoice?.number || '—'}
+                                                </span>
+                                                {nfUrl ? (
+                                                    <a
+                                                      href={nfUrl}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                                      title="Abrir nota fiscal"
+                                                      aria-label="Abrir nota fiscal"
+                                                      data-testid={`link-nf-receivable-${t.id}`}
+                                                    >
+                                                      <FileText size={14} />
+                                                    </a>
+                                                ) : linkedInvoice ? (
+                                                    <span
+                                                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600"
+                                                      title="Nota fiscal ainda não disponível"
+                                                      data-testid={`nf-pending-receivable-${t.id}`}
+                                                    >
+                                                      <Clock size={14} />
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                        </td>
+                                    )}
                                     <td className="px-4 py-3">
                                         <span className="text-xs font-bold text-gray-600 uppercase">{t.entity_name || 'Geral'}</span>
                                     </td>

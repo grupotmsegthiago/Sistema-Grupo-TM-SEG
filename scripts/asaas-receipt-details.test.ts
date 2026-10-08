@@ -175,6 +175,8 @@ test('webhook, sincronizações e tela usam a mesma fonte de detalhes', () => {
   assert.match(ui, /Tarifa Asaas/);
   assert.match(ui, /Abrir nota fiscal/);
   assert.match(ui, /findInvoiceForReceivable/);
+  assert.match(ui, />NF \/ Fatura<\/th>/);
+  assert.match(ui, /link-nf-receivable/);
   assert.match(ui, /import React/);
 });
 
