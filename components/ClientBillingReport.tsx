@@ -69,6 +69,17 @@ interface ClientBillingReportProps {
     onEditClient?: (clientId: string) => void;
 }
 
+const DHL_CANCELLED_HOURS_DEBUG_IDS = new Set(['GTM-7787', 'GTM-7790', 'GTM-7791', 'GTM-7793', 'GTM-7788', 'GTM-7833', 'GTM-7834']);
+const agentDebugDhlCancelledHours = async (payload: { hypothesisId: string; location: string; message: string; data: Record<string, unknown> }) => {
+    try {
+        await fetch('/api/__agent-debug/dhl-cancelled-hours', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+    } catch {}
+};
+
 /** Ref. interna de rastreio (não é Nº NFS-e fiscal). Visível antes da emissão Asaas. */
 function buildInternalTrackingRef(): string {
     const d = new Date();
@@ -2112,6 +2123,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             if (!file) return;
             setFillingSheet(true);
             try {
+                // #region agent log
+                await agentDebugDhlCancelledHours({ hypothesisId: 'E', location: 'components/ClientBillingReport.tsx:handleFillDhlSheet', message: 'Entrada do preenchimento DHL', data: { startDate, endDate, importedFileName: file.name } });
+                // #endregion
                 const XLSX = await import('xlsx');
                 const buf = await file.arrayBuffer();
                 const wbIn = XLSX.read(buf, { type: 'array' });
@@ -2297,6 +2311,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     } catch {}
                 }
 
+                // #region agent log
+                await agentDebugDhlCancelledHours({ hypothesisId: 'B,C', location: 'components/ClientBillingReport.tsx:mission_history', message: 'Horários encontrados para OS alvo', data: { missions: foundMissions.filter(m => DHL_CANCELLED_HOURS_DEBUG_IDS.has(String(m.id))).map(m => ({ id: m.id, status: m.status, startTime: m.start_time || '', endTime: m.end_time || '', emViagem: fillEmViagemMap[m.id] || '', terminal: fillFinalMap[m.id] || '', cancelAt: fillCancelTimeMap[m.id] || '' })) } });
+                // #endregion
+
                 // Tabelas de preco/custo do cliente DHL para o motor financeiro.
                 const dhlClient = clients.find(c => (c.name || '').toUpperCase().includes('DHL') || (c.trading_name || '').toUpperCase().includes('DHL')) || clientData;
                 const dhlClientName = dhlClient ? (dhlClient.name || dhlClient.trading_name || 'DHL') : 'DHL';
@@ -2429,6 +2447,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     // a OS cancelada SEMPRE cair no minimo da tabela 100km da regiao.
                     const canceladaVal = (imp?.situacao || (isCancel ? 'CANCELADA' : 'FINALIZADA')).toUpperCase();
                     const isCancelledRow = /CANCEL/.test(canceladaVal);
+                    if (DHL_CANCELLED_HOURS_DEBUG_IDS.has(String(m.id))) {
+                        // #region agent log
+                        await agentDebugDhlCancelledHours({ hypothesisId: 'D', location: 'components/ClientBillingReport.tsx:cancel-predicates', message: 'Predicados de cancelamento da OS alvo', data: { id: m.id, missionStatus: m.status || '', importedSituation: imp?.situacao || '', canceladaVal, isCancel, isCancelledRow } });
+                        // #endregion
+                    }
                     // RAIO declarado na coluna E (ex.: "RAIO SP 200 KM"): extrai o
                     // raio contratado (100..500) do texto da SE/operação.
                     const parseRaioKm = (txt: any): number => {
@@ -2496,11 +2519,21 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     // ANTES do agendamento mantém início = fim = agendamento (0h).
                     const agendamentoIso = m.start_time || rowStart;
                     rowStart = agendamentoIso;
+                    if (DHL_CANCELLED_HOURS_DEBUG_IDS.has(String(m.id))) {
+                        // #region agent log
+                        await agentDebugDhlCancelledHours({ hypothesisId: 'A,B,C', location: 'components/ClientBillingReport.tsx:before-cancelled-overwrite', message: 'Janela calculada antes da regra que zera cancelada', data: { id: m.id, rowStart, rowEnd, emViagemIso, finalIso, cancelAt: fillCancelTimeMap[m.id] || '', cancelledBeforeFill } });
+                        // #endregion
+                    }
                     if (cancelledBeforeFill) rowEnd = agendamentoIso;
                     // OS cancelada cobra o MINIMO da tabela 100km: zera a duração
                     // (fim = início) para que a HORA EXCEDENTE (AB) seja sempre 0 e o
                     // TOTAL FORNECEDOR (AG) recaia apenas sobre a FRANQUIA TABELA (AE).
                     if (isCancelledRow) rowEnd = rowStart;
+                    if (DHL_CANCELLED_HOURS_DEBUG_IDS.has(String(m.id))) {
+                        // #region agent log
+                        await agentDebugDhlCancelledHours({ hypothesisId: 'A,C,E', location: 'components/ClientBillingReport.tsx:after-cancelled-overwrite', message: 'Janela final enviada ao exportador', data: { id: m.id, rowStart, rowEnd, equalAfterOverwrite: rowStart === rowEnd, durationHours: rowStart && rowEnd ? (new Date(rowEnd).getTime() - new Date(rowStart).getTime()) / 3600000 : null, selectedPeriodStart: startDate, selectedPeriodEnd: endDate } });
+                        // #endregion
+                    }
 
                     // TABELA REGIONAL CORRETA: usa o motor de seleção DHL (região da
                     // origem + faixa de KM + rota exata/inversa) para TODAS as OS,
