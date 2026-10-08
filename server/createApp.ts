@@ -4,7 +4,6 @@ import { createServer } from "http";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { isVercel } from "./runtime";
-import { appendFileSync } from "fs";
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -46,18 +45,6 @@ async function buildApp(): Promise<Express> {
   });
 
   app.disable("etag");
-
-  // #region agent log
-  app.post("/api/__agent-debug/dhl-cancelled-hours", (req, res) => {
-    if (process.env.NODE_ENV === "production") return res.status(404).end();
-    const { hypothesisId, location, message, data } = req.body || {};
-    if (typeof hypothesisId !== "string" || typeof location !== "string" || typeof message !== "string") {
-      return res.status(400).json({ ok: false });
-    }
-    appendFileSync("/opt/cursor/logs/debug.log", `${JSON.stringify({ hypothesisId, location, message, data: data || {}, timestamp: Date.now() })}\n`);
-    return res.json({ ok: true });
-  });
-  // #endregion
 
   app.use((req, res, next) => {
     const start = Date.now();
