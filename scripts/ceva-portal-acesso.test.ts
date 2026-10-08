@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { caminhoPortalDasPermissoes, decidirPrimeiroAcesso, deveTrocarSenhaPortal, DIAS_TROCA_SENHA_PORTAL, emailDeAcesso, gerarSenhaTemporaria, hashSenha, mensagemAcessoPortal, nomeDeAcesso, perfilDeAcesso, perfilPortalDasPermissoes, permissoesDoPortal, podeCadastrarPessoa, preservarSenhaPortal, senhaConfere, senhaPortalVencida, usuarioSoPortal, validarSenha } from '../lib/cevaPortal/acesso';
+import { ehEquipeInterna, origemDoTokenPortal, senhaEquipeConfere, tokenDaEquipeInterna } from '../lib/cevaPortal/equipeInterna';
 import { sincronizarAcessoPortal } from '../lib/cevaPortal/cadastroSistema';
 import { portalPorNomeCliente } from '../lib/cevaPortal/portalServidor';
 
@@ -143,6 +144,34 @@ test('tela e login prendem o usuário ao portal do próprio cliente', () => {
   assert.match(http, /senha_alterada_em/);
   assert.match(http, /cfg\(\)\.clienteNome|carregarClienteDoPortal/);
   assert.doesNotMatch(http, /senha_hash: hashSenha\(senhaNova\), trocar_senha: false, atualizado_em/);
+});
+
+test('equipe interna entra com a senha do sistema e o token não mistura com o usuário do portal', () => {
+  const interna = { id: 8, status: 'Ativo', user_type: 'internal', permissions: ['dashboard'] };
+  assert.equal(ehEquipeInterna(interna), true);
+  assert.equal(ehEquipeInterna({ id: 8, status: 'Ativo', user_type: 'internal', client_id: null, provider_id: null }), true);
+  assert.equal(ehEquipeInterna({ id: 3, status: 'Ativo', user_type: '', client_id: null, provider_id: null }), true);
+  assert.equal(ehEquipeInterna({ id: 8, status: 'Inativo', user_type: 'internal' }), false);
+  assert.equal(ehEquipeInterna({ id: 8, status: 'Ativo', user_type: 'client', client_id: 'c1' }), false);
+  assert.equal(ehEquipeInterna({ id: 8, status: 'Ativo', user_type: 'provider', provider_id: 'p1' }), false);
+  assert.equal(ehEquipeInterna({ id: 8, status: 'Ativo', user_type: 'internal', permissions: permissoesDoPortal('/ibl', 'administrador') }), false);
+  assert.equal(ehEquipeInterna(null), false);
+  assert.equal(senhaEquipeConfere('  mesma-senha ', 'mesma-senha'), true);
+  assert.equal(senhaEquipeConfere('outra', 'mesma-senha'), false);
+  assert.equal(senhaEquipeConfere('mesma-senha', null), false);
+  const token = tokenDaEquipeInterna('ibl-portal', 8, 1_700_000_000_000);
+  assert.equal(token, 'ibl-portal-interno-8-1700000000000');
+  assert.deepEqual(origemDoTokenPortal('ibl-portal', `Bearer ${token}`), { origem: 'equipe', id: '8' });
+  assert.deepEqual(origemDoTokenPortal('ibl-portal', 'ibl-portal-8-1700000000000'), { origem: 'portal', id: '8' });
+  assert.equal(origemDoTokenPortal('ceva-portal', token), null);
+  const http = readFileSync(join(root, 'lib/cevaPortal/httpHandler.ts'), 'utf8');
+  const tela = readFileSync(join(root, 'components/ceva/AcessoCeva.tsx'), 'utf8');
+  assert.match(http, /ehEquipeInterna/);
+  assert.match(http, /tokenDaEquipeInterna/);
+  assert.match(http, /session\.equipeInterna/);
+  assert.match(http, /A senha da equipe interna é alterada no sistema/);
+  assert.match(tela, /mesmo login do sistema/);
+  assert.match(tela, /import React/);
 });
 
 test('e-mail, nome e perfil entram normalizados', () => {

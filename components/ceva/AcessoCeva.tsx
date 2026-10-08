@@ -85,7 +85,7 @@ export const AcessoCeva: React.FC<{ onEntrar: (sessao: SessaoCeva) => void }> = 
 
   const titulo = modo === 'login' ? 'Bem-vindo de volta' : modo === 'primeiro' ? 'Primeiro acesso' : 'Como você entra?';
   const texto = modo === 'login'
-    ? 'Use o e-mail liberado e a sua senha.'
+    ? 'Use o e-mail liberado e a sua senha. A equipe interna entra com o mesmo login do sistema.'
     : modo === 'primeiro' && temAdministrador === false
       ? 'O acesso nasce no Cadastro de Usuários do cliente, com a opção Acesso ao portal.'
       : modo === 'primeiro'

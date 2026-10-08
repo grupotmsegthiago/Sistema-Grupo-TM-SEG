@@ -24,6 +24,7 @@ import {
   usuarioSoPortal,
 } from './regrasAcesso.js';
 import { alinharStatusCadastroPortal, colunaSenhaAlteradaAusente, vincularCadastroCliente } from './cadastroSistema.js';
+import { ehEquipeInterna, origemDoTokenPortal, senhaEquipeConfere, tokenDaEquipeInterna } from './equipeInterna.js';
 import {
   buildCevaSolicitacao,
   CEVA_PORTAL_LOGIN_ENABLED,
@@ -44,13 +45,6 @@ function cfg(): PortalServidor {
 
 function tokenDoPortal(userId: string | number, now = Date.now()): string {
   return `${cfg().tokenPrefix}-${userId}-${now}`;
-}
-
-function idDoToken(header: string | null | undefined): string | null {
-  const raw = String(header || '').replace(/^Bearer\s+/i, '').trim();
-  const prefixo = cfg().tokenPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = raw.match(new RegExp(`^${prefixo}-(\\d+)-(\\d{10,})$`));
-  return match ? match[1] : null;
 }
 
 const STOP_WORDS = ['LTDA', 'LTDA.', 'S.A.', 'S.A', 'SA', 'S/A', 'S/A.', 'DO', 'DE', 'DA', 'E', 'DAS', 'DOS'];
@@ -101,7 +95,7 @@ function clearFailures(key: string): void {
   attempts.delete(key);
 }
 
-type PortalUser = CevaPortalSession & { perfil: PerfilCeva; trocarSenha: boolean };
+type PortalUser = CevaPortalSession & { perfil: PerfilCeva; trocarSenha: boolean; equipeInterna?: boolean };
 
 function usuarioPublico(row: { id: number | string; nome: string; email: string; perfil: PerfilCeva; trocarSenha?: boolean }) {
   return {
@@ -153,13 +147,43 @@ function sessaoAberta(): PortalUser {
   };
 }
 
+function sessaoDaEquipe(row: { id: number | string; name?: string | null; email?: string | null }): PortalUser {
+  return {
+    id: String(row.id),
+    name: String(row.name || '').trim() || 'Equipe interna',
+    email: String(row.email || '').trim().toLowerCase(),
+    perfil: 'administrador',
+    trocarSenha: false,
+    equipeInterna: true,
+  };
+}
+
+async function sessaoEquipeInterna(
+  sb: NonNullable<ReturnType<typeof createSupabaseAdminClient>>,
+  id: string,
+): Promise<PortalUser | null> {
+  const { data, error } = await sb
+    .from('system_users')
+    .select('id, name, email, status, client_id, provider_id, user_type, permissions')
+    .eq('id', id)
+    .maybeSingle();
+  if (error || !ehEquipeInterna(data)) return null;
+  return sessaoDaEquipe(data);
+}
+
 async function portalSession(req: any): Promise<PortalUser | null> {
-  const userId = idDoToken(String(req.headers?.authorization || req.headers?.[cfg().headerSessao] || ''));
-  if (!userId) return cfg().exigeLogin ? null : sessaoAberta();
+  const header = String(req.headers?.authorization || req.headers?.[cfg().headerSessao] || '');
+  const token = origemDoTokenPortal(cfg().tokenPrefix, header);
+  if (!token) return cfg().exigeLogin ? null : sessaoAberta();
   const sb = createSupabaseAdminClient();
   if (!sb) return null;
+  if (token.origem === 'equipe') {
+    const equipe = await sessaoEquipeInterna(sb, token.id);
+    if (equipe) return equipe;
+    return cfg().exigeLogin ? null : sessaoAberta();
+  }
 
-  const { data: user, error } = await lerUsuarioPortal(sb, { id: userId }, false);
+  const { data: user, error } = await lerUsuarioPortal(sb, { id: token.id }, false);
   if (error) return null;
   if (!user || user.status !== 'ativo') return cfg().exigeLogin ? null : sessaoAberta();
   return sessaoDe(user);
@@ -520,6 +544,19 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         res.status(503).json({ error: 'Portal indisponível.' });
         return;
       }
+      const { data: sistema, error: erroSistema } = await sb
+        .from('system_users')
+        .select('id, name, email, password, status, client_id, provider_id, user_type, permissions')
+        .ilike('email', email)
+        .maybeSingle();
+      if (erroSistema) {
+        console.error(`[${cfg().logPrefix}] login equipe`, erroSistema.message || erroSistema);
+      } else if (sistema && ehEquipeInterna(sistema) && senhaEquipeConfere(senha, sistema.password)) {
+        clearFailures(key);
+        const session = sessaoDaEquipe(sistema);
+        res.status(200).json({ token: tokenDaEquipeInterna(cfg().tokenPrefix, sistema.id), user: session });
+        return;
+      }
       const { data: user, error: erroUsuario } = await lerUsuarioPortal(sb, { email }, true);
       if (erroUsuario) {
         console.error(`[${cfg().logPrefix}] login`, erroUsuario.message || erroUsuario);
@@ -539,12 +576,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         res.status(403).json({ error: 'O administrador ainda não liberou este acesso.' });
         return;
       }
-      const { data: sistema } = await sb
-        .from('system_users')
-        .select('id, status, client_id, user_type, permissions')
-        .ilike('email', email)
-        .maybeSingle();
-      if (sistema) {
+      if (!erroSistema && sistema) {
         const clienteDoLogin = await carregarClienteDoPortal(sb);
         const mesmoCliente = Boolean(clienteDoLogin?.id) && String(sistema.client_id || '') === String(clienteDoLogin.id);
         const tipo = String(sistema.user_type || '');
@@ -593,6 +625,10 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
       const session = await portalSession(req);
       if (!session) {
         res.status(401).json({ error: 'Sessão expirada. Entre novamente.' });
+        return;
+      }
+      if (session.equipeInterna) {
+        res.status(403).json({ error: 'A senha da equipe interna é alterada no sistema.' });
         return;
       }
       const senhaAtual = String(body?.senhaAtual || '');
@@ -713,7 +749,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         trocar_senha: true,
         senha_hash: hashSenha(senhaTemporaria),
         senha_alterada_em: null,
-        criado_por: Number.isInteger(criador) ? criador : null,
+        criado_por: session.equipeInterna || !Number.isInteger(criador) ? null : criador,
       };
       let { data, error } = await sb.from(cfg().tabelas.usuarios).insert(novo).select('id, nome, email, perfil, status, trocar_senha').single();
       if (colunaSenhaAlteradaAusente(error)) {
