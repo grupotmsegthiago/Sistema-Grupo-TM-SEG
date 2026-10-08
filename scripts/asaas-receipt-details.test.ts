@@ -177,3 +177,18 @@ test('webhook, sincronizações e tela usam a mesma fonte de detalhes', () => {
   assert.match(ui, /findInvoiceForReceivable/);
   assert.match(ui, /import React/);
 });
+
+test('paginação retroativa percorre faturas pagas por cursor sem limite silencioso', () => {
+  const core = fs.readFileSync('lib/asaasSyncOpenPaymentsCore.ts', 'utf8');
+  const handler = fs.readFileSync('api/asaas-sync-open-payments.ts', 'utf8');
+  const ui = fs.readFileSync('components/FinancialInvoiceControl.tsx', 'utf8');
+  assert.match(core, /retroactivePaid \? \['PAGA'\]/);
+  assert.match(core, /\.gt\('id', cursor\)/);
+  assert.match(core, /nextCursor/);
+  assert.match(core, /checkedIds/);
+  assert.match(handler, /queryRetroactivePaid/);
+  assert.match(handler, /queryCursor/);
+  assert.match(ui, /Sincronizar pagos antigos/);
+  assert.match(ui, /seen\.has\(id\)/);
+  assert.match(ui, /Paginação retroativa não avançou/);
+});

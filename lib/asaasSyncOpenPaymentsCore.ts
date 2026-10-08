@@ -25,6 +25,15 @@ export type SyncOpenPaymentsResult = {
   nfUpdated: number;
   errors: number;
   paidIds: string[];
+  checkedIds: string[];
+  retroactivePaid: boolean;
+  backfilledPaid: number;
+  offset: number;
+  nextOffset: number;
+  hasMore: boolean;
+  totalMatched: number;
+  cursor: string | null;
+  nextCursor: string | null;
 };
 
 export type AsaasOpenPaymentLike = {
@@ -67,6 +76,16 @@ function parseLimit(queryLimit: unknown, bodyLimit: unknown): number {
   return Number.isFinite(raw) && raw > 0 ? Math.min(raw, 40) : 15;
 }
 
+function parseOffset(queryOffset: unknown, bodyOffset: unknown): number {
+  const raw = Number(queryOffset ?? bodyOffset);
+  return Number.isInteger(raw) && raw >= 0 ? raw : 0;
+}
+
+function parseFlag(queryValue: unknown, bodyValue: unknown): boolean {
+  const raw = queryValue ?? bodyValue;
+  return raw === true || raw === 1 || String(raw || '').toLowerCase() === 'true' || String(raw) === '1';
+}
+
 function dueDateFromPayment(payment: AsaasOpenPaymentLike): string | null {
   const due = String(payment.dueDate || '').slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : null;
@@ -75,6 +94,12 @@ function dueDateFromPayment(payment: AsaasOpenPaymentLike): string | null {
 export async function runAsaasSyncOpenPayments(params: {
   queryLimit?: unknown;
   bodyLimit?: unknown;
+  queryOffset?: unknown;
+  bodyOffset?: unknown;
+  queryRetroactivePaid?: unknown;
+  bodyRetroactivePaid?: unknown;
+  queryCursor?: unknown;
+  bodyCursor?: unknown;
 }): Promise<SyncOpenPaymentsResult> {
   const supabase = createSupabaseAdminClient();
   if (!supabase) {
@@ -82,15 +107,28 @@ export async function runAsaasSyncOpenPayments(params: {
   }
 
   const limit = parseLimit(params.queryLimit, params.bodyLimit);
-  const { data: openInvs, error } = await supabase
+  const offset = parseOffset(params.queryOffset, params.bodyOffset);
+  const retroactivePaid = parseFlag(params.queryRetroactivePaid, params.bodyRetroactivePaid);
+  const cursor = String(params.queryCursor ?? params.bodyCursor ?? '').trim() || null;
+  const statuses = retroactivePaid ? ['PAGA'] : ['EMITIDA', 'VENCIDA'];
+  let invoiceQuery = supabase
     .from('financial_invoices')
     .select(
       'id, number, client, notes, asaas_payment_id, issuer_company, status, nf_status, nf_provider, plugnotas_invoice_id, nf_image_url, asaas_bankslip_url, boleto_due_date',
+      { count: 'exact' },
     )
-    .in('status', ['EMITIDA', 'VENCIDA'])
-    .not('asaas_payment_id', 'is', null)
-    .order('boleto_due_date', { ascending: true, nullsFirst: false })
-    .limit(limit);
+    .in('status', statuses)
+    .not('asaas_payment_id', 'is', null);
+  if (retroactivePaid) {
+    if (cursor) invoiceQuery = invoiceQuery.gt('id', cursor);
+    invoiceQuery = invoiceQuery.order('id', { ascending: true }).limit(limit);
+  } else {
+    invoiceQuery = invoiceQuery
+      .order('boleto_due_date', { ascending: true, nullsFirst: false })
+      .order('id', { ascending: true })
+      .range(offset, offset + limit - 1);
+  }
+  const { data: openInvs, error, count } = await invoiceQuery;
 
   if (error) {
     throw new Error(error.message);
@@ -103,7 +141,9 @@ export async function runAsaasSyncOpenPayments(params: {
   let dueDateUpdated = 0;
   let nfUpdated = 0;
   let errors = 0;
+  let backfilledPaid = 0;
   const paidIds: string[] = [];
+  const checkedIds: string[] = [];
 
   const markCancelled = async (inv: { id: string; number?: string | null }, asaasStatus: string) => {
     await supabase.from('financial_invoices').update({
@@ -133,6 +173,7 @@ export async function runAsaasSyncOpenPayments(params: {
   for (const inv of openInvs || []) {
     if (!inv.asaas_payment_id) continue;
     checked++;
+    checkedIds.push(inv.id);
     try {
       if (isCanceledNfStatus(inv.nf_status)) {
         await markCancelled(inv, 'CANCELED');
@@ -179,6 +220,7 @@ export async function runAsaasSyncOpenPayments(params: {
         patch.status = 'PAGA';
         patch.notes = upsertAsaasReceiptNote(inv.notes, receipt);
         markedPaid++;
+        if (retroactivePaid) backfilledPaid++;
         paidIds.push(inv.id);
         if (inv.number) {
           await syncAsaasReceiptToReceivables(supabase, inv, payment);
@@ -264,5 +306,18 @@ export async function runAsaasSyncOpenPayments(params: {
     nfUpdated,
     errors,
     paidIds,
+    checkedIds,
+    retroactivePaid,
+    backfilledPaid,
+    offset,
+    nextOffset: offset + (openInvs || []).length,
+    hasMore: retroactivePaid
+      ? (openInvs || []).length === limit
+      : offset + (openInvs || []).length < Number(count || 0),
+    totalMatched: Number(count || 0),
+    cursor,
+    nextCursor: retroactivePaid && (openInvs || []).length > 0
+      ? String(openInvs![openInvs!.length - 1].id)
+      : null,
   };
 }

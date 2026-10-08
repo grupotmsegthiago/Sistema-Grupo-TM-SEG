@@ -54,6 +54,12 @@ export async function handleAsaasSyncOpenPaymentsRequest(
     const result = await runSync({
       queryLimit: req.query?.limit,
       bodyLimit: body.limit,
+      queryOffset: req.query?.offset,
+      bodyOffset: body.offset,
+      queryRetroactivePaid: req.query?.retroactivePaid,
+      bodyRetroactivePaid: body.retroactivePaid,
+      queryCursor: req.query?.cursor,
+      bodyCursor: body.cursor,
     });
     res.status(200).json(result);
   } catch (err: unknown) {

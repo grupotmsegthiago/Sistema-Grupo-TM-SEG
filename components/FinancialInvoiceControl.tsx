@@ -146,6 +146,7 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
   const [retroForm, setRetroForm] = useState({ client: '', number: '', amount: '', date: '', dueDate: '', notes: '', issuer_company: 'TM GESTÃO' });
   const [savingRetro, setSavingRetro] = useState(false);
   const [bulkRetrying, setBulkRetrying] = useState(false);
+  const [backfillingPaid, setBackfillingPaid] = useState(false);
   const [issuerSummary, setIssuerSummary] = useState<Array<{ company: string; total: number; authorized: number; synchronized: number; scheduled: number; error: number; stuck: number; canceled: number; other: number; asaas?: number; plugnotas?: number }>>([]);
   const [issuerFilter, setIssuerFilter] = useState<string | null>(null);
   const [issuerStateFilter, setIssuerStateFilter] = useState<'total' | 'authorized' | 'scheduled' | 'stuck' | null>(null);
@@ -280,6 +281,60 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
     } finally {
       clearTimeout(hang);
       setBulkRetrying(false);
+    }
+  };
+
+  const handleBackfillPaidAsaas = async () => {
+    if (!confirm(
+      'Sincronizar pagamentos já recebidos no Asaas?\n\n' +
+      'O sistema vai consultar todas as faturas pagas, em lotes, e registrar no Contas a Receber: valor pago, data, juros/multa, líquido e tarifa. A operação é idempotente.',
+    )) return;
+    setBackfillingPaid(true);
+    const seen = new Set<string>();
+    let cursor: string | null = null;
+    let updated = 0;
+    let errors = 0;
+    let pages = 0;
+    try {
+      do {
+        const params = new URLSearchParams({ retroactivePaid: '1', limit: '10' });
+        if (cursor) params.set('cursor', cursor);
+        const response = await authFetch(`/api/asaas/sync-open-payments?${params.toString()}`, {
+          method: 'POST',
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data?.success !== true) {
+          throw new Error(data?.error || `Falha na sincronização retroativa (${response.status})`);
+        }
+        for (const id of data.checkedIds || []) {
+          if (seen.has(id)) throw new Error(`Consulta retroativa repetiu a fatura ${id}`);
+          seen.add(id);
+        }
+        updated += Number(data.backfilledPaid || 0);
+        errors += Number(data.errors || 0);
+        pages += 1;
+        if (!data.hasMore) {
+          cursor = null;
+          break;
+        }
+        const next = String(data.nextCursor || '').trim();
+        if (!next || next === cursor) throw new Error('Paginação retroativa não avançou');
+        cursor = next;
+        if (pages > 500) throw new Error('Paginação retroativa excedeu o limite de segurança');
+      } while (cursor);
+
+      await fetchInvoices({ silent: true });
+      await fetchIssuerSummary();
+      alert(
+        `Sincronização retroativa concluída.\n\n` +
+        `${seen.size} fatura(s) consultada(s)\n` +
+        `${updated} pagamento(s) atualizado(s)\n` +
+        `${errors} erro(s)`,
+      );
+    } catch (e: any) {
+      alert(`Erro na sincronização retroativa: ${e?.message || e}`);
+    } finally {
+      setBackfillingPaid(false);
     }
   };
 
@@ -743,6 +798,9 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
           <p className="text-xs text-gray-400 font-semibold mt-1">Notas Fiscais, Boletos, Cobranças Asaas — Integrado ao Contas a Receber</p>
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
+          <button onClick={() => void handleBackfillPaidAsaas()} disabled={backfillingPaid} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm disabled:opacity-60" data-testid="btn-backfill-paid-asaas" title="Busca no Asaas os detalhes das faturas já pagas">
+            {backfillingPaid ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />} {backfillingPaid ? 'Sincronizando pagos...' : 'Sincronizar pagos antigos'}
+          </button>
           <button onClick={handleBulkRetryNfs} disabled={bulkRetrying} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm disabled:opacity-60" data-testid="btn-bulk-retry-nfs" title="Executa o ciclo do worker imediatamente — cancela e reagenda NFs travadas">
             {bulkRetrying ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Reemitir TODAS NFs pendentes
           </button>

@@ -6567,6 +6567,12 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       res.json(await runAsaasSyncOpenPayments({
         queryLimit: req.query.limit,
         bodyLimit: req.body?.limit,
+        queryOffset: req.query.offset,
+        bodyOffset: req.body?.offset,
+        queryRetroactivePaid: req.query.retroactivePaid,
+        bodyRetroactivePaid: req.body?.retroactivePaid,
+        queryCursor: req.query.cursor,
+        bodyCursor: req.body?.cursor,
       }));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
