@@ -11,6 +11,7 @@ import {
   confirmarEnvioDhl,
   copiaBloqueadaPara,
   entraNaListaBloqueados,
+  fornecedorEntraNoComunicadoDhl,
   marcarCopiadoDhl,
   minutosRestantes,
   montarMensagemDisponibilidadeDhlAoVivo,
@@ -139,7 +140,11 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
     [rows, now],
   );
   const semConfirmacao = useMemo(
-    () => rows.filter((row) => row.status === 'copiado' && minutosRestantes(row.finalizada_em, now) === 0),
+    () => rows.filter((row) => (
+      fornecedorEntraNoComunicadoDhl(row.provider_name)
+      && row.status === 'copiado'
+      && minutosRestantes(row.finalizada_em, now) === 0
+    )),
     [rows, now],
   );
   const podeAuditar = podeAuditarNaoEncaminhados(user);

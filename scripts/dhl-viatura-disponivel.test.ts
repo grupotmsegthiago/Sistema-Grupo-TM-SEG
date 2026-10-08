@@ -11,6 +11,7 @@ import {
   HORA_MS,
   agruparPorRegiao,
   entraNaListaBloqueados,
+  fornecedorEntraNoComunicadoDhl,
   textoMotivoNaOs,
   montarMensagemDisponibilidadeDhl,
   parteLocal,
@@ -87,6 +88,38 @@ test('entra no portal por 30 min, fora do raio de 100 km, com o sul de Minas no 
   assert.equal(resolverAlertaDhl(base({ currentLocation: 'BRASILIA - DF' }), now)?.regiao, 'CENTRO-OESTE');
   assert.equal(resolverAlertaDhl(base({ currentLocation: 'BELO HORIZONTE - MG' }), now)?.regiao, 'SUDESTE');
   assert.equal(resolverAlertaDhl(base({ currentLocation: 'VITORIA - ES' }), now)?.regiao, 'SUDESTE');
+});
+
+test('fornecedor ATIVA e TM SEG não entra no comunicado da DHL', () => {
+  const fora = [
+    'ATIVA SERVICOS DE SEGURANCA E RECUPERACAO VEICULAR LTDA',
+    'ATIVA',
+    'TM SEG',
+    'TM SEGURANCA LTDA',
+    'TMSEG',
+    'TM SECURITY',
+  ];
+  for (const provider of fora) {
+    assert.equal(fornecedorEntraNoComunicadoDhl(provider), false, provider);
+    assert.equal(resolverAlertaDhl(base({ provider, currentLocation: 'BRASILIA - DF' }), now), null, provider);
+  }
+  assert.equal(fornecedorEntraNoComunicadoDhl('GNS SEGURANCA LTDA'), true);
+  assert.ok(resolverAlertaDhl(base({ provider: 'GNS SEGURANCA LTDA', currentLocation: 'BRASILIA - DF' }), now));
+
+  const ativa = {
+    status: 'pendente' as const,
+    finalizada_em: ha(5),
+    provider_name: 'ATIVA SERVICOS DE SEGURANCA E RECUPERACAO VEICULAR LTDA',
+  };
+  assert.equal(visivelNoPainelVivo(ativa, now), false);
+  assert.equal(entraNaListaBloqueados({ ...ativa, status: 'expirado', finalizada_em: ha(40) }, now), false);
+  assert.equal(deveAvisarOperadores('pendente', ha(5), now, ativa.provider_name), false);
+
+  const linhas = rascunhosDeMissoesFinalizadas([
+    { id: 'GTM-ATIVA', status: 'Concluída', provider: 'ATIVA SERVICOS DE SEGURANCA E RECUPERACAO VEICULAR LTDA', current_location: 'GOIANIA - GO', end_time: ha(8) },
+    { id: 'GTM-PARCEIRO', status: 'Concluída', provider: 'GNS SEGURANCA LTDA', current_location: 'GOIANIA - GO', end_time: ha(8) },
+  ], now);
+  assert.deepEqual(linhas.map((item) => item.missionId), ['GTM-PARCEIRO']);
 });
 
 test('sem UF na ocorrência, usa o destino; menção a SP no meio do texto não vence Curitiba', () => {
