@@ -35,6 +35,7 @@ import {
   Mail, Send, Banknote
 } from 'lucide-react';
 import InvoiceManualPaymentDialog from './InvoiceManualPaymentDialog';
+import ManualBilledInvoiceDialog from './ManualBilledInvoiceDialog';
 
 interface Invoice {
   id: string;
@@ -52,6 +53,7 @@ interface Invoice {
   issuer_company?: string;
   boleto_due_date?: string;
   asaas_payment_id?: string;
+  asaas_invoice_id?: string;
   asaas_status?: string;
   asaas_invoice_url?: string;
   asaas_bankslip_url?: string;
@@ -140,6 +142,7 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
   const [retryingNfId, setRetryingNfId] = useState<string | null>(null);
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   const [showRetroModal, setShowRetroModal] = useState(false);
+  const [showManualBilledModal, setShowManualBilledModal] = useState(false);
   const [retroForm, setRetroForm] = useState({ client: '', number: '', amount: '', date: '', dueDate: '', notes: '', issuer_company: 'TM GESTÃO' });
   const [savingRetro, setSavingRetro] = useState(false);
   const [bulkRetrying, setBulkRetrying] = useState(false);
@@ -746,6 +749,9 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
           <button onClick={() => setShowRetroModal(true)} className="flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-retro-invoice">
             <Calendar size={14} /> Lançar Retroativo
           </button>
+          <button onClick={() => setShowManualBilledModal(true)} className="flex items-center gap-2 bg-indigo-700 hover:bg-indigo-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-manual-billed-invoice">
+            <Receipt size={14} /> Incluir Faturamento
+          </button>
           <button
             onClick={async () => {
               setLoading(true);
@@ -1024,12 +1030,17 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                         </div>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {(inv.asaas_payment_id || inv.plugnotas_invoice_id) ? (() => {
+                        {(inv.asaas_payment_id || inv.plugnotas_invoice_id || inv.nf_image_url) ? (() => {
                           const ns = inv.nf_status?.toUpperCase();
                           const ref = inv.nf_retry_at || inv.created_at;
                           const ageH = ref ? Math.floor((Date.now() - new Date(ref).getTime()) / 3600_000) : null;
                           const isStuckSync = ns === 'SYNCHRONIZED' && ageH !== null && ageH >= 24;
-                          const invProvider = String(inv.nf_provider || '').toUpperCase() === 'PLUGNOTAS' || inv.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS';
+                          const configuredProvider = String(inv.nf_provider || '').toUpperCase();
+                          const invProvider = configuredProvider === 'MANUAL'
+                            ? 'MANUAL'
+                            : configuredProvider === 'PLUGNOTAS' || inv.plugnotas_invoice_id
+                              ? 'PLUGNOTAS'
+                              : 'ASAAS';
                           const paused = !!inv.nf_retry_paused;
                           const bucket = nfStatusBucket(ns, { stuckByAge: isStuckSync, paused });
                           const shortLabel = nfBucketLabel(bucket);
@@ -1589,6 +1600,16 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
             </div>
           </div>
         </div>
+      )}
+      {showManualBilledModal && (
+        <ManualBilledInvoiceDialog
+          onClose={() => setShowManualBilledModal(false)}
+          onSaved={() => {
+            setShowManualBilledModal(false);
+            void fetchInvoices();
+            void fetchIssuerSummary();
+          }}
+        />
       )}
     </div>
   );
