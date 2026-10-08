@@ -5,14 +5,17 @@
  */
 import { createSupabaseAdminClient } from './supabaseAdmin.js';
 import { atualizarStatusAposBaixaCliente } from './comissao/comissaoCore.js';
+import { getPayment } from './asaasChargeApi.js';
+import {
+  normalizeAsaasReceipt,
+  syncAsaasReceiptToReceivables,
+  upsertAsaasReceiptNote,
+  type AsaasReceiptPayment,
+} from './asaasReceiptDetails.js';
 
 export type AsaasWebhookPayload = {
   event?: string;
-  payment?: {
-    id?: string;
-    status?: string;
-    externalReference?: string;
-  };
+  payment?: AsaasReceiptPayment;
 };
 
 export type AsaasWebhookResult = {
@@ -22,7 +25,7 @@ export type AsaasWebhookResult = {
 
 export type AsaasWebhookCoreDeps = {
   createAdminClient?: () => ReturnType<typeof createSupabaseAdminClient>;
-  today?: () => string;
+  getPayment?: typeof getPayment;
   log?: (message: string) => void;
 };
 
@@ -48,36 +51,36 @@ export async function handleAsaasPaymentWebhook(
     }
     const { data: invoices } = await supabase
       .from('financial_invoices')
-      .select('id, number, client')
+      .select('id, number, client, amount, notes, issuer_company')
       .or(orParts.join(','));
 
     if (invoices && invoices.length > 0) {
+      let paidPayment = payment;
+      try {
+        normalizeAsaasReceipt(paidPayment);
+      } catch {
+        const loadPayment = deps.getPayment ?? getPayment;
+        paidPayment = await loadPayment(payment.id, invoices[0]?.issuer_company || undefined);
+      }
+      const receipt = normalizeAsaasReceipt(paidPayment);
       for (const inv of invoices) {
         await supabase
           .from('financial_invoices')
           .update({
             status: 'PAGA',
-            asaas_status: payment.status || 'RECEIVED',
+            asaas_status: paidPayment.status || payment.status || 'RECEIVED',
+            notes: upsertAsaasReceiptNote(inv.notes, receipt),
           })
           .eq('id', inv.id);
 
-        const { receivableMatchFilter } = await import('./invoiceReceivableSync.js');
-        await supabase
-          .from('financial_transactions')
-          .update({
-            status: 'PAID',
-            payment_date: deps.today ? deps.today() : new Date().toISOString().split('T')[0],
-          })
-          .eq('type', 'INCOME')
-          .in('status', ['PENDING', 'OVERDUE'])
-          .or(receivableMatchFilter(String(inv.number || ''), payment.id));
+        await syncAsaasReceiptToReceivables(supabase, inv, paidPayment);
 
         log(`[Asaas Webhook] Baixa automática: NF ${inv.number} — ${inv.client}`);
         try {
           await atualizarStatusAposBaixaCliente(
             supabase,
             String(inv.id),
-            deps.today ? deps.today() : new Date().toISOString().split('T')[0],
+            receipt.paymentDate,
           );
         } catch (e) {
           log(`[Asaas Webhook] Comissão (baixa) ignorada: ${e instanceof Error ? e.message : e}`);

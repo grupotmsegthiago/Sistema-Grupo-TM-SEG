@@ -43,6 +43,7 @@ import { extractParentTransactionId } from '../lib/financial/confirmReceivablePa
 import CashFlowPreviewButton from './CashFlowPreviewButton';
 import { extractAnticipationId, extractAnticipationDates } from '../lib/financial/paymentAnticipation';
 import PaymentAnticipationModal from './PaymentAnticipationModal';
+import { extractAsaasReceiptDetails } from '../lib/asaasReceiptDetails';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -1093,6 +1094,7 @@ const FinancialTransactionList: React.FC = () => {
                             const anticipationOpDate = anticipationDates.operationDate;
                             const anticipationPayDate = anticipationDates.paymentDate
                               || (anticipationId ? String(t.payment_date || '').slice(0, 10) || null : null);
+                            const asaasReceipt = isReceber ? extractAsaasReceiptDetails(t.notes) : null;
                             return (
                                 <tr
                                     key={t.id}
@@ -1191,6 +1193,24 @@ const FinancialTransactionList: React.FC = () => {
                                                 {hasResidualChildren && (
                                                     <span className="block text-[9px] font-bold text-orange-700 mt-0.5">
                                                         Pago incompleto · {childResiduals!.length} residual(is)
+                                                    </span>
+                                                )}
+                                                {asaasReceipt && (
+                                                    <span className="mt-0.5 block text-[9px] font-bold text-cyan-800 normal-case" data-testid={`asaas-receipt-${t.id}`}>
+                                                      Asaas: recebido {formatCurrency(asaasReceipt.paidAmount)}
+                                                      {' · '}Pago em {formatDateBR(asaasReceipt.paymentDate + 'T12:00:00')}
+                                                      {asaasReceipt.interestAndFineAmount > 0.009 && (
+                                                        <> · Juros/multa {formatCurrency(asaasReceipt.interestAndFineAmount)}</>
+                                                      )}
+                                                      {asaasReceipt.discountAmount > 0.009 && (
+                                                        <> · Desconto {formatCurrency(asaasReceipt.discountAmount)}</>
+                                                      )}
+                                                      {asaasReceipt.netAmount !== null && (
+                                                        <> · Líquido {formatCurrency(asaasReceipt.netAmount)}</>
+                                                      )}
+                                                      {asaasReceipt.feeAmount > 0.009 && (
+                                                        <> · Tarifa Asaas {formatCurrency(asaasReceipt.feeAmount)}</>
+                                                      )}
                                                     </span>
                                                 )}
                                                 {isReceber && (t.manual_payment_amount != null || t.doc_comprovante_url) && (

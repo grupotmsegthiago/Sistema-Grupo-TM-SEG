@@ -155,7 +155,16 @@ export type AsaasPayment = {
   id: string;
   status: string;
   value: number;
+  netValue?: number | null;
+  originalValue?: number | null;
+  /** Valor calculado pelo Asaas para juros + multa após vencimento. */
+  interestValue?: number | null;
   dueDate: string;
+  paymentDate?: string | null;
+  customerPaymentDate?: string | null;
+  clientPaymentDate?: string | null;
+  confirmedDate?: string | null;
+  externalReference?: string | null;
   invoiceUrl?: string;
   bankSlipUrl?: string;
 };

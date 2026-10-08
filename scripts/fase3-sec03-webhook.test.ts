@@ -189,7 +189,15 @@ describe('SEC-03 — eventos e idempotência do core preservados', () => {
             select() {
               return {
                 async or() {
-                  return { data: [{ id: 'inv-1', number: 'NF-1', client: 'Cliente' }] };
+                  return {
+                    data: [{
+                      id: 'inv-1',
+                      number: 'NF-1',
+                      client: 'Cliente',
+                      notes: '',
+                      issuer_company: 'TM GESTÃO',
+                    }],
+                  };
                 },
               };
             },
@@ -210,21 +218,26 @@ describe('SEC-03 — eventos e idempotência do core preservados', () => {
 
         if (table === 'financial_transactions') {
           return {
-            update(payload: { status?: string }) {
-              const finish = async () => {
-                if (state.transactionStatus === 'PENDING' || state.transactionStatus === 'OVERDUE') {
-                  state.transactionStatus = payload.status || state.transactionStatus;
-                  state.transactionUpdates += 1;
-                }
-                return { error: null };
-              };
+            select() {
               const chain = {
                 eq() { return chain; },
-                in() { return chain; },
-                ilike() { return chain; },
-                or: finish,
+                async or() {
+                  return {
+                    data: [{ id: 'tx-1', amount: 100, notes: 'Fatura NF-1' }],
+                    error: null,
+                  };
+                },
               };
               return chain;
+            },
+            update(payload: { status?: string }) {
+              return {
+                async eq() {
+                  state.transactionStatus = payload.status || state.transactionStatus;
+                  state.transactionUpdates += 1;
+                  return { error: null };
+                },
+              };
             },
             insert() {
               state.inserts += 1;
@@ -247,10 +260,18 @@ describe('SEC-03 — eventos e idempotência do core preservados', () => {
     it(`${event} autenticado mantém baixa existente`, async () => {
       const { client, state } = createStatefulSupabase();
       const result = await handleAsaasPaymentWebhook(
-        { event, payment: { id: `pay_${event}`, status: 'RECEIVED' } },
+        {
+          event,
+          payment: {
+            id: `pay_${event}`,
+            status: 'RECEIVED',
+            value: 100,
+            netValue: 98,
+            paymentDate: '2026-08-16',
+          },
+        },
         {
           createAdminClient: () => client as any,
-          today: () => '2026-08-16',
           log: () => {},
         },
       );
@@ -315,17 +336,25 @@ describe('SEC-03 — eventos e idempotência do core preservados', () => {
 
   it('evento duplicado mantém estado idempotente e não duplica transação', async () => {
     const { client, state } = createStatefulSupabase();
-    const payload = { event: 'PAYMENT_RECEIVED', payment: { id: 'pay_duplicate' } };
+    const payload = {
+      event: 'PAYMENT_RECEIVED',
+      payment: {
+        id: 'pay_duplicate',
+        status: 'RECEIVED',
+        value: 100,
+        netValue: 98,
+        paymentDate: '2026-08-16',
+      },
+    };
     const deps = {
       createAdminClient: () => client as any,
-      today: () => '2026-08-16',
       log: () => {},
     };
     await handleAsaasPaymentWebhook(payload, deps);
     await handleAsaasPaymentWebhook(payload, deps);
     assert.equal(state.invoiceStatus, 'PAGA');
     assert.equal(state.transactionStatus, 'PAID');
-    assert.equal(state.transactionUpdates, 1, 'segunda entrega não encontra transação PENDING');
+    assert.equal(state.transactionUpdates, 2, 'segunda entrega atualiza a mesma transação sem duplicar');
     assert.equal(state.inserts, 0);
   });
 });

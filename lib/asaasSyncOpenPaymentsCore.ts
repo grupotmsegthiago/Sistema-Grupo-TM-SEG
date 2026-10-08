@@ -9,6 +9,11 @@ import {
 import { createSupabaseAdminClient } from './supabaseAdmin.js';
 import { isCanceledNfStatus, overdueDays } from './invoiceDisplay.js';
 import { atualizarStatusAposBaixaCliente } from './comissao/comissaoCore.js';
+import {
+  normalizeAsaasReceipt,
+  syncAsaasReceiptToReceivables,
+  upsertAsaasReceiptNote,
+} from './asaasReceiptDetails.js';
 
 export type SyncOpenPaymentsResult = {
   success: true;
@@ -80,7 +85,7 @@ export async function runAsaasSyncOpenPayments(params: {
   const { data: openInvs, error } = await supabase
     .from('financial_invoices')
     .select(
-      'id, number, client, asaas_payment_id, issuer_company, status, nf_status, nf_provider, plugnotas_invoice_id, nf_image_url, asaas_bankslip_url, boleto_due_date',
+      'id, number, client, notes, asaas_payment_id, issuer_company, status, nf_status, nf_provider, plugnotas_invoice_id, nf_image_url, asaas_bankslip_url, boleto_due_date',
     )
     .in('status', ['EMITIDA', 'VENCIDA'])
     .not('asaas_payment_id', 'is', null)
@@ -170,17 +175,13 @@ export async function runAsaasSyncOpenPayments(params: {
       }
 
       if (isAsaasPaymentPaid(payment)) {
+        const receipt = normalizeAsaasReceipt(payment);
         patch.status = 'PAGA';
+        patch.notes = upsertAsaasReceiptNote(inv.notes, receipt);
         markedPaid++;
         paidIds.push(inv.id);
         if (inv.number) {
-          const { receivableMatchFilter } = await import('./invoiceReceivableSync.js');
-          await supabase
-            .from('financial_transactions')
-            .update({ status: 'PAID', payment_date: new Date().toISOString().split('T')[0] })
-            .eq('type', 'INCOME')
-            .in('status', ['PENDING', 'OVERDUE'])
-            .or(receivableMatchFilter(inv.number, inv.asaas_payment_id));
+          await syncAsaasReceiptToReceivables(supabase, inv, payment);
         }
       } else {
         const days = overdueDays(effectiveDue);
