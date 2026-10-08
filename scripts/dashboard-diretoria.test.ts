@@ -468,6 +468,15 @@ describe('Cockpit Atualizar → recalcula OS', () => {
     assert.match(src, /await load\(\)/);
   });
 
+  it('o cockpit não mostra o TM SEG News', async () => {
+    const src = await import('node:fs/promises').then((fs) =>
+      fs.readFile('components/dashboard/DashboardDiretoria.tsx', 'utf8'),
+    );
+    assert.doesNotMatch(src, /TmsegNews/);
+    assert.match(src, /Cockpit Diretoria Executiva/);
+    assert.match(src, /import React/);
+  });
+
   it('botão Atualizar do cockpit dispara data.refresh com feedback', async () => {
     const src = await import('node:fs/promises').then((fs) =>
       fs.readFile('components/dashboard/DashboardDiretoria.tsx', 'utf8'),

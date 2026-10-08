@@ -12,7 +12,6 @@ import DiretoriaSistemaTab from './DiretoriaSistemaTab';
 import CockpitEvidenceByOperator from '../CockpitEvidenceByOperator';
 import CockpitOpenOccurrences from '../CockpitOpenOccurrences';
 import CockpitTabelaErrada from '../CockpitTabelaErrada';
-import TmsegNews from '../TmsegNews';
 import InvoiceDivergenceAuditPanel from '../InvoiceDivergenceAuditPanel';
 import CashFlowPreviewButton from '../CashFlowPreviewButton';
 import { useDashboardDiretoriaData } from '../../lib/dashboardDiretoria/useDashboardDiretoriaData';
@@ -1083,7 +1082,6 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
   return (
     <div className="space-y-4 pb-16 bg-gray-50/50 p-2 rounded-2xl animate-fade-in" data-testid="dashboard-diretoria">
-      <TmsegNews compact />
       <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
