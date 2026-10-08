@@ -8,6 +8,8 @@ import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, 
 import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, resolveCancelledWindow } from '../lib/financialUtils';
 import { resolveMissionDisplacement } from '../lib/billing/resolveMissionDisplacement';
 import { resolveBoletimClientLineTotal } from '../lib/billing/boletimLineTotal';
+import { resolveDhlCancelledSheetWindow, type DhlEndTimeHistory } from '../lib/billing/dhlCancelledSheetWindow';
+import { fetchAllPages } from '../lib/supabasePaging';
 import { resolveStoredClientToll, resolveStoredProviderToll } from '../lib/toll/clientTollBilling';
 import { computeDhlBand, findDhlAutoClient, selectDhlClientTable, DHL_CLIENT_NAME } from '../lib/dhlAutoTableSelector';
 import MissionFinancialModal from './MissionFinancialModal';
@@ -2269,18 +2271,32 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const fillEmViagemMap: Record<string, string> = {};
                 const fillFinalMap: Record<string, string> = {};
                 const fillCancelTimeMap: Record<string, string> = {};
+                const fillEndTimeHistoryMap: Record<string, DhlEndTimeHistory[]> = {};
                 if (fillAllIds.length > 0) {
                     try {
                         for (const ids of chunk(fillAllIds, 100)) {
-                            const { data: histRows } = await supabase
-                                .from('mission_history')
-                                .select('mission_id, changed_at, new_value')
-                                .in('mission_id', ids)
-                                .eq('field_name', 'status')
-                                .order('changed_at', { ascending: true });
-                            if (!histRows) continue;
-                            for (const h of histRows as any[]) {
+                            const histResult = await fetchAllPages<any>(
+                                (from, size) => supabase
+                                    .from('mission_history')
+                                    .select('id, mission_id, field_name, changed_at, new_value', { count: 'exact' })
+                                    .in('mission_id', ids)
+                                    .in('field_name', ['status', 'end_time'])
+                                    .order('changed_at', { ascending: true })
+                                    .order('id', { ascending: true })
+                                    .range(from, from + size - 1),
+                                500,
+                                50_000,
+                                { getRowKey: h => h.id },
+                            );
+                            for (const h of histResult.rows) {
                                 const id = h.mission_id;
+                                if (h.field_name === 'end_time') {
+                                    (fillEndTimeHistoryMap[id] ||= []).push({
+                                        changedAt: h.changed_at,
+                                        newValue: h.new_value,
+                                    });
+                                    continue;
+                                }
                                 const v = (h.new_value || '').toString().toLowerCase()
                                     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
                                 if (v.includes('viagem') && !fillEmViagemMap[id]) {
@@ -2294,7 +2310,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                                 }
                             }
                         }
-                    } catch {}
+                    } catch (historyError) {
+                        console.error('[DHL] Falha ao carregar histórico de horários da planilha', historyError);
+                        throw new Error('Não foi possível carregar o histórico completo de horários das OS. A planilha não foi gerada para evitar divergências.');
+                    }
                 }
 
                 // Tabelas de preco/custo do cliente DHL para o motor financeiro.
@@ -2473,34 +2492,26 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     // HORÁRIOS REAIS: início = "Em Viagem"; fim = status terminal.
                     const emViagemIso = fillEmViagemMap[m.id] || '';
                     const finalIso = fillFinalMap[m.id] || '';
-                    if (isCancel) {
-                        const cancelAt = fillCancelTimeMap[m.id] || finalIso || '';
-                        if (emViagemIso) {
-                            // Saiu em viagem e foi cancelada depois -> soma horas reais.
-                            rowStart = emViagemIso;
-                            rowEnd = cancelAt || emViagemIso;
-                            cancelledBeforeFill = false;
-                        } else {
-                            // Cancelada antes de sair -> sem horas (início = fim).
-                            rowStart = cancelAt || m.start_time || '';
-                            rowEnd = cancelAt || m.start_time || '';
-                            cancelledBeforeFill = true;
-                        }
-                    } else {
+                    if (!isCancelledRow) {
                         rowStart = emViagemIso || m.start_time || '';
                         rowEnd = finalIso || m.end_time || m.start_time || '';
+                        // Coluna U (HORA INÍCIO) SEMPRE = horário do AGENDAMENTO.
+                        rowStart = m.start_time || rowStart;
+                    } else {
+                        // Desde setembro/2026, cancelada executada conserva as horas
+                        // reconhecidas na Auditoria de Faturamento. O end_time gravado
+                        // no mesmo evento do cancelamento é importante quando a OS foi
+                        // reaberta depois (GTM-7788), pois o end_time atual já mudou.
+                        const cancelWindow = resolveDhlCancelledSheetWindow({
+                            scheduledIso: m.start_time,
+                            currentEndIso: m.end_time,
+                            cancelStatusAt: fillCancelTimeMap[m.id] || finalIso || '',
+                            endTimeHistory: fillEndTimeHistoryMap[m.id] || [],
+                        });
+                        rowStart = cancelWindow.start;
+                        rowEnd = cancelWindow.end;
+                        cancelledBeforeFill = cancelWindow.cancelledBefore;
                     }
-
-                    // Coluna U (HORA INÍCIO) SEMPRE = horário do AGENDAMENTO
-                    // (start_time), independente do horário real de saída. Cancelada
-                    // ANTES do agendamento mantém início = fim = agendamento (0h).
-                    const agendamentoIso = m.start_time || rowStart;
-                    rowStart = agendamentoIso;
-                    if (cancelledBeforeFill) rowEnd = agendamentoIso;
-                    // OS cancelada cobra o MINIMO da tabela 100km: zera a duração
-                    // (fim = início) para que a HORA EXCEDENTE (AB) seja sempre 0 e o
-                    // TOTAL FORNECEDOR (AG) recaia apenas sobre a FRANQUIA TABELA (AE).
-                    if (isCancelledRow) rowEnd = rowStart;
 
                     // TABELA REGIONAL CORRETA: usa o motor de seleção DHL (região da
                     // origem + faixa de KM + rota exata/inversa) para TODAS as OS,
