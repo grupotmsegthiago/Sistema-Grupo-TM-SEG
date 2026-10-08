@@ -11,6 +11,7 @@ import {
   HORA_MS,
   agruparPorRegiao,
   entraNaListaBloqueados,
+  textoMotivoNaOs,
   montarMensagemDisponibilidadeDhl,
   parteLocal,
   copiaBloqueadaPara,
@@ -176,6 +177,9 @@ test('cor do botão e saída do painel depois de 30 minutos', () => {
   assert.equal(entraNaListaBloqueados(estourado, now), true);
   assert.equal(entraNaListaBloqueados(expirado, now), true);
   assert.equal(entraNaListaBloqueados(copiado, now), false);
+  assert.equal(entraNaListaBloqueados({ ...expirado, observacao_diretoria: 'ajustes do sistema' }, now), false);
+  assert.equal(entraNaListaBloqueados({ ...expirado, observacao_diretoria: '   ' }, now), true);
+  assert.equal(textoMotivoNaOs('ajustes do sistema'), 'Não encaminhada à DHL. ajustes do sistema');
   assert.equal(HORA_MS, 30 * 60 * 1000);
 });
 
@@ -290,11 +294,18 @@ test('mapa público esconde OS, fornecedor e cliente e obedece o raio', () => {
   assert.equal(semLink.includes('FORNECEDOR'), false);
 });
 
-test('painel só para a operação interna', () => {
+test('painel DHL só para operador, avançado e administrador', () => {
   assert.equal(podeVerPainelDhl({ role: 'operador' }), true);
+  assert.equal(podeVerPainelDhl({ role: 'Operador' }), true);
   assert.equal(podeVerPainelDhl({ role: 'avançado' }), true);
-  assert.equal(podeVerPainelDhl({ role: 'diretoria' }), true);
+  assert.equal(podeVerPainelDhl({ role: 'AVANÇADO' }), true);
+  assert.equal(podeVerPainelDhl({ role: 'administrador' }), true);
+  assert.equal(podeVerPainelDhl({ role: 'Administrador' }), true);
+  assert.equal(podeVerPainelDhl({ role: 'diretoria' }), false);
+  assert.equal(podeVerPainelDhl({ role: 'diretoria', permissions: ['*'] }), false);
+  assert.equal(podeVerPainelDhl({ role: 'financeiro' }), false);
   assert.equal(podeVerPainelDhl({ role: 'comercial' }), false);
+  assert.equal(podeVerPainelDhl({ role: 'controller' }), false);
   assert.equal(podeVerPainelDhl({ role: 'operador', userType: 'provider', providerId: '9' }), false);
   assert.equal(podeVerPainelDhl({ role: 'operador', clientId: '1' }), false);
   assert.equal(podeVerPainelDhl(null), false);

@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decidirPrimeiroAcesso, emailDeAcesso, gerarSenhaTemporaria, hashSenha, nomeDeAcesso, perfilDeAcesso, podeCadastrarPessoa, senhaConfere, validarSenha } from '../lib/cevaPortal/acesso';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { caminhoPortalDasPermissoes, decidirPrimeiroAcesso, deveTrocarSenhaPortal, DIAS_TROCA_SENHA_PORTAL, emailDeAcesso, gerarSenhaTemporaria, hashSenha, mensagemAcessoPortal, nomeDeAcesso, perfilDeAcesso, perfilPortalDasPermissoes, permissoesDoPortal, podeCadastrarPessoa, preservarSenhaPortal, senhaConfere, senhaPortalVencida, usuarioSoPortal, validarSenha } from '../lib/cevaPortal/acesso';
+import { sincronizarAcessoPortal } from '../lib/cevaPortal/cadastroSistema';
+import { portalPorNomeCliente } from '../lib/cevaPortal/portalServidor';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 test('só o administrador cadastra pessoa', () => {
   assert.equal(podeCadastrarPessoa('administrador'), true);
@@ -9,15 +16,12 @@ test('só o administrador cadastra pessoa', () => {
   assert.equal(podeCadastrarPessoa(null), false);
 });
 
-test('o primeiro acesso cria o administrador quando ainda não existe ninguém', () => {
-  const decisao = decidirPrimeiroAcesso({ existeAdministrador: false });
-  assert.deepEqual(decisao, { ok: true, acao: 'criar-administrador' });
-});
-
-test('com administrador, a senha não é escolhida na tela: ela vem por e-mail', () => {
-  const decisao = decidirPrimeiroAcesso({ existeAdministrador: true });
-  assert.equal(decisao.ok, false);
-  if (!decisao.ok) assert.match(decisao.error, /e-mail/);
+test('o primeiro acesso público não cria administrador', () => {
+  const semAdmin = decidirPrimeiroAcesso({ existeAdministrador: false });
+  const comAdmin = decidirPrimeiroAcesso({ existeAdministrador: true });
+  assert.equal(semAdmin.ok, false);
+  assert.equal(comAdmin.ok, false);
+  assert.match(semAdmin.error, /Cadastro de Usuários/);
 });
 
 test('a senha temporária cabe na regra e não repete o gerador à toa', () => {
@@ -34,6 +38,111 @@ test('senha curta é recusada e a senha gravada confere', () => {
   assert.equal(senhaConfere('segredo12', hash), true);
   assert.equal(senhaConfere('outra-senha', hash), false);
   assert.equal(senhaConfere('segredo12', null), false);
+});
+
+test('senha do portal vence em 30 dias e a troca obrigatória entra na hora', () => {
+  const agora = new Date('2026-10-07T12:00:00.000Z');
+  const recente = new Date(agora.getTime() - 29 * 24 * 60 * 60 * 1000).toISOString();
+  const vencida = new Date(agora.getTime() - DIAS_TROCA_SENHA_PORTAL * 24 * 60 * 60 * 1000).toISOString();
+  assert.equal(senhaPortalVencida(recente, agora), false);
+  assert.equal(senhaPortalVencida(vencida, agora), true);
+  assert.equal(senhaPortalVencida(null, agora), false);
+  assert.equal(deveTrocarSenhaPortal({ trocarSenha: true, senhaAlteradaEm: recente, agora }), true);
+  assert.equal(deveTrocarSenhaPortal({ trocarSenha: false, senhaAlteradaEm: vencida, agora }), true);
+  assert.equal(deveTrocarSenhaPortal({ trocarSenha: false, senhaAlteradaEm: recente, agora }), false);
+});
+
+test('hash existente é preservado e a mensagem da Lara não traz senha nova', () => {
+  const hash = hashSenha('senha-da-lara');
+  assert.equal(preservarSenhaPortal(hash), true);
+  assert.equal(preservarSenhaPortal('texto-puro'), false);
+  assert.equal(preservarSenhaPortal(null), false);
+  const texto = mensagemAcessoPortal({
+    nome: 'Lara Borba',
+    email: 'ext.lara.borba@cevalogistics.com',
+    senha: 'nao-usar',
+    rotulo: 'CEVA',
+    link: 'https://sistema.grupotmseg.com.br/ceva',
+    manteveSenha: true,
+  });
+  assert.match(texto, /ceva/i);
+  assert.match(texto, /30 dias/);
+  assert.doesNotMatch(texto, /nao-usar/);
+  assert.match(texto, /somente as informações deste cliente/);
+});
+
+test('portal reconhece CEVA e IBL e o acesso fica só neles', () => {
+  assert.equal(portalPorNomeCliente('CEVA LOGISTICS LTDA')?.caminho, '/ceva');
+  assert.equal(portalPorNomeCliente('INTERMODAL BRASIL LOGISTICA S.A.')?.caminho, '/ibl');
+  assert.equal(portalPorNomeCliente('DHL') , null);
+  const perms = permissoesDoPortal('/ibl', 'administrador');
+  assert.equal(usuarioSoPortal(perms), true);
+  assert.equal(caminhoPortalDasPermissoes(perms), '/ibl');
+  assert.equal(perfilPortalDasPermissoes(perms), 'administrador');
+  assert.equal(usuarioSoPortal(['dashboard', 'missions']), false);
+});
+
+test('cadastro que já tem senha no portal não troca o hash', async () => {
+  const hash = hashSenha('senha-da-lara');
+  const tabelas = new Map<string, Record<string, unknown>>([
+    ['system_users', { id: '9', email: 'ext.lara.borba@cevalogistics.com', client_id: 'c1', user_type: 'client', permissions: [] }],
+    ['ceva_portal_usuarios', { id: 14, email: 'ext.lara.borba@cevalogistics.com', senha_hash: hash }],
+  ]);
+  const sb = {
+    from(tabela: string) {
+      const linha = tabelas.get(tabela)!;
+      const cadeia: Record<string, unknown> = {
+        select() { return cadeia; },
+        eq() { return cadeia; },
+        ilike() { return cadeia; },
+        maybeSingle: async () => ({ data: { ...linha }, error: null }),
+        update(dados: Record<string, unknown>) {
+          if (tabela === 'ceva_portal_usuarios' && 'senha_hash' in dados) throw new Error('hash da Lara foi alterado');
+          Object.assign(linha, dados);
+          return cadeia;
+        },
+        insert() { throw new Error('não deveria inserir outra Lara'); },
+        single: async () => ({ data: { ...linha }, error: null }),
+      };
+      return cadeia;
+    },
+  };
+  const resultado = await sincronizarAcessoPortal(sb, {
+    clientId: 'c1',
+    nome: 'Lara Borba',
+    email: 'ext.lara.borba@cevalogistics.com',
+    senha: 'senha-nova-que-nao-entra',
+    perfil: 'administrador',
+    ativo: true,
+    systemUserId: '9',
+    acesso: true,
+    tabela: 'ceva_portal_usuarios',
+    caminho: '/ceva',
+  });
+  assert.equal(resultado.ok, true);
+  if (resultado.ok) assert.equal(resultado.manteveSenha, true);
+  assert.equal(tabelas.get('ceva_portal_usuarios')?.senha_hash, hash);
+  assert.equal(usuarioSoPortal(tabelas.get('system_users')?.permissions), true);
+  assert.equal(caminhoPortalDasPermissoes(tabelas.get('system_users')?.permissions), '/ceva');
+});
+
+test('tela e login prendem o usuário ao portal do próprio cliente', () => {
+  const form = readFileSync(join(root, 'components/UserForm.tsx'), 'utf8');
+  const login = readFileSync(join(root, 'components/Login.tsx'), 'utf8');
+  const app = readFileSync(join(root, 'App.tsx'), 'utf8');
+  const http = readFileSync(join(root, 'lib/cevaPortal/httpHandler.ts'), 'utf8');
+  assert.match(form, /Acesso ao portal/);
+  assert.match(form, /checkbox-acesso-portal/);
+  assert.match(form, /Não administrador/);
+  assert.match(form, /mensagemAcessoPortal/);
+  assert.match(form, /import React/);
+  assert.match(login, /usuarioSoPortal/);
+  assert.match(login, /import React/);
+  assert.match(app, /Acesso somente ao portal do cliente/);
+  assert.match(http, /deveTrocarSenhaPortal/);
+  assert.match(http, /senha_alterada_em/);
+  assert.match(http, /cfg\(\)\.clienteNome|carregarClienteDoPortal/);
+  assert.doesNotMatch(http, /senha_hash: hashSenha\(senhaNova\), trocar_senha: false, atualizado_em/);
 });
 
 test('e-mail, nome e perfil entram normalizados', () => {

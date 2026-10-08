@@ -103,6 +103,14 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
           item.mission_id === missionId ? { ...item, status: 'confirmado' } : item
         )));
       }
+      if (missionId && payload.status === 'observacao') {
+        const observacao = String(payload.observacao || '').trim();
+        setRows((prev) => prev.map((item) => (
+          item.mission_id === missionId
+            ? { ...item, observacao_diretoria: observacao || item.observacao_diretoria || 'gravado' }
+            : item
+        )));
+      }
       void load(false);
     };
     window.addEventListener(MISSION_LIVE_WINDOW_EVENT, onLive);
@@ -228,12 +236,22 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
   };
 
   const salvarNota = async (row: AlertaDhl) => {
+    const motivo = String(notas[row.mission_id] || '').trim();
+    if (!motivo) {
+      showNotification('Diretoria', 'Escreva o motivo antes de salvar.', 'warning');
+      return;
+    }
     setSalvandoNota(row.mission_id);
-    const ok = await salvarObservacaoDhl(row.mission_id, notas[row.mission_id] || '');
+    const ok = await salvarObservacaoDhl(row.mission_id, motivo);
     setSalvandoNota(null);
+    if (ok) {
+      setRows((prev) => prev.map((item) => (
+        item.mission_id === row.mission_id ? { ...item, observacao_diretoria: motivo } : item
+      )));
+    }
     showNotification(
       'Diretoria',
-      ok ? 'Motivo gravado.' : 'Não foi possível gravar o motivo.',
+      ok ? 'Motivo gravado na OS. Saiu desta lista.' : 'Não foi possível gravar o motivo na OS.',
       ok ? 'success' : 'error',
     );
   };

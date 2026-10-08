@@ -87,7 +87,7 @@ export const AcessoCeva: React.FC<{ onEntrar: (sessao: SessaoCeva) => void }> = 
   const texto = modo === 'login'
     ? 'Use o e-mail liberado e a sua senha.'
     : modo === 'primeiro' && temAdministrador === false
-      ? 'Ainda não há administrador. Este cadastro passa a cuidar do portal e a liberar as outras pessoas.'
+      ? 'O acesso nasce no Cadastro de Usuários do cliente, com a opção Acesso ao portal.'
       : modo === 'primeiro'
         ? 'A senha temporária chega no e-mail quando o administrador libera o acesso. No primeiro login a troca é obrigatória.'
         : 'Entre com a senha. Se o administrador acabou de liberar, use a senha do e-mail e troque no primeiro acesso.';
@@ -158,7 +158,11 @@ export const AcessoCeva: React.FC<{ onEntrar: (sessao: SessaoCeva) => void }> = 
             <button type="button" onClick={() => { setModo('login'); setErro(''); }} className="mt-6 h-12 w-full rounded-2xl bg-[var(--portal-acao)] text-sm font-bold text-white">Entrar com a senha do e-mail</button>
           )}
 
-          {modo !== 'escolha' && !(modo === 'primeiro' && temAdministrador !== false) && (
+          {modo === 'primeiro' && temAdministrador === false && (
+            <p className="mt-6 rounded-2xl bg-white px-4 py-3 text-sm text-slate-700">O acesso é criado no Cadastro de Usuários do cliente, com a opção Acesso ao portal. Peça a liberação à equipe da TM SEG.</p>
+          )}
+
+          {modo === 'login' && (
             <form onSubmit={(event) => void enviar(event)} className="mt-2">
               {modo === 'primeiro' && temAdministrador === false && (
                 <label className={CAMPO}>Nome

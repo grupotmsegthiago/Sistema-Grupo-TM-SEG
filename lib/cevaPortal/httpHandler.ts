@@ -6,7 +6,6 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 import { PORTAL_CEVA, PORTAL_IBL, type PortalServidor } from './portalServidor.js';
 import {
-  decidirPrimeiroAcesso,
   emailDeAcesso,
   gerarSenhaTemporaria,
   hashSenha,
@@ -18,11 +17,19 @@ import {
   type PerfilCeva,
 } from './acesso.js';
 import {
+  caminhoPortalDasPermissoes,
+  decidirPrimeiroAcesso,
+  deveTrocarSenhaPortal,
+  mensagemAcessoPortal,
+  usuarioSoPortal,
+} from './regrasAcesso.js';
+import { alinharStatusCadastroPortal, colunaSenhaAlteradaAusente, vincularCadastroCliente } from './cadastroSistema.js';
+import {
   buildCevaSolicitacao,
   CEVA_PORTAL_LOGIN_ENABLED,
   type CevaPortalSession,
 } from './rules.js';
-import { sendCevaPortalAccessEmail } from './emailAcesso.js';
+import { sendCevaPortalAccessEmail, systemAppUrl } from './emailAcesso.js';
 import type { CevaBoletimMission } from './report.js';
 import type { CampoFiltro } from './camposCliente.js';
 // Imports pesados (billing/report/ao-vivo) entram via import() dinâmico nas ops
@@ -106,11 +113,34 @@ function usuarioPublico(row: { id: number | string; nome: string; email: string;
   };
 }
 
-function sessaoDe(row: { id: number | string; nome: string; email: string; perfil: string; trocar_senha?: boolean | null }): PortalUser | null {
+function sessaoDe(row: { id: number | string; nome: string; email: string; perfil: string; trocar_senha?: boolean | null; senha_alterada_em?: string | null }): PortalUser | null {
   const perfil = perfilDeAcesso(row.perfil);
   if (!perfil) return null;
-  const user = usuarioPublico({ ...row, perfil, trocarSenha: row.trocar_senha === true });
-  return { ...user, perfil, trocarSenha: user.trocarSenha };
+  const trocarSenha = deveTrocarSenhaPortal({
+    trocarSenha: row.trocar_senha === true,
+    senhaAlteradaEm: row.senha_alterada_em,
+  });
+  const user = usuarioPublico({ ...row, perfil, trocarSenha });
+  return { ...user, perfil, trocarSenha };
+}
+
+async function lerUsuarioPortal(
+  sb: NonNullable<ReturnType<typeof createSupabaseAdminClient>>,
+  filtro: { id?: string; email?: string },
+  comSenha: boolean,
+) {
+  const base = comSenha
+    ? 'id, nome, email, senha_hash, perfil, status, trocar_senha'
+    : 'id, nome, email, perfil, status, trocar_senha';
+  const consulta = (colunas: string) => {
+    let query = sb.from(cfg().tabelas.usuarios).select(colunas);
+    if (filtro.id) query = query.eq('id', filtro.id);
+    if (filtro.email) query = query.eq('email', filtro.email);
+    return query.maybeSingle();
+  };
+  const completo = await consulta(`${base}, senha_alterada_em`);
+  if (!colunaSenhaAlteradaAusente(completo.error)) return completo;
+  return consulta(base);
 }
 
 function sessaoAberta(): PortalUser {
@@ -129,11 +159,8 @@ async function portalSession(req: any): Promise<PortalUser | null> {
   const sb = createSupabaseAdminClient();
   if (!sb) return null;
 
-  const { data: user } = await sb
-    .from(cfg().tabelas.usuarios)
-    .select('id, nome, email, perfil, status, trocar_senha')
-    .eq('id', userId)
-    .maybeSingle();
+  const { data: user, error } = await lerUsuarioPortal(sb, { id: userId }, false);
+  if (error) return null;
   if (!user || user.status !== 'ativo') return cfg().exigeLogin ? null : sessaoAberta();
   return sessaoDe(user);
 }
@@ -150,7 +177,7 @@ function exigirUso(res: any, session: PortalUser | null): session is PortalUser 
     return false;
   }
   if (session.trocarSenha) {
-    res.status(403).json({ error: 'Troque a senha enviada por e-mail para continuar.', trocarSenha: true });
+    res.status(403).json({ error: 'Troque a senha para continuar. A troca é obrigatória no primeiro acesso e a cada 30 dias.', trocarSenha: true });
     return false;
   }
   return true;
@@ -493,11 +520,12 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         res.status(503).json({ error: 'Portal indisponível.' });
         return;
       }
-      const { data: user } = await sb
-        .from(cfg().tabelas.usuarios)
-        .select('id, nome, email, senha_hash, perfil, status, trocar_senha')
-        .eq('email', email)
-        .maybeSingle();
+      const { data: user, error: erroUsuario } = await lerUsuarioPortal(sb, { email }, true);
+      if (erroUsuario) {
+        console.error(`[${cfg().logPrefix}] login`, erroUsuario.message || erroUsuario);
+        res.status(500).json({ error: 'Não foi possível entrar.' });
+        return;
+      }
       if (!user || !senhaConfere(senha, user.senha_hash)) {
         registerFailure(key);
         res.status(401).json({ error: INVALID_LOGIN });
@@ -511,6 +539,25 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         res.status(403).json({ error: 'O administrador ainda não liberou este acesso.' });
         return;
       }
+      const { data: sistema } = await sb
+        .from('system_users')
+        .select('id, status, client_id, user_type, permissions')
+        .ilike('email', email)
+        .maybeSingle();
+      if (sistema) {
+        const clienteDoLogin = await carregarClienteDoPortal(sb);
+        const mesmoCliente = Boolean(clienteDoLogin?.id) && String(sistema.client_id || '') === String(clienteDoLogin.id);
+        const tipo = String(sistema.user_type || '');
+        const internoOuFornecedor = tipo === 'internal' || tipo === 'provider';
+        if (sistema.status !== 'Ativo' || internoOuFornecedor || !mesmoCliente) {
+          res.status(403).json({ error: 'Este acesso não está liberado no Cadastro de Usuários deste cliente.' });
+          return;
+        }
+        if (usuarioSoPortal(sistema.permissions) && caminhoPortalDasPermissoes(sistema.permissions) !== cfg().caminho) {
+          res.status(403).json({ error: 'Este acesso não está liberado no Cadastro de Usuários deste cliente.' });
+          return;
+        }
+      }
       const session = sessaoDe(user);
       if (!session) {
         res.status(401).json({ error: INVALID_LOGIN });
@@ -522,68 +569,13 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
     }
 
     if (op === 'primeiro-acesso' && method === 'POST') {
-      const email = emailDeAcesso(body?.email);
-      const senha = String(body?.senha || '');
-      const confirmacao = String(body?.confirmacao || '');
-      const key = `${clientIp(req)}|primeiro|${email || ''}`;
+      const key = `${clientIp(req)}|primeiro|${emailDeAcesso(body?.email) || ''}`;
       if (tooManyAttempts(key)) {
         res.status(429).json({ error: 'Muitas tentativas. Aguarde alguns minutos.' });
         return;
       }
-      if (!email) {
-        res.status(400).json({ error: 'Informe um e-mail válido.' });
-        return;
-      }
-      const senhaInvalida = validarSenha(senha);
-      if (senhaInvalida) {
-        res.status(400).json({ error: senhaInvalida });
-        return;
-      }
-      if (senha !== confirmacao) {
-        res.status(400).json({ error: 'A confirmação da senha não confere.' });
-        return;
-      }
-      const sb = createSupabaseAdminClient();
-      if (!sb) {
-        res.status(503).json({ error: 'Portal indisponível.' });
-        return;
-      }
-      try {
-        const decisao = decidirPrimeiroAcesso({ existeAdministrador: await existeAdministrador(sb) });
-        if (!decisao.ok) {
-          res.status(403).json({ error: decisao.error });
-          return;
-        }
-        const nome = nomeDeAcesso(body?.nome);
-        if (!nome) {
-          res.status(400).json({ error: 'Informe o nome do administrador.' });
-          return;
-        }
-        if (await existeAdministrador(sb)) {
-          res.status(409).json({ error: 'O administrador já foi criado. Use o login.' });
-          return;
-        }
-        const { data: criado, error } = await sb
-          .from(cfg().tabelas.usuarios)
-          .insert({ nome, email, senha_hash: hashSenha(senha), perfil: 'administrador', status: 'ativo', trocar_senha: false })
-          .select('id, nome, email, perfil, trocar_senha')
-          .single();
-        if (error || !criado) {
-          console.error(`[${cfg().logPrefix}] primeiro administrador`, error?.message);
-          res.status(500).json({ error: 'Não foi possível criar o administrador.' });
-          return;
-        }
-        const session = sessaoDe(criado);
-        if (!session) {
-          res.status(500).json({ error: 'Não foi possível criar o administrador.' });
-          return;
-        }
-        clearFailures(key);
-        res.status(201).json({ token: tokenDoPortal(criado.id), user: session });
-      } catch (error) {
-        console.error(`[${cfg().logPrefix}] primeiro acesso`, error instanceof Error ? error.message : error);
-        res.status(500).json({ error: 'Não foi possível concluir o primeiro acesso.' });
-      }
+      const decisao = decidirPrimeiroAcesso();
+      res.status(403).json({ error: decisao.error });
       return;
     }
 
@@ -629,10 +621,18 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         res.status(401).json({ error: 'A senha atual não confere.' });
         return;
       }
-      const { error } = await sb
-        .from(cfg().tabelas.usuarios)
-        .update({ senha_hash: hashSenha(senhaNova), trocar_senha: false, atualizado_em: new Date().toISOString() })
-        .eq('id', session.id);
+      const agora = new Date().toISOString();
+      const troca = {
+        senha_hash: hashSenha(senhaNova),
+        trocar_senha: false,
+        senha_alterada_em: agora,
+        atualizado_em: agora,
+      };
+      let { error } = await sb.from(cfg().tabelas.usuarios).update(troca).eq('id', session.id);
+      if (colunaSenhaAlteradaAusente(error)) {
+        const { senha_alterada_em: _ignorado, ...semData } = troca;
+        ({ error } = await sb.from(cfg().tabelas.usuarios).update(semData).eq('id', session.id));
+      }
       if (error) {
         res.status(500).json({ error: 'Não foi possível trocar a senha.' });
         return;
@@ -704,11 +704,22 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         return;
       }
       const senhaTemporaria = gerarSenhaTemporaria();
-      const { data, error } = await sb
-        .from(cfg().tabelas.usuarios)
-        .insert({ nome, email, perfil, status: 'ativo', trocar_senha: true, senha_hash: hashSenha(senhaTemporaria), criado_por: Number(session.id) })
-        .select('id, nome, email, perfil, status, trocar_senha')
-        .single();
+      const criador = Number(session.id);
+      const novo = {
+        nome,
+        email,
+        perfil,
+        status: 'ativo',
+        trocar_senha: true,
+        senha_hash: hashSenha(senhaTemporaria),
+        senha_alterada_em: null,
+        criado_por: Number.isInteger(criador) ? criador : null,
+      };
+      let { data, error } = await sb.from(cfg().tabelas.usuarios).insert(novo).select('id, nome, email, perfil, status, trocar_senha').single();
+      if (colunaSenhaAlteradaAusente(error)) {
+        const { senha_alterada_em: _ignorado, ...semData } = novo;
+        ({ data, error } = await sb.from(cfg().tabelas.usuarios).insert(semData).select('id, nome, email, perfil, status, trocar_senha').single());
+      }
       if (error?.code === '23505') {
         res.status(409).json({ error: 'Este e-mail já está cadastrado.' });
         return;
@@ -717,14 +728,33 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         res.status(500).json({ error: 'Não foi possível liberar o acesso.' });
         return;
       }
-      const enviou = await sendCevaPortalAccessEmail({ nome, email, senhaTemporaria, rotulo: cfg().rotulo, caminho: cfg().caminho });
-      if (!enviou) {
+      const cliente = await carregarClienteDoPortal(sb);
+      if (!cliente?.id) {
         await sb.from(cfg().tabelas.usuarios).delete().eq('id', data.id);
-        res.status(503).json({ error: 'Não foi possível enviar o e-mail. O acesso não foi liberado.' });
+        res.status(503).json({ error: `Cliente ${cfg().clienteBusca || cfg().rotulo} não encontrado.` });
         return;
       }
+      const vinculo = await vincularCadastroCliente(sb, {
+        nome,
+        email,
+        senhaTemporaria,
+        clientId: cliente.id,
+        caminho: cfg().caminho,
+        perfil,
+        ativo: true,
+      });
+      if (!vinculo.ok) {
+        await sb.from(cfg().tabelas.usuarios).delete().eq('id', data.id);
+        res.status(409).json({ error: vinculo.error });
+        return;
+      }
+      const enviou = await sendCevaPortalAccessEmail({ nome, email, senhaTemporaria, rotulo: cfg().rotulo, caminho: cfg().caminho });
+      const link = systemAppUrl(cfg().caminho);
       res.status(201).json({
         pessoa: { id: data.id, nome: data.nome, email: data.email, perfil: data.perfil, status: data.status, trocarSenha: true },
+        senhaTemporaria,
+        emailEnviado: enviou,
+        mensagem: mensagemAcessoPortal({ nome, email, senha: senhaTemporaria, rotulo: cfg().rotulo, link, manteveSenha: false }),
       });
       return;
     }
@@ -777,6 +807,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         res.status(500).json({ error: 'Não foi possível alterar a pessoa.' });
         return;
       }
+      if (data.email) await alinharStatusCadastroPortal(sb, String(data.email), proximo === 'ativo');
       res.status(200).json({ pessoa: data });
       return;
     }

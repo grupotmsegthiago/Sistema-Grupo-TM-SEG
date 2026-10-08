@@ -1,5 +1,51 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## TM0810 — BOLETIM CESLOG, 2ª QUINZENA DE SETEMBRO/2026
+
+**Data:** 2026-10-08
+**Pedido:** explicar por que a soma das linhas do Excel fica R$ 83,66 abaixo do total R$ 107.853,60.
+
+**Achado:** o total do rodapé está certo. A diferença inteira é a OS **GTM-8231**. A linha mostra o snapshot congelado de R$ 699,84. O total soma a receita atual R$ 769,82 mais o pedágio R$ 13,68 = R$ 783,50. 783,50 − 699,84 = 83,66 (KM extra R$ 69,98 + pedágio R$ 13,68). As outras 70 OS fecham. Não é arredondamento.
+
+**O que mudou:** a linha do boletim de cliente passa a usar receita + pedágio + deslocamento atuais quando o snapshot congelado divergiu dessa base. Snapshot que ainda coincide, e snapshot com base atual zerada, permanecem. Edição manual continua mandando na linha.
+
+**Não alterado:** gravação da OS, snapshot no banco, Asaas, eNotas, rodapé do boletim.
+
+## PAINEL DHL NA LISTA DE OS
+
+**Data:** 2026-10-07
+**Pedido:** a tela de viaturas DHL no painel de OS fica só para Operador, Avançado e Administrador.
+
+**O que mudou:** Diretoria, Financeiro, Comercial e Controller deixam de ver esse painel e os avisos ligados a ele. Quem abre a tela continua sendo Operador, Avançado e Administrador.
+
+**Não publicado.**
+
+## PONTO CLT — FACIAL DE VOLTA, SEM TRAVA DE HORÁRIO
+
+**Data:** 2026-10-07
+**Pedido:** funcionário CLT em RH / Funcionários volta a bater ponto com identificação facial. O horário do turno não bloqueia o uso do sistema.
+
+**O que mudou:** CLT ativo (ou em experiência), mesmo no perfil Avançado, passa de novo pela cobrança de entrada com facial. A batida continua liberada a qualquer hora. Diretoria, Administrador e o auditor Daniel seguem sem essa trava.
+
+**Não alterado:** sequência das quatro batidas, cálculo de OS, financeiro.
+
+## VS TRANSPORTES — REFERÊNCIA DE PEDIDOS NO BOLETIM
+
+**Data:** 2026-10-07
+**Pedido:** só para a VS TRANSPORTES, o time informa a Referência de Pedidos na OS (ex.: 303185 / 303189) e essa coluna aparece no boletim de medição. OS já concluídas e aprovadas também recebem o campo, para preencher e reenviar o boletim.
+
+**O que mudou:**
+- Cliente: `VS TRANSPORTES LTDA` (fantasia VS OPERADOR LOGISTICO, id 80).
+- Campo na criação da OS (`MissionForm`), na edição (`UpdateMissionModal`) e na Auditoria de Faturamento (`MissionFinancialModal`), gravado em `missions.reference_number` (coluna que já existia).
+- OS concluída e aprovada: na auditoria, o botão **Salvar referência** grava só esse número, mesmo com o faturamento travado. Quem não pode alterar o restante da OS ainda consegue salvar só essa referência.
+- Boletim de medição do cliente (tela, Excel e PDF) ganha a coluna **REF. PEDIDOS**. O PDF sai do mesmo HTML.
+
+**Não alterado:** cálculo da OS, aprovação, snapshot financeiro, Asaas, eNotas, colunas de CESLOG/DHL/CEVA/INTERMODAL, boletim de fornecedor.
+
+**Testes:** `npx tsx --test scripts/vs-transportes-pedido.test.ts`
+
+**Pendência:** as OS já aprovadas com a referência vazia são preenchidas na Auditoria de Faturamento (campo ciano no topo) e o boletim é gerado de novo.
+
 ## GTM-6482: 100% SEM MAPA E SEM FOTO
 
 **Data:** 2026-10-06

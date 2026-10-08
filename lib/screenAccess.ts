@@ -17,6 +17,7 @@ import {
 import { canAccessMissionReport } from './missionReportAccess';
 import { canViewOsAnalysisPendencies } from './osAnalysisAccess';
 import { APROVACOES_PENDENTES_SCREEN, canViewAprovacoesPendentes } from './aprovacoesPendentesAccess';
+import { canViewRankingDhl } from './rankingDhlAccess';
 import { isPerfilAvancado, telaFinanceiraOcultaParaAvancado } from './avancadoFinanceBlock';
 
 export type ScreenAccessUser = {
@@ -198,9 +199,21 @@ export function canAccessScreen(user: ScreenAccessUser | null | undefined, scree
     return canViewAprovacoesPendentes(user);
   }
 
+  // Ranking DHL (prêmio): só Diretoria e Financeiro. O link some para os demais.
+  if (screenId === 'ranking-dhl') {
+    return canViewRankingDhl(user);
+  }
+
   // Relatório de OS: helper já inclui permissão `mission-report` + allowlist.
   if (screenId === 'mission-report') {
     return canAccessMissionReport(user);
+  }
+
+  // Cadastro de Viaturas é operacional (inclusive vínculo para a DHL).
+  // O perfil Financeiro não usa essa tela.
+  if (resolvePermissionId(screenId) === 'provider-vehicles') {
+    const role = (user.role || '').toLowerCase();
+    if (role === 'financeiro') return false;
   }
 
   // Grupos do menu: visível somente se algum filho estiver acessível.

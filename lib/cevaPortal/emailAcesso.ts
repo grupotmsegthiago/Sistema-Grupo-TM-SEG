@@ -4,7 +4,7 @@ function escapar(valor: string): string {
   return valor.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function systemAppUrl(path: string): string {
+export function systemAppUrl(path: string): string {
   const base = process.env.SYSTEM_URL
     || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'sistema.grupotmseg.com.br'}`;
   return `${base.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`;
@@ -23,7 +23,7 @@ export async function sendCevaPortalAccessEmail(input: {
   const html = `<!DOCTYPE html><html lang="pt-BR"><body style="font-family:Segoe UI,Arial,sans-serif;color:#333;line-height:1.6">
     <h2>Acesso ao Controle de Escolta</h2>
     <p>Olá, <strong>${escapar(input.nome)}</strong>.</p>
-    <p>O administrador liberou o seu acesso ao controle de escolta da ${escapar(rotulo)}. Use a senha temporária abaixo e troque-a no primeiro acesso.</p>
+    <p>O administrador liberou o seu acesso ao controle de escolta da ${escapar(rotulo)}. Use a senha temporária abaixo, troque-a no primeiro acesso e repita a troca a cada 30 dias. O portal mostra somente este cliente.</p>
     <p><strong>Link:</strong> <a href="${link}">${link}</a><br>
     <strong>E-mail:</strong> ${escapar(input.email)}<br>
     <strong>Senha temporária:</strong> <code>${escapar(input.senhaTemporaria)}</code></p>

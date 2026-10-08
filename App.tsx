@@ -8,6 +8,7 @@ import IdlePresenceGuard from './components/IdlePresenceGuard';
 import Login from './components/Login';
 import ResetPassword from './components/ResetPassword';
 import { APP_VERSION } from './constants';
+import { caminhoPortalDasPermissoes, usuarioSoPortal } from './lib/cevaPortal/regrasAcesso';
 import { supabase } from './lib/supabase';
 import { RefreshCw } from 'lucide-react';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -132,6 +133,7 @@ import {
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { canAccessMissionReport } from './lib/missionReportAccess';
+import { canViewRankingDhl } from './lib/rankingDhlAccess';
 import { canAccessDiretoriaMenu, canAccessComissoesComerciais, canAccessFaturamentoDiretoria } from './lib/diretoriaAccess';
 import { canViewOsAnalysisPendencies } from './lib/osAnalysisAccess';
 import OsAnalysisPendingPage from './components/OsAnalysisPendingPage';
@@ -549,6 +551,21 @@ const App: React.FC = () => {
   }
   
   if (!isAuthenticated) { return <Login onLogin={handleLogin} />; }
+
+  const guardado = getStoredUser();
+  const caminhoSoPortal = usuarioSoPortal(guardado?.permissions) ? caminhoPortalDasPermissoes(guardado.permissions) : null;
+  if (caminhoSoPortal) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
+        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow">
+          <h1 className="text-xl font-black text-slate-900">Acesso somente ao portal do cliente</h1>
+          <p className="mt-2 text-sm text-slate-600">Este usuário vê apenas as informações do cliente vinculado. O restante do sistema fica fechado.</p>
+          <a href={caminhoSoPortal} className="mt-5 inline-flex h-11 items-center justify-center rounded-xl bg-black px-4 text-sm font-bold text-white">Abrir o portal</a>
+          <button type="button" onClick={() => void handleLogout()} className="mt-3 block text-sm font-semibold text-slate-500">Sair</button>
+        </div>
+      </div>
+    );
+  }
   
   if (needsPasswordChange) { return <ChangePasswordModal onSuccess={handlePasswordChanged} />; }
 
@@ -730,9 +747,7 @@ const App: React.FC = () => {
       }
       case 'ranking-dhl': {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
-        const rl = (u.role || '').toLowerCase();
-        const allowed = rl === 'avançado' || rl === 'avancado' || rl === 'diretoria' || rl === 'administrador';
-        return allowed ? <RankingDHL /> : <Dashboard />;
+        return canViewRankingDhl(u) ? <RankingDHL /> : <Dashboard />;
       }
       case 'support-network': return <SupportMapFinder onNavigate={navigateTo} />;
       default: {

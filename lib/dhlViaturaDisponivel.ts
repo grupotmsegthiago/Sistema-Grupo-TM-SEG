@@ -135,7 +135,21 @@ export function visivelNoPainelVivo(alerta: Pick<AlertaDhl, 'status' | 'finaliza
   return false;
 }
 
-export function entraNaListaBloqueados(alerta: Pick<AlertaDhl, 'status' | 'finalizada_em'>, now: Date): boolean {
+/** Motivo já escrito sai da lista. O texto fica na observação da OS. */
+export function motivoJaGravado(observacao: string | null | undefined): boolean {
+  return String(observacao || '').trim().length > 0;
+}
+
+/** Frase que entra na observação da OS. O painel deixa de mostrar o aviso. */
+export function textoMotivoNaOs(motivo: string): string {
+  return `Não encaminhada à DHL. ${String(motivo || '').trim()}`;
+}
+
+export function entraNaListaBloqueados(
+  alerta: Pick<AlertaDhl, 'status' | 'finalizada_em'> & { observacao_diretoria?: string | null },
+  now: Date,
+): boolean {
+  if (motivoJaGravado(alerta.observacao_diretoria)) return false;
   if (alerta.status === 'expirado') return true;
   return alerta.status === 'pendente' && idadeMs(alerta.finalizada_em, now) >= HORA_MS;
 }
@@ -156,22 +170,13 @@ function papel(user: UsuarioPainel | null | undefined): string {
     .toLowerCase();
 }
 
-/** Operação interna. Cliente, comercial e fornecedor não veem o painel. */
+/** Painel de viaturas DHL na lista de OS: só Operador, Avançado e Administrador. */
 export function podeVerPainelDhl(user: UsuarioPainel | null | undefined): boolean {
   if (!user) return false;
   if (user.providerId || user.userType === 'provider') return false;
   if (user.clientId || user.userType === 'client') return false;
   const role = papel(user);
-  if (role.includes('comercial')) return false;
-  if (
-    role.includes('operador')
-    || role.includes('diretoria')
-    || role.includes('administrador')
-    || role.includes('avancado')
-    || role.includes('financeiro')
-    || role.includes('controller')
-  ) return true;
-  return !!user.permissions?.includes('*');
+  return role === 'operador' || role === 'avancado' || role === 'administrador' || role === 'admin';
 }
 
 export function podeAuditarNaoEncaminhados(user: { role?: string | null; profileName?: string | null; permissions?: string[] | null } | null | undefined): boolean {
@@ -602,16 +607,29 @@ export async function confirmarEnvioDhl(missionId: string, por: string): Promise
 }
 
 export async function salvarObservacaoDhl(missionId: string, texto: string): Promise<boolean> {
+  const motivo = String(texto || '').trim();
+  if (!missionId || !motivo) return false;
   try {
+    const noteRes = await authFetch('/api/controle-diario-notas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mission_id: missionId,
+        note: textoMotivoNaOs(motivo),
+        kind: 'observacao',
+      }),
+    });
+    if (!noteRes.ok) return false;
     const { error } = await supabase
       .from(TABELA_DHL_VIATURA)
       .update({
-        observacao_diretoria: texto.trim(),
+        observacao_diretoria: motivo,
         updated_at: new Date().toISOString(),
       })
       .eq('mission_id', missionId);
-    if (!error) avisarOutrasTelas({ missionId, status: 'observacao' });
-    return !error;
+    if (error) return false;
+    avisarOutrasTelas({ missionId, status: 'observacao', observacao: motivo });
+    return true;
   } catch {
     return false;
   }

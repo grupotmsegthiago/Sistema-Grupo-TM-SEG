@@ -44,7 +44,7 @@ export const PORTAL_IBL: PortalServidor = {
   headerSessao: 'x-ibl-portal',
   logPrefix: 'ibl-portal',
   caminho: '/ibl',
-  exigeLogin: false,
+  exigeLogin: true,
   tabelas: {
     usuarios: 'ibl_portal_usuarios',
     osCampos: 'ibl_portal_os_campos',
@@ -53,3 +53,16 @@ export const PORTAL_IBL: PortalServidor = {
     solicitacoes: 'ibl_escolta_solicitacoes',
   },
 };
+
+const PORTAIS_CLIENTE = [PORTAL_CEVA, PORTAL_IBL];
+
+/** Cliente com portal de escolta. Os demais clientes não ganham esta liberação. */
+export function portalPorNomeCliente(nome: string | null | undefined): PortalServidor | null {
+  const texto = String(nome || '').trim().toUpperCase();
+  if (!texto) return null;
+  const exato = PORTAIS_CLIENTE.find((portal) => portal.clienteNome.toUpperCase() === texto);
+  if (exato) return exato;
+  if (texto.includes('CEVA')) return PORTAL_CEVA;
+  if (texto.includes('INTERMODAL')) return PORTAL_IBL;
+  return null;
+}

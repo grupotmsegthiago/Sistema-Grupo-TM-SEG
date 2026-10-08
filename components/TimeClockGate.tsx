@@ -16,9 +16,9 @@ interface Props {
 }
 
 /**
- * Bloqueia o sistema até o operador bater a entrada (IN) do dia.
- * Diretoria e perfis sem obrigatoriedade de ponto passam direto.
- * Não há mais trava por horário de turno — a batida de entrada fica liberada a qualquer hora.
+ * Cobra a entrada (IN) do dia, com facial, antes de usar o sistema.
+ * CLT do RH entra nessa cobrança. Diretoria, Administrador e quem não é CLT/operador passam direto.
+ * Horário de turno não trava: a batida vale a qualquer hora, inclusive no horário normal.
  */
 const TimeClockGate: React.FC<Props> = ({ onLogout, onCleared, children }) => {
   const [loading, setLoading] = useState(true);
