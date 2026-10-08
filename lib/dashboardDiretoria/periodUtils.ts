@@ -1,5 +1,6 @@
 import type { DashboardPeriod, DashboardPeriodMode } from './types';
 import type { FinancialTransaction } from '../../types';
+import { extractAsaasReceiptDetails } from '../asaasReceiptDetails';
 import { formatIsoDateBR } from '../dateUtils';
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -14,6 +15,10 @@ export function getCalendarPartsBR(now = new Date()): { year: number; month: num
 /** Data de movimentação de caixa: pagamento quando PAID, senão vencimento. */
 export function getCashMovementDate(t: FinancialTransaction): string {
   if (t.status === 'PAID') {
+    const receipt = extractAsaasReceiptDetails(t.notes);
+    if (receipt?.availability === 'AVAILABLE' && receipt.creditDate) {
+      return receipt.creditDate;
+    }
     const paid = String(t.payment_date || '').slice(0, 10);
     if (paid) return paid;
   }

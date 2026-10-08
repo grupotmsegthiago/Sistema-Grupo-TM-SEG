@@ -5,6 +5,8 @@ import { FinancialTransaction, FinancialCategory } from '../types';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { formatIsoDateBR, formatDateBR } from '../lib/dateUtils';
 import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
+import { getGrossReceivedAmount } from '../lib/financial/transactionAmounts';
+import { getCashMovementDate } from '../lib/dashboardDiretoria/periodUtils';
 import { 
     FileText, Calendar, DollarSign, Download, Printer, Filter, 
     ArrowUpCircle, ArrowDownCircle, ShieldAlert, Loader2, Search, TrendingUp, User,
@@ -171,7 +173,9 @@ const FinancialReport: React.FC = () => {
         };
         const [rangeStart, rangeEnd] = getRange();
         return nonInvestTx.filter(t => {
-            const d = t.due_date.split('T')[0];
+            const d = t.status === 'PAID' && t.payment_date
+                ? getCashMovementDate(t)
+                : t.due_date.split('T')[0];
             return d >= rangeStart && d <= rangeEnd;
         });
     }, [nonInvestTx, viewPeriod, today, todayStr]);
@@ -260,7 +264,7 @@ const FinancialReport: React.FC = () => {
     const paidIncome = useMemo(() => periodFilteredTx.filter(t => t.type === 'INCOME' && t.status === 'PAID'), [periodFilteredTx]);
     const paidExpense = useMemo(() => periodFilteredTx.filter(t => t.type === 'EXPENSE' && t.status === 'PAID'), [periodFilteredTx]);
 
-    const totalRecebido = useMemo(() => paidIncome.reduce((a, t) => a + t.amount, 0), [paidIncome]);
+    const totalRecebido = useMemo(() => paidIncome.reduce((a, t) => a + getGrossReceivedAmount(t), 0), [paidIncome]);
     const totalPago = useMemo(() => paidExpense.reduce((a, t) => a + t.amount, 0), [paidExpense]);
     const totalAReceber = useMemo(() => aReceberFuture.reduce((a, t) => a + t.amount, 0), [aReceberFuture]);
     const totalAPagar = useMemo(() => aPagarFuture.reduce((a, t) => a + t.amount, 0), [aPagarFuture]);
@@ -573,7 +577,7 @@ const FinancialReport: React.FC = () => {
                                                         </span>
                                                     </td>
                                                     <td className={`px-4 py-2 text-right font-mono font-bold text-xs ${item.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
-                                                        {item.type === 'INCOME' ? '+' : '-'} {formatCurrency(item.amount)}
+                                                        {item.type === 'INCOME' ? '+' : '-'} {formatCurrency(item.type === 'INCOME' && item.status === 'PAID' ? getGrossReceivedAmount(item) : item.amount)}
                                                     </td>
                                                 </tr>
                                             );

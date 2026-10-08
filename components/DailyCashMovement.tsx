@@ -4,6 +4,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { FinancialTransaction, FinancialAccount } from '../types';
+import { getNetCreditedAmount } from '../lib/financial/transactionAmounts';
+import { fetchAllPages } from '../lib/supabasePaging';
+import { getCashMovementDate } from '../lib/dashboardDiretoria/periodUtils';
 import { 
     Calendar, ArrowUpCircle, ArrowDownCircle, Landmark, 
     RefreshCw, Loader2, Printer, Search, Building2,
@@ -37,17 +40,24 @@ const DailyCashMovement: React.FC = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [accsRes, transRes] = await Promise.all([
+            const [accsRes, transResult] = await Promise.all([
                 supabase.from('financial_accounts').select('*').order('name'),
-                supabase.from('financial_transactions')
-                    .select('*')
-                    .gte('due_date', startDate)
-                    .lte('due_date', endDate)
-                    .order('due_date', { ascending: false })
+                fetchAllPages<FinancialTransaction>(async (from, size) => {
+                    const { data, error, count } = await supabase
+                        .from('financial_transactions')
+                        .select('*', { count: 'exact' })
+                        .eq('status', 'PAID')
+                        .order('id', { ascending: true })
+                        .range(from, from + size - 1);
+                    return { data: data as FinancialTransaction[] | null, error, count };
+                }),
             ]);
 
             if (accsRes.data) setAccounts(accsRes.data as any);
-            if (transRes.data) setTransactions(transRes.data as any);
+            setTransactions(transResult.rows.filter((transaction) => {
+                const date = getCashMovementDate(transaction);
+                return date >= startDate && date <= endDate;
+            }));
         } catch (e) {
             console.error(e);
         } finally {
@@ -72,7 +82,7 @@ const DailyCashMovement: React.FC = () => {
             const accId = t.account_id;
             if (accId && map[accId]) {
                 map[accId].transactions.push(t);
-                if (t.type === 'INCOME') map[accId].inflow += t.amount;
+                if (t.type === 'INCOME') map[accId].inflow += getNetCreditedAmount(t);
                 else map[accId].outflow += t.amount;
             }
         });

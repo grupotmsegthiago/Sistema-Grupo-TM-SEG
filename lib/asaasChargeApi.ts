@@ -164,6 +164,7 @@ export type AsaasPayment = {
   customerPaymentDate?: string | null;
   clientPaymentDate?: string | null;
   confirmedDate?: string | null;
+  creditDate?: string | null;
   externalReference?: string | null;
   invoiceUrl?: string;
   bankSlipUrl?: string;

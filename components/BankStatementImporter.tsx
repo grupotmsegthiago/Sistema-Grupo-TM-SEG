@@ -5,6 +5,7 @@ import { FinancialAccount, FinancialCategory, TransactionType } from '../types';
 import { useNotification } from '../lib/NotificationContext';
 import { generateContent } from '../lib/gemini';
 import { INTERNAL_TRANSFER_NOTE_TAG, isInternalGroupTransfer } from '../lib/financialInternalTransfer';
+import { getNetCreditedAmount } from '../lib/financial/transactionAmounts';
 
 interface Props {
   onClose: () => void;
@@ -149,8 +150,11 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
             .gte('due_date', ninetyDaysAgo);
 
           const reconciliation: ReconciliationItem[] = parsed.map((item: any) => {
-            const match = dbTrans?.find(db => 
-              Math.abs(db.amount - Math.abs(item.amount)) < 0.05 && 
+            const match = dbTrans?.find(db =>
+              Math.abs(
+                (db.type === 'INCOME' ? getNetCreditedAmount(db) : Number(db.amount || 0))
+                - Math.abs(item.amount),
+              ) < 0.05 &&
               db.type === item.type &&
               db.status === 'PAID'
             );

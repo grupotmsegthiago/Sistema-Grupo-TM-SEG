@@ -14,6 +14,7 @@ export type AsaasReceiptPayment = {
   customerPaymentDate?: string | null;
   clientPaymentDate?: string | null;
   confirmedDate?: string | null;
+  creditDate?: string | null;
   externalReference?: string | null;
 };
 
@@ -27,6 +28,8 @@ export type AsaasReceiptDetails = {
   netAmount: number | null;
   feeAmount: number;
   status: string;
+  creditDate: string | null;
+  availability: 'AVAILABLE' | 'SCHEDULED' | 'UNKNOWN';
 };
 
 function money(value: unknown): number | null {
@@ -69,6 +72,13 @@ export function normalizeAsaasReceipt(payment: AsaasReceiptPayment): AsaasReceip
   const feeAmount = netAmount === null
     ? 0
     : Math.round(Math.max(0, paidAmount - netAmount) * 100) / 100;
+  const status = String(payment.status || '').toUpperCase();
+  const creditDate = dateOnly(payment?.creditDate);
+  const availability = ['RECEIVED', 'RECEIVED_IN_CASH'].includes(status)
+    ? 'AVAILABLE'
+    : status === 'CONFIRMED'
+      ? 'SCHEDULED'
+      : 'UNKNOWN';
 
   return {
     paymentId,
@@ -79,7 +89,9 @@ export function normalizeAsaasReceipt(payment: AsaasReceiptPayment): AsaasReceip
     discountAmount,
     netAmount,
     feeAmount,
-    status: String(payment.status || '').toUpperCase(),
+    status,
+    creditDate,
+    availability,
   };
 }
 
@@ -110,9 +122,16 @@ export function extractAsaasReceiptDetails(
   if (!match) return null;
   try {
     const parsed = JSON.parse(match[1]) as AsaasReceiptDetails;
-    return parsed?.paymentId && parsed?.paymentDate && Number(parsed?.paidAmount) > 0
-      ? parsed
-      : null;
+    if (!parsed?.paymentId || !parsed?.paymentDate || Number(parsed?.paidAmount) <= 0) return null;
+    const status = String(parsed.status || '').toUpperCase();
+    return {
+      ...parsed,
+      creditDate: dateOnly(parsed.creditDate),
+      availability: parsed.availability
+        || (['RECEIVED', 'RECEIVED_IN_CASH'].includes(status)
+          ? 'AVAILABLE'
+          : status === 'CONFIRMED' ? 'SCHEDULED' : 'UNKNOWN'),
+    };
   } catch {
     return null;
   }

@@ -11,6 +11,16 @@ import {
   findInvoiceForReceivable,
   invoiceNfUrl,
 } from '../lib/financial/receivableInvoiceLink.ts';
+import {
+  getGrossReceivedAmount,
+  getNetCreditedAmount,
+  getScheduledNetCreditAmount,
+} from '../lib/financial/transactionAmounts.ts';
+import {
+  buildDailyCashFlow,
+  computeCashKpis,
+} from '../lib/dashboardDiretoria/aggregations.ts';
+import { getCashMovementDate } from '../lib/dashboardDiretoria/periodUtils.ts';
 
 test('normaliza valor pago, data, juros/multa, líquido, tarifa e desconto do Asaas', () => {
   const late = normalizeAsaasReceipt({
@@ -33,6 +43,8 @@ test('normaliza valor pago, data, juros/multa, líquido, tarifa e desconto do As
     netAmount: 109,
     feeAmount: 3,
     status: 'RECEIVED',
+    creditDate: null,
+    availability: 'AVAILABLE',
   });
 
   const discounted = normalizeAsaasReceipt({
@@ -43,10 +55,13 @@ test('normaliza valor pago, data, juros/multa, líquido, tarifa e desconto do As
     interestValue: 0,
     netValue: 93,
     confirmedDate: '2026-10-06',
+    creditDate: '2026-10-07',
   });
   assert.equal(discounted.discountAmount, 5);
   assert.equal(discounted.feeAmount, 2);
   assert.equal(discounted.paymentDate, '2026-10-06');
+  assert.equal(discounted.availability, 'SCHEDULED');
+  assert.equal(discounted.creditDate, '2026-10-07');
 });
 
 test('não inventa valor ou data quando o Asaas não os enviou', () => {
@@ -159,6 +174,73 @@ test('Contas a Receber encontra a mesma nota fiscal do Controle de NF', () => {
   assert.equal(invoiceNfUrl({ id: 'pending', nf_status: 'PROCESSING' }), null);
 });
 
+test('fluxo separa recebido bruto, crédito líquido e crédito previsto', () => {
+  const available = upsertAsaasReceiptNote('', normalizeAsaasReceipt({
+    id: 'pay_available',
+    status: 'RECEIVED',
+    originalValue: 100,
+    value: 112,
+    interestValue: 12,
+    netValue: 109,
+    paymentDate: '2026-10-08',
+    creditDate: '2026-10-08',
+  }));
+  assert.equal(getGrossReceivedAmount({ amount: 100, status: 'PAID', notes: available }), 112);
+  assert.equal(getNetCreditedAmount({ amount: 100, status: 'PAID', notes: available }), 109);
+  assert.equal(getScheduledNetCreditAmount({ amount: 100, status: 'PAID', notes: available }), 0);
+
+  const scheduled = upsertAsaasReceiptNote('', normalizeAsaasReceipt({
+    id: 'pay_scheduled',
+    status: 'CONFIRMED',
+    value: 100,
+    netValue: 98,
+    confirmedDate: '2026-10-08',
+    creditDate: '2026-10-09',
+  }));
+  assert.equal(getGrossReceivedAmount({ amount: 100, status: 'PAID', notes: scheduled }), 100);
+  assert.equal(getNetCreditedAmount({ amount: 100, status: 'PAID', notes: scheduled }), 0);
+  assert.equal(getScheduledNetCreditAmount({ amount: 100, status: 'PAID', notes: scheduled }), 98);
+});
+
+test('caixa realizado usa crédito líquido e a data em que entrou no Asaas', () => {
+  const receivedNotes = upsertAsaasReceiptNote('', normalizeAsaasReceipt({
+    id: 'pay_received',
+    status: 'RECEIVED',
+    originalValue: 100,
+    value: 112,
+    interestValue: 12,
+    netValue: 109,
+    paymentDate: '2026-10-08',
+    creditDate: '2026-10-09',
+  }));
+  const confirmedNotes = upsertAsaasReceiptNote('', normalizeAsaasReceipt({
+    id: 'pay_confirmed',
+    status: 'CONFIRMED',
+    value: 100,
+    netValue: 98,
+    confirmedDate: '2026-10-08',
+    creditDate: '2026-10-09',
+  }));
+  const transactions: any[] = [
+    {
+      id: 'tx-received', amount: 100, amount_paid: 112, type: 'INCOME', status: 'PAID',
+      due_date: '2026-10-01', payment_date: '2026-10-08', notes: receivedNotes,
+      category_id: 'receita', category_name: 'Receita',
+    },
+    {
+      id: 'tx-confirmed', amount: 100, amount_paid: 100, type: 'INCOME', status: 'PAID',
+      due_date: '2026-10-01', payment_date: '2026-10-08', notes: confirmedNotes,
+      category_id: 'receita', category_name: 'Receita',
+    },
+  ];
+  const period = { mode: 'month' as const, year: 2026, month: 9 };
+  const cash = computeCashKpis([], transactions, [], [], period, new Date('2026-10-10T12:00:00-03:00'));
+  assert.equal(cash.incomePaid, 109);
+  assert.equal(getCashMovementDate(transactions[0]), '2026-10-09');
+  const daily = buildDailyCashFlow(transactions, period, new Date('2026-10-10T12:00:00-03:00'));
+  assert.deepEqual(daily, [{ day: '09/10', inflow: 109, outflow: 0 }]);
+});
+
 test('webhook, sincronizações e tela usam a mesma fonte de detalhes', () => {
   for (const path of [
     'lib/asaasWebhookCore.ts',
@@ -172,7 +254,12 @@ test('webhook, sincronizações e tela usam a mesma fonte de detalhes', () => {
   const ui = fs.readFileSync('components/FinancialTransactionList.tsx', 'utf8');
   assert.match(ui, /extractAsaasReceiptDetails/);
   assert.match(ui, /Juros\/multa/);
-  assert.match(ui, /Tarifa Asaas/);
+  assert.match(ui, /Tarifa/);
+  assert.match(ui, /Data de Pagamento/);
+  assert.match(ui, /Crédito Asaas/);
+  assert.match(ui, /Cai em/);
+  assert.match(ui, /asaas-value-breakdown/);
+  assert.match(ui, /getGrossReceivedAmount/);
   assert.match(ui, /Abrir nota fiscal/);
   assert.match(ui, /findInvoiceForReceivable/);
   assert.match(ui, />NF \/ Fatura<\/th>/);

@@ -28,7 +28,6 @@ import FinancialDocConferencia from './FinancialDocConferencia';
 import AsaasPixTransferModal from './AsaasPixTransferModal';
 import { calcMaxPixTransfer } from '../lib/asaasPixTransfer';
 import { matchesFinancialStatusFilter, type FinancialStatusFilter } from '../lib/financialStatusFilter';
-import { resolverPeriodoVencimento } from '../lib/financial/transactionPeriod';
 import { computeAccountBalanceOverview } from '../lib/dashboardDiretoria/aggregations';
 import { listBalanceSnapshots } from '../lib/investment/snapshotClient';
 import {
@@ -45,6 +44,8 @@ import { extractAnticipationId, extractAnticipationDates } from '../lib/financia
 import PaymentAnticipationModal from './PaymentAnticipationModal';
 import { extractAsaasReceiptDetails } from '../lib/asaasReceiptDetails';
 import { findInvoiceForReceivable, invoiceNfUrl } from '../lib/financial/receivableInvoiceLink';
+import { getGrossReceivedAmount } from '../lib/financial/transactionAmounts';
+import { getCashMovementDate } from '../lib/dashboardDiretoria/periodUtils';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -256,13 +257,6 @@ const FinancialTransactionList: React.FC = () => {
         try { await authFetch('/api/supabase/init-invoices', { method: 'POST' }); } catch {}
     };
 
-    const periodoVencimento = useMemo(() => resolverPeriodoVencimento({
-        viewPeriod,
-        today: getTodayBR(),
-        customStart: customStartDate,
-        customEnd: customEndDate,
-    }), [viewPeriod, customStartDate, customEndDate]);
-
     const fetchTransactions = useCallback(async () => {
         setLoading(true);
         try {
@@ -272,15 +266,12 @@ const FinancialTransactionList: React.FC = () => {
                 /* a lista abre com o que já está no banco */
             }
             const result = await fetchAllPages<FinancialTransaction>(async (from, size) => {
-                let q = supabase
+                const q = supabase
                     .from('financial_transactions')
                     .select('*', { count: 'exact' })
                     .order('due_date', { ascending: false })
                     .order('id', { ascending: false })
                     .range(from, from + size - 1);
-                if (periodoVencimento) {
-                    q = q.gte('due_date', periodoVencimento.start).lte('due_date', periodoVencimento.end);
-                }
                 const { data, error, count } = await q;
                 return { data: data as FinancialTransaction[] | null, error, count };
             });
@@ -295,7 +286,7 @@ const FinancialTransactionList: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [periodoVencimento, showNotification]);
+    }, [showNotification]);
 
     const fetchOverdueUniverse = useCallback(async () => {
         const today = getTodayBR();
@@ -817,8 +808,13 @@ const FinancialTransactionList: React.FC = () => {
         let list = [...transactions];
         const todayStr = getTodayBR();
         const now = new Date(todayStr + 'T12:00:00');
+        const periodDate = (transaction: FinancialTransaction) => (
+            transaction.status === 'PAID'
+                ? getCashMovementDate(transaction)
+                : transaction.due_date.split('T')[0]
+        );
         if (viewPeriod === 'DAY') {
-            list = list.filter(t => t.due_date.split('T')[0] === todayStr);
+            list = list.filter(t => periodDate(t) === todayStr);
         } else if (viewPeriod === 'WEEK') {
             const day = now.getDay();
             const sunday = new Date(now);
@@ -828,11 +824,11 @@ const FinancialTransactionList: React.FC = () => {
             const fmt = (dt: Date) => { const y = dt.getFullYear(); const m = String(dt.getMonth()+1).padStart(2,'0'); const d = String(dt.getDate()).padStart(2,'0'); return `${y}-${m}-${d}`; };
             const weekStart = fmt(sunday);
             const weekEnd = fmt(saturday);
-            list = list.filter(t => { const d = t.due_date.split('T')[0]; return d >= weekStart && d <= weekEnd; });
+            list = list.filter(t => { const d = periodDate(t); return d >= weekStart && d <= weekEnd; });
         } else if (viewPeriod === 'MONTH') {
-            list = list.filter(t => { const d = new Date(t.due_date + 'T12:00:00'); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
+            list = list.filter(t => { const d = new Date(periodDate(t) + 'T12:00:00'); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
         } else if (viewPeriod === 'CUSTOM') {
-            list = list.filter(t => { const d = t.due_date.split('T')[0]; return d >= customStartDate && d <= customEndDate; });
+            list = list.filter(t => { const d = periodDate(t); return d >= customStartDate && d <= customEndDate; });
         }
         return list;
     }, [transactions, viewPeriod, customStartDate, customEndDate]);
@@ -862,7 +858,7 @@ const FinancialTransactionList: React.FC = () => {
         const partialList = incomes.filter(t => t.status === 'PARTIALLY_PAID');
         // Recebido = títulos quitados + valores já recebidos nos parciais
         const paidAmount =
-            paidList.reduce((a, t) => a + Number(t.amount || 0), 0) +
+            paidList.reduce((a, t) => a + getGrossReceivedAmount(t), 0) +
             partialList.reduce((a, t) => a + getTransactionPaidAmount(t), 0);
         // Pendente / em aberto = saldo residual (parcial) + títulos ainda não pagos
         const pendingAmount = pendingList.reduce((a, t) => a + getTransactionOpenAmount(t), 0);
@@ -1000,7 +996,7 @@ const FinancialTransactionList: React.FC = () => {
 
     const renderTransactionTable = (list: FinancialTransaction[], typeLabel: string, showConferencia = false) => {
         const isReceber = typeLabel === 'Receita' || typeLabel === 'RECEBER' || activeStep === 'RECEBER';
-        const colCount = (showConferencia ? 9 : 8) + (isReceber ? 3 : 0);
+        const colCount = (showConferencia ? 9 : 8) + (isReceber ? 5 : 0);
 
         // Agrupa saldos residuais logo abaixo do título pai (Contas a Receber).
         const residualByParent = new Map<string, FinancialTransaction[]>();
@@ -1063,6 +1059,8 @@ const FinancialTransactionList: React.FC = () => {
                                 </th>
                             )}
                             <th className="px-4 py-3">Vencimento</th>
+                            {isReceber && <th className="px-4 py-3 text-center">Data de Pagamento</th>}
+                            {isReceber && <th className="px-4 py-3 text-center">Crédito Asaas</th>}
                             <th className="px-4 py-3">Descrição</th>
                             {isReceber && <th className="px-4 py-3 text-center">NF / Fatura</th>}
                             <th className="px-4 py-3">Favorecido</th>
@@ -1097,6 +1095,7 @@ const FinancialTransactionList: React.FC = () => {
                             const anticipationPayDate = anticipationDates.paymentDate
                               || (anticipationId ? String(t.payment_date || '').slice(0, 10) || null : null);
                             const asaasReceipt = isReceber ? extractAsaasReceiptDetails(t.notes) : null;
+                            const grossReceived = isReceber ? getGrossReceivedAmount(t) : 0;
                             const linkedInvoice = isReceber
                               ? findInvoiceForReceivable(faturaNumero, t.notes, invoices)
                               : null;
@@ -1143,6 +1142,28 @@ const FinancialTransactionList: React.FC = () => {
                                         </span>
                                         {isOverdueRow && <span className="block text-[8px] font-black text-red-500 uppercase">Vencido</span>}
                                     </td>
+                                    {isReceber && (
+                                        <td className="px-4 py-3 text-center">
+                                            {(asaasReceipt?.paymentDate || t.payment_date) ? (
+                                                <span className="text-xs font-mono font-bold text-emerald-700" data-testid={`payment-date-${t.id}`}>
+                                                    {formatDateBR(`${asaasReceipt?.paymentDate || String(t.payment_date).slice(0, 10)}T12:00:00`)}
+                                                </span>
+                                            ) : <span className="text-gray-300">—</span>}
+                                        </td>
+                                    )}
+                                    {isReceber && (
+                                        <td className="px-4 py-3 text-center">
+                                            {asaasReceipt?.availability === 'AVAILABLE' ? (
+                                                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[9px] font-black text-emerald-700" data-testid={`asaas-credit-${t.id}`}>
+                                                    ✅ Disponível
+                                                </span>
+                                            ) : asaasReceipt?.availability === 'SCHEDULED' ? (
+                                                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-black text-amber-700" data-testid={`asaas-credit-${t.id}`}>
+                                                    ⏳ {asaasReceipt.creditDate ? `Cai em ${formatDateBR(asaasReceipt.creditDate + 'T12:00:00')}` : 'Crédito pendente'}
+                                                </span>
+                                            ) : <span className="text-gray-300">—</span>}
+                                        </td>
+                                    )}
                                     <td className={`px-4 py-3 ${isResidualRow ? 'pl-8' : ''}`}>
                                         <div className="flex items-start gap-1.5">
                                             {hasResidualChildren && (
@@ -1194,24 +1215,6 @@ const FinancialTransactionList: React.FC = () => {
                                                 {hasResidualChildren && (
                                                     <span className="block text-[9px] font-bold text-orange-700 mt-0.5">
                                                         Pago incompleto · {childResiduals!.length} residual(is)
-                                                    </span>
-                                                )}
-                                                {asaasReceipt && (
-                                                    <span className="mt-0.5 block text-[9px] font-bold text-cyan-800 normal-case" data-testid={`asaas-receipt-${t.id}`}>
-                                                      Asaas: recebido {formatCurrency(asaasReceipt.paidAmount)}
-                                                      {' · '}Pago em {formatDateBR(asaasReceipt.paymentDate + 'T12:00:00')}
-                                                      {asaasReceipt.interestAndFineAmount > 0.009 && (
-                                                        <> · Juros/multa {formatCurrency(asaasReceipt.interestAndFineAmount)}</>
-                                                      )}
-                                                      {asaasReceipt.discountAmount > 0.009 && (
-                                                        <> · Desconto {formatCurrency(asaasReceipt.discountAmount)}</>
-                                                      )}
-                                                      {asaasReceipt.netAmount !== null && (
-                                                        <> · Líquido {formatCurrency(asaasReceipt.netAmount)}</>
-                                                      )}
-                                                      {asaasReceipt.feeAmount > 0.009 && (
-                                                        <> · Tarifa Asaas {formatCurrency(asaasReceipt.feeAmount)}</>
-                                                      )}
                                                     </span>
                                                 )}
                                                 {isReceber && (t.manual_payment_amount != null || t.doc_comprovante_url) && (
@@ -1336,8 +1339,27 @@ const FinancialTransactionList: React.FC = () => {
                                             <FinancialDocConferencia transaction={t} onUpdate={handleTransactionDocUpdate} />
                                         </td>
                                     )}
-                                    <td className={`px-4 py-3 text-right font-black font-mono text-sm ${t.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
-                                        {formatCurrency(t.amount)}
+                                    <td className={`px-4 py-3 text-right font-mono ${t.type === 'INCOME' ? 'text-green-700' : 'text-red-600'}`}>
+                                        {isReceber && asaasReceipt ? (
+                                            <div className="space-y-0.5 text-[9px]" data-testid={`asaas-value-breakdown-${t.id}`}>
+                                                <p className="font-bold text-gray-500">Boleto {formatCurrency(asaasReceipt.originalAmount ?? Number(t.amount || 0))}</p>
+                                                {asaasReceipt.interestAndFineAmount > 0.009 && (
+                                                    <p className="font-bold text-amber-700">Juros/multa +{formatCurrency(asaasReceipt.interestAndFineAmount)}</p>
+                                                )}
+                                                {asaasReceipt.discountAmount > 0.009 && (
+                                                    <p className="font-bold text-blue-700">Desconto −{formatCurrency(asaasReceipt.discountAmount)}</p>
+                                                )}
+                                                <p className="text-sm font-black text-green-700">Total {formatCurrency(grossReceived)}</p>
+                                                {asaasReceipt.netAmount !== null && (
+                                                    <p className="font-bold text-cyan-700">Líquido {formatCurrency(asaasReceipt.netAmount)}</p>
+                                                )}
+                                                {asaasReceipt.feeAmount > 0.009 && (
+                                                    <p className="font-bold text-gray-500">Tarifa {formatCurrency(asaasReceipt.feeAmount)}</p>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <span className="text-sm font-black">{formatCurrency(t.amount)}</span>
+                                        )}
                                     </td>
                                     {isReceber && (
                                         <td className="px-4 py-3 text-right">
@@ -1577,7 +1599,7 @@ const FinancialTransactionList: React.FC = () => {
                                 </div>
                                 <div className="p-4 bg-green-50 rounded-xl border border-green-200 text-center">
                                     <p className="text-[9px] font-black text-green-700 uppercase mb-1">Títulos Recebidos</p>
-                                    <p className="text-xl font-black text-green-700 font-mono">{formatCurrency(paidIncomes.reduce((a, t) => a + t.amount, 0))}</p>
+                                    <p className="text-xl font-black text-green-700 font-mono">{formatCurrency(paidIncomes.reduce((a, t) => a + getGrossReceivedAmount(t), 0))}</p>
                                     <p className="text-[9px] text-green-600 font-bold">{paidIncomes.length} título(s)</p>
                                 </div>
                                 <div className="p-4 bg-red-50 rounded-xl border border-red-200 text-center">

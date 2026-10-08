@@ -13,6 +13,8 @@ import { useQuery } from '@tanstack/react-query';
 import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
 import FaturamentoAlertBanner from './FaturamentoAlertBanner';
 import CockpitOpenOccurrences from './CockpitOpenOccurrences';
+import { getNetCreditedAmount } from '../lib/financial/transactionAmounts';
+import { getCashMovementDate } from '../lib/dashboardDiretoria/periodUtils';
 
 const isInvestmentMovement = (t: FinancialTransaction, categories: FinancialCategory[]) => {
     if (categories.some(c => c.id === t.category_id && c.group === 'INVESTIMENTOS')) return true;
@@ -58,7 +60,7 @@ const FinancialDashboard: React.FC<{ onNavigate?: (screen: string) => void }> = 
 
     const currentBalances = accounts.map(acc => {
         const accTrans = transactions.filter(t => t.account_id === acc.id && t.status === 'PAID');
-        const income = accTrans.filter(t => t.type === 'INCOME').reduce((acc, t) => acc + t.amount, 0);
+        const income = accTrans.filter(t => t.type === 'INCOME').reduce((acc, t) => acc + getNetCreditedAmount(t), 0);
         const expense = accTrans.filter(t => t.type === 'EXPENSE').reduce((acc, t) => acc + t.amount, 0);
         return acc.initial_balance + income - expense;
     });
@@ -66,16 +68,17 @@ const FinancialDashboard: React.FC<{ onNavigate?: (screen: string) => void }> = 
 
     const periodTrans = transactions.filter(t => {
         if (period === 'ALL') return true;
-        const d = new Date(t.due_date);
+        const movementDate = t.status === 'PAID' ? getCashMovementDate(t) : t.due_date;
+        const d = new Date(movementDate);
         if (period === 'MONTH') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
         if (period === 'CUSTOM') {
-            const transDate = t.due_date.split('T')[0];
+            const transDate = movementDate.split('T')[0];
             return transDate >= customStartDate && transDate <= customEndDate;
         }
         return d.getFullYear() === now.getFullYear();
     });
 
-    const incomeConfirmed = periodTrans.filter(t => t.type === 'INCOME' && t.status === 'PAID' && !isInternalGroupTransfer(t) && !isInvestmentMovement(t, categories)).reduce((acc, t) => acc + t.amount, 0);
+    const incomeConfirmed = periodTrans.filter(t => t.type === 'INCOME' && t.status === 'PAID' && !isInternalGroupTransfer(t) && !isInvestmentMovement(t, categories)).reduce((acc, t) => acc + getNetCreditedAmount(t), 0);
     const expenseConfirmed = periodTrans.filter(t => t.type === 'EXPENSE' && t.status === 'PAID' && !isInternalGroupTransfer(t) && !isInvestmentMovement(t, categories)).reduce((acc, t) => acc + t.amount, 0);
     
     const pendingIncome = transactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && !isInternalGroupTransfer(t) && !isInvestmentMovement(t, categories)).reduce((acc, t) => acc + t.amount, 0);
@@ -161,7 +164,7 @@ const FinancialDashboard: React.FC<{ onNavigate?: (screen: string) => void }> = 
                     <input type="date" className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-xs font-bold text-gray-700 outline-none" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} />
                 </div>
             )}
-            <button onClick={fetchData} className="p-1.5 text-gray-400 hover:text-red-600 transition-colors">
+            <button onClick={() => { void fetchData(); }} className="p-1.5 text-gray-400 hover:text-red-600 transition-colors">
                 <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
             </button>
         </div>
@@ -321,7 +324,7 @@ const FinancialDashboard: React.FC<{ onNavigate?: (screen: string) => void }> = 
                   <div className="space-y-3 flex-1">
                       {accounts.map(acc => {
                           const accTrans = transactions.filter(t => t.account_id === acc.id && t.status === 'PAID');
-                          const inc = accTrans.filter(t => t.type === 'INCOME').reduce((a, b) => a + b.amount, 0);
+                          const inc = accTrans.filter(t => t.type === 'INCOME').reduce((a, b) => a + getNetCreditedAmount(b), 0);
                           const exp = accTrans.filter(t => t.type === 'EXPENSE').reduce((a, b) => a + b.amount, 0);
                           const bal = acc.initial_balance + inc - exp;
                           

@@ -4,6 +4,7 @@ import * as path from 'path';
 import { createSupabaseAdminClient } from './supabaseConfig';
 import { computeCanonicalRevenueCost } from '../lib/missionFinancialsCanonical';
 import { MissionStatus, type ClientPriceTable, type ProviderCostTable, type Client } from '../types';
+import { getNetCreditedAmount } from '../lib/financial/transactionAmounts';
 
 const RECIPIENT = 'thiago@grupotmseg.com.br';
 const EMAIL_USER = process.env.EMAIL_USER || 'adm@grupotmseg.com.br';
@@ -367,7 +368,8 @@ async function sendDailyAccountsReport() {
 
     const sum = (arr: any[]) => arr.reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const totPay = sum(payPending); const totRec = sum(recPending);
-    const totPayPaid = sum(payPaid); const totRecPaid = sum(recPaid);
+    const totPayPaid = sum(payPaid);
+    const totRecPaid = recPaid.reduce((s, transaction) => s + getNetCreditedAmount(transaction), 0);
 
     const saldo = totRec - totPay;
 

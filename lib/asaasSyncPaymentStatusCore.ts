@@ -29,6 +29,8 @@ export type SyncPaymentStatusResult = {
   discountAmount: number;
   netAmount: number | null;
   feeAmount: number;
+  creditDate: string | null;
+  availability: 'AVAILABLE' | 'SCHEDULED' | 'UNKNOWN' | null;
   nfPdfUrl: string | null;
   nfStatus: string | null;
   nfNumber: string | null;
@@ -199,6 +201,8 @@ export async function runAsaasSyncPaymentStatus(params: {
     discountAmount: receipt?.discountAmount || 0,
     netAmount: receipt?.netAmount ?? null,
     feeAmount: receipt?.feeAmount || 0,
+    creditDate: receipt?.creditDate || null,
+    availability: receipt?.availability || null,
     nfPdfUrl,
     nfStatus,
     nfNumber,
