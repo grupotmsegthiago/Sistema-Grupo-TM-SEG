@@ -7,6 +7,10 @@ import {
   syncAsaasReceiptToReceivables,
   upsertAsaasReceiptNote,
 } from '../lib/asaasReceiptDetails.ts';
+import {
+  findInvoiceForReceivable,
+  invoiceNfUrl,
+} from '../lib/financial/receivableInvoiceLink.ts';
 
 test('normaliza valor pago, data, juros/multa, líquido, tarifa e desconto do Asaas', () => {
   const late = normalizeAsaasReceipt({
@@ -126,6 +130,35 @@ test('baixa atualiza Contas a Receber com valor e data oficiais sem alterar amou
   assert.equal(extractAsaasReceiptDetails(String(updates[0].payload.notes))?.interestAndFineAmount, 12);
 });
 
+test('Contas a Receber encontra a mesma nota fiscal do Controle de NF', () => {
+  const invoices = [
+    {
+      id: 'inv-10',
+      number: 'NF-10',
+      asaas_payment_id: 'pay_10',
+      nf_status: 'AUTHORIZED',
+      nf_image_url: 'https://storage.test/nf-10.pdf',
+      asaas_invoice_url: 'https://asaas.test/invoice-10',
+    },
+    {
+      id: 'inv-11',
+      number: 'NF-11',
+      asaas_payment_id: 'pay_11',
+      nf_status: 'AUTHORIZED',
+      asaas_invoice_url: 'https://asaas.test/invoice-11',
+    },
+  ];
+  const byNumber = findInvoiceForReceivable('nf-10', '', invoices);
+  assert.equal(byNumber?.id, 'inv-10');
+  assert.equal(invoiceNfUrl(byNumber), 'https://storage.test/nf-10.pdf');
+
+  const byPayment = findInvoiceForReceivable(null, 'Cobrança Asaas pay_11', invoices);
+  assert.equal(byPayment?.id, 'inv-11');
+  assert.equal(invoiceNfUrl(byPayment), 'https://asaas.test/invoice-11');
+
+  assert.equal(invoiceNfUrl({ id: 'pending', nf_status: 'PROCESSING' }), null);
+});
+
 test('webhook, sincronizações e tela usam a mesma fonte de detalhes', () => {
   for (const path of [
     'lib/asaasWebhookCore.ts',
@@ -140,5 +173,7 @@ test('webhook, sincronizações e tela usam a mesma fonte de detalhes', () => {
   assert.match(ui, /extractAsaasReceiptDetails/);
   assert.match(ui, /Juros\/multa/);
   assert.match(ui, /Tarifa Asaas/);
+  assert.match(ui, /Abrir nota fiscal/);
+  assert.match(ui, /findInvoiceForReceivable/);
   assert.match(ui, /import React/);
 });

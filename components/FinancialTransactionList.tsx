@@ -44,6 +44,7 @@ import CashFlowPreviewButton from './CashFlowPreviewButton';
 import { extractAnticipationId, extractAnticipationDates } from '../lib/financial/paymentAnticipation';
 import PaymentAnticipationModal from './PaymentAnticipationModal';
 import { extractAsaasReceiptDetails } from '../lib/asaasReceiptDetails';
+import { findInvoiceForReceivable, invoiceNfUrl } from '../lib/financial/receivableInvoiceLink';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -90,7 +91,7 @@ const FinancialTransactionList: React.FC = () => {
     const [closingNotes, setClosingNotes] = useState('');
     const [closingConfirmed, setClosingConfirmed] = useState(false);
 
-    const [invoices, setInvoices] = useState<{id: string, client: string, number: string, amount: number, date: string, status: 'EMITIDA' | 'PAGA' | 'CANCELADA', notes: string, nf_image_url?: string, boleto_image_url?: string, provider?: string, issuer_company?: string, boleto_due_date?: string}[]>([]);
+    const [invoices, setInvoices] = useState<{id: string, client: string, number: string, amount: number, date: string, status: 'EMITIDA' | 'PAGA' | 'CANCELADA', notes: string, nf_image_url?: string, nf_status?: string, asaas_invoice_url?: string, asaas_payment_id?: string, boleto_image_url?: string, provider?: string, issuer_company?: string, boleto_due_date?: string}[]>([]);
     const [clients, setClients] = useState<{id: string, name: string}[]>([]);
 
     // Saldos Asaas (TM Gestão, TM Seg, TM Security)
@@ -1095,6 +1096,10 @@ const FinancialTransactionList: React.FC = () => {
                             const anticipationPayDate = anticipationDates.paymentDate
                               || (anticipationId ? String(t.payment_date || '').slice(0, 10) || null : null);
                             const asaasReceipt = isReceber ? extractAsaasReceiptDetails(t.notes) : null;
+                            const linkedInvoice = isReceber
+                              ? findInvoiceForReceivable(faturaNumero, t.notes, invoices)
+                              : null;
+                            const nfUrl = invoiceNfUrl(linkedInvoice);
                             return (
                                 <tr
                                     key={t.id}
@@ -1163,6 +1168,22 @@ const FinancialTransactionList: React.FC = () => {
                                                 {faturaNumero && (
                                                     <span className="block text-[9px] font-black text-indigo-700 mt-0.5" data-testid={`badge-fatura-${t.id}`}>
                                                         Fatura {faturaNumero}
+                                                    </span>
+                                                )}
+                                                {nfUrl && (
+                                                    <a
+                                                      href={nfUrl}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 underline"
+                                                      data-testid={`link-nf-receivable-${t.id}`}
+                                                    >
+                                                      <FileText size={10} /> Abrir nota fiscal
+                                                    </a>
+                                                )}
+                                                {linkedInvoice && !nfUrl && (
+                                                    <span className="mt-0.5 block text-[9px] font-bold text-amber-700" data-testid={`nf-pending-receivable-${t.id}`}>
+                                                      Nota fiscal ainda não disponível no Controle de NF
                                                     </span>
                                                 )}
                                                 {isResidualRow && (
