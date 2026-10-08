@@ -75,6 +75,9 @@ test('Controle de NF possui inclusão separada, upload e rollback', () => {
   const dialog = fs.readFileSync('components/ManualBilledInvoiceDialog.tsx', 'utf8');
   assert.match(control, /Incluir Faturamento/);
   assert.match(control, /ManualBilledInvoiceDialog/);
+  assert.doesNotMatch(control, /btn-bulk-retry-nfs/);
+  assert.doesNotMatch(control, /btn-retro-invoice/);
+  assert.doesNotMatch(control, /Reemitir TODAS NFs pendentes/);
   assert.match(dialog, /financial-invoices\/manual/);
   assert.match(dialog, /mission-evidence/);
   assert.match(dialog, /financial_invoices/);

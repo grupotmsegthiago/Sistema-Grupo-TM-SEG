@@ -145,7 +145,6 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
   const [showManualBilledModal, setShowManualBilledModal] = useState(false);
   const [retroForm, setRetroForm] = useState({ client: '', number: '', amount: '', date: '', dueDate: '', notes: '', issuer_company: 'TM GESTÃO' });
   const [savingRetro, setSavingRetro] = useState(false);
-  const [bulkRetrying, setBulkRetrying] = useState(false);
   const [backfillingPaid, setBackfillingPaid] = useState(false);
   const [issuerSummary, setIssuerSummary] = useState<Array<{ company: string; total: number; authorized: number; synchronized: number; scheduled: number; error: number; stuck: number; canceled: number; other: number; asaas?: number; plugnotas?: number }>>([]);
   const [issuerFilter, setIssuerFilter] = useState<string | null>(null);
@@ -236,51 +235,6 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
       alert('Erro: ' + e.message);
     } finally {
       setReissuePlugnotasId(null);
-    }
-  };
-
-  const handleBulkRetryNfs = async () => {
-    if (!confirm('Reemitir NFs pendentes agora?\n\nIsso vai:\n• Reabrir pausadas soft\n• Tentar autorizar até 10 NFs\n• Cancelar e reagendar só quando seguro (anti-duplicata)')) return;
-    setBulkRetrying(true);
-    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    // Handler leve (nf-control) — 100s; se a chave Asaas estiver inválida, falha rápido com 401.
-    const hang = setTimeout(() => ctrl?.abort(), 100_000);
-    try {
-      const res = await authFetch('/api/nf/retry-now?limit=10&reopen=1', {
-        method: 'POST',
-        ...(ctrl ? { signal: ctrl.signal } : {}),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) {
-        const err = String(data.error || `HTTP ${res.status}`);
-        if (/chave de API|401|403|ASAAS_TMGESTAO/i.test(err)) {
-          throw new Error(
-            `${err}\n\nA chave Asaas na Vercel está inválida/expirada.\n` +
-              `Atualize ASAAS_TMGESTAO_API (TM GESTÃO) com $aact_prod_... do painel Asaas e faça Redeploy.\n` +
-              `Diagnóstico: /api/asaas/status?probe=1`,
-          );
-        }
-        throw new Error(err || 'Falha ao executar ciclo.');
-      }
-      const parts = [
-        `${data.reopened || 0} reaberta(s)`,
-        `${data.processed || 0} processada(s)`,
-        `✓ ${data.ok || 0} OK`,
-        `⏸ ${data.paused || 0} pausada(s)`,
-        `🚨 ${data.stuck || 0} travada(s)`,
-        `✗ ${data.errors || 0} erro(s)`,
-      ];
-      alert('Ciclo de reemissão concluído!\n\n' + parts.join('\n'));
-      await fetchInvoices();
-      await fetchIssuerSummary();
-    } catch (e: any) {
-      const msg = e?.name === 'AbortError'
-        ? 'Tempo esgotado no ciclo (100s). Parte pode ter sido processada — atualize a lista.'
-        : (e.message || 'Erro');
-      alert('Erro: ' + msg);
-    } finally {
-      clearTimeout(hang);
-      setBulkRetrying(false);
     }
   };
 
@@ -800,12 +754,6 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
         <div className="flex gap-2 flex-wrap justify-end">
           <button onClick={() => void handleBackfillPaidAsaas()} disabled={backfillingPaid} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm disabled:opacity-60" data-testid="btn-backfill-paid-asaas" title="Busca no Asaas os detalhes das faturas já pagas">
             {backfillingPaid ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />} {backfillingPaid ? 'Sincronizando pagos...' : 'Sincronizar pagos antigos'}
-          </button>
-          <button onClick={handleBulkRetryNfs} disabled={bulkRetrying} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm disabled:opacity-60" data-testid="btn-bulk-retry-nfs" title="Executa o ciclo do worker imediatamente — cancela e reagenda NFs travadas">
-            {bulkRetrying ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Reemitir TODAS NFs pendentes
-          </button>
-          <button onClick={() => setShowRetroModal(true)} className="flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-retro-invoice">
-            <Calendar size={14} /> Lançar Retroativo
           </button>
           <button onClick={() => setShowManualBilledModal(true)} className="flex items-center gap-2 bg-indigo-700 hover:bg-indigo-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-manual-billed-invoice">
             <Receipt size={14} /> Incluir Faturamento
