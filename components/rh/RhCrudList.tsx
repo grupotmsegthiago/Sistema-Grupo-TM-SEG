@@ -5,7 +5,7 @@ import { useNotification } from '../../lib/NotificationContext';
 import RhPageHeader from './shared/RhPageHeader';
 import RhDataTable from './shared/RhDataTable';
 import { RH_INPUT_CLASS, RH_LABEL_CLASS } from '../../lib/rh/constants';
-import { logRhAudit, softDelete } from '../../lib/rh/audit';
+import { gravarRh, logRhAudit, softDelete } from '../../lib/rh/audit';
 import { canEditRh } from '../../lib/rh/permissions';
 
 export interface RhCrudField {
@@ -52,14 +52,12 @@ const RhCrudList: React.FC<Props> = ({ title, subtitle, table, fields, columns, 
       }
     }
     try {
-      const user = JSON.parse(localStorage.getItem('userData') || '{}');
-      const payload = { ...form, updated_by: user.name };
+      const payload = { ...form };
       if (editingId) {
-        await supabase.from(table).update(payload).eq('id', editingId);
+        await gravarRh(table, payload, editingId);
         await logRhAudit(table, editingId, 'update', form);
       } else {
-        const { data, error } = await supabase.from(table).insert([payload]).select().single();
-        if (error) throw error;
+        const data = await gravarRh(table, payload);
         await logRhAudit(table, data.id, 'create', data);
       }
       showNotification('success', 'Salvo com sucesso!');
