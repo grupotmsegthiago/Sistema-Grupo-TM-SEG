@@ -54,7 +54,7 @@ export function preferLaterDueDate(...dates: Array<string | null | undefined>): 
 }
 
 export function isAsaasPaymentPaid(payment: AsaasOpenPaymentLike | null | undefined): boolean {
-  return ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(String(payment.status || '').toUpperCase());
+  return ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(String(payment?.status || '').toUpperCase());
 }
 
 export function isAsaasGoneError(err: unknown): boolean {
