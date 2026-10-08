@@ -1,5 +1,16 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## TM0810 — BOLETIM CESLOG, 2ª QUINZENA DE SETEMBRO/2026
+
+**Data:** 2026-10-08
+**Pedido:** explicar por que a soma das linhas do Excel fica R$ 83,66 abaixo do total R$ 107.853,60.
+
+**Achado:** o total do rodapé está certo. A diferença inteira é a OS **GTM-8231**. A linha mostra o snapshot congelado de R$ 699,84. O total soma a receita atual R$ 769,82 mais o pedágio R$ 13,68 = R$ 783,50. 783,50 − 699,84 = 83,66 (KM extra R$ 69,98 + pedágio R$ 13,68). As outras 70 OS fecham. Não é arredondamento.
+
+**O que mudou:** a linha do boletim de cliente passa a usar receita + pedágio + deslocamento atuais quando o snapshot congelado divergiu dessa base. Snapshot que ainda coincide, e snapshot com base atual zerada, permanecem. Edição manual continua mandando na linha.
+
+**Não alterado:** gravação da OS, snapshot no banco, Asaas, eNotas, rodapé do boletim.
+
 ## PAINEL DHL NA LISTA DE OS
 
 **Data:** 2026-10-07

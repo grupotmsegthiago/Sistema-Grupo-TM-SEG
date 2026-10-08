@@ -7,6 +7,7 @@ import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw, Send } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, resolveCancelledWindow } from '../lib/financialUtils';
 import { resolveMissionDisplacement } from '../lib/billing/resolveMissionDisplacement';
+import { resolveBoletimClientLineTotal } from '../lib/billing/boletimLineTotal';
 import { resolveStoredClientToll, resolveStoredProviderToll } from '../lib/toll/clientTollBilling';
 import { computeDhlBand, findDhlAutoClient, selectDhlClientTable, DHL_CLIENT_NAME } from '../lib/dhlAutoTableSelector';
 import MissionFinancialModal from './MissionFinancialModal';
@@ -1171,7 +1172,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const snapTotalWithDisp = snapTotal > 0 && snapDispStored <= 0 && useDisp > 0
                     ? snapTotal + useDisp
                     : snapTotal;
-                const useTotal = wasManuallyEdited ? dbTotal : (snapTotalWithDisp > 0 ? snapTotalWithDisp : (useBase + useKmEx + useHrEx + useToll + useDisp));
+                // Linha acompanha o rodapé quando receita/pedágio mudaram depois do congelamento.
+                const useTotal = resolveBoletimClientLineTotal({
+                    dbTotal,
+                    snapTotalWithDisp,
+                    componentTotal: useBase + useKmEx + useHrEx + useToll + useDisp,
+                    wasManuallyEdited,
+                });
 
                 // FALLBACK p/ snapshots legados: se franquia zerada mas há cálculo possível,
                 // busca os dados da tabela real para exibição (totais financeiros permanecem congelados)
