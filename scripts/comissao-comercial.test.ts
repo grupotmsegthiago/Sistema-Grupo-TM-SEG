@@ -1288,6 +1288,7 @@ describe('comissao comercial — lançar no Contas a Pagar', () => {
     assert.equal(payload.amount, 90.13);
     assert.equal(payload.entity_name, 'Ana');
     assert.equal(payload.notes, 'comissao_id:row-1');
+    assert.equal(payload.payment_method, 'PIX');
     assert.equal(payload.description, titulo);
     const { vencimentoPagamentoComissao } = await import('../lib/comissao/contaPagarComissao');
     assert.equal(vencimentoPagamentoComissao('2026-10-05'), '2026-10-15');
@@ -1317,6 +1318,9 @@ describe('comissao comercial — lançar no Contas a Pagar', () => {
     assert.match(payload, /status: 'PENDING'/);
     assert.match(payload, /category_name: 'COMISSÃO'/);
     assert.match(service, /financial_transactions/);
+    assert.match(service, /payment_method = 'PIX'/);
+    assert.match(service, /doc_comprovante_url: comprovanteUrl/);
+    assert.match(page, /comprovanteUrl: comprovantePorComissao\[r\.id\]/);
     assert.match(service, /Comissão TORRES não entra no Contas a Pagar da TM SEG/);
     assert.match(service, /status: 'PAID'/);
     assert.match(service, /pago_em: agora.toISOString\(\)/);
@@ -1344,6 +1348,8 @@ describe('comissao comercial — lançar no Contas a Pagar', () => {
     assert.equal(payload.origin_type, 'comissao_comercial');
     assert.equal(payload.origin_id, 'c-200');
     assert.equal(payload.comprovante_path, 'invoices/200/recibo.pdf');
+    assert.equal(payload.payment_method, 'PIX');
+    assert.equal(payload.doc_comprovante_url, undefined);
     assert.equal(payload.notes, 'comissao_id:c-200');
     const inserts: Array<Record<string, unknown>> = [];
     const resultado = await executarLancamentoTorres({

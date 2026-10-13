@@ -13,7 +13,7 @@ import {
   COMISSAO_STATUS_LABEL,
   type ComissaoStatus,
 } from '../lib/comissao/comissaoCalc';
-import { lancarPagamentoComissao, registrarPagamentoComissao } from '../lib/comissao/comissaoService';
+import { garantirFormaPixEComprovante, lancarPagamentoComissao, registrarPagamentoComissao } from '../lib/comissao/comissaoService';
 import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
 import { comprovantesJaGravados, decidirComprovante } from '../lib/financial/avisoComprovante';
 import { sincronizarComerciaisDeUsuarios } from '../lib/comissao/comissaoUsuarios';
@@ -898,6 +898,21 @@ const ComissoesComerciaisPage: React.FC = () => {
     return () => { alive = false; };
   }, [rows]);
 
+  const pixContaRef = useRef(new Set<string>());
+  useEffect(() => {
+    const alvos = rows.filter((r) => {
+      if (!r.conta_pagar_id) return false;
+      if (String(r.empresa_origem || '').toUpperCase() === 'TORRES') return false;
+      const chave = `${r.conta_pagar_id}|${comprovantePorComissao[r.id] || ''}`;
+      if (pixContaRef.current.has(chave)) return false;
+      pixContaRef.current.add(chave);
+      return true;
+    });
+    for (const r of alvos) {
+      void garantirFormaPixEComprovante(r.conta_pagar_id || '', comprovantePorComissao[r.id] || null);
+    }
+  }, [rows, comprovantePorComissao]);
+
   useEffect(() => {
     const c = comerciais.find((x) => x.id === comercialId);
     setNovoPix(c?.pix_chave || '');
@@ -1016,6 +1031,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           dataFaturamento: r.data_faturamento,
           valor,
           contaPagarId: r.conta_pagar_id,
+          comprovanteUrl: comprovantePorComissao[r.id] || null,
         });
         if (!res.ok) throw new Error(res.error || 'Falha ao lançar no Contas a Pagar');
         if (!silencioso) showNotification('Contas a Pagar', 'Lançamento criado. Agora é possível pagar a comissão.', 'success');

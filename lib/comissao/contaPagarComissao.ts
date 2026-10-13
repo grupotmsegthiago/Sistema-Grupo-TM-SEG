@@ -93,6 +93,7 @@ export function montarContaPagarComissao(input: {
   entity_id: null;
   entity_name: string | null;
   notes: string;
+  payment_method: 'PIX';
   created_by: string | null;
   updated_by: string | null;
 } {
@@ -113,6 +114,7 @@ export function montarContaPagarComissao(input: {
     entity_id: null,
     entity_name: comercial || null,
     notes: notaContaPagarComissao(input.id),
+    payment_method: 'PIX',
     created_by: input.createdBy || null,
     updated_by: input.createdBy || null,
   };

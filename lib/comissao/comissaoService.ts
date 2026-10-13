@@ -5,6 +5,7 @@
 import { supabase } from '../supabase';
 import { formatIsoDateBR } from '../dateUtils';
 import { calcularComissao } from './comissaoCalc';
+import { urlComprovanteHttp } from '../asaasReceiptDetails';
 import { montarContaPagarComissao, notaContaPagarComissao, vencimentoPagamentoComissao } from './contaPagarComissao';
 import {
   atualizarStatusAposBaixaCliente as atualizarCore,
@@ -110,6 +111,28 @@ function usuarioAtual(): string | null {
   }
 }
 
+/** PIX é a forma desta despesa. O comprovante é o do pagamento do cliente no Asaas, se já houver URL https. */
+export async function garantirFormaPixEComprovante(
+  transactionId: string,
+  comprovanteUrl?: string | null,
+): Promise<void> {
+  const id = String(transactionId || '').trim();
+  if (!id) return;
+  const url = urlComprovanteHttp(comprovanteUrl);
+  const { data, error } = await supabase
+    .from('financial_transactions')
+    .select('id, notes, payment_method, doc_comprovante_url')
+    .eq('id', id)
+    .maybeSingle();
+  if (error || !data) return;
+  if (!String(data.notes || '').includes('comissao_id:')) return;
+  const patch: { payment_method?: 'PIX'; doc_comprovante_url?: string } = {};
+  if (!String(data.payment_method || '').trim()) patch.payment_method = 'PIX';
+  if (!String(data.doc_comprovante_url || '').trim() && url) patch.doc_comprovante_url = url;
+  if (!patch.payment_method && !patch.doc_comprovante_url) return;
+  await supabase.from('financial_transactions').update(patch).eq('id', id);
+}
+
 export async function lancarPagamentoComissao(input: {
   id: string;
   cliente?: string | null;
@@ -118,6 +141,7 @@ export async function lancarPagamentoComissao(input: {
   dataFaturamento?: string | null;
   valor: number;
   contaPagarId?: string | null;
+  comprovanteUrl?: string | null;
 }): Promise<{ ok: boolean; transactionId?: string; error?: string }> {
   const id = String(input.id || '').trim();
   if (!id) return { ok: false, error: 'comissaoId ausente' };
@@ -136,9 +160,12 @@ export async function lancarPagamentoComissao(input: {
   if (String(atual.empresa_origem || '').toUpperCase() === 'TORRES') {
     return { ok: false, error: 'Comissão TORRES não entra no Contas a Pagar da TM SEG.' };
   }
-  const jaInformado = String(input.contaPagarId || '').trim();
-  if (jaInformado) return { ok: true, transactionId: jaInformado };
-  if (atual.conta_pagar_id) return { ok: true, transactionId: String(atual.conta_pagar_id) };
+  const comprovanteUrl = urlComprovanteHttp(input.comprovanteUrl);
+  const jaInformado = String(input.contaPagarId || atual.conta_pagar_id || '').trim();
+  if (jaInformado) {
+    await garantirFormaPixEComprovante(jaInformado, comprovanteUrl);
+    return { ok: true, transactionId: jaInformado };
+  }
 
   const nota = notaContaPagarComissao(id);
   const { data: existente, error: buscaErr } = await supabase
@@ -157,17 +184,20 @@ export async function lancarPagamentoComissao(input: {
       .eq('type', 'EXPENSE')
       .eq('name', 'COMISSÃO')
       .limit(1);
-    const payload = montarContaPagarComissao({
-      id,
-      cliente: input.cliente,
-      fatura: input.fatura,
-      comercial: input.comercial,
-      dataFaturamento: input.dataFaturamento,
-      valor,
-      dueDate: vencimentoPagamentoComissao(atual.data_recebimento_cliente || atual.data_faturamento, formatIsoDateBR()),
-      categoryId: categoria?.[0]?.id || null,
-      createdBy: usuarioAtual(),
-    });
+    const payload = {
+      ...montarContaPagarComissao({
+        id,
+        cliente: input.cliente,
+        fatura: input.fatura,
+        comercial: input.comercial,
+        dataFaturamento: input.dataFaturamento,
+        valor,
+        dueDate: vencimentoPagamentoComissao(atual.data_recebimento_cliente || atual.data_faturamento, formatIsoDateBR()),
+        categoryId: categoria?.[0]?.id || null,
+        createdBy: usuarioAtual(),
+      }),
+      doc_comprovante_url: comprovanteUrl,
+    };
     const { data: criado, error: insertErr } = await supabase
       .from('financial_transactions')
       .insert(payload)
@@ -189,6 +219,7 @@ export async function lancarPagamentoComissao(input: {
   const gravado = String(ligado?.[0]?.conta_pagar_id || '').trim();
   if (gravado && gravado !== transactionId) {
     await supabase.from('financial_transactions').delete().eq('id', transactionId);
+    await garantirFormaPixEComprovante(gravado, comprovanteUrl);
     return { ok: true, transactionId: gravado };
   }
   if (!gravado) {
@@ -196,10 +227,12 @@ export async function lancarPagamentoComissao(input: {
     const outro = String(deNovo?.conta_pagar_id || '').trim();
     if (outro && outro !== transactionId) {
       await supabase.from('financial_transactions').delete().eq('id', transactionId);
+      await garantirFormaPixEComprovante(outro, comprovanteUrl);
       return { ok: true, transactionId: outro };
     }
     return { ok: false, error: 'Não foi possível ligar o lançamento à comissão' };
   }
+  await garantirFormaPixEComprovante(transactionId, comprovanteUrl);
   return { ok: true, transactionId };
 }
 

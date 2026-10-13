@@ -116,6 +116,33 @@ export function filtrarDivergenciasDiretoria(
   return filtrarDivergenciasAbertas(items).filter((i) => i.escalarDiretoria);
 }
 
+/** O financeiro já viu a linha. Ela sai da auditoria, sem alterar valor de OS, NF ou comissão. */
+export function filtrarDivergenciasNaoVerificadas(
+  items: ItemDivergenciaFinanceira[] | null | undefined,
+  invoiceIdsVistos: Iterable<string> | null | undefined,
+): ItemDivergenciaFinanceira[] {
+  const vistos = new Set(
+    [...(invoiceIdsVistos || [])].map((id) => String(id || '').trim()).filter(Boolean),
+  );
+  return (items || []).filter((item) => !vistos.has(item.invoiceId));
+}
+
+/** O vínculo escolhe outra fatura que já está nesta auditoria. */
+export function candidatasDaMesmaAuditoria(
+  items: ItemDivergenciaFinanceira[] | null | undefined,
+  invoiceIdAtual: string,
+): Array<{ id: string; client: string; number: string | null; amount: number }> {
+  const atual = String(invoiceIdAtual || '').trim();
+  return (items || [])
+    .filter((item) => item.invoiceId && item.invoiceId !== atual)
+    .map((item) => ({
+      id: item.invoiceId,
+      client: item.cliente,
+      number: item.faturaNumero,
+      amount: item.valorFatura,
+    }));
+}
+
 function normalizarNomeCliente(value: string | null | undefined): string {
   return String(value || '')
     .normalize('NFD')
@@ -133,6 +160,52 @@ export function nfEhDoMesmoCliente(a: string | null | undefined, b: string | nul
   if (na === nb) return true;
   if (na.length < 8 || nb.length < 8) return false;
   return na.startsWith(nb) || nb.startsWith(na);
+}
+
+export type ClienteComCnpj = {
+  name?: string | null;
+  trading_name?: string | null;
+  cnpj?: string | null;
+};
+
+export function somenteDigitosCnpj(value: string | null | undefined): string {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 11 || digits.length === 14 ? digits : '';
+}
+
+export function formatarCnpj(value: string | null | undefined): string | null {
+  const digits = somenteDigitosCnpj(value);
+  if (digits.length !== 14) return digits || null;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+}
+
+/** CNPJs cadastrados para o nome da fatura. Vazio quando o cliente não está no cadastro. */
+export function cnpjsDoNome(nome: string | null | undefined, clientes: ClienteComCnpj[]): string[] {
+  const docs = new Set<string>();
+  for (const cliente of clientes) {
+    const bate = nfEhDoMesmoCliente(nome, cliente.name) || nfEhDoMesmoCliente(nome, cliente.trading_name);
+    if (!bate) continue;
+    const doc = somenteDigitosCnpj(cliente.cnpj);
+    if (doc) docs.add(doc);
+  }
+  return [...docs];
+}
+
+/**
+ * A lista de vínculo mostra a NF quando ela é de outro CNPJ.
+ * O mesmo CNPJ fica de fora. Sem cadastro, entra se o nome não for o mesmo cliente.
+ */
+export function faturaEhDeOutroCnpj(
+  clienteAtual: string | null | undefined,
+  clienteFatura: string | null | undefined,
+  clientes: ClienteComCnpj[],
+): boolean {
+  const atuais = cnpjsDoNome(clienteAtual, clientes);
+  const daFatura = cnpjsDoNome(clienteFatura, clientes);
+  if (atuais.length === 0 || daFatura.length === 0) {
+    return !nfEhDoMesmoCliente(clienteAtual, clienteFatura);
+  }
+  return daFatura.every((doc) => !atuais.includes(doc));
 }
 
 export type FaturaParaGrupoNf = {
@@ -408,10 +481,18 @@ export async function auditarDivergenciasInvoices(
       };
     });
     const items = consolidarDivergenciasComNf(faturasGrupo, valorPorMissao, vinculos);
+    const vistasRes = await fetchAllRows(sb, 'financial_invoice_divergencia_vista', 'invoice_id');
+    if (vistasRes.error && !isMissingRelation({ message: vistasRes.error })) {
+      return { ok: false, items: [], error: vistasRes.error };
+    }
+    if (!vistasRes.error && !vistasRes.complete) {
+      return { ok: false, items: [], error: 'Consulta incompleta das divergências já verificadas.' };
+    }
+    const vistas = (vistasRes.rows || []).map((row) => String(row.invoice_id || '').trim()).filter(Boolean);
 
     return {
       ok: true,
-      items,
+      items: filtrarDivergenciasNaoVerificadas(items, vistas),
       consultaIncompleta: !vinculosRes.complete || fatRes.data.length !== invoiceIds.length,
     };
   } catch (e: unknown) {
@@ -425,26 +506,58 @@ export async function listarNfCandidatasDoCliente(
   cliente: string,
   excluirIds: string[],
   opts?: { sb?: InvoiceSyncClient },
-): Promise<{ ok: boolean; itens: Array<{ id: string; client: string; number: string | null; amount: number; status: string }>; error?: string }> {
+): Promise<{ ok: boolean; itens: Array<{ id: string; client: string; number: string | null; amount: number; status: string; cnpj: string | null }>; error?: string }> {
   const sb = opts?.sb || supabase;
   const res = await fetchAllRows(sb, 'financial_invoices', 'id, client, number, amount, status');
   if (res.error) return { ok: false, itens: [], error: res.error };
+  const clientesRes = await fetchAllRows(sb, 'clients', 'name, trading_name, cnpj');
+  if (clientesRes.error) return { ok: false, itens: [], error: clientesRes.error };
+  if (!res.complete || !clientesRes.complete) {
+    return { ok: false, itens: [], error: 'Consulta incompleta das NFs ou dos CNPJs.' };
+  }
+  const clientes = (clientesRes.rows || []) as ClienteComCnpj[];
   const excluir = new Set(excluirIds);
   const itens = (res.rows || [])
     .filter((row) => {
       const id = String(row.id || '').trim();
       if (!id || excluir.has(id)) return false;
       if (String(row.status || '').toUpperCase() === 'CANCELADA') return false;
-      return nfEhDoMesmoCliente(cliente, row.client);
+      return faturaEhDeOutroCnpj(cliente, row.client, clientes);
     })
-    .map((row) => ({
-      id: String(row.id),
-      client: String(row.client || ''),
-      number: row.number ? String(row.number) : null,
-      amount: Number(row.amount) || 0,
-      status: String(row.status || ''),
-    }));
+    .map((row) => {
+      const nome = String(row.client || '');
+      const docs = cnpjsDoNome(nome, clientes);
+      return {
+        id: String(row.id),
+        client: nome,
+        number: row.number ? String(row.number) : null,
+        amount: Number(row.amount) || 0,
+        status: String(row.status || ''),
+        cnpj: formatarCnpj(docs[0]),
+      };
+    })
+    .sort((a, b) => a.client.localeCompare(b.client, 'pt-BR') || String(a.number || '').localeCompare(String(b.number || ''), 'pt-BR'));
   return { ok: true, itens };
+}
+
+export async function marcarDivergenciaVerificada(
+  invoiceId: string,
+  vistoPor?: string | null,
+  opts?: { sb?: InvoiceSyncClient },
+): Promise<{ ok: boolean; error?: string }> {
+  const id = String(invoiceId || '').trim();
+  if (!id) return { ok: false, error: 'Fatura ausente' };
+  const sb = opts?.sb || supabase;
+  const { error } = await sb.from('financial_invoice_divergencia_vista').upsert(
+    {
+      invoice_id: id,
+      visto_em: new Date().toISOString(),
+      visto_por: String(vistoPor || '').trim() || null,
+    },
+    { onConflict: 'invoice_id' },
+  );
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 export async function gravarVinculoOutraNf(
