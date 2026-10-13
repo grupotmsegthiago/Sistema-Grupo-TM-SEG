@@ -7,9 +7,9 @@
 
 **Publicado:** `sistema.grupotmseg.com.br` está no commit `c3451494` (`builtAt` `2026-10-13T22:51:05.492Z`). `TORRES_SUPABASE_SERVICE_ROLE_KEY` existe na Vercel, ambiente Production, tipo Secret, valor oculto. Não foi lido.
 
-**Conexão pelo sistema publicado: não validada.** O site no ar está na tela de login. O `POST /api/comissoes/conta-pagar-torres` sem sessão responde 401 antes de criar o cliente da TORRES. Os HTTP 200 antigos dessa rota são de antes do commit atual e não provam leitura. A consulta desta auditoria ao banco da TORRES usou o canal de leitura separado, não a chave do sistema publicado. Nesse canal, `financial_transactions` tem as colunas do lançamento (`origin_type`, `origin_id`, `amount`, `due_date`, `category_name`, `payment_method`, `notes`, `entity_name`, `comprovante_path`) e as três comissões continuam com zero títulos.
+**Conexão pelo sistema publicado: não validada.** O diagnóstico temporário, só Diretoria e só leitura, rodou no commit `731a57eb`. HTTP 503, código `CREDENCIAL`. A variável está presente. A chave salva é do projeto da TM SEG, não da TORRES. Nenhuma linha financeira foi devolvida e nenhum título foi criado. O diagnóstico foi removido em seguida.
 
-**Código nesta publicação:** falha de lançamento deixa de voltar HTTP 200. Credencial 503, permissão 403, conexão 502, comissão não liberada 409, comissão ausente 404, banco 500. Título já ligado continua HTTP 200 com `ok: true` e `jaExistia: true`. A tela segue lendo `ok` e `error`. Há um GET temporário `/api/comissoes/diagnostico-torres`, só Diretoria, só leitura, sem devolver linha financeira. Ele sai na publicação seguinte.
+**Publicado junto:** falha de lançamento deixa de voltar HTTP 200. Credencial 503, permissão 403, conexão 502, comissão não liberada 409, comissão ausente 404, banco 500. Título já ligado continua HTTP 200 com `ok: true` e `jaExistia: true`. A tela segue lendo `ok` e `error`.
 
 ## AUDITORIA — FRASE “NESTE COMPUTADOR” NA PORTA 5000
 

@@ -1764,23 +1764,4 @@ describe('comissao comercial — chave do servidor da TORRES', () => {
     assert.deepEqual(respostaFalhaContaPagar('duplicate key value'), { status: 500, codigo: 'BANCO' });
     assert.notEqual(respostaFalhaContaPagar('A chave da TORRES não está no servidor que respondeu.').status, 200);
   });
-
-  it('diagnóstico da TORRES só lê e não devolve linha financeira', async () => {
-    const { classificarErroLeituraTorres, lerUmaLinhaTorres } = await import('../lib/comissao/diagnosticoTorres');
-    assert.equal(classificarErroLeituraTorres('Invalid API key').codigo, 'CREDENCIAL');
-    assert.equal(classificarErroLeituraTorres('fetch failed').codigo, 'CONEXAO');
-    assert.equal(classificarErroLeituraTorres('permission denied for table').codigo, 'SEM_PERMISSAO');
-    assert.equal(classificarErroLeituraTorres('column does not exist').codigo, 'BANCO');
-    let tabela = '';
-    const ok = await lerUmaLinhaTorres({
-      from(nome: string) {
-        tabela = nome;
-        return { select: () => ({ limit: async () => ({ error: null, data: [{ id: 'segredo', amount: 10 }] }) }) };
-      },
-    });
-    assert.equal(tabela, 'financial_transactions');
-    assert.deepEqual(ok, { ok: true });
-    const pagina = await import('node:fs').then((fs) => fs.readFileSync(new URL('../api/comissoes-ingest.ts', import.meta.url), 'utf8'));
-    assert.match(pagina, /diagnostico-torres/);
-  });
 });
