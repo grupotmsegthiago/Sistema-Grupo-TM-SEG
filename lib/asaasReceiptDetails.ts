@@ -16,6 +16,8 @@ export type AsaasReceiptPayment = {
   confirmedDate?: string | null;
   creditDate?: string | null;
   externalReference?: string | null;
+  /** Comprovante oficial da cobrança paga. Ausência não inventa URL. */
+  transactionReceiptUrl?: string | null;
 };
 
 export type AsaasReceiptDetails = {
@@ -30,7 +32,15 @@ export type AsaasReceiptDetails = {
   status: string;
   creditDate: string | null;
   availability: 'AVAILABLE' | 'SCHEDULED' | 'UNKNOWN';
+  receiptUrl: string | null;
 };
+
+/** Só aceita o comprovante https que a integração enviou. */
+export function urlComprovanteHttp(value: unknown): string | null {
+  const url = String(value || '').trim();
+  if (!/^https:\/\/\S+$/i.test(url)) return null;
+  return url;
+}
 
 function money(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
@@ -92,6 +102,7 @@ export function normalizeAsaasReceipt(payment: AsaasReceiptPayment): AsaasReceip
     status,
     creditDate,
     availability,
+    receiptUrl: urlComprovanteHttp(payment?.transactionReceiptUrl),
   };
 }
 
@@ -131,6 +142,7 @@ export function extractAsaasReceiptDetails(
         || (['RECEIVED', 'RECEIVED_IN_CASH'].includes(status)
           ? 'AVAILABLE'
           : status === 'CONFIRMED' ? 'SCHEDULED' : 'UNKNOWN'),
+      receiptUrl: urlComprovanteHttp(parsed.receiptUrl),
     };
   } catch {
     return null;

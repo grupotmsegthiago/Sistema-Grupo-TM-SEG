@@ -1,5 +1,5 @@
 /**
- * Acesso à API do quadro de comissões: Diretoria (todos) ou Comercial (só o próprio).
+ * Acesso à API do quadro de comissões: Diretoria e Financeiro (todos) ou Comercial (só o próprio).
  * Não usa RLS anon; o handler chama o banco com service_role.
  */
 import { extractAuthToken, extractUserIdFromToken } from '../billingApiAuth.js';

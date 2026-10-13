@@ -7,6 +7,12 @@ import { createSupabaseAdminClient } from './supabaseConfig';
 import { assertComissoesQuadroAccess } from '../lib/comissao/comissaoQuadroAuth';
 import { montarQuadroComissoesApi, sincronizarComissoesViaAdmin } from '../lib/comissao/comissaoQuadroApi';
 import { sincronizarComissoesTmETorres } from '../lib/comissao/sincronizarComissoesTorres';
+import { instalarAvisoComissaoLiberada } from '../lib/comissao/enviarAvisoComissaoLiberada';
+import { tratarPedidoAvisoLiberacao } from '../lib/comissao/avisoLiberacaoHttp';
+import { tratarPedidoComprovantesComissao } from '../lib/comissao/comprovantesComissao';
+import { tratarPedidoContaPagarTorres } from '../lib/comissao/contaPagarTorres';
+
+instalarAvisoComissaoLiberada();
 
 export function registerComissaoQuadroRoutes(app: Express, requireAuth: any): void {
   app.get('/api/comissoes/quadro', requireAuth, async (req: Request, res: Response) => {
@@ -44,6 +50,18 @@ export function registerComissaoQuadroRoutes(app: Express, requireAuth: any): vo
       const message = e instanceof Error ? e.message : String(e);
       return res.status(200).json({ ok: false, error: message });
     }
+  });
+
+  app.post('/api/comissoes/liberada-email', requireAuth, async (req: Request, res: Response) => {
+    await tratarPedidoAvisoLiberacao(req, res);
+  });
+
+  app.post('/api/comissoes/comprovantes', requireAuth, async (req: Request, res: Response) => {
+    await tratarPedidoComprovantesComissao(req, res);
+  });
+
+  app.post('/api/comissoes/conta-pagar-torres', requireAuth, async (req: Request, res: Response) => {
+    await tratarPedidoContaPagarTorres(req, res);
   });
 
   app.post('/api/comissoes/sync-tm-torres', requireAuth, async (req: Request, res: Response) => {

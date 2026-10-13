@@ -32,6 +32,9 @@ import {
 import { syncPendingAsaasNfStatuses } from '../lib/asaasNfStatusSync.js';
 import { executeManualInvoiceRetry } from '../lib/nfRetryInvoiceApiCore.js';
 import { registrarBaixaManualFatura } from '../lib/invoiceManualPayment.js';
+import { instalarAvisoComissaoLiberada } from '../lib/comissao/enviarAvisoComissaoLiberada.js';
+
+instalarAvisoComissaoLiberada();
 import { syncPaidInvoicesToReceivablesNow } from '../lib/invoiceReceivableSync.js';
 
 const require = createRequire(import.meta.url);

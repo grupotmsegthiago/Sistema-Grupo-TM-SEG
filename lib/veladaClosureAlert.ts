@@ -108,6 +108,12 @@ export function isThiagoVeladaEscalationUser(user: {
   return name.includes('thiago') && name.includes('moreira');
 }
 
+/** A tela vermelha de +48h não abre para estes perfis. O aviso do operador permanece. */
+export function veladaEscalationOcultaParaPerfil(role: string | null | undefined): boolean {
+  const perfil = normalizeName(role);
+  return perfil === 'diretoria' || perfil === 'controller' || perfil === 'financeiro';
+}
+
 export function veladaFinalKmIsValid(endKm: number, startKm: number | null | undefined): boolean {
   if (!Number.isFinite(endKm) || endKm <= 0) return false;
   const start = Number(startKm);

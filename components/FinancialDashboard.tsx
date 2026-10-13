@@ -12,6 +12,7 @@ import { FinancialTransaction, FinancialAccount, FinancialCategory } from '../ty
 import { useQuery } from '@tanstack/react-query';
 import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
 import FaturamentoAlertBanner from './FaturamentoAlertBanner';
+import InvoiceDivergenceAuditPanel from './InvoiceDivergenceAuditPanel';
 import CockpitOpenOccurrences from './CockpitOpenOccurrences';
 import { getNetCreditedAmount } from '../lib/financial/transactionAmounts';
 import { getCashMovementDate } from '../lib/dashboardDiretoria/periodUtils';
@@ -128,6 +129,7 @@ const FinancialDashboard: React.FC<{ onNavigate?: (screen: string) => void }> = 
   return (
     <div className="space-y-6 animate-fade-in pb-12 bg-gray-50/50 p-2 rounded-2xl">
       <FaturamentoAlertBanner onOpenPainel={() => onNavigate?.('diretoria-faturamento')} />
+      <InvoiceDivergenceAuditPanel audiencia="financeiro" />
       <div className="px-1">
         <CockpitOpenOccurrences />
       </div>

@@ -74,6 +74,24 @@ export function casarClienteDaFatura(
   return { status: 'none' };
 }
 
+/** Na tela de comissão, divergência sem responsável comercial não entra. */
+export function divergenciaTemComercialSelecionado(
+  cliente: string | null | undefined,
+  clients: ClienteComissaoMatch[],
+): boolean {
+  const match = casarClienteDaFatura(cliente, clients);
+  if (match.status !== 'ok' || !match.client) return false;
+  return String(match.client.responsavel_comercial_id || '').trim() !== '';
+}
+
+export async function listarClientesComercialMatch(
+  sb: ComissaoDbClient,
+): Promise<{ ok: boolean; clients: ClienteComissaoMatch[]; error?: string }> {
+  const res = await fetchAllRows(sb, 'clients', 'id, name, trading_name, responsavel_comercial_id');
+  if (res.error) return { ok: false, clients: [], error: res.error };
+  return { ok: true, clients: (res.rows || []) as ClienteComissaoMatch[] };
+}
+
 export type PendenciaComissaoCliente = {
   cliente: string;
   faturas: number;

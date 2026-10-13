@@ -4,8 +4,11 @@ import fs from 'node:fs';
 import {
   avaliarDivergenciaFatura,
   auditarDivergenciasInvoices,
+  consolidarDivergenciasComNf,
   filtrarDivergenciasAbertas,
+  filtrarDivergenciasDiretoria,
   formatarTagDivergencia,
+  nfEhDoMesmoCliente,
   valoresDivergem,
 } from '../lib/billing/auditarDivergenciasFinanceiras';
 import { somarReceitasOs } from '../lib/billing/sincronizarFaturaAberta';
@@ -150,6 +153,55 @@ describe('auditoria de divergência — consulta encadeada', () => {
   });
 });
 
+describe('auditoria de divergência — outra NF do mesmo cliente', () => {
+  const base = {
+    status: 'EMITIDA',
+    consultaOsIncompleta: false,
+    valorComissaoFaturamento: null,
+  };
+
+  it('soma a outra NF e some quando o conjunto fecha', () => {
+    assert.equal(nfEhDoMesmoCliente('INTERMODAL BRASIL', 'INTERMODAL BRASIL LOGISTICA S.A.'), true);
+    assert.equal(nfEhDoMesmoCliente('CESLOG', 'LUFT LOGISTICS'), false);
+    const fechou = consolidarDivergenciasComNf(
+      [
+        { ...base, invoiceId: 'a', faturaNumero: 'NF-A', cliente: 'CESLOG', valorFatura: 176350.81, missionIds: ['os-1'] },
+        { ...base, invoiceId: 'b', faturaNumero: 'NF-B', cliente: 'CESLOG FILIAL', valorFatura: 12721.19, missionIds: [] },
+      ],
+      { 'os-1': 189072 },
+      [{ invoiceId: 'a', outraInvoiceId: 'b' }],
+    );
+    assert.equal(fechou.length, 0);
+  });
+
+  it('se ainda divergir depois do vínculo, sobe para a diretoria', () => {
+    const aberto = consolidarDivergenciasComNf(
+      [
+        { ...base, invoiceId: 'a', faturaNumero: 'NF-A', cliente: 'CESLOG', valorFatura: 100, missionIds: ['os-1'] },
+      ],
+      { 'os-1': 180 },
+      [],
+    );
+    assert.equal(aberto.length, 1);
+    assert.equal(aberto[0].escalarDiretoria, false);
+    assert.equal(filtrarDivergenciasDiretoria(aberto).length, 0);
+
+    const residual = consolidarDivergenciasComNf(
+      [
+        { ...base, invoiceId: 'a', faturaNumero: 'NF-A', cliente: 'CESLOG', valorFatura: 100, missionIds: ['os-1'] },
+        { ...base, invoiceId: 'b', faturaNumero: 'NF-B', cliente: 'CESLOG SP', valorFatura: 20, missionIds: ['os-2'] },
+      ],
+      { 'os-1': 180, 'os-2': 30 },
+      [{ invoiceId: 'a', outraInvoiceId: 'b' }],
+    );
+    assert.equal(residual.length, 1);
+    assert.equal(residual[0].escalarDiretoria, true);
+    assert.equal(residual[0].valorOs, 210);
+    assert.equal(residual[0].valorFatura, 120);
+    assert.equal(filtrarDivergenciasDiretoria(residual).length, 1);
+  });
+});
+
 describe('auditoria de divergência — UI Diretoria', () => {
   it('painel usa a tag pedida e o botão Sincronizar Valor chama sincronizarFaturaPorOS', () => {
     const panel = fs.readFileSync('components/InvoiceDivergenceAuditPanel.tsx', 'utf8');
@@ -161,8 +213,12 @@ describe('auditoria de divergência — UI Diretoria', () => {
     assert.match(panel, /formatarTagDivergencia/);
     assert.match(panel, /Sincronizar Valor/);
     assert.match(panel, /sincronizarFaturaPorOS/);
-    assert.match(page, /InvoiceDivergenceAuditPanel/);
-    assert.match(dash, /InvoiceDivergenceAuditPanel/);
+    const financeiro = fs.readFileSync('components/FinancialDashboard.tsx', 'utf8');
+    assert.match(financeiro, /InvoiceDivergenceAuditPanel audiencia="financeiro"/);
+    assert.match(financeiro, /from 'react'/);
+    assert.match(dash, /InvoiceDivergenceAuditPanel audiencia="diretoria"/);
+    assert.doesNotMatch(page, /InvoiceDivergenceAuditPanel/);
+    assert.match(panel, /Vincular outra NF/);
     assert.match(page, /data-testid="comissoes-comerciais-page"/);
   });
 });

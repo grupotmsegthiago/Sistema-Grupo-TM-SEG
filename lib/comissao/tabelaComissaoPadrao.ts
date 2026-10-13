@@ -111,6 +111,39 @@ export function valorComissaoLinhaAposPiso(opts: {
   };
 }
 
+/** Liberado para pagamento fica no topo. O restante conserva a ordem original. */
+export function ordenarComissoesLiberadasPrimeiro<T extends { status?: string | null }>(rows: T[]): T[] {
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const aLib = a.row.status === 'LIBERADO_PARA_PAGAMENTO' ? 0 : 1;
+      const bLib = b.row.status === 'LIBERADO_PARA_PAGAMENTO' ? 0 : 1;
+      if (aLib !== bLib) return aLib - bLib;
+      return a.index - b.index;
+    })
+    .map((item) => item.row);
+}
+
+/** Coluna A pagar: valor liberado ou já pago, acima do piso. Aguardando o cliente fica em branco. */
+export function valorColunaPagamentoComissao(
+  status: string | null | undefined,
+  valorLinha: number,
+  abaixoDoPiso: boolean,
+): number | null {
+  if (abaixoDoPiso) return null;
+  if (status !== 'LIBERADO_PARA_PAGAMENTO' && status !== 'PAGO') return null;
+  return roundMoney(Math.max(0, Number(valorLinha) || 0));
+}
+
+export function somarListaComissao(
+  linhas: Array<{ valorComissao: number; aPagar: number | null }>,
+): { comissao: number; aPagar: number } {
+  return {
+    comissao: roundMoney(linhas.reduce((s, l) => s + (Number(l.valorComissao) || 0), 0)),
+    aPagar: roundMoney(linhas.reduce((s, l) => s + (l.aPagar == null ? 0 : Number(l.aPagar) || 0), 0)),
+  };
+}
+
 export function brutoPorComercialNasLinhas(
   rows: Array<{ comercial_id?: string | null; valor_faturamento?: number | null }>,
 ): Map<string, number> {

@@ -3,26 +3,44 @@ import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import {
   auditarDivergenciasInvoices,
   filtrarDivergenciasAbertas,
+  filtrarDivergenciasDiretoria,
   formatarTagDivergencia,
+  gravarVinculoOutraNf,
+  listarNfCandidatasDoCliente,
   type ItemDivergenciaFinanceira,
 } from '../lib/billing/auditarDivergenciasFinanceiras';
 import { sincronizarFaturaPorOS } from '../lib/billing/sincronizarFaturaAberta';
+import { supabase } from '../lib/supabase';
+import {
+  divergenciaTemComercialSelecionado,
+  listarClientesComercialMatch,
+} from '../lib/comissao/sincronizarComissoesFaturas';
 import { useNotification } from '../lib/NotificationContext';
 
 function fmtBRL(n: number): string {
   return (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+type CandidataNf = { id: string; client: string; number: string | null; amount: number; status: string };
+
 type Props = {
   onSynced?: () => void;
+  /** Na comissão, esconde fatura cujo cliente está sem responsável comercial. */
+  somenteComComercial?: boolean;
+  /** Financeiro vê a fila e pode juntar outra NF. Diretoria só vê o que continuou divergente. */
+  audiencia?: 'financeiro' | 'diretoria';
 };
 
-const InvoiceDivergenceAuditPanel: React.FC<Props> = ({ onSynced }) => {
+const InvoiceDivergenceAuditPanel: React.FC<Props> = ({ onSynced, somenteComComercial = false, audiencia = 'financeiro' }) => {
   const { showNotification } = useNotification();
   const [items, setItems] = useState<ItemDivergenciaFinanceira[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [consultaIncompleta, setConsultaIncompleta] = useState(false);
+  const [vincularItem, setVincularItem] = useState<ItemDivergenciaFinanceira | null>(null);
+  const [candidatas, setCandidatas] = useState<CandidataNf[]>([]);
+  const [carregandoNf, setCarregandoNf] = useState(false);
+  const [vinculandoId, setVinculandoId] = useState<string | null>(null);
 
   const loadAudit = useCallback(async () => {
     setLoading(true);
@@ -34,14 +52,25 @@ const InvoiceDivergenceAuditPanel: React.FC<Props> = ({ onSynced }) => {
         return;
       }
       setConsultaIncompleta(!!res.consultaIncompleta);
-      setItems(filtrarDivergenciasAbertas(res.items));
+      let abertas = audiencia === 'diretoria'
+        ? filtrarDivergenciasDiretoria(res.items)
+        : filtrarDivergenciasAbertas(res.items);
+      if (somenteComComercial) {
+        const clientes = await listarClientesComercialMatch(supabase);
+        if (!clientes.ok) {
+          setItems([]);
+          return;
+        }
+        abertas = abertas.filter((item) => divergenciaTemComercialSelecionado(item.cliente, clientes.clients));
+      }
+      setItems(abertas);
     } catch (e) {
       console.warn('[BILLING_AUDIT_DIVERGENCE] falha fail-soft:', e);
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [somenteComComercial, audiencia]);
 
   useEffect(() => { void loadAudit(); }, [loadAudit]);
 
@@ -69,7 +98,42 @@ const InvoiceDivergenceAuditPanel: React.FC<Props> = ({ onSynced }) => {
     }
   };
 
-  if (loading && items.length === 0) return null;
+  const abrirVinculo = async (item: ItemDivergenciaFinanceira) => {
+    setVincularItem(item);
+    setCandidatas([]);
+    setCarregandoNf(true);
+    try {
+      const res = await listarNfCandidatasDoCliente(item.cliente, [item.invoiceId]);
+      if (!res.ok) throw new Error(res.error || 'Falha ao listar NFs');
+      setCandidatas(res.itens);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Falha ao listar NFs';
+      showNotification('Erro', message, 'error');
+      setVincularItem(null);
+    } finally {
+      setCarregandoNf(false);
+    }
+  };
+
+  const confirmarVinculo = async (outraId: string) => {
+    if (!vincularItem) return;
+    setVinculandoId(outraId);
+    try {
+      const res = await gravarVinculoOutraNf(vincularItem.invoiceId, outraId);
+      if (!res.ok) throw new Error(res.error || 'Falha ao vincular NF');
+      showNotification('NF vinculada', 'A divergência foi recalculada com a outra NF e as OS dela.', 'success');
+      setVincularItem(null);
+      await loadAudit();
+      onSynced?.();
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Falha ao vincular NF';
+      showNotification('Erro', message, 'error');
+    } finally {
+      setVinculandoId(null);
+    }
+  };
+
+  if (loading && items.length === 0 && !vincularItem) return null;
   if (items.length === 0 && !consultaIncompleta) return null;
 
   const destaque = items.find((i) => i.estado === 'DIVERGENTE') || items[0];
@@ -96,7 +160,9 @@ const InvoiceDivergenceAuditPanel: React.FC<Props> = ({ onSynced }) => {
             </p>
           )}
           <p className="text-[11px] text-amber-800">
-            {items.length} fatura(s) aberta(s) com diferença acima de R$ 0,01 entre a soma das OS e o valor da fatura/comissão.
+            {audiencia === 'diretoria'
+              ? `${items.length} divergência(s) que continuaram depois de vincular outra NF do mesmo cliente.`
+              : `${items.length} fatura(s) aberta(s) com diferença entre a soma das OS e a NF. Se o CNPJ foi separado, vincule a outra NF do mesmo cliente.`}
             {consultaIncompleta ? ' Consulta incompleta — a lista pode não ser o universo total.' : ''}
           </p>
           <div className="overflow-x-auto">
@@ -115,11 +181,26 @@ const InvoiceDivergenceAuditPanel: React.FC<Props> = ({ onSynced }) => {
                 {items.map((item) => (
                   <tr key={item.invoiceId} className="border-t border-amber-200" data-testid={`invoice-divergence-row-${item.invoiceId}`}>
                     <td className="py-1.5 pr-3 font-mono">{item.faturaNumero || item.invoiceId.slice(0, 8)}</td>
-                    <td className="py-1.5 pr-3">{item.cliente}</td>
+                    <td className="py-1.5 pr-3">
+                      {item.cliente}
+                      {item.nfsVinculadas.length > 0 && (
+                        <div className="text-[10px] font-bold text-amber-800">NF vinculada: {item.nfsVinculadas.join(', ')}</div>
+                      )}
+                    </td>
                     <td className="py-1.5 pr-3 text-right font-mono">{fmtBRL(item.valorOs)}</td>
                     <td className="py-1.5 pr-3 text-right font-mono">{fmtBRL(item.valorFatura)}</td>
                     <td className="py-1.5 pr-3 text-right font-black text-red-700">{fmtBRL(item.diferencaFatura)}</td>
-                    <td className="py-1.5 text-right">
+                    <td className="py-1.5 text-right space-x-1">
+                      {audiencia === 'financeiro' && (
+                        <button
+                          type="button"
+                          onClick={() => void abrirVinculo(item)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-amber-700 text-amber-900 text-[10px] font-black uppercase hover:bg-amber-100"
+                          data-testid={`btn-vincular-nf-${item.invoiceId}`}
+                        >
+                          Vincular outra NF
+                        </button>
+                      )}
                       {item.estado === 'CONSULTA_INCOMPLETA' ? (
                         <span className="text-[10px] font-bold text-amber-700 uppercase">Consulta incompleta</span>
                       ) : item.podeSincronizar ? (
@@ -142,6 +223,39 @@ const InvoiceDivergenceAuditPanel: React.FC<Props> = ({ onSynced }) => {
           </div>
         </div>
       </div>
+      {vincularItem && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" data-testid="modal-vincular-outra-nf">
+          <div className="bg-white rounded-2xl w-full max-w-lg p-5 space-y-3 shadow-xl">
+            <p className="font-black text-sm uppercase text-gray-900">Vincular outra NF</p>
+            <p className="text-xs text-gray-600">
+              {vincularItem.cliente}. Use quando o CNPJ foi separado, mas é o mesmo cliente. A conta junta o valor das NFs e as OS vinculadas.
+            </p>
+            {carregandoNf ? (
+              <p className="text-xs text-gray-500 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Buscando NFs…</p>
+            ) : candidatas.length === 0 ? (
+              <p className="text-xs font-bold text-amber-800">Nenhuma outra NF deste cliente.</p>
+            ) : (
+              <div className="max-h-64 overflow-y-auto border border-gray-100 rounded-lg">
+                {candidatas.map((nf) => (
+                  <button
+                    key={nf.id}
+                    type="button"
+                    disabled={vinculandoId === nf.id}
+                    onClick={() => void confirmarVinculo(nf.id)}
+                    className="w-full text-left px-3 py-2 border-b border-gray-50 hover:bg-amber-50 text-xs"
+                    data-testid={`btn-escolher-nf-${nf.id}`}
+                  >
+                    <span className="font-mono font-bold">{nf.number || nf.id.slice(0, 8)}</span>
+                    <span className="ml-2">{nf.client}</span>
+                    <span className="float-right font-mono">{fmtBRL(nf.amount)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <button type="button" onClick={() => setVincularItem(null)} className="w-full py-2 rounded-lg border text-xs font-black uppercase">Fechar</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -7,6 +7,7 @@ import {
   getVeladaClosureMissing,
   isThiagoVeladaEscalationUser,
   isVeladaClosureOverdue,
+  veladaEscalationOcultaParaPerfil,
   veladaClosureOperatorMatches,
   veladaFinalKmIsValid,
   type VeladaClosureMission,
@@ -19,7 +20,7 @@ type Row = VeladaClosureMission & {
   start_km?: number | null;
 };
 
-type SessionUser = { name?: string; email?: string };
+type SessionUser = { name?: string; email?: string; role?: string };
 
 const POLL_MS = 30_000;
 
@@ -92,6 +93,7 @@ const VeladaClosureAlert: React.FC = () => {
   }, [rows, tollLogged, user?.name]);
 
   const overdueForThiago = useMemo(() => {
+    if (veladaEscalationOcultaParaPerfil(user?.role)) return [];
     if (!isThiagoVeladaEscalationUser(user)) return [];
     return rows.filter((row) => (
       isVeladaClosureOverdue(row.velada_closure_opened_at)

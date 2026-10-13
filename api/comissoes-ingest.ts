@@ -16,6 +16,12 @@ import {
 import { assertComissoesQuadroAccess } from '../lib/comissao/comissaoQuadroAuth.js';
 import { montarQuadroComissoesApi, sincronizarComissoesViaAdmin } from '../lib/comissao/comissaoQuadroApi.js';
 import { sincronizarComissoesTmETorres } from '../lib/comissao/sincronizarComissoesTorres.js';
+import { instalarAvisoComissaoLiberada } from '../lib/comissao/enviarAvisoComissaoLiberada.js';
+import { tratarPedidoAvisoLiberacao } from '../lib/comissao/avisoLiberacaoHttp.js';
+import { tratarPedidoComprovantesComissao } from '../lib/comissao/comprovantesComissao.js';
+import { tratarPedidoContaPagarTorres } from '../lib/comissao/contaPagarTorres.js';
+
+instalarAvisoComissaoLiberada();
 
 function extractToken(req: { headers?: Record<string, unknown> }): string {
   const headers = req.headers || {};
@@ -36,6 +42,8 @@ function queryOp(req: { query?: Record<string, unknown>; url?: string }): string
   if (url.includes('/comissoes/quadro')) return 'quadro';
   if (url.includes('/comissoes/sync-tm-torres')) return 'sync-tm-torres';
   if (url.includes('/comissoes/sync-faturas')) return 'sync-faturas';
+  if (url.includes('/comissoes/comprovantes')) return 'comprovantes';
+  if (url.includes('/comissoes/conta-pagar-torres')) return 'conta-pagar-torres';
   return '';
 }
 
@@ -103,6 +111,36 @@ export async function handleComissoesIngest(req: any, res: any) {
   }
 
   const op = queryOp(req);
+  if (op === 'conta-pagar-torres') {
+    try {
+      await tratarPedidoContaPagarTorres(req, res);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('[comissao] contas a pagar TORRES:', message);
+      res.status(200).json({ ok: false, error: message });
+    }
+    return;
+  }
+  if (op === 'comprovantes') {
+    try {
+      await tratarPedidoComprovantesComissao(req, res);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('[comissao] comprovante:', message);
+      res.status(200).json({ ok: false, urls: {}, completo: false });
+    }
+    return;
+  }
+  if (op === 'liberada-email') {
+    try {
+      await tratarPedidoAvisoLiberacao(req, res);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('[comissao] aviso de liberação:', message);
+      res.status(200).json({ ok: false, enviados: 0, error: message });
+    }
+    return;
+  }
   if (op === 'quadro' || op === 'sync-faturas' || op === 'sync-tm-torres') {
     if (op === 'quadro' && req.method !== 'GET') {
       res.status(405).json({ error: 'method_not_allowed' });

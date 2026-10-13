@@ -2834,6 +2834,39 @@ async function alinharStatusCadastroPortal(sb, email, ativo) {
   await sb.from("system_users").update({ status: ativo ? "Ativo" : "Inativo" }).eq("id", data.id);
 }
 
+// lib/cevaPortal/equipeInterna.ts
+var import_crypto2 = require("crypto");
+function ehEquipeInterna(usuario) {
+  if (!usuario || usuario.id == null || String(usuario.id) === "") return false;
+  if (String(usuario.status || "") !== "Ativo") return false;
+  if (usuarioSoPortal(usuario.permissions)) return false;
+  const tipo = String(usuario.user_type || "").trim().toLowerCase();
+  if (tipo === "client" || tipo === "provider") return false;
+  if (tipo === "internal") return true;
+  return !tipo && !usuario.client_id && !usuario.provider_id;
+}
+function senhaEquipeConfere(informada, gravada) {
+  const limpa = String(informada ?? "").trim();
+  const salva = gravada == null ? "" : String(gravada);
+  if (!limpa || !salva) return false;
+  const digitada = Buffer.from(limpa);
+  const armazenada = Buffer.from(salva);
+  if (digitada.length !== armazenada.length) return false;
+  return (0, import_crypto2.timingSafeEqual)(digitada, armazenada);
+}
+function tokenDaEquipeInterna(prefixo, userId, agora = Date.now()) {
+  return `${prefixo}-interno-${userId}-${agora}`;
+}
+function origemDoTokenPortal(prefixo, header) {
+  const raw = String(header || "").replace(/^Bearer\s+/i, "").trim();
+  const seguro = prefixo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const equipe = raw.match(new RegExp(`^${seguro}-interno-(\\d+)-(\\d{10,})$`));
+  if (equipe) return { origem: "equipe", id: equipe[1] };
+  const portal = raw.match(new RegExp(`^${seguro}-(\\d+)-(\\d{10,})$`));
+  if (portal) return { origem: "portal", id: portal[1] };
+  return null;
+}
+
 // lib/cevaPortal/rules.ts
 var CEVA_PORTAL_LOGIN_ENABLED = false;
 function cleanText(value, max) {
@@ -2961,12 +2994,6 @@ function cfg() {
 function tokenDoPortal(userId, now = Date.now()) {
   return `${cfg().tokenPrefix}-${userId}-${now}`;
 }
-function idDoToken(header) {
-  const raw = String(header || "").replace(/^Bearer\s+/i, "").trim();
-  const prefixo = cfg().tokenPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = raw.match(new RegExp(`^${prefixo}-(\\d+)-(\\d{10,})$`));
-  return match ? match[1] : null;
-}
 var STOP_WORDS2 = ["LTDA", "LTDA.", "S.A.", "S.A", "SA", "S/A", "S/A.", "DO", "DE", "DA", "E", "DAS", "DOS"];
 function quoteForOr(v) {
   return /[(),.:]/.test(v) ? `"${v.replace(/"/g, '\\"')}"` : v;
@@ -3044,12 +3071,33 @@ function sessaoAberta() {
     trocarSenha: false
   };
 }
+function sessaoDaEquipe(row) {
+  return {
+    id: String(row.id),
+    name: String(row.name || "").trim() || "Equipe interna",
+    email: String(row.email || "").trim().toLowerCase(),
+    perfil: "administrador",
+    trocarSenha: false,
+    equipeInterna: true
+  };
+}
+async function sessaoEquipeInterna(sb, id) {
+  const { data, error } = await sb.from("system_users").select("id, name, email, status, client_id, provider_id, user_type, permissions").eq("id", id).maybeSingle();
+  if (error || !ehEquipeInterna(data)) return null;
+  return sessaoDaEquipe(data);
+}
 async function portalSession(req) {
-  const userId = idDoToken(String(req.headers?.authorization || req.headers?.[cfg().headerSessao] || ""));
-  if (!userId) return cfg().exigeLogin ? null : sessaoAberta();
+  const header = String(req.headers?.authorization || req.headers?.[cfg().headerSessao] || "");
+  const token = origemDoTokenPortal(cfg().tokenPrefix, header);
+  if (!token) return cfg().exigeLogin ? null : sessaoAberta();
   const sb = createSupabaseAdminClient();
   if (!sb) return null;
-  const { data: user, error } = await lerUsuarioPortal(sb, { id: userId }, false);
+  if (token.origem === "equipe") {
+    const equipe = await sessaoEquipeInterna(sb, token.id);
+    if (equipe) return equipe;
+    return cfg().exigeLogin ? null : sessaoAberta();
+  }
+  const { data: user, error } = await lerUsuarioPortal(sb, { id: token.id }, false);
   if (error) return null;
   if (!user || user.status !== "ativo") return cfg().exigeLogin ? null : sessaoAberta();
   return sessaoDe(user);
@@ -3356,6 +3404,15 @@ async function executarPortalHttp(req, res) {
         res.status(503).json({ error: "Portal indispon\xEDvel." });
         return;
       }
+      const { data: sistema, error: erroSistema } = await sb.from("system_users").select("id, name, email, password, status, client_id, provider_id, user_type, permissions").ilike("email", email).maybeSingle();
+      if (erroSistema) {
+        console.error(`[${cfg().logPrefix}] login equipe`, erroSistema.message || erroSistema);
+      } else if (sistema && ehEquipeInterna(sistema) && senhaEquipeConfere(senha, sistema.password)) {
+        clearFailures(key);
+        const session2 = sessaoDaEquipe(sistema);
+        res.status(200).json({ token: tokenDaEquipeInterna(cfg().tokenPrefix, sistema.id), user: session2 });
+        return;
+      }
       const { data: user, error: erroUsuario } = await lerUsuarioPortal(sb, { email }, true);
       if (erroUsuario) {
         console.error(`[${cfg().logPrefix}] login`, erroUsuario.message || erroUsuario);
@@ -3375,8 +3432,7 @@ async function executarPortalHttp(req, res) {
         res.status(403).json({ error: "O administrador ainda n\xE3o liberou este acesso." });
         return;
       }
-      const { data: sistema } = await sb.from("system_users").select("id, status, client_id, user_type, permissions").ilike("email", email).maybeSingle();
-      if (sistema) {
+      if (!erroSistema && sistema) {
         const clienteDoLogin = await carregarClienteDoPortal(sb);
         const mesmoCliente = Boolean(clienteDoLogin?.id) && String(sistema.client_id || "") === String(clienteDoLogin.id);
         const tipo = String(sistema.user_type || "");
@@ -3422,6 +3478,10 @@ async function executarPortalHttp(req, res) {
       const session = await portalSession(req);
       if (!session) {
         res.status(401).json({ error: "Sess\xE3o expirada. Entre novamente." });
+        return;
+      }
+      if (session.equipeInterna) {
+        res.status(403).json({ error: "A senha da equipe interna \xE9 alterada no sistema." });
         return;
       }
       const senhaAtual = String(body?.senhaAtual || "");
@@ -3537,7 +3597,7 @@ async function executarPortalHttp(req, res) {
         trocar_senha: true,
         senha_hash: hashSenha(senhaTemporaria),
         senha_alterada_em: null,
-        criado_por: Number.isInteger(criador) ? criador : null
+        criado_por: session.equipeInterna || !Number.isInteger(criador) ? null : criador
       };
       let { data, error } = await sb.from(cfg().tabelas.usuarios).insert(novo).select("id, nome, email, perfil, status, trocar_senha").single();
       if (colunaSenhaAlteradaAusente(error)) {

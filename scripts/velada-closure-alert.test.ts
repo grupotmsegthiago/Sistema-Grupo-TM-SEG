@@ -6,6 +6,7 @@ import {
   getVeladaClosureMissing,
   isThiagoVeladaEscalationUser,
   isVeladaClosureOverdue,
+  veladaEscalationOcultaParaPerfil,
   isVeladaFinalKmPending,
   veladaClosureApplies,
   veladaClosureOperatorMatches,
@@ -65,6 +66,18 @@ test('escalação vermelha é a conta do Thiago', () => {
   assert.equal(isThiagoVeladaEscalationUser({ email: 'thiago@grupotmseg.com.br' }), true);
   assert.equal(isThiagoVeladaEscalationUser({ name: 'Thiago Moreira' }), true);
   assert.equal(isThiagoVeladaEscalationUser({ email: 'thiago.arruda@grupotmseg.com.br', name: 'Thiago Arruda' }), false);
+});
+
+test('tela vermelha de 48h não abre para diretoria, controller e financeiro', () => {
+  assert.equal(veladaEscalationOcultaParaPerfil('Diretoria'), true);
+  assert.equal(veladaEscalationOcultaParaPerfil('Controller'), true);
+  assert.equal(veladaEscalationOcultaParaPerfil('Financeiro'), true);
+  assert.equal(veladaEscalationOcultaParaPerfil('Operador'), false);
+  assert.equal(veladaEscalationOcultaParaPerfil('Avançado'), false);
+  assert.equal(veladaEscalationOcultaParaPerfil('Administrador'), false);
+  const src = fs.readFileSync('components/VeladaClosureAlert.tsx', 'utf8');
+  assert.match(src, /veladaEscalationOcultaParaPerfil/);
+  assert.match(src, /velada-closure-alert/);
 });
 
 test('KM final não pode ser menor que o inicial', () => {

@@ -3,6 +3,67 @@
  * Falha de forma isolada: emissão/baixa de fatura NÃO deve quebrar se a comissão falhar.
  */
 import { calcularComissao, type ComissaoStatus } from './comissaoCalc.js';
+import { linhasParaAvisos, type ComissaoLiberadaAviso } from './avisoComissaoLiberada.js';
+
+export const SELECT_COMISSAO_LIBERADA =
+  'id, cliente_nome, fatura_numero, valor_comissao, valor_faturamento, data_recebimento_cliente, empresa_origem, comercial_id';
+
+type EnviarAvisoComissao = (avisos: ComissaoLiberadaAviso[]) => Promise<unknown> | unknown;
+
+async function nomesComerciais(sb: ComissaoDbClient, ids: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (!ids.length) return map;
+  try {
+    const query = sb.from('comerciais').select('id, nome');
+    const result = typeof query?.in === 'function' ? await query.in('id', ids) : await query;
+    const data = result?.data;
+    if (!Array.isArray(data)) return map;
+    for (const row of data) {
+      const id = String(row?.id || '').trim();
+      const nome = String(row?.nome || '').trim();
+      if (id && nome) map.set(id, nome);
+    }
+  } catch {
+    // O nome do comercial complementa o e-mail. A liberação já foi gravada.
+  }
+  return map;
+}
+
+export async function montarAvisosLiberacao(
+  sb: ComissaoDbClient,
+  rows: unknown,
+): Promise<ComissaoLiberadaAviso[]> {
+  const lista = Array.isArray(rows) ? rows : [];
+  const ids = [...new Set(lista.map((row) => String(row?.comercial_id || '').trim()).filter(Boolean))];
+  const nomes = await nomesComerciais(sb, ids);
+  return linhasParaAvisos(lista, nomes);
+}
+
+async function notificarComissaoLiberada(sb: ComissaoDbClient, rows: unknown): Promise<void> {
+  try {
+    const avisos = await montarAvisosLiberacao(sb, rows);
+    if (!avisos.length) return;
+    const hook = (globalThis as { __tmsegEnviarAvisoComissaoLiberada?: EnviarAvisoComissao })
+      .__tmsegEnviarAvisoComissaoLiberada;
+    if (typeof hook === 'function') {
+      await hook(avisos);
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      const { authFetch } = await import('../authFetch.js');
+      const res = await authFetch('/api/comissoes/liberada-email', {
+        method: 'POST',
+        body: JSON.stringify({ ids: avisos.map((item) => item.id) }),
+      });
+      if (!res.ok) console.warn('[comissao] aviso de liberação HTTP', res.status);
+      return;
+    }
+    console.warn('[comissao] aviso de liberação sem remetente no servidor');
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.warn('[comissao] aviso de liberação:', message);
+  }
+}
 
 export type ComissaoDbClient = {
   from: (table: string) => any;
@@ -256,8 +317,9 @@ export async function atualizarStatusAposBaixaCliente(
       })
       .eq('fatura_id', id)
       .eq('status', 'AGUARDANDO_PAGAMENTO_CLIENTE')
-      .select('id');
+      .select(SELECT_COMISSAO_LIBERADA);
     if (error) return { ok: false, updated: 0, error: error.message };
+    await notificarComissaoLiberada(sb, data);
     return { ok: true, updated: data?.length || 0 };
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
@@ -286,8 +348,9 @@ export async function atualizarStatusAposBaixaPorOrigem(
       .eq('empresa_origem', empresa)
       .eq('origem_fatura_id', id)
       .eq('status', 'AGUARDANDO_PAGAMENTO_CLIENTE')
-      .select('id');
+      .select(SELECT_COMISSAO_LIBERADA);
     if (error) return { ok: false, updated: 0, error: error.message };
+    await notificarComissaoLiberada(sb, data);
     return { ok: true, updated: data?.length || 0 };
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
@@ -338,8 +401,9 @@ export async function atualizarStatusAposBaixaPorNumeroFatura(
       })
       .eq('fatura_numero', numero)
       .eq('status', 'AGUARDANDO_PAGAMENTO_CLIENTE')
-      .select('id');
+      .select(SELECT_COMISSAO_LIBERADA);
     if (error) return { ok: false, updated: 0, error: error.message };
+    await notificarComissaoLiberada(sb, data);
     return { ok: true, updated: data?.length || 0 };
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);

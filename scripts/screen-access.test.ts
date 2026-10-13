@@ -76,7 +76,11 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
     );
     assert.equal(
       canAccessScreen({ role: 'Financeiro', permissions: ['comissoes-comerciais'] }, 'comissoes-comerciais'),
-      false,
+      true,
+    );
+    assert.equal(
+      canAccessScreen({ role: 'Financeiro', permissions: [] }, 'comissoes-comerciais'),
+      true,
     );
   });
 

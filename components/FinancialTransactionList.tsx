@@ -43,6 +43,8 @@ import CashFlowPreviewButton from './CashFlowPreviewButton';
 import { extractAnticipationId, extractAnticipationDates } from '../lib/financial/paymentAnticipation';
 import PaymentAnticipationModal from './PaymentAnticipationModal';
 import { extractAsaasReceiptDetails } from '../lib/asaasReceiptDetails';
+import { decidirComprovante } from '../lib/financial/avisoComprovante';
+import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
 import { findInvoiceForReceivable, invoiceNfUrl } from '../lib/financial/receivableInvoiceLink';
 import { getGrossReceivedAmount } from '../lib/financial/transactionAmounts';
 import { getCashMovementDate } from '../lib/dashboardDiretoria/periodUtils';
@@ -89,6 +91,7 @@ const FinancialTransactionList: React.FC = () => {
     const [customStartDate, setCustomStartDate] = useState(getTodayBR());
     const [customEndDate, setCustomEndDate] = useState(getTodayBR());
     const [canAccessReconciliation, setCanAccessReconciliation] = useState(false);
+    const [perfilFinanceiro, setPerfilFinanceiro] = useState(false);
     const [closingNotes, setClosingNotes] = useState('');
     const [closingConfirmed, setClosingConfirmed] = useState(false);
 
@@ -190,6 +193,7 @@ const FinancialTransactionList: React.FC = () => {
             if (role === 'administrador' || role === 'diretoria' || user.permissions?.includes('*')) {
                 setCanAccessReconciliation(true);
             }
+            setPerfilFinanceiro(isFinanceProfileRole(user.role));
         }
     };
 
@@ -1226,14 +1230,29 @@ const FinancialTransactionList: React.FC = () => {
                                                         <> · Juros {formatCurrency(Number(t.manual_payment_interest))}</>
                                                       )}
                                                       {t.manual_payment_reason ? <> · Motivo: {t.manual_payment_reason}</> : null}
-                                                      {t.doc_comprovante_url && (
-                                                        <>
-                                                          {' · '}
-                                                          <a href={t.doc_comprovante_url} target="_blank" rel="noreferrer" className="underline">Comprovante</a>
-                                                        </>
-                                                      )}
                                                     </span>
                                                 )}
+                                                {(() => {
+                                                  const pago = t.status === 'PAID' || t.status === 'PARTIALLY_PAID';
+                                                  const comprovante = decidirComprovante({
+                                                    exige: pago,
+                                                    urls: [t.doc_comprovante_url, isReceber ? asaasReceipt?.receiptUrl : null],
+                                                    perfilFinanceiro,
+                                                  });
+                                                  if (comprovante.link) {
+                                                    return (
+                                                      <a href={comprovante.link} target="_blank" rel="noreferrer" className="mt-0.5 block text-[9px] font-black text-emerald-800 underline uppercase" data-testid={`link-comprovante-${t.id}`}>
+                                                        Comprovante
+                                                      </a>
+                                                    );
+                                                  }
+                                                  if (!comprovante.avisarFalta) return null;
+                                                  return (
+                                                    <span className="mt-0.5 block text-[9px] font-black text-amber-700 uppercase" data-testid={`aviso-comprovante-${t.id}`}>
+                                                      Falta anexar o comprovante
+                                                    </span>
+                                                  );
+                                                })()}
                                                 {isReceber && paidAmt > 0 && t.status !== 'PAID' && (
                                                     <span className="block text-[9px] font-bold text-green-700 mt-0.5">
                                                       Recebido: {formatCurrency(paidAmt)}

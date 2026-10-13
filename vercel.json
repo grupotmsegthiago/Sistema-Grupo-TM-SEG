@@ -539,6 +539,18 @@
       "destination": "/api/comissoes-ingest?op=sync-tm-torres"
     },
     {
+      "source": "/api/comissoes/liberada-email",
+      "destination": "/api/comissoes-ingest?op=liberada-email"
+    },
+    {
+      "source": "/api/comissoes/comprovantes",
+      "destination": "/api/comissoes-ingest?op=comprovantes"
+    },
+    {
+      "source": "/api/comissoes/conta-pagar-torres",
+      "destination": "/api/comissoes-ingest?op=conta-pagar-torres"
+    },
+    {
       "source": "/api/asaas/sync-open-payments",
       "destination": "/api/asaas-sync-open-payments"
     },

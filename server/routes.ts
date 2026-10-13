@@ -9,11 +9,14 @@ import { computeRouteDistanceKm, computeRouteProgressKm, normalizeRouteAddress }
 import fs from "fs";
 import path from "path";
 import pg from "pg";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider, sendPaymentAnticipationEmail } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider, sendPaymentAnticipationEmail, sendSystemAlertEmail } from "./emailService";
 import { registerTabelaRotaAlerta } from "./tabelaRotaAlerta";
+import { montarEmailAuditoriaFaturamento, rotaDaTabelaOperacao } from "../lib/comercial/auditoriaFaturamentoTabela";
 import { runEmailHealthCheck } from "./emailHealth";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { registerRhRoutes } from "./rhRoutes";
+import { handleFinancialTransactionPaymentsRequest } from "../api/financial-transaction-payments";
+import { handleFinancialPaymentsInitRequest } from "../api/financial-payments-init";
 import { registerOsAnalysisRoutes } from "./osAnalysisRequests";
 import { registerGestaoInvestimentoRoutes } from "./gestaoInvestimentoRoutes";
 import { registerSupportAgentsRoutes } from "./supportAgentsRoutes";
@@ -1939,6 +1942,45 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/email/auditar-faturamento", requireAuth, requireRole('administrador', 'diretoria', 'financeiro', 'comercial', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const clientId = Number(req.body?.clientId);
+      const operationType = String(req.body?.operationType || '').trim();
+      const clienteNome = String(req.body?.clientName || '').trim();
+      const rota = rotaDaTabelaOperacao(operationType);
+      if (!rota) return res.status(400).json({ ok: false, error: 'A tabela não tem origem e destino no formato CIDADE X CIDADE.' });
+      const sb = createSupabaseAdminClient();
+      if (!sb || !Number.isFinite(clientId) || clientId <= 0) {
+        return res.status(400).json({ ok: false, error: 'Cliente inválido para avisar o comercial.' });
+      }
+      const { data: client } = await sb.from('clients').select('id, name, responsavel_comercial_id').eq('id', clientId).maybeSingle();
+      let email = '';
+      let comercial = '';
+      if (client?.responsavel_comercial_id) {
+        const { data: com } = await sb.from('comerciais').select('nome, email, usuario_id').eq('id', client.responsavel_comercial_id).maybeSingle();
+        comercial = String(com?.nome || '').trim();
+        email = String(com?.email || '').trim();
+        if (!email && com?.usuario_id) {
+          const { data: user } = await sb.from('system_users').select('email, name').eq('id', com.usuario_id).maybeSingle();
+          email = String(user?.email || '').trim();
+          comercial = comercial || String(user?.name || '').trim();
+        }
+      }
+      if (!email) return res.status(200).json({ ok: false, error: 'O comercial deste cliente não tem e-mail cadastrado.' });
+      const emailMontado = montarEmailAuditoriaFaturamento({
+        cliente: String(client?.name || clienteNome || 'o cliente'),
+        tabela: operationType,
+        origem: rota.origem,
+        destino: rota.destino,
+        comercial,
+      });
+      const success = await sendSystemAlertEmail([email], emailMontado.subject, emailMontado.html);
+      res.json({ ok: success, to: email, error: success ? undefined : 'Falha ao enviar o e-mail.' });
+    } catch (err: any) {
+      res.status(200).json({ ok: false, error: err.message });
+    }
+  });
+
   app.get("/api/email/health", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
     try {
       const sendTestTo = typeof req.query?.sendTestTo === 'string' ? req.query.sendTestTo : undefined;
@@ -3038,6 +3080,22 @@ export async function registerRoutes(
 
   registerDhlIntakeRoutes(app, requireAuth, requireRole, resolveUserRole, resolvePrincipal);
   registerRhRoutes(app, requireAuth, requireRole);
+
+  // Pagamentos parciais. Sem esta rota o Vite devolve o HTML do site e o modal quebra no JSON.
+  app.all('/api/financial-transaction-payments', async (req: Request, res: Response) => {
+    try {
+      await handleFinancialTransactionPaymentsRequest(req, res);
+    } catch (e: any) {
+      if (!res.headersSent) res.status(500).json({ error: e?.message || 'Falha ao carregar pagamentos' });
+    }
+  });
+  app.all('/api/financial-payments-init', async (req: Request, res: Response) => {
+    try {
+      await handleFinancialPaymentsInitRequest(req, res);
+    } catch (e: any) {
+      if (!res.headersSent) res.status(500).json({ error: e?.message || 'Falha ao preparar pagamentos' });
+    }
+  });
 
   // POST/GET /api/dhl/occurrence-report — Plano de Ação DHL (somente diretoria)
   app.post('/api/dhl/occurrence-report', requireAuth, requireRole('diretoria'), async (req: Request, res: Response) => {

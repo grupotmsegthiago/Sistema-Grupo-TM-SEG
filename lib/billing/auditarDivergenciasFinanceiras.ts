@@ -30,6 +30,9 @@ export type ItemDivergenciaFinanceira = {
   missionIdSync: string;
   estado: EstadoDivergencia;
   podeSincronizar: boolean;
+  /** Só vai ao cockpit da Diretoria depois que outra NF do mesmo cliente foi vinculada e a diferença continua. */
+  escalarDiretoria: boolean;
+  nfsVinculadas: string[];
 };
 
 export type AuditoriaDivergenciasResult = {
@@ -87,6 +90,8 @@ export function avaliarDivergenciaFatura(entrada: EntradaAuditoriaFatura): ItemD
     missionIdSync: String(entrada.missionIdSync || ''),
     estado: 'DIVERGENTE',
     podeSincronizar: deveSincronizarStatusFatura(status),
+    escalarDiretoria: false,
+    nfsVinculadas: [],
   };
 
   if (entrada.consultaOsIncompleta) {
@@ -103,6 +108,112 @@ export function filtrarDivergenciasAbertas(
   items: ItemDivergenciaFinanceira[] | null | undefined,
 ): ItemDivergenciaFinanceira[] {
   return (items || []).filter((i) => deveSincronizarStatusFatura(i.status));
+}
+
+export function filtrarDivergenciasDiretoria(
+  items: ItemDivergenciaFinanceira[] | null | undefined,
+): ItemDivergenciaFinanceira[] {
+  return filtrarDivergenciasAbertas(items).filter((i) => i.escalarDiretoria);
+}
+
+function normalizarNomeCliente(value: string | null | undefined): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+/** CNPJ separado ainda é o mesmo cliente quando o nome coincide ou um contém o outro. */
+export function nfEhDoMesmoCliente(a: string | null | undefined, b: string | null | undefined): boolean {
+  const na = normalizarNomeCliente(a);
+  const nb = normalizarNomeCliente(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.length < 8 || nb.length < 8) return false;
+  return na.startsWith(nb) || nb.startsWith(na);
+}
+
+export type FaturaParaGrupoNf = {
+  invoiceId: string;
+  faturaNumero: string | null;
+  cliente: string;
+  status: string;
+  valorFatura: number;
+  missionIds: string[];
+  consultaOsIncompleta: boolean;
+  valorComissaoFaturamento: number | null;
+};
+
+export type VinculoNf = { invoiceId: string; outraInvoiceId: string };
+
+/**
+ * Junta NFs vinculadas do mesmo cliente.
+ * A Diretoria só vê o grupo se, somando a outra NF e as OS dela, a diferença continuar.
+ */
+export function consolidarDivergenciasComNf(
+  faturas: FaturaParaGrupoNf[],
+  valorPorMissao: Record<string, number>,
+  vinculos: VinculoNf[],
+): ItemDivergenciaFinanceira[] {
+  const porId = new Map(faturas.map((f) => [f.invoiceId, f]));
+  const parent = new Map<string, string>();
+  const find = (id: string): string => {
+    const p = parent.get(id) || id;
+    if (p === id) return id;
+    const root = find(p);
+    parent.set(id, root);
+    return root;
+  };
+  const unite = (a: string, b: string) => {
+    if (!porId.has(a) || !porId.has(b)) return;
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(rb, ra);
+  };
+  for (const f of faturas) parent.set(f.invoiceId, f.invoiceId);
+  for (const v of vinculos) unite(v.invoiceId, v.outraInvoiceId);
+
+  const grupos = new Map<string, FaturaParaGrupoNf[]>();
+  for (const f of faturas) {
+    const root = find(f.invoiceId);
+    const list = grupos.get(root) || [];
+    list.push(f);
+    grupos.set(root, list);
+  }
+
+  const items: ItemDivergenciaFinanceira[] = [];
+  for (const grupo of grupos.values()) {
+    const abertas = grupo.filter((f) => deveSincronizarStatusFatura(f.status));
+    const principal = abertas[0] || grupo[0];
+    if (!principal) continue;
+    const missionIds = [...new Set(grupo.flatMap((f) => f.missionIds))];
+    const incompleta = grupo.some((f) => f.consultaOsIncompleta) || missionIds.some((id) => valorPorMissao[id] == null);
+    let valorOs = 0;
+    if (!incompleta) {
+      for (const id of missionIds) valorOs = roundMoney(valorOs + (Number(valorPorMissao[id]) || 0));
+    }
+    const valorFatura = grupo.reduce((s, f) => roundMoney(s + (Number(f.valorFatura) || 0)), 0);
+    const outras = grupo.filter((f) => f.invoiceId !== principal.invoiceId);
+    const item = avaliarDivergenciaFatura({
+      invoiceId: principal.invoiceId,
+      faturaNumero: principal.faturaNumero,
+      cliente: principal.cliente,
+      status: principal.status,
+      valorFatura,
+      valorOs,
+      valorComissaoFaturamento: principal.valorComissaoFaturamento,
+      osCount: missionIds.length,
+      missionIdSync: missionIds[0] || '',
+      consultaOsIncompleta: incompleta,
+    });
+    if (!item) continue;
+    item.escalarDiretoria = outras.length > 0;
+    item.nfsVinculadas = outras.map((f) => f.faturaNumero || f.invoiceId);
+    items.push(item);
+  }
+  return items;
 }
 
 async function fetchAllRows(
@@ -249,26 +360,54 @@ export async function auditarDivergenciasInvoices(
       comByInvoice.set(key, list);
     }
 
-    const items: ItemDivergenciaFinanceira[] = [];
-    for (const fatura of fatRes.data) {
+    const valorPorMissao: Record<string, number> = {};
+    for (const [id, mission] of missionsById) {
+      valorPorMissao[id] = somarReceitasOs([mission]);
+    }
+
+    const nfVinculosRes = await fetchAllRows(sb, 'financial_invoice_nf_vinculos', 'invoice_id, outra_invoice_id');
+    const vinculos: VinculoNf[] = [];
+    if (!nfVinculosRes.error) {
+      for (const row of nfVinculosRes.rows) {
+        const invoiceId = String(row.invoice_id || '').trim();
+        const outraInvoiceId = String(row.outra_invoice_id || '').trim();
+        if (invoiceId && outraInvoiceId) vinculos.push({ invoiceId, outraInvoiceId });
+      }
+    } else if (!isMissingRelation({ message: nfVinculosRes.error })) {
+      return { ok: false, items: [], error: nfVinculosRes.error };
+    }
+
+    const conhecidas = new Set(fatRes.data.map((f) => String(f.id)));
+    const extrasIds = [...new Set(vinculos.flatMap((v) => [v.invoiceId, v.outraInvoiceId]))].filter((id) => !conhecidas.has(id));
+    let faturasFonte = fatRes.data;
+    if (extrasIds.length > 0) {
+      const extraRes = await fetchByIds<{
+        id: string;
+        client?: string | null;
+        number?: string | null;
+        status?: string | null;
+        amount?: number | null;
+      }>(sb, 'financial_invoices', 'id, client, number, status, amount', 'id', extrasIds);
+      if (extraRes.error) return { ok: false, items: [], error: extraRes.error };
+      faturasFonte = [...fatRes.data, ...extraRes.data];
+    }
+
+    const faturasGrupo: FaturaParaGrupoNf[] = faturasFonte.map((fatura) => {
       const invoiceId = String(fatura.id);
       const missionIds = byInvoice.get(invoiceId) || [];
       const found = missionIds.map((id) => missionsById.get(id)).filter(Boolean) as ReceitaOsFaturaInput[];
-      const incompleta = found.length !== missionIds.length;
-      const item = avaliarDivergenciaFatura({
+      return {
         invoiceId,
-        faturaNumero: fatura.number,
-        cliente: fatura.client,
-        status: fatura.status,
+        faturaNumero: fatura.number || null,
+        cliente: String(fatura.client || ''),
+        status: String(fatura.status || ''),
         valorFatura: Number(fatura.amount) || 0,
-        valorOs: incompleta ? 0 : somarReceitasOs(found),
+        missionIds,
+        consultaOsIncompleta: found.length !== missionIds.length,
         valorComissaoFaturamento: pickComissaoFaturamento(comByInvoice.get(invoiceId) || []),
-        osCount: missionIds.length,
-        missionIdSync: missionIds[0] || '',
-        consultaOsIncompleta: incompleta,
-      });
-      if (item) items.push(item);
-    }
+      };
+    });
+    const items = consolidarDivergenciasComNf(faturasGrupo, valorPorMissao, vinculos);
 
     return {
       ok: true,
@@ -280,6 +419,50 @@ export async function auditarDivergenciasInvoices(
     console.warn('[BILLING_AUDIT_DIVERGENCE]', message);
     return { ok: false, items: [], error: message };
   }
+}
+
+export async function listarNfCandidatasDoCliente(
+  cliente: string,
+  excluirIds: string[],
+  opts?: { sb?: InvoiceSyncClient },
+): Promise<{ ok: boolean; itens: Array<{ id: string; client: string; number: string | null; amount: number; status: string }>; error?: string }> {
+  const sb = opts?.sb || supabase;
+  const res = await fetchAllRows(sb, 'financial_invoices', 'id, client, number, amount, status');
+  if (res.error) return { ok: false, itens: [], error: res.error };
+  const excluir = new Set(excluirIds);
+  const itens = (res.rows || [])
+    .filter((row) => {
+      const id = String(row.id || '').trim();
+      if (!id || excluir.has(id)) return false;
+      if (String(row.status || '').toUpperCase() === 'CANCELADA') return false;
+      return nfEhDoMesmoCliente(cliente, row.client);
+    })
+    .map((row) => ({
+      id: String(row.id),
+      client: String(row.client || ''),
+      number: row.number ? String(row.number) : null,
+      amount: Number(row.amount) || 0,
+      status: String(row.status || ''),
+    }));
+  return { ok: true, itens };
+}
+
+export async function gravarVinculoOutraNf(
+  invoiceId: string,
+  outraInvoiceId: string,
+  opts?: { sb?: InvoiceSyncClient },
+): Promise<{ ok: boolean; error?: string }> {
+  const a = String(invoiceId || '').trim();
+  const b = String(outraInvoiceId || '').trim();
+  if (!a || !b || a === b) return { ok: false, error: 'Escolha outra NF do mesmo cliente.' };
+  const [invoice_id, outra_invoice_id] = a < b ? [a, b] : [b, a];
+  const sb = opts?.sb || supabase;
+  const { error } = await sb.from('financial_invoice_nf_vinculos').upsert(
+    { invoice_id, outra_invoice_id },
+    { onConflict: 'invoice_id,outra_invoice_id', ignoreDuplicates: true },
+  );
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 export function formatarTagDivergencia(item: Pick<ItemDivergenciaFinanceira, 'valorOs' | 'valorFatura'>): string {

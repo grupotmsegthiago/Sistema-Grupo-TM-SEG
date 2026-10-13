@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BadgeDollarSign, Filter, Loader2, Receipt,
-  Wallet, X, Landmark, FileSpreadsheet, RefreshCw, ChevronDown, ChevronUp, ChevronRight, AlertTriangle,
+  Wallet, X, Landmark, FileSpreadsheet, RefreshCw, ChevronDown, ChevronUp, ChevronRight,
   TrendingUp, Percent, Briefcase, CircleDollarSign, Gift, ClipboardList,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { formatDateTimeBR, formatNowDateTimeBR } from '../lib/dateUtils';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { fetchAllPages } from '../lib/supabasePaging';
@@ -12,9 +13,10 @@ import {
   COMISSAO_STATUS_LABEL,
   type ComissaoStatus,
 } from '../lib/comissao/comissaoCalc';
-import { registrarPagamentoComissao } from '../lib/comissao/comissaoService';
+import { lancarPagamentoComissao, registrarPagamentoComissao } from '../lib/comissao/comissaoService';
+import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
+import { comprovantesJaGravados, decidirComprovante } from '../lib/financial/avisoComprovante';
 import { sincronizarComerciaisDeUsuarios } from '../lib/comissao/comissaoUsuarios';
-import { carregarPendenciasComissao, type PendenciaComissaoCliente } from '../lib/comissao/sincronizarComissoesFaturas';
 import {
   anosFiltroComissao,
   aplicarPisoComissaoQuadro,
@@ -37,10 +39,12 @@ import {
   type StatusPagamentoPar,
 } from '../lib/comissao/dashboardComissoes';
 import type { LinhaTempoCliente } from '../lib/comissao/linhaTempoComissao';
-import InvoiceDivergenceAuditPanel from './InvoiceDivergenceAuditPanel';
 import {
   gerarLinhasTabelaReferencia,
   TABELA_COMISSAO_PADRAO,
+  ordenarComissoesLiberadasPrimeiro,
+  somarListaComissao,
+  valorColunaPagamentoComissao,
   valorComissaoLinhaAposPiso,
 } from '../lib/comissao/tabelaComissaoPadrao';
 import { filtrarLinhasAposCadastro, lancamentoAposCadastro } from '../lib/comissao/dataInicioComissao';
@@ -88,12 +92,27 @@ type ComissaoRow = {
   data_faturamento: string | null;
   data_recebimento_cliente: string | null;
   data_pagamento_comissao: string | null;
+  pago_em?: string | null;
+  conta_pagar_id?: string | null;
   comprovante_url: string | null;
   comerciais?: { nome?: string | null; pix_chave?: string | null } | null;
 };
 
 function empresaLabel(empresa?: string | null): string {
   return String(empresa || '').toUpperCase() === 'TORRES' ? 'TORRES' : 'TM SEG';
+}
+
+function LogoEmpresa({ empresa }: { empresa?: string | null }) {
+  const torres = String(empresa || '').toUpperCase() === 'TORRES';
+  return (
+    <img
+      src={torres ? '/logo-torres.jpeg' : '/logo-tm.svg'}
+      alt={torres ? 'Torres' : 'TM SEG'}
+      title={empresaLabel(empresa)}
+      className={`h-10 w-auto object-contain ${torres ? 'max-w-[76px]' : 'max-w-[92px]'}`}
+      data-testid={torres ? 'logo-empresa-torres' : 'logo-empresa-tm'}
+    />
+  );
 }
 
 function fmtBRL(n: number): string {
@@ -154,6 +173,159 @@ const STATUS_BADGE: Record<ComissaoStatus, string> = {
   PAGO: 'bg-green-50 text-green-800 border-green-200',
   CANCELADO: 'bg-gray-100 text-gray-500 border-gray-200',
 };
+
+function fmtHistoricoPagamento(pagoEm?: string | null, data?: string | null): string {
+  if (pagoEm) return formatDateTimeBR(pagoEm);
+  if (data) return fmtDate(data);
+  return '—';
+}
+
+function BlocoListaComissao({
+  titulo,
+  testId,
+  vazio,
+  rows,
+  soma,
+  comissaoLinha,
+  onLancar,
+  lancandoId,
+  onPagar,
+  perfilFinanceiro,
+  comprovantePorComissao,
+  comprovantesCompletos,
+}: {
+  titulo: string;
+  testId: string;
+  vazio: string;
+  rows: ComissaoRow[];
+  soma: { comissao: number; aPagar: number };
+  comissaoLinha: (r: ComissaoRow) => { valor: number; percentual: number; abaixoDoPiso: boolean };
+  onLancar: (r: ComissaoRow) => void;
+  lancandoId: string | null;
+  onPagar: (r: ComissaoRow) => void;
+  perfilFinanceiro: boolean;
+  comprovantePorComissao: Record<string, string>;
+  comprovantesCompletos: boolean;
+}) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid={testId}>
+      <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-xs font-black uppercase text-gray-800">{titulo}</h3>
+          <p className="text-[10px] text-gray-400 font-bold">{rows.length} lançamento(s)</p>
+        </div>
+        <div className="flex flex-wrap gap-4 text-right">
+          <div>
+            <div className="text-[9px] font-black uppercase text-gray-400">Valor da comissão</div>
+            <div className="text-sm font-black text-gray-900" data-testid={`${testId}-soma-comissao`}>{fmtBRL(soma.comissao)}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-black uppercase text-gray-400">Valor a pagar</div>
+            <div className="text-sm font-black text-blue-800" data-testid={`${testId}-soma-a-pagar`}>{fmtBRL(soma.aPagar)}</div>
+          </div>
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <div className="p-8 text-center text-sm text-gray-500">{vazio}</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase">
+                <th className="text-left px-3 py-2">Empresa</th>
+                <th className="text-left px-3 py-2">Cliente</th>
+                <th className="text-left px-3 py-2">NF / OS</th>
+                <th className="text-left px-3 py-2">Fechamento</th>
+                <th className="text-right px-3 py-2">Faturamento</th>
+                <th className="text-right px-3 py-2">Imposto %</th>
+                <th className="text-right px-3 py-2">Lucro base</th>
+                <th className="text-right px-3 py-2">% Comissão</th>
+                <th className="text-right px-3 py-2">Vlr. comissão</th>
+                <th className="text-right px-3 py-2">A pagar</th>
+                <th className="text-left px-3 py-2">Status</th>
+                <th className="text-center px-3 py-2">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const linhaPiso = comissaoLinha(r);
+                const aPagar = valorColunaPagamentoComissao(r.status, linhaPiso.valor, linhaPiso.abaixoDoPiso);
+                const pago = r.status === 'PAGO';
+                const comprovante = decidirComprovante({
+                  exige: comprovantesCompletos && (pago || r.status === 'LIBERADO_PARA_PAGAMENTO'),
+                  urls: [r.comprovante_url, comprovantePorComissao[r.id]],
+                  perfilFinanceiro,
+                });
+                return (
+                  <tr key={r.id} className={`border-t border-gray-50 ${pago ? 'bg-green-50/40' : aPagar != null ? 'bg-blue-50/60' : ''}`} data-testid={`comissao-row-${r.id}`}>
+                    <td className="px-3 py-2"><LogoEmpresa empresa={r.empresa_origem} /></td>
+                    <td className="px-3 py-2">
+                      <div className="font-bold text-gray-900 uppercase text-xs">{r.cliente_nome || '—'}</div>
+                      <div className="text-[10px] text-gray-400">{r.comerciais?.nome || '—'}</div>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs">{r.fatura_numero || r.fatura_id?.slice(0, 8) || '—'}</td>
+                    <td className="px-3 py-2 text-[10px] font-bold text-gray-600">
+                      <div>{fmtDate(r.data_faturamento)}</div>
+                      <div className="text-gray-400 uppercase">{labelQuinzena(quinzenaDeDataFaturamento(r.data_faturamento))}</div>
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(Number(r.valor_faturamento))}</td>
+                    <td className="px-3 py-2 text-right">{Number(r.percentual_imposto_aplicado).toFixed(2)}%</td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(Number(r.valor_base_liquida))}</td>
+                    <td className="px-3 py-2 text-right">{linhaPiso.percentual.toFixed(2)}%</td>
+                    <td className="px-3 py-2 text-right font-black">
+                      {fmtBRL(linhaPiso.valor)}
+                      {linhaPiso.abaixoDoPiso && (
+                        <div className="text-[9px] font-bold text-amber-700 uppercase">Abaixo do piso</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right font-black text-blue-800" data-testid={`comissao-a-pagar-${r.id}`}>
+                      {aPagar == null ? '—' : fmtBRL(aPagar)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border ${STATUS_BADGE[r.status]}`}>
+                        {COMISSAO_STATUS_LABEL[r.status]}
+                      </span>
+                      {pago && (
+                        <div className="mt-1 text-[10px] font-bold text-green-800" data-testid={`comissao-pago-em-${r.id}`}>
+                          {fmtHistoricoPagamento(r.pago_em, r.data_pagamento_comissao)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                      {r.status === 'LIBERADO_PARA_PAGAMENTO' && !linhaPiso.abaixoDoPiso && !r.conta_pagar_id && (
+                        <button type="button" disabled={lancandoId === r.id} onClick={() => onLancar(r)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 text-white text-[10px] font-black uppercase disabled:opacity-50" data-testid={`btn-lancar-pagamento-${r.id}`}>
+                          {lancandoId === r.id ? <Loader2 size={12} className="animate-spin" /> : <CircleDollarSign size={12} />}
+                          {lancandoId === r.id ? 'Lançando…' : (String(r.empresa_origem || '').toUpperCase() === 'TORRES' ? 'Lançar na TORRES' : 'Lançar pagamento')}
+                        </button>
+                      )}
+                      {r.status === 'LIBERADO_PARA_PAGAMENTO' && !linhaPiso.abaixoDoPiso && !!r.conta_pagar_id && (
+                        <button type="button" onClick={() => onPagar(r)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-red-600 text-white text-[10px] font-black uppercase" data-testid={`btn-pagar-${r.id}`}>
+                          <Wallet size={12} /> Pagar comissão
+                        </button>
+                      )}
+                      {comprovante.link && (
+                        <a href={comprovante.link} target="_blank" rel="noreferrer" className="text-[10px] font-black text-green-700 uppercase inline-flex items-center gap-1" data-testid={`link-comprovante-comissao-${r.id}`}>
+                          <Receipt size={12} /> Comprovante
+                        </a>
+                      )}
+                      {comprovante.avisarFalta && (
+                        <div className="text-[10px] font-black text-amber-700 uppercase" data-testid={`aviso-comprovante-comissao-${r.id}`}>
+                          Falta anexar o comprovante
+                        </div>
+                      )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Sparkline({ tone }: { tone: 'white' | 'muted' }) {
   const stroke = tone === 'white' ? 'rgba(255,255,255,0.55)' : 'rgba(15,23,42,0.18)';
@@ -479,6 +651,7 @@ const ComissoesComerciaisPage: React.FC = () => {
     try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
   }, []);
   const soProprio = comissaoSomentePropria(usuarioAtual);
+  const perfilFinanceiro = isFinanceProfileRole(usuarioAtual?.role);
   const now = new Date();
   const [year, setYear] = useState(2026);
   const [month, setMonth] = useState(9);
@@ -489,10 +662,13 @@ const ComissoesComerciaisPage: React.FC = () => {
   const [empresaFilter, setEmpresaFilter] = useState<'' | EmpresaOrigem>('');
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ComissaoRow[]>([]);
+  const [comprovantePorComissao, setComprovantePorComissao] = useState<Record<string, string>>({});
+  const [comprovantesCompletos, setComprovantesCompletos] = useState(true);
   const [comerciais, setComerciais] = useState<Comercial[]>([]);
   const [paying, setPaying] = useState<ComissaoRow | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [savingPay, setSavingPay] = useState(false);
+  const [lancandoId, setLancandoId] = useState<string | null>(null);
   const [showCadastro, setShowCadastro] = useState(false);
   const [syncingUsers, setSyncingUsers] = useState(false);
   const [showTabela, setShowTabela] = useState(false);
@@ -506,7 +682,6 @@ const ComissoesComerciaisPage: React.FC = () => {
     live: boolean;
     error?: string;
   } | null>(null);
-  const [pendencias, setPendencias] = useState<PendenciaComissaoCliente[]>([]);
   const [quadroTm, setQuadroTm] = useState<LinhaQuadroCliente[]>([]);
   const [quadroTorres, setQuadroTorres] = useState<LinhaQuadroCliente[]>([]);
   const [mesesDisponiveis, setMesesDisponiveis] = useState<string[]>([]);
@@ -515,6 +690,7 @@ const ComissoesComerciaisPage: React.FC = () => {
   const [iniciosComissao, setIniciosComissao] = useState<Record<string, string>>({});
   const [escopoPronto, setEscopoPronto] = useState(!soProprio);
   const autoSyncRef = useRef(false);
+  const autoTorresRef = useRef(new Set<string>());
 
   const { start: periodStart, end: periodEnd } = intervaloQuinzena(year, month, quinzenaFiltro);
 
@@ -548,8 +724,7 @@ const ComissoesComerciaisPage: React.FC = () => {
         setSyncingFaturas(true);
         try {
           const syncRes = await authFetch('/api/comissoes/sync-faturas', { method: 'POST', body: '{}' });
-          const sync = await syncRes.json().catch(() => ({}));
-          if (sync.pendencias) setPendencias(sync.pendencias);
+          await syncRes.json().catch(() => ({}));
         } catch {
           /* fail-soft: quadro das faturas continua */
         } finally {
@@ -582,7 +757,6 @@ const ComissoesComerciaisPage: React.FC = () => {
           setQuadroTm(quadroJson.linhasTm || []);
           setQuadroTorres(mesclarLinhasQuadro(quadroJson.linhasTorres || [], quadroDeComissoesTorres(result.rows, listaComerciais)));
           setMesesDisponiveis(quadroJson.meses || []);
-          if (Array.isArray(quadroJson.pendencias)) setPendencias(quadroJson.pendencias);
           setCobertura(quadroJson.cobertura || coberturaVazia('CONSULTA INCOMPLETA', 'API sem cobertura de OS.', true));
           if (quadroJson.error && !(quadroJson.linhasTm || []).length && !(quadroJson.linhasTorres || []).length) {
             showNotification('Quadro', quadroJson.error, 'warning');
@@ -609,12 +783,6 @@ const ComissoesComerciaisPage: React.FC = () => {
         }
         setCobertura(coberturaVazia('ERRO', e?.message || 'Falha ao carregar cobertura de OS', true));
         showNotification('Quadro', e?.message || 'Falha ao carregar faturamento', 'warning');
-      }
-      try {
-        const pend = await carregarPendenciasComissao(supabase);
-        if (pend.ok && pend.pendencias.length) setPendencias(pend.pendencias);
-      } catch {
-        /* pendências já podem ter vindo da API */
       }
       if (!result.complete) {
         showNotification('Consulta incompleta', 'Nem todas as comissões do período foram carregadas.', 'warning');
@@ -655,6 +823,82 @@ const ComissoesComerciaisPage: React.FC = () => {
   useEffect(() => { if (periodoPronto && escopoPronto) void load(); }, [load, periodoPronto, escopoPronto]);
 
   useEffect(() => {
+    let alive = true;
+    const elegiveis = rows.filter((r) => r.status === 'LIBERADO_PARA_PAGAMENTO' || r.status === 'PAGO');
+    if (!elegiveis.length) {
+      setComprovantePorComissao({});
+      setComprovantesCompletos(true);
+      return;
+    }
+    (async () => {
+      try {
+        const numeros = [...new Set(elegiveis.map((r) => String(r.fatura_numero || '').trim()).filter((n) => n.length >= 8 || n.includes('-')))];
+        const idsFatura = [...new Set(elegiveis.map((r) => String(r.fatura_id || '').trim()).filter((id) => /^[0-9a-f-]{36}$/i.test(id)))];
+        const faturas: Array<{ id: string; number: string | null; notes: string | null; manual_payment_evidence_url: string | null; asaas_payment_id: string | null; issuer_company: string | null }> = [];
+        for (let i = 0; i < numeros.length; i += 40) {
+          const { data, error } = await supabase
+            .from('financial_invoices')
+            .select('id, number, notes, manual_payment_evidence_url, asaas_payment_id, issuer_company')
+            .in('number', numeros.slice(i, i + 40));
+          if (error) throw error;
+          faturas.push(...(data || []));
+        }
+        for (let i = 0; i < idsFatura.length; i += 40) {
+          const { data, error } = await supabase
+            .from('financial_invoices')
+            .select('id, number, notes, manual_payment_evidence_url, asaas_payment_id, issuer_company')
+            .in('id', idsFatura.slice(i, i + 40));
+          if (error) throw error;
+          faturas.push(...(data || []));
+        }
+        const titulos: Array<{ description: string | null; notes: string | null; doc_comprovante_url: string | null }> = [];
+        for (let i = 0; i < numeros.length; i += 8) {
+          const chunk = numeros.slice(i, i + 8);
+          const or = chunk.map((n) => {
+            const token = n.replace(/[%_,.()]/g, '');
+            return `description.ilike.%${token}%,notes.ilike.%${token}%`;
+          }).join(',');
+          const result = await fetchAllPages<{ description: string | null; notes: string | null; doc_comprovante_url: string | null }>(async (from, size) => {
+            const { data, error, count } = await supabase
+              .from('financial_transactions')
+              .select('description, notes, doc_comprovante_url', { count: 'exact' })
+              .eq('type', 'INCOME')
+              .not('doc_comprovante_url', 'is', null)
+              .or(or)
+              .range(from, from + size - 1);
+            return { data, error, count };
+          });
+          if (!result.complete) throw new Error('consulta incompleta');
+          titulos.push(...result.rows);
+        }
+        const gravados = comprovantesJaGravados({ comissoes: elegiveis, faturas, titulos });
+        const mapa = { ...gravados.urls };
+        let completo = true;
+        const pendentes = gravados.pendentes.filter((item) => item.paymentId || item.torresOrigemId);
+        if (pendentes.length) {
+          const res = await authFetch('/api/comissoes/comprovantes', {
+            method: 'POST',
+            body: JSON.stringify({ itens: pendentes }),
+          });
+          const json = await res.json().catch(() => null) as { urls?: Record<string, string>; completo?: boolean } | null;
+          if (!res.ok || !json) completo = false;
+          else {
+            Object.assign(mapa, json.urls || {});
+            if (json.completo !== true) completo = false;
+          }
+        }
+        if (alive) {
+          setComprovantePorComissao(mapa);
+          setComprovantesCompletos(completo);
+        }
+      } catch {
+        if (alive) setComprovantesCompletos(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [rows]);
+
+  useEffect(() => {
     const c = comerciais.find((x) => x.id === comercialId);
     setNovoPix(c?.pix_chave || '');
     setNovoFixo(c?.valor_fixo != null ? String(c.valor_fixo) : '');
@@ -679,7 +923,9 @@ const ComissoesComerciaisPage: React.FC = () => {
   }, [quadroTm, quadroTorres, empresaFilter, comercialId, iniciosComissao]);
 
   const rowsAposCadastro = useMemo(
-    () => rows.filter((r) => lancamentoAposCadastro(r.data_faturamento, iniciosComissao[String(r.comercial_id || '').trim()] || null)),
+    () => ordenarComissoesLiberadasPrimeiro(
+      rows.filter((r) => lancamentoAposCadastro(r.data_faturamento, iniciosComissao[String(r.comercial_id || '').trim()] || null)),
+    ),
     [rows, iniciosComissao],
   );
 
@@ -699,6 +945,27 @@ const ComissoesComerciaisPage: React.FC = () => {
     brutoComercialNoPeriodo: brutoComercialPeriodo.get(String(r.comercial_id || '').trim()) || 0,
     percentual: Number(r.percentual_comissao_aplicado),
   }), [brutoComercialPeriodo]);
+
+  const listasComissao = useMemo(() => {
+    const liberadas = rowsAposCadastro.filter((r) => r.status === 'LIBERADO_PARA_PAGAMENTO');
+    const pendentes = rowsAposCadastro.filter((r) => r.status !== 'PAGO' && r.status !== 'LIBERADO_PARA_PAGAMENTO');
+    const pagas = rowsAposCadastro.filter((r) => r.status === 'PAGO');
+    const linhaSoma = (r: ComissaoRow) => {
+      const linha = comissaoLinha(r);
+      return {
+        valorComissao: linha.valor,
+        aPagar: valorColunaPagamentoComissao(r.status, linha.valor, linha.abaixoDoPiso),
+      };
+    };
+    return {
+      liberadas,
+      pendentes,
+      pagas,
+      somaLiberada: somarListaComissao(liberadas.map(linhaSoma)),
+      somaPendente: somarListaComissao(pendentes.map(linhaSoma)),
+      somaPaga: somarListaComissao(pagas.map(linhaSoma)),
+    };
+  }, [rowsAposCadastro, comissaoLinha]);
 
   const stats = useMemo(() => {
     const lib = rowsAposCadastro.filter((r) => r.status === 'LIBERADO_PARA_PAGAMENTO').reduce((s, r) => s + comissaoLinha(r).valor, 0);
@@ -722,6 +989,90 @@ const ComissoesComerciaisPage: React.FC = () => {
     cobertura,
   }), [quadroVisivel.all, funcionarios, cobertura]);
 
+  const lancarNoContasAPagar = async (r: ComissaoRow, silencioso = false) => {
+    const linha = comissaoLinha(r);
+    const valor = valorColunaPagamentoComissao(r.status, linha.valor, linha.abaixoDoPiso);
+    if (valor == null || valor <= 0) {
+      if (!silencioso) showNotification('Lançar pagamento', 'Esta comissão não tem valor a pagar.', 'warning');
+      return false;
+    }
+    const torres = String(r.empresa_origem || '').toUpperCase() === 'TORRES';
+    setLancandoId(r.id);
+    try {
+      if (torres) {
+        const res = await authFetch('/api/comissoes/conta-pagar-torres', {
+          method: 'POST',
+          body: JSON.stringify({ acao: 'lancar', id: r.id, valor }),
+        });
+        const json = await res.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+        if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao lançar no Contas a Pagar da TORRES');
+        if (!silencioso) showNotification('Contas a Pagar da TORRES', 'Lançamento criado na TORRES, separado da TM SEG.', 'success');
+      } else {
+        const res = await lancarPagamentoComissao({
+          id: r.id,
+          cliente: r.cliente_nome,
+          fatura: r.fatura_numero,
+          comercial: r.comerciais?.nome,
+          dataFaturamento: r.data_faturamento,
+          valor,
+          contaPagarId: r.conta_pagar_id,
+        });
+        if (!res.ok) throw new Error(res.error || 'Falha ao lançar no Contas a Pagar');
+        if (!silencioso) showNotification('Contas a Pagar', 'Lançamento criado. Agora é possível pagar a comissão.', 'success');
+      }
+      await load();
+      return true;
+    } catch (e: any) {
+      if (!silencioso) showNotification('Erro', e?.message || 'Falha ao lançar pagamento', 'error');
+      return false;
+    } finally {
+      setLancandoId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (soProprio) return;
+    const alvos = rows.filter((r) => {
+      if (autoTorresRef.current.has(r.id)) return false;
+      if (String(r.empresa_origem || '').toUpperCase() !== 'TORRES') return false;
+      if (r.status !== 'LIBERADO_PARA_PAGAMENTO' || r.conta_pagar_id) return false;
+      const linha = comissaoLinha(r);
+      const valor = valorColunaPagamentoComissao(r.status, linha.valor, linha.abaixoDoPiso);
+      return valor != null && valor > 0 && !linha.abaixoDoPiso;
+    });
+    if (!alvos.length) return;
+    let vivo = true;
+    (async () => {
+      let criou = false;
+      let erro = '';
+      for (const r of alvos) {
+        autoTorresRef.current.add(r.id);
+        const linha = comissaoLinha(r);
+        const valor = valorColunaPagamentoComissao(r.status, linha.valor, linha.abaixoDoPiso);
+        if (valor == null) continue;
+        try {
+          const res = await authFetch('/api/comissoes/conta-pagar-torres', {
+            method: 'POST',
+            body: JSON.stringify({ acao: 'lancar', id: r.id, valor }),
+          });
+          const json = await res.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+          if (!res.ok || !json?.ok) erro = json?.error || erro || 'Falha ao lançar na TORRES';
+          else criou = true;
+        } catch (e: any) {
+          erro = e?.message || erro;
+        }
+      }
+      if (!vivo) return;
+      if (criou) {
+        showNotification('Contas a Pagar da TORRES', 'Comissão da TORRES lançada no contas a pagar dela.', 'success');
+        await load();
+      } else if (erro) {
+        showNotification('Contas a Pagar da TORRES', erro, 'warning');
+      }
+    })();
+    return () => { vivo = false; };
+  }, [rows, soProprio]);
+
   const confirmarPagamento = async () => {
     if (!paying || !file) {
       showNotification('Comprovante', 'Anexe o comprovante da transferência.', 'warning');
@@ -731,7 +1082,21 @@ const ComissoesComerciaisPage: React.FC = () => {
     try {
       const res = await registrarPagamentoComissao(paying.id, file);
       if (!res.ok) throw new Error(res.error || 'Falha ao registrar pagamento');
-      showNotification('Pago', 'Comissão marcada como paga.', 'success');
+      if (String(paying.empresa_origem || '').toUpperCase() === 'TORRES') {
+        const baixa = await authFetch('/api/comissoes/conta-pagar-torres', {
+          method: 'POST',
+          body: JSON.stringify({ acao: 'baixar', id: paying.id }),
+        });
+        const json = await baixa.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+        if (!json?.ok) {
+          showNotification('Pago', json?.error || 'A comissão foi paga, mas o Contas a Pagar da TORRES não foi baixado.', 'warning');
+          setPaying(null);
+          setFile(null);
+          await load();
+          return;
+        }
+      }
+      showNotification('Pago', res.aviso || 'Comprovante anexado. Data e hora do pagamento gravadas.', res.aviso ? 'warning' : 'success');
       setPaying(null);
       setFile(null);
       await load();
@@ -775,7 +1140,6 @@ const ComissoesComerciaisPage: React.FC = () => {
       const syncRes = await authFetch('/api/comissoes/sync-faturas', { method: 'POST', body: '{}' });
       const res = await syncRes.json().catch(() => ({}));
       if (!syncRes.ok || res.ok === false) throw new Error(res.error || 'Falha ao sincronizar faturas');
-      setPendencias(res.pendencias || []);
       showNotification(
         'Comissões',
         `${res.generated || 0} gerada(s). Sem comercial: ${res.skippedSemComercial || 0}. Já existiam: ${res.skippedJaExiste || 0}.`,
@@ -796,7 +1160,6 @@ const ComissoesComerciaisPage: React.FC = () => {
       const syncRes = await authFetch(`/api/comissoes/sync-tm-torres?${qs}`, { method: 'POST', body: '{}' });
       const json = await syncRes.json().catch(() => ({}));
       if (!syncRes.ok) throw new Error(json.error || 'Falha no sincronismo');
-      setPendencias(json.tm?.pendencias || []);
       setSyncTorresInfo({
         clientes: json.torres?.clientesComComercial || [],
         live: !!json.torres?.liveDisponivel || !!json.torres?.pushed,
@@ -914,8 +1277,6 @@ const ComissoesComerciaisPage: React.FC = () => {
         </div>
       </div>
 
-      {!soProprio && <InvoiceDivergenceAuditPanel onSynced={() => { void load(); }} />}
-
       {syncTorresInfo ? (
         <div
           className={`rounded-xl border p-4 ${syncTorresInfo.live ? 'border-emerald-200 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}
@@ -936,44 +1297,6 @@ const ComissoesComerciaisPage: React.FC = () => {
           ) : null}
         </div>
       ) : null}
-
-      {pendencias.length > 0 && (
-        <div className="border-2 border-amber-400 bg-amber-50 rounded-xl p-4" data-testid="comissao-pendencias-banner">
-          <div className="flex items-start gap-3">
-            <div className="p-2 rounded-lg bg-amber-500 shrink-0"><AlertTriangle size={18} className="text-white" /></div>
-            <div className="flex-1 min-w-0">
-              <p className="font-black text-sm uppercase text-amber-900">Faturamento sem comissão</p>
-              <p className="text-[11px] text-amber-800 mt-1">
-                O quadro lista só o faturamento com <strong>Responsável Comercial</strong> no cadastro. Sem comercial não entra na comissão — aparece abaixo para vincular. TORRES entra pelo ingest/faturamento da TORRES (não pelo cadastro de cliente da TM SEG).
-              </p>
-              <div className="overflow-x-auto mt-3 max-h-48">
-                <table className="min-w-full text-xs">
-                  <thead>
-                    <tr className="text-[10px] font-black text-amber-800 uppercase">
-                      <th className="text-left py-1 pr-3">Cliente na fatura</th>
-                      <th className="text-left py-1 pr-3">Motivo</th>
-                      <th className="text-right py-1 pr-3">Faturas</th>
-                      <th className="text-right py-1">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendencias.slice(0, 20).map((p) => (
-                      <tr key={`${p.motivo}-${p.cliente}`} className="border-t border-amber-200">
-                        <td className="py-1 pr-3 font-bold uppercase">{p.cliente}</td>
-                        <td className="py-1 pr-3">
-                          {p.motivo === 'sem_comercial' ? 'Sem comercial no cadastro' : p.motivo === 'cadastro_ambiguo' ? 'Cadastro duplicado' : 'Nome da fatura não achou o cliente'}
-                        </td>
-                        <td className="py-1 pr-3 text-right font-mono">{p.faturas}</td>
-                        <td className="py-1 text-right font-mono">{fmtBRL(p.total)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="border border-slate-200 bg-white rounded-xl p-4" data-testid="cobertura-os-periodo">
         <p className="font-black text-sm uppercase text-slate-800">OS do período × faturamento</p>
@@ -1249,79 +1572,57 @@ const ComissoesComerciaisPage: React.FC = () => {
         </div>
       )}
 
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        {loading ? (
-          <div className="p-10 flex items-center justify-center gap-2 text-gray-500 text-sm"><Loader2 className="animate-spin" size={16} /> Carregando comissões…</div>
-        ) : rowsAposCadastro.length === 0 ? (
-          <div className="p-10 text-center text-sm text-gray-500">Nenhuma comissão lançada para pagamento neste filtro. O quadro acima já lista o faturamento das faturas.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase">
-                  <th className="text-left px-3 py-2">Empresa</th>
-                  <th className="text-left px-3 py-2">Cliente</th>
-                  <th className="text-left px-3 py-2">NF / OS</th>
-                  <th className="text-left px-3 py-2">Fechamento</th>
-                  <th className="text-right px-3 py-2">Faturamento</th>
-                  <th className="text-right px-3 py-2">Imposto %</th>
-                  <th className="text-right px-3 py-2">Lucro base</th>
-                  <th className="text-right px-3 py-2">% Comissão</th>
-                  <th className="text-right px-3 py-2">Vlr. comissão</th>
-                  <th className="text-left px-3 py-2">Status</th>
-                  <th className="text-center px-3 py-2">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rowsAposCadastro.map((r) => {
-                  const linhaPiso = comissaoLinha(r);
-                  return (
-                  <tr key={r.id} className="border-t border-gray-50" data-testid={`comissao-row-${r.id}`}>
-                    <td className="px-3 py-2 text-[10px] font-black text-gray-500">{empresaLabel(r.empresa_origem)}</td>
-                    <td className="px-3 py-2">
-                      <div className="font-bold text-gray-900 uppercase text-xs">{r.cliente_nome || '—'}</div>
-                      <div className="text-[10px] text-gray-400">{r.comerciais?.nome || '—'}</div>
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs">{r.fatura_numero || r.fatura_id?.slice(0, 8) || '—'}</td>
-                    <td className="px-3 py-2 text-[10px] font-bold text-gray-600">
-                      <div>{fmtDate(r.data_faturamento)}</div>
-                      <div className="text-gray-400 uppercase">{labelQuinzena(quinzenaDeDataFaturamento(r.data_faturamento))}</div>
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(Number(r.valor_faturamento))}</td>
-                    <td className="px-3 py-2 text-right">{Number(r.percentual_imposto_aplicado).toFixed(2)}%</td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(Number(r.valor_base_liquida))}</td>
-                    <td className="px-3 py-2 text-right">{linhaPiso.percentual.toFixed(2)}%</td>
-                    <td className="px-3 py-2 text-right font-black">
-                      {fmtBRL(linhaPiso.valor)}
-                      {linhaPiso.abaixoDoPiso && (
-                        <div className="text-[9px] font-bold text-amber-700 uppercase">Abaixo do piso</div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border ${STATUS_BADGE[r.status]}`}>
-                        {COMISSAO_STATUS_LABEL[r.status]}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      {r.status === 'LIBERADO_PARA_PAGAMENTO' && !linhaPiso.abaixoDoPiso && (
-                        <button type="button" onClick={() => { setPaying(r); setFile(null); }} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-red-600 text-white text-[10px] font-black uppercase" data-testid={`btn-pagar-${r.id}`}>
-                          <Wallet size={12} /> Pagar comissão
-                        </button>
-                      )}
-                      {r.status === 'PAGO' && r.comprovante_url && (
-                        <a href={r.comprovante_url} target="_blank" rel="noreferrer" className="text-[10px] font-black text-green-700 uppercase inline-flex items-center gap-1">
-                          <Receipt size={12} /> Comprovante
-                        </a>
-                      )}
-                    </td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <div className="bg-white border border-gray-200 rounded-xl p-10 flex items-center justify-center gap-2 text-gray-500 text-sm"><Loader2 className="animate-spin" size={16} /> Carregando comissões…</div>
+      ) : rowsAposCadastro.length === 0 ? (
+        <div className="bg-white border border-gray-200 rounded-xl p-10 text-center text-sm text-gray-500">Nenhuma comissão lançada para pagamento neste filtro. O quadro acima já lista o faturamento das faturas.</div>
+      ) : (
+        <div className="space-y-4">
+          <BlocoListaComissao
+            titulo="Liberado para pagamento"
+            testId="comissoes-liberadas"
+            vazio="Nenhuma comissão liberada para pagamento neste filtro."
+            rows={listasComissao.liberadas}
+            soma={listasComissao.somaLiberada}
+            comissaoLinha={comissaoLinha}
+            onLancar={(r) => { void lancarNoContasAPagar(r); }}
+            lancandoId={lancandoId}
+            onPagar={(r) => { setPaying(r); setFile(null); }}
+            perfilFinanceiro={perfilFinanceiro}
+            comprovantePorComissao={comprovantePorComissao}
+            comprovantesCompletos={comprovantesCompletos}
+          />
+          <BlocoListaComissao
+            titulo="Pendente"
+            testId="comissoes-pendentes"
+            vazio="Nenhuma comissão pendente neste filtro."
+            rows={listasComissao.pendentes}
+            soma={listasComissao.somaPendente}
+            comissaoLinha={comissaoLinha}
+            onLancar={(r) => { void lancarNoContasAPagar(r); }}
+            lancandoId={lancandoId}
+            onPagar={(r) => { setPaying(r); setFile(null); }}
+            perfilFinanceiro={perfilFinanceiro}
+            comprovantePorComissao={comprovantePorComissao}
+            comprovantesCompletos={comprovantesCompletos}
+          />
+          <BlocoListaComissao
+            titulo="Já pago"
+            testId="comissoes-pagas"
+            vazio="Nenhuma comissão paga neste filtro."
+            rows={listasComissao.pagas}
+            soma={listasComissao.somaPaga}
+            comissaoLinha={comissaoLinha}
+            onLancar={(r) => { void lancarNoContasAPagar(r); }}
+            lancandoId={lancandoId}
+            onPagar={(r) => { setPaying(r); setFile(null); }}
+            perfilFinanceiro={perfilFinanceiro}
+            comprovantePorComissao={comprovantePorComissao}
+            comprovantesCompletos={comprovantesCompletos}
+          />
+        </div>
+      )}
+
 
       {paying && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" data-testid="modal-pagar-comissao">
@@ -1334,11 +1635,15 @@ const ComissoesComerciaisPage: React.FC = () => {
             {paying.comerciais?.pix_chave && (
               <p className="text-xs text-gray-500 flex items-center gap-1"><Landmark size={12} /> PIX: {paying.comerciais.pix_chave}</p>
             )}
+            <p className="text-xs text-gray-600" data-testid="comissao-pagamento-historico">
+              Anexe o comprovante. A data e a hora deste pagamento ficam no histórico: {formatNowDateTimeBR()}.
+            </p>
             <label className="block text-[10px] font-black text-gray-400 uppercase">
               Comprovante
-              <input type="file" className="mt-1 block w-full text-sm" onChange={(e) => setFile(e.target.files?.[0] || null)} data-testid="input-comprovante-comissao" />
+              <input type="file" accept="image/*,.pdf" className="mt-1 block w-full text-sm" onChange={(e) => setFile(e.target.files?.[0] || null)} data-testid="input-comprovante-comissao" />
+              <span className="mt-1 block normal-case font-bold text-gray-600">{file ? file.name : 'Nenhum arquivo selecionado'}</span>
             </label>
-            <button type="button" disabled={savingPay} onClick={() => void confirmarPagamento()} className="w-full bg-red-600 text-white rounded-lg py-2.5 text-xs font-black uppercase disabled:opacity-50">
+            <button type="button" disabled={savingPay || !file} onClick={() => void confirmarPagamento()} className="w-full bg-red-600 text-white rounded-lg py-2.5 text-xs font-black uppercase disabled:opacity-50">
               {savingPay ? 'Confirmando…' : 'Confirmar pagamento'}
             </button>
           </div>

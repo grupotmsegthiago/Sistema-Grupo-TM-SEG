@@ -2,6 +2,7 @@
  * Menu Diretoria / Cockpit Executivo — acesso exclusivo por nome.
  * Perfil "Diretoria" ou "Administrador" sozinhos NÃO liberam o menu.
  */
+import { isFinanceProfileRole } from './financeSupervisorAccess';
 
 export type DiretoriaAccessUser = {
   name?: string | null;
@@ -49,11 +50,11 @@ export function isPerfilComercial(user: DiretoriaAccessUser | null | undefined):
 }
 
 /**
- * Comissões: Diretoria vê todos. Comercial vê só o próprio.
- * Administrador e Financeiro NÃO liberam.
+ * Comissões: Diretoria e Financeiro veem todos. Comercial vê só o próprio.
+ * Administrador NÃO libera.
  */
 export function canAccessComissoesComerciais(user: DiretoriaAccessUser | null | undefined): boolean {
-  return isPerfilDiretoria(user) || isPerfilComercial(user);
+  return isPerfilDiretoria(user) || isPerfilComercial(user) || isFinanceProfileRole(user?.role);
 }
 
 /** Comercial sem perfil Diretoria só enxerga o próprio cadastro. */

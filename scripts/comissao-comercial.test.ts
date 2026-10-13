@@ -36,7 +36,8 @@ describe('comissao comercial — baixa e acesso', () => {
     assert.equal(canAccessComissoesComerciais({ name: 'Thiago Moreira' }), false);
     assert.equal(canAccessComissoesComerciais({ name: 'Bárbara Silva', role: 'Administrador' }), false);
     assert.equal(canAccessComissoesComerciais({ name: 'João', role: 'comercial' }), true);
-    assert.equal(canAccessComissoesComerciais({ name: 'João', role: 'Financeiro' }), false);
+    assert.equal(canAccessComissoesComerciais({ name: 'João', role: 'Financeiro' }), true);
+    assert.equal(comissaoSomentePropria({ name: 'João', role: 'Financeiro' }), false);
     assert.equal(comissaoSomentePropria({ name: 'Miguel Mota', role: 'Comercial' }), true);
     assert.equal(comissaoSomentePropria({ name: 'Daniel Pinto', role: 'Diretoria' }), false);
   });
@@ -60,6 +61,7 @@ describe('comissao comercial — integração preservada', () => {
   it('cadastro de cliente e tela da Diretoria existem', () => {
     const form = fs.readFileSync('components/ClientForm.tsx', 'utf8');
     const page = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
+    const pagamento = fs.readFileSync('lib/comissao/comissaoService.ts', 'utf8');
     const app = fs.readFileSync('App.tsx', 'utf8');
     const nav = fs.readFileSync('lib/navItems.ts', 'utf8');
     assert.match(form, /select-responsavel-comercial/);
@@ -70,7 +72,14 @@ describe('comissao comercial — integração preservada', () => {
     assert.match(page, /apuracao-escala-comercial/);
     assert.match(page, /btn-sync-usuarios-comercial/);
     assert.match(page, /btn-sync-comissoes-faturas/);
-    assert.match(page, /comissao-pendencias-banner/);
+    assert.match(page, /comissoes-liberadas/);
+    assert.match(page, /comissoes-pendentes/);
+    assert.match(page, /comissoes-pagas/);
+    assert.match(page, /comissao-pagamento-historico/);
+    assert.match(pagamento, /pago_em: agora.toISOString\(\)/);
+    assert.match(pagamento, /Anexe o comprovante/);
+    assert.doesNotMatch(page, /comissao-pendencias-banner/);
+    assert.doesNotMatch(page, /Faturamento sem comissão/);
     assert.match(page, /quadro-tm-seg/);
     assert.match(page, /quadro-torres/);
     assert.match(page, /meses-com-fatura/);
@@ -202,6 +211,26 @@ describe('comissao comercial — escala da planilha', () => {
     const liberada = valorComissaoLinhaAposPiso({ valorComissao: 83.15, brutoComercialNoPeriodo: 50_000 });
     assert.equal(liberada.abaixoDoPiso, false);
     assert.equal(liberada.valor, 83.15);
+    const { ordenarComissoesLiberadasPrimeiro, valorColunaPagamentoComissao } = await import('../lib/comissao/tabelaComissaoPadrao');
+    const ordem = ordenarComissoesLiberadasPrimeiro([
+      { id: 'a', status: 'AGUARDANDO_PAGAMENTO_CLIENTE' },
+      { id: 'b', status: 'LIBERADO_PARA_PAGAMENTO' },
+      { id: 'c', status: 'PAGO' },
+      { id: 'd', status: 'LIBERADO_PARA_PAGAMENTO' },
+    ]);
+    assert.deepEqual(ordem.map((r) => r.id), ['b', 'd', 'a', 'c']);
+    assert.equal(valorColunaPagamentoComissao('LIBERADO_PARA_PAGAMENTO', 144.04, false), 144.04);
+    assert.equal(valorColunaPagamentoComissao('AGUARDANDO_PAGAMENTO_CLIENTE', 144.04, false), null);
+    assert.equal(valorColunaPagamentoComissao('LIBERADO_PARA_PAGAMENTO', 0, true), null);
+    assert.equal(valorColunaPagamentoComissao('PAGO', 144.04, false), 144.04);
+    assert.equal(valorColunaPagamentoComissao('PAGO', 0, true), null);
+    const { somarListaComissao } = await import('../lib/comissao/tabelaComissaoPadrao');
+    const soma = somarListaComissao([
+      { valorComissao: 288.07, aPagar: 288.07 },
+      { valorComissao: 25.25, aPagar: null },
+    ]);
+    assert.equal(soma.comissao, 313.32);
+    assert.equal(soma.aPagar, 288.07);
     assert.equal(liberada.percentual, 3);
 
     const p500 = calcularApuracaoComissao({ valorBruto: 500_000, valorFixo: 0 });
@@ -229,7 +258,7 @@ describe('comissao comercial — escala da planilha', () => {
 
 describe('comissao comercial — faturas históricas', () => {
   it('casa fatura pelo nome, não por client_id (coluna inexistente)', async () => {
-    const { casarClienteDaFatura, montarPendenciasComissao } = await import('../lib/comissao/sincronizarComissoesFaturas');
+    const { casarClienteDaFatura, divergenciaTemComercialSelecionado, montarPendenciasComissao } = await import('../lib/comissao/sincronizarComissoesFaturas');
     const clients = [
       { id: 1, name: 'CEVA LOGISTICS LTDA', trading_name: 'CEVA', responsavel_comercial_id: null },
       { id: 37, name: 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', trading_name: 'TECHTRANS TRANSPORTES', responsavel_comercial_id: 'abc' },
@@ -245,6 +274,10 @@ describe('comissao comercial — faturas históricas', () => {
     );
     assert.equal(casarClienteDaFatura('TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', clients).client?.id, 37);
     assert.equal(casarClienteDaFatura('LUFT LOGISTICS LTDA', clients).status, 'ambiguous');
+    assert.equal(divergenciaTemComercialSelecionado('TECHTRANS TRANSPORTES', clients), true);
+    assert.equal(divergenciaTemComercialSelecionado('CEVA', clients), false);
+    assert.equal(divergenciaTemComercialSelecionado('LUFT LOGISTICS LTDA', clients), false);
+    assert.equal(divergenciaTemComercialSelecionado('DESCONHECIDO', clients), false);
     const pend = montarPendenciasComissao(
       [
         { id: '1', client: 'CEVA', amount: 100, status: 'EMITIDA' },
@@ -1079,5 +1112,281 @@ describe('comissao comercial — sincronismo TM SEG + TORRES', () => {
     assert.match(cron, /sincronizarComissoesTmETorres/);
     assert.match(sync, /dispararPushTorres/);
     assert.doesNotMatch(sync, /trading_name, responsavel_comercial_id/);
+  });
+});
+
+describe('comissao comercial — e-mail ao financeiro na liberação', () => {
+  it('monta o aviso com cliente, fatura e comercial', async () => {
+    const { montarEmailComissaoLiberada, EMAIL_FINANCEIRO_COMISSAO, EMAILS_PAGAMENTO_CLIENTE_TORRES } = await import('../lib/comissao/avisoComissaoLiberada');
+    const email = montarEmailComissaoLiberada([{
+      id: '1',
+      cliente: 'ACME <script>',
+      fatura: 'NF-9',
+      comercial: 'Ana',
+      valorComissao: 90,
+      valorFaturamento: 3000,
+      dataRecebimento: '2026-10-13',
+      empresa: 'TM_SEG',
+    }]);
+    assert.deepEqual(email.to, [EMAIL_FINANCEIRO_COMISSAO]);
+    assert.deepEqual(email.to, ['financeiro@grupotmseg.com.br']);
+    const torres = montarEmailComissaoLiberada([{
+      id: '2',
+      cliente: 'TECHTRANS',
+      fatura: 'torres-inv-207',
+      comercial: 'Miguel',
+      valorComissao: 288.07,
+      valorFaturamento: 11431.31,
+      dataRecebimento: '2026-09-29',
+      empresa: 'TORRES',
+    }]);
+    assert.deepEqual([...torres.to], [...EMAILS_PAGAMENTO_CLIENTE_TORRES]);
+    assert.deepEqual(torres.to, [
+      'financeiro@torresseguranca.com.br',
+      'adm@torresseguranca.com.br',
+      'thiago@grupotmseg.com.br',
+    ]);
+    assert.match(torres.subject, /Cliente TORRES pagou/);
+    assert.match(torres.subject, /verificar comissão/);
+    assert.match(torres.html, /pagamento está confirmado/);
+    assert.match(torres.html, /Verifiquem a comissão/);
+    assert.doesNotMatch(torres.to.join(','), /financeiro@grupotmseg.com.br/);
+    assert.match(email.subject, /ACME/);
+    assert.match(email.html, /pagou/);
+    assert.match(email.html, /está liberado/);
+    assert.match(email.html, /Ana/);
+    assert.match(email.html, /NF-9/);
+    assert.match(email.html, /13\/10\/2026/);
+    assert.doesNotMatch(email.html, /<script>/);
+  });
+
+  it('avisa só quando a baixa realmente libera a comissão', async () => {
+    const { atualizarStatusAposBaixaCliente } = await import('../lib/comissao/comissaoCore');
+    const g = globalThis as { __tmsegEnviarAvisoComissaoLiberada?: (avisos: Array<{ cliente: string; comercial: string }>) => Promise<void> };
+    const anterior = g.__tmsegEnviarAvisoComissaoLiberada;
+    const recebidos: Array<{ cliente: string; comercial: string }> = [];
+    g.__tmsegEnviarAvisoComissaoLiberada = async (avisos) => {
+      recebidos.push(...avisos);
+    };
+    const sb = {
+      from(table: string) {
+        if (table === 'comerciais') {
+          return {
+            select() {
+              return { in: async () => ({ data: [{ id: 'c1', nome: 'Ana Comercial' }], error: null }) };
+            },
+          };
+        }
+        const chain: {
+          update: () => typeof chain;
+          eq: () => typeof chain;
+          select: () => Promise<{ data: unknown; error: { message: string } | null }>;
+        } = {
+          update: () => chain,
+          eq: () => chain,
+          select: async () => ({
+            data: [{
+              id: 'row-1',
+              cliente_nome: 'Cliente Pago',
+              fatura_numero: 'NF-9',
+              valor_comissao: 90,
+              valor_faturamento: 3000,
+              data_recebimento_cliente: '2026-10-13',
+              empresa_origem: 'TM_SEG',
+              comercial_id: 'c1',
+            }],
+            error: null,
+          }),
+        };
+        return chain;
+      },
+    };
+    try {
+      const ok = await atualizarStatusAposBaixaCliente(sb as never, 'fatura-1', '2026-10-13');
+      assert.equal(ok.ok, true);
+      assert.equal(ok.updated, 1);
+      assert.equal(recebidos.length, 1);
+      assert.equal(recebidos[0].cliente, 'Cliente Pago');
+      assert.equal(recebidos[0].comercial, 'Ana Comercial');
+
+      const vazio = {
+        from() {
+          const chain: { update: () => typeof chain; eq: () => typeof chain; select: () => Promise<{ data: unknown[]; error: null }> } = {
+            update: () => chain,
+            eq: () => chain,
+            select: async () => ({ data: [], error: null }),
+          };
+          return chain;
+        },
+      };
+      const semLinha = await atualizarStatusAposBaixaCliente(vazio as never, 'fatura-2');
+      assert.equal(semLinha.updated, 0);
+      assert.equal(recebidos.length, 1);
+
+      g.__tmsegEnviarAvisoComissaoLiberada = async () => {
+        throw new Error('smtp fora');
+      };
+      const mesmoAssim = await atualizarStatusAposBaixaCliente(sb as never, 'fatura-1', '2026-10-13');
+      assert.equal(mesmoAssim.ok, true);
+      assert.equal(mesmoAssim.updated, 1);
+    } finally {
+      g.__tmsegEnviarAvisoComissaoLiberada = anterior;
+    }
+  });
+
+  it('a tela e o cálculo não importam o envio de e-mail', () => {
+    const core = fs.readFileSync('lib/comissao/comissaoCore.ts', 'utf8');
+    const page = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
+    const service = fs.readFileSync('lib/comissao/comissaoService.ts', 'utf8');
+    const webhook = fs.readFileSync('api/asaas-webhook.ts', 'utf8');
+    const sync = fs.readFileSync('api/asaas-sync-open-payments.ts', 'utf8');
+    const nf = fs.readFileSync('api/nf-control.ts', 'utf8');
+    const ingest = fs.readFileSync('api/comissoes-ingest.ts', 'utf8');
+    const quadro = fs.readFileSync('server/comissaoQuadroRoutes.ts', 'utf8');
+    const vercel = fs.readFileSync('vercel.json', 'utf8');
+    assert.equal((core.match(/await notificarComissaoLiberada\(/g) || []).length, 3);
+    assert.match(core, /SELECT_COMISSAO_LIBERADA/);
+    assert.doesNotMatch(core, /nodemailer|email\/smtp/);
+    assert.doesNotMatch(page, /enviarAvisoComissaoLiberada|nodemailer/);
+    assert.doesNotMatch(service, /enviarAvisoComissaoLiberada|nodemailer/);
+    assert.match(webhook, /instalarAvisoComissaoLiberada/);
+    assert.match(sync, /instalarAvisoComissaoLiberada/);
+    assert.match(nf, /instalarAvisoComissaoLiberada/);
+    assert.match(ingest, /op === 'liberada-email'/);
+    assert.match(quadro, /\/api\/comissoes\/liberada-email/);
+    assert.match(vercel, /\/api\/comissoes\/liberada-email/);
+    assert.match(fs.readFileSync('lib/comissao/avisoComissaoLiberada.ts', 'utf8'), /financeiro@grupotmseg.com.br/);
+  });
+});
+
+describe('comissao comercial — lançar no Contas a Pagar', () => {
+  it('monta uma despesa pendente por comissão, com cliente, NF, comercial e fechamento', async () => {
+    const { tituloContaPagarComissao, montarContaPagarComissao, fechamentoComissao } = await import('../lib/comissao/contaPagarComissao');
+    assert.equal(fechamentoComissao('2026-10-01'), '1º QUINZENA DE OUTUBRO');
+    assert.equal(fechamentoComissao('2026-10-16'), '2º QUINZENA DE OUTUBRO');
+    const titulo = tituloContaPagarComissao({
+      cliente: 'Techtrans',
+      fatura: 'NF-9',
+      comercial: 'Ana',
+      dataFaturamento: '2026-10-01',
+    });
+    assert.equal(titulo, 'Comissão Comercial - TECHTRANS / NF-9 / ANA / 1º QUINZENA DE OUTUBRO');
+    const payload = montarContaPagarComissao({
+      id: 'row-1',
+      cliente: 'Techtrans',
+      fatura: 'NF-9',
+      comercial: 'Ana',
+      dataFaturamento: '2026-10-01',
+      valor: 90.126,
+      dueDate: '2026-10-13',
+      categoryId: 'cat-1',
+      createdBy: 'Financeiro',
+    });
+    assert.equal(payload.type, 'EXPENSE');
+    assert.equal(payload.status, 'PENDING');
+    assert.equal(payload.category_name, 'COMISSÃO');
+    assert.equal(payload.amount, 90.13);
+    assert.equal(payload.entity_name, 'Ana');
+    assert.equal(payload.notes, 'comissao_id:row-1');
+    assert.equal(payload.description, titulo);
+    const { vencimentoPagamentoComissao } = await import('../lib/comissao/contaPagarComissao');
+    assert.equal(vencimentoPagamentoComissao('2026-10-05'), '2026-10-15');
+    assert.equal(vencimentoPagamentoComissao('2026-10-15'), '2026-10-15');
+    assert.equal(vencimentoPagamentoComissao('2026-10-16'), '2026-11-15');
+    assert.equal(vencimentoPagamentoComissao('2026-10-20'), '2026-11-15');
+    assert.equal(vencimentoPagamentoComissao('2026-12-31'), '2027-01-15');
+  });
+
+  it('o botão de pagar só aparece depois do lançamento', () => {
+    const page = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
+    const service = fs.readFileSync('lib/comissao/comissaoService.ts', 'utf8');
+    assert.match(service, /vencimentoPagamentoComissao/);
+    assert.match(fs.readFileSync('lib/comissao/contaPagarTorres.ts', 'utf8'), /vencimentoPagamentoComissao/);
+    const lancar = page.indexOf('btn-lancar-pagamento-');
+    const pagar = page.indexOf('btn-pagar-');
+    assert.ok(lancar >= 0 && pagar > lancar);
+    assert.match(page, /!r\.conta_pagar_id/);
+    assert.match(page, /!!r\.conta_pagar_id/);
+    assert.match(page, /\/logo-torres\.jpeg/);
+    assert.match(page, /\/logo-tm\.svg/);
+    assert.doesNotMatch(page, /logo-tm\.svg[\s\S]{0,240}bg-black/);
+    assert.match(page, /<LogoEmpresa empresa=\{r\.empresa_origem\} \/>/);
+    assert.match(page, /from 'react'/);
+    const payload = fs.readFileSync('lib/comissao/contaPagarComissao.ts', 'utf8');
+    assert.match(payload, /type: 'EXPENSE'/);
+    assert.match(payload, /status: 'PENDING'/);
+    assert.match(payload, /category_name: 'COMISSÃO'/);
+    assert.match(service, /financial_transactions/);
+    assert.match(service, /Comissão TORRES não entra no Contas a Pagar da TM SEG/);
+    assert.match(service, /status: 'PAID'/);
+    assert.match(service, /pago_em: agora.toISOString\(\)/);
+    assert.match(page, /\/api\/comissoes\/conta-pagar-torres/);
+    assert.match(page, /Lançar na TORRES/);
+  });
+
+  it('comissão TORRES vai para o contas a pagar da TORRES e leva o comprovante da fatura', async () => {
+    const { executarLancamentoTorres, montarContaPagarTorres, valorAceitoNoContasPagarTorres } = await import('../lib/comissao/contaPagarTorres');
+    assert.equal(valorAceitoNoContasPagarTorres(13.86, 13.86), true);
+    assert.equal(valorAceitoNoContasPagarTorres(20, 13.86), false);
+    const payload = montarContaPagarTorres({
+      id: 'c-200',
+      cliente: 'Nimbus',
+      fatura: '200',
+      comercial: 'Miguel',
+      dataFaturamento: '2026-09-24',
+      valor: 13.86,
+      dueDate: '2026-10-13',
+      categoryId: 'cat-torres',
+      createdBy: 'Financeiro',
+      comprovantePath: 'invoices/200/recibo.pdf',
+    });
+    assert.equal(payload.category_name, 'Comissões');
+    assert.equal(payload.origin_type, 'comissao_comercial');
+    assert.equal(payload.origin_id, 'c-200');
+    assert.equal(payload.comprovante_path, 'invoices/200/recibo.pdf');
+    assert.equal(payload.notes, 'comissao_id:c-200');
+    const inserts: Array<Record<string, unknown>> = [];
+    const resultado = await executarLancamentoTorres({
+      comissao: {
+        id: 'c-200',
+        status: 'LIBERADO_PARA_PAGAMENTO',
+        empresa_origem: 'TORRES',
+        valor_comissao: 13.86,
+        cliente_nome: 'NIMBUS',
+        fatura_numero: '200',
+        comercial_nome: 'Miguel',
+        data_faturamento: '2026-09-24',
+      },
+      valor: 13.86,
+      dueDate: '2026-10-13',
+      comprovantePath: 'invoices/200/recibo.pdf',
+    }, {
+      buscarExistente: async () => null,
+      buscarCategoriaId: async () => 'cat-torres',
+      inserir: async (row) => {
+        inserts.push(row);
+        return 'tx-torres';
+      },
+      ligar: async () => true,
+    });
+    assert.equal(resultado.ok, true);
+    assert.equal(resultado.transactionId, 'tx-torres');
+    assert.equal(inserts[0].category_name, 'Comissões');
+    const tm = await executarLancamentoTorres({
+      comissao: {
+        id: 'c-tm',
+        status: 'LIBERADO_PARA_PAGAMENTO',
+        empresa_origem: 'TM_SEG',
+        valor_comissao: 10,
+      },
+      valor: 10,
+      dueDate: '2026-10-13',
+    }, {
+      buscarExistente: async () => { throw new Error('não consulta a TORRES'); },
+      buscarCategoriaId: async () => null,
+      inserir: async () => { throw new Error('não grava na TORRES'); },
+      ligar: async () => false,
+    });
+    assert.equal(tm.ok, false);
   });
 });

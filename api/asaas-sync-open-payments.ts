@@ -3,6 +3,9 @@
  */
 import { runAsaasSyncOpenPayments } from '../lib/asaasSyncOpenPaymentsCore.js';
 import { authorizeSupabaseAdminRequest } from '../lib/supabaseAdminApiAuth.js';
+import { instalarAvisoComissaoLiberada } from '../lib/comissao/enviarAvisoComissaoLiberada.js';
+
+instalarAvisoComissaoLiberada();
 
 const ASAAS_FINANCE_ROLES = ['administrador', 'diretoria', 'financeiro'] as const;
 

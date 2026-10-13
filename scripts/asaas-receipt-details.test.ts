@@ -7,6 +7,8 @@ import {
   syncAsaasReceiptToReceivables,
   upsertAsaasReceiptNote,
 } from '../lib/asaasReceiptDetails.ts';
+import { comprovanteAsaasDaFatura, comprovantesJaGravados, decidirComprovante, faturaCitadaNoTexto } from '../lib/financial/avisoComprovante.ts';
+import { caminhoComprovanteTorres, resolverComprovantesAoVivo } from '../lib/comissao/comprovantesComissao.ts';
 import {
   findInvoiceForReceivable,
   invoiceNfUrl,
@@ -45,6 +47,7 @@ test('normaliza valor pago, data, juros/multa, líquido, tarifa e desconto do As
     status: 'RECEIVED',
     creditDate: null,
     availability: 'AVAILABLE',
+    receiptUrl: null,
   });
 
   const discounted = normalizeAsaasReceipt({
@@ -62,6 +65,126 @@ test('normaliza valor pago, data, juros/multa, líquido, tarifa e desconto do As
   assert.equal(discounted.paymentDate, '2026-10-06');
   assert.equal(discounted.availability, 'SCHEDULED');
   assert.equal(discounted.creditDate, '2026-10-07');
+  assert.equal(discounted.receiptUrl, null);
+});
+
+test('guarda o comprovante https da integração e descarta texto solto', () => {
+  const withUrl = normalizeAsaasReceipt({
+    id: 'pay_url',
+    status: 'RECEIVED',
+    value: 100,
+    paymentDate: '2026-10-08',
+    transactionReceiptUrl: 'https://www.asaas.com/comprovantes/pay_url',
+  });
+  assert.equal(withUrl.receiptUrl, 'https://www.asaas.com/comprovantes/pay_url');
+  const junk = normalizeAsaasReceipt({
+    id: 'pay_junk',
+    status: 'RECEIVED',
+    value: 100,
+    paymentDate: '2026-10-08',
+    transactionReceiptUrl: 'sem-link',
+  });
+  assert.equal(junk.receiptUrl, null);
+  const notes = upsertAsaasReceiptNote('', withUrl);
+  assert.equal(extractAsaasReceiptDetails(notes)?.receiptUrl, withUrl.receiptUrl);
+});
+
+test('aviso de comprovante só para o financeiro e some quando a integração trouxe o link', () => {
+  const sem = decidirComprovante({
+    exige: true,
+    urls: [null, ''],
+    perfilFinanceiro: true,
+  });
+  assert.equal(sem.link, null);
+  assert.equal(sem.avisarFalta, true);
+  const outroPerfil = decidirComprovante({
+    exige: true,
+    urls: [],
+    perfilFinanceiro: false,
+  });
+  assert.equal(outroPerfil.avisarFalta, false);
+  const comLink = decidirComprovante({
+    exige: true,
+    urls: ['https://www.asaas.com/comprovantes/p'],
+    perfilFinanceiro: true,
+  });
+  assert.equal(comLink.link, 'https://www.asaas.com/comprovantes/p');
+  assert.equal(comLink.avisarFalta, false);
+  const aberto = decidirComprovante({ exige: false, urls: [], perfilFinanceiro: true });
+  assert.equal(aberto.avisarFalta, false);
+  const notes = upsertAsaasReceiptNote('NF TMSEG-1', normalizeAsaasReceipt({
+    id: 'pay_nf',
+    status: 'RECEIVED',
+    value: 50,
+    paymentDate: '2026-10-08',
+    transactionReceiptUrl: 'https://www.asaas.com/comprovantes/pay_nf',
+  }));
+  assert.equal(
+    comprovanteAsaasDaFatura(notes, 'Recebimento TMSEG-1', 'TMSEG-1'),
+    'https://www.asaas.com/comprovantes/pay_nf',
+  );
+  const lista = fs.readFileSync('components/FinancialTransactionList.tsx', 'utf8');
+  const comissao = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
+  assert.match(lista, /Falta anexar o comprovante/);
+  assert.match(lista, /isFinanceProfileRole/);
+  assert.match(comissao, /Falta anexar o comprovante/);
+  assert.match(comissao, /isFinanceProfileRole/);
+  assert.match(comissao, /\/api\/comissoes\/comprovantes/);
+  assert.match(fs.readFileSync('lib/comissao/comissaoService.ts', 'utf8'), /doc_comprovante_url: comprovanteUrl/);
+  assert.equal(faturaCitadaNoTexto('saldo 200.000 e nf 1200', '200'), false);
+  assert.equal(faturaCitadaNoTexto('NF 200 recebida', '200'), true);
+  const gravados = comprovantesJaGravados({
+    comissoes: [
+      { id: 'c-200', empresa_origem: 'TORRES', fatura_numero: '200', origem_fatura_id: '200' },
+      { id: 'c-tm', empresa_origem: 'TM_SEG', fatura_numero: 'TMSEG-INV-1', fatura_id: 'fat-1' },
+    ],
+    faturas: [{
+      id: 'fat-1',
+      number: 'TMSEG-INV-1',
+      notes: '',
+      manual_payment_evidence_url: 'https://arquivos.exemplo/manual.pdf',
+      asaas_payment_id: 'pay_abc',
+    }],
+    titulos: [{ description: 'saldo 200.000', notes: '', doc_comprovante_url: 'https://arquivos.exemplo/errado.pdf' }],
+  });
+  assert.equal(gravados.urls['c-200'], undefined);
+  assert.equal(gravados.urls['c-tm'], 'https://arquivos.exemplo/manual.pdf');
+  assert.equal(gravados.pendentes.find((item) => item.id === 'c-200')?.torresOrigemId, '200');
+});
+
+test('comprovante ao vivo usa o arquivo da TORRES ou a URL do Asaas', async () => {
+  assert.equal(caminhoComprovanteTorres('200', 'invoices/200/recibo.pdf'), 'invoices/200/recibo.pdf');
+  assert.equal(caminhoComprovanteTorres('200', 'invoices/201/recibo.pdf'), null);
+  assert.equal(caminhoComprovanteTorres('200', '../segredo.pdf'), null);
+  const torres = await resolverComprovantesAoVivo(
+    [{ id: 'c-200', torresOrigemId: '200' }],
+    {
+      lerTorres: async () => ({ rows: [{ id: '200', comprovante_url: 'invoices/200/recibo.pdf' }], ok: true }),
+      assinarTorres: async (path) => `https://arquivos.exemplo/${path}?token=1`,
+      reciboAsaas: async () => { throw new Error('não deveria chamar o Asaas'); },
+    },
+  );
+  assert.equal(torres.urls['c-200'], 'https://arquivos.exemplo/invoices/200/recibo.pdf?token=1');
+  assert.equal(torres.completo, true);
+  const asaas = await resolverComprovantesAoVivo(
+    [{ id: 'c-tm', paymentId: 'pay_abc', company: 'TM GESTÃO' }],
+    {
+      lerTorres: async () => ({ rows: [], ok: true }),
+      assinarTorres: async () => null,
+      reciboAsaas: async (paymentId) => ({ url: `https://www.asaas.com/comprovantes/${paymentId}`, ok: true }),
+    },
+  );
+  assert.equal(asaas.urls['c-tm'], 'https://www.asaas.com/comprovantes/pay_abc');
+  const semChave = await resolverComprovantesAoVivo(
+    [{ id: 'c-200', torresOrigemId: '200' }],
+    {
+      lerTorres: async () => ({ rows: [], ok: false }),
+      assinarTorres: async () => null,
+      reciboAsaas: async () => ({ url: null, ok: true }),
+    },
+  );
+  assert.equal(semChave.urls['c-200'], undefined);
+  assert.equal(semChave.completo, false);
 });
 
 test('não inventa valor ou data quando o Asaas não os enviou', () => {
