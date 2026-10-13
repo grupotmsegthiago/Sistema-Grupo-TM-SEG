@@ -9,7 +9,9 @@
 
 **Evidência no ar:** em 13/10/2026 19:11 (UTC 22:11) três POST dessa rota no deploy `dpl_D3xwJep3Jz8JU9nnDu7wrg3xGpk6` responderam 200. As faturas 200 (NIMBUS), 199 (R J C) e 207 (TECHTRANS) continuam `LIBERADO_PARA_PAGAMENTO` com `conta_pagar_id` nulo. O `financial_transactions` da TORRES não tem essas origens. A variável está sensível na Vercel; o valor não foi lido.
 
-**Código:** `lib/comissao/torresSupabase.ts` passou a aceitar `sb_secret_` e a `service_role` antiga `eyJ` do projeto `erjhxwbutjyylxdthuuz`. Publishable, chave da TM SEG e anon continuam recusados, com mensagem específica. Teste `scripts/comissao-comercial.test.ts`: 43 passaram. **Não publicado. Nenhuma gravação financeira.**
+**Código:** `lib/comissao/torresSupabase.ts` aceita `sb_secret_` e a `service_role` antiga `eyJ` do projeto `erjhxwbutjyylxdthuuz`. Publishable, chave da TM SEG e anon continuam recusados, com mensagem específica. Teste `scripts/comissao-comercial.test.ts`: 43 passaram.
+
+**Publicado:** commit `dec5cf52` na `dev` e na `main`. Domínio `sistema.grupotmseg.com.br` em 13/10/2026 19:24 (`buildId` `dec5cf5276955c05017e18481f55827d61be5f6f`). `/api/health` ok. `POST /api/comissoes/conta-pagar-torres` sem login responde 401. A leitura autenticada do quadro não rodou daqui: o site publicado está na tela de login e o navegador local bloqueia a chamada cruzada. Nenhuma das três contas a pagar foi criada. Abrir setembro na tela ainda dispara o lançamento automático se a chave passar.
 
 ## TM0810 — BOLETIM CESLOG, 2ª QUINZENA DE SETEMBRO/2026
 
