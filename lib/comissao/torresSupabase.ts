@@ -1,6 +1,7 @@
 /**
- * Cliente de leitura do Supabase TORRES (projeto separado).
- * Sem TORRES_SUPABASE_SERVICE_ROLE_KEY o quadro usa só o ingest já gravado na TM SEG.
+ * Cliente do Supabase TORRES (projeto separado).
+ * A chave fica só no servidor. Aceita a secret atual (sb_secret_) e a service_role antiga (eyJ)
+ * do projeto erjhxwbutjyylxdthuuz. Sem chave válida, o quadro usa o ingest já gravado na TM SEG.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -26,12 +27,67 @@ function decodeJwtRole(key: string): string | null {
   }
 }
 
+export type MotivoChaveTorres =
+  | 'ok'
+  | 'ausente'
+  | 'publishable'
+  | 'projeto_tmseg'
+  | 'nao_service_role'
+  | 'formato';
+
+const TMSEG_PROJECT_REF = 'ajhmmjuewdsukecaimik';
+
+/** Secret atual do painel (sb_secret_...). Publishable não serve no servidor. */
+export function isTorresSecretKey(key: string): boolean {
+  const cleaned = cleanEnv(key);
+  return cleaned.startsWith('sb_secret_') && cleaned.length >= 30 && !/\s/.test(cleaned);
+}
+
 export function isTorresServiceRoleKey(key: string): boolean {
   const cleaned = cleanEnv(key);
-  if (!cleaned || cleaned.startsWith('sb_')) return false;
+  if (!cleaned) return false;
+  if (isTorresSecretKey(cleaned)) return true;
+  if (cleaned.startsWith('sb_')) return false;
   const ref = decodeJwtProjectRef(cleaned);
   const role = decodeJwtRole(cleaned);
   return ref === TORRES_SUPABASE_PROJECT_REF && role === 'service_role';
+}
+
+export function motivoChaveTorres(key: string): MotivoChaveTorres {
+  const cleaned = cleanEnv(key);
+  if (!cleaned) return 'ausente';
+  if (isTorresServiceRoleKey(cleaned)) return 'ok';
+  if (cleaned.startsWith('sb_publishable_') || cleaned.startsWith('sb_')) return 'publishable';
+  const ref = decodeJwtProjectRef(cleaned);
+  const role = decodeJwtRole(cleaned);
+  if (ref === TMSEG_PROJECT_REF) return 'projeto_tmseg';
+  if (ref === TORRES_SUPABASE_PROJECT_REF && role && role !== 'service_role') return 'nao_service_role';
+  return 'formato';
+}
+
+const NOMES_CHAVE_TORRES = [
+  'TORRES_SUPABASE_SERVICE_ROLE_KEY',
+  'TORRES_SUPABASE_SERVICE_KEY',
+  'TORRES_SUPABASE_KEY',
+] as const;
+
+export function mensagemChaveTorresRecusada(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  let motivo: MotivoChaveTorres = 'ausente';
+  for (const nome of NOMES_CHAVE_TORRES) {
+    const valor = env[nome];
+    if (!cleanEnv(valor)) continue;
+    motivo = motivoChaveTorres(valor || '');
+    if (motivo === 'ok') return '';
+  }
+  if (motivo === 'ausente') return 'A chave da TORRES não chegou neste servidor publicado.';
+  if (motivo === 'publishable') {
+    return 'A chave da TORRES está no formato publishable. No servidor use a secret (sb_secret_) ou a service_role antiga (eyJ) do projeto da TORRES.';
+  }
+  if (motivo === 'projeto_tmseg') return 'A chave salva é do projeto da TM SEG. A TORRES usa a chave do projeto dela.';
+  if (motivo === 'nao_service_role') return 'A chave salva não é service_role da TORRES.';
+  return 'A chave da TORRES não foi aceita. Use a secret atual (sb_secret_) ou a service_role antiga (eyJ) do projeto da TORRES.';
 }
 
 export function resolveTorresSupabaseUrl(): string {

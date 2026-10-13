@@ -1,5 +1,16 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## COMISSÕES SETEMBRO — AVISO “TORRES NÃO ESTÁ LIGADA NESTE COMPUTADOR”
+
+**Data:** 2026-10-13
+**Pedido:** achar a causa real do aviso ao selecionar setembro, sem gravar financeiro e sem publicar.
+
+**Causa:** ao escolher setembro, a tela dispara `POST /api/comissoes/conta-pagar-torres` para cada comissão TORRES liberada sem conta a pagar. `tratarPedidoContaPagarTorres` chama `createTorresAdminClient()`. Se `isTorresServiceRoleKey` recusa a variável, a função responde HTTP 200 com a frase do computador e não consulta o Supabase da TORRES. Não há computador, localhost nem falha de RLS nesse caminho.
+
+**Evidência no ar:** em 13/10/2026 19:11 (UTC 22:11) três POST dessa rota no deploy `dpl_D3xwJep3Jz8JU9nnDu7wrg3xGpk6` responderam 200. As faturas 200 (NIMBUS), 199 (R J C) e 207 (TECHTRANS) continuam `LIBERADO_PARA_PAGAMENTO` com `conta_pagar_id` nulo. O `financial_transactions` da TORRES não tem essas origens. A variável está sensível na Vercel; o valor não foi lido.
+
+**Código:** `lib/comissao/torresSupabase.ts` passou a aceitar `sb_secret_` e a `service_role` antiga `eyJ` do projeto `erjhxwbutjyylxdthuuz`. Publishable, chave da TM SEG e anon continuam recusados, com mensagem específica. Teste `scripts/comissao-comercial.test.ts`: 43 passaram. **Não publicado. Nenhuma gravação financeira.**
+
 ## TM0810 — BOLETIM CESLOG, 2ª QUINZENA DE SETEMBRO/2026
 
 **Data:** 2026-10-08

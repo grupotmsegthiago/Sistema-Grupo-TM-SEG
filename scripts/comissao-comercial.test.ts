@@ -1625,3 +1625,32 @@ describe('comissao comercial — lançar no Contas a Pagar', () => {
     assert.equal(tm.ok, false);
   });
 });
+
+describe('comissao comercial — chave do servidor da TORRES', () => {
+  function jwt(payload: Record<string, string>): string {
+    const corpo = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    return `eyJhbGciOiJIUzI1NiJ9.${corpo}.assinatura`;
+  }
+
+  it('aceita a secret atual e a service_role antiga, e recusa publishable e a chave da TM SEG', async () => {
+    const { isTorresServiceRoleKey, mensagemChaveTorresRecusada, motivoChaveTorres } = await import('../lib/comissao/torresSupabase');
+    const secret = `sb_secret_${'a'.repeat(22)}_${'b'.repeat(8)}`;
+    const serviceRole = jwt({ role: 'service_role', ref: 'erjhxwbutjyylxdthuuz' });
+    const publishable = `sb_publishable_${'c'.repeat(22)}_${'d'.repeat(8)}`;
+    const daTm = jwt({ role: 'service_role', ref: 'ajhmmjuewdsukecaimik' });
+    const anon = jwt({ role: 'anon', ref: 'erjhxwbutjyylxdthuuz' });
+
+    assert.equal(isTorresServiceRoleKey(secret), true);
+    assert.equal(isTorresServiceRoleKey(serviceRole), true);
+    assert.equal(motivoChaveTorres(secret), 'ok');
+    assert.equal(motivoChaveTorres(''), 'ausente');
+    assert.equal(motivoChaveTorres(publishable), 'publishable');
+    assert.equal(motivoChaveTorres(daTm), 'projeto_tmseg');
+    assert.equal(motivoChaveTorres(anon), 'nao_service_role');
+    assert.match(mensagemChaveTorresRecusada({}), /não chegou neste servidor/);
+    assert.match(mensagemChaveTorresRecusada({ TORRES_SUPABASE_SERVICE_ROLE_KEY: publishable }), /publishable/);
+    assert.match(mensagemChaveTorresRecusada({ TORRES_SUPABASE_SERVICE_ROLE_KEY: daTm }), /TM SEG/);
+    assert.equal(mensagemChaveTorresRecusada({ TORRES_SUPABASE_SERVICE_ROLE_KEY: secret }), '');
+    assert.doesNotMatch(mensagemChaveTorresRecusada({}), /computador/);
+  });
+});

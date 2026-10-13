@@ -10,7 +10,7 @@ import { resolveSupabasePublicConfig } from '../resolveSupabasePublicConfig.js';
 import { caminhoComprovanteTorres } from './comprovantesComissao.js';
 import { assertComissoesQuadroAccess } from './comissaoQuadroAuth.js';
 import { montarContaPagarComissao, notaContaPagarComissao, tituloContaPagarComissao, vencimentoPagamentoComissao } from './contaPagarComissao.js';
-import { createTorresAdminClient } from './torresSupabase.js';
+import { createTorresAdminClient, mensagemChaveTorresRecusada } from './torresSupabase.js';
 
 export const CATEGORIA_COMISSAO_TORRES = 'Comissões';
 export const ORIGEM_CONTA_PAGAR_TORRES = 'comissao_comercial';
@@ -172,7 +172,9 @@ export async function tratarPedidoContaPagarTorres(req: any, res: any): Promise<
 
   const torres = createTorresAdminClient();
   if (!torres) {
-    res.status(200).json({ ok: false, error: 'A TORRES não está ligada neste computador.' });
+    const error = mensagemChaveTorresRecusada() || 'A chave da TORRES não foi aceita.';
+    console.warn('[comissao] contas a pagar TORRES recusou a chave:', error);
+    res.status(200).json({ ok: false, error });
     return;
   }
 

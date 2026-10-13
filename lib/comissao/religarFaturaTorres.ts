@@ -8,6 +8,7 @@ import type { ComissaoDbClient } from './comissaoCore.js';
 import { faturaCancelada } from './quadroFaturamentoComissao.js';
 import { dataIsoCivil } from './rotaMissaoComissao.js';
 import { faturaTorresPaga } from './sincronizarComissoesTorres.js';
+import { mensagemChaveTorresRecusada } from './torresSupabase.js';
 
 export type FaturaTorresReligar = {
   id: string;
@@ -176,7 +177,7 @@ export async function executarReligarFaturaTorres(
   const comissaoId = String(input.comissaoId || '').trim();
   const numero = normalizarNumeroFatura(input.faturaNumero);
   if (!comissaoId || !numero) return { ok: false, error: 'Informe a comissão e o número da fatura.' };
-  if (!sbTorres) return { ok: false, error: 'A TORRES não está ligada neste computador.' };
+  if (!sbTorres) return { ok: false, error: mensagemChaveTorresRecusada() };
 
   const atual = await sbTm
     .from('comissoes')
