@@ -49,6 +49,14 @@ import {
   valorComissaoLinhaAposPiso,
 } from '../lib/comissao/tabelaComissaoPadrao';
 import { filtrarLinhasAposCadastro, lancamentoAposCadastro } from '../lib/comissao/dataInicioComissao';
+import {
+  comissaoDuplicadaNoPeriodo,
+  decorarComissaoTorres,
+  linhaNaQuinzenaComissao,
+  resumoLocal,
+  type DecoracaoComissao,
+  type RotaMissaoComissao,
+} from '../lib/comissao/rotaMissaoComissao';
 import { comissaoSomentePropria } from '../lib/diretoriaAccess';
 import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
 import {
@@ -181,6 +189,71 @@ function fmtHistoricoPagamento(pagoEm?: string | null, data?: string | null): st
   return '—';
 }
 
+function TrocaNfComissao({
+  row,
+  pode,
+  onTrocar,
+}: {
+  row: ComissaoRow;
+  pode: boolean;
+  onTrocar: (id: string, faturaNumero: string) => Promise<void>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [numero, setNumero] = useState(String(row.fatura_numero || ''));
+  const [salvando, setSalvando] = useState(false);
+  if (!pode) return null;
+  if (String(row.empresa_origem || '').toUpperCase() !== 'TORRES') return null;
+  if (row.status === 'PAGO' || row.conta_pagar_id) return null;
+  if (!aberto) {
+    return (
+      <button
+        type="button"
+        className="mt-1 text-[10px] font-black uppercase text-slate-600 underline"
+        data-testid={`btn-trocar-fatura-${row.id}`}
+        onClick={() => {
+          setNumero(String(row.fatura_numero || ''));
+          setAberto(true);
+        }}
+      >
+        Trocar NF
+      </button>
+    );
+  }
+  return (
+    <form
+      className="mt-1 flex flex-col gap-1"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        setSalvando(true);
+        try {
+          await onTrocar(row.id, numero);
+          setAberto(false);
+        } catch {
+          /* o aviso fica na página */
+        } finally {
+          setSalvando(false);
+        }
+      }}
+    >
+      <input
+        value={numero}
+        onChange={(event) => setNumero(event.target.value)}
+        className="w-28 border rounded px-1 py-0.5 text-[10px] font-bold"
+        placeholder="Nº da fatura"
+        data-testid={`input-trocar-fatura-${row.id}`}
+      />
+      <button
+        type="submit"
+        disabled={salvando || !numero.trim()}
+        className="text-[10px] font-black uppercase text-white bg-slate-800 rounded px-1 py-0.5 disabled:opacity-50"
+        data-testid={`btn-salvar-fatura-${row.id}`}
+      >
+        {salvando ? 'Puxando…' : 'Puxar da TORRES'}
+      </button>
+    </form>
+  );
+}
+
 function BlocoListaComissao({
   titulo,
   testId,
@@ -194,6 +267,9 @@ function BlocoListaComissao({
   perfilFinanceiro,
   comprovantePorComissao,
   comprovantesCompletos,
+  decorar,
+  podeTrocarNf,
+  onTrocarFatura,
 }: {
   titulo: string;
   testId: string;
@@ -207,6 +283,9 @@ function BlocoListaComissao({
   perfilFinanceiro: boolean;
   comprovantePorComissao: Record<string, string>;
   comprovantesCompletos: boolean;
+  decorar: (r: ComissaoRow) => DecoracaoComissao;
+  podeTrocarNf: boolean;
+  onTrocarFatura: (id: string, faturaNumero: string) => Promise<void>;
 }) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid={testId}>
@@ -257,6 +336,10 @@ function BlocoListaComissao({
                   urls: [r.comprovante_url, comprovantePorComissao[r.id]],
                   perfilFinanceiro,
                 });
+                const rota = decorar(r);
+                const dataMissao = rota.datasMissao[0] || null;
+                const dataQuinzena = dataMissao || r.data_faturamento;
+                const missaoConcluidaNaTela = rota.concluida && (rota.substituida || !!rota.jaNaFatura);
                 return (
                   <tr key={r.id} className={`border-t border-gray-50 ${pago ? 'bg-green-50/40' : aPagar != null ? 'bg-blue-50/60' : ''}`} data-testid={`comissao-row-${r.id}`}>
                     <td className="px-3 py-2"><LogoEmpresa empresa={r.empresa_origem} /></td>
@@ -264,10 +347,26 @@ function BlocoListaComissao({
                       <div className="font-bold text-gray-900 uppercase text-xs">{r.cliente_nome || '—'}</div>
                       <div className="text-[10px] text-gray-400">{r.comerciais?.nome || '—'}</div>
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs">{r.fatura_numero || r.fatura_id?.slice(0, 8) || '—'}</td>
+                    <td className="px-3 py-2 font-mono text-xs">
+                      <div>{r.fatura_numero || r.fatura_id?.slice(0, 8) || '—'}</div>
+                      <TrocaNfComissao row={r} pode={podeTrocarNf} onTrocar={onTrocarFatura} />
+                      {rota.os.map((os) => (
+                        <div key={os.osId} className="mt-1 font-sans" data-testid={`rota-os-${r.id}-${os.osId}`}>
+                          <div className="font-black text-gray-800">OS {os.osNumero}</div>
+                          <div className="text-[10px] font-bold text-gray-500 normal-case" title={`${os.origem || ''} → ${os.destino || ''}`}>
+                            {resumoLocal(os.origem) || '—'} → {resumoLocal(os.destino) || '—'}
+                          </div>
+                        </div>
+                      ))}
+                    </td>
                     <td className="px-3 py-2 text-[10px] font-bold text-gray-600">
-                      <div>{fmtDate(r.data_faturamento)}</div>
-                      <div className="text-gray-400 uppercase">{labelQuinzena(quinzenaDeDataFaturamento(r.data_faturamento))}</div>
+                      {rota.os.length > 0 ? rota.os.map((os) => (
+                        <div key={`data-${os.osId}`}>{fmtDate(os.dataMissao)}</div>
+                      )) : <div>{fmtDate(r.data_faturamento)}</div>}
+                      <div className="text-gray-400 uppercase">{labelQuinzena(quinzenaDeDataFaturamento(dataQuinzena))}</div>
+                      {dataMissao && dataMissao !== String(r.data_faturamento || '').slice(0, 10) && (
+                        <div className="text-[9px] font-bold text-amber-700 normal-case">Fatura lançada em {fmtDate(r.data_faturamento)}</div>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right font-mono">{fmtBRL(Number(r.valor_faturamento))}</td>
                     <td className="px-3 py-2 text-right">{Number(r.percentual_imposto_aplicado).toFixed(2)}%</td>
@@ -283,9 +382,25 @@ function BlocoListaComissao({
                       {aPagar == null ? '—' : fmtBRL(aPagar)}
                     </td>
                     <td className="px-3 py-2">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border ${STATUS_BADGE[r.status]}`}>
-                        {COMISSAO_STATUS_LABEL[r.status]}
-                      </span>
+                      {missaoConcluidaNaTela ? (
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border bg-green-50 text-green-800 border-green-200" data-testid={`status-missao-${r.id}`}>
+                          Concluída
+                        </span>
+                      ) : (
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border ${STATUS_BADGE[r.status]}`}>
+                          {COMISSAO_STATUS_LABEL[r.status]}
+                        </span>
+                      )}
+                      {rota.substituida && (
+                        <div className="mt-1 text-[10px] font-bold text-gray-500 normal-case max-w-[220px]" data-testid={`aviso-fatura-substituida-${r.id}`}>
+                          A fatura {r.fatura_numero} foi cancelada na TORRES. A missão está concluída e a comissão fica na fatura {rota.faturaViva}.
+                        </div>
+                      )}
+                      {rota.jaNaFatura && (
+                        <div className="mt-1 text-[10px] font-bold text-gray-500 normal-case" data-testid={`aviso-os-na-fatura-${r.id}`}>
+                          Esta OS já entrou na fatura {rota.jaNaFatura}.
+                        </div>
+                      )}
                       {pago && (
                         <div className="mt-1 text-[10px] font-bold text-green-800" data-testid={`comissao-pago-em-${r.id}`}>
                           {fmtHistoricoPagamento(r.pago_em, r.data_pagamento_comissao)}
@@ -480,11 +595,19 @@ function TabelaQuadroEmpresa({
                                 <tr key={d.id} className="border-t border-gray-200">
                                   <td className="py-1.5 pr-3 font-mono">
                                     {d.numero || d.id.slice(0, 8)}
-                                    {d.osIds.length > 0 && (
+                                    {(d.rotas || []).length > 0 ? (d.rotas || []).map((os) => (
+                                      <div key={os.osId} className="text-[10px] text-gray-600 font-bold font-sans normal-case" title={`${os.origem || ''} → ${os.destino || ''}`}>
+                                        OS {os.osNumero} · {resumoLocal(os.origem) || '—'} → {resumoLocal(os.destino) || '—'}
+                                      </div>
+                                    )) : d.osIds.length > 0 && (
                                       <div className="text-[10px] text-gray-500 font-bold">OS {d.osIds.join(', ')}</div>
                                     )}
                                   </td>
-                                  <td className="py-1.5 pr-3">{fmtDate(d.date)}</td>
+                                  <td className="py-1.5 pr-3">
+                                    {(d.rotas || []).some((os) => os.dataMissao)
+                                      ? (d.rotas || []).map((os) => <div key={`d-${os.osId}`}>{fmtDate(os.dataMissao || d.date)}</div>)
+                                      : fmtDate(d.date)}
+                                  </td>
                                   <td className="py-1.5 pr-3 text-right font-mono">{fmtBRL(d.faturamento)}</td>
                                   <td className="py-1.5 pr-3 text-right font-mono">{fmtBRL(d.imposto)}</td>
                                   <td className="py-1.5 pr-3 text-right font-black">{fmtBRL(d.valorAPagar)}</td>
@@ -689,6 +812,7 @@ const ComissoesComerciaisPage: React.FC = () => {
   const [cobertura, setCobertura] = useState<CoberturaOsPeriodo>(coberturaVazia());
   const [funcionarioAberto, setFuncionarioAberto] = useState<string | null>(null);
   const [iniciosComissao, setIniciosComissao] = useState<Record<string, string>>({});
+  const [rotasTorres, setRotasTorres] = useState<RotaMissaoComissao[]>([]);
   const [escopoPronto, setEscopoPronto] = useState(!soProprio);
   const autoSyncRef = useRef(false);
   const autoTorresRef = useRef(new Set<string>());
@@ -732,12 +856,13 @@ const ComissoesComerciaisPage: React.FC = () => {
           setSyncingFaturas(false);
         }
       }
+      const mesCheio = intervaloQuinzena(year, month, 'todas');
       const result = await fetchAllPages<ComissaoRow>(async (from, size) => {
         let q = supabase
           .from('comissoes')
           .select('*, comerciais(nome, pix_chave)', { count: 'exact' })
-          .gte('data_faturamento', periodStart)
-          .lte('data_faturamento', periodEnd)
+          .gte('data_faturamento', mesCheio.start)
+          .lte('data_faturamento', mesCheio.end)
           .order('data_faturamento', { ascending: false })
           .range(from, from + size - 1);
         if (comercialId) q = q.eq('comercial_id', comercialId);
@@ -746,8 +871,16 @@ const ComissoesComerciaisPage: React.FC = () => {
         const { data, error, count } = await q;
         return { data: data as ComissaoRow[] | null, error, count };
       });
-      setRows(result.rows);
-      setQuadroTorres(quadroDeComissoesTorres(result.rows, listaComerciais));
+      const publicarLinhas = (rotas: RotaMissaoComissao[]) => {
+        setRotasTorres(rotas);
+        const visiveis = result.rows.filter((r) => linhaNaQuinzenaComissao(
+          decorarComissaoTorres(r, rotas).datasMissao,
+          r.data_faturamento,
+          quinzenaFiltro,
+        ));
+        setRows(visiveis);
+        return visiveis;
+      };
       const comOsSemFatura = async (linhas: LinhaQuadroCliente[], cobertura: CoberturaOsPeriodo | null) => {
         let cob = cobertura;
         if (!cob || cob.consultaIncompleta || cob.estado !== 'ENCONTRADO') {
@@ -771,19 +904,21 @@ const ComissoesComerciaisPage: React.FC = () => {
           setIniciosComissao(quadroJson.iniciosComissao);
         }
         if (quadroRes.ok && (quadroJson.ok || (quadroJson.linhasTm || []).length > 0 || (quadroJson.linhasTorres || []).length > 0 || (quadroJson.meses || []).length > 0)) {
+          const visiveis = publicarLinhas(Array.isArray(quadroJson.rotasTorres) ? quadroJson.rotasTorres : []);
           const completo = await comOsSemFatura(quadroJson.linhasTm || [], quadroJson.cobertura || null);
           setQuadroTm(completo.linhas);
-          setQuadroTorres(mesclarLinhasQuadro(quadroJson.linhasTorres || [], quadroDeComissoesTorres(result.rows, listaComerciais)));
+          setQuadroTorres(mesclarLinhasQuadro(quadroJson.linhasTorres || [], quadroDeComissoesTorres(visiveis, listaComerciais)));
           setMesesDisponiveis(quadroJson.meses || []);
           setCobertura(completo.cobertura);
           if (quadroJson.error && !(quadroJson.linhasTm || []).length && !(quadroJson.linhasTorres || []).length) {
             showNotification('Quadro', quadroJson.error, 'warning');
           }
         } else {
+          const visiveis = publicarLinhas([]);
           const quadro = await carregarQuadroTmSeg(supabase, periodStart, periodEnd, listaComerciais);
           const completo = await comOsSemFatura(quadro.linhas, null);
           setQuadroTm(completo.linhas);
-          setQuadroTorres(quadroDeComissoesTorres(result.rows, listaComerciais));
+          setQuadroTorres(quadroDeComissoesTorres(visiveis, listaComerciais));
           setMesesDisponiveis(quadro.meses);
           setCobertura(completo.cobertura);
           if (quadro.error || quadroJson.error) {
@@ -792,15 +927,17 @@ const ComissoesComerciaisPage: React.FC = () => {
         }
       } catch (e: any) {
         try {
+          const visiveis = publicarLinhas([]);
           const quadro = await carregarQuadroTmSeg(supabase, periodStart, periodEnd, listaComerciais);
           const completo = await comOsSemFatura(quadro.linhas, null);
           setQuadroTm(completo.linhas);
-          setQuadroTorres(quadroDeComissoesTorres(result.rows, listaComerciais));
+          setQuadroTorres(quadroDeComissoesTorres(visiveis, listaComerciais));
           setMesesDisponiveis(quadro.meses);
           setCobertura(completo.cobertura);
         } catch {
+          const visiveis = publicarLinhas([]);
           setQuadroTm([]);
-          setQuadroTorres(quadroDeComissoesTorres(result.rows, listaComerciais));
+          setQuadroTorres(quadroDeComissoesTorres(visiveis, listaComerciais));
           setCobertura(coberturaVazia('ERRO', e?.message || 'Falha ao carregar cobertura de OS', true));
         }
         showNotification('Quadro', e?.message || 'Falha ao carregar faturamento', 'warning');
@@ -811,10 +948,11 @@ const ComissoesComerciaisPage: React.FC = () => {
     } catch (e: any) {
       showNotification('Erro', e?.message || 'Falha ao carregar comissões', 'error');
       setRows([]);
+      setRotasTorres([]);
     } finally {
       setLoading(false);
     }
-  }, [periodoPronto, escopoPronto, periodStart, periodEnd, comercialId, statusFilter, empresaFilter, quinzenaFiltro, loadComerciais, showNotification, soProprio]);
+  }, [periodoPronto, escopoPronto, periodStart, periodEnd, year, month, comercialId, statusFilter, empresaFilter, quinzenaFiltro, loadComerciais, showNotification, soProprio]);
 
   useEffect(() => {
     let alive = true;
@@ -982,10 +1120,19 @@ const ComissoesComerciaisPage: React.FC = () => {
     percentual: Number(r.percentual_comissao_aplicado),
   }), [brutoComercialPeriodo]);
 
+  const decorarLinha = useCallback(
+    (r: ComissaoRow) => decorarComissaoTorres(r, rotasTorres),
+    [rotasTorres],
+  );
+
   const listasComissao = useMemo(() => {
     const liberadas = rowsAposCadastro.filter((r) => r.status === 'LIBERADO_PARA_PAGAMENTO');
     const pendentes = rowsAposCadastro.filter((r) => r.status !== 'PAGO' && r.status !== 'LIBERADO_PARA_PAGAMENTO');
     const pagas = rowsAposCadastro.filter((r) => r.status === 'PAGO');
+    const faturasVisiveis = new Set(
+      rowsAposCadastro.map((r) => String(r.fatura_numero || '').trim()).filter(Boolean),
+    );
+    const entraNaSoma = (r: ComissaoRow) => !comissaoDuplicadaNoPeriodo(decorarLinha(r), faturasVisiveis);
     const linhaSoma = (r: ComissaoRow) => {
       const linha = comissaoLinha(r);
       return {
@@ -997,11 +1144,11 @@ const ComissoesComerciaisPage: React.FC = () => {
       liberadas,
       pendentes,
       pagas,
-      somaLiberada: somarListaComissao(liberadas.map(linhaSoma)),
-      somaPendente: somarListaComissao(pendentes.map(linhaSoma)),
-      somaPaga: somarListaComissao(pagas.map(linhaSoma)),
+      somaLiberada: somarListaComissao(liberadas.filter(entraNaSoma).map(linhaSoma)),
+      somaPendente: somarListaComissao(pendentes.filter(entraNaSoma).map(linhaSoma)),
+      somaPaga: somarListaComissao(pagas.filter(entraNaSoma).map(linhaSoma)),
     };
-  }, [rowsAposCadastro, comissaoLinha]);
+  }, [rowsAposCadastro, comissaoLinha, decorarLinha]);
 
   const stats = useMemo(() => {
     const lib = rowsAposCadastro.filter((r) => r.status === 'LIBERADO_PARA_PAGAMENTO').reduce((s, r) => s + comissaoLinha(r).valor, 0);
@@ -1151,16 +1298,23 @@ const ComissoesComerciaisPage: React.FC = () => {
     }
     const comercialNome = comerciais.find((c) => c.id === comercialId)?.nome || 'Todos';
     const csv = montarCsvRelatorioComissoes(
-      rowsAposCadastro.map((r) => ({
-        empresa: empresaLabel(r.empresa_origem),
-        cliente_nome: r.cliente_nome,
-        comercial_nome: r.comerciais?.nome || comercialNome,
-        fatura_numero: r.fatura_numero,
-        data_faturamento: r.data_faturamento,
-        valor_faturamento: Number(r.valor_faturamento),
-        valor_comissao: comissaoLinha(r).valor,
-        status: COMISSAO_STATUS_LABEL[r.status] || r.status,
-      })),
+      rowsAposCadastro.map((r) => {
+        const rota = decorarLinha(r);
+        return {
+          empresa: empresaLabel(r.empresa_origem),
+          cliente_nome: r.cliente_nome,
+          comercial_nome: r.comerciais?.nome || comercialNome,
+          fatura_numero: r.fatura_numero,
+          data_faturamento: r.data_faturamento,
+          valor_faturamento: Number(r.valor_faturamento),
+          valor_comissao: comissaoLinha(r).valor,
+          status: rota.substituida && rota.concluida ? 'Concluída' : (COMISSAO_STATUS_LABEL[r.status] || r.status),
+          os_numero: rota.os.map((os) => os.osNumero).join(' | '),
+          origem: rota.os.map((os) => os.origem || '').filter(Boolean).join(' | '),
+          destino: rota.os.map((os) => os.destino || '').filter(Boolean).join(' | '),
+          data_missao: rota.datasMissao.join(' | '),
+        };
+      }),
       { year, month, quinzena: quinzenaFiltro, comercialNome },
     );
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -1169,6 +1323,21 @@ const ComissoesComerciaisPage: React.FC = () => {
     link.download = nomeArquivoRelatorioComissoes({ year, month, quinzena: quinzenaFiltro, comercialNome });
     link.click();
     URL.revokeObjectURL(link.href);
+  };
+
+  const trocarFaturaTorres = async (id: string, faturaNumero: string) => {
+    const res = await authFetch('/api/comissoes/religar-fatura-torres', {
+      method: 'POST',
+      body: JSON.stringify({ id, faturaNumero }),
+    });
+    const json = await res.json().catch(() => null) as { ok?: boolean; error?: string; mensagem?: string } | null;
+    if (!res.ok || !json?.ok) {
+      const erro = json?.error || 'Não foi possível puxar a fatura da TORRES.';
+      showNotification('Fatura', erro, 'error');
+      throw new Error(erro);
+    }
+    showNotification('Fatura', json.mensagem || 'Fatura puxada da TORRES.', 'success');
+    await load();
   };
 
   const sincronizarFaturasExistentes = async () => {
@@ -1628,6 +1797,9 @@ const ComissoesComerciaisPage: React.FC = () => {
             perfilFinanceiro={perfilFinanceiro}
             comprovantePorComissao={comprovantePorComissao}
             comprovantesCompletos={comprovantesCompletos}
+            decorar={decorarLinha}
+            podeTrocarNf={!soProprio}
+            onTrocarFatura={trocarFaturaTorres}
           />
           <BlocoListaComissao
             titulo="Pendente"
@@ -1642,6 +1814,9 @@ const ComissoesComerciaisPage: React.FC = () => {
             perfilFinanceiro={perfilFinanceiro}
             comprovantePorComissao={comprovantePorComissao}
             comprovantesCompletos={comprovantesCompletos}
+            decorar={decorarLinha}
+            podeTrocarNf={!soProprio}
+            onTrocarFatura={trocarFaturaTorres}
           />
           <BlocoListaComissao
             titulo="Já pago"
@@ -1656,6 +1831,9 @@ const ComissoesComerciaisPage: React.FC = () => {
             perfilFinanceiro={perfilFinanceiro}
             comprovantePorComissao={comprovantePorComissao}
             comprovantesCompletos={comprovantesCompletos}
+            decorar={decorarLinha}
+            podeTrocarNf={!soProprio}
+            onTrocarFatura={trocarFaturaTorres}
           />
         </div>
       )}

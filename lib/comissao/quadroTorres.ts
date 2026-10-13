@@ -15,8 +15,15 @@ import {
   unirOsIds,
   type FaturaQuadro,
   type LinhaQuadroCliente,
+  type RotaDetalheQuadro,
 } from './quadroFaturamentoComissao.js';
 import { createTorresAdminClient } from './torresSupabase.js';
+import {
+  dataIsoCivil,
+  mesCivilDoIntervalo,
+  missaoRecusada,
+  type RotaMissaoComissao,
+} from './rotaMissaoComissao.js';
 
 type ClienteTorres = ClienteComissaoMatch & {
   nome_fantasia?: string | null;
@@ -51,11 +58,21 @@ function acharClienteTorres(
   return match.status === 'ok' ? match.client || null : null;
 }
 
+function rotaDetalhe(rota: RotaMissaoComissao): RotaDetalheQuadro {
+  return {
+    osId: rota.osId,
+    osNumero: rota.osNumero,
+    origem: rota.origem,
+    destino: rota.destino,
+    dataMissao: rota.dataMissao,
+  };
+}
+
 export async function carregarFaturasQuadroTorresLive(
   sbTorres: ComissaoDbClient,
   periodStart: string,
   periodEnd: string,
-): Promise<{ faturas: FaturaQuadro[]; error?: string }> {
+): Promise<{ faturas: FaturaQuadro[]; rotas: RotaMissaoComissao[]; error?: string }> {
   const cliRes = await fetchAllRows(
     sbTorres,
     'clients',
@@ -75,7 +92,12 @@ export async function carregarFaturasQuadroTorresLive(
   const billRes = await fetchAllRows(
     sbTorres,
     'escort_billings',
-    'invoice_id, os_number, service_order_id, pago_em, fat_total, data_missao, faturado_em, created_at, status, client_id, client_name',
+    'invoice_id, os_number, service_order_id, pago_em, fat_total, data_missao, faturado_em, created_at, status, client_id, client_name, origem, destino',
+  );
+  const osRes = await fetchAllRows(
+    sbTorres,
+    'service_orders',
+    'id, os_number, status, mission_status, origin, destination, scheduled_date',
   );
   const byId = new Map<number, ClienteComissaoMatch>();
   const byNome = new Map<string, ClienteComissaoMatch>();
@@ -92,22 +114,74 @@ export async function carregarFaturasQuadroTorresLive(
       if (nome) byNome.set(nome, cli);
     }
   }
+  const osPorId = new Map<string, {
+    osNumero: string;
+    status: string | null;
+    missionStatus: string | null;
+    origem: string | null;
+    destino: string | null;
+    data: string | null;
+  }>();
+  for (const row of osRes.rows || []) {
+    const id = String(row.id || '').trim();
+    if (!id) continue;
+    osPorId.set(id, {
+      osNumero: String(row.os_number || '').trim() || `OS ${id}`,
+      status: row.status || null,
+      missionStatus: row.mission_status || null,
+      origem: row.origin || null,
+      destino: row.destination || null,
+      data: dataIsoCivil(row.scheduled_date),
+    });
+  }
+  const mes = mesCivilDoIntervalo(periodStart);
+  const rotas: RotaMissaoComissao[] = [];
+  const rotasPorInvoice = new Map<string, RotaMissaoComissao[]>();
   const osPorInvoice = new Map<string, string[]>();
   for (const row of billRes.rows || []) {
+    const osId = String(row.service_order_id || row.os_number || '').trim();
+    if (!osId) continue;
+    const cadastro = osPorId.get(osId);
+    const rota: RotaMissaoComissao = {
+      osId,
+      osNumero: cadastro?.osNumero || String(row.os_number || '').trim() || `OS ${osId}`,
+      origem: row.origem || cadastro?.origem || null,
+      destino: row.destino || cadastro?.destino || null,
+      dataMissao: dataIsoCivil(row.data_missao) || cadastro?.data || null,
+      statusOs: cadastro?.status || row.status || null,
+      statusMissao: cadastro?.missionStatus || null,
+      invoiceId: String(row.invoice_id || '').trim() || null,
+      cliente: row.client_name || null,
+      valor: Number(row.fat_total) || 0,
+    };
+    const dataRota = rota.dataMissao || '';
+    if (dataRota >= mes.start && dataRota <= mes.end) rotas.push(rota);
     const invoiceId = String(row.invoice_id || '').trim();
     if (!invoiceId) continue;
-    const os = String(row.os_number || row.service_order_id || '').trim();
-    if (!os) continue;
-    const prev = osPorInvoice.get(invoiceId) || [];
-    prev.push(os);
-    osPorInvoice.set(invoiceId, prev);
+    const prev = rotasPorInvoice.get(invoiceId) || [];
+    prev.push(rota);
+    rotasPorInvoice.set(invoiceId, prev);
+    const os = rota.osNumero || osId;
+    const ids = osPorInvoice.get(invoiceId) || [];
+    ids.push(osId);
+    if (os && os !== osId) ids.push(os);
+    osPorInvoice.set(invoiceId, ids);
   }
   const faturas: FaturaQuadro[] = [];
   const idsContados = new Set<string>();
   for (const inv of invRes.rows || []) {
     if (faturaCancelada(inv.status)) continue;
-    const date = String(inv.due_date || '').slice(0, 10);
-    if (!faturaNoPeriodo(date, periodStart, periodEnd)) continue;
+    const rotasInv = rotasPorInvoice.get(String(inv.id)) || [];
+    const datasMissao = rotasInv
+      .map((rota) => rota.dataMissao)
+      .filter((data): data is string => !!data)
+      .sort();
+    const datasNoPeriodo = datasMissao.filter((data) => faturaNoPeriodo(data, periodStart, periodEnd));
+    let date = String(inv.due_date || '').slice(0, 10);
+    if (datasMissao.length) {
+      if (!datasNoPeriodo.length) continue;
+      date = datasNoPeriodo[0];
+    } else if (!faturaNoPeriodo(date, periodStart, periodEnd)) continue;
     const cli = byId.get(Number(inv.client_id)) || acharClienteTorres(inv.client_id, inv.client_name, byId, byNome);
     const comercialId = String(cli?.responsavel_comercial_id || '').trim() || null;
     if (!comercialId) continue;
@@ -127,6 +201,7 @@ export async function carregarFaturasQuadroTorresLive(
         inv.service_order_id != null ? [String(inv.service_order_id)] : [],
         osPorInvoice.get(String(inv.id)),
       ),
+      rotas: rotasInv.map(rotaDetalhe),
       paymentDate: inv.payment_date || null,
     });
   }
@@ -161,35 +236,51 @@ export async function carregarFaturasQuadroTorresLive(
     for (const os of fat.osIds || []) osJaContada.add(String(os));
   }
   for (const bill of billRes.rows || []) {
-    const status = String(bill.status || '').toUpperCase();
-    if (status === 'CANCELADO' || /CANCEL/.test(status)) continue;
+    const osCadastro = osPorId.get(String(bill.service_order_id || '').trim());
+    if (missaoRecusada(bill.status, osCadastro?.status, osCadastro?.missionStatus)) continue;
     const valor = Number(bill.fat_total) || 0;
     if (valor <= 0) continue;
     const date = String(bill.data_missao || bill.faturado_em || bill.created_at || '').slice(0, 10);
     if (!faturaNoPeriodo(date, periodStart, periodEnd)) continue;
     const invoiceId = String(bill.invoice_id || '').trim();
     if (invoiceId && idsContados.has(invoiceId)) continue;
-    const osId = String(bill.os_number || bill.service_order_id || '').trim();
-    if (osId && osJaContada.has(osId)) continue;
+    const osId = String(bill.service_order_id || '').trim();
+    const osNumero = osCadastro?.osNumero || String(bill.os_number || '').trim() || osId;
+    if ((osId && osJaContada.has(osId)) || (osNumero && osJaContada.has(osNumero))) continue;
     const cli = acharClienteTorres(bill.client_id, bill.client_name, byId, byNome);
     const comercialId = String(cli?.responsavel_comercial_id || '').trim() || null;
     if (!comercialId) continue;
     if (osId) osJaContada.add(osId);
+    if (osNumero) osJaContada.add(osNumero);
+    const rotaBill: RotaMissaoComissao = {
+      osId: osId || osNumero,
+      osNumero: osNumero || `OS ${osId}`,
+      origem: bill.origem || osCadastro?.origem || null,
+      destino: bill.destino || osCadastro?.destino || null,
+      dataMissao: dataIsoCivil(bill.data_missao) || osCadastro?.data || null,
+      statusOs: osCadastro?.status || bill.status || null,
+      statusMissao: osCadastro?.missionStatus || null,
+      invoiceId: invoiceId || null,
+      cliente: bill.client_name || null,
+      valor,
+    };
     faturas.push({
-      id: `os:${osId || bill.service_order_id || date}`,
+      id: `os:${osId || osNumero || date}`,
       empresa: 'TORRES',
       cliente: String(bill.client_name || cli?.name || '').trim() || null,
-      number: osId || null,
+      number: osNumero || osId || null,
       amount: valor,
       date,
       status: bill.pago_em ? 'PAGA' : 'EMITIDA',
       comercialId,
-      osIds: osId ? [osId] : [],
+      osIds: unirOsIds(osId ? [osId] : [], osNumero ? [osNumero] : []),
+      rotas: [rotaDetalhe(rotaBill)],
       paymentDate: bill.pago_em || null,
     });
   }
   return {
     faturas,
+    rotas,
     error: cliRes.error || invRes.error || txRes.error || billRes.error,
   };
 }
@@ -200,7 +291,7 @@ export async function carregarQuadroTorres(
   periodEnd: string,
   comerciais: Array<{ id: string; nome?: string | null }>,
   sbTorres?: ComissaoDbClient | null,
-): Promise<{ linhas: LinhaQuadroCliente[]; error?: string }> {
+): Promise<{ linhas: LinhaQuadroCliente[]; rotas: RotaMissaoComissao[]; error?: string }> {
   const torresCols =
     'id, origem_fatura_id, fatura_numero, empresa_origem, cliente_nome, valor_faturamento, valor_comissao, percentual_imposto_aplicado, valor_base_liquida, data_faturamento, status, comercial_id, ordem_servico_id, comerciais(nome)';
   let ingestRes = await fetchAllRows(
@@ -220,12 +311,13 @@ export async function carregarQuadroTorres(
   const linhasIngest = quadroDeComissoesTorres(ingestRes.rows || [], comerciais);
   const liveClient = sbTorres === undefined ? createTorresAdminClient() : sbTorres;
   if (!liveClient) {
-    return { linhas: linhasIngest, error: ingestRes.error };
+    return { linhas: linhasIngest, rotas: [], error: ingestRes.error };
   }
   const live = await carregarFaturasQuadroTorresLive(liveClient, periodStart, periodEnd);
   const linhasLive = montarQuadroClientes(live.faturas, [], comerciais, periodStart, periodEnd);
   return {
     linhas: mesclarLinhasQuadro(linhasLive, linhasIngest),
+    rotas: live.rotas || [],
     error: ingestRes.error || live.error,
   };
 }

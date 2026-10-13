@@ -12,6 +12,14 @@ import {
 } from './sincronizarComissoesFaturas.js';
 import { extractFaturaNumeroFromNotes, type ComissaoDbClient } from './comissaoCore.js';
 
+export type RotaDetalheQuadro = {
+  osId: string;
+  osNumero: string;
+  origem: string | null;
+  destino: string | null;
+  dataMissao: string | null;
+};
+
 export type DetalheFaturaQuadro = {
   id: string;
   numero: string | null;
@@ -21,6 +29,7 @@ export type DetalheFaturaQuadro = {
   valorAPagar: number;
   pago: boolean;
   osIds: string[];
+  rotas?: RotaDetalheQuadro[];
 };
 
 export type LinhaQuadroCliente = {
@@ -49,6 +58,7 @@ export type FaturaQuadro = {
   asaasStatus?: string | null;
   comercialId?: string | null;
   osIds?: string[];
+  rotas?: RotaDetalheQuadro[];
   receivableStatus?: string | null;
   paymentDate?: string | null;
 };
@@ -176,6 +186,7 @@ export function montarQuadroClientes(
         paymentDate: fat.paymentDate,
       }),
       osIds: unirOsIds(fat.osIds),
+      rotas: fat.rotas || [],
     });
     map.set(key, prev);
   }

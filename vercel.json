@@ -551,6 +551,10 @@
       "destination": "/api/comissoes-ingest?op=conta-pagar-torres"
     },
     {
+      "source": "/api/comissoes/religar-fatura-torres",
+      "destination": "/api/comissoes-ingest?op=religar-fatura-torres"
+    },
+    {
       "source": "/api/asaas/sync-open-payments",
       "destination": "/api/asaas-sync-open-payments"
     },

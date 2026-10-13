@@ -64,6 +64,11 @@ export function registerComissaoQuadroRoutes(app: Express, requireAuth: any): vo
     await tratarPedidoContaPagarTorres(req, res);
   });
 
+  app.post('/api/comissoes/religar-fatura-torres', requireAuth, async (req: Request, res: Response) => {
+    const { tratarPedidoReligarFaturaTorres } = await import('../lib/comissao/religarFaturaTorres');
+    await tratarPedidoReligarFaturaTorres(req, res);
+  });
+
   app.post('/api/comissoes/sync-tm-torres', requireAuth, async (req: Request, res: Response) => {
     const access = await assertComissoesQuadroAccess(req);
     if (!access.ok) return res.status(access.status).json({ ok: false, error: access.error });

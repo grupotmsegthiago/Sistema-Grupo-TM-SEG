@@ -39,7 +39,7 @@ export async function montarAvisosLiberacao(
   return linhasParaAvisos(lista, nomes);
 }
 
-async function notificarComissaoLiberada(sb: ComissaoDbClient, rows: unknown): Promise<void> {
+export async function notificarComissaoLiberada(sb: ComissaoDbClient, rows: unknown): Promise<void> {
   try {
     const avisos = await montarAvisosLiberacao(sb, rows);
     if (!avisos.length) return;

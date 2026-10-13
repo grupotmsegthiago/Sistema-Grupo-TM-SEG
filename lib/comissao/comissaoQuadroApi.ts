@@ -20,6 +20,7 @@ import { carregarQuadroTorres } from './quadroTorres.js';
 import { carregarCoberturaOsPeriodo, coberturaVazia, type CoberturaOsPeriodo } from './coberturaOsPeriodo.js';
 import type { ComissaoDbClient } from './comissaoCore.js';
 import { carregarIniciosComissao, filtrarLinhasAposCadastro } from './dataInicioComissao.js';
+import type { RotaMissaoComissao } from './rotaMissaoComissao.js';
 
 export type QuadroComissoesApiResult = {
   ok: boolean;
@@ -29,6 +30,7 @@ export type QuadroComissoesApiResult = {
   pendencias: Awaited<ReturnType<typeof carregarPendenciasComissao>>['pendencias'];
   cobertura: CoberturaOsPeriodo;
   iniciosComissao: Record<string, string>;
+  rotasTorres: RotaMissaoComissao[];
   error?: string;
 };
 
@@ -55,6 +57,7 @@ export function restringirQuadroAoComercial(
         totais: { missoes: 0, faturadas: 0, semFatura: 0, receita: 0, custo: 0, lucro: 0 },
       },
       iniciosComissao: {},
+      rotasTorres: quadro.rotasTorres || [],
     };
   }
   const linhasTm = quadro.linhasTm.filter((l) => String(l.comercialId || '') === id);
@@ -84,6 +87,7 @@ export function restringirQuadroAoComercial(
       ),
     },
     iniciosComissao: inicio ? { [id]: inicio } : {},
+    rotasTorres: quadro.rotasTorres || [],
   };
 }
 
@@ -103,6 +107,7 @@ export async function montarQuadroComissoesApi(
       pendencias: [],
       cobertura: coberturaVazia('ERRO', comErr.message, true),
       iniciosComissao: {},
+      rotasTorres: [],
       error: comErr.message,
     };
   }
@@ -141,6 +146,7 @@ export async function montarQuadroComissoesApi(
     pendencias: pend.ok ? pend.pendencias : [],
     cobertura,
     iniciosComissao: Object.fromEntries(inicios),
+    rotasTorres: torres.rotas || [],
     error: quadro.error || torres.error || (!pend.ok ? pend.error : undefined) || cobertura.error,
   };
   if (opts?.somenteProprio) {

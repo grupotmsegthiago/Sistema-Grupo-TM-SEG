@@ -559,6 +559,214 @@ describe('comissao comercial — quadro TORRES ao vivo', () => {
     assert.ok(quadro.linhas.some((l) => l.cliente.includes('TECHTRANS')));
     assert.equal(quadro.linhas[0].comercialNome, 'MIGUEL MOTA');
   });
+
+  it('missão cancelada entra na comissão e missão recusada fica de fora', async () => {
+    const { carregarFaturasQuadroTorresLive } = await import('../lib/comissao/quadroTorres');
+    const tables: Record<string, any[]> = {
+      clients: [{ id: 1, name: 'NOVA MINAS LOGISTICA', responsavel_comercial_id: 'abc' }],
+      invoices: [],
+      financial_transactions: [],
+      service_orders: [
+        { id: 10, os_number: 'TOR-0010', status: 'cancelada', mission_status: 'cancelada', origin: 'GRU', destination: 'Betim', scheduled_date: '2026-09-08' },
+        { id: 11, os_number: 'TOR-0011', status: 'recusada', mission_status: 'recusada', origin: 'GRU', destination: 'Cajamar', scheduled_date: '2026-09-09' },
+      ],
+      escort_billings: [
+        { service_order_id: 10, client_id: 1, client_name: 'NOVA MINAS LOGISTICA', fat_total: 800, status: 'CANCELADO', data_missao: '2026-09-08', origem: 'GRU', destino: 'Betim' },
+        { service_order_id: 11, client_id: 1, client_name: 'NOVA MINAS LOGISTICA', fat_total: 900, status: 'RECUSADA', data_missao: '2026-09-09', origem: 'GRU', destino: 'Cajamar' },
+      ],
+    };
+    const sb = {
+      from(table: string) {
+        const chain: any = {
+          select() { return chain; },
+          eq() { return chain; },
+          range() { return Promise.resolve({ data: tables[table] || [], error: null }); },
+        };
+        return chain;
+      },
+    };
+    const live = await carregarFaturasQuadroTorresLive(sb as any, '2026-09-01', '2026-09-30');
+    assert.equal(live.faturas.length, 1);
+    assert.equal(live.faturas[0].number, 'TOR-0010');
+    assert.equal(live.faturas[0].rotas?.[0].destino, 'Betim');
+    assert.equal(live.rotas.some((rota) => rota.osNumero === 'TOR-0011'), true);
+  });
+});
+
+describe('comissao comercial — rota e quinzena da missão TORRES', () => {
+  it('fatura antiga cancelada mostra a OS concluída na 1ª quinzena', async () => {
+    const {
+      decorarComissaoTorres,
+      linhaNaQuinzenaComissao,
+      comissaoDuplicadaNoPeriodo,
+    } = await import('../lib/comissao/rotaMissaoComissao');
+    const rotas = [
+      {
+        osId: '1186', osNumero: 'TOR-0792', origem: 'Aeroporto Internacional de Guarulhos (GRU)', destino: 'Betim',
+        dataMissao: '2026-09-08', statusOs: 'concluida', statusMissao: 'finalizada', invoiceId: '201',
+        cliente: 'NOVA MINAS LOGISTICA', valor: 3371.27,
+      },
+      {
+        osId: '1197', osNumero: 'TOR-0803', origem: 'Aeroporto de Guarulhos (GRU)', destino: 'Betim',
+        dataMissao: '2026-09-09', statusOs: 'concluida', statusMissao: 'finalizada', invoiceId: '201',
+        cliente: 'NOVA MINAS LOGISTICA', valor: 3245.6,
+      },
+      {
+        osId: '1198', osNumero: 'TOR-0804', origem: 'Palmar Modular', destino: 'Cajamar',
+        dataMissao: '2026-09-10', statusOs: 'concluida', statusMissao: 'finalizada', invoiceId: '200',
+        cliente: 'NIMBUS EXPRESS TRANSPORTES LTDA', valor: 550,
+      },
+    ];
+    const antiga = decorarComissaoTorres({
+      empresa_origem: 'TORRES', status: 'CANCELADO', origem_fatura_id: '184', fatura_numero: '184',
+      cliente_nome: 'NOVA MINAS LOGISTICA', valor_faturamento: 6616.87,
+    }, rotas);
+    assert.equal(antiga.substituida, true);
+    assert.equal(antiga.faturaViva, '201');
+    assert.equal(antiga.concluida, true);
+    assert.deepEqual(antiga.os.map((os) => os.osNumero), ['TOR-0792', 'TOR-0803']);
+    assert.equal(linhaNaQuinzenaComissao(antiga.datasMissao, '2026-09-18', 'q1'), true);
+    assert.equal(linhaNaQuinzenaComissao(antiga.datasMissao, '2026-09-18', 'q2'), false);
+    const nimbus = decorarComissaoTorres({
+      empresa_origem: 'TORRES', status: 'CANCELADO', origem_fatura_id: '185', fatura_numero: '185',
+      cliente_nome: 'NIMBUS EXPRESS TRANSPORTES LTDA', valor_faturamento: 550,
+    }, rotas);
+    assert.equal(nimbus.os[0].osNumero, 'TOR-0804');
+    assert.equal(nimbus.os[0].destino, 'Cajamar');
+    const osSolta = decorarComissaoTorres({
+      empresa_origem: 'TORRES', status: 'AGUARDANDO_PAGAMENTO_CLIENTE', origem_fatura_id: 'os:1186', fatura_numero: '1186',
+      cliente_nome: 'NOVA MINAS LOGISTICA', valor_faturamento: 3371.27,
+    }, rotas);
+    assert.equal(osSolta.jaNaFatura, '201');
+    const faturaViva = decorarComissaoTorres({
+      empresa_origem: 'TORRES', status: 'AGUARDANDO_PAGAMENTO_CLIENTE', origem_fatura_id: '201', fatura_numero: '201',
+      cliente_nome: 'NOVA MINAS LOGISTICA', valor_faturamento: 6616.87,
+    }, rotas);
+    assert.equal(faturaViva.substituida, false);
+    assert.equal(faturaViva.jaNaFatura, null);
+    assert.equal(comissaoDuplicadaNoPeriodo(antiga, new Set(['201'])), true);
+    assert.equal(comissaoDuplicadaNoPeriodo(osSolta, new Set(['201'])), true);
+    assert.equal(comissaoDuplicadaNoPeriodo(faturaViva, new Set(['201'])), false);
+    assert.equal(comissaoDuplicadaNoPeriodo(osSolta, new Set()), false);
+  });
+});
+
+describe('comissao comercial — trocar NF e puxar da TORRES', () => {
+  it('recalcula a mesma regra, usa a data da missão e não duplica', async () => {
+    const { montarPatchReligarFatura, normalizarNumeroFatura, executarReligarFaturaTorres } = await import('../lib/comissao/religarFaturaTorres');
+    assert.equal(normalizarNumeroFatura('NF 331'), '331');
+    assert.equal(normalizarNumeroFatura('torres-inv-205'), '205');
+    const aberto = montarPatchReligarFatura({
+      statusAtual: 'CANCELADO',
+      percentualImposto: 16,
+      percentualComissao: 3,
+      dataAtual: '2026-09-18',
+      fatura: { id: '201', nfseNumero: '332', cliente: 'NOVA MINAS LOGISTICA', valor: 6616.87, status: 'OVERDUE', paymentDate: null, dueDate: '2026-10-02' },
+      missoes: [
+        { osId: '1186', osNumero: 'TOR-0792', dataMissao: '2026-09-08' },
+        { osId: '1197', osNumero: 'TOR-0803', dataMissao: '2026-09-09' },
+      ],
+    });
+    assert.equal(aberto.ok, true);
+    if (!aberto.ok) return;
+    assert.equal(aberto.patch.origem_fatura_id, '201');
+    assert.equal(aberto.patch.valor_comissao, 166.75);
+    assert.equal(aberto.patch.data_faturamento, '2026-09-08');
+    assert.equal(aberto.patch.status, 'AGUARDANDO_PAGAMENTO_CLIENTE');
+    assert.equal(aberto.patch.ordem_servico_id, '1186');
+    assert.equal(aberto.liberouAgora, false);
+    const paga = montarPatchReligarFatura({
+      statusAtual: 'CANCELADO',
+      percentualImposto: 16,
+      percentualComissao: 3,
+      fatura: { id: '200', nfseNumero: '331', cliente: 'NIMBUS', valor: 550, status: 'CONFIRMED', paymentDate: '2026-10-05', dueDate: '2026-10-05' },
+      missoes: [{ osId: '1198', osNumero: 'TOR-0804', dataMissao: '2026-09-10' }],
+    });
+    assert.equal(paga.ok && paga.patch.status, 'LIBERADO_PARA_PAGAMENTO');
+    assert.equal(paga.ok && paga.liberouAgora, true);
+    assert.equal(montarPatchReligarFatura({
+      statusAtual: 'PAGO', percentualImposto: 16, percentualComissao: 3,
+      fatura: { id: '201', nfseNumero: null, cliente: 'A', valor: 10, status: 'PENDING', paymentDate: null, dueDate: '2026-09-10' },
+      missoes: [],
+    }).ok, false);
+    const lancada = montarPatchReligarFatura({
+      statusAtual: 'AGUARDANDO_PAGAMENTO_CLIENTE', contaPagarId: 'x', percentualImposto: 16, percentualComissao: 3,
+      fatura: { id: '201', nfseNumero: null, cliente: 'A', valor: 10, status: 'PENDING', paymentDate: null, dueDate: '2026-09-10' },
+      missoes: [],
+    });
+    assert.equal(lancada.ok, false);
+    if (!lancada.ok) assert.match(lancada.error, /lançada/);
+    assert.equal(montarPatchReligarFatura({
+      statusAtual: 'CANCELADO', percentualImposto: 16, percentualComissao: 3, outraComissaoId: 'outra',
+      fatura: { id: '201', nfseNumero: null, cliente: 'A', valor: 10, status: 'PENDING', paymentDate: null, dueDate: '2026-09-10' },
+      missoes: [],
+    }).ok, false);
+
+    const tm = {
+      comissoes: [{
+        id: 'c-184', status: 'CANCELADO', empresa_origem: 'TORRES', conta_pagar_id: null,
+        percentual_imposto_aplicado: 16, percentual_comissao_aplicado: 3,
+        data_faturamento: '2026-09-18', data_recebimento_cliente: null, cliente_nome: 'NOVA MINAS LOGISTICA',
+        origem_fatura_id: '184',
+      }],
+    };
+    const torres = {
+      invoices: [{ id: 201, client_name: 'NOVA MINAS LOGISTICA', value: 6616.87, status: 'OVERDUE', due_date: '2026-10-02', payment_date: null, nfse_number: '332' }],
+      escort_billings: [
+        { invoice_id: 201, service_order_id: 1186, data_missao: '2026-09-08', os_number: null },
+      ],
+      service_orders: [{ id: 1186, os_number: 'TOR-0792' }],
+    };
+    const cliente = (tabelas: Record<string, any[]>) => ({
+      from(table: string) {
+        const filtros: Array<[string, string, unknown]> = [];
+        const casa = (row: any) => filtros.every(([op, col, val]) => {
+          if (op === 'eq') return String(row[col]) === String(val);
+          if (op === 'neq') return String(row[col]) !== String(val);
+          if (op === 'in') return (val as unknown[]).map(String).includes(String(row[col]));
+          return true;
+        });
+        const chain: any = {
+          select() { return chain; },
+          eq(col: string, val: unknown) { filtros.push(['eq', col, val]); return chain; },
+          neq(col: string, val: unknown) { filtros.push(['neq', col, val]); return chain; },
+          in(col: string, val: unknown) { filtros.push(['in', col, val]); return chain; },
+          limit() { return chain; },
+          maybeSingle() {
+            const linha = (tabelas[table] || []).find(casa) || null;
+            return Promise.resolve({ data: linha, error: null });
+          },
+          update(patch: Record<string, unknown>) {
+            return {
+              eq(col: string, val: unknown) {
+                filtros.push(['eq', col, val]);
+                const linha = (tabelas[table] || []).find(casa);
+                if (linha) Object.assign(linha, patch);
+                return { select: () => Promise.resolve({ data: linha ? [linha] : [], error: null }) };
+              },
+            };
+          },
+          then(resolve: (v: unknown) => void) {
+            resolve({ data: (tabelas[table] || []).filter(casa), error: null });
+          },
+        };
+        return chain;
+      },
+    });
+    const res = await executarReligarFaturaTorres(cliente(tm) as any, cliente(torres) as any, { comissaoId: 'c-184', faturaNumero: 'NF 332' });
+    assert.equal(res.ok, true);
+    assert.equal(tm.comissoes[0].origem_fatura_id, '201');
+    assert.equal(tm.comissoes[0].data_faturamento, '2026-09-08');
+    assert.match(res.mensagem || '', /TOR-0792/);
+    const page = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
+    const vercel = fs.readFileSync('vercel.json', 'utf8');
+    const ingest = fs.readFileSync('api/comissoes-ingest.ts', 'utf8');
+    assert.match(page, /btn-trocar-fatura-/);
+    assert.match(page, /\/api\/comissoes\/religar-fatura-torres/);
+    assert.match(vercel, /religar-fatura-torres/);
+    assert.match(ingest, /op === 'religar-fatura-torres'/);
+    assert.equal(Object.keys(JSON.parse(vercel).functions || {}).length, 50);
+  });
 });
 
 describe('comissao comercial — cobertura OS e dashboard', () => {
