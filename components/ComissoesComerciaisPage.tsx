@@ -412,7 +412,7 @@ function BlocoListaComissao({
                       {r.status === 'LIBERADO_PARA_PAGAMENTO' && !linhaPiso.abaixoDoPiso && !r.conta_pagar_id && (
                         <button type="button" disabled={lancandoId === r.id} onClick={() => onLancar(r)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 text-white text-[10px] font-black uppercase disabled:opacity-50" data-testid={`btn-lancar-pagamento-${r.id}`}>
                           {lancandoId === r.id ? <Loader2 size={12} className="animate-spin" /> : <CircleDollarSign size={12} />}
-                          {lancandoId === r.id ? 'Lançando…' : (String(r.empresa_origem || '').toUpperCase() === 'TORRES' ? 'Lançar na TORRES' : 'Lançar pagamento')}
+                          {lancandoId === r.id ? 'Lançando…' : 'Lançar pagamento'}
                         </button>
                       )}
                       {r.status === 'LIBERADO_PARA_PAGAMENTO' && !linhaPiso.abaixoDoPiso && !!r.conta_pagar_id && (
@@ -815,7 +815,6 @@ const ComissoesComerciaisPage: React.FC = () => {
   const [rotasTorres, setRotasTorres] = useState<RotaMissaoComissao[]>([]);
   const [escopoPronto, setEscopoPronto] = useState(!soProprio);
   const autoSyncRef = useRef(false);
-  const autoTorresRef = useRef(new Set<string>());
 
   const { start: periodStart, end: periodEnd } = intervaloQuinzena(year, month, quinzenaFiltro);
 
@@ -1172,11 +1171,11 @@ const ComissoesComerciaisPage: React.FC = () => {
     cobertura,
   }), [quadroVisivel.all, funcionarios, cobertura]);
 
-  const lancarNoContasAPagar = async (r: ComissaoRow, silencioso = false) => {
+  const lancarNoContasAPagar = async (r: ComissaoRow) => {
     const linha = comissaoLinha(r);
     const valor = valorColunaPagamentoComissao(r.status, linha.valor, linha.abaixoDoPiso);
     if (valor == null || valor <= 0) {
-      if (!silencioso) showNotification('Lançar pagamento', 'Esta comissão não tem valor a pagar.', 'warning');
+      showNotification('Lançar pagamento', 'Esta comissão não tem valor a pagar.', 'warning');
       return false;
     }
     const torres = String(r.empresa_origem || '').toUpperCase() === 'TORRES';
@@ -1189,7 +1188,7 @@ const ComissoesComerciaisPage: React.FC = () => {
         });
         const json = await res.json().catch(() => null) as { ok?: boolean; error?: string } | null;
         if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao lançar no Contas a Pagar da TORRES');
-        if (!silencioso) showNotification('Contas a Pagar da TORRES', 'Lançamento criado na TORRES, separado da TM SEG.', 'success');
+        showNotification('Contas a Pagar da TORRES', 'Lançamento criado na TORRES, separado da TM SEG.', 'success');
       } else {
         const res = await lancarPagamentoComissao({
           id: r.id,
@@ -1202,60 +1201,17 @@ const ComissoesComerciaisPage: React.FC = () => {
           comprovanteUrl: comprovantePorComissao[r.id] || null,
         });
         if (!res.ok) throw new Error(res.error || 'Falha ao lançar no Contas a Pagar');
-        if (!silencioso) showNotification('Contas a Pagar', 'Lançamento criado. Agora é possível pagar a comissão.', 'success');
+        showNotification('Contas a Pagar', 'Lançamento criado. Agora é possível pagar a comissão.', 'success');
       }
       await load();
       return true;
     } catch (e: any) {
-      if (!silencioso) showNotification('Erro', e?.message || 'Falha ao lançar pagamento', 'error');
+      showNotification('Erro', e?.message || 'Falha ao lançar pagamento', 'error');
       return false;
     } finally {
       setLancandoId(null);
     }
   };
-
-  useEffect(() => {
-    if (soProprio) return;
-    const alvos = rows.filter((r) => {
-      if (autoTorresRef.current.has(r.id)) return false;
-      if (String(r.empresa_origem || '').toUpperCase() !== 'TORRES') return false;
-      if (r.status !== 'LIBERADO_PARA_PAGAMENTO' || r.conta_pagar_id) return false;
-      const linha = comissaoLinha(r);
-      const valor = valorColunaPagamentoComissao(r.status, linha.valor, linha.abaixoDoPiso);
-      return valor != null && valor > 0 && !linha.abaixoDoPiso;
-    });
-    if (!alvos.length) return;
-    let vivo = true;
-    (async () => {
-      let criou = false;
-      let erro = '';
-      for (const r of alvos) {
-        autoTorresRef.current.add(r.id);
-        const linha = comissaoLinha(r);
-        const valor = valorColunaPagamentoComissao(r.status, linha.valor, linha.abaixoDoPiso);
-        if (valor == null) continue;
-        try {
-          const res = await authFetch('/api/comissoes/conta-pagar-torres', {
-            method: 'POST',
-            body: JSON.stringify({ acao: 'lancar', id: r.id, valor }),
-          });
-          const json = await res.json().catch(() => null) as { ok?: boolean; error?: string } | null;
-          if (!res.ok || !json?.ok) erro = json?.error || erro || 'Falha ao lançar na TORRES';
-          else criou = true;
-        } catch (e: any) {
-          erro = e?.message || erro;
-        }
-      }
-      if (!vivo) return;
-      if (criou) {
-        showNotification('Contas a Pagar da TORRES', 'Comissão da TORRES lançada no contas a pagar dela.', 'success');
-        await load();
-      } else if (erro) {
-        showNotification('Contas a Pagar da TORRES', erro, 'warning');
-      }
-    })();
-    return () => { vivo = false; };
-  }, [rows, soProprio]);
 
   const confirmarPagamento = async () => {
     if (!paying || !file) {

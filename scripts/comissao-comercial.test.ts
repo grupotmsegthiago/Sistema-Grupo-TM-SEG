@@ -1554,7 +1554,8 @@ describe('comissao comercial — lançar no Contas a Pagar', () => {
     assert.match(service, /status: 'PAID'/);
     assert.match(service, /pago_em: agora.toISOString\(\)/);
     assert.match(page, /\/api\/comissoes\/conta-pagar-torres/);
-    assert.match(page, /Lançar na TORRES/);
+    assert.match(page, /Lançar pagamento/);
+    assert.doesNotMatch(page, /autoTorresRef/);
   });
 
   it('comissão TORRES vai para o contas a pagar da TORRES e leva o comprovante da fatura', async () => {
@@ -1623,6 +1624,105 @@ describe('comissao comercial — lançar no Contas a Pagar', () => {
       ligar: async () => false,
     });
     assert.equal(tm.ok, false);
+  });
+
+  it('setembro só lança no clique, não duplica e não confirma sem vínculo', async () => {
+    const { executarLancamentoTorres } = await import('../lib/comissao/contaPagarTorres');
+    const page = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
+    assert.doesNotMatch(page, /autoTorresRef/);
+    assert.match(page, /Lançar pagamento/);
+
+    const setembro = [
+      { id: '91beddd8-4a85-4e23-aae5-7f13af639555', fatura: '200', cliente: 'NIMBUS', valor: 13.86 },
+      { id: '6b004af2-7cd1-4b61-9b2c-d7c0d0decc87', fatura: 'torres-inv-199', cliente: 'R J C', valor: 41.53 },
+      { id: '28bd0a56-57c6-4915-8d0f-e595be1ef21d', fatura: 'torres-inv-207', cliente: 'TECHTRANS', valor: 288.07 },
+    ];
+    const titulos = new Map<string, string>();
+    const vinculos = new Map<string, string>();
+    let seq = 0;
+    const depsDe = (falhaInserir = false) => ({
+      buscarExistente: async (comissaoId: string) => titulos.get(comissaoId) || null,
+      buscarCategoriaId: async () => 'cat',
+      inserir: async (row: Record<string, unknown>) => {
+        if (falhaInserir) throw new Error('TORRES indisponível');
+        const id = `tx-${++seq}`;
+        titulos.set(String(row.origin_id), id);
+        return id;
+      },
+      ligar: async (comissaoId: string, transactionId: string) => {
+        if (vinculos.has(comissaoId)) return vinculos.get(comissaoId) === transactionId;
+        vinculos.set(comissaoId, transactionId);
+        return true;
+      },
+      lerVinculo: async (comissaoId: string) => vinculos.get(comissaoId) || null,
+      descartarOrfao: async (transactionId: string) => {
+        for (const [comissaoId, tituloId] of titulos) {
+          if (tituloId === transactionId && vinculos.get(comissaoId) !== transactionId) titulos.delete(comissaoId);
+        }
+      },
+    });
+
+    for (const linha of setembro) {
+      const primeiro = await executarLancamentoTorres({
+        comissao: {
+          id: linha.id,
+          status: 'LIBERADO_PARA_PAGAMENTO',
+          empresa_origem: 'TORRES',
+          valor_comissao: linha.valor,
+          cliente_nome: linha.cliente,
+          fatura_numero: linha.fatura,
+        },
+        valor: linha.valor,
+        dueDate: '2026-10-15',
+      }, depsDe());
+      assert.equal(primeiro.ok, true);
+      assert.equal(vinculos.get(linha.id), primeiro.transactionId);
+      const repetido = await executarLancamentoTorres({
+        comissao: {
+          id: linha.id,
+          status: 'LIBERADO_PARA_PAGAMENTO',
+          empresa_origem: 'TORRES',
+          conta_pagar_id: primeiro.transactionId,
+          valor_comissao: linha.valor,
+        },
+        valor: linha.valor,
+        dueDate: '2026-10-15',
+      }, depsDe());
+      assert.equal(repetido.ok, true);
+      assert.equal(repetido.transactionId, primeiro.transactionId);
+    }
+    assert.equal(titulos.size, 3);
+
+    const aberta = await executarLancamentoTorres({
+      comissao: { id: 'aberta', status: 'AGUARDANDO_PAGAMENTO_CLIENTE', empresa_origem: 'TORRES', valor_comissao: 10 },
+      valor: 10,
+      dueDate: '2026-10-15',
+    }, depsDe());
+    assert.equal(aberta.ok, false);
+    assert.equal(titulos.size, 3);
+
+    await assert.rejects(() => executarLancamentoTorres({
+      comissao: { id: 'sem-rede', status: 'LIBERADO_PARA_PAGAMENTO', empresa_origem: 'TORRES', valor_comissao: 10 },
+      valor: 10,
+      dueDate: '2026-10-15',
+    }, depsDe(true)), /TORRES indisponível/);
+
+    const orfaos: string[] = [];
+    const corrida = await executarLancamentoTorres({
+      comissao: { id: 'corrida', status: 'LIBERADO_PARA_PAGAMENTO', empresa_origem: 'TORRES', valor_comissao: 10 },
+      valor: 10,
+      dueDate: '2026-10-15',
+    }, {
+      buscarExistente: async () => null,
+      buscarCategoriaId: async () => null,
+      inserir: async () => 'tx-perdedor',
+      ligar: async () => false,
+      lerVinculo: async () => 'tx-vencedor',
+      descartarOrfao: async (id) => { orfaos.push(id); },
+    });
+    assert.equal(corrida.ok, true);
+    assert.equal(corrida.transactionId, 'tx-vencedor');
+    assert.deepEqual(orfaos, ['tx-perdedor']);
   });
 });
 

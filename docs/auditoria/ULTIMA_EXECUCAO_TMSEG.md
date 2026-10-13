@@ -1,5 +1,28 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## LANÇAMENTO SÓ NO CLIQUE — TM SEG × TORRES
+
+**Data:** 2026-10-13
+**Pedido:** tirar o lançamento automático ao escolher o mês. O botão Lançar pagamento grava no banco da empresa. Sem publicar e sem gravar título real.
+
+**O que mudou:**
+- `components/ComissoesComerciaisPage.tsx`: removido o `useEffect` que lançava comissão TORRES ao carregar o mês. O botão passou a se chamar Lançar pagamento nos dois casos. TM SEG segue no Supabase dela; TORRES segue em `POST /api/comissoes/conta-pagar-torres`.
+- `lib/comissao/contaPagarTorres.ts`: o `conta_pagar_id` só entra depois do título. Clique repetido reaproveita o vínculo. Se outro clique já vinculou, o título órfão desta tentativa é descartado e o título já ligado permanece. Sem vínculo confirmado, a resposta é erro.
+- Status continua `LIBERADO_PARA_PAGAMENTO` até Pagar comissão. Cálculo, vencimento e pagamento efetivo não mudaram.
+
+**Teste:** `npx tsx --test scripts/comissao-comercial.test.ts` — 44 passaram na validação de 13/10/2026. Esta publicação tira o lançamento automático que ainda estava em `dec5cf52`. Nenhum título real foi criado na validação. Os dois efeitos antigos (sincronismo de faturas na primeira abertura e PIX/comprovante de título da TM SEG já lançado) permanecem.
+
+**Leitura da tela:** o único `acao: 'lancar'` está dentro de `lancarNoContasAPagar`, chamado pelo botão. A TORRES exige login e `podeEscrever` (comercial só o próprio recebe 403). Ao trocar o mês, a lista não cria conta a pagar. Permanecem dois efeitos antigos, fora deste pedido: na primeira abertura da página, `POST /api/comissoes/sync-faturas` gera comissões de faturas já existentes; e, para título da TM SEG que já tem `conta_pagar_id`, `garantirFormaPixEComprovante` pode preencher PIX e comprovante. A TORRES não entra nesse preenchimento.
+
+## AUDITORIA — LANÇAR PAGAMENTO TM SEG × TORRES
+
+**Data:** 2026-10-13
+**Pedido:** comparar o botão de lançar da TM SEG com o da TORRES e planejar a padronização. Sem alterar regra financeira e sem publicar.
+
+**Achado:** os dois usam o mesmo payload (`montarContaPagarComissao`): despesa pendente, PIX, vencimento no dia 15, beneficiário no nome do comercial, histórico `comissao_id:`, e a comissão só fica ligada se o `conta_pagar_id` gravar. A TM SEG grava no Supabase dela pelo clique. A TORRES grava no Supabase dela por `POST /api/comissoes/conta-pagar-torres`. A divergência operacional é o `useEffect` em `ComissoesComerciaisPage.tsx`: ao carregar o mês, ele lança sozinho toda comissão TORRES liberada sem conta a pagar. Setembro dispara isso. Não há estorno de lançamento nos dois fluxos. O status da comissão continua `LIBERADO_PARA_PAGAMENTO` depois do lançamento; `PAGO` só vem no botão Pagar comissão.
+
+**Plano, ainda sem código:** tirar o lançamento automático e deixar só o clique. Reaproveitar a corrida da TM SEG (se outro clique ganhar, não deixar título duplicado). Não criar as três contas de setembro nesta auditoria.
+
 ## COMISSÕES SETEMBRO — AVISO “TORRES NÃO ESTÁ LIGADA NESTE COMPUTADOR”
 
 **Data:** 2026-10-13

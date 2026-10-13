@@ -84,6 +84,9 @@ export async function executarLancamentoTorres(
     buscarCategoriaId: () => Promise<string | null>;
     inserir: (payload: Record<string, unknown>) => Promise<string>;
     ligar: (comissaoId: string, transactionId: string) => Promise<boolean>;
+    lerVinculo?: (comissaoId: string) => Promise<string | null>;
+    /** Só o título criado nesta tentativa, e apenas se a comissão já apontar para outro id. */
+    descartarOrfao?: (transactionId: string) => Promise<void>;
   },
 ): Promise<{ ok: boolean; transactionId?: string; error?: string }> {
   const row = input.comissao;
@@ -121,10 +124,14 @@ export async function executarLancamentoTorres(
   if (!transactionId) return { ok: false, error: 'Não foi possível criar o Contas a Pagar da TORRES' };
 
   const ligado = await deps.ligar(id, transactionId);
-  if (!ligado) {
-    return { ok: false, transactionId, error: 'O título foi criado na TORRES, mas não ligou na comissão. Tente de novo.' };
+  if (ligado) return { ok: true, transactionId };
+
+  const vencedor = String(await deps.lerVinculo?.(id) || '').trim();
+  if (vencedor) {
+    if (!existente && vencedor !== transactionId) await deps.descartarOrfao?.(transactionId);
+    return { ok: true, transactionId: vencedor };
   }
-  return { ok: true, transactionId };
+  return { ok: false, error: 'O título da TORRES não ficou ligado na comissão. O lançamento não foi confirmado.' };
 }
 
 function clienteDoUsuario(token: string) {
@@ -274,6 +281,21 @@ export async function tratarPedidoContaPagarTorres(req: any, res: any): Promise<
         if (ligaErr) return false;
         const gravado = String(ligado?.[0]?.conta_pagar_id || '').trim();
         return gravado === transactionId;
+      },
+      lerVinculo: async (comissaoId) => {
+        const { data: atual } = await sb.from('comissoes').select('conta_pagar_id').eq('id', comissaoId).maybeSingle();
+        return atual?.conta_pagar_id ? String(atual.conta_pagar_id) : null;
+      },
+      descartarOrfao: async (transactionId) => {
+        const { data: atual } = await sb.from('comissoes').select('conta_pagar_id').eq('id', id).maybeSingle();
+        const vinculado = String(atual?.conta_pagar_id || '').trim();
+        if (!vinculado || vinculado === transactionId) return;
+        await torres
+          .from('financial_transactions')
+          .delete()
+          .eq('id', transactionId)
+          .eq('origin_type', ORIGEM_CONTA_PAGAR_TORRES)
+          .eq('origin_id', id);
       },
     });
     res.status(200).json(resultado);
