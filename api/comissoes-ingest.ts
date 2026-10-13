@@ -43,6 +43,7 @@ function queryOp(req: { query?: Record<string, unknown>; url?: string }): string
   if (url.includes('/comissoes/sync-tm-torres')) return 'sync-tm-torres';
   if (url.includes('/comissoes/sync-faturas')) return 'sync-faturas';
   if (url.includes('/comissoes/comprovantes')) return 'comprovantes';
+  if (url.includes('/comissoes/diagnostico-torres')) return 'diagnostico-torres';
   if (url.includes('/comissoes/conta-pagar-torres')) return 'conta-pagar-torres';
   if (url.includes('/comissoes/religar-fatura-torres')) return 'religar-fatura-torres';
   return '';
@@ -127,6 +128,17 @@ export async function handleComissoesIngest(req: any, res: any) {
     }
     return;
   }
+  if (op === 'diagnostico-torres') {
+    try {
+      const { tratarDiagnosticoTorres } = await import('../lib/comissao/diagnosticoTorres.js');
+      await tratarDiagnosticoTorres(req, res);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('[comissao] diagnostico TORRES:', message);
+      res.status(500).json({ ok: false, conectado: false, codigo: 'BANCO', error: 'A leitura da TORRES falhou.' });
+    }
+    return;
+  }
   if (op === 'conta-pagar-torres') {
     try {
       const { tratarPedidoContaPagarTorres } = await import('../lib/comissao/contaPagarTorres.js');
@@ -134,7 +146,7 @@ export async function handleComissoesIngest(req: any, res: any) {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn('[comissao] contas a pagar TORRES:', message);
-      res.status(200).json({ ok: false, error: message });
+      res.status(500).json({ ok: false, error: message, codigo: 'BANCO' });
     }
     return;
   }

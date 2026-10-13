@@ -1747,10 +1747,40 @@ describe('comissao comercial — chave do servidor da TORRES', () => {
     assert.equal(motivoChaveTorres(publishable), 'publishable');
     assert.equal(motivoChaveTorres(daTm), 'projeto_tmseg');
     assert.equal(motivoChaveTorres(anon), 'nao_service_role');
-    assert.match(mensagemChaveTorresRecusada({}), /não chegou neste servidor/);
+    assert.match(mensagemChaveTorresRecusada({}), /não está no servidor que respondeu/);
     assert.match(mensagemChaveTorresRecusada({ TORRES_SUPABASE_SERVICE_ROLE_KEY: publishable }), /publishable/);
     assert.match(mensagemChaveTorresRecusada({ TORRES_SUPABASE_SERVICE_ROLE_KEY: daTm }), /TM SEG/);
     assert.equal(mensagemChaveTorresRecusada({ TORRES_SUPABASE_SERVICE_ROLE_KEY: secret }), '');
     assert.doesNotMatch(mensagemChaveTorresRecusada({}), /computador/);
+  });
+
+  it('falha de lançamento não responde HTTP 200', async () => {
+    const { respostaFalhaContaPagar } = await import('../lib/comissao/contaPagarTorres');
+    assert.deepEqual(respostaFalhaContaPagar('A chave da TORRES não está no servidor que respondeu.'), { status: 503, codigo: 'CREDENCIAL' });
+    assert.deepEqual(respostaFalhaContaPagar('Permissão negada'), { status: 403, codigo: 'SEM_PERMISSAO' });
+    assert.deepEqual(respostaFalhaContaPagar('fetch failed'), { status: 502, codigo: 'CONEXAO' });
+    assert.deepEqual(respostaFalhaContaPagar('A comissão não está liberada para pagamento'), { status: 409, codigo: 'NAO_LIBERADA' });
+    assert.deepEqual(respostaFalhaContaPagar('Comissão não encontrada'), { status: 404, codigo: 'NAO_ENCONTRADA' });
+    assert.deepEqual(respostaFalhaContaPagar('duplicate key value'), { status: 500, codigo: 'BANCO' });
+    assert.notEqual(respostaFalhaContaPagar('A chave da TORRES não está no servidor que respondeu.').status, 200);
+  });
+
+  it('diagnóstico da TORRES só lê e não devolve linha financeira', async () => {
+    const { classificarErroLeituraTorres, lerUmaLinhaTorres } = await import('../lib/comissao/diagnosticoTorres');
+    assert.equal(classificarErroLeituraTorres('Invalid API key').codigo, 'CREDENCIAL');
+    assert.equal(classificarErroLeituraTorres('fetch failed').codigo, 'CONEXAO');
+    assert.equal(classificarErroLeituraTorres('permission denied for table').codigo, 'SEM_PERMISSAO');
+    assert.equal(classificarErroLeituraTorres('column does not exist').codigo, 'BANCO');
+    let tabela = '';
+    const ok = await lerUmaLinhaTorres({
+      from(nome: string) {
+        tabela = nome;
+        return { select: () => ({ limit: async () => ({ error: null, data: [{ id: 'segredo', amount: 10 }] }) }) };
+      },
+    });
+    assert.equal(tabela, 'financial_transactions');
+    assert.deepEqual(ok, { ok: true });
+    const pagina = await import('node:fs').then((fs) => fs.readFileSync(new URL('../api/comissoes-ingest.ts', import.meta.url), 'utf8'));
+    assert.match(pagina, /diagnostico-torres/);
   });
 });

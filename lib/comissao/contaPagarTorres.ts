@@ -88,7 +88,7 @@ export async function executarLancamentoTorres(
     /** Só o título criado nesta tentativa, e apenas se a comissão já apontar para outro id. */
     descartarOrfao?: (transactionId: string) => Promise<void>;
   },
-): Promise<{ ok: boolean; transactionId?: string; error?: string }> {
+): Promise<{ ok: boolean; transactionId?: string; error?: string; jaExistia?: boolean }> {
   const row = input.comissao;
   const id = String(row.id || '').trim();
   if (String(row.empresa_origem || '').toUpperCase() !== 'TORRES') {
@@ -98,7 +98,7 @@ export async function executarLancamentoTorres(
     return { ok: false, error: 'A comissão não está liberada para pagamento' };
   }
   const ja = String(row.conta_pagar_id || '').trim();
-  if (ja) return { ok: true, transactionId: ja };
+  if (ja) return { ok: true, transactionId: ja, jaExistia: true };
   if (!valorAceitoNoContasPagarTorres(input.valor, row.valor_comissao)) {
     return { ok: false, error: 'Valor a pagar inválido' };
   }
@@ -124,14 +124,56 @@ export async function executarLancamentoTorres(
   if (!transactionId) return { ok: false, error: 'Não foi possível criar o Contas a Pagar da TORRES' };
 
   const ligado = await deps.ligar(id, transactionId);
-  if (ligado) return { ok: true, transactionId };
+  if (ligado) return { ok: true, transactionId, jaExistia: Boolean(existente) };
 
   const vencedor = String(await deps.lerVinculo?.(id) || '').trim();
   if (vencedor) {
     if (!existente && vencedor !== transactionId) await deps.descartarOrfao?.(transactionId);
-    return { ok: true, transactionId: vencedor };
+    return { ok: true, transactionId: vencedor, jaExistia: true };
   }
   return { ok: false, error: 'O título da TORRES não ficou ligado na comissão. O lançamento não foi confirmado.' };
+}
+
+export type CodigoFalhaContaPagar =
+  | 'CREDENCIAL'
+  | 'SEM_PERMISSAO'
+  | 'CONEXAO'
+  | 'BANCO'
+  | 'NAO_LIBERADA'
+  | 'JA_EXISTE'
+  | 'NAO_ENCONTRADA'
+  | 'VALIDACAO';
+
+/** Falha nunca volta como HTTP 200. O texto de `error` continua o que a tela já mostra. */
+export function respostaFalhaContaPagar(error: string): { status: number; codigo: CodigoFalhaContaPagar } {
+  const texto = error.toLowerCase();
+  if (/chave da torres|não foi aceita|publishable|service_role|não está no servidor|não chegou neste servidor/.test(texto)) {
+    return { status: 503, codigo: 'CREDENCIAL' };
+  }
+  if (/não autorizado|permissão negada/.test(texto)) {
+    return { status: 403, codigo: 'SEM_PERMISSAO' };
+  }
+  if (/fetch failed|network|econn|enotfound|timeout|socket|falha de conexão/.test(texto)) {
+    return { status: 502, codigo: 'CONEXAO' };
+  }
+  if (/não está liberada|não é da torres/.test(texto)) {
+    return { status: 409, codigo: 'NAO_LIBERADA' };
+  }
+  if (/já foi lançad|já existe|já está ligad/.test(texto)) {
+    return { status: 409, codigo: 'JA_EXISTE' };
+  }
+  if (/não encontrada/.test(texto)) {
+    return { status: 404, codigo: 'NAO_ENCONTRADA' };
+  }
+  if (/valor a pagar inválido|ausente/.test(texto)) {
+    return { status: 400, codigo: 'VALIDACAO' };
+  }
+  return { status: 500, codigo: 'BANCO' };
+}
+
+function responderFalha(res: { status: (code: number) => { json: (body: unknown) => void } }, error: string): void {
+  const falha = respostaFalhaContaPagar(error);
+  res.status(falha.status).json({ ok: false, error, codigo: falha.codigo });
 }
 
 function clienteDoUsuario(token: string) {
@@ -181,7 +223,7 @@ export async function tratarPedidoContaPagarTorres(req: any, res: any): Promise<
   if (!torres) {
     const error = mensagemChaveTorresRecusada() || 'A chave da TORRES não foi aceita.';
     console.warn('[comissao] contas a pagar TORRES recusou a chave:', error);
-    res.status(200).json({ ok: false, error });
+    responderFalha(res, error);
     return;
   }
 
@@ -193,7 +235,7 @@ export async function tratarPedidoContaPagarTorres(req: any, res: any): Promise<
     .eq('id', id)
     .maybeSingle();
   if (error || !data) {
-    res.status(200).json({ ok: false, error: error?.message || 'Comissão não encontrada' });
+    responderFalha(res, error?.message || 'Comissão não encontrada');
     return;
   }
 
@@ -207,7 +249,7 @@ export async function tratarPedidoContaPagarTorres(req: any, res: any): Promise<
       .eq('origin_id', id)
       .select('id');
     if (baixaErr) {
-      res.status(200).json({ ok: false, error: baixaErr.message });
+      responderFalha(res, baixaErr.message);
       return;
     }
     res.status(200).json({ ok: true, baixado: (baixado || []).length > 0 });
@@ -298,11 +340,15 @@ export async function tratarPedidoContaPagarTorres(req: any, res: any): Promise<
           .eq('origin_id', id);
       },
     });
-    res.status(200).json(resultado);
+    if (resultado.ok) {
+      res.status(200).json(resultado);
+      return;
+    }
+    responderFalha(res, resultado.error || 'Não foi possível criar o Contas a Pagar da TORRES');
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn('[comissao] contas a pagar TORRES:', message);
-    res.status(200).json({ ok: false, error: message });
+    responderFalha(res, message);
   }
 }
 

@@ -81,7 +81,9 @@ export function mensagemChaveTorresRecusada(
     motivo = motivoChaveTorres(valor || '');
     if (motivo === 'ok') return '';
   }
-  if (motivo === 'ausente') return 'A chave da TORRES não chegou neste servidor publicado.';
+  if (motivo === 'ausente') {
+    return 'A chave da TORRES não está no servidor que respondeu. O nome esperado é TORRES_SUPABASE_SERVICE_ROLE_KEY.';
+  }
   if (motivo === 'publishable') {
     return 'A chave da TORRES está no formato publishable. No servidor use a secret (sb_secret_) ou a service_role antiga (eyJ) do projeto da TORRES.';
   }

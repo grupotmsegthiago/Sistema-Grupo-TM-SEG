@@ -1,5 +1,29 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## VALIDAÇÃO — INTEGRAÇÃO PUBLICADA TM SEG × TORRES
+
+**Data:** 2026-10-13
+**Pedido:** provar a leitura do Supabase da TORRES pelo sistema publicado, sem gravar as faturas 200, 199 e 207 e sem publicar.
+
+**Publicado:** `sistema.grupotmseg.com.br` está no commit `c3451494` (`builtAt` `2026-10-13T22:51:05.492Z`). `TORRES_SUPABASE_SERVICE_ROLE_KEY` existe na Vercel, ambiente Production, tipo Secret, valor oculto. Não foi lido.
+
+**Conexão pelo sistema publicado: não validada.** O site no ar está na tela de login. O `POST /api/comissoes/conta-pagar-torres` sem sessão responde 401 antes de criar o cliente da TORRES. Os HTTP 200 antigos dessa rota são de antes do commit atual e não provam leitura. A consulta desta auditoria ao banco da TORRES usou o canal de leitura separado, não a chave do sistema publicado. Nesse canal, `financial_transactions` tem as colunas do lançamento (`origin_type`, `origin_id`, `amount`, `due_date`, `category_name`, `payment_method`, `notes`, `entity_name`, `comprovante_path`) e as três comissões continuam com zero títulos.
+
+**Código nesta publicação:** falha de lançamento deixa de voltar HTTP 200. Credencial 503, permissão 403, conexão 502, comissão não liberada 409, comissão ausente 404, banco 500. Título já ligado continua HTTP 200 com `ok: true` e `jaExistia: true`. A tela segue lendo `ok` e `error`. Há um GET temporário `/api/comissoes/diagnostico-torres`, só Diretoria, só leitura, sem devolver linha financeira. Ele sai na publicação seguinte.
+
+## AUDITORIA — FRASE “NESTE COMPUTADOR” NA PORTA 5000
+
+**Data:** 2026-10-13
+**Pedido:** o aviso antigo apareceu em `http://127.0.0.1:5000/?page=comissoes-comerciais`. Investigar o fluxo real, sem gravar título e sem publicar.
+
+**Causa comprovada:** o processo da porta 5000 tinha subido às 17:07 com `npx tsx server/index.ts` e não recarrega o código da API. Nesse horário a frase ainda estava em `lib/comissao/contaPagarTorres.ts` (commit `e5443e65`, linha 175). O disco, a `dev`, a `main` e a Vercel já estavam em `c3451494`, sem essa frase. O Vite servia a tela nova; a API em memória continuava a antiga.
+
+**Reprodução, sem título:** `POST /api/comissoes/conta-pagar-torres` com um id inexistente, sessão da Diretoria já aberta. HTTP 200, `ok: false`, erro exatamente `A TORRES não está ligada neste computador.` Não houve insert. As faturas 200, 199 e 207 seguem sem `conta_pagar_id`. A TORRES segue com zero títulos dessas origens.
+
+**Ambiente:** não existe arquivo `.env` nesta máquina. `TORRES_SUPABASE_SERVICE_ROLE_KEY` está ausente no processo local. A variável foi cadastrada na Vercel; o valor não foi lido. No publicado, o mesmo POST sem login responde 401 antes de chegar na chave. Service worker em `127.0.0.1` está ativo e com cache vazio; não foi ele que devolveu a frase.
+
+**Depois de reiniciar a porta 5000 com o código atual:** o mesmo POST de id inexistente respondeu HTTP 200 e `A chave da TORRES não está no servidor que respondeu. O nome esperado é TORRES_SUPABASE_SERVICE_ROLE_KEY.` A frase do computador saiu. O lançamento local continua impossível até essa variável existir no processo. Não publicado. O aviso novo está só na pasta local, em `lib/comissao/torresSupabase.ts`.
+
 ## LANÇAMENTO SÓ NO CLIQUE — TM SEG × TORRES
 
 **Data:** 2026-10-13

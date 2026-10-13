@@ -547,6 +547,10 @@
       "destination": "/api/comissoes-ingest?op=comprovantes"
     },
     {
+      "source": "/api/comissoes/diagnostico-torres",
+      "destination": "/api/comissoes-ingest?op=diagnostico-torres"
+    },
+    {
       "source": "/api/comissoes/conta-pagar-torres",
       "destination": "/api/comissoes-ingest?op=conta-pagar-torres"
     },
