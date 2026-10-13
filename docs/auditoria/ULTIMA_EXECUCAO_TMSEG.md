@@ -3,14 +3,20 @@
 ## LANÇAMENTO SÓ NO CLIQUE — TM SEG × TORRES
 
 **Data:** 2026-10-13
-**Pedido:** tirar o lançamento automático ao escolher o mês. O botão Lançar pagamento grava no banco da empresa. Sem publicar e sem gravar título real.
+**Pedido:** tirar o lançamento automático ao escolher o mês. O botão Lançar pagamento grava no banco da empresa. Publicado em 13/10/2026, sem criar as contas das faturas 200, 199 e 207.
 
 **O que mudou:**
 - `components/ComissoesComerciaisPage.tsx`: removido o `useEffect` que lançava comissão TORRES ao carregar o mês. O botão passou a se chamar Lançar pagamento nos dois casos. TM SEG segue no Supabase dela; TORRES segue em `POST /api/comissoes/conta-pagar-torres`.
 - `lib/comissao/contaPagarTorres.ts`: o `conta_pagar_id` só entra depois do título. Clique repetido reaproveita o vínculo. Se outro clique já vinculou, o título órfão desta tentativa é descartado e o título já ligado permanece. Sem vínculo confirmado, a resposta é erro.
 - Status continua `LIBERADO_PARA_PAGAMENTO` até Pagar comissão. Cálculo, vencimento e pagamento efetivo não mudaram.
 
-**Teste:** `npx tsx --test scripts/comissao-comercial.test.ts` — 44 passaram na validação de 13/10/2026. Esta publicação tira o lançamento automático que ainda estava em `dec5cf52`. Nenhum título real foi criado na validação. Os dois efeitos antigos (sincronismo de faturas na primeira abertura e PIX/comprovante de título da TM SEG já lançado) permanecem.
+**Publicado:** commit `f4834f59` na `dev` e na `main`. Deploy Production Ready `sistema-grupo-tm-5zsbadklf-grupotmsegs-projects.vercel.app`. Domínio `sistema.grupotmseg.com.br` em 13/10/2026 19:41 (`buildId` `f4834f598f55410a406902e9e51dccc66bf3f615`, `builtAt` `2026-10-13T22:41:16.211Z`). `/api/health` ok. O bundle `index-BkIq_1mt.js` não contém `autoTorresRef` e o botão publicado é Lançar pagamento.
+
+**Depois do deploy:** trocar agosto e setembro na tela local, já com o código novo, fez só GET do quadro e GET de títulos. Não houve POST de conta a pagar. As três comissões continuam `LIBERADO_PARA_PAGAMENTO` sem `conta_pagar_id`. A TORRES segue com zero títulos `comissao_comercial` dessas origens.
+
+**Conexão da TORRES no servidor publicado:** não validada. O site no ar está na tela de login. A sessão local, ao chamar o domínio, recebeu `Failed to fetch` (o navegador bloqueou a origem cruzada). A função da chave não chegou a responder, então não há erro técnico da chave nesta rodada. O quadro local respondeu 200 com 9 linhas TORRES e sem campo `rotasTorres`, portanto esse processo local não prova o servidor publicado.
+
+**Teste:** `npx tsx --test scripts/comissao-comercial.test.ts` — 44 passaram antes do commit. Nenhum título real foi criado. Os dois efeitos antigos (sincronismo de faturas na primeira abertura e PIX/comprovante de título da TM SEG já lançado) permanecem.
 
 **Leitura da tela:** o único `acao: 'lancar'` está dentro de `lancarNoContasAPagar`, chamado pelo botão. A TORRES exige login e `podeEscrever` (comercial só o próprio recebe 403). Ao trocar o mês, a lista não cria conta a pagar. Permanecem dois efeitos antigos, fora deste pedido: na primeira abertura da página, `POST /api/comissoes/sync-faturas` gera comissões de faturas já existentes; e, para título da TM SEG que já tem `conta_pagar_id`, `garantirFormaPixEComprovante` pode preencher PIX e comprovante. A TORRES não entra nesse preenchimento.
 
@@ -34,7 +40,7 @@
 
 **Código:** `lib/comissao/torresSupabase.ts` aceita `sb_secret_` e a `service_role` antiga `eyJ` do projeto `erjhxwbutjyylxdthuuz`. Publishable, chave da TM SEG e anon continuam recusados, com mensagem específica. Teste `scripts/comissao-comercial.test.ts`: 43 passaram.
 
-**Publicado:** commit `dec5cf52` na `dev` e na `main`. Domínio `sistema.grupotmseg.com.br` em 13/10/2026 19:24 (`buildId` `dec5cf5276955c05017e18481f55827d61be5f6f`). `/api/health` ok. `POST /api/comissoes/conta-pagar-torres` sem login responde 401. A leitura autenticada do quadro não rodou daqui: o site publicado está na tela de login e o navegador local bloqueia a chamada cruzada. Nenhuma das três contas a pagar foi criada. Abrir setembro na tela ainda dispara o lançamento automático se a chave passar.
+**Publicado:** commit `dec5cf52` na `dev` e na `main`. Domínio `sistema.grupotmseg.com.br` em 13/10/2026 19:24 (`buildId` `dec5cf5276955c05017e18481f55827d61be5f6f`). `/api/health` ok. `POST /api/comissoes/conta-pagar-torres` sem login responde 401. A leitura autenticada do quadro não rodou daqui: o site publicado está na tela de login e o navegador local bloqueia a chamada cruzada. Nenhuma das três contas a pagar foi criada. Esse commit ainda lançava ao abrir setembro. O commit seguinte `f4834f59` tirou esse disparo.
 
 ## TM0810 — BOLETIM CESLOG, 2ª QUINZENA DE SETEMBRO/2026
 
