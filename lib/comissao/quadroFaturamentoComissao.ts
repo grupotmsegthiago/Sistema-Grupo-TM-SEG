@@ -357,6 +357,34 @@ export async function carregarQuadroTmSeg(
   };
 }
 
+/**
+ * Soma a OS sem NF no bruto já montado.
+ * A mesma OS não entra duas vezes. Cobertura incompleta não inventa valor: quem chama é que decide se usa.
+ */
+export function mesclarOsSemFaturaNoQuadro(
+  linhas: LinhaQuadroCliente[],
+  os: Array<{
+    id: string;
+    cliente: string;
+    comercialId: string | null;
+    receita: number;
+    faturada: boolean;
+    date?: string | null;
+  }>,
+  comerciais: Array<{ id: string; nome?: string | null }>,
+  periodStart: string,
+  periodEnd: string,
+): LinhaQuadroCliente[] {
+  const extras = montarQuadroClientes(
+    faturasDeOsParaQuadro(os),
+    [],
+    comerciais,
+    periodStart,
+    periodEnd,
+  );
+  return mesclarLinhasQuadro(linhas, extras);
+}
+
 /** OS concluída/faturada sem NF, com comercial. Entra no bruto após o cadastro. */
 export function faturasDeOsParaQuadro(
   os: Array<{

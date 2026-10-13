@@ -5,8 +5,12 @@
  */
 import { getPayment } from '../asaasChargeApi.js';
 import { urlComprovanteHttp } from '../asaasReceiptDetails.js';
+import { CANONICAL_PUBLIC_ORIGIN } from '../publicAppUrl.js';
 import { assertComissoesQuadroAccess } from './comissaoQuadroAuth.js';
 import { createTorresAdminClient } from './torresSupabase.js';
+
+/** Evita que o site oficial, ao receber o pedido, chame a si mesmo. */
+export const HEADER_COMPROVANTE_ORIGEM = 'x-tmseg-comprovante-origem';
 
 export const BUCKET_COMPROVANTE_TORRES = 'comprovantes-pagamento';
 
@@ -141,6 +145,72 @@ async function assinarComprovanteTorres(path: string): Promise<string | null> {
   return data?.signedUrl || null;
 }
 
+type BuscaHttp = (url: string, init: { method: string; headers: Record<string, string> }) => Promise<{ ok: boolean; status?: number; json: () => Promise<unknown> }>;
+
+function headerTexto(req: { headers?: Record<string, unknown> } | undefined, name: string): string {
+  const raw = req?.headers?.[name] ?? req?.headers?.[name.toLowerCase()];
+  if (Array.isArray(raw)) return String(raw[0] || '').trim();
+  return String(raw || '').trim();
+}
+
+/**
+ * Nesta máquina a chave do Asaas não existe. A consulta da cobrança no site
+ * publicado tem a chave e devolve transactionReceiptUrl. Só fica a URL https.
+ * Não inventa link e não repete o pedido em produção.
+ */
+export async function completarComprovantesNoSiteOficial(
+  itens: ItemComprovanteAoVivo[],
+  parcial: ResultadoComprovanteAoVivo,
+  opts: {
+    authorization?: string | null;
+    jaVeioDoSite?: boolean;
+    emProducao?: boolean;
+    host?: string | null;
+    origem?: string;
+    buscar?: BuscaHttp;
+  },
+): Promise<ResultadoComprovanteAoVivo> {
+  if (parcial.completo || opts.jaVeioDoSite || opts.emProducao) return parcial;
+  const host = String(opts.host || '').toLowerCase();
+  if (host.includes('grupotmseg.com.br')) return parcial;
+  const authorization = String(opts.authorization || '').trim();
+  if (!authorization) return parcial;
+  const faltam = itens.filter((item) => item.paymentId && !parcial.urls[item.id]);
+  if (!faltam.length) return parcial;
+  const buscar = opts.buscar || ((url, init) => fetch(url, { ...init, redirect: 'manual' }));
+  const origem = String(opts.origem || CANONICAL_PUBLIC_ORIGIN).replace(/\/$/, '');
+  const authHeader = authorization.startsWith('Bearer ') ? authorization : `Bearer ${authorization}`;
+  const urls = { ...parcial.urls };
+  let completo = true;
+  await Promise.all(faltam.map(async (item) => {
+    const paymentId = encodeURIComponent(String(item.paymentId));
+    const company = encodeURIComponent(String(item.company || ''));
+    try {
+      const res = await buscar(`${origem}/api/asaas/payment/${paymentId}?company=${company}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: authHeader,
+          [HEADER_COMPROVANTE_ORIGEM]: '1',
+        },
+      });
+      if (!res.ok) {
+        completo = false;
+        console.info('[comissao] comprovante asaas', { status: res.status || 0, temUrl: false });
+        return;
+      }
+      const json = await res.json() as { payment?: { transactionReceiptUrl?: unknown } };
+      const https = urlComprovanteHttp(json?.payment?.transactionReceiptUrl);
+      if (https) urls[item.id] = https;
+      console.info('[comissao] comprovante asaas', { status: res.status || 200, temUrl: !!https });
+    } catch {
+      completo = false;
+      console.info('[comissao] comprovante asaas', { status: 0, temUrl: false });
+    }
+  }));
+  return { urls, completo };
+}
+
 export async function tratarPedidoComprovantesComissao(req: any, res: any): Promise<void> {
   if (String(req.method || '').toUpperCase() !== 'POST') {
     res.status(405).json({ error: 'method_not_allowed' });
@@ -153,7 +223,13 @@ export async function tratarPedidoComprovantesComissao(req: any, res: any): Prom
   }
   const itens = itensValidos(req.body?.itens);
   try {
-    const resultado = await resolverComprovantesAoVivo(itens);
+    const local = await resolverComprovantesAoVivo(itens);
+    const resultado = await completarComprovantesNoSiteOficial(itens, local, {
+      authorization: headerTexto(req, 'authorization') || headerTexto(req, 'x-auth-token'),
+      jaVeioDoSite: headerTexto(req, HEADER_COMPROVANTE_ORIGEM) === '1',
+      emProducao: Boolean(process.env.VERCEL),
+      host: headerTexto(req, 'x-forwarded-host') || headerTexto(req, 'host'),
+    });
     res.status(200).json({ ok: true, ...resultado });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

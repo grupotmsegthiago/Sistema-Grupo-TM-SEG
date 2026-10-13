@@ -13,15 +13,15 @@ import {
   parseComissaoIngestPayload,
   processarComissaoIngest,
 } from '../lib/comissao/comissaoIngest.js';
-import { assertComissoesQuadroAccess } from '../lib/comissao/comissaoQuadroAuth.js';
-import { montarQuadroComissoesApi, sincronizarComissoesViaAdmin } from '../lib/comissao/comissaoQuadroApi.js';
-import { sincronizarComissoesTmETorres } from '../lib/comissao/sincronizarComissoesTorres.js';
-import { instalarAvisoComissaoLiberada } from '../lib/comissao/enviarAvisoComissaoLiberada.js';
-import { tratarPedidoAvisoLiberacao } from '../lib/comissao/avisoLiberacaoHttp.js';
-import { tratarPedidoComprovantesComissao } from '../lib/comissao/comprovantesComissao.js';
-import { tratarPedidoContaPagarTorres } from '../lib/comissao/contaPagarTorres.js';
 
-instalarAvisoComissaoLiberada();
+/**
+ * O aviso de e-mail puxa o nodemailer. Carregar isso no topo derrubava a função
+ * inteira na Vercel (quadro, comprovante e lançamento da TORRES) antes de responder.
+ */
+async function instalarAvisoSobDemanda(): Promise<void> {
+  const { instalarAvisoComissaoLiberada } = await import('../lib/comissao/enviarAvisoComissaoLiberada.js');
+  instalarAvisoComissaoLiberada();
+}
 
 function extractToken(req: { headers?: Record<string, unknown> }): string {
   const headers = req.headers || {};
@@ -62,6 +62,10 @@ function queryDate(req: { query?: Record<string, unknown>; url?: string }, key: 
 }
 
 async function handleQuadroOps(req: any, res: any, op: string) {
+  const { assertComissoesQuadroAccess } = await import('../lib/comissao/comissaoQuadroAuth.js');
+  const { montarQuadroComissoesApi, sincronizarComissoesViaAdmin } = await import('../lib/comissao/comissaoQuadroApi.js');
+  const { sincronizarComissoesTmETorres } = await import('../lib/comissao/sincronizarComissoesTorres.js');
+  await instalarAvisoSobDemanda();
   const access = await assertComissoesQuadroAccess(req);
   if (!access.ok) {
     res.status(access.status).json({ ok: false, error: access.error });
@@ -113,6 +117,7 @@ export async function handleComissoesIngest(req: any, res: any) {
   const op = queryOp(req);
   if (op === 'conta-pagar-torres') {
     try {
+      const { tratarPedidoContaPagarTorres } = await import('../lib/comissao/contaPagarTorres.js');
       await tratarPedidoContaPagarTorres(req, res);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -123,6 +128,7 @@ export async function handleComissoesIngest(req: any, res: any) {
   }
   if (op === 'comprovantes') {
     try {
+      const { tratarPedidoComprovantesComissao } = await import('../lib/comissao/comprovantesComissao.js');
       await tratarPedidoComprovantesComissao(req, res);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -133,6 +139,8 @@ export async function handleComissoesIngest(req: any, res: any) {
   }
   if (op === 'liberada-email') {
     try {
+      await instalarAvisoSobDemanda();
+      const { tratarPedidoAvisoLiberacao } = await import('../lib/comissao/avisoLiberacaoHttp.js');
       await tratarPedidoAvisoLiberacao(req, res);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

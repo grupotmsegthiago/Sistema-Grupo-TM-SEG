@@ -7,8 +7,8 @@ import {
   syncAsaasReceiptToReceivables,
   upsertAsaasReceiptNote,
 } from '../lib/asaasReceiptDetails.ts';
-import { comprovanteAsaasDaFatura, comprovantesJaGravados, decidirComprovante, faturaCitadaNoTexto } from '../lib/financial/avisoComprovante.ts';
-import { caminhoComprovanteTorres, resolverComprovantesAoVivo } from '../lib/comissao/comprovantesComissao.ts';
+import { comprovanteAsaasDaFatura, comprovantesClienteDasDespesas, comprovantesJaGravados, decidirComprovante, faturaCitadaNoTexto, faturaDaDescricaoComissao } from '../lib/financial/avisoComprovante.ts';
+import { caminhoComprovanteTorres, completarComprovantesNoSiteOficial, resolverComprovantesAoVivo } from '../lib/comissao/comprovantesComissao.ts';
 import {
   findInvoiceForReceivable,
   invoiceNfUrl,
@@ -130,6 +130,12 @@ test('aviso de comprovante só para o financeiro e some quando a integração tr
   assert.match(comissao, /Falta anexar o comprovante/);
   assert.match(comissao, /isFinanceProfileRole/);
   assert.match(comissao, /\/api\/comissoes\/comprovantes/);
+  assert.match(comissao, /Comprovante do pagamento do cliente/);
+  assert.match(lista, /comprovantesClienteDasDespesas/);
+  assert.match(lista, /btn-ver-comprovante-cliente-/);
+  assert.match(lista, /comprovanteClienteUrl=/);
+  assert.match(fs.readFileSync('components/FinancialDocConferencia.tsx', 'utf8'), /Comprovante do pagamento do cliente no Asaas/);
+  assert.match(lista, /\/api\/comissoes\/comprovantes/);
   assert.match(fs.readFileSync('lib/comissao/comissaoService.ts', 'utf8'), /doc_comprovante_url: comprovanteUrl/);
   assert.equal(faturaCitadaNoTexto('saldo 200.000 e nf 1200', '200'), false);
   assert.equal(faturaCitadaNoTexto('NF 200 recebida', '200'), true);
@@ -150,6 +156,45 @@ test('aviso de comprovante só para o financeiro e some quando a integração tr
   assert.equal(gravados.urls['c-200'], undefined);
   assert.equal(gravados.urls['c-tm'], 'https://arquivos.exemplo/manual.pdf');
   assert.equal(gravados.pendentes.find((item) => item.id === 'c-200')?.torresOrigemId, '200');
+});
+
+test('a despesa de comissão mostra o comprovante do cliente só para consulta', () => {
+  const titulo = 'Comissão Comercial - SANKYU LOGISTICS DO BRASIL LTDA. / TMSEG-20260928-103111-B6W2-S1-1521 / MIGUEL MOTA / 2º QUINZENA DE SETEMBRO';
+  assert.equal(faturaDaDescricaoComissao(titulo), 'TMSEG-20260928-103111-B6W2-S1-1521');
+  assert.equal(faturaDaDescricaoComissao('Aluguel do escritório'), null);
+  assert.equal(faturaDaDescricaoComissao('Comissão Comercial - CLIENTE / SEM NF / NOME / 1º QUINZENA DE MAIO'), null);
+
+  const comUrl = comprovantesClienteDasDespesas({
+    despesas: [{ id: 'desp-1', description: titulo, notes: 'comissao_id:abc' }],
+    faturas: [{
+      id: 'fat-1',
+      number: 'TMSEG-20260928-103111-B6W2-S1-1521',
+      notes: '<!--TMSEG_ASAAS_RECEIPT:{"paymentId":"pay_abc","paidAmount":10,"paymentDate":"2026-09-29","originalAmount":null,"interestAndFineAmount":0,"discountAmount":0,"netAmount":9,"feeAmount":1,"status":"RECEIVED","creditDate":"2026-09-29","availability":"AVAILABLE","receiptUrl":"https://www.asaas.com/comprovantes/pay_abc"}-->',
+      asaas_payment_id: 'pay_abc',
+      issuer_company: 'TM GESTÃO',
+    }],
+  });
+  assert.equal(comUrl.urls['desp-1'], 'https://www.asaas.com/comprovantes/pay_abc');
+  assert.equal(comUrl.pendentes.length, 0);
+
+  const semUrl = comprovantesClienteDasDespesas({
+    despesas: [
+      { id: 'desp-2', description: titulo, notes: 'comissao_id:abc' },
+      { id: 'outra', description: titulo, notes: 'despesa comum' },
+    ],
+    faturas: [{
+      id: 'fat-1',
+      number: 'tmseg-20260928-103111-b6w2-s1-1521',
+      notes: '<!--TMSEG_ASAAS_RECEIPT:{"paymentId":"pay_ym5ncz8tfwhmifh2","paidAmount":781.36,"paymentDate":"2026-09-29","originalAmount":null,"interestAndFineAmount":0,"discountAmount":0,"netAmount":779.37,"feeAmount":1.99,"status":"RECEIVED","creditDate":"2026-09-29","availability":"AVAILABLE"}-->',
+      asaas_payment_id: 'pay_ym5ncz8tfwhmifh2',
+      issuer_company: 'TM GESTÃO',
+    }],
+  });
+  assert.equal(semUrl.urls['desp-2'], undefined);
+  assert.equal(semUrl.pendentes.length, 1);
+  assert.equal(semUrl.pendentes[0]?.paymentId, 'pay_ym5ncz8tfwhmifh2');
+  assert.equal(semUrl.pendentes[0]?.company, 'TM GESTÃO');
+  assert.equal(semUrl.pendentes.find((item) => item.id === 'outra'), undefined);
 });
 
 test('comprovante ao vivo usa o arquivo da TORRES ou a URL do Asaas', async () => {
@@ -185,6 +230,49 @@ test('comprovante ao vivo usa o arquivo da TORRES ou a URL do Asaas', async () =
   );
   assert.equal(semChave.urls['c-200'], undefined);
   assert.equal(semChave.completo, false);
+});
+
+test('sem chave local o comprovante vem do site oficial e só em https', async () => {
+  let chamado = 0;
+  const remoto = await completarComprovantesNoSiteOficial(
+    [{ id: 'desp', paymentId: 'pay_abc', company: 'TM GESTÃO' }],
+    { urls: {}, completo: false },
+    {
+      authorization: 'tok',
+      buscar: async (url, init) => {
+        chamado += 1;
+        assert.match(url, /^https:\/\/sistema\.grupotmseg\.com\.br\/api\/asaas\/payment\/pay_abc\?company=TM%20GEST%C3%83O$/);
+        assert.equal(init.method, 'GET');
+        assert.equal(init.headers.Authorization, 'Bearer tok');
+        assert.equal(init.headers['x-tmseg-comprovante-origem'], '1');
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            payment: { transactionReceiptUrl: 'https://www.asaas.com/comprovantes/abc' },
+          }),
+        };
+      },
+    },
+  );
+  assert.equal(chamado, 1);
+  assert.equal(remoto.urls.desp, 'https://www.asaas.com/comprovantes/abc');
+  assert.equal(remoto.completo, true);
+  const producao = await completarComprovantesNoSiteOficial(
+    [{ id: 'desp', paymentId: 'pay_abc' }],
+    { urls: {}, completo: false },
+    { authorization: 'tok', emProducao: true, buscar: async () => { throw new Error('não deve chamar'); } },
+  );
+  assert.equal(producao.completo, false);
+  const http = await completarComprovantesNoSiteOficial(
+    [{ id: 'desp', paymentId: 'pay_abc' }],
+    { urls: {}, completo: false },
+    {
+      authorization: 'tok',
+      buscar: async () => ({ ok: true, status: 200, json: async () => ({ payment: { transactionReceiptUrl: 'http://inseguro' } }) }),
+    },
+  );
+  assert.equal(http.urls.desp, undefined);
 });
 
 test('não inventa valor ou data quando o Asaas não os enviou', () => {

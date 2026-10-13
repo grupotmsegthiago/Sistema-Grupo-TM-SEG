@@ -895,6 +895,27 @@ describe('comissao comercial — cobertura OS e dashboard', () => {
     assert.equal(pacheco.detalhes.some((d) => d.osIds.includes('GTM-7764')), false);
     assert.ok(pacheco.detalhes.some((d) => d.numero === 'NF-P'));
     assert.equal(linhas.some((l) => /SANKYU/.test(l.cliente)), false);
+    const { mesclarOsSemFaturaNoQuadro } = await import('../lib/comissao/quadroFaturamentoComissao');
+    const umaVez = mesclarOsSemFaturaNoQuadro(
+      nf,
+      cob.itens,
+      [{ id: 'abc', nome: 'MIGUEL MOTA' }],
+      '2026-09-01',
+      '2026-09-30',
+    );
+    const deNovo = mesclarOsSemFaturaNoQuadro(
+      umaVez,
+      cob.itens,
+      [{ id: 'abc', nome: 'MIGUEL MOTA' }],
+      '2026-09-01',
+      '2026-09-30',
+    );
+    const tech2 = deNovo.find((l) => /TECHTRANS/.test(l.cliente));
+    assert.equal(tech2?.faturamento, umaVez.find((l) => /TECHTRANS/.test(l.cliente))?.faturamento);
+    assert.match(
+      fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8'),
+      /carregarCoberturaOsPeriodo/,
+    );
   });
 
   it('linha do tempo: OS sem NF para em Faturado; fluxo fecha no pagamento da comissão', async () => {

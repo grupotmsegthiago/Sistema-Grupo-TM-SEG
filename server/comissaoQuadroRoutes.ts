@@ -1,6 +1,6 @@
 /**
  * Rotas Express do quadro de comissões (dev local).
- * Em produção a Vercel reescreve /api/comissoes/quadro para api/comissoes-ingest.ts.
+ * Em produção a Vercel reescreve estas rotas para api/comissoes-ingest.ts.
  */
 import type { Express, Request, Response } from 'express';
 import { createSupabaseAdminClient } from './supabaseConfig';

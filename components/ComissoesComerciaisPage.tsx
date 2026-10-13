@@ -23,12 +23,13 @@ import {
   carregarQuadroTmSeg,
   chaveLinhaQuadro,
   mesclarLinhasQuadro,
+  mesclarOsSemFaturaNoQuadro,
   quadroDeComissoesTorres,
   resolverPeriodoInicialFaturas,
   somarQuadro,
   type LinhaQuadroCliente,
 } from '../lib/comissao/quadroFaturamentoComissao';
-import { coberturaVazia, type CoberturaOsPeriodo } from '../lib/comissao/coberturaOsPeriodo';
+import { carregarCoberturaOsPeriodo, coberturaVazia, type CoberturaOsPeriodo } from '../lib/comissao/coberturaOsPeriodo';
 import {
   acharComissaoDaFatura,
   montarApuracaoPorComercial,
@@ -305,7 +306,7 @@ function BlocoListaComissao({
                         </button>
                       )}
                       {comprovante.link && (
-                        <a href={comprovante.link} target="_blank" rel="noreferrer" className="text-[10px] font-black text-green-700 uppercase inline-flex items-center gap-1" data-testid={`link-comprovante-comissao-${r.id}`}>
+                        <a href={comprovante.link} target="_blank" rel="noreferrer" title="Comprovante do pagamento do cliente" className="text-[10px] font-black text-emerald-800 underline uppercase inline-flex items-center gap-1" data-testid={`link-comprovante-comissao-${r.id}`}>
                           <Receipt size={12} /> Comprovante
                         </a>
                       )}
@@ -747,6 +748,22 @@ const ComissoesComerciaisPage: React.FC = () => {
       });
       setRows(result.rows);
       setQuadroTorres(quadroDeComissoesTorres(result.rows, listaComerciais));
+      const comOsSemFatura = async (linhas: LinhaQuadroCliente[], cobertura: CoberturaOsPeriodo | null) => {
+        let cob = cobertura;
+        if (!cob || cob.consultaIncompleta || cob.estado !== 'ENCONTRADO') {
+          cob = await carregarCoberturaOsPeriodo(supabase, periodStart, periodEnd, listaComerciais);
+        }
+        if (!cob || cob.consultaIncompleta || cob.estado === 'ERRO') {
+          return {
+            linhas,
+            cobertura: cob || coberturaVazia('CONSULTA INCOMPLETA', 'Cobertura de OS incompleta.', true),
+          };
+        }
+        return {
+          linhas: mesclarOsSemFaturaNoQuadro(linhas, cob.itens, listaComerciais, periodStart, periodEnd),
+          cobertura: cob,
+        };
+      };
       try {
         const quadroRes = await authFetch(`/api/comissoes/quadro?start=${encodeURIComponent(periodStart)}&end=${encodeURIComponent(periodEnd)}`);
         const quadroJson = await quadroRes.json().catch(() => ({}));
@@ -754,19 +771,21 @@ const ComissoesComerciaisPage: React.FC = () => {
           setIniciosComissao(quadroJson.iniciosComissao);
         }
         if (quadroRes.ok && (quadroJson.ok || (quadroJson.linhasTm || []).length > 0 || (quadroJson.linhasTorres || []).length > 0 || (quadroJson.meses || []).length > 0)) {
-          setQuadroTm(quadroJson.linhasTm || []);
+          const completo = await comOsSemFatura(quadroJson.linhasTm || [], quadroJson.cobertura || null);
+          setQuadroTm(completo.linhas);
           setQuadroTorres(mesclarLinhasQuadro(quadroJson.linhasTorres || [], quadroDeComissoesTorres(result.rows, listaComerciais)));
           setMesesDisponiveis(quadroJson.meses || []);
-          setCobertura(quadroJson.cobertura || coberturaVazia('CONSULTA INCOMPLETA', 'API sem cobertura de OS.', true));
+          setCobertura(completo.cobertura);
           if (quadroJson.error && !(quadroJson.linhasTm || []).length && !(quadroJson.linhasTorres || []).length) {
             showNotification('Quadro', quadroJson.error, 'warning');
           }
         } else {
           const quadro = await carregarQuadroTmSeg(supabase, periodStart, periodEnd, listaComerciais);
-          setQuadroTm(quadro.linhas);
+          const completo = await comOsSemFatura(quadro.linhas, null);
+          setQuadroTm(completo.linhas);
           setQuadroTorres(quadroDeComissoesTorres(result.rows, listaComerciais));
           setMesesDisponiveis(quadro.meses);
-          setCobertura(coberturaVazia('CONSULTA INCOMPLETA', 'Cobertura de OS só via API autenticada.', true));
+          setCobertura(completo.cobertura);
           if (quadro.error || quadroJson.error) {
             showNotification('Quadro', quadroJson.error || quadro.error || 'Falha ao carregar faturamento', 'warning');
           }
@@ -774,14 +793,16 @@ const ComissoesComerciaisPage: React.FC = () => {
       } catch (e: any) {
         try {
           const quadro = await carregarQuadroTmSeg(supabase, periodStart, periodEnd, listaComerciais);
-          setQuadroTm(quadro.linhas);
+          const completo = await comOsSemFatura(quadro.linhas, null);
+          setQuadroTm(completo.linhas);
           setQuadroTorres(quadroDeComissoesTorres(result.rows, listaComerciais));
           setMesesDisponiveis(quadro.meses);
+          setCobertura(completo.cobertura);
         } catch {
           setQuadroTm([]);
           setQuadroTorres(quadroDeComissoesTorres(result.rows, listaComerciais));
+          setCobertura(coberturaVazia('ERRO', e?.message || 'Falha ao carregar cobertura de OS', true));
         }
-        setCobertura(coberturaVazia('ERRO', e?.message || 'Falha ao carregar cobertura de OS', true));
         showNotification('Quadro', e?.message || 'Falha ao carregar faturamento', 'warning');
       }
       if (!result.complete) {

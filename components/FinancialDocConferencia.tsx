@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
+import { urlComprovanteHttp } from '../lib/asaasReceiptDetails';
 import { FinancialDocStatus, FinancialTransaction } from '../types';
 
 type DocKey = 'boleto' | 'nf' | 'comprovante';
@@ -31,9 +32,11 @@ function resolveDocStatus(url: string | null | undefined, status: FinancialDocSt
 interface Props {
   transaction: FinancialTransaction;
   onUpdate: (id: string, patch: Partial<FinancialTransaction>) => void;
+  /** Comprovante do cliente no Asaas, só para abrir. Não grava no título. */
+  comprovanteClienteUrl?: string | null;
 }
 
-const FinancialDocConferencia: React.FC<Props> = ({ transaction, onUpdate }) => {
+const FinancialDocConferencia: React.FC<Props> = ({ transaction, onUpdate, comprovanteClienteUrl }) => {
   const { showNotification } = useNotification();
   const fileRef = useRef<HTMLInputElement>(null);
   const [activeDoc, setActiveDoc] = useState<DocKey | null>(null);
@@ -42,10 +45,12 @@ const FinancialDocConferencia: React.FC<Props> = ({ transaction, onUpdate }) => 
 
   const getDocValues = (key: DocKey) => {
     const meta = DOC_META[key];
-    const url = (transaction[meta.urlKey] as string | null | undefined) || null;
+    const gravado = (transaction[meta.urlKey] as string | null | undefined) || null;
+    const visual = key === 'comprovante' && !gravado ? urlComprovanteHttp(comprovanteClienteUrl) : null;
+    const url = gravado || visual;
     const rawStatus = transaction[meta.statusKey] as FinancialDocStatus | null | undefined;
     const status = resolveDocStatus(url, rawStatus);
-    return { url, status, meta };
+    return { url, status, meta, somenteVisualizacao: !!visual };
   };
 
   const persist = async (key: DocKey, patch: Record<string, string | null>) => {
@@ -125,14 +130,17 @@ const FinancialDocConferencia: React.FC<Props> = ({ transaction, onUpdate }) => 
         }}
       />
       {DOC_KEYS.map((key) => {
-        const { url, status, meta } = getDocValues(key);
+        const { url, status, meta, somenteVisualizacao } = getDocValues(key);
         const ui = STATUS_UI[status];
         const busy = uploading === key;
+        const titulo = somenteVisualizacao
+          ? 'Comprovante do pagamento do cliente no Asaas — clique para abrir'
+          : `${meta.title}${url ? ' — clique para abrir' : ' — clique para anexar'}. Clique direito para status.`;
         return (
           <div key={key} className="relative">
             <button
               type="button"
-              title={`${meta.title}${url ? ' — clique para abrir' : ' — clique para anexar'}. Clique direito para status.`}
+              title={titulo}
               onClick={() => handleButtonClick(key)}
               onContextMenu={(e) => { e.preventDefault(); setMenuDoc(menuDoc === key ? null : key); }}
               className={`min-w-[52px] px-1 py-1 rounded border text-[8px] font-black uppercase leading-tight transition-all hover:opacity-90 ${ui.bg} ${ui.text} ${ui.border}`}

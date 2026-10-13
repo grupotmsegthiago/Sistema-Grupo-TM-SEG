@@ -128,3 +128,60 @@ export function comprovantesJaGravados(input: {
 
   return { urls, pendentes };
 }
+
+/** Fatura citada no título "Comissão Comercial - CLIENTE / FATURA / COMERCIAL / FECHAMENTO". */
+export function faturaDaDescricaoComissao(description: string | null | undefined): string | null {
+  const texto = String(description || '').trim();
+  if (!/^comiss[aã]o comercial\s*-/i.test(texto)) return null;
+  const marcada = texto.match(/\b(TMSEG-[A-Z0-9-]+)\b/i);
+  if (marcada) return marcada[1].toUpperCase();
+  const partes = texto.split(' / ').map((parte) => parte.trim()).filter(Boolean);
+  const fatura = partes[1] || '';
+  if (!fatura || fatura.toUpperCase() === 'SEM NF') return null;
+  return fatura;
+}
+
+/**
+ * Comprovante do pagamento do cliente para a despesa de comissão.
+ * Só visualização: usa o que já está na fatura, ou devolve o paymentId para buscar a URL do Asaas.
+ */
+export function comprovantesClienteDasDespesas(input: {
+  despesas: Array<{ id: string; description?: string | null; notes?: string | null; doc_comprovante_url?: string | null }>;
+  faturas: FaturaComprovanteGravado[];
+}): { urls: Record<string, string>; pendentes: PendenteComprovanteAoVivo[] } {
+  const urls: Record<string, string> = {};
+  const pendentes: PendenteComprovanteAoVivo[] = [];
+  const faturas = input.faturas || [];
+
+  for (const row of input.despesas || []) {
+    const id = String(row.id || '').trim();
+    if (!id || !String(row.notes || '').includes('comissao_id:')) continue;
+    const numero = faturaDaDescricaoComissao(row.description);
+    const fatura = numero
+      ? faturas.find((item) => String(item.number || '').trim().toUpperCase() === numero.toUpperCase()) || null
+      : null;
+    const link = decidirComprovante({
+      exige: false,
+      urls: [
+        row.doc_comprovante_url,
+        fatura?.manual_payment_evidence_url,
+        fatura ? extractAsaasReceiptDetails(fatura.notes)?.receiptUrl : null,
+      ],
+      perfilFinanceiro: false,
+    }).link;
+    if (link) {
+      urls[id] = link;
+      continue;
+    }
+    const paymentId = String(fatura?.asaas_payment_id || extractAsaasReceiptDetails(fatura?.notes)?.paymentId || '').trim();
+    if (!/^pay_[A-Za-z0-9]+$/.test(paymentId)) continue;
+    pendentes.push({
+      id,
+      paymentId,
+      company: String(fatura?.issuer_company || '').trim() || null,
+      torresOrigemId: null,
+    });
+  }
+
+  return { urls, pendentes };
+}

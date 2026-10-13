@@ -43,7 +43,7 @@ import CashFlowPreviewButton from './CashFlowPreviewButton';
 import { extractAnticipationId, extractAnticipationDates } from '../lib/financial/paymentAnticipation';
 import PaymentAnticipationModal from './PaymentAnticipationModal';
 import { extractAsaasReceiptDetails } from '../lib/asaasReceiptDetails';
-import { decidirComprovante } from '../lib/financial/avisoComprovante';
+import { comprovantesClienteDasDespesas, decidirComprovante, faturaDaDescricaoComissao } from '../lib/financial/avisoComprovante';
 import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
 import { findInvoiceForReceivable, invoiceNfUrl } from '../lib/financial/receivableInvoiceLink';
 import { getGrossReceivedAmount } from '../lib/financial/transactionAmounts';
@@ -111,6 +111,8 @@ const FinancialTransactionList: React.FC = () => {
         balance: number;
     } | null>(null);
     const [paymentsTx, setPaymentsTx] = useState<FinancialTransaction | null>(null);
+    /** URL do comprovante do cliente, só para abrir. Não grava o documento da despesa. */
+    const [comprovanteClientePorTitulo, setComprovanteClientePorTitulo] = useState<Record<string, string>>({});
     /** Modal de confirmação ao marcar PAGO em Contas a Receber. */
     const [payConfirmTx, setPayConfirmTx] = useState<FinancialTransaction | null>(null);
     /** Pais com residual expandido (sublinhas). */
@@ -312,6 +314,46 @@ const FinancialTransactionList: React.FC = () => {
     }, []);
 
     useEffect(() => { void fetchTransactions(); }, [fetchTransactions]);
+
+    useEffect(() => {
+        let alive = true;
+        const despesas = transactions.filter((t) => t.type === 'EXPENSE' && String(t.notes || '').includes('comissao_id:'));
+        if (!despesas.length) {
+            setComprovanteClientePorTitulo({});
+            return;
+        }
+        (async () => {
+            try {
+                const numeros = [...new Set(despesas.map((t) => faturaDaDescricaoComissao(t.description)).filter((n): n is string => !!n))];
+                const faturas: Array<{ id: string; number: string | null; notes: string | null; manual_payment_evidence_url: string | null; asaas_payment_id: string | null; issuer_company: string | null }> = [];
+                for (let i = 0; i < numeros.length; i += 20) {
+                    const chunk = numeros.slice(i, i + 20);
+                    const or = chunk.map((n) => `number.ilike."${n.replace(/["\\%_,]/g, '')}"`).join(',');
+                    const { data, error } = await supabase
+                        .from('financial_invoices')
+                        .select('id, number, notes, manual_payment_evidence_url, asaas_payment_id, issuer_company')
+                        .or(or);
+                    if (error) throw error;
+                    faturas.push(...(data || []));
+                }
+                const resolvido = comprovantesClienteDasDespesas({ despesas, faturas });
+                const mapa = { ...resolvido.urls };
+                const pendentes = resolvido.pendentes.filter((item) => item.paymentId);
+                for (let i = 0; i < pendentes.length; i += 40) {
+                    const res = await authFetch('/api/comissoes/comprovantes', {
+                        method: 'POST',
+                        body: JSON.stringify({ itens: pendentes.slice(i, i + 40) }),
+                    });
+                    const json = await res.json().catch(() => null) as { urls?: Record<string, string> } | null;
+                    if (res.ok && json?.urls) Object.assign(mapa, json.urls);
+                }
+                if (alive) setComprovanteClientePorTitulo(mapa);
+            } catch {
+                /* sem URL não inventa o link */
+            }
+        })();
+        return () => { alive = false; };
+    }, [transactions]);
     useEffect(() => { void fetchOverdueUniverse(); }, [fetchOverdueUniverse]);
     useRealtimeRefresh(['financial_transactions', 'financial_accounts', 'financial_invoices'], () => {
         void fetchTransactions();
@@ -1234,14 +1276,17 @@ const FinancialTransactionList: React.FC = () => {
                                                 )}
                                                 {(() => {
                                                   const pago = t.status === 'PAID' || t.status === 'PARTIALLY_PAID';
+                                                  const reciboCliente = !isReceber && String(t.notes || '').includes('comissao_id:')
+                                                    ? comprovanteClientePorTitulo[t.id]
+                                                    : null;
                                                   const comprovante = decidirComprovante({
                                                     exige: pago,
-                                                    urls: [t.doc_comprovante_url, isReceber ? asaasReceipt?.receiptUrl : null],
+                                                    urls: [t.doc_comprovante_url, isReceber ? asaasReceipt?.receiptUrl : reciboCliente],
                                                     perfilFinanceiro,
                                                   });
                                                   if (comprovante.link) {
                                                     return (
-                                                      <a href={comprovante.link} target="_blank" rel="noreferrer" className="mt-0.5 block text-[9px] font-black text-emerald-800 underline uppercase" data-testid={`link-comprovante-${t.id}`}>
+                                                      <a href={comprovante.link} target="_blank" rel="noreferrer" title={reciboCliente ? 'Comprovante do pagamento do cliente' : 'Comprovante'} className="mt-0.5 block text-[9px] font-black text-emerald-800 underline uppercase" data-testid={`link-comprovante-${t.id}`}>
                                                         Comprovante
                                                       </a>
                                                     );
@@ -1355,7 +1400,11 @@ const FinancialTransactionList: React.FC = () => {
                                     </td>
                                     {showConferencia && (
                                         <td className="px-2 py-3 text-center">
-                                            <FinancialDocConferencia transaction={t} onUpdate={handleTransactionDocUpdate} />
+                                            <FinancialDocConferencia
+                                                transaction={t}
+                                                onUpdate={handleTransactionDocUpdate}
+                                                comprovanteClienteUrl={!isReceber && String(t.notes || '').includes('comissao_id:') ? comprovanteClientePorTitulo[t.id] : null}
+                                            />
                                         </td>
                                     )}
                                     <td className={`px-4 py-3 text-right font-mono ${t.type === 'INCOME' ? 'text-green-700' : 'text-red-600'}`}>
@@ -1393,6 +1442,24 @@ const FinancialTransactionList: React.FC = () => {
                                     )}
                                     <td className="px-4 py-3 text-right no-print">
                                         <div className="flex justify-end gap-1">
+                                            {(() => {
+                                                const reciboCliente = !isReceber && String(t.notes || '').includes('comissao_id:')
+                                                    ? comprovanteClientePorTitulo[t.id]
+                                                    : null;
+                                                if (!reciboCliente) return null;
+                                                return (
+                                                    <a
+                                                        href={reciboCliente}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded"
+                                                        title="Comprovante do pagamento do cliente"
+                                                        data-testid={`btn-ver-comprovante-cliente-${t.id}`}
+                                                    >
+                                                        <Receipt size={14} />
+                                                    </a>
+                                                );
+                                            })()}
                                             {isReceber && (
                                                 <button
                                                     onClick={() => setPaymentsTx(t)}

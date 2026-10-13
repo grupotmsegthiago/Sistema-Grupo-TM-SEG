@@ -2,7 +2,7 @@
  * Menu Diretoria / Cockpit Executivo — acesso exclusivo por nome.
  * Perfil "Diretoria" ou "Administrador" sozinhos NÃO liberam o menu.
  */
-import { isFinanceProfileRole } from './financeSupervisorAccess';
+import { isFinanceProfileRole } from './financeSupervisorAccess.js';
 
 export type DiretoriaAccessUser = {
   name?: string | null;
