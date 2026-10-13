@@ -111,23 +111,7 @@ async function handleQuadroOps(req: any, res: any, op: string) {
 }
 
 export async function handleComissoesIngest(req: any, res: any) {
-  if (req.method === 'OPTIONS') {
-    res.status(200).json({ ok: true });
-    return;
-  }
-
   const op = queryOp(req);
-  if (op === 'religar-fatura-torres') {
-    try {
-      const { tratarPedidoReligarFaturaTorres } = await import('../lib/comissao/religarFaturaTorres.js');
-      await tratarPedidoReligarFaturaTorres(req, res);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn('[comissao] religar fatura TORRES:', message);
-      res.status(200).json({ ok: false, error: message });
-    }
-    return;
-  }
   if (op === 'diagnostico-torres') {
     try {
       const { tratarDiagnosticoTorres } = await import('../lib/comissao/diagnosticoTorres.js');
@@ -136,6 +120,22 @@ export async function handleComissoesIngest(req: any, res: any) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn('[comissao] diagnostico TORRES:', message);
       res.status(500).json({ ok: false, conectado: false, codigo: 'BANCO', error: 'A leitura da TORRES falhou.' });
+    }
+    return;
+  }
+  if (req.method === 'OPTIONS') {
+    res.status(200).json({ ok: true });
+    return;
+  }
+
+  if (op === 'religar-fatura-torres') {
+    try {
+      const { tratarPedidoReligarFaturaTorres } = await import('../lib/comissao/religarFaturaTorres.js');
+      await tratarPedidoReligarFaturaTorres(req, res);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('[comissao] religar fatura TORRES:', message);
+      res.status(200).json({ ok: false, error: message });
     }
     return;
   }
