@@ -3,11 +3,11 @@
 ## VALIDAÇÃO — INTEGRAÇÃO PUBLICADA TM SEG × TORRES
 
 **Data:** 2026-10-13
-**Pedido:** provar a leitura do Supabase da TORRES pelo sistema publicado, sem gravar as faturas 200, 199 e 207 e sem publicar.
+**Pedido:** publicar a correção já testada, provar a leitura do Supabase da TORRES pelo sistema publicado e tirar o diagnóstico em seguida. Sem gravar as faturas 200, 199 e 207 e sem lançar pagamento.
 
-**Publicado:** `sistema.grupotmseg.com.br` está no commit `c3451494` (`builtAt` `2026-10-13T22:51:05.492Z`). `TORRES_SUPABASE_SERVICE_ROLE_KEY` existe na Vercel, ambiente Production, tipo Secret, valor oculto. Não foi lido.
+**Publicado:** `sistema.grupotmseg.com.br` está no commit `d46cbd9a` (`buildId` `d46cbd9a24f75d1d3fbea104d440c1e6ca296ef8`, `builtAt` `2026-10-14T00:23:03.252Z`). `/api/health` ok. A rota própria do diagnóstico saiu desse commit. `TORRES_SUPABASE_SERVICE_ROLE_KEY` existe na Vercel, ambiente Production, tipo Secret, valor oculto. Não foi lido.
 
-**Conexão pelo sistema publicado: não validada.** O diagnóstico temporário, só Diretoria e só leitura, rodou no commit `731a57eb`. HTTP 503, código `CREDENCIAL`. A variável está presente. A chave salva é do projeto da TM SEG, não da TORRES. Nenhuma linha financeira foi devolvida e nenhum título foi criado. O diagnóstico foi removido em seguida.
+**Conexão pelo sistema publicado: não validada.** O diagnóstico temporário, só Diretoria e só leitura, rodou no commit `731a57eb` e foi removido no `d46cbd9a`. HTTP 503, código `CREDENCIAL`. A variável está presente. A chave salva é do projeto da TM SEG, não da TORRES. Nenhuma linha financeira foi devolvida e nenhum título foi criado. Depois da remoção, as três comissões de setembro continuam `LIBERADO_PARA_PAGAMENTO` sem `conta_pagar_id`. A TORRES segue com zero títulos `comissao_comercial` dessas origens.
 
 **Publicado junto:** falha de lançamento deixa de voltar HTTP 200. Credencial 503, permissão 403, conexão 502, comissão não liberada 409, comissão ausente 404, banco 500. Título já ligado continua HTTP 200 com `ok: true` e `jaExistia: true`. A tela segue lendo `ok` e `error`.
 
