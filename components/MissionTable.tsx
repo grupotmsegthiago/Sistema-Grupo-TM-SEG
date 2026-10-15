@@ -57,12 +57,12 @@ import ClientMissionRequest from './ClientMissionRequest';
 import ClientCommitteePresentation from './ClientCommitteePresentation';
 import MissionOperationalReport from './MissionOperationalReport';
 import MissionTeamPresenceBoard from './MissionTeamPresenceBoard';
-import { hasFullMissionListAccess, isMissionClientScopeRestricted } from '../lib/missionAccess';
+import { financeiroConsultaOsSobDemanda, hasFullMissionListAccess, isMissionClientScopeRestricted } from '../lib/missionAccess';
 import { isPerfilComercial } from '../lib/diretoriaAccess';
 import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
 import { canSeeMissionBillingSummary, canSeeOsComPrejuizo, isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
-import { searchMissionsByTerm } from '../lib/missionTableSearch';
+import { carregarContextoOsConsultadas, searchMissionsByTerm } from '../lib/missionTableSearch';
 import { isOsLossHidden, loadOsLossHiddenMap } from '../lib/osLossHidden';
 import { collectLinkedFamilyIds } from '../lib/missionLinkage';
 import { comparePanelMissions, PANEL_LAYER_META, PANEL_LAYER_ORDER, placeMissionOnPanel, type MissionPanelLayer } from '../lib/missionPanelLayers';
@@ -222,6 +222,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   // que a busca encontre OS fora do período atualmente carregado.
   const [searchMatches, setSearchMatches] = useState<Mission[]>([]);
   const [searchMatchesTruncated, setSearchMatchesTruncated] = useState(false);
+  const [consultaOsLoading, setConsultaOsLoading] = useState(false);
   // Sinal para re-disparar a busca server-side (searchMatches) após qualquer
   // refresh de missões — cobre visão restrita/comercial (sem patch direcionado)
   // e reconexão de realtime, mantendo os cards encontrados por busca em dia.
@@ -366,8 +367,14 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   // carregado, p.ex., canceladas fora do período). Só roda para quem vê o alerta.
   const [missingTableExtra, setMissingTableExtra] = useState<any[]>([]);
   const [missingTableAdj, setMissingTableAdj] = useState<Map<string, BillingAdjustmentRecord>>(new Map());
+  const consultaOsSobDemanda = useMemo(
+    () => financeiroConsultaOsSobDemanda(currentUser),
+    [currentUser],
+  );
+
   const fetchMissingTableExtra = useCallback(async () => {
-    if (!canSeeMissingTableAlert) { setMissingTableExtra([]); setMissingTableAdj(new Map()); return; }
+    // Financeiro não varre OS sem tabela: esse alerta baixa todas as não aprovadas desde maio/2026.
+    if (!canSeeMissingTableAlert || consultaOsSobDemanda) { setMissingTableExtra([]); setMissingTableAdj(new Map()); return; }
     try {
       const floorIso = new Date(2026, 4, 1, 0, 0, 0, 0).toISOString(); // 01/05/2026
       const dateOr = `start_time.gte.${floorIso},and(start_time.is.null,created_at.gte.${floorIso})`;
@@ -397,7 +404,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     } catch {
       // mantém o último conjunto conhecido em caso de falha de rede
     }
-  }, [canSeeMissingTableAlert]);
+  }, [canSeeMissingTableAlert, consultaOsSobDemanda]);
 
   useEffect(() => { fetchMissingTableExtra(); }, [fetchMissingTableExtra]);
 
@@ -696,12 +703,31 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   isRestrictedClientViewRef.current = isRestrictedClientView;
   const hasFullMissionListAccessRef = useRef(hasFullMissionListAccessFlag);
   hasFullMissionListAccessRef.current = hasFullMissionListAccessFlag;
+  const financeiroSobDemandaRef = useRef(consultaOsSobDemanda);
+  financeiroSobDemandaRef.current = consultaOsSobDemanda;
+  const searchMatchesRef = useRef<Mission[]>([]);
+  useEffect(() => { searchMatchesRef.current = searchMatches; }, [searchMatches]);
 
   const fetchMissions = useCallback(async (silent = false): Promise<boolean> => {
     const user = currentUserRef.current;
     const commercial = isCommercialRef.current;
     const restrictedClientView = isRestrictedClientViewRef.current;
     const fullListAccess = hasFullMissionListAccess(user) || hasFullMissionListAccessRef.current;
+
+    // Perfil Financeiro não baixa o quadro: a OS entra só na consulta do painel.
+    if (financeiroConsultaOsSobDemanda(user) || financeiroSobDemandaRef.current) {
+      clientScopeRef.current = { type: 'all' };
+      setScopeReady(true);
+      setResolvedClientName('');
+      allMissionsRef.current = [];
+      setAllMissions([]);
+      setDbStatus('ok');
+      initialFetchDoneRef.current = true;
+      setLastMissionsFetchAt(new Date());
+      if (!silent) setIsLoading(false);
+      setSearchRefreshTick((tick) => tick + 1);
+      return true;
+    }
 
     if (!silent) setIsLoading(true);
     setDbStatus(null);
@@ -980,11 +1006,22 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           });
           setSearchMatches(prev => prev.some(m => String(m.id) === String(oldId)) ? prev.filter(m => String(m.id) !== String(oldId)) : prev);
           suppressFullRefetchUntilRef.current = Date.now() + 1500;
+          if (financeiroSobDemandaRef.current) {
+            const nextSearch = searchMatchesRef.current.filter((mission) => String(mission.id) !== String(oldId));
+            searchMatchesRef.current = nextSearch;
+            void refreshDerivedDataRef.current(nextSearch);
+            return;
+          }
           scheduleAuxRefreshRef.current();
           return;
         }
         const row = payload.new;
         if (!row || row.id == null) { scheduleFullRefetchRef.current(); return; }
+        const sobDemanda = financeiroSobDemandaRef.current;
+        const jaNaConsulta = sobDemanda && (
+          allMissionsRef.current.some((mission) => String(mission.id) === String(row.id))
+          || searchMatchesRef.current.some((mission) => String(mission.id) === String(row.id))
+        );
         // Mantém os resultados de busca (searchMatches) sincronizados: uma OS
         // pode estar visível via busca/filtro de OS por estar FORA do período
         // carregado em allMissions (ex.: OS Concluída antiga). O patch
@@ -999,13 +1036,21 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           snext[sidx] = mapRawMissionRowRef.current(row);
           return snext;
         });
+        if (sobDemanda && !jaNaConsulta) return;
         const maps = lookupMapsRef.current;
         const needsVehicle = !!row.vehicle_id && !maps.vehicleMap[row.vehicle_id];
         const needsClientVehicle = !!row.client_vehicle && !maps.clientVehicleMap[row.client_vehicle?.toString()];
-        if (needsVehicle || needsClientVehicle) { scheduleFullRefetchRef.current(); return; }
+        if (needsVehicle || needsClientVehicle) {
+          // Financeiro não rebaixa o quadro inteiro por uma OS que não está na consulta.
+          if (sobDemanda) return;
+          scheduleFullRefetchRef.current();
+          return;
+        }
         const mappedRow = mapRawMissionRowRef.current(row);
         setAllMissions(prev => {
           const idx = prev.findIndex(m => String(m.id) === String(row.id));
+          // não insere OS fora da consulta no quadro do Financeiro
+          if (sobDemanda && idx === -1) return prev;
           const next = idx === -1 ? [mappedRow, ...prev] : prev.slice();
           if (idx !== -1) next[idx] = mappedRow;
           allMissionsRef.current = next;
@@ -1016,6 +1061,14 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           return next;
         });
         suppressFullRefetchUntilRef.current = Date.now() + 1500;
+        if (sobDemanda) {
+          const nextSearch = searchMatchesRef.current.map((mission) => (
+            String(mission.id) === String(row.id) ? mappedRow : mission
+          ));
+          searchMatchesRef.current = nextSearch;
+          void refreshDerivedDataRef.current(nextSearch);
+          return;
+        }
         // Reconcilia mapas auxiliares (aprovação/evidência/logs/DHL/pedágio) da
         // OS afetada de forma leve, sem rebaixar a lista inteira.
         scheduleAuxRefreshRef.current();
@@ -1104,11 +1157,21 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
           const syncBoardFromServer = async (onlyId?: string) => {
             try {
+              const sobDemanda = financeiroSobDemandaRef.current;
+              const consultadas = sobDemanda
+                ? searchMatchesRef.current.map((mission) => String(mission.id))
+                : [];
+              if (sobDemanda && onlyId && !consultadas.includes(String(onlyId)) && !allMissionsRef.current.some((mission) => String(mission.id) === String(onlyId))) {
+                if (!cancelled) setLastLiveAt(new Date());
+                return;
+              }
               const ids = onlyId
                 ? [onlyId]
-                : allMissionsRef.current
-                  .filter((mission) => OPEN_BOARD_STATUSES.has(mission.status))
-                  .map((mission) => String(mission.id));
+                : sobDemanda
+                  ? consultadas
+                  : allMissionsRef.current
+                    .filter((mission) => OPEN_BOARD_STATUSES.has(mission.status))
+                    .map((mission) => String(mission.id));
               if (!ids.length) {
                 if (!cancelled) setLastLiveAt(new Date());
                 return;
@@ -1141,7 +1204,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 return changed ? next : prev;
               };
               setAllMissions((prev) => {
-                const next = applyRows(prev, Boolean(onlyId));
+                const next = applyRows(prev, Boolean(onlyId) && !sobDemanda);
                 if (next !== prev) allMissionsRef.current = next;
                 return next;
               });
@@ -1160,6 +1223,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           if (currentStatus) setLiveConnected(currentStatus === 'SUBSCRIBED');
           const handleExternalRefresh = () => {
             setSearchRefreshTick(t => t + 1);
+            if (financeiroSobDemandaRef.current) return;
             if (Date.now() < suppressFullRefetchUntilRef.current) {
               scheduleAuxRefreshRef.current();
               return;
@@ -1214,18 +1278,42 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(() => {
       const term = (osFilterTerm.trim() || searchTerm.trim());
-      if (term.length < 2) { setSearchMatches([]); setSearchMatchesTruncated(false); return; }
+      if (term.length < 2) { setConsultaOsLoading(false); setSearchMatches([]); setSearchMatchesTruncated(false); return; }
       // Não busca antes do escopo de cliente estar resolvido (evita IDOR).
-      if (!scopeReady) { setSearchMatches([]); setSearchMatchesTruncated(false); return; }
+      if (!scopeReady) { setConsultaOsLoading(false); setSearchMatches([]); setSearchMatchesTruncated(false); return; }
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      if (financeiroSobDemandaRef.current) setConsultaOsLoading(true);
       searchDebounceRef.current = setTimeout(async () => {
         try {
           const scope = clientScopeRef.current;
           if (scope.type === 'empty') { setSearchMatches([]); setSearchMatchesTruncated(false); return; }
           const { rows, truncated } = await searchMissionsByTerm(supabase, term, scope);
-          setSearchMatches(rows.map((m: any) => mapRawMissionRow(m)));
+          if (financeiroSobDemandaRef.current) {
+            try {
+              const contexto = await carregarContextoOsConsultadas(supabase, rows);
+              lookupMapsRef.current = {
+                vehicleMap: contexto.vehicleMap,
+                clientVehicleMap: contexto.clientVehicleMap,
+                clientNameMap: contexto.clientNameMap,
+                providerNameMap: contexto.providerNameMap,
+              };
+              setClientsData(contexto.clients as any);
+              setClientTables(contexto.clientTables as any);
+              setProviderTables(contexto.providerTables as any);
+              setAgentPhonesMap(contexto.agentPhones);
+            } catch (err) {
+              console.error('Erro ao carregar contexto da OS consultada:', err);
+            }
+          }
+          const mapped = rows.map((m: any) => mapRawMissionRow(m));
+          searchMatchesRef.current = mapped;
+          setSearchMatches(mapped);
           setSearchMatchesTruncated(truncated);
+          if (financeiroSobDemandaRef.current) {
+            void refreshDerivedDataRef.current(mapped).catch((err) => console.error('Erro ao carregar dados da OS consultada:', err));
+          }
         } catch { /* silencioso */ }
+        finally { if (financeiroSobDemandaRef.current) setConsultaOsLoading(false); }
       }, 400);
       return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
     }, [osFilterTerm, searchTerm, scopeReady, mapRawMissionRow, searchRefreshTick]);
@@ -2117,13 +2205,14 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-600"><Activity size={16} /></div>
                     <div className="flex-1">
                         <h3 className="text-xs font-black uppercase tracking-wide text-gray-800 leading-none">Missões em Aberto</h3>
-                        <p className="text-[10px] text-gray-500 mt-0.5">DHL vs Demais clientes</p>
+                        <p className="text-[10px] text-gray-500 mt-0.5">{consultaOsSobDemanda ? 'Consulte a OS no filtro. O quadro não carrega a lista.' : 'DHL vs Demais clientes'}</p>
                     </div>
                     <div className="text-right">
-                        <div className="text-xl font-black text-gray-900 leading-none font-mono">{activeOpenStats.total}</div>
+                        <div className="text-xl font-black text-gray-900 leading-none font-mono">{consultaOsSobDemanda ? '—' : activeOpenStats.total}</div>
                         <div className="text-[8px] font-bold uppercase tracking-wide text-gray-400">Total</div>
                     </div>
                 </div>
+                {consultaOsSobDemanda ? null : (<>
                 <div className="flex items-center gap-1 mb-3">
                     <button
                         type="button"
@@ -2192,6 +2281,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         )}
                     </div>
                 </div>
+                </>)}
             </div>
         )}
 
@@ -2270,7 +2360,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                       <g transform="translate(10, 5) scale(0.85)"><path d="M40 5 L10 15 V35 C10 55 25 70 40 75 C55 70 70 55 70 35 V15 L40 5 Z" stroke="#000" strokeWidth="4" fill="none" strokeLinejoin="round"/><path d="M20 50 Q40 65 60 40" stroke="#b91c1c" strokeWidth="6" strokeLinecap="round"/><path d="M28 22 L40 22 L40 55" stroke="#000" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/><path d="M45 22 L55 38 L65 22 L65 55 M45 55 L45 22" stroke="#000" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/></g>
                       <text x="95" y="52" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="34" fill="#000" letterSpacing="3">GRUPO TMSEG</text>
                   </svg>
-                  <p className="text-sm font-bold text-gray-500 relative z-10">Nenhuma missão encontrada para este filtro.</p>
+                  <p className="text-sm font-bold text-gray-500 relative z-10 text-center px-6" data-testid="mission-list-empty">
+                    {consultaOsSobDemanda && consultaOsLoading
+                      ? 'Consultando a OS...'
+                      : consultaOsSobDemanda && searchTerm.trim().length < 2 && osFilterTerm.trim().length < 2
+                        ? 'Consulte a OS no filtro do painel para carregar.'
+                        : 'Nenhuma missão encontrada para este filtro.'}
+                  </p>
               </div> ) : (
                 <>
                   {/* Barra de rolagem horizontal SUPERIOR — espelha a inferior */}
