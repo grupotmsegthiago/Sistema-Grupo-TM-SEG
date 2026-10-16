@@ -94,6 +94,15 @@ async function principalDoToken(req: Request, abrirAdmin: () => ReturnType<typeo
   };
 }
 
+/**
+ * Quem já está logado no sistema lê e grava a OS.
+ * A sessão financeira continua valendo quando existe.
+ * Sem ela, o cadastro ativo do token entra no lugar — o perfil ainda corta coluna.
+ */
+async function principalOperacional(req: Request, abrirAdmin: () => ReturnType<typeof createSupabaseAdminClient>) {
+  return (await principalDaSessao(req, abrirAdmin)) || (await principalDoToken(req, abrirAdmin));
+}
+
 export function registerFinanceiroAcessoRoutes(
   app: Express,
   requireAuth: any,
@@ -148,7 +157,7 @@ export function registerFinanceiroAcessoRoutes(
   });
 
   app.post('/api/financeiro/os/valores', requireAuth, async (req: Request, res: Response) => {
-    const principal = await principalDaSessao(req, abrirAdmin);
+    const principal = await principalOperacional(req, abrirAdmin);
     if (!principal) {
       res.status(401).json({ erro: 'Sessão financeira ausente.' });
       return;
@@ -173,7 +182,7 @@ export function registerFinanceiroAcessoRoutes(
   });
 
   app.post('/api/financeiro/os/gravar', requireAuth, async (req: Request, res: Response) => {
-    const principal = await principalDaSessao(req, abrirAdmin);
+    const principal = await principalOperacional(req, abrirAdmin);
     if (!principal) {
       res.status(401).json({ erro: 'Sessão financeira ausente.' });
       return;
@@ -212,7 +221,7 @@ export function registerFinanceiroAcessoRoutes(
   });
 
   app.post('/api/financeiro/tabelas/ler', requireAuth, async (req: Request, res: Response) => {
-    const principal = await principalDaSessao(req, abrirAdmin);
+    const principal = await principalOperacional(req, abrirAdmin);
     if (!principal || !podeLerTabelasPreco(principal)) {
       res.status(403).json({ erro: 'Sem acesso à tabela de preço.' });
       return;

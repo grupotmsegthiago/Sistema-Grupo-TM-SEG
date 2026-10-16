@@ -32,6 +32,7 @@ function bancoFalso() {
   ];
   const sessoes: Linha[] = [];
   const faturas: Linha[] = [{ id: 'FAT-H', valor: 250 }];
+  const missoes: Linha[] = [{ id: 'GTM-H', status: 'Em Viagem', revenue_value: 1500, snapshot_data: { a: 1 } }];
 
   function filtrar(linhas: Linha[], filtros: Array<{ coluna: string; op: string; valor: unknown }>) {
     return linhas.filter((linha) => filtros.every((filtro) => {
@@ -44,15 +45,23 @@ function bancoFalso() {
   function from(tabela: string) {
     const estado = {
       filtros: [] as Array<{ coluna: string; op: string; valor: unknown }>,
-      op: 'select' as 'select' | 'insert',
+      op: 'select' as 'select' | 'insert' | 'update',
       payload: null as Linha | null,
       uma: false,
+      colunas: [] as string[],
     };
     const api: any = {
-      select() { return api; },
+      select(cols?: string) {
+        if (tabela === 'missions') {
+          estado.colunas = String(cols || '').split(',').map((parte) => parte.trim()).filter(Boolean);
+        }
+        return api;
+      },
       eq(coluna: string, valor: unknown) { estado.filtros.push({ coluna, op: 'eq', valor }); return api; },
+      in(coluna: string, valor: unknown) { estado.filtros.push({ coluna, op: 'in', valor }); return api; },
       ilike(coluna: string, valor: unknown) { estado.filtros.push({ coluna, op: 'ilike', valor }); return api; },
       insert(payload: Linha) { estado.op = 'insert'; estado.payload = payload; return api; },
+      update(payload: Linha) { estado.op = 'update'; estado.payload = payload; return api; },
       maybeSingle() { estado.uma = true; return api; },
       then(ok?: any, erro?: any) { return Promise.resolve(executar()).then(ok, erro); },
     };
@@ -72,12 +81,29 @@ function bancoFalso() {
       if (tabela === 'financial_invoices') {
         return { data: faturas, error: null, count: faturas.length };
       }
+      if (tabela === 'missions') {
+        const filtroIn = estado.filtros.find((filtro) => filtro.op === 'in');
+        const ids = Array.isArray(filtroIn?.valor) ? filtroIn.valor.map(String) : null;
+        const linhas = ids ? missoes.filter((linha) => ids.includes(String(linha.id))) : missoes;
+        if (estado.op === 'update' && estado.payload) {
+          for (const linha of linhas) Object.assign(linha, estado.payload);
+        }
+        const projetar = (linha: Linha) => {
+          if (estado.colunas.length === 0) return linha;
+          const saida: Linha = {};
+          for (const coluna of estado.colunas) {
+            if (Object.prototype.hasOwnProperty.call(linha, coluna)) saida[coluna] = linha[coluna];
+          }
+          return saida;
+        };
+        return { data: linhas.map(projetar), error: null };
+      }
       return { data: null, error: { message: 'tabela ausente' } };
     }
     return api;
   }
 
-  return { from, sessoes };
+  return { from, sessoes, missoes };
 }
 
 async function pedir(app: express.Express, caminho: string, corpo: unknown, headers: Record<string, string> = {}) {
@@ -165,5 +191,39 @@ describe('fluxo real das rotas financeiras sem produção', () => {
     });
     assert.equal(bloqueado.status, 403);
     assert.equal(bloqueado.json.data, undefined);
+
+    const valores = await pedir(app, '/api/financeiro/os/valores', { ids: ['GTM-H'] }, {
+      Authorization: `Bearer ${abriu.json.token}`,
+    });
+    assert.equal(valores.status, 200);
+    assert.equal(valores.json.linhas[0].revenue_value, 1500);
+    assert.equal(valores.json.linhas[0].snapshot_data.a, 1);
+
+    const gravou = await pedir(app, '/api/financeiro/os/gravar', {
+      modo: 'update',
+      filtros: { eq: { id: 'GTM-H' } },
+      valores: { status: 'Origem', revenue_value: 1600, map_link: 'https://mapa.exemplo/h' },
+    }, { Authorization: `Bearer ${abriu.json.token}` });
+    assert.equal(gravou.status, 200);
+    assert.equal(banco.missoes[0].status, 'Origem');
+    assert.equal(banco.missoes[0].revenue_value, 1600);
+    assert.equal(banco.missoes[0].map_link, 'https://mapa.exemplo/h');
+
+    const operadorValores = await pedir(app, '/api/financeiro/os/valores', { ids: ['GTM-H'] }, {
+      Authorization: `Bearer ${operador.json.token}`,
+    });
+    assert.equal(operadorValores.status, 200);
+    assert.equal(operadorValores.json.linhas[0].revenue_value, 1600);
+    assert.equal(operadorValores.json.linhas[0].snapshot_data, undefined);
+
+    const operadorGrava = await pedir(app, '/api/financeiro/os/gravar', {
+      modo: 'update',
+      filtros: { eq: { id: 'GTM-H' } },
+      valores: { status: 'Em Viagem', snapshot_data: { x: 9 }, revenue_value: 1700 },
+    }, { Authorization: `Bearer ${operador.json.token}` });
+    assert.equal(operadorGrava.status, 200);
+    assert.equal(banco.missoes[0].status, 'Em Viagem');
+    assert.equal(banco.missoes[0].revenue_value, 1700);
+    assert.deepEqual(banco.missoes[0].snapshot_data, { a: 1 });
   });
 });
