@@ -816,10 +816,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           return Array.from(byId.values());
       };
 
+      const lerTabelaPreco = async (nome: 'client_price_tables' | 'provider_cost_tables') => {
+          try {
+              return await fetchAllPagesOf(supabase.from(nome).select('*'));
+          } catch {
+              return [] as any[];
+          }
+      };
       const [missionsData, clientTablesRows, providerTablesRows, clientsRes, providersRes] = await Promise.all([
           fetchScoped(),
-          fetchAllPagesOf(supabase.from('client_price_tables').select('*')),
-          fetchAllPagesOf(supabase.from('provider_cost_tables').select('*')),
+          lerTabelaPreco('client_price_tables'),
+          lerTabelaPreco('provider_cost_tables'),
           supabase.from('clients').select('*'),
           supabase.from('providers').select('name, trading_name')
       ]);
