@@ -3,7 +3,7 @@ import { Autocomplete, Circle, GoogleMap, OverlayView, useLoadScript } from '@re
 import { MapPin, Radio } from 'lucide-react';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { supabase } from '../lib/supabase';
-import { buscarMissoesFinalizadasNaJanela, textoHaQuantoTempo } from '../lib/dhlViaturaDisponivel';
+import { buscarMissoesFinalizadasNaJanela, fornecedorEntraNoComunicadoDhl, textoHaQuantoTempo } from '../lib/dhlViaturaDisponivel';
 import { ehCidadeTopo, ordemCidadeTopo } from '../lib/dhlReferenciaGeografica';
 import {
   filtrarViaturasPorRaio,
@@ -63,15 +63,17 @@ async function pontosDaTabela(): Promise<PontoMapaPublico[]> {
   const corte = new Date(Date.now() - JANELA_MAPA_MS).toISOString();
   const { data, error } = await supabase
     .from('dhl_viatura_disponivel')
-    .select('posicao, uf, regiao, finalizada_em, status')
+    .select('posicao, uf, regiao, finalizada_em, status, provider_name')
     .gte('finalizada_em', corte)
     .in('status', ['pendente', 'copiado', 'confirmado'])
     .limit(80);
   if (error || !data) return [];
-  const linhas = (data as Omit<LinhaMapaViatura, 'mission_id'>[]).map((row) => ({
-    ...row,
-    mission_id: `${row.uf}|${row.posicao}|${row.finalizada_em}`,
-  }));
+  const linhas = (data as Array<Omit<LinhaMapaViatura, 'mission_id'> & { provider_name?: string | null }>)
+    .filter((row) => fornecedorEntraNoComunicadoDhl(row.provider_name))
+    .map((row) => ({
+      ...row,
+      mission_id: `${row.uf}|${row.posicao}|${row.finalizada_em}`,
+    }));
   return montarPontosPublicos(linhas);
 }
 
