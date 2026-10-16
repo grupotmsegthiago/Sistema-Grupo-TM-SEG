@@ -224,18 +224,24 @@ export function canAccessScreen(user: ScreenAccessUser | null | undefined, scree
   return hasProfilePermission(user, screenId);
 }
 
+const TELAS_ABERTAS_A_TODO_INTERNO = new Set(['controle-diario', 'treinamento']);
+
 /** Home segura quando a tela pedida não está liberada. */
 export function fallbackScreenForUser(user: ScreenAccessUser | null | undefined): string {
   // Preferir o que realmente está no perfil (dashboard "sempre aberto" não conta aqui).
+  // Controle Diário e Treinamento abrem para o interno, mas não roubam a tela inicial
+  // de quem só tem outra permissão explícita, como orçamentos.
   if (hasProfilePermission(user, 'dashboard')) return 'dashboard';
   if (hasProfilePermission(user, 'missions') || canAccessScreen(user, 'missions')) return 'missions';
   for (const item of NAV_ITEMS) {
     if (item.children?.length) {
       for (const child of item.children) {
         if (child.id === 'dashboard') continue;
+        if (TELAS_ABERTAS_A_TODO_INTERNO.has(child.id) && !hasProfilePermission(user, child.id)) continue;
         if (canAccessScreen(user, child.id)) return child.id;
       }
     } else if (item.id !== 'dashboard' && item.id !== 'treinamento' && canAccessScreen(user, item.id)) {
+      if (TELAS_ABERTAS_A_TODO_INTERNO.has(item.id) && !hasProfilePermission(user, item.id)) continue;
       return item.id;
     }
   }

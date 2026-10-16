@@ -19,6 +19,9 @@ import { registerRhRoutes } from "./rhRoutes";
 import { handleFinancialTransactionPaymentsRequest } from "../api/financial-transaction-payments";
 import { handleFinancialPaymentsInitRequest } from "../api/financial-payments-init";
 import { registerOsAnalysisRoutes } from "./osAnalysisRequests";
+import { registerReaprovacaoFinanceiraRoutes } from "./reaprovacaoFinanceiraRoutes";
+import { registerFinanceiroAcessoRoutes } from "./financeiroAcessoRoutes";
+import { podeAcessarAuditoriaFaturamento } from "../lib/auditoriaFaturamentoAccess";
 import { registerGestaoInvestimentoRoutes } from "./gestaoInvestimentoRoutes";
 import { registerSupportAgentsRoutes } from "./supportAgentsRoutes";
 import { registerComissaoQuadroRoutes } from "./comissaoQuadroRoutes";
@@ -380,6 +383,21 @@ async function resolveUserRole(token: string): Promise<string | null> {
   if (cached && cached.expiresAt > Date.now()) return cached.role;
   const principal = await resolvePrincipal(token);
   return principal?.role || null;
+}
+
+function requireAuditoriaFaturamento(req: Request, res: Response, next: Function) {
+  return (async () => {
+    const token = (req as any).authToken;
+    if (!token) return res.status(401).json({ error: 'Não autorizado' });
+    const principal = await resolvePrincipal(token);
+    if (!principal || !podeAcessarAuditoriaFaturamento(principal)) {
+      return res.status(403).json({ error: 'Sem acesso à auditoria de faturamento.' });
+    }
+    (req as any).userRole = principal.role;
+    (req as any).user = principal;
+    (req as any).auth = principal;
+    return next();
+  })().catch(() => res.status(403).json({ error: 'Sem acesso à auditoria de faturamento.' }));
 }
 
 function requireRole(...allowedRoles: string[]) {
@@ -829,6 +847,8 @@ export async function registerRoutes(
   // Pedido de análise — também em /api/os-analysis (handler leve na Vercel).
   // NÃO usar await import aqui: trava getApp se o chunk falhar no bundle.
   registerOsAnalysisRoutes(app, requireAuth);
+  registerReaprovacaoFinanceiraRoutes(app, requireAuth);
+  registerFinanceiroAcessoRoutes(app, requireAuth);
   registerGestaoInvestimentoRoutes(app, requireAuth);
   registerSupportAgentsRoutes(app, requireAuth, requireRole);
   registerComissaoQuadroRoutes(app, requireAuth);
@@ -3572,7 +3592,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/missions/force-recalculate-by-os/:osNumber", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
+  app.post("/api/missions/force-recalculate-by-os/:osNumber", requireAuth, requireAuditoriaFaturamento, async (req: Request, res: Response) => {
     try {
       const osNumber = req.params.osNumber;
       const missionId = osNumber.startsWith('GTM-') ? osNumber : `GTM-${osNumber}`;
@@ -3594,7 +3614,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/missions/:id/billing-override", requireAuth, requireRole('diretoria', 'administrador', 'ceo', 'financeiro', 'controller'), async (req: Request, res: Response) => {
+  app.patch("/api/missions/:id/billing-override", requireAuth, requireAuditoriaFaturamento, async (req: Request, res: Response) => {
     try {
       const missionId = req.params.id;
       const { revenue_value, billing_verified_by, billing_approved, revenue_edit_reason, toll_value } = req.body || {};
@@ -3665,7 +3685,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/missions/:id/financial-history", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/missions/:id/financial-history", requireAuth, requireAuditoriaFaturamento, async (req: Request, res: Response) => {
     try {
       const missionId = req.params.id;
       const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
@@ -3836,7 +3856,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/missions/:id/force-recalculate", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
+  app.post("/api/missions/:id/force-recalculate", requireAuth, requireAuditoriaFaturamento, async (req: Request, res: Response) => {
     try {
       const missionId = req.params.id;
       const { confirm } = req.body || {};
@@ -4078,7 +4098,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/missions/scan-divergences", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
+  app.post("/api/missions/scan-divergences", requireAuth, requireAuditoriaFaturamento, async (req: Request, res: Response) => {
     try {
       const fetchAll = async (table: string) => {
         const allRows: any[] = [];
@@ -4147,7 +4167,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/missions/fix-divergences", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
+  app.post("/api/missions/fix-divergences", requireAuth, requireAuditoriaFaturamento, async (req: Request, res: Response) => {
     try {
       const fetchAll = async (table: string) => {
         const allRows: any[] = [];
@@ -4272,7 +4292,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/missions/recalculate-all", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
+  app.post("/api/missions/recalculate-all", requireAuth, requireAuditoriaFaturamento, async (req: Request, res: Response) => {
     try {
       const fetchAll = async (table: string) => {
         const allRows: any[] = [];

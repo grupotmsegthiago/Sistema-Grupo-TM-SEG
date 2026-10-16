@@ -22,19 +22,25 @@ describe('P3 — billing-override exige auth', () => {
 describe('P3 — Plinio somente fornecedor', () => {
   it('MissionFinancialModal bloqueia cliente para Plinio', () => {
     const src = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
-    assert.match(src, /isRestrictedPlinioUser\(currentUserIdentity\)/);
-    assert.match(src, /canEditClientData = !isPlinio/);
-    assert.match(src, /canEditClientTablesEvenIfLocked = canOverrideAutoProvider && !isPlinio/);
-    assert.match(src, /canEditProviderTablesEvenIfLocked = canOverrideAutoProvider \|\| isPlinio/);
+    const plinio = fs.readFileSync('lib/plinioMissionRestrictions.ts', 'utf8');
+    assert.match(plinio, /export function isRestrictedPlinioUser/);
+    assert.match(src, /isProviderOnlyControllerUser\(\{ \.\.\.currentUserIdentity, role: userRoleLower \}\)/);
+    assert.match(src, /const canEditClientData = !isProviderOnlyUser && !financeApprovedClientLock && \(\(canEditOpsData && !isController\) \|\| fullEditMode\)/);
+    assert.match(src, /const canEditClientTablesEvenIfLocked = canOverrideAutoProvider && !isProviderOnlyUser && !financeApprovedClientLock/);
+    assert.match(src, /const canEditProviderTablesEvenIfLocked = canOverrideAutoProvider \|\| isProviderOnlyUser/);
+    assert.match(src, /const isAdminFullAccess = \(userRoleLower === 'administrador' \|\| fullEditMode \|\| isBarbaraFinance\) && !isProviderOnlyUser/);
+    assert.doesNotMatch(src, /canEditClientData = !isPlinio/);
     assert.doesNotMatch(src, /isAdminFullAccess = userRoleLower === 'administrador' \|\| fullEditMode \|\| isPlinio/);
   });
 
   it('Plinio + OS destravada: campos financeiros cliente usam clientFinanceInputLocked', () => {
     const src = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
-    assert.match(src, /const clientFinanceInputLocked = isController \|\| isEffectivelyLocked \|\| !canEditClientData/);
+    assert.match(src, /const clientFinanceInputLocked = financeApprovedClientLock \|\| isController \|\| isEffectivelyLocked \|\| !canEditClientData \|\| isPaidInvoiceEffectivelyLocked/);
+    assert.match(src, /const clientTollInputLocked = isPaidInvoiceEffectivelyLocked/);
+    assert.match(src, /travaPedagioClienteFinanceiro && !corrigirPedagio\.cliente/);
+    assert.doesNotMatch(src, /clientTollInputLocked = isPaidInvoiceEffectivelyLocked \|\| isProviderOnlyUser \|\| isControllerRole/);
 
     const clientFields = [
-      'input-toll-client',
       'input-displacement-client',
       'input-custom-client-base',
       'input-custom-client-km',
@@ -43,19 +49,22 @@ describe('P3 — Plinio somente fornecedor', () => {
     for (const testId of clientFields) {
       const idx = src.indexOf(`data-testid="${testId}"`);
       assert.ok(idx > 0, `campo ${testId} deve existir`);
-      const slice = src.slice(Math.max(0, idx - 600), idx + 80);
+      const slice = src.slice(Math.max(0, idx - 700), idx + 80);
       assert.match(slice, /clientFinanceInputLocked/, `${testId} deve respeitar clientFinanceInputLocked`);
       assert.match(slice, /readOnly=\{clientFinanceInputLocked\}/, `${testId} deve ter readOnly ligado ao gate`);
     }
 
-    // Fornecedor não usa o gate do cliente — Plínio pode ajustar e salvar o custo.
+    const tollIdx = src.indexOf('data-testid="input-toll-client"');
+    assert.ok(tollIdx > 0);
+    const tollSlice = src.slice(Math.max(0, tollIdx - 700), tollIdx + 40);
+    assert.match(tollSlice, /readOnly=\{clientTollInputLocked\}/);
+
     const provIdx = src.indexOf('data-testid="input-toll-provider"');
     assert.ok(provIdx > 0);
     const provSlice = src.slice(Math.max(0, provIdx - 600), provIdx + 120);
     assert.doesNotMatch(provSlice, /clientFinanceInputLocked/);
 
-    // Destravar billing não contorna: gate inclui !canEditClientData (false para Plinio)
-    assert.match(src, /canSaveProviderAdjustments = isPlinio/);
+    assert.match(src, /canSaveProviderAdjustments = isProviderOnlyUser/);
     assert.match(src, /if \(!canEditClientData\) return;/);
   });
 });

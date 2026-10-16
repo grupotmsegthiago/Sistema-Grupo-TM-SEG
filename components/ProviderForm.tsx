@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Save, Briefcase, Truck, Loader2, Search, Calendar, FileText, AlertTriangle, CheckCircle2, MapPin, Upload, Eye, X, Trash2, DollarSign, Plus, Edit, FileSpreadsheet, TrendingUp, Percent, Lock, Phone as PhoneIcon, Mail, Hash, Fingerprint, Building2, ShieldCheck, User, RotateCcw, Check, CheckSquare, Square, Download, ScrollText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { LinkArquivo } from './ArquivoProtegido';
 import { logAction } from '../lib/logger';
 import { publicarNovidadeCadastro } from '../lib/tmsegNews';
 import { ProviderCostTable } from '../types';
@@ -870,9 +871,9 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                                      <input type="file" className="hidden" accept="application/pdf,image/*" onChange={handleFileUpload} disabled={isUploading} />
                                  </label>
                                  {formData.alvaraUrl && (
-                                     <a href={formData.alvaraUrl} target="_blank" rel="noopener noreferrer" className="p-2.5 rounded-lg border border-amber-300 bg-white hover:bg-amber-100 transition-colors flex items-center justify-center shadow-sm text-amber-600">
+                                     <LinkArquivo href={formData.alvaraUrl} className="p-2.5 rounded-lg border border-amber-300 bg-white hover:bg-amber-100 transition-colors flex items-center justify-center shadow-sm text-amber-600">
                                          <Eye size={20} />
-                                     </a>
+                                     </LinkArquivo>
                                  )}
                              </div>
                         </div>

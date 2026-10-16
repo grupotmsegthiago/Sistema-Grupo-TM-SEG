@@ -27,6 +27,7 @@ import MissionFinancialModal from './MissionFinancialModal';
 import MissionOccurrenceDialog from './MissionOccurrenceDialog';
 import { buildPassagemPlantao, type PassagemPlantao } from '../lib/passagemPlantao';
 import { SEM_APROVACAO_DESDE, SEM_APROVACAO_POR_PAGINA, canViewAprovacoesPendentes } from '../lib/aprovacoesPendentesAccess';
+import { podeAcessarAuditoriaFaturamento } from '../lib/auditoriaFaturamentoAccess';
 
 const OPEN_STATUSES = ['Solicitada', 'Documentação', 'Agendada', 'Origem', 'Em Viagem', 'Pendente'];
 const LOOKBACK_DAYS = 90;
@@ -262,7 +263,8 @@ export default function ControleDiario() {
       return null;
     }
   }, []);
-  const opensAudit = controleDiarioOpensAudit(currentUser?.name);
+  const opensAudit = controleDiarioOpensAudit(currentUser?.name)
+    && podeAcessarAuditoriaFaturamento(currentUser);
   const canSeePendingApproval = canViewAprovacoesPendentes(currentUser);
   const [pendingPage, setPendingPage] = useState(1);
 

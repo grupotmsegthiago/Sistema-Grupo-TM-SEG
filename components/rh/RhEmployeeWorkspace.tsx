@@ -9,6 +9,7 @@ import RhEmployeeScopedCrud from './RhEmployeeScopedCrud';
 import RhEmployeeDocuments from './RhEmployeeDocuments';
 import RhMedicalExams from './RhMedicalExams';
 import RhWarnings from './RhWarnings';
+import { LinkArquivo } from '../ArquivoProtegido';
 import { maskCurrency } from '../../lib/rh/masks';
 import {
   RH_BONUS_TYPES, RH_COMMISSION_TYPES, RH_LEAVE_TYPES,
@@ -201,7 +202,7 @@ const RhEmployeeWorkspace: React.FC<Props> = ({ id, onBack, onSaved }) => {
             ]}
             columns={[
               { key: 'reference_month', label: 'Referência' },
-              { key: 'file_url', label: 'Arquivo', render: (r) => r.file_url ? <a href={r.file_url} target="_blank" rel="noreferrer" className="text-blue-600 text-xs font-bold">Abrir</a> : '—' },
+              { key: 'file_url', label: 'Arquivo', render: (r) => r.file_url ? <LinkArquivo href={r.file_url} className="text-blue-600 text-xs font-bold">Abrir</LinkArquivo> : '—' },
             ]}
           />
         )}

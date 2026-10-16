@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { formatDateTimeBR } from '../lib/dateUtils';
 import { supabase } from '../lib/supabase';
+import { LinkArquivo } from './ArquivoProtegido';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import {
   paymentStatusLabel,
@@ -975,16 +976,14 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                             </a>
                           )}
                           {inv.manual_payment_evidence_url && (
-                            <a
+                            <LinkArquivo
                               href={inv.manual_payment_evidence_url}
-                              target="_blank"
-                              rel="noreferrer"
                               className="text-emerald-700 hover:text-emerald-900"
                               title="Comprovante do pagamento"
                               data-testid={`doc-comprovante-${inv.id}`}
                             >
                               <Banknote size={14} />
-                            </a>
+                            </LinkArquivo>
                           )}
                           {!inv.nf_image_url && !inv.boleto_image_url && !inv.asaas_bankslip_url && !inv.manual_payment_evidence_url && !(inv.nf_status === 'AUTHORIZED' && inv.asaas_invoice_url) && (
                             <span className="text-gray-300 text-[10px]">—</span>
@@ -1178,7 +1177,7 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                         <p className="text-xs text-emerald-950"><span className="font-black">Quando:</span> {formatDateTimeBR(inv.manual_payment_at)}</p>
                         {inv.manual_payment_note && <p className="text-xs text-emerald-950"><span className="font-black">Observação:</span> {inv.manual_payment_note}</p>}
                         {inv.manual_payment_evidence_url && (
-                          <a href={inv.manual_payment_evidence_url} target="_blank" rel="noreferrer" className="inline-flex text-xs font-bold text-emerald-800 underline">Ver evidência do extrato</a>
+                          <LinkArquivo href={inv.manual_payment_evidence_url} className="inline-flex text-xs font-bold text-emerald-800 underline">Ver evidência do extrato</LinkArquivo>
                         )}
                       </div>
                     )}

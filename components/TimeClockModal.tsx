@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { ImgArquivo } from './ArquivoProtegido';
 import {
   X,
   Camera,
@@ -296,7 +297,7 @@ const TimeClockModal: React.FC<Props> = ({ open, onClose, onRegistered, forced =
               {user?.digitalSignatureUrl ? (
                 <div className="space-y-3">
                   <div className="border rounded-xl p-3 bg-gray-50">
-                    <img src={user.digitalSignatureUrl} alt="Assinatura salva" className="h-20 mx-auto object-contain" />
+                    <ImgArquivo src={user.digitalSignatureUrl} alt="Assinatura salva" className="h-20 mx-auto object-contain" />
                   </div>
                   <button
                     type="button"

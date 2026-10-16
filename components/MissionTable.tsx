@@ -32,6 +32,7 @@ import OsActionPlanModal from './OsActionPlanModal';
 import MissionPrintModal from './MissionPrintModal';
 import MissionHistoryModal from './MissionHistoryModal';
 import MissionFinancialModal from './MissionFinancialModal';
+import { podeAcessarAuditoriaFaturamento } from '../lib/auditoriaFaturamentoAccess';
 import MissionFullReportModal from './MissionFullReportModal';
 import DailyGoalThermometer from './DailyGoalThermometer';
 import EndEvidencePendingAlert from './EndEvidencePendingAlert';
@@ -1666,7 +1667,15 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const handleOpenUpdateModal = (mission: Mission) => { setSelectedMission(mission); setIsUpdateModalOpen(true); };
     const handleUpdateSuccess = (reportText?: string) => { setIsUpdateModalOpen(false); setSelectedMission(null); fetchMissions(true); if (reportText) handleCopyToClipboard(reportText, 'relatorio', true); };
     const handleOpenStatusModal = async (mission: Mission) => { setMissionForStatusView(mission); setIsStatusModalOpen(true); const { data } = await supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: false }); if (data) setMissionLogs(data as MissionLog[]); };
-    const handleOpenFinancialModal = (mission: Mission) => { setMissionForFinancials(mission); setIsFinancialModalOpen(true); };
+    const podeAuditoria = useMemo(
+        () => podeAcessarAuditoriaFaturamento(currentUser),
+        [currentUser],
+    );
+    const handleOpenFinancialModal = (mission: Mission) => {
+        if (!podeAuditoria) return;
+        setMissionForFinancials(mission);
+        setIsFinancialModalOpen(true);
+    };
 
     // Task #116: deep-link ?openMission=<id> abre o modal financeiro da OS
     // correspondente assim que as missões forem carregadas (uma única vez por
@@ -1675,10 +1684,18 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const openMissionDeepLinkConsumedRef = useRef(false);
     useEffect(() => {
         if (openMissionDeepLinkConsumedRef.current) return;
+        if (!currentUser) return;
         try {
             const params = new URLSearchParams(window.location.search);
             const targetId = params.get('openMission');
             if (!targetId) return;
+            if (!podeAcessarAuditoriaFaturamento(currentUser)) {
+                openMissionDeepLinkConsumedRef.current = true;
+                params.delete('openMission');
+                const qs = params.toString();
+                window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+                return;
+            }
             const consume = (mission: Mission) => {
                 openMissionDeepLinkConsumedRef.current = true;
                 setMissionForFinancials(mission);
@@ -1717,7 +1734,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 } catch { /* ignore */ }
             })();
         } catch { /* ignore */ }
-    }, [allMissions, mapRawMissionRow]);
+    }, [allMissions, mapRawMissionRow, currentUser]);
     const handleOpenPrintModal = (mission: Mission) => { setMissionForPrint(mission); setIsPrintModalOpen(true); };
     const handleActionPlan = (mission: Mission) => { setPlanoAcaoId(mission.id); };
     const handleDeleteClick = (mission: Mission) => { setMissionToDelete(mission); setDeletePassword(''); setCancelEscortAtOrigin(null); setIsDeleteModalOpen(true); };
