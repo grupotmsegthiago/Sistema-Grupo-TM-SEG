@@ -4,8 +4,20 @@
  * Os números seguem o boletim. O dinheiro só entra quando a OS está aprovada no sistema.
  */
 import { calculateMissionFinancials, resolveCancelledWindow } from '../financialUtils';
+import { resolveBoletimClientLineTotal } from '../billing/boletimLineTotal';
 import { resolveMissionDisplacement } from '../billing/resolveMissionDisplacement';
-import { resolveStoredClientToll } from '../toll/clientTollBilling';
+import { billableClientToll, resolveStoredClientToll } from '../toll/clientTollBilling';
+import {
+  DIVERGENCIA_DETALHAMENTO_INCOMPLETO,
+  DIVERGENCIA_DETALHAMENTO_ZERADO,
+  DIVERGENCIA_SNAPSHOT_INVALIDO,
+  classificarAlteracaoPosterior,
+  devePreservarDetalhamentoRegistrado,
+  estadoDetalhamentoSnapshot,
+  origemSnapshotFinanceiro,
+  textoAlteracaoPosterior,
+  type OrigemSnapshotFinanceiro,
+} from '../missionSnapshot';
 
 export type CevaReportSnapshot = {
   kmTotal?: unknown;
@@ -52,6 +64,7 @@ export type CevaBoletimMission = {
   is_same_os?: boolean | null;
   billing_verified_by?: unknown;
   revenue_edit_reason?: unknown;
+  cost_edit_reason?: unknown;
   snapshot_data?: CevaReportSnapshot | null;
   snapshot_approved_by?: string | null;
   billing_approved?: boolean | null;
@@ -100,6 +113,9 @@ export type CevaReportRow = {
   obs: null;
   financeiro: 'ENCONTRADO';
   valores: 'APROVADO' | 'AGUARDANDO';
+  origemSnapshot?: OrigemSnapshotFinanceiro | null;
+  divergenciaDetalhamento?: string | null;
+  homologadoPorPessoa?: boolean;
 };
 
 export function numeroOuNulo(value: unknown): number | null {
@@ -119,6 +135,20 @@ function centavos(value: number): number {
 }
 
 /**
+ * Snapshot antigo guardou o bruto e a leitura oficial aplica a faixa uma vez.
+ * Isso não é edição posterior. Receita, hodômetro e pedágio realmente diferente continuam valendo.
+ */
+function pedagioSoFaixaLegada(mission: CevaBoletimMission, snap: CevaReportSnapshot): boolean {
+  if (snap.tollVal == null) return false;
+  const oficial = resolveStoredClientToll(mission.toll_value ?? 0, mission.toll_value_provider, mission.client);
+  const congelado = numeroEntregue(snap.tollVal);
+  if (centavos(oficial) === centavos(congelado)) return false;
+  const bruto = numeroEntregue(mission.toll_value);
+  const faixa = billableClientToll(bruto, mission.client);
+  return centavos(congelado) === centavos(bruto) && centavos(oficial) === centavos(faixa);
+}
+
+/**
  * A OS aprovada mudou depois do boletim congelado.
  * Receita, pedágio do cliente ou hodômetro diferentes do snapshot.
  * O carimbo de aprovação sozinho não conta: ele existe em toda OS aprovada.
@@ -132,7 +162,7 @@ export function osMudouDepoisDoSnapshot(mission: CevaBoletimMission, snap: CevaR
   if (centavos(receita) !== centavos(baseSnap)) return true;
 
   const pedagio = resolveStoredClientToll(mission.toll_value ?? 0, mission.toll_value_provider, mission.client);
-  if (snap.tollVal != null && centavos(pedagio) !== centavos(numeroEntregue(snap.tollVal))) return true;
+  if (snap.tollVal != null && centavos(pedagio) !== centavos(numeroEntregue(snap.tollVal)) && !pedagioSoFaixaLegada(mission, snap)) return true;
 
   const inicio = kmGravado(mission.start_km);
   const fim = kmGravado(mission.end_km);
@@ -266,10 +296,16 @@ export function linhaDoBoletimCeva(mission: CevaBoletimMission, ctx: CevaBoletim
   const providerTables = ctx.providerTables || [];
   const clientData = ctx.clientData;
   const snap = mission.snapshot_data && typeof mission.snapshot_data === 'object' ? mission.snapshot_data : null;
-  const hasValidSnapshot = !!(mission.snapshot_approved_by && snap);
+  const estado = estadoDetalhamentoSnapshot(mission.snapshot_data);
+  const origem = origemSnapshotFinanceiro(mission.snapshot_approved_by, mission.snapshot_data);
+  const preservar = devePreservarDetalhamentoRegistrado({
+    billingApproved: mission.billing_approved === true,
+    carimbo: mission.snapshot_approved_by,
+    snapshot: mission.snapshot_data,
+  });
+  const exibirRegistrado = !!(preservar && snap && (estado === 'valido' || estado === 'zerado'));
   const base = baseDaLinha(mission, os);
-
-  if (hasValidSnapshot && snap) {
+  if (exibirRegistrado && snap) {
     const useBase = numeroEntregue(snap.activationFee);
     const useKmEx = numeroEntregue(snap.kmExtraTotal);
     const useHrEx = numeroEntregue(snap.hrExtraTotal);
@@ -299,31 +335,26 @@ export function linhaDoBoletimCeva(mission: CevaBoletimMission, ctx: CevaBoletim
     const snapTotalWithDisp = snapTotal > 0 && snapDispStored <= 0 && useDisp > 0
       ? snapTotal + useDisp
       : snapTotal;
-    const useTotal = wasManuallyEdited ? dbTotal : (snapTotalWithDisp > 0 ? snapTotalWithDisp : (useBase + useKmEx + useHrEx + useToll + useDisp));
+    const componentes = useBase + useKmEx + useHrEx + useToll + useDisp;
+    const totalDoBoletim = resolveBoletimClientLineTotal({
+      dbTotal,
+      snapTotalWithDisp,
+      componentTotal: componentes,
+      wasManuallyEdited,
+    });
+    // OS aprovada usa o total oficial do boletim. O snapshot antigo não permanece na linha.
+    const useTotal = mission.billing_approved === true
+      ? totalDoBoletim
+      : (wasManuallyEdited ? dbTotal : (snapTotalWithDisp > 0 ? snapTotalWithDisp : componentes));
 
-    let snapFranchiseHours = numeroEntregue(snap.franchiseHours);
-    let snapFranchiseKm = numeroEntregue(snap.franchiseKm);
-    let snapUnitHr = numeroEntregue(snap.unitHr);
-    let snapUnitKm = numeroEntregue(snap.unitKm);
-    let snapHrExtraQtd = numeroEntregue(snap.hrExtraQtd);
-    let snapKmExtraQtd = numeroEntregue(snap.kmExtraQtd);
-    let snapDurationHours = numeroEntregue(snap.durationHours);
-
-    if (snapFranchiseHours === 0 && snapFranchiseKm === 0 && snapUnitHr === 0 && snapUnitKm === 0) {
-      try {
-        const finFallback = calculateMissionFinancials(mission as any, priceTables, providerTables, clientData, new Date());
-        const tblFallback = priceTables.find((t) => t.id.toString() === finFallback.client.tableId);
-        if (tblFallback) {
-          snapFranchiseHours = tblFallback.franchise_hours ?? 0;
-          snapFranchiseKm = tblFallback.franchise_km ?? 0;
-          snapUnitHr = tblFallback.price_per_extra_hour ?? 0;
-          snapUnitKm = tblFallback.price_per_extra_km ?? 0;
-          snapHrExtraQtd = finFallback.client.excessHours ?? 0;
-          snapKmExtraQtd = finFallback.client.excessKm ?? 0;
-          snapDurationHours = finFallback.durationHours ?? 0;
-        }
-      } catch { /* mantém o snapshot */ }
-    }
+    // Franquia zerada permanece a que foi gravada. A tabela viva não completa o snapshot.
+    const snapFranchiseHours = numeroEntregue(snap.franchiseHours);
+    const snapFranchiseKm = numeroEntregue(snap.franchiseKm);
+    const snapUnitHr = numeroEntregue(snap.unitHr);
+    const snapUnitKm = numeroEntregue(snap.unitKm);
+    const snapHrExtraQtd = numeroEntregue(snap.hrExtraQtd);
+    const snapKmExtraQtd = numeroEntregue(snap.kmExtraQtd);
+    const snapDurationHours = numeroEntregue(snap.durationHours);
 
     const isCancelledSnap = (mission.status || '').toString().toLowerCase().includes('cancel');
     const wasExecutedSnap = isCancelledSnap && !!mission.end_time && !!mission.start_time && new Date(mission.end_time).getTime() > new Date(mission.start_time).getTime();
@@ -355,35 +386,60 @@ export function linhaDoBoletimCeva(mission: CevaBoletimMission, ctx: CevaBoletim
       tarifaKm: snapUnitKm,
       tarifaHora: snapUnitHr,
       local: localOrigemDestino(mission.origin, mission.destination),
+      origemSnapshot: origem,
+      homologadoPorPessoa: origem === 'humana',
+      divergenciaDetalhamento: estado === 'zerado' ? DIVERGENCIA_DETALHAMENTO_ZERADO : null,
     };
 
     if (osMudouDepoisDoSnapshot(mission, snap)) {
-      linha.valorTotal = dbTotal;
-      linha.pedagio = useToll;
-      if (!cancelledBeforeSnap && kmPeloHodometro != null && Math.abs(kmPeloHodometro - kmDoSnapshot) > 0.5) {
-        linha.kmInicio = kmInicio;
-        linha.kmFim = kmFim;
-        linha.kmRodado = kmPeloHodometro;
-      }
-      try {
-        const finVivo = calculateMissionFinancials(mission as any, priceTables, providerTables, clientData, new Date());
-        const tabelaViva = priceTables.find((t) => t.id.toString() === finVivo.client.tableId);
-        if (tabelaViva) {
-          linha.franquiaHora = horaDoBoletim(tabelaViva.franchise_hours ?? 0);
-          linha.franquiaKm = tabelaViva.franchise_km ?? 0;
-          linha.kmExcedente = finVivo.client.excessKm ?? 0;
-          linha.hrsTrabalhada = horaDoBoletim(finVivo.durationHours);
-          linha.hrsExcedente = horaDoBoletim(finVivo.client.excessHours);
-          linha.valorHrsExcedente = finVivo.client.extraHrVal ?? 0;
-          linha.valorKmExcedente = finVivo.client.extraKmVal ?? 0;
-          linha.valorAcionamento = tabelaViva.activation_fee ?? 0;
-          linha.tarifaKm = tabelaViva.price_per_extra_km ?? 0;
-          linha.tarifaHora = tabelaViva.price_per_extra_hour ?? 0;
-        }
-      } catch { /* sem tabela, o total do cliente ainda acompanha a OS */ }
+      linha.divergenciaDetalhamento = textoAlteracaoPosterior(classificarAlteracaoPosterior({
+        motivoReceita: mission.revenue_edit_reason,
+        motivoCusto: mission.cost_edit_reason,
+      }));
     }
 
     return fecharLinha(linha, mission);
+  }
+
+  if (mission.billing_approved === true || origem === 'humana') {
+    const tollOficial = resolveStoredClientToll(mission.toll_value || 0, mission.toll_value_provider, mission.client);
+    const receitaOficial = numeroEntregue(mission.revenue_value);
+    let deslocamentoOficial = 0;
+    try {
+      const finOficial = calculateMissionFinancials(mission as any, priceTables, providerTables, clientData, new Date());
+      deslocamentoOficial = resolveMissionDisplacement(mission as any, {
+        clientUnitPriceKm: finOficial.client.unitPriceKm,
+        providerUnitPriceKm: finOficial.provider.unitCostKm,
+      }).client;
+    } catch { /* o total segue a receita e o pedágio oficiais */ }
+    const kmInicio = kmGravado(mission.start_km);
+    const kmFim = kmGravado(mission.end_km);
+    const kmRodado = kmInicio != null && kmFim != null && kmFim >= kmInicio ? kmFim - kmInicio : null;
+    const divergencia = estado === 'incompleto'
+      ? DIVERGENCIA_DETALHAMENTO_INCOMPLETO
+      : DIVERGENCIA_SNAPSHOT_INVALIDO;
+    return fecharLinha({
+      ...base,
+      franquiaHora: null,
+      franquiaKm: null,
+      kmInicio,
+      kmFim,
+      kmRodado,
+      kmExcedente: null,
+      hrsTrabalhada: null,
+      hrsExcedente: null,
+      valorHrsExcedente: null,
+      valorKmExcedente: null,
+      valorAcionamento: null,
+      valorTotal: receitaOficial + tollOficial + deslocamentoOficial,
+      pedagio: tollOficial,
+      tarifaKm: null,
+      tarifaHora: null,
+      local: localOrigemDestino(mission.origin, mission.destination),
+      origemSnapshot: origem,
+      homologadoPorPessoa: false,
+      divergenciaDetalhamento: divergencia,
+    }, mission);
   }
 
   const tollVal = resolveStoredClientToll(mission.toll_value || 0, mission.toll_value_provider, mission.client);
@@ -442,5 +498,8 @@ export function linhaDoBoletimCeva(mission: CevaBoletimMission, ctx: CevaBoletim
     tarifaKm: unitKm,
     tarifaHora: unitHr,
     local: localOrigemDestino(mission.origin, mission.destination),
+    origemSnapshot: origem,
+    homologadoPorPessoa: false,
+    divergenciaDetalhamento: null,
   }, mission);
 }

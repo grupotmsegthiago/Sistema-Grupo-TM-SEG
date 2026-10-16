@@ -1,4 +1,5 @@
 import { isIntentionalBillingOverride } from '../financialUtils';
+import { carimboAprovacaoHumana } from '../missionSnapshot';
 
 /**
  * O número grande só é refeito quando a tabela aplicada muda de fato.
@@ -27,7 +28,7 @@ type BillingFreezeMission = {
  */
 export function hasPersistedBillingFreeze(mission: BillingFreezeMission): boolean {
   if (!mission) return false;
-  if (mission.billing_approved || mission.snapshot_approved_by || mission.billing_verified_by) return true;
+  if (mission.billing_approved || carimboAprovacaoHumana(mission.snapshot_approved_by) || mission.billing_verified_by) return true;
   if (isIntentionalBillingOverride(mission.revenue_edit_reason)) return true;
   if (isIntentionalBillingOverride(mission.cost_edit_reason)) return true;
   if (Number(mission.revenue_value) > 0 || Number(mission.cost_value) > 0) return true;

@@ -3,6 +3,7 @@
  * O catch-all Express estoura tempo e o login ficava em "Aguarde...".
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { carimboRecalculoAutomatico } from '../missionSnapshot.js';
 import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 import { PORTAL_CEVA, PORTAL_IBL, type PortalServidor } from './portalServidor.js';
 import {
@@ -453,6 +454,7 @@ async function gravarColuna(sb: NonNullable<ReturnType<typeof createSupabaseAdmi
 
 function hydrateSnapshot<T extends CevaBoletimMission>(mission: T, logSnapshot: any): T {
   if (!logSnapshot || mission.snapshot_approved_by) return mission;
+  if (carimboRecalculoAutomatico(logSnapshot.approved_by)) return mission;
   return {
     ...mission,
     snapshot_data: logSnapshot,

@@ -44,6 +44,9 @@ type ReportRow = {
   pedagio: number | null;
   tarifaKm: number | null;
   tarifaHora: number | null;
+  origemSnapshot?: string | null;
+  divergenciaDetalhamento?: string | null;
+  homologadoPorPessoa?: boolean;
   local: string | null;
   obs: string | null;
   financeiro: 'ENCONTRADO' | 'NÃO CARREGADO';
@@ -512,7 +515,7 @@ const CevaPortal: React.FC = () => {
                   const celula = `border-b border-slate-100 px-3 py-2.5 ${fundo} text-slate-700`;
                   const valorCls = `${celula} whitespace-nowrap tabular-nums`;
                   return (
-                  <tr key={item.os} className="transition-colors hover:bg-slate-100/80">
+                  <tr key={item.os} title={item.divergenciaDetalhamento || (item.homologadoPorPessoa ? undefined : item.origemSnapshot === 'automatica' ? 'Detalhamento registrado pelo recálculo automático. Não é aprovação humana.' : undefined)} className="transition-colors hover:bg-slate-100/80">
                     <td className={`${celula} sticky left-0 z-10 font-black whitespace-nowrap shadow-[6px_0_10px_-8px_rgba(15,23,42,0.45)] text-[var(--portal-marca)] ${fundo}`}>{item.os}</td>
                     <td className={`${celula} whitespace-nowrap`}>
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${classeStatusSistema(item.status)}`}>
