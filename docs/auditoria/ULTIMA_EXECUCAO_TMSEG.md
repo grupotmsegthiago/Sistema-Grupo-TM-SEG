@@ -1,5 +1,14 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## HANDOFF — FINALIZAÇÃO DO PR #339 SEM PUBLICAÇÃO
+
+**Data:** 2026-10-16  
+**Pedido:** corrigir pendências, homologar e publicar o PR #339 na `main` somente se todos os critérios passarem.
+
+**O que ficou pronto.** O teste legado do Plínio passou sem afrouxar a trava de cliente. A função `editar_os_total_financeira` compara horário com `timestamptz`. A homologação rodou em PostgreSQL 16 isolado, porta 54329, cluster apagado depois, com OS fictícias. A migration aditiva foi aplicada no Grupo TMSEG (`ajhmmjuewdsukecaimik`): coluna `parametros_edicao_total` e a função. Antes: 6271 OS, zero reaprovações, função ausente. Depois: 6271 OS, zero parâmetros preenchidos, zero eventos. A prova com OS inexistente devolveu trava e não gravou. `anon` e `authenticated` não executam; `service_role` executa. Rollback: `migrations/rollback/2026_10_16_reaprovacao_financeira.sql`.
+
+**Publicação interrompida.** `missions`, `client_price_tables` e `provider_cost_tables` seguem com política `USING (true)` para o papel público. O navegador usa só a chave anon, sem JWT de usuário. Fechar essa política esconderia a OS de Diretoria, Financeiro e Controller nas telas que já funcionam. A prova isolada mostrou que a política fechada zera a leitura do anon. Ela não foi aplicada. Por isso o PR não foi para a `main` e a `dev` não foi alterada.
+
 ## HANDOFF — RESTRIÇÃO DA AUDITORIA DE FATURAMENTO NO PR #339
 
 **Data:** 2026-10-16  
@@ -11,7 +20,7 @@
 
 **Onde fechou.** Menu e botões da OS, Controle Diário, boletim, conferência de fornecedor, relatório de OS e Gestão de Cobrança. URL `?openMission=` e o evento `tmseg:open-billing-mission` param antes de ler a OS. O modal não carrega valores e mostra a tela bloqueada. EDIÇÃO TOTAL e reaprovação usam a mesma regra. No servidor, histórico financeiro, override, recálculo e varredura de divergência respondem 403.
 
-**Banco, só leitura.** `missions` tem RLS com política `public_access_missions` (`qual = true`) e GRANT completo para anon e authenticated. Isso continua permitindo leitura e gravação direta pelo cliente. Não foi alterado. `reaprovar_os_financeira` segue só para postgres e service_role. `editar_os_total_financeira` não existe em produção. A proposta SQL ganhou o aviso de que a função não autoriza pelo perfil.
+**Banco.** `missions` tem RLS com política `public_access_missions` (`qual = true`) e GRANT completo para anon e authenticated. Isso continua permitindo leitura e gravação direta pelo cliente. A política não foi fechada porque o cliente do navegador não distingue perfil. `reaprovar_os_financeira` segue só para postgres e service_role. `editar_os_total_financeira` foi aplicada depois, só para `service_role`. A função não autoriza pelo perfil.
 
 ## HANDOFF — EDIÇÃO TOTAL FINANCEIRA NO PR #339
 
@@ -20,7 +29,7 @@
 
 **O que entra.** Com a edição total ligada, Salvar alterações abre a confirmação (senha, justificativa e o antes/depois). A senha é conferida no servidor. A função proposta `editar_os_total_financeira` trava a tentativa e a linha, revalida faturada, paga, encerrada e prejuízo, e só então grava os campos permitidos, o evento e o aviso. Snapshot, aprovação, comissão, fatura e nota não são reescritos. Tabela e franquia vão para `parametros_edicao_total` e para o aviso, sem substituir `snapshot_data`. Operador e Controller continuam de fora. A barra só chega a 100% com a transação e o aviso confirmados.
 
-**Ainda sem aplicar.** A migration `migrations/propostas/2026_10_16_edicao_total_financeira.sql` não foi executada no Supabase Grupo TMSEG. Enquanto a função não existir, o servidor recusa a gravação e não altera a OS. O rollback só remove a função nova; não apaga evento, aviso nem captura.
+**Aplicada.** A migration `migrations/propostas/2026_10_16_edicao_total_financeira.sql` entrou no Grupo TMSEG em 2026-10-16, depois da homologação isolada. O rollback só remove a função nova; não apaga evento, aviso nem captura. A tela que chama essa função ainda não está na `main`.
 
 ## HANDOFF — REAPROVAÇÃO FINANCEIRA NO PR #339
 

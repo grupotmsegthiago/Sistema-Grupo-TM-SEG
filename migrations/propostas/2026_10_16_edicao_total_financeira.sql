@@ -1,4 +1,5 @@
--- Proposta. NÃO aplicar em produção sem autorização.
+-- Autorizada em 2026-10-16 para o Grupo TMSEG, depois da homologação isolada.
+-- Aditiva: coluna parametros_edicao_total e função editar_os_total_financeira.
 -- Depende das tabelas de reaprovacao_financeira e reaprovacao_diretoria.
 -- Não altera senha, perfil, comissão, fatura, Asaas, PlugNotas nem o snapshot da aprovação.
 -- A função NÃO autoriza pelo perfil. Quem pode chamar é a API
@@ -201,6 +202,28 @@ BEGIN
 
     v_texto_antes := btrim(coalesce(v_item->>'antes', ''));
     v_texto_depois := btrim(coalesce(v_item->>'depois', ''));
+    IF v_campo IN ('start_time', 'end_time', 'provider_start_time', 'provider_end_time') THEN
+      IF v_texto_antes <> '' AND v_texto_antes !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' THEN
+        RETURN jsonb_build_object('ok', false, 'codigo', 'banco', 'erro', 'Há horário inválido. Nada foi salvo.');
+      END IF;
+      IF v_texto_depois !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' THEN
+        RETURN jsonb_build_object('ok', false, 'codigo', 'banco', 'erro', 'Há horário inválido. Nada foi salvo.');
+      END IF;
+      IF v_texto_antes = '' THEN
+        IF to_jsonb(v_os)->>v_campo IS NOT NULL THEN
+          RETURN jsonb_build_object('ok', false, 'codigo', 'conflito', 'erro', 'A OS foi alterada por outra edição. A edição total não foi concluída.');
+        END IF;
+      ELSIF to_jsonb(v_os)->>v_campo IS NULL
+         OR (to_jsonb(v_os)->>v_campo)::timestamptz IS DISTINCT FROM v_texto_antes::timestamptz THEN
+        RETURN jsonb_build_object('ok', false, 'codigo', 'conflito', 'erro', 'A OS foi alterada por outra edição. A edição total não foi concluída.');
+      END IF;
+      IF v_texto_antes <> '' AND (to_jsonb(v_os)->>v_campo)::timestamptz IS NOT DISTINCT FROM v_texto_depois::timestamptz THEN
+        CONTINUE;
+      END IF;
+      v_novos := v_novos || jsonb_build_object(v_campo, v_texto_depois);
+      v_campos := v_campos || jsonb_build_array(jsonb_build_object('campo', v_campo, 'antes', v_texto_antes, 'depois', v_texto_depois));
+      CONTINUE;
+    END IF;
     IF length(v_texto_antes) > 500 OR length(v_texto_depois) > 500 THEN
       RETURN jsonb_build_object('ok', false, 'codigo', 'banco', 'erro', 'Há texto longo demais. Nada foi salvo.');
     END IF;
@@ -262,10 +285,10 @@ BEGIN
       provider_end_km = CASE WHEN v_novos ? 'provider_end_km' THEN (v_novos->>'provider_end_km')::numeric ELSE provider_end_km END,
       total_distance = CASE WHEN v_novos ? 'total_distance' THEN (v_novos->>'total_distance')::numeric ELSE total_distance END,
       traveled_distance = CASE WHEN v_novos ? 'traveled_distance' THEN (v_novos->>'traveled_distance')::numeric ELSE traveled_distance END,
-      start_time = CASE WHEN v_novos ? 'start_time' THEN v_novos->>'start_time' ELSE start_time END,
-      end_time = CASE WHEN v_novos ? 'end_time' THEN v_novos->>'end_time' ELSE end_time END,
-      provider_start_time = CASE WHEN v_novos ? 'provider_start_time' THEN v_novos->>'provider_start_time' ELSE provider_start_time END,
-      provider_end_time = CASE WHEN v_novos ? 'provider_end_time' THEN v_novos->>'provider_end_time' ELSE provider_end_time END,
+      start_time = CASE WHEN v_novos ? 'start_time' THEN (v_novos->>'start_time')::timestamptz ELSE start_time END,
+      end_time = CASE WHEN v_novos ? 'end_time' THEN (v_novos->>'end_time')::timestamptz ELSE end_time END,
+      provider_start_time = CASE WHEN v_novos ? 'provider_start_time' THEN (v_novos->>'provider_start_time')::timestamptz ELSE provider_start_time END,
+      provider_end_time = CASE WHEN v_novos ? 'provider_end_time' THEN (v_novos->>'provider_end_time')::timestamptz ELSE provider_end_time END,
       estimated_time = CASE WHEN v_novos ? 'estimated_time' THEN v_novos->>'estimated_time' ELSE estimated_time END,
       provider_ops_edited = CASE WHEN v_novos ? 'provider_ops_edited' THEN (v_novos->>'provider_ops_edited')::boolean ELSE provider_ops_edited END,
       parametros_edicao_total = CASE
