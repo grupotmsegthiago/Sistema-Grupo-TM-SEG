@@ -6,6 +6,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ehTabelaConsultaFinanceira } from './consultaFinanceira';
 import { reescreverSelectOs } from './colunasProtegidas';
+import { filtroUsaColunaProtegida, type PassoLeituraOs } from '../operacional/leituraOs';
 import { aplicarPedidoTabela, pedidoTabelaVazio, type PedidoTabela } from './filtrarTabela';
 
 type Linha = Record<string, unknown>;
@@ -18,10 +19,10 @@ function sessaoAtual(): { token: string; sessao: string } {
   };
 }
 
-async function chamarApi(caminho: string, corpo: unknown): Promise<{ ok: boolean; status: number; body: any }> {
+async function chamarApi(caminho: string, corpo: unknown, limiteMs = 8000): Promise<{ ok: boolean; status: number; body: any }> {
   const { token, sessao } = sessaoAtual();
   const controle = new AbortController();
-  const timer = setTimeout(() => controle.abort(), 8000);
+  const timer = setTimeout(() => controle.abort(), limiteMs);
   try {
     const resposta = await fetch(caminho, {
       method: 'POST',
@@ -66,14 +67,60 @@ async function completarValores(data: unknown): Promise<unknown> {
   return unico ? juntas[0] || data : juntas;
 }
 
-function envolverLeitura(filtro: any, hidratar: boolean) {
-  if (!hidratar || typeof filtro?.then !== 'function') return filtro;
-  const original = filtro.then.bind(filtro);
-  filtro.then = (ok?: any, erro?: any) => original(async (resultado: any) => {
-    if (resultado?.data) resultado.data = await completarValores(resultado.data);
-    return ok ? ok(resultado) : resultado;
-  }, erro);
-  return filtro;
+const METODOS_LEITURA_OS = [
+  'eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'like', 'ilike', 'is', 'in',
+  'or', 'not', 'filter', 'match', 'order', 'limit', 'range', 'single', 'maybeSingle',
+  'contains', 'containedBy', 'overlaps', 'textSearch',
+];
+
+function leitorOs(
+  selectOriginal: (colunas?: string, opcoes?: { head?: boolean; count?: string }) => any,
+  reescrito: { sql: string; hidratar: boolean },
+  opcoes?: { head?: boolean; count?: string },
+) {
+  const passos: PassoLeituraOs[] = [{ m: 'select', args: opcoes === undefined ? ['*'] : ['*', opcoes] }];
+  const api: any = {
+    then(ok?: any, erro?: any) {
+      return executar().then(ok, erro);
+    },
+  };
+  for (const nome of METODOS_LEITURA_OS) {
+    api[nome] = (...args: unknown[]) => {
+      passos.push({ m: nome, args });
+      return api;
+    };
+  }
+  async function executarDireto() {
+    let consulta: any = selectOriginal(reescrito.sql, opcoes);
+    for (const passo of passos.slice(1)) {
+      const metodo = consulta?.[passo.m];
+      if (typeof metodo !== 'function') {
+        return { data: null, error: { message: 'A lista de OS não foi lida.' }, count: null };
+      }
+      consulta = metodo.apply(consulta, passo.args);
+    }
+    const resultado = await consulta;
+    if (!resultado?.error && reescrito.hidratar && !opcoes?.head && resultado?.data) {
+      resultado.data = await completarValores(resultado.data);
+    }
+    return resultado;
+  }
+  async function executar() {
+    const resposta = await chamarApi('/api/operacional/os/ler', { passos }, 20000);
+    if (!resposta.ok) {
+      if (resposta.status === 403 || filtroUsaColunaProtegida(passos)) {
+        return { data: null, error: { message: resposta.body?.erro || 'Sem acesso a esta OS.' }, count: null };
+      }
+      return executarDireto();
+    }
+    if (resposta.body?.error) {
+      return { data: null, error: resposta.body.error, count: resposta.body?.count ?? null };
+    }
+    let data = resposta.body?.data ?? null;
+    if (reescrito.hidratar && !opcoes?.head && data) data = await completarValores(data);
+    return { data, error: null, count: resposta.body?.count ?? null };
+  }
+  return api;
 }
 
 function protegerMissions(builder: any) {
@@ -81,8 +128,7 @@ function protegerMissions(builder: any) {
   const updateOriginal = builder.update.bind(builder);
   builder.select = (colunas?: string, opcoes?: { head?: boolean; count?: string }) => {
     const reescrito = reescreverSelectOs(colunas);
-    const filtro = selectOriginal(reescrito.sql, opcoes);
-    return envolverLeitura(filtro, reescrito.hidratar && !opcoes?.head);
+    return leitorOs(selectOriginal, reescrito, opcoes);
   };
   builder.insert = (valores: unknown) => {
     const linhas = Array.isArray(valores) ? valores : [valores];

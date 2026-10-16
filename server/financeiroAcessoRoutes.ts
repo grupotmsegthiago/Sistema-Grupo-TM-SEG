@@ -21,6 +21,7 @@ import {
 } from '../lib/financeiro/arquivoSeguro';
 import { senhasConferem } from '../lib/reaprovacaoFinanceira/capturaSenha';
 import { sessaoConfere } from '../lib/financeiro/sessao';
+import { decisaoLeituraOs, executarLeituraOs } from '../lib/operacional/leituraOs';
 import { createSupabaseAdminClient } from './supabaseConfig';
 
 const SESSAO_MS = 7 * 24 * 60 * 60 * 1000;
@@ -44,6 +45,34 @@ async function principalDaSessao(req: Request, abrirAdmin: () => ReturnType<type
     .maybeSingle();
   const row = sessaoRow.data as { user_id?: string; expires_at?: string; revoked_at?: string | null } | null;
   if (!sessaoConfere(row, userId)) return null;
+  const usuario = await sb
+    .from('system_users')
+    .select('id, name, email, status, permissions, profiles:profile_id ( name, permissions )')
+    .eq('id', userId)
+    .maybeSingle();
+  const data = usuario.data as any;
+  if (!data || data.status !== 'Ativo') return null;
+  const perfil = Array.isArray(data.profiles) ? data.profiles[0] : data.profiles;
+  const permissoes = [
+    ...(Array.isArray(perfil?.permissions) ? perfil.permissions : []),
+    ...(Array.isArray(data.permissions) ? data.permissions : []),
+  ];
+  return {
+    id: data.id,
+    name: data.name || null,
+    email: data.email || null,
+    role: String(perfil?.name || ''),
+    permissions: permissoes,
+  };
+}
+
+/** Lista de OS: qualquer usuário ativo, sem exigir a sessão financeira. */
+async function principalDoToken(req: Request, abrirAdmin: () => ReturnType<typeof createSupabaseAdminClient>) {
+  const token = String((req as any).authToken || '');
+  const userId = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/)?.[1] || '';
+  if (!userId) return null;
+  const sb = abrirAdmin();
+  if (!sb) return null;
   const usuario = await sb
     .from('system_users')
     .select('id, name, email, status, permissions, profiles:profile_id ( name, permissions )')
@@ -249,6 +278,35 @@ export function registerFinanceiroAcessoRoutes(
       return;
     }
     res.json({ linhas: gravou.data || [] });
+  });
+
+  app.post('/api/operacional/os/ler', requireAuth, async (req: Request, res: Response) => {
+    const sb = abrirAdmin();
+    if (!sb) {
+      res.status(503).json({ erro: 'O servidor não conseguiu ler as OS.' });
+      return;
+    }
+    const principal = await principalDoToken(req, abrirAdmin);
+    if (!principal) {
+      res.status(401).json({ erro: 'Sessão ausente.' });
+      return;
+    }
+    const passos = req.body?.passos;
+    const decisao = decisaoLeituraOs(passos, podeLerValoresOs(principal));
+    if (decisao === 'invalida') {
+      res.status(400).json({ erro: 'Consulta de OS inválida.' });
+      return;
+    }
+    if (decisao === 'protegida') {
+      res.status(403).json({ erro: 'A lista não consulta valor financeiro.' });
+      return;
+    }
+    try {
+      const resultado = await executarLeituraOs(sb, passos);
+      res.json(resultado);
+    } catch {
+      res.status(400).json({ erro: 'A lista de OS não foi lida.' });
+    }
   });
 
   app.post('/api/financeiro/consulta', requireAuth, async (req: Request, res: Response) => {
