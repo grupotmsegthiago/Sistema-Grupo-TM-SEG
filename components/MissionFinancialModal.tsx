@@ -25,8 +25,16 @@ import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import { billableClientToll, tollPersistencePair } from '../lib/toll/clientTollBilling';
+import {
+    classificarFornecedorGravado,
+    deveReescreverSnapshotAprovado,
+    franquiaSnapshotLoteZerada,
+    fornecedorPedagioMudou,
+    impactoTrocaFornecedorAusentePorZero,
+    montarAtualizacaoPedagio,
+} from '../lib/toll/aprovacaoPedagio';
 import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
-import { gravarOcorrenciaPedagioAprovado, pedagioAlterado, senhaDoUsuarioConfere } from '../lib/toll/pedagioDaOs';
+import { gravarOcorrenciaFornecedorAusenteParaZero, gravarOcorrenciaPedagioAprovado, pedagioAlterado, senhaDoUsuarioConfere } from '../lib/toll/pedagioDaOs';
 import { formatProviderName } from '../lib/utils';
 import { AvisoTabelaOs } from './AvisoTabelaOs';
 import { copyTextAsync } from '../lib/clipboard';
@@ -38,6 +46,8 @@ import MissionAnalyticalReportModal from './MissionAnalyticalReportModal';
 import { formatDateTimeBR, formatNowDateTimeBR, formatDateBR, formatTimeBR, toDatetimeLocalValueBR, datetimeLocalToIsoBR } from '../lib/dateUtils';
 import {
   buildMinimalBillingSnapshot,
+  carimboAprovacaoHumana,
+  carimboRecalculoAutomatico,
   retryPayloadForSnapshotConstraint,
   shouldWriteBillingSnapshot,
 } from '../lib/missionSnapshot';
@@ -527,6 +537,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [senhaPedagioErro, setSenhaPedagioErro] = useState('');
   const [senhaPedagioChecando, setSenhaPedagioChecando] = useState(false);
   const senhaPedagioOkRef = useRef(false);
+  const zeroFornecedorConfirmadoRef = useRef(false);
+  const [avisoZeroFornecedor, setAvisoZeroFornecedor] = useState<ReturnType<typeof impactoTrocaFornecedorAusentePorZero>>(null);
   const saveApproveRef = useRef(false);
   const [tollConfirmAutoOpened, setTollConfirmAutoOpened] = useState(false);
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
@@ -555,9 +567,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const setUseSavedValues = (val: boolean) => { useSavedValuesRef.current = val; _setUseSavedValues(val); };
   const isSavingRef = React.useRef(false);
   const userManuallyEditedRef = React.useRef(false);
+  const fornecedorPedagioEditadoRef = React.useRef(false);
+  const pedagioClienteEditadoRef = React.useRef(false);
   const dbValuesLoadedRef = React.useRef(false);
   const openedTablesRef = React.useRef<{ clientId: string; clientName: string; providerId: string; providerName: string } | null>(null);
-  const staleAutoResyncDoneRef = React.useRef<string | null>(null);
   const [savedByInfo, setSavedByInfo] = useState<string | null>(null);
 
   const [aiLoading, setAiLoading] = useState(false);
@@ -766,7 +779,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // TRAVA PÓS-APROVAÇÃO: após Aprovar (billing_verified_by / billing_approved /
   // snapshot), campos editáveis ficam bloqueados. Salvar (rascunho) NÃO trava.
   // Diretoria, administrador e CEO podem destravar manualmente para corrigir.
-  const isBillingLocked = !!(mission?.billing_verified_by || mission?.billing_approved || mission?.snapshot_approved_by);
+  const aprovadorHumano = carimboAprovacaoHumana(mission?.snapshot_approved_by);
+  const isBillingLocked = !!(mission?.billing_verified_by || mission?.billing_approved || aprovadorHumano);
+  const isSnapshotFrozen = !!aprovadorHumano;
   // Prejuízo analisado: trava mais forte que a aprovação normal.
   // Administrador, Bárbara/Giovanna e Controller não destravam — só perfil Diretoria.
   const negativeMarginHardLocked = isOsNegativeMarginLocked(mission);
@@ -784,7 +799,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [paidUnlockOverride, setPaidUnlockOverride] = useState(false);
   const [paidUnlockReason, setPaidUnlockReason] = useState('');
   const [paidUnlocking, setPaidUnlocking] = useState(false);
-  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setAnalysisReason(''); setOpenAnalysisRequest(null); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); staleAutoResyncDoneRef.current = null; setPaidInvoiceLock({ bloqueado: false }); setPaidUnlockOverride(false); setPaidUnlockReason(''); }, [mission?.id]);
+  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setAnalysisReason(''); setOpenAnalysisRequest(null); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); setPaidInvoiceLock({ bloqueado: false }); setPaidUnlockOverride(false); setPaidUnlockReason(''); zeroFornecedorConfirmadoRef.current = false; setAvisoZeroFornecedor(null); }, [mission?.id]);
   useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); setAnalysisReason(''); setShowTollConfirmDialog(false); setTollConfirmAutoOpened(false); } }, [isOpen]);
 
   useEffect(() => {
@@ -1171,7 +1186,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       userManuallyEditedRef.current = false;
       dbValuesLoadedRef.current = false;
       openedTablesRef.current = null;
-      staleAutoResyncDoneRef.current = null;
       setUseSavedValues(false);
       setIsLoading(true);
       // Reseta apelidos do fornecedor para evitar carry-over de uma OS
@@ -1312,24 +1326,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               };
               setMission(fullMission);
 
-              // Se origem/destino existem mas KM previsto está zerado, recalcula automaticamente.
-              if (
-                  !mRes.data.is_same_os
-                  && mRes.data.status !== MissionStatus.CANCELLED
-                  && mRes.data.origin
-                  && mRes.data.destination
-                  && safeNumber(mRes.data.total_distance) <= 0
-              ) {
-                  void (async () => {
-                      const km = await fetchRouteDistanceKm(String(mRes.data.origin), String(mRes.data.destination));
-                      if (km != null && km > 0) {
-                          await supabase.from('missions').update({ total_distance: km, last_update: new Date().toISOString() }).eq('id', initialMission.id);
-                          setMission((prev) => prev ? { ...prev, totalDistance: km, total_distance: km } : prev);
-                          setMemoryLoaded(false);
-                      }
-                  })();
-              }
-
+              // Abertura não preenche KM previsto. O valor gravado só muda no Salvar.
               setEditStartKm(mRes.data.start_km ? String(mRes.data.start_km) : '');
               setEditEndKm(mRes.data.end_km ? String(mRes.data.end_km) : '');
               const st = mRes.data.start_time ? new Date(mRes.data.start_time) : null;
@@ -1384,6 +1381,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setShowRevenueReasonInput(false);
               setShowCostReasonInput(false);
 
+              fornecedorPedagioEditadoRef.current = false;
+              pedagioClienteEditadoRef.current = false;
               const dbToll = Math.max(0, mRes.data.toll_value || 0);
               // Pedágio do FORNECEDOR vem ESTRITAMENTE de toll_value_provider; se nulo, é 0.
               // NUNCA herda dbToll (pedágio do cliente) — era o "pedágio fantasma" que
@@ -2084,7 +2083,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // de valores manuais e snapshots aprovados.
           const revIntentional = isIntentionalBillingOverride(mission.revenue_edit_reason);
           const costIntentional = isIntentionalBillingOverride(mission.cost_edit_reason);
-          const hasFrozenOrApproved = !!(mission.billing_approved || mission.snapshot_approved_by || mission.billing_verified_by);
+          const hasFrozenOrApproved = !!(mission.billing_approved || carimboAprovacaoHumana(mission.snapshot_approved_by) || mission.billing_verified_by);
           const canResyncSaved = dbValuesLoadedRef.current
               && !isSavingRef.current
               && lockAllowsRecalc
@@ -2109,88 +2108,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               } else if (mission.is_same_os && currentCost !== 0) {
                   setCostInput('0,00');
               }
-
-              // Persiste automaticamente no banco (uma vez por abertura) para não exigir
-              // clique em "Restaurar Auto" nem novo Salvar só por regra de cálculo atualizada.
-              // Também materializa deslocamento (KM autorizado → R$ cliente/fornecedor).
-              // NUNCA altera snapshot_data aqui — snapshot aprovado é imutável.
-              const dispResolve = resolveDisplacementFromAuthorizedKm({
-                  dhlDeslocamentoKm: dhlDeslocKmRef.current,
-                  displacementValue: parseNumber(displacementInput),
-                  displacementValueProvider: parseNumber(displacementProviderInput),
-                  clientUnitPriceKm: financialData.client.unitPriceKm,
-                  providerUnitPriceKm: financialData.provider.unitCostKm,
-                  origin: mission.origin,
-                  isSameOs: !!mission.is_same_os,
-              });
-              const needDispClient = dispResolve.km > 0 && parseNumber(displacementInput) <= 0 && dispResolve.client > 0;
-              const needDispProvider =
-                  dispResolve.km > 0 &&
-                  !mission.is_same_os &&
-                  parseNumber(displacementProviderInput) <= 0 &&
-                  dispResolve.provider > 0;
-              if ((needRev || needCost || needDispClient || needDispProvider) && staleAutoResyncDoneRef.current !== mission.id) {
-                  staleAutoResyncDoneRef.current = mission.id;
-                  const r2 = (v: number) => Math.round(v * 100) / 100;
-                  const revServiceOnly = financialData.client.serviceTotal;
-                  const costServiceOnly = mission.is_same_os ? 0 : financialData.provider.serviceTotal;
-                  const toll = parseNumber(tollInput);
-                  const tollProv = mission.is_same_os ? 0 : parseNumber(tollProviderInput);
-                  const payload: Record<string, unknown> = {
-                      last_update: new Date().toISOString(),
-                  };
-                  if (needRev) {
-                      payload.revenue_value = r2(revServiceOnly);
-                      payload.revenue_edit_reason = '[Sistema] Recalculado pelo sistema — alinhado ao motor';
-                  }
-                  if (needCost) {
-                      payload.cost_value = r2(costServiceOnly);
-                      payload.cost_edit_reason = '[Sistema] Recalculado pelo sistema — alinhado ao motor';
-                  }
-                  if (needDispClient) payload.displacement_value = r2(dispResolve.client);
-                  if (needDispProvider) payload.displacement_value_provider = r2(dispResolve.provider);
-                  (async () => {
-                      try {
-                          const { error } = await supabase.from('missions').update(payload).eq('id', mission.id);
-                          if (error) throw error;
-                          setMission((prev) => prev ? {
-                              ...prev,
-                              ...(needRev ? { revenue_value: payload.revenue_value as number, revenue_edit_reason: String(payload.revenue_edit_reason || '') } : {}),
-                              ...(needCost ? { cost_value: payload.cost_value as number, cost_edit_reason: String(payload.cost_edit_reason || '') } : {}),
-                              ...(needDispClient ? { displacement_value: payload.displacement_value as number } : {}),
-                              ...(needDispProvider ? { displacement_value_provider: payload.displacement_value_provider as number } : {}),
-                          } : prev);
-                          await supabase.from('system_logs').insert([{
-                              user_name: 'Sistema',
-                              action_type: 'AUTO_RESYNC_BILLING',
-                              entity: 'Mission',
-                              entity_id: mission.id,
-                              details: JSON.stringify({
-                                  revenue: needRev ? r2(revServiceOnly) : null,
-                                  cost: needCost ? r2(costServiceOnly) : null,
-                                  displacement: needDispClient ? r2(dispResolve.client) : null,
-                                  displacementProvider: needDispProvider ? r2(dispResolve.provider) : null,
-                                  toll: r2(toll),
-                                  tollProvider: r2(tollProv),
-                                  clientExcessKm: financialData.client.excessKm,
-                                  clientExtraKmVal: r2(financialData.client.extraKmVal),
-                                  clientExcessHours: financialData.client.excessHours,
-                                  durationHours: financialData.durationHours,
-                                  snapshotUpdated: false,
-                              }),
-                          }]);
-                          showNotification(
-                              'Cálculo atualizado',
-                              needDispClient || needDispProvider
-                                  ? 'Deslocamento (KM autorizado) e valores alinhados automaticamente ao cálculo.'
-                                  : 'Valor salvo anteriormente foi alinhado automaticamente ao cálculo da tabela.',
-                              'success',
-                          );
-                      } catch (e) {
-                          console.warn('[Auto-resync billing] Falha ao persistir:', e);
-                      }
-                  })();
-              }
+              // A abertura só ajusta o número na tela. Receita, custo e deslocamento
+              // gravados mudam no Salvar ou no Restaurar Auto.
           }
 
           // Motor automático é fonte oficial na TELA apenas quando não há
@@ -2198,7 +2117,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (financialData.autoEngine?.active && !mission.is_same_os && !userManuallyEditedRef.current && !isSavingRef.current && !isControllerRole
               && !savedBillingFrozen
               && !isIntentionalBillingOverride(mission.cost_edit_reason)
-              && !(mission.billing_approved || mission.snapshot_approved_by || mission.billing_verified_by)) {
+              && !(mission.billing_approved || carimboAprovacaoHumana(mission.snapshot_approved_by) || mission.billing_verified_by)) {
               const engineCostTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
               const currentCostInput = parseNumber(costInput);
               if (engineCostTotal > 0 && Math.abs(currentCostInput - engineCostTotal) > 1) {
@@ -2213,7 +2132,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               && !savedBillingFrozen
               && !isIntentionalBillingOverride(mission.revenue_edit_reason)
               && !isIntentionalBillingOverride(mission.cost_edit_reason)
-              && !(mission.billing_approved || mission.snapshot_approved_by || mission.billing_verified_by)) {
+              && !(mission.billing_approved || carimboAprovacaoHumana(mission.snapshot_approved_by) || mission.billing_verified_by)) {
               const fmt = (v: number) => v.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               const calcRevTotal = financialData.client.total + parseNumber(displacementInput);
               const currentInput = parseNumber(revenueInput);
@@ -2326,6 +2245,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
 
   const handleTollChange = (val: string) => {
+      pedagioClienteEditadoRef.current = true;
       const oldToll = parseNumber(tollInput);
       const newToll = parseNumber(val);
       setTollInput(val);
@@ -2344,6 +2264,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleTollProviderChange = (val: string) => {
       if (mission?.is_same_os) return;
+      fornecedorPedagioEditadoRef.current = true;
       const oldTollProv = parseNumber(tollProviderInput);
       const newTollProv = parseNumber(val);
       setTollProviderInput(val);
@@ -2600,8 +2521,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       return { stage: 'operacional', label: `Aprovado por ${userName}` };
   };
 
-  const isSnapshotFrozen = !!(mission?.snapshot_approved_by);
-
   const currentApprovalStatus = useMemo(() => {
       const stages = approvalLog.map(l => l.stage);
       const hasAuditor = stages.includes('auditor');
@@ -2828,7 +2747,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       // Detecta se a OS já estava aprovada e quais valores mudaram nesta edição.
       // Quando há mudança em OS já aprovada, exige uma OBSERVAÇÃO curta que será
       // gravada no histórico permanente da OS (MissionEditHistory).
-      const wasAlreadyApproved = !!(mission.billing_approved || mission.snapshot_approved_by);
+      const wasAlreadyApproved = !!(mission.billing_approved || carimboAprovacaoHumana(mission.snapshot_approved_by));
       const origRevenueService = mission.revenue_value || 0;
       const origCost = mission.cost_value || 0;
       const origToll = mission.toll_value || 0;
@@ -2891,9 +2810,23 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
       }
 
+      const impactoZero = (fornecedorPedagioEditadoRef.current && !travarPedagioFornecedor && !isSameOs)
+        ? impactoTrocaFornecedorAusentePorZero({
+            tollValue: toll,
+            tollValueProvider: (mission as any).toll_value_provider,
+            clientName: mission.client,
+            isSameOs,
+            informado: parseNumber(tollProviderInput),
+          })
+        : null;
+      if (impactoZero && !zeroFornecedorConfirmadoRef.current) {
+          saveApproveRef.current = approve;
+          setAvisoZeroFornecedor(impactoZero);
+          return;
+      }
       const mudouPedagioAprovado = reeditandoPedagio && (
         pedagioAlterado(Number(mission.toll_value || 0), toll)
-        || pedagioAlterado(Number((mission as any).toll_value_provider || 0), tollProv)
+        || fornecedorPedagioMudou((mission as any).toll_value_provider, tollProv, fornecedorPedagioEditadoRef.current && !travarPedagioFornecedor)
       );
       if (mudouPedagioAprovado && !senhaPedagioOkRef.current) {
           saveApproveRef.current = approve;
@@ -2967,22 +2900,36 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
           const canReleaseBilling = stage === 'financeiro' || stage === 'diretoria' || stage === 'controller';
           const isApprovedForBillingEffective = lockingNegative || isApprovedForBilling;
+          const simulacaoSemAprovacao = carimboRecalculoAutomatico(mission.snapshot_approved_by) && mission.billing_approved !== true;
           const shouldSnapshot = lockingNegative || shouldWriteBillingSnapshot({
               approve: (approve && canReleaseBilling) || isApprovedForBillingEffective,
               billingApproved: isApprovedForBillingEffective,
-              existingSnapshot: mission.snapshot_data,
+              existingSnapshot: simulacaoSemAprovacao ? null : mission.snapshot_data,
           });
           
           const r2 = (v: number) => Math.round(v * 100) / 100;
-          const isSameOs = mission.is_same_os === true;
           const existingSnapshot = mission.snapshot_data && typeof mission.snapshot_data === 'object' && Object.keys(mission.snapshot_data).length > 0;
+          const pedagioAprovacao = montarAtualizacaoPedagio({
+              tollValueInformado: toll,
+              tollProviderOriginal: (mission as any).toll_value_provider,
+              tollProviderInformado: parseNumber(tollProviderInput),
+              fornecedorEditado: fornecedorPedagioEditadoRef.current && !travarPedagioFornecedor,
+              pedagioClienteEditado: pedagioClienteEditadoRef.current && !travarPedagioCliente,
+              isSameOs,
+              clientName: mission.client,
+              revenueServiceOnly: revServiceOnly,
+              displacementOriginal: (mission as any).displacement_value,
+              displacementInformado: displacement,
+              displacementProviderOriginal: (mission as any).displacement_value_provider,
+              displacementProviderInformado: dispProv,
+          });
           const basePayload: any = {
               revenue_value: r2(revServiceOnly),
               cost_value: isSameOs ? 0 : r2(costServiceOnly),
               toll_value: r2(toll),
-              displacement_value: r2(displacement),
               billing_approved: lockingNegative ? true : isApprovedForBilling,
               last_update: new Date().toISOString(),
+              ...pedagioAprovacao.patch,
           };
           if (lockingNegative) {
               const lockedAt = new Date().toISOString();
@@ -3018,15 +2965,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   hrExtraQtd: financialData.client.excessHours,
                   hrExtraTotal: financialData.client.extraHrVal,
                   durationHours: financialData.durationHours,
-                  tollVal: toll,
-                  tollProvider: tollProv,
+                  tollVal: pedagioAprovacao.snapshotPedagio.tollVal,
+                  tollProvider: pedagioAprovacao.snapshotPedagio.tollProvider,
                   displacementVal: displacement,
                   displacementProvider: isSameOs ? 0 : dispProv,
                   systemCalculatedRevenue: r2(calcRevTotal),
                   systemCalculatedCost: r2(calcCostTotal),
                   revenueServiceOnly: r2(revServiceOnly),
                   costServiceOnly: r2(costServiceOnly),
-                  totalGeral: r2(revServiceOnly + toll + displacement),
+                  totalGeral: pedagioAprovacao.snapshotPedagio.totalGeral,
                   iblFee: financialData.iblFee || 0
               };
               basePayload.snapshot_data = snapshotObj;
@@ -3034,17 +2981,22 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               basePayload.snapshot_approved_at = snapshotNow;
           } else if (shouldSnapshot) {
               const snapshotNow = new Date().toISOString();
-              basePayload.snapshot_data = buildMinimalBillingSnapshot({
-                  route: mission.origin && mission.destination
-                      ? `${(mission.origin || '').split(',')[0].trim()} X ${(mission.destination || '').split(',')[0].trim()}`
-                      : '-',
-                  revenueServiceOnly: r2(revServiceOnly),
-                  costServiceOnly: isSameOs ? 0 : r2(costServiceOnly),
-                  tollVal: r2(toll),
-                  tollProvider: isSameOs ? 0 : r2(tollProv),
-                  displacementVal: r2(displacement),
-                  displacementProvider: isSameOs ? 0 : r2(dispProv),
-              });
+              basePayload.snapshot_data = {
+                  ...buildMinimalBillingSnapshot({
+                      route: mission.origin && mission.destination
+                          ? `${(mission.origin || '').split(',')[0].trim()} X ${(mission.destination || '').split(',')[0].trim()}`
+                          : '-',
+                      revenueServiceOnly: r2(revServiceOnly),
+                      costServiceOnly: isSameOs ? 0 : r2(costServiceOnly),
+                      tollVal: pedagioAprovacao.snapshotPedagio.tollVal,
+                      tollProvider: pedagioAprovacao.snapshotPedagio.tollProvider ?? 0,
+                      displacementVal: r2(displacement),
+                      displacementProvider: isSameOs ? 0 : r2(dispProv),
+                  }),
+                  tollVal: pedagioAprovacao.snapshotPedagio.tollVal,
+                  tollProvider: pedagioAprovacao.snapshotPedagio.tollProvider,
+                  totalGeral: pedagioAprovacao.snapshotPedagio.totalGeral,
+              };
               basePayload.snapshot_approved_by = userName;
               basePayload.snapshot_approved_at = snapshotNow;
           }
@@ -3118,22 +3070,25 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
           // Controller/Plínio grava o fornecedor e, se o financeiro ainda não auditou, o pedágio do cliente.
           const fullPayload = isProviderOnlyUser
-              ? {
-                  ...buildProviderOnlyMissionPayload({
-                      costValue: isSameOs ? 0 : r2(costServiceOnly),
-                      tollValue: r2(toll),
-                      persistClientToll: !travaPedagioClienteFinanceiro,
-                      tollValueProvider: isSameOs ? 0 : r2(tollProv),
-                      displacementValueProvider: isSameOs ? 0 : r2(dispProv),
-                      costEditReason: reasonFields.cost_edit_reason || null,
-                      lastUpdate: basePayload.last_update,
-                  }),
-                  ...(isEditingProvOpsData ? opsSaveFields : {}),
-              }
+              ? (() => {
+                  const payloadProvedor: Record<string, unknown> = {
+                      ...buildProviderOnlyMissionPayload({
+                          costValue: isSameOs ? 0 : r2(costServiceOnly),
+                          tollValue: r2(toll),
+                          persistClientToll: !travaPedagioClienteFinanceiro,
+                          tollValueProvider: isSameOs ? 0 : r2(tollProv),
+                          displacementValueProvider: isSameOs ? 0 : r2(dispProv),
+                          costEditReason: reasonFields.cost_edit_reason || null,
+                          lastUpdate: basePayload.last_update,
+                      }),
+                      ...(isEditingProvOpsData ? opsSaveFields : {}),
+                  };
+                  if (!('toll_value_provider' in pedagioAprovacao.patch)) delete payloadProvedor.toll_value_provider;
+                  if (!('displacement_value_provider' in pedagioAprovacao.patch)) delete payloadProvedor.displacement_value_provider;
+                  return payloadProvedor;
+              })()
               : {
                   ...basePayload,
-                  toll_value_provider: isSameOs ? 0 : r2(tollProv),
-                  displacement_value_provider: isSameOs ? 0 : r2(dispProv),
                   ...reasonFields,
                   ...opsSaveFields,
               };
@@ -3154,14 +3109,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       payload: { ...(fullPayload as Record<string, unknown>) },
                       billingApproved: isApprovedForBilling,
                       userName,
-                      minimalSnapshot: buildMinimalBillingSnapshot({
-                          revenueServiceOnly: r2(revServiceOnly),
-                          costServiceOnly: isSameOs ? 0 : r2(costServiceOnly),
-                          tollVal: r2(toll),
-                          tollProvider: isSameOs ? 0 : r2(tollProv),
-                          displacementVal: r2(displacement),
-                          displacementProvider: isSameOs ? 0 : r2(dispProv),
-                      }),
+                      minimalSnapshot: {
+                          ...buildMinimalBillingSnapshot({
+                              revenueServiceOnly: r2(revServiceOnly),
+                              costServiceOnly: isSameOs ? 0 : r2(costServiceOnly),
+                              tollVal: pedagioAprovacao.snapshotPedagio.tollVal,
+                              tollProvider: pedagioAprovacao.snapshotPedagio.tollProvider ?? 0,
+                              displacementVal: r2(displacement),
+                              displacementProvider: isSameOs ? 0 : r2(dispProv),
+                          }),
+                          tollVal: pedagioAprovacao.snapshotPedagio.tollVal,
+                          tollProvider: pedagioAprovacao.snapshotPedagio.tollProvider,
+                          totalGeral: pedagioAprovacao.snapshotPedagio.totalGeral,
+                      },
                   })
                   : (() => {
                       const { snapshot_data, snapshot_approved_by, snapshot_approved_at, ...rest } = fullPayload as any;
@@ -3190,13 +3150,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
               // Último recurso do controller: custo + pedágio + deslocamento + motivo
               if (result.error && isProviderOnlyUser && reasonFields.cost_edit_reason) {
-                  result = await supabase.from('missions').update({
+                  const ultimoRecurso: Record<string, unknown> = {
                       cost_value: isSameOs ? 0 : r2(costServiceOnly),
                       toll_value_provider: isSameOs ? 0 : r2(tollProv),
                       displacement_value_provider: isSameOs ? 0 : r2(dispProv),
                       cost_edit_reason: reasonFields.cost_edit_reason,
                       last_update: basePayload.last_update,
-                  }).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, toll_value_provider, last_update').single();
+                  };
+                  if (!('toll_value_provider' in pedagioAprovacao.patch)) delete ultimoRecurso.toll_value_provider;
+                  if (!('displacement_value_provider' in pedagioAprovacao.patch)) delete ultimoRecurso.displacement_value_provider;
+                  result = await supabase.from('missions').update(ultimoRecurso).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, toll_value_provider, last_update').single();
               }
               if (basePayload.snapshot_data && !result.error) {
                   await supabase.from('system_logs').insert([{
@@ -3210,7 +3173,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           if (result.error) throw result.error;
           if (!result.data) throw new Error('Falha na persistência: registro não retornado após UPDATE');
-          if (mudouPedagioAprovado) {
+          if (impactoZero && Number(pedagioAprovacao.patch.toll_value_provider) === 0) {
+              const ocorrenciaZero = await gravarOcorrenciaFornecedorAusenteParaZero(supabase, {
+                  missionId: String(mission.id),
+                  quem: userName,
+                  impacto: impactoZero,
+              });
+              if (!ocorrenciaZero.ok) throw new Error(ocorrenciaZero.erro);
+              zeroFornecedorConfirmadoRef.current = false;
+              setReeditarPedagioAprovado(false);
+          } else if (mudouPedagioAprovado) {
               const ocorrencia = await gravarOcorrenciaPedagioAprovado(supabase, {
                   missionId: String(mission.id),
                   quem: userName,
@@ -3301,7 +3273,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               console.error('[AUDIT] Divergência pós-salvamento detectada!', { esperado: { rev: revServiceOnly, toll }, banco: { rev: savedRevCheck, toll: savedTollCheck } });
           }
 
-          if (!shouldSnapshot && mission.snapshot_approved_by && mission.snapshot_data) {
+          if (!shouldSnapshot && carimboAprovacaoHumana(mission.snapshot_approved_by) && mission.snapshot_data) {
               const existingSnap = mission.snapshot_data as any;
               const usedTableNow = clientTables.find((t: any) => t.id.toString() === (manualClientTableId || financialData?.client.tableId));
               const newClientTableId = manualClientTableId || financialData?.client.tableId || null;
@@ -3339,16 +3311,32 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   r2(existingSnap.hrExtraTotal || 0) !== r2(newHrExtraTotal)
               );
 
-              const shouldResyncSnapshot = isProviderOnlyUser
-                  ? costChanged || tollProvChanged || dispProvChanged || providerTableChanged
-                  : revenueChanged || costChanged || tollChanged || tollProvChanged
-                      || dispChanged || dispProvChanged || tableChanged
-                      || providerTableChanged || breakdownChanged;
-              if (shouldResyncSnapshot) {
+              const reescreverSnapshot = deveReescreverSnapshotAprovado({
+                  revenueChanged: isProviderOnlyUser ? false : revenueChanged,
+                  costChanged,
+                  tollChanged: isProviderOnlyUser ? false : tollChanged,
+                  tollProvChanged,
+                  dispChanged: isProviderOnlyUser ? false : dispChanged,
+                  dispProvChanged,
+                  tableChanged: isProviderOnlyUser ? false : tableChanged,
+                  providerTableChanged,
+                  breakdownChanged: isProviderOnlyUser ? false : breakdownChanged,
+                  fornecedorEditado: fornecedorPedagioEditadoRef.current && !travarPedagioFornecedor && !isSameOs,
+                  fornecedorOriginalAusente: classificarFornecedorGravado((mission as any).toll_value_provider) === 'ausente',
+                  pedagioClienteEditado: pedagioClienteEditadoRef.current && !travarPedagioCliente,
+                  franquiaSnapshotZerada: franquiaSnapshotLoteZerada(existingSnap),
+              });
+              const tollValPreservado = (pedagioClienteEditadoRef.current && !travarPedagioCliente)
+                  ? r2(toll)
+                  : existingSnap.tollVal;
+              const tollProviderPreservado = (fornecedorPedagioEditadoRef.current && !travarPedagioFornecedor && !isSameOs)
+                  ? pedagioAprovacao.snapshotPedagio.tollProvider
+                  : existingSnap.tollProvider;
+              if (reescreverSnapshot) {
                   const updatedSnap = isProviderOnlyUser ? {
                       ...existingSnap,
                       costServiceOnly: r2(costServiceOnly),
-                      tollProvider: r2(tollProv),
+                      tollProvider: tollProviderPreservado,
                       displacementProvider: r2(dispProv),
                       providerTableId: newProviderTableId,
                       snapshot_resynced_at: new Date().toISOString(),
@@ -3358,11 +3346,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       // valores financeiros
                       revenueServiceOnly: r2(revServiceOnly),
                       costServiceOnly: r2(costServiceOnly),
-                      tollVal: r2(toll),
-                      tollProvider: r2(tollProv),
+                      tollVal: tollValPreservado,
+                      tollProvider: tollProviderPreservado,
                       displacementVal: r2(displacement),
                       displacementProvider: r2(dispProv),
-                      totalGeral: r2(revServiceOnly + toll + displacement),
+                      totalGeral: r2(revServiceOnly + (Number(tollValPreservado) || 0) + displacement),
                       // tabela e breakdown atual — mantém o snapshot
                       // alinhado com a tabela escolhida na auditoria
                       clientTableId: newClientTableId,
@@ -3726,6 +3714,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           return false;
       });
   }, [providerTables, mission?.provider, providerAliases]);
+
+  const confirmarZeroFornecedor = () => {
+      zeroFornecedorConfirmadoRef.current = true;
+      setAvisoZeroFornecedor(null);
+      void handleUpdate(saveApproveRef.current);
+  };
 
   const confirmarSenhaPedagio = async () => {
       setSenhaPedagioChecando(true);
@@ -6866,6 +6860,38 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                 data-testid="button-confirmar-senha-pedagio"
               >
                 {senhaPedagioChecando ? 'Conferindo...' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {avisoZeroFornecedor && (
+        <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4" data-testid="modal-confirmar-zero-fornecedor">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-3">
+            <h3 className="text-sm font-black uppercase text-slate-900">Confirmar fornecedor zero</h3>
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              O fornecedor estava ausente. Gravar zero muda o pedágio cobrável, o custo e o lucro.
+            </p>
+            <div className="text-[11px] text-slate-800 space-y-1">
+              <p>Pedágio cobrável: de R$ {avisoZeroFornecedor.clienteAntes.toFixed(2)} para R$ {avisoZeroFornecedor.clienteDepois.toFixed(2)}</p>
+              <p>Custo do fornecedor: de ausente (leitura R$ {avisoZeroFornecedor.fornecedorAntes.toFixed(2)}) para R$ {avisoZeroFornecedor.fornecedorDepois.toFixed(2)}</p>
+              <p>Lucro do pedágio: de R$ {avisoZeroFornecedor.lucroAntes.toFixed(2)} para R$ {avisoZeroFornecedor.lucroDepois.toFixed(2)}</p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { zeroFornecedorConfirmadoRef.current = false; setAvisoZeroFornecedor(null); }}
+                className="px-3 py-2 text-[10px] font-black uppercase text-slate-500"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarZeroFornecedor}
+                className="px-4 py-2 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase"
+                data-testid="button-confirmar-zero-fornecedor"
+              >
+                Gravar zero
               </button>
             </div>
           </div>

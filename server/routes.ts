@@ -5,6 +5,7 @@ import { createClient, type RealtimeChannel, type SupabaseClient } from "@supaba
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseServerKey, getSupabaseServiceRoleKey, getSupabaseUrl } from "./supabaseConfig";
 import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
+import { preservarParPedagioNoRecalculo } from "../lib/toll/clientTollBilling";
 import { computeRouteDistanceKm, computeRouteProgressKm, normalizeRouteAddress } from "../lib/routeDistance";
 import fs from "fs";
 import path from "path";
@@ -728,21 +729,27 @@ export async function registerRoutes(
           const revDiff = Math.abs(calcRev - savedRev);
           const costDiff = Math.abs(calcCost - savedCost);
 
-          const calcToll = r2(fd.tollValue || 0);
+          const parPedagio = preservarParPedagioNoRecalculo({
+            tollValue: m.toll_value,
+            tollValueProvider: m.toll_value_provider,
+            isSameOs: !!m.is_same_os,
+          });
           const oldToll = r2(m.toll_value || 0);
-          const tollDiff = Math.abs(calcToll - oldToll);
+          const oldTollProv = m.toll_value_provider == null ? null : r2(Number(m.toll_value_provider) || 0);
+          const tollMudou = Math.abs(parPedagio.toll_value - oldToll) > 0.009
+            || (parPedagio.escreverFornecedor && oldTollProv != null && Math.abs((parPedagio.toll_value_provider ?? 0) - oldTollProv) > 0.009);
 
-          if (revDiff > 1 || costDiff > 1 || tollDiff > 0.5) {
-            const tollProv = m.is_same_os ? 0 : calcToll;
-            await sb.from('missions').update({
+          if (revDiff > 1 || costDiff > 1 || tollMudou) {
+            const payloadPedagio: Record<string, unknown> = {
               revenue_value: calcRev,
               cost_value: calcCost,
-              toll_value: calcToll,
-              toll_value_provider: r2(tollProv),
-              last_update: new Date().toISOString()
-            }).eq('id', m.id);
+              toll_value: parPedagio.toll_value,
+              last_update: new Date().toISOString(),
+            };
+            if (parPedagio.escreverFornecedor) payloadPedagio.toll_value_provider = parPedagio.toll_value_provider;
+            await sb.from('missions').update(payloadPedagio).eq('id', m.id);
             updated++;
-            details.push({ id: m.id, client: m.client, oldRev: savedRev, newRev: calcRev, oldCost: savedCost, newCost: calcCost, oldToll: oldToll, newToll: calcToll, revDiff: r2(revDiff), costDiff: r2(costDiff) });
+            details.push({ id: m.id, client: m.client, oldRev: savedRev, newRev: calcRev, oldCost: savedCost, newCost: calcCost, oldToll, newToll: parPedagio.toll_value, tollOrigem: parPedagio.origem, revDiff: r2(revDiff), costDiff: r2(costDiff) });
           } else {
             skipped++;
           }
@@ -3776,7 +3783,12 @@ export async function registerRoutes(
       const r2 = (n: number) => Math.round(Number(n || 0) * 100) / 100;
       const newRevenue = r2(result.client.serviceTotal || 0);
       const newCost = mission.is_same_os ? 0 : r2(result.provider.serviceTotal || 0);
-      const newToll = r2(result.tollValue ?? mission.toll_value ?? 0);
+      const parPedagio = preservarParPedagioNoRecalculo({
+        tollValue: mission.toll_value,
+        tollValueProvider: mission.toll_value_provider,
+        isSameOs: !!mission.is_same_os,
+      });
+      const newToll = parPedagio.toll_value;
       const oldRevenue = Number(mission.revenue_value || 0);
       const oldCost = Number(mission.cost_value || 0);
 
@@ -3784,12 +3796,14 @@ export async function registerRoutes(
         return res.json({ skipped: true, reason: 'no_change', revenue: oldRevenue, cost: oldCost });
       }
 
-      const { error: upErr } = await supabaseAdmin.from('missions').update({
+      const payloadCancel: Record<string, unknown> = {
         revenue_value: newRevenue,
         cost_value: newCost,
         toll_value: newToll,
         last_update: new Date().toISOString(),
-      }).eq('id', missionId);
+      };
+      if (parPedagio.escreverFornecedor) payloadCancel.toll_value_provider = parPedagio.toll_value_provider;
+      const { error: upErr } = await supabaseAdmin.from('missions').update(payloadCancel).eq('id', missionId);
       if (upErr) return res.status(500).json({ error: upErr.message });
 
       try {
@@ -3876,13 +3890,20 @@ export async function registerRoutes(
         const newRevenue = result.client.serviceTotal || 0;
         const newCost = mission.is_same_os ? 0 : (result.provider.serviceTotal || 0);
 
-        await supabaseAdmin.from('missions').update({
+        const parPedagio = preservarParPedagioNoRecalculo({
+          tollValue: mission.toll_value,
+          tollValueProvider: mission.toll_value_provider,
+          isSameOs: !!mission.is_same_os,
+        });
+        const payloadForca: Record<string, unknown> = {
           revenue_value: newRevenue,
           cost_value: newCost,
-          toll_value: result.tollValue || mission.toll_value || 0,
+          toll_value: parPedagio.toll_value,
           billing_verified_by: null,
           snapshot_approved_by: null,
-        }).eq('id', missionId);
+        };
+        if (parPedagio.escreverFornecedor) payloadForca.toll_value_provider = parPedagio.toll_value_provider;
+        await supabaseAdmin.from('missions').update(payloadForca).eq('id', missionId);
 
         try {
           await supabaseAdmin.from('system_logs').insert([{
@@ -3893,7 +3914,7 @@ export async function registerRoutes(
             details: JSON.stringify({
               source: '/api/missions/:id/force-recalculate',
               before: { revenue_value: mission.revenue_value, cost_value: mission.cost_value, toll_value: mission.toll_value },
-              after: { revenue_value: newRevenue, cost_value: newCost, toll_value: result.tollValue || mission.toll_value || 0 },
+              after: { revenue_value: newRevenue, cost_value: newCost, toll_value: parPedagio.toll_value, tollOrigem: parPedagio.origem },
               confirmed_overwrite: !!(mission.revenue_edit_reason || mission.cost_edit_reason),
             })
           }]);
@@ -3972,58 +3993,23 @@ export async function registerRoutes(
 
           const newRevenue = calc.client.serviceTotal || 0;
           const newCost = raw.is_same_os ? 0 : (calc.provider.serviceTotal || 0);
-          const newToll = calc.tollValue || raw.toll_value || 0;
+          const parPedagio = preservarParPedagioNoRecalculo({
+            tollValue: raw.toll_value,
+            tollValueProvider: raw.toll_value_provider,
+            isSameOs: !!raw.is_same_os,
+          });
+          const newToll = parPedagio.toll_value;
           const oldRevenue = raw.revenue_value || 0;
           const oldCost = raw.cost_value || 0;
-          const clientServiceOnly = calc.client.serviceTotal || 0;
-
-          const snapData = {
-            activationFee: calc.client.base || 0,
-            kmExtraTotal: calc.client.extraKmVal || 0,
-            hrExtraTotal: calc.client.extraHrVal || 0,
-            kmExtraQtd: calc.client.excessKm || 0,
-            hrExtraQtd: calc.client.excessHours || 0,
-            tollVal: newToll,
-            franchiseKm: calc.client.franchiseKm || 0,
-            franchiseHours: calc.client.franchiseHours || 0,
-            unitKm: calc.client.unitPriceKm || 0,
-            unitHr: calc.client.unitPriceHour || 0,
-            kmTotal: raw.end_km && raw.start_km ? (raw.end_km - raw.start_km) : (raw.total_distance || 0),
-            durationHours: calc.durationHours || 0,
-            revenueServiceOnly: clientServiceOnly,
-            costServiceOnly: calc.provider.serviceTotal || 0,
-            totalGeral: clientServiceOnly + newToll,
-            clientTableId: calc.client.tableId || null,
-            providerTableId: (calc.provider.tableId && !String(calc.provider.tableId).startsWith('auto-')) ? calc.provider.tableId : null,
-            tableName: calc.client.tableName || '',
-            route: (() => {
-              const co = (raw.origin || '').split(',')[0].split('-')[0].trim();
-              const cd = (raw.destination || '').split(',')[0].split('-')[0].trim();
-              return co && cd ? `${co} X ${cd}` : co || cd || raw.region || '-';
-            })(),
-            approved_by: 'Sistema (Recalcular e Comparar)',
-            approved_at: new Date().toISOString(),
-            tollProvider: calc.tollValue || 0,
-            systemCalculatedRevenue: newRevenue,
-            systemCalculatedCost: newCost,
-          };
-
-          await supabaseAdmin.from('missions').update({
+          const payloadComparar: Record<string, unknown> = {
             revenue_value: newRevenue,
             cost_value: newCost,
             toll_value: newToll,
-            snapshot_data: snapData,
-            snapshot_approved_by: 'Sistema (Recalcular e Comparar)',
-            snapshot_approved_at: new Date().toISOString(),
-          }).eq('id', raw.id);
-
-          await supabaseAdmin.from('system_logs').insert({
-            entity: 'BillingSnapshot',
-            entity_id: raw.id,
-            action_type: 'snapshot_save',
-            details: JSON.stringify(snapData),
-            created_by: 'Sistema (Recalcular e Comparar)',
-          });
+          };
+          if (parPedagio.escreverFornecedor) payloadComparar.toll_value_provider = parPedagio.toll_value_provider;
+          // Recálculo não é aprovação: não grava snapshot_approved_by nem log BillingSnapshot.
+          // Carimbo antigo permanece no banco. Aprovação humana posterior cria o snapshot oficial.
+          await supabaseAdmin.from('missions').update(payloadComparar).eq('id', raw.id);
 
           try {
             await supabaseAdmin.from('system_logs').insert([{
@@ -4035,17 +4021,16 @@ export async function registerRoutes(
                 source: 'POST /api/billing/recalculate-client',
                 client: clientName,
                 period: { startDate: startDate || null, endDate: endDate || null },
+                aprovacao: false,
                 before: {
                   revenue_value: oldRevenue,
                   cost_value: oldCost,
                   toll_value: raw.toll_value ?? null,
-                  snapshot_data: raw.snapshot_data ?? null,
                 },
                 after: {
                   revenue_value: newRevenue,
                   cost_value: newCost,
                   toll_value: newToll,
-                  snapshot_data: snapData,
                 },
               })
             }]);
@@ -4209,13 +4194,20 @@ export async function registerRoutes(
             await supabaseAdmin.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', m.id);
 
             const newRevenue = result.client.serviceTotal || 0;
-            const { error: upErr } = await supabaseAdmin.from('missions').update({
+            const parPedagio = preservarParPedagioNoRecalculo({
+              tollValue: m.toll_value,
+              tollValueProvider: m.toll_value_provider,
+              isSameOs: !!m.is_same_os,
+            });
+            const payloadDiv: Record<string, unknown> = {
               revenue_value: newRevenue,
               cost_value: m.is_same_os ? 0 : calcCost,
-              toll_value: result.tollValue || m.toll_value || 0,
+              toll_value: parPedagio.toll_value,
               billing_verified_by: null,
               snapshot_approved_by: null,
-            }).eq('id', m.id);
+            };
+            if (parPedagio.escreverFornecedor) payloadDiv.toll_value_provider = parPedagio.toll_value_provider;
+            const { error: upErr } = await supabaseAdmin.from('missions').update(payloadDiv).eq('id', m.id);
 
             if (upErr) { errorList.push(`${m.id}: ${upErr.message}`); continue; }
 
@@ -4235,7 +4227,7 @@ export async function registerRoutes(
                   after: {
                     revenue_value: newRevenue,
                     cost_value: m.is_same_os ? 0 : calcCost,
-                    toll_value: result.tollValue || m.toll_value || 0,
+                    toll_value: parPedagio.toll_value,
                   },
                   diffCost: Math.round((calcCost - savedCost) * 100) / 100,
                 })

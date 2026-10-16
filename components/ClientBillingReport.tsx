@@ -11,7 +11,8 @@ import { resolveBoletimClientLineTotal } from '../lib/billing/boletimLineTotal';
 import { resolveDhlCancelledSheetWindow, type DhlEndTimeHistory } from '../lib/billing/dhlCancelledSheetWindow';
 import { fetchAllPages } from '../lib/supabasePaging';
 import { resolveStoredClientToll, resolveStoredProviderToll } from '../lib/toll/clientTollBilling';
-import { computeDhlBand, findDhlAutoClient, selectDhlClientTable, DHL_CLIENT_NAME } from '../lib/dhlAutoTableSelector';
+import { carimboAprovacaoHumana, carimboRecalculoAutomatico, devePreservarDetalhamentoRegistrado, estadoDetalhamentoSnapshot, origemSnapshotFinanceiro, primeiroLogDepoisDoAutomatico, ressincronizadoPorHumano, textoLeituraSnapshot, DIVERGENCIA_DETALHAMENTO_INCOMPLETO, DIVERGENCIA_DETALHAMENTO_ZERADO, DIVERGENCIA_SNAPSHOT_INVALIDO } from '../lib/missionSnapshot';
+import { computeDhlBand, findDhlAutoClient, franquiaKmBoletimAprovado, selectDhlClientTable, DHL_CLIENT_NAME } from '../lib/dhlAutoTableSelector';
 import MissionFinancialModal from './MissionFinancialModal';
 
 import { generateContent } from '../lib/gemini';
@@ -504,7 +505,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 }
                 const updated = enrichedMissions.map((m: any) => {
                     const snap = snapMap[m.id];
-                    if (snap && !m.snapshot_approved_by) {
+                    if (snap && !m.snapshot_approved_by && !carimboRecalculoAutomatico(snap.approved_by)) {
                         return { ...m, snapshot_data: snap, snapshot_approved_by: snap.approved_by || 'Sistema', snapshot_approved_at: snap.approved_at };
                     }
                     return m;
@@ -1052,7 +1053,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         return `GERAL - ${month} /${year} - ${fmtDateDisp(startDate)} A ${fmtDateDisp(endDate)}`;
     };
 
-    const hasFrozenMissions = useMemo(() => missions.some(m => m.snapshot_approved_by), [missions]);
+    const hasFrozenMissions = useMemo(() => missions.some(m => !!carimboAprovacaoHumana(m.snapshot_approved_by)), [missions]);
 
     const rowsData = useMemo(() => {
         return missions.map(m => {
@@ -1140,9 +1141,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 };
             }
             const snap = m.snapshot_data;
-            const hasValidSnapshot = !!(m.snapshot_approved_by && snap);
+            const aprovadorHumano = carimboAprovacaoHumana(m.snapshot_approved_by);
+            const estadoDetalhe = estadoDetalhamentoSnapshot(snap);
+            const origemDetalhe = origemSnapshotFinanceiro(m.snapshot_approved_by, snap);
+            const preservarDetalhamento = devePreservarDetalhamentoRegistrado({
+                billingApproved: m.billing_approved === true,
+                carimbo: m.snapshot_approved_by,
+                snapshot: snap,
+            });
+            const exibirRegistrado = !!(preservarDetalhamento && snap && (estadoDetalhe === 'valido' || estadoDetalhe === 'zerado'));
 
-            if (hasValidSnapshot && snap) {
+            if (exibirRegistrado && snap) {
                 const useBase = snap.activationFee ?? 0;
                 const useKmEx = snap.kmExtraTotal ?? 0;
                 const useHrEx = snap.hrExtraTotal ?? 0;
@@ -1182,31 +1191,14 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     wasManuallyEdited,
                 });
 
-                // FALLBACK p/ snapshots legados: se franquia zerada mas há cálculo possível,
-                // busca os dados da tabela real para exibição (totais financeiros permanecem congelados)
-                let snapFranchiseHours = snap.franchiseHours ?? 0;
+                // Franquia zerada permanece a gravada. A tabela viva não completa o snapshot.
+                const snapFranchiseHours = snap.franchiseHours ?? 0;
                 let snapFranchiseKm = snap.franchiseKm ?? 0;
-                let snapUnitHr = snap.unitHr ?? 0;
-                let snapUnitKm = snap.unitKm ?? 0;
-                let snapHrExtraQtd = snap.hrExtraQtd ?? 0;
-                let snapKmExtraQtd = snap.kmExtraQtd ?? 0;
-                let snapDurationHours = snap.durationHours ?? 0;
-
-                if (snapFranchiseHours === 0 && snapFranchiseKm === 0 && snapUnitHr === 0 && snapUnitKm === 0) {
-                    try {
-                        const finFallback = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date());
-                        const tblFallback = priceTables.find(t => t.id.toString() === finFallback.client.tableId);
-                        if (tblFallback) {
-                            snapFranchiseHours = tblFallback.franchise_hours ?? 0;
-                            snapFranchiseKm = tblFallback.franchise_km ?? 0;
-                            snapUnitHr = tblFallback.price_per_extra_hour ?? 0;
-                            snapUnitKm = tblFallback.price_per_extra_km ?? 0;
-                            snapHrExtraQtd = finFallback.client.excessHours ?? 0;
-                            snapKmExtraQtd = finFallback.client.excessKm ?? 0;
-                            snapDurationHours = finFallback.durationHours ?? 0;
-                        }
-                    } catch (e) { /* mantém zeros se falhar */ }
-                }
+                const snapUnitHr = snap.unitHr ?? 0;
+                const snapUnitKm = snap.unitKm ?? 0;
+                const snapHrExtraQtd = snap.hrExtraQtd ?? 0;
+                const snapKmExtraQtd = snap.kmExtraQtd ?? 0;
+                const snapDurationHours = snap.durationHours ?? 0;
 
                 const isCancelledSnap = (m.status || '').toString().toLowerCase().includes('cancel');
                 // OS executada e cancelada depois (hora de fim real) mostra KM real; só cancelada antes zera.
@@ -1215,10 +1207,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const kmTotalRawSnap = (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
                     : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
                 const kmTotal = cancelledBeforeSnap ? 0 : kmTotalRawSnap;
-                // Sincroniza KM FRAN com a banda DHL do KM real, mesmo em snapshots congelados.
-                if (isDhlBilling && kmTotal > 0) {
-                    snapFranchiseKm = computeDhlBand(kmTotal);
-                }
+                // OS aprovada conserva a franquia gravada. A banda DHL só aparece no aviso.
+                snapFranchiseKm = franquiaKmBoletimAprovado({
+                    billingApproved: m.billing_approved === true,
+                    isDhl: isDhlBilling,
+                    kmTotal,
+                    franquiaGravada: snapFranchiseKm,
+                });
 
                 const refCidades2 = snap.route || (() => {
                     const co = extractCityFromAddress(m.origin || '');
@@ -1266,7 +1261,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     totalGeral: useTotal,
                     franchiseHoursFmt: fmtFranchiseHr(snapFranchiseHours),
                     frozen: true,
-                    frozenBy: m.snapshot_approved_by,
+                    frozenBy: aprovadorHumano,
+                    origemSnapshot: origemDetalhe,
+                    homologadoPorPessoa: origemDetalhe === 'humana',
+                    semDetalhamento: false,
+                    divergenciaDetalhamento: estadoDetalhe === 'zerado' ? DIVERGENCIA_DETALHAMENTO_ZERADO : null,
+                    textoLeitura: textoLeituraSnapshot({
+                        origem: origemDetalhe,
+                        aprovador: aprovadorHumano,
+                        ressincronizadoPor: ressincronizadoPorHumano(snap),
+                        divergencia: estadoDetalhe === 'zerado' ? DIVERGENCIA_DETALHAMENTO_ZERADO : null,
+                    }),
                     referenceNumber: m.reference_number || '',
                     seNumber: (m as any).dhl_se_number || '',
                     smNumber: (m as any).dhl_sm_number || '',
@@ -1335,6 +1340,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const durationHours = fin.durationHours;
 
             const totalGeral = savedRevenue + tollVal + dispValN;
+            const semDetalhamento = m.billing_approved === true || origemDetalhe === 'humana';
+            const divergenciaSemDetalhe = estadoDetalhe === 'incompleto'
+                ? DIVERGENCIA_DETALHAMENTO_INCOMPLETO
+                : DIVERGENCIA_SNAPSHOT_INVALIDO;
 
             const cargoPlate = m._clientVehicle?.plate || '-';
 
@@ -1348,11 +1357,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 id: (m.id || '').replace('GTM-', ''),
                 route: refCidades,
                 client: displayClientName,
-                activationFee,
-                franchiseHours,
-                franchiseKm,
-                unitHr,
-                unitKm,
+                activationFee: semDetalhamento ? null : activationFee,
+                franchiseHours: semDetalhamento ? null : franchiseHours,
+                franchiseKm: semDetalhamento ? null : franchiseKm,
+                unitHr: semDetalhamento ? null : unitHr,
+                unitKm: semDetalhamento ? null : unitKm,
                 tollLabel: 'À PARTE',
                 status: 'CONCLUÍDO',
                 missionStatus: m.status || 'Concluída',
@@ -1368,20 +1377,25 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 kmTotal,
                 timeStart: fmtTime(effStartTime),
                 timeEnd: fmtTime(effEndTime),
-                timeTotal: cancelledBefore ? fmtHHMM(0) : fmtHHMM(durationHours),
-                kmExtraQtd,
-                kmExtraUnit: unitKm,
-                kmExtraTotal,
-                hrExtraQtd,
-                hrExtraUnit: unitHr,
-                hrExtraTotal,
-                escoltaVal: activationFee,
+                timeTotal: semDetalhamento ? '—' : (cancelledBefore ? fmtHHMM(0) : fmtHHMM(durationHours)),
+                kmExtraQtd: semDetalhamento ? 0 : kmExtraQtd,
+                kmExtraUnit: semDetalhamento ? null : unitKm,
+                kmExtraTotal: semDetalhamento ? 0 : kmExtraTotal,
+                hrExtraQtd: semDetalhamento ? 0 : hrExtraQtd,
+                hrExtraUnit: semDetalhamento ? null : unitHr,
+                hrExtraTotal: semDetalhamento ? 0 : hrExtraTotal,
+                escoltaVal: semDetalhamento ? null : activationFee,
                 tollVal,
                 displacementVal: dispValN,
                 totalGeral,
-                franchiseHoursFmt: fmtFranchiseHr(franchiseHours),
+                franchiseHoursFmt: semDetalhamento ? '—' : fmtFranchiseHr(franchiseHours),
                 frozen: false,
                 frozenBy: null as string | null,
+                origemSnapshot: origemDetalhe,
+                homologadoPorPessoa: false,
+                semDetalhamento,
+                divergenciaDetalhamento: semDetalhamento ? divergenciaSemDetalhe : null,
+                textoLeitura: semDetalhamento ? divergenciaSemDetalhe : null,
                 referenceNumber: m.reference_number || '',
                 seNumber: (m as any).dhl_se_number || '',
                 smNumber: (m as any).dhl_sm_number || '',
@@ -2360,6 +2374,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                                 if (fillSnapInfo[row.entity_id]) continue;
                                 try {
                                     const d = JSON.parse(row.details);
+                                    if (!primeiroLogDepoisDoAutomatico([d])) continue;
                                     fillSnapInfo[row.entity_id] = {
                                         id: d.clientTableId ? String(d.clientTableId) : undefined,
                                         name: d.tableName || undefined,
@@ -5278,7 +5293,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     <tr><td colSpan={29 + extraClientCols} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>{boletimFilter !== 'todas' ? `NENHUMA MISSÃO ${boletimFilter === 'aprovadas' ? 'APROVADA' : 'PENDENTE'} NO PERÍODO.` : 'NENHUMA MISSÃO NO PERÍODO.'}</td></tr>
                                 ) : (
                                     filtered.map((r, i) => (
-                                        <tr key={i} title={r.frozen ? `Dados Congelados - Aprovado por ${r.frozenBy}` : !r.isApproved ? `Status: ${r.missionStatus} (não aprovada)` : ''} style={(() => {
+                                        <tr key={i} title={r.textoLeitura || (r.frozen && r.homologadoPorPessoa ? `Dados Congelados - Aprovado por ${r.frozenBy}` : !r.isApproved ? `Status: ${r.missionStatus} (não aprovada)` : '')} style={(() => {
                                             const s = (r.missionStatus || '').toLowerCase();
                                             if (s.includes('cancel')) return { backgroundColor: '#fee2e2' };
                                             if (r.isApproved || s.includes('conclu')) return { backgroundColor: '#dcfce7' };
@@ -5309,16 +5324,16 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             {isVsTransportesBilling && <td style={{ ...cellStyle, fontWeight: 800, color: '#0e7490', fontSize: '13px', letterSpacing: '0.2px' }} data-testid={`cell-vs-pedido-${r.id}`}>{r.referenceNumber || '-'}</td>}
                                             <td style={{ ...cellStyle, fontWeight: 800, fontSize: '13px', textTransform: 'uppercase', color: r.isApproved ? '#065f46' : '#991b1b', backgroundColor: r.isApproved ? '#ecfdf5' : '#fee2e2' }} data-testid={`cell-status-${r.id}`}>{r.missionStatus}</td>
                                             <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3', fontSize: '15px', maxWidth: '340px' }} title={r.route}>{r.route}</td>
-                                            <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
-                                            <td style={cellStyle}>{r.franchiseHoursFmt}</td>
+                                            <td style={cellStyle}>{r.semDetalhamento ? '—' : fmtBRL(r.activationFee)}</td>
+                                            <td style={cellStyle}>{r.semDetalhamento ? '—' : r.franchiseHoursFmt}</td>
                                             <td style={isDhlBilling && dhlWarningsById.has(r.id) ? { ...cellStyle, background: '#fff7ed', color: '#9a3412', fontWeight: 900, border: '1.5px solid #ea580c' } : cellStyle} title={isDhlBilling && dhlWarningsById.has(r.id) ? `Divergente: KM real ${dhlWarningsById.get(r.id)!.kmTotal} → tabela esperada ${dhlWarningsById.get(r.id)!.expected}KM (aplicada ${dhlWarningsById.get(r.id)!.actual}KM)` : undefined}>
-                                                {fmtNum(r.franchiseKm)}
+                                                {r.semDetalhamento ? '—' : fmtNum(r.franchiseKm)}
                                                 {isDhlBilling && dhlWarningsById.has(r.id) && (
                                                     <span className="no-print" style={{ display: 'inline-block', marginLeft: '4px', fontSize: '8px', fontWeight: 900, color: '#fff', backgroundColor: '#ea580c', borderRadius: '3px', padding: '0 3px', verticalAlign: 'middle' }}>!{dhlWarningsById.get(r.id)!.expected}</span>
                                                 )}
                                             </td>
-                                            <td style={cellStyle}>{fmtBRL(r.unitHr)}</td>
-                                            <td style={cellStyle}>{fmtBRL(r.unitKm)}</td>
+                                            <td style={cellStyle}>{r.semDetalhamento ? '—' : fmtBRL(r.unitHr)}</td>
+                                            <td style={cellStyle}>{r.semDetalhamento ? '—' : fmtBRL(r.unitKm)}</td>
                                             <td style={cellStyle}>{r.startDate}</td>
                                             <td style={cellStyle}>{r.startTime}</td>
                                             <td style={{ ...cellMono }}>{r.viatura}</td>
@@ -5331,12 +5346,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             <td style={{ ...cellMono, backgroundColor: bgHr }}>{r.timeStart}</td>
                                             <td style={{ ...cellMono, backgroundColor: bgHr }}>{r.timeEnd}</td>
                                             <td style={{ ...cellMonoBold, backgroundColor: bgHr }}>{r.timeTotal}</td>
-                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-'}</td>
-                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtBRL(r.kmExtraUnit) : '-'}</td>
-                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.kmExtraTotal > 0 ? fmtBRL(r.kmExtraTotal) : 'R$ 0,00'}</td>
-                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-'}</td>
-                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtBRL(r.hrExtraUnit) : '-'}</td>
-                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.hrExtraTotal > 0 ? fmtBRL(r.hrExtraTotal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.semDetalhamento ? '—' : (r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-')}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.semDetalhamento ? '—' : (r.kmExtraQtd > 0 ? fmtBRL(r.kmExtraUnit) : '-')}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.semDetalhamento ? '—' : (r.kmExtraTotal > 0 ? fmtBRL(r.kmExtraTotal) : 'R$ 0,00')}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.semDetalhamento ? '—' : (r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-')}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.semDetalhamento ? '—' : (r.hrExtraQtd > 0 ? fmtBRL(r.hrExtraUnit) : '-')}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.semDetalhamento ? '—' : (r.hrExtraTotal > 0 ? fmtBRL(r.hrExtraTotal) : 'R$ 0,00')}</td>
                                             <td style={{ ...cellMono, backgroundColor: bgVal }}>{r.tollVal > 0 ? fmtBRL(r.tollVal) : 'R$ 0,00'}</td>
                                             <td style={{ ...cellMonoBold, backgroundColor: bgVal }}>{fmtBRL(r.totalGeral)}</td>
                                         </tr>

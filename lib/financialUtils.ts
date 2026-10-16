@@ -9,6 +9,7 @@ import {
 } from './providerAutoPricing';
 import { findDhlAutoClient, selectDhlClientTable } from './dhlAutoTableSelector';
 import { resolveStoredClientToll, resolveStoredProviderToll } from './toll/clientTollBilling';
+import { carimboAprovacaoHumana } from './missionSnapshot';
 
 const STOP_WORDS = ['LTDA','LTDA.','S.A.','S.A','SA','S/A','S/A.','DO','DE','DA','E','DAS','DOS'];
 // PostgREST trata ( ) , . : como reservados dentro de .or(); envolvemos
@@ -1820,7 +1821,7 @@ export const auditMissionFinancials = (
     const m = mission as any;
     const dispVal = safeNumber(m.displacement_value);
     const dispProvVal = safeNumber(m.displacement_value_provider);
-    const hasManualOverride = !!(m.revenue_edit_reason) || !!(m.cost_edit_reason) || !!(m.snapshot_approved_by);
+    const hasManualOverride = !!(m.revenue_edit_reason) || !!(m.cost_edit_reason) || !!carimboAprovacaoHumana(m.snapshot_approved_by);
     if (hasManualOverride) {
         const storedRev = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, (mission as any).toll_value_provider, mission.client) + dispVal;
         const storedCst = safeNumber(mission.cost_value) + resolveStoredProviderToll(mission.toll_value, (mission as any).toll_value_provider, !!(mission as any).is_same_os) + dispProvVal;

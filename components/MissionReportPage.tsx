@@ -21,6 +21,23 @@ function formatRouteCities(origin?: string | null, destination?: string | null):
   const destCity = extractCityFromAddress(destination || '').trim() || '-';
   return `${originCity} → ${destCity}`;
 }
+
+function leituraPedagioDaMissao(m: {
+  toll_value?: unknown;
+  toll_value_provider?: unknown;
+  client?: string | null;
+  is_same_os?: boolean;
+  snapshot_data?: { tollVal?: unknown; toll_value?: unknown } | null;
+}) {
+  const snap = m.snapshot_data;
+  return classificarParPedagio({
+    tollValue: m.toll_value,
+    tollValueProvider: m.toll_value_provider,
+    clientName: m.client,
+    isSameOs: !!m.is_same_os,
+    snapshotToll: snap?.tollVal ?? snap?.toll_value,
+  });
+}
 import {
   auditMissionsBatchAsync,
   clearMissionBillingAuditCache,
@@ -33,6 +50,7 @@ import {
 import { loadAllPricingTables, invalidatePricingTablesCache } from '../lib/pricingTablesLoader';
 import { isTerminalMissionStatusForAudit } from '../lib/missionBillingAuditConfig';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import { classificarParPedagio } from '../lib/toll/clientTollBilling';
 import {
   computeCanonicalRevenueCost,
   getCanonicalDateRange,
@@ -572,8 +590,9 @@ const MissionReportPage: React.FC = () => {
       const can = computeCanonicalRevenueCost(m, refs, now);
       const revBase = asNum((m as any).revenue_value);
       const costBase = asNum((m as any).cost_value);
-      const tollRev = asNum((m as any).toll_value) || can.tollRev;
-      const tollCost = asNum((m as any).toll_value_provider) || tollRev || can.tollCost;
+      const parPedagio = leituraPedagioDaMissao(m);
+      const tollRev = parPedagio.clienteExibido;
+      const tollCost = parPedagio.fornecedorExibido;
       const rev = revBase + tollRev + can.dispRev;
       const cost = costBase + tollCost + can.dispCost;
       return {
@@ -1073,6 +1092,7 @@ const MissionReportPage: React.FC = () => {
                   const cost = c?.costBase || 0;
                   const toll = c?.tollRev || 0;
                   const tollProvider = c?.tollCost || 0;
+                  const leituraToll = leituraPedagioDaMissao(m);
                   const disp = c?.dispRev || 0;
                   const dispProvider = c?.dispCost || 0;
                   const resultado = c?.profit || 0;
@@ -1143,8 +1163,15 @@ const MissionReportPage: React.FC = () => {
                               {!(m.is_same_os && cost === 0) && tableInfoMap.get(m.id) && <span className="text-[8px] text-blue-500 font-normal truncate max-w-[100px]">{tableInfoMap.get(m.id)?.providerTable}</span>}
                             </div>
                           </td>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-600 whitespace-nowrap">{toll > 0 ? fmtMoney(toll) : '-'}</td>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-500 whitespace-nowrap">{tollProvider > 0 ? fmtMoney(tollProvider) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-600 whitespace-nowrap" title={leituraToll.aviso || undefined}>
+                            <div className="flex flex-col items-end">
+                              <span>{toll > 0 ? fmtMoney(toll) : '-'}</span>
+                              {leituraToll.aviso && (
+                                <span className="text-[8px] font-normal text-amber-700 max-w-[160px] text-right whitespace-normal">{leituraToll.aviso}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-500 whitespace-nowrap" title={leituraToll.aviso || undefined}>{tollProvider > 0 ? fmtMoney(tollProvider) : '-'}</td>
                           <td className="px-3 py-2 border-r border-gray-100 text-right text-purple-600 whitespace-nowrap">{disp > 0 ? fmtMoney(disp) : '-'}</td>
                           <td className="px-3 py-2 border-r border-gray-100 text-right text-purple-500 whitespace-nowrap">{dispProvider > 0 ? fmtMoney(dispProvider) : '-'}</td>
                           <td className={`px-3 py-2 border-r border-gray-100 text-right font-black whitespace-nowrap ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600 bg-red-50'}`}>
