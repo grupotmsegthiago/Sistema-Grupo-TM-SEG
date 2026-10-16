@@ -20,18 +20,27 @@ function sessaoAtual(): { token: string; sessao: string } {
 
 async function chamarApi(caminho: string, corpo: unknown): Promise<{ ok: boolean; status: number; body: any }> {
   const { token, sessao } = sessaoAtual();
-  const resposta = await fetch(caminho, {
-    method: 'POST',
-    cache: 'no-store',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: token ? `Bearer ${token}` : '',
-      'x-tmseg-sessao': sessao,
-    },
-    body: JSON.stringify(corpo),
-  });
-  const body = await resposta.json().catch(() => ({}));
-  return { ok: resposta.ok, status: resposta.status, body };
+  const controle = new AbortController();
+  const timer = setTimeout(() => controle.abort(), 8000);
+  try {
+    const resposta = await fetch(caminho, {
+      method: 'POST',
+      cache: 'no-store',
+      signal: controle.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: token ? `Bearer ${token}` : '',
+        'x-tmseg-sessao': sessao,
+      },
+      body: JSON.stringify(corpo),
+    });
+    const body = await resposta.json().catch(() => ({}));
+    return { ok: resposta.ok, status: resposta.status, body };
+  } catch {
+    return { ok: false, status: 0, body: {} };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function comoLista(data: unknown): { lista: Linha[]; unico: boolean } {
