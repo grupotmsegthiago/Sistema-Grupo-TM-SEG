@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { authFetch } from '../lib/authFetch';
+import { rotuloCampo, textoValorCampo } from '../lib/reaprovacaoFinanceira/camposEdicao';
 import type { NotificacaoDiretoria } from '../lib/reaprovacaoFinanceira/tipos';
 
 function quando(iso: string | null | undefined): string {
@@ -7,10 +8,6 @@ function quando(iso: string | null | undefined): string {
   const data = new Date(iso);
   if (Number.isNaN(data.getTime())) return iso;
   return data.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-}
-
-function dinheiro(valor: number): string {
-  return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
 export default function ReaprovacaoDiretoriaLista() {
@@ -67,7 +64,10 @@ export default function ReaprovacaoDiretoriaLista() {
         {itens.length === 0 && !erro && <p className="text-[11px] text-gray-500">Nenhuma reaprovação pendente de leitura.</p>}
         {itens.map((item) => (
           <article key={item.id} className="border border-gray-100 rounded-xl p-3" data-testid={`reaprovacao-diretoria-${item.id}`}>
-            <p className="text-xs font-black text-gray-900">OS {item.resumo.osNumero} · {item.situacao}</p>
+            <p className="text-xs font-black text-gray-900">
+              OS {item.resumo.osNumero}{item.resumo.cliente ? ` · ${item.resumo.cliente}` : ''} · {item.situacao}
+              {item.resumo.origem === 'edicao_total' ? ' · Edição total' : ''}
+            </p>
             <p className="text-[11px] text-gray-700 mt-1">Incluiu: {item.resumo.incluidoPor || '—'}</p>
             <p className="text-[11px] text-gray-700">Aprovou originalmente: {item.resumo.aprovadoOriginalmentePor || '—'} em {quando(item.resumo.aprovadoOriginalmenteEm)}</p>
             <p className="text-[11px] text-gray-700">Alterou e reaprovou: {item.resumo.alteradoPor} / {item.resumo.reaprovadoPor} em {quando(item.resumo.reaprovadoEm)}</p>
@@ -75,7 +75,7 @@ export default function ReaprovacaoDiretoriaLista() {
             <ul className="mt-1">
               {item.resumo.campos.map((campo) => (
                 <li key={campo.campo} className="text-[11px] text-gray-800">
-                  {campo.campo === 'revenue_value' ? 'Receita' : 'Custo'}: {dinheiro(campo.antes)} → {dinheiro(campo.depois)}
+                  {rotuloCampo(campo.campo)}: {textoValorCampo(campo.campo, campo.antes)} → {textoValorCampo(campo.campo, campo.depois)}
                 </li>
               ))}
             </ul>

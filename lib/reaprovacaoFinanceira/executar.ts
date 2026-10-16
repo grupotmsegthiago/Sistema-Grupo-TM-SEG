@@ -4,6 +4,7 @@
  * numa transação só. Não há reversão compensatória.
  */
 import { validarJpegBase64 } from './capturaSenha';
+import { validarCamposEdicao } from './camposEdicao';
 import {
   anexarAcaoDiretoria,
   caminhoCaptura,
@@ -11,13 +12,15 @@ import {
   etapasVazias,
   justificativaValida,
   montarResumo,
+  montarResumoEdicao,
   papelDiretoria,
   percentualEtapas,
+  podeEdicaoTotal,
   podeReaprovar,
   tentativaValida,
   textoErroPublico,
 } from './regras';
-import type { EntradaAtomica, ResultadoAtomico } from './transacao';
+import type { EntradaAtomica, EntradaEdicaoTotal, ResultadoAtomico } from './transacao';
 import type {
   EventoReaprovacao,
   NotificacaoDiretoria,
@@ -29,6 +32,7 @@ import type {
 export type RepositorioReaprovacao = {
   buscarTentativa(tentativaId: string): Promise<{ ok: true; evento: EventoReaprovacao | null } | { ok: false; erro: string }>;
   confirmar(entrada: EntradaAtomica): Promise<ResultadoAtomico>;
+  confirmarEdicao?: (entrada: EntradaEdicaoTotal) => Promise<ResultadoAtomico>;
 };
 
 export type ArmazenamentoCaptura = {
@@ -194,6 +198,130 @@ export async function executarReaprovacao(
   etapas.notificacao = true;
   etapas.confirmacao = true;
   return concluirDeEvento(confirmado.evento, confirmado.repetida);
+}
+
+export type PedidoEdicaoTotal = {
+  usuario: UsuarioReaprovacao;
+  os: OsReaprovacao;
+  tentativaId: string;
+  justificativa: unknown;
+  senha: string;
+  capturaAntes: unknown;
+  capturaDepois: unknown;
+  campos: unknown;
+  cliente?: string | null;
+  agora?: string;
+};
+
+function concluirEdicao(evento: EventoReaprovacao, cliente: string | null, repetida: boolean): ResultadoReaprovacao {
+  const etapas = etapasVazias();
+  for (const chave of Object.keys(etapas) as (keyof typeof etapas)[]) etapas[chave] = true;
+  return {
+    ok: true,
+    http: 200,
+    percentual: 100,
+    etapas,
+    status: 'concluida',
+    repetida,
+    evento,
+    resumo: montarResumoEdicao(evento, cliente),
+  };
+}
+
+export async function executarEdicaoTotal(
+  pedido: PedidoEdicaoTotal,
+  deps: {
+    senhaConfere: (senha: string) => Promise<boolean>;
+    repo: RepositorioReaprovacao;
+    storage: ArmazenamentoCaptura;
+  },
+): Promise<ResultadoReaprovacao> {
+  const senha = String(pedido.senha || '');
+  const etapas = etapasVazias();
+  const os = pedido.os;
+  const permissao = podeEdicaoTotal(pedido.usuario, os);
+  if (!permissao.permitido) {
+    return resultado(403, 'recusada', etapas, permissao.motivo, senha);
+  }
+  etapas.permissao = true;
+
+  const justificativa = justificativaValida(pedido.justificativa);
+  if (!justificativa.ok) return resultado(400, 'recusada', etapas, justificativa.erro, senha);
+  etapas.justificativa = true;
+
+  if (!senha.trim()) return resultado(401, 'recusada', etapas, 'Informe a senha pessoal.', senha);
+  let senhaOk = false;
+  try {
+    senhaOk = await deps.senhaConfere(senha);
+  } catch {
+    senhaOk = false;
+  }
+  if (!senhaOk) return resultado(401, 'recusada', etapas, 'Senha incorreta.', senha);
+  etapas.senha = true;
+
+  if (!tentativaValida(pedido.tentativaId)) {
+    return resultado(400, 'recusada', etapas, 'A tentativa de edição é inválida.', senha);
+  }
+  if (!deps.repo.confirmarEdicao) {
+    return resultado(500, 'falha', etapas, 'A função de edição total ainda não foi implantada. A conclusão foi impedida.', senha);
+  }
+
+  const jaExiste = await deps.repo.buscarTentativa(pedido.tentativaId);
+  if (!jaExiste.ok) return resultado(500, 'falha', etapas, jaExiste.erro, senha);
+  if (evidenciaConfirmada(jaExiste.evento) && jaExiste.evento.missionId === os.id) {
+    return concluirEdicao(jaExiste.evento, pedido.cliente || null, true);
+  }
+
+  const antesImg = validarJpegBase64(pedido.capturaAntes);
+  const depoisImg = validarJpegBase64(pedido.capturaDepois);
+  if (!antesImg.ok || !depoisImg.ok) {
+    return resultado(400, 'falha', etapas, 'Falha na captura obrigatória. A edição total não foi concluída.', senha);
+  }
+  etapas.capturas = true;
+
+  const campos = validarCamposEdicao(pedido.campos);
+  if (!campos.ok) return resultado(400, 'recusada', etapas, campos.erro, senha);
+
+  const pathAntes = caminhoCaptura(os.id, pedido.tentativaId, 'antes');
+  const pathDepois = caminhoCaptura(os.id, pedido.tentativaId, 'depois');
+  if (!pathAntes || !pathDepois) {
+    return resultado(400, 'falha', etapas, 'Não foi possível nomear a evidência.', senha);
+  }
+
+  const guardadoAntes = await deps.storage.guardar(pathAntes, antesImg.bytes);
+  if (!guardadoAntes.ok) {
+    return resultado(500, 'falha', etapas, `Falha no armazenamento da captura. ${guardadoAntes.erro}`, senha);
+  }
+  const guardadoDepois = await deps.storage.guardar(pathDepois, depoisImg.bytes);
+  if (!guardadoDepois.ok) {
+    return resultado(500, 'falha', etapas, `Falha no armazenamento da captura. ${guardadoDepois.erro}`, senha);
+  }
+  etapas.storage = true;
+
+  const quando = pedido.agora || new Date().toISOString();
+  const nome = String(pedido.usuario.name || '').trim() || 'Financeiro';
+  const confirmado = await deps.repo.confirmarEdicao({
+    tentativaId: pedido.tentativaId,
+    missionId: os.id,
+    campos: campos.campos,
+    justificativa: justificativa.texto,
+    alteradoPor: nome,
+    capturaAntesPath: guardadoAntes.path,
+    capturaDepoisPath: guardadoDepois.path,
+    quando,
+    cliente: pedido.cliente || null,
+  });
+  if (!confirmado.ok) {
+    const http = confirmado.codigo === 'conflito' ? 409 : confirmado.codigo === 'trava' ? 403 : 500;
+    return resultado(http, 'falha', etapas, confirmado.erro, senha);
+  }
+  if (!evidenciaConfirmada(confirmado.evento)) {
+    return resultado(500, 'falha', etapas, 'A transação não confirmou histórico, evidência e notificação. A conclusão foi impedida.', senha);
+  }
+  etapas.gravacao = true;
+  etapas.notificacao = true;
+  etapas.confirmacao = true;
+  return concluirEdicao(confirmado.evento, pedido.cliente || null, confirmado.repetida);
 }
 
 export async function executarAcaoDiretoria(

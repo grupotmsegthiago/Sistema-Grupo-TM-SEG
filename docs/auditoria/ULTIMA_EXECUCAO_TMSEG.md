@@ -1,5 +1,14 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## HANDOFF — EDIÇÃO TOTAL FINANCEIRA NO PR #339
+
+**Data:** 2026-10-16  
+**Pedido:** na branch `preparacao/acessos-financeiro`, o Financeiro (incluindo Giovanna Marsili e ANA.FERNANDES) edita cliente e fornecedor pela EDIÇÃO TOTAL. Nada grava sem senha, justificativa, auditoria e aviso à Diretoria. Sem merge e sem publicar.
+
+**O que entra.** Com a edição total ligada, Salvar alterações abre a confirmação (senha, justificativa e o antes/depois). A senha é conferida no servidor. A função proposta `editar_os_total_financeira` trava a tentativa e a linha, revalida faturada, paga, encerrada e prejuízo, e só então grava os campos permitidos, o evento e o aviso. Snapshot, aprovação, comissão, fatura e nota não são reescritos. Tabela e franquia vão para `parametros_edicao_total` e para o aviso, sem substituir `snapshot_data`. Operador e Controller continuam de fora. A barra só chega a 100% com a transação e o aviso confirmados.
+
+**Ainda sem aplicar.** A migration `migrations/propostas/2026_10_16_edicao_total_financeira.sql` não foi executada no Supabase Grupo TMSEG. Enquanto a função não existir, o servidor recusa a gravação e não altera a OS. O rollback só remove a função nova; não apaga evento, aviso nem captura.
+
 ## HANDOFF — REAPROVAÇÃO FINANCEIRA NO PR #339
 
 **Data:** 2026-10-16  

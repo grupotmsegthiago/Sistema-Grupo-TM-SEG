@@ -1,7 +1,7 @@
 /**
  * Entrada HTTP sem Express. A senha chega separada e não volta na resposta.
  */
-import { executarAcaoDiretoria, executarReaprovacao } from './executar';
+import { executarAcaoDiretoria, executarEdicaoTotal, executarReaprovacao } from './executar';
 import type { ArmazenamentoCaptura, RepositorioReaprovacao } from './executar';
 import { papelDiretoria, separarSenha } from './regras';
 import type { NotificacaoDiretoria, OsReaprovacao, UsuarioReaprovacao } from './tipos';
@@ -85,6 +85,42 @@ export async function tratarReaprovacaoHttp(pedido: PedidoHttp): Promise<{ statu
       (notificacao) => pedido.repo.salvarNotificacao(notificacao),
     );
     return { status: acao.http, body: semSenha(acao.body, '') };
+  }
+
+  if (op === 'edicao-total' && method === 'POST') {
+    const { senha, resto } = separarSenha(pedido.corpo);
+    const missionId = String(resto.missionId || resto.id || '').trim();
+    const osRes = await pedido.buscaOs(missionId);
+    if (!osRes.ok) {
+      return { status: 500, body: { ok: false, erro: osRes.erro, percentual: 0 } };
+    }
+    if (!osRes.os) return { status: 404, body: { ok: false, erro: 'OS não encontrada.', percentual: 0 } };
+    const resultado = await executarEdicaoTotal({
+      usuario: pedido.principal,
+      os: osRes.os,
+      tentativaId: String(resto.tentativaId || ''),
+      justificativa: resto.justificativa,
+      senha,
+      capturaAntes: resto.capturaAntes,
+      capturaDepois: resto.capturaDepois,
+      campos: resto.campos,
+      cliente: osRes.os.client || null,
+    }, {
+      senhaConfere: (informada) => pedido.senhaConfere(String(pedido.principal?.id || ''), informada),
+      repo: pedido.repo,
+      storage: pedido.storage,
+    });
+    const body = semSenha({
+      ok: resultado.ok,
+      erro: resultado.erro,
+      percentual: resultado.percentual,
+      etapas: resultado.etapas,
+      status: resultado.status,
+      repetida: resultado.repetida === true,
+      resumo: resultado.resumo || null,
+      aprovacaoFinanceiraAlterada: false,
+    }, senha);
+    return { status: resultado.http, body };
   }
 
   if (op !== 'reaprovar' || method !== 'POST') {

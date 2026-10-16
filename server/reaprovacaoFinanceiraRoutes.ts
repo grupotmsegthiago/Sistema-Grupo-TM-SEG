@@ -16,6 +16,7 @@ import { createSupabaseAdminClient } from './supabaseConfig';
 
 const COLUNAS_OS = [
   'id',
+  'client',
   'status',
   'invoice_number',
   'billing_approved',

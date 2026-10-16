@@ -1,7 +1,7 @@
 /**
  * Regras puras da reaprovação. Não gravam OS, snapshot, pedágio, franquia nem comissão.
  */
-import { isFinanceProfileRole } from '../financeSupervisorAccess';
+import { isFinanceProfileRole, isFinanceSupervisorName } from '../financeSupervisorAccess';
 import { carimboAprovacaoHumana } from '../missionSnapshot';
 import {
   ACOES_DIRETORIA,
@@ -136,6 +136,50 @@ export function podeReaprovar(
   if (!osJaAprovada(os)) {
     return { permitido: false, motivo: 'A OS ainda não tem aprovação financeira.' };
   }
+  return { permitido: true, motivo: '' };
+}
+
+const PAPEIS_EDICAO_NEGADOS = new Set(['operador', 'controller', 'comercial', 'avancado']);
+const PAPEIS_EDICAO_PERMITIDOS = new Set(['financeiro', 'diretoria', 'administrador', 'ceo']);
+
+export function motivoBloqueioEdicaoTotal(os: OsReaprovacao | null | undefined): string | null {
+  if (!os) return 'OS não encontrada.';
+  if (os.consultaTravaIncompleta) {
+    return 'Não foi possível confirmar se a OS está faturada ou paga. A edição total foi impedida.';
+  }
+  if (os.negative_margin_locked === true) {
+    return 'OS com prejuízo analisado. A edição total não desbloqueia essa trava.';
+  }
+  if (os.faturaPaga === true) {
+    return 'OS vinculada a fatura paga. A edição total não desbloqueia.';
+  }
+  if (String(os.invoice_number || '').trim()) {
+    return 'OS faturada. A edição total não desbloqueia a fatura.';
+  }
+  const status = normalizar(os.status);
+  if (status.includes('faturad')) return 'OS faturada. A edição total não desbloqueia a fatura.';
+  if (STATUS_ENCERRADOS.has(status) || status.includes('encerrad')) {
+    return 'OS encerrada. A edição total não reabre.';
+  }
+  return null;
+}
+
+export function podeEdicaoTotal(
+  usuario: UsuarioReaprovacao | null | undefined,
+  os: OsReaprovacao | null | undefined,
+): { permitido: boolean; motivo: string } {
+  const papel = normalizar(usuario?.role);
+  const nome = normalizar(usuario?.name);
+  if (PAPEIS_EDICAO_NEGADOS.has(papel)) {
+    return { permitido: false, motivo: 'Operador e Controller não usam a edição total.' };
+  }
+  const porPapel = PAPEIS_EDICAO_PERMITIDOS.has(papel);
+  const porNome = isFinanceSupervisorName(nome) || nome.includes('thiago') || nome.includes('simone');
+  if (!porPapel && !porNome) {
+    return { permitido: false, motivo: 'Somente Financeiro, Diretoria ou Administrador pode usar a edição total.' };
+  }
+  const trava = motivoBloqueioEdicaoTotal(os);
+  if (trava) return { permitido: false, motivo: trava };
   return { permitido: true, motivo: '' };
 }
 
@@ -279,6 +323,27 @@ export function montarResumo(evento: EventoReaprovacao): ResumoNotificacao {
     capturaAntesPath: evento.capturaAntesPath,
     capturaDepoisPath: evento.capturaDepoisPath,
     preservados: [...PRESERVADOS_NA_REAPROVACAO],
+    aprovacaoFinanceiraAlterada: false,
+    origem: 'reaprovacao',
+  };
+}
+
+export function montarResumoEdicao(evento: EventoReaprovacao, cliente: string | null): ResumoNotificacao {
+  const alterados = new Set(evento.campos.map((campo) => campo.campo));
+  const preservados = [
+    'snapshot original',
+    'aprovação original',
+    'comissão',
+    'contas a pagar',
+    'notas fiscais',
+  ];
+  if (!alterados.has('toll_value') && !alterados.has('toll_value_provider')) preservados.push('pedágio');
+  preservados.push('franquia do snapshot');
+  return {
+    ...montarResumo(evento),
+    cliente,
+    origem: 'edicao_total',
+    preservados,
     aprovacaoFinanceiraAlterada: false,
   };
 }

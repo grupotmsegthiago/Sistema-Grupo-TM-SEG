@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { executarAcaoDiretoria, executarReaprovacao } from '../lib/reaprovacaoFinanceira/executar';
+import { executarAcaoDiretoria, executarEdicaoTotal, executarReaprovacao } from '../lib/reaprovacaoFinanceira/executar';
 import { classificarErroGravacao } from '../lib/reaprovacaoFinanceira/gravacao';
-import { confirmarReaprovacaoAtomica, criarEstadoAtomico } from '../lib/reaprovacaoFinanceira/transacao';
+import { confirmarEdicaoTotalAtomica, confirmarReaprovacaoAtomica, criarEstadoAtomico } from '../lib/reaprovacaoFinanceira/transacao';
 import {
   anexarAcaoDiretoria,
   camposAlterados,
@@ -12,6 +12,7 @@ import {
   patchSeguro,
   percentualEtapas,
   percentualExibido,
+  podeEdicaoTotal,
   podeReaprovar,
   separarSenha,
 } from '../lib/reaprovacaoFinanceira/regras';
@@ -62,6 +63,8 @@ function memoria(opcoes?: {
     },
     confirmar: (entrada: Parameters<typeof confirmarReaprovacaoAtomica>[1]) =>
       confirmarReaprovacaoAtomica(estado, entrada, { abortar: opcoes?.abortar }),
+    confirmarEdicao: (entrada: Parameters<typeof confirmarEdicaoTotalAtomica>[1]) =>
+      confirmarEdicaoTotalAtomica(estado, entrada, { abortar: opcoes?.abortar }),
     async listarNotificacoes() {
       return { ok: true as const, itens: estado.avisos };
     },
@@ -532,5 +535,157 @@ describe('transação única', () => {
     assert.match(executavel, /DROP FUNCTION IF EXISTS/);
     assert.doesNotMatch(executavel, /DROP TABLE/i);
     assert.doesNotMatch(executavel, /DELETE/i);
+  });
+});
+
+const OUTRA_EDICAO = '33333333-3333-4333-8333-333333333333';
+
+function pedidoEdicao(os: OsReaprovacao, usuario = giovanna, extra: Record<string, unknown> = {}) {
+  return {
+    usuario,
+    os,
+    tentativaId: TENTATIVA,
+    justificativa: 'Ajuste conferido na edição total da OS',
+    senha: SENHA,
+    capturaAntes: JPEG,
+    capturaDepois: JPEG,
+    campos: [
+      { campo: 'revenue_value', antes: 100, depois: 150 },
+      { campo: 'cost_value', antes: 80, depois: 90 },
+      { campo: 'toll_value', antes: 12, depois: 18 },
+      { campo: 'tabela_cliente', antes: '', depois: 'Tabela Norte' },
+    ],
+    cliente: 'Cliente Ficticio',
+    agora: '2026-10-16T18:00:00.000Z',
+    ...extra,
+  };
+}
+
+async function executarEdicao(os: OsReaprovacao, mem = memoria(), usuario = giovanna, extra: Record<string, unknown> = {}) {
+  const resultado = await executarEdicaoTotal(pedidoEdicao(os, usuario, extra), {
+    senhaConfere: async (senha) => {
+      mem.contarSenha();
+      return senha === SENHA;
+    },
+    repo: mem.repo,
+    storage: mem.storage,
+  });
+  return { resultado, mem };
+}
+
+describe('edição total financeira', () => {
+  it('Giovanna, ANA.FERNANDES e Diretoria podem; Controller e operador não', () => {
+    const os = osBase();
+    assert.equal(podeEdicaoTotal(giovanna, os).permitido, true);
+    assert.equal(podeEdicaoTotal(ana, os).permitido, true);
+    assert.equal(podeEdicaoTotal({ id: 'd1', name: 'Thiago Moreira', role: 'Diretoria' }, os).permitido, true);
+    assert.equal(podeEdicaoTotal({ id: 'c1', name: 'Controller', role: 'Controller' }, os).permitido, false);
+    assert.equal(podeEdicaoTotal({ id: 'o1', name: 'Operador', role: 'Operador' }, os).permitido, false);
+    assert.equal(podeEdicaoTotal({ id: 'g2', name: 'Giovanna Marsili', role: 'Controller' }, os).permitido, false);
+  });
+
+  it('senha errada, justificativa vazia e campo proibido não gravam', async () => {
+    const senhaErrada = await executarEdicao(osBase(), memoria(), giovanna, { senha: 'errada' });
+    assert.equal(senhaErrada.resultado.ok, false);
+    assert.equal(senhaErrada.resultado.percentual < 100, true);
+    assert.equal(senhaErrada.mem.valores.revenue_value, 100);
+    assert.equal(senhaErrada.mem.contagem().aplicacoes, 0);
+
+    const semTexto = await executarEdicao(osBase(), memoria(), ana, { justificativa: '   ' });
+    assert.equal(semTexto.resultado.ok, false);
+    assert.equal(semTexto.mem.valores.revenue_value, 100);
+    assert.equal(semTexto.mem.avisos.length, 0);
+
+    const proibido = await executarEdicao(osBase(), memoria(), giovanna, {
+      campos: [{ campo: 'snapshot_data', antes: 'a', depois: 'b' }],
+    });
+    assert.equal(proibido.resultado.ok, false);
+    assert.equal(proibido.mem.valores.snapshot_data && (proibido.mem.valores.snapshot_data as { franchiseKm: number }).franchiseKm, 40);
+    assert.equal(proibido.mem.contagem().aplicacoes, 0);
+  });
+
+  it('grava cliente e fornecedor, preserva aprovação e avisa a Diretoria', async () => {
+    const os = osBase();
+    (os as OsReaprovacao & { comissao?: number }).comissao = 7;
+    const mem = memoria(undefined, os);
+    const feito = await executarEdicao(os, mem, ana);
+    assert.equal(feito.resultado.ok, true);
+    assert.equal(feito.resultado.percentual, 100);
+    assert.equal(feito.resultado.resumo?.origem, 'edicao_total');
+    assert.equal(feito.resultado.resumo?.cliente, 'Cliente Ficticio');
+    assert.equal(feito.resultado.resumo?.aprovacaoFinanceiraAlterada, false);
+    assert.equal(mem.valores.revenue_value, 150);
+    assert.equal(mem.valores.cost_value, 90);
+    assert.equal(mem.valores.toll_value, 18);
+    assert.equal(mem.valores.billing_approved, true);
+    assert.equal(mem.valores.snapshot_approved_by, 'Giovanna Marsili');
+    assert.equal((mem.valores.snapshot_data as { franchiseKm: number }).franchiseKm, 40);
+    assert.equal((mem.valores as OsReaprovacao & { comissao?: number }).comissao, 7);
+    assert.equal(mem.valores.parametros_edicao_total?.tabela_cliente, 'Tabela Norte');
+    assert.equal(mem.avisos.length, 1);
+    assert.equal(mem.avisos[0].resumo.campos.some((campo) => campo.campo === 'revenue_value' && campo.antes === 100 && campo.depois === 150), true);
+    assert.equal(mem.avisos[0].historico.length, 0);
+  });
+
+  it('falha de banco e edição simultânea não deixam gravação parcial', async () => {
+    const falha = await executarEdicao(osBase(), memoria({ abortar: 'banco' }), giovanna);
+    assert.equal(falha.resultado.ok, false);
+    assert.equal(falha.resultado.percentual < 100, true);
+    assert.equal(falha.mem.valores.revenue_value, 100);
+    assert.equal(falha.mem.valores.toll_value, 12);
+    assert.equal(falha.mem.avisos.length, 0);
+
+    const os = osBase();
+    const mem = memoria(undefined, os);
+    const primeira = await executarEdicao(os, mem, giovanna);
+    assert.equal(primeira.resultado.ok, true);
+    const segunda = await executarEdicao(os, mem, ana, {
+      tentativaId: OUTRA_EDICAO,
+      campos: [{ campo: 'revenue_value', antes: 100, depois: 180 }],
+    });
+    assert.equal(segunda.resultado.ok, false);
+    assert.equal(segunda.resultado.http, 409);
+    assert.equal(mem.valores.revenue_value, 150);
+    assert.equal(mem.contagem().aplicacoes, 1);
+
+    const repetida = await executarEdicao(os, mem, giovanna);
+    assert.equal(repetida.resultado.ok, true);
+    assert.equal(repetida.resultado.repetida, true);
+    assert.equal(mem.contagem().aplicacoes, 1);
+  });
+
+  it('OS faturada, paga, encerrada ou com prejuízo não entra', async () => {
+    for (const extra of [
+      { invoice_number: 'NF-1' },
+      { faturaPaga: true },
+      { status: 'Encerrada' },
+      { negative_margin_locked: true },
+    ]) {
+      const os = osBase(extra);
+      const feito = await executarEdicao(os, memoria(undefined, os), giovanna);
+      assert.equal(feito.resultado.ok, false);
+      assert.equal(feito.mem.valores.revenue_value, 100);
+      assert.equal(feito.mem.avisos.length, 0);
+    }
+  });
+
+  it('a função nova não mexe em snapshot, aprovação nem histórico antigo', () => {
+    const sql = fs.readFileSync('migrations/propostas/2026_10_16_edicao_total_financeira.sql', 'utf8');
+    assert.match(sql, /FOR UPDATE/);
+    assert.match(sql, /pg_advisory_xact_lock/);
+    assert.match(sql, /REVOKE ALL ON FUNCTION/);
+    assert.match(sql, /GRANT EXECUTE ON FUNCTION[\s\S]*TO service_role/);
+    assert.doesNotMatch(sql, /GRANT EXECUTE[\s\S]*TO authenticated/);
+    assert.doesNotMatch(sql, /EXCEPTION/);
+    assert.doesNotMatch(sql, /snapshot_data\s*=/);
+    assert.doesNotMatch(sql, /snapshot_approved_by\s*=/);
+    assert.doesNotMatch(sql, /billing_approved\s*=/);
+    assert.doesNotMatch(sql, /billing_verified_by\s*=/);
+    const modal = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
+    assert.match(modal, /_reapproval/);
+    assert.match(modal, /if \(fullEditMode\)/);
+    assert.match(modal, /Salvar alterações/);
+    const dialogo = fs.readFileSync('components/EdicaoTotalConfirmacao.tsx', 'utf8');
+    assert.match(dialogo, /op=edicao-total/);
   });
 });

@@ -25,6 +25,10 @@ import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import ReaprovacaoFinanceiraPainel from './ReaprovacaoFinanceiraPainel';
+import EdicaoTotalConfirmacao from './EdicaoTotalConfirmacao';
+import { compararBooleano, compararNumero, compararTexto, juntarDiferencas } from '../lib/reaprovacaoFinanceira/camposEdicao';
+import { motivoBloqueioEdicaoTotal } from '../lib/reaprovacaoFinanceira/regras';
+import type { CampoAuditado } from '../lib/reaprovacaoFinanceira/tipos';
 import { billableClientToll, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import {
     classificarFornecedorGravado,
@@ -724,6 +728,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     if (isProviderOnlyUser) return false;
     if (isOsNegativeMarginLocked(mission) && !canEditNegativeMarginLockedOs({ role: userRoleLower, name: userNameLower })) return false;
     return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
+      || isFinanceProfileRole(userRoleLower)
       || isFinanceSupervisorName(userNameLower) || userNameLower.includes('thiago')
       || userNameLower.includes('simone');
   }, [userRoleLower, userNameLower, isProviderOnlyUser, mission?.negative_margin_locked]);
@@ -753,6 +758,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const canEditProviderTablesEvenIfLocked = canOverrideAutoProvider || isProviderOnlyUser;
   const canEditTablesEvenIfLocked = canEditClientTablesEvenIfLocked || canEditProviderTablesEvenIfLocked;
   const [fullEditMode, setFullEditMode] = useState(false);
+  const edicaoRaizRef = useRef<HTMLDivElement>(null);
+  const capturaAntesEdicaoRef = useRef('');
+  const [confirmacaoEdicao, setConfirmacaoEdicao] = useState<CampoAuditado[] | null>(null);
   // isController: identifica o cargo Controller para travas de edição.
   // Quando EDIÇÃO TOTAL está ligada, o gate de Controller é suspenso para
   // que TODOS os campos (cliente, pedágio, etc.) fiquem editáveis.
@@ -1817,8 +1825,72 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setIsAddCostModalOpen(false);
   };
 
+  const montarCamposEdicaoTotal = (): CampoAuditado[] => {
+      if (!mission) return [];
+      const snap = mission.snapshot_data && typeof mission.snapshot_data === 'object'
+          ? mission.snapshot_data as Record<string, unknown>
+          : null;
+      const tabelaClienteId = manualClientTableId || financialData?.client.tableId || '';
+      const tabelaFornecedorId = manualProviderTableId || financialData?.provider.tableId || '';
+      const tabelaClienteNova = `${tabelaClienteId} ${financialData?.client.tableName || ''}`.trim();
+      const tabelaClienteAntes = `${openedTablesRef.current?.clientId || ''} ${openedTablesRef.current?.clientName || ''}`.trim();
+      const tabelaFornecedorNova = `${tabelaFornecedorId} ${financialData?.provider.tableName || ''}`.trim();
+      const tabelaFornecedorAntes = `${openedTablesRef.current?.providerId || ''} ${openedTablesRef.current?.providerName || ''}`.trim();
+      const horaCliente = (valor: string) => (valor ? datetimeLocalToIsoBR(valor) || '' : '');
+      const mudouTabelaCliente = String(openedTablesRef.current?.clientId || '') !== String(tabelaClienteId || '');
+      const tabelaCliente = clientTables.find((t: any) => String(t.id) === String(tabelaClienteId));
+      return juntarDiferencas([
+          compararTexto('tabela_cliente', tabelaClienteAntes, tabelaClienteNova),
+          compararTexto('tabela_fornecedor', tabelaFornecedorAntes, tabelaFornecedorNova),
+          mudouTabelaCliente ? compararNumero('franquia_km', snap?.franchiseKm ?? 0, tabelaCliente?.franchise_km ?? 0) : null,
+          mudouTabelaCliente ? compararNumero('franquia_horas', snap?.franchiseHours ?? 0, tabelaCliente?.franchise_hours ?? 0) : null,
+          mudouTabelaCliente && financialData ? compararNumero('km_excedente', snap?.kmExtraQtd ?? 0, financialData.client.excessKm ?? 0) : null,
+          mudouTabelaCliente && financialData ? compararNumero('horas_excedentes', snap?.hrExtraQtd ?? 0, financialData.client.excessHours ?? 0) : null,
+          compararNumero('start_km', mission.startKm, editStartKm ? parseFloat(editStartKm) : mission.startKm),
+          compararNumero('end_km', mission.endKm, editEndKm ? parseFloat(editEndKm) : mission.endKm),
+          compararTexto('start_time', mission.startTime || '', horaCliente(editStartTime) || mission.startTime || ''),
+          compararTexto('end_time', mission.endTime || '', horaCliente(editEndTime) || mission.endTime || ''),
+          compararNumero('provider_start_km', mission.provider_start_km, provEditStartKm ? parseFloat(provEditStartKm) : mission.provider_start_km),
+          compararNumero('provider_end_km', mission.provider_end_km, provEditEndKm ? parseFloat(provEditEndKm) : mission.provider_end_km),
+          compararTexto('provider_start_time', mission.provider_start_time || '', horaCliente(provEditStartTime) || mission.provider_start_time || ''),
+          compararTexto('provider_end_time', mission.provider_end_time || '', horaCliente(provEditEndTime) || mission.provider_end_time || ''),
+          compararBooleano('provider_ops_edited', mission.provider_ops_edited === true, mission.provider_ops_edited === true),
+      ]);
+  };
+
+  const abrirConfirmacaoEdicao = (campos: CampoAuditado[]) => {
+      if (!mission) return;
+      const trava = motivoBloqueioEdicaoTotal({
+          id: mission.id,
+          status: mission.status,
+          invoice_number: mission.invoice_number,
+          billing_approved: mission.billing_approved,
+          negative_margin_locked: mission.negative_margin_locked,
+          faturaPaga: isPaidInvoiceEffectivelyLocked,
+          revenue_value: mission.revenue_value,
+          cost_value: mission.cost_value,
+      });
+      if (trava) {
+          showNotification('Edição total', trava, 'error');
+          return;
+      }
+      if (campos.length === 0) {
+          showNotification('Edição total', 'Nenhuma alteração para salvar.', 'info');
+          return;
+      }
+      if (!capturaAntesEdicaoRef.current.startsWith('data:image/jpeg')) {
+          showNotification('Edição total', 'A captura anterior não foi registrada. Ative a edição total de novo.', 'error');
+          return;
+      }
+      setConfirmacaoEdicao(campos);
+  };
+
   const handleSaveOpsData = async () => {
       if (!mission) return;
+      if (fullEditMode) {
+          abrirConfirmacaoEdicao(montarCamposEdicaoTotal());
+          return;
+      }
       if (isPaidInvoiceEffectivelyLocked) {
           showNotification('Bloqueado', paidInvoiceLock.motivo || 'OS vinculada a fatura PAGA.', 'error');
           return;
@@ -1891,6 +1963,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleSaveProvOpsData = async () => {
       if (!mission) return;
+      if (fullEditMode) {
+          const campos = juntarDiferencas([
+              ...montarCamposEdicaoTotal(),
+              compararBooleano('provider_ops_edited', mission.provider_ops_edited === true, true),
+          ]);
+          abrirConfirmacaoEdicao(campos);
+          return;
+      }
       if (isPaidInvoiceEffectivelyLocked) {
           showNotification('Bloqueado', paidInvoiceLock.motivo || 'OS vinculada a fatura PAGA.', 'error');
           return;
@@ -2728,12 +2808,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           && autoEngineSuggestedCost !== null
           && Math.abs(savedCostServiceOnly - autoEngineSuggestedCost) > 0.01;
 
-      if (revDivergent && !revenueEditReason.trim()) {
+      if (!fullEditMode && revDivergent && !revenueEditReason.trim()) {
           setShowRevenueReasonInput(true);
           showNotification('Motivo Obrigatório', 'O valor do cliente foi alterado manualmente. Informe o motivo da alteração.', 'error');
           return;
       }
-      if ((costDivergent || autoEngineDivergent) && !costEditReason.trim()) {
+      if (!fullEditMode && (costDivergent || autoEngineDivergent) && !costEditReason.trim()) {
           setShowCostReasonInput(true);
           showNotification(
               'Motivo Obrigatório',
@@ -2779,6 +2859,25 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               financialData?.provider.tableName,
           ),
       ].filter((line): line is string => !!line);
+      if (fullEditMode) {
+          const camposFinanceiros = juntarDiferencas([
+              compararNumero('revenue_value', origRevenueService, newRevenueService),
+              compararNumero('cost_value', origCost, newCostService),
+              compararNumero('toll_value', origToll, toll),
+              compararNumero('toll_value_provider', origTollProv, tollProv),
+              compararNumero('displacement_value', origDisp, displacement),
+              compararNumero('displacement_value_provider', origDispProv, dispProv),
+              ...montarCamposEdicaoTotal(),
+          ]);
+          if (approve && camposFinanceiros.length > 0) {
+              showNotification('Edição total', 'Confirme as alterações em Salvar alterações, com senha e justificativa, antes de aprovar.', 'error');
+              return;
+          }
+          if (!approve) {
+              abrirConfirmacaoEdicao(camposFinanceiros);
+              return;
+          }
+      }
       const mudouServicoAprovado = wasAlreadyApproved && detectedChanges.some((linha) =>
           linha.startsWith('Serviço Cliente:') || linha.startsWith('Serviço Fornecedor:')
       );
@@ -3893,7 +3992,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center overflow-y-auto bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in">
+    <div ref={edicaoRaizRef} data-edicao-total-raiz="1" className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center overflow-y-auto bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in">
       
       {showAuditSummary && (
           <div className="absolute inset-0 z-[125] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowAuditSummary(false)}>
@@ -4152,7 +4251,26 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                 data-testid="btn-toggle-full-edit"
                 onClick={async () => {
                   const turningOn = !fullEditMode;
-                  if (turningOn && !confirm('Ativar MODO EDIÇÃO TOTAL? Todos os campos da OS ficarão editáveis. A ação será registrada no histórico permanente.')) return;
+                  if (turningOn && !confirm('Ativar MODO EDIÇÃO TOTAL? Os campos do cliente e do fornecedor ficam editáveis. Salvar pede senha, justificativa e avisa a Diretoria.')) return;
+                  if (turningOn) {
+                    if (!edicaoRaizRef.current) {
+                      showNotification('Edição total', 'Não foi possível capturar o estado anterior. A edição não foi aberta.', 'error');
+                      return;
+                    }
+                    try {
+                      const html2canvas = (await import('html2canvas')).default;
+                      const canvas = await html2canvas(edicaoRaizRef.current, { backgroundColor: '#ffffff', scale: 1, logging: false });
+                      const data = canvas.toDataURL('image/jpeg', 0.85);
+                      if (!data.startsWith('data:image/jpeg')) throw new Error('captura');
+                      capturaAntesEdicaoRef.current = data;
+                    } catch {
+                      showNotification('Edição total', 'Falha na captura do estado anterior. A edição não foi aberta.', 'error');
+                      return;
+                    }
+                  } else {
+                    capturaAntesEdicaoRef.current = '';
+                    setConfirmacaoEdicao(null);
+                  }
                   setFullEditMode(turningOn);
                   if (turningOn) {
                     try {
@@ -6792,7 +6910,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 )}
                                 <button onClick={() => handleUpdate(false)} disabled={isUpdating || negativeLockBlocks || (!canSaveProviderAdjustments && !reeditandoPedagio && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${(negativeLockBlocks || (!canSaveProviderAdjustments && !reeditandoPedagio && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={negativeLockBlocks ? 'Prejuízo analisado — somente a Diretoria altera' : isEffectivelyLocked && !canSaveProviderAdjustments ? 'Faturamento travado — destrave para editar' : canSaveProviderAdjustments ? 'Salvar somente o valor do fornecedor' : ''} data-testid="button-save-adjustments">
                                     {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (negativeLockBlocks || (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance)) ? <Lock size={14} className="shrink-0" /> : <Save size={14} className="shrink-0" />}
-                                    <span className="truncate">{negativeLockBlocks ? 'Travada' : (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado' : 'Salvar'}</span>
+                                    <span className="truncate">{negativeLockBlocks ? 'Travada' : (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado' : fullEditMode ? 'Salvar alterações' : 'Salvar'}</span>
                                 </button>
                                 {currentApprovalStatus.currentUserStage === 'diretoria' && currentApprovalStatus.isFullyApproved && (
                                   <button
@@ -6950,6 +7068,24 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           isOpen={analyticalReportOpen}
           onClose={() => setAnalyticalReportOpen(false)}
           omitFinancials={isProviderOnlyUser}
+        />
+      )}
+      {confirmacaoEdicao && mission && (
+        <EdicaoTotalConfirmacao
+          campos={confirmacaoEdicao}
+          capturaAntes={capturaAntesEdicaoRef.current}
+          osId={mission.id}
+          cliente={String(mission.client || '')}
+          raiz={edicaoRaizRef.current}
+          onFechar={() => setConfirmacaoEdicao(null)}
+          onConcluida={() => {
+            setConfirmacaoEdicao(null);
+            setFullEditMode(false);
+            capturaAntesEdicaoRef.current = '';
+            showNotification('Edição total', 'Alterações gravadas e a Diretoria foi avisada.', 'success');
+            if (onUpdate) onUpdate();
+            void loadData();
+          }}
         />
       )}
       <RequestOsAnalysisModal

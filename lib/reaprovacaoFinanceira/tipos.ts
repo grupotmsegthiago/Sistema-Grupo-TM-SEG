@@ -30,6 +30,7 @@ export type UsuarioReaprovacao = {
 
 export type OsReaprovacao = {
   id: string;
+  client?: string | null;
   created_by?: string | null;
   status?: string | null;
   invoice_number?: string | null;
@@ -48,12 +49,35 @@ export type OsReaprovacao = {
   cost_edit_reason?: string | null;
   toll_value?: number | null;
   toll_value_provider?: number | null;
+  displacement_value?: number | null;
+  displacement_value_provider?: number | null;
+  start_km?: number | null;
+  end_km?: number | null;
+  provider_start_km?: number | null;
+  provider_end_km?: number | null;
+  total_distance?: number | null;
+  traveled_distance?: number | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  provider_start_time?: string | null;
+  provider_end_time?: string | null;
+  estimated_time?: string | null;
+  provider_ops_edited?: boolean | null;
+  /** Parâmetros da edição total. Não substitui o snapshot da aprovação. */
+  parametros_edicao_total?: Record<string, string | number | boolean | null> | null;
 };
 
 export type CampoAlterado = {
   campo: CampoCorrigivel;
   antes: number;
   depois: number;
+};
+
+/** Campo mostrado à Diretoria. Pode ser valor ou texto operacional. */
+export type CampoAuditado = {
+  campo: string;
+  antes: number | string;
+  depois: number | string;
 };
 
 export type StatusEventoReaprovacao = 'pendente' | 'concluida' | 'falha' | 'inconsistente';
@@ -71,7 +95,7 @@ export type EventoReaprovacao = {
   reaprovadoPor: string;
   reaprovadoEm: string;
   justificativa: string;
-  campos: CampoAlterado[];
+  campos: CampoAuditado[];
   capturaAntesPath: string | null;
   capturaDepoisPath: string | null;
   snapshotOriginal: unknown;
@@ -104,11 +128,13 @@ export type ResumoNotificacao = {
   reaprovadoPor: string;
   reaprovadoEm: string;
   justificativa: string;
-  campos: CampoAlterado[];
+  campos: CampoAuditado[];
   capturaAntesPath: string | null;
   capturaDepoisPath: string | null;
   preservados: string[];
   aprovacaoFinanceiraAlterada: false;
+  cliente?: string | null;
+  origem?: 'reaprovacao' | 'edicao_total';
 };
 
 export type NotificacaoDiretoria = {

@@ -5,6 +5,10 @@
 DROP FUNCTION IF EXISTS public.reaprovar_os_financeira(
   text, text, numeric, numeric, numeric, numeric, text, text, text, text, timestamptz
 );
+DROP FUNCTION IF EXISTS public.editar_os_total_financeira(
+  text, text, jsonb, text, text, text, text, timestamptz
+);
+-- parametros_edicao_total permanece. O rollback não apaga evento, aviso nem captura.
 
 -- A exclusão do histórico e das capturas fica de fora de propósito.
 -- Descomentar apagaria eventos, avisos da Diretoria e os arquivos privados.

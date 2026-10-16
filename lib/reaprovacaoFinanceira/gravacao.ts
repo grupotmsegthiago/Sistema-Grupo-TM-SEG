@@ -2,7 +2,7 @@
  * Gravação da reaprovação. O banco guarda referência e histórico.
  * A imagem vai para o bucket privado, nunca para a coluna da OS.
  */
-import type { EntradaAtomica, ResultadoAtomico } from './transacao';
+import type { EntradaAtomica, EntradaEdicaoTotal, ResultadoAtomico } from './transacao';
 import type { EventoReaprovacao, NotificacaoDiretoria, OsReaprovacao } from './tipos';
 
 export const BUCKET_REAPROVACAO = 'reaprovacao-financeira';
@@ -21,6 +21,9 @@ export function classificarErroGravacao(error: ErroBanco): string | null {
   }
   if (/bucket not found|bucket .* not found/i.test(msg)) {
     return 'O armazenamento privado da reaprovação ainda não foi implantado. A conclusão foi impedida.';
+  }
+  if (/editar_os_total_financeira/i.test(msg)) {
+    return 'A função de edição total ainda não foi implantada. A conclusão foi impedida.';
   }
   if (error.code === 'PGRST202' || /reaprovar_os_financeira/i.test(msg)) {
     return 'A função de reaprovação ainda não foi implantada. A conclusão foi impedida.';
@@ -117,6 +120,7 @@ export function osDaLinha(
   if (!row?.id) return null;
   return {
     id: String(row.id),
+    client: texto(row.client),
     created_by: texto(row.created_by),
     status: texto(row.status),
     invoice_number: texto(row.invoice_number),
@@ -185,6 +189,29 @@ export function criarRepositorio(sb: Cliente) {
           ? corpo.codigo
           : 'banco';
         return { ok: false, codigo, erro: String(corpo.erro || 'Falha ao gravar a reaprovação.') };
+      }
+      const evento = eventoDaLinha(corpo.evento as Record<string, unknown> | null);
+      if (!evento) return { ok: false, codigo: 'banco', erro: 'A transação não devolveu o evento. A conclusão foi impedida.' };
+      return { ok: true, evento, repetida: corpo.repetida === true };
+    },
+    async confirmarEdicao(entrada: EntradaEdicaoTotal): Promise<ResultadoAtomico> {
+      const { data, error } = await sb.rpc('editar_os_total_financeira', {
+        p_tentativa_id: entrada.tentativaId,
+        p_mission_id: entrada.missionId,
+        p_campos: entrada.campos,
+        p_justificativa: entrada.justificativa,
+        p_alterado_por: entrada.alteradoPor,
+        p_captura_antes: entrada.capturaAntesPath,
+        p_captura_depois: entrada.capturaDepoisPath,
+        p_quando: entrada.quando,
+      });
+      if (error) return { ok: false, codigo: 'banco', erro: classificarErroGravacao(error) || 'Falha ao gravar a edição total.' };
+      const corpo = data || {};
+      if (corpo.ok !== true) {
+        const codigo = corpo.codigo === 'conflito' || corpo.codigo === 'trava' || corpo.codigo === 'sem_mudanca' || corpo.codigo === 'tentativa'
+          ? corpo.codigo
+          : 'banco';
+        return { ok: false, codigo, erro: String(corpo.erro || 'Falha ao gravar a edição total.') };
       }
       const evento = eventoDaLinha(corpo.evento as Record<string, unknown> | null);
       if (!evento) return { ok: false, codigo: 'banco', erro: 'A transação não devolveu o evento. A conclusão foi impedida.' };
