@@ -280,3 +280,94 @@ BEGIN
   END IF;
 END $$;
 RESET ROLE;
+
+-- Função excepcional e rollback. Dados fictícios. Não mexe em OS real.
+\ir ../migrations/propostas/2026_10_16_edicao_total_excepcional.sql
+
+INSERT INTO missions (
+  id, client, status, billing_approved, billing_verified_by, snapshot_approved_by, snapshot_approved_at,
+  snapshot_data, negative_margin_locked, revenue_value, cost_value, displacement_value, displacement_value_provider
+) VALUES
+  ('HOMOLOG-ED-RECUSADA', 'Cliente Ficticio', 'Recusada', true, 'Conferente Ficticio', 'Aprovador Ficticio', '2026-10-01 12:00:00+00',
+   '{"franchiseKm":40,"totalGeral":0}'::jsonb, false, 0, 0, 0, 0),
+  ('HOMOLOG-ED-CANCELADA', 'Cliente Ficticio', 'Cancelada', true, 'Conferente Ficticio', 'Aprovador Ficticio', '2026-10-01 12:00:00+00',
+   '{"franchiseKm":40}'::jsonb, false, 50, 40, 0, 0);
+
+DO $$
+DECLARE
+  v jsonb;
+  st text;
+  snap text;
+BEGIN
+  v := public.editar_os_total_financeira(
+    '99999999-9999-4999-8999-999999999991', 'HOMOLOG-ED-RECUSADA',
+    jsonb_build_array(jsonb_build_object('campo', 'displacement_value', 'antes', '0', 'depois', '100')),
+    'Correção excepcional do deslocamento da OS recusada', 'Giovanna Marsili',
+    'HOMOLOG-ED-RECUSADA/antes.jpg', 'HOMOLOG-ED-RECUSADA/depois.jpg', now()
+  );
+  SELECT status, snapshot_data::text INTO st, snap FROM missions WHERE id = 'HOMOLOG-ED-RECUSADA';
+  IF v->>'ok' IS DISTINCT FROM 'true' OR st IS DISTINCT FROM 'Recusada' OR snap NOT LIKE '%franchiseKm%'
+     OR (SELECT displacement_value FROM missions WHERE id = 'HOMOLOG-ED-RECUSADA') <> 100
+     OR (SELECT revenue_value FROM missions WHERE id = 'HOMOLOG-ED-RECUSADA') <> 0 THEN
+    RAISE EXCEPTION 'recusada não corrigiu sem mexer no status: % status %', v, st;
+  END IF;
+
+  v := public.editar_os_total_financeira(
+    '99999999-9999-4999-8999-999999999992', 'HOMOLOG-ED-RECUSADA',
+    jsonb_build_array(jsonb_build_object('campo', 'cost_value', 'antes', '0', 'depois', '-10')),
+    'Ajuste conferido na edição total da OS', 'Giovanna Marsili', 'a.jpg', 'b.jpg', now()
+  );
+  IF v->>'ok' IS DISTINCT FROM 'false' OR (SELECT cost_value FROM missions WHERE id = 'HOMOLOG-ED-RECUSADA') <> 0 THEN
+    RAISE EXCEPTION 'serviço negativo sem desconto ou estorno gravou: %', v;
+  END IF;
+
+  v := public.editar_os_total_financeira(
+    '99999999-9999-4999-8999-999999999993', 'HOMOLOG-ED-RECUSADA',
+    jsonb_build_array(jsonb_build_object('campo', 'cost_value', 'antes', '0', 'depois', '-10')),
+    'Estorno conferido na edição total da OS', 'Giovanna Marsili', 'a.jpg', 'b.jpg', now()
+  );
+  IF v->>'ok' IS DISTINCT FROM 'true' OR (SELECT cost_value FROM missions WHERE id = 'HOMOLOG-ED-RECUSADA') <> -10
+     OR (SELECT status FROM missions WHERE id = 'HOMOLOG-ED-RECUSADA') IS DISTINCT FROM 'Recusada' THEN
+    RAISE EXCEPTION 'estorno legítimo não gravou: %', v;
+  END IF;
+
+  v := public.editar_os_total_financeira(
+    '99999999-9999-4999-8999-999999999994', 'HOMOLOG-ED-CANCELADA',
+    jsonb_build_array(jsonb_build_object('campo', 'revenue_value', 'antes', '50', 'depois', '0')),
+    'Correção excepcional da OS cancelada', 'ANA.FERNANDES', 'a.jpg', 'b.jpg', now()
+  );
+  IF v->>'ok' IS DISTINCT FROM 'true'
+     OR (SELECT status FROM missions WHERE id = 'HOMOLOG-ED-CANCELADA') IS DISTINCT FROM 'Cancelada'
+     OR (SELECT revenue_value FROM missions WHERE id = 'HOMOLOG-ED-CANCELADA') <> 0
+     OR (SELECT snapshot_data->>'franchiseKm' FROM missions WHERE id = 'HOMOLOG-ED-CANCELADA') IS DISTINCT FROM '40' THEN
+    RAISE EXCEPTION 'cancelada mudou status ou snapshot: %', v;
+  END IF;
+
+  v := public.editar_os_total_financeira(
+    '99999999-9999-4999-8999-999999999995', 'HOMOLOG-ED-FATURA',
+    jsonb_build_array(jsonb_build_object('campo', 'revenue_value', 'antes', '100', 'depois', '1')),
+    'Ajuste conferido na edição total da OS', 'Diretoria Ficticia', 'a.jpg', 'b.jpg', now()
+  );
+  IF v->>'codigo' IS DISTINCT FROM 'trava' OR (SELECT revenue_value FROM missions WHERE id = 'HOMOLOG-ED-FATURA') <> 100 THEN
+    RAISE EXCEPTION 'função nova alterou OS faturada: %', v;
+  END IF;
+END $$;
+
+-- Rollback: a função anterior volta a recusar OS recusada e cancelada. Não apaga histórico.
+\ir ../migrations/propostas/2026_10_16_edicao_total_financeira.sql
+
+DO $$
+DECLARE
+  v jsonb;
+BEGIN
+  v := public.editar_os_total_financeira(
+    '99999999-9999-4999-8999-999999999996', 'HOMOLOG-ED-RECUSADA',
+    jsonb_build_array(jsonb_build_object('campo', 'revenue_value', 'antes', '0', 'depois', '20')),
+    'Ajuste conferido na edição total da OS', 'Giovanna Marsili', 'a.jpg', 'b.jpg', now()
+  );
+  IF v->>'codigo' IS DISTINCT FROM 'trava'
+     OR (SELECT revenue_value FROM missions WHERE id = 'HOMOLOG-ED-RECUSADA') <> 0
+     OR (SELECT status FROM missions WHERE id = 'HOMOLOG-ED-RECUSADA') IS DISTINCT FROM 'Recusada' THEN
+    RAISE EXCEPTION 'rollback não restaurou a trava da recusada: %', v;
+  END IF;
+END $$;

@@ -461,7 +461,7 @@ describe('missionBillingAudit', () => {
     assert.equal(audit.provider.esperado, finReal100.provider.serviceTotal);
   });
 
-  it('GTM-6258 com tabela de km extra zero não usa a tarifa regional para validar o valor salvo', () => {
+  it('valida GTM-6258 pela regra DHL vigente em julho, com a tabela de 100KM', () => {
     clearMissionBillingAuditCache();
     const dhlClient = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
     const g8Name = 'COMANDO G8 - SEGURANCA PATRIMONIAL E TRANSPORTE DE VALORES LTDA';
@@ -548,13 +548,16 @@ describe('missionBillingAudit', () => {
       providersList,
     );
 
-    assert.equal(audit.overallStatus, 'erro');
-    assert.ok(Math.abs(audit.client.diferenca) >= 1);
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(Math.abs(audit.client.diferenca) < 0.01);
+    assert.ok(Math.abs(audit.provider.diferenca) < 0.01);
     assert.equal(audit.client.lancado, 1166.3);
     assert.equal(audit.provider.lancado, 809.6);
+    assert.ok((audit.client.tableName || '').includes('BARUERI-CAJAMAR'));
+    assert.equal(audit.provider.tableName, '100KM');
   });
 
-  it('GTM-6235 com km extra zero na tabela não valida pela tarifa regional', () => {
+  it('valida GTM-6235 pela regra DHL vigente em julho na tabela LOUVEIRA-SERRA', () => {
     clearMissionBillingAuditCache();
     const dhlClient = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
     const clientTables = [
@@ -621,10 +624,68 @@ describe('missionBillingAudit', () => {
       },
     );
 
-    assert.equal(audit.overallStatus, 'erro');
-    assert.ok(Math.abs(audit.client.diferenca) >= 1);
+    assert.equal(audit.overallStatus, 'validado');
+    assert.ok(Math.abs(audit.client.diferenca) < 0.01);
     assert.equal(audit.client.lancado, 8180.97);
     assert.ok((audit.client.tableName || '').includes('LOUVEIRA-SERRA'));
+  });
+
+  it('OS DHL a partir de 17/10/2026 não herda a tarifa regional quando a tabela está zerada', () => {
+    clearMissionBillingAuditCache();
+    const dhlClient = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
+    const clientTables = [
+      {
+        id: 'louveira-971',
+        client: dhlClient,
+        operation_type: 'SUDESTE - LOUVEIRA-SERRA 971KM',
+        activation_fee: 6699.9,
+        franchise_km: 971,
+        franchise_hours: 28,
+        price_per_extra_km: 0,
+        price_per_extra_hour: 145,
+      },
+    ];
+    const providerTables = [
+      {
+        id: 'torres-900',
+        provider: 'TORRES',
+        operation_type: '900KM',
+        activation_cost: 4320,
+        franchise_km: 900,
+        franchise_hours: 23,
+        cost_per_extra_km: 4.8,
+        cost_per_extra_hour: 110,
+      },
+    ];
+    const mission = makeMission({
+      id: 'GTM-NOVA',
+      client: dhlClient,
+      provider: 'TORRES',
+      origin: 'ROD. VICE PREF. HERMENEGILDO TONOLI, 1500 - JUNDIAÍ - SP',
+      destination: 'R. PORTO ALEGRE, 307 - SERRA - ES',
+      start_km: 40906,
+      end_km: 41878,
+      total_distance: 1023.13,
+      start_time: '2026-10-17T12:00:00.000Z',
+      end_time: '2026-10-17T18:00:00.000Z',
+      revenue_value: 8180.97,
+      cost_value: 6333.93,
+    } as any);
+    const audit = computeMissionBillingAudit(
+      mission,
+      clientTables as any,
+      providerTables as any,
+      undefined,
+      null,
+      undefined,
+      {
+        clientTableId: 'louveira-971',
+        providerTableId: 'torres-900',
+      },
+    );
+    assert.equal(audit.overallStatus, 'erro');
+    assert.equal(audit.client.lancado, 8180.97);
+    assert.ok(Math.abs(audit.client.diferenca) >= 1);
   });
 
   it('OS em andamento exibe EM VIAGEM sem rodar auditoria financeira', () => {
