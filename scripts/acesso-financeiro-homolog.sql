@@ -109,11 +109,73 @@ BEGIN
   END IF;
 END $$;
 
+SET ROLE authenticated;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM revenue_value FROM public.missions;
+    RAISE EXCEPTION 'autenticado leu a receita';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    PERFORM * FROM public.missions;
+    RAISE EXCEPTION 'autenticado leu a linha inteira';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  IF (SELECT status FROM public.missions WHERE id = 'HOMOLOG-ACESSO') IS DISTINCT FROM 'Em Viagem' THEN
+    RAISE EXCEPTION 'autenticado perdeu a OS operacional';
+  END IF;
+  BEGIN
+    UPDATE public.missions SET revenue_value = 9 WHERE id = 'HOMOLOG-ACESSO';
+    RAISE EXCEPTION 'autenticado alterou a receita';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    PERFORM * FROM public.client_price_tables;
+    RAISE EXCEPTION 'autenticado leu a tabela de preço';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    PERFORM * FROM public.provider_cost_tables;
+    RAISE EXCEPTION 'autenticado leu a tabela de custo';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    PERFORM * FROM public.user_sessions;
+    RAISE EXCEPTION 'autenticado leu a sessão';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+END $$;
+RESET ROLE;
+
+SET ROLE anon;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM * FROM public.user_sessions;
+    RAISE EXCEPTION 'anon leu a sessão';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+END $$;
+RESET ROLE;
+
 SET ROLE service_role;
 DO $$
 BEGIN
   IF (SELECT revenue_value FROM public.missions WHERE id = 'HOMOLOG-ACESSO') <> 100 THEN
     RAISE EXCEPTION 'o serviço não leu a receita';
+  END IF;
+END $$;
+BEGIN;
+UPDATE public.missions SET revenue_value = 777 WHERE id = 'HOMOLOG-ACESSO';
+ROLLBACK;
+DO $$
+BEGIN
+  IF (SELECT revenue_value FROM public.missions WHERE id = 'HOMOLOG-ACESSO') <> 100 THEN
+    RAISE EXCEPTION 'a falha de transação alterou a receita';
+  END IF;
+  IF (SELECT status FROM public.missions WHERE id = 'HOMOLOG-ACESSO') IS DISTINCT FROM 'Em Viagem' THEN
+    RAISE EXCEPTION 'a OS operacional sumiu depois da transação';
   END IF;
 END $$;
 RESET ROLE;

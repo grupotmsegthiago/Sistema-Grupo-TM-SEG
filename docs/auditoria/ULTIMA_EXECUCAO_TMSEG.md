@@ -5,11 +5,15 @@
 **Data:** 2026-10-16  
 **Pedido:** a chave anônima não pode ler nem gravar valor financeiro de `missions`, `client_price_tables` e `provider_cost_tables`.
 
-**Como ficou.** O navegador pede só as colunas operacionais da OS. Receita, custo, pedágio, deslocamento, snapshot e parâmetros voltam pela API, com sessão e perfil lidos no cadastro. A tabela de preço também passa pela API. No banco, anon e authenticated recebem SELECT/UPDATE só das colunas operacionais. A chave anônima não cria OS e não lê tabela de preço. `service_role` continua com a tabela inteira. A homologação isolada provou: anon lê o status, não lê a receita, não altera a receita, não cria OS e não lê as tabelas de preço.
+**Como ficou.** O navegador pede só as colunas operacionais da OS. Receita, custo, pedágio, deslocamento, snapshot e parâmetros voltam pela API, com sessão e perfil lidos no cadastro. A tabela de preço também passa pela API. No banco, anon e authenticated recebem SELECT/UPDATE só das colunas operacionais. A chave anônima não cria OS e não lê tabela de preço. `service_role` continua com a tabela inteira. A homologação isolada provou: anon e authenticated leem o status, não leem a receita, não alteram a receita, não leem as tabelas de preço e não leem `user_sessions`. Uma transação desfeita não muda a receita. O corte ainda não está em produção, porque o sistema no ar ainda pede a OS inteira.
 
 **Quem vê o quê pela API.** Diretoria, Controller e Financeiro autorizado leem o snapshot. Administrador, Avançado e Operador leem o valor necessário para calcular e finalizar a OS, e não leem o snapshot. O Controller grava custo e pedágio, e não grava a receita. Cliente do portal não grava receita. Edição total e reaprovação continuam só com Diretoria e Financeiro autorizado.
 
 **Ordem.** A tabela `user_sessions` entra antes do código novo. O corte das colunas entra só depois que o build novo está no ar. Quem já estava logado precisa entrar de novo para a sessão financeira.
+
+**Abortar a publicação se qualquer item abaixo falhar.** O build novo não responde no domínio. O `buildId` não é o commit publicado. A listagem operacional da OS falha depois do corte. A chave anônima ainda lê `revenue_value` depois do corte. O número de OS muda. Fatura, conta, comissão, Asaas ou PlugNotas passa a falhar. Nesses casos, aplicar `migrations/rollback/2026_10_16_acesso_financeiro_colunas.sql` e manter o código anterior no ar. O rollback devolve a leitura e não apaga OS nem sessão.
+
+**Classificação em 2026-10-16, sem alteração de produção.** A chave anônima ainda lê faturas, contas, transações, comissões, regiões de preço, `system_logs` e as três tabelas do corte. Não há view financeira exposta. Fechar fatura, conta e comissão agora derruba boletim, faturamento e contas a pagar, porque o navegador ainda consulta essas tabelas direto. Asaas e PlugNotas usam `service_role` e não entram neste corte. Por isso a publicação permanece interrompida: ainda existe acesso financeiro indevido fora das colunas da OS.
 
 ## HANDOFF — FINALIZAÇÃO DO PR #339 SEM PUBLICAÇÃO
 
