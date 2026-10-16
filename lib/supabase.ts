@@ -1,9 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
+import { protegerCliente } from './financeiro/clienteGuardado';
 import { resolveSupabasePublicConfig } from './resolveSupabasePublicConfig';
 
 const { url: supabaseUrl, anonKey: supabaseAnonKey } = resolveSupabasePublicConfig();
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabaseBase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = typeof window === 'undefined' ? supabaseBase : protegerCliente(supabaseBase);
 
 /** Canal broadcast compartilhado: quem envia e quem escuta devem usar o mesmo nome. */
 export const MISSION_UPDATES_BROADCAST_CHANNEL = 'mission-updates';

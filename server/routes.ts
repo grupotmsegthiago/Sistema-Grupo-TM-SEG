@@ -20,6 +20,7 @@ import { handleFinancialTransactionPaymentsRequest } from "../api/financial-tran
 import { handleFinancialPaymentsInitRequest } from "../api/financial-payments-init";
 import { registerOsAnalysisRoutes } from "./osAnalysisRequests";
 import { registerReaprovacaoFinanceiraRoutes } from "./reaprovacaoFinanceiraRoutes";
+import { registerFinanceiroAcessoRoutes } from "./financeiroAcessoRoutes";
 import { podeAcessarAuditoriaFaturamento } from "../lib/auditoriaFaturamentoAccess";
 import { registerGestaoInvestimentoRoutes } from "./gestaoInvestimentoRoutes";
 import { registerSupportAgentsRoutes } from "./supportAgentsRoutes";
@@ -847,6 +848,7 @@ export async function registerRoutes(
   // NÃO usar await import aqui: trava getApp se o chunk falhar no bundle.
   registerOsAnalysisRoutes(app, requireAuth);
   registerReaprovacaoFinanceiraRoutes(app, requireAuth);
+  registerFinanceiroAcessoRoutes(app, requireAuth);
   registerGestaoInvestimentoRoutes(app, requireAuth);
   registerSupportAgentsRoutes(app, requireAuth, requireRole);
   registerComissaoQuadroRoutes(app, requireAuth);

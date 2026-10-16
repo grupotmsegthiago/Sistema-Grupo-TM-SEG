@@ -125,7 +125,7 @@ describe('auditoria de faturamento — API direta', () => {
     assert.match(tabela, /openMission/);
     assert.match(tabela, /podeAcessarAuditoriaFaturamento\(currentUser\)/);
     const sql = fs.readFileSync('migrations/propostas/2026_10_16_edicao_total_financeira.sql', 'utf8');
-    assert.match(sql, /NÃO aplicar em produção sem autorização/);
+    assert.match(sql, /Autorizada em 2026-10-16 para o Grupo TMSEG/);
     assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.editar_os_total_financeira/);
     assert.match(sql, /service_role/);
     assert.match(sql, /A função NÃO autoriza pelo perfil/);

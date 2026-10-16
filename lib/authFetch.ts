@@ -27,6 +27,7 @@ export const authFetch = (url: string, options: RequestInit = {}) => {
       'x-tmseg-role': role,
       'x-tmseg-user-name': userName,
       'x-tmseg-permissions': permissions,
+      'x-tmseg-sessao': localStorage.getItem('authSessao') || '',
       ...(options.headers || {}),
     },
   });
