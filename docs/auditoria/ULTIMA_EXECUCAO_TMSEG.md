@@ -11,7 +11,7 @@
 
 **Implementação.** O botão Reaprovar fica no modal financeiro e só o perfil Financeiro passa. A senha é conferida no servidor com a mesma comparação do login, sem ir para log nem para a resposta. O evento REAPROVAÇÃO guarda justificativa, pessoas, data e valores antes/depois. O snapshot original, o pedágio, a franquia e a comissão não entram no patch. OS faturada, paga, encerrada ou com prejuízo analisado continua bloqueada, sem desbloqueio novo. Capturas JPEG vão para o bucket privado `reaprovacao-financeira`; o banco fica com o caminho. A Diretoria marca Lido, Questionar ou Encerrar no cockpit, sem apagar o histórico e sem aprovar a OS.
 
-**Implantação pendente, sem executar.** Aplicar `migrations/propostas/2026_10_16_reaprovacao_financeira.sql` só com autorização. Ela cria as tabelas, o bucket privado e a função, com EXECUTE só para `service_role`. O rollback está em `migrations/rollback/2026_10_16_reaprovacao_financeira.sql` e não apaga histórico nem arquivo. Sem a função, a API responde que a reaprovação ainda não foi implantada e não conclui. Não houve merge nem publicação.
+**Implantação.** Em 2026-10-16 a migration foi aplicada no projeto Supabase Grupo TMSEG (`ajhmmjuewdsukecaimik`), depois da conferência das colunas. `missions` não tem `created_by`; a função lê quem incluiu no primeiro registro de `mission_logs`, e a API não pede essa coluna. EXECUTE ficou só para `postgres` e `service_role`. RLS ligado, sem política para anon. Bucket privado, zero arquivos. A prova com OS inexistente devolveu trava e não gravou evento. O rollback em `migrations/rollback/2026_10_16_reaprovacao_financeira.sql` só remove a função.
 
 ## VALIDAÇÃO — INTEGRAÇÃO PUBLICADA TM SEG × TORRES
 

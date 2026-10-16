@@ -521,6 +521,9 @@ describe('transação única', () => {
     assert.doesNotMatch(sql, /snapshot_approved_by\s*=/);
     assert.doesNotMatch(sql, /billing_approved\s*=/);
     assert.doesNotMatch(sql, /toll_value\s*=/);
+    assert.doesNotMatch(sql, /v_os\.created_by/);
+    const rotaOs = fs.readFileSync('server/reaprovacaoFinanceiraRoutes.ts', 'utf8');
+    assert.doesNotMatch(rotaOs, /'created_by'/);
     const rollback = fs.readFileSync('migrations/rollback/2026_10_16_reaprovacao_financeira.sql', 'utf8');
     const executavel = rollback
       .split('\n')

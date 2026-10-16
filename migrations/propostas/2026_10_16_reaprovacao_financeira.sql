@@ -84,6 +84,7 @@ DECLARE
   v_campos jsonb;
   v_carimbo_texto text;
   v_resumo jsonb;
+  v_incluido text;
 BEGIN
   IF p_tentativa_id IS NULL OR p_mission_id IS NULL OR length(btrim(p_justificativa)) < 8 THEN
     RETURN jsonb_build_object('ok', false, 'codigo', 'banco', 'erro', 'Justificativa ou identificação ausente. Nada foi alterado.');
@@ -166,6 +167,13 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'codigo', 'sem_mudanca', 'erro', 'Nenhum valor financeiro foi alterado.');
   END IF;
 
+  SELECT nullif(btrim(coalesce(ml.updated_by, '')), '')
+  INTO v_incluido
+  FROM mission_logs ml
+  WHERE ml.mission_id = p_mission_id
+  ORDER BY ml.created_at ASC
+  LIMIT 1;
+
   v_evento_id := gen_random_uuid();
   v_aviso_id := gen_random_uuid();
   v_carimbo_texto := format(
@@ -202,7 +210,7 @@ BEGIN
     captura_antes_path, captura_depois_path, snapshot_original,
     valores_aplicados, notificacao_id, status, erro
   ) VALUES (
-    v_evento_id, p_tentativa_id, p_mission_id, p_mission_id, nullif(btrim(coalesce(v_os.created_by, '')), ''),
+    v_evento_id, p_tentativa_id, p_mission_id, p_mission_id, v_incluido,
     nullif(CASE WHEN v_carimbo = '' OR v_carimbo = 'Sistema (Recalcular e Comparar)' THEN btrim(coalesce(v_os.billing_verified_by, '')) ELSE v_carimbo END, ''),
     v_os.snapshot_approved_at,
     nullif(btrim(coalesce(v_os.billing_verified_by, '')), ''),
@@ -213,7 +221,7 @@ BEGIN
 
   v_resumo := jsonb_build_object(
     'osNumero', p_mission_id,
-    'incluidoPor', nullif(btrim(coalesce(v_os.created_by, '')), ''),
+    'incluidoPor', v_incluido,
     'aprovadoOriginalmentePor', nullif(CASE WHEN v_carimbo = '' OR v_carimbo = 'Sistema (Recalcular e Comparar)' THEN btrim(coalesce(v_os.billing_verified_by, '')) ELSE v_carimbo END, ''),
     'aprovadoOriginalmenteEm', v_os.snapshot_approved_at,
     'alteradoPor', btrim(p_alterado_por),
