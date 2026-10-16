@@ -23,6 +23,7 @@ import { useNotification } from '../lib/NotificationContext';
 import { applyRegionSuffix, calculateMissionFinancials, auditMissionFinancials, hasPersistedProviderCost, resolveDisplayedProviderCost } from '../lib/financialUtils';
 import { formatProviderName, resolveLocationDisplay, extractCoordinates } from '../lib/utils';
 import { isMissionOpsIncomplete, getMissionOpsMissingFields, isOpsAlertRecipient } from '../lib/missionOpsIncomplete';
+import { podeAcessarAuditoriaFaturamento } from '../lib/auditoriaFaturamentoAccess';
 import LiveTrackPanel from './LiveTrackPanel';
 import { isVeladaMission } from '../lib/liveTrack/isVeladaMission';
 import { isVeladaFinalKmPending } from '../lib/veladaClosureAlert';
@@ -221,6 +222,9 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
 }) => {
     
     const { showNotification } = useNotification();
+    const usuarioAuditoria = useMemo(() => {
+        try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+    }, []);
     const [chargeCopied, setChargeCopied] = useState(false);
     const [showEvidenceModal, setShowEvidenceModal] = useState(false);
     const [showUploadModal, setShowUploadModal] = useState(false);
@@ -1226,7 +1230,7 @@ Qualquer dúvida, estamos a disposição.
                         <button type="button" onClick={() => setOccurrenceOpen(true)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-orange-50 text-orange-700 border border-orange-200 transition-all duration-200 hover:bg-orange-600 hover:text-white hover:shadow-sm active:scale-95" title="Registrar ocorrência desta OS" data-testid={`button-occurrence-${mission.id}`}><AlertTriangle size={14} /></button>
                         <MissionHandoverNoteButton missionId={mission.id} note={handoverNote} onSaved={(saved) => onHandoverNoteSaved?.(saved)} />
                         
-                        {!hideFinancialInfo && (isDirector || canEditMission) && onOpenFinancials && (
+                        {!hideFinancialInfo && podeAcessarAuditoriaFaturamento(usuarioAuditoria) && onOpenFinancials && (
                             <button onClick={() => onOpenFinancials(mission)} className={`flex items-center justify-center rounded-md transition-all duration-200 hover:shadow-sm active:scale-95 border ${mission.billing_approved ? 'w-7 h-7 bg-blue-600 text-white border-blue-700' : pendingApproval?.hasPartial ? 'h-7 px-1.5 gap-1 bg-gray-100 text-gray-500 border-gray-300 hover:bg-gray-200' : 'w-7 h-7 bg-green-50 text-green-700 border-green-200 hover:bg-green-600 hover:text-white'}`} title={mission.billing_approved ? "Faturamento Aprovado - Visualizar" : pendingApproval?.hasPartial ? `Aguardando: ${pendingApproval.missing.join(', ')} (${pendingApproval.waitingDays}d)` : "Conferência e Aprovação de Faturamento"}>
                                 <Calculator size={14} />
                                 {pendingApproval?.hasPartial && <span className="text-[9px] font-black text-gray-500 leading-none whitespace-nowrap">{pendingApproval.missing[0]} ({pendingApproval.waitingDays}d)</span>}

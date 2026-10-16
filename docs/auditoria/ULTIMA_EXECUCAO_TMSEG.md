@@ -1,5 +1,18 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## HANDOFF — RESTRIÇÃO DA AUDITORIA DE FATURAMENTO NO PR #339
+
+**Data:** 2026-10-16  
+**Pedido:** somente Diretoria e Financeiro autorizado visualizam ou editam a Auditoria de Faturamento. Sem merge e sem publicar. Sem alteração de segurança no banco.
+
+**Quem entra.** Perfil Diretoria. Perfil Financeiro com nome de Bárbara, Giovanna Marsili ou ANA.FERNANDES. No cadastro atual, Giovanna Marsili (24) e ANA.FERNANDES (29) estão Ativo e Financeiro. Thiago Moreira e Beatriz Rocha entram porque o perfil é Diretoria.
+
+**Quem sai.** Administrador, Avançado e Operador, mesmo com permissão `*` e mesmo que o nome seja Giovanna ou Thiago. Financeiro genérico também sai. Barbara Sgarlata está Ativo com perfil Administrador, então a auditoria fecha para ela. O cadastro dela não foi alterado.
+
+**Onde fechou.** Menu e botões da OS, Controle Diário, boletim, conferência de fornecedor, relatório de OS e Gestão de Cobrança. URL `?openMission=` e o evento `tmseg:open-billing-mission` param antes de ler a OS. O modal não carrega valores e mostra a tela bloqueada. EDIÇÃO TOTAL e reaprovação usam a mesma regra. No servidor, histórico financeiro, override, recálculo e varredura de divergência respondem 403.
+
+**Banco, só leitura.** `missions` tem RLS com política `public_access_missions` (`qual = true`) e GRANT completo para anon e authenticated. Isso continua permitindo leitura e gravação direta pelo cliente. Não foi alterado. `reaprovar_os_financeira` segue só para postgres e service_role. `editar_os_total_financeira` não existe em produção. A proposta SQL ganhou o aviso de que a função não autoriza pelo perfil.
+
 ## HANDOFF — EDIÇÃO TOTAL FINANCEIRA NO PR #339
 
 **Data:** 2026-10-16  

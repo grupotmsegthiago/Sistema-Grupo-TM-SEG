@@ -1,6 +1,8 @@
 -- Proposta. NÃO aplicar em produção sem autorização.
 -- Depende das tabelas de reaprovacao_financeira e reaprovacao_diretoria.
 -- Não altera senha, perfil, comissão, fatura, Asaas, PlugNotas nem o snapshot da aprovação.
+-- A função NÃO autoriza pelo perfil. Quem pode chamar é a API
+-- (requireAuditoriaFaturamento). EXECUTE fica só em service_role.
 
 ALTER TABLE missions
   ADD COLUMN IF NOT EXISTS parametros_edicao_total jsonb;

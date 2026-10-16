@@ -582,6 +582,10 @@ describe('edição total financeira', () => {
     assert.equal(podeEdicaoTotal({ id: 'c1', name: 'Controller', role: 'Controller' }, os).permitido, false);
     assert.equal(podeEdicaoTotal({ id: 'o1', name: 'Operador', role: 'Operador' }, os).permitido, false);
     assert.equal(podeEdicaoTotal({ id: 'g2', name: 'Giovanna Marsili', role: 'Controller' }, os).permitido, false);
+    assert.equal(podeEdicaoTotal({ id: 'adm', name: 'Administrador', role: 'Administrador' }, os).permitido, false);
+    assert.equal(podeEdicaoTotal({ id: 'adm2', name: 'Giovanna Marsili', role: 'Administrador' }, os).permitido, false);
+    assert.equal(podeEdicaoTotal({ id: 'av', name: 'Avançado', role: 'Avançado' }, os).permitido, false);
+    assert.equal(podeEdicaoTotal({ id: 'fin', name: 'Outro Financeiro', role: 'Financeiro' }, os).permitido, false);
   });
 
   it('senha errada, justificativa vazia e campo proibido não gravam', async () => {

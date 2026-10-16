@@ -57,7 +57,7 @@ import {
   shouldWriteBillingSnapshot,
 } from '../lib/missionSnapshot';
 import { diretoriaAindaAprova, faturamentoAprovadoSemDiretoria } from '../lib/billing/diretoriaApproval';
-import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
+import { podeAcessarAuditoriaFaturamento } from '../lib/auditoriaFaturamentoAccess';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import {
   getMissionOpsDisplayStatus,
@@ -727,10 +727,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const canActivateFullEdit = useMemo(() => {
     if (isProviderOnlyUser) return false;
     if (isOsNegativeMarginLocked(mission) && !canEditNegativeMarginLockedOs({ role: userRoleLower, name: userNameLower })) return false;
-    return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
-      || isFinanceProfileRole(userRoleLower)
-      || isFinanceSupervisorName(userNameLower) || userNameLower.includes('thiago')
-      || userNameLower.includes('simone');
+    return podeAcessarAuditoriaFaturamento({ name: userNameLower, role: userRoleLower });
   }, [userRoleLower, userNameLower, isProviderOnlyUser, mission?.negative_margin_locked]);
   // OS 5046: libera a troca da TABELA DE CUSTO mesmo com o Motor Automático ativo
   // para os responsáveis pela auditoria (Thiago Moreira, Simone, Barbara) e
@@ -1191,6 +1188,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   };
 
   const loadData = async () => {
+      if (!podeAcessarAuditoriaFaturamento({ name: userNameLower, role: userRoleLower })) return;
       if (!initialMission?.id || isSavingRef.current) return;
       userManuallyEditedRef.current = false;
       dbValuesLoadedRef.current = false;
@@ -1760,6 +1758,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   };
 
   const loadFinancialHistory = async () => {
+      if (!podeAcessarAuditoriaFaturamento({ name: userNameLower, role: userRoleLower })) return;
       if (!mission?.id) return;
       setFinHistLoading(true);
       try {
@@ -2041,7 +2040,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       } finally { setIsUpdating(false); isSavingRef.current = false; }
   };
 
-  useEffect(() => { if (isOpen) loadData(); }, [isOpen, initialMission?.id]);
+  useEffect(() => {
+      if (!isOpen) return;
+      if (!podeAcessarAuditoriaFaturamento({ name: userNameLower, role: userRoleLower })) return;
+      void loadData();
+  }, [isOpen, initialMission?.id]);
 
   useRealtimeRefresh('missions', () => {
       if (isOpen && !isSavingRef.current) loadData();
@@ -3979,12 +3982,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isSavedZero = tollSource === 'VALOR SALVO (R$ 0,00)';
   const isAwaitingCheck = tollSource === 'AGUARDANDO CONFERÊNCIA';
 
-  if (isPerfilAvancado({ role: userRoleLower })) {
+  if (!podeAcessarAuditoriaFaturamento({ name: userNameLower, role: userRoleLower })) {
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" data-testid="auditoria-faturamento-bloqueada">
         <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center shadow-2xl">
-          <p className="text-sm font-black text-gray-900 uppercase">Sem acesso financeiro</p>
-          <p className="text-xs text-gray-600 mt-2">O perfil Avançado não visualiza valores, pedágio nem aprovação de faturamento.</p>
+          <p className="text-sm font-black text-gray-900 uppercase">Sem acesso à auditoria de faturamento</p>
+          <p className="text-xs text-gray-600 mt-2">Somente a Diretoria e o Financeiro autorizado visualizam ou editam esta auditoria.</p>
           <button type="button" onClick={onClose} className="mt-4 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase">Fechar</button>
         </div>
       </div>

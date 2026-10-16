@@ -1,7 +1,8 @@
 /**
  * Regras puras da reaprovação. Não gravam OS, snapshot, pedágio, franquia nem comissão.
  */
-import { isFinanceProfileRole, isFinanceSupervisorName } from '../financeSupervisorAccess';
+import { podeAcessarAuditoriaFaturamento } from '../auditoriaFaturamentoAccess';
+import { isFinanceProfileRole } from '../financeSupervisorAccess';
 import { carimboAprovacaoHumana } from '../missionSnapshot';
 import {
   ACOES_DIRETORIA,
@@ -128,8 +129,8 @@ export function podeReaprovar(
   usuario: UsuarioReaprovacao | null | undefined,
   os: OsReaprovacao | null | undefined,
 ): { permitido: boolean; motivo: string } {
-  if (!isFinanceProfileRole(usuario?.role)) {
-    return { permitido: false, motivo: 'Somente o perfil Financeiro pode reaprovar.' };
+  if (!podeAcessarAuditoriaFaturamento(usuario) || !isFinanceProfileRole(usuario?.role)) {
+    return { permitido: false, motivo: 'Somente o Financeiro autorizado pode reaprovar.' };
   }
   const trava = motivoBloqueioReaprovacao(os);
   if (trava) return { permitido: false, motivo: trava };
@@ -138,9 +139,6 @@ export function podeReaprovar(
   }
   return { permitido: true, motivo: '' };
 }
-
-const PAPEIS_EDICAO_NEGADOS = new Set(['operador', 'controller', 'comercial', 'avancado']);
-const PAPEIS_EDICAO_PERMITIDOS = new Set(['financeiro', 'diretoria', 'administrador', 'ceo']);
 
 export function motivoBloqueioEdicaoTotal(os: OsReaprovacao | null | undefined): string | null {
   if (!os) return 'OS não encontrada.';
@@ -168,15 +166,8 @@ export function podeEdicaoTotal(
   usuario: UsuarioReaprovacao | null | undefined,
   os: OsReaprovacao | null | undefined,
 ): { permitido: boolean; motivo: string } {
-  const papel = normalizar(usuario?.role);
-  const nome = normalizar(usuario?.name);
-  if (PAPEIS_EDICAO_NEGADOS.has(papel)) {
-    return { permitido: false, motivo: 'Operador e Controller não usam a edição total.' };
-  }
-  const porPapel = PAPEIS_EDICAO_PERMITIDOS.has(papel);
-  const porNome = isFinanceSupervisorName(nome) || nome.includes('thiago') || nome.includes('simone');
-  if (!porPapel && !porNome) {
-    return { permitido: false, motivo: 'Somente Financeiro, Diretoria ou Administrador pode usar a edição total.' };
+  if (!podeAcessarAuditoriaFaturamento(usuario)) {
+    return { permitido: false, motivo: 'Somente a Diretoria ou o Financeiro autorizado usa a edição total.' };
   }
   const trava = motivoBloqueioEdicaoTotal(os);
   if (trava) return { permitido: false, motivo: trava };
@@ -187,7 +178,7 @@ export function exibirPainelReaprovacao(
   usuario: UsuarioReaprovacao | null | undefined,
   os: OsReaprovacao | null | undefined,
 ): boolean {
-  if (!isFinanceProfileRole(usuario?.role) || !os?.id) return false;
+  if (!podeAcessarAuditoriaFaturamento(usuario) || !isFinanceProfileRole(usuario?.role) || !os?.id) return false;
   return osJaAprovada(os) || !!motivoBloqueioReaprovacao(os);
 }
 

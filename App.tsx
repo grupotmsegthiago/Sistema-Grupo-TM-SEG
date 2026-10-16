@@ -142,6 +142,7 @@ import AprovacoesPendentesPage from './components/AprovacoesPendentesPage';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
 import { persistScreen, resolveInitialScreen, getRoleDefaultScreen, getScreenFromUrl } from './lib/screenNavigation';
 import { canAccessScreen, fallbackScreenForUser } from './lib/screenAccess';
+import { podeAcessarAuditoriaFaturamento } from './lib/auditoriaFaturamentoAccess';
 import TrainingAcademy from './components/TrainingAcademy';
 import { operadorBloqueado, normalizarModulos } from './lib/training/operadorAcademy';
 
@@ -459,6 +460,11 @@ const App: React.FC = () => {
   };
 
   const handleOpenBillingMission = async (missionId: string) => {
+      const usuario = getStoredUser();
+      if (!podeAcessarAuditoriaFaturamento(usuario)) {
+          alert('Sem acesso à auditoria de faturamento.');
+          return;
+      }
       try {
           const { data, error } = await supabase.from('missions').select('*').eq('id', missionId).single();
           if (error || !data) { alert(`OS ${missionId} não encontrada.`); return; }
