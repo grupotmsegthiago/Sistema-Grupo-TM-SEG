@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { executarAcaoDiretoria, executarReaprovacao } from '../lib/reaprovacaoFinanceira/executar';
 import { classificarErroGravacao } from '../lib/reaprovacaoFinanceira/gravacao';
+import { confirmarReaprovacaoAtomica, criarEstadoAtomico } from '../lib/reaprovacaoFinanceira/transacao';
 import {
   anexarAcaoDiretoria,
   camposAlterados,
@@ -15,7 +16,7 @@ import {
   separarSenha,
 } from '../lib/reaprovacaoFinanceira/regras';
 import { tratarReaprovacaoHttp } from '../lib/reaprovacaoFinanceira/tratar';
-import type { EtapasReaprovacao, EventoReaprovacao, NotificacaoDiretoria, OsReaprovacao } from '../lib/reaprovacaoFinanceira/tipos';
+import type { EtapasReaprovacao, NotificacaoDiretoria, OsReaprovacao } from '../lib/reaprovacaoFinanceira/tipos';
 
 const SENHA = 'segredo-unico-reaprovacao';
 const TENTATIVA = '11111111-1111-4111-8111-111111111111';
@@ -46,75 +47,31 @@ function osBase(extra: Partial<OsReaprovacao> = {}): OsReaprovacao {
 }
 
 function memoria(opcoes?: {
-  falhaSalvar?: boolean;
-  falhaAplicar?: boolean;
-  falhaAviso?: boolean;
-  falhaReversao?: boolean;
+  abortar?: 'aviso' | 'banco';
   falhaStorage?: boolean;
-}) {
-  const eventos = new Map<string, EventoReaprovacao>();
-  const avisos: NotificacaoDiretoria[] = [];
-  const valores = { revenue_value: 100, cost_value: 80, revenue_edit_reason: 'motivo antigo' as string | null, cost_edit_reason: null as string | null, toll_value: 12 };
-  const patches: Record<string, unknown>[] = [];
-  let aplicacoes = 0;
+}, inicial?: OsReaprovacao) {
+  const estado = criarEstadoAtomico([inicial || osBase()]);
   let uploads = 0;
   let senhas = 0;
   const repo = {
     async buscarTentativa(tentativaId: string) {
-      return { ok: true as const, evento: eventos.get(tentativaId) || null };
+      return { ok: true as const, evento: estado.eventos.get(tentativaId) || null };
     },
     async buscarPorId(id: string) {
-      return { ok: true as const, evento: [...eventos.values()].find((item) => item.id === id) || null };
+      return { ok: true as const, evento: [...estado.eventos.values()].find((item) => item.id === id) || null };
     },
-    async salvarEvento(evento: EventoReaprovacao) {
-      if (opcoes?.falhaSalvar && !eventos.has(evento.tentativaId)) return { ok: false as const, erro: 'insert fail' };
-      eventos.set(evento.tentativaId, { ...evento });
-      return { ok: true as const, evento: { ...evento } };
-    },
-    async aplicarValores(_id: string, patch: Record<string, unknown>) {
-      aplicacoes += 1;
-      patches.push(patch);
-      if (opcoes?.falhaAplicar && aplicacoes === 1) return { ok: false as const, erro: 'update fail' };
-      if (opcoes?.falhaReversao && aplicacoes > 1) return { ok: false as const, erro: 'revert fail' };
-      Object.assign(valores, patch);
-      return { ok: true as const };
-    },
-    async criarNotificacao(evento: EventoReaprovacao) {
-      if (opcoes?.falhaAviso) return { ok: false as const, erro: 'aviso fail' };
-      const notificacao: NotificacaoDiretoria = {
-        id: `aviso-${avisos.length + 1}`,
-        reaprovacaoId: evento.id,
-        situacao: 'pendente',
-        historico: [],
-        resumo: {
-          osNumero: evento.osNumero,
-          incluidoPor: evento.incluidoPor,
-          aprovadoOriginalmentePor: evento.aprovadoOriginalmentePor,
-          aprovadoOriginalmenteEm: evento.aprovadoOriginalmenteEm,
-          alteradoPor: evento.alteradoPor,
-          reaprovadoPor: evento.reaprovadoPor,
-          reaprovadoEm: evento.reaprovadoEm,
-          justificativa: evento.justificativa,
-          campos: evento.campos,
-          capturaAntesPath: evento.capturaAntesPath,
-          capturaDepoisPath: evento.capturaDepoisPath,
-          preservados: ['snapshot original', 'pedágio', 'franquia', 'comissão'],
-          aprovacaoFinanceiraAlterada: false,
-        },
-      };
-      avisos.push(notificacao);
-      return { ok: true as const, notificacao };
-    },
+    confirmar: (entrada: Parameters<typeof confirmarReaprovacaoAtomica>[1]) =>
+      confirmarReaprovacaoAtomica(estado, entrada, { abortar: opcoes?.abortar }),
     async listarNotificacoes() {
-      return { ok: true as const, itens: avisos };
+      return { ok: true as const, itens: estado.avisos };
     },
     async buscarNotificacao(id: string) {
-      return { ok: true as const, notificacao: avisos.find((item) => item.id === id) || null };
+      return { ok: true as const, notificacao: estado.avisos.find((item) => item.id === id) || null };
     },
     async salvarNotificacao(notificacao: NotificacaoDiretoria) {
-      const indice = avisos.findIndex((item) => item.id === notificacao.id);
+      const indice = estado.avisos.findIndex((item) => item.id === notificacao.id);
       if (indice < 0) return { ok: false as const, erro: 'ausente' };
-      avisos[indice] = notificacao;
+      estado.avisos[indice] = notificacao;
       return { ok: true as const };
     },
   };
@@ -131,11 +88,12 @@ function memoria(opcoes?: {
   return {
     repo,
     storage,
-    valores,
-    patches,
-    avisos,
-    eventos,
-    contagem: () => ({ aplicacoes, uploads, senhas, avisos: avisos.length }),
+    estado,
+    get valores() { return estado.missoes.get((inicial || osBase()).id)!; },
+    get patches() { return estado.patches; },
+    get avisos() { return estado.avisos; },
+    get eventos() { return estado.eventos; },
+    contagem: () => ({ aplicacoes: estado.confirmacoes, uploads, senhas, avisos: estado.avisos.length }),
     contarSenha: () => { senhas += 1; },
   };
 }
@@ -222,37 +180,32 @@ describe('reaprovação com senha, evidência e aviso', () => {
   });
 
   it('falha no banco não altera o valor', async () => {
-    const { resultado, mem } = await executar(osBase(), memoria({ falhaSalvar: true }));
+    const { resultado, mem } = await executar(osBase(), memoria({ abortar: 'banco' }));
     assert.equal(resultado.ok, false);
     assert.match(resultado.erro || '', /banco/i);
     assert.equal(mem.contagem().aplicacoes, 0);
     assert.equal(mem.valores.revenue_value, 100);
     assert.equal(mem.valores.toll_value, 12);
+    assert.equal(mem.eventos.size, 0);
   });
 
   it('falha ao aplicar o valor não conclui', async () => {
-    const { resultado, mem } = await executar(osBase(), memoria({ falhaAplicar: true }));
+    const { resultado, mem } = await executar(osBase(), memoria({ abortar: 'banco' }));
     assert.equal(resultado.status, 'falha');
     assert.equal(resultado.percentual < 100, true);
     assert.equal(mem.valores.revenue_value, 100);
+    assert.equal(mem.contagem().avisos, 0);
   });
 
-  it('falha no aviso devolve o valor anterior', async () => {
-    const { resultado, mem } = await executar(osBase(), memoria({ falhaAviso: true }));
+  it('falha no aviso desfaz a transação inteira', async () => {
+    const { resultado, mem } = await executar(osBase(), memoria({ abortar: 'aviso' }));
     assert.equal(resultado.ok, false);
     assert.match(resultado.erro || '', /Diretoria/);
     assert.equal(mem.valores.revenue_value, 100);
     assert.equal(mem.valores.revenue_edit_reason, 'motivo antigo');
     assert.equal(mem.contagem().avisos, 0);
-    assert.equal([...mem.eventos.values()][0]?.valoresAplicados, false);
-  });
-
-  it('falha ao reverter fica inconsistente e abaixo de 100%', async () => {
-    const { resultado, mem } = await executar(osBase(), memoria({ falhaAviso: true, falhaReversao: true }));
-    assert.equal(resultado.status, 'inconsistente');
-    assert.equal(resultado.ok, false);
+    assert.equal(mem.eventos.size, 0);
     assert.equal(resultado.percentual < 100, true);
-    assert.equal(mem.valores.revenue_value, 150);
   });
 
   it('conclui uma vez, preserva snapshot, pedágio e aprovação original, e não repete', async () => {
@@ -385,6 +338,7 @@ describe('progresso e proteção dos campos', () => {
   it('tabela ausente impede a conclusão e a senha sai do corpo', () => {
     assert.match(classificarErroGravacao({ code: '42P01', message: 'relation does not exist' }) || '', /não foi implantada/);
     assert.match(classificarErroGravacao({ message: 'Bucket not found' }) || '', /armazenamento privado/);
+    assert.match(classificarErroGravacao({ code: 'PGRST202', message: 'reaprovar_os_financeira' }) || '', /função de reaprovação/i);
     const separado = separarSenha({ senha: SENHA, justificativa: 'Correção do valor conferido na OS', missionId: 'GTM-9001' });
     assert.equal(separado.senha, SENHA);
     assert.equal('senha' in separado.resto, false);
@@ -456,5 +410,124 @@ describe('arquivos do fluxo', () => {
     assert.match(diretoria, /LIDO/);
     assert.match(diretoria, /QUESTIONAR/);
     assert.match(diretoria, /ENCERRAR/);
+    const executarFonte = fs.readFileSync('lib/reaprovacaoFinanceira/executar.ts', 'utf8');
+    assert.doesNotMatch(executarFonte, /patchReversao|aplicarValores/);
+    assert.match(executarFonte, /repo\.confirmar/);
+    const gravacao = fs.readFileSync('lib/reaprovacaoFinanceira/gravacao.ts', 'utf8');
+    assert.match(gravacao, /reaprovar_os_financeira/);
+  });
+});
+
+const OUTRA = '22222222-2222-4222-8222-222222222222';
+
+function entradaAtomica(os: OsReaprovacao, extra: Record<string, unknown> = {}) {
+  return {
+    tentativaId: TENTATIVA,
+    missionId: os.id,
+    receitaNova: 150,
+    custoNovo: 80,
+    receitaEsperada: Number(os.revenue_value || 0),
+    custoEsperado: Number(os.cost_value || 0),
+    justificativa: 'Correção do valor conferido na OS',
+    alteradoPor: 'Giovanna Marsili',
+    capturaAntesPath: 'GTM-9001/antes.jpg',
+    capturaDepoisPath: 'GTM-9001/depois.jpg',
+    quando: '2026-10-16T15:00:00.000Z',
+    ...extra,
+  };
+}
+
+describe('transação única', () => {
+  it('duas requisições com a mesma tentativa gravam uma vez', async () => {
+    const mem = memoria();
+    const os = osBase();
+    const [primeira, segunda] = await Promise.all([
+      executar(os, mem, ana),
+      executar(os, mem, ana),
+    ]);
+    assert.equal(primeira.resultado.ok, true);
+    assert.equal(segunda.resultado.ok, true);
+    const repetidas = [primeira.resultado.repetida, segunda.resultado.repetida].filter(Boolean);
+    assert.equal(repetidas.length, 1);
+    assert.equal(mem.contagem().aplicacoes, 1);
+    assert.equal(mem.eventos.size, 1);
+    assert.equal(mem.contagem().avisos, 1);
+    assert.equal(mem.valores.revenue_value, 150);
+    assert.equal(mem.valores.revenue_edit_reason?.includes('motivo antigo'), false);
+  });
+
+  it('duas tentativas na mesma OS: a segunda encontra conflito e o valor fica o da primeira', async () => {
+    const mem = memoria();
+    const os = osBase();
+    const [primeira, segunda] = await Promise.all([
+      executar(os, mem, ana, { tentativaId: TENTATIVA, revenue_value: 150 }),
+      executar(os, mem, ana, { tentativaId: OUTRA, revenue_value: 180 }),
+    ]);
+    const respostas = [primeira.resultado, segunda.resultado];
+    assert.equal(respostas.filter((item) => item.ok).length, 1);
+    assert.equal(respostas.filter((item) => item.http === 409).length, 1);
+    assert.equal(mem.contagem().aplicacoes, 1);
+    assert.equal(mem.eventos.size, 1);
+    assert.equal(mem.contagem().avisos, 1);
+    assert.equal([150, 180].includes(Number(mem.valores.revenue_value)), true);
+    assert.equal(mem.valores.toll_value, 12);
+    assert.equal(mem.valores.billing_approved, true);
+  });
+
+  it('a trava é revalidada dentro da transação e a falha não grava valor nem aviso', async () => {
+    const os = osBase({ faturaPaga: true, revenue_value: 100 });
+    const estado = criarEstadoAtomico([os]);
+    const resultado = await confirmarReaprovacaoAtomica(estado, entradaAtomica(os));
+    assert.equal(resultado.ok, false);
+    if (!resultado.ok) assert.equal(resultado.codigo, 'trava');
+    assert.equal(estado.confirmacoes, 0);
+    assert.equal(estado.eventos.size, 0);
+    assert.equal(estado.avisos.length, 0);
+    assert.equal(estado.missoes.get(os.id)?.revenue_value, 100);
+
+    const encerrada = osBase({ status: 'Encerrada' });
+    const estadoEncerrada = criarEstadoAtomico([encerrada]);
+    const bloqueada = await confirmarReaprovacaoAtomica(estadoEncerrada, entradaAtomica(encerrada));
+    assert.equal(bloqueada.ok, false);
+    assert.equal(estadoEncerrada.confirmacoes, 0);
+  });
+
+  it('versão divergente não aplica o valor novo', async () => {
+    const os = osBase();
+    const estado = criarEstadoAtomico([os]);
+    const primeira = await confirmarReaprovacaoAtomica(estado, entradaAtomica(os));
+    assert.equal(primeira.ok, true);
+    const segunda = await confirmarReaprovacaoAtomica(estado, entradaAtomica(os, {
+      tentativaId: OUTRA,
+      receitaNova: 180,
+      receitaEsperada: 100,
+    }));
+    assert.equal(segunda.ok, false);
+    if (!segunda.ok) assert.equal(segunda.codigo, 'conflito');
+    assert.equal(estado.missoes.get(os.id)?.revenue_value, 150);
+    assert.equal(estado.confirmacoes, 1);
+    assert.equal(estado.avisos.length, 1);
+  });
+
+  it('a função e o rollback não apagam histórico nem captura', () => {
+    const sql = fs.readFileSync('migrations/propostas/2026_10_16_reaprovacao_financeira.sql', 'utf8');
+    assert.match(sql, /FOR UPDATE/);
+    assert.match(sql, /pg_advisory_xact_lock/);
+    assert.match(sql, /tentativa_id/);
+    assert.match(sql, /REVOKE ALL ON FUNCTION/);
+    assert.match(sql, /GRANT EXECUTE ON FUNCTION[\s\S]*TO service_role/);
+    assert.doesNotMatch(sql, /GRANT EXECUTE[\s\S]*TO authenticated/);
+    assert.doesNotMatch(sql, /EXCEPTION/);
+    assert.doesNotMatch(sql, /snapshot_approved_by\s*=/);
+    assert.doesNotMatch(sql, /billing_approved\s*=/);
+    assert.doesNotMatch(sql, /toll_value\s*=/);
+    const rollback = fs.readFileSync('migrations/rollback/2026_10_16_reaprovacao_financeira.sql', 'utf8');
+    const executavel = rollback
+      .split('\n')
+      .filter((linha) => linha.trim() && !linha.trim().startsWith('--'))
+      .join('\n');
+    assert.match(executavel, /DROP FUNCTION IF EXISTS/);
+    assert.doesNotMatch(executavel, /DROP TABLE/i);
+    assert.doesNotMatch(executavel, /DELETE/i);
   });
 });

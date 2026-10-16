@@ -2,7 +2,7 @@
  * Gravação da reaprovação. O banco guarda referência e histórico.
  * A imagem vai para o bucket privado, nunca para a coluna da OS.
  */
-import { montarResumo, patchSeguro } from './regras';
+import type { EntradaAtomica, ResultadoAtomico } from './transacao';
 import type { EventoReaprovacao, NotificacaoDiretoria, OsReaprovacao } from './tipos';
 
 export const BUCKET_REAPROVACAO = 'reaprovacao-financeira';
@@ -21,6 +21,9 @@ export function classificarErroGravacao(error: ErroBanco): string | null {
   }
   if (/bucket not found|bucket .* not found/i.test(msg)) {
     return 'O armazenamento privado da reaprovação ainda não foi implantado. A conclusão foi impedida.';
+  }
+  if (error.code === 'PGRST202' || /reaprovar_os_financeira/i.test(msg)) {
+    return 'A função de reaprovação ainda não foi implantada. A conclusão foi impedida.';
   }
   return 'Falha ao gravar a reaprovação.';
 }
@@ -136,6 +139,7 @@ export function osDaLinha(
 
 type Cliente = {
   from: (tabela: string) => any;
+  rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: Record<string, unknown> | null; error: ErroBanco }>;
   storage: {
     from: (bucket: string) => {
       upload: (path: string, body: Uint8Array, opts: { contentType: string; upsert: boolean }) => Promise<{ error: ErroBanco }>;
@@ -160,38 +164,31 @@ export function criarRepositorio(sb: Cliente) {
       if (error) return falha(error);
       return { ok: true as const, evento: eventoDaLinha(data) };
     },
-    async salvarEvento(evento: EventoReaprovacao) {
-      const { data, error } = await sb
-        .from('reaprovacao_financeira')
-        .upsert(linhaDoEvento(evento), { onConflict: 'tentativa_id' })
-        .select('*')
-        .maybeSingle();
-      if (error) return falha(error);
-      const lido = eventoDaLinha(data) || evento;
-      return { ok: true as const, evento: lido };
-    },
-    async aplicarValores(missionId: string, patch: Record<string, unknown>) {
-      const seguro = patchSeguro(patch);
-      if (!seguro.ok) return seguro;
-      const { error } = await sb.from('missions').update(seguro.patch).eq('id', missionId);
-      if (error) return falha(error);
-      return { ok: true as const };
-    },
-    async criarNotificacao(evento: EventoReaprovacao) {
-      const id = crypto.randomUUID();
-      const linha = {
-        id,
-        reaprovacao_id: evento.id,
-        situacao: 'pendente',
-        historico: [],
-        resumo: montarResumo(evento),
-        updated_at: new Date().toISOString(),
-      };
-      const { data, error } = await sb.from('reaprovacao_diretoria').insert(linha).select('*').maybeSingle();
-      if (error) return falha(error);
-      const notificacao = notificacaoDaLinha(data) || notificacaoDaLinha(linha);
-      if (!notificacao) return { ok: false as const, erro: 'Falha ao gravar a notificação da Diretoria.' };
-      return { ok: true as const, notificacao };
+    async confirmar(entrada: EntradaAtomica): Promise<ResultadoAtomico> {
+      const { data, error } = await sb.rpc('reaprovar_os_financeira', {
+        p_tentativa_id: entrada.tentativaId,
+        p_mission_id: entrada.missionId,
+        p_receita_nova: entrada.receitaNova,
+        p_custo_novo: entrada.custoNovo,
+        p_receita_esperada: entrada.receitaEsperada,
+        p_custo_esperado: entrada.custoEsperado,
+        p_justificativa: entrada.justificativa,
+        p_alterado_por: entrada.alteradoPor,
+        p_captura_antes: entrada.capturaAntesPath,
+        p_captura_depois: entrada.capturaDepoisPath,
+        p_quando: entrada.quando,
+      });
+      if (error) return { ok: false, codigo: 'banco', erro: classificarErroGravacao(error) || 'Falha ao gravar a reaprovação.' };
+      const corpo = data || {};
+      if (corpo.ok !== true) {
+        const codigo = corpo.codigo === 'conflito' || corpo.codigo === 'trava' || corpo.codigo === 'sem_mudanca' || corpo.codigo === 'tentativa'
+          ? corpo.codigo
+          : 'banco';
+        return { ok: false, codigo, erro: String(corpo.erro || 'Falha ao gravar a reaprovação.') };
+      }
+      const evento = eventoDaLinha(corpo.evento as Record<string, unknown> | null);
+      if (!evento) return { ok: false, codigo: 'banco', erro: 'A transação não devolveu o evento. A conclusão foi impedida.' };
+      return { ok: true, evento, repetida: corpo.repetida === true };
     },
     async listarNotificacoes() {
       const { data, error } = await sb

@@ -1,6 +1,7 @@
 /**
- * Orquestra a reaprovação. Falha de evidência, banco ou aviso impede a conclusão
- * e não deixa a OS aprovada com valor novo sem o restante obrigatório.
+ * Orquestra a reaprovação.
+ * As capturas são validadas antes. Valor, histórico e notificação entram
+ * numa transação só. Não há reversão compensatória.
  */
 import { validarJpegBase64 } from './capturaSenha';
 import {
@@ -9,17 +10,14 @@ import {
   camposAlterados,
   etapasVazias,
   justificativaValida,
-  montarPatchValores,
   montarResumo,
-  nomeAprovadorOriginal,
   papelDiretoria,
-  patchReversao,
-  patchSeguro,
   percentualEtapas,
   podeReaprovar,
   tentativaValida,
   textoErroPublico,
 } from './regras';
+import type { EntradaAtomica, ResultadoAtomico } from './transacao';
 import type {
   EventoReaprovacao,
   NotificacaoDiretoria,
@@ -30,9 +28,7 @@ import type {
 
 export type RepositorioReaprovacao = {
   buscarTentativa(tentativaId: string): Promise<{ ok: true; evento: EventoReaprovacao | null } | { ok: false; erro: string }>;
-  salvarEvento(evento: EventoReaprovacao): Promise<{ ok: true; evento: EventoReaprovacao } | { ok: false; erro: string }>;
-  aplicarValores(missionId: string, patch: Record<string, unknown>): Promise<{ ok: true } | { ok: false; erro: string }>;
-  criarNotificacao(evento: EventoReaprovacao): Promise<{ ok: true; notificacao: NotificacaoDiretoria } | { ok: false; erro: string }>;
+  confirmar(entrada: EntradaAtomica): Promise<ResultadoAtomico>;
 };
 
 export type ArmazenamentoCaptura = {
@@ -72,6 +68,15 @@ function resultado(
     status: ok ? 'concluida' : status,
     ...extra,
   };
+}
+
+function evidenciaConfirmada(evento: EventoReaprovacao | null | undefined): evento is EventoReaprovacao {
+  return !!evento
+    && evento.status === 'concluida'
+    && evento.valoresAplicados === true
+    && !!evento.capturaAntesPath
+    && !!evento.capturaDepoisPath
+    && !!evento.notificacaoId;
 }
 
 function concluirDeEvento(evento: EventoReaprovacao, repetida: boolean): ResultadoReaprovacao {
@@ -127,7 +132,7 @@ export async function executarReaprovacao(
 
   const jaExiste = await deps.repo.buscarTentativa(pedido.tentativaId);
   if (!jaExiste.ok) return resultado(500, 'falha', etapas, jaExiste.erro, senha);
-  if (jaExiste.evento?.status === 'concluida' && jaExiste.evento.missionId === os.id) {
+  if (evidenciaConfirmada(jaExiste.evento) && jaExiste.evento.missionId === os.id) {
     return concluirDeEvento(jaExiste.evento, true);
   }
 
@@ -142,8 +147,8 @@ export async function executarReaprovacao(
     revenue_value: Object.prototype.hasOwnProperty.call(pedido, 'revenue_value') ? pedido.revenue_value : os.revenue_value,
     cost_value: Object.prototype.hasOwnProperty.call(pedido, 'cost_value') ? pedido.cost_value : os.cost_value,
   };
-  const campos = camposAlterados(os, depois);
-  if (campos.length === 0) {
+  const camposPrevios = camposAlterados(os, depois);
+  if (camposPrevios.length === 0) {
     return resultado(400, 'recusada', etapas, 'Nenhum valor financeiro foi alterado.', senha);
   }
 
@@ -153,15 +158,11 @@ export async function executarReaprovacao(
     return resultado(400, 'falha', etapas, 'Não foi possível nomear a evidência.', senha);
   }
 
-  const guardadoAntes = jaExiste.evento?.capturaAntesPath
-    ? { ok: true as const, path: jaExiste.evento.capturaAntesPath }
-    : await deps.storage.guardar(pathAntes, antesImg.bytes);
+  const guardadoAntes = await deps.storage.guardar(pathAntes, antesImg.bytes);
   if (!guardadoAntes.ok) {
     return resultado(500, 'falha', etapas, `Falha no armazenamento da captura. ${guardadoAntes.erro}`, senha);
   }
-  const guardadoDepois = jaExiste.evento?.capturaDepoisPath
-    ? { ok: true as const, path: jaExiste.evento.capturaDepoisPath }
-    : await deps.storage.guardar(pathDepois, depoisImg.bytes);
+  const guardadoDepois = await deps.storage.guardar(pathDepois, depoisImg.bytes);
   if (!guardadoDepois.ok) {
     return resultado(500, 'falha', etapas, `Falha no armazenamento da captura. ${guardadoDepois.erro}`, senha);
   }
@@ -169,89 +170,30 @@ export async function executarReaprovacao(
 
   const quando = pedido.agora || new Date().toISOString();
   const nome = String(pedido.usuario.name || '').trim() || 'Financeiro';
-  const patchNovo = montarPatchValores(campos, justificativa.texto, nome, quando);
-  const seguro = patchSeguro(patchNovo);
-  if (!seguro.ok) return resultado(500, 'falha', etapas, seguro.erro, senha);
-
-  const base: EventoReaprovacao = jaExiste.evento && jaExiste.evento.missionId === os.id
-    ? { ...jaExiste.evento, campos, justificativa: justificativa.texto, erro: null }
-    : {
-        id: pedido.novoId ? pedido.novoId() : crypto.randomUUID(),
-        tentativaId: pedido.tentativaId,
-        missionId: os.id,
-        osNumero: os.id,
-        incluidoPor: String(os.created_by || '').trim() || null,
-        aprovadoOriginalmentePor: nomeAprovadorOriginal(os),
-        aprovadoOriginalmenteEm: os.snapshot_approved_at || null,
-        conferidoOriginalmentePor: String(os.billing_verified_by || '').trim() || null,
-        alteradoPor: nome,
-        reaprovadoPor: nome,
-        reaprovadoEm: quando,
-        justificativa: justificativa.texto,
-        campos,
-        capturaAntesPath: guardadoAntes.path,
-        capturaDepoisPath: guardadoDepois.path,
-        snapshotOriginal: os.snapshot_data ?? null,
-        valoresAplicados: false,
-        notificacaoId: null,
-        status: 'pendente',
-        erro: null,
-      };
-  base.capturaAntesPath = guardadoAntes.path;
-  base.capturaDepoisPath = guardadoDepois.path;
-  base.status = 'pendente';
-
-  const gravado = await deps.repo.salvarEvento(base);
-  if (!gravado.ok) {
-    return resultado(500, 'falha', etapas, `Falha no banco. Os valores da OS não foram alterados. ${gravado.erro}`, senha);
+  const confirmado = await deps.repo.confirmar({
+    tentativaId: pedido.tentativaId,
+    missionId: os.id,
+    receitaNova: Number(depois.revenue_value),
+    custoNovo: Number(depois.cost_value),
+    receitaEsperada: Number(os.revenue_value || 0),
+    custoEsperado: Number(os.cost_value || 0),
+    justificativa: justificativa.texto,
+    alteradoPor: nome,
+    capturaAntesPath: guardadoAntes.path,
+    capturaDepoisPath: guardadoDepois.path,
+    quando,
+  });
+  if (!confirmado.ok) {
+    const http = confirmado.codigo === 'conflito' ? 409 : confirmado.codigo === 'trava' ? 403 : 500;
+    return resultado(http, 'falha', etapas, confirmado.erro, senha);
   }
-
-  let evento = gravado.evento;
-  if (!evento.valoresAplicados) {
-    const aplicou = await deps.repo.aplicarValores(os.id, seguro.patch);
-    if (!aplicou.ok) {
-      evento = { ...evento, status: 'falha', erro: aplicou.erro };
-      await deps.repo.salvarEvento(evento);
-      return resultado(500, 'falha', etapas, `Falha no banco ao gravar os valores. ${aplicou.erro}`, senha);
-    }
-    evento = { ...evento, valoresAplicados: true, erro: null };
-    const marcado = await deps.repo.salvarEvento(evento);
-    if (!marcado.ok) {
-      return resultado(500, 'inconsistente', { ...etapas, gravacao: true }, `Falha no banco depois de alterar os valores. ${marcado.erro}`, senha);
-    }
-    evento = marcado.evento;
+  if (!evidenciaConfirmada(confirmado.evento)) {
+    return resultado(500, 'falha', etapas, 'A transação não confirmou histórico, evidência e notificação. A conclusão foi impedida.', senha);
   }
   etapas.gravacao = true;
-
-  if (!evento.notificacaoId) {
-    const aviso = await deps.repo.criarNotificacao({ ...evento, status: 'pendente' });
-    if (!aviso.ok) {
-      const reverso = patchSeguro(patchReversao(campos, os, quando));
-      if (!reverso.ok) {
-        return resultado(500, 'inconsistente', etapas, 'Falha ao avisar a Diretoria e ao montar a reversão dos valores.', senha);
-      }
-      const voltou = await deps.repo.aplicarValores(os.id, reverso.patch);
-      if (!voltou.ok) {
-        evento = { ...evento, status: 'inconsistente', valoresAplicados: true, erro: aviso.erro };
-        await deps.repo.salvarEvento(evento);
-        return resultado(500, 'inconsistente', etapas, 'A Diretoria não foi avisada e os valores não puderam voltar. A reaprovação não está concluída.', senha);
-      }
-      evento = { ...evento, status: 'falha', valoresAplicados: false, erro: aviso.erro };
-      await deps.repo.salvarEvento(evento);
-      etapas.gravacao = false;
-      return resultado(500, 'falha', etapas, `Falha ao avisar a Diretoria. Os valores voltaram ao estado anterior. ${aviso.erro}`, senha);
-    }
-    evento = { ...evento, notificacaoId: aviso.notificacao.id, status: 'concluida', erro: null };
-  }
-
-  evento = { ...evento, status: 'concluida', erro: null, valoresAplicados: true };
-  const fechado = await deps.repo.salvarEvento(evento);
-  if (!fechado.ok) {
-    return resultado(500, 'inconsistente', etapas, `Falha no banco ao confirmar a conclusão. ${fechado.erro}`, senha);
-  }
   etapas.notificacao = true;
   etapas.confirmacao = true;
-  return concluirDeEvento(fechado.evento, false);
+  return concluirDeEvento(confirmado.evento, confirmado.repetida);
 }
 
 export async function executarAcaoDiretoria(
