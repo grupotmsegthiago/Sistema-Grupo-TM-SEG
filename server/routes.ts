@@ -19,6 +19,7 @@ import { registerRhRoutes } from "./rhRoutes";
 import { handleFinancialTransactionPaymentsRequest } from "../api/financial-transaction-payments";
 import { handleFinancialPaymentsInitRequest } from "../api/financial-payments-init";
 import { registerOsAnalysisRoutes } from "./osAnalysisRequests";
+import { registerReaprovacaoFinanceiraRoutes } from "./reaprovacaoFinanceiraRoutes";
 import { registerGestaoInvestimentoRoutes } from "./gestaoInvestimentoRoutes";
 import { registerSupportAgentsRoutes } from "./supportAgentsRoutes";
 import { registerComissaoQuadroRoutes } from "./comissaoQuadroRoutes";
@@ -829,6 +830,7 @@ export async function registerRoutes(
   // Pedido de análise — também em /api/os-analysis (handler leve na Vercel).
   // NÃO usar await import aqui: trava getApp se o chunk falhar no bundle.
   registerOsAnalysisRoutes(app, requireAuth);
+  registerReaprovacaoFinanceiraRoutes(app, requireAuth);
   registerGestaoInvestimentoRoutes(app, requireAuth);
   registerSupportAgentsRoutes(app, requireAuth, requireRole);
   registerComissaoQuadroRoutes(app, requireAuth);

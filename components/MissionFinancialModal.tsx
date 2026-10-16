@@ -24,6 +24,7 @@ import { suggestPriceTable } from '../lib/gemini';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
+import ReaprovacaoFinanceiraPainel from './ReaprovacaoFinanceiraPainel';
 import { billableClientToll, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import {
     classificarFornecedorGravado,
@@ -2778,6 +2779,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               financialData?.provider.tableName,
           ),
       ].filter((line): line is string => !!line);
+      const mudouServicoAprovado = wasAlreadyApproved && detectedChanges.some((linha) =>
+          linha.startsWith('Serviço Cliente:') || linha.startsWith('Serviço Fornecedor:')
+      );
+      if (mudouServicoAprovado && perfilFinanceiro && !lockingNegative) {
+          showNotification(
+              'Reaprovar',
+              'OS já aprovada. A correção de receita ou custo entra em Reaprovar, com justificativa e senha.',
+              'error',
+          );
+          return;
+      }
       const requiresPostApprovalNote = wasAlreadyApproved && detectedChanges.length > 0 && !approve;
       // Controller/Plínio: o motivo do ajuste de fornecedor JÁ é a justificativa
       // oficial — não exigir um segundo campo de observação além do motivo.
@@ -6657,6 +6669,31 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             )}
         </div>
 
+        {mission && (
+          <ReaprovacaoFinanceiraPainel
+            key={mission.id}
+            os={{
+              id: mission.id,
+              created_by: (mission as any).created_by,
+              status: mission.status,
+              invoice_number: mission.invoice_number,
+              billing_approved: mission.billing_approved,
+              billing_verified_by: mission.billing_verified_by,
+              snapshot_approved_by: mission.snapshot_approved_by,
+              snapshot_approved_at: (mission as any).snapshot_approved_at,
+              negative_margin_locked: mission.negative_margin_locked,
+              faturaPaga: paidInvoiceLock.bloqueado,
+              revenue_value: mission.revenue_value,
+              cost_value: mission.cost_value,
+              toll_value: mission.toll_value,
+            }}
+            usuario={{ name: currentUserIdentity.name, role: currentUserIdentity.role }}
+            onConcluida={(valores) => {
+              setMission((prev) => prev ? { ...prev, revenue_value: valores.revenue_value, cost_value: valores.cost_value } : prev);
+              onUpdate?.();
+            }}
+          />
+        )}
         {financialData && !isLoading && (
                     <div
                         className="shrink-0 border-t border-gray-200 bg-white z-20 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-2 py-2 sm:px-4 sm:py-3 pb-[max(0.5rem,env(safe-area-inset-bottom))]"

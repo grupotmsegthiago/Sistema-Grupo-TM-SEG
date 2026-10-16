@@ -9,6 +9,7 @@ import {
   ArrowUpCircle, ArrowDownCircle,   BarChart3,
 } from 'lucide-react';
 import DiretoriaSistemaTab from './DiretoriaSistemaTab';
+import ReaprovacaoDiretoriaLista from '../ReaprovacaoDiretoriaLista';
 import CockpitEvidenceByOperator from '../CockpitEvidenceByOperator';
 import CockpitOpenOccurrences from '../CockpitOpenOccurrences';
 import CockpitTabelaErrada from '../CockpitTabelaErrada';
@@ -1195,6 +1196,8 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
           ))}
         </div>
       </div>
+
+      <ReaprovacaoDiretoriaLista />
 
       <div className="rounded-xl">
         {tabContent[tab]()}

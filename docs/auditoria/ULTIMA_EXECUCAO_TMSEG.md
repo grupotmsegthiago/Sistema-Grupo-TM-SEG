@@ -1,5 +1,18 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## HANDOFF — REAPROVAÇÃO FINANCEIRA NO PR #339
+
+**Data:** 2026-10-16  
+**Pedido:** continuar o PR #339 na branch `preparacao/acessos-financeiro`, com correção de OS aprovada, senha, captura e aviso à Diretoria. Sem migration em produção, sem mudar permissão real e sem merge.
+
+**Diagnóstico.** Giovanna Marsili e ANA.FERNANDES seguem no perfil Financeiro, com a trava de prejuízo só para Giovanna, Beatriz e Thiago Moreira. O operador só com orçamentos continua abrindo em orçamentos. O Aprovar antigo regrava o fluxo de salvamento e não exige senha, evidência nem aviso. A senha que já existia vale só para o pedágio.
+
+**Implementação.** O botão Reaprovar fica no modal financeiro e só o perfil Financeiro passa. A senha é conferida no servidor com a mesma comparação do login, sem ir para log nem para a resposta. O evento REAPROVAÇÃO guarda justificativa, pessoas, data e valores antes/depois. O snapshot original, o pedágio, a franquia e a comissão não entram no patch. OS faturada, paga, encerrada ou com prejuízo analisado continua bloqueada, sem desbloqueio novo. Capturas JPEG vão para o bucket privado `reaprovacao-financeira`; o banco fica com o caminho. Se captura, banco, armazenamento ou aviso falhar, a conclusão fica abaixo de 100% e o valor novo não permanece sem o aviso. A Diretoria marca Lido, Questionar ou Encerrar no cockpit, sem apagar o histórico e sem aprovar a OS.
+
+**Testes.** 19 testes novos da reaprovação passaram, com Ana, Giovanna, senha errada, justificativa ausente, falha de banco, falha de armazenamento, snapshot preservado, aviso e as três ações. Também passaram os testes de acesso, tela, pedágio e faturamento. O build concluiu. A tela logada não foi clicada: a reaprovação depende de sessão Financeiro e a migration ainda não foi aplicada.
+
+**Implantação pendente, sem executar.** Aplicar `migrations/propostas/2026_10_16_reaprovacao_financeira.sql` só com autorização. O rollback está em `migrations/rollback/2026_10_16_reaprovacao_financeira.sql`. Sem essa tabela e sem o bucket, a API impede a conclusão. Não houve merge nem publicação.
+
 ## VALIDAÇÃO — INTEGRAÇÃO PUBLICADA TM SEG × TORRES
 
 **Data:** 2026-10-13
