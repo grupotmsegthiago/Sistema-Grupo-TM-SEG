@@ -2,6 +2,8 @@ import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import { Mission, MissionStatus, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { calculateMissionFinancials } from '../lib/financialUtils';
+import { camposPedagioSnapshotAceite, classificarParPedagio } from '../lib/toll/clientTollBilling';
+import { carimboRecalculoAutomatico } from '../lib/missionSnapshot';
 import {
   computeCanonicalRevenueCost,
   getCanonicalDateRange,
@@ -169,7 +171,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         for (const c of conferidas) {
             try {
                 const missionId = c.osId;
-                const mission = missions.find(m => String(m.id).toUpperCase().replace('GTM-', '') === missionId.replace('GTM-', ''));
+                let mission = missions.find(m => String(m.id).toUpperCase().replace('GTM-', '') === missionId.replace('GTM-', ''));
                 if (!mission) { failed++; continue; }
 
                 const { data: existingLogs } = await supabase.from('system_logs').select('details').eq('entity', 'BillingApproval').eq('entity_id', mission.id);
@@ -179,6 +181,10 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const missionAlreadyApproved = mission.billing_approved === true;
 
                 if (alreadyLogged && missionAlreadyApproved) { success++; continue; }
+
+                if (carimboRecalculoAutomatico(mission.snapshot_approved_by) && !missionAlreadyApproved) {
+                    mission = { ...mission, snapshot_approved_by: null };
+                }
 
                 if (!alreadyLogged) {
                     const logEntry = { user: displayName, role: userData.role || '', stage, date: new Date().toISOString() };
@@ -205,6 +211,14 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     let updateSuccess = false;
 
                     if (canSnapshot) {
+                        const pedagioSnapshot = camposPedagioSnapshotAceite({
+                            tollValue: mission.toll_value,
+                            tollValueProvider: mission.toll_value_provider,
+                            clientName: mission.client,
+                            isSameOs: mission.is_same_os === true,
+                            revenueServiceOnly: mission.revenue_value || 0,
+                            displacementVal: mission.displacement_value || 0,
+                        });
                         const snapshotObj: any = {
                             route: mission.origin && mission.destination
                                 ? `${(mission.origin || '').split(',')[0].trim()} X ${(mission.destination || '').split(',')[0].trim()}`
@@ -220,13 +234,13 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                             hrExtraQtd: 0,
                             hrExtraTotal: 0,
                             durationHours: 0,
-                            tollVal: mission.toll_value || 0,
-                            tollProvider: mission.toll_value_provider || mission.toll_value || 0,
+                            tollVal: pedagioSnapshot.tollVal,
+                            tollProvider: pedagioSnapshot.tollProvider,
                             displacementVal: mission.displacement_value || 0,
                             displacementProvider: mission.displacement_value_provider || 0,
                             revenueServiceOnly: mission.revenue_value || 0,
                             costServiceOnly: mission.cost_value || 0,
-                            totalGeral: (mission.revenue_value || 0) + (mission.toll_value || 0) + (mission.displacement_value || 0),
+                            totalGeral: pedagioSnapshot.totalGeral,
                             iblFee: 0
                         };
                         const fullPayload = { ...basePayload, snapshot_data: snapshotObj, snapshot_approved_by: displayName, snapshot_approved_at: new Date().toISOString() };
@@ -347,11 +361,17 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         if (isSameOs) return { revDiff, costDiff, revMatch: true, costMatch: true };
         if (isApproved) return { revDiff, costDiff, revMatch: true, costMatch: true };
         const toll = excelToll || 0;
-        const sysStoredRevBase = (systemMission?.revenue_value || 0) + Math.max(0, systemMission?.toll_value || 0) + Math.max(0, systemMission?.displacement_value || 0);
+        const leituraPedagio = classificarParPedagio({
+            tollValue: systemMission?.toll_value,
+            tollValueProvider: systemMission?.toll_value_provider,
+            clientName: systemMission?.client,
+            isSameOs,
+        });
+        const sysStoredRevBase = (systemMission?.revenue_value || 0) + leituraPedagio.clienteExibido + Math.max(0, systemMission?.displacement_value || 0);
         const revBaseMatchesAcion = excelAcionamento != null && excelAcionamento > 0 && sysStoredRevBase > 0 && Math.abs(sysStoredRevBase - (excelAcionamento + toll)) <= 10;
         const revDiffIsToll = toll > 0 && Math.abs(revDiff - toll) <= 10;
         const revDiffWithToll = toll > 0 && Math.abs((sysRev + toll) - excelRev) <= 10;
-        const sysStoredCostBase = (systemMission?.cost_value || 0) + Math.max(0, systemMission?.toll_value_provider != null ? systemMission.toll_value_provider : (systemMission?.toll_value || 0)) + Math.max(0, systemMission?.displacement_value_provider != null ? systemMission.displacement_value_provider : (systemMission?.displacement_value || 0));
+        const sysStoredCostBase = (systemMission?.cost_value || 0) + leituraPedagio.fornecedorExibido + Math.max(0, systemMission?.displacement_value_provider != null ? systemMission.displacement_value_provider : (systemMission?.displacement_value || 0));
         const costDiffExplainedByExtras = costDiff > 10 && sysStoredCostBase > 0 && excelCost > sysStoredCostBase && Math.abs(sysCost - sysStoredCostBase) <= 1;
         const costDiffIsToll = toll > 0 && Math.abs(costDiff - toll) <= 10;
         const costDiffWithToll = toll > 0 && Math.abs((sysCost + toll) - excelCost) <= 10;
@@ -421,13 +441,21 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         const sysHoraFim = et ? new Date(et).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo' }) : '';
         const sysDataInicial = st ? new Date(st).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '';
         const sysDataFinal = et ? new Date(et).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '';
-        const sysToll = Math.max(0, sm.toll_value || 0);
+        const leituraPedagio = classificarParPedagio({
+            tollValue: sm.toll_value,
+            tollValueProvider: sm.toll_value_provider,
+            clientName: sm.client,
+            isSameOs: sm.is_same_os === true,
+            snapshotToll: sm.snapshot_data?.tollVal ?? sm.snapshot_data?.toll_value,
+        });
+        const sysToll = leituraPedagio.clienteExibido;
+        const sysTollAviso = leituraPedagio.aviso;
         const sysActivation = sm.revenue_value || 0;
         const sysStartKm = startKm;
         const sysEndKm = endKm;
         const sysRota = sm.origin && sm.destination ? `${sm.origin} → ${sm.destination}` : (sm.origin || sm.destination || '');
         const sysOperacao = sm.operation_type || '';
-        return { sysKm, sysStartKm, sysEndKm, sysHoraInicio, sysHoraFim, sysDataInicial, sysDataFinal, sysToll, sysActivation, sysRota, sysOperacao };
+        return { sysKm, sysStartKm, sysEndKm, sysHoraInicio, sysHoraFim, sysDataInicial, sysDataFinal, sysToll, sysTollAviso, sysActivation, sysRota, sysOperacao };
     };
 
     const detectSheetLayout = (ws: XLSX.WorkSheet) => {
@@ -760,6 +788,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                         if (d.excelToll != null || d.sysToll != null) {
                             entry.planilha_pedagio = d.excelToll;
                             entry.sistema_pedagio = d.sysToll;
+                            if (d.sysTollAviso) entry.sistema_pedagio_aviso = d.sysTollAviso;
                             if (d.excelToll != null && d.sysToll != null) entry.diff_pedagio = Math.abs(d.excelToll - d.sysToll);
                         }
                         if (d.excelEstacionamento != null) entry.planilha_estacionamento = d.excelEstacionamento;
@@ -977,7 +1006,11 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     if (d.excelHoraInicio || d.sysHoraInicio) { entry.planilha_hora_inicio = d.excelHoraInicio || '-'; entry.sistema_hora_inicio = d.sysHoraInicio || '-'; }
                     if (d.excelDataFinal || d.sysDataFinal) { entry.planilha_data_final = d.excelDataFinal || '-'; entry.sistema_data_final = d.sysDataFinal || '-'; }
                     if (d.excelHoraFim || d.sysHoraFim) { entry.planilha_hora_fim = d.excelHoraFim || '-'; entry.sistema_hora_fim = d.sysHoraFim || '-'; }
-                    if (d.excelToll != null || d.sysToll != null) { entry.planilha_pedagio = d.excelToll; entry.sistema_pedagio = d.sysToll; }
+                    if (d.excelToll != null || d.sysToll != null) {
+                        entry.planilha_pedagio = d.excelToll;
+                        entry.sistema_pedagio = d.sysToll;
+                        if (d.sysTollAviso) entry.sistema_pedagio_aviso = d.sysTollAviso;
+                    }
                     if (d.excelEstacionamento != null) entry.planilha_estacionamento = d.excelEstacionamento;
                     entry.receita_confere = d.revMatch ? 'SIM' : 'NÃO';
                     entry.custo_confere = d.costMatch ? 'SIM' : 'NÃO';

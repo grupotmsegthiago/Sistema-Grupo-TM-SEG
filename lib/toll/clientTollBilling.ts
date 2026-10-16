@@ -121,3 +121,195 @@ export function resolveStoredProviderToll(
   }
   return normalizeTollAmount(tollValue);
 }
+
+export type OrigemParPedagio =
+  | 'par_gravado'
+  | 'igual_preservado'
+  | 'mesma_os'
+  | 'fornecedor_ausente';
+
+export type ParPedagioRecalculo = {
+  toll_value: number;
+  toll_value_provider: number | null;
+  escreverFornecedor: boolean;
+  origem: OrigemParPedagio;
+};
+
+function fornecedorFoiGravado(value: unknown): boolean {
+  return value !== undefined && value !== null && String(value).trim() !== '';
+}
+
+/**
+ * Par usado pelos recálculos.
+ * O motor devolve o custo já gravado, não um pedágio novo de rota.
+ * Por isso esta função não aplica a faixa de novo: 120/100 continua 120/100.
+ * Valores iguais permanecem iguais (DHL, até R$ 10 ou legado).
+ * Fornecedor ausente não é preenchido com o valor do cliente nem com zero.
+ */
+export function preservarParPedagioNoRecalculo(input: {
+  tollValue: unknown;
+  tollValueProvider?: unknown | null;
+  isSameOs?: boolean;
+}): ParPedagioRecalculo {
+  const cliente = normalizeTollAmount(input.tollValue);
+  const temFornecedor = fornecedorFoiGravado(input.tollValueProvider);
+
+  if (input.isSameOs) {
+    return {
+      toll_value: cliente,
+      toll_value_provider: temFornecedor ? 0 : null,
+      escreverFornecedor: temFornecedor,
+      origem: 'mesma_os',
+    };
+  }
+
+  if (!temFornecedor) {
+    return {
+      toll_value: cliente,
+      toll_value_provider: null,
+      escreverFornecedor: false,
+      origem: 'fornecedor_ausente',
+    };
+  }
+
+  const fornecedor = normalizeTollAmount(input.tollValueProvider);
+  const iguais = Math.abs(cliente - fornecedor) < 0.009;
+  return {
+    toll_value: cliente,
+    toll_value_provider: fornecedor,
+    escreverFornecedor: true,
+    origem: iguais ? 'igual_preservado' : 'par_gravado',
+  };
+}
+
+export type EstadoLeituraPedagio =
+  | 'par_novo'
+  | 'manual'
+  | 'igual_esperado'
+  | 'legado_ambiguo'
+  | 'fornecedor_ausente'
+  | 'fornecedor_zero'
+  | 'mesma_os';
+
+export type ClassificacaoParPedagio = {
+  estado: EstadoLeituraPedagio;
+  clienteGravado: number;
+  fornecedorGravado: number | null;
+  clienteExibido: number;
+  fornecedorExibido: number;
+  fornecedorConfirmado: boolean;
+  faixaAplicadaNaLeitura: boolean;
+  aviso: string | null;
+};
+
+function reaisLeitura(value: number): string {
+  return `R$ ${value.toFixed(2).replace('.', ',')}`;
+}
+
+/**
+ * Classifica a leitura do par já gravado.
+ * clienteExibido é resolveStoredClientToll e fornecedorExibido é resolveStoredProviderToll.
+ * Não grava, não reaplica a faixa quando o par já é diferente e não inventa custo novo.
+ */
+export function classificarParPedagio(input: {
+  tollValue: unknown;
+  tollValueProvider?: unknown | null;
+  clientName?: string | null;
+  isSameOs?: boolean;
+  snapshotToll?: unknown | null;
+}): ClassificacaoParPedagio {
+  const clienteGravado = normalizeTollAmount(input.tollValue);
+  const fornecedorInformado = input.tollValueProvider !== undefined && input.tollValueProvider !== null;
+  const fornecedorGravado = fornecedorInformado ? normalizeTollAmount(input.tollValueProvider) : null;
+  const clienteExibido = resolveStoredClientToll(input.tollValue, input.tollValueProvider, input.clientName);
+  const fornecedorExibido = resolveStoredProviderToll(input.tollValue, input.tollValueProvider, !!input.isSameOs);
+  const faixaAplicadaNaLeitura = Math.abs(clienteExibido - clienteGravado) >= 0.009;
+
+  let estado: EstadoLeituraPedagio;
+  if (input.isSameOs) {
+    estado = 'mesma_os';
+  } else if (!fornecedorInformado) {
+    estado = 'fornecedor_ausente';
+  } else if ((fornecedorGravado ?? 0) === 0) {
+    estado = 'fornecedor_zero';
+  } else if (Math.abs(clienteGravado - (fornecedorGravado ?? 0)) < 0.009) {
+    const semFaixa = isDhlClientTollExempt(input.clientName) || clienteGravado <= TOLL_NO_MARKUP_MAX_BRL;
+    estado = semFaixa ? 'igual_esperado' : 'legado_ambiguo';
+  } else if (Math.abs(clienteGravado - billableClientToll(fornecedorGravado, input.clientName)) < 0.009) {
+    estado = 'par_novo';
+  } else {
+    estado = 'manual';
+  }
+
+  const partes: string[] = [];
+  if (estado === 'legado_ambiguo') {
+    partes.push('OS antiga com pedágio igual acima de R$ 10. A leitura aplica a faixa uma vez. O valor gravado não mudou.');
+  } else if (estado === 'fornecedor_ausente') {
+    partes.push('Fornecedor do pedágio não está gravado. O custo exibido segue a leitura histórica e não está confirmado.');
+  } else if (estado === 'fornecedor_zero') {
+    partes.push('Fornecedor do pedágio está zerado. O zero foi mantido.');
+  } else if (estado === 'manual') {
+    partes.push('Par manual. A leitura não reaplica a faixa.');
+  } else if (estado === 'mesma_os' && !fornecedorInformado) {
+    partes.push('OS mesma. O custo do fornecedor segue a regra existente e o campo não está gravado.');
+  }
+
+  const snapshotInformado = input.snapshotToll !== undefined && input.snapshotToll !== null && String(input.snapshotToll).trim() !== '';
+  if (snapshotInformado) {
+    const snapshot = normalizeTollAmount(input.snapshotToll);
+    if (Math.abs(snapshot - clienteExibido) >= 0.009) {
+      partes.push(`Snapshot ${reaisLeitura(snapshot)} difere da leitura ${reaisLeitura(clienteExibido)}. O snapshot não foi alterado.`);
+    }
+  }
+
+  return {
+    estado,
+    clienteGravado,
+    fornecedorGravado,
+    clienteExibido,
+    fornecedorExibido,
+    fornecedorConfirmado: estado !== 'fornecedor_ausente',
+    faixaAplicadaNaLeitura,
+    aviso: partes.length > 0 ? partes.join(' ') : null,
+  };
+}
+
+export type CamposPedagioSnapshotAceite = {
+  tollVal: number;
+  tollProvider: number | null;
+  totalGeral: number;
+};
+
+/**
+ * Campos de pedágio do primeiro snapshot do aceite em lote.
+ * tollVal é o cliente já cobrável no boletim. totalGeral soma esse valor uma vez.
+ * Fornecedor numérico, inclusive zero, permanece. Fornecedor ausente permanece null.
+ * O par bruto continua nas colunas da OS: o snapshot não tem campo separado para ele.
+ */
+export function camposPedagioSnapshotAceite(input: {
+  tollValue: unknown;
+  tollValueProvider?: unknown | null;
+  clientName?: string | null;
+  isSameOs?: boolean;
+  revenueServiceOnly?: unknown;
+  displacementVal?: unknown;
+}): CamposPedagioSnapshotAceite {
+  const leitura = classificarParPedagio({
+    tollValue: input.tollValue,
+    tollValueProvider: input.tollValueProvider,
+    clientName: input.clientName,
+    isSameOs: !!input.isSameOs,
+  });
+  const receita = Number(input.revenueServiceOnly) || 0;
+  const deslocamento = Number(input.displacementVal) || 0;
+  const fornecedorInformado = input.tollValueProvider !== undefined && input.tollValueProvider !== null;
+  const tollProvider = !fornecedorInformado
+    ? null
+    : (input.isSameOs ? 0 : leitura.fornecedorGravado);
+  const tollVal = leitura.clienteExibido;
+  return {
+    tollVal,
+    tollProvider,
+    totalGeral: Math.round((receita + tollVal + deslocamento) * 100) / 100,
+  };
+}

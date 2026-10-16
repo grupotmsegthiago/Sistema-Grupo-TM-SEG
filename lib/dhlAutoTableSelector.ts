@@ -53,6 +53,22 @@ export const computeDhlBand = (km: number): number => {
   return Math.ceil((k - 50) / 100) * 100;
 };
 
+/**
+ * OS financeiramente aprovada mostra a franquia gravada no snapshot.
+ * A banda calculada não substitui esse número; o aviso do boletim informa a divergência.
+ * OS ainda não aprovada continua na banda já usada pelo boletim.
+ */
+export function franquiaKmBoletimAprovado(opts: {
+  billingApproved: boolean;
+  isDhl: boolean;
+  kmTotal: number;
+  franquiaGravada: number;
+}): number {
+  if (opts.billingApproved) return opts.franquiaGravada;
+  if (opts.isDhl && opts.kmTotal > 0) return computeDhlBand(opts.kmTotal);
+  return opts.franquiaGravada;
+}
+
 const VALID_REGIONS = new Set(['SUDESTE', 'SUL', 'CENTRO-OESTE', 'NORDESTE', 'NORTE', 'BRASIL']);
 
 export interface DhlOpParts {

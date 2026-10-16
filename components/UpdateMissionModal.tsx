@@ -1691,29 +1691,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const isLocEmpty = !currentLoc || currentLoc === 'Solicitação Criada';
             const needsEnrichment = isLocEmpty || isLocUrl || isLocCoordsFallback;
 
-            if (needsEnrichment) {
-                let enrichCoords = extractCoordinates(locSegment) || coords;
-                if (!enrichCoords && isLocCoordsFallback) {
-                    const latM = locSegment.match(/LAT\s*(-?\d+\.\d+)/i);
-                    const lngM = locSegment.match(/LNG\s*(-?\d+\.\d+)/i);
-                    if (latM && lngM) enrichCoords = { lat: parseFloat(latM[1]), lng: parseFloat(lngM[1]) };
-                }
-                if (enrichCoords) {
-                    reverseGeocode(enrichCoords.lat, enrichCoords.lng).then(async (resolvedAddr) => {
-                        if (resolvedAddr && !/^LAT\s/i.test(resolvedAddr)) {
-                            console.log(`[LOCATION] Auto-enriquecimento OS ${m.id}: "${resolvedAddr}"`);
-                            const statusPart = locParts.length > 1 ? locParts[0] : '';
-                            const newLocation = statusPart 
-                                ? `${statusPart} | ${resolvedAddr.toUpperCase()}` 
-                                : resolvedAddr.toUpperCase();
-                            const { error } = await supabase.from('missions').update({ current_location: newLocation }).eq('id', m.id);
-                            if (!error) {
-                                console.log(`[LOCATION] OS ${m.id} enriquecida no banco: "${newLocation}"`);
-                            }
-                        }
-                    }).catch(() => {});
-                }
-            } else if (locSegment && !isLocEmpty) {
+            // Abertura não grava current_location. O endereço muda quando o operador salva.
+            if (!needsEnrichment && locSegment && !isLocEmpty) {
                 const cleanAddr = locSegment.replace(/\s*-?\s*BRASIL$/i, '').replace(/,\s*$/, '').trim();
                 if (cleanAddr) {
                     setEditData(prev => ({ ...prev, currentLocationName: cleanAddr }));

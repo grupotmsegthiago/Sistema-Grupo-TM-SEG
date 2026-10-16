@@ -92,6 +92,65 @@ type GravacaoOcorrencia = {
   from: (tabela: string) => any;
 };
 
+export function textoOcorrenciaFornecedorAusenteParaZero(input: {
+  quem: string;
+  clienteAntes: number;
+  clienteDepois: number;
+  fornecedorAntes: number;
+  lucroAntes: number;
+  lucroDepois: number;
+}): string {
+  return [
+    `Pedágio do fornecedor informado como zero por ${input.quem}.`,
+    `O fornecedor estava ausente. A leitura histórica era R$ ${dinheiroPedagio(input.fornecedorAntes)}.`,
+    'O valor gravado agora é R$ 0,00.',
+    `Pedágio cobrável: de R$ ${dinheiroPedagio(input.clienteAntes)} para R$ ${dinheiroPedagio(input.clienteDepois)}.`,
+    `Lucro do pedágio: de R$ ${dinheiroPedagio(input.lucroAntes)} para R$ ${dinheiroPedagio(input.lucroDepois)}.`,
+  ].join(' ');
+}
+
+export async function gravarOcorrenciaFornecedorAusenteParaZero(
+  client: GravacaoOcorrencia,
+  input: {
+    missionId: string;
+    quem: string;
+    impacto: {
+      clienteAntes: number;
+      clienteDepois: number;
+      fornecedorAntes: number;
+      lucroAntes: number;
+      lucroDepois: number;
+    };
+  },
+): Promise<{ ok: true } | { ok: false; erro: string }> {
+  const description = textoOcorrenciaFornecedorAusenteParaZero({ quem: input.quem, ...input.impacto });
+  const { error: insertError } = await client.from('mission_occurrences').insert([{
+    mission_id: input.missionId,
+    description,
+    evidence_url: null,
+    created_by: input.quem,
+  }]);
+  if (insertError) {
+    return { ok: false, erro: insertError.message || 'Não foi possível gravar a ocorrência do pedágio nesta OS.' };
+  }
+  await client.from('system_logs').insert([{
+    user_name: input.quem,
+    action_type: 'OTHER',
+    entity: 'MissionOccurrence',
+    entity_id: input.missionId,
+    details: JSON.stringify({
+      texto: description,
+      fornecedorAntes: 'ausente',
+      fornecedorDepois: 0,
+      clienteAntes: input.impacto.clienteAntes,
+      clienteDepois: input.impacto.clienteDepois,
+      lucroAntes: input.impacto.lucroAntes,
+      lucroDepois: input.impacto.lucroDepois,
+    }),
+  }]);
+  return { ok: true };
+}
+
 export async function gravarOcorrenciaPedagioAprovado(
   client: GravacaoOcorrencia,
   input: {
