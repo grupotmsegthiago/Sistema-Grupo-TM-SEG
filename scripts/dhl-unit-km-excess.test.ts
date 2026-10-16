@@ -15,7 +15,7 @@ test('clientTableMatchesMission — tolera variações de razão social DHL', ()
   assert.equal(clientTableMatchesMission(canonical, 'DHL SUPPLY CHAIN'), true);
 });
 
-test('calculateMissionFinancials — DHL aplica KM excedente automático quando tabela tem price_per_extra_km = 0', () => {
+test('calculateMissionFinancials — tabela com km extra zero não recebe tarifa regional', () => {
   const mission = {
     id: 'GTM-TEST',
     client: 'DHL SUPPLY CHAIN (BRAZIL) LTDA',
@@ -54,8 +54,9 @@ test('calculateMissionFinancials — DHL aplica KM excedente automático quando 
   );
 
   assert.equal(result.client.excessKm, 32);
-  assert.equal(result.client.unitPriceKm, 6.90);
-  assert.equal(result.client.extraKmVal, 220.8);
+  assert.equal(result.client.tarifaKmOrigem, 'zero_contratual');
+  assert.equal(result.client.unitPriceKm, 0);
+  assert.equal(result.client.extraKmVal, 0);
 });
 
 test('calculateMissionFinancials — OS concluída seleciona tabela pelo KM real, não KM previsto da rota', () => {
