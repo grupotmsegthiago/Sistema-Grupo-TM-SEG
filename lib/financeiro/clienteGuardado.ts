@@ -4,6 +4,7 @@
  * Tabelas de preço não usam mais a chave anônima.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { ehTabelaConsultaFinanceira } from './consultaFinanceira';
 import { reescreverSelectOs } from './colunasProtegidas';
 import { aplicarPedidoTabela, pedidoTabelaVazio, type PedidoTabela } from './filtrarTabela';
 
@@ -182,11 +183,38 @@ function guardarTabela(tabela: 'client_price_tables' | 'provider_cost_tables') {
   return api as PedidoTabela;
 }
 
+function guardarConsulta(tabela: string) {
+  const passos: Array<{ m: string; args: unknown[] }> = [];
+  const api: any = new Proxy({}, {
+    get(_alvo, prop) {
+      if (prop === 'then') return (ok?: any, erro?: any) => executar().then(ok, erro);
+      if (typeof prop !== 'string') return undefined;
+      return (...args: unknown[]) => {
+        passos.push({ m: prop, args });
+        return api;
+      };
+    },
+  });
+  async function executar() {
+    const resposta = await chamarApi('/api/financeiro/consulta', { tabela, passos });
+    if (!resposta.ok) {
+      return { data: null, error: { message: resposta.body?.erro || 'A consulta financeira foi recusada.' }, count: null };
+    }
+    return {
+      data: resposta.body?.data ?? null,
+      error: resposta.body?.error || null,
+      count: resposta.body?.count ?? null,
+    };
+  }
+  return api;
+}
+
 export function protegerCliente<T extends SupabaseClient>(cliente: T): T {
   const original = cliente.from.bind(cliente);
   cliente.from = ((tabela: string) => {
     if (tabela === 'client_price_tables' || tabela === 'provider_cost_tables') return guardarTabela(tabela);
     if (tabela === 'missions') return protegerMissions(original('missions'));
+    if (ehTabelaConsultaFinanceira(tabela)) return guardarConsulta(tabela);
     return original(tabela as never);
   }) as T['from'];
   return cliente;

@@ -13,7 +13,7 @@
 
 **Abortar a publicação se qualquer item abaixo falhar.** O build novo não responde no domínio. O `buildId` não é o commit publicado. A listagem operacional da OS falha depois do corte. A chave anônima ainda lê `revenue_value` depois do corte. O número de OS muda. Fatura, conta, comissão, Asaas ou PlugNotas passa a falhar. Nesses casos, aplicar `migrations/rollback/2026_10_16_acesso_financeiro_colunas.sql` e manter o código anterior no ar. O rollback devolve a leitura e não apaga OS nem sessão.
 
-**Classificação em 2026-10-16, sem alteração de produção.** A chave anônima ainda lê faturas, contas, transações, comissões, regiões de preço, `system_logs` e as três tabelas do corte. Não há view financeira exposta. Fechar fatura, conta e comissão agora derruba boletim, faturamento e contas a pagar, porque o navegador ainda consulta essas tabelas direto. Asaas e PlugNotas usam `service_role` e não entram neste corte. Por isso a publicação permanece interrompida: ainda existe acesso financeiro indevido fora das colunas da OS.
+**Publicação desta etapa:** não. Produção não foi alterada. O código novo encaminha fatura, conta, comissão, região de preço e `system_logs` para `/api/financeiro/consulta`, com o perfil lido no cadastro. Operador não lê fatura nem snapshot de log. O corte dessas tabelas está em `migrations/propostas/2026_10_16_acesso_financeiro_tabelas.sql` e só pode entrar depois que esse código estiver no ar. O rollback é `migrations/rollback/2026_10_16_acesso_financeiro_tabelas.sql`. Isso não substitui um login real em produção.
 
 ## HANDOFF — FINALIZAÇÃO DO PR #339 SEM PUBLICAÇÃO
 

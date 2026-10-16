@@ -3,10 +3,8 @@
  * Só comissão com empresa TORRES. A TM SEG continua no lançamento dela.
  * O comprovante copiado é o do pagamento do cliente, já gravado na fatura da TORRES.
  */
-import { createClient } from '@supabase/supabase-js';
 import { formatIsoDateBR } from '../dateUtils.js';
-import { extractAuthToken } from '../billingApiAuth.js';
-import { resolveSupabasePublicConfig } from '../resolveSupabasePublicConfig.js';
+import { createSupabaseAdminClient } from '../supabaseAdmin.js';
 import { caminhoComprovanteTorres } from './comprovantesComissao.js';
 import { assertComissoesQuadroAccess } from './comissaoQuadroAuth.js';
 import { montarContaPagarComissao, notaContaPagarComissao, tituloContaPagarComissao, vencimentoPagamentoComissao } from './contaPagarComissao.js';
@@ -176,14 +174,6 @@ function responderFalha(res: { status: (code: number) => { json: (body: unknown)
   res.status(falha.status).json({ ok: false, error, codigo: falha.codigo });
 }
 
-function clienteDoUsuario(token: string) {
-  const { url, anonKey } = resolveSupabasePublicConfig();
-  return createClient(url, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-}
-
 function nomeUsuario(req: { headers?: Record<string, unknown> }): string | null {
   const raw = req.headers?.['x-tmseg-user-name'] ?? req.headers?.['X-Tmseg-User-Name'];
   const nome = String(Array.isArray(raw) ? raw[0] : raw || '').trim();
@@ -227,8 +217,11 @@ export async function tratarPedidoContaPagarTorres(req: any, res: any): Promise<
     return;
   }
 
-  const token = extractAuthToken(req);
-  const sb = clienteDoUsuario(token);
+  const sb = createSupabaseAdminClient();
+  if (!sb) {
+    responderFalha(res, 'O servidor não conseguiu ler a comissão.');
+    return;
+  }
   const { data, error } = await sb
     .from('comissoes')
     .select('id, status, empresa_origem, conta_pagar_id, cliente_nome, fatura_numero, origem_fatura_id, data_faturamento, data_recebimento_cliente, valor_comissao, comerciais(nome)')

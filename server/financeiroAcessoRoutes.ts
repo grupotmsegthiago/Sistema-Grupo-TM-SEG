@@ -5,6 +5,16 @@
 import type { Express, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { filtrarGravacaoOs, podeGravarTabelasPreco, podeLerAuditoriaOs, podeLerTabelasPreco, podeLerValoresOs, colunasProtegidasLegiveis } from '../lib/financeiro/acessoCampos';
+import {
+  ehTabelaConsultaFinanceira,
+  escritaDoPedido,
+  filtrarLogDeAuditoria,
+  passosPermitidos,
+  podeGravarConsultaFinanceira,
+  podeLerConsultaFinanceira,
+  valoresDoPedido,
+} from '../lib/financeiro/consultaFinanceira';
+import { sessaoConfere } from '../lib/financeiro/sessao';
 import { senhasConferem } from '../lib/reaprovacaoFinanceira/capturaSenha';
 import { createSupabaseAdminClient } from './supabaseConfig';
 
@@ -28,8 +38,7 @@ async function principalDaSessao(req: Request) {
     .eq('id', sessao)
     .maybeSingle();
   const row = sessaoRow.data as { user_id?: string; expires_at?: string; revoked_at?: string | null } | null;
-  if (!row || String(row.user_id) !== String(userId) || row.revoked_at) return null;
-  if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) return null;
+  if (!sessaoConfere(row, userId)) return null;
   const usuario = await sb
     .from('system_users')
     .select('id, name, email, status, permissions, profiles:profile_id ( name, permissions )')
@@ -230,6 +239,51 @@ export function registerFinanceiroAcessoRoutes(app: Express, requireAuth: any): 
       return;
     }
     res.json({ linhas: gravou.data || [] });
+  });
+
+  app.post('/api/financeiro/consulta', requireAuth, async (req: Request, res: Response) => {
+    const principal = await principalDaSessao(req);
+    const tabela = String(req.body?.tabela || '');
+    const passos = Array.isArray(req.body?.passos) ? req.body.passos : [];
+    if (!principal || !ehTabelaConsultaFinanceira(tabela) || !passosPermitidos(passos)) {
+      res.status(403).json({ erro: 'Sem acesso a esta consulta.' });
+      return;
+    }
+    const valores = valoresDoPedido(passos);
+    const permitido = escritaDoPedido(passos)
+      ? podeGravarConsultaFinanceira(principal, tabela, valores)
+      : podeLerConsultaFinanceira(principal, tabela);
+    if (!permitido) {
+      res.status(403).json({ erro: 'Sem acesso a esta consulta.' });
+      return;
+    }
+    const sb = createSupabaseAdminClient();
+    if (!sb) {
+      res.status(503).json({ erro: 'O servidor não conseguiu consultar.' });
+      return;
+    }
+    try {
+      let consulta: any = sb.from(tabela);
+      for (const passo of passos) {
+        const metodo = consulta[passo.m];
+        if (typeof metodo !== 'function') {
+          res.status(400).json({ erro: 'Operação não aceita.' });
+          return;
+        }
+        consulta = metodo.apply(consulta, passo.args || []);
+      }
+      const resultado = await consulta;
+      const data = tabela === 'system_logs'
+        ? filtrarLogDeAuditoria(principal, resultado.data)
+        : resultado.data;
+      res.json({
+        data: data ?? null,
+        error: resultado.error ? { message: String(resultado.error.message || 'Falha na consulta.') } : null,
+        count: resultado.count ?? null,
+      });
+    } catch {
+      res.status(400).json({ erro: 'A consulta financeira não foi executada.' });
+    }
   });
 }
 
