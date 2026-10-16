@@ -1,6 +1,7 @@
 /**
  * Supervisão financeira — privilégios por nome (além do perfil Administrador).
- * Bárbara Sgarlata e Giovanna Marsili compartilham o mesmo nível operacional.
+ * Bárbara Sgarlata, Giovanna Marsili e Ana Fernandes compartilham o mesmo nível operacional.
+ * Ana entra só pelo cadastro confirmado ANA.FERNANDES. "Ana" sozinho não libera.
  */
 
 export function normalizePersonName(name: string | null | undefined): string {
@@ -15,13 +16,20 @@ export function isFinanceProfileRole(role: string | null | undefined): boolean {
   return normalizePersonName(role) === 'financeiro';
 }
 
-/** True para Bárbara Sgarlata / Giovanna Marsili (e variantes sem acento). */
+/** Cadastro único do Financeiro. Ponto ou espaço viram o mesmo nome; trecho solto não entra. */
+export function isAnaFernandes(name: string | null | undefined): boolean {
+  const n = normalizePersonName(name).replace(/[.\s]+/g, ' ').trim();
+  return n === 'ana fernandes';
+}
+
+/** True para Bárbara Sgarlata / Giovanna Marsili / Ana Fernandes. */
 export function isFinanceSupervisorName(name: string | null | undefined): boolean {
   const n = normalizePersonName(name);
   if (!n) return false;
   if (n.includes('barbara')) return true;
   // Única Giovanna no sistema (Giovanna Marsili) — mesmo acesso da Bárbara.
   if (n.includes('giovanna')) return true;
+  if (isAnaFernandes(name)) return true;
   return false;
 }
 
@@ -46,7 +54,7 @@ export function canSeeOsComPrejuizo(user: OsLossCardUser | null | undefined): bo
     .trim();
   if (roleLower === 'comercial') return false;
   if (Array.isArray(user.permissions) && user.permissions.includes('*')) return true;
-  if (isFinanceSupervisorName(user.name)) return true; // Bárbara / Giovanna
+  if (isFinanceSupervisorName(user.name)) return true; // Bárbara / Giovanna / Ana Fernandes
   if (nameLower.includes('daniel')) return true;
   if (nameLower.includes('michelle')) return true;
   if (nameLower.includes('thiago moreira')) return true;
