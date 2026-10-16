@@ -38,6 +38,17 @@ test('assertBillingApiAccess nega headers com userId divergente', async () => {
   assert.equal(denied, 'Permissão negada — apenas Diretoria, Administrador ou CEO');
 });
 
+test('permissão estrela não abre o custo de IA para operador', async () => {
+  const token = 'tmseg-token-7-1783678641263';
+  const denied = await assertBillingApiAccess(token, {
+    headers: {
+      'x-tmseg-user-id': '7',
+      'x-tmseg-role': 'operador',
+      'x-tmseg-permissions': '["*"]',
+    },
+  });
+  assert.equal(denied, 'Permissão negada — apenas Diretoria, Administrador ou CEO');
+});
 test('assertBillingApiAccess nega role financeiro via headers', async () => {
   const token = 'tmseg-token-42-1783678641263';
   const denied = await assertBillingApiAccess(token, {

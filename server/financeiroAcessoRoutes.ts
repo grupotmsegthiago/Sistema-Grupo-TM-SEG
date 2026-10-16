@@ -25,12 +25,12 @@ function sessaoDoPedido(req: Request): string {
   return String(req.headers['x-tmseg-sessao'] || '').trim();
 }
 
-async function principalDaSessao(req: Request) {
+async function principalDaSessao(req: Request, abrirAdmin: () => ReturnType<typeof createSupabaseAdminClient>) {
   const token = String((req as any).authToken || '');
   const sessao = sessaoDoPedido(req);
   const userId = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/)?.[1] || '';
   if (!userId || !sessao) return null;
-  const sb = createSupabaseAdminClient();
+  const sb = abrirAdmin();
   if (!sb) return null;
   const sessaoRow = await sb
     .from('user_sessions')
@@ -60,7 +60,12 @@ async function principalDaSessao(req: Request) {
   };
 }
 
-export function registerFinanceiroAcessoRoutes(app: Express, requireAuth: any): void {
+export function registerFinanceiroAcessoRoutes(
+  app: Express,
+  requireAuth: any,
+  deps?: { admin?: () => ReturnType<typeof createSupabaseAdminClient> },
+): void {
+  const abrirAdmin = deps?.admin || createSupabaseAdminClient;
   app.post('/api/auth/sessao', async (req: Request, res: Response) => {
     const email = String(req.body?.email || '').trim().toLowerCase();
     const senha = String(req.body?.senha || '');
@@ -77,7 +82,7 @@ export function registerFinanceiroAcessoRoutes(app: Express, requireAuth: any): 
       res.status(401).json({ erro: 'Não foi possível abrir a sessão.' });
       return;
     }
-    const sb = createSupabaseAdminClient();
+    const sb = abrirAdmin();
     if (!sb) {
       res.status(503).json({ erro: 'O servidor não conseguiu abrir a sessão.' });
       return;
@@ -109,7 +114,7 @@ export function registerFinanceiroAcessoRoutes(app: Express, requireAuth: any): 
   });
 
   app.post('/api/financeiro/os/valores', requireAuth, async (req: Request, res: Response) => {
-    const principal = await principalDaSessao(req);
+    const principal = await principalDaSessao(req, abrirAdmin);
     if (!principal) {
       res.status(401).json({ erro: 'Sessão financeira ausente.' });
       return;
@@ -120,7 +125,7 @@ export function registerFinanceiroAcessoRoutes(app: Express, requireAuth: any): 
       res.json({ linhas: [] });
       return;
     }
-    const sb = createSupabaseAdminClient();
+    const sb = abrirAdmin();
     if (!sb) {
       res.status(503).json({ erro: 'O servidor não conseguiu ler os valores.' });
       return;
@@ -134,13 +139,13 @@ export function registerFinanceiroAcessoRoutes(app: Express, requireAuth: any): 
   });
 
   app.post('/api/financeiro/os/gravar', requireAuth, async (req: Request, res: Response) => {
-    const principal = await principalDaSessao(req);
+    const principal = await principalDaSessao(req, abrirAdmin);
     if (!principal) {
       res.status(401).json({ erro: 'Sessão financeira ausente.' });
       return;
     }
     const modo = req.body?.modo === 'insert' ? 'insert' : 'update';
-    const sb = createSupabaseAdminClient();
+    const sb = abrirAdmin();
     if (!sb) {
       res.status(503).json({ erro: 'O servidor não conseguiu gravar.' });
       return;
@@ -173,13 +178,13 @@ export function registerFinanceiroAcessoRoutes(app: Express, requireAuth: any): 
   });
 
   app.post('/api/financeiro/tabelas/ler', requireAuth, async (req: Request, res: Response) => {
-    const principal = await principalDaSessao(req);
+    const principal = await principalDaSessao(req, abrirAdmin);
     if (!principal || !podeLerTabelasPreco(principal)) {
       res.status(403).json({ erro: 'Sem acesso à tabela de preço.' });
       return;
     }
     const tabela = req.body?.tabela === 'provider_cost_tables' ? 'provider_cost_tables' : 'client_price_tables';
-    const sb = createSupabaseAdminClient();
+    const sb = abrirAdmin();
     if (!sb) {
       res.status(503).json({ erro: 'O servidor não conseguiu ler a tabela.' });
       return;
@@ -193,14 +198,14 @@ export function registerFinanceiroAcessoRoutes(app: Express, requireAuth: any): 
   });
 
   app.post('/api/financeiro/tabelas/gravar', requireAuth, async (req: Request, res: Response) => {
-    const principal = await principalDaSessao(req);
+    const principal = await principalDaSessao(req, abrirAdmin);
     if (!principal || !podeGravarTabelasPreco(principal)) {
       res.status(403).json({ erro: 'Sem permissão para gravar a tabela.' });
       return;
     }
     const tabela = req.body?.tabela === 'provider_cost_tables' ? 'provider_cost_tables' : 'client_price_tables';
     const modo = String(req.body?.modo || '');
-    const sb = createSupabaseAdminClient();
+    const sb = abrirAdmin();
     if (!sb) {
       res.status(503).json({ erro: 'O servidor não conseguiu gravar a tabela.' });
       return;
@@ -242,7 +247,7 @@ export function registerFinanceiroAcessoRoutes(app: Express, requireAuth: any): 
   });
 
   app.post('/api/financeiro/consulta', requireAuth, async (req: Request, res: Response) => {
-    const principal = await principalDaSessao(req);
+    const principal = await principalDaSessao(req, abrirAdmin);
     const tabela = String(req.body?.tabela || '');
     const passos = Array.isArray(req.body?.passos) ? req.body.passos : [];
     if (!principal || !ehTabelaConsultaFinanceira(tabela) || !passosPermitidos(passos)) {
@@ -257,7 +262,7 @@ export function registerFinanceiroAcessoRoutes(app: Express, requireAuth: any): 
       res.status(403).json({ erro: 'Sem acesso a esta consulta.' });
       return;
     }
-    const sb = createSupabaseAdminClient();
+    const sb = abrirAdmin();
     if (!sb) {
       res.status(503).json({ erro: 'O servidor não conseguiu consultar.' });
       return;

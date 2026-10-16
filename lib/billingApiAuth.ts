@@ -52,11 +52,8 @@ function parsePermissions(raw: string): string[] {
   }
 }
 
-function canAccess(role: string, permissions: string[]): boolean {
-  const normalizedRole = normalizeRole(role);
-  if (BILLING_ROLES.has(normalizedRole)) return true;
-  if (permissions.includes('*')) return true;
-  return false;
+function canAccess(role: string, _permissions: string[]): boolean {
+  return BILLING_ROLES.has(normalizeRole(role));
 }
 
 function pickServiceRoleKey(): string {

@@ -13,7 +13,15 @@
 
 **Abortar a publicação se qualquer item abaixo falhar.** O build novo não responde no domínio. O `buildId` não é o commit publicado. A listagem operacional da OS falha depois do corte. A chave anônima ainda lê `revenue_value` depois do corte. O número de OS muda. Fatura, conta, comissão, Asaas ou PlugNotas passa a falhar. Nesses casos, aplicar `migrations/rollback/2026_10_16_acesso_financeiro_colunas.sql` e manter o código anterior no ar. O rollback devolve a leitura e não apaga OS nem sessão.
 
-**Publicação desta etapa:** não. Produção não foi alterada. O código novo encaminha fatura, conta, comissão, região de preço e `system_logs` para `/api/financeiro/consulta`, com o perfil lido no cadastro. Operador não lê fatura nem snapshot de log. O corte dessas tabelas está em `migrations/propostas/2026_10_16_acesso_financeiro_tabelas.sql` e só pode entrar depois que esse código estiver no ar. O rollback é `migrations/rollback/2026_10_16_acesso_financeiro_tabelas.sql`. Isso não substitui um login real em produção.
+**Publicação desta etapa:** não. Produção não foi alterada.
+
+**Sequência quando a publicação for autorizada.** 1) Publicar o código. 2) Confirmar o build no domínio. 3) Só então aplicar, nesta ordem, `2026_10_16_sessoes_financeiras.sql` se ainda não estiver, `2026_10_16_acesso_financeiro_colunas.sql` e `2026_10_16_acesso_financeiro_tabelas.sql`. 4) Provar que a chave anônima não lê receita, fatura nem comissão, e que a OS operacional continua. Se a listagem da OS falhar ou o número de OS mudar, aplicar os dois rollbacks de acesso e manter o código anterior. Quem já estava logado precisa entrar de novo para ver valor. A OS de status, rota, KM e hora continua no acesso direto durante a janela.
+
+**Critério para autorizar a publicação.** Os testes desta branch verdes. O build novo confirmado antes do corte. Rollback ensaiado. Aceitar, por escrito, que os buckets públicos de evidência, documento e comprovante de comissão continuam abertos até uma etapa própria de link assinado. Sem essa aceitação, a publicação não fecha o acesso financeiro por link direto.
+
+**Espelho de custo de IA.** `billing_usage` tem RLS sem política para anon: a chave anônima não lê as 571 linhas. A permissão `*` deixou de abrir o painel. Diretoria, Administrador e CEO continuam. O fallback por cabeçalho só existe se o cadastro não puder ser lido.
+
+**Buckets.** `mission-evidence` mistura foto de OS, ponto, odômetro e a pasta `financial`. `documents` tem alvará e PDF de CNPJ. `comissoes-comprovantes` tem comprovante de pagamento. Os três são públicos. Fechar o bucket agora apagaria a foto da OS e o comprovante já gravado, porque a tela usa o link público. Isso fica pendente.
 
 ## HANDOFF — FINALIZAÇÃO DO PR #339 SEM PUBLICAÇÃO
 
